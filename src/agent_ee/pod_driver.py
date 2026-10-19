@@ -54,7 +54,7 @@ def validate_plan(plan):
                 'routing_adapter', 'routing_budget_s', 'review_budget_s'}
     if (not isinstance(plan, dict) or plan.get('schema') != SCHEMA or
             not required <= plan.keys() or
-            set(plan) - required - {'max_iterations', 'max_seconds', 'placement_adapter', 'envelope_content'}):
+            set(plan) - required - {'max_iterations', 'max_seconds', 'placement_adapter', 'envelope_content', 'net_constraints'}):
         raise ValueError('expected agent-ee.pod-plan/1 fields')
     if not isinstance(plan['scope'], str) or not plan['scope']:
         raise ValueError('scope must name a planning scope file')
@@ -72,6 +72,8 @@ def validate_plan(plan):
         raise ValueError('intent and deviations must be different files')
     if any(Path(p).suffix != '.json' for p in paths):
         raise ValueError('writer inputs must be captured JSON records')
+    if 'net_constraints' in plan:
+        _path(plan['net_constraints'])
     if 'envelope_content' in plan:
         content = plan['envelope_content']
         if not isinstance(content, dict) or set(content) - {*CONTENT_PATHS, 'imu_reference'}:
@@ -246,6 +248,58 @@ def _validate_content(plan, scope, sources):
     return _content_step(plan, scope)
 
 
+def _constraint_paths(scope):
+    project = str(Path(scope['board']).with_suffix('.kicad_pro'))
+    return project, str(Path(project).with_suffix('.kicad_dru')), str(Path(project).with_suffix('.net-constraints.record.json'))
+
+
+def _apply_constraints(plan, scope, inputs, out):
+    """Apply after scaffold metadata; preserve emitter record bytes without hash rewriting."""
+    from .net_constraints import emit
+    project, rules, record = _constraint_paths(scope)
+    rules_path = inputs / rules
+    artifacts = emit((inputs / plan['net_constraints']).read_bytes(), (inputs / project).read_bytes(),
+                     envelope_raw=(inputs / plan['envelope']).read_bytes(),
+                     rules_raw=rules_path.read_bytes() if rules_path.exists() else b'(version 1)\n')
+    if 'project' not in artifacts:
+        raise ValueError('net constraints could not be applied: ' + artifacts['record'].decode())
+    for key, rel in (('project', project), ('rules', rules), ('record', record)):
+        target = out / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(artifacts[key])
+
+
+def _constraint_scope(scope, plan, inputs):
+    from .net_constraints import parse_document
+    scope = copy.deepcopy(scope)
+    _, classes = parse_document((inputs / plan['net_constraints']).read_bytes())
+    project, _, record = _constraint_paths(scope)
+    check_id = 'net-constraint-assignment'
+    if any(c['id'] == check_id for c in scope['checks']):
+        raise ValueError('net constraint check id is reserved: ' + check_id)
+    requirements = {r['id']: r for r in scope['baseline']['requirements']}
+    for spec in classes:
+        if spec['requirement'] not in requirements:
+            raise ValueError('net constraint requires a mapped baseline requirement: ' + spec['requirement'])
+        mapped = requirements[spec['requirement']]['checks']
+        if check_id not in mapped:
+            mapped.append(check_id)
+    index = next(i for i, c in enumerate(scope['checks']) if ORDER.index(c['stage']) > ORDER.index('placement'))
+    scope['checks'].insert(index, dict(id=check_id, kind='net_class_assignment', stage='placement',
+                               params=dict(project=project, record=record, constraints=plan['net_constraints'])))
+    return scope
+
+
+def _constraint_step(plan_dir, scope):
+    outputs = _constraint_paths(scope)
+    return dict(schema='agent-ee.stage-step/1', stage='scaffold', step='apply-net-constraints',
+        argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
+              '-m', 'agent_ee.pod_driver', '_constraints', '/tool/plan/constraints.json'],
+        mounts=[dict(source=str(SOURCE), at='/tool/agent-ee'), dict(source=str(plan_dir), at='/tool/plan')],
+        source='/tool/agent-ee', version_argv=['/usr/bin/python3', '--version'],
+        writes={p: 'constraints/' + p for p in outputs}, adoptable_exits=[0], timeout_s=120)
+
+
 def run_scaffold(recipe):
     """Only the shared scaffold producer writes native files, in the receipt sandbox."""
     recipe = read_json(recipe)
@@ -264,7 +318,7 @@ def build(plan_path, out, *, dry_run=False):
     scope = scaffold.strict_json(scope_raw)
     validate_scope(scope)
     before, sources, _ = candidate.source_manifest(scope, scope_path.parent)
-    for key in ('envelope', 'parts', 'spec', 'spec_record'):
+    for key in ('envelope', 'parts', 'spec', 'spec_record', *(['net_constraints'] if 'net_constraints' in plan else [])):
         if plan[key] not in sources:
             raise ValueError(f'uncaptured pod {key}: {plan[key]}')
     content_spec = _validate_content(plan, scope, sources) if 'envelope_content' in plan else None
@@ -285,12 +339,19 @@ def build(plan_path, out, *, dry_run=False):
         initial = read_json(preview / 'scope.json')
         prepared_scope = _final_scope(initial, plan, preview / 'inputs')
         files, _, _ = candidate.source_manifest(prepared_scope, preview)
-        validation = validate_configuration(plan, prepared_scope, files, preview / 'inputs')
         outputs = sorted(p for p in files if before.get(p) != files[p])
         if not {scope['schematic'], scope['board']} <= set(outputs):
             # Empty input placeholders may already equal the scaffold; still receipt-own both outputs.
             outputs = sorted(set(outputs) | {scope['schematic'], scope['board']})
         expected = dict(files)
+        if 'net_constraints' in plan:
+            if _constraint_paths(scope)[2] in before:
+                raise ValueError('net constraint record collides with captured inputs')
+            _apply_constraints(plan, scope, preview / 'inputs', preview / 'inputs')
+            initial = _constraint_scope(initial, plan, preview / 'inputs')
+        prepared_scope = _final_scope(initial, plan, preview / 'inputs')
+        files, _, _ = candidate.source_manifest(prepared_scope, preview)
+        validation = validate_configuration(plan, prepared_scope, files, preview / 'inputs')
     if plan_path.read_bytes() != raw or scope_path.read_bytes() != scope_raw or candidate.source_manifest(scope, scope_path.parent)[0] != before:
         raise ValueError('pod preparation inputs changed during validation')
     out.mkdir(parents=True)
@@ -315,6 +376,8 @@ def build(plan_path, out, *, dry_run=False):
     sandbox_scope = _scope_for_inputs(scope, inputs)
     sandbox_scope['inputs'] = [dict(path='/candidate/' + e['at'], at=e['at']) for e in sandbox_scope['inputs']]
     write_json(tools / 'scope.json', sandbox_scope)
+    if 'net_constraints' in plan:
+        write_json(tools / 'constraints.json', dict(plan=plan, scope=scope))
     step = _scaffold_step(tools, outputs)
     receipt_dir = out / 'scaffold-receipt'
     receipt = stage_receipts.run_step(receipt_dir, inputs, step, {'pre_receipt': 1})
@@ -323,13 +386,22 @@ def build(plan_path, out, *, dry_run=False):
         raise ValueError('receipted scaffold differs from validated preparation')
     link = dict(path='scaffold-receipt/receipt.json', sha256=digest(receipt_dir / 'receipt.json'), binding={'pre_receipt': 1})
     links = [link]
+    constraint_link = None
+    if 'net_constraints' in plan:
+        constraint_dir = out / 'constraints-receipt'
+        constraint = stage_receipts.run_step(constraint_dir, inputs, _constraint_step(tools, scope), {'pre_receipt': 2})
+        stage_receipts.adopt(constraint_dir, constraint, inputs)
+        constraint_link = dict(path='constraints-receipt/receipt.json', sha256=digest(constraint_dir / 'receipt.json'),
+                               binding={'pre_receipt': 2})
+        links.append(constraint_link)
     if content_spec is not None:
         # Envelope content consumes the adopted scaffold in place; its board is the only write.
         content_dir = out / 'content-receipt'
-        content = stage_receipts.run_step(content_dir, inputs, content_spec, {'pre_receipt': 2})
+        content_binding = {'pre_receipt': len(links) + 1}
+        content = stage_receipts.run_step(content_dir, inputs, content_spec, content_binding)
         stage_receipts.adopt(content_dir, content, inputs)
         links.append(dict(path='content-receipt/receipt.json', sha256=digest(content_dir / 'receipt.json'),
-                          binding={'pre_receipt': 2}))
+                          binding=content_binding))
     final_scope = _final_scope(initial, plan, inputs)
     files, _, _ = candidate.source_manifest(final_scope, out)
     final_validation = validate_configuration(plan, final_scope, files, inputs)
@@ -352,7 +424,8 @@ def build(plan_path, out, *, dry_run=False):
     write_json(out / 'campaign.json', config)
     record.update(status='prepared', campaign_sha256=digest(out / 'campaign.json'),
                   scope_sha256=digest(out / 'scope.json'), scaffold=link, first_capture_binding=binding,
-                  **({'envelope_content': links[1]} if content_spec is not None else {}))
+                  **({'envelope_content': links[-1]} if content_spec is not None else {}),
+                  **({'net_constraints': constraint_link} if constraint_link is not None else {}))
     write_json(out / 'driver-receipt.json', record)
     if dry_run:
         run_dry(out)
@@ -401,6 +474,10 @@ def dry_stage_results(checks, scope):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == '_constraints':
+        recipe = read_json(argv[1])
+        _apply_constraints(recipe['plan'], recipe['scope'], Path('/candidate'), Path('/work/constraints'))
+        return 0
     if argv and argv[0] == '_scaffold':
         run_scaffold(argv[1])
         return 0

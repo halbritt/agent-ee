@@ -18,6 +18,12 @@ feedback, see the [closed-loop contract and command reference](closed-loop.md).
 The [pod evidence index](evidence-index.md) maps captured criteria to existing
 check results, receipt history and outstanding obligations without running checks.
 
+The [seeded benchmark closure audit](seeded-benchmark.md#dependency-closure)
+requires exact tool and font inventories and verified licence files. Its CLI
+reports `closed: false` and exits 1 when any licence evidence is unverified,
+including an absent outer-host Docker licence inside an identified image.
+This inventory audit adds no candidate check kind.
+
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
 arguments, exit status and console output remain in `work/CHECK_ID/`.
@@ -276,7 +282,9 @@ step receipts. These are provenance and performance changes, with no new check
 kind or acceptance credit. See [emitter cost and benchmark](schematic-emitter.md#library-subsets-and-emission-cost).
 
 The opt-in [functional presentation](schematic-emitter.md#functional-presentation)
-(AGENTEE-222) groups flat schematics and draws short local wires. Its internal
+(AGENTEE-222) groups flat schematics and draws short local wires; AGENTEE-241
+fans crowded edge-pin labels and packs frames tighter, with the same native
+netlist and ERC on the real pod. Its internal
 connectivity guard is diagnostic; native ERC, exact netlist parity and rendered
 review remain required on the captured output. It adds no check kind or
 acceptance credit, and preserves symbol and pin UUIDs across presentation modes.
@@ -1082,6 +1090,10 @@ or lacks an observation for a populated id. The [JLC catalog schema](jlc-catalog
 requires retained response hashes and requests; unknown keys and LCSC warehouse
 sources are refused. Per-part hash verdicts and the evaluation-time witness are
 retained as evidence.
+An external part without an LCSC code can cite an owner-run
+[DigiKey capture](digikey-capture.md) as its identity and purchase-source
+evidence. That capture is a host-side preparation input; DigiKey stock is not
+JLCPCB stock.
 Optional captured `deviations` uses `agent-ee.part-deviations/1`. Valid hand-fit
 records require an exact original MPN, purchase source, captured evidence,
 stock reason and native `JLCPCB_Assembly=not_assembled`. They appear in
@@ -1359,4 +1371,29 @@ XML inventory used by `netlist_parity`, or waive native DRC schematic parity.
 [binding fill](binding-fill.md#source-derived-passive-ratings) (AGENTEE-233).
 A malformed record or a rating that differs from it is an `invalid_rating_provenance`
 defect. Absent ratings remain `missing_rating_property` defects;
-`require_passive_ratings` still defaults to true. No new check kind or predicate is added.
+`require_passive_ratings` still defaults to true. No new check kind is added.
+The optional `rating_provenance` parameter (AGENTEE-242) adds the
+`assembly:rating-provenance` predicate. It names the captured binding-fill stage
+receipt, its pinned sha256 and its `binding-fill.json` artifact. Each
+`record_sha256` must then resolve to the receipted record, or the check reports
+`invalid_rating_provenance`. Unavailable provenance is `unknown`, and so is an
+`AGENT_EE_Ratings` field when no `rating_provenance` is declared
+(`undeclared_rating_provenance`). See
+[receipt-bound rating provenance](assembly-readiness.md#receipt-bound-rating-provenance).
+
+## Saved native net-class assignment
+
+`net_class_assignment` reloads a saved board and sibling project through pcbnew.
+Parameters are captured `project`, `record` and `constraints` paths; see
+[net constraints](net-constraints.md#campaign-application-and-native-assignment-check-agentee-232).
+The check verifies each declared class, each exact net's effective assignment,
+minimum width and clearance. Missing or unassigned nets and classes are defects;
+unavailable native evidence stays unknown. Native KiCad pattern matching also
+refuses declared-class patterns matching extra undeclared board nets, naming
+each extra net, and legacy backslash-escaped slashes. This is independent of the
+record hash comparison, including standalone scopes. Literal `/POD_GNSS_RF` is
+accepted. The native report retains per-pattern matched net names.
+Project and rules hashes must agree
+with the record. The constraint document, record, project and emitted rules are
+immutable baseline policy. Capability predicate: `netclass:effective-assignment`.
+Impedance stays `recorded_not_enforced`; native DRC checks actual copper.

@@ -523,12 +523,17 @@ def _geometry(item, rotation, mirror):
                 # rotation (the written angle adds the rotation, drawing undoes it).
                 angle = (_nm(at[0][3]) // 1000000 if len(at[0]) == 4 else 0) % 180
                 # About 0.8 em per glyph. A justified field may flip sides under
-                # the symbol transform, so it is reserved on both sides.
-                justified = any(j[1:] and {'left', 'right'} & set(j[1:])
-                                for e in children(prop, 'effects') for j in children(e, 'justify'))
-                half = len(text) * FONT * 4 // 5 // (1 if justified else 2) + FONT // 2
-                shapes.append([px - half, py - FONT, px + half, py + FONT] if angle == 0 else
-                              [px - FONT, py - half, px + FONT, py + half])
+                # the symbol transform, so it is reserved on both sides, except
+                # untransformed horizontal text, which keeps its library side.
+                sides = {s for e in children(prop, 'effects') for j in children(e, 'justify')
+                         for s in j[1:] if s in ('left', 'right')}
+                half = len(text) * FONT * 4 // 5 // (1 if sides else 2) + FONT // 2
+                if angle == 0 and len(sides) == 1 and (rotation, mirror) == (0, None):
+                    shapes.append([px - half, py - FONT, px + FONT // 2, py + FONT] if 'right' in sides else
+                                  [px - FONT // 2, py - FONT, px + half, py + FONT])
+                else:
+                    shapes.append([px - half, py - FONT, px + half, py + FONT] if angle == 0 else
+                                  [px - FONT, py - half, px + FONT, py + half])
     return dict(matrix=matrix, rotation=rotation, mirror=mirror, labels=labels, box=_box(points),
                 shapes=shapes, body=_box([p for s in shapes for p in (s[:2], s[2:])]), ends=ends)
 
@@ -582,13 +587,15 @@ def _label(net, point, away, uid):
             ['uuid', Q(uid('label'))]]
 
 
-def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets, omit=frozenset()):
+def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets, relabel=None):
     """One placed unit: its instance node, plus a label or marker on every pin endpoint.
 
     ``key`` is the unit's identity prefix for every derived UUID, and ``path``
-    is its native sheet-occurrence path. Pins in ``omit`` are wired to a
-    labelled pin of the same net (functional presentation) and carry no label.
+    is its native sheet-occurrence path. ``relabel`` (functional presentation)
+    maps a pin wired to a labelled pin of the same net to ``None`` (no label),
+    and a pin with a fanned label to its unit-local ``(x, y, angle)``.
     """
+    relabel = relabel or {}
     comp, unit = item['comp'], item['unit']
     instance = ['symbol', ['lib_id', Q(comp['lib_id'])], ['at', _mm(anchor[0]), _mm(anchor[1]), str(item['rotation'])]]
     if item['mirror']:
@@ -630,7 +637,10 @@ def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets,
         if net is None:
             markers.append(['no_connect', ['at', _mm(point[0]), _mm(point[1])],
                             ['uuid', Q(_uuid(namespace, 'no_connect', *ident))]])
-        elif pin['number'] not in omit:
+        elif relabel.get(pin['number'], ()) is not None:
+            if pin['number'] in relabel:  # A fanned label sits at the far end of its wire.
+                fx, fy, away = relabel[pin['number']]
+                point = (anchor[0] + fx, anchor[1] + fy)
             kind = dict(net, **{'global': net['id'] in global_nets})
             labels.append(_label(kind, point, away, lambda tag: _uuid(namespace, tag, *ident)))
     return instance, labels, markers
@@ -672,10 +682,10 @@ def _project_file(project, root, sheets):
 
 def _emit(resolved, units, global_nets, namespace, project, presentation='rows', groups=()):
     root = _uuid(namespace, 'sheet', '/')
-    omit, drawn = {}, []
+    relabel, drawn = {}, []
     if presentation == 'functional':
         from .schematic_presentation import arrange
-        paper, placed, omit, drawn = arrange(units, resolved, global_nets, groups, namespace)
+        paper, placed, relabel, drawn = arrange(units, resolved, global_nets, groups, namespace)
     else:
         paper, placed = _pack(units)
     endpoints, lib_symbols, symbols, labels, markers = {}, {}, [], [], []
@@ -683,7 +693,7 @@ def _emit(resolved, units, global_nets, namespace, project, presentation='rows',
         lib_symbols[item['comp']['lib_id']] = item['embedded']
         symbol, unit_labels, unit_markers = _symbol(item, anchor, namespace, (item['comp']['id'],), project,
                                                     '/' + root, endpoints, global_nets,
-                                                    omit.get((item['comp']['id'], item['unit']), frozenset()))
+                                                    relabel.get((item['comp']['id'], item['unit'])))
         symbols.append(symbol)
         labels += unit_labels
         markers += unit_markers

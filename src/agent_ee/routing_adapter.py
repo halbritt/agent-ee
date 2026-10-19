@@ -57,8 +57,11 @@ def preflight(checkout, state=None, backend='krt'):
 
 
 def step(*, project, board, schematic, name, label, checkout, state=None, budget=300, timeout=None,
-         backend='krt', diff_pairs=None):
-    """The AGENTEE-95 step declaration for one attempt. Raises ValueError if the tool does not qualify."""
+         backend='krt', diff_pairs=None, layer_policy=None):
+    """The AGENTEE-95 step declaration for one attempt. Raises ValueError if the tool does not qualify.
+
+    layer_policy (AGENTEE-231) is the declared allowed signal layers, optional KRT
+    layer costs, pour area-loss bound and optional RF reference plane."""
     check = preflight(checkout, state, backend)
     if check['problems']:
         raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
@@ -69,6 +72,8 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
             '--state', 'separate' if separate else 'checkout']
     if diff_pairs is not None:
         args += ['--diff-pairs', diff_pairs]
+    if layer_policy is not None:
+        args += ['--layer-policy', attempt.canonical_json(layer_policy)]
     request = attempt.parse_request(args)  # the same validation the sandbox applies
     return _step(request, check['checkout'], check['state'] if separate else None)
 
@@ -91,7 +96,7 @@ def _step(request, checkout, state):
 def validate_declaration(value):
     """Strict campaign opt-in; command, mounts, pin and environment are not configurable."""
     required = {'schema', 'project', 'board', 'schematic', 'name', 'label', 'checkout'}
-    optional = {'state', 'budget', 'timeout', 'backend', 'diff_pairs'}
+    optional = {'state', 'budget', 'timeout', 'backend', 'diff_pairs', 'layer_policy'}
     if (not isinstance(value, dict) or value.get('schema') != 'agent-ee.routing-adapter/1' or
             not required <= set(value) or not set(value) <= required | optional):
         raise ValueError('expected agent-ee.routing-adapter/1 declaration')
@@ -110,11 +115,13 @@ def validate_declaration(value):
         **{k: value[k] for k in ('project', 'board', 'schematic', 'name', 'label')},
         'backend': value.get('backend', 'krt'), 'budget_s': budget, 'timeout_s': timeout,
         'state': 'separate' if separate else 'checkout',
-        **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {})}))
+        **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {}),
+        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {})}))
     return {'schema': value['schema'], **{k: request[k] for k in ('project', 'board', 'schematic', 'name', 'label')},
             'checkout': checkout, 'state': state if separate else None, 'budget': request['budget_s'],
             'timeout': request['timeout_s'], 'backend': request['backend'],
-            **({'diff_pairs': request['diff_pairs']} if 'diff_pairs' in request else {})}
+            **({'diff_pairs': request['diff_pairs']} if 'diff_pairs' in request else {}),
+            **({'layer_policy': request['layer_policy']} if 'layer_policy' in request else {})}
 
 
 def campaign_spec(declaration, manifest, mutable):
@@ -132,7 +139,8 @@ def campaign_spec(declaration, manifest, mutable):
         **{k: value[k] for k in ('project', 'board', 'schematic', 'name', 'label', 'backend')},
         'budget_s': value['budget'], 'timeout_s': value['timeout'],
         'state': 'separate' if value['state'] else 'checkout',
-        **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {})}))
+        **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {}),
+        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {})}))
     return validate_step(_step(request, value['checkout'], value['state']), host=False)
 
 
@@ -317,7 +325,8 @@ def _verify(run, report, inputs, receipt, layout):
                 attempt.files_of(attempt.tree(routing / 'candidate')) !=
                 {f'{request["project"]}/{request["board"]}': report['candidate']['sha256']}):
             raise ValueError('routed candidate differs from the adapter report')
-    if classification != 'validation_failed' and report['rejected_candidate_sha256'] is not None:
+    if (classification not in ('validation_failed', 'policy_failed') and
+            report['rejected_candidate_sha256'] is not None):
         raise ValueError(f'a {classification} attempt records a rejected candidate')
     result = record = None
     if classification == 'not_run':
@@ -345,6 +354,11 @@ def _verify(run, report, inputs, receipt, layout):
             refused = attempt.refused_output(stdout)
             derived, _ = attempt.semantics(process['exit_code'], result, record, refused, found is not None,
                                            request)
+            if 'layer_policy' in request:
+                grade = attempt.layer_policy_grade(request['layer_policy'], routing / 'attempt', result, derived,
+                                                  request['board'])
+                if derived in ('complete', 'incomplete') and grade['status'] != 'pass':
+                    derived = 'policy_failed'
             # A contradiction may sit over reports that alone classify otherwise, because some
             # contradictions come from the file system. It never delivers a board.
             if classification != 'contradiction':
@@ -363,11 +377,36 @@ def _verify(run, report, inputs, receipt, layout):
     pairs = attempt.pair_coverage(request, result, record, classification)
     if 'pair_coverage' in sem and sem['pair_coverage'] != pairs:
         raise ValueError('pair coverage differs from retained routing evidence')
+    policy = _policy_grade(routing, report, request, result, classification)
     return {'classification': classification, 'proposal': proposal, 'coverage': coverage,
             'pair_coverage': pairs,
             'router_exit': sem['exit_code'], 'candidate_sha256': (report['candidate'] or {}).get('sha256'),
             'backend': backend, 'tool_version': dict(attempt.TOOL_VERSION),
-            'reproducibility': attempt.REPRODUCIBILITY[request['backend']]}
+            'reproducibility': attempt.REPRODUCIBILITY[request['backend']],
+            **({'layer_policy': policy} if policy is not None else {})}
+
+
+def _policy_grade(routing, report, request, result, classification):
+    """Re-grade a declared layer policy from the retained reports; None when undeclared."""
+    sem = report['semantics']
+    if 'layer_policy' not in request:
+        if 'layer_policy' in sem:
+            raise ValueError('layer policy grade without a declared layer policy')
+        return None
+    if classification == 'policy_failed':
+        result_sha = result['validation'].get('validated_board_sha256')
+        if report['rejected_candidate_sha256'] != result_sha:
+            raise ValueError('policy-failed board is not the board the router validated')
+    graded = classification
+    if classification == 'policy_failed':
+        graded = 'complete' if result['routing']['status'] == 'COMPLETE' else 'incomplete'
+    grade = attempt.layer_policy_grade(request['layer_policy'], routing / 'attempt', result, graded,
+                                      request['board'])
+    if sem.get('layer_policy') != grade:
+        raise ValueError('layer policy grade differs from the retained routing evidence')
+    if attempt.CLASSES[classification][0] != 'none' and grade['status'] != 'pass':
+        raise ValueError(f'a {classification} attempt delivered a board whose layer policy is {grade["status"]}')
+    return grade
 
 
 def _tool_claims(report, request, layout, *, ran):
@@ -488,9 +527,15 @@ def _request_argv(request):
              'state': '--state'}
     if 'diff_pairs' in request:
         flags['diff_pairs'] = '--diff-pairs'
+    if 'layer_policy' in request:
+        flags['layer_policy'] = '--layer-policy'
     if set(request) != set(flags):
         raise ValueError('routing adapter request has unknown or missing fields')
     argv = []
     for key, flag in flags.items():
-        argv += [flag, str(request[key])]
+        try:
+            value = attempt.canonical_json(request[key]) if key == 'layer_policy' else str(request[key])
+        except (TypeError, ValueError):
+            raise ValueError('routing adapter layer policy is not JSON') from None
+        argv += [flag, value]
     return argv

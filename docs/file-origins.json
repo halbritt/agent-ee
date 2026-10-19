@@ -442,6 +442,7 @@
         "action.yml",
         "bin/",
         "docker/agent-ee.apparmor",
+        "docker/image-context.json",
         "docker/kicad-route/",
         "pyproject.toml",
         "profiles/",
@@ -2059,6 +2060,16 @@
     },
     {
       "paths": [
+        "tests/test_digikey_capture.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code; the HTML literal is a synthetic non-JSON body the DigiKey v4 parser must refuse and the PDF literal is a minimal owned envelope served by a loopback stub. Part numbers, manufacturers and responses are invented; no DigiKey response or datasheet is copied."
+    },
+    {
+      "paths": [
         "tests/test_datasheet_capture.py"
       ],
       "kind": "owned-source",
@@ -2272,6 +2283,16 @@
     },
     {
       "paths": [
+        "tests/test_route_layer_policy.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original native layer-policy routing tests on the owned add-planes probe: invented signal pads, GND plane plan and a minimal empty schematic format literal. No copied design or library assets; the probe does not represent the telemetry pod."
+    },
+    {
+      "paths": [
         "tests/test_routing_campaign.py"
       ],
       "kind": "owned-source",
@@ -2319,6 +2340,16 @@
         "AE"
       ],
       "reviewed": "Original source URL, commit, byte counts and SHA-256 facts recorded for AGENTEE-27. Contains no upstream catalog rows, library or design files."
+    },
+    {
+      "paths": [
+        "catalog-sources/jlcparts-identity-2026-09-14.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-247 identity-index source manifest: the same jlcparts commit, URL, byte counts and SHA-256 facts as catalog-sources/jlcparts-2026-09-14.json under the jlcparts-v2-identity-split-zip profile name. The source-db-v2 layout it names is read from the MIT-licensed yaqwsx/jlcparts producer's published format; no upstream catalog rows, data or software are vendored, and pinning the public source grants no permission to redistribute its data. Tests build owned synthetic archives only."
     },
     {
       "paths": [

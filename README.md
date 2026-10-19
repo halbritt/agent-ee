@@ -94,7 +94,8 @@ hierarchical fome-mc board; its expectations and reports live in a private
 Git-backed store until the owner decides on publication (AGENTEE-118). Sources
 and generated designs remain outside the repository. The public corpus records a
 verified dependency closure, deterministic control false-alarm bounds and native
-rerun comparisons; owner review and any publication remain outstanding.
+rerun comparisons. The closure audit exits 1 whenever tool or font licence
+evidence is unverified; owner review and any publication remain outstanding.
 
 The [false-positive calibration](docs/fp-calibration.md) measures the reviewers
 themselves. It shows each profile reviewer pairs made from a design and its seeded
@@ -316,6 +317,10 @@ properties are unknown.
 The [netclass completeness check](docs/netclass-completeness.md) checks captured
 Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
+The [pod driver](docs/pod-driver.md#net-constraint-application) can apply captured
+net constraints under receipt and register saved native class-assignment checks.
+Standalone class-assignment checks also refuse declared-class patterns that
+match undeclared board nets or use legacy escaped slashes.
 [Net constraints](docs/net-constraints.md) turn the intent's per-net current,
 clearance, differential-pair and impedance declarations into native netclasses
 and DRC width rules. Widths for declared currents come from an IPC-2152 fit, and
@@ -419,6 +424,10 @@ explicit requirement. Their [full-feed runtime qualification](docs/catalog.md#fu
 uses a declared 600-second helper ceiling and retains sealed evidence in private
 scratch. They do not authenticate upstream claims or establish
 circuit acceptance. Snapshot stock and prices describe their recorded dates.
+A separate pinned [catalog identity index](docs/catalog-identity.md) retains
+non-passive LCSC/MPN/manufacturer/package/tier/stock/datasheet-URL facts and
+resolves declared MPNs offline to candidate LCSC ids and datasheet URLs;
+ambiguous matches need an explicit reasoned narrowing and misses stay unknown.
 [Named ICs and modules](docs/approved-parts.md#named-ics-and-modules) can enter
 `parts/1` through per-LCSC records derived offline from captured JLCPCB responses
 and datasheet acquisitions. The subset check and scaffold producer replay exact
@@ -465,6 +474,15 @@ from those bytes and binds `as_of` to the generation receipt in campaigns
 reports per-part hash verdicts. It refuses a capture that is
 stale or lacks an observation for a populated id. Its response mapping is not
 yet qualified against a live JLCPCB response.
+
+[DigiKey capture](docs/digikey-capture.md) is the owner-run Stage 2 producer
+for external parts without an LCSC code. It needs owner-provided DigiKey
+API v4 client credentials and an explicit `--allow-network`. It retains each raw
+response with its hash and UTC time. An offline validator re-derives every
+field. An adapter projects a found part into an
+`agent-ee.external-part-identity/1` declaration, a datasheet binding and
+hand-fit purchase-source evidence. Its response mapping is not yet qualified
+against a live DigiKey response.
 
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
 pinned local commit without Git transports or replacement refs, and checks

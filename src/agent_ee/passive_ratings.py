@@ -251,3 +251,70 @@ def validate_binding(props, kind):
         elif quantity(value, field) is None or props.get(field) != value:
             problems.append(f'{field}={props.get(field)!r} differs from provenance {value!r}')
     return problems
+
+
+def load_provenance(root, declaration):
+    """Derived records of a receipted binding-fill report; ValueError when the provenance is unavailable.
+
+    ``declaration`` names the captured stage receipt of the binding-fill step, its
+    coordinator-pinned sha256, and the captured ``binding-fill.json``. The report is
+    accepted only as the exact artifact the adoptable receipt recorded.
+    """
+    from .stage_receipts import ADOPTABLE, RECEIPT_KEYS, RECEIPT_SCHEMA, validate_step
+    from .storage import digest, identity
+    root = Path(root)
+    receipt_path, report_path = root / declaration['receipt'], root / declaration['report']
+    for path in (receipt_path, report_path):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f'rating provenance file is missing: {path.relative_to(root).as_posix()}')
+    if digest(receipt_path) != declaration['receipt_sha256']:
+        raise ValueError('binding-fill receipt differs from its pinned sha256')
+    receipt = strict_json(receipt_path.read_bytes())
+    if (not isinstance(receipt, dict) or receipt.get('schema') != RECEIPT_SCHEMA or set(receipt) != RECEIPT_KEYS or
+            identity({k: v for k, v in receipt.items() if k != 'identity'}) != receipt['identity']):
+        raise ValueError('malformed binding-fill stage receipt')
+    spec = validate_step(receipt['spec'], host=False)
+    if spec != receipt['spec'] or spec['step'] != 'binding-fill' or '--ratings' not in spec['argv']:
+        raise ValueError('stage receipt is not a binding-fill step with declared ratings')
+    if receipt['status'] not in ADOPTABLE:
+        raise ValueError(f'binding-fill receipt status {receipt["status"]} is not adoptable')
+    if not isinstance(receipt['artifacts'], dict) or receipt['artifacts'].get('out/binding-fill.json') != digest(report_path):
+        raise ValueError('binding-fill report is not the receipted artifact')
+    report = strict_json(report_path.read_bytes())
+    if not isinstance(report, dict) or report.get('schema') != 'agent-ee.binding-fill/1':
+        raise ValueError('expected agent-ee.binding-fill/1 report')
+    ratings = report.get('ratings')
+    if not isinstance(ratings, dict) or not isinstance(ratings.get('derived'), dict):
+        raise ValueError('binding-fill report carries no ratings provenance')
+    for ref, entry in ratings['derived'].items():
+        exact_fields(entry, ('record', 'record_sha256'))
+        if (not isinstance(entry['record'], dict) or entry['record_sha256'] != identity(entry['record']) or
+                entry['record'].get('schema') != BINDING):
+            raise ValueError(f'receipted rating record for {ref} does not match its identity')
+    return ratings['derived']
+
+
+def resolve_record(props, ref, derived):
+    """Problems binding a native rating field to the receipted record of ``ref``."""
+    raw = props.get(PROPERTY)
+    entry = derived.get(ref)
+    if raw is None:
+        return [] if entry is None else [f'receipted rating record for {ref} is absent from the component']
+    if entry is None:
+        return [f'{PROPERTY} names no receipted rating record for {ref}']
+    document = strict_json(raw.encode())
+    record = entry['record']
+    problems = []
+    if document['record_sha256'] != entry['record_sha256']:
+        problems.append(f'record_sha256 {document["record_sha256"]} is not the receipted record '
+                        f'{entry["record_sha256"]}')
+    expected = {field: rating['value'] for field, rating in record['ratings'].items()}
+    if document['ratings'] != expected:
+        problems.append(f'ratings {document["ratings"]} differ from the receipted record {expected}')
+    part = record['part']
+    if part.get('lcsc') is not None and props.get('LCSC') != part['lcsc']:
+        problems.append(f'LCSC={props.get("LCSC")!r} differs from the receipted record {part["lcsc"]!r}')
+    numbers = [props[name] for name in ('MPN', 'Partnumber', 'PartNumber') if name in props]
+    if not numbers or any(number != part['mpn'] for number in numbers):
+        problems.append(f'part number differs from the receipted record {part["mpn"]!r}')
+    return problems

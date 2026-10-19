@@ -1126,6 +1126,15 @@ CLOSURE_SCHEMA = 'agent-ee.benchmark-dependency-closure/2'
 BENCHMARK_INPUTS = ('benchmark/requirements.json','benchmark/contract.json')
 # Native binaries a retained run records by content; the closure pins each one.
 NATIVE_RUNTIME = ('kicad-cli','bwrap','/usr/bin/python3','pcbnew')
+# Where each closure tool lives. The closure lists exactly these tools; only the
+# container runtime that launches the image is outside it.
+TOOL_LOCATIONS = {**{name:'runtime' for name in NATIVE_RUNTIME},'git':'runtime','docker':'outer-host'}
+FONT_PACKAGES = frozenset({'fonts-dejavu-core','fonts-dejavu-mono','fontconfig'})
+# Positive evidence of running inside an agent-ee image: Docker's container
+# marker and the image context record the Dockerfile installs.
+CONTAINER_MARKER = '/.dockerenv'
+IMAGE_CONTEXT = '/usr/local/share/agent-ee/image-context.json'
+IMAGE_CONTEXT_RECORD = {'schema':'agent-ee.image-context/1','outer_host_tools':['docker']}
 # Every consumed library copy is embedded in, or captured beside, a pinned native file.
 LIBRARY_LICENCES = {'kicad-stock':'CC-BY-SA-4.0 with KiCad design-use exception (embedded copy)',
                     'project':'board hardware grant (captured project file)',
@@ -1180,7 +1189,11 @@ def tool_licences(tools):
     native host with the same toolchain) and must match byte for byte. 'outer-host'
     evidence belongs to the container runtime that launches the image: it is
     pinned by hash and path, verified wherever its binary or licence file exists,
-    and reported absent inside the image instead of being skipped silently.
+    and reported absent where neither file exists instead of being skipped
+    silently. Absence alone does not prove the image: verify_closure keeps
+    'outer-host-absent' only with positive image context, otherwise 'unknown'.
+    The tool inventory must match TOOL_LOCATIONS exactly, with no duplicates;
+    every tool must carry its policy location.
     """
     results = {}
     for tool in tools:
@@ -1190,8 +1203,9 @@ def tool_licences(tools):
                 not all(str(path or '').startswith('/') for path in (tool.get('path'),evidence.get('path'))) or
                 not re.fullmatch(r'[a-f0-9]{64}',evidence.get('sha256') or '')):
             raise ValueError('tool licence evidence missing: '+name)
-        if name in NATIVE_RUNTIME and location!='runtime':
-            raise ValueError('native runtime licence evidence must be verified in the runtime: '+name)
+        if TOOL_LOCATIONS.get(name,location)!=location:
+            raise ValueError(('runtime licence evidence must be verified in the runtime: ' if TOOL_LOCATIONS[name]=='runtime'
+                              else 'outer-host licence evidence must be verified on the outer host: ')+name)
         present = location=='runtime' or Path(tool['path']).exists() or Path(evidence['path']).exists()
         if not present:
             results[name] = 'outer-host-absent'
@@ -1199,7 +1213,78 @@ def tool_licences(tools):
         if not Path(evidence['path']).is_file() or digest(evidence['path'])!=evidence['sha256']:
             raise ValueError('tool licence evidence missing or changed: '+name)
         results[name] = 'verified'
+    names = [tool.get('name') for tool in tools]
+    if len(set(names))!=len(names) or set(names)!=set(TOOL_LOCATIONS):
+        raise ValueError('closure tool set differs from policy: listed '+', '.join(sorted(map(str,names)))+
+                         '; expected '+', '.join(sorted(TOOL_LOCATIONS)))
     return results
+
+
+def image_context(tools, *, container=CONTAINER_MARKER, record=IMAGE_CONTEXT):
+    """Positive evidence that this process runs inside an agent-ee image carrying the pinned runtime.
+
+    All of: Docker's container marker, the image context record with the exact
+    expected content, and every runtime tool binary matching its closure hash.
+    Returns the problems; an empty list is the evidence.
+    """
+    problems = []
+    if not Path(container).is_file():
+        problems.append('no container marker '+str(container))
+    try:
+        if json.loads(Path(record).read_text())!=IMAGE_CONTEXT_RECORD:
+            problems.append('image context record differs: '+str(record))
+    except (OSError,ValueError):
+        problems.append('no image context record '+str(record))
+    for tool in tools:
+        if TOOL_LOCATIONS.get(tool.get('name'))=='runtime':
+            path = Path(tool.get('path') or '')
+            if not path.is_file() or digest(path)!=tool.get('sha256'):
+                problems.append('runtime binary differs from closure: '+tool['name'])
+    return problems
+
+
+def font_licences(packages, in_image):
+    """Digest each image font licence file where it exists; it must exist inside the image.
+
+    A present file must match byte for byte. Outside the image an absent file is
+    'unknown', never verified. The package set must match FONT_PACKAGES exactly.
+    """
+    results = {}
+    for package in packages:
+        name = package.get('package') or '?';evidence = package.get('licence_evidence') or {}
+        if (not package.get('licence_class') or evidence.get('location')!='image' or
+                not str(evidence.get('path') or '').startswith('/') or
+                not re.fullmatch(r'[a-f0-9]{64}',evidence.get('sha256') or '')):
+            raise ValueError('font licence evidence missing: '+name)
+        if name in results:
+            raise ValueError('font package listed twice: '+name)
+        path = Path(evidence['path'])
+        if not path.is_file() and not in_image:
+            results[name] = 'unknown'
+            continue
+        if not path.is_file() or digest(path)!=evidence['sha256']:
+            raise ValueError('font licence evidence missing or changed: '+name)
+        results[name] = 'verified'
+    if set(results)!=FONT_PACKAGES:
+        raise ValueError('closure font package set differs from policy: listed '+', '.join(sorted(results))+
+                         '; expected '+', '.join(sorted(FONT_PACKAGES)))
+    return results
+
+
+def closure_evidence(closure, **context_paths):
+    """The closure's tools against the code-owned location policy, and every licence result."""
+    licences = tool_licences(closure['tools'])
+    tools = {t['name']:t for t in closure['tools']}
+    if any(not re.fullmatch(r'[a-f0-9]{64}',tools[name].get('sha256') or '') for name in TOOL_LOCATIONS):
+        raise ValueError('native runtime not pinned in closure')
+    context = image_context(closure['tools'],**context_paths)
+    for name,result in licences.items():
+        if result=='outer-host-absent' and context:
+            licences[name] = 'unknown'
+    fonts = font_licences(closure['fonts']['packages'],not context)
+    return {'licence_evidence':licences,'font_licence_evidence':fonts,
+            'image_context':{'established':not context,'problems':context},
+            'unverified':sorted(n for n,r in {**licences,**fonts}.items() if r!='verified')}
 
 
 def verify_closure(manifest_path, cache, closure_path, runs=(), *, stock='/usr/share/kicad'):
@@ -1246,15 +1331,7 @@ def verify_closure(manifest_path, cache, closure_path, runs=(), *, stock='/usr/s
     if digest(cache/'alternate-footprints'/'LICENSE.md')!=read_json(record)['license_sha256']:
         raise ValueError('cached alternate library license differs')
     tools = {t['name']:t for t in closure['tools']}
-    licences = tool_licences(closure['tools'])
-    if any(name not in tools or not re.fullmatch(r'[a-f0-9]{64}',tools[name].get('sha256') or '') for name in NATIVE_RUNTIME):
-        raise ValueError('native runtime not pinned in closure')
-    for package in closure['fonts']['packages']:
-        # Image-only files are pinned by the image identity, not by this host.
-        evidence = package.get('licence_evidence') or {}
-        if (not package.get('licence_class') or evidence.get('location')!='image' or
-                not re.fullmatch(r'[a-f0-9]{64}',evidence.get('sha256') or '')):
-            raise ValueError('font licence evidence missing: '+package.get('package','?'))
+    evidence = closure_evidence(closure)
     substitutions = {}
     checked = []
     for run in runs:
@@ -1284,5 +1361,5 @@ def verify_closure(manifest_path, cache, closure_path, runs=(), *, stock='/usr/s
         checked.append(str(run))
     if runs and substitutions!=closure['fonts']['substitutions']:
         raise ValueError(f'run font substitutions {substitutions} differ from closure')
-    return {'closed':True,'boards':counts,'alternate_footprints':len(alternates),'tools':sorted(tools),
-            'licence_evidence':licences,'runs':checked}
+    return {'closed':not evidence['unverified'],'boards':counts,'alternate_footprints':len(alternates),'tools':sorted(tools),
+            **evidence,'runs':checked}

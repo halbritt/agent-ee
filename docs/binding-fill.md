@@ -276,7 +276,10 @@ The full record is in `binding-fill.json` under `ratings.derived[reference]`:
 the part ID, LCSC and MPN; per field the value, exact SI value, unit and every
 source (`catalog`: LCSC ID, response path, SHA-256, attribute name;
 `datasheet`: selected source ID, fact ID, PDF path, SHA-256, page); and the
-limitation. `record_sha256` is the canonical identity of that record. Rating
+limitation. `record_sha256` is the canonical identity of that record.
+`assembly_readiness` resolves it against the receipted report when its
+[`rating_provenance`](assembly-readiness.md#receipt-bound-rating-provenance)
+is declared (AGENTEE-242); undeclared, the check is `unknown`. Rating
 fields follow the ordinary writer-binding rule: a supplied different value
 refuses. Facts files and cited PDFs are added to the report dependencies. Pass
 them in `configuration(..., dependencies=...)`.

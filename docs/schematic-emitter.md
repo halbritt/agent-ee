@@ -205,29 +205,52 @@ component IDs, and a component belongs to at most one group. Implementation:
   junction at each tap. A series part continues the wire in line when that fits
   nearest, so its far pin can carry a further chain. Satellites are oriented
   automatically; their Reference and Value are placed beside the body,
-  horizontal and centred, never on the wire. Shunt parts are placed lowest pin
-  first, so downward combs form a staircase rather than blocking the next pin.
+  horizontal and centred, never on the wire. A part hanging from a vertical
+  wire may stack both texts on the side away from the wire when the default
+  above/below split would cross it (AGENTEE-241). Shunt parts are placed lowest
+  pin first, so downward combs form a staircase rather than blocking the next
+  pin. Within a group, satellites are tried in hops from the group's own
+  anchors over non-rail nets, so a divider leg follows the series part whose
+  far pin it hangs from even when the layout lists both.
 - **Labels.** The target pin keeps its label, so every net keeps a label with
   its intent name. Only a wired satellite's attach pin drops its label. The
   satellite's far pin, and every pin that is not wired, keeps its label as in
-  `rows`. Pins on global power nets are never extended by a wire, because the
-  global label's flag sits on the connection line.
+  `rows`. Pins on global power nets are never extended by a satellite wire,
+  because the global label's flag sits on the connection line.
+- **Pin-label fan (AGENTEE-241).** On an anchor's top or bottom edge, a run of
+  labelled pins one grid (2.54 mm) apart would read as one crowded column of
+  vertical text against the pin numbers. Each unwired pin of such a run gets a
+  short straight wire out of the edge and a horizontal label at its end: the
+  left half of the run points left, the right half right, staggered one grid
+  per pin with the outermost pins nearest the body. A pin already wired to a
+  satellite keeps its place and label. A run is fanned whole or not at all,
+  under the same collision rules as a satellite. The label keeps its UUID and
+  net name; only its position and angle change.
 - **Fail closed.** A placement is tried at up to 24 grid steps (2.54 mm) from the
   pin. It is refused if its wire would pass through any connection point,
   overlap another wire, or land on an existing point, or if its body, text or
-  label would overlap anything already drawn in that cluster. A satellite that
-  fits nowhere stays a labelled loose part in its group. Before any bytes are
+  label would overlap anything already drawn in that cluster. Satellites that
+  do not fit are retried in further sweeps while any sweep places one, since a
+  later part may create their target. A shunt part that still fits nowhere may
+  then continue an anchor pin's wire in line, which closes that pin to further
+  parts. A satellite that fits nowhere stays a labelled loose part in its group. Before any bytes are
   produced, `verify` rebuilds connectivity from the drawn pin endpoints, wires
   and labels and refuses (`presentation_conflict`) unless it equals the intent
   partition exactly. No-connect pins must touch nothing.
 - **Frames and page.** Each group gets a dashed frame and a bold title. Clusters
   and loose parts inside a group, and the groups on the page, are packed
   bottom-left on a skyline in order, so the flow runs left to right in layout
-  order. Group widths are tried at several aspect ratios on each paper. The
-  smallest landscape paper from A4 to A0 that fits any of them is used.
+  order. Each group is first packed at the width (one of several aspect ratios)
+  that gives its frame the least area, which removes most whitespace inside
+  frames (AGENTEE-241); if that set does not fit, one shared aspect ratio is
+  tried at a time, as before. The smallest landscape paper from A4 to A0 that
+  fits any of them is used. Text reservations are conservative estimates;
+  only an untransformed symbol's left- or right-justified horizontal field is
+  reserved on its library side alone, since no transform can flip it.
 - **Identity.** Symbol, pin, label and no-connect UUIDs, references, values,
   footprints and embedded symbols are exactly those of the `rows`
-  presentation. Wires are `["wire", id, unit, attach pin]`, junctions
+  presentation. Wires are `["wire", id, unit, attach pin]`, fan wires
+  `["wire", "fan", id, unit, pin]`, junctions
   `["junction", id, unit, attach pin]`, frames `["group_frame", kind, group]` and
   titles `["group_title", kind, group]`, where `kind` distinguishes `explicit`
   from automatic `component` groups. Fallback frames use
@@ -243,14 +266,20 @@ refuse the functional presentation (`layout_schema`).
 The real telemetry-pod intent (113 components, 62 nets) was re-emitted
 read-only from the prepared inputs, without adoption. The `rows` emission is
 byte-identical to the reviewed candidate, so it renders to the same PNG.
-Automatic grouping wires 80 of 85 satellites, and an authored 12-group layout
-does the same; both fit A2 instead of A1. Native ERC gives the same 221 warnings
+After AGENTEE-241, the authored 12-group layout wires all 85 satellites (80
+before; R2, R4, R18, D2 and C40 were loose) and automatic grouping wires 82
+(80 before). Five dense edge pins are fanned (U3 pins 23, 22 and 7; U4 pins 14
+and 12). Total frame area drops from 1323 to 1166 cm² (authored) and from 1234
+to 1096 cm² (automatic). Both fit A2 instead of A1. Native ERC gives the same 221 warnings
 as before, all of them library-table warnings from the sandbox. The exported
 netlist is identical (116 native nets, including the 54 no-connect
-singletons), and AGENTEE-41 topology and components parity
-pass. Remaining visual limits: loose parts and markers keep `rows` label
-placement, and group membership comes from structure or the layout, not from
-datasheet roles.
+singletons), and AGENTEE-41 topology and components parity pass. In automatic
+grouping, R10, R13 and R26 stay loose: each one's only same-group target pin is
+blocked by its neighbours, and its other net continues in another group, which
+the presentation never wires across. Remaining visual limits: loose parts and
+markers keep `rows` label placement, a wired pin keeps its vertical label next
+to its pin number (U4 pin 13), and group membership comes from structure or the
+layout, not from datasheet roles.
 
 ## Hierarchy
 
@@ -381,7 +410,13 @@ executor with networking unshared:
   hanging filter capacitor are asserted, along with three non-overlapping titled
   frames that contain their members. An island with no anchor lands in
   `Unassigned parts`. Ten malformed layouts, a hierarchical intent and stable
-  regeneration are refused. The self-check refuses a drawn short, a split, a
+  regeneration are refused. AGENTEE-241 adds: a divider leg listed before its
+  series part is still wired; a rotated connector's free edge pins fan out to
+  staggered horizontal labels beside a wired pin, with 0 native ERC
+  violations, a netlist equal to `rows` and a byte-identical forced re-save; the
+  in-line shunt placement happens only as the fallback; stacked fields keep
+  Reference above Value; and the chosen frames are never larger than any
+  single shared aspect gives. The self-check refuses a drawn short, a split, a
   wire through a pin and a wire onto a no-connect pin. A `python -m` CLI run
   writes the API bytes. Native: zero ERC violations, the same XML netlist as
   `rows` and the hand-written nets, AGENTEE-41 topology, components and instance
@@ -432,8 +467,9 @@ executor with networking unshared:
 - The functional presentation is flat-only and opt-in; `rows` stays the default,
   so existing callers, hashes and stable regeneration are unchanged. Its text
   extents are estimates (about 0.9 em per glyph), not measured font metrics.
-  Loose parts and markers keep `rows` label placement, and adjacent anchor-pin
-  labels can still crowd each other as in `rows`. Roles come from reference
+  Loose parts and markers keep `rows` label placement. Adjacent labels on an
+  anchor's left or right side, and a satellite-wired pin's own label, keep
+  `rows` placement; only top and bottom edge runs are fanned. Roles come from reference
   prefixes and net structure, and group membership from the layout or from
   structure, never from datasheet semantics. It wires only satellites to
   anchor pins or satellite pins; it never routes nets between anchors.

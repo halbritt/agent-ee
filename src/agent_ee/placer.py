@@ -14,6 +14,8 @@ qualified mounting-side courtyard is refused by name. The greedy choice is kept
 as a ranked first fit; a part left without a candidate backjumps over the parts
 that blocked it, within the step budget, and a declared region provably too
 small for its courtyards (with or without the packing gap) is proved infeasible.
+Crowded clusters: candidates align to the slabs of concave fixed courtyards, and
+parts bound to an anchor point are placed first.
 """
 import bisect
 import copy
@@ -303,7 +305,7 @@ def _slabs(polygon):
     return out
 
 
-def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts):
+def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed=None):
     """Positions whose courtyard boxes clear every same-side reserved box by the gap.
 
     The reservation test applied as a sweep: for each x, a reserved box that the
@@ -314,9 +316,15 @@ def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts)
     overlap of one with a ``solid`` box (a slab of a rectilinear fixed courtyard or
     obstacle) is a polygon overlap, which the exact obstacle test rejects; such positions are
     dropped too (gap 0, no owner).
+
+    A kept position where such a pair of boxes is nearer than the gap
+    (dx² + dy² < gap², with dx, dy their nonnegative separations) is added to
+    ``doomed`` when given: the distance between two unions of boxes is the least
+    distance between a pair, so the exact obstacle test would reject it too. The
+    caller still counts it as a step and rejects it without the polygon test.
     """
     for x in xs:
-        blocked = []
+        blocked, near = [], []
         for side, (x0, y0, x1, y1) in side_boxes.items():
             for other, (a0, b0, a1, b1), ref in reserved:
                 if other == side and not (x1+x+gap <= a0 or a1+gap <= x0+x):
@@ -327,16 +335,28 @@ def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts)
         for side, parts in rectangles.items():
             for r0, s0, r1, s1 in parts:
                 for other, (a0, b0, a1, b1) in solid:
-                    if other == side and not (r1+x <= a0 or a1 <= r0+x):
+                    if other != side:
+                        continue
+                    if not (r1+x <= a0 or a1 <= r0+x):
                         i, j = bisect.bisect_right(ys, b0-s1), bisect.bisect_left(ys, b1-s0)
                         if i < j:
                             blocked.append((i, j))
+                    dx = max(0, a0-r1-x, r0+x-a1)
+                    if doomed is not None and gap and dx < gap:
+                        # For an integer separation dy, dy² < gap² - dx² exactly when dy <= reach.
+                        reach = math.isqrt(gap*gap - dx*dx - 1)
+                        i, j = bisect.bisect_left(ys, b0-s1-reach), bisect.bisect_right(ys, b1-s0+reach)
+                        if i < j:
+                            near.append((i, j))
+        near = {k for i, j in near for k in range(i, j)}
         free, start = [], 0
         for i, j in sorted(blocked):
             free.extend(range(start, i))
             start = max(start, j)
         free.extend(range(start, len(ys)))
         for k in free:
+            if k in near:
+                doomed.add((x, ys[k]))
             yield x, ys[k]
 
 
@@ -691,6 +711,8 @@ class _Search:
         """Admissible candidates in rank order; rejections add their blockers to ``conflicts``."""
         group = self.members.get(fp['ref'])
         anchors = [(side, box) for side, box, _ in self.reserved] + [(o['side'], o['box']) for o in self.exact]
+        # A concave fixed courtyard's box can lie far from its edges; its slabs carry them.
+        anchors += self.solid
         anchors += _keepout_boxes(self.obstacles + [area for f in self.placed for area in f.get('packing_keepouts', [])])
         ties = self.ties(fp['ref'])
         targets = [] if group is None else [p for poly in group.get('region', {}).get('polygons', []) for p in poly]
@@ -703,15 +725,18 @@ class _Search:
             rectangles = {side: [r for poly in c['polygons'] for r in _slabs(poly)]
                           for side, c in at_origin['courtyards'].items()
                           if all(_slabs(poly) is not None for poly in c['polygons'])}
-            for position in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid, self.gap,
-                                        conflicts):
-                ranked.append((_wire_cost(_pad_nets(fp, position, rotation, self.grounds), self.peers),
-                               *position, rotation))
+            doomed = set()
+            for x, y in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid,
+                                    self.gap, conflicts, doomed):
+                ranked.append((_wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
+                               x, y, rotation, (x, y) in doomed))
         ranked.sort()
-        for _, x, y, rotation in ranked:
+        for _, x, y, rotation, doomed in ranked:
             if self.steps == self.budget:
                 raise _BudgetExhausted
             self.steps += 1
+            if doomed:
+                continue  # Nearer than the gap to a fixed courtyard or obstacle: the exact test rejects it.
             proposed = transform(fp, [x, y], rotation)
             hit = self.blockers(proposed, group, ties)
             if hit is None:
@@ -772,17 +797,22 @@ def pack(capture, policy):
     except ValueError as exc:
         return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc), margin_nm)
     priorities = {ref: i for i, ref in enumerate(policy['priority_refs'])}
-    # A movable group anchor is placed before every member (anchors are never anchored
-    # members), and its members directly after it, so a cluster claims its space first.
+    # Parts bound to a declared anchor point come first, tightest distance first: each
+    # has only a small disc of positions. Then a movable group anchor is placed before
+    # every member (anchors are never anchored members), and its members directly after
+    # it, so a cluster claims its space first.
     leaders = {g['anchor']['reference'] for g in groups if 'reference' in g.get('anchor', {})}
     by_ref = {fp['ref']: fp for fp in capture['footprints']}
     def rank(f):
         return f['ref'] not in leaders, priorities.get(f['ref'], len(priorities)), -len(f['pads']), f['ref']
     def cluster(f):
-        anchor = members.get(f['ref'], {}).get('anchor', {}).get('reference')
+        group = members.get(f['ref'], {})
+        if 'point_nm' in group.get('anchor', {}):
+            return (0, group['max_distance_nm']), rank(f), 0, rank(f)
+        anchor = group.get('anchor', {}).get('reference')
         if anchor is None or anchor in fixed:
-            return rank(f), 0, rank(f)
-        return rank(by_ref[anchor]), 1, rank(f)
+            return (1,), rank(f), 0, rank(f)
+        return (1,), rank(by_ref[anchor]), 1, rank(f)
     queue = sorted((fp for fp in capture['footprints'] if fp['ref'] not in fixed), key=cluster)
     proof = _region_impossibility(capture, outline, groups, fixed, placed, obstacles, policy)
     if proof:
@@ -791,10 +821,13 @@ def pack(capture, policy):
         return {**failure, 'proof': proof}
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members)
     units = [(fp['ref'],) for fp in queue]
-    stack, seen, backjumps, failures = [], {tuple(units)}, 0, {}
+    stack, seen, backjumps, failures, peak = [], {tuple(units)}, 0, {}, 0
     def stopped(status, reason, unplaced=None):
         failure = _failure(capture, policy, status, 'unknown', search.steps, reason, margin_nm)
-        return {**failure, 'search': search.record(backjumps, unplaced)}
+        record = search.record(backjumps, unplaced)
+        if unplaced is not None:
+            record['placed_peak'] = peak  # Diagnostic only: a plan is complete or empty.
+        return {**failure, 'search': record}
     while len(stack) < len(units):
         unit = units[len(stack)]
         try:
@@ -805,6 +838,7 @@ def pack(capture, policy):
             for fp in fps:
                 search.push(fp)
             stack.append(fps)
+            peak = max(peak, sum(map(len, stack)))
             continue
         # Backjump to the latest placed part that blocked the unit and place the unit
         # before it; a member blocked through its anchor leads the anchor's unit, so

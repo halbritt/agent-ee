@@ -200,3 +200,51 @@ What these tests do not establish:
 - Vias, zones, pads and copper pours are outside the width rule.
 - Current is assumed to be continuous and per net.
 - Fusing current, pulsed loads and ambient derating are not modelled.
+
+## Campaign application and native assignment check (AGENTEE-232)
+
+The [pod driver](pod-driver.md#net-constraint-application) accepts an optional
+`net_constraints` path to a captured constraint document. Its
+`apply-net-constraints` pre-receipt consumes the adopted scaffold and applies the
+shared emitter to the final metadata-bearing project. The receipt hashes all
+inputs and the project, sibling rules and constraint record outputs. The emitter
+record is retained byte-for-byte; its `project_sha256` names the final project,
+not the earlier template. No emitter hash is rewritten after generation.
+
+Preparation emits an `unbound` planning record because the empty scaffold has no
+functional nets yet. This grants no acceptance. The automatically registered
+`net_class_assignment` check at placement reloads the saved board and sibling
+project with pcbnew in the networkless tool sandbox. For every declared class it
+checks native class presence, every exact net's effective class, routing width
+and clearance against the recorded minimums. Missing classes, missing nets,
+Default assignments and dimensions below the minimum give `ok/defect`.
+A crashed tool, absent output or malformed report gives unknown, never pass.
+Project or rules bytes differing from the record also give a defect.
+
+Standalone checks also inspect the saved project's `netclass_patterns`
+independently of that hash comparison (AGENTEE-244). The native probe tests each
+pattern against every saved board net using an isolated KiCad `NET_SETTINGS`
+matcher, retaining its class, pattern and exact matched net names in the native
+report's `patterns` list. For a declared class, a match outside that class's
+recorded net set gives `pattern_matches_undeclared_net`, naming the class,
+pattern and extra net. Legacy backslash-escaped slash patterns for declared
+classes give `legacy_escaped_slash`, even though KiCad accepts them: the pinned
+router does not. Literal `/POD_GNSS_RF` remains accepted. These checks also run
+when a hand-edited project's hash has been recomputed in the record. They use
+KiCad's regex and wildcard semantics, without a Python approximation. A missing
+or malformed native pattern report cannot pass. Patterns of unrelated classes
+are outside the declared constraint check; existing assignment checks still
+apply to every declared net.
+
+The check takes `project`, `record` and `constraints` captured paths. The project
+must be the board-sibling `.kicad_pro`. The passing record must bind the original
+constraint bytes and agree with their declarations. Constraints, record,
+project and emitted rules are immutable baseline inputs; the board remains the
+candidate under review. Capability registration exposes
+`netclass:effective-assignment`; launch preflight requires pcbnew.
+
+This check verifies saved class settings and assignment, not the finished copper
+or arbitrary custom-rule overrides. Keep native DRC and geometry checks.
+Impedance remains `recorded_not_enforced` and `acceptance_ready` stays false.
+The original fixture tests use `/POD_GNSS_RF`, RF_50 width 0.335 mm and clearance
+0.2032 mm, with absent-class, absent-net and unassigned-net controls.

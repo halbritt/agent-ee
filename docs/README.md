@@ -28,8 +28,10 @@ product's hardware qualification.
 | Look up a command, flag, exit code or work budget | [CLI reference](cli-reference.md) |
 | Select inputs, libraries, reviewers and packet contents | [Scope reference](scope-reference.md) |
 | Capture offline catalog data and select declared part intervals | [Catalog](catalog.md), [part selection](part-selection.md) |
+| Resolve declared IC/module MPNs to candidate LCSC ids and datasheet URLs offline | [Catalog identity index](catalog-identity.md) |
 | Capture declared datasheet URLs before offline verification | [Datasheet acquisition](datasheet-capture.md) |
 | Capture JLCPCB stock per LCSC id (owner-run) for assembly readiness | [JLCPCB stock capture](jlc-stock-capture.md) |
+| Capture DigiKey API v4 identity, datasheet URL and ratings for external parts (owner-run) | [DigiKey capture](digikey-capture.md) |
 | Capture reference blocks and verify their native evidence coverage | [Reference block interface](reference-block-interface.md) |
 | Inspect the incomplete wbo1 and PSU host review attempts | [FOME block host review attempts](fome-block-review-runs.md) |
 | Capture a design's block plan as draft block entries; check a block adaptation | [Block inventory](block-inventory.md) |

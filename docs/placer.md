@@ -24,10 +24,11 @@ uses 1.5 mm to preserve space for J1's reference text outside its courtyard;
 using the copper-edge rule as the courtyard margin alone clipped that text.
 
 The placer sorts explicit priorities first, then descending pad count, then
-reference (declared group anchors and their members are ordered first; see
-[search](#bounded-search-agentee-212)). It tries four quarter-turn rotations at deterministic positions
-aligned to board vertices (shifted inward by `min_courtyard_edge_mm`) and
-inflated reserved courtyard boxes. It chooses the
+reference (parts bound to a declared anchor point, then declared group anchors
+and their members, are ordered first; see [search](#bounded-search-agentee-212)
+and [crowded clusters](#crowded-clusters-agentee-212)). It tries four quarter-turn rotations at deterministic positions
+aligned to board vertices (shifted inward by `min_courtyard_edge_mm`),
+inflated reserved courtyard boxes and the slabs of fixed courtyards. It chooses the
 smallest integer Manhattan same-net pad distance to already placed parts,
 excluding explicitly declared ground nets, with position and rotation tie
 breaks. Boxes conservatively reserve a minimum gap around parts the search
@@ -240,7 +241,8 @@ choice and adds deterministic backjumping.
   positive-area overlap between a slab of the candidate's courtyard and a slab
   of a rectilinear fixed courtyard or declared obstacle on the same side is a
   polygon overlap, which the exact obstacle test rejects; the sweep drops those
-  too (the gap band is left to the exact test). Each is a necessary condition of a predicate, so no
+  too. A position whose slab pair is nearer than the gap still counts as a step
+  but is rejected without the polygon test ([below](#crowded-clusters-agentee-212)). Each is a necessary condition of a predicate, so no
   admissible candidate is dropped, and the predicates still recheck every
   candidate the generation keeps.
 - **Backjumping.** A rejected candidate records the placed movable parts that
@@ -260,7 +262,47 @@ No random numbers or wall-clock limits are used: identical inputs give
 identical plans. Every accepted candidate passes the same exact predicates,
 the complete proposal the same polygon judge and group grading, and fixed parts
 never move. Every result the search returns records
-`search: {strategy: "ranked-first-fit-backjump/1", backjumps, unplaced?}`.
+`search: {strategy: "ranked-first-fit-backjump/1", backjumps, unplaced?}`; a
+search failure that names a part also records `placed_peak`.
+
+### Crowded clusters (AGENTEE-212)
+
+The actual v2 pod input spent its 200 000-step budget after 160 backjumps. At
+its deepest point it had placed 72 of 104 movable parts. The fixed connector and
+RF module courtyards cover most of the board. At the 0.25 mm gap, the movable
+courtyards grown by half the gap need about 1549 mm² of the at most 1620 mm²
+left (about 96 %). That is not a proof, so the result stays unknown. Three
+changes, tested on owned fixtures (`tests/test_placer_crowded.py`):
+
+- **Slab alignment.** Candidate positions align to every slab of a rectilinear
+  fixed courtyard or obstacle as well as to its box. A concave courtyard's box
+  can lie far from its edges: the RF module's box spans 48 mm, while its board
+  edges at x = 52.75 mm and 72.25 mm were never alignment targets. A part
+  anchored within 5 mm of a point on one of those edges therefore had no
+  candidate at all.
+- **Anchor points first.** Parts bound to a declared anchor point are placed
+  before every cluster, tightest `max_distance_nm` first. Each has only a small
+  disc of positions, which a cluster placed earlier could take.
+- **Exact gap band at generation.** For a rectilinear candidate, two closed
+  boxes are nearer than the gap exactly when dx² + dy² < gap², with dx and dy
+  their nonnegative separations, all integers. A position with such a pair
+  against a fixed or obstacle slab still counts as one step and is rejected,
+  but without running the polygon test. Step accounting, conflicts and plans
+  are unchanged; only CPU time drops (about half on the pod).
+
+Search failures also record `search.placed_peak`: the most movable parts placed
+at once. It is a diagnostic only. A plan is complete or empty, and the outcome
+stays unknown.
+
+The rank key is unchanged. A touching-perimeter (compaction) term raised the
+pod's deepest partial placement further, but it moved parts against each other
+and the board edge, which changed native silkscreen and copper-to-edge DRC on
+existing boards. Courtyards do not model either, so that term was not adopted.
+
+On the actual pod inputs (policy step budget 200 000) neither v1 nor v2
+completes. An anchor-free rectangle packer that ignores nets reached at most 86
+of 104 parts. The remaining lever is the input (board area, fixed courtyards,
+the gap or mounting side), which is the pod lane's decision.
 
 ### Region capacity proofs (AGENTEE-212)
 
