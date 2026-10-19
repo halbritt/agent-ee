@@ -259,8 +259,13 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         coverage = baseline['envelope']['coverage']
         self.assertEqual(len(coverage),9)
         self.assertEqual({r['status'] for r in coverage},{'bound'})
-        for cid in ('outline','layer-count','stackup','hole-h1','hole-h2','hole-h3','hole-h4','keepout-antenna'):
+        for cid in ('outline','layer-count','stackup','hole-h1','hole-h2','hole-h3','hole-h4'):
             self.assertEqual((results[cid]['execution'],results[cid]['outcome']),('ok','pass'),results[cid])
+        antenna = results['keepout-antenna']
+        self.assertEqual((antenna['execution'], antenna['outcome']), ('unsupported', 'unknown'), antenna)
+        self.assertIn('placement qualification unresolved', antenna['details']['unknown'][0])
+        self.assertIn('module dimensions do not define a base-board minimum', antenna['details']['unknown'][0])
+        self.assertNotIn('declared_polygon_nm', antenna['details']['saved'])
         descriptor = baseline['coverage']['checks']['keepout-antenna']
         self.assertEqual(descriptor['predicates'],['envelope:keepouts/1:antenna'])
         self.assertEqual(descriptor['prerequisites'],[dict(check_id='facts',kind='datasheet_facts')])
