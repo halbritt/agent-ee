@@ -33,22 +33,51 @@ Duplicate headers, duplicate connector positions, empty cells and ragged rows
 are refused with the CSV line number (the final physical line of a quoted row).
 `MCU_Pin=N/A` means no MCU terminal is applicable; `TBD` means unresolved.
 
-Concrete MCU rows require the extra column `MCU_Path` with value `direct`.
-This explicitly declares that the MCU pin and connector share a conductor.
-Missing or `TBD` paths on concrete MCU rows are refused. Other path values
+Concrete MCU rows require the extra column `MCU_Path`. The value `direct`
+explicitly declares that the MCU pin and connector share a conductor. Missing or
+`TBD` paths on concrete MCU rows are refused. Without `--paths`, other values
 are refused with the row number, signal and path name. For example,
 `MCU_Path=TJA1051T/3 TXD/RXD -> CANH/CANL` reports
 `row 2: unsupported indirect MCU_Path 'TJA1051T/3 TXD/RXD -> CANH/CANL' for CAN_H`.
-The caller must use a separately authored contract with the intermediate part's
-pins and distinct conductors for that circuit. The compiler does not infer
-connectivity from signal names or Notes. Use `N/A` in this column for rows
-without an MCU terminal.
+The compiler does not infer connectivity from signal names or Notes. Use `N/A`
+in this column for rows without an MCU terminal.
 
 The pod's CAN transceiver and sensor ADC paths are indirect. Filling in their
 MCU pins in the pinned CSV alone is refused; those paths must never be declared
 `direct`. CAN TXD/RXD do not share a conductor with CANH/CANL, and an MCP3204
-analog input does not share a conductor with its MCU SPI connection. Named
-indirect paths require a separate contract; this compiler does not compile them.
+analog input does not share a conductor with its MCU SPI connection.
+
+## Indirect MCU paths
+
+`--paths paths.json` supplies owner-declared indirect paths:
+
+```json
+{"schema": "agent-ee.io-map-paths/1", "paths": {"can-tx": {
+  "terminals": ["J1-1", "U1:3", "U1:1", "U3:1"],
+  "pin_names": ["Pin_1", "CANH", "TXD", "IO1"],
+  "devices": [{"component": "xcvr", "value": "TJA1051T-3", "role": "CAN transceiver"}],
+  "directions": ["bidirectional", "toward_connector"]}}}
+```
+
+On such a row, `MCU_Path` lists path IDs separated by `;` and `MCU_Pin` lists
+the same number of MCU pins in the same order. For example, `MCU_Pin=1;2` with
+`MCU_Path=can-tx;can-rx`. Each path must start at the row's `Connector_Pin`
+terminal and end at `MCU_Ref:MCU_Pin`. Each path is used by exactly one row and
+pin. Undeclared and unused paths are refused, as are TBD MCU identities and rows
+without a connector net. Path terminals are looked up in `--bindings` like other
+terminals; an unbound one stays explicitly unresolved and its path
+`not_evaluated`. Every `devices` component must be declared in the bindings, or
+the row is refused as an undeclared intermediate device.
+
+Each declared path compiles to one `indirect_path` invariant
+`<Connector_Pin>:mcu-path:<id>` with the row's `io_map` citation. It replaces the
+row's MCU `named_net` and `same_net`, so connector and MCU are never asserted to
+share a conductor. Every intermediate part also receives a populated predicate.
+The [interface reference](hardware-interface.md#declared-indirect-paths) defines
+the native evaluation: each segment is one native conductor, each part has its
+declared value and pin names, no part is bypassed, and pin types agree with
+directions. Topology success makes no transfer, accuracy, stability, CAN-rate,
+firmware or BLE claim. Radio rows without a net remain unresolved.
 
 Supply `--bindings existing.interface.json` to reuse that validated contract's
 component and terminal declarations. Its predicates and allowed edits are not
@@ -95,3 +124,11 @@ missing bindings. It also reproduces four CAN1 named-net obligations from the
 [pinned fome-mc excerpt](../fixtures/telemetry-pod/fome-mc-can1.interface.json),
 derived from `contracts/psu.interface.json` at `d31a690`. The probe schematic is
 original test material; it is not a proposed pod design.
+
+`tests.test_io_map.IndirectPathTests` covers compiling paths on an original
+synthetic transceiver/resistor/ADC probe, together with refusals and evaluator
+violations. These include severed, bypassed and shorted segments, wrong parts,
+pin names and directions, and dropped intermediates. Absent native evidence
+stays unknown. `NativeIndirectPathTests` runs kicad-cli on the probe. The
+declared paths pass, while a severed segment and a changed transceiver value are
+native defects.
