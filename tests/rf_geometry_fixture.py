@@ -46,8 +46,13 @@ def via_sites(paths, keepout=0.6, step=VIA_STEP, offset=VIA_OFFSET):
 
 def make_board(path, *, width=0.335, gap=0.2032, ground_signal=True, reference=True, reference_slot=False,
                fill=True, drop_vias=(), d3_stub=None, dangling=False, undeclared_pad=False, foreign=False,
-               unrouted_l3=False, vias=True, b_cu_hop=False, arc_bend=False):
-    """arc_bend replaces the 45 degree bend with a quarter arc (centre (13, 10), radius 2)."""
+               unrouted_l3=False, vias=True, b_cu_hop=False, arc_bend=False, foreign_via=None,
+               tht_launch=False, reference_keepout=None):
+    """arc_bend replaces the 45 degree bend with a quarter arc (centre (13, 10), radius 2).
+
+    foreign_via places a /OTHER through via at the given centre; tht_launch makes J2.1 a plated
+    through-hole pad (its In1.Cu clearance is the RF net's own launch cut); reference_keepout adds an
+    In1.Cu rule area forbidding zone fill over the given rectangle (x0, y0, x1, y1)."""
     import pcbnew as k
     board = k.BOARD()
     board.SetCopperLayerCount(4)
@@ -61,7 +66,7 @@ def make_board(path, *, width=0.335, gap=0.2032, ground_signal=True, reference=T
     def vec(p):
         return k.VECTOR2I(_mm(p[0]), _mm(p[1]))
 
-    def pad(ref, number, position, net, size=0.6):
+    def pad(ref, number, position, net, size=0.6, drill=None):
         fp = next((f for f in board.GetFootprints() if f.GetReference() == ref), None)
         if fp is None:
             fp = k.FOOTPRINT(board)
@@ -69,10 +74,16 @@ def make_board(path, *, width=0.335, gap=0.2032, ground_signal=True, reference=T
             board.Add(fp)
         item = k.PAD(fp)
         item.SetNumber(number)
-        item.SetAttribute(k.PAD_ATTRIB_SMD)
         item.SetSize(k.VECTOR2I(_mm(size), _mm(size)))
-        layers = k.LSET()
-        layers.AddLayer(k.F_Cu)
+        if drill is None:
+            item.SetAttribute(k.PAD_ATTRIB_SMD)
+            layers = k.LSET()
+            layers.AddLayer(k.F_Cu)
+        else:
+            item.SetAttribute(k.PAD_ATTRIB_PTH)
+            item.SetShape(k.PAD_SHAPE_CIRCLE)
+            item.SetDrillSize(k.VECTOR2I(_mm(drill), _mm(drill)))
+            layers = k.PAD.PTHMask()
         item.SetLayerSet(layers)
         item.SetPosition(vec(position))
         item.SetNet(nets[net])
@@ -99,7 +110,7 @@ def make_board(path, *, width=0.335, gap=0.2032, ground_signal=True, reference=T
         board.Add(v)
 
     for (ref, number), position in TERMINALS.items():
-        pad(ref, number, position, RF_NET)
+        pad(ref, number, position, RF_NET, drill=0.3 if tht_launch and (ref, number) == ('J2', '1') else None)
     pad('D3', '2', (8.0, 3.8), GND_NET)
     pad('L3', '1', (20.0, 14.2), '/BIAS')
     stubs = dict(STUBS)
@@ -137,6 +148,8 @@ def make_board(path, *, width=0.335, gap=0.2032, ground_signal=True, reference=T
     if foreign:
         offset = width / 2 + gap / 2
         track([(4.5, 8.0 + offset + 0.05), (6.5, 8.0 + offset + 0.05)], net='/OTHER', w=0.1)
+    if foreign_via is not None:
+        via(foreign_via, '/OTHER')
     if vias:
         paths = [TRUNK, *stubs.values()] + ([[(24.0, 10.0), (24.0, 7.5)]] if dangling else [])
         for index, site in enumerate(via_sites(paths)):
@@ -161,6 +174,21 @@ def make_board(path, *, width=0.335, gap=0.2032, ground_signal=True, reference=T
                 outline.Append(_mm(x), _mm(y), -1, 0)
         board.Add(z)
 
+    if reference_keepout is not None:
+        z = k.ZONE(board)
+        z.SetLayer(k.In1_Cu)
+        z.SetIsRuleArea(True)
+        z.SetDoNotAllowZoneFills(True)
+        z.SetDoNotAllowTracks(False)
+        z.SetDoNotAllowVias(False)
+        z.SetDoNotAllowPads(False)
+        z.SetDoNotAllowFootprints(False)
+        outline = z.Outline()
+        outline.NewOutline()
+        x0, y0, x1, y1 = reference_keepout
+        for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+            outline.Append(_mm(x), _mm(y))
+        board.Add(z)
     if ground_signal:
         zone(k.F_Cu, gap)
     if reference:
@@ -177,6 +205,12 @@ def make_board(path, *, width=0.335, gap=0.2032, ground_signal=True, reference=T
     if fill:
         k.ZONE_FILLER(board).Fill(board.Zones())
     k.SaveBoard(str(path), board)
+
+
+# Owned stand-in for a captured guard-width record (the field name is this fixture's own). The value is a test
+# control, not the pod determination's unsourced 1.19 mm heuristic.
+GUARD_RECORD = {'schema': 'agent-ee.test-guard-basis/1', 'guard_mm': 1.0,
+                'basis': 'owned test control: no engineering claim'}
 
 
 def declaration(**overrides):

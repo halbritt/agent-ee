@@ -467,12 +467,18 @@ grades:
 - coplanar ground present beside every track side;
 - reference-layer ground under the trace and both gaps;
 - stitching-via pitch on both sides of each branch;
-- routed length per branch.
+- routed length per branch;
+- the return-corridor guard: reference-layer ground under every signal-layer RF
+  track grown by a declared guard width per side, with no foreign antipad, RF
+  via antipad, fill keepout or void inside. The width is declared with a
+  recorded `basis` (inline or by JSON pointer into a captured record). It has
+  no default. A `null` width is unknown. Only the RF net's own pad clearance is
+  excused, as in AGENTEE-231 reference continuity.
 
 A missing coplanar ground or reference is a defect stated as an absent
 structure, never graded as microstrip. A `null` bound, an unfilled zone or an
 unrouted branch is unknown, with execution `unsupported`. The check is not RF
-qualification.
+qualification, and the guard is a geometric guard result only.
 
 ## Native netlist
 

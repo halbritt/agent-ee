@@ -16,6 +16,11 @@ ground net, the signal and reference layers and any of three sections:
 - `topology`: an explicit trunk between two terminals plus named stubs; the
   routed copper graph must realise exactly that tree, and each branch's routed
   track length is graded against its declared bound.
+- `guard`: the ground net's copper on the reference layer covers every RF track on
+  the signal layer grown by a declared guard width per side, with no antipad or
+  void inside. The width comes from the declaration with a recorded engineering
+  basis (inline or by JSON pointer into a captured record), never a default; a
+  `null` width is unknown. This is a geometric guard result, not RF evidence.
 
 The sandboxed pcbnew probe (`python3 -m agent_ee.rf_geometry`) emits judgment-free
 native facts: the RF net's tracks, pads and vias, ground vias and united copper
@@ -23,21 +28,24 @@ polygons (ground on the signal and reference layers, other copper on the signal
 layer) clipped to the RF corridor. The coordinator evaluates them in pure Python.
 Absent evidence is unknown: a null tolerance, pitch or length bound, unfilled
 zones, missing RF copper or an unrouted terminal never passes. None of this is RF
-qualification: no field solver, TDR, VNA or proxy such as guard width is used.
+qualification: no field solver, TDR, VNA or installed measurement is used, and a
+declared guard width is graded only as the geometric guard it declares.
 """
 import argparse
 import heapq
 import json
 import math
+import re
 from pathlib import Path, PurePosixPath
 
+from .kicad_route_attempt import CLEARANCE_RULE, CONTINUITY_TOLERANCE_MM2, FILLER_EXTRA_CLEARANCE_MM
 from .storage import digest, write_json
 
 SCHEMA = 'agent-ee.rf-geometry/1'
 NATIVE_SCHEMA = 'agent-ee.rf-geometry-native/1'
 RESULT_SCHEMA = 'agent-ee.rf-geometry-result/1'
 TOP_KEYS = {'schema', 'net', 'ground_net', 'signal_layer', 'reference_layer'}
-TOP_OPTIONAL = {'source', 'cpw', 'stitching', 'topology', 'electrical_length', 'basis'}
+TOP_OPTIONAL = {'source', 'cpw', 'stitching', 'topology', 'electrical_length', 'guard', 'basis'}
 SOURCE_KEYS = {'path', 'width_pointer', 'gap_pointer'}
 SOURCE_OPTIONAL = {'unit'}
 SOURCE_UNITS = {'mm': 1.0, 'mil': 0.0254}
@@ -49,11 +57,20 @@ TRUNK_KEYS = {'from', 'to', 'max_length_mm'}
 STUB_KEYS = {'name', 'terminal', 'max_length_mm'}
 STUB_OPTIONAL = {'from'}
 ELECTRICAL_KEYS = {'effective_permittivity', 'frequency_hz', 'basis'}
+GUARD_KEYS = {'basis'}
+GUARD_OPTIONAL = {'width_mm', 'source'}
+GUARD_SOURCE_KEYS = {'path', 'pointer'}
+GUARD_SCOPE = ('geometric guard result: ground-net copper on the declared reference layer under every RF track '
+               'on the signal layer grown by the declared guard width per side; the width is a declared '
+               'engineering choice, and this is not RF qualification or a return-current measurement')
 DEFAULT_STEP_MM = 0.05
 DEFAULT_SEARCH_MM = 1.0
 ARC_SAGITTA_NM = 100.0
 LIGHT_M_PER_S = 299_792_458
 NM = 1_000_000
+# The corridor is built inside the true grown track by at most this chord error, as reference continuity builds
+# the track footprint.
+GUARD_ARC_ERROR_NM = 1000
 COPPER_SETS = ('ground_signal', 'ground_signal_pour', 'other_signal', 'ground_reference')
 
 
@@ -130,8 +147,8 @@ def parse_declaration(raw, load_source=None):
     _layer(doc['reference_layer'], 'reference_layer')
     if doc['signal_layer'] == doc['reference_layer']:
         raise ValueError('signal and reference layers must differ')
-    if not {'cpw', 'stitching', 'topology'} & set(doc):
-        raise ValueError('rf-geometry declaration needs cpw, stitching or topology')
+    if not {'cpw', 'stitching', 'topology', 'guard'} & set(doc):
+        raise ValueError('rf-geometry declaration needs cpw, stitching, topology or guard')
     if 'basis' in doc:
         _text(doc['basis'], 'basis')
     resolved = {'net': doc['net'], 'ground_net': doc['ground_net'],
@@ -222,7 +239,33 @@ def parse_declaration(raw, load_source=None):
             'effective_permittivity': _number(electrical['effective_permittivity'], 'effective_permittivity'),
             'frequency_hz': _number(electrical['frequency_hz'], 'frequency_hz'),
             'basis': _text(electrical['basis'], 'electrical_length basis')}
+    if 'guard' in doc:
+        resolved['guard'] = _guard(doc['guard'], load_source)
     return doc, resolved
+
+
+def _guard(guard, load_source):
+    """The declared guard width and its recorded basis; there is no default width."""
+    _keys(guard, GUARD_KEYS, GUARD_OPTIONAL, 'guard')
+    if len(GUARD_OPTIONAL & set(guard)) != 1:
+        raise ValueError('guard requires exactly one of width_mm or source')
+    result = {'basis': _text(guard['basis'], 'guard basis')}
+    if 'width_mm' in guard:
+        result['width_mm'] = _number(guard['width_mm'], 'guard width_mm', nullable=True)
+        return result
+    source = guard['source']
+    _keys(source, GUARD_SOURCE_KEYS, SOURCE_OPTIONAL, 'guard source')
+    unit = source.get('unit', 'mm')
+    if unit not in SOURCE_UNITS:
+        raise ValueError(f'guard source unit must be one of {sorted(SOURCE_UNITS)}')
+    if load_source is None:
+        raise ValueError('guard source requires captured inputs')
+    captured = load_source(source['path'])
+    width = _number(pointer(captured['document'], source['pointer']), 'guard source width')
+    result.update(width_mm=width * SOURCE_UNITS[unit],
+                  source={'path': source['path'], 'sha256': captured['sha256'], 'pointer': source['pointer'],
+                          'unit': unit})
+    return result
 
 
 def predicates(resolved):
@@ -241,6 +284,8 @@ def predicates(resolved):
         found.append('rf-geometry:branch-topology')
         found += [f"rf-geometry:branch-length:{b['name']}" for b in resolved['topology']
                   if b['max_length_mm'] is not None]
+    if resolved.get('guard', {}).get('width_mm') is not None:
+        found.append('rf-geometry:return-guard')
     return found
 
 
@@ -275,7 +320,7 @@ def capability(params, scope, files, inputs):
         return {'document': document, 'sha256': digest(root / rel)}
 
     doc, resolved = parse_declaration((root / declaration).read_bytes(), load_source)
-    return {'immutable_inputs': sorted(immutable), 'predicates': predicates(resolved),
+    return {'immutable_inputs': sorted(set(immutable)), 'predicates': predicates(resolved),
             'declaration': doc, 'resolved': resolved}
 
 
@@ -405,12 +450,123 @@ def extract(board_path, request):
                 else:
                     unfilled[key].append(zone.m_Uuid.AsString())
             poly.Simplify()
+            if key == 'ground_reference' and 'guard_nm' in request:
+                report['guard'] = _guard_facts(pcbnew, board, board_path, request, ids,
+                                               pcbnew.SHAPE_POLY_SET(poly), zones, all_pads, shapes)
             poly.BooleanIntersection(clip)
             poly.Simplify()
             copper_sets[key] = _polyset(poly)
     report['copper'] = copper_sets
     report['unfilled_zones'] = {k: sorted(v) for k, v in unfilled.items()}
     return report
+
+
+def _guard_facts(pcbnew, board, board_path, request, ids, ground, zones, all_pads, shapes):
+    """The corridor (RF signal-layer tracks grown by the guard), what the reference ground leaves uncovered of it,
+    and every non-ground item on the reference layer whose clearance shape overlaps the uncovered area.
+
+    The clearance the zone filler cut for the RF net's own pads is excused exactly as AGENTEE-231's reference
+    continuity rebuilds it (kicad_route_attempt.MEASURE_REFERENCE): the pad on the layer grown by the larger of
+    the smallest ground-zone clearance, the pad clearance and the board minimum, plus the filler's extra
+    clearance, and the hole to the lesser of that and the hole clearance. Nothing else is excused."""
+    rf, gnd = request['net'], request['ground_net']
+    signal, layer = ids[request['signal_layer']], ids[request['reference_layer']]
+    ds = board.GetDesignSettings()
+    max_error, extra = int(ds.m_MaxError), int(request['extra_clearance_nm'])
+    problems = [f'custom clearance rules in {rules.name}: the plane clearance is not evaluable'
+                for rules in sorted(Path(board_path).parent.glob('*.kicad_dru'))
+                if re.search(request['clearance_rule'], rules.read_text(errors='replace'))]
+    corridor, tracks = pcbnew.SHAPE_POLY_SET(), []
+    for item in board.GetTracks():
+        if (item.GetClass() in ('PCB_TRACK', 'PCB_ARC') and str(item.GetNetname()) == rf and
+                item.GetLayer() == signal):
+            item.TransformShapeToPolygon(corridor, signal, int(request['guard_nm']), GUARD_ARC_ERROR_NM,
+                                         pcbnew.ERROR_INSIDE)
+            tracks.append(item.m_Uuid.AsString())
+    corridor.Simplify()
+    gap = None
+    for zone in zones:
+        if not zone.GetIsRuleArea() and str(zone.GetNetname()) == gnd and zone.IsOnLayer(layer):
+            own = zone.GetOwnClearance(layer)
+            gap = own if gap is None else min(gap, own)
+    keep = pcbnew.SHAPE_POLY_SET()
+    for pad in all_pads:
+        if str(pad.GetNetname()) != rf:
+            continue
+        clear = max(gap or 0, pad.GetOwnClearance(layer), ds.m_MinClearance)
+        if pad.FlashLayer(layer):
+            pad.TransformShapeToPolygon(keep, layer, clear + extra, max_error, pcbnew.ERROR_OUTSIDE)
+        if pad.HasHole():
+            pad.TransformHoleToPolygon(keep, min(clear, ds.m_HoleClearance) + extra, max_error,
+                                       pcbnew.ERROR_OUTSIDE)
+    uncovered = pcbnew.SHAPE_POLY_SET(corridor)
+    uncovered.BooleanSubtract(ground)
+    uncovered.BooleanSubtract(keep)
+    uncovered.Simplify()
+    attributions, unattributed = [], pcbnew.SHAPE_POLY_SET(uncovered)
+    if uncovered.OutlineCount():
+        box = uncovered.BBox()
+
+        def attribute(item, kind, net, clear, shape_layer=None, outline=None, **identity):
+            if outline is None:
+                # Hold the box: SWIG would free a temporary returned by GetBoundingBox() under Inflate.
+                reach = item.GetBoundingBox()
+                reach.Inflate(clear + extra)
+                if not reach.Intersects(box):
+                    return
+            poly = pcbnew.SHAPE_POLY_SET()
+            if outline is not None:
+                poly.Append(outline)
+            else:
+                item.TransformShapeToPolygon(poly, layer if shape_layer is None else shape_layer,
+                                             clear + extra, max_error, pcbnew.ERROR_OUTSIDE)
+                if isinstance(item, pcbnew.PAD) and item.HasHole():
+                    item.TransformHoleToPolygon(poly, clear + extra, max_error, pcbnew.ERROR_OUTSIDE)
+            poly.Simplify()
+            unattributed.BooleanSubtract(poly)
+            poly.BooleanIntersection(uncovered)
+            area = poly.Area()
+            if area > 0:
+                attributions.append({'kind': kind, 'net': net, 'uuid': item.m_Uuid.AsString(),
+                                     'overlap_nm2': float(area), **identity})
+
+        for item in board.GetTracks():
+            net = str(item.GetNetname())
+            if net == gnd or not item.IsOnLayer(layer):
+                continue
+            clear = max(gap or 0, item.GetOwnClearance(layer), ds.m_MinClearance)
+            if item.GetClass() == 'PCB_VIA':
+                # The full via pad on its top layer, grown by the clearance: whether or not it is flashed on the
+                # reference layer, the filler's knockout there lies inside this shape.
+                attribute(item, 'via', net, clear, shape_layer=item.TopLayer())
+            elif item.GetLayer() == layer:
+                attribute(item, 'track', net, clear)
+        for pad in all_pads:
+            net = str(pad.GetNetname())
+            if net in (gnd, rf) or not (pad.IsOnLayer(layer) or pad.HasHole()):
+                continue
+            clear = max(gap or 0, pad.GetOwnClearance(layer), ds.m_MinClearance)
+            attribute(pad, 'pad', net, clear, shape_layer=layer if pad.FlashLayer(layer) else None,
+                      ref=str(pad.GetParentFootprint().GetReference()), pad=str(pad.GetNumber()))
+        for zone in zones:
+            if not zone.IsOnLayer(layer):
+                continue
+            if zone.GetIsRuleArea():
+                if zone.GetDoNotAllowZoneFills():
+                    attribute(zone, 'rule_area', '', 0, outline=zone.Outline())
+            elif str(zone.GetNetname()) != gnd:
+                clear = max(gap or 0, zone.GetOwnClearance(layer), ds.m_MinClearance)
+                attribute(zone, 'zone', str(zone.GetNetname()), clear)
+        for shape in shapes:
+            net = str(shape.GetNetname()) if isinstance(shape, pcbnew.BOARD_CONNECTED_ITEM) else ''
+            if net != gnd and shape.IsOnLayer(layer):
+                attribute(shape, 'graphic', net, max(gap or 0, ds.m_MinClearance))
+    unattributed.Simplify()
+    return {'guard_nm': int(request['guard_nm']), 'arc_error_nm': GUARD_ARC_ERROR_NM, 'problems': problems,
+            'corridor_tracks': sorted(tracks), 'reference_zone_clearance_nm': gap,
+            'corridor_nm': _polyset(corridor), 'uncovered_nm': _polyset(uncovered),
+            'unattributed_nm': _polyset(unattributed),
+            'attributions': sorted(attributions, key=lambda a: (a['kind'], a['net'], a['uuid']))}
 
 
 # ------------------------------------------------------------------ planar geometry (coordinator)
@@ -1120,9 +1276,99 @@ def evaluate(resolved, native):
         topology['paths'] = {name: {'tracks': sorted({t for t in p.get('tracks', [])}), 'points': len(p['points'])}
                              for name, p in topology.get('paths', {}).items()}
         sections['topology'] = topology
+    if 'guard' in resolved:
+        sections['guard'] = evaluate_guard(resolved, native)
     if not native['nets_present'].get('ground_net') and ('cpw' in sections or 'stitching' in sections):
         sections['binding'] = {'status': 'unknown', 'reason': 'declared ground net absent from board'}
     return {'status': _status(s['status'] for s in sections.values()), 'sections': sections}
+
+
+def polyset_area(polyset):
+    """Even-odd area of a polygon set in nm2 (outlines minus holes)."""
+    def ring(points):
+        return abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(points, points[1:] + points[:1]))) / 2
+    return sum(ring(p['outline']) - sum(ring(h) for h in p['holes']) for p in polyset)
+
+
+def _validate_guard(facts, native, resolved):
+    if not isinstance(facts, dict):
+        raise ValueError('native guard facts are missing')
+    for key in ('corridor_nm', 'uncovered_nm', 'unattributed_nm'):
+        polyset = facts.get(key)
+        if not isinstance(polyset, list) or any(
+                not isinstance(p, dict) or not isinstance(p.get('outline'), list) or
+                not isinstance(p.get('holes'), list) or
+                not all(isinstance(v, list) and len(v) == 2 and all(type(c) is int for c in v)
+                        for ring in [p['outline'], *p['holes']] if isinstance(ring, list) for v in ring)
+                or not all(isinstance(h, list) for h in p['holes']) for p in polyset):
+            raise ValueError(f'native guard {key} is malformed')
+    if facts.get('guard_nm') != round(resolved['guard']['width_mm'] * NM):
+        raise ValueError('native guard facts are not of the declared guard width')
+    if not isinstance(facts.get('problems'), list) or not all(isinstance(p, str) for p in facts['problems']):
+        raise ValueError('native guard problems are malformed')
+    signal = sorted(t['uuid'] for t in native['tracks'] if t['layer'] == resolved['signal_layer'])
+    if facts.get('corridor_tracks') != signal:
+        raise ValueError('native guard corridor does not cover the RF tracks on the signal layer')
+    attributions = facts.get('attributions')
+    if not isinstance(attributions, list) or any(
+            not isinstance(a, dict) or a.get('kind') not in ('via', 'pad', 'track', 'zone', 'rule_area', 'graphic')
+            or not isinstance(a.get('net'), str) or not isinstance(a.get('uuid'), str) or
+            type(a.get('overlap_nm2')) is not float or not a['overlap_nm2'] > 0 for a in attributions):
+        raise ValueError('native guard attributions are malformed')
+
+
+def evaluate_guard(resolved, native):
+    """Ground copper on the reference layer over the RF signal-layer tracks grown by the declared guard."""
+    spec, net, gnd = resolved['guard'], resolved['net'], resolved['ground_net']
+    record = {'width_mm': spec['width_mm'], 'basis': spec['basis'], 'scope': GUARD_SCOPE,
+              **({'source': spec['source']} if 'source' in spec else {})}
+    if spec['width_mm'] is None:
+        return {**record, 'status': 'unknown', 'reason': 'guard width not declared'}
+    if resolved['reference_layer'] in native['absent_layers']:
+        return {**record, 'status': 'defect', 'reason': 'reference_layer_absent',
+                'statement': f"{resolved['reference_layer']} is not on the board: no return corridor exists"}
+    on_signal = [t for t in native['tracks'] if t['layer'] == resolved['signal_layer']]
+    if native['absent_layers'] or not on_signal:
+        return {**record, 'status': 'unknown',
+                'reason': 'declared RF net absent from board' if not native['nets_present']['net'] else
+                f"no routed RF copper on {resolved['signal_layer']}"}
+    facts = native.get('guard')
+    _validate_guard(facts, native, resolved)
+    if not native['nets_present']['ground_net']:
+        return {**record, 'status': 'unknown', 'reason': 'declared ground net absent from board'}
+    if native['unfilled_zones']['ground_reference']:
+        return {**record, 'status': 'unknown', 'reason': 'ground zones on the reference layer are unfilled',
+                'zones': native['unfilled_zones']['ground_reference']}
+    if facts['problems']:
+        return {**record, 'status': 'unknown', 'reason': 'the plane clearance is not evaluable',
+                'problems': facts['problems']}
+    tolerance = CONTINUITY_TOLERANCE_MM2 * NM * NM
+    uncovered, unattributed = polyset_area(facts['uncovered_nm']), polyset_area(facts['unattributed_nm'])
+    found = [a for a in facts['attributions'] if a['overlap_nm2'] > tolerance]
+
+    def listed(selected):
+        return [{**{k: v for k, v in a.items() if k != 'overlap_nm2'}, 'overlap_mm2': round(a['overlap_nm2'] / 1e12, 6)}
+                for a in selected]
+    foreign = listed(a for a in found if a['kind'] != 'rule_area' and a['net'] != net)
+    rf_vias = listed(a for a in found if a['kind'] == 'via' and a['net'] == net)
+    rule_areas = listed(a for a in found if a['kind'] == 'rule_area')
+    off_signal = sorted(t['uuid'] for t in native['tracks'] if t['layer'] != resolved['signal_layer'])
+    record.update(guard_nm=facts['guard_nm'], corridor_tracks=len(facts['corridor_tracks']),
+                  corridor_mm2=round(polyset_area(facts['corridor_nm']) / 1e12, 6),
+                  uncovered_mm2=round(uncovered / 1e12, 6), unattributed_mm2=round(unattributed / 1e12, 6),
+                  tolerance_mm2=CONTINUITY_TOLERANCE_MM2, foreign=foreign, rf_vias=rf_vias, rule_areas=rule_areas,
+                  ungraded_tracks=off_signal)
+    if uncovered > tolerance:
+        reasons = [reason for reason, present in (('foreign_antipad', foreign), ('rf_via_antipad', rf_vias),
+                                                  ('rule_area', rule_areas),
+                                                  ('void', unattributed > tolerance)) if present]
+        return {**record, 'status': 'defect', 'reasons': reasons or ['void'],
+                'statement': f"{gnd} copper on {resolved['reference_layer']} does not cover the RF tracks on "
+                             f"{resolved['signal_layer']} grown by {spec['width_mm']} mm per side"}
+    if off_signal:
+        return {**record, 'status': 'unknown',
+                'reason': f"RF tracks off {resolved['signal_layer']} are not graded against this reference"}
+    return {**record, 'status': 'pass'}
 
 
 def margin_nm(resolved):
@@ -1133,6 +1379,17 @@ def margin_nm(resolved):
     if 'stitching' in resolved:
         values.append(resolved['stitching']['band_mm'][1])
     return math.ceil((max(values) + 1.0) * NM)
+
+
+def probe_request(resolved):
+    request = {'net': resolved['net'], 'ground_net': resolved['ground_net'],
+               'signal_layer': resolved['signal_layer'], 'reference_layer': resolved['reference_layer'],
+               'margin_nm': margin_nm(resolved)}
+    width = resolved.get('guard', {}).get('width_mm')
+    if width is not None:
+        request.update(guard_nm=round(width * NM), extra_clearance_nm=round(FILLER_EXTRA_CLEARANCE_MM * NM),
+                       clearance_rule=CLEARANCE_RULE.pattern)
+    return request
 
 
 def gate_findings(resolved, evaluation):
@@ -1152,6 +1409,8 @@ def gate_findings(resolved, evaluation):
     for branch in topology.get('branches', []):
         if branch['status'] == 'defect':
             found.append((f"{net}:{branch['name']}", 'rf-geometry/branch-length'))
+    if sections.get('guard', {}).get('status') == 'defect':
+        found.append((f'{net}:guard', 'rf-geometry/return-guard'))
     return found
 
 
@@ -1167,6 +1426,15 @@ LIMITATIONS = ('Planar saved-board copper geometry against a declared structure 
                'not by zone connection.')
 
 
+GUARD_LIMITATIONS = ('The return-corridor guard is a geometric guard result against a declared width and its '
+                     'recorded basis, not RF qualification, impedance or a return-current measurement. Only the '
+                     "clearance the zone filler cut for the RF net's own pads is excused (as in AGENTEE-231 "
+                     'reference continuity); any other uncovered area is a defect, attributed to the overlapping '
+                     'foreign items, RF vias and rule areas where their clearance shapes reach it. The corridor is '
+                     'built from RF tracks on the signal layer at a 1 um chord error; fill polygons are graded as '
+                     'saved.')
+
+
 def check_rf_geometry(ctx):
     from .checks import CheckError
     try:
@@ -1175,9 +1443,7 @@ def check_rf_geometry(ctx):
         raise CheckError('unsupported', str(exc)) from exc
     resolved = descriptor['resolved']
     board = ctx.candidate_path(ctx.scope['board'])
-    request = {'net': resolved['net'], 'ground_net': resolved['ground_net'],
-               'signal_layer': resolved['signal_layer'], 'reference_layer': resolved['reference_layer'],
-               'margin_nm': margin_nm(resolved)}
+    request = probe_request(resolved)
     write_json(ctx.work / 'rf-request.json', request)
     ctx.evidence('rf-request.json')
     ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.rf_geometry', board,
@@ -1198,6 +1464,8 @@ def check_rf_geometry(ctx):
     ctx.evidence('rf-geometry.json')
     ctx.result['details'].update(report)
     ctx.result['limitations'].append(LIMITATIONS)
+    if 'guard' in resolved:
+        ctx.result['limitations'].append(GUARD_LIMITATIONS)
     ctx.result['details']['gate_findings'] = [{'check_id': ctx.cid, 'entity': entity, 'kind': kind}
                                               for entity, kind in gate_findings(resolved, evaluation)]
     counts = {s: sum(1 for v in evaluation['sections'].values() if v['status'] == s)
