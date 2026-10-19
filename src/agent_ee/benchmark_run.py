@@ -1122,7 +1122,7 @@ def canonical_native(value):
     return result
 
 
-CLOSURE_SCHEMA = 'agent-ee.benchmark-dependency-closure/1'
+CLOSURE_SCHEMA = 'agent-ee.benchmark-dependency-closure/2'
 BENCHMARK_INPUTS = ('benchmark/requirements.json','benchmark/contract.json')
 # Native binaries a retained run records by content; the closure pins each one.
 NATIVE_RUNTIME = ('kicad-cli','bwrap','/usr/bin/python3','pcbnew')
@@ -1173,6 +1173,35 @@ def library_origin(kind, nickname, tables, stock):
     return 'kicad-stock' if path.exists() else 'third-party-custom'
 
 
+def tool_licences(tools):
+    """Verify each tool's licence file by hash where that tool lives; return the explicit result per tool.
+
+    'runtime' evidence belongs to the executing runtime (the pinned image, or a
+    native host with the same toolchain) and must match byte for byte. 'outer-host'
+    evidence belongs to the container runtime that launches the image: it is
+    pinned by hash and path, verified wherever its binary or licence file exists,
+    and reported absent inside the image instead of being skipped silently.
+    """
+    results = {}
+    for tool in tools:
+        name = tool.get('name') or '?';evidence = tool.get('licence_evidence') or {}
+        location = evidence.get('location')
+        if (not tool.get('licence_class') or location not in ('runtime','outer-host') or
+                not all(str(path or '').startswith('/') for path in (tool.get('path'),evidence.get('path'))) or
+                not re.fullmatch(r'[a-f0-9]{64}',evidence.get('sha256') or '')):
+            raise ValueError('tool licence evidence missing: '+name)
+        if name in NATIVE_RUNTIME and location!='runtime':
+            raise ValueError('native runtime licence evidence must be verified in the runtime: '+name)
+        present = location=='runtime' or Path(tool['path']).exists() or Path(evidence['path']).exists()
+        if not present:
+            results[name] = 'outer-host-absent'
+            continue
+        if not Path(evidence['path']).is_file() or digest(evidence['path'])!=evidence['sha256']:
+            raise ValueError('tool licence evidence missing or changed: '+name)
+        results[name] = 'verified'
+    return results
+
+
 def verify_closure(manifest_path, cache, closure_path, runs=(), *, stock='/usr/share/kicad'):
     """Refuse unless the committed closure lists exactly what the pinned inputs and runs depend on."""
     manifest = load_manifest(manifest_path);cache = external(cache)
@@ -1217,10 +1246,7 @@ def verify_closure(manifest_path, cache, closure_path, runs=(), *, stock='/usr/s
     if digest(cache/'alternate-footprints'/'LICENSE.md')!=read_json(record)['license_sha256']:
         raise ValueError('cached alternate library license differs')
     tools = {t['name']:t for t in closure['tools']}
-    for tool in closure['tools']:
-        evidence = tool.get('licence_evidence')
-        if not tool.get('licence_class') or not evidence or digest(evidence['path'])!=evidence['sha256']:
-            raise ValueError('tool licence evidence missing or changed: '+tool['name'])
+    licences = tool_licences(closure['tools'])
     if any(name not in tools or not re.fullmatch(r'[a-f0-9]{64}',tools[name].get('sha256') or '') for name in NATIVE_RUNTIME):
         raise ValueError('native runtime not pinned in closure')
     for package in closure['fonts']['packages']:
@@ -1258,4 +1284,5 @@ def verify_closure(manifest_path, cache, closure_path, runs=(), *, stock='/usr/s
         checked.append(str(run))
     if runs and substitutions!=closure['fonts']['substitutions']:
         raise ValueError(f'run font substitutions {substitutions} differ from closure')
-    return {'closed':True,'boards':counts,'alternate_footprints':len(alternates),'tools':sorted(tools),'runs':checked}
+    return {'closed':True,'boards':counts,'alternate_footprints':len(alternates),'tools':sorted(tools),
+            'licence_evidence':licences,'runs':checked}
