@@ -1,0 +1,46 @@
+{
+  "work_item": "AGENTEE-75",
+  "as_of": "2026-10-19",
+  "raw_captures": [
+    {
+      "file": "jlcpcb-capabilities.html",
+      "url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "resolved_url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "captured_at": "2026-10-19T14:21:32.817947+00:00",
+      "sha256": "0bea35f47831498b72f155b2408785fc50f0771efe3eca0470a1e74ff6b40280",
+      "bytes": 137321,
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "jlcpcb-extra-charge.html",
+      "url": "https://jlcpcb.com/help/article/in-what-cases-will-there-be-charged-extra",
+      "resolved_url": "https://jlcpcb.com/help/article/in-what-cases-will-there-be-charged-extra",
+      "captured_at": "2026-10-19T14:22:08.741067+00:00",
+      "sha256": "bb92466ba0a028ad865d1992a20b277b28e231ac15c9c7bcc44b5112c314c409",
+      "bytes": 159645,
+      "tool": "Python 3 urllib.request.urlopen (host, not a check)"
+    }
+  ],
+  "raw_bytes_committed": false,
+  "retention": "Raw vendor responses remain worker scratch only; no owner evidence store. Only original numeric/name records and source identities are committed.",
+  "recorded_sources": {
+    "jlcpcb-vias.txt": {
+      "path": "jlcpcb-vias.txt",
+      "sha256": "6feb9f71abbf52fdcf8bd720ebd69278f2aae370a7fa130e42e04746b266b281",
+      "bytes": 382
+    }
+  },
+  "locators": {
+    "minimum": "PCB capabilities / Drilling / Min. Via hole size/diameter / 2-layer and Multilayer, ordinary process",
+    "small-via": "Same row / note 3 / drill options 0.2 or 0.25 mm AND via diameter <0.45 mm",
+    "small-drill": "Same row / notes 2 and 3 / preferred drill 0.2 mm; 0.15 mm with any diameter costs extra",
+    "standard-hole": "Extra-charge article / 4. Small Size Holes / standard hole diameter >=0.3 mm"
+  },
+  "interpretation_limits": [
+    "The joint <0.3 mm drill AND <0.45 mm diameter rule models the published 0.2 and 0.25 mm drill options below the separately published standard-hole boundary. Intermediate drill sizes are not qualified by the discrete capabilities text.",
+    "The separate preferred 0.2 mm drill rule covers the published 0.15 mm drill option at any diameter. The <=1 mm special process for 0.1 mm drills is excluded.",
+    "This is an explicit via-only FR-4 profile for 2-layer and multilayer boards using the ordinary process. No automatic applicability gate, complete DFM, annular-ring, pricing, assembly or supplier approval is claimed.",
+    "Source verification proves occurrence in the original numeric record, not authenticity or interpretation of vendor bytes. Raw response hashes cannot replay absent vendor pages."
+  ],
+  "recording_method": "Worker reviewed host HTML table and article and recorded numbers/names only; no vendor prose, graphics, designs or code retained."
+}

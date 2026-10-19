@@ -1,0 +1,80 @@
+{
+  "schema": "agent-ee.fab-profile/2",
+  "name": "jlcpcb_standard_2026-10-19",
+  "as_of": "2026-10-19",
+  "limits": [
+    {
+      "id": "via-drill",
+      "requirement": "fab",
+      "key": "min_via_drill_mm",
+      "value": 0.15,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "jlcpcb-vias.txt",
+        "sha256": "6feb9f71abbf52fdcf8bd720ebd69278f2aae370a7fa130e42e04746b266b281",
+        "source": "JLCPCB published capabilities and extra-charge policy; agent-ee numeric record",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "via / drill / diameter / minimum: 0.15 / 0.25 mm"
+      }
+    },
+    {
+      "id": "via-diameter",
+      "requirement": "fab",
+      "key": "min_via_pad_mm",
+      "value": 0.25,
+      "unit": "mm",
+      "tier": "minimum",
+      "source": {
+        "path": "jlcpcb-vias.txt",
+        "sha256": "6feb9f71abbf52fdcf8bd720ebd69278f2aae370a7fa130e42e04746b266b281",
+        "source": "JLCPCB published capabilities and extra-charge policy; agent-ee numeric record",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "via / drill / diameter / minimum: 0.15 / 0.25 mm"
+      }
+    },
+    {
+      "id": "small-drill",
+      "requirement": "fab",
+      "key": "min_via_drill_mm",
+      "value": 0.2,
+      "unit": "mm",
+      "tier": "preferred",
+      "source": {
+        "path": "jlcpcb-vias.txt",
+        "sha256": "6feb9f71abbf52fdcf8bd720ebd69278f2aae370a7fa130e42e04746b266b281",
+        "source": "JLCPCB published capabilities and extra-charge policy; agent-ee numeric record",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "via / drill / preferred: 0.2 mm"
+      }
+    },
+    {
+      "id": "small-via",
+      "requirement": "fab",
+      "tier": "preferred",
+      "all": [
+        {
+          "key": "min_via_drill_mm",
+          "value": 0.3,
+          "unit": "mm"
+        },
+        {
+          "key": "min_via_pad_mm",
+          "value": 0.45,
+          "unit": "mm"
+        }
+      ],
+      "source": {
+        "path": "jlcpcb-vias.txt",
+        "sha256": "6feb9f71abbf52fdcf8bd720ebd69278f2aae370a7fa130e42e04746b266b281",
+        "source": "JLCPCB published capabilities and extra-charge policy; agent-ee numeric record",
+        "as_of": "2026-10-19",
+        "page": 1,
+        "quote": "small-via / drill / diameter / bounds: <0.3 / <0.45 mm"
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+JLCPCB / FR-4 / 2-layer / multilayer / 2026-10-19
+
+Agent-ee recorded facts (numbers and names only).
+via / drill / diameter / minimum: 0.15 / 0.25 mm
+via / drill / preferred: 0.2 mm
+via / drill / diameter / extra-charge: 0.2, 0.25 / <0.45 mm
+via / drill / extra-charge / any diameter: 0.15 mm
+standard / hole / minimum: 0.3 mm
+small-via / drill / diameter / bounds: <0.3 / <0.45 mm

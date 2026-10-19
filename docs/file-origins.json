@@ -3293,6 +3293,16 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-71 feature documentation. Names SchGen and Konnect and their ticket-supplied source locators solely to attribute mechanism references; no external project text or code is reproduced."
+    },
+    {
+      "paths": [
+        "fixtures/fab-profiles/"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "note": "AGENTEE-75 original dated JLCPCB via profile, numeric/name-only records and host-capture metadata. Source URLs, raw response hashes, UTC timestamps and interpretation limits are recorded in source-capture.json and docs/fab-profile.md. No vendor prose, graphics, code, designs or libraries are copied; raw HTML remains worker scratch only. Existing source-bound compiler and original routing fixtures supply the mechanism."
     }
   ]
 }

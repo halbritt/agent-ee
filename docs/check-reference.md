@@ -378,7 +378,13 @@ are reported as extra charges, never defects. A `fab-profile/2` conjunctive rule
 charges only vias whose drill and diameter are both under its bounds. Each term
 runs its own native DRC, and the rule charges the intersection of the cited via
 UUIDs. Out-of-range numeric profile bounds are unsupported in both descriptors
-and execution. The [telemetry-pod profile](telemetry-pod-fab-profile.md) records
+and execution. The [2026-10-19 JLCPCB via preset](fab-profile.md#dated-jlcpcb-standard-via-preset)
+records the ordinary-process drill/diameter minima, a separate small-drill
+surcharge and the joint small-via surcharge from host captures. A 0.25 mm drill
+with a 0.4 mm diameter reports its saved via UUID as an extra charge; a 0.45 mm
+diameter is outside that joint band. Its documented applicability covers the
+published drill options, with no automatic applicability gate or pricing.
+The [telemetry-pod profile](telemetry-pod-fab-profile.md) records
 eight dated JLCPCB native/geometry limits plus a finished-thickness tolerance
 from numeric/name captures. Envelope/2 checks the honest physical sum against
 that captured tolerance and retains unbound mechanical obligations. The fab
