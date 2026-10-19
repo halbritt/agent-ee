@@ -1180,7 +1180,14 @@ the snapshot, is counted `unknown`, never Basic. Its outcome is always `info`,
 or `unknown` when `pcb_summary.json` is missing or unusable. Scope/3 declares
 no predicate, so it can be mapped only to an informational requirement. The
 report records the table version, capture date and staleness, and the input
-hashes. See [JLCPCB cost estimate](jlc-cost-estimate.md).
+hashes. A `thru_hole` pad with a native heatsink or mechanical property that
+has its entire drill and annulus provably contained in same-numbered `smd`
+copper is excluded and recorded in `tht_excluded`. Containment uses exact
+integer nanometres, including the boundary; unsupported geometry stays counted.
+Excluding these vias from THT joint counts is an unconfirmed pricing assumption,
+not verified against a JLCPCB quote. Other `thru_hole` pads that may be vias are
+still counted, and are reported in `tht_unclassified`. See
+[JLCPCB cost estimate](jlc-cost-estimate.md).
 
 ## Scaffold preparation
 
