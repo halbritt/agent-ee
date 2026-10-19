@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import time
 import unittest
+from collections import Counter
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -46,9 +47,20 @@ def catalog(tmp, parts):
 
 
 def footprint(ref, pads, layer='F.Cu'):
-    body = ''.join(f'(pad "{number}" {kind} rect (at 0 0) (size 1 1) (layers "{layer}"))' for number, kind in pads)
+    """Pads are (number, kind) or (number, kind, extra native children such as a pad property)."""
+    body = ''.join(f'(pad "{number}" {kind} rect (at 0 0) (size 1 1) {extra[0] if extra else ""}(layers "{layer}"))'
+                   for number, kind, *extra in pads)
     return (f'(footprint "lib:FP" (layer "{layer}") (property "Reference" "{ref}" (at 0 0 0)) '
             f'(property "Value" "v" (at 0 0 0)) {body})')
+
+
+def joint(smt, tht, excluded=(), unclassified=()):
+    return {'smt': smt, 'tht': tht, 'tht_excluded': list(excluded), 'tht_unclassified': list(unclassified)}
+
+
+def via(pad, count, prop):
+    return {'pad': pad, 'count': count, 'property': prop,
+            'reason': f'native {prop} via in SMD pad {pad}; not a soldered THT joint'}
 
 
 class PricingTableTests(unittest.TestCase):
@@ -125,11 +137,44 @@ class InputReaderTests(unittest.TestCase):
                  + footprint('J1', [('1', 'thru_hole'), ('2', 'thru_hole'), ('', 'np_thru_hole')])
                  + footprint('P1', [('1', 'connect')]) + ')')
         self.assertEqual(designator_joints(board.encode()),
-                         {'U1': {'smt': 3, 'tht': 0}, 'J1': {'smt': 0, 'tht': 2}, 'P1': {'smt': 0, 'tht': 0}})
+                         {'U1': joint(3, 0), 'J1': joint(0, 2), 'P1': joint(0, 0)})
         with self.assertRaises(ValueError):
             designator_joints(('(kicad_pcb ' + footprint('U1', []) + footprint('U1', []) + ')').encode())
         with self.assertRaises(ValueError):
             designator_joints(b'(kicad_pcb (footprint "x" (layer "F.Cu"))')
+
+    def test_thermal_and_mechanical_vias_in_smd_pads_are_excluded_and_recorded(self):
+        # AGENTEE-228: U1-style heatsink vias, J2-style mechanical vias, a mixed footprint and unmarked holes.
+        heat, mech = '(property pad_prop_heatsink) ', '(property pad_prop_mechanical) '
+        board = ('(kicad_pcb (version 20241229) '
+                 + footprint('U1', [('1', 'smd'), ('2', 'smd'), ('41', 'smd')] + [('41', 'thru_hole', heat)] * 3)
+                 + footprint('J2', [('1', 'smd'), ('2', 'smd')] + [('2', 'thru_hole', mech)] * 2)
+                 + footprint('J3', [('A1', 'smd'), ('9', 'smd'), ('9', 'thru_hole', heat), ('9', 'thru_hole'),
+                                    ('SH', 'thru_hole', mech), ('SH', 'thru_hole', mech), ('', 'np_thru_hole')])
+                 + footprint('U5', [(n, 'smd') for n in '123456789'] + [('9', 'thru_hole')] * 8)
+                 + footprint('Q1', [('1', 'thru_hole'), ('2', 'thru_hole'), ('3', 'thru_hole', heat)])
+                 + footprint('U2', [('1', 'smd'), ('1', 'thru_hole', '(property pad_prop_castellated) '),
+                                    ('1', 'thru_hole', heat + mech)])
+                 + ')')
+        joints = designator_joints(board.encode())
+        self.assertEqual(joints['U1'], joint(3, 0, excluded=[via('41', 3, 'pad_prop_heatsink')]))
+        self.assertEqual(joints['J2'], joint(2, 0, excluded=[via('2', 2, 'pad_prop_mechanical')]))
+        # A same-numbered heatsink via is excluded; the unmarked hole and the anchors stay counted and reported.
+        j3 = joints['J3']
+        self.assertEqual((j3['smt'], j3['tht']), (2, 3))
+        self.assertEqual(j3['tht_excluded'], [via('9', 1, 'pad_prop_heatsink')])
+        self.assertEqual([(g['pad'], g['count']) for g in j3['tht_unclassified']], [('9', 1), ('SH', 2)])
+        self.assertIn('lacks native pad_prop_heatsink or pad_prop_mechanical', j3['tht_unclassified'][0]['reason'])
+        self.assertIn('no SMD pad SH', j3['tht_unclassified'][1]['reason'])
+        # Unpropertied vias (AGENTEE-221 pre-patch U5) stay conservative THT joints, reported.
+        self.assertEqual((joints['U5']['smt'], joints['U5']['tht'], joints['U5']['tht_excluded']), (9, 8, []))
+        self.assertEqual([(g['pad'], g['count']) for g in joints['U5']['tht_unclassified']], [('9', 8)])
+        # A property without a same-numbered SMD pad is not trusted as a via.
+        self.assertEqual((joints['Q1']['tht'], joints['Q1']['tht_excluded']), (3, []))
+        self.assertEqual([(g['pad'], g['count']) for g in joints['Q1']['tht_unclassified']], [('3', 1)])
+        # Another property, or more than one, is not the thermal-via contract: counted.
+        self.assertEqual((joints['U2']['smt'], joints['U2']['tht'], joints['U2']['tht_excluded']), (1, 2, []))
+        self.assertEqual(joints['U2']['tht_unclassified'][0]['count'], 2)
 
     def test_pcb_summary_reads_native_units_and_refuses_gaps(self):
         native = {'board': {'has_outline': True, 'width': '36.0000 mm', 'height': '20.0000 mm',
@@ -150,7 +195,7 @@ SUMMARY = {'width_mm': Decimal('36'), 'height_mm': Decimal('20'), 'native_area_m
 BINDINGS = {'C1': 'C900001', 'C2': 'C900001', 'C10': 'C900001', 'J1': 'C900030', 'R1': 'C900010',
             'R2': 'C900047'}
 SIDES = {'C1': 'Top', 'C2': 'Top', 'C10': 'Top', 'J1': 'Top', 'R1': 'Top', 'R2': 'Bottom'}
-JOINTS = {**{ref: {'smt': 2, 'tht': 0} for ref in ('C1', 'C2', 'C10', 'R1', 'R2')}, 'J1': {'smt': 0, 'tht': 3}}
+JOINTS = {**{ref: joint(2, 0) for ref in ('C1', 'C2', 'C10', 'R1', 'R2')}, 'J1': joint(0, 3)}
 
 
 class EstimateTests(unittest.TestCase):
@@ -159,11 +204,11 @@ class EstimateTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def run_case(self, table=TABLE, parts=None, tier='standard', boards=5, summary=SUMMARY, sides=SIDES,
-                 layers=2):
+                 layers=2, joints=JOINTS):
         table = load_pricing_table(table)
         snapshot = catalog(self.tmp.name, CATALOG['parts'] if parts is None else parts)
         fields, est = estimate(table, entry_freshness(table, date(2026, 10, 17), None), tier=tier, boards=boards,
-                               layers=layers, summary=summary, bindings=BINDINGS, sides=sides, joints=JOINTS,
+                               layers=layers, summary=summary, bindings=BINDINGS, sides=sides, joints=joints,
                                catalog=snapshot)
         return fields, est, est.totals(('pcb', 'assembly', 'components'))
 
@@ -177,6 +222,19 @@ class EstimateTests(unittest.TestCase):
         for line in est.lines:
             self.assertTrue(line.get('entry') in ids or line.get('catalog_row') in BINDINGS.values(), line)
             self.assertEqual(Decimal(line['amount_usd']), Decimal(line['quantity']) * Decimal(line['unit_usd']))
+
+    def test_excluded_vias_are_recorded_and_not_priced(self):
+        # AGENTEE-228: excluded via pads change no THT line; unclassified holes stay priced.
+        joints = {**JOINTS, 'C1': joint(2, 0, excluded=[via('2', 4, 'pad_prop_heatsink')]),
+                  'J1': joint(0, 3, unclassified=[{'pad': '1', 'count': 1, 'reason': 'r'}])}
+        fields, est, totals = self.run_case(joints=joints)
+        self.assertEqual(totals['total'], {'min_usd': '76.2780', 'max_usd': '76.2780', 'complete': True})
+        recorded = fields['joints']
+        self.assertEqual((recorded['tht'], recorded['tht_per_board']), (15, 3))
+        self.assertEqual((recorded['tht_excluded_per_board'], recorded['tht_unclassified_per_board']), (4, 1))
+        self.assertEqual(recorded['per_designator']['C1']['tht_excluded'], [via('2', 4, 'pad_prop_heatsink')])
+        tht = [line for line in est.lines if line['item'].startswith('tht solder joints')]
+        self.assertEqual([Decimal(line['quantity']) for line in tht], [15])
 
     def test_extended_count_equals_snapshot_flags_and_classless_part_is_unknown_not_basic(self):
         parts = copy.deepcopy(CATALOG['parts'])
@@ -451,3 +509,55 @@ class NativeJlcCostTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NativeThermalViaJointTests(unittest.TestCase):
+    """AGENTEE-228 on real footprints: KiCad's installed library and the owned AGENTEE-221 power pad,
+    placed and saved by pcbnew, then counted from the saved board bytes."""
+
+    def test_saved_board_joints_match_pcbnew_pad_properties(self):
+        require_toolchain(native=True)
+        import pcbnew
+        from test_footprint_library import HEATSINK, power_pad
+        stock = Path('/usr/share/kicad/footprints')
+        picks = {'U1': (stock / 'RF_Module.pretty', 'ESP32-S3-WROOM-1'),
+                 'J2': (stock / 'Connector_Coaxial.pretty', 'SMA_Molex_73251-1153_EdgeMount_Horizontal'),
+                 'J3': (stock / 'Connector_USB.pretty', 'USB_C_Receptacle_HRO_TYPE-C-31-M-12')}
+        with tempfile.TemporaryDirectory() as tmp:
+            owned = Path(tmp) / 'Owned.pretty'
+            owned.mkdir()
+            for name, extra in (('So8Bare', ''), ('So8Tv', HEATSINK)):
+                (owned / f'{name}.kicad_mod').write_text(power_pad(extra).replace('"So8Tv"', f'"{name}"', 1))
+            picks.update(U5=(owned, 'So8Bare'), U6=(owned, 'So8Tv'))
+            board, expected = pcbnew.BOARD(), {}
+            via_props = {pcbnew.PAD_PROP_HEATSINK: 'pad_prop_heatsink',
+                         pcbnew.PAD_PROP_MECHANICAL: 'pad_prop_mechanical'}
+            for ref, (lib, name) in picks.items():
+                fp = pcbnew.FootprintLoad(str(lib), name)
+                self.assertIsNotNone(fp, name)
+                fp.SetReference(ref)
+                board.Add(fp)
+                pads = [p for p in fp.Pads() if p.GetNumber()]
+                smd = {p.GetNumber() for p in pads if p.GetAttribute() == pcbnew.PAD_ATTRIB_SMD}
+                pth = [p for p in pads if p.GetAttribute() == pcbnew.PAD_ATTRIB_PTH]
+                vias = Counter((p.GetNumber(), via_props[p.GetProperty()]) for p in pth
+                               if p.GetProperty() in via_props and p.GetNumber() in smd)
+                expected[ref] = (len(pads) - len(pth), len(pth) - sum(vias.values()),
+                                 sorted((pad, n, prop) for (pad, prop), n in vias.items()))
+            path = Path(tmp) / 'thermal.kicad_pcb'
+            self.assertTrue(pcbnew.SaveBoard(str(path), board))
+            joints = designator_joints(path.read_bytes())
+        found = {ref: (j['smt'], j['tht'], [(g['pad'], g['count'], g['property']) for g in j['tht_excluded']])
+                 for ref, j in joints.items()}
+        self.assertEqual(found, expected)
+        # The pod cases: 12 heatsink vias in U1 pad 41, 2 mechanical vias in J2 pad 2, 8 in a patched power pad.
+        self.assertEqual(found['U1'][1:], (0, [('41', 12, 'pad_prop_heatsink')]))
+        self.assertEqual(found['J2'][1:], (0, [('2', 2, 'pad_prop_mechanical')]))
+        self.assertEqual(found['U6'][1:], (0, [('9', 8, 'pad_prop_heatsink')]))
+        # Unmarked power-pad vias and USB-C shield anchors (mechanical, no SMD pad SH) stay THT joints, reported.
+        self.assertEqual(found['U5'][1:], (8, []))
+        self.assertEqual(found['J3'][1:], (4, []))
+        self.assertEqual([(g['pad'], g['count']) for g in joints['U5']['tht_unclassified']], [('9', 8)])
+        self.assertEqual([(g['pad'], g['count']) for g in joints['J3']['tht_unclassified']], [('SH', 4)])
+        for ref in ('U1', 'J2', 'U6'):
+            self.assertEqual(joints[ref]['tht_unclassified'], [])

@@ -89,6 +89,16 @@ DECLARED_SHAPES = ('custom', 'trapezoid')
 THERMAL_VIA_PROPERTIES = ('pad_prop_heatsink', 'pad_prop_mechanical')
 
 
+def thermal_via_property(pad):
+    """The native thermal-via property of one parsed ``(pad ...)`` node, or None.
+
+    The pad must carry exactly one ``(property ...)`` child naming one of
+    THERMAL_VIA_PROPERTIES; none, another value or several are None.
+    """
+    props = [x[1:] for x in pad[4:] if isinstance(x, list) and x and x[0] == 'property']
+    return props[0][0] if props in ([[p]] for p in THERMAL_VIA_PROPERTIES) else None
+
+
 def _numbers(value):
     if not isinstance(value, list) or len(set(map(str, value))) != len(value):
         raise FootprintError('declared pad numbers must be a list of unique strings')
@@ -143,8 +153,7 @@ def _apply_declaration(pads, attributes, entry):
             raise FootprintError(f'declared thermal-via pad {number!r} needs SMD and through-hole copper pads')
         for pad in pads:
             if pad['number'] == number and pad['type'] == 'thru_hole':
-                props = [x for x in pad['native'][4:] if isinstance(x, list) and x and x[0] == 'property']
-                if [x[1:] for x in props] not in ([[p]] for p in THERMAL_VIA_PROPERTIES):
+                if thermal_via_property(pad['native']) is None:
                     raise FootprintError(f'declared thermal-via pad {number!r} through-hole copper lacks native '
                                          'pad_prop_heatsink; KiCad then types the footprint through-hole '
                                          '(DRC footprint_type_mismatch)')

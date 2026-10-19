@@ -51,6 +51,22 @@ separate `fab_export` check for the estimate to consume.
   `np_thru_hole`, `connect` and unnumbered pads are not joints. Designators that
   the export excluded by its assembly rule are not in the BOM and so add no
   joints.
+- **Vias in SMD pads** (AGENTEE-228): a `thru_hole` pad is excluded from the
+  THT joints when it carries exactly one native `(property pad_prop_heatsink)`
+  or `(property pad_prop_mechanical)` and its number also names an `smd` pad of
+  the same footprint. These are the thermal and stitching vias of the
+  [AGENTEE-221 contract](footprint-libraries.md), for example the 12 heatsink
+  vias in pad 41 of `ESP32-S3-WROOM-1` or the 2 mechanical vias in pad 2 of an
+  edge-mount SMA. The property is read by
+  `footprint_library.thermal_via_property`, the same reader the footprint
+  index uses for thermal-via declarations. The exclusion is recorded per
+  designator in `tht_excluded` (pad, count, property, reason). Every other `thru_hole` pad stays a THT joint, which is the
+  conservative choice. It is listed in `tht_unclassified` with a reason when it
+  might still be a via: an unmarked hole in a footprint with `smd` pads, or a
+  heatsink/mechanical pad with no same-numbered `smd` pad, such as the
+  `pad_prop_mechanical` shield anchors `SH` of a USB-C receptacle, which are
+  soldered. Other properties, or more than one property, do not match the
+  contract.
 - **Sides**: the CPL `Layer` column of the BOM designators.
 - **Part class**: for each unique LCSC ID in the BOM, the snapshot's class
   flags. `library_tier`, or `is_basic = 1`, decides the class. Otherwise both
@@ -132,6 +148,10 @@ evidence with these fields:
 - `selection_objective`: `unique_extended_parts` and
   `unique_unknown_class_parts`, the quantities part selection should minimise.
 - `pcb`, `sides` and `joints` (totals, per board and per designator).
+  `joints` also gives `tht_excluded_per_board` and
+  `tht_unclassified_per_board`. Each `per_designator` entry has `smt`, `tht`,
+  `tht_excluded` and `tht_unclassified`. When either count is non-zero, the
+  result's limitations say so.
 - `line_items`: each has `group` (`pcb`, `assembly` or `components`), `item`,
   `quantity`, `unit_usd` and `amount_usd`. Each also cites its source: the
   table `entry` with `entry_stale`, or the `catalog_row`.

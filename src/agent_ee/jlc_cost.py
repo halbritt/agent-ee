@@ -12,7 +12,12 @@ arithmetic:
   row without enough class flags, is counted `unknown`, never Basic. Its loading
   fee is reported as a range over the table's class fees, not a guess.
 * Solder joints are the numbered `smd` and `thru_hole` pads of each BOM
-  designator's board footprint. Assembled sides come from the CPL.
+  designator's board footprint. A `thru_hole` pad carrying the native
+  heatsink/mechanical property (AGENTEE-221 thermal-via contract) whose number
+  also names an `smd` pad of the footprint is a via in that pad, not a THT
+  joint (AGENTEE-228); it is excluded and recorded. Any other `thru_hole` pad
+  of a footprint with `smd` pads, or with such a property, stays counted and
+  is reported as unclassified. Assembled sides come from the CPL.
 * The PCB line uses the copper layer count and the `pcb_summary.json` bounding
   box. A missing or unusable summary leaves the PCB cost unresolved and the
   outcome `unknown`.
@@ -42,6 +47,7 @@ from .assembly_readiness import (AssemblyReadinessExecutionError, ISO_DATE_RE, L
 from .catalog import decimal_number
 from .cpl_rotation import read_bom_bindings, read_native_cpl
 from .fab_export import natural_key, scan_sexpr, verify_manifest
+from .footprint_library import THERMAL_VIA_PROPERTIES, thermal_via_property
 from .hardware_interface import unique_object
 from .storage import digest, read_json, write_json
 
@@ -243,11 +249,25 @@ def find_entry(table, kind, **selector):
 def _pad_want(path):
     if len(path) == 1:
         return path[0] == 'kicad_pcb'
-    return path[1] == 'footprint' and (len(path) == 2 or (len(path) == 3 and path[2] in ('property', 'pad')))
+    return path[1] == 'footprint' and (len(path) == 2 or (len(path) == 3 and path[2] in ('property', 'pad'))
+                                       or path[2:] == ('pad', 'property'))
+
+
+def _pad_groups(groups):
+    return [{'pad': pad, 'count': n, **dict(extra)}
+            for (pad, *extra), n in sorted(groups.items(), key=lambda g: (natural_key(g[0][0]), g[0][1:]))]
 
 
 def designator_joints(data):
-    """{reference: {'smt': n, 'tht': n}} counting numbered smd/thru_hole pads of each board footprint."""
+    """{reference: {'smt', 'tht', 'tht_excluded', 'tht_unclassified'}} from each board footprint's pads.
+
+    Numbered smd/thru_hole pads count as SMT/THT joints. A thru_hole pad with
+    a native thermal-via property whose number also names an smd pad is a via
+    in that pad: excluded from `tht` and listed in `tht_excluded`. Other
+    thru_hole pads of a footprint with smd pads, and propertied pads without a
+    same-numbered smd pad (e.g. soldered shield anchors), stay counted and are
+    listed in `tht_unclassified`.
+    """
     root, _ = scan_sexpr(data, _pad_want)
     if root[0] != 'kicad_pcb':
         raise ValueError('not a kicad_pcb file')
@@ -259,13 +279,27 @@ def designator_joints(data):
             raise ValueError(f'footprint {fp[1:2]} lacks exactly one Reference')
         if refs[0] in joints:
             raise ValueError(f'board repeats footprint reference {refs[0]}')
-        count = Counter()
-        for pad in (p for p in fp[1:] if isinstance(p, list) and p[0] == 'pad'):
-            if len(pad) < 3:
-                raise ValueError(f'footprint {refs[0]} has a malformed pad')
-            if pad[1] != '' and pad[2] in PAD_TECHNOLOGY:
-                count[PAD_TECHNOLOGY[pad[2]]] += 1
-        joints[refs[0]] = {'smt': count['smt'], 'tht': count['tht']}
+        count, excluded, unclassified = Counter(), Counter(), Counter()
+        pads = [p for p in fp[1:] if isinstance(p, list) and p[0] == 'pad']
+        if any(len(pad) < 3 for pad in pads):
+            raise ValueError(f'footprint {refs[0]} has a malformed pad')
+        numbered = [pad for pad in pads if pad[1] != '' and pad[2] in PAD_TECHNOLOGY]
+        smd = {pad[1] for pad in numbered if pad[2] == 'smd'}
+        for pad in numbered:
+            prop = thermal_via_property(pad) if pad[2] == 'thru_hole' else None
+            if prop and pad[1] in smd:
+                excluded[pad[1], ('property', prop), ('reason', f'native {prop} via in SMD pad {pad[1]}; '
+                                                      'not a soldered THT joint')] += 1
+                continue
+            count[PAD_TECHNOLOGY[pad[2]]] += 1
+            if prop:
+                unclassified[pad[1], ('reason', f'native {prop} but no SMD pad {pad[1]}; may be a soldered '
+                                      'anchor, counted as a THT joint')] += 1
+            elif pad[2] == 'thru_hole' and smd:
+                unclassified[pad[1], ('reason', f'thru_hole pad in a footprint with SMD pads lacks native '
+                                      f'{" or ".join(THERMAL_VIA_PROPERTIES)}; counted as a THT joint')] += 1
+        joints[refs[0]] = {'smt': count['smt'], 'tht': count['tht'], 'tht_excluded': _pad_groups(excluded),
+                           'tht_unclassified': _pad_groups(unclassified)}
     return joints
 
 
@@ -388,6 +422,8 @@ def estimate(table, freshness, *, tier, boards, layers, summary, bindings, sides
     used_sides = sorted(set(sides.values()))
     smt = sum(joints[ref]['smt'] for ref in bindings) * boards
     tht = sum(joints[ref]['tht'] for ref in bindings) * boards
+    tht_excluded = sum(g['count'] for ref in bindings for g in joints[ref]['tht_excluded'])
+    tht_unclassified = sum(g['count'] for ref in bindings for g in joints[ref]['tht_unclassified'])
     if tier_entry is None:
         est.gap('assembly', 'assembly', f'pricing table has no assembly_tier entry for {tier}')
     elif len(used_sides) > tier_entry['max_sides']:
@@ -444,6 +480,7 @@ def estimate(table, freshness, *, tier, boards, layers, summary, bindings, sides
             record['catalog_row'] = part['lcsc']
     fields = {'parts': parts, 'class_counts': counts, 'sides': used_sides,
               'joints': {'smt': smt, 'tht': tht, 'smt_per_board': smt // boards, 'tht_per_board': tht // boards,
+                         'tht_excluded_per_board': tht_excluded, 'tht_unclassified_per_board': tht_unclassified,
                          'per_designator': {ref: joints[ref] for ref in sorted(bindings, key=natural_key)}}}
     return fields, est
 
@@ -559,8 +596,9 @@ def check_jlc_cost_estimate(ctx):
     total = totals['total']
     details.update(not_a_quote=True, pricing_table={k: table_record[k] for k in
                                                     ('path', 'sha256', 'table_id', 'version', 'captured_on')},
-                   inputs=inputs, class_counts=fields['class_counts'], joints={k: fields['joints'][k]
-                                                                               for k in ('smt', 'tht')},
+                   inputs=inputs, class_counts=fields['class_counts'],
+                   joints={k: fields['joints'][k] for k in ('smt', 'tht', 'tht_excluded_per_board',
+                                                            'tht_unclassified_per_board')},
                    sides=fields['sides'], totals=totals, unresolved=len(est.unresolved),
                    stale_entries=sorted(table_record['stale_entries']),
                    report_sha256=digest(ctx.work / 'jlc-cost-estimate.json'))
@@ -583,6 +621,17 @@ def check_jlc_cost_estimate(ctx):
         'solder joints count numbered smd/thru_hole board pads of BOM designators; shipping, tax, '
         'panelisation, surface finish, colour and other options are outside the table',
     ]
+    joints = fields['joints']
+    if joints['tht_excluded_per_board']:
+        ctx.result['limitations'].append(
+            f"{joints['tht_excluded_per_board']} thru_hole via pad(s) per board with a native "
+            f"{'/'.join(THERMAL_VIA_PROPERTIES)} property inside a same-numbered SMD pad are excluded from THT joints "
+            '(see joints.per_designator tht_excluded)')
+    if joints['tht_unclassified_per_board']:
+        ctx.result['limitations'].append(
+            f"{joints['tht_unclassified_per_board']} thru_hole pad(s) per board in footprints with SMD pads, or "
+            'with a via property but no same-numbered SMD pad, are counted as THT joints but may be vias '
+            '(see joints.per_designator tht_unclassified)')
     if table['provenance']['values'] != 'observed':
         ctx.result['limitations'].append(f"pricing table values are {table['provenance']['values']}, "
                                          'not observed fabricator prices')
