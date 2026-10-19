@@ -314,34 +314,28 @@ system Python, Claude/Codex/Agy binaries, the Codex tool host and the `_pcbnew` 
 OS/shared-library image. See [security](security.md) for the guarantees this
 provides and the host-modification limits.
 
-Digest reuse never infers unchanged bytes from file status for a file this user, a
-writer sandbox or an agent process can write: a shared writable mapping changes a
-file's bytes without changing its size, mtime or ctime (AGENTEE-250). Two rules
-remain.
+No digest is reused across verification calls (AGENTEE-250). File status cannot prove
+unchanged bytes for a file this user, a writer sandbox or an agent process can write: a
+shared writable mapping changes a file's bytes without changing its size, mtime or
+ctime. Root ownership is no exception on a host where this user has sudo, so
+root-owned tools are hashed on every call too.
 
-- Within one verification call (`verify`, a campaign verification, one
-  `runtime_files()` observation) each file is hashed once. A file with the same
-  device, inode, size, mtime, ctime, owner and mode as when the call hashed it reuses
-  that observation; a rename over it or a status change hashes it again. A
-  verification establishes that each file had its recorded bytes at some instant
-  during the call, and one hash per file establishes exactly that. The observations
-  end with the outermost call and are discarded on entry to and exit from every
-  sandboxed tool run, so nothing is reused by a later call. A campaign verification
-  still verifies every retained run against one host policy and tool observation.
-- Across calls within one `agent-ee` or `pod_driver` command, a digest is reused only
-  for a file no agent process can change: a regular file owned by root with no group
-  or other write bit and no access ACL, below root-owned directories that are neither
-  group nor other writable, on a local kernel filesystem (ext2/3/4, xfs, btrfs,
-  squashfs, zfs, f2fs), while the command runs unprivileged in the initial user
-  namespace, and only while its status equals the status seen before and after
-  hashing, at least two seconds old. This covers `/usr/bin` tools and `_pcbnew`; user
-  installed harness binaries and every candidate or run file are hashed on every call.
-  A process that obtains root is outside this guarantee.
+Within one verification call (`verify`, a campaign verification, one `runtime_files()`
+observation) each file is hashed once. A file with the same device, inode, size, mtime,
+ctime, owner and mode as when the call hashed it reuses that observation; a rename over
+it or a status change hashes it again. A verification establishes that each file had its
+recorded bytes at some instant during the call, and one hash per file establishes
+exactly that. The observations end with the outermost call and are discarded on entry
+to and exit from every sandboxed tool run, so nothing is reused by a later call. A
+campaign verification still verifies every retained run against one host policy and
+tool observation.
 
 On the campaign test fixture with a 32 MiB owned candidate file, three campaign
-verifications read 583 MB before this change and 327 MB after. One `runtime_files()`
-observation on the development host reads 0.94 GB instead of 1.23 GB, and a campaign
-verification takes one observation instead of one per retained run.
+verifications read 583 MB before this change and 343 MB after. One `runtime_files()`
+observation on the development host reads 0.94 GB instead of 1.23 GB, because a binary
+reached under two names is hashed once, and a campaign verification takes one
+observation instead of one per retained run. Each campaign verification still re-hashes
+every retained run's candidate files, so its reads grow with the number of runs.
 
 ## Version-2 witnesses and evidence seal
 

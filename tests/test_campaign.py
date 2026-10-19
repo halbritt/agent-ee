@@ -247,7 +247,7 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         from agent_ee.cli import main
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 0)
-        time.sleep(storage.RACY_NS / 1e9 + 0.2)
+        time.sleep(2.2)
         counts = {}
         original = storage._hash_stream
 
@@ -270,14 +270,11 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         once = hashes(lambda: verify_campaign(root))
         self.assertTrue(inputs and inputs <= once.keys())
         self.assertEqual(max(once.values()), 1, once)
-        # Every call re-hashes every file, inside one command run too: candidate files are user-writable.
-        with storage.digest_memo():
-            repeated = hashes(lambda: [verify_campaign(root) for _ in range(3)])
+        # Every call re-hashes every file, root-owned runtime files (the measurement tool) included.
+        repeated = hashes(lambda: [verify_campaign(root) for _ in range(3)])
         self.assertEqual({repeated[k] for k in inputs}, {3}, repeated)
-        # Only root-owned runtime files (the measurement tool) are hashed once per command.
-        self.assertEqual({k: v for k, v in repeated.items() if k not in rooted},
-                         {k: 3 * v for k, v in once.items() if k not in rooted})
-        self.assertTrue(rooted and all(repeated[k] == 1 for k in rooted), rooted)
+        self.assertEqual(repeated, {k: 3 * v for k, v in once.items()})
+        self.assertTrue(rooted and all(repeated[k] == 3 for k in rooted), rooted)
         with contextlib.redirect_stdout(io.StringIO()):
             command = hashes(lambda: self.assertEqual(main(['verify-campaign', str(root)]), 0))
         self.assertEqual(max(command.values()), 1, command)
@@ -285,23 +282,21 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         target = root / "runs/1/inputs/design/board"
         with target.open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as mapped:
             mapped[0] = mapped[0]
-            time.sleep(storage.RACY_NS / 1e9 + 0.2)
-            with storage.digest_memo():
-                verify_campaign(root)
-                before = os.stat(target)
-                mapped[0] = ord('B')
-                self.assertEqual(storage._status(os.stat(target)), storage._status(before))
-                with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
-                    verify_campaign(root)
-                mapped[0] = ord('b')
-        # The same holds for a rewrite whose timestamps are restored.
-        before = os.stat(target)
-        with storage.digest_memo():
+            time.sleep(2.2)
             verify_campaign(root)
-            target.write_text("BOARD")
-            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+            before = os.stat(target)
+            mapped[0] = ord('B')
+            self.assertEqual(storage._status(os.stat(target)), storage._status(before))
             with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
                 verify_campaign(root)
+            mapped[0] = ord('b')
+        # The same holds for a rewrite whose timestamps are restored.
+        before = os.stat(target)
+        verify_campaign(root)
+        target.write_text("BOARD")
+        os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
+            verify_campaign(root)
 
     def test_finding_retry_limit_below_two_refused_before_campaign_creation(self):
         self.scope['checks'][0]['stage'] = 'schematic'
