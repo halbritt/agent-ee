@@ -1580,7 +1580,8 @@
       "paths": [
         "fixtures/design-rules/generate.py",
         "fixtures/netlist-extra/generate.py",
-        "fixtures/package-consistency/generate.py"
+        "fixtures/package-consistency/generate.py",
+        "fixtures/topology-rules/generate.py"
       ],
       "kind": "owned-fixture",
       "origins": [

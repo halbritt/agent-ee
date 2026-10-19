@@ -120,6 +120,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 
 | `netlist_extra` | Coordinator checks the earlier native netlist and captured topology policy; no additional tool launched ([details](netlist-extra.md)) | Enclosing run deadline |
 | `part_decisions` | Coordinator compares source-bound choices and captured deviations against the earlier native netlist ([details](part-decisions.md)) | Enclosing run deadline |
+| `topology_rules` | Coordinator evaluates a captured requirement-tagged topology rule file against the earlier native netlist; no additional tool launched ([details](topology-rules.md)) | Enclosing run deadline |
 | `net_names` | Coordinator checks the earlier native netlist against a captured owner name policy and the candidate's name-level annotation; no additional tool launched ([details](net-names.md)) | Enclosing run deadline |
 | `regeneration_determinism` | Coordinator compares two captured boards, schematics, netlists or JSON probe outputs after removing IDs; no additional tool launched ([details](design-diff.md)) | Enclosing run deadline |
 | `design_rules` | Coordinator grades the enforced cards of a captured rule pack against the earlier native netlist, owner role bindings and verified datasheet facts; no additional tool launched ([details](design-rules.md)) | Enclosing run deadline |
@@ -455,6 +456,19 @@ the owner did not make. Suggested collisions get deterministic `<name>_<k>`
 proposals that keep a trailing `_P`/`_N`, reported with `severity=info`. A named
 net without a level, or an unresolved anchor, keeps the check
 `unsupported/unknown`. Nothing is renamed.
+
+`topology_rules` requires `rules` and an earlier `netlist_check`. The immutable
+[rule file](topology-rules.md) declares exact symbol classes and rules tagged
+with the baseline requirements that map the check: pin on net, pin unconnected,
+at least N parts of a class between two nets, a series part between a pin and a
+net, a forbidden class between two nets, a specific part between two nets,
+value equality across references, and expected components matched to
+references by bounded backtracking with bijective net roles. Only two-terminal
+passives may match with swapped terminals. A violated rule makes the check
+`ok/defect` and names the offending references or kind counts. An absent or
+ambiguous net or reference, an unreadable value, an unclassified part that
+could carry the structure, or an exhausted visit bound keeps the check
+`unsupported/unknown`. A rule file that does not validate is `malformed`.
 
 `regeneration_determinism` requires `format`, `reference` and `subject`, plus
 `decimals` for boards and schematics. The [canonical design diff](design-diff.md)

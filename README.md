@@ -246,6 +246,11 @@ exact search for repeated channels; the report records anchors and search steps.
 [Additional netlist checks](docs/netlist-extra.md) test declared direct-net shorts
 and anchored rail pairs, and warn about same-name net islands. Island warnings
 are advisory. Neither check establishes electrical adequacy.
+[Requirement topology rules](docs/topology-rules.md) check requirement-tagged
+structural rules over the native netlist, such as at least eight capacitors
+between two rails, no diode between two nets, or a series gate resistor. An
+expected-component set is matched to references by bounded backtracking.
+Absent names, unreadable values and an exhausted search are unknown.
 [Net-name provenance](docs/net-names.md) checks that owner-declared net names
 survive generation: each names exactly one native net at its declared terminals.
 Suggested-name collisions are reported as information with deterministic
