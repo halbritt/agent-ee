@@ -266,6 +266,11 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                     from .component_height import model_input_paths
                     for path in model_input_paths(files):
                         captured(path, immutable=True)
+                    if 'digikey_heights' in params:
+                        # Retained DigiKey responses are acceptance evidence, never repairable.
+                        from .digikey_record import evidence_inputs
+                        for path in evidence_inputs(params['digikey_heights'], inputs):
+                            captured(path, immutable=True)
             if params['criterion'] == 'stackup/1':
                 if inputs is None:
                     raise ValueError('stackup copper_weight_oz needs captured source-verified profile inputs')

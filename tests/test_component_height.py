@@ -1,6 +1,7 @@
 """Original component fixtures, verified PDF citations and sandboxed native STEP bounds."""
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import time
@@ -290,6 +291,72 @@ k.SaveBoard(sys.argv[1],b)
         scope['checks'][-1]['params'] = dict(criterion='outline/1', envelope='envelope.json')
         with self.assertRaisesRegex(ValueError, 'exact criterion'):
             fixture.capture(scope)
+
+    def digikey(self, height='0.069" (1.75mm)', *, mpn='OWNED-CAP', fields=None, item=None, pin=None):
+        """AGENTEE-254: bind C1 to a captured DigiKey record and save the native part-number fields."""
+        from tests.test_digikey_capture import product
+        from tests.test_digikey_evidence import parameters as dk_parameters, write_capture
+        found = product(mpn, parameters=dk_parameters(height=height)) if item is None else item
+        path = write_capture(self.source / 'dk', {mpn: found})
+        self.params['digikey_heights'] = {'capture': 'dk/digikey-capture.json',
+                                          'capture_sha256': pin or digest(path), 'parts': {'C1': mpn}}
+        fields = {'Partnumber': 'OWNED-CAP', 'Manufacturer': ''} if fields is None else fields
+        script = 'import pcbnew as k,sys,json\nb=k.LoadBoard(sys.argv[1])\nfp=list(b.GetFootprints())[0]\n' \
+                 'for n,v in json.loads(sys.argv[2]).items(): fp.SetField(n,v)\nk.SaveBoard(sys.argv[1],b)\n'
+        subprocess.run(['/usr/bin/python3', '-B', '-c', script, str(self.board), json.dumps(fields)], check=True,
+                       capture_output=True, timeout=60)
+
+    def test_digikey_seated_height_pass_defect_and_rounding_boundary(self):
+        for height, outcome, measured in (('0.069" (1.75mm)', 'pass', '1.755'), ('13.00mm', 'defect', '12.995'),
+                                          ('11.99mm', 'pass', '11.995'), ('0.472" (12.00mm)', 'unknown', None)):
+            with self.subTest(height=height):
+                self.digikey(height)
+                result = self.run_height()
+                self.assertEqual(result['outcome'], outcome, result['summary'])
+                item = result['details']['measured'][0]
+                self.assertEqual((item['source'], item.get('height_mm')), ('digikey_seated_height', measured))
+                self.assertEqual(item['digikey']['value'], height)
+                self.assertEqual(item['digikey']['provenance']['response']['sha256'],
+                                 digest(self.source / 'dk/responses/OWNED-CAP.json'))
+                self.assertNotIn('quantity_available', item['digikey'])
+        self.assertIn('straddles 12 mm', result['summary'])
+        self.assertIn('dk/responses/OWNED-CAP.json', self.descriptor['immutable_inputs'])
+        self.assertIn('dk/digikey-capture.json', self.descriptor['immutable_inputs'])
+
+    def test_digikey_height_unbound_absent_or_unparseable_stays_unknown(self):
+        from tests.test_digikey_capture import product
+        from tests.test_digikey_evidence import parameters as dk_parameters
+        cases = {'MPN': dict(mpn='OWNED-CAP-T'), 'part number': dict(fields={'Partnumber': ''}),
+                 'manufacturer': dict(fields={'Partnumber': 'OWNED-CAP', 'Manufacturer': 'Other Maker'}),
+                 'lists no': dict(height=None), 'unparsed': dict(height='1.75 mm max'),
+                 'disagreeing': dict(height='0.039" (1.75mm)'), 'not_found': dict(item='not_found'),
+                 'failed': dict(item='failed'), 'capture_sha256': dict(pin='0' * 64)}
+        for reason, kwargs in cases.items():
+            with self.subTest(reason=reason):
+                shutil.rmtree(self.source / 'dk', ignore_errors=True)
+                self.digikey(**kwargs)
+                result = self.run_height()
+                self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'),
+                                 result['summary'])
+                item = result['details']['measured'][0]
+                self.assertEqual(item['status'], 'unknown')
+                self.assertIn(reason, item['reason'])
+        # A matching saved manufacturer is admitted, case-insensitively.
+        self.digikey(fields={'Partnumber': 'OWNED-CAP', 'Manufacturer': 'EXAMPLE CONNECTOR CO.'},
+                     item=product('OWNED-CAP', parameters=dk_parameters()))
+        self.assertEqual(self.run_height()['outcome'], 'pass')
+        # Retained response bytes changed after capture: replay refuses, never passes.
+        (self.source / 'dk/responses/OWNED-CAP.json').write_bytes(b'{"Product": null}')
+        self.assertEqual(self.run_height()['outcome'], 'unknown')
+
+    def test_digikey_height_declaration(self):
+        self.digikey()
+        for params in ({**self.params, 'digikey_heights': {**self.params['digikey_heights'], 'parts': {}}},
+                       {**self.params, 'digikey_heights': {**self.params['digikey_heights'], 'capture': 'dk/x.json'}},
+                       {**self.params, 'facts_check': 'facts', 'height_facts': {'C1': 'height-C1'}}):
+            with self.subTest(params=params), self.assertRaises(ValueError):
+                parameters(params)
+        self.assertIn('dk/digikey-capture.json', parameters(self.params))
 
     def test_model_dependencies_do_not_change_with_candidate_footprints(self):
         self.model()

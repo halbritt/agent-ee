@@ -379,6 +379,30 @@ maximum applicability remain engineer-interpreted assertions. An unverified,
 wrong-part, wrong-footprint, nominal or axial-reference fact stays unknown.
 An explicitly selected unusable fact does not fall through to another source.
 
+`digikey_heights` (AGENTEE-254) takes a reference's height from a captured
+[DigiKey capture](digikey-capture.md#check-evidence) instead:
+
+```json
+{"digikey_heights": {"capture": "parts/digikey/digikey-capture.json",
+                     "capture_sha256": "<sha256 of the manifest>", "parts": {"U3": "TPS62840"}}}
+```
+
+The manifest and every retained response it names become immutable capability
+inputs; the check replays them offline and refuses a capture whose hash differs
+from `capture_sha256` or whose files were not captured. The record's
+`Height - Seated (Max)` text is read as `0.069" (1.75mm)` or `1.75mm`. Each
+printed figure counts as rounded to its last digit, and an inch figure narrows
+the mm interval or, if it disagrees, refuses it. The upper bound must be at most
+the maximum for a pass. A defect needs the lower bound above it. An interval
+straddling the maximum is unknown. The saved `Partnumber`/`PartNumber` must
+equal the DigiKey MPN exactly, and a saved `Manufacturer`, when present, must
+match case-insensitively. A missing part number, mismatched part, absent or
+unparsed parameter, or a not-found or failed request is unknown. A reference
+listed in both `height_facts` and `digikey_heights` is a refused declaration.
+DigiKey stock and price are not carried into the verdict. Seated height is
+DigiKey's listed maximum above the seating plane, as the source states it;
+the engineer still owns its applicability to the installed orientation.
+
 For references without a selected fact, the check reuses the fabrication model
 resolver. `model_libraries` has the same stock-variable-to-captured-receipt map
 as [fab consistency](fab-consistency.md). Stock members require their pinned

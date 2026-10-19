@@ -6,7 +6,9 @@ of the captured schematic hierarchy, the same source the JLC BOM in
 """
 
 from datetime import date, datetime, timezone
+from decimal import Decimal
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -83,7 +85,11 @@ ALLOWED_PARAM_KEYS = frozenset((
     "deviations",
     "hand_fit_policy",
     "rating_provenance",
+    "operating_temperature",
 ))
+
+# Native fields that may carry the exact manufacturer part number a DigiKey record must equal.
+MPN_PROPERTIES = ("Partnumber", "PartNumber", "MPN")
 
 CATALOG_SQLITE_COLUMNS = (
     "lcsc",
@@ -867,6 +873,10 @@ def validate_params(params):
     if rating_provenance is not None:
         rating_provenance = _validate_rating_provenance(rating_provenance)
 
+    operating_temperature = params.get("operating_temperature")
+    if operating_temperature is not None:
+        operating_temperature = _validate_operating_temperature(operating_temperature)
+
     return {
         "catalog": catalog,
         "catalog_sha256": catalog_sha256,
@@ -882,6 +892,7 @@ def validate_params(params):
         "deviations": deviations,
         "hand_fit_policy": hand_fit_policy,
         "rating_provenance": rating_provenance,
+        "operating_temperature": operating_temperature,
     }
 
 
@@ -897,6 +908,70 @@ def _validate_rating_provenance(raw):
     if not isinstance(raw["receipt_sha256"], str) or not SHA256_RE.fullmatch(raw["receipt_sha256"]):
         raise ValueError("rating_provenance.receipt_sha256 must be a 64-character lowercase hex digest")
     return dict(raw)
+
+
+def _validate_operating_temperature(raw):
+    """Declared ambient range in degC and the captured DigiKey records bound to references."""
+    from .digikey_record import EVIDENCE_KEYS, evidence_declaration
+    from .hardware_interface import exact_keys
+    exact_keys(raw, "min_c max_c capture capture_sha256 parts")
+    bounds = []
+    for key in ("min_c", "max_c"):
+        value = raw[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"operating_temperature.{key} must be a finite number of degC")
+        bounds.append(Decimal(str(value)))
+    if bounds[0] > bounds[1]:
+        raise ValueError("operating_temperature.min_c exceeds max_c")
+    evidence = evidence_declaration({key: raw[key] for key in EVIDENCE_KEYS}, "operating_temperature")
+    return {**evidence, "min_c": bounds[0], "max_c": bounds[1]}
+
+
+def _operating_temperature(inputs_root, spec, populated, captured_files):
+    """Declared ambient against each bound part's DigiKey 'Operating Temperature'; never stock evidence."""
+    from .digikey_record import ambient_verdict, part_evidence, replay_evidence
+    findings, components = [], []
+    report = {"min_c": str(spec["min_c"]), "max_c": str(spec["max_c"]), "capture": spec["capture"],
+              "capture_sha256": spec["capture_sha256"], "components": components, "error": None}
+    try:
+        doc, dependencies = replay_evidence(inputs_root, spec, captured_files)
+    except (OSError, ValueError, KeyError) as exc:
+        # An unreadable or unpinned capture is unknown temperature coverage, never a pass.
+        report["error"] = str(exc)
+        findings.append({"severity": "unknown", "code": "operating_temperature_unavailable",
+                         "references": sorted(spec["parts"], key=natural_key),
+                         "message": f"DigiKey operating-temperature capture is unavailable: {exc}"})
+        return report, findings
+    by_ref = {}
+    for comp in populated:
+        by_ref.setdefault(comp["reference"], []).append(comp)
+    for ref in sorted(spec["parts"], key=natural_key):
+        entry = {"reference": ref, "key": spec["parts"][ref], "status": "unknown", "reason": None}
+        components.append(entry)
+        try:
+            if len(by_ref.get(ref, [])) != 1:
+                raise ValueError(f"{ref} is not exactly one populated component")
+            props = by_ref[ref][0]["properties"]
+            evidence = part_evidence(doc, spec, dependencies, spec["parts"][ref], "operating_temperature")
+            entry["digikey"] = evidence
+            numbers = {_nonempty_prop_value(props.get(name, "")) for name in MPN_PROPERTIES} - {""}
+            if numbers != {evidence["mpn"]}:
+                raise ValueError(f"{ref} part number {sorted(numbers)} is not DigiKey MPN {evidence['mpn']!r}")
+            manufacturer = _nonempty_prop_value(props.get("Manufacturer", ""))
+            if manufacturer and manufacturer.casefold() != evidence["manufacturer"].casefold():
+                raise ValueError(f"{ref} manufacturer {manufacturer!r} is not DigiKey "
+                                 f"{evidence['manufacturer']!r}")
+            if evidence["value"] is None:
+                raise ValueError(f"DigiKey record {evidence['key']} lists no {evidence['parameter']!r}")
+            entry["status"], entry["reason"] = ambient_verdict(evidence["value"], spec["min_c"], spec["max_c"])
+        except ValueError as exc:
+            entry["reason"] = str(exc)
+        if entry["status"] != "pass":
+            defect = entry["status"] == "defect"
+            findings.append({"severity": entry["status"],
+                             "code": "operating_temperature_out_of_range" if defect else "operating_temperature_unknown",
+                             "reference": ref, "message": f"{ref}: {entry['reason']}"})
+    return report, findings
 
 
 def _validate_hand_fit_policy(raw, deviations):
@@ -950,6 +1025,12 @@ def capability(params, files, inputs=None):
             if cfg["rating_provenance"][key] not in files:
                 raise ValueError(f"rating_provenance.{key} must be a captured input")
             immutable_inputs.append(cfg["rating_provenance"][key])
+    if cfg["operating_temperature"] is not None:
+        from .digikey_record import evidence_inputs
+        for rel in evidence_inputs(cfg["operating_temperature"], inputs):
+            if rel not in files:
+                raise ValueError(f"operating_temperature DigiKey file {rel!r} must be a captured input")
+            immutable_inputs.append(rel)
     if inputs is not None:
         catalog_path = Path(inputs) / catalog_rel
         if catalog_path.is_file():
@@ -984,6 +1065,8 @@ def capability(params, files, inputs=None):
         predicates.append("assembly:extended-parts-limit")
     if cfg["rating_provenance"] is not None:
         predicates.append("assembly:rating-provenance")
+    if cfg["operating_temperature"] is not None:
+        predicates.append("assembly:operating-temperature")
 
     return {
         "immutable_inputs": sorted(set(immutable_inputs)),
@@ -1305,6 +1388,11 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             findings.append({"severity": "unknown", "code": "rating_provenance_unavailable",
                              "provenance": cfg["rating_provenance"],
                              "message": f"receipted rating provenance is unavailable: {exc}"})
+    temperature_report = None
+    if cfg["operating_temperature"] is not None:
+        temperature_report, temperature_findings = _operating_temperature(
+            Path(inputs_root), cfg["operating_temperature"], populated, captured_files)
+        findings.extend(temperature_findings)
     missing_properties_by_ref = {}
     missing_rating_refs = []
     missing_lcsc_refs = []
@@ -1737,6 +1825,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             "records": None if rating_records is None else len(rating_records),
             "error": rating_records_error,
         },
+        "operating_temperature": temperature_report,
         "ignored_non_assembly": [
             {"reference": c["reference"], "lib_id": c["lib_id"], "reason": c["ignore_reason"]}
             for c in ignored_non_assembly
