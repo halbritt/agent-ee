@@ -192,8 +192,35 @@ check's `details.extra_charges` and do not change a passing outcome.
 The ticket's numbers are exercised with owned synthetic limits: 0.09 mm and
 0.15 mm tracks against a 0.1 mm minimum and 0.2 mm preferred limit, and a 0.25 mm
 drill against a 0.2 mm minimum and 0.3 mm preferred limit, which reports both via
-IDs as extra charges. These numbers are test assumptions, not a bundled standard
-preset or a quote from any fabricator.
+IDs as extra charges. These numbers are test assumptions. The separately captured
+[JLCPCB preset](#dated-jlcpcb-standard-via-preset) uses a 0.45 mm diameter bound
+for the joint surcharge.
+
+## Discrete drill options (fab-profile/2)
+
+A minimum-tier `min_via_drill_mm` limit may also declare `drill_options`:
+
+```json
+{"drill_options": {"values_mm": [0.15, 0.2, 0.25], "continuous_from_mm": 0.3}}
+```
+
+These are the dated preset's sourced options. The limit's source citation must
+cover the options and the continuous range. Every value must be a positive,
+finite whole number of nanometres. The nonempty discrete list must contain
+unique values below `continuous_from_mm`, and no value may be below the limit's
+minimum. Other keys, preferred-tier limits and `/1` profiles refuse this field.
+Profiles without the field retain their continuous grading.
+
+The existing native inventory records every saved via UUID and integer
+`drill_nm`. Before surcharge classification, drills must exactly match a listed
+option or be at least `continuous_from_mm`. There is no rounding tolerance.
+An unlisted drill makes the minimum record `execution=unsupported` and
+`status=not_evaluated`, with the exact `unsupported_vias`. Missing inventory is
+also unsupported; an observed empty inventory has no unsupported vias.
+Both scalar and conjunctive drill surcharge records then remain unknown because
+their minimum is unevaluated. Raw native reports remain retained evidence, but
+cannot establish a drill defect or charge outside the declared options. The
+whole check is unknown even if another limit has a proved violation.
 
 ## Conjunctive surcharge rules (fab-profile/2)
 
@@ -239,6 +266,60 @@ and carries that term's execution and reason. Classification needs an evaluated
 minimum for every term key. A joint via that is illegal under any term's minimum
 is listed in `minimum_violation_ids` and stays a defect of that minimum. The
 remaining joint vias are the rule's `offender_ids` in its `extra_charge` record.
+
+## Dated JLCPCB standard via preset
+
+[profile.json](../fixtures/fab-profiles/jlcpcb-standard-2026-10-19/profile.json)
+is an explicitly selected `jlcpcb_standard_2026-10-19` profile. It records a
+**via-only subset** for ordinary FR-4 two-layer and multilayer fabrication,
+excluding the special process for boards at most 1 mm thick. It is independent
+of the telemetry-pod profile and changes no captured pod criteria or hashes.
+
+| Limit | Value | Role |
+| --- | --- | --- |
+| Via drill / diameter | 0.15 / 0.25 mm | Manufacturing minima |
+| Preferred drill | 0.2 mm | Separate charge for the published 0.15 mm drill option at any diameter |
+| Joint small-via bounds | Drill <0.3 mm AND diameter <0.45 mm | Charge for the published 0.2 and 0.25 mm drill options with small diameters |
+
+The [capabilities page](https://jlcpcb.com/capabilities/pcb-capabilities) names
+0.2 and 0.25 mm drills with diameter below 0.45 mm as surcharged, and separately
+names 0.15 mm drills at any diameter. The
+[extra-charge article](https://jlcpcb.com/help/article/in-what-cases-will-there-be-charged-extra)
+(section 4, Small Size Holes) identifies 0.3 mm as the standard-hole boundary.
+The joint rule expresses those published small-drill options below that bound;
+**intermediate drill sizes are not qualified by the discrete capabilities text**.
+The 0.2 mm preferred floor similarly models the published 0.15 mm option.
+The declared `drill_options` gate enforces those options and the continuous
+range from 0.3 mm. Drills of 0.18, 0.22 and 0.28 mm are unsupported, regardless
+of via diameter. Supplier process applicability and pricing remain unqualified.
+
+For example, a legal 0.25/0.4 mm drill/diameter via yields a `small-via`
+`extra_charge` record listing its saved UUID. At 0.25/0.45 mm, the via is outside
+the joint band. A 0.15/0.6 mm via retains its separate `small-drill` charge.
+A 0.1 mm drill is also outside the ordinary-process options and remains unknown,
+with its native minimum violation retained as diagnostic evidence. A supported
+drill with an undersized diameter still establishes a diameter defect.
+An empty charge list covers the declared rules only; it does not establish an
+order price, annular-ring compliance or complete supplier DFM approval.
+
+[source-capture.json](../fixtures/fab-profiles/jlcpcb-standard-2026-10-19/source-capture.json)
+records the two host-captured URLs, UTC timestamps, raw response SHA-256 values,
+byte counts, table/section locators and the interpretation above. As in the
+[telemetry-pod capture](telemetry-pod-fab-profile.md#sources-and-replay), the
+committed [numeric record](../fixtures/fab-profiles/jlcpcb-standard-2026-10-19/jlcpcb-vias.txt)
+contains original numbers/names only. Each profile citation binds exact text
+and its SHA-256; citation occurrence proves neither vendor authenticity nor
+semantic interpretation. Raw vendor HTML remains in worker scratch, outside
+Git and any owner evidence store. Refreshes require a new host capture and
+reviewed date/values; checks and tests never fetch sources.
+
+`tests.test_standard_fab_profile` compiles the committed preset, refuses missing,
+changed, misquoted and unsourced facts, and uses real sandboxed KiCad DRC for
+the examples and both joint boundaries. It checks saved via IDs and reloads
+pad layers in a fresh process. The existing seal helper rejects changed results
+and profile bytes. It also covers unlisted drills, exact nanometre boundaries,
+invalid option declarations and missing inventory. The compiler accepts the
+optional `/2` drill field; check kinds and predicate names are unchanged.
 
 ## Evidence and failure
 
@@ -286,12 +367,11 @@ cases with scripted reviewer transport.
 
 The [telemetry-pod fixture](telemetry-pod-fab-profile.md) records dated JLCPCB
 manufacturing minima from a host capture as original numeric/name records.
-It supplies no surcharge rule. The standard-preset surcharge criterion remains
-unmet for a real fabricator: the synthetic 0.25 mm example proves classification
-only. JLCPCB's small-via surcharge depends on drill and diameter together;
-`/2` can express a joint condition, but this fixture does not qualify that
-conditional policy. Raw vendor pages remain outside the repository. The scalar
-preferred-drill example must not be labelled a qualified JLCPCB surcharge preset.
+It supplies no surcharge rule. The separate
+[dated standard via preset](#dated-jlcpcb-standard-via-preset) exercises the
+published 0.25 mm drill surcharge with the conjunctive `/2` policy and its
+own captured sources. Raw vendor pages remain outside the repository. The
+synthetic scalar preferred-drill example remains a test assumption.
 Arbitrary-angle minimum bounding dimensions, curved outlines and
 cutouts remain unsupported. Owner review and peer review remain separate from
 these checks.

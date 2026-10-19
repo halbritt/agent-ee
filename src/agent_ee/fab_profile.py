@@ -6,6 +6,7 @@ engineering applicability. No built-in fabricator values or pricing are supplied
 import copy
 import datetime
 from collections import defaultdict
+from fractions import Fraction
 
 from .routing_rules import (ID, captured_file, load_document, native_rule_inputs, number,
                             rule_text, run_compiled, sha_text, validate_mappings)
@@ -92,7 +93,8 @@ def validate_limit(limit, schema='agent-ee.fab-profile/1'):
         raise ValueError('limit needs safe id and mapped requirement')
     if schema == 'agent-ee.fab-profile/2' and 'all' in limit:
         return validate_conjunctive(limit)
-    if set(limit) - {'id', 'requirement', 'key', 'value', 'unit', 'tier', 'source'}:
+    if set(limit) - {'id', 'requirement', 'key', 'value', 'unit', 'tier', 'source'} - (
+            {'drill_options'} if schema == SCHEMAS[1] else set()):
         raise ValueError('unknown fabricator limit fields')
     key = limit.get('key')
     if not isinstance(key, str) or key not in NATIVE.keys() | GEOMETRY:
@@ -114,6 +116,22 @@ def validate_limit(limit, schema='agent-ee.fab-profile/1'):
                 raise ValueError('board bounds must be positive')
     elif number(value, key, integer=key == 'max_layers') <= 0:
         raise ValueError('fabricator bound must be positive')
+    if 'drill_options' in limit:
+        if key != 'min_via_drill_mm' or limit['tier'] != 'minimum':
+            raise ValueError('drill_options requires minimum min_via_drill_mm')
+        options = limit['drill_options']
+        if (not isinstance(options, dict) or set(options) != {'values_mm', 'continuous_from_mm'} or
+                not isinstance(options['values_mm'], list) or not options['values_mm']):
+            raise ValueError('drill_options needs nonempty values_mm and continuous_from_mm')
+        sizes = [*options['values_mm'], options['continuous_from_mm']]
+        for size in sizes:
+            if (number(size, 'drill option') <= 0 or
+                    (Fraction(str(size)) * 1_000_000).denominator != 1):
+                raise ValueError('drill options must be positive whole nanometres')
+        if len(set(sizes)) != len(sizes) or any(v >= sizes[-1] for v in sizes[:-1]):
+            raise ValueError('drill options must be unique and below continuous_from_mm')
+        if any(v < value for v in sizes):
+            raise ValueError('drill options must not be below the minimum drill')
 
 
 def native_rule(record, key, value):
@@ -342,7 +360,10 @@ def native_inventory(board_path):
                                         if k.IsCopperLayer(l)],
                  'outline_xy_mm': outline, 'outline_ids': sorted(e.m_Uuid.AsString() for e in edges),
                  'smt_ids': sorted(p.m_Uuid.AsString() for fp in board.GetFootprints() for p in fp.Pads()
-                                   if p.GetAttribute() == k.PAD_ATTRIB_SMD)}
+                                   if p.GetAttribute() == k.PAD_ATTRIB_SMD),
+                 'vias': sorted(({'uuid': t.m_Uuid.AsString(), 'drill_nm': int(t.GetDrillValue())}
+                                 for t in board.GetTracks() if t.GetClass() == 'PCB_VIA'),
+                                key=lambda v: v['uuid'])}
     if problem:
         inventory['outline_problem'] = {'reason': problem[0], 'locator_ids': problem[1]}
     return inventory
@@ -397,6 +418,19 @@ def classify_preferred(records, inventory):
     The native inventory is required: an edge clearance is satisfied only against
     one qualified outline, because absent or malformed Edge.Cuts prove nothing.
     """
+    for record in records:
+        options = record['expected'].get('drill_options')
+        if options is None or record['execution'] != 'ok':
+            continue
+        vias = inventory.get('vias')
+        allowed = {Fraction(str(v)) * 1_000_000 for v in options['values_mm']}
+        continuous = Fraction(str(options['continuous_from_mm'])) * 1_000_000
+        unknown = None if vias is None else [v for v in vias
+                                            if v['drill_nm'] not in allowed and v['drill_nm'] < continuous]
+        if unknown is None or unknown:
+            record.update(status='not_evaluated', execution='unsupported',
+                          reason='via drill outside sourced options' if unknown else 'via drill inventory missing',
+                          unsupported_vias=unknown)
     if inventory['outline_xy_mm'] is None:
         for record in records:
             if record['expected'].get('key') == 'min_edge_clearance_mm' and record['status'] == 'satisfied':
