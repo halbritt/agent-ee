@@ -1,0 +1,990 @@
+{
+ "schema": "agent-ee.pod-composition-recipe/1",
+ "ticket": "AGENTEE-197",
+ "status": "incomplete",
+ "done": false,
+ "authority": "Composition record only: no campaign, scaffold, placement, routing, check or inference ran. Not acceptance evidence; every pod limitation and bench obligation remains open.",
+ "sources": {
+  "root": "/tmp/agent463-pod-preparation-20261018",
+  "inputs": {
+   "path": "placement-inputs-v2/inputs",
+   "files": 506,
+   "freeze_sha256": "7e814db6917da5a60ac3bc091fe9b218d869d5743514d60f258d172f45e22f79",
+   "freeze_matches_all_inputs": true,
+   "key_files": {
+    "envelope.json": "32ccd1efc0d48c33162d5bb02b6794310b886e41f4cf8cfde972171f998c3d3a",
+    "parts-electrical.json": "83d57d13b5c3c92145fc9aa534824ef0e39ca3bb63a9f0e2d24d910a701abf05",
+    "part-refs.json": "7f62582027c97ff0d257f6c5d1756c54b0c7d9dc4c841c8d79a04ef589e94ad1",
+    "part-deviations.json": "e732d323bb36bf15a49c012c537e4092b89497f679530b409f4c26d74a6e0077",
+    "intent.unbound.json": "13a1963990a1dcc5512bbaac0b813ff722840bbc3a9e33ead59e0831fb5a1f8e",
+    "intent.json": "c2127a278bf792a0362b7e7b55f21d27fff578cb8a18f02a0e565685aa3f5bdb",
+    "binding-fill.json": "7b873694f39744192e0445e3aaf3df907dacf9337a0417623a93715cf2998e8b",
+    "emitter-layout.json": "88dfa7f94c792f241745335c932399f2590ccae9dffe85e8b8a7237aed367c41",
+    "cad/manifest.json": "7dc0dbe640f2a077d897e182875a71062cf363383e8ed8114d403f8f407ac40d",
+    "spec.md": "09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493",
+    "spec-record.json": "58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250",
+    "placement/policy.json": "59a0d92de3b9f7a41a1297eec9a1350e3f256d786a0c7c20d823748b995713f5",
+    "placement/execution-budget.json": "89d37b54aad7ec6180b0a6d72d26f38bb79b067bbaa24a2061fc2185fe452fed",
+    "freeze.json": "7e814db6917da5a60ac3bc091fe9b218d869d5743514d60f258d172f45e22f79",
+    "antenna-facts.json": "54124f9068270a57c0c4a8985e1cdf22f8547c6bcf0138cd47462b5b1bbd51b0",
+    "captured-rule-areas.json": "bd1fdb9f2d0011a90cff332e93a918a1062d7f79d4031f1874534396a51b745c",
+    "rf-net-constraints.json": "2822674985f68021f5af6e8835fbf1d7a730e82ea107b84065617ae321e6fda8"
+   }
+  },
+  "planning": {
+   "path": "placement-inputs-v2/planning",
+   "files": {
+    "compiled/scope.json": "6007a40fd81a3a9a861c8582266fbf953de0a755cb9159ce62d9cc563d6e0e9a",
+    "compiled/receipt.json": "12bc714c7b08923f218cbe4a9d17c8993a8af41566ea77a6449d5c2e4550ad94",
+    "preparation.json": "317dc9fffce5fc788dc08c9c49aad825a7ee7cfa79fb5ace25212ee54b0ac0d1",
+    "preparation-map.json": "5cb57e97803ebfff182404934879b8c4cb94862f642279ee3c8b676be28316d7",
+    "declared-project/telemetry-pod.kicad_pro": "ecadbf5d7605e155a411c76f0713221237e0a0a226a87cb5968c94151629ed25"
+   }
+  },
+  "native_v5": {
+   "path": "native-v5",
+   "files": 3813,
+   "result_sha256": "9cc8fae50aa2882d28c532a760cb42d9c1902332338aba2efcaecaa6f4d5a6c8",
+   "scope_sha256": "2bd2165a5fae524e109d9fb7297445567b5083df7dac87a1cb3dff6bef1693ca",
+   "scaffold_receipt_sha256": "7ac07e835804e8cca8c0cf373064a6d078cf694f2f5e54face266851c4733f60",
+   "receipts": {
+    "01-envelope-content": "c63b9c6112cd2ebff42470fd8ec07758eeed2954e78c14114060ad83245f124e",
+    "02-emit-schematic": "7cd3e865cf068fbd1d2fc14c01e2714fc292add331955b3e5b69b9d96645e906",
+    "03-forward-annotate": "80da5ce60c997ca44817bcd3134efac34357f15f543748ff2a05d85c7dea2560"
+   }
+  },
+  "tools_b093615": {
+   "path": "tools-b093615",
+   "files": 6180,
+   "commit": "b093615eff90fd97f76d2e52a9892e24f7bd14ee",
+   "tree": "b851d9bc3d9e8399806cffb5ab6e127810942b2f",
+   "record": "tool-source-b093615.json",
+   "record_sha256": "c4a303278bea37077a2283fe58464473697311a494fb508b76a4270625d86029",
+   "matches_record": true
+  }
+ },
+ "declared_dependencies": {
+  "router": {
+   "adapter": "agent-ee.routing-adapter/1",
+   "pin_checkout": "build/kicad-route-pin-a132899",
+   "preflight_problems": [],
+   "executed": false
+  },
+  "placer": {
+   "adapter": "agent-ee.placement-adapter/1",
+   "helper": "agent-ee.placer/1",
+   "note": "Released placer as a declared dependency only; the ee212s successor is evaluated separately.",
+   "executed": false
+  }
+ },
+ "plan_fragment": {
+  "schema": "agent-ee.pod-plan/1",
+  "envelope": "envelope.json",
+  "parts": "parts-electrical.json",
+  "spec": "spec.md",
+  "spec_record": "spec-record.json",
+  "writer_inputs": {
+   "deviations": "part-deviations.json",
+   "intent": "intent.unbound.json"
+  },
+  "placement_adapter": {
+   "fixed_footprints": [],
+   "helper": "agent-ee.placer/1",
+   "policy": "placement/policy.json",
+   "schema": "agent-ee.placement-adapter/1",
+   "timeout_s": 900
+  },
+  "routing_adapter": {
+   "board": "telemetry-pod.kicad_pcb",
+   "budget": 300,
+   "label": "campaign",
+   "name": "telemetry-pod",
+   "project": "project",
+   "schema": "agent-ee.routing-adapter/1",
+   "schematic": "telemetry-pod.kicad_sch",
+   "timeout": 900
+  },
+  "routing_budget_s": 300,
+  "review_budget_s": 3600,
+  "review_profile": "profiles/claude.json (validates; owner selection pending)",
+  "producer_calls": {
+   "binding_fill.configuration": {
+    "intent": "intent.unbound.json",
+    "output": "intent.json",
+    "manifest": "parts-electrical.json",
+    "part_refs": "part-refs.json",
+    "deviations": "part-deviations.json",
+    "captures": ".",
+    "dependencies": "binding-fill.json dependency keys minus manifest/refs/deviations"
+   },
+   "schematic_stage.configuration": {
+    "board": "project/telemetry-pod.kicad_pcb",
+    "schematic": "project/telemetry-pod.kicad_sch",
+    "intent": "intent.json",
+    "layout": "emitter-layout.json",
+    "captures": ".",
+    "footprints": "cad/manifest.json"
+   },
+   "add_planes.step": "missing: no captured agent-ee.plane-plan/1"
+  },
+  "implementation_steps": [
+   {
+    "stage": "schematic",
+    "step": "binding-fill",
+    "writes": {
+     "intent.json": "out/intent.json"
+    },
+    "inputs_count": 282
+   },
+   {
+    "stage": "schematic",
+    "step": "emit-schematic",
+    "writes": {
+     "project/telemetry-pod.kicad_sch": "out/project/telemetry-pod.kicad_sch"
+    },
+    "inputs_count": 3
+   },
+   {
+    "stage": "schematic",
+    "step": "forward-annotate",
+    "writes": {
+     "project/telemetry-pod.kicad_pcb": "out/board.kicad_pcb"
+    },
+    "inputs_count": 3
+   }
+  ]
+ },
+ "validation": {
+  "baseline.compile_baseline": {
+   "status": "accepted"
+  },
+  "cli.validate_scope (compiled planning scope)": {
+   "status": "accepted"
+  },
+  "cli.validate_scope (native-v5 scaffold scope)": {
+   "status": "accepted"
+  },
+  "evidence_index.criteria_map (pre-capture)": {
+   "status": "accepted"
+  },
+  "pod_driver.validate_configuration (native-v5 scope)": {
+   "status": "refused",
+   "error": "ValueError: pod stages must be schematic, placement, routing, verification"
+  },
+  "pod_driver.validate_plan": {
+   "status": "accepted"
+  },
+  "profiles.validate_profile (profiles/claude.json, owner selection pending)": {
+   "status": "accepted"
+  },
+  "spec_record.verify": {
+   "status": "accepted"
+  },
+  "stages.declaration": {
+   "status": "accepted"
+  },
+  "producer add_planes.step": {
+   "status": "missing-input",
+   "error": "no captured agent-ee.plane-plan/1 input; add_planes.step needs one"
+  },
+  "producer binding_fill.configuration": {
+   "status": "accepted"
+  },
+  "producer placement_adapter.validate_declaration": {
+   "status": "accepted"
+  },
+  "producer placement_policy_schema": {
+   "status": "accepted"
+  },
+  "producer routing_adapter.preflight": {
+   "status": "accepted"
+  },
+  "producer routing_adapter.validate_declaration": {
+   "status": "accepted"
+  },
+  "producer schematic_stage.configuration": {
+   "status": "accepted"
+  }
+ },
+ "refusal": "ValueError: pod stages must be schematic, placement, routing, verification",
+ "gates": {
+  "stage_order": {
+   "met": false,
+   "observed": [
+    "schematic",
+    "verification"
+   ],
+   "required": [
+    "schematic",
+    "placement",
+    "routing",
+    "verification"
+   ]
+  },
+  "fab_package_done_gate": {
+   "met": false,
+   "observed_generation": null
+  },
+  "finding_retry_limit": 2,
+  "bench_obligations_retained": {
+   "POD-AC-8": true,
+   "POD-AC-9": true
+  },
+  "spec_in_baseline_files": false,
+  "placement_subject_declared": false,
+  "routing_subject_declared": false,
+  "generic_steps_required": [
+   "binding-fill@schematic",
+   "emit-schematic@schematic",
+   "forward-annotate@schematic",
+   "add-planes@routing"
+  ],
+  "generic_steps_composed": [
+   "binding-fill@schematic",
+   "emit-schematic@schematic",
+   "forward-annotate@schematic"
+  ]
+ },
+ "dry_run": {
+  "reason": "configuration incomplete; pod_driver.build would refuse before scaffold, so no checks-only dry run is possible without substitute inputs",
+  "status": "not-run"
+ },
+ "criteria": {
+  "evidence_index_map": {
+   "1": [],
+   "2": [],
+   "3": [
+    "POD-AC-3"
+   ],
+   "4": [],
+   "5": [],
+   "6": [],
+   "7": [],
+   "8": [],
+   "9": []
+  },
+  "baseline_requirements": [
+   "POD-AC-3"
+  ],
+  "accounting_map": {
+   "1": [
+    "POD-AC-1",
+    "POD-IF-ANALOG-INPUTS",
+    "POD-IF-BLUETOOTH-LE",
+    "POD-IF-CAN1",
+    "POD-IF-GNSS-ANTENNA",
+    "POD-IF-HARNESS-CONNECTOR",
+    "POD-IF-P1",
+    "POD-IF-POWER-IN",
+    "POD-IF-PROGRAMMING-AND-DEBUG",
+    "POD-IF-SENSOR-SUPPLY"
+   ],
+   "2": [
+    "POD-AC-2",
+    "POD-CD-ANALOG-FRONT-END",
+    "POD-CD-BOARD",
+    "POD-CD-CAN-TRANSCEIVER",
+    "POD-CD-GNSS",
+    "POD-CD-HARNESS-CONNECTOR",
+    "POD-CD-IMU",
+    "POD-CD-MCU-AND-RADIO",
+    "POD-CD-P1",
+    "POD-CD-POWER"
+   ],
+   "3": [
+    "POD-AC-3"
+   ],
+   "4": [
+    "POD-AC-4"
+   ],
+   "5": [
+    "POD-AC-5"
+   ],
+   "6": [
+    "POD-AC-6",
+    "POD-CD-BOARD"
+   ],
+   "7": [
+    "POD-AC-7",
+    "POD-ME-1",
+    "POD-ME-2",
+    "POD-ME-3",
+    "POD-ME-4",
+    "POD-ME-5",
+    "POD-ME-6",
+    "POD-ME-P1"
+   ],
+   "8": [
+    "POD-AC-8",
+    "POD-FN-FRONT-AND-REAR-BRAKE-PRESSURE",
+    "POD-FN-FRONT-FORK-TRAVEL",
+    "POD-FN-LATERAL-LONGITUDINAL-VERTICAL-ACCELERATION",
+    "POD-FN-LEAN-AND-PITCH-ANGLE",
+    "POD-FN-P1",
+    "POD-FN-P2",
+    "POD-FN-REAR-SHOCK-TRAVEL",
+    "POD-FN-YAW-ROLL-PITCH-RATE",
+    "POD-IF-CAN1"
+   ],
+   "9": [
+    "POD-AC-9",
+    "POD-FN-LEAN-AND-PITCH-ANGLE",
+    "POD-FN-P1",
+    "POD-FN-POSITION-SPEED-HEADING-ALTITUDE",
+    "POD-IF-BLUETOOTH-LE",
+    "POD-IF-GNSS-ANTENNA"
+   ]
+  },
+  "note": "evidence_index maps baseline requirements only; criteria without one are not met."
+ },
+ "requirements": [
+  {
+   "id": "POD-FN-LATERAL-LONGITUDINAL-VERTICAL-ACCELERATION",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "8"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-FN-YAW-ROLL-PITCH-RATE",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "8"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-FN-LEAN-AND-PITCH-ANGLE",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "8",
+    "9"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-FN-FRONT-FORK-TRAVEL",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "8"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-FN-REAR-SHOCK-TRAVEL",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "8"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-FN-FRONT-AND-REAR-BRAKE-PRESSURE",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "8"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-FN-POSITION-SPEED-HEADING-ALTITUDE",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "9"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-IF-CAN1",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "1",
+    "8"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-IF-BLUETOOTH-LE",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "1",
+    "9"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-IF-POWER-IN",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "1"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-IF-SENSOR-SUPPLY",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "1"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-IF-ANALOG-INPUTS",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "1"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-IF-GNSS-ANTENNA",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "1",
+    "9"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-IF-PROGRAMMING-AND-DEBUG",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "1"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-IF-HARNESS-CONNECTOR",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "1"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-CD-MCU-AND-RADIO",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-CD-CAN-TRANSCEIVER",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-CD-IMU",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-CD-GNSS",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-CD-ANALOG-FRONT-END",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-CD-POWER",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-CD-HARNESS-CONNECTOR",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-CD-BOARD",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "2",
+    "6"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-ME-1",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "7"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-ME-2",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "7"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-ME-3",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "7"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-ME-4",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "7"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-ME-5",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "7"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-ME-6",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "7"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-AC-1",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "1"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-AC-2",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-AC-3",
+   "section": "requirement",
+   "disposition": "check",
+   "criteria": [
+    "3"
+   ],
+   "baseline_requirement": true,
+   "scope_limitation_retained": null
+  },
+  {
+   "id": "POD-AC-4",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "4"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-AC-5",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "5"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-AC-6",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "6"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-AC-7",
+   "section": "requirement",
+   "disposition": "limitation",
+   "criteria": [
+    "7"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-AC-8",
+   "section": "requirement",
+   "disposition": "bench",
+   "criteria": [
+    "8"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-AC-9",
+   "section": "requirement",
+   "disposition": "bench",
+   "criteria": [
+    "9"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-DOC-P1",
+   "section": "prose",
+   "disposition": "context",
+   "criteria": null,
+   "baseline_requirement": false,
+   "scope_limitation_retained": null
+  },
+  {
+   "id": "POD-PU-P1",
+   "section": "prose",
+   "disposition": "context",
+   "criteria": null,
+   "baseline_requirement": false,
+   "scope_limitation_retained": null
+  },
+  {
+   "id": "POD-PU-P2",
+   "section": "prose",
+   "disposition": "context",
+   "criteria": null,
+   "baseline_requirement": false,
+   "scope_limitation_retained": null
+  },
+  {
+   "id": "POD-FN-P1",
+   "section": "prose",
+   "disposition": "limitation",
+   "criteria": [
+    "8",
+    "9"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-FN-P2",
+   "section": "prose",
+   "disposition": "limitation",
+   "criteria": [
+    "8"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-IF-P1",
+   "section": "prose",
+   "disposition": "context",
+   "criteria": [
+    "1"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": null
+  },
+  {
+   "id": "POD-CD-P1",
+   "section": "prose",
+   "disposition": "context",
+   "criteria": [
+    "2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": null
+  },
+  {
+   "id": "POD-ME-P1",
+   "section": "prose",
+   "disposition": "limitation",
+   "criteria": [
+    "7"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": true
+  },
+  {
+   "id": "POD-AC-P1",
+   "section": "prose",
+   "disposition": "context",
+   "criteria": [
+    "P1"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": null
+  },
+  {
+   "id": "POD-AC-P2",
+   "section": "prose",
+   "disposition": "context",
+   "criteria": [
+    "P2"
+   ],
+   "baseline_requirement": false,
+   "scope_limitation_retained": null
+  }
+ ],
+ "open_obligations": {
+  "antenna (AGENTEE-211)": [
+   "POD-AC-7",
+   "POD-CD-BOARD",
+   "POD-CD-GNSS",
+   "POD-CD-MCU-AND-RADIO",
+   "POD-IF-GNSS-ANTENNA",
+   "POD-ME-2",
+   "POD-ME-6"
+  ],
+  "component suitability": [
+   "POD-CD-ANALOG-FRONT-END",
+   "POD-CD-BOARD",
+   "POD-CD-CAN-TRANSCEIVER",
+   "POD-CD-GNSS",
+   "POD-CD-HARNESS-CONNECTOR",
+   "POD-CD-IMU",
+   "POD-CD-MCU-AND-RADIO",
+   "POD-CD-POWER"
+  ],
+  "connector": [
+   "POD-AC-1",
+   "POD-AC-5",
+   "POD-CD-GNSS",
+   "POD-CD-HARNESS-CONNECTOR",
+   "POD-IF-GNSS-ANTENNA",
+   "POD-IF-HARNESS-CONNECTOR",
+   "POD-IF-PROGRAMMING-AND-DEBUG",
+   "POD-IF-SENSOR-SUPPLY",
+   "POD-ME-2",
+   "POD-ME-4",
+   "POD-ME-6"
+  ],
+  "temperature (AGENTEE-209)": [
+   "POD-ME-3"
+  ]
+ },
+ "open_obligations_all_retained": true,
+ "check_gaps": [
+  {
+   "criterion": "1",
+   "declared_in_scope": false,
+   "kind": "hardware_interface",
+   "registered": true
+  },
+  {
+   "criterion": "2",
+   "declared_in_scope": false,
+   "kind": "part_binding",
+   "registered": true
+  },
+  {
+   "criterion": "2",
+   "declared_in_scope": false,
+   "kind": "part_decisions",
+   "registered": true
+  },
+  {
+   "criterion": "3",
+   "declared_in_scope": true,
+   "kind": "erc",
+   "registered": true
+  },
+  {
+   "criterion": "3",
+   "declared_in_scope": true,
+   "kind": "drc",
+   "registered": true
+  },
+  {
+   "criterion": "4",
+   "declared_in_scope": false,
+   "kind": "kicad_happy_severity_gate",
+   "registered": true
+  },
+  {
+   "criterion": "5",
+   "declared_in_scope": false,
+   "kind": "assembly_readiness",
+   "registered": true
+  },
+  {
+   "criterion": "6",
+   "declared_in_scope": false,
+   "kind": "fab_package",
+   "registered": true
+  },
+  {
+   "criterion": "6",
+   "declared_in_scope": false,
+   "kind": "jlc_dfm",
+   "registered": true
+  },
+  {
+   "criterion": "7",
+   "declared_in_scope": false,
+   "kind": "board_envelope",
+   "registered": true
+  },
+  {
+   "criterion": "7",
+   "declared_in_scope": false,
+   "kind": "placement",
+   "registered": true
+  },
+  {
+   "criterion": "7",
+   "declared_in_scope": false,
+   "kind": "dfa_dft",
+   "registered": true
+  }
+ ],
+ "next_steps": [
+  {
+   "missing": "placement and routing stages",
+   "gate": "stage_order",
+   "action": "Recompile the planning scope with stages.order [schematic, placement, routing, verification], a placement footprints subject (all 112 physical references including H1-H4) and a routing tracks subject; keep finding_retry_limit >= 2.",
+   "owner": "pod lane (planning recompile)"
+  },
+  {
+   "missing": "generation marker and fab_package done check",
+   "gate": "fab_package_done_gate",
+   "action": "Declare generation {schema: agent-ee.generation/1, done_check: <fab_package id>} with the fab_package check in verification; fab stays out of stages.order.",
+   "owner": "pod lane"
+  },
+  {
+   "missing": "spec and spec record as baseline sources",
+   "gate": "spec_in_baseline_files",
+   "action": "Add spec.md and spec-record.json to baseline.targets.",
+   "owner": "pod lane"
+  },
+  {
+   "missing": "captured agent-ee.plane-plan/1",
+   "gate": "add-planes step",
+   "action": "Author and capture a plane plan (GND reference under the RF path per rf-net-constraints.json) and declare add_planes.step(board=project/telemetry-pod.kicad_pcb, plan=<path>).",
+   "owner": "pod lane"
+  },
+  {
+   "missing": "envelope-content pre-receipt in the pod driver",
+   "gate": "product gap",
+   "action": "native-v5 needed scaffold.content_step (fixed J1/J2/U1/U2, holes, antenna facts, captured rule areas) after the scaffold; pod_driver records only the write-scaffold pre_receipt. A follow-up must decide how that content step joins the driver pre_receipt chain.",
+   "owner": "coordinator (follow-up item)"
+  },
+  {
+   "missing": "captured criterion map",
+   "gate": "evidence_index",
+   "action": "Capture this evidence_index_map as requirements/pod-criteria.json and list it in baseline.targets; criteria 1, 2 and 4-9 stay empty (not met) until checks join the baseline.",
+   "owner": "pod lane"
+  },
+  {
+   "missing": "executable checks for criteria 1, 2, 4, 5, 6, 7",
+   "gate": "check_gaps",
+   "action": "Each named kind is registered; its captured inputs (pinout contract, parts manifest/deviations, analyzer pin and dispositions, day-of-generation stock, owner-saved DFM, complete mechanical declarations) are absent, so the requirements remain limitations.",
+   "owner": "pod lane / owner"
+  },
+  {
+   "missing": "review profile and implementation definition",
+   "gate": "owner selection",
+   "action": "Owner selects the subscription profile; profiles/claude.json validates but is not selected.",
+   "owner": "owner"
+  },
+  {
+   "missing": "physical and owner obligations",
+   "gate": "never file-checkable",
+   "action": "Criteria 8 and 9 bench runs, component suitability, temperature (AGENTEE-209), connector and antenna (AGENTEE-211) evidence remain open limitations.",
+   "owner": "owner"
+  }
+ ]
+}

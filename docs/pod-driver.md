@@ -28,6 +28,9 @@ checks, without models or implementation steps, against the empty scaffold.
 and propagates its exit code. There is no provider fallback. Preparing a config
 or a successful dry-run invocation does not mean that the pod is accepted.
 
+The current state of the actual pod inputs against this driver is recorded in
+[the pod composition record](pod-composition.md).
+
 ## Explicit plan
 
 A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.

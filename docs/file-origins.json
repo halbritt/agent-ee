@@ -2906,6 +2906,16 @@
     },
     {
       "paths": [
+        "fixtures/telemetry-pod/composition-recipe.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-197 composition record: host-local source paths, SHA-256 identities, requirement IDs, validator outcomes and declarations only. It contains no design, library, datasheet or vendor bytes; it is not acceptance evidence or an owner waiver."
+    },
+    {
+      "paths": [
         "tests/test_approved_parts.py"
       ],
       "kind": "owned-source",
