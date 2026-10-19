@@ -568,6 +568,7 @@ def _layer_requirements(captures, read, impedance, rf_nets, board, routing):
 
 def campaign_routing_context(root, state):
     """The latest anchored receipt of the campaign's owned routing step; None without one."""
+    from .layer_policy_lineage import declared_form
     from .stage_done import _receipts
     binding = state.get("routing_binding")
     if binding is None:
@@ -576,7 +577,8 @@ def campaign_routing_context(root, state):
     for number in range(1, len(state["history"]) + 1):
         work = Path(root) / "implementations" / str(number)
         for k, sha, receipt in _receipts(root, state, str(number)):
-            if receipt["spec"] == binding["spec"]:
+            # A derived layer policy (AGENTEE-260) is the only argument a turn's step may add.
+            if receipt["spec"] == binding["spec"] or declared_form(receipt["spec"]) == binding["spec"]:
                 link = read_json(work / "stage-receipts.json")["receipts"][k - 1]
                 context["receipt"] = {"path": str(work / link["path"]), "sha256": sha}
     return context

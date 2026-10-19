@@ -123,15 +123,15 @@ def step_plan(config, manifest, record, version):
     return plan
 
 
-def plan_receipt_specs(plan, work, config, manifest, mutable):
+def plan_receipt_specs(plan, work, config, manifest, mutable, state):
     """The exact receipt step declarations a plan produces, in order."""
     specs = []
     for entry in plan:
         if entry["kind"] == "step":
             specs.append(entry["spec"])
         elif entry['kind'] == 'routing':
-            from .routing_adapter import campaign_spec
-            specs.append(campaign_spec(config['routing_adapter'], manifest, mutable))
+            from .layer_policy_lineage import planned_spec
+            specs.append(planned_spec(config, state, work, manifest, mutable))
         elif entry["receipt_index"] is not None:
             from .placement_adapter import bind_declaration, step_declaration
             bound = bind_declaration(config["placement_adapter"], manifest, mutable)
@@ -274,7 +274,8 @@ def _implement_once(root, previous, definition, state, deadline, *, retry=None):
         from .intent_retry import pin_source
         pin_source(work, manifest, state, config, plan)
         run_implementation_steps(work, design, manifest, state, deadline, plan,
-                                 source_inputs=previous / "inputs", declaration=config.get("placement_adapter"))
+                                 source_inputs=previous / "inputs", declaration=config.get("placement_adapter"),
+                                 config=config)
         if plan:
             check_proposal(design, manifest, state)
     elif plan:
@@ -282,6 +283,9 @@ def _implement_once(root, previous, definition, state, deadline, *, retry=None):
     from .rating_lineage import proposal_scope
     # A newly adopted binding-fill --ratings receipt is captured into a new derived scope.
     scope = proposal_scope(manifest["scope"], design, work, root, state, config)
+    from .layer_policy_lineage import proposal_scope as layer_policy_scope
+    # A routing turn's pre-routing layer policy derivation is captured the same way.
+    scope = layer_policy_scope(scope, work, state, config)
     path = work / "proposal.scope.json"
     write_json(path, scope)
     return path
@@ -352,7 +356,7 @@ def verify_routing_chain(work, index, expected, specs, *, terminal_incomplete):
 
 
 def run_implementation_steps(work, design, manifest, state, deadline, plan, *, source_inputs=None,
-                             declaration=None):
+                             declaration=None, config=None):
     """Coordinator-run planned steps on the delivered design; receipts are provenance only."""
     from .stage_receipts import adopt, bind_implementation, run_step, validate_step
 
@@ -376,6 +380,20 @@ def run_implementation_steps(work, design, manifest, state, deadline, plan, *, s
                 from .stage_receipts import file_tree
                 binding = state['routing_binding']
                 validate_live_binding(binding)
+                from . import layer_policy_lineage as lineage
+                if config is not None and lineage.config_of(config) is not None:
+                    # Pre-routing boundary: the coordinator measures the adopted planed board and
+                    # derives the bound; the anchored record fixes it before the router starts.
+                    board = manifest['scope']['board']
+                    record = lineage.boundary(work, design, board, expected_files[board], config, number,
+                                              manifest['candidate_id'])
+                    state.setdefault('layer_policy_records', {})[work.name] = digest(
+                        work / lineage.BOUNDARY / lineage.RECORD_FILE)
+                    if record['status'] != 'derived':
+                        raise ValueError(f"layer policy unknown at the pre-routing boundary: {record['reason']}; "
+                                         "routing not run")
+                    binding = lineage.turn_binding(binding, lineage.routing_spec(
+                        config, manifest, state['mutable_inputs'], record['layer_policy']))
                 spec = binding['spec']
                 k = entry['receipt_index']
                 receipt_dir = work / 'receipts' / f"{k}-{spec['step']}"
@@ -478,6 +496,8 @@ def run_campaign(config_path, out):
             raise ValueError("placement_adapter cannot be combined with placement implementation_steps")
     from .rating_lineage import validate_campaign as validate_rating_provenance
     validate_rating_provenance(config, scope, [validate_step(s, host=False) for s in steps])
+    from .layer_policy_lineage import validate_campaign as validate_layer_policy_derivation
+    validate_layer_policy_derivation(config, scope)
     # Reuse the subscription route validator for the implementation definition.
     validate_profile({**profile, "adjudicator": config["implementation"]})
     root = Path(out).resolve()
@@ -515,6 +535,8 @@ def record_iteration(root, state, run, config):
     from .rating_lineage import sealed_baseline, verify_candidate
     baseline = sealed_baseline(run, config)
     verify_candidate(root, state, config, len(state["history"]) + 1, manifest)
+    from .layer_policy_lineage import verify_candidate as verify_layer_policy_provenance
+    verify_layer_policy_provenance(root, state, config, len(state["history"]) + 1, manifest)
     if "baseline" not in state:
         state["baseline"] = baseline
         state["mutable_inputs"] = mutable_inputs(manifest, baseline)
@@ -707,6 +729,8 @@ def verify_campaign_records(root, *, observations=None):
         if sealed_baseline(run, config) != state["baseline"]:
             raise ValueError("campaign history baseline changed")
         verify_candidate(root, {**state, 'history': history}, config, index, manifest)
+        from .layer_policy_lineage import verify_candidate as verify_layer_policy_provenance
+        verify_layer_policy_provenance(root, {**state, 'history': history}, config, index, manifest)
         empirical = manifest["scope"].get("empirical")
         calibration_id = manifest["files"].get(empirical) if empirical else None
         if stored["calibration_id"] != calibration_id:
@@ -762,21 +786,44 @@ def verify_campaign_records(root, *, observations=None):
                          state['mutable_inputs'], read_json(first / 'result.json')['policy_files'])
     elif routing_binding is not None:
         raise ValueError('routing binding without a routing adapter and captured source')
+    from . import layer_policy_lineage as lineage
+    from .stage_receipts import after_tree
+    derivations = {}
     for name in state.get('stage_receipts', {}):
         work = root / 'implementations' / name
         index = read_json(work / 'stage-receipts.json')
-        if routing_binding is not None and routing_binding['spec'] in plans[name]:
+        # A derived layer policy changes only the routing step's --layer-policy argument.
+        turn = None
+        if routing_binding is not None and lineage.config_of(config) is None:
+            turn = routing_binding if routing_binding['spec'] in plans[name] else None
+        elif routing_binding is not None:
+            routes = [s for s in plans[name] if lineage.declared_form(s) == routing_binding['spec']]
+            turn = lineage.turn_binding(routing_binding, routes[0]) if routes else None
+        if turn is not None:
             source = Path(state['history'][int(name) - 1]['run'])
             verify_routing_chain(work, index, read_json(source / 'candidate.json')['files'], plans[name],
                 terminal_incomplete=int(name) == len(state['history']) and state['state'] == 'incomplete')
+            if lineage.config_of(config) is not None:
+                # The router's input is the adopted output of the producers declared before it.
+                routing_input, routed = dict(read_json(source / 'candidate.json')['files']), None
+                for k, link in enumerate(index['receipts'], 1):
+                    receipt = read_json(work / link['path'])
+                    if plans[name][k - 1] == turn['spec']:
+                        routed = receipt
+                        break
+                    if receipt['status'] not in ('completed', 'partial'):
+                        break
+                    routing_input = after_tree(receipt)
+                derivations[name] = lineage.verify_turn(root, state, config, int(name),
+                                                        routing_input[source_board(source)], routed)
         for k, link in enumerate(index['receipts'], 1):
             receipt_path = work / link['path']
-            if routing_binding is not None and plans[name][k - 1] == routing_binding['spec']:
+            if turn is not None and plans[name][k - 1] == turn['spec']:
                 source = Path(state['history'][int(name) - 1]['run'])
                 receipt = read_json(receipt_path)
                 verify_campaign_receipt(receipt_path.parent, expected={'implementation': int(name),
                     'source_candidate_id': read_json(source / 'candidate.json')['candidate_id'], 'receipt_index': k},
-                    binding=routing_binding)
+                    binding=turn)
                 if receipt['status'] not in ('completed', 'partial'):
                     if ((work / 'proposal.scope.json').exists() or int(name) != len(state['history']) or
                             state['state'] != 'incomplete'):
@@ -785,9 +832,14 @@ def verify_campaign_records(root, *, observations=None):
                     following = read_json(Path(state['history'][int(name)]['run']) / 'candidate.json')
                     if following.get('scope_path') != str(work / 'proposal.scope.json'):
                         raise ValueError('next campaign run was not captured from this routing proposal')
+    lineage.verify_records(root, state, config, derivations)
     from .stage_done import verify_done
     verify_done(root, state, config)
     return {**state, "state": "empirical_superseded"} if feedback_seen else state
+
+
+def source_board(source):
+    return read_json(Path(source) / 'candidate.json')['scope']['board']
 
 
 def verify_campaign_plans(root, state, config):
@@ -822,7 +874,7 @@ def verify_campaign_plans(root, state, config):
         if 'routing_adapter' in config:
             validate_routing_predecessors(config.get('implementation_steps', []), manifest['scope'])
         plan = step_plan(config, manifest, history[number - 1], version)
-        plans[name] = plan_receipt_specs(plan, work, config, manifest, state["mutable_inputs"])
+        plans[name] = plan_receipt_specs(plan, work, config, manifest, state["mutable_inputs"], state)
         record = work / "placement-adapter.json"
         if not any(entry["kind"] == "placement" for entry in plan):
             if record.exists() or record.is_symlink() or name in anchors:

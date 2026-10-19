@@ -40,6 +40,7 @@ The configuration schema is `agent-ee.campaign/1`:
 | `implementation_steps` | Optional list of `agent-ee.stage-step/1` declarations, run by the coordinator after each writer session; in a staged campaign only the earliest failing stage's steps run; see [stage receipts](stage-receipts.md) |
 | `pre_receipts` | Optional list of `{path, sha256, binding}` entries for coordinator receipts made before the first capture; start imports their retained runs and verification binds them to run 1; see [pre-receipts](stage-receipts.md#receipts-before-the-first-capture) |
 | `placement_adapter` | Optional `agent-ee.placement-adapter/1` declaration for staged scopes with a placement stage; see [placement adapter](placement-adapter.md) |
+| `layer_policy_derivation` | Optional `agent-ee.layer-policy-derivation/1` for campaigns with the owned `routing_adapter` and no literal `layer_policy`: the coordinator measures the planed routing input and derives `pour_area_loss_pct` before each routing attempt; see [derived at the pre-routing boundary](routing-adapter.md#derived-at-the-pre-routing-boundary-agentee-260) |
 | `rating_provenance` | Optional top-level candidate directory for the coordinator capture of an adopted `binding-fill --ratings` receipt and report; derived scopes then declare `assembly_readiness` `rating_provenance`; see [coordinator rating provenance](stage-receipts.md#coordinator-rating-provenance) |
 
 See the [complete executable configuration](../fixtures/closed-loop/campaign.json)

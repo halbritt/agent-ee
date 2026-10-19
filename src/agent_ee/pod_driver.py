@@ -56,7 +56,8 @@ def validate_plan(plan):
                 'routing_adapter', 'routing_budget_s', 'review_budget_s'}
     if (not isinstance(plan, dict) or plan.get('schema') != SCHEMA or
             not required <= plan.keys() or
-            set(plan) - required - {'max_iterations', 'max_seconds', 'placement_adapter', 'envelope_content', 'net_constraints'}):
+            set(plan) - required - {'max_iterations', 'max_seconds', 'placement_adapter', 'envelope_content', 'net_constraints',
+                                    'layer_policy_derivation'}):
         raise ValueError('expected agent-ee.pod-plan/1 fields')
     if not isinstance(plan['scope'], str) or not plan['scope']:
         raise ValueError('scope must name a planning scope file')
@@ -176,6 +177,10 @@ def validate_configuration(plan, scope, files, inputs):
     validate_routing_predecessors(normalized, scope)
     route = campaign_spec(plan['routing_adapter'], {'scope': scope}, sorted(mutable))
     validate_campaign_step(route)
+    # AGENTEE-260: the numeric pour bound is derived by the coordinator before each routing attempt.
+    from .layer_policy_lineage import validate_campaign as validate_layer_policy_derivation
+    derivation = {k: plan[k] for k in ('routing_adapter', 'layer_policy_derivation') if k in plan}
+    validate_layer_policy_derivation({**derivation, **({'rating_provenance': rating} if rating else {})}, scope)
     generation = scope.get('generation')
     checks = {c['id']: c for c in scope['checks']}
     if (not isinstance(generation, dict) or
@@ -199,7 +204,9 @@ def validate_configuration(plan, scope, files, inputs):
                 coordinator_outputs=sorted(written), max_iterations=iterations,
                 max_seconds=seconds, implementation_steps=normalized, routing_step=route,
                 **({'placement_adapter': placement} if placer else {}),
-                **({'rating_provenance': rating} if rating else {}))
+                **({'rating_provenance': rating} if rating else {}),
+                **({'layer_policy_derivation': plan['layer_policy_derivation']}
+                   if 'layer_policy_derivation' in plan else {}))
 
 
 def _rating_provenance(scope, steps):
@@ -435,6 +442,8 @@ def build(plan_path, out, *, dry_run=False):
                   routing_adapter=plan['routing_adapter'],
                   **({'placement_adapter': plan['placement_adapter']} if 'placement_adapter' in plan else {}),
                   **({'rating_provenance': validation['rating_provenance']} if 'rating_provenance' in validation else {}),
+                  **({'layer_policy_derivation': validation['layer_policy_derivation']}
+                     if 'layer_policy_derivation' in validation else {}),
                   max_iterations=validation['max_iterations'], max_seconds=validation['max_seconds'],
                   max_schema_resubmissions=1)
     write_json(out / 'scope.json', final_scope)

@@ -675,5 +675,38 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         self.assertNotIn('rating_provenance',receipt['validation'])
 
 
+    def test_layer_policy_derivation_is_carried_into_the_campaign(self):
+        # AGENTEE-260: the plan declares the method; the coordinator derives the bound per routing turn.
+        derivation=dict(schema='agent-ee.layer-policy-derivation/1',directory='layer-policy',
+                        policy={'signal_layers':['F.Cu','B.Cu']})
+        self.plan['layer_policy_derivation']=derivation
+        self.save()
+        with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
+            receipt=self.build()
+        self.assertEqual(read_json(self.root/'run/campaign.json')['layer_policy_derivation'],derivation)
+        self.assertEqual(receipt['validation']['layer_policy_derivation'],derivation)
+        self.assertNotIn('layer_policy_provenance',read_json(self.root/'run/scope.json'))
+        self.start_campaign()
+
+    def test_layer_policy_derivation_refusals_before_output(self):
+        derivation=dict(schema='agent-ee.layer-policy-derivation/1',directory='layer-policy',
+                        policy={'signal_layers':['F.Cu','B.Cu']})
+        for name,change,message in [
+                ('literal',lambda: self.plan['routing_adapter'].update(layer_policy={'signal_layers':['F.Cu','B.Cu'],
+                                                                                     'pour_area_loss_pct':0.5}),
+                 'exclusive'),
+                ('bound',lambda: derivation['policy'].update(pour_area_loss_pct=0.5),'cannot state pour_area_loss_pct'),
+                ('sealed',lambda: self.scope.update(layer_policy_provenance={}),'sealed scope cannot declare')]:
+            with self.subTest(name=name):
+                original=copy.deepcopy((self.plan,self.scope,derivation))
+                change()
+                self.plan['layer_policy_derivation']=derivation
+                self.save()
+                with self.assertRaisesRegex(ValueError,message):
+                    self.build('refused-'+name)
+                self.assertFalse((self.root/('refused-'+name)).exists())
+                self.plan,self.scope,derivation=original[0],original[1],original[2]
+
+
 if __name__=='__main__':
     unittest.main()
