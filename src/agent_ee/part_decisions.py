@@ -145,6 +145,34 @@ def evidence_references(refs, inputs, files):
     return evidence
 
 
+def validate_deviation(deviation):
+    """Validate the shared substitution or post-delivery assembly declaration."""
+    fields = 'requirement_id reason evidence_refs'
+    assembly = 'assembly' in deviation
+    fields += (' original assembly stock_deviation purchase_source' if assembly else ' replacement')
+    if not assembly and 'original' in deviation:
+        fields += ' original'
+    exact_keys(deviation, fields)
+    text(deviation['requirement_id'])
+    text(deviation['reason'])
+    if not assembly:
+        part(deviation['replacement'])
+    if 'original' in deviation:
+        part(deviation['original'])
+    refs = deviation['evidence_refs']
+    if not isinstance(refs, list) or not refs:
+        raise ValueError('deviation requires captured evidence references')
+    if assembly:
+        if deviation['assembly'] not in ('consigned', 'hand_soldered'):
+            raise ValueError('assembly must be consigned or hand_soldered after delivery')
+        if deviation['original']['mpn'] is None:
+            raise ValueError('assembly deviation requires an exact MPN')
+        exact_keys(deviation['stock_deviation'], 'reason')
+        text(deviation['stock_deviation']['reason'])
+        text(deviation['purchase_source'])
+    return assembly
+
+
 def evaluate(policy, deviations, components, inputs, files):
     """Presence only; rationale and references are reported without suitability judgment."""
     decisions = policy['declaration']['decisions']
@@ -156,19 +184,13 @@ def evaluate(policy, deviations, components, inputs, files):
         receipt = {'index': index, 'declaration': deviation, 'violations': []}
         receipts.append(receipt)
         try:
-            fields = 'requirement_id replacement reason evidence_refs'
-            exact_keys(deviation, fields + (' original' if 'original' in deviation else ''))
+            validate_deviation(deviation)
             candidates = [d for d in decisions if d['requirement_id'] == deviation['requirement_id']]
             if 'original' in deviation:
-                part(deviation['original'])
                 candidates = [d for d in candidates if all(d[k] == deviation['original'][k] for k in ('mpn', 'lcsc'))]
             if len(candidates) != 1:
                 raise ValueError('deviation needs exactly one original decision; use original for a multi-part row')
-            part(deviation['replacement'])
-            text(deviation['reason'])
             refs = deviation['evidence_refs']
-            if not isinstance(refs, list) or not refs:
-                raise ValueError('deviation requires captured evidence references')
             evidence = evidence_references(refs, inputs, files)
             identity = key(candidates[0])
             if identity in by_key:
@@ -181,7 +203,7 @@ def evaluate(policy, deviations, components, inputs, files):
     records = []
     for decision in decisions:
         deviation = by_key.get(key(decision))
-        selected = deviation['replacement'] if deviation else decision
+        selected = deviation.get('replacement', deviation.get('original')) if deviation else decision
         matches = []
         for ref, component in sorted(components.items()):
             fields = component['binding_fields']

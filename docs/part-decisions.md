@@ -131,6 +131,29 @@ A declaration applies even if the original part is also present: its named
 replacement must exist. Reviewers see all declarations, invalid declarations,
 reasons, evidence hashes and matched native component locators.
 
+The same `agent-ee.part-deviations/1` file also accepts an assembly deviation:
+
+```json
+{
+  "requirement_id": "POD-CD-HARNESS-CONNECTOR",
+  "original": {"mpn": "776228-1", "lcsc": null},
+  "assembly": "consigned",
+  "reason": "Hand-fitted after delivery under the recorded owner decision.",
+  "purchase_source": "Named supplier and purchase-list reference",
+  "stock_deviation": {"reason": "Not available for JLCPCB assembly."},
+  "evidence_refs": [{"path": "requirements/purchase-list.md", "locator": "Header source"}]
+}
+```
+
+`assembly` accepts `consigned` or `hand_soldered`; both mean fitting after
+delivery, excluded from JLCPCB assembly. `original` requires an exact MPN;
+`replacement` is refused on this record. All reasons, the purchase source and
+captured evidence references must be nonempty. `part_decisions` verifies that
+the original identity is present; [assembly readiness](assembly-readiness.md#declared-hand-fit-deviations)
+enforces the assembly marker and stock exclusion. Configure both checks with
+the same deviations file. The declarations do not authorize a purchase or
+prove the supplier's inventory.
+
 ## Results and limits
 
 `work/<check-id>/part_decisions.json` is normal coordinator evidence, sealed by
