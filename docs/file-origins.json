@@ -3145,6 +3145,27 @@
         "AE"
       ],
       "reviewed": "Original agent-ee six-pad pogo tracer authored under owner direction by agent-463, frozen 2026-10-18. Copied byte-exact only after verifying all four freeze input hashes; freeze.json SHA-256 a54bb1c2d678fdb74cc87405c983ac7dcb4f7d6be3d7b6e80a84cae185bcee09. No vendor design, symbol, footprint or text."
+    },
+    {
+      "paths": [
+        "src/agent_ee/schematic_render.py",
+        "tests/test_schematic_render.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-71 implementation and tests using the existing owned schematic-lint fixture generator. SchGen and Konnect are mechanism references in the ticket only; no upstream code, text, rasteriser, design or library was consulted, copied or adapted. Owned bitmap glyphs, PNG encoding and grid overlay; KiCad and already-pinned Poppler invoked as separate processes."
+    },
+    {
+      "paths": [
+        "docs/schematic-renders.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-71 feature documentation. Names SchGen and Konnect and their ticket-supplied source locators solely to attribute mechanism references; no external project text or code is reproduced."
     }
   ]
 }

@@ -1181,3 +1181,14 @@ networkless executor; the owner performs the upload outside agent-ee.
 [Probe features](probe-features.md) extend the existing `parts_subset`, `part_binding` and `fab_export` checks without new predicates. `part_binding` accepts optional `probe_manifest` plus `netlist_check`; `fab_export` accepts optional `probe_manifest`. Both bind the complete source closure as immutable inputs. Required physical membership, pin/net identity, native schematic/board flags and saved pad geometry remain checked while qualified probes are absent from assembly CSV files. Marker-only, missing, swapped and byte-changed features are refused.
 
 Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.
+
+## `schematic_render` — optional reviewer images
+
+The [schematic render reference](schematic-renders.md) describes deterministic
+PNG evidence with a 20 mm grid, native PDF/Poppler rasterisation and renderer-bound
+per-sheet changed-pixel percentages and bounding boxes. The only parameter is
+optional `baseline`, a captured directory containing a prior render manifest and
+its artifacts. Those inputs are immutable verification dependencies. The check
+always produces information or unknown coverage, never a pass or defect, and
+cannot satisfy scope/3 acceptance requirements. Failed rendering retains missing
+visual evidence without preventing review; malformed critique remains unusable.

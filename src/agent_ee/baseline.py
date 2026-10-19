@@ -189,6 +189,9 @@ def compile_baseline(scope, files, inputs=None):
             paths.add(str(safe_relative(scope["board"]).with_suffix(".kicad_pro")))
         if spec.get("kind") == "passive_corners":
             paths.add(str(safe_relative(params["qualification"])))
+        if spec.get("kind") == "schematic_render":
+            from .schematic_render import parameters
+            paths.update(parameters(params, files))
         if spec.get("kind") == "measurements":
             paths.add(str(safe_relative(params["adapter"])))
             paths.update(str(safe_relative(p)) for p in params["tool"].get("inputs", []))
