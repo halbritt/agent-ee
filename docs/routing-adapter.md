@@ -167,17 +167,46 @@ retained bytes. The grade is `semantics.layer_policy`, and `verify` returns it a
 
 | Item | Source | Defect | Unknown |
 | --- | --- | --- | --- |
-| `disallowed_tracks` | the router's `validate/candidate-facts.json`, bound to the validated board hash, and `facts/reference-facts.json` | a track or arc not in the input that lies on a layer outside `signal_layers`, listed by UUID, layer and net; input tracks are listed as `preexisting` | facts missing, malformed or of another board |
+| `disallowed_tracks` | the router's `validate/candidate-facts.json`, bound to the validated board hash, and `facts/reference-facts.json`, bound to the input board hash in `snapshot.json` | a track or arc on a layer outside `signal_layers` that no input track matches, listed by UUID, layer and net; matched input tracks are listed as `preexisting`. Every listed track is a defect when the reference facts are not of the input board | facts missing or malformed, candidate facts of another board, or no input board hash in the snapshot |
 | `pour_integrity` | `validate/preservation.json` | the pin's check is FAIL | the check is missing |
-| `area_loss` | `validate/pour-integrity.json` | a net/layer lost more than the bound, listed under `exceeded` | no deltas, no pour, or a bound other than the declared one |
-| `reference_continuity` (when declared) | `attempt/agent-ee-reference-continuity.json`, measured by KiCad's Python on the validated candidate | an RF track whose footprint is not covered by the reference net's fill on a reference layer (`interrupted`, with the uncovered mm²) | a missing net, layer or fill, an RF track on its own reference layer, no RF track, a measurement of another board, or a board the router rejected |
+| `area_loss` | `validate/pour-integrity.json` | a net/layer lost more than the bound, listed under `exceeded`; a declared reference plane whose delta is null because it had no initial fill | no deltas, no pour, a bound other than the declared one, a null delta (no initial fill, listed under `unmeasured`), or a declared reference net/layer the router did not measure (listed under `absent`) |
+| `reference_continuity` (when declared) | `attempt/agent-ee-reference-continuity.json`, measured by KiCad's Python on the validated candidate | an RF track whose footprint is not covered by the reference net's fill on a reference layer (`interrupted`, with the uncovered mm²), or an RF via through a reference layer (`vias`) | a missing net, layer, zone or fill, custom clearance rules, an RF track on its own reference layer, no RF track, a measurement of another board or another specification, or a board the router rejected |
 
-The continuity measurement subtracts each reference layer's filled polygons from
-every RF track's copper shape. It excludes the plane clearance around the RF
-net's own pads, holes and vias, plus a 0.05 mm margin. More than 0.0001 mm² left
-uncovered is an interruption. The measurement runs in the same sandbox, after the
-candidate binds and only for an eligible exit. Its record and log are retained
-beside the router's reports.
+A track on a disallowed layer is pre-existing only when the input board's facts,
+whose `sha256` must equal the snapshot's hash of the input board, hold a track of
+the same kind, layer, net, width and endpoints (and arc mid point). Matching is
+one to one, so a second track of the same geometry is new. UUIDs are not
+compared, because the router may rewrite them; a moved or widened input track is
+new copper. Without a stage receipt, `verify` can only check that the retained
+reference facts name the input board's hash: the facts themselves are sealed by
+the receipt's `routing/attempt/facts` directory hash.
+
+`reference_continuity` is a 2D fill-coverage check of the declared plane under
+each RF track footprint. It is not an impedance or return-path qualification: it
+does not compute characteristic impedance, look at the stackup, or check stitching
+vias near a layer change. The record and the grade carry this label as `scope`.
+
+The measurement subtracts each reference layer's filled polygons from every RF
+track's copper shape. Only the clearance the zone filler cut for the RF net's own
+pads is excused, and it is rebuilt as the filler builds it: the pad shape on the
+layer, grown by the larger of the zone's and the pad's clearance and the board
+minimum, plus KiCad's 0.0005 mm extra zone clearance, at the board's own arc
+error. A pad hole is excused only to the smaller of that clearance and the board
+hole clearance. With several reference zones on a layer, the smallest zone
+clearance is used. Any area left uncovered above 0.000001 mm² is an interruption;
+a clean pad launch leaves about 2e-8 mm². A board rules file with clearance
+constraints can change that cut, which pcbnew's Python cannot evaluate, so it
+makes continuity unknown. An RF via that passes through a reference layer is an
+interruption by its antipad, whichever layers its tracks use, so an RF route that
+changes side between F.Cu and B.Cu through In1/In2 is a defect. The measurement
+runs in the same sandbox, after the candidate binds and only for an eligible exit.
+Its record and log are retained beside the router's reports.
+
+Changing this measurement or the grading changes `src/agent_ee/kicad_route_attempt.py`.
+A campaign that froze the adapter's hash (`policy_files['kicad_route_attempt.py']`
+and `state.json.routing_binding.adapter_sha256`) refuses the new adapter until the
+binding is recaptured; adopting a layer policy in the pod campaign is the pod
+lane's step.
 
 The overall grade is `defect` if any item is a defect, otherwise `unknown` if any
 item is unknown, otherwise `pass`. An exit 0 or 2 whose grade is not `pass`
@@ -199,6 +228,14 @@ continuity under the routed net. A control that allows the inner layers at cost 
 with the outer layers at 1000, routes on the planes. The 0.01 % bound then gives
 exit 3 with an `area_loss` defect. A route across an owned In1/In2 fill keepout is
 `policy_failed`, with `reference_continuity` naming the interrupted track UUIDs.
+An RF route from an F.Cu pad to a B.Cu pad changes side through a via, which is a
+`reference_continuity` defect on both planes. A finished In1.Cu connection in the
+input is `preexisting` and passes; its reference facts with one endpoint moved by
+1 µm make it a defect. A policy that declares In2.Cu as a reference plane the
+board does not fill is `policy_failed`, with `area_loss` unknown. On original
+measurement boards, a plane void 45 µm beyond the clearance cut for an RF pad
+(inside the 0.05 mm ring the first version excused) is interrupted
+(0.011217 mm² under the launch), and a clean launch leaves nothing uncovered.
 
 ## Router targets from the scaffold producer
 

@@ -59,7 +59,9 @@ if name == 'reference_differs':
 files = {p.name: sha(p) for p in sorted(ref.iterdir())}
 write(run / 'snapshot.json', {'project': project, 'files': files})
 fingerprint = hashlib.sha256(''.join(f'{n}\0{d}\n' for n, d in sorted(files.items())).encode()).hexdigest()
-write(run / 'facts/reference-facts.json', {'nets': {}, 'tracks': scenario.get('reference_tracks', [])})
+# As the pin's facts.py: the input board's hash and its tracks.
+write(run / 'facts/reference-facts.json', {'nets': {}, 'tracks': scenario.get('reference_tracks', []),
+                                           'sha256': scenario.get('reference_sha256', files.get(board))})
 if name == 'early_exit':
     sys.exit('could not read the input board: see facts/reference-facts.log')
 if name in ('refused', 'unknown_refusal_version', 'human_refusal'):

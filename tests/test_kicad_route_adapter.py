@@ -660,6 +660,10 @@ class RetainedVerificationTest(unittest.TestCase):
 
 
 POLICY = {'signal_layers': ['F.Cu', 'B.Cu'], 'layer_costs': [1.0, 3.0], 'pour_area_loss_pct': 0.5}
+REFERENCE = {'net': 'GND', 'layers': ['In1.Cu', 'In2.Cu'], 'rf_nets': ['/RF']}
+# Track geometry as the pin's facts.py writes it (nm, endpoints in canonical order).
+SEG = {'width': 250000, 'start': [15000000, 35000000], 'end': [45000000, 35000000]}
+ARC = {'width': 250000, 'start': [1000000, 0], 'mid': [1500000, 500000], 'end': [2000000, 0]}
 
 
 def policy_argv(policy=POLICY):
@@ -707,11 +711,12 @@ class LayerPolicyTest(unittest.TestCase):
         self.assertFalse(any(a.startswith('--backend-arg') for a in case.report['process']['argv']))
 
     def test_router_track_on_a_disallowed_layer_withholds_the_board(self):
-        tracks = [{'kind': 'segment', 'layer': 'F.Cu', 'net': '/IN', 'uuid': 'ok-1'},
-                  {'kind': 'segment', 'layer': 'In1.Cu', 'net': '/IN', 'uuid': 'cut-1'},
-                  {'kind': 'arc', 'layer': 'In2.Cu', 'net': '/OUT', 'uuid': 'old-1'}]
+        tracks = [{'kind': 'segment', 'layer': 'F.Cu', 'net': '/IN', 'uuid': 'ok-1', **SEG},
+                  {'kind': 'segment', 'layer': 'In1.Cu', 'net': '/IN', 'uuid': 'cut-1', **SEG},
+                  {'kind': 'arc', 'layer': 'In2.Cu', 'net': '/OUT', 'uuid': 'old-1', **ARC}]
         case = self.case({'name': 'complete', 'tracks': tracks,
-                          'reference_tracks': [{'kind': 'arc', 'layer': 'In2.Cu', 'net': '/OUT', 'uuid': 'old-1'}]})
+                          'reference_tracks': [{'kind': 'arc', 'layer': 'In2.Cu', 'net': '/OUT', 'uuid': 'old-1',
+                                                **ARC}]})
         self.assertEqual(case.exit, attempt.EXIT_POLICY, case.report['semantics'])
         sem = case.report['semantics']
         self.assertEqual((sem['classification'], sem['proposal']), ('policy_failed', 'none'))
@@ -724,6 +729,74 @@ class LayerPolicyTest(unittest.TestCase):
         self.assertEqual(case.report['rejected_candidate_sha256'], result['validation']['validated_board_sha256'])
         summary = case.verify()
         self.assertEqual((summary['classification'], summary['layer_policy']['status']), ('policy_failed', 'defect'))
+
+    def test_preexisting_exemption_is_bound_to_the_input_board_and_its_geometry(self):
+        old = {'kind': 'segment', 'layer': 'In1.Cu', 'net': '/IN', 'uuid': 'old-1', **SEG}
+        for label, scenario, new in (
+                ('same uuid, moved end', {'tracks': [{**old, 'end': [46000000, 35000000]}],
+                                          'reference_tracks': [old]}, ['old-1']),
+                ('same uuid, wider', {'tracks': [{**old, 'width': 300000}], 'reference_tracks': [old]}, ['old-1']),
+                ('same geometry twice, one input track', {'tracks': [old, {**old, 'uuid': 'old-1'}],
+                                                          'reference_tracks': [old]}, ['old-1']),
+                ('reference facts of another board', {'tracks': [old], 'reference_tracks': [old],
+                                                      'reference_sha256': 'f' * 64}, ['old-1'])):
+            with self.subTest(label):
+                case = self.case({'name': 'complete', **scenario})
+                sem = case.report['semantics']
+                self.assertEqual((case.exit, sem['classification']), (attempt.EXIT_POLICY, 'policy_failed'), sem)
+                item = sem['layer_policy']['items']['disallowed_tracks']
+                self.assertEqual((item['status'], [t['uuid'] for t in item['tracks']]), ('defect', new), item)
+                self.assertEqual(case.verify()['layer_policy'], sem['layer_policy'])
+        # The pin's own facts, the same geometry under a fresh uuid: the input's copper, exempt.
+        case = self.case({'name': 'complete', 'tracks': [{**old, 'uuid': 'renamed'}], 'reference_tracks': [old]})
+        item = case.report['semantics']['layer_policy']['items']['disallowed_tracks']
+        self.assertEqual((case.exit, item['status'], [t['uuid'] for t in item['preexisting']]),
+                         (0, 'pass', ['renamed']))
+        forge(case, files={'snapshot.json': lambda v: v['files'].pop('rc.kicad_pcb')})
+        regraded = attempt.layer_policy_grade(POLICY, case.work / 'routing/attempt', json.loads(
+            (case.work / 'routing/attempt/result.json').read_text()), 'complete', 'rc.kicad_pcb')
+        self.assertEqual(regraded['items']['disallowed_tracks']['status'], 'unknown')
+
+    def test_unmeasured_area_delta_is_never_pass(self):
+        empty = {'net_layer': 'GND@In1.Cu', 'area_mm2': [0.0, 0.0], 'area_delta_pct': None}
+        kept = {'net_layer': 'GND@In2.Cu', 'area_mm2': [100.0, 100.0], 'area_delta_pct': 0.0}
+        other = {**empty, 'net_layer': '/AUX@B.Cu'}
+        for label, layers, policy, status in (
+                ('no initial fill', [empty], POLICY, 'unknown'),
+                ('no initial fill beside a measured plane', [other, kept], POLICY, 'unknown'),
+                ('declared reference plane without fill', [empty, kept], {**POLICY, 'reference': REFERENCE},
+                 'defect'),
+                ('declared reference plane not measured', [kept], {**POLICY, 'reference': REFERENCE}, 'unknown')):
+            with self.subTest(label):
+                case = self.case({'name': 'complete', 'pour_layers': layers}, policy_argv(policy))
+                sem = case.report['semantics']
+                self.assertEqual((case.exit, sem['classification']), (attempt.EXIT_POLICY, 'policy_failed'), sem)
+                item = sem['layer_policy']['items']['area_loss']
+                self.assertEqual(item['status'], status, item)
+                self.assertEqual(case.verify()['layer_policy'], sem['layer_policy'])
+
+    def test_reference_continuity_is_labelled_and_fails_closed(self):
+        policy = {**POLICY, 'reference': REFERENCE}
+        sha = 'a' * 64
+        record = {'schema': 'agent-ee.reference-continuity/2', 'board_sha256': sha,
+                  'spec': attempt.reference_spec(policy), 'scope': attempt.CONTINUITY_SCOPE, 'problems': [],
+                  'tracks': [{'uuid': 't', 'status': 'continuous', 'reference_layer': 'In1.Cu', 'uncovered_mm2': 0.0}],
+                  'vias': []}
+        grade = attempt.reference_grade(policy, record, sha, 'complete')
+        self.assertEqual((grade['status'], grade['scope']), ('pass', attempt.CONTINUITY_SCOPE))
+        self.assertIn('not an impedance or return-path qualification', grade['scope'])
+        via = {'uuid': 'v', 'status': 'interrupted', 'reference_layer': 'In1.Cu', 'layers': ['F.Cu', 'B.Cu']}
+        for label, change, status in (
+                ('RF via through the plane', dict(vias=[via]), 'defect'),
+                ('first measurement schema', dict(schema='agent-ee.reference-continuity/1'), 'unknown'),
+                ('no via record', dict(vias=None), 'unknown'),
+                ('a via graded continuous', dict(vias=[{**via, 'status': 'continuous'}]), 'unknown'),
+                ('the old padded ring', dict(spec={**record['spec'], 'margin_mm': 0.05}), 'unknown'),
+                ('scope dropped', dict(scope=None), 'unknown')):
+            with self.subTest(label):
+                grade = attempt.reference_grade(policy, {**record, **change}, sha, 'complete')
+                self.assertEqual(grade['status'], status, grade)
+                self.assertEqual(grade['scope'], attempt.CONTINUITY_SCOPE)
 
     def test_area_loss_beyond_the_bound_is_a_defect(self):
         layers = [{'net_layer': 'GND@In1.Cu', 'area_mm2': [100.0, 97.0], 'area_delta_pct': -3.0},
@@ -764,7 +837,12 @@ class LayerPolicyTest(unittest.TestCase):
         forgeries = {
             'grade claims pass over a defect': dict(
                 files={'validate/candidate-facts.json': lambda v: v['tracks'].append(
-                    {'kind': 'segment', 'layer': 'In1.Cu', 'net': '/IN', 'uuid': 'hidden'})}),
+                    {'kind': 'segment', 'layer': 'In1.Cu', 'net': '/IN', 'uuid': 'hidden', **SEG})}),
+            'reference facts claim the cut': dict(
+                files={'validate/candidate-facts.json': lambda v: v['tracks'].append(
+                    {'kind': 'segment', 'layer': 'In1.Cu', 'net': '/IN', 'uuid': 'hidden', **SEG}),
+                       'facts/reference-facts.json': lambda v: v.update(sha256='f' * 64, tracks=[
+                           {'kind': 'segment', 'layer': 'In1.Cu', 'net': '/IN', 'uuid': 'hidden', **SEG}])}),
             'edited grade': dict(report=lambda r: r['semantics']['layer_policy'].update(status='defect')),
             'dropped grade': dict(report=lambda r: r['semantics'].pop('layer_policy')),
             'facts of another board': dict(files={'validate/candidate-facts.json': lambda v: v.update(sha256='0' * 64)}),

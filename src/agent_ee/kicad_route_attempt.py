@@ -17,6 +17,7 @@ The report is provenance. It never makes a check pass: acceptance comes only
 from agent-ee's own fresh checks on the captured proposal.
 """
 
+import collections
 import errno
 import hashlib
 import json
@@ -144,10 +145,24 @@ POLICY_KEYS = {'signal_layers', 'pour_area_loss_pct'}
 POLICY_OPTIONAL = {'layer_costs', 'reference'}
 REFERENCE_KEYS = {'net', 'layers', 'rf_nets'}
 POLICY_FILE = 'agent-ee-reference-continuity.json'
-# Uncovered area below this is polygon approximation, not a gap in the plane.
-CONTINUITY_TOLERANCE_MM2 = 0.0001
-# Margin beyond the plane clearance around the RF net's own pads and vias.
-CONTINUITY_MARGIN_MM = 0.05
+# Uncovered area below this is boolean rounding, not a gap in the plane: the
+# clearance KiCad's zone filler cut for the RF net's own pads is rebuilt with the
+# filler's own geometry, which leaves about 2e-8 mm2 per pad crossing.
+CONTINUITY_TOLERANCE_MM2 = 0.000001
+# The zone filler's extra clearance beyond the rule clearance (KiCad's
+# ExtraZoneClearance default): without it a clean pad launch leaves 0.00025 mm2.
+FILLER_EXTRA_CLEARANCE_MM = 0.0005
+# A board rules file with these constraints can change the zone-to-pad clearance,
+# which pcbnew's Python cannot evaluate: continuity is then not measured.
+CLEARANCE_RULE = re.compile(r'\(\s*constraint\s+(clearance|hole_clearance|physical_clearance|'
+                            r'physical_hole_clearance)\b')
+# Reference continuity is a 2D check: the declared plane's fill covers each RF
+# track's footprint. It does not qualify impedance or the return path.
+CONTINUITY_SCOPE = ('2D fill coverage of the declared reference plane under each RF track footprint; '
+                    'not an impedance or return-path qualification')
+# A pre-existing track on a disallowed layer is exempt only by this geometry,
+# matched one to one against the input board's own facts.
+TRACK_IDENTITY = ('kind', 'layer', 'net', 'width', 'start', 'mid', 'end')
 
 
 def canonical_json(value):
@@ -659,17 +674,26 @@ def pair_coverage(request, result, record, classification):
 
 
 # Run with KiCad's Python on the graded board: the reference net's native fill on
-# each reference layer must cover every RF track, outside the plane clearance
-# around the RF net's own pads and vias. Nothing is filled or saved.
+# each reference layer must cover every RF track. Only the clearance the zone
+# filler cut for the RF net's own pads is excused, rebuilt with the filler's
+# geometry (rule clearance plus its extra clearance, at the board's arc error);
+# any other uncovered area interrupts the plane. An RF via through a reference
+# layer interrupts it by its antipad. Nothing is filled or saved.
 MEASURE_REFERENCE = r"""
-import hashlib, json, sys
+import hashlib, json, re, sys
+from pathlib import Path
 import pcbnew as k
 board_path, spec, out_path = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
 sha = hashlib.sha256(open(board_path, 'rb').read()).hexdigest()
 b = k.LoadBoard(board_path)
+ds = b.GetDesignSettings()
 layers = {b.GetLayerName(l): l for l in b.GetEnabledLayers().CuStack()}
-err = k.FromMM(0.001)
-problems, tracks = [], []
+err, filler_err = k.FromMM(0.001), ds.m_MaxError
+extra = k.FromMM(spec['extra_clearance_mm'])
+problems, tracks, vias = [], [], []
+for rules in sorted(Path(board_path).parent.glob('*.kicad_dru')):
+    if re.search(spec['clearance_rule'], rules.read_text(errors='replace')):
+        problems.append('custom clearance rules in ' + rules.name + ': the plane clearance is not evaluable')
 names = {str(n) for n in b.GetNetsByName().keys()}
 for net in [spec['net'], *spec['rf_nets']]:
     if net not in names:
@@ -679,20 +703,44 @@ for name in spec['layers']:
     if name not in layers:
         problems.append('reference layer not on the board: ' + name)
         continue
-    layer, fill, gap = layers[name], k.SHAPE_POLY_SET(), 0
+    layer, fill, gap = layers[name], k.SHAPE_POLY_SET(), None
     for z in b.Zones():
         if z.GetIsRuleArea() or z.GetNetname() != spec['net'] or not z.IsOnLayer(layer):
             continue
         if not z.IsFilled():
             problems.append('reference zone is not filled on ' + name)
         fill.BooleanAdd(z.GetFilledPolysList(layer))
-        gap = max(gap, z.GetLocalClearance() or 0)
-    fills[name], gaps[name] = fill, gap
-margin = k.FromMM(spec['margin_mm'])
-own = [t for t in b.GetTracks() if t.GetClass() == 'PCB_VIA' and t.GetNetname() in spec['rf_nets']]
+        # The smallest zone clearance: a larger one would excuse more than one zone cut.
+        own = z.GetOwnClearance(layer)
+        gap = own if gap is None else min(gap, own)
+    if gap is None:
+        problems.append('no reference zone on ' + name)
+    fills[name], gaps[name] = fill, gap or 0
 pads = [p for fp in b.GetFootprints() for p in fp.Pads() if p.GetNetname() in spec['rf_nets']]
+keeps = {}
+for name, layer in ((n, layers[n]) for n in fills):
+    keep = k.SHAPE_POLY_SET()
+    for p in pads:
+        clear = max(gaps[name], p.GetOwnClearance(layer), ds.m_MinClearance)
+        if p.FlashLayer(layer):
+            p.TransformShapeToPolygon(keep, layer, clear + extra, filler_err, k.ERROR_OUTSIDE)
+        if p.HasHole():
+            # The lesser of the two clearances a hole may carry: never more than KiCad cut.
+            hole = min(clear, ds.m_HoleClearance)
+            p.TransformHoleToPolygon(keep, hole + extra, filler_err, k.ERROR_OUTSIDE)
+    keeps[name] = keep
 for t in b.GetTracks():
-    if t.GetClass() not in ('PCB_TRACK', 'PCB_ARC') or t.GetNetname() not in spec['rf_nets']:
+    if t.GetNetname() not in spec['rf_nets']:
+        continue
+    if t.GetClass() == 'PCB_VIA':
+        for name in spec['layers']:
+            if name in layers and t.IsOnLayer(layers[name]):
+                vias.append({'uuid': t.m_Uuid.AsString(), 'net': t.GetNetname(), 'kind': 'PCB_VIA',
+                             'layers': [b.GetLayerName(t.TopLayer()), b.GetLayerName(t.BottomLayer())],
+                             'reference_layer': name, 'status': 'interrupted',
+                             'reason': 'RF via antipad through the reference plane'})
+        continue
+    if t.GetClass() not in ('PCB_TRACK', 'PCB_ARC'):
         continue
     for name in spec['layers']:
         rec = {'uuid': t.m_Uuid.AsString(), 'net': t.GetNetname(), 'kind': t.GetClass(),
@@ -702,29 +750,24 @@ for t in b.GetTracks():
         elif rec['layer'] == name:
             rec.update(status='unmeasured', reason='RF track on its own reference layer')
         else:
-            layer = layers[name]
             shape = k.SHAPE_POLY_SET()
             t.TransformShapeToPolygon(shape, t.GetLayer(), 0, err, k.ERROR_INSIDE)
             shape.BooleanSubtract(fills[name])
-            keep = k.SHAPE_POLY_SET()
-            for item in own + pads:
-                clear = max(gaps[name], item.GetOwnClearance(layer)) + margin
-                if item.IsOnLayer(layer):
-                    item.TransformShapeToPolygon(keep, layer, clear, err, k.ERROR_OUTSIDE)
-                if item.GetClass() == 'PAD' and item.HasHole():
-                    item.TransformHoleToPolygon(keep, clear, err, k.ERROR_OUTSIDE)
-            shape.BooleanSubtract(keep)
+            shape.BooleanSubtract(keeps[name])
             area = shape.Area() / 1e12
             rec.update(uncovered_mm2=round(area, 6),
                        status='interrupted' if area > spec['tolerance_mm2'] else 'continuous')
         tracks.append(rec)
-json.dump({'schema': 'agent-ee.reference-continuity/1', 'board_sha256': sha, 'kicad': k.Version(),
-           'spec': spec, 'problems': problems, 'tracks': tracks}, open(out_path, 'w'), indent=1, sort_keys=True)
+json.dump({'schema': 'agent-ee.reference-continuity/2', 'board_sha256': sha, 'kicad': k.Version(),
+           'scope': spec['scope'], 'spec': spec, 'problems': problems, 'tracks': tracks, 'vias': vias},
+          open(out_path, 'w'), indent=1, sort_keys=True)
 """
 
 
 def reference_spec(policy):
-    return {**policy['reference'], 'margin_mm': CONTINUITY_MARGIN_MM, 'tolerance_mm2': CONTINUITY_TOLERANCE_MM2}
+    return {**policy['reference'], 'extra_clearance_mm': FILLER_EXTRA_CLEARANCE_MM,
+            'tolerance_mm2': CONTINUITY_TOLERANCE_MM2, 'clearance_rule': CLEARANCE_RULE.pattern,
+            'scope': CONTINUITY_SCOPE}
 
 
 def measure_reference(policy, board, routing, env):
@@ -748,7 +791,7 @@ def _item(status, **detail):
     return {'status': status, **detail}
 
 
-def layer_policy_grade(policy, attempt_dir, result, classification):
+def layer_policy_grade(policy, attempt_dir, result, classification, board):
     """Grade a declared layer policy from the retained reports alone.
 
     Each item is pass, defect or unknown; anything unmeasured is unknown and the
@@ -777,12 +820,7 @@ def layer_policy_grade(policy, attempt_dir, result, classification):
                  for t in cand['tracks'] + ref['tracks']):
         items['disallowed_tracks'] = _item('unknown', reason='malformed track facts')
     else:
-        before = {(t['uuid'], t['layer']) for t in ref['tracks']}
-        off = sorted(({'uuid': t['uuid'], 'layer': t['layer'], 'net': t.get('net'), 'kind': t.get('kind')}
-                      for t in cand['tracks'] if t['layer'] not in allowed), key=lambda t: (t['layer'], t['uuid']))
-        new = [t for t in off if (t['uuid'], t['layer']) not in before]
-        items['disallowed_tracks'] = _item('defect' if new else 'pass', tracks=new,
-                                           preexisting=[t for t in off if t not in new])
+        items['disallowed_tracks'] = disallowed_tracks(allowed, cand, ref, read('snapshot.json'), board)
     checks = read('validate/preservation.json')
     pour = [c for c in checks if isinstance(c, dict) and c.get('check') == 'pour_integrity'] \
         if isinstance(checks, list) else []
@@ -802,10 +840,7 @@ def layer_policy_grade(policy, attempt_dir, result, classification):
     elif not layers:
         items['area_loss'] = _item('unknown', reason='no copper pour was measured')
     else:
-        rows = [{'net_layer': r['net_layer'], 'area_delta_pct': r['area_delta_pct'], 'area_mm2': r.get('area_mm2')}
-                for r in layers]
-        over = [r for r in rows if r['area_delta_pct'] is not None and -r['area_delta_pct'] > bound]
-        items['area_loss'] = _item('defect' if over else 'pass', limit_pct=bound, exceeded=over, layers=rows)
+        items['area_loss'] = area_loss(policy, layers, bound)
     if 'reference' in policy:
         items['reference_continuity'] = reference_grade(policy, read(POLICY_FILE), sha, classification)
     statuses = {i['status'] for i in items.values()}
@@ -813,23 +848,77 @@ def layer_policy_grade(policy, attempt_dir, result, classification):
     return {'status': status, 'items': items}
 
 
+def disallowed_tracks(allowed, cand, ref, snapshot, board):
+    """Tracks on layers outside the allowlist. One is pre-existing only when the input
+    board's own facts (bound by hash to the snapshot) hold a track of the same geometry
+    that no other candidate track already matched; anything else the router added."""
+    files = snapshot.get('files') if isinstance(snapshot, dict) else None
+    input_sha = files.get(board) if isinstance(files, dict) else None
+    if not isinstance(input_sha, str) or not re.fullmatch(r'[0-9a-f]{64}', input_sha):
+        return _item('unknown', reason='no input board hash in the snapshot')
+    off = sorted((t for t in cand['tracks'] if t['layer'] not in allowed),
+                 key=lambda t: (t['layer'], t['uuid'], canonical_json(t)))
+    show = [{'uuid': t['uuid'], 'layer': t['layer'], 'net': t.get('net'), 'kind': t.get('kind')} for t in off]
+    if ref.get('sha256') != input_sha:
+        return _item('defect', tracks=show, preexisting=[],
+                     reason='reference facts are not of the input board: no track is exempt')
+    unmatched = collections.Counter(canonical_json([t.get(k) for k in TRACK_IDENTITY]) for t in ref['tracks'])
+    new, preexisting = [], []
+    for track, shown in zip(off, show):
+        key = canonical_json([track.get(k) for k in TRACK_IDENTITY])
+        if unmatched[key] > 0:
+            unmatched[key] -= 1
+            preexisting.append(shown)
+        else:
+            new.append(shown)
+    return _item('defect' if new else 'pass', tracks=new, preexisting=preexisting)
+
+
+def area_loss(policy, layers, bound):
+    """Pour area deltas against the bound. A delta the router could not compute (no
+    initial fill) is unknown, and a defect on a declared reference plane: the plane
+    the policy protects had no copper to begin with."""
+    reference = {f'{policy["reference"]["net"]}@{layer}' for layer in policy['reference']['layers']} \
+        if 'reference' in policy else set()
+    rows = [{'net_layer': r['net_layer'], 'area_delta_pct': r['area_delta_pct'], 'area_mm2': r.get('area_mm2')}
+            for r in layers]
+    over = [r for r in rows if r['area_delta_pct'] is not None and -r['area_delta_pct'] > bound]
+    unmeasured = [r for r in rows if r['area_delta_pct'] is None]
+    empty_reference = [r for r in unmeasured if r['net_layer'] in reference]
+    absent = sorted(reference - {r['net_layer'] for r in rows})
+    detail = dict(limit_pct=bound, exceeded=over, unmeasured=unmeasured, layers=rows)
+    if over or empty_reference:
+        return _item('defect', **detail, **({'reason': 'a declared reference plane had no initial fill'}
+                                            if empty_reference else {}))
+    if unmeasured or absent:
+        return _item('unknown', **detail, absent=absent,
+                     reason='area delta not measured: no initial fill' if unmeasured else
+                     'a declared reference plane was not measured by the router')
+    return _item('pass', **detail)
+
+
 def reference_grade(policy, measured, sha, classification):
     if classification == 'validation_failed':
-        return _item('unknown', reason='the router rejected the board; continuity was not measured')
-    if (not isinstance(measured, dict) or measured.get('schema') != 'agent-ee.reference-continuity/1' or
-            not isinstance(measured.get('tracks'), list) or not isinstance(measured.get('problems'), list)):
-        return _item('unknown', reason='reference continuity measurement unavailable')
-    if measured.get('board_sha256') != sha or measured.get('spec') != reference_spec(policy):
-        return _item('unknown', reason='measurement is not of the validated board and declared reference')
-    tracks = measured['tracks']
-    if not all(isinstance(t, dict) and t.get('status') in ('continuous', 'interrupted', 'unmeasured')
-               for t in tracks):
-        return _item('unknown', reason='malformed continuity record')
+        return _item('unknown', scope=CONTINUITY_SCOPE,
+                     reason='the router rejected the board; continuity was not measured')
+    if (not isinstance(measured, dict) or measured.get('schema') != 'agent-ee.reference-continuity/2' or
+            not isinstance(measured.get('tracks'), list) or not isinstance(measured.get('vias'), list) or
+            not isinstance(measured.get('problems'), list)):
+        return _item('unknown', scope=CONTINUITY_SCOPE, reason='reference continuity measurement unavailable')
+    if (measured.get('board_sha256') != sha or measured.get('spec') != reference_spec(policy) or
+            measured.get('scope') != CONTINUITY_SCOPE):
+        return _item('unknown', scope=CONTINUITY_SCOPE,
+                     reason='measurement is not of the validated board and declared reference')
+    tracks, vias = measured['tracks'], measured['vias']
+    if (not all(isinstance(t, dict) and t.get('status') in ('continuous', 'interrupted', 'unmeasured')
+                for t in tracks) or
+            not all(isinstance(v, dict) and v.get('status') == 'interrupted' for v in vias)):
+        return _item('unknown', scope=CONTINUITY_SCOPE, reason='malformed continuity record')
     interrupted = [t for t in tracks if t['status'] == 'interrupted']
     unmeasured = [t for t in tracks if t['status'] == 'unmeasured']
-    detail = {'interrupted': interrupted, 'unmeasured': unmeasured, 'problems': measured['problems'],
-              'tracks_measured': len(tracks) - len(unmeasured)}
-    if interrupted:
+    detail = {'scope': CONTINUITY_SCOPE, 'interrupted': interrupted, 'vias': vias, 'unmeasured': unmeasured,
+              'problems': measured['problems'], 'tracks_measured': len(tracks) - len(unmeasured)}
+    if interrupted or vias:
         return _item('defect', **detail)
     if unmeasured or measured['problems'] or not tracks:
         return _item('unknown', **detail, reason='no RF track measured' if not tracks else 'incomplete measurement')
@@ -1190,7 +1279,7 @@ def attempt(request, layout, cancel=None):
                     path = routing / 'attempt' / name
                     if path.is_file() and not path.is_symlink():
                         report['retained'][f'attempt/{name}'] = digest(path)
-        grade = layer_policy_grade(policy, routing / 'attempt', result, classification)
+        grade = layer_policy_grade(policy, routing / 'attempt', result, classification, request['board'])
         if classification in ('complete', 'incomplete') and grade['status'] != 'pass':
             failing = [f'{k} {v["status"]}' for k, v in grade['items'].items() if v['status'] != 'pass']
             classification, reasons = 'policy_failed', reasons + [
@@ -1227,7 +1316,7 @@ def _finish(report, routing):
     policy = report['request'].get('layer_policy')
     if policy is not None and 'layer_policy' not in report['semantics']:
         report['semantics']['layer_policy'] = layer_policy_grade(
-            policy, routing / 'attempt', result, report['semantics']['classification'])
+            policy, routing / 'attempt', result, report['semantics']['classification'], report['request']['board'])
     return write_report(routing / 'adapter-report.json', report)
 
 

@@ -350,7 +350,8 @@ def _verify(run, report, inputs, receipt, layout):
             derived, _ = attempt.semantics(process['exit_code'], result, record, refused, found is not None,
                                            request)
             if 'layer_policy' in request:
-                grade = attempt.layer_policy_grade(request['layer_policy'], routing / 'attempt', result, derived)
+                grade = attempt.layer_policy_grade(request['layer_policy'], routing / 'attempt', result, derived,
+                                                  request['board'])
                 if derived in ('complete', 'incomplete') and grade['status'] != 'pass':
                     derived = 'policy_failed'
             # A contradiction may sit over reports that alone classify otherwise, because some
@@ -394,7 +395,8 @@ def _policy_grade(routing, report, request, result, classification):
     graded = classification
     if classification == 'policy_failed':
         graded = 'complete' if result['routing']['status'] == 'COMPLETE' else 'incomplete'
-    grade = attempt.layer_policy_grade(request['layer_policy'], routing / 'attempt', result, graded)
+    grade = attempt.layer_policy_grade(request['layer_policy'], routing / 'attempt', result, graded,
+                                      request['board'])
     if sem.get('layer_policy') != grade:
         raise ValueError('layer policy grade differs from the retained routing evidence')
     if attempt.CLASSES[classification][0] != 'none' and grade['status'] != 'pass':
