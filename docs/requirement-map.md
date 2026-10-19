@@ -132,6 +132,20 @@ a real scaffold producer must declare its actual subject inventory.
 revision 2. They use ordinary mappings; there is no contradiction disposition
 or rationale-only exception.
 
+The interface limitations explicitly retain regulator accuracy, connector-referenced
+ratiometry, automotive transient and reverse-polarity survival, installed BLE
+range, CAN timing and firmware behavior. Native connectivity or selected-part
+checks do not discharge those physical or functional obligations. No captured
+vendor regulator model supplies partial SPICE evidence in this fixture.
+
+The final run's `result.json` carries every compiled limitation verbatim; verified
+campaign history links that completion record. The [evidence index](evidence-index.md)
+repeats the same list, and verification refuses a changed or removed prefix.
+To capture an index criteria map through this compiler, include the JSON file in
+the template's `inputs` and `requirements`; it becomes an immutable baseline
+source without replacing the compiler-owned baseline. A passing native check
+does not mark a declared limitation or built-board bench obligation as met.
+
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest \
   tests.test_spec_record tests.test_requirement_scope tests.test_requirement_map \

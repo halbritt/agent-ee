@@ -369,6 +369,11 @@ class NativeMapTests(unittest.TestCase):
             scope['mutable_inputs'] = [scope['schematic'], scope['board']]
             scope['inputs'] = [{'path': str(captured / 'project'), 'at': 'project'}]
             scope['inputs'] += read_json(ROOT / 'fixtures/rc/control.scope.json')['inputs'][2:]
+            # The map template's requirement inputs are immutable baseline sources.
+            criteria = captured / 'pod-criteria.json'
+            write_json(criteria, {str(i): ['POD-AC-3'] if i == 3 else [] for i in range(1, 10)})
+            scope['inputs'].append({'path': str(criteria), 'at': 'pod-criteria.json'})
+            scope.setdefault('requirements', []).append('pod-criteria.json')
             scope['stages']['subjects']['verification'] = {
                 'path': scope['schematic'], 'kind': 'symbols', 'references': ['R1', 'C1', 'J1']}
             path = root / 'map.json'
@@ -390,6 +395,13 @@ class NativeMapTests(unittest.TestCase):
                 self.assertIn(limitation, result['limitations'])
             self.assertTrue(any(s.startswith('POD-AC-8: BENCH REQUIRED:') for s in result['limitations']))
             self.assertFalse(any(c['id'] in ('POD-AC-8', 'POD-AC-9') for c in result['checks']))
+            from agent_ee.evidence_index import build_index, render_index
+            index = build_index(root / 'review', 'pod-criteria.json')
+            self.assertEqual(index['limitations'][:len(compiled['limitations'])], compiled['limitations'])
+            for limitation in compiled['limitations']:
+                self.assertIn(limitation, render_index(index))
+            self.assertFalse(index['acceptance'])
+            self.assertEqual([row['status'] for row in index['criteria'][7:]], ['not_met', 'not_met'])
 
 
 if __name__ == '__main__':

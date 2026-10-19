@@ -107,19 +107,19 @@
     {
       "id": "POD-IF-CAN1",
       "limitation": {
-        "reason": "A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified."
+        "reason": "ISO 11898-2 physical-layer operation at 500 kbit/s, CAN 2.0B timing, required transmit frame rates and received-frame firmware behavior require circuit, timing and built-board evidence. Native net connectivity alone does not establish them; criterion 8 remains a separate bench obligation."
       }
     },
     {
       "id": "POD-IF-BLUETOOTH-LE",
       "limitation": {
-        "reason": "A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified."
+        "reason": "BLE 5.0 RaceChrono GATT behavior and radio range to a phone in a tank bag or jacket pocket require firmware and installed-board measurements. Module identity and antenna keepout checks do not establish radio performance; criterion 9 remains a separate bench obligation."
       }
     },
     {
       "id": "POD-IF-POWER-IN",
       "limitation": {
-        "reason": "A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified."
+        "reason": "Operation over 9 V to 16 V, ISO 7637-2 automotive transient survival with the stated 40 V clamp, reverse-polarity survival and the under-2 A power budget require captured protection/power analysis and physical evidence. Wiring and part identity checks alone do not establish survival or operation."
       }
     },
     {
@@ -131,7 +131,7 @@
     {
       "id": "POD-IF-ANALOG-INPUTS",
       "limitation": {
-        "reason": "A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified."
+        "reason": "Four 0-5 V channels with 12-bit resolution, connector-referenced ratiometry to the pod sensor supply, 16 V input protection and 200 Hz per-channel acquisition require circuit/error-budget, firmware and physical evidence. Native connectivity alone does not establish the analog transfer function or sampling performance."
       }
     },
     {
