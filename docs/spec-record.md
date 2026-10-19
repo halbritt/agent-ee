@@ -100,7 +100,9 @@ rest with the byte offset rather than reading it another way.
 - ATX headings (`#` to `######`, optional closing `#`s).
 - Pipe tables whose rows all begin and end with `|`, followed by a delimiter row
   (`| --- | :-: |`). A backslash escapes the next character, so `\|` is a pipe
-  inside a cell. A table ends at a blank line or a heading.
+  inside a cell. A table ends at a blank line or a heading. GitHub tables that
+  omit outer pipes are detected and refused with a byte offset, never captured
+  as prose.
 - Bullet lists (`-`, `*`, `+`) and numbered lists (`1.` or `1)`) with the marker
   in the first column. A line directly after an item continues it.
 - Paragraphs. LF or CRLF line ends; UTF-8 without a byte-order mark.
@@ -134,6 +136,10 @@ checks that a fresh capture reproduces it byte for byte.
 
 ## Limits
 
+- Table-row IDs follow the first cell; bullet IDs follow position (see [IDs](#ids)),
+  so edits can rename them.
+  The record hash also includes `spec.name`: renaming the spec file changes the
+  record hash even when its contents and requirement IDs stay the same.
 - The record says where text is, not what it means. Values such as `500 kbit/s`
   stay in the cell text; the requirement map (AGENTEE-159) maps each ID to a
   check, a limitation or a bench obligation.

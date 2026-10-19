@@ -27,7 +27,8 @@ SPACE = b' \t'
 ATX = re.compile(rb'( {0,3})(#{1,6})(?:[ \t]+|$)')
 BULLET = re.compile(rb'([-*+])(?:[ \t]+|$)')
 ORDERED = re.compile(rb'(\d{1,9})[.)](?:[ \t]+|$)')
-DELIMITER = re.compile(rb'\|(?:[ \t]*:?-+:?[ \t]*\|)+')
+# Recognize optional outer pipes so unsupported tables reach refusal, never prose.
+DELIMITER = re.compile(rb'\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?')
 BREAK = re.compile(rb'([-*_])(?:[ \t]*\1){2,}[ \t]*')
 SETEXT = re.compile(rb'(=+|-+)[ \t]*')
 
