@@ -2943,6 +2943,27 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-176 flat composition and native regression controls. Source symbols and stock connector library are read from separately admitted captures or the installed toolchain at runtime; no third-party symbol bodies are embedded in this code."
+    },
+    {
+      "paths": [
+        "src/agent_ee/binding_fill.py",
+        "tests/test_binding_fill.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-174 deterministic producer and synthetic captured-identity/native 130-component benchmark. Tests reuse owned native-binding and named-parts fixtures; MPN strings are labels, synthetic PDF envelopes are authored here, no vendor geometry/document or live supplier data is copied."
+    },
+    {
+      "paths": [
+        "docs/binding-fill.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-174 public contract and qualification limits."
     }
   ]
 }

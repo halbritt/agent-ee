@@ -524,7 +524,7 @@ def _symbol(item, anchor, namespace, key, project, path, endpoints, global_nets)
             continue
         instance.append(_property(prop, values.get(prop[1], prop[2]), anchor, item['matrix'], item['rotation']))
         written.add(prop[1])
-    for name, value in sorted(comp.get('part_binding', {}).items()):
+    for name, value in sorted({**comp.get('part_binding', {}), 'Footprint': comp['footprint']}.items()):
         if name not in written:
             instance.append(_property(['property', Q(name), Q(value), ['hide', 'yes']],
                                       value, anchor, item['matrix'], item['rotation']))
