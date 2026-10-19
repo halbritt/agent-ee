@@ -124,10 +124,37 @@ def native_rule(record, key, value):
     return record
 
 
+def compile_stackup(value, files, inputs, as_of):
+    """Source-bound nominal copper weights; thickness matching never converts ounces."""
+    from .board_envelope import fields, length, load, mm, name, validate_stackup
+    from .storage import canonical
+    # Reuse the envelope's exact numeric and alternating-layer contract.
+    declaration = load(canonical(value))
+    fields(declaration, 'profile stackup', ['name', 'layer_count', 'nominal_thickness_mm',
+           'thickness_mm', 'layers', 'layer_thickness_tolerance_mm', 'source'])
+    name(declaration['name'], 'profile stackup name', ID)
+    expected = validate_stackup({k: declaration[k] for k in ('thickness_mm', 'layers')},
+                                declaration['layer_count'])
+    expected.update(name=declaration['name'], layer_count=declaration['layer_count'],
+                    nominal_thickness_mm=mm(length(declaration['nominal_thickness_mm'],
+                                                  'nominal_thickness_mm', positive=True)),
+                    layer_thickness_tolerance_mm=mm(length(declaration['layer_thickness_tolerance_mm'],
+                                                           'layer_thickness_tolerance_mm')),
+                    source=copy.deepcopy(value['source']))
+    record = {'expected': expected, 'execution': 'unsupported'}
+    try:
+        verify_source(value['source'], inputs, files, as_of)
+    except (ValueError, KeyError, OSError, UnicodeError) as exc:
+        record['reason'] = str(exc)
+    else:
+        record['execution'] = 'ready'
+    return record
+
+
 def compile_profile(profile, files, inputs):
     required = {'schema', 'name', 'as_of', 'limits'}
     if (not isinstance(profile, dict) or not required <= profile.keys() or
-            set(profile) - required - ({'finished_thickness_tolerance'}
+            set(profile) - required - ({'finished_thickness_tolerance', 'stackup'}
                                       if profile.get('schema') == SCHEMAS[1] else set()) or
             profile['schema'] not in SCHEMAS or not isinstance(profile['name'], str)
             or not ID.fullmatch(profile['name']) or not isinstance(profile['limits'], list)
@@ -187,6 +214,16 @@ def compile_profile(profile, files, inputs):
             record['execution'] = 'ready'
         # This is an envelope bound, not an isolated native DRC rule or predicate.
         metadata['finished_thickness_tolerance'] = record
+    if 'stackup' in profile:
+        metadata['stackup'] = compile_stackup(profile['stackup'], files, inputs, as_of)
+        source = profile['stackup']['source']
+        if isinstance(source, dict) and isinstance(source.get('path'), str):
+            try:
+                captured_file(inputs, files, source['path'])
+            except ValueError:
+                pass  # The unsupported metadata retains the missing-source reason.
+            else:
+                dependencies.add(source['path'])
     return {'schema': 'agent-ee.compiled-fab/1', 'name': profile['name'], 'as_of': as_of, **metadata,
             'constraints': sorted(records, key=lambda c: c['id']),
             'immutable_inputs': sorted(dependencies)}
@@ -200,6 +237,9 @@ def capability(params, scope, files, inputs, cid):
     tolerance = compiled.get('finished_thickness_tolerance')
     if tolerance is not None and tolerance['execution'] != 'ready':
         raise ValueError('finished-thickness tolerance source not verified: ' + tolerance['reason'])
+    stackup = compiled.get('stackup')
+    if stackup is not None and stackup['execution'] != 'ready':
+        raise ValueError('stackup source not verified: ' + stackup['reason'])
     validate_mappings(compiled['constraints'], scope, files, cid)
     return {'compiled': compiled,
             'immutable_inputs': sorted({params['fab_profile'], *compiled['immutable_inputs'],

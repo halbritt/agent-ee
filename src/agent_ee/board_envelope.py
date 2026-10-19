@@ -53,8 +53,8 @@ UNBOUND = {
     'mounting_holes': 'no registered predicate checks declared mounting holes',
     'keepouts': 'no registered predicate binds a declared keepout to a saved rule area '
                 '(placement footprint-keepout/1 grades only rule areas already saved)',
-    'fixed_footprints': 'needs one placement connector-edge/1 check over these envelope bytes, '
-                        'and an envelope with exactly one fixed footprint'}
+    'fixed_footprints': 'needs one placement connector-edge/1 check over these envelope bytes '
+                        'selecting this fixed reference'}
 
 
 def load(raw):
@@ -493,6 +493,8 @@ def validate_profile(value, profile, captured, inventory):
     # source_paths lists only cited sources found in the capture inventory.
     record.update(as_of=compiled['as_of'], support=support, sources_verified=captured is not None,
                   source_paths=compiled['immutable_inputs'])
+    if 'stackup' in compiled:
+        record['stackup'] = compiled['stackup']
     if 'finished_thickness_tolerance' in compiled:
         record['finished_thickness_tolerance'] = compiled['finished_thickness_tolerance']
     return record, unresolved
@@ -773,13 +775,7 @@ def bind_fab_profile(item, spec, record, files, others):
 
 
 def bind_connector_edge(item, spec, record, files, others):
-    """A placement connector-edge/1 check (AGENTEE-92) over these exact envelope bytes.
-
-    The check grades every fixed footprint of its envelope as one verdict, so it
-    can witness this obligation only when the envelope fixes exactly this one
-    footprint and no other requirement maps the check. Returns an unknown reason
-    when the verdict cannot be attributed; raises on a mapping that cannot apply.
-    """
+    """One selected fixed reference, one witness over these exact envelope bytes."""
     params = spec.get('params') if isinstance(spec.get('params'), dict) else {}
     if params.get('criterion') != 'connector-edge/1':
         raise ValueError(f"envelope obligation {item['id']} maps placement check {spec['id']} with criterion "
@@ -790,10 +786,22 @@ def bind_connector_edge(item, spec, record, files, others):
     if others:
         raise ValueError(f"placement check {spec['id']} for envelope obligation {item['id']} is also mapped by "
                          f'{others}; one connector verdict cannot witness several requirements')
-    if len(record['fixed_footprints']) != 1:
-        return (f"connector-edge/1 grades all {len(record['fixed_footprints'])} fixed footprints as one "
-                'verdict, so a defect cannot be attributed to this one')
+    fixed = record['fixed_footprints'][int(item['source']['locator'].rsplit('/', 1)[1])]
+    if 'reference' not in params:
+        if len(record['fixed_footprints']) != 1:
+            return 'connector-edge/1 needs an explicit reference for each of several fixed footprints'
+    elif params['reference'] != fixed['reference']:
+        raise ValueError(f"connector-edge/1 reference {params['reference']!r} does not cover {fixed['reference']}")
     return None
+
+
+def stackup_authority_reason(record):
+    if record['fab_profile'].get('stackup', {}).get('execution') != 'ready':
+        return 'copper_weight_oz needs qualified captured manufacturing authority; no inferred conversion'
+    missing = [u['reason'] for u in record['unresolved']
+               if u['predicate'].startswith('stackup_layer_source_') or
+               u['predicate'] == 'finished_thickness_tolerance']
+    return '; '.join(missing) if missing else None
 
 
 def bind_native_envelope(item, spec, record, files, others):
@@ -809,7 +817,7 @@ def bind_native_envelope(item, spec, record, files, others):
     if others:
         raise ValueError(f"native envelope check {spec['id']} also mapped by {others}; one field per witness")
     if field == 'stackup':
-        return 'copper_weight_oz needs qualified captured manufacturing authority; no inferred conversion'
+        return stackup_authority_reason(record)
     return None
 
 

@@ -261,5 +261,263 @@ class NativeEnvelopeTests(unittest.TestCase):
             self.assertEqual(self.last_ctx.result['outcome'], 'unknown')
 
 
+class PodEnvelopeAcceptanceTests(unittest.TestCase):
+    """Real capture and sandboxed native checks on an original scaffold with two connectors."""
+    def setUp(self):
+        import shutil
+        import tempfile
+        from toolchain import require_toolchain
+        from agent_ee.board_envelope import source_inventory
+        require_toolchain(native=True)
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-envelope-profile-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.source = self.root / 'source'
+        shutil.copytree(ROOT / 'fixtures/telemetry-pod', self.source)
+        self.envelope = json.loads((self.source / 'envelope.json').read_text())
+        # This is a scoped contract fixture, not acceptance of the complete pod.
+        self.envelope['obligations'] = []
+        self.envelope['fixed_footprints'] = [dict(reference=ref, side='front', edge='left',
+            position_mm=pos, inset_mm=0, rotation_deg=0, insertion='from_top', tolerance_mm=0)
+            for ref, pos in (('AMPSEAL', 10), ('SMA', 30))]
+        self.count = 0
+        self.save_envelope()
+        record = validate((self.source / 'envelope.json').read_bytes(),
+                          profile=(self.source / 'fab-profile.json').read_bytes(),
+                          captured=source_inventory(self.source))
+        from agent_ee.scaffold import board
+        raw = board(record, 'owned-ee161-contract')
+        footprints = ''.join(f'(footprint "Owned:Connector" (layer "F.Cu") (at 0 {50-pos}) '
+                            f'(property "Reference" "{ref}"))'
+                            for ref, pos in (('AMPSEAL', 10), ('SMA', 30)))
+        (self.source / 'board.kicad_pcb').write_bytes(raw.rstrip()[:-1] + footprints.encode() + b')\n')
+        shutil.copyfile(ROOT / 'fixtures/rc/control/rc_filter.kicad_sch', self.source / 'board.kicad_sch')
+        shutil.copyfile(ROOT / 'fixtures/rc/control/rc_filter.kicad_pro', self.source / 'board.kicad_pro')
+        (self.source / 'targets.md').write_text('Owned envelope contract targets.\n')
+        (self.source / 'reference.md').write_text('Owned envelope contract reference.\n')
+
+    def save_envelope(self):
+        (self.source / 'envelope.json').write_text(json.dumps(self.envelope, indent=2) + '\n')
+
+    def save_profile(self, profile):
+        from agent_ee.storage import digest
+        (self.source / 'fab-profile.json').write_text(json.dumps(profile, indent=2) + '\n')
+        self.envelope['fab_profile']['sha256'] = digest(self.source / 'fab-profile.json')
+        self.save_envelope()
+
+    def scope(self):
+        from agent_ee.board_envelope import derive_requirements, source_inventory
+        record = validate((self.source / 'envelope.json').read_bytes(),
+                          profile=(self.source / 'fab-profile.json').read_bytes(),
+                          captured=source_inventory(self.source))
+        requirements = derive_requirements(record, 'envelope.json')['requirements']
+        checks = [{'id': 'drc', 'kind': 'drc'},
+                  {'id': 'fab', 'kind': 'fab_profile', 'params': {'fab_profile': 'fab-profile.json'}}]
+        checks += [dict(id=field.replace('_', '-'), kind='board_envelope',
+                        params=dict(criterion=criterion, envelope='envelope.json'))
+                   for field, criterion in (('outline', 'outline/1'), ('layer_count', 'layers/1'),
+                                            ('stackup', 'stackup/1'))]
+        checks += [dict(id=ref.lower(), kind='placement', params=dict(criterion='connector-edge/1',
+                   reference=ref, drc_check='drc', envelope='envelope.json')) for ref in ('AMPSEAL', 'SMA')]
+        for r in requirements:
+            field = r['source']['locator'].split('/')[1]
+            cid = ('fab' if field == 'fab_profile' else r['id'].rsplit('-', 1)[1].lower()
+                   if field == 'fixed_footprints' else field.replace('_', '-') if field in ('outline', 'layer_count', 'stackup')
+                   else 'drc')
+            r['checks'] = [cid]
+            del r['check_kinds']
+            del r['field_sha256']
+        requirements.append(dict(id='native', statement='Native DRC runs.', intent='acceptance',
+                                 source=dict(path='targets.md', locator='line 1'), checks=['drc']))
+        return dict(schema='agent-ee.scope/3', name='owned-ee161', scope='Envelope acceptance contract',
+                    inputs=[dict(path=str(p), at=p.relative_to(self.source).as_posix())
+                            for p in sorted(self.source.rglob('*')) if p.is_file()],
+                    schematic='board.kicad_sch', board='board.kicad_pcb', checks=checks,
+                    envelope=dict(path='envelope.json', profile='fab-profile.json', dialog=None),
+                    baseline=dict(requirements=requirements, targets=['targets.md'],
+                                  reference_architectures=['reference.md']))
+
+    def capture(self, scope=None):
+        from agent_ee.candidate import capture
+        from agent_ee.storage import write_json
+        self.count += 1
+        run = self.root / f'run-{self.count}'
+        run.mkdir()
+        write_json(self.root / 'scope.json', scope if scope is not None else self.scope())
+        manifest = capture(self.root / 'scope.json', run)
+        return run, manifest
+
+    def stackup_result(self):
+        import time
+        from agent_ee.checks import Ctx, check_board_envelope
+        run, manifest = self.capture()
+        spec = next(c for c in manifest['scope']['checks'] if c['id'] == 'stackup')
+        ctx = Ctx(run, manifest, spec, time.monotonic() + 60)
+        check_board_envelope(ctx)
+        return ctx.result
+
+    def test_stackup_bound_to_profile(self):
+        result = self.stackup_result()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'))
+        self.assertEqual(result['details']['fab_profile']['stackup']['execution'], 'ready')
+        self.assertEqual(result['details']['saved']['layers'][1]['thickness_mm'], '0.2104')
+        self.envelope['stackup']['layers'][0]['copper_weight_oz'] = 2
+        self.save_envelope()
+        result = self.stackup_result()
+        self.assertEqual(result['outcome'], 'defect')
+        self.assertEqual(result['details']['defects'],
+                         ['envelope layer F.Cu copper_weight_oz differs from profile'])
+
+    def test_saved_layer_outside_profile_tolerance_is_native_defect(self):
+        board = self.source / 'board.kicad_pcb'
+        board.write_bytes(board.read_bytes().replace(b'(thickness 0.035)',
+                                                     b'(thickness 0.035001)', 1))
+        result = self.stackup_result()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'))
+        self.assertEqual(result['details']['defects'],
+                         ['saved layer F.Cu thickness exceeds profile tolerance'])
+        self.assertEqual(result['details']['unknown'], [])
+
+    def test_unverified_stackup_source_stays_unknown_at_native_execution(self):
+        import shutil
+        import time
+        from agent_ee.checks import CheckError, Ctx, check_board_envelope
+        from agent_ee.storage import digest, read_json
+        profile = json.loads((self.source / 'fab-profile.json').read_text())
+        profile['stackup']['source']['quote'] = 'absent authority quote'
+        self.save_profile(profile)
+        with self.assertRaisesRegex(ValueError, 'copper_weight_oz'):
+            self.capture()
+        # Exercise runtime refusal independently of the capture gate, using real
+        # captured bytes and the native sandbox, without an acceptance baseline.
+        run = self.root / 'runtime-unknown'
+        inputs = run / 'inputs'
+        shutil.copytree(self.source, inputs)
+        manifest = dict(candidate_id='owned-ee161-unknown-authority',
+                        scope=dict(board='board.kicad_pcb', envelope=dict(
+                            path='envelope.json', profile='fab-profile.json', dialog=None)),
+                        files={p.relative_to(inputs).as_posix(): digest(p)
+                               for p in inputs.rglob('*') if p.is_file()})
+        spec = dict(id='stackup', kind='board_envelope',
+                    params=dict(criterion='stackup/1', envelope='envelope.json'))
+        ctx = Ctx(run, manifest, spec, time.monotonic() + 60)
+        with self.assertRaises(CheckError) as raised:
+            check_board_envelope(ctx)
+        self.assertEqual(raised.exception.execution, 'unsupported')
+        judgment = read_json(ctx.work / 'envelope-judgment.json')
+        self.assertEqual(judgment['status'], 'unknown')
+        self.assertEqual(judgment['fab_profile']['stackup']['execution'], 'unsupported')
+        self.assertIn('exact source quote absent', judgment['fab_profile']['stackup']['reason'])
+        self.assertTrue(read_json(ctx.work / 'envelope-probe.json')['has_stackup'])
+
+    def test_stackup_without_profile_unknown(self):
+        from agent_ee.envelope_check import captured_record
+        from agent_ee.board_envelope import source_inventory
+        scope = self.scope()
+        scope['envelope']['profile'] = None
+        files, inputs = source_inventory(self.source)
+        record, _ = captured_record(scope, dict(envelope='envelope.json'), files, inputs)
+        result = compare_saved('stackup/1', record, saved_structure((self.source / 'board.kicad_pcb').read_bytes()))
+        self.assertEqual(result['status'], 'unknown')
+        with self.assertRaisesRegex(ValueError, 'declare its captured path'):
+            self.capture(scope)
+        for field, value in (('quote', 'absent quote'), ('sha256', '0' * 64),
+                             ('page', 2), ('as_of', '2026-10-17')):
+            with self.subTest(field=field):
+                profile = json.loads((ROOT / 'fixtures/telemetry-pod/fab-profile.json').read_text())
+                profile['stackup']['source'][field] = value
+                self.save_profile(profile)
+                files, inputs = source_inventory(self.source)
+                record, _ = captured_record(self.scope(), dict(envelope='envelope.json'), files, inputs)
+                self.assertEqual(compare_saved('stackup/1', record,
+                    saved_structure((self.source / 'board.kicad_pcb').read_bytes()))['status'], 'unknown')
+                with self.assertRaisesRegex(ValueError, 'copper_weight_oz'):
+                    self.capture()
+
+    def test_two_fixed_footprints_each_graded(self):
+        import time
+        from agent_ee.checks import run_checks
+        board = self.source / 'board.kicad_pcb'
+        board.write_bytes(board.read_bytes().replace(b'(at 0 20)', b'(at 1 20)'))
+        run, _ = self.capture()
+        results = {r['id']: r for r in run_checks(run, time.monotonic() + 120)}
+        for cid in ('outline', 'layer-count', 'stackup', 'ampseal'):
+            self.assertEqual((results[cid]['execution'], results[cid]['outcome']),
+                             ('ok', 'pass'), results[cid])
+        self.assertEqual((results['sma']['execution'], results['sma']['outcome']), ('ok', 'defect'))
+        self.assertEqual([d['reference'] for d in results['sma']['details']['defects']], ['SMA'])
+        self.assertEqual([d['reference'] for d in results['ampseal']['details']['connectors']], ['AMPSEAL'])
+        # A missing SMA never makes the AMPSEAL witness unknown.
+        board.write_bytes(board.read_bytes().replace(b'(property "Reference" "SMA")',
+                                                     b'(property "Reference" "OTHER")'))
+        run, _ = self.capture()
+        results = {r['id']: r for r in run_checks(run, time.monotonic() + 120)}
+        self.assertEqual(results['ampseal']['outcome'], 'pass')
+        self.assertEqual((results['sma']['execution'], results['sma']['outcome']), ('unsupported', 'unknown'))
+        self.assertEqual([d['reference'] for d in results['sma']['details']['unknown']], ['SMA'])
+
+    def test_capture_lists_each_bound_obligation_and_refuses_holes_keepouts(self):
+        from agent_ee.storage import read_json
+        run, manifest = self.capture()
+        baseline = read_json(run / 'baseline.json')
+        self.assertEqual(len(baseline['envelope']['coverage']), 6)
+        self.assertEqual({c['status'] for c in baseline['envelope']['coverage']}, {'bound'})
+        self.assertEqual(baseline['coverage']['checks']['ampseal']['predicates'],
+                         ['placement:connector-edge/1:AMPSEAL'])
+        for path in ('envelope.json', 'fab-profile.json', 'sources/jlcpcb-stackup.txt',
+                     'sources/jlcpcb-thickness.txt'):
+            self.assertEqual(baseline['files'][path], manifest['files'][path])
+        self.envelope['mounting_holes'] = [dict(id='H1', at=[5, 5], drill_mm=3, plated=False)]
+        self.save_envelope()
+        with self.assertRaisesRegex(ValueError, 'R-envelope-telemetry-pod-hole-H1'):
+            self.capture()
+        self.envelope['mounting_holes'] = []
+        self.envelope['keepouts'] = [dict(id='antenna', polygon=[[1, 1], [2, 1], [2, 2], [1, 2]],
+                                        layers=['F.Cu'], forbid=['footprints'])]
+        self.save_envelope()
+        with self.assertRaisesRegex(ValueError, 'R-envelope-telemetry-pod-keepout-antenna'):
+            self.capture()
+
+    def test_profile_thickness_boundary_and_copper_identity_are_exact(self):
+        from agent_ee.board_envelope import source_inventory
+        from agent_ee.envelope_check import captured_record
+        profile = json.loads((self.source / 'fab-profile.json').read_text())
+        profile['stackup']['layer_thickness_tolerance_mm'] = 0.000001
+        self.save_profile(profile)
+        files, inputs = source_inventory(self.source)
+        record, _ = captured_record(self.scope(), dict(envelope='envelope.json'), files, inputs)
+        pcb = (self.source / 'board.kicad_pcb').read_bytes()
+        for thickness, status in ((b'0.035001', 'pass'), (b'0.034999', 'pass'),
+                                  (b'0.035002', 'defect'), (b'0.034998', 'defect')):
+            with self.subTest(thickness=thickness):
+                facts = saved_structure(pcb.replace(b'(thickness 0.035)', b'(thickness ' + thickness + b')', 1))
+                self.assertEqual(compare_saved('stackup/1', record, facts)['status'], status)
+        facts = saved_structure(pcb.replace(b'(layer "F.Cu"', b'(layer "In3.Cu"', 1))
+        self.assertEqual(compare_saved('stackup/1', record, facts)['status'], 'defect')
+        facts = saved_structure(pcb.replace(b'(thickness 0.035)', b'(thickness nope)', 1))
+        self.assertEqual(compare_saved('stackup/1', record, facts)['status'], 'unknown')
+
+    def test_connector_scope_rejects_cross_reference_shared_or_omitted_selectors(self):
+        scope = self.scope()
+        for c in scope['checks']:
+            if c['id'] == 'sma':
+                c['params']['reference'] = 'AMPSEAL'
+        with self.assertRaisesRegex(ValueError, 'does not cover SMA'):
+            self.capture(scope)
+        scope = self.scope()
+        for c in scope['checks']:
+            if c['id'] in ('sma', 'ampseal'):
+                del c['params']['reference']
+        with self.assertRaisesRegex(ValueError, 'explicit reference'):
+            self.capture(scope)
+        scope = self.scope()
+        for r in scope['baseline']['requirements']:
+            if r['id'].endswith('fixed-SMA'):
+                r['checks'] = ['ampseal']
+        scope['checks'] = [c for c in scope['checks'] if c['id'] != 'sma']
+        with self.assertRaisesRegex(ValueError, 'also mapped by'):
+            self.capture(scope)
+
+
 if __name__ == '__main__':
     unittest.main()

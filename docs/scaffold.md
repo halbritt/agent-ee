@@ -206,10 +206,12 @@ not silently add a stage policy.
 Hierarchical files can be pre-created and loaded by KiCad, but the existing
 staged presence checker refuses hierarchy. It remains unknown coverage; a
 hierarchical staged campaign is not qualified by this command. The production
-envelope baseline also continues to refuse uncovered stackup and other
-obligations. Supplying an envelope as an uncited generation input does not make
-it an acceptance authority. Complete production generation needs those coverage
-gaps and producer migrations resolved before the envelope can become binding.
+envelope baseline continues to refuse uncovered obligations. AGENTEE-161 enables
+stackup coverage through the declared profile's source-verified authority;
+holes, keepouts and unresolved generator mechanics still need bindings.
+Supplying an envelope as an uncited generation input does not make it an
+acceptance authority. Every obligation needs mapped executable coverage before
+capture can accept the envelope.
 
 [test_scaffold_producer.py](../tests/test_scaffold_producer.py) covers the
 producer on owned synthetic envelope, profile and parts fixtures: byte-identical

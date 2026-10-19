@@ -5,6 +5,7 @@ Nominal copper ounces require a separately qualified manufacturing authority;
 no thickness-to-weight conversion is inferred here.
 """
 from decimal import Decimal
+from fractions import Fraction
 import re
 
 from . import board_envelope as envelope
@@ -135,22 +136,65 @@ def compare_saved(criterion, record, facts):
         if [l['name'] for l in source['copper']] != record['copper_layers']:
             defects.append('saved copper layer set differs from exact envelope layer set')
     else:
-        expected = {'thickness_mm': record['stackup']['thickness_mm'], 'layers': [
-            {k: v for k, v in layer.items() if k != 'copper_weight_oz'} for layer in record['stackup']['layers']]}
-        if source != expected:
-            defects.append('saved structural stackup differs in name, order, kind or exact thickness')
+        authority = record['fab_profile'].get('stackup', {})
+        if authority.get('execution') != 'ready':
+            expected = {'thickness_mm': record['stackup']['thickness_mm'], 'layers': [
+                {k: v for k, v in layer.items() if k != 'copper_weight_oz'}
+                for layer in record['stackup']['layers']]}
+            if source != expected:
+                defects.append('saved structural stackup differs in name, order, kind or exact thickness')
+        else:
+            defects.extend(compare_stackup(record['stackup'], source, authority['expected']))
     if field == 'stackup':
-        unknown.append('nominal copper_weight_oz has no qualified captured manufacturing authority; '
-                       'KiCad thickness does not establish ounces')
+        reason = envelope.stackup_authority_reason(record)
+        if reason:
+            unknown.append(reason)
     return {'criterion': criterion, 'status': 'unknown' if unknown else 'defect' if defects else 'pass',
             'defects': defects, 'unknown': unknown, 'saved': source}
+
+
+def compare_stackup(declared, saved, profile):
+    """Compare exact rational thickness bounds and explicitly declared copper weights."""
+    defects = []
+    if declared['thickness_mm'] != profile['nominal_thickness_mm']:
+        defects.append('envelope nominal thickness differs from profile stackup')
+    if saved['thickness_mm'] != declared['thickness_mm']:
+        defects.append('saved nominal board thickness differs from envelope')
+    tolerance = Fraction(profile['layer_thickness_tolerance_mm'])
+    expected = profile['layers']
+    for label, layers in (('envelope', declared['layers']), ('saved', saved['layers'])):
+        if [(l['name'], l['kind']) for l in layers] != [(l['name'], l['kind']) for l in expected]:
+            defects.append(f'{label} stackup layer names, order or kinds differ from profile')
+            continue
+        for layer, bound in zip(layers, expected):
+            if abs(Fraction(layer['thickness_mm']) - Fraction(bound['thickness_mm'])) > tolerance:
+                defects.append(f"{label} layer {layer['name']} thickness exceeds profile tolerance")
+            if label == 'envelope' and layer.get('copper_weight_oz') != bound.get('copper_weight_oz'):
+                defects.append(f"envelope layer {layer['name']} copper_weight_oz differs from profile")
+    return defects
+
+
+def captured_record(scope, params, files, inputs):
+    """Resolve manufacturing authority only through the scope's declared envelope profile."""
+    from .board_envelope import captured_bytes
+    raw = captured_bytes(files, inputs, params['envelope'], 'envelope')
+    declared = scope.get('envelope') or {}
+    profile = None
+    if declared.get('path') == params['envelope'] and declared.get('profile') is not None:
+        profile = captured_bytes(files, inputs, declared['profile'], 'profile')
+    record = envelope.validate(raw, profile=profile, captured=(files, inputs))
+    dependencies = {params['envelope'], *record['fab_profile'].get('source_paths', []),
+                    *record['stackup'].get('source_paths', [])}
+    if profile is not None:
+        dependencies.add(declared['profile'])
+    return record, sorted(dependencies)
 
 
 def check_board_envelope(ctx):
     from .checks import CheckError
     try:
         parameters(ctx.params)
-        record = envelope.validate(_captured(ctx, ctx.params['envelope']))
+        record, _ = captured_record(ctx.scope, ctx.params, ctx.manifest['files'], ctx.inputs)
         raw = _captured(ctx, ctx.scope['board'])
         facts = saved_structure(raw)
     except (ValueError, KeyError, TypeError) as exc:
@@ -189,7 +233,8 @@ def check_board_envelope(ctx):
         result['status'] = 'unknown'
     judgment = {'schema': 'agent-ee.envelope-judgment/1', 'candidate_id': ctx.manifest['candidate_id'],
                 'board_sha256': native['board_sha256'], 'pcbnew_version': native['pcbnew_version'],
-                'envelope': {'path': ctx.params['envelope'], 'sha256': record['envelope_sha256']}, **result}
+                'envelope': {'path': ctx.params['envelope'], 'sha256': record['envelope_sha256']},
+                'fab_profile': record['fab_profile'], **result}
     write_json(ctx.work / 'envelope-judgment.json', judgment)
     ctx.evidence('envelope-judgment.json')
     ctx.result['details'].update(judgment)

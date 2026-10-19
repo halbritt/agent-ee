@@ -14,7 +14,7 @@ from .placement import judge, validate_capture
 from .storage import digest, read_json, write_json
 
 COMMON = {'criterion', 'drc_check', 'policy', 'routing_feedback'}
-EXTRA = {'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'envelope'},
+EXTRA = {'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'envelope', 'reference'},
          'ratsnest-mst/1': {'max_manhattan_mm', 'max_euclidean_mm'}}
 REQUIRED = {'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'envelope'}}
 MAXIMA = {'max_manhattan_mm': 'manhattan', 'max_euclidean_mm': 'euclidean'}
@@ -33,6 +33,9 @@ def parameters(params):
         raise ValueError(f'placement {criterion} params: unknown {sorted(unknown)}, missing {sorted(missing)}')
     if not isinstance(params.get('drc_check'), str) or not params['drc_check']:
         raise ValueError('placement requires the id of an earlier drc check')
+    if 'reference' in params:
+        from .board_envelope import name
+        name(params['reference'], 'connector reference')
     if 'min_courtyard_edge_mm' in params:
         predicates.exact_nm(params['min_courtyard_edge_mm'], 'min_courtyard_edge_mm')
     for key in MAXIMA:
@@ -58,6 +61,8 @@ def parameters(params):
 
 def predicate_names(params):
     criterion = params['criterion']
+    if criterion == 'connector-edge/1' and 'reference' in params:
+        return [f"placement:{criterion}:{params['reference']}"]
     if criterion != 'ratsnest-mst/1':
         return [f'placement:{criterion}']
     return [f'placement:{criterion}:{MAXIMA[key]}:max' for key in sorted(MAXIMA) if key in params]
@@ -127,9 +132,21 @@ def _connector_declarations(ctx):
     raw = _captured(ctx, ctx.params['envelope'])
     try:
         validation = validate(raw)
-        return predicates.envelope_declarations(validation), validation
+        return connector_declarations(validation, ctx.params), validation
     except (ValueError, KeyError, TypeError) as exc:
         raise CheckError('malformed', f'envelope refused: {exc}') from exc
+
+
+def connector_declarations(validation, params):
+    declarations = predicates.envelope_declarations(validation)
+    reference = params.get('reference')
+    if reference is not None:
+        declarations = [d for d in declarations if d['reference'] == reference]
+    if not declarations:
+        raise ValueError(f'no fixed connector declared for reference {reference!r}')
+    if len(declarations) != 1:
+        raise ValueError('connector-edge/1 requires reference when several fixed footprints are declared')
+    return declarations
 
 
 def _routing(ctx, facts):

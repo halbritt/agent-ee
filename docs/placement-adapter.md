@@ -488,13 +488,14 @@ does must declare it under the AGENTEE-85 contract and bind every derived
 obligation. The envelope-binding scope maps `connector-edge/1` to the
 fixed-footprint obligation and native `board_envelope` `outline/1` and
 `layers/1` checks to the outline and layer-count obligations; those bind. Its
-`stackup/1` check cannot bind until the AGENTEE-94 fab-profile seam supplies a
-qualified captured `copper_weight_oz` authority, so capture refuses with
+RC profile has no qualified captured `copper_weight_oz` authority, so its
+`stackup/1` check stays unbound and capture refuses with
 `R-envelope-rc-filter-stackup` as the only unbound obligation and no candidate is
 published. The envelope-fixed connector, the envelope reference missing from the
-board and the envelope declared mutable assert exactly that refusal; their
-binding behavior is unreachable through a campaign until AGENTEE-94. The envelope
-authority guard is neither bypassed nor replaced by test bindings.
+board and the envelope declared mutable assert exactly that refusal.
+AGENTEE-161 permits stackup binding when the
+declared profile supplies [source-verified authority](fab-profile.md#stackup-authority).
+The RC tests neither supply that authority nor replace it with test bindings.
 
 A campaign whose run captured no candidate records that run's own `result.json`
 error (`run N captured no candidate: ...`), not a missing-manifest error.
@@ -560,9 +561,9 @@ tests show the following:
 requires the scope to declare that envelope (AGENTEE-85). Capture then requires
 every envelope obligation to be bound to an executable check. The RC envelope's
 outline and layer-count obligations bind to the native `board_envelope`
-`outline/1` and `layers/1` checks; its stackup obligation cannot bind until a
-qualified captured `copper_weight_oz` authority exists (AGENTEE-94), and the
-envelope selects no fabricator profile. Capture therefore refuses such a
+`outline/1` and `layers/1` checks. The envelope selects no fabricator profile,
+so its stackup lacks the source-verified authority required by AGENTEE-161.
+Capture therefore refuses this fixture's
 campaign before any writer or helper runs, naming `R-envelope-rc-filter-stackup`
 as the only unbound obligation. The campaign reports the run's retained refusal, labelled
 unverified, because no candidate exists to verify it against. The campaign test
@@ -599,10 +600,11 @@ The real placer step, given the reused board with every member fixed, fails with
 
 These obligations remain open:
 
-- **Envelope-consuming campaigns (AGENTEE-85, AGENTEE-94/75).** The
-  campaign-level refusal of an envelope-fixed connector move needs the outline
-  and layer-count bindings, the copper-weight authority for the stackup and a
-  selected fabricator profile. Until then, such a campaign stops at capture.
+- **Envelope-consuming campaign qualification (AGENTEE-85/161).** The RC
+  campaign fixture selects no profile with stackup authority, so it stops at
+  capture. AGENTEE-161 supplies that binding mechanism for sourced profiles;
+  this fixture still does not qualify refusal of a connector move after
+  complete capture.
 - **AGENTEE-93 routing feedback.** The writer context reports it as unavailable.
   No stale result or model prose substitutes for a captured routed-attempt
   receipt.

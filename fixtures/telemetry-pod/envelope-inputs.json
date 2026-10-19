@@ -199,7 +199,7 @@
     "mounting_hole_count": 4,
     "fab_profile": {
       "name": "jlc04161h-7628",
-      "sha256": "71eeef06627f83d00f1a35a81d87231987d1a740b6298c0a7f77294786fd0238"
+      "sha256": "02e484728bbcf695422ab2aa70ff3923ddd82b871fc28715aa1e9e9104822632"
     },
     "stackup_layers": [
       {

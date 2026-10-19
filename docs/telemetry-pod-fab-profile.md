@@ -6,6 +6,11 @@ and 0.5 oz inner copper. Its machine name is `jlc04161h-7628` because profile
 identifiers accept lowercase letters. It uses `agent-ee.fab-profile/2` and the
 existing compiler. Its additional source-bound finished-thickness tolerance is
 consumed by the envelope validator; it emits no native DRC rule or predicate.
+AGENTEE-161 adds the sourced ordered stackup, explicit copper weights and a
+zero layer-thickness matching tolerance to this same profile. Saved layers must
+match those published values exactly; the separate ±10% bound applies only to
+finished-board thickness. This metadata enables `board_envelope` `stackup/1`
+coverage without inferring an ounce-to-thickness conversion.
 The fab-check descriptor also refuses an unverified tolerance citation.
 
 | Minimum | Captured value | Applicability |

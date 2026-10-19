@@ -44,6 +44,38 @@ class PodFabProfileTests(unittest.TestCase):
         self.assertEqual(set(compiled['immutable_inputs']),
                          {s['path'] for s in manifest['recorded_sources'].values()})
 
+    def test_profile_stackup_authority_is_sourced_and_closed(self):
+        compiled = compile_profile(self.profile, self.files, self.inputs)
+        authority = compiled['stackup']
+        self.assertEqual(authority['execution'], 'ready')
+        self.assertEqual(authority['expected']['name'], 'jlc04161h-7628')
+        self.assertEqual(authority['expected']['layer_thickness_tolerance_mm'], '0')
+        self.assertEqual([l['copper_weight_oz'] for l in authority['expected']['layers']
+                          if l['kind'] == 'copper'], ['1', '0.5', '0.5', '1'])
+        for mutation in ('schema', 'missing_tolerance', 'negative_tolerance', 'sub_nm',
+                         'unknown', 'layers', 'weight', 'sum'):
+            with self.subTest(mutation=mutation):
+                changed = copy.deepcopy(self.profile)
+                stack = changed['stackup']
+                if mutation == 'schema':
+                    changed['schema'] = 'agent-ee.fab-profile/1'
+                elif mutation == 'missing_tolerance':
+                    del stack['layer_thickness_tolerance_mm']
+                elif mutation == 'negative_tolerance':
+                    stack['layer_thickness_tolerance_mm'] = -0.001
+                elif mutation == 'sub_nm':
+                    stack['layer_thickness_tolerance_mm'] = 0.0000001
+                elif mutation == 'unknown':
+                    stack['accept'] = True
+                elif mutation == 'layers':
+                    stack['layer_count'] = 2
+                elif mutation == 'weight':
+                    stack['layers'][0]['copper_weight_oz'] = True
+                else:
+                    stack['thickness_mm'] = 1.6
+                with self.assertRaises(ValueError):
+                    compile_profile(changed, self.files, self.inputs)
+
     def test_pod_profile_source_hash(self):
         for source in ({c['source']['path'] for c in self.profile['limits']} |
                        {self.profile['finished_thickness_tolerance']['source']['path']}):
@@ -244,7 +276,8 @@ class PodEnvelopeTests(unittest.TestCase):
         self.assertEqual(facts['stackup']['thickness_mm'], '1.6')
         self.assertEqual(sum(Decimal(l['thickness_mm']) for l in facts['stackup']['layers']), Decimal('1.5862'))
         comparison = compare_saved('stackup/1', record, facts)
-        self.assertEqual(comparison['status'], 'unknown')
+        self.assertEqual(comparison['status'], 'pass')
+        self.assertEqual(comparison['unknown'], [])
         self.assertEqual(comparison['defects'], [])
         trip = round_trip((POD / 'envelope.json').read_bytes(), native)
         fields = {f['field']: f['status'] for f in trip['fields']}
