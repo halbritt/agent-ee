@@ -327,3 +327,14 @@ later turn fails although every check passes, and a campaign without steps is un
 - A completed write-bearing receipt with all writes present but missing declared artifacts or an unknown backend is still
   adoptable. A tool adapter such as AGENTEE-93 must require its own result and validation artifacts, and
   the qualified statuses, before it adopts a proposal. `adoptable_exits` does not encode a tool's exit semantics.
+
+## Declared authored inputs
+
+An optional step `inputs` list names unique candidate-relative files separate
+from `writes`. A missing input refuses a receipt as `missing_input:<path>`.
+At done, each such producer needs an adopted receipt whose input hashes equal
+the final captured files; changed authored inputs fail as `stage_step_stale_input`.
+The full input tree is still retained and hashed. Declarations without this
+field retain their historical normalization and done behavior.
+The [mutable-intent schematic stage](intent-schematic-stage.md) uses this binding
+for the writer intent and block seeds consumed by emission and forward annotation.

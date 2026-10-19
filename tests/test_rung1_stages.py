@@ -425,6 +425,22 @@ class GenerationTest(unittest.TestCase):
                             path.write_bytes(original)
         self.assertEqual(st.verify_record(self.rundir)['problems'], [])
 
+    def test_earlier_review_source_is_fixed_and_tampering_still_refuses(self):
+        stage = self.record['stages'][2]
+        run = self.rundir / stage['review']['run']
+        manifest = read_json(run / 'candidate.json')
+        scope = read_json(manifest['scope_path'])
+        sources = [Path(item['path']) for item in scope['inputs']]
+        self.assertTrue(all((self.rundir / 'reviews' / '3-schematic-source') in (p, *p.parents) for p in sources))
+        source = next(p for p in sources if p.name == 'project') / Path(scope['schematic']).name
+        original = source.read_bytes()
+        self.assertIsNone(st.sealed(run))
+        try:
+            source.write_bytes(original + b'\n')
+            self.assertIn('declared source inputs changed', st.sealed(run))
+        finally:
+            source.write_bytes(original)
+
     def test_removing_the_schematic_step_makes_every_later_stage_not_reached(self):
         with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-gen-omit-') as tmp:
             record = st.run(Path(tmp) / 'run', spec=SPEC, kicad_route=self.kicad_route,

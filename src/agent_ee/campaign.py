@@ -147,6 +147,7 @@ def implement(root, previous, definition, state, deadline):
                    "a no-op summary when the steps cover the repair. Fresh checks still grade every proposal."
                    "\nDeclared implementation steps:\n" + json.dumps({
                        'implementation_steps': [{**{key: spec[key] for key in ('stage', 'step', 'writes')},
+                           **({'inputs': spec['inputs']} if 'inputs' in spec else {}),
                            'scheduled': spec['stage'] in scheduled_stages} for spec in config['implementation_steps']],
                        'step_owned_outputs': sorted({rel for spec in scheduled for rel in spec['writes']})}))
     (work / 'implementation-prompt.txt').write_text(prompt, encoding='utf-8')

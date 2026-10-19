@@ -197,3 +197,8 @@ AGENTEE-54). `verify` exits 0.
   The driver then records every stage `not_reached` with the setup error.
 - **No reviewers.** Reviews are checks-only. The record carries no independent
   review or adjudication, and nothing in it is campaign acceptance.
+
+Each checks-only review declares a fixed copy of that stage's source under
+`review-sources/LABEL/`. Later placement or routing writes to `design/` leave
+those earlier sources intact. Historical verification uses the ordinary source
+and snapshot checks, including rejection of edits to a retained review source.

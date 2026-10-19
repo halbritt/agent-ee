@@ -107,6 +107,20 @@ def stage_done(root, state, config):
     order = staged['order'] if staged is not None else STAGES
     excluded = [{'stage': s['stage'], 'step': s['step'], 'reason': 'stage not in the scope stage order'}
                 for s in declared if s['stage'] not in order]
+    # Opt-in authored inputs must still be the bytes consumed by each producer's
+    # last receipt. Output provenance alone would allow stale intent at done.
+    for spec in (s for s in declared if s['stage'] in order and s.get('inputs')):
+        latest = None
+        for number in range(1, len(state['history'])):
+            for _, _, receipt in _receipts(root, state, str(number)):
+                if receipt['spec'] == spec and receipt['status'] in ADOPTABLE:
+                    latest = receipt
+        if latest is None:
+            raise ValueError(f"stage_step_unreceipted: {spec['stage']}/{spec['step']} has no adopted receipt")
+        for rel in spec['inputs']:
+            if latest['inputs'].get(rel) is None or latest['inputs'].get(rel) != final['files'].get(rel):
+                raise ValueError(f"stage_step_stale_input: {spec['stage']}/{spec['step']} did not consume "
+                                 f"the final {rel}")
     owners = {}
     for spec in (s for s in declared if s['stage'] in order):
         for rel in spec['writes']:

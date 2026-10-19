@@ -2823,6 +2823,16 @@
         "AE"
       ],
       "reviewed": "AGENTEE-168 original rectangular PESD1CAN-UX and LSM6DSO32 symbols, authored here without vendor or KiCad library graphics. Only pin names and numbers are transcribed from the cited pin tables. KiCad 10.0.7 supplies format defaults; no copied upstream geometry. See fixtures/telemetry-pod/symbols/README.md."
+    },
+    {
+      "paths": [
+        "tests/test_schematic_stage.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression tests for AGENTEE-173 with one minimal hand-authored four-line kicad_symbol_lib literal (ESP32-S3-TEST, one pin); stock RF_Module is read in memory only at runtime and no library or design text is copied."
     }
   ]
 }

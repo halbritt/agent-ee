@@ -149,6 +149,28 @@ class StageDoneRuleTests(unittest.TestCase):
         self.assertEqual(list(record['paths'][BOARD]['stages']), ['placement', 'routing'])
         self.assertEqual(record['paths'][BOARD]['producer']['step'], 'route-krt')
 
+    def test_mutable_intent_changed_after_emission_fails_done(self):
+        intent = 'generation/connectivity-intent.json'
+        emit = {**self.emit, 'inputs': [intent]}
+        r = Records(self.root, {SCH: 'empty', intent: 'intent-1'}, order=['schematic', 'verification'])
+        r.implementation(writer={intent: 'intent-2'}, steps=[(emit, {SCH: 'emitted'})])
+        r.next('verification')
+        self.assertEqual(r.done({'implementation_steps': [emit]})['paths'][SCH]['sha256'], 'emitted')
+        r.implementation(writer={intent: 'intent-3'})
+        r.next(None)
+        with self.assertRaisesRegex(ValueError, 'stage_step_stale_input: schematic/emit-schematic'):
+            r.done({'implementation_steps': [emit]})
+
+    def test_input_binding_requires_each_declared_producer(self):
+        intent = 'generation/connectivity-intent.json'
+        emit = {**self.emit, 'inputs': [intent]}
+        annotate = {**spec('schematic', 'forward-annotate', [BOARD]), 'inputs': [intent]}
+        r = Records(self.root, {SCH: 'empty', BOARD: 'empty', intent: 'i1'}, order=['schematic'])
+        r.implementation(steps=[(emit, {SCH: 'emitted'})])
+        r.next(None)
+        with self.assertRaisesRegex(ValueError, 'stage_step_unreceipted: schematic/forward-annotate'):
+            r.done({'implementation_steps': [emit, annotate]})
+
     def test_writer_hand_routing_after_the_routing_receipt_fails_done(self):
         # The verification writer edits the routed board; the in-place fab step passes it through.
         r = self.rung1(verification_writer={BOARD: 'hand-routed'})

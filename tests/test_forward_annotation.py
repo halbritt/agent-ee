@@ -24,8 +24,12 @@ from agent_ee import forward_annotation as fa
 from agent_ee.native_netlist import read_native_inventory
 from agent_ee.schematic_emitter import emit_schematic
 from agent_ee.symbol_library import children, parse_sexpr
-from test_schematic_emitter import PROJECT, ROOT, captures, load, run_native, tables
-from toolchain import require_toolchain
+try:
+    from test_schematic_emitter import PROJECT, ROOT, captures, load, run_native, tables
+    from toolchain import require_toolchain
+except ImportError:  # module-qualified invocation from the repository root
+    from tests.test_schematic_emitter import PROJECT, ROOT, captures, load, run_native, tables
+    from tests.toolchain import require_toolchain
 
 BOARD = ROOT / 'regulator.kicad_pcb'
 MANIFEST = ROOT / 'footprints.manifest.json'

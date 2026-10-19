@@ -27,6 +27,10 @@ Campaign [`pre_receipts`](stage-receipts.md#receipts-before-the-first-capture) b
 coordinator receipts made before the campaign to its first capture. Start copies and
 revalidates them; `verify-campaign` refuses changed, missing or unbound imports.
 They do not replace fresh checks or the declared-stage done binding.
+The [mutable-intent schematic stage](intent-schematic-stage.md) adds no check kind:
+its emission and annotation receipts bind authored inputs to native outputs.
+Pin-resolution failures retain named diagnostic findings and refuse adoption;
+checks still grade the freshly captured schematic and board.
 
 [Stage-one intent import](design-intent.md) prepares source-bound requirements
 and incomplete interface stubs for later capture. Its lint outcome covers only
