@@ -915,11 +915,12 @@ unique same-reference footprint, inclusive position tolerance, exact round drill
 plating and whole-hole outline containment. Keepouts require a saved board-level
 or footprint-owned rule area covering the complete polygon on every declared
 layer with at least the declared forbid set. Native loading supplies transformed
-board coordinates. An `antenna: {reference, facts_check}` declaration derives
-ESP32-S3-WROOM-1 geometry through AGENTEE-170 from a prior verified
-`datasheet_facts` result, applies the module transform and requires its owned
-area. Missing native output or unverified facts stay unknown; measured mismatches
-are per-item defects. See the [native envelope contract](board-envelope.md#native-envelope-check)
+board coordinates. The legacy `antenna: {reference, facts_check}` declaration
+now stays unknown: AGENTEE-170's former minimum misread a pin number as a
+clearance. Prior verified text facts cannot restore that invalid derivation.
+Separate source-bound placement policy context and captured CAD geometry do not
+establish a qualified minimum. Explicit polygon comparisons retain their
+saved-declaration semantics. See the [native envelope contract](board-envelope.md#native-envelope-check)
 for evidence, binding and failure boundaries. Envelope/2 preserves nominal
 and physical thickness separately and derives each generator mechanical
 obligation as unresolved; no existing criterion binds those obligations.

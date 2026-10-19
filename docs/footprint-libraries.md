@@ -181,10 +181,34 @@ helper `capture_esp32_s3_wroom_1` record:
 - `footprint-declarations.json`: `thermal_via_pads: ["41"]` for the 12
   `0.2 mm` thru-hole thermal vias sharing exposed pad `41` (the 9 unnumbered
   `F.Paste` apertures are already classified as `paste`).
-- `datasheet-facts.json`: four `keepout_dimension` facts citing page 45,
-  `Section 11.1 PCB Land Pattern, Figure 11-1. ESP32-S3-WROOM-1 Recommended PCB
-  Land Pattern` (`18 mm` body width, `25.5 mm` body length, `6 mm` antenna depth,
-  `15 mm` base-board keepout clearance), from which `derive_antenna_keepout`
-  derives the `(-24, -6.75)..(24, -27.75) mm` rectangle matching the footprint's
-  owned rule area across all 32 copper layers (`rule-area.json`).
+- `datasheet-facts.json`: three module dimensions citing page 45, Figure 11-1
+  (`18 mm` body width, `25.5 mm` body length, `6 mm` antenna depth). The magenta
+  `15` in that figure is pin 15, not a base-board clearance. The former fourth
+  fact and its symmetric minimum derivation have been withdrawn.
+- `rule-area.json`: unchanged captured CAD geometry, the
+  `(-24, -6.75)..(24, -27.75) mm` rectangle across all 32 copper layers.
+  `probe_rule_areas` still reproduces it from the pinned footprint bytes. This
+  establishes what the library contains, not a manufacturer-derived minimum.
 
+`derive_antenna_keepout` now refuses legacy clearance records even if a prior
+text-extraction check labeled them verified. It also refuses to derive a minimum
+from the three authentic dimensions alone. A numeric token's presence does not
+establish its engineering meaning. Dynamic envelope antenna declarations remain
+unknown with an actionable reason; no CAD polygon is substituted automatically.
+
+`esp32_s3_wroom_1_placement_policy(case, pdf_path=...)` declares either
+`outside_board` or `board_cutout`. `antenna_placement_context(policy,
+captured_files)` verifies the safe capture path, exact source bytes/hash and
+case-specific page/locator against the reviewed guidelines snapshot SHA-256
+`057f6df63e10a2dfc155cf19d942adf5780127d839626e2beb4c1a61efeaf3a5`.
+The [hardware design guidelines PDF](https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32s3/esp-hardware-design-guidelines-en-master-esp32s3.pdf)
+places the outside-board policy on physical page 33 (printed 30), section 1.4.7,
+and conditional asymmetric cutout Figure 26 on physical page 34 (printed 31).
+The separate 15 mm housing recommendation is retained with its own scope; it is
+never converted into board copper clearance. No vendor PDF is committed.
+
+Both context records return `outcome: unknown`, `coverage: missing` and
+`source_derived_minimum: null`. They expose no polygon and grant no new check or
+acceptance capability. Module pose, feed-point side, board/cutout/housing geometry
+and final RF testing still need qualification. This is a source/provenance repair,
+not a general antenna placement solver.

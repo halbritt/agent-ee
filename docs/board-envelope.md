@@ -48,7 +48,7 @@ separates facts read from the saved board from owned assumptions.
 | `stackup` | `thickness_mm` and `layers` from top to bottom, alternating `copper` (`name`, `thickness_mm`, `copper_weight_oz`) and `dielectric` (`name`, `thickness_mm`). Copper names are exactly `F.Cu`, `In1.Cu` … `B.Cu`. Layer thicknesses must sum exactly to `thickness_mm` |
 | `fab_profile` | `null` (none selected yet) or `{name, sha256}` naming a captured profile |
 | `mounting_holes` | `{id, at, drill_mm, plated}` plus optional nonnegative `tolerance_mm` (default 0); `id` selects the board reference and the whole hole must lie inside the outline |
-| `keepouts` | `{id, polygon, layers, forbid}`: a simple polygon contained in the closed outline; alternatively replace `polygon` with `antenna: {reference, facts_check}` for the ESP32-S3-WROOM-1 datasheet derivation. Stackup copper layer names and a unique subset of `footprints`, `tracks`, `vias`, `pads`, `copper_pours` |
+| `keepouts` | `{id, polygon, layers, forbid}`: a simple polygon contained in the closed outline; alternatively replace `polygon` with `antenna: {reference, facts_check}` for the legacy ESP32-S3-WROOM-1 derivation, now explicitly unresolved. Stackup copper layer names and a unique subset of `footprints`, `tracks`, `vias`, `pads`, `copper_pours` |
 | `fixed_footprints` | `{reference, side, edge, position_mm, inset_mm, rotation_deg, insertion, tolerance_mm}` |
 
 Version 2 changes `stackup` to `{nominal_thickness_mm,
@@ -343,20 +343,20 @@ For an ESP32-S3-WROOM-1 antenna declaration, use `antenna` instead of `polygon`:
  "forbid": ["footprints", "tracks", "vias", "pads", "copper_pours"]}
 ```
 
-`facts_check` must select a prior `datasheet_facts` check. At execution, its
-candidate-bound `facts.json` must contain verified records for AGENTEE-170's
-four Figure 11-1 dimensions. `footprint_library.derive_antenna_keepout` derives
-the module-origin polygon from those values; the envelope supplies no coordinates
-for it. The check transforms that polygon using the unique named module's native
-origin, side and exact quarter-turn rotation, then compares only that footprint's
-owned rule areas. The derived clearance may extend past the board edge; this
-criterion does not select module placement or clip the datasheet polygon.
-The judgment retains the derivation, source hash, compared polygon and area UUID.
-Missing or inapplicable facts, an ambiguous module or an unqualified rotation
-stay unknown. A board-level substitute cannot satisfy this owned antenna binding.
-The existing [AGENTEE-170 metadata](footprint-libraries.md#footprint-owned-keepout-rule-areas-and-esp32-s3-wroom-1)
-records the fact IDs and datum. The module's antenna-area width/depth alone in
-`antenna-facts.json` does not supply the base-board clearance dimension.
+`facts_check` still selects a prior `datasheet_facts` check, but this legacy
+ESP32 dynamic declaration currently returns unknown. The former AGENTEE-170
+clearance derivation misread the pin-15 label in Figure 11-1 as 15 mm clearance.
+That derivation is withdrawn even for previously verified text records. The
+three authentic module dimensions do not define a base-board minimum.
+
+The [source context](footprint-libraries.md#footprint-owned-keepout-rule-areas-and-esp32-s3-wroom-1)
+separates outside-board placement, conditional asymmetric cutouts and housing
+clearance, with captured guideline provenance. These contexts deliberately
+withhold geometric qualification. The retained stock footprint rectangle is CAD
+geometry only. It cannot make this dynamic predicate pass. Explicit polygon
+checks still grade fidelity to an authored declaration; they do not qualify a
+manufacturer's antenna placement policy. Scaffold callers receive the same
+explicit unresolved error rather than an invented replacement polygon.
 
 Launch preflight requires the recorded `pcbnew` runtime. The coordinator runs
 `agent_ee.envelope_probe` in the networkless tool sandbox,

@@ -607,7 +607,7 @@
       "origins": [
         "AE"
       ],
-      "reviewed": "Owned manifest, thermal-via declaration, numerical keepout dimension facts (18, 25.5, 6, 15 mm from Espressif ESP32-S3-WROOM-1 datasheet v1.8 page 45 Figure 11-1), and rule-area polygon metadata; no stock KiCad library or vendor datasheet text is copied."
+      "reviewed": "Owned manifest, thermal-via declaration, authentic module dimension facts (18, 25.5, 6 mm from Espressif ESP32-S3-WROOM-1 datasheet v1.8 page 45 Figure 11-1) and captured rule-area geometry metadata. Former 15 mm fact withdrawn: the source label is pin15. CAD geometry is preserved without claiming a manufacturer-derived minimum. No stock KiCad library or vendor datasheet text is copied."
     },
     {
       "paths": [

@@ -99,7 +99,8 @@ The envelope carries five `obligations`, bound by requirement IDs to revision 2:
 
 These generator obligations remain unbound until AGENTEE-177/179. Once declared,
 holes and keepouts bind through the [native envelope checks](board-envelope.md#native-envelope-check)
-from AGENTEE-162, including an antenna polygon derived from AGENTEE-170 facts.
+from AGENTEE-162. The former AGENTEE-170 dynamic antenna minimum is withdrawn:
+a pin label is not a clearance, and its placement qualification remains unknown.
 Empty geometry lists mean those
 choices have not been made. The validator returns `structural: pass`,
 `outcome: unknown`, `acceptance_ready: false`; deriving requirements preserves
