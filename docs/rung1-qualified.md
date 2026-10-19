@@ -193,15 +193,19 @@ needs footprints on the board.
 ### Placement policy
 
 `generation/placement-policy.json` is a captured `agent-ee.packing-policy/1`.
-It fixes no reference (see [Gaps](#gaps)) and names `GND` as the ground net.
-Its obstacles are four 0.5 mm bands along the inside of the outline, on each
-side, one obstacle per band. The placer grades courtyards against the outline
-only. In a dry run without the bands it put C1's pad 0.255 mm from the edge, and
-native DRC reported `copper_edge_clearance` against the template board's 0.5 mm
-rule, so the placement stage could not pass. The bands, with the policy's 1 mm
-gap, keep every courtyard 1.5 mm inside the edge. The placer reserves one
-bounding box per obstacle, so a single obstacle holding all four bands
-reserves the whole board (`packing_search_exhausted`).
+It fixes no reference (see [Gaps](#gaps)), names `GND` as the ground net, sets
+`min_courtyard_edge_mm: 1.5`, and declares `obstacles: []`. This preserves the
+previous effective inset (0.5 mm edge bands plus a 1 mm packing gap). It also
+leaves room for J1's reference text outside its courtyard. A run with a 0.5 mm
+courtyard margin had no copper-edge violation for these parts, but placed J1's
+reference centre at y=99.89 mm across the y=100 mm board edge; native DRC
+reported `silk_edge_clearance`. Courtyard clearance and copper-edge
+clearance do not establish silkscreen clearance. The placer shrinks the admissible
+region for movable footprints by `min_courtyard_edge_mm` from every outline
+edge and records `min_courtyard_edge_mm` in its placement receipt, without
+needing hand-made `EDGE_BAND` obstacle rectangles. The regression checks the
+placed board with native DRC including schematic parity, in addition to the
+courtyard and outline predicates. The board outline and native rules stay fixed.
 
 ### Iteration budget
 

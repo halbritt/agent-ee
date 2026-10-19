@@ -167,16 +167,6 @@ def references(board):
     return {pa._reference(node): key for key, node in pa.footprints(pa._board(Path(board).read_bytes())).items()}
 
 
-def rectangle_nm(x, y, w, h):
-    return [[int(round(a * 1000000)), int(round(b * 1000000))] for a, b in ((x, y), (x + w, y), (x + w, y + h), (x, y + h))]
-
-
-# Owner policy for the 20 x 12 mm RC outline: a 1.5 mm keep-off band inside every edge. The
-# pinned placer packs courtyards against the outline only; it does not apply the board's copper
-# edge clearance or silkscreen edge rules (an open AGENTEE-54 gap), so the band is captured intent.
-EDGE_BAND = [{'side': 'F', 'polygons': [rectangle_nm(*r)]}
-             for r in ((96, 96, 20, 1.5), (96, 106.5, 20, 1.5), (96, 97.5, 1.5, 9), (114.5, 97.5, 1.5, 9))]
-
 
 def placement_check(cid, criterion, **params):
     return {'id': cid, 'kind': 'placement', 'stage': 'placement',
@@ -492,7 +482,7 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         self.staged_scaffold((self.source / BOARD).read_bytes())
 
     def test_pinned_helper_places_the_scaffold_and_fresh_checks_grade_it(self):
-        write_json(self.source / POLICY, {**read_json(self.source / POLICY), 'obstacles': EDGE_BAND})
+        write_json(self.source / POLICY, {**read_json(self.source / POLICY), 'min_courtyard_edge_mm': 1.5})
         status, state = self.campaign(self.declaration(fixed=[]))
         self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'repeated_design'), state)
         self.staged_scaffold((self.out / 'runs/1/inputs' / BOARD).read_bytes())
@@ -511,7 +501,10 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         self.assertEqual((record['status'], record['helper']['status'], record['protected']), ('proposed', 'completed', []))
         self.assertEqual(sorted(t['reference'] for t in record['proposal_scope']['transforms']), ['C1', 'J1', 'R1'])
         # The captured proposal is the adopted helper output, and fresh native checks grade it.
-        receipt = read_json(self.out / 'implementations/1/receipts/1-agent-ee-placer/receipt.json')
+        receipt_dir = self.out / 'implementations/1/receipts/1-agent-ee-placer'
+        receipt = read_json(receipt_dir / 'receipt.json')
+        result = read_json(receipt_dir / pa.RESULT)
+        self.assertEqual(result['min_courtyard_edge_mm'], 1.5)
         self.assertEqual(read_json(self.out / 'runs/2/candidate.json')['files'][BOARD], receipt['outputs'][BOARD])
         self.assertEqual(self.outcomes(2), {'drc-placement': 'pass', 'courtyard': 'pass', 'outline': 'pass',
                                             'drc-final': 'defect'})

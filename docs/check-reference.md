@@ -800,6 +800,10 @@ probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
 authority and unknown boundaries, and [native qualification](placement.md#native-qualification)
 for the acceptance tests and remaining campaign and fabrication-limit gaps.
+The [placer's declared edge margin](placer.md) constrains courtyard geometry;
+it does not establish silkscreen or copper clearance. The
+[rung-1 policy](rung1-qualified.md#placement-policy) preserves a 1.5 mm courtyard
+inset and checks native placement DRC to cover J1's reference text too.
 The [placement adapter's property resave rule](placement-adapter.md#property-font-resave-default-agentee-147)
 admits KiCad's omitted 0.15 mm property-font thickness default during transform
 comparison; it does not grade placement or relax field value, layer or visibility checks.

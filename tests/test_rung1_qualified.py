@@ -138,14 +138,11 @@ class IntentAndLayoutTest(unittest.TestCase):
 
     def test_placement_policy_fixes_nothing_and_declaration_validates(self):
         from agent_ee.placement_adapter import validate_declaration
-        from agent_ee.placement import qualified_polygons
         policy = q.packing_policy(self.prep['params'], {'x': 100.0, 'y': 100.0, 'w': 50.0, 'h': 30.0})
         self.assertEqual((policy['schema'], policy['fixed_refs']), ('agent-ee.packing-policy/1', []))
         self.assertEqual(policy['ground_nets'], ['GND'])
-        self.assertEqual([o['side'] for o in policy['obstacles']], ['F'] * 4 + ['B'] * 4)
-        for obstacle in policy['obstacles']:
-            self.assertEqual(len(qualified_polygons({'status': 'proven', 'polygons': obstacle['polygons']})), 1)
-        self.assertEqual(policy['obstacles'][0]['polygons'][0][0], [100_000_000, 100_000_000])
+        self.assertEqual(policy['min_courtyard_edge_mm'], q.EDGE_CLEARANCE_MM)
+        self.assertEqual(policy['obstacles'], [])
         self.assertEqual(validate_declaration(q.placement_declaration())['helper'], 'agent-ee.placer/1')
 
     def test_prep_against_fome_mc_head_passes_stage_two_and_records_header_schema(self):
@@ -499,7 +496,18 @@ class SchematicTurnTest(unittest.TestCase):
         # Adoption binds the real helper output, and never rewrites the source candidate.
         receipt = Path(summary['receipt']).parent
         self.assertEqual(digest(board), digest(receipt / 'run' / pa.OUTPUT))
+        result = json.loads((receipt / pa.RESULT).read_text())
+        self.assertEqual(result['min_courtyard_edge_mm'], q.EDGE_CLEARANCE_MM)
+        from agent_ee.placement_predicates import edge_clearance
+        from agent_ee.placement_probe import extract
+        self.assertEqual(edge_clearance(extract(board), q.EDGE_CLEARANCE_NM)['status'], 'pass')
         self.assertEqual((self.design / 'project' / board.name).read_bytes(), before)
+        # Courtyard clearance alone missed J1's reference text crossing Edge.Cuts.
+        review, _ = q.review_checks_only(self.rundir, q.rehearsal_scope(
+            self.scope_path, design, base / 'after-placement.scope.json'), 'placed-native-checks')
+        for cid in ('drc-placement', 'courtyard', 'outline'):
+            check = json.loads((review / 'checks' / f'{cid}.json').read_text())
+            self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check)
 
     def test_erc_passes_and_intent_parity_passes(self):
         checks = self.checks()

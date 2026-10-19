@@ -3,14 +3,29 @@
 `placer.pack(facts, policy)` proposes a complete placement from the saved-board
 [placement probe](placement.md). The policy is captured input, using schema
 `agent-ee.packing-policy/1` and explicit `step_budget`, `gap_nm`, `fixed_refs`,
-`priority_refs`, `ground_nets`, and `obstacles`. Obstacles declare `side` and
+`priority_refs`, `ground_nets`, and `obstacles`, plus optional
+`min_courtyard_edge_mm` (default `0.0`). Obstacles declare `side` and
 closed straight `polygons` in integer nanometres. Locked footprints are fixed
 even when absent from `fixed_refs`; interface-owned fixed references must be
-supplied by the coordinator from captured owner intent.
+supplied by the coordinator from captured owner intent. When
+`min_courtyard_edge_mm` is set (in the packing policy, on the `placer_runner`
+request, or derived by `placement_adapter` from the scope's `edge-clearance/1`
+check params or `fab_profile` `min_edge_clearance_mm`), movable footprints are
+kept at least that margin inside every board outline edge; fixed edge-mounted
+footprints (`fixed_refs` and `locked`) are exempt by reference. The margin used
+is recorded as `min_courtyard_edge_mm` in the plan and in
+`placement-result.json`.
+
+The margin measures courtyard polygons, not text or copper. A driver must
+declare enough space for its footprints' other features and grade the saved
+board with native DRC. The [rung-1 policy](rung1-qualified.md#placement-policy)
+uses 1.5 mm to preserve space for J1's reference text outside its courtyard;
+using the copper-edge rule as the courtyard margin alone clipped that text.
 
 The placer sorts explicit priorities first, then descending pad count, then
 reference. It tries four quarter-turn rotations at deterministic positions
-aligned to board vertices and inflated reserved courtyard boxes. It chooses the
+aligned to board vertices (shifted inward by `min_courtyard_edge_mm`) and
+inflated reserved courtyard boxes. It chooses the
 smallest integer Manhattan same-net pad distance to already placed parts,
 excluding explicitly declared ground nets, with position and rotation tie
 breaks. Boxes conservatively reserve a minimum gap; the full polygon judge
