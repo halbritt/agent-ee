@@ -151,6 +151,10 @@ derivation is now withdrawn because it mistook a pin label for clearance; that
 item remains unknown pending case-specific physical qualification. A scope can
 capture; unresolved generator mechanical obligations still refuse acceptance
 by name. The diagnostic round trip does not satisfy them.
+AGENTEE-182 adds [declared courtyard separation](placement.md#keep-tall-and-heavy-parts-apart)
+and [sourced component height](board-envelope.md#component-height). The pod's
+separation distance still needs an explicit input; its connector installed height
+remains an AGENTEE-209 question, without an exemption from the 12 mm limit.
 
 The scope/2 fields that carry it:
 

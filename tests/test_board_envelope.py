@@ -623,7 +623,8 @@ class EnvelopeObligationTests(unittest.TestCase):
         self.assertEqual(set(BINDINGS), {('fab_profile', 'fab_profile'), ('fixed_footprints', 'placement'),
                                        ('outline', 'board_envelope'), ('layer_count', 'board_envelope'),
                                        ('stackup', 'board_envelope'), ('mounting_holes', 'board_envelope'),
-                                       ('keepouts', 'board_envelope')})
+                                       ('keepouts', 'board_envelope'),
+                                       ('max_component_height_mm', 'board_envelope')})
         report = self.coverage(mapped_scope(self.document))
         self.assertEqual({k: (r['status'], r['locator'], r['checks']) for k, r in report.items()}, {
             PROFILE_ID: ('bound', '/fab_profile', ['fab']),

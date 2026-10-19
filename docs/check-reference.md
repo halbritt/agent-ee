@@ -906,6 +906,16 @@ ordinary earlier DRC result. Missing markers are defects; unreadable markings or
 unverified axis facts are unknown. See [IMU axes](placement.md#imu-axes) for the
 required parameters, qualified text and evidence limits.
 
+`keep-apart/1` consumes declared `policy.keep_apart` pairs and minimum distances
+from `placement-policy/1`. It grades projected courtyard separation,
+including opposite sides. Outer-bound distance at least the minimum proves pass;
+inner-bound distance below the minimum proves defect. A minimum between the
+curve bounds yields `courtyard_approximation` naming the pair; missing or unproven
+courtyards are unknown. Exact straight-polygon equality passes. It retains per-pair
+verdicts and supplies `placement:keep-apart/1`. The pod spec gives no numeric
+minimum: [keep-apart declarations](placement.md#keep-tall-and-heavy-parts-apart)
+must supply it as an input.
+
 ## Board envelope predicates
 
 `board_envelope` takes `criterion` and a captured immutable `envelope`
@@ -940,6 +950,15 @@ saved-declaration semantics. See the [native envelope contract](board-envelope.m
 for evidence, binding and failure boundaries. Envelope/2 preserves nominal
 and physical thickness separately and derives each generator mechanical
 obligation as unresolved; no existing criterion binds those obligations.
+
+`component-height/1` binds the optional envelope `max_component_height_mm` field
+and supplies `envelope:component-height/1`. It grades every native footprint from
+an explicitly selected verified datasheet height fact or captured resolved STEP
+bounds read by native KiCad. Missing sources, unsupported models and unusable
+facts are unknown; a part above the inclusive maximum is a defect. It retains
+per-reference verdicts without exemptions for DNP or hand-fitted parts. See
+[component height](board-envelope.md#component-height) for parameter contracts,
+source applicability, model transform qualification and AGENTEE-209.
 
 ## Assembly and test access
 

@@ -18,7 +18,7 @@ from .symbol_library import LibraryError, nanometres
 
 CRITERIA = ('courtyard-overlap/1', 'outline-containment/1', 'edge-clearance/1',
             'footprint-keepout/1', 'connector-edge/1', 'ratsnest-mst/1', 'imu-axes/1',
-            'placement-groups/1')
+            'placement-groups/1', 'keep-apart/1')
 SIDE_LAYER = {'F': 'F.Cu', 'B': 'B.Cu'}
 AXES = {'x+': (1, 0), 'x-': (-1, 0), 'y+': (0, 1), 'y-': (0, -1)}
 INSERTIONS = ('through_edge', 'from_top', 'from_bottom')
@@ -189,6 +189,61 @@ def segment_distance2(a, b, c, d):
     if intersects(a, b, c, d):
         return Fraction(0)
     return min(point_segment2(a, c, d), point_segment2(b, c, d), point_segment2(c, a, b), point_segment2(d, a, b))
+
+
+def keep_apart(probe, policy):
+    """Minimum projected courtyard separation, including opposite board sides."""
+    from .placement import keep_apart_rules
+
+    def separation2(left, right):
+        return (Fraction(0) if _overlap(left, right) else
+                min(segment_distance2(a, b, c, d) for p in left for q in right
+                    for a, b in edges(p) for c, d in edges(q)))
+
+    rules = keep_apart_rules(policy)
+    defects, unknown, measured = [], [], []
+    if not rules:
+        unknown.append({'kind': 'keep_apart_rules_missing'})
+    for rule in rules:
+        minimum = exact_nm(rule['min_distance_mm'], 'min_distance_mm')
+        for other in rule['others']:
+            record = {'ref': rule['ref'], 'other': other, 'minimum_mm': mm(minimum)}
+            polygons, inner_polygons = [], []
+            for ref in (rule['ref'], other):
+                matches = [fp for fp in probe['footprints'] if fp['ref'] == ref]
+                if len(matches) != 1:
+                    unknown.append({**record, 'kind': 'footprint_missing_or_ambiguous', 'reference': ref})
+                    break
+                sides, reason = courtyards(matches[0])
+                if sides is None:
+                    unknown.append({**record, 'kind': 'courtyard', 'reference': ref, 'reason': reason})
+                    break
+                polygons.append([p for contours in sides.values() for p in contours])
+                inner, _ = courtyards(matches[0], inner=True)
+                inner_polygons.append([p for contours in inner.values() for p in contours])
+            if len(polygons) != 2:
+                continue
+            # Outer separation is a lower bound; inner separation is an upper
+            # bound. Only the corresponding side can prove pass or defect.
+            distance2 = separation2(*polygons)
+            inner_distance2 = separation2(*inner_polygons)
+            status = ('pass' if distance2 >= minimum**2 else
+                      'defect' if inner_distance2 < minimum**2 else 'unknown')
+            record.update(distance_mm=math.sqrt(distance2) / 10**6,
+                          distance_squared_nm={'numerator': distance2.numerator,
+                                               'denominator': distance2.denominator},
+                          inner_distance_mm=math.sqrt(inner_distance2) / 10**6,
+                          inner_distance_squared_nm={'numerator': inner_distance2.numerator,
+                                                     'denominator': inner_distance2.denominator},
+                          status=status)
+            measured.append(record)
+            if record['status'] == 'defect':
+                defects.append({'kind': 'keep_apart', 'refs': [rule['ref'], other], **record})
+            elif record['status'] == 'unknown':
+                unknown.append({'kind': 'courtyard_approximation', 'refs': [rule['ref'], other], **record,
+                                'reason': 'separation lies between the declared curve bounds'})
+    return {'criterion': 'keep-apart/1', 'status': verdict(defects, unknown),
+            'defects': defects, 'unknown': unknown, 'measured': measured, 'policy': policy}
 
 
 def proven_outline(probe):
