@@ -1,0 +1,345 @@
+{
+  "prose": [
+    {
+      "context": {
+        "reason": "Revision metadata; no design obligation."
+      },
+      "id": "POD-DOC-P1"
+    },
+    {
+      "context": {
+        "reason": "Generator benchmark purpose and project destination; no electrical predicate."
+      },
+      "id": "POD-PU-P1"
+    },
+    {
+      "context": {
+        "reason": "Requirement authority and pinned reference provenance; does not itself establish design compliance. References are pinned to fome-mc commit d31a690ab169290131b377057c41fe7d82d74bc4: docs/TELEMETRY_AND_RACECHRONO.md (Git blob 3dafed620a10f8fba209c2707b8f832eec6f6303; SHA-256 acaeab4504761c5ae1776eff185d1481d52a2637b501c7c29381a57547a41624) and docs/WIRING_SV650_K7.md (Git blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106; SHA-256 52920d87d8bc396aa702f4dd8d7ea96751cfcec7a9ed013575857104c96c03bf)."
+      },
+      "id": "POD-PU-P2"
+    },
+    {
+      "id": "POD-FN-P1",
+      "limitation": {
+        "reason": "CAN1/BLE forwarding, logging and no-control-output obligations need captured connectivity plus firmware and physical evidence; no full executable mapping is declared."
+      }
+    },
+    {
+      "id": "POD-FN-P2",
+      "limitation": {
+        "reason": "CAN forwarding and subscription filtering need firmware evidence. The 12-bit analog channels are ratiometric to the pod-owned 5 V sensor supply and do not use ECU 5V_SENSOR_2; circuit and bench evidence is not captured."
+      }
+    },
+    {
+      "context": {
+        "reason": "External interface authority and reference-document locations; row obligations are mapped separately. Interface references are fome-mc commit d31a690ab169290131b377057c41fe7d82d74bc4: docs/TELEMETRY_AND_RACECHRONO.md (Git blob 3dafed620a10f8fba209c2707b8f832eec6f6303; SHA-256 acaeab4504761c5ae1776eff185d1481d52a2637b501c7c29381a57547a41624) and docs/WIRING_SV650_K7.md (Git blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106; SHA-256 52920d87d8bc396aa702f4dd8d7ea96751cfcec7a9ed013575857104c96c03bf)."
+      },
+      "id": "POD-IF-P1"
+    },
+    {
+      "context": {
+        "reason": "Component decision provenance; component rows are mapped separately."
+      },
+      "id": "POD-CD-P1"
+    },
+    {
+      "id": "POD-ME-P1",
+      "limitation": {
+        "reason": "Tail-cowl installation, sealing and vibration survival require installation and physical qualification evidence."
+      }
+    },
+    {
+      "context": {
+        "reason": "Acceptance process and file-versus-bench division; numbered items are mapped separately."
+      },
+      "id": "POD-AC-P1"
+    },
+    {
+      "context": {
+        "reason": "Permitted generator methods and deviation policy; does not waive any component obligation."
+      },
+      "id": "POD-AC-P2"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "POD-FN-LATERAL-LONGITUDINAL-VERTICAL-ACCELERATION",
+      "limitation": {
+        "reason": "Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared."
+      }
+    },
+    {
+      "id": "POD-FN-YAW-ROLL-PITCH-RATE",
+      "limitation": {
+        "reason": "Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared."
+      }
+    },
+    {
+      "id": "POD-FN-LEAN-AND-PITCH-ANGLE",
+      "limitation": {
+        "reason": "Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared."
+      }
+    },
+    {
+      "id": "POD-FN-FRONT-FORK-TRAVEL",
+      "limitation": {
+        "reason": "Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared."
+      }
+    },
+    {
+      "id": "POD-FN-REAR-SHOCK-TRAVEL",
+      "limitation": {
+        "reason": "Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared."
+      }
+    },
+    {
+      "id": "POD-FN-FRONT-AND-REAR-BRAKE-PRESSURE",
+      "limitation": {
+        "reason": "Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared."
+      }
+    },
+    {
+      "id": "POD-FN-POSITION-SPEED-HEADING-ALTITUDE",
+      "limitation": {
+        "reason": "Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared."
+      }
+    },
+    {
+      "id": "POD-IF-CAN1",
+      "limitation": {
+        "reason": "ISO 11898-2 physical-layer operation at 500 kbit/s, CAN 2.0B timing, required transmit frame rates and received-frame firmware behavior require circuit, timing and built-board evidence. Native net connectivity alone does not establish them; criterion 8 remains a separate bench obligation."
+      }
+    },
+    {
+      "id": "POD-IF-BLUETOOTH-LE",
+      "limitation": {
+        "reason": "BLE 5.0 RaceChrono GATT behavior and radio range to a phone in a tank bag or jacket pocket require firmware and installed-board measurements. Module identity and antenna keepout checks do not establish radio performance; criterion 9 remains a separate bench obligation."
+      }
+    },
+    {
+      "id": "POD-IF-POWER-IN",
+      "limitation": {
+        "reason": "Operation over 9 V to 16 V, ISO 7637-2 automotive transient survival with the stated 40 V clamp, reverse-polarity survival and the under-2 A power budget require captured protection/power analysis and physical evidence. Wiring and part identity checks alone do not establish survival or operation."
+      }
+    },
+    {
+      "id": "POD-IF-SENSOR-SUPPLY",
+      "limitation": {
+        "reason": "The pod owns the 5 V sensor rail; its 5.00 V +/-1% at 200 mA and connector-referenced ratiometry require a captured circuit contract and physical load measurements. ECU 5V_SENSOR_2 is unused."
+      }
+    },
+    {
+      "id": "POD-IF-ANALOG-INPUTS",
+      "limitation": {
+        "reason": "Four 0-5 V channels with 12-bit resolution, connector-referenced ratiometry to the pod sensor supply, 16 V input protection and 200 Hz per-channel acquisition require circuit/error-budget, firmware and physical evidence. Native connectivity alone does not establish the analog transfer function or sampling performance."
+      }
+    },
+    {
+      "id": "POD-IF-GNSS-ANTENNA",
+      "limitation": {
+        "reason": "A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified."
+      }
+    },
+    {
+      "id": "POD-IF-PROGRAMMING-AND-DEBUG",
+      "limitation": {
+        "reason": "A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified."
+      }
+    },
+    {
+      "id": "POD-IF-HARNESS-CONNECTOR",
+      "limitation": {
+        "reason": "A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified."
+      }
+    },
+    {
+      "id": "POD-CD-MCU-AND-RADIO",
+      "limitation": {
+        "reason": "Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision."
+      }
+    },
+    {
+      "id": "POD-CD-CAN-TRANSCEIVER",
+      "limitation": {
+        "reason": "Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision."
+      }
+    },
+    {
+      "id": "POD-CD-IMU",
+      "limitation": {
+        "reason": "Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision."
+      }
+    },
+    {
+      "id": "POD-CD-GNSS",
+      "limitation": {
+        "reason": "Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision."
+      }
+    },
+    {
+      "id": "POD-CD-ANALOG-FRONT-END",
+      "limitation": {
+        "reason": "Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision."
+      }
+    },
+    {
+      "id": "POD-CD-POWER",
+      "limitation": {
+        "reason": "Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision."
+      }
+    },
+    {
+      "id": "POD-CD-HARNESS-CONNECTOR",
+      "limitation": {
+        "reason": "Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision."
+      }
+    },
+    {
+      "id": "POD-CD-BOARD",
+      "limitation": {
+        "reason": "Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision."
+      }
+    },
+    {
+      "id": "POD-ME-1",
+      "limitation": {
+        "reason": "Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate."
+      }
+    },
+    {
+      "id": "POD-ME-2",
+      "limitation": {
+        "reason": "Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate."
+      }
+    },
+    {
+      "id": "POD-ME-3",
+      "limitation": {
+        "reason": "Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate."
+      }
+    },
+    {
+      "id": "POD-ME-4",
+      "limitation": {
+        "reason": "Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate."
+      }
+    },
+    {
+      "id": "POD-ME-5",
+      "limitation": {
+        "reason": "Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate."
+      }
+    },
+    {
+      "id": "POD-ME-6",
+      "limitation": {
+        "reason": "Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate."
+      }
+    },
+    {
+      "id": "POD-AC-1",
+      "limitation": {
+        "reason": "No complete pod pinout contract is captured yet; hardware_interface must verify its declared pins without claiming firmware or radio performance."
+      }
+    },
+    {
+      "id": "POD-AC-2",
+      "limitation": {
+        "reason": "A pod parts manifest and approved deviations are not captured yet; part_binding only compares properties and does not establish the required part set."
+      }
+    },
+    {
+      "checks": [
+        {
+          "id": "erc",
+          "kind": "erc",
+          "params": {},
+          "stage": "verification"
+        },
+        {
+          "id": "drc",
+          "kind": "drc",
+          "params": {},
+          "stage": "verification"
+        }
+      ],
+      "id": "POD-AC-3"
+    },
+    {
+      "id": "POD-AC-4",
+      "limitation": {
+        "reason": "The registered kicad_happy_severity_gate requires a captured analyzer pin, policy and warning dispositions; those pod inputs are not supplied by this accounting fixture."
+      }
+    },
+    {
+      "id": "POD-AC-5",
+      "limitation": {
+        "reason": "assembly_readiness requires captured day-of-generation JLCPCB stock evidence plus recorded hand-fit deviations; neither has been captured for a generated pod."
+      }
+    },
+    {
+      "id": "POD-AC-6",
+      "limitation": {
+        "reason": "fab_package and jlc_dfm require a generated candidate, sealed exports and the owner-saved supplier report; the owner placement-preview obligations also remain open."
+      }
+    },
+    {
+      "id": "POD-AC-7",
+      "limitation": {
+        "reason": "board_envelope, placement and dfa_dft need complete mechanical declarations; silkscreen axes and antenna datasheet keepout coverage are not declared here."
+      }
+    },
+    {
+      "bench": {
+        "criterion": "CAN frame rates within 5% and ECU .mlg channel logging on a built pod.",
+        "procedure": "Connect the built pod and ECU to a bench CAN bus; retain timestamped traffic for all six specified frame IDs, compare rates with the spec, and retain an ECU .mlg file showing lean, brake pressure and suspension travel."
+      },
+      "id": "POD-AC-8"
+    },
+    {
+      "bench": {
+        "criterion": "RaceChrono Pro BLE pairing and combined ECU RPM, pod lean and 25 Hz GPS speed.",
+        "procedure": "Pair RaceChrono Pro with the built pod over BLE; retain the app session showing ECU RPM alongside pod lean and GPS speed and measure the GPS update rate against 25 Hz."
+      },
+      "id": "POD-AC-9"
+    }
+  ],
+  "schema": "agent-ee.requirement-map/1",
+  "scope": {
+    "board": "project/telemetry_pod.kicad_pcb",
+    "inputs": [
+      {
+        "at": "project",
+        "path": "scaffold/project"
+      }
+    ],
+    "limitations": [
+      "Example map for review; all declared limitations and bench obligations remain unverified even when native checks pass."
+    ],
+    "mutable_inputs": [
+      "project/telemetry_pod.kicad_sch",
+      "project/telemetry_pod.kicad_pcb"
+    ],
+    "name": "Telemetry pod requirement accounting example",
+    "schema": "agent-ee.scope/3",
+    "schematic": "project/telemetry_pod.kicad_sch",
+    "scope": "Compile revision-2 pod obligations. This accounting fixture declares incomplete coverage and is not a verified pod design or owner acceptance.",
+    "stages": {
+      "finding_retry_limit": 2,
+      "order": [
+        "verification"
+      ],
+      "schema": "agent-ee.stages/1",
+      "subjects": {
+        "verification": {
+          "kind": "symbols",
+          "path": "project/telemetry_pod.kicad_sch",
+          "references": [
+            "U1"
+          ]
+        }
+      }
+    }
+  },
+  "spec_record_sha256": "58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250"
+}

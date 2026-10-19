@@ -37,6 +37,10 @@ and incomplete interface stubs for later capture. Its lint outcome covers only
 the declared lexical checks; executable checks must supply acceptance evidence.
 The [requirement-record compiler](requirement-scope.md) maps quoted spec
 requirements to the check specifications on this page; it adds no check kind.
+The [spec-record requirement map](requirement-map.md) accepts registered kinds
+and uses their existing parameter and executable-coverage validators.
+Limitations and bench obligations appear in the scope and run limitations,
+never as passing checks; pod acceptance items 8 and 9 are bench-only.
 [Spec capture](spec-record.md) records a markdown spec's table rows, bullets and
 numbered items as requirement IDs with byte-exact locators; it adds no check
 kind either.

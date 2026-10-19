@@ -15,6 +15,7 @@ from .baseline import compile_baseline
 from .design_intent import JsonNumber, load_json
 from .findings import safe_id
 from .hardware_interface import exact_keys, strings, text
+from .requirement_map import Refused
 from .storage import digest, json_bytes
 
 RECORD_SCHEMA = 'agent-ee.requirement-record/1'
@@ -32,14 +33,6 @@ CHECK_FIELDS = {
     'rc_transient': 'id kind input_net output_net ground_net step_v stop_ms bounds samples_ms',
     'fab_export': 'id kind',
 }
-
-
-class Refused(ValueError):
-    """The record is well formed but cannot compile; ``findings`` names every reason."""
-
-    def __init__(self, findings):
-        super().__init__('; '.join(f['message'] for f in findings))
-        self.findings = findings
 
 
 def sha256(raw):
@@ -323,10 +316,19 @@ def main(argv=None):
     import sys
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('record', type=Path)
+    parser.add_argument('--spec-record', type=Path, help='verified spec-record/1 for a requirement-map/1')
+    parser.add_argument('--spec', type=Path, help='verbatim markdown used to capture --spec-record')
+    parser.add_argument('--inputs', type=Path, help='captured input root for map contract validation')
     parser.add_argument('--out', required=True, type=Path, help='new directory for scope, receipt and requirements')
     args = parser.parse_args(argv)
+    if bool(args.spec_record) != bool(args.spec) or (args.inputs and not args.spec_record):
+        parser.error('--spec-record and --spec are required together; --inputs requires both')
     try:
-        record_raw, spec_raw, scope, receipt = compile_file(args.record)
+        if args.spec_record:
+            from .requirement_map import compile_map_file
+            scope, receipt = compile_map_file(args.record, args.spec_record, args.spec, inputs=args.inputs)
+        else:
+            record_raw, spec_raw, scope, receipt = compile_file(args.record)
     except Refused as exc:
         json.dump({'outcome': 'refused', 'findings': exc.findings}, sys.stdout, indent=2, sort_keys=True)
         print()
@@ -334,8 +336,12 @@ def main(argv=None):
     except (ValueError, OSError) as exc:
         parser.exit(2, f'requirement record not compiled: {exc}\n')
     try:
-        write_outputs(args.out, record_raw, spec_raw, scope, receipt)
-    except OSError as exc:
+        if args.spec_record:
+            from .requirement_map import write_map_outputs
+            write_map_outputs(args.out, args.record, args.spec_record, args.spec, scope, receipt)
+        else:
+            write_outputs(args.out, record_raw, spec_raw, scope, receipt)
+    except (OSError, ValueError) as exc:
         parser.exit(2, f'outputs not written: {exc}\n')
     print(json.dumps({'outcome': 'compiled', 'baseline_id': receipt['baseline_id'],
                       'scope_sha256': receipt['scope_sha256']}, sort_keys=True))

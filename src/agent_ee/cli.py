@@ -178,6 +178,11 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
     manifest = verify_source(run) if current_source else verify_snapshot(run)
     if manifest["candidate_id"] != result.get("candidate_id"):
         raise ValueError("result candidate identity differs from snapshot")
+    declared_limits = manifest["scope"].get("limitations", [])
+    retained_limits = result.get("limitations", [])
+    if (not isinstance(retained_limits, list) or
+            retained_limits[:len(declared_limits)] != declared_limits):
+        raise ValueError("result omits or changes captured scope limitations")
     if result.get("policy_files") != policy_files():
         raise ValueError("review implementation changed; rerun under the current rules")
     from .preflight import profile_definitions, runtime_drift

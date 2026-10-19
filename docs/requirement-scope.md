@@ -1,5 +1,10 @@
 # Compiling a requirement record into a scope/2
 
+For verified markdown captures, the [requirement-map path](requirement-map.md)
+(AGENTEE-159) supports registered check kinds, explicit limitations, bench
+obligations and prose accounting in scope/3. This page describes the original
+requirement-record/1 interface.
+
 `agent_ee.requirement_scope` (AGENTEE-100) turns a stage-1 requirement record
 and the verbatim spec it cites into an `agent-ee.scope/2` file. The compiler
 uses only the Python standard library. It makes no model calls and infers
@@ -154,8 +159,8 @@ results above.
 
 ## Limits
 
-- The record vocabulary covers only the rung-1 check kinds. Other kinds need a
-  compiler extension and a new compiler version.
+- The legacy requirement-record/1 vocabulary covers only the rung-1 check
+  kinds. Use requirement-map/1 for other registered kinds and scope/3 coverage.
 - The compiler is not wired into `agent_ee.generate`, `agent_ee.rung1_campaign`
   or `agent_ee.rung1_qualified`, which still compile their own scopes.
   `rung1_campaign.write_scaffold` copies its own `scaffold/requirements` tree.

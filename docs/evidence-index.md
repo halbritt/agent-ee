@@ -87,6 +87,15 @@ index: CAN/ECU rates and logging, then RaceChrono BLE operation. A separate
 physical validation workflow must discharge them. This reader does not infer
 physical success from a file check.
 
+The limitations-bearing completion record is the final `runs/N/result.json`,
+linked by path and hash from verified campaign history. Its limitations must
+begin with every captured scope limitation verbatim, including order and
+duplicates. Operational limitations may follow. Ordinary verification and the
+index refuse deletion, rewording or reordering of that captured list. The index
+repeats it in JSON and Markdown even when the declared checks are satisfied.
+`stage_done` continues to describe producer receipt custody; it does not replace
+this completion record or certify the limitations as met.
+
 The ordinary run verifier checks snapshot, policy/runtime compatibility, check
 projections and the existing `agent-ee.evidence/1` seal. The index reads the
 captured snapshot, so a later change to the original source directory does not
