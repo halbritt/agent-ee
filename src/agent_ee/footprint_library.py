@@ -572,7 +572,6 @@ ESP32_KEEPOUT_FACT_IDS = (
     'esp32_s3_wroom_1_body_width_mm',
     'esp32_s3_wroom_1_body_length_mm',
     'esp32_s3_wroom_1_antenna_depth_mm',
-    'esp32_s3_wroom_1_keepout_clearance_mm',
 )
 
 
@@ -639,7 +638,7 @@ def esp32_s3_wroom_1_assignments(reference='U1', symbol_path='symbols/RF_Module.
 
 
 def esp32_s3_wroom_1_datasheet_facts(*, pdf_path=ESP32_DATASHEET_PATH, pdf_sha256=ESP32_DATASHEET_SHA256):
-    """Datasheet facts record naming page 45 and Figure 11-1 for the antenna keepout dimensions."""
+    """Authentic module dimensions; Figure 11-1 gives no base-board clearance."""
     figure = 'Section 11.1 PCB Land Pattern, Figure 11-1. ESP32-S3-WROOM-1 Recommended PCB Land Pattern'
     return dict(
         schema='agent-ee.datasheet-facts/1',
@@ -674,97 +673,76 @@ def esp32_s3_wroom_1_datasheet_facts(*, pdf_path=ESP32_DATASHEET_PATH, pdf_sha25
                 source=dict(path=pdf_path, sha256=pdf_sha256, page=45,
                             locator=f'{figure} (Antenna Area depth)', quote='6'),
             ),
-            dict(
-                id='esp32_s3_wroom_1_keepout_clearance_mm',
-                part_number='ESP32-S3-WROOM-1',
-                kind='keepout_dimension',
-                value='15',
-                unit='mm',
-                conditions=(f'{figure}: base-board keepout clearance 15 mm on left, right and top of '
-                            'antenna area (polygon x -24..24 mm, y -6.75..-27.75 mm)'),
-                source=dict(path=pdf_path, sha256=pdf_sha256, page=45,
-                            locator=f'{figure} (antenna keepout clearance)', quote='15'),
-            ),
+
         ],
     )
 
 
 def derive_antenna_keepout(facts, *, part_number='ESP32-S3-WROOM-1'):
-    """Derive the module-origin antenna keepout polygon from the Figure 11-1 datasheet facts."""
-    from .board_envelope import mm, simple_polygon
-    from .symbol_library import LibraryError, nanometres
-    if isinstance(facts, dict):
-        facts = facts.get('facts')
-    if not isinstance(facts, list):
+    """Refuse the withdrawn blanket-clearance derivation, including old verified records."""
+    entries = facts.get('facts') if isinstance(facts, dict) else facts
+    if not isinstance(entries, list):
         raise FootprintError('datasheet facts list required')
-    by_id = {}
-    for entry in facts:
-        if not isinstance(entry, dict):
+    for entry in entries:
+        fact = entry.get('fact', entry) if isinstance(entry, dict) else None
+        if not isinstance(fact, dict):
             raise FootprintError('invalid datasheet fact entry')
-        if 'fact' in entry and 'status' in entry:
-            if entry.get('status') != 'verified':
-                raise FootprintError(f"datasheet fact {entry.get('id')!r} is not verified")
-            fact = entry['fact']
-        else:
-            fact = entry
-        fid = fact.get('id')
-        if fid in ESP32_KEEPOUT_FACT_IDS:
-            if fid in by_id:
-                raise FootprintError(f'duplicate keepout fact {fid!r}')
-            by_id[fid] = fact
-    missing = [fid for fid in ESP32_KEEPOUT_FACT_IDS if fid not in by_id]
-    if missing:
-        raise FootprintError('missing ESP32 antenna keepout facts: ' + ', '.join(missing))
-    values_nm = {}
-    pages, sha256s, locators = set(), set(), []
-    for fid in ESP32_KEEPOUT_FACT_IDS:
-        fact = by_id[fid]
-        if fact.get('part_number') != part_number or fact.get('kind') != 'keepout_dimension' or fact.get('unit') != 'mm':
-            raise FootprintError(f'inapplicable keepout fact {fid!r}')
-        source = fact.get('source')
-        if (not isinstance(source, dict) or type(source.get('page')) is not int or source['page'] < 1
-                or not isinstance(source.get('locator'), str) or 'Figure 11-1' not in source['locator']
-                or not isinstance(source.get('sha256'), str) or len(source['sha256']) != 64):
-            raise FootprintError(f'keepout fact {fid!r} lacks Figure 11-1 page/locator/sha256 citation')
-        try:
-            nm = nanometres(fact.get('value'))
-        except LibraryError as exc:
-            raise FootprintError(f'invalid keepout dimension {fid!r}: {exc}') from exc
-        if nm <= 0:
-            raise FootprintError(f'keepout dimension {fid!r} must be positive')
-        values_nm[fid] = nm
-        pages.add(source['page'])
-        sha256s.add(source['sha256'])
-        locators.append(source['locator'])
-    if len(pages) != 1 or len(sha256s) != 1:
-        raise FootprintError('keepout dimension facts must cite one datasheet page and sha256')
-    width_nm = values_nm['esp32_s3_wroom_1_body_width_mm']
-    length_nm = values_nm['esp32_s3_wroom_1_body_length_mm']
-    depth_nm = values_nm['esp32_s3_wroom_1_antenna_depth_mm']
-    clearance_nm = values_nm['esp32_s3_wroom_1_keepout_clearance_mm']
-    if width_nm % 2 or length_nm % 2 or depth_nm >= length_nm:
-        raise FootprintError('keepout dimensions do not form a valid module-centered antenna zone')
-    half_w, half_l = width_nm // 2, length_nm // 2
-    x_min, x_max = -half_w - clearance_nm, half_w + clearance_nm
-    y_max, y_min = -half_l + depth_nm, -half_l - clearance_nm
-    points_nm = [(x_min, y_max), (x_max, y_max), (x_max, y_min), (x_min, y_min)]
-    simple_polygon(points_nm, 'derived antenna keepout')
-    return _seal(dict(
-        schema='agent-ee.antenna-keepout-derivation/1',
-        part_number=part_number,
-        page=next(iter(pages)),
-        figure='Figure 11-1',
-        source_sha256=next(iter(sha256s)),
-        dimensions_mm=dict(
-            body_width=mm(width_nm),
-            body_length=mm(length_nm),
-            antenna_depth=mm(depth_nm),
-            keepout_clearance=mm(clearance_nm),
-        ),
-        polygon_nm=[[x, y] for x, y in points_nm],
-        polygon_mm=[[mm(x), mm(y)] for x, y in points_nm],
-        bounds_mm=dict(min=[mm(x_min), mm(y_min)], max=[mm(x_max), mm(y_max)]),
-    ))
+        if fact.get('id') == 'esp32_s3_wroom_1_keepout_clearance_mm':
+            raise FootprintError('withdrawn ESP32 clearance: Figure 11-1 labels pin 15, not a 15 mm '
+                                 'base-board clearance; select a separately source-bound placement case')
+    raise FootprintError('ESP32 antenna placement qualification unresolved: module dimensions do not '
+                         'define a base-board minimum; outside-board and conditional cutout policies '
+                         'need separate physical qualification; captured CAD geometry is not that proof')
+
+
+ESP32_GUIDELINES_SHA256 = '057f6df63e10a2dfc155cf19d942adf5780127d839626e2beb4c1a61efeaf3a5'
+ESP32_GUIDELINES_PATH = 'datasheets/esp32-s3-hardware-design-guidelines.pdf'
+_ESP32_PLACEMENT_CASES = {
+    'outside_board': (33, 'Section 1.4.7 RF: module antenna outside the base board',
+        'Place the module PCB antenna beyond the base board with its feed point close to the edge; '
+        'corner selection depends on feed-point side.'),
+    'board_cutout': (34, 'Figure 26: conditional cutout, antenna feed point on the right',
+        'When the antenna cannot extend beyond the edge, use the applicable base-board cutout case. '
+        'Figure 26 has asymmetric Min15, Max2 and Max1 constraints; it is not a symmetric rectangle.'),
+}
+
+
+def esp32_s3_wroom_1_placement_policy(placement_case, *, pdf_path=ESP32_GUIDELINES_PATH):
+    """Declare a case and exact reviewed source snapshot; this does not qualify placement."""
+    placement_case = _text(placement_case)
+    if placement_case not in _ESP32_PLACEMENT_CASES:
+        raise FootprintError('unsupported ESP32 antenna placement case')
+    page, locator, _ = _ESP32_PLACEMENT_CASES[placement_case]
+    return dict(schema='agent-ee.antenna-placement-policy/1', part_number='ESP32-S3-WROOM-1',
+        placement_case=placement_case,
+        source=dict(path=pdf_path, sha256=ESP32_GUIDELINES_SHA256, page=page, locator=locator))
+
+
+def antenna_placement_context(policy, captured_files):
+    """Bind the selected policy source while explicitly withholding geometric qualification."""
+    _object(policy, ('schema', 'part_number', 'placement_case', 'source'))
+    source = policy['source']
+    _object(source, ('path', 'sha256', 'page', 'locator'))
+    path = PurePosixPath(_text(source['path']))
+    if path.is_absolute() or '..' in path.parts or str(path) != source['path'] or '\\' in source['path']:
+        raise FootprintError('unsafe antenna policy source path')
+    expected = esp32_s3_wroom_1_placement_policy(policy['placement_case'], pdf_path=source['path'])
+    if policy != expected:
+        raise FootprintError('antenna placement case/source differs from the reviewed guideline snapshot')
+    raw = captured_files.get(source['path'])
+    if not isinstance(raw, bytes) or hashlib.sha256(raw).hexdigest() != source['sha256']:
+        raise FootprintError('antenna policy source capture missing or hash mismatch')
+    return _seal(dict(schema='agent-ee.antenna-placement-context/1', execution='ok', outcome='unknown',
+        coverage='missing', part_number=policy['part_number'], placement_case=policy['placement_case'],
+        source=dict(source), policy=_ESP32_PLACEMENT_CASES[policy['placement_case']][2],
+        source_derived_minimum=None,
+        housing_clearance=dict(scope='inside end-product housing; not base-board copper clearance',
+            minimum_mm='15', source=dict(path=source['path'], sha256=source['sha256'], page=33,
+                locator='Section 1.4.7 RF: end-product housing clearance')),
+        limitations=['Source applicability is bound to the declared case and captured snapshot only.',
+            'Module pose, feed-point side, board edge/cutout and housing geometry remain unqualified.',
+            'Retained footprint rule-area geometry is CAD evidence, not a manufacturer-derived minimum.',
+            'Final RF range and throughput testing remain required.']))
 
 
 def capture_esp32_s3_wroom_1(out_dir=None, *, stock_root='/usr/share/kicad', reference='U1'):

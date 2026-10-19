@@ -146,8 +146,9 @@ candidate is an ordinary captured project:
 The [board envelope check](board-envelope.md#native-envelope-check) now owns exact
 native outline and copper-layer comparisons. AGENTEE-161 adds source-bound
 profile stackup authority and individual reference selectors for fixed connectors.
-AGENTEE-162 adds per-hole and per-keepout bindings, including a module-owned
-antenna polygon derived from verified datasheet facts. A fully bound scope can
+AGENTEE-162 adds per-hole and per-keepout bindings. Its legacy dynamic antenna
+derivation is now withdrawn because it mistook a pin label for clearance; that
+item remains unknown pending case-specific physical qualification. A scope can
 capture; unresolved generator mechanical obligations still refuse acceptance
 by name. The diagnostic round trip does not satisfy them.
 

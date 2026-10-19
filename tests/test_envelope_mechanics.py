@@ -197,36 +197,23 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         self.build('plated')
         self.assertEqual(self.results()['hole-h1']['outcome'],'pass')
 
-    def test_keepout_owned_by_footprint(self):
-        for angle in (0,90,180,270):
-            with self.subTest(angle=angle):
-                self.build(angle=angle)
+    def test_antenna_source_hold_survives_native_pose_and_zone_changes(self):
+        for mode, angle, side in [('control', 0, 'F'), ('control', 90, 'F'),
+                                  ('control', 0, 'B'), ('edge', 0, 'F'),
+                                  ('shrunk', 0, 'F'), ('no-zone', 0, 'F')]:
+            with self.subTest(mode=mode, angle=angle, side=side):
+                self.build(mode, angle=angle, side=side)
                 result = self.results()['keepout-antenna']
-                self.assertEqual((result['execution'],result['outcome']),('ok','pass'),result)
-                self.assertEqual(result['details']['saved']['derivation']['dimensions_mm']['keepout_clearance'],'15')
-                self.assertEqual(len(result['details']['saved']['rule_areas']),1)
-        self.build('edge',angle=0)
-        edge = self.results()['keepout-antenna']
-        self.assertEqual(edge['outcome'],'pass',edge)
-        self.assertEqual(min(p[1] for p in edge['details']['saved']['declared_polygon_nm']),-15000000)
-        self.build('shrunk')
-        result = self.results()['keepout-antenna']
-        self.assertEqual((result['execution'],result['outcome']),('ok','defect'),result)
-        self.assertEqual(result['details']['id'],'antenna')
+                self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+                self.assertIn('placement qualification unresolved', result['details']['unknown'][0])
+                self.assertNotIn('declared_polygon_nm', result['details']['saved'])
 
-    def test_antenna_requires_owned_area_and_qualified_transform(self):
-        self.build(side='B')
-        self.assertEqual(self.results()['keepout-antenna']['outcome'],'pass')
-        self.build(angle=45)
-        result = self.results()['keepout-antenna']
-        self.assertEqual((result['execution'],result['outcome']),('unsupported','unknown'))
-        self.build('no-zone')
-        self.assertEqual(self.results()['keepout-antenna']['outcome'],'defect')
+    def test_explicit_polygon_fidelity_is_separate_from_antenna_qualification(self):
         self.build('board-area')
-        self.assertEqual(self.results()['keepout-antenna']['outcome'],'defect')
+        self.assertEqual(self.results()['keepout-antenna']['outcome'], 'unknown')
         self.envelope['keepouts'][0].pop('antenna')
         self.envelope['keepouts'][0]['polygon'] = [[33.25,49],[33.25,1],[12.25,1],[12.25,49]]
-        self.assertEqual(self.results()['keepout-antenna']['outcome'],'pass')
+        self.assertEqual(self.results()['keepout-antenna']['outcome'], 'pass')
 
     def test_duplicate_native_pad_uuid_cannot_overwrite_drill_evidence(self):
         from agent_ee.symbol_library import children, parse_sexpr

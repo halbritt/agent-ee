@@ -200,47 +200,23 @@ class Esp32FootprintKeepoutTests(unittest.TestCase):
                 results = run_checks(run_dir, time.monotonic() + 60)
                 self.assertEqual((results[0]['execution'], results[0]['outcome']), expected, results)
 
-    def test_datasheet_facts_cite_page_and_figure_and_derive_keepout_polygon(self):
+    def test_datasheet_dimensions_do_not_establish_a_clearance_minimum(self):
         require_toolchain(tools=('pdftotext',))
-        raw = read_json(FIXTURE_DIR / 'datasheet-facts.json')
         loaded = load_facts(FIXTURE_DIR, 'datasheet-facts.json')
         self.assertEqual([f['id'] for f in loaded], list(ESP32_KEEPOUT_FACT_IDS))
+        self.assertEqual([f['value'] for f in loaded], ['18', '25.5', '6'])
         for fact in loaded:
-            self.assertEqual(fact['part_number'], 'ESP32-S3-WROOM-1')
-            self.assertEqual(fact['kind'], 'keepout_dimension')
-            self.assertEqual(fact['unit'], 'mm')
-            self.assertEqual(fact['source']['path'], ESP32_DATASHEET_PATH)
             self.assertEqual(fact['source']['sha256'], ESP32_DATASHEET_SHA256)
             self.assertEqual(fact['source']['page'], 45)
-            self.assertIn('Section 11.1 PCB Land Pattern', fact['source']['locator'])
             self.assertIn('Figure 11-1', fact['source']['locator'])
-            self.assertEqual(fact['source']['quote'], fact['value'])
+        with self.assertRaisesRegex(FootprintError, 'placement qualification unresolved'):
+            derive_antenna_keepout(loaded)
 
-        derived = derive_antenna_keepout(raw)
-        self.assertEqual(derived['schema'], 'agent-ee.antenna-keepout-derivation/1')
-        self.assertEqual(derived['part_number'], 'ESP32-S3-WROOM-1')
-        self.assertEqual(derived['page'], 45)
-        self.assertEqual(derived['figure'], 'Figure 11-1')
-        self.assertEqual(derived['source_sha256'], ESP32_DATASHEET_SHA256)
-        self.assertEqual(
-            derived['dimensions_mm'],
-            {'body_width': '18', 'body_length': '25.5', 'antenna_depth': '6', 'keepout_clearance': '15'},
-        )
-        self.assertEqual(
-            derived['polygon_mm'],
-            [['-24', '-6.75'], ['24', '-6.75'], ['24', '-27.75'], ['-24', '-27.75']],
-        )
-        self.assertEqual(
-            derived['polygon_nm'],
-            [[-24000000, -6750000], [24000000, -6750000], [24000000, -27750000], [-24000000, -27750000]],
-        )
-        self.assertEqual(derived['bounds_mm'], {'min': ['-24', '-27.75'], 'max': ['24', '-6.75']})
-
-        # Verify sandboxed datasheet_facts check and derivation from verified fact report
+        # Numerical text verification is not a placement qualification.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             pdf_path = root / 'esp32_page45.pdf'
-            multipage_text_pdf(pdf_path, 45, 45, ['18', '25.5', '6', '15'])
+            multipage_text_pdf(pdf_path, 45, 45, ['18', '25.5', '6'])
             pdf_sha = digest(pdf_path)
             facts_doc = esp32_s3_wroom_1_datasheet_facts(
                 pdf_path='datasheets/esp32_page45.pdf',
@@ -277,29 +253,10 @@ class Esp32FootprintKeepoutTests(unittest.TestCase):
             capture_candidate(root / 'scope.json', run_dir)
             results = run_checks(run_dir, time.monotonic() + 60)
             self.assertEqual((results[0]['execution'], results[0]['outcome']), ('ok', 'pass'), results)
-            self.assertEqual(derive_antenna_keepout(results[0]['details']['facts'])['polygon_mm'], derived['polygon_mm'])
+            with self.assertRaisesRegex(FootprintError, 'placement qualification unresolved'):
+                derive_antenna_keepout(results[0]['details']['facts'])
 
-        # Failure boundaries for derive_antenna_keepout
-        missing = copy.deepcopy(raw)
-        missing['facts'] = missing['facts'][:-1]
-        with self.assertRaisesRegex(FootprintError, 'missing ESP32 antenna keepout facts'):
-            derive_antenna_keepout(missing)
-
-        no_fig = copy.deepcopy(raw)
-        no_fig['facts'][0]['source']['locator'] = 'Section 11.1 PCB Land Pattern'
-        with self.assertRaisesRegex(FootprintError, 'Figure 11-1'):
-            derive_antenna_keepout(no_fig)
-
-        diff_page = copy.deepcopy(raw)
-        diff_page['facts'][0]['source']['page'] = 44
-        with self.assertRaisesRegex(FootprintError, 'one datasheet page'):
-            derive_antenna_keepout(diff_page)
-
-        unverified = [{'id': f['id'], 'status': 'mismatch', 'fact': f} for f in raw['facts']]
-        with self.assertRaisesRegex(FootprintError, 'not verified'):
-            derive_antenna_keepout(unverified)
-
-    def test_probe_lists_footprint_owned_rule_area_and_matches_pcbnew_and_datasheet(self):
+    def test_probe_lists_captured_rule_area_and_matches_pcbnew_without_source_minimum(self):
         require_toolchain(native=True)
         import pcbnew
 
@@ -336,11 +293,10 @@ class Esp32FootprintKeepoutTests(unittest.TestCase):
         )
         self.assertEqual(area['bounds_mm'], {'min': ['-24', '-27.75'], 'max': ['24', '-6.75']})
 
-        # Verify exact match with datasheet-derived keepout polygon
-        derived = derive_antenna_keepout(read_json(FIXTURE_DIR / 'datasheet-facts.json'))
-        self.assertEqual(area['polygon_nm'], derived['polygon_nm'])
-        self.assertEqual(area['polygon_mm'], derived['polygon_mm'])
-        self.assertEqual(area['bounds_mm'], derived['bounds_mm'])
+        # The identical captured CAD rectangle is retained, but is not a source-derived minimum.
+        self.assertEqual(probe, read_json(FIXTURE_DIR / 'rule-area.json'))
+        with self.assertRaisesRegex(FootprintError, 'placement qualification unresolved'):
+            derive_antenna_keepout(read_json(FIXTURE_DIR / 'datasheet-facts.json'))
 
         # Cross-check against native pcbnew FootprintLoad
         native = pcbnew.FootprintLoad(str(stock_fp.parent), 'ESP32-S3-WROOM-1')
@@ -359,6 +315,54 @@ class Esp32FootprintKeepoutTests(unittest.TestCase):
         pts = outline.Outline(0)
         native_pts_nm = [[pts.CPoint(i).x, pts.CPoint(i).y] for i in range(pts.PointCount())]
         self.assertEqual(area['polygon_nm'], native_pts_nm)
+
+
+class AntennaSourceCorrectionTests(unittest.TestCase):
+    def test_fact_helper_does_not_promote_pin15_to_clearance(self):
+        facts = esp32_s3_wroom_1_datasheet_facts()['facts']
+        self.assertEqual([f['value'] for f in facts], ['18', '25.5', '6'])
+        self.assertNotIn('esp32_s3_wroom_1_keepout_clearance_mm', [f['id'] for f in facts])
+
+    def test_legacy_verified_pin15_derivation_is_refused(self):
+        facts = esp32_s3_wroom_1_datasheet_facts()['facts'][:3]
+        legacy = copy.deepcopy(facts[0])
+        legacy.update(id='esp32_s3_wroom_1_keepout_clearance_mm', value='15',
+                      conditions='Legacy alleged clearance from Figure 11-1')
+        legacy['source'].update(quote='15', locator='Figure 11-1 antenna keepout clearance')
+        facts.append(legacy)
+        verified = [dict(id=f['id'], status='verified', fact=f) for f in facts]
+        with self.assertRaisesRegex(FootprintError, 'pin 15'):
+            derive_antenna_keepout(verified)
+
+    def test_policy_source_and_case_cannot_be_swapped(self):
+        from agent_ee.footprint_library import esp32_s3_wroom_1_placement_policy, antenna_placement_context
+        for case, page in [('outside_board', 33), ('board_cutout', 34)]:
+            policy = esp32_s3_wroom_1_placement_policy(case)
+            self.assertEqual(policy['source']['page'], page)
+            self.assertNotEqual(policy['source']['sha256'], ESP32_DATASHEET_SHA256)
+            for field, value in [('page', 34 if page == 33 else 33), ('sha256', ESP32_DATASHEET_SHA256),
+                                 ('locator', 'Figure 11-1'), ('path', '../guidelines.pdf')]:
+                changed = copy.deepcopy(policy)
+                changed['source'][field] = value
+                with self.subTest(case=case, field=field), self.assertRaises(FootprintError):
+                    antenna_placement_context(changed, {})
+            with self.assertRaisesRegex(FootprintError, 'capture missing or hash mismatch'):
+                antenna_placement_context(policy, {})
+            with self.assertRaisesRegex(FootprintError, 'capture missing or hash mismatch'):
+                antenna_placement_context(policy, {policy['source']['path']: b'wrong source body'})
+        for case in ['housing', 'symmetric_15mm', '']:
+            with self.assertRaises(FootprintError):
+                esp32_s3_wroom_1_placement_policy(case)
+
+    def test_dynamic_envelope_cannot_borrow_captured_zone_as_minimum(self):
+        from agent_ee.envelope_check import keepout_verdict
+        declaration = dict(id='antenna', antenna=dict(reference='U1', facts_check='facts'),
+                           layers=['F.Cu'], forbid=['tracks'])
+        result = keepout_verdict(declaration, dict(footprints=[], rule_areas=[]),
+                                esp32_s3_wroom_1_datasheet_facts())
+        self.assertEqual(result['status'], 'unknown')
+        self.assertIn('placement qualification unresolved', result['unknown'][0])
+        self.assertNotIn('declared_polygon_nm', result['saved'])
 
 
 if __name__ == '__main__':
