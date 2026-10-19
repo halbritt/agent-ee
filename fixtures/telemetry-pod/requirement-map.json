@@ -14,7 +14,7 @@
     },
     {
       "context": {
-        "reason": "Requirement authority and pinned reference provenance; does not itself establish design compliance."
+        "reason": "Requirement authority and pinned reference provenance; does not itself establish design compliance. References are pinned to fome-mc commit d31a690ab169290131b377057c41fe7d82d74bc4: docs/TELEMETRY_AND_RACECHRONO.md (Git blob 3dafed620a10f8fba209c2707b8f832eec6f6303; SHA-256 acaeab4504761c5ae1776eff185d1481d52a2637b501c7c29381a57547a41624) and docs/WIRING_SV650_K7.md (Git blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106; SHA-256 52920d87d8bc396aa702f4dd8d7ea96751cfcec7a9ed013575857104c96c03bf)."
       },
       "id": "POD-PU-P2"
     },
@@ -32,7 +32,7 @@
     },
     {
       "context": {
-        "reason": "External interface authority and reference-document locations; row obligations are mapped separately."
+        "reason": "External interface authority and reference-document locations; row obligations are mapped separately. Interface references are fome-mc commit d31a690ab169290131b377057c41fe7d82d74bc4: docs/TELEMETRY_AND_RACECHRONO.md (Git blob 3dafed620a10f8fba209c2707b8f832eec6f6303; SHA-256 acaeab4504761c5ae1776eff185d1481d52a2637b501c7c29381a57547a41624) and docs/WIRING_SV650_K7.md (Git blob bb0ff8c1a32faef6e7cc8fe1e67538829544b106; SHA-256 52920d87d8bc396aa702f4dd8d7ea96751cfcec7a9ed013575857104c96c03bf)."
       },
       "id": "POD-IF-P1"
     },
