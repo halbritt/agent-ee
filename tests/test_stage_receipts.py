@@ -655,6 +655,59 @@ class PreReceiptTests(StepFixture):
         with self.assertRaisesRegex(ValueError, 'not campaign-local'):
             self.verify()
 
+    def prepare_chain(self):
+        """Two real in-place pre-receipts: the second consumes the first's adopted after-tree."""
+        links, receipts = [], []
+        for text in ('outline board', 'content board'):
+            spec = self.spec('plant', json.dumps({'files': {'design/project/board.txt': text}}))
+            path, receipt = self.run_step(spec)
+            adopt(path, receipt, self.design)
+            links.append({'path': str(path / 'receipt.json'), 'sha256': digest(path / 'receipt.json'),
+                          'binding': receipt['binding']})
+            receipts.append(receipt)
+        self.campaign = self.root / 'campaign'
+        self.campaign.mkdir()
+        self.links = stage_receipts.import_pre_receipts(self.campaign, links, self.root)
+        self.state = {'history': [{'run': str(self.campaign / 'runs/1')}],
+                      'pre_receipts': {link['path']: link['sha256'] for link in self.links}}
+        self.captured = stage_receipts.after_tree(receipts[-1])
+        write_json(self.campaign / 'runs/1/candidate.json', {'files': self.captured})
+        write_json(self.campaign / 'config.json', {'pre_receipts': self.links})
+        return links, receipts
+
+    @toolchain_test
+    def test_ordered_chain_binds_through_last_receipt(self):
+        links, receipts = self.prepare_chain()
+        self.assertEqual(receipts[1]['inputs'], stage_receipts.after_tree(receipts[0]))
+        self.assertEqual(stage_receipts.validate_pre_receipt_chain(self.root, links), receipts)
+        self.verify()
+        # The first receipt alone no longer describes run 1: the content board differs.
+        shutil.rmtree(self.campaign / 'pre-receipts/2')
+        with self.assertRaisesRegex(ValueError, 'differs from first capture: project/board.txt'):
+            stage_receipts.verify_pre_receipts(self.campaign, {**self.state, 'pre_receipts': {
+                self.links[0]['path']: self.links[0]['sha256']}}, self.links[:1])
+
+    @toolchain_test
+    def test_reordered_or_unchained_receipts_refuse(self):
+        links, _ = self.prepare_chain()
+        with self.assertRaisesRegex(ValueError, 'must form one ordered chain'):
+            stage_receipts.validate_pre_receipt_chain(self.root, links[::-1])
+        reordered = self.root / 'reordered'
+        reordered.mkdir()
+        imported = stage_receipts.import_pre_receipts(reordered, links[::-1], self.root)
+        write_json(reordered / 'runs/1/candidate.json', {'files': self.captured})
+        write_json(reordered / 'config.json', {'pre_receipts': imported})
+        with self.assertRaisesRegex(ValueError, 'must form one ordered chain'):
+            stage_receipts.verify_campaign_receipts(reordered, {
+                'history': [{'run': str(reordered / 'runs/1')}],
+                'pre_receipts': {link['path']: link['sha256'] for link in imported}})
+        # An unreceipted edit between the two receipts breaks custody even in declared order.
+        (self.design / 'project/rules.txt').write_text('edited between receipts')
+        path, receipt = self.run_step(self.spec('plant', json.dumps({'files': {'design/project/board.txt': 'x'}})))
+        gap = {'path': str(path / 'receipt.json'), 'sha256': digest(path / 'receipt.json'), 'binding': receipt['binding']}
+        with self.assertRaisesRegex(ValueError, 'pre_receipt 2 does not consume'):
+            stage_receipts.validate_pre_receipt_chain(self.root, [links[1], gap])
+
     @toolchain_test
     def test_missing_retained_output_and_unlisted_import_refuse(self):
         self.prepare_campaign()

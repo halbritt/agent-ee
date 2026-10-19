@@ -87,7 +87,8 @@ byte-identity tests here are the single source of truth for the board it emits.
 After outline preparation and before campaign run 1, `content_step` declares an
 `agent-ee.stage-step/1` with `stage: scaffold`. Run it through `run_step` and
 `adopt`, then pass its receipt as a campaign `pre_receipts` entry with binding
-`{"pre_receipt": 1}`. It is preparation, outside `implementation_steps`.
+`{"pre_receipt": 1}`. It is preparation, outside `implementation_steps`. The [pod driver](pod-driver.md#envelope-content)
+runs it as its second pre-receipt (`{"pre_receipt": 2}`), chained after `write-scaffold`.
 The write source is `design/BOARD`: ee139's in-place layout. The board is its
 only write; captured planning records, libraries and project rules stay intact.
 
