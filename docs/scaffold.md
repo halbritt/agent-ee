@@ -116,6 +116,10 @@ closure before native footprint loading. Library footprint bytes supply all
 pads and graphics. The declared position, rotation and front/back side are
 applied with pcbnew, then the footprint is locked. Forward annotation binds by
 native path and retains the footprint UUID and transform.
+When annotation adds hidden symbol fields to a fixed footprint, each new field
+UUID is seeded by the retained footprint UUID and field name. Existing UUIDs
+remain unchanged; see the [forward-annotation evidence](forward-annotation.md#evidence)
+for the independent repeated-input and fresh-process reload control.
 
 Mounting holes are constructed directly as locked board-only footprints, with
 one round drilled pad, the declared reference, position, drill and plating,
