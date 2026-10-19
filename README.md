@@ -128,8 +128,9 @@ scope. It preserves project rules, checks and baseline sources, pre-creates chil
 sheets and leaves native execution to the ordinary review/campaign workflow. Its
 stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
 rules from the envelope, its fab profile and the parts manifest instead, and
-refuses incomplete inputs. Per-net classes and hierarchical staged presence
-remain unavailable.
+refuses incomplete inputs. Stage-three preparation writes declared holes, keepouts,
+locked fixed footprints and the IMU marking through a campaign pre-receipt.
+Per-net classes and hierarchical staged presence remain unavailable.
 
 An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it

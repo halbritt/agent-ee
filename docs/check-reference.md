@@ -961,7 +961,10 @@ receipt is provenance and cannot satisfy a requirement. `scaffold --scope`
 preserves the explicit planning scope's checks and baseline. `scaffold --plan`
 derives `erc`, `netlist`, `parts_subset`, `drc` and `fab_profile` checks, their
 mappings and the project rules from the envelope, profile and parts manifest. Native ERC/DRC run through the
-ordinary `review` command. Staged absence is a coordinator defect only after a
+ordinary `review` command. The [stage-three pre-receipt](scaffold.md#stage-three-envelope-content-agentee-177)
+writes declared board mechanics before run 1. Its stage receipt binds the initial
+capture; native `mounting-holes/1`, `keepouts/1` and reference-selected
+`connector-edge/1` checks grade the saved geometry. Staged absence is a coordinator defect only after a
 successful native presence observation; hierarchical presence and uncovered
 production envelope obligations continue to fail closed.
 

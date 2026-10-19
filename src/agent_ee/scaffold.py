@@ -6,14 +6,17 @@ record defines (native-validity requirement, targets, references, a native
 project template); checks, mappings and design rules are derived from the
 envelope, its fabricator profile and the parts manifest. Neither mode can choose
 acceptance criteria or waive uncovered board-envelope obligations. No
-native-tool or owner-approval claim is made here.
+owner-approval claim is made here. Stage three writes declared board content
+on an isolated native copy through an ee139 scaffold pre-receipt.
 """
+import argparse
 import copy
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
 import shutil
 import sys
+import tempfile
 import uuid
 
 from . import board_envelope
@@ -24,6 +27,7 @@ from .footprint_library import _members
 from .parts_manifest import load_manifest, qualify_manifest, read_captured
 from .schematic_emit import Quoted as Q, format_sexpr
 from .storage import digest, identity, json_bytes
+from .symbol_library import children, nanometres, parse_sexpr
 
 NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/agent-ee/scaffold/1')
 SCHEMA = 'agent-ee.scaffold-receipt/1'
@@ -135,6 +139,229 @@ def board(record, seed):
                      ['uuid', Q(str(uuid.uuid5(NAMESPACE, seed + ':edge:' + edge['name'])))]])
     node.append(['embedded_fonts', 'no'])
     return sexpr(node)
+
+
+def emission_paths(inputs, intent_rel, layout_rel, document):
+    """Ask the existing emitter for native paths; never reproduce its UUID recipe."""
+    from .schematic_emitter import emit_schematic
+    intent = strict_json(read_captured(inputs, intent_rel))
+    layout = strict_json(read_captured(inputs, layout_rel))
+    captures = {lib['path']: read_captured(inputs, lib['path']) for lib in intent['libraries']}
+    result, files = emit_schematic(intent, captures, layout)
+    if result['execution'] != 'ok':
+        raise ValueError('fixed footprint emission unavailable: ' + str(result['findings']))
+    paths, identities = {}, {}
+    for filename, raw in files.items():
+        if not filename.endswith('.kicad_sch'):
+            continue
+        for symbol in children(parse_sexpr(raw), 'symbol'):
+            uid = children(symbol, 'uuid')[0][1]
+            for project in children(children(symbol, 'instances')[0], 'project'):
+                for path in children(project, 'path'):
+                    ref = children(path, 'reference')[0][1]
+                    properties = {p[1]: p[2] for p in children(symbol, 'property')}
+                    identities[ref] = (children(symbol, 'lib_id')[0][1], properties.get('Footprint'))
+                    # Multiple units share a physical reference; any unit is a native binding.
+                    # KiCad XML/board paths omit the document's root UUID.
+                    sheet = path[1].removeprefix('/' + result['root_uuid']) + '/'
+                    paths.setdefault(ref, sheet + uid)
+    for part in document['parts']:
+        for instance in part['instances']:
+            ref = instance['reference']
+            native = paths.get(ref)
+            if native is None or native.rsplit('/', 1)[0] + '/' != instance['sheet']:
+                raise ValueError('parts selector differs from emitted native path: ' + ref)
+            if identities[ref] != (part['lib_id'], part['footprint']):
+                raise ValueError('parts CAD identity differs from emitter inputs: ' + ref)
+    return paths
+
+
+def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent_rel=None,
+                           layout_rel=None, imu_reference=None, antenna_facts_rel=None):
+    """Stage three, in place on a run_step copy; no nets or schematic hole symbols.
+
+    Parts and emitter inputs are captured authority for identities, not component
+    choices. Datasheet facts guide generation; the independent checks must verify
+    their citations and the saved board. Only a pristine outline scaffold is accepted.
+    """
+    import pcbnew
+    from .forward_annotation_probe import _stable_uuids
+    from .footprint_library import ESP32_FOOTPRINT_ID
+    from .envelope_check import antenna_polygon
+
+    inputs = Path(inputs)
+    raw = read_captured(inputs, envelope_rel)
+    record = board_envelope.validate(raw)
+    document = load_manifest(inputs, parts_rel)
+    qualification = qualify_manifest(document, inputs)
+    source = read_captured(inputs, board_rel)
+    if board_rel in qualification['dependencies'] or board_rel in {
+            envelope_rel, parts_rel, intent_rel, layout_rel, antenna_facts_rel}:
+        raise ValueError('board content output collides with a planning input')
+    trip = board_envelope.round_trip(raw, source)
+    if any(f['status'] == 'mismatch' for f in trip['fields'] if not f['field'].startswith('/fixed_footprints/')):
+        raise ValueError('board outline or stackup differs from the envelope')
+    native = pcbnew.LoadBoard(str(inputs / board_rel))
+    if list(native.GetFootprints()) or list(native.GetTracks()) or list(native.Zones()) or any(
+            item.GetLayer() != pcbnew.Edge_Cuts for item in native.GetDrawings()):
+        raise ValueError('board content requires a pristine outline scaffold')
+    fixed = {item['reference']: item for item in record['fixed_footprints']}
+    parts = {}
+    for part in document['parts']:
+        for selector in part['instances']:
+            ref = selector['reference']
+            if ref in parts:
+                raise ValueError('board references must be unique across sheets: ' + ref)
+            parts[ref] = part
+    if set(fixed) - parts.keys():
+        raise ValueError('fixed footprints are not declared parts instances: ' + ', '.join(sorted(set(fixed) - parts.keys())))
+    if fixed and (intent_rel is None or layout_rel is None):
+        raise ValueError('fixed footprints require captured intent and emitter layout')
+    paths = emission_paths(inputs, intent_rel, layout_rel, document) if fixed else {}
+    if imu_reference is not None and imu_reference not in fixed:
+        raise ValueError('IMU reference must select a declared fixed footprint')
+    members = _members(strict_json(read_captured(inputs, document['cad']['manifest']['path'])))
+    library = {lib + ':' + PurePosixPath(member['path']).stem: member for lib, member in members}
+    seed = hashlib.sha256(raw).hexdigest()
+
+    def kiid(label):
+        return pcbnew.KIID(str(uuid.uuid5(NAMESPACE, seed + ':' + label)))
+
+    def position(values):
+        return pcbnew.VECTOR2I(*(nanometres(v) for v in values))
+
+    footprints = {}
+    for ref, declaration in fixed.items():
+        part = parts[ref]
+        member = library.get(part['footprint'])
+        if member is None:
+            raise ValueError('fixed footprint is not an exact captured member: ' + ref)
+        # qualify_manifest verified the full closure, including this member's hash.
+        path = inputs / member['path']
+        fp = pcbnew.FootprintLoad(str(path.parent), path.stem)
+        if fp is None:
+            raise ValueError('captured fixed footprint failed native load: ' + ref)
+        fp.SetFPID(pcbnew.LIB_ID(*part['footprint'].split(':')))
+        fp.SetReference(ref)
+        fp.SetValue(part['mpn'])
+        fp.SetPath(pcbnew.KIID_PATH(paths[ref]))
+        _stable_uuids(fp, paths[ref])
+        for index, zone in enumerate(fp.Zones()):
+            zone.SetUuidDirect(kiid(f'fixed:{ref}:zone:{index}'))
+        native.Add(fp)  # Flip needs the board's layer stack, including on pad-only footprints.
+        if declaration['side'] == 'back':
+            fp.Flip(fp.GetPosition(), pcbnew.FLIP_DIRECTION_TOP_BOTTOM)
+        fp.SetOrientationDegrees(float(declaration['rotation_deg']))
+        fp.SetPosition(position(declaration['anchor_mm']))
+        fp.SetLocked(True)
+        footprints[ref] = fp
+
+    for hole in record['mounting_holes']:
+        if hole['id'] in parts:
+            raise ValueError('mounting holes are board-only; remove the pinless symbol/parts instance: ' + hole['id'])
+        fp = pcbnew.FOOTPRINT(native)
+        fp.SetReference(hole['id'])
+        fp.SetValue('MountingHole')
+        fp.SetAttributes(pcbnew.FP_BOARD_ONLY | pcbnew.FP_EXCLUDE_FROM_BOM | pcbnew.FP_EXCLUDE_FROM_POS_FILES)
+        fp.SetPosition(position(hole['at_mm']))
+        fp.SetLocked(True)
+        pad = pcbnew.PAD(fp)
+        pad.SetAttribute(pcbnew.PAD_ATTRIB_PTH if hole['plated'] else pcbnew.PAD_ATTRIB_NPTH)
+        pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
+        drill = nanometres(hole['drill_mm'])
+        pad.SetDrillSize(pcbnew.VECTOR2I(drill, drill))
+        size = drill + (600000 if hole['plated'] else 0)
+        pad.SetSize(pcbnew.VECTOR2I(size, size))
+        layers = pcbnew.LSET.AllCuMask()
+        layers.AddLayer(pcbnew.F_Mask)
+        layers.AddLayer(pcbnew.B_Mask)
+        pad.SetLayerSet(layers)
+        pad.SetPosition(fp.GetPosition())
+        fp.Add(pad)
+        _stable_uuids(fp, 'board-only:' + seed + ':' + hole['id'])
+        native.Add(fp)
+
+    for area in record['keepouts']:
+        if 'antenna' in area:
+            if antenna_facts_rel is None:
+                raise ValueError('antenna keepout requires captured antenna facts')
+            ref = area['antenna']['reference']
+            if ref not in footprints or parts[ref]['footprint'] != ESP32_FOOTPRINT_ID:
+                raise ValueError('antenna requires a declared fixed ESP32 module transform')
+            facts = strict_json(read_captured(inputs, antenna_facts_rel))
+            fp = footprints[ref]
+            # Share the check's exact native front/back/quarter-turn transform.
+            pos = fp.GetPosition()
+            polygon, _, _ = antenna_polygon(area['antenna'], {'footprints': [dict(
+                ref=ref, fpid=fp.GetFPIDAsString(), uuid=fp.m_Uuid.AsString(),
+                rotation_deg=fp.GetOrientationDegrees(), side='B' if fp.IsFlipped() else 'F',
+                position_nm=[pos.x, pos.y])]}, facts)
+            # The check also requires the module-owned rule area. Retain it from
+            # the captured footprint and adding the declared restriction. Native
+            # footprint zones use board coordinates in memory.
+            fp.Add(rule_area(fp, area, polygon, native, kiid('owned:' + area['id'])))
+        else:
+            polygon = [[nanometres(v) for v in p] for p in area['polygon_mm']]
+        native.Add(rule_area(native, area, polygon, native, kiid('area:' + area['id'])))
+
+    if imu_reference is not None:
+        text = pcbnew.PCB_TEXT(native)
+        text.SetText('IMU_AXES  X forward  Y left  Z up')
+        text.SetLayer(pcbnew.F_SilkS)
+        anchor = footprints[imu_reference].GetPosition()
+        text.SetPosition(pcbnew.VECTOR2I(anchor.x, anchor.y + 4000000))
+        text.SetTextSize(pcbnew.VECTOR2I(800000, 800000))
+        text.SetTextThickness(120000)
+        text.SetUuidDirect(kiid('IMU_AXES'))
+        native.Add(text)
+    target = inputs / board_rel
+    with tempfile.TemporaryDirectory(prefix='.envelope-', dir=target.parent) as tmp:
+        staged = Path(tmp) / target.name
+        if not pcbnew.SaveBoard(str(staged), native):
+            raise ValueError('native envelope content save failed')
+        if read_captured(inputs, board_rel) != source:
+            raise ValueError('scaffold board changed during content generation')
+        os.replace(staged, target)
+
+
+def rule_area(parent, declaration, polygon, native, uid):
+    """A native rule area, with only the envelope's declared restrictions."""
+    import pcbnew
+    zone = pcbnew.ZONE(parent)
+    zone.SetUuidDirect(uid)
+    zone.SetZoneName(declaration['id'])
+    zone.SetIsRuleArea(True)
+    layers = pcbnew.LSET()
+    for layer in declaration['layers']:
+        layers.AddLayer(native.GetLayerID(layer))
+    zone.SetLayerSet(layers)
+    for key, setter in (('tracks', zone.SetDoNotAllowTracks), ('vias', zone.SetDoNotAllowVias),
+                        ('pads', zone.SetDoNotAllowPads), ('footprints', zone.SetDoNotAllowFootprints),
+                        ('copper_pours', zone.SetDoNotAllowZoneFills)):
+        setter(key in declaration['forbid'])
+    zone.Outline().NewOutline()
+    for x, y in polygon:
+        zone.Outline().Append(x, y)
+    return zone
+
+
+def content_step(source_root, envelope, parts, board, *, intent=None, layout=None,
+                 imu_reference=None, antenna_facts=None):
+    """ee139 pre-receipt declaration; the board is the sole in-place write."""
+    for path in (envelope, parts, board, intent, layout, antenna_facts):
+        if path is not None and str(safe_relative(path)) != path:
+            raise ValueError('board content paths must be canonical captured paths')
+    argv = ['/usr/bin/python3', '-B', '-X', 'faulthandler', '-c',
+            "import runpy,sys; sys.path.insert(0, '/tool/agent-ee'); "
+            "runpy.run_module('agent_ee.scaffold', run_name='__main__')",
+            '--inputs', '/work/design', '--envelope', envelope, '--parts', parts, '--board', board]
+    for key, value in (('intent', intent), ('layout', layout), ('imu-reference', imu_reference),
+                       ('antenna-facts', antenna_facts)):
+        if value is not None:
+            argv.extend(['--' + key, value])
+    return dict(schema='agent-ee.stage-step/1', stage='scaffold', step='envelope-content', argv=argv,
+                mounts=[dict(source=str(Path(source_root).resolve() / 'src'), at='/tool/agent-ee')],
+                source='/tool/agent-ee', writes={board: 'design/' + board}, timeout_s=300)
 
 
 def library_tables(document, inputs, project):
@@ -511,3 +738,24 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
         # Only this invocation created out; failed preparation publishes no candidate.
         shutil.rmtree(out)
         raise
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='Write captured envelope content into an outline scaffold.')
+    parser.add_argument('--inputs', required=True, type=Path)
+    for name in ('envelope', 'parts', 'board'):
+        parser.add_argument('--' + name, required=True)
+    for name in ('intent', 'layout', 'imu-reference', 'antenna-facts'):
+        parser.add_argument('--' + name)
+    args = parser.parse_args(argv)
+    try:
+        write_envelope_content(args.inputs, args.envelope, args.parts, args.board,
+            intent_rel=args.intent, layout_rel=args.layout, imu_reference=args.imu_reference,
+            antenna_facts_rel=args.antenna_facts)
+    except (ValueError, OSError) as exc:
+        parser.exit(2, f'envelope content refused: {exc}\n')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

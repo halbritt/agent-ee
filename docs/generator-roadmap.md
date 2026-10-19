@@ -167,7 +167,10 @@ production envelope and parts records plus an explicit stage-one scope and
 project-rule template. It copies selected dependencies, pre-creates child sheets
 and preserves checks and baseline mappings. Its stage-two producer (AGENTEE-141)
 compiles the scope/2 checks, mappings, stage policy and `.kicad_pro` rules from
-the envelope's fab profile and the parts manifest. Per-net classes (AGENTEE-47),
+the envelope's fab profile and the parts manifest. Stage-three preparation
+(AGENTEE-177) adds declared holes, rule areas, fixed footprints and the IMU
+marking through an ee139 pre-receipt; forward annotation retains their native
+identities. Per-net classes (AGENTEE-47),
 hierarchical staged presence and complete production envelope acceptance remain
 unavailable. The experimental rung-1 driver still uses its earlier
 [RC campaign scaffold](rung1-campaign.md).

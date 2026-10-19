@@ -371,5 +371,339 @@ class NativeScaffoldTests(ScaffoldFixture, unittest.TestCase):
         self.assertTrue((self.root / 'campaign/runs/1/work/verification/evidence.json').is_file())
 
 
+class EnvelopeScaffoldFixture(ScaffoldFixture):
+    """Pod-sized mechanics with original stand-ins, not production part approval.
+
+    J1 stands for AMPSEAL, J2 for SMA, U1 for IMU and U2 for the radio.
+    The two-pad radio is authored here; no vendor CAD bytes enter the tree.
+    """
+    def setUp(self):
+        import uuid
+        from agent_ee.part_selection import selection_check
+        from agent_ee.storage import identity
+        from agent_ee.footprint_library import esp32_s3_wroom_1_datasheet_facts
+        from test_esp32_footprint_keepout import multipage_text_pdf
+        require_toolchain(native=True, tools=('pdftotext',))
+        super().setUp()
+        pod = ROOT / 'fixtures/telemetry-pod'
+        self.envelope = read_json(pod / 'envelope.json')
+        self.envelope['obligations'] = []  # Only declared mechanics are this fixture's scope.
+        shutil.copytree(pod / 'sources', self.source / 'sources')
+        shutil.copyfile(pod / 'fab-profile.json', self.source / 'fab-profile.json')
+        self.envelope['mounting_holes'] = [dict(id=f'H{i}', at=[x, y], drill_mm=3.2,
+            plated=False, tolerance_mm=0) for i, (x, y) in enumerate(((4,4),(76,4),(76,46),(4,46)),1)]
+        self.envelope['fixed_footprints'] = [dict(reference=ref, side=side, edge=edge,
+            position_mm=along, inset_mm=inset, rotation_deg=angle, insertion=insertion, tolerance_mm=0)
+            for ref, side, edge, along, inset, angle, insertion in (
+                ('J1','front','left',30,2,90,'through_edge'),
+                ('J2','back','right',15,1,270,'through_edge'),
+                ('U1','front','top',50,30,180,'from_top'),
+                ('U2','front','top',40,30,90,'from_top'))]
+        self.envelope['keepouts'] = [dict(id='antenna', antenna=dict(reference='U2', facts_check='facts'),
+            layers=['F.Cu','In1.Cu','In2.Cu','B.Cu'],
+            forbid=['tracks','vias','pads','copper_pours','footprints'])]
+        self.envelope['keepouts'].append(dict(id='board-clearance', polygon=[[60,30],[62,30],[62,32],[60,32]],
+            layers=['B.Cu'], forbid=['tracks','vias']))
+        self.parts['parts'][0]['instances'] = [dict(sheet='/', reference='U1')]
+        self.parts['parts'][1]['instances'] = [dict(sheet='/', reference='J2')]
+        radio = copy.deepcopy(self.parts['parts'][0])
+        radio.update(id='radio', selection_id='radio', role='owned radio mechanics stand-in',
+                     footprint='RF_Module:ESP32-S3-WROOM-1', instances=[dict(sheet='/', reference='U2')])
+        self.parts['parts'].append(radio)
+        requirements = read_json(self.source / 'selection-requirements.json')
+        requirements['parts'].append(dict(requirements['parts'][0], id='radio'))
+        write_json(self.source / 'selection-requirements.json', requirements)
+        selection = selection_check(self.source / 'snapshot', self.parts['catalog']['manifest_sha256'], requirements)
+        self.assertEqual(selection['outcome'], 'pass', selection)
+        write_json(self.source / 'selection.json', selection)
+        for name in ('requirements', 'result'):
+            blob = self.parts['selection'][name]
+            blob['sha256'] = digest(self.source / blob['path'])
+        data = (self.source / 'Owned.pretty/R2.kicad_mod').read_bytes().replace(b'"R2"', b'"ESP32-S3-WROOM-1"', 1)
+        (self.source / 'RF_Module.pretty').mkdir()
+        path = 'RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod'
+        (self.source / path).write_bytes(data)
+        cad = read_json(self.source / 'cad.json')
+        cad['libraries'].append(dict(name='RF_Module', members=[dict(path=path, sha256=digest(self.source / path))]))
+        write_json(self.source / 'cad.json', cad)
+        assignments = read_json(self.source / 'assignments.json')
+        library = self.source / 'Owned.kicad_sym'
+        library.write_bytes(library.read_bytes().replace(b'(property "Value"',
+            b'(property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27)))) (property "Value"'))
+        assignments['libraries'][0]['sha256'] = digest(library)
+        assignments['components'].append(dict(assignments['components'][0], reference='radio', footprint=radio['footprint']))
+        write_json(self.source / 'assignments.json', assignments)
+        for name in ('manifest', 'assignments'):
+            blob = self.parts['cad'][name]
+            blob['sha256'] = digest(self.source / blob['path'])
+        members = [m for lib in cad['libraries'] for m in lib['members']]
+        self.parts['cad']['members_sha256'] = identity(sorted(
+            [*members, dict(path='Owned.kicad_sym', sha256=digest(self.source / 'Owned.kicad_sym'))],
+            key=lambda m: m['path']))
+        write_json(self.source / 'parts.json', self.parts)
+        self.intent = dict(schema='agent-ee.connectivity-intent/1', libraries=assignments['libraries'],
+            components=[dict(id=p['id'], reference=p['instances'][0]['reference'], lib_id=p['lib_id'],
+                footprint=p['footprint'], value=p['mpn'], units=[1]) for p in self.parts['parts']],
+            nets=[], no_connects=[dict(component=p['id'], pin=dict(number=n)) for p in self.parts['parts']
+                for n in ('123' if p['id']=='header' else '12')])
+        write_json(self.source / 'intent.json', self.intent)
+        write_json(self.source / 'layout.json', dict(schema='agent-ee.schematic-layout/1',
+            namespace=str(uuid.uuid5(uuid.NAMESPACE_URL, 'owned-ee177')), project='design', transforms={}))
+        multipage_text_pdf(self.source / 'owned.pdf',45,45,['18','25.5','6','15'])
+        self.facts = esp32_s3_wroom_1_datasheet_facts(pdf_path='owned.pdf',pdf_sha256=digest(self.source / 'owned.pdf'))
+        write_json(self.source / 'facts.json',self.facts)
+        self.save()
+        self.count = 0
+
+    def save(self):
+        write_json(self.source / 'envelope.json',self.envelope)
+        self.scope['inputs'] = [dict(path='source/'+p.relative_to(self.source).as_posix(),
+            at=p.relative_to(self.source).as_posix()) for p in sorted(self.source.rglob('*')) if p.is_file()]
+        write_json(self.scope_path,self.scope)
+
+    def content(self, name='content', **overrides):
+        from agent_ee.scaffold import content_step
+        from agent_ee.stage_receipts import run_step, adopt
+        self.build(name)
+        inputs = self.root / name / 'inputs'
+        args = dict(intent='intent.json',layout='layout.json',imu_reference='U1',antenna_facts='facts.json')
+        args.update(overrides)
+        spec = content_step(ROOT,'envelope.json','parts.json','project/design.kicad_pcb',**args)
+        path = self.root / (name+'-receipt')
+        receipt = run_step(path,inputs,spec,{'pre_receipt':1})
+        if receipt['status']=='completed':
+            adopt(path,receipt,inputs)
+        return inputs, path, receipt
+
+    def assert_completed(self, path, receipt):
+        self.assertEqual(receipt['status'],'completed', (receipt['violations'], (path / 'run/console.log').read_text()))
+
+
+class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
+    def test_envelope_content(self):
+        from agent_ee.forward_annotation import board_facts
+        from agent_ee.executor import execute
+        from agent_ee.board_envelope import validate
+        from agent_ee.envelope_check import hole_verdict, keepout_verdict
+        inputs,path,receipt = self.content()
+        self.assert_completed(path,receipt)
+        pcb = inputs / 'project/design.kicad_pcb'
+        native = board_facts(pcb,self.root / 'facts')
+        fixed = {fp['reference']:fp for fp in native['footprints'] if fp['path']}
+        expected = {'J1':([2000000,20000000],90,'F.Cu'), 'J2':([79000000,15000000],270,'B.Cu'),
+                    'U1':([50000000,30000000],180,'F.Cu'), 'U2':([40000000,30000000],90,'F.Cu')}
+        for ref,(at,angle,layer) in expected.items():
+            self.assertEqual((fixed[ref]['position_nm'],fixed[ref]['orientation_deg']%360,fixed[ref]['layer']),
+                             (at,angle,layer))
+        record = execute(inputs,self.root / 'probe',['/usr/bin/python3','-B','-m','agent_ee.envelope_probe',
+            '/candidate/project/design.kicad_pcb','--out','/work/native.json'])
+        self.assertEqual(record['execution'],'ok',record)
+        native = read_json(self.root / 'probe/native.json')
+        declaration = validate((inputs / 'envelope.json').read_bytes())
+        self.assertEqual(len(native['footprints']),8)
+        for hole in declaration['mounting_holes']:
+            self.assertEqual(hole_verdict(hole,native)['status'],'pass')
+        for area in declaration['keepouts']:
+            result = keepout_verdict(area,native,self.facts)
+            self.assertEqual(result['status'],'pass',result)
+        self.assertTrue(all(fp['locked'] for fp in native['footprints']))
+        self.assertEqual(len([a for a in native['rule_areas'] if a['owner']=='board']),2)
+        parsed = parse_sexpr(pcb.read_bytes())
+        holes = [fp for fp in children(parsed,'footprint') if children(fp,'attr') and 'board_only' in children(fp,'attr')[0]]
+        self.assertEqual(len(holes),4)
+        self.assertTrue(all(not children(fp,'path') for fp in holes))
+        text, = children(parsed,'gr_text')
+        self.assertIn('IMU_AXES',text[1])
+        self.assertIn('X forward  Y left  Z up',text[1])
+        self.assertEqual(children(text,'layer')[0][1],'F.SilkS')
+        self.assertEqual(children(text,'at')[0][1:3],['50','34'])
+        other,other_path,other_receipt = self.content('other')
+        self.assert_completed(other_path,other_receipt)
+        self.assertEqual(pcb.read_bytes(),(other / 'project/design.kicad_pcb').read_bytes())
+
+    def test_forward_annotation_retains_fixed(self):
+        from agent_ee import forward_annotation as fa
+        from agent_ee.executor import execute
+        from agent_ee.schematic_emitter import emit_schematic
+        inputs,path,receipt = self.content()
+        self.assert_completed(path,receipt)
+        result,files = emit_schematic(self.intent,{'Owned.kicad_sym':(inputs / 'Owned.kicad_sym').read_bytes()},
+                                     read_json(inputs / 'layout.json'))
+        self.assertEqual(result['execution'],'ok',result)
+        (inputs / 'project/design.kicad_sch').write_bytes(files['design.kicad_sch'])
+        record = execute(inputs,self.root / 'xml',['kicad-cli','sch','export','netlist','--format','kicadxml',
+            '-o','/work/native.xml','/candidate/project/design.kicad_sch'])
+        self.assertEqual(record['execution'],'ok',record)
+        board = inputs / 'project/design.kicad_pcb'
+        xml = self.root / 'xml/native.xml'
+        manifest = read_json(inputs / 'cad.json')
+        plan = fa.plan(board,xml,manifest,inputs,self.root / 'annotation-plan')
+        self.assertEqual(plan['execution'],'ok',plan)
+        self.assertEqual((plan['counts']['retain'],plan['counts']['add'],plan['counts']['remove'],plan['counts']['board_only']),
+                         (4,0,0,4))
+        out = inputs / 'project/annotated.kicad_pcb'
+        result = fa.apply(plan,board,xml,manifest,inputs,out,self.root / 'annotation-apply')
+        self.assertEqual(result['execution'],'ok',result)
+        before = fa.board_facts(board,self.root / 'before')
+        after = fa.board_facts(out,self.root / 'after')
+        for key in ('uuid','path','position_nm','orientation_deg','layer'):
+            self.assertEqual({fp['reference']:fp[key] for fp in before['footprints']},
+                             {fp['reference']:fp[key] for fp in after['footprints']},key)
+        self.assertEqual(len(children(parse_sexpr(out.read_bytes()),'gr_text')),1)
+
+    def test_registered_envelope_checks_pass(self):
+        import time
+        from agent_ee.board_envelope import validate, derive_requirements, source_inventory
+        from agent_ee.checks import run_checks
+        inputs,path,receipt = self.content()
+        self.assert_completed(path,receipt)
+        record = validate((inputs / 'envelope.json').read_bytes(),
+            profile=(inputs / 'fab-profile.json').read_bytes(),captured=source_inventory(inputs))
+        requirements = derive_requirements(record,'envelope.json')['requirements']
+        version = subprocess.run(['/usr/bin/pdftotext','-v'],capture_output=True,text=True,check=True).stderr.splitlines()[0]
+        checks = [dict(id='facts',kind='datasheet_facts',params=dict(facts='facts.json',extractor=dict(
+            path='/usr/bin/pdftotext',sha256=digest('/usr/bin/pdftotext'),version=version))),
+            dict(id='drc',kind='drc'),
+            dict(id='fab',kind='fab_profile',params=dict(fab_profile='fab-profile.json'))]
+        for req in requirements:
+            field = req['source']['locator'].split('/')[1]
+            cid = req['id'].removeprefix('R-envelope-telemetry-pod-').lower()
+            if field == 'fab_profile':
+                cid = 'fab'
+            elif field == 'fixed_footprints':
+                ref = record[field][int(req['source']['locator'].split('/')[-1])]['reference']
+                checks.append(dict(id=cid,kind='placement',params=dict(
+                    criterion='connector-edge/1',envelope='envelope.json',reference=ref,drc_check='drc')))
+            else:
+                criterion = {'outline':'outline/1','layer_count':'layers/1','stackup':'stackup/1',
+                    'mounting_holes':'mounting-holes/1','keepouts':'keepouts/1'}[field]
+                params = dict(criterion=criterion,envelope='envelope.json')
+                if field in ('mounting_holes','keepouts'):
+                    params['id'] = record[field][int(req['source']['locator'].split('/')[-1])]['id']
+                checks.append(dict(id=cid,kind='board_envelope',params=params))
+            req['checks'] = [cid]
+            del req['field_sha256'],req['check_kinds']
+        requirements.append(dict(id='R-facts',statement='Verify cited mechanical dimensions.',intent='informational',
+            source=dict(path='targets.md',locator='line 1'),checks=['facts']))
+        requirements.append(dict(id='native-drc',statement='Native DRC passes.',intent='acceptance',
+            source=dict(path='targets.md',locator='line 1'),checks=['drc']))
+        scope = read_json(self.root / 'content/scope.json')
+        scope.update(schema='agent-ee.scope/3',checks=checks,envelope=dict(path='envelope.json',profile='fab-profile.json',dialog=None),
+            baseline=dict(requirements=requirements,targets=['targets.md'],reference_architectures=['reference.md']))
+        write_json(self.root / 'content/scope.json',scope)
+        run = self.root / 'checks'
+        run.mkdir()
+        capture(self.root / 'content/scope.json',run)
+        results = {r['id']:r for r in run_checks(run,time.monotonic()+300)}
+        for cid in ['facts','outline','layer-count','stackup',*[f'hole-h{i}' for i in range(1,5)],
+                    'keepout-antenna','keepout-board-clearance',*[f'fixed-{ref}' for ref in ('j1','j2','u1','u2')]]:
+            self.assertEqual((results[cid]['execution'],results[cid]['outcome']),('ok','pass'),results[cid])
+
+    def test_pre_receipt_verifies(self):
+        from agent_ee.campaign import run_campaign, verify_campaign
+        inputs,path,receipt = self.content()
+        self.assert_completed(path,receipt)
+        definition = dict(harness='codex',model='test',effort='high',timeout_s=10)
+        profile = dict(schema='agent-ee.profile/1',name='scripted-envelope-receipt-test',
+            reviewers=[dict(**definition,role='circuit'),dict(**definition,role='physical')],adjudicator=definition)
+        config = dict(schema='agent-ee.campaign/1',scope='content/scope.json',review_profile=profile,
+            implementation=definition,max_iterations=1,max_seconds=300,pre_receipts=[dict(
+                path=str(path / 'receipt.json'),sha256=digest(path / 'receipt.json'),binding={'pre_receipt':1})])
+        write_json(self.root / 'campaign.json',config)
+        def scripted(run,label,definition,prompt,schema,timeout,**kwargs):
+            packet = read_json(Path(run) / 'packet.json')
+            binding = {k:packet[k] for k in ('candidate_id','run_id')}
+            if label == 'adjudicator':
+                result = read_json(Path(run) / 'result.json')
+                return dict(execution='ok'),dict(schema='agent-ee.decisions/2',**binding,decisions=[dict(
+                    finding_id=f['id'],disposition='accepted',reason='Sealed native fixture violation.',evidence=[dict(
+                        path='checks/'+f['local_id']+'.json',locator='outcome',pointer='/outcome')]) for f in result['findings']])
+            self.assertNotEqual(label,'implementation')
+            return dict(execution='ok'),dict(schema='agent-ee.review/2',**binding,packet_sha256=packet['packet_sha256'],
+                role=label,coverage=['receipt protocol'],limitations=['Scripted inference; native tools are real.'],findings=[])
+        with patch('agent_ee.reviewers.dispatch',side_effect=scripted),contextlib.redirect_stdout(io.StringIO()):
+            run_campaign(self.root / 'campaign.json',self.root / 'campaign')
+        state = verify_campaign(self.root / 'campaign')
+        self.assertEqual(state['pre_receipts'],{'pre-receipts/1/receipt.json':digest(path / 'receipt.json')})
+        first = read_json(self.root / 'campaign/runs/1/candidate.json')
+        self.assertEqual(first['files']['project/design.kicad_pcb'],receipt['outputs']['project/design.kicad_pcb'])
+        imported = self.root / 'campaign/pre-receipts/1/receipt.json'
+        imported.write_bytes(imported.read_bytes()+b'\n')
+        with self.assertRaisesRegex(ValueError,'pre_receipt changed'):
+            verify_campaign(self.root / 'campaign')
+        # A valid receipt for different bytes cannot bind to run 1.
+        board = inputs / 'project/design.kicad_pcb'
+        board.write_bytes(board.read_bytes()+b'\n')
+        with patch('agent_ee.reviewers.dispatch',side_effect=scripted),contextlib.redirect_stdout(io.StringIO()):
+            run_campaign(self.root / 'campaign.json',self.root / 'mismatch-campaign')
+        failed = read_json(self.root / 'mismatch-campaign/state.json')
+        self.assertIn('pre_receipt output differs from first capture',failed['error'])
+
+    def test_antenna_native_transforms_and_refusal_boundaries(self):
+        from agent_ee.envelope_check import keepout_verdict
+        from agent_ee.board_envelope import validate
+        from agent_ee.executor import execute
+        for side in ('front','back'):
+            for angle in (0,90,180,270):
+                with self.subTest(side=side,angle=angle):
+                    self.envelope['fixed_footprints'][-1].update(side=side,rotation_deg=angle,
+                        insertion='from_top' if side=='front' else 'from_bottom')
+                    self.save()
+                    name = f'antenna-{side}-{angle}'
+                    inputs,path,receipt = self.content(name)
+                    self.assert_completed(path,receipt)
+                    work = self.root / (name+'-probe')
+                    result = execute(inputs,work,['/usr/bin/python3','-B','-m','agent_ee.envelope_probe',
+                        '/candidate/project/design.kicad_pcb','--out','/work/native.json'])
+                    self.assertEqual(result['execution'],'ok',result)
+                    area = validate((inputs / 'envelope.json').read_bytes())['keepouts'][0]
+                    verdict = keepout_verdict(area,read_json(work / 'native.json'),self.facts)
+                    self.assertEqual(verdict['status'],'pass',verdict)
+        self.envelope['fixed_footprints'][-1]['rotation_deg'] = 45
+        self.save()
+        inputs,path,receipt = self.content('oblique')
+        self.assertEqual(receipt['status'],'failed')
+        self.assertIn('exact quarter turn',(path / 'run/console.log').read_text())
+        self.assertEqual(receipt['inputs']['project/design.kicad_pcb'],digest(path / 'run/design/project/design.kicad_pcb'))
+
+    def test_wrong_identity_and_nonempty_board_are_refused(self):
+        from agent_ee.scaffold import content_step
+        from agent_ee.stage_receipts import run_step
+        inputs,path,receipt = self.content()
+        self.assert_completed(path,receipt)
+        repeat = self.root / 'repeat-receipt'
+        spec = content_step(ROOT,'envelope.json','parts.json','project/design.kicad_pcb',
+            intent='intent.json',layout='layout.json',imu_reference='U1',antenna_facts='facts.json')
+        refused = run_step(repeat,inputs,spec,{'pre_receipt':1})
+        self.assertEqual(refused['status'],'failed')
+        self.assertIn('pristine outline scaffold',(repeat / 'run/console.log').read_text())
+        self.assertEqual(refused['inputs']['project/design.kicad_pcb'],digest(repeat / 'run/design/project/design.kicad_pcb'))
+        self.intent['components'][0]['footprint'] = 'Owned:PinHeader_1x03'
+        write_json(self.source / 'intent.json',self.intent)
+        self.save()
+        inputs,path,receipt = self.content('wrong-cad')
+        self.assertEqual(receipt['status'],'failed')
+        self.assertIn('CAD identity differs',(path / 'run/console.log').read_text())
+        self.assertEqual(receipt['inputs']['project/design.kicad_pcb'],digest(path / 'run/design/project/design.kicad_pcb'))
+        (self.source / 'Owned.pretty/R2.kicad_mod').write_bytes(b'not a captured footprint')
+        self.save()
+        with self.assertRaisesRegex(ValueError,'hash mismatch'):
+            self.build('changed-member')
+        self.assertFalse((self.root / 'changed-member').exists())
+
+    def test_content_refusals_leave_board_unchanged(self):
+        for label,overrides,message in (
+            ('missing-layout',dict(layout=None),'require captured intent'),
+            ('missing-facts',dict(antenna_facts=None),'requires captured antenna facts'),
+            ('unknown-imu',dict(imu_reference='U99'),'declared fixed footprint')):
+            with self.subTest(label=label):
+                inputs,path,receipt = self.content(label,**overrides)
+                self.assertEqual(receipt['status'],'failed')
+                self.assertIn(message,(path / 'run/console.log').read_text())
+                self.assertEqual(receipt['inputs']['project/design.kicad_pcb'],digest(inputs / 'project/design.kicad_pcb'))
+                self.assertEqual(receipt['inputs']['project/design.kicad_pcb'],
+                                 digest(path / 'run/design/project/design.kicad_pcb'))
+
+
 if __name__ == '__main__':
     unittest.main()
