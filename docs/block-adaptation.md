@@ -214,6 +214,15 @@ legacy `~` placeholders or embedded-library defaults from silently changing
 source metadata. The generated libraries remain derived from the recorded
 upstream sources. No new licensing permission follows from composition.
 
+Legacy source properties containing only `~` mean empty text before KiCad's
+20250318 format boundary. Composition writes those as explicit empty strings,
+so the derived library and modern emitted schematic have the same meaning.
+Libraries derived only from those legacy sources retain version 20241209.
+If a library also includes definitions from a source at or after 20250318, it
+uses the 20250318 library format so literal tildes remain literal. This is a
+text-semantics boundary, not an unconditional upgrade to the installed KiCad
+library version or a claim of support for arbitrary future format features.
+
 ### Immutable flat instance record
 
 Each `agent-ee.flat-block-instance/1` sidecar records:
