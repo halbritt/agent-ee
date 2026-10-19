@@ -979,6 +979,9 @@ probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
 authority and unknown boundaries, and [native qualification](placement.md#native-qualification)
 for the acceptance tests and remaining campaign and fabrication-limit gaps.
+A placer infeasibility proof bound by a soft envelope limit is `unknown`, not
+`defect`, and names its [binding constraints](placer.md#constraint-provenance-agentee-266)
+with their provenance class.
 The [placer's declared edge margin](placer.md) constrains courtyard geometry;
 it does not establish silkscreen or copper clearance. The
 [rung-1 policy](rung1-qualified.md#placement-policy) preserves a 1.5 mm courtyard
@@ -1048,6 +1051,9 @@ geometry and a native closed-contour probe. `layers/1` compares the exact ordere
 copper layer set against saved and native enabled layers. Each check binds one
 field and one requirement, with predicates `envelope:outline/1` or
 `envelope:layers/1`.
+A field whose [constraint provenance](board-envelope.md#constraint-provenance)
+is soft (assumed or owner-weakened) derives an informational obligation, so no
+check is acceptance evidence for it until the owner confirms the limit.
 
 `stackup/1` supplies `envelope:stackup/1` only when the scope's declared profile
 matches the envelope reference and contains a source-verified stackup declaration.

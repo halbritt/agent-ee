@@ -43,3 +43,14 @@ manifest lists the pages searched under `stackup_authority`.
 changed, to reference that profile's name and SHA-256. Its 0.035/1.53/0.035 mm
 stackup and 1 oz weights remain the owned assumptions described above, not
 fabricator facts.
+
+## Constraint provenance fixture (AGENTEE-266)
+
+`provenance/envelope.json` is `rc.envelope.json` with a 12.5 mm
+`max_component_height_mm` and an original `constraint_provenance` declaration.
+`provenance/owner-statement.md` is owned synthetic text written for the tests.
+It is not a real owner's statement. The outline and fab profile are `assumed`,
+the layer count and height are `owner_stated`, and the stackup is `derived`
+from the layer count. J1 is `owner_stated` but soft, because its quote says
+"ideally". The envelope cites the statement by its SHA-256, so editing the
+statement requires updating the envelope.

@@ -651,6 +651,161 @@ def declared_inventory(count, copper, edges):
     return inventory
 
 
+# Constraint provenance (AGENTEE-266). Every constrained field may name who fixed it:
+# the owner (quoted, with a hashed source), a derivation from owner-stated facts, or an
+# agent-proposed assumption. Assumed and owner-weakened limits are soft: reported for
+# owner confirmation, never a hard ceiling. A field without provenance keeps today's
+# enforcement and is reported as unknown provenance, never as owner-stated.
+PROVENANCE_CLASSES = ('owner_stated', 'derived', 'assumed')
+# Wording that says the owner did not fix the limit; it never compiles into a hard limit.
+WEAKENING = re.compile(r"\b(?:not tight|not fixed|not a hard|soft limit|(?<!no )room (?:in|for|to)|there'?s room|ideally|"
+                       r"preferably|if possible|flexible|or so)\b|"
+                       r"(?:\b(?:about|around|approximately|approx\.?|roughly|circa)|~)\s*\d", re.IGNORECASE)
+NUMBER = re.compile(r'(?<![\d.])\d+(?:\.\d+)?')
+MAX_TEXT = 4096
+
+
+def provenance_locators(envelope):
+    """JSON pointers of the constrained fields; the same locators the obligations cite."""
+    out = ['/outline', '/layer_count', '/stackup', '/fab_profile']
+    if 'max_component_height_mm' in envelope:
+        out.append('/max_component_height_mm')
+    for field in ('mounting_holes', 'keepouts', 'fixed_footprints', 'obligations'):
+        out += [f'/{field}/{i}' for i in range(len(envelope.get(field) or []))]
+    return out
+
+
+def stated_numbers(envelope, vertices):
+    """Numbers a quote must state for the owner to have fixed this limit, in mm or a count."""
+    xs, ys = [v[0] for v in vertices], [v[1] for v in vertices]
+    numbers = {'/outline': [Decimal(mm(max(xs) - min(xs))), Decimal(mm(max(ys) - min(ys)))],
+               '/layer_count': [Decimal(envelope['layer_count'])]}
+    if 'max_component_height_mm' in envelope:
+        numbers['/max_component_height_mm'] = [Decimal(str(envelope['max_component_height_mm']))]
+    return numbers
+
+
+def prose(value, label):
+    if not isinstance(value, str) or not value.strip() or len(value) > MAX_TEXT:
+        raise ValueError(f'{label} must be nonempty text of at most {MAX_TEXT} characters')
+    return value
+
+
+def owner_quote(value, label, captured):
+    """{quote, source: {path, sha256}}, checked against the captured source when supplied.
+
+    The quote must appear in the source text (whitespace runs compared as one space).
+    A captured source whose bytes or text disagree is refused; an uncaptured one stays
+    unverified, never assumed verified."""
+    fields(value, label, ['quote', 'source'])
+    quote = prose(value['quote'], f'{label} quote')
+    fields(value['source'], f'{label} source', ['path', 'sha256'])
+    path = str(safe_relative(value['source']['path']))
+    if path != value['source']['path']:
+        raise ValueError(f'{label} source path must be canonical candidate-relative')
+    sha256 = value['source']['sha256']
+    if not isinstance(sha256, str) or not SHA256.fullmatch(sha256):
+        raise ValueError(f'{label} source sha256 must be 64 lowercase hex digits')
+    out = {'quote': quote, 'source': {'path': path, 'sha256': sha256}, 'verification': 'not_captured'}
+    if captured is None:
+        return out
+    files, inputs = captured
+    if path not in files:
+        return out
+    data = captured_bytes(files, inputs, path, f'{label} source')
+    if hashlib.sha256(data).hexdigest() != sha256:
+        raise ValueError(f'{label} source {path} is not the cited sha256')
+    try:
+        text = data.decode('utf-8')
+    except UnicodeError as exc:
+        raise ValueError(f'{label} source {path} is not UTF-8 text') from exc
+    if ' '.join(quote.split()) not in ' '.join(text.split()):
+        raise ValueError(f'{label} quote does not appear in {path}')
+    out['verification'] = 'quote_in_source'
+    return out
+
+
+def weakened(quotes):
+    for quote in quotes:
+        found = WEAKENING.search(quote)
+        if found:
+            return f'the quote weakens the limit ({found.group(0).strip()!r})'
+    return None
+
+
+def validate_provenance(envelope, vertices, captured):
+    """Per-constraint provenance class and enforcement; see docs/board-envelope.md."""
+    declared = envelope.get('constraint_provenance', {})
+    if not isinstance(declared, dict) or ('constraint_provenance' in envelope and not declared):
+        raise ValueError('constraint_provenance must be a nonempty object keyed by field pointer')
+    locators = provenance_locators(envelope)
+    unknown = sorted(set(declared) - set(locators))
+    if unknown:
+        raise ValueError(f'constraint_provenance names no constrained field: {unknown}')
+    numbers = stated_numbers(envelope, vertices)
+    entries, done = {}, {}
+
+    def resolve(locator, trail=()):
+        if locator in done:
+            return done[locator]
+        if locator in trail:
+            raise ValueError(f"constraint_provenance derivation cycle: {' -> '.join(trail + (locator,))}")
+        item, label = declared[locator], f'constraint_provenance {locator}'
+        if not isinstance(item, dict) or item.get('class') not in PROVENANCE_CLASSES:
+            raise ValueError(f'{label} class must be one of {PROVENANCE_CLASSES}')
+        kind = item['class']
+        entry = {'locator': locator, 'class': kind}
+        if kind == 'owner_stated':
+            fields(item, label, ['class', 'quote', 'source'])
+            entry.update(owner_quote({k: item[k] for k in ('quote', 'source')}, label, captured))
+            reason = weakened([entry['quote']])
+            stated = {Decimal(n) for n in NUMBER.findall(entry['quote'])}
+            missing = [str(n) for n in numbers.get(locator, []) if n not in stated]
+            if reason is None and missing:
+                reason = f"the quote does not state {', '.join(missing)}"
+        elif kind == 'derived':
+            fields(item, label, ['class', 'derivation'], ['from', 'facts'])
+            entry['derivation'] = prose(item['derivation'], f'{label} derivation')
+            cited, facts = item.get('from', []), item.get('facts', [])
+            if (not isinstance(cited, list) or not isinstance(facts, list) or not cited + facts
+                    or len(cited) > MAX_ITEMS or len(facts) > MAX_ITEMS):
+                raise ValueError(f'{label} must cite owner-stated fields (from) or quoted owner facts')
+            if any(c not in declared for c in cited) or len(set(cited)) != len(cited):
+                raise ValueError(f'{label} cites fields without provenance or twice: {cited}')
+            entry['facts'] = [owner_quote(f, f'{label} fact {i}', captured) for i, f in enumerate(facts)]
+            entry['from'] = list(cited)
+            reason = None
+            for parent in cited:
+                if resolve(parent, trail + (locator,))['class'] == 'assumed':
+                    raise ValueError(f'{label} derives from assumed {parent}; a limit derived from an '
+                                     'assumption is assumed')
+                if done[parent]['enforcement'] == 'soft':
+                    reason = reason or f'it derives from soft {parent}'
+            reason = reason or weakened(f['quote'] for f in entry['facts'])
+        else:
+            fields(item, label, ['class', 'rationale'])
+            entry['rationale'] = prose(item['rationale'], f'{label} rationale')
+            reason = 'agent-proposed default awaiting owner confirmation'
+        entry['enforcement'] = 'soft' if reason else 'hard'
+        if reason:
+            entry['soft_reason'] = reason
+        done[locator] = entry
+        return entry
+    for locator in locators:
+        if locator in declared:
+            entries[locator] = resolve(locator)
+        else:
+            entries[locator] = {'locator': locator, 'class': 'unknown', 'enforcement': 'hard',
+                                'reason': 'no provenance declared; enforced as before and never '
+                                          'treated as owner-stated'}
+    constraints = [entries[l] for l in locators]
+    sources = sorted({q['source']['path'] for e in constraints for q in [e] + e.get('facts', [])
+                      if 'source' in q and q['verification'] == 'quote_in_source'})
+    return {'status': 'unknown' if any(e['class'] == 'unknown' for e in constraints) else 'declared',
+            'constraints': constraints, 'source_paths': sources,
+            'owner_confirmation': [e['locator'] for e in constraints if e['enforcement'] == 'soft']}
+
+
 def validate(raw, *, profile=None, captured=None):
     """Return the validator record or raise ValueError; never a partial pass.
 
@@ -662,7 +817,7 @@ def validate(raw, *, profile=None, captured=None):
     schema = envelope.get('schema') if isinstance(envelope, dict) else None
     fields(envelope, 'envelope', ['schema', 'id', 'outline', 'layer_count', 'stackup', 'fab_profile',
                                   'mounting_holes', 'keepouts', 'fixed_footprints']
-           + (['obligations'] if schema == SCHEMAS[1] else []), ['max_component_height_mm'])
+           + (['obligations'] if schema == SCHEMAS[1] else []), ['max_component_height_mm', 'constraint_provenance'])
     if schema not in SCHEMAS:
         raise ValueError(f'schema must be one of {SCHEMAS}')
     eid = name(envelope['id'], 'envelope id', ENVELOPE_ID)
@@ -687,6 +842,7 @@ def validate(raw, *, profile=None, captured=None):
     unique_names(envelope['fixed_footprints'], 'reference', 'fixed footprint', namespace)
     unique_names(envelope['mounting_holes'], 'id', 'mounting hole', namespace)
     unique_names(envelope['keepouts'], 'id', 'keepout', namespace)
+    provenance = validate_provenance(envelope, vertices, captured)
     return {'schema': 'agent-ee.envelope-validation/1', 'envelope_id': eid,
             'envelope_sha256': hashlib.sha256(raw).hexdigest(),
             'structural': 'pass', 'outcome': 'unknown' if unresolved else 'pass',
@@ -697,7 +853,13 @@ def validate(raw, *, profile=None, captured=None):
             **({'obligations': obligations} if schema == SCHEMAS[1] else {}),
             'mounting_holes': validate_holes(envelope['mounting_holes'], vertices),
             'keepouts': validate_keepouts(envelope['keepouts'], vertices, copper),
-            'fixed_footprints': validate_fixed(envelope['fixed_footprints'], vertices, edges)}
+            'fixed_footprints': validate_fixed(envelope['fixed_footprints'], vertices, edges),
+            'constraint_provenance': provenance}
+
+
+SOFT_PREFIX = {'assumed': 'ASSUMED, not a hard limit until the owner confirms it',
+               'owner_stated': 'SOFT owner statement, not a hard limit until the owner states it',
+               'derived': 'SOFT derivation, not a hard limit until the owner confirms it'}
 
 
 def obligation(eid, suffix, field, value, statement, source_path, kinds):
@@ -775,10 +937,20 @@ def derive_requirements(record, source_path):
                               item['statement'] + f" Requirement IDs: {', '.join(item['requirement_ids'])}; "
                               f"checks pending {', '.join(item['owner_items'])}.",
                               source_path, CHECK_KINDS['obligations']))
+    by_locator = {e['locator']: e for e in record.get('constraint_provenance', {}).get('constraints', [])}
+    provenance = {}
+    for item in out:
+        entry = by_locator.get(item['source']['locator'], {'class': 'unknown', 'enforcement': 'hard'})
+        provenance[item['id']] = {k: entry[k] for k in ('class', 'enforcement', 'soft_reason') if k in entry}
+        if entry['enforcement'] == 'soft':
+            # Soft limits are surfaced for owner confirmation, never acceptance ceilings.
+            item['intent'] = 'informational'
+            item['statement'] = (f"{SOFT_PREFIX[entry['class']]} ({entry['soft_reason']}): "
+                                 + item['statement'])
     return {'schema': 'agent-ee.envelope-requirements/1', 'envelope_id': eid,
             'envelope_sha256': record['envelope_sha256'], 'source_path': source_path,
             'complete': not record['unresolved'], 'unresolved': record['unresolved'],
-            'requirements': out}
+            'requirements': out, 'provenance': provenance}
 
 
 def dialog_requirements(requirements):
@@ -793,8 +965,12 @@ def derive(raw, *, source_path, profile=None, captured=None):
     record = validate(raw, profile=profile, captured=captured)
     requirements = derive_requirements(record, source_path)
     markdown = ''.join(f"{r['id']}: {r['statement']}\n  Source: {r['source']['path']} {r['source']['locator']} "
-                       f"(field sha256 {r['field_sha256']}); check kinds: {', '.join(r['check_kinds'])}\n\n"
+                       f"(field sha256 {r['field_sha256']}); check kinds: {', '.join(r['check_kinds'])}\n"
+                       f"  Provenance: {requirements['provenance'][r['id']]['class']}, "
+                       f"{requirements['provenance'][r['id']]['enforcement']} limit\n\n"
                        for r in requirements['requirements'])
+    markdown += ''.join(f"Owner confirmation needed: {locator}\n"
+                        for locator in record['constraint_provenance']['owner_confirmation'])
     markdown += ''.join(f"Unresolved: {u['predicate']}: {u['reason']}\n" for u in record['unresolved'])
     return {'envelope.json': raw, 'envelope-validation.json': canonical(record) + b'\n',
             'envelope-requirements.json': canonical(requirements) + b'\n',
@@ -926,6 +1102,18 @@ def obligation_coverage(scope, requirements, record, files):
         rid, mapped, field = item['id'], baseline.get(item['id']), field_of(item)
         kinds = item['check_kinds']
         entry = {'id': rid, 'locator': item['source']['locator'], 'check_kinds': kinds, 'checks': []}
+        provenance = requirements.get('provenance', {}).get(rid, {'class': 'unknown', 'enforcement': 'hard'})
+        entry['provenance'] = provenance
+        intent = item.get('intent', 'acceptance')
+        if intent == 'informational':
+            # A soft limit (AGENTEE-266) is reported for owner confirmation; it is not acceptance
+            # and needs no check, but a mapping must still carry its exact statement and intent.
+            if mapped is not None and (mapped.get('statement') != item['statement']
+                                       or mapped.get('source') != item['source'] or mapped.get('intent') != intent):
+                raise ValueError(f'envelope obligation {rid} statement, source or informational intent differs')
+            report.append({**entry, 'checks': list(mapped.get('checks', [])) if mapped else [], 'status': 'soft',
+                           'reason': f"{provenance['class']} limit is soft: {provenance['soft_reason']}"})
+            continue
         if mapped is None or not mapped.get('checks'):
             report.append({**entry, 'status': 'unmapped', 'reason': f'no mapped check; {UNBOUND[field]}'})
             continue
@@ -954,7 +1142,7 @@ def obligation_coverage(scope, requirements, record, files):
 def require_obligations(scope, requirements, record, files):
     """Refuse a scope/3 baseline that drops, alters, vacuously maps or leaves unknown an obligation."""
     report = obligation_coverage(scope, requirements, record, files)
-    missing = [f"{r['id']} ({r['status']}: {r['reason']})" for r in report if r['status'] != 'bound']
+    missing = [f"{r['id']} ({r['status']}: {r['reason']})" for r in report if r['status'] not in ('bound', 'soft')]
     if missing:
         raise ValueError('envelope obligations lack executable coverage and are refused, not dropped: '
                          + '; '.join(missing))
@@ -1111,6 +1299,7 @@ def baseline_envelope(scope, files, inputs):
     dependencies = {path} | ({declared['profile']} if profile is not None else set())
     dependencies.update(record['fab_profile'].get('source_paths', []))
     dependencies.update(record['stackup'].get('source_paths', []))
+    dependencies.update(record['constraint_provenance']['source_paths'])
     from .design_dialog import validate_requirements
     expected = dialog_requirements(requirements)['requirements']
     stage_one = sorted(rel for rel, (kind, _, _) in consumed.items() if kind == 'stage_one')
@@ -1312,9 +1501,10 @@ def main():
     parser.add_argument('--board', type=Path, help='saved .kicad_pcb to compare field by field')
     args = parser.parse_args()
     try:
-        if args.sources and not args.profile:
-            raise ValueError('--sources needs --profile')
         raw = args.envelope.read_bytes()
+        declares = isinstance(load(raw), dict) and 'constraint_provenance' in load(raw)
+        if args.sources and not args.profile and not declares:
+            raise ValueError('--sources needs --profile or a constraint_provenance declaration')
         artifacts = derive(raw, source_path=args.source_path,
                            profile=args.profile.read_bytes() if args.profile else None,
                            captured=source_inventory(args.sources) if args.sources else None)
