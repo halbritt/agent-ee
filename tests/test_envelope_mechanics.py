@@ -64,8 +64,8 @@ zone = list(fp.Zones())[0]
 if mode == 'shrunk':
     for i, (x,y) in enumerate(((-23,-7.75),(23,-7.75),(23,-26.75),(-23,-26.75))):
         zone.Outline().SetVertex(i,pcbnew.VECTOR2I(int(x*1000000),int(y*1000000)))
-if mode == 'tracks': zone.SetDoNotAllowTracks(False)
-if mode == 'layers':
+if mode in ('tracks', 'board-area-tracks'): zone.SetDoNotAllowTracks(False)
+if mode in ('layers', 'board-area-layers'):
     layers = pcbnew.LSET()
     layers.AddLayer(pcbnew.F_Cu)
     zone.SetLayerSet(layers)
@@ -74,7 +74,7 @@ if side == 'B': fp.Flip(fp.GetPosition(), False)
 fp.SetOrientationDegrees(angle)
 fp.SetPosition(pcbnew.VECTOR2I(40000000,25000000 if angle % 180 else (30000000 if angle == 0 else 20000000)))
 if mode == 'edge': fp.SetPosition(pcbnew.VECTOR2I(40000000,12750000))
-if mode == 'board-area':
+if mode in ('board-area', 'board-area-tracks', 'board-area-layers'):
     copied = zone.Duplicate(False)
     fp.Remove(zone)
     board.Add(copied)
@@ -247,11 +247,38 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             self.assertEqual(ctx.result['outcome'],'unknown')
 
     def test_keepout_forbid_subset(self):
-        self.build('tracks')
-        result = self.results()['keepout-antenna']
-        self.assertEqual((result['execution'],result['outcome']),('ok','defect'),result)
-        self.build('layers')
-        self.assertEqual(self.results()['keepout-antenna']['outcome'],'defect')
+        # Explicit generator geometry tests native coverage independently of the
+        # dynamic antenna declaration's unresolved manufacturer qualification.
+        self.envelope['keepouts'][0].pop('antenna')
+        self.envelope['keepouts'][0]['polygon'] = [[33.25,49],[33.25,1],[12.25,1],[12.25,49]]
+        self.build('board-area')
+        control = self.results()['keepout-antenna']
+        self.assertEqual((control['execution'],control['outcome']),('ok','pass'),control)
+        areas = read_json(self.last_run / 'work/keepout-antenna/envelope-probe.json')['rule_areas']
+        self.assertEqual(len(areas),1)
+        original = areas[0]
+        self.assertEqual(original['owner'],'board')
+        self.assertTrue(original['forbid']['tracks'])
+        self.assertTrue(set(self.envelope['keepouts'][0]['layers']) <= set(original['layers']))
+        for mode in ('board-area-tracks','board-area-layers'):
+            with self.subTest(mode=mode):
+                self.build(mode)
+                result = self.results()['keepout-antenna']
+                self.assertEqual((result['execution'],result['outcome']),('ok','defect'),result)
+                self.assertEqual(result['details']['unknown'],[])
+                self.assertEqual(result['details']['defects'],[
+                    'no saved rule area covers the declared polygon, layers and forbid set'])
+                areas = read_json(self.last_run / 'work/keepout-antenna/envelope-probe.json')['rule_areas']
+                self.assertEqual(len(areas),1)  # Missing zone cannot satisfy this negative.
+                area = areas[0]
+                self.assertEqual(area['owner'],'board')
+                self.assertEqual(area['outline'],original['outline'])
+                if mode == 'board-area-tracks':
+                    self.assertEqual(area['layers'],original['layers'])
+                    self.assertEqual(area['forbid'],dict(original['forbid'],tracks=False))
+                else:
+                    self.assertEqual(area['layers'],['F.Cu'])
+                    self.assertEqual(area['forbid'],original['forbid'])
 
     def test_full_scope_capture(self):
         results = self.results()
@@ -259,8 +286,13 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         coverage = baseline['envelope']['coverage']
         self.assertEqual(len(coverage),9)
         self.assertEqual({r['status'] for r in coverage},{'bound'})
-        for cid in ('outline','layer-count','stackup','hole-h1','hole-h2','hole-h3','hole-h4','keepout-antenna'):
+        for cid in ('outline','layer-count','stackup','hole-h1','hole-h2','hole-h3','hole-h4'):
             self.assertEqual((results[cid]['execution'],results[cid]['outcome']),('ok','pass'),results[cid])
+        antenna = results['keepout-antenna']
+        self.assertEqual((antenna['execution'], antenna['outcome']), ('unsupported', 'unknown'), antenna)
+        self.assertIn('placement qualification unresolved', antenna['details']['unknown'][0])
+        self.assertIn('module dimensions do not define a base-board minimum', antenna['details']['unknown'][0])
+        self.assertNotIn('declared_polygon_nm', antenna['details']['saved'])
         descriptor = baseline['coverage']['checks']['keepout-antenna']
         self.assertEqual(descriptor['predicates'],['envelope:keepouts/1:antenna'])
         self.assertEqual(descriptor['prerequisites'],[dict(check_id='facts',kind='datasheet_facts')])
