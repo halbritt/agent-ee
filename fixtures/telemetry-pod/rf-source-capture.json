@@ -1,0 +1,42 @@
+{
+  "work_item": "AGENTEE-186",
+  "as_of": "2026-10-19",
+  "status": "calculation_not_captured",
+  "raw_captures": [
+    {
+      "file": "calculator.html",
+      "url": "https://jlcpcb.com/pcb-impedance-calculator/",
+      "resolved_url": "https://jlcpcb.com/pcb-impedance-calculator/",
+      "sha256": "4f206c2946ac0881b7cbe6644dfb1dd9a4a2593ddf3a0d9bf0233ef8b50fb1b3",
+      "bytes": 76250,
+      "captured_at": "2026-10-19T02:15:23.693059+00:00",
+      "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+    },
+    {
+      "file": "5164550de9f6c4318dc0.js",
+      "url": "https://jlcpcb.com/ssr/js/5164550de9f6c4318dc0.js",
+      "bytes": 78804,
+      "sha256": "29bba50d37ada0c4d9397c316b805844fd4ee10fc28358dfd742198055c05ed0",
+      "captured_at": "2026-10-19T02:15:46.643157+00:00",
+      "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+    }
+  ],
+  "other_fetches": [
+    {
+      "url": "https://cart.jlcpcb.com/impedanceCalculation",
+      "error": "HTTP Error 404: Not Found"
+    }
+  ],
+  "raw_bytes_committed": false,
+  "retention": "Raw responses remain worker scratch only, not an owner evidence store. Only original source identities and capture observations are committed.",
+  "observations": [
+    "The fetched calculator HTML contains no JLC04161H-7628 calculation result.",
+    "The referenced public JavaScript declares POST /jlcTools/impedance/calc. This endpoint was not called.",
+    "No width, gap or calculated impedance was extracted or entered as vendor data."
+  ],
+  "blocked_need": "A host-side calculator calculation and capture beyond an ordinary HTTPS public-page fetch. The assignment only authorizes that fetch; no calculation POST, login, interactive automation or paid service was attempted.",
+  "interpretation_limits": [
+    "Response hashes identify fetched raw bytes; they do not authenticate a vendor response or establish calculator output.",
+    "There is no source-derived RF_50 constraint document. Synthetic test dimensions are not vendor data."
+  ]
+}

@@ -561,6 +561,11 @@ are outside this routing-width criterion. See [coverage](coverage.md) for the
 complete class/count contract. Opting in changes the scope/2 baseline identity;
 existing baseline criteria keep their historical meaning.
 
+The [GNSS RF controls](gnss-rf-path.md) exercise this per-net width binding and
+native maximum length with synthetic dimensions. They do not establish a
+JLCPCB calculation or impedance. The pod requirement map keeps the 50 ohm target
+as a limitation; a calculator source capture remains blocked.
+
 Width is not ampacity. A zone's `filled` flag is not a full polygon/return-path
 analysis. Review actual saved native polygons and connectivity when needed;
 the control reviewers did that alongside native DRC evidence.

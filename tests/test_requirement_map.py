@@ -92,6 +92,19 @@ class RequirementMapTests(unittest.TestCase):
                 f'{PROVENANCE}/spec-record.json': sha256(self.record_raw),
                 f'{PROVENANCE}/requirement-map.json': sha256(json_bytes(self.value))}
 
+    def test_gnss_50_ohm_impedance_is_an_explicit_limitation_without_a_check(self):
+        scope, receipt = self.compile()
+        rid = 'POD-IF-GNSS-ANTENNA'
+        entry = next(e for e in receipt['requirements'] if e['id'] == rid)
+        self.assertEqual(entry['mode'], 'limitation')
+        limitation, = [s for s in scope['limitations'] if s.startswith(rid + ':')]
+        for fact in ('50 ohm', 'Impedance remains unverified', 'JLC04161H-7628',
+                     'https://jlcpcb.com/pcb-impedance-calculator/',
+                     'not a captured calculation'):
+            self.assertIn(fact, limitation)
+        self.assertNotIn(rid, compile_coverage(scope, self.provenance_files())['requirements'])
+        self.assertEqual([c['id'] for c in scope['checks']], ['erc', 'drc'])
+
     def test_pod_scope_validates(self):
         scope, receipt = self.compile()
         validate_scope(scope)
