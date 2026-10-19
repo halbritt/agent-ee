@@ -137,7 +137,7 @@
     {
       "id": "POD-IF-GNSS-ANTENNA",
       "limitation": {
-        "reason": "A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified."
+        "reason": "NEO-M9N RF_IN to SMA targets 50 ohm coplanar routing on F.Cu over In1.Cu GND using JLC04161H-7628. Impedance remains unverified: no qualified impedance solver or captured JLCPCB calculator result is supplied. https://jlcpcb.com/pcb-impedance-calculator/ is the intended source, not a captured calculation. Source-derived RF_50 width and clearance and a pod RF length bound remain undeclared; native width and length checks cannot establish impedance. A complete pinout and captured electrical contracts are also required before hardware_interface can cover this interface; physical and firmware performance remains unverified."
       }
     },
     {

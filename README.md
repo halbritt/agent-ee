@@ -279,6 +279,8 @@ not establish that the declared clearance or track-width values are suitable.
 clearance, differential-pair and impedance declarations into native netclasses
 and DRC width rules. Widths for declared currents come from an IPC-2152 fit, and
 `copper-width/1` reads the per-net minimums. Impedance is recorded, not computed.
+The [GNSS RF controls](docs/gnss-rf-path.md) exercise width and length separately;
+the pod's source-derived RF dimensions and 50 ohm impedance remain unverified.
 The [fab exporter](docs/fab-export.md) produces Gerbers, drills, BOM, CPL and a
 board-bound manifest offline. It requires identical assembled designators
 across the board and CSVs before completing the package. A declared
