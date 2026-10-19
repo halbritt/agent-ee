@@ -15,7 +15,7 @@ from .storage import identity
 KINDS = frozenset(('schematic_render', 'part_decisions', 'jlc_dfm', 'fab_package', 'cpl_rotation', 'jlc_cost_estimate', 'block_provenance', 'fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'pin_contracts', 'active_spice',
                    'kicad_happy', 'kicad_happy_severity_gate', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'net_class_assignment', 'footprint_assignment', 'symbol_pins', 'routing_equivalence', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names', 'topology_rules', 'regeneration_determinism', 'design_rules', 'interval_assertions', 'placement_congestion'))
+                   'netclass_completeness', 'net_class_assignment', 'footprint_assignment', 'symbol_pins', 'routing_equivalence', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names', 'topology_rules', 'regeneration_determinism', 'design_rules', 'interval_assertions', 'placement_congestion', 'rf_geometry'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -488,6 +488,13 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'fab_profile':
             from .fab_profile import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])
+            for path in descriptor['immutable_inputs']:
+                captured(path, immutable=True)
+            result['predicates'] = descriptor['predicates']
+        elif kind == 'rf_geometry':
+            from .rf_geometry import capability
+            captured(scope.get('board'))
+            descriptor = capability(params, scope, files, inputs)
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']

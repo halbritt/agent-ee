@@ -167,6 +167,7 @@ registered check kind.
 | `package_consistency` | `/usr/bin/python3 -B -m agent_ee.package_consistency /candidate/CATALOG MANIFEST_SHA256 /work/request.json /work/catalog-rows.json`; coordinator then compares preceding native XML names through the captured table ([details](package-consistency.md)) | 600 s |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `dfm_geometry` | Same probe with `--dfm`, then a coordinator evaluation against the captured profile; see [DFM geometry](dfm-geometry.md) | 900 s |
+| `rf_geometry` | `/usr/bin/python3 -B -m agent_ee.rf_geometry BOARD --request /work/rf-request.json --out /work/rf-native.json`, then a coordinator evaluation against the captured declaration; see [RF geometry](rf-geometry.md) | 600 s |
 | `placement_congestion` | `/usr/bin/python3 -B -m agent_ee.placement_probe BOARD --out /work/placement-probe.json`, then an offline coordinator analysis of the captured probe ([details](placement-congestion.md)) | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
@@ -441,6 +442,29 @@ in `details.rules` and `limitations`. A rule that cannot evaluate an item, such
 as one with no saved board thickness, a blind via, a custom PTH pad, an unfilled
 zone or a missing courtyard, is `unsupported`, and the check becomes
 `unsupported/unknown`.
+
+## RF geometry
+
+The [RF geometry check](rf-geometry.md) takes exactly `params.declaration`. That
+is a captured `agent-ee.rf-geometry/1` record for one RF net. It may hold a
+grounded-CPW section (width, gap and tolerance targets, read directly or by JSON
+pointer from a captured calculation record in `mm` or `mil`), a stitching
+section (pitch and band) and an explicit trunk/stub topology with per-branch
+length bounds. The sandboxed pcbnew probe records facts only. The coordinator
+grades:
+
+- exact track width;
+- the minimum gap to coplanar ground on exact pcbnew polygons, plus the
+  maximum gap sampled along both edges;
+- coplanar ground present beside every track side;
+- reference-layer ground under the trace and both gaps;
+- stitching-via pitch on both sides of each branch;
+- routed length per branch.
+
+A missing coplanar ground or reference is a defect stated as an absent
+structure, never graded as microstrip. A `null` bound, an unfilled zone or an
+unrouted branch is unknown, with execution `unsupported`. The check is not RF
+qualification.
 
 ## Native netlist
 

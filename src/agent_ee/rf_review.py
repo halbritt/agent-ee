@@ -37,7 +37,8 @@ QUALIFICATION_METHODS = (
 # Registered check kinds an RF reviewer consumes when present. Absence is recorded
 # as missing, never as a pass. Layer policy and RF reference continuity are not
 # check kinds: they come from the routing adapter's verified AGENTEE-231 grade.
-RF_EVIDENCE_KINDS = ("drc", "geometry", "routing_rules", "net_class_assignment", "netlist", "netlist_parity")
+RF_EVIDENCE_KINDS = ("drc", "geometry", "routing_rules", "net_class_assignment", "netlist", "netlist_parity",
+                     "rf_geometry")
 RF_EXPECTED_KINDS = ("net_class_assignment", "routing_rules", "geometry")
 # Under work/ so reviewers see it at /evidence/work/rf-routing and may cite it; the id is reserved.
 ROUTING_DIR = "work/rf-routing"
