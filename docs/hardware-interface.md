@@ -123,8 +123,21 @@ result has three states:
   pin's conductor: its expansion is not reimplemented, so it never proves a
   connection. It also includes unmodelled item kinds,
   coordinates finer than the native 100 nm unit, oblique rotations, `extends`
-  symbols and hidden or `no_connect` pins. Multi-unit components whose native
-  UUIDs resolve to several placed symbols are also unknown.
+  symbols and hidden pins of any library type other than `no_connect`.
+  Multi-unit components whose native UUIDs resolve to several placed symbols
+  are also unknown.
+
+A pin whose embedded library type is `no_connect`, hidden or visible, is never
+joined by name, so no label ever makes it connected. It is disconnected only
+when three source facts hold: every connectable item in the owning sheet file is
+a modelled kind; exactly one explicit `(no_connect (at ...))` marker sits exactly
+on the pin's connection point; and the 10 µm closure around the pin contains
+nothing but that marker. Any wire, bus, bus entry, junction, label, global or
+hierarchical label, directive label, sheet pin, other pin or second marker in
+the closure leaves it unknown, as do a missing or offset marker and any
+unmodelled item. The report cites the marker position and UUID under
+`global_label_sources`. Hidden pins of other types may join nets implicitly and
+stay unknown.
 
 kicad-cli connects labels lying within about one native unit of a wire. It does
 not connect a pin lying inside a wire or a wire ending inside another wire
@@ -192,7 +205,11 @@ with an explicit no-connect marker (native `_1` suffix), a spelling attached to
 another conductor, power symbols on and off the pin, and direct, wired,
 junction and interior-wire labels; junctionless tees; pins inside wires; labels
 offset by one native unit, 1 µm and 10 µm; sub-unit coordinates; all twelve pin
-orientations; and child-sheet, root-sheet and hierarchical-port scoping. Wired,
+orientations; and child-sheet, root-sheet and hierarchical-port scoping.
+Library `no_connect` pin tests cover visible and hidden pins isolated by their
+own marker, natively and in source, and each failing condition: no marker, an
+offset or doubled marker, an unmodelled item, and wires, junctions, labels, bus
+entries, a second marker or an exactly spelled global label in the margin. Wired,
 unproven and orientation cases first check native kicad-cli connectivity with an
 ordinary label at the same point. Scripted independent initial reviews and
 central adjudication test evidence authority; they do not establish live-model
