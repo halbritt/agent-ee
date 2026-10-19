@@ -1365,7 +1365,15 @@ XML inventory used by `netlist_parity`, or waive native DRC schematic parity.
 [binding fill](binding-fill.md#source-derived-passive-ratings) (AGENTEE-233).
 A malformed record or a rating that differs from it is an `invalid_rating_provenance`
 defect. Absent ratings remain `missing_rating_property` defects;
-`require_passive_ratings` still defaults to true. No new check kind or predicate is added.
+`require_passive_ratings` still defaults to true. No new check kind is added.
+The optional `rating_provenance` parameter (AGENTEE-242) adds the
+`assembly:rating-provenance` predicate. It names the captured binding-fill stage
+receipt, its pinned sha256 and its `binding-fill.json` artifact. Each
+`record_sha256` must then resolve to the receipted record, or the check reports
+`invalid_rating_provenance`. Unavailable provenance is `unknown`, and so is an
+`AGENT_EE_Ratings` field when no `rating_provenance` is declared
+(`undeclared_rating_provenance`). See
+[receipt-bound rating provenance](assembly-readiness.md#receipt-bound-rating-provenance).
 
 ## Saved native net-class assignment
 

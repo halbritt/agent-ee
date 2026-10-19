@@ -425,11 +425,24 @@ class NativeRatingPropagationTests(unittest.TestCase):
         catalog.mkdir()
         _write_sqlite_catalog(catalog, [{'lcsc': 'C38695', 'mpn': MPN, 'stock': 1000}])
         xml = receipts / '3/run/out/netlist/design.xml'
+        # Without receipted provenance the native record_sha256 is unresolved: unknown, never pass.
         params = {'catalog': 'assembly-catalog/catalog-manifest.json'}
+        assembly = evaluate_assembly_readiness(root, xml, params)
+        self.assertEqual(assembly['outcome'], 'unknown', assembly)
+        self.assertEqual([(f['code'], f['references']) for f in assembly['findings'] if f['severity'] == 'unknown'],
+                         [('undeclared_rating_provenance', ['R1', 'R2'])])
+        self.assertEqual({c['rating_provenance'] for c in assembly['components']}, {'unverified'})
+        (root / 'provenance').mkdir()
+        shutil.copyfile(receipts / '1/receipt.json', root / 'provenance/binding-fill.receipt.json')
+        shutil.copyfile(receipts / '1/run/out/binding-fill.json', root / 'provenance/binding-fill.json')
+        params['rating_provenance'] = {'receipt': 'provenance/binding-fill.receipt.json',
+                                       'receipt_sha256': digest(root / 'provenance/binding-fill.receipt.json'),
+                                       'report': 'provenance/binding-fill.json'}
         assembly = evaluate_assembly_readiness(root, xml, params)
         self.assertEqual(assembly['outcome'], 'pass', assembly)
         self.assertIs(assembly['policy']['require_passive_ratings'], True)
-        self.assertEqual({c['rating_provenance'] for c in assembly['components']}, {'source_backed'})
+        self.assertEqual({(c['rating_provenance'], c['rating_record']) for c in assembly['components']},
+                         {('source_backed', 'receipt_bound')})
         # The checker refuses a rating that drifted from its provenance, and absent ratings stay defects.
         def edited(name, change):
             tree = ET.parse(xml)
@@ -453,3 +466,203 @@ class NativeRatingPropagationTests(unittest.TestCase):
         result = evaluate_assembly_readiness(root, edited('bare.xml', strip), params)
         self.assertEqual(result['outcome'], 'defect')
         self.assertEqual(result['missing_rating_refs'], ['R1', 'R2'])
+
+
+class ReceiptBoundRatingProvenanceTests(unittest.TestCase):
+    """AGENTEE-242: the checker resolves record_sha256 against the receipted binding-fill report."""
+
+    def setUp(self):
+        from toolchain import require_toolchain
+        from agent_ee import binding_fill
+        from agent_ee.parts_manifest import qualify_manifest
+        from agent_ee.stage_receipts import adopt, run_step
+        from test_assembly_readiness import _write_sqlite_catalog
+        require_toolchain(native=True)
+        helper = PassiveRatingTests()
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        self.root = root = helper.root
+        for name, value in [('intent.json', helper.intent), ('parts.json', helper.parts), ('refs.json', helper.refs),
+                            ('deviations.json', helper.deviations), ('ratings.json', helper.ratings)]:
+            write_json(root / name, value)
+        spec = binding_fill.configuration(Path(__file__).resolve().parents[1] / 'src', intent='intent.json',
+            manifest='parts.json', part_refs='refs.json', deviations='deviations.json', captures='.',
+            dependencies=sorted(qualify_manifest(helper.parts, root)['dependencies']), ratings='ratings.json')
+        step = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'bind'
+        receipt = run_step(step, root, spec, {'implementation': 1, 'source_candidate_id': 'rated', 'receipt_index': 1})
+        self.assertEqual(receipt['status'], 'completed', (step / 'run/console.log').read_text())
+        adopt(step, receipt, root)
+        (root / 'provenance').mkdir()
+        shutil.copyfile(step / 'receipt.json', root / 'provenance/binding-fill.receipt.json')
+        shutil.copyfile(step / 'run/out/binding-fill.json', root / 'provenance/binding-fill.json')
+        self.report = read_json(root / 'provenance/binding-fill.json')
+        self.fields = read_json(root / 'intent.json')['components'][0]['part_binding']
+        self.assertIn('AGENT_EE_Ratings', self.fields)
+        (root / 'assembly-catalog').mkdir()
+        _write_sqlite_catalog(root / 'assembly-catalog', [{'lcsc': 'C38695', 'mpn': MPN, 'stock': 1000}])
+        self.provenance = {'receipt': 'provenance/binding-fill.receipt.json',
+                           'receipt_sha256': digest(root / 'provenance/binding-fill.receipt.json'),
+                           'report': 'provenance/binding-fill.json'}
+        self.params = {'catalog': 'assembly-catalog/catalog-manifest.json', 'rating_provenance': self.provenance}
+
+    def netlist(self, fields, name='design.xml'):
+        """An owned KiCad XML netlist carrying exactly ``fields`` on R1."""
+        import xml.etree.ElementTree as ET
+        export = ET.Element('export', version='E')
+        ET.SubElement(ET.SubElement(export, 'design'), 'sheet', number='1', name='/', tstamps='/')
+        comp = ET.SubElement(ET.SubElement(export, 'components'), 'comp', ref='R1')
+        ET.SubElement(comp, 'value').text = '10k'
+        ET.SubElement(comp, 'footprint').text = 'Owned:R2'
+        node = ET.SubElement(comp, 'fields')
+        for key, value in fields.items():
+            ET.SubElement(node, 'field', name=key).text = value
+        ET.SubElement(comp, 'libsource', lib='Owned', part='R')
+        ET.SubElement(comp, 'sheetpath', names='/', tstamps='/')
+        ET.SubElement(comp, 'tstamps').text = '6f0f7f0e-5c43-5b8e-9a51-2a3f2c1d0e41'
+        ET.ElementTree(export).write(self.root / name)
+        return self.root / name
+
+    def evaluate(self, fields, params=None):
+        from agent_ee.assembly_readiness import evaluate_assembly_readiness
+        return evaluate_assembly_readiness(self.root, self.netlist(fields), params or self.params)
+
+    def defects(self, result):
+        return [(f['code'], f['reference']) for f in result['findings'] if f['severity'] == 'defect']
+
+    def forged(self, **change):
+        native = json.loads(self.fields['AGENT_EE_Ratings'])
+        return {**self.fields, 'AGENT_EE_Ratings': json.dumps({**native, **change})}
+
+    def test_genuine_receipted_record_is_accepted(self):
+        result = self.evaluate(self.fields)
+        self.assertEqual(result['outcome'], 'pass', result['findings'])
+        self.assertEqual([(c['rating_provenance'], c['rating_record']) for c in result['components']],
+                         [('source_backed', 'receipt_bound')])
+        self.assertEqual(result['rating_provenance']['report_sha256'],
+                         digest(self.root / 'provenance/binding-fill.json'))
+        self.assertEqual((result['rating_provenance']['records'], result['rating_provenance']['error']), (1, None))
+
+    def test_forged_64_hex_hash_is_refused(self):
+        result = self.evaluate(self.forged(record_sha256='a' * 64))
+        self.assertEqual(result['outcome'], 'defect')
+        self.assertEqual(self.defects(result), [('invalid_rating_provenance', 'R1')])
+        self.assertIn('not the receipted record', ' '.join(result['findings'][0]['problems']))
+        self.assertEqual(result['components'][0]['rating_record'], 'unresolved')
+
+    def test_consistent_native_fields_with_a_forged_record_are_refused(self):
+        from agent_ee.storage import canonical
+        entry = self.report['ratings']['derived']['R1']
+        record = copy.deepcopy(entry['record'])
+        record['ratings']['Power'].update(value='250mW', si='0.25')
+        # A self-consistent forgery: native Power, field ratings and record identity all agree.
+        fields = {**self.fields, 'Power': '250mW', 'AGENT_EE_Ratings': canonical({
+            'schema': 'agent-ee.passive-rating-binding/1', 'ratings': {'Power': '250mW'},
+            'record_sha256': identity(record)}).decode()}
+        self.assertEqual(self.evaluate(fields, {'catalog': self.params['catalog']})['outcome'], 'unknown')
+        result = self.evaluate(fields)
+        self.assertEqual(self.defects(result), [('invalid_rating_provenance', 'R1')])
+        problems = ' '.join(result['findings'][0]['problems'])
+        self.assertIn('not the receipted record', problems)
+        self.assertIn('differ from the receipted record', problems)
+        # A genuine hash with a respelled rating or another part identity is still refused.
+        respelled = {**self.fields, 'Power': '0.1W', 'AGENT_EE_Ratings': canonical({
+            'schema': 'agent-ee.passive-rating-binding/1', 'ratings': {'Power': '0.1W'},
+            'record_sha256': entry['record_sha256']}).decode()}
+        self.assertEqual(self.defects(self.evaluate(respelled)), [('invalid_rating_provenance', 'R1')])
+        other = self.evaluate({**self.fields, 'Partnumber': 'OTHER-MPN'})
+        self.assertIn('part number differs', ' '.join(f for x in other['findings'] if x['severity'] == 'defect'
+                                                        for f in x.get('problems', [])))
+        # A rating field stripped from a component the receipt derived is refused, not silently unsourced.
+        bare = {k: v for k, v in self.fields.items() if k != 'AGENT_EE_Ratings'}
+        self.assertIn(('invalid_rating_provenance', 'R1'), self.defects(self.evaluate(bare)))
+
+    def test_missing_or_unbound_provenance_is_unknown(self):
+        def unknown(result, text):
+            self.assertEqual(result['outcome'], 'unknown', result['findings'])
+            self.assertEqual([f['code'] for f in result['findings'] if f['severity'] == 'unknown'],
+                             ['rating_provenance_unavailable'])
+            self.assertIn(text, result['rating_provenance']['error'])
+            self.assertEqual(result['components'][0]['rating_record'], 'unavailable')
+
+        report = self.root / 'provenance/binding-fill.json'
+        original = report.read_bytes()
+        report.unlink()
+        unknown(self.evaluate(self.fields), 'missing')
+        # A report that is not the receipted artifact, even a well-formed one, is not provenance.
+        forged = copy.deepcopy(self.report)
+        forged['ratings']['derived']['R1']['record']['limitations'] = []
+        forged['ratings']['derived']['R1']['record_sha256'] = identity(forged['ratings']['derived']['R1']['record'])
+        write_json(report, forged)
+        unknown(self.evaluate(self.fields), 'not the receipted artifact')
+        report.write_bytes(original)
+        unknown(self.evaluate(self.fields, {**self.params, 'rating_provenance': {
+            **self.provenance, 'receipt_sha256': 'b' * 64}}), 'pinned sha256')
+        receipt = read_json(self.root / self.provenance['receipt'])
+        receipt['status'] = 'failed'
+        write_json(self.root / 'provenance/failed.receipt.json', receipt)
+        unknown(self.evaluate(self.fields, {**self.params, 'rating_provenance': {
+            **self.provenance, 'receipt': 'provenance/failed.receipt.json',
+            'receipt_sha256': digest(self.root / 'provenance/failed.receipt.json')}}), 'malformed')
+        # A determinate defect elsewhere stays a defect while the provenance is unknown.
+        report.unlink()
+        drifted = self.evaluate({**self.fields, 'Power': '250mW'})
+        self.assertEqual(drifted['outcome'], 'defect')
+        self.assertEqual(self.defects(drifted), [('invalid_rating_provenance', 'R1')])
+
+    def test_undeclared_provenance_is_unknown_never_pass(self):
+        params = {'catalog': self.params['catalog']}
+        for fields in (self.fields, self.forged(record_sha256='a' * 64)):
+            result = self.evaluate(fields, params)
+            self.assertEqual(result['outcome'], 'unknown', result['findings'])
+            self.assertEqual([(c['rating_provenance'], c['rating_record']) for c in result['components']],
+                             [('unverified', 'undeclared')])
+            self.assertEqual([(f['code'], f['references']) for f in result['findings'] if f['severity'] == 'unknown'],
+                             [('undeclared_rating_provenance', ['R1'])])
+            self.assertIsNone(result['rating_provenance'])
+        # A determinate defect stays a defect, and a malformed field is unresolved, not undeclared.
+        drifted = self.evaluate({**self.fields, 'Power': '250mW'}, params)
+        self.assertEqual(drifted['outcome'], 'defect')
+        self.assertEqual(self.defects(drifted), [('invalid_rating_provenance', 'R1')])
+        self.assertEqual(drifted['components'][0]['rating_record'], 'unresolved')
+        self.assertNotIn('undeclared_rating_provenance', [f['code'] for f in drifted['findings']])
+        # A passive without AGENT_EE_Ratings keeps its prior unsourced verdict.
+        plain = self.evaluate({k: v for k, v in self.fields.items() if k != 'AGENT_EE_Ratings'}, params)
+        self.assertEqual(plain['outcome'], 'pass', plain['findings'])
+        self.assertEqual([(c['rating_provenance'], c['rating_record']) for c in plain['components']],
+                         [('unsourced', None)])
+
+    def test_malformed_receipt_or_record_structure_is_unknown(self):
+        receipt = read_json(self.root / self.provenance['receipt'])
+        report = copy.deepcopy(self.report)
+        report['ratings']['derived']['R1']['record'] = ['not', 'a', 'record']
+        write_json(self.root / 'provenance/listed.json', report)
+        for name, change in (('artifacts', []), ('record', None)):
+            body = {**receipt}
+            if name == 'artifacts':
+                body['artifacts'] = change
+            else:
+                body['artifacts'] = {**receipt['artifacts'],
+                                     'out/binding-fill.json': digest(self.root / 'provenance/listed.json')}
+            body['identity'] = identity({k: v for k, v in body.items() if k != 'identity'})
+            path = self.root / f'provenance/{name}.receipt.json'
+            write_json(path, body)
+            result = self.evaluate(self.fields, {**self.params, 'rating_provenance': {
+                'receipt': path.relative_to(self.root).as_posix(), 'receipt_sha256': digest(path),
+                'report': 'provenance/listed.json' if name == 'record' else self.provenance['report']}})
+            self.assertEqual(result['outcome'], 'unknown', result['findings'])
+            self.assertEqual([f['code'] for f in result['findings'] if f['severity'] == 'unknown'],
+                             ['rating_provenance_unavailable'])
+
+    def test_capability_pins_the_provenance_as_captured_inputs(self):
+        from agent_ee.assembly_readiness import capability, validate_params
+        files = {'assembly-catalog/catalog-manifest.json', self.provenance['receipt'], self.provenance['report']}
+        descriptor = capability(self.params, files)
+        self.assertIn('assembly:rating-provenance', descriptor['predicates'])
+        self.assertTrue({self.provenance['receipt'], self.provenance['report']} <= set(descriptor['immutable_inputs']))
+        self.assertNotIn('assembly:rating-provenance', capability({'catalog': self.params['catalog']}, files)['predicates'])
+        with self.assertRaisesRegex(ValueError, 'captured input'):
+            capability(self.params, files - {self.provenance['report']})
+        for change, message in (({'receipt_sha256': 'x'}, 'hex digest'), ({'report': '../x.json'}, 'normalized|unsafe|escape'),
+                                ({'report': self.provenance['receipt']}, 'distinct'), ({'extra': 1}, '')):
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, message):
+                validate_params({**self.params, 'rating_provenance': {**self.provenance, **change}})
