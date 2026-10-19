@@ -12,28 +12,44 @@ puts it in scope limitations, outside executable acceptance requirements.
 test also verifies that compiled limitations survive into the run result and
 evidence index.
 
-## Source capture blocker
+## Source capture preflight blocker
 
 The host fetched the [JLCPCB calculator page](https://jlcpcb.com/pcb-impedance-calculator/)
 on 2026-10-19 UTC (2026-10-18 local). The HTML contains no calculated width/gap
-for JLC04161H-7628. Its referenced JavaScript declares a calculation POST to
-`/jlcTools/impedance/calc`. That request exceeds this assignment's ordinary
-public-page-fetch capture route and was not attempted. The old cart calculator
-URL returned HTTP 404.
+for JLC04161H-7628. The first worker stopped at the GET-only capture boundary;
+the old cart calculator URL returned HTTP 404. Agent-463's delegated amendment
+then authorized a bounded host-side POST to `/jlcTools/impedance/calc`, using
+public dimensions, without login, payment, uploads or a cookie/session/token.
+
+The continuation captured the public pages and client JavaScript again. The
+client obtains `impedanceType` and `parameterData` through a separate POST to
+`/jlcTools/impedance/selectPageImpedancePicture`; the static calculator HTML
+does not supply that model recipe. Its calculation request carries a UUID,
+and its result handler receives output over
+`wss://tools.jlc.com/jlcTools/webSocket/{uuid}`. Those additional protocol
+operations exceed the calc-only amendment. No model-catalog POST, WebSocket
+session or incomplete calculation POST was attempted. This is a **request
+preflight blocker**, not an observed server refusal: authentication requirements
+and the availability of a synchronous alternative have not been tested.
 
 [Capture metadata](../fixtures/telemetry-pod/rf-source-capture.json) records the
-URLs, UTC times, tool and raw response hashes. Raw HTML/JavaScript stays in worker
+URLs, UTC times, tool and raw response hashes for both workers, plus the known
+stackup dimensions and the missing model inputs. The public stackup page records
+7628's dielectric constant as 4.4; that fact supplies no calculated width or gap.
+No candidate geometry was submitted and no calculation response exists.
+Raw HTML/JavaScript stays in worker
 scratch; it is not committed or an owner evidence store. These identities
 record the unsuccessful capture, not a calculator result or an offline replay.
 
-Completion requires authorization for a host-side calculation/capture route,
-then a genuine result with the selected coplanar gap, width, target, stackup,
+Completion requires a source-bound model recipe and an authorized result
+transport, then a genuine result with the selected coplanar gap, width, target, stackup,
 signal/reference layers and copper identities bound to hashed raw bytes.
 Only then can those dimensions populate `RF_50` using the existing
 [net-constraint emitter](net-constraints.md). Its `impedance_ohm: 50` must retain
 `recorded_not_enforced`; no check may claim verified impedance. The pod RF
-maximum length also needs a captured design bound; the fixture's test bound
-does not supply one.
+maximum length also needs a captured design bound. It remains a scope limitation;
+the fixture's 15 mm test bound does not supply one. The spec's 500 mm antenna
+cable limit is for the cable to the SMA, not the PCB RF trace.
 
 ## Native mechanism controls
 

@@ -34,9 +34,120 @@
     "The referenced public JavaScript declares POST /jlcTools/impedance/calc. This endpoint was not called.",
     "No width, gap or calculated impedance was extracted or entered as vendor data."
   ],
-  "blocked_need": "A host-side calculator calculation and capture beyond an ordinary HTTPS public-page fetch. The assignment only authorizes that fetch; no calculation POST, login, interactive automation or paid service was attempted.",
+  "blocked_need": "Preflight cannot form a source-bound calculation request from the captured public pages: the client obtains impedanceType and parameterData through POST /jlcTools/impedance/selectPageImpedancePicture, which the calc-only amendment does not authorize. The captured client also receives results over a UUID-bound WebSocket at wss://tools.jlc.com/jlcTools/webSocket/. No model-catalog POST, WebSocket session or calculation POST was attempted; no claim is made that the server requires authentication or lacks a synchronous alternative.",
   "interpretation_limits": [
     "Response hashes identify fetched raw bytes; they do not authenticate a vendor response or establish calculator output.",
     "There is no source-derived RF_50 constraint document. Synthetic test dimensions are not vendor data."
-  ]
+  ],
+  "previous_get_only_blocker": "A host-side calculator calculation and capture beyond an ordinary HTTPS public-page fetch. The assignment only authorizes that fetch; no calculation POST, login, interactive automation or paid service was attempted.",
+  "continuation": {
+    "work_item": "AGENTEE-186",
+    "base": "54a01df665f7590d2ee0f17bb9423bffccaf15a6",
+    "status": "request_preflight_blocked",
+    "authority": "agent-463 delegated amendment, 2026-10-18 19:26: bounded public calculation POST only; no login, payment, upload, private data, cookie/session/captcha/token.",
+    "raw_captures": [
+      {
+        "file": "calculator.html",
+        "url": "https://jlcpcb.com/pcb-impedance-calculator/",
+        "resolved_url": "https://jlcpcb.com/pcb-impedance-calculator/",
+        "http_status": 200,
+        "bytes": 76255,
+        "sha256": "1556a64eb3ba4e8edd478f7e09b9fccb854c404ab36d101aaf6ce2bb30943280",
+        "captured_at": "2026-10-19T02:29:46.516384+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      },
+      {
+        "file": "stackup.html",
+        "url": "https://jlcpcb.com/impedance",
+        "resolved_url": "https://jlcpcb.com/impedance",
+        "http_status": 200,
+        "bytes": 319813,
+        "sha256": "a1ad8700cfa05f6b914c5b03dfc2f50881de153f80a68f830613ccd96a9b4ba4",
+        "captured_at": "2026-10-19T02:29:47.485423+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      },
+      {
+        "file": "calculator.js",
+        "url": "https://jlcpcb.com/ssr/js/5164550de9f6c4318dc0.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/5164550de9f6c4318dc0.js",
+        "http_status": 200,
+        "bytes": 78804,
+        "sha256": "29bba50d37ada0c4d9397c316b805844fd4ee10fc28358dfd742198055c05ed0",
+        "captured_at": "2026-10-19T02:30:01.525846+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      },
+      {
+        "file": "common.js",
+        "url": "https://jlcpcb.com/ssr/js/dd532eaa660d895e7232.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/dd532eaa660d895e7232.js",
+        "http_status": 200,
+        "bytes": 8139,
+        "sha256": "5451905e2269edae5a0eb7e1f39f09626a54708e501bf6f73962bf7668f2b321",
+        "captured_at": "2026-10-19T02:30:01.026047+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      },
+      {
+        "file": "app.js",
+        "url": "https://jlcpcb.com/ssr/js/8c38ca5d0b718cd89d53.js",
+        "resolved_url": "https://jlcpcb.com/ssr/js/8c38ca5d0b718cd89d53.js",
+        "http_status": 200,
+        "bytes": 8281,
+        "sha256": "cc1e2f21198c5894ff6a146c367fc2e1437e4d24a516f2f02369544e0acacdc2",
+        "captured_at": "2026-10-19T02:30:07.363922+00:00",
+        "tool": "Python 3.12.3 urllib.request.urlopen (host, not a check)"
+      }
+    ],
+    "raw_capture_directory": "/tmp/agent-ee-burndown-20261017/workers/ee186c-gnss-rf-capture/scratch",
+    "calculation_post_attempted": false,
+    "candidate_geometries_submitted": [],
+    "request_body": null,
+    "calculation_response": null,
+    "extracted_geometry": null,
+    "request_preflight": {
+      "calculator_endpoint_path": "/jlcTools/impedance/calc",
+      "model_recipe_endpoint_path": "/jlcTools/impedance/selectPageImpedancePicture",
+      "model_recipe_method": "POST",
+      "client_request_fields": [
+        "accessId",
+        "impedance_calc_mark",
+        "paramMd5",
+        "impedance_calc_arg",
+        "uuid"
+      ],
+      "missing_source_bound_inputs": [
+        "impedancePicInfo.impedanceType",
+        "impedancePicInfo.parameterData"
+      ],
+      "client_result_transport": "wss://tools.jlc.com/jlcTools/webSocket/{uuid}",
+      "server_requirements_tested": false,
+      "additional_protocol_operations_attempted": false,
+      "reason": "Preflight cannot form a source-bound calculation request from the captured public pages: the client obtains impedanceType and parameterData through POST /jlcTools/impedance/selectPageImpedancePicture, which the calc-only amendment does not authorize. The captured client also receives results over a UUID-bound WebSocket at wss://tools.jlc.com/jlcTools/webSocket/. No model-catalog POST, WebSocket session or calculation POST was attempted; no claim is made that the server requires authentication or lacks a synchronous alternative."
+    },
+    "known_inputs": {
+      "stackup_identity": "JLC04161H-7628",
+      "signal_layer": "F.Cu",
+      "reference_layer": "In1.Cu GND",
+      "fab_profile_path": "fab-profile.json",
+      "fab_profile_sha256": "02e484728bbcf695422ab2aa70ff3923ddd82b871fc28715aa1e9e9104822632",
+      "outer_copper_thickness_mm": 0.035,
+      "reference_copper_thickness_mm": 0.0152,
+      "prepreg_thickness_mm": 0.2104,
+      "prepreg_dielectric_constant": 4.4,
+      "dielectric_constant_capture": "stackup.html",
+      "dielectric_constant_locator": "Prepreg dielectric constant / 7628",
+      "impedance_target_ohm": 50
+    },
+    "rf_maximum_length": {
+      "status": "unbound",
+      "design_bound": null,
+      "native_control_max_mm": 15,
+      "native_control_is_design_bound": false
+    },
+    "interpretation_limits": [
+      "This is an offline audit of captured client code and public numeric facts, not a server refusal or a calculation result.",
+      "No incomplete or synthetic calculation request was submitted. No width or gap is inferred from these inputs.",
+      "A model-catalog POST and an anonymous WebSocket result session are additional protocol operations beyond the calc-only amendment; no authentication requirement is established.",
+      "Raw responses are retained only in the named worker scratch; no owner evidence store was created."
+    ]
+  }
 }
