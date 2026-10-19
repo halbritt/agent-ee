@@ -3105,7 +3105,8 @@
       "paths": [
         "fixtures/telemetry-pod/electrical/power-selections.json",
         "fixtures/telemetry-pod/electrical/power-source-lock.json",
-        "fixtures/telemetry-pod/electrical/support-decisions.json"
+        "fixtures/telemetry-pod/electrical/support-decisions.json",
+        "fixtures/telemetry-pod/electrical/probe-selections.json"
       ],
       "kind": "owned-metadata",
       "origins": [

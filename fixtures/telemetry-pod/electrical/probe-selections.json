@@ -1,0 +1,215 @@
+{
+  "authority": "Declared actual probe identities and exact native net names. Frozen native observation is provenance, not a substituted final native check.",
+  "components": {
+    "debug/tp1": {
+      "part_ref": "probe-tp1"
+    },
+    "debug/tp2": {
+      "part_ref": "probe-tp2"
+    },
+    "debug/tp3": {
+      "part_ref": "probe-tp3"
+    },
+    "debug/tp4": {
+      "part_ref": "probe-tp4"
+    },
+    "debug/tp5": {
+      "part_ref": "probe-tp5"
+    },
+    "debug/tp6": {
+      "part_ref": "probe-tp6"
+    }
+  },
+  "parts": [
+    {
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "id": "probe-tp1",
+      "instances": [
+        {
+          "native_net": "/POD_UART_TX",
+          "net": "POD_UART_TX",
+          "reference": "TP1",
+          "sheet": "/"
+        }
+      ],
+      "kind": "bare_copper_probe",
+      "lib_id": "PodFeatures:PogoPad",
+      "probe": {
+        "footprint": {
+          "path": "footprints/PodFeatures.pretty/PogoPad_D1.5mm.kicad_mod",
+          "sha256": "51be7d99dff60d92bf8d41f4908d01e48e744ce764396b23f7afb791e1c0b8ae"
+        },
+        "pin": {
+          "electrical_type": "passive",
+          "name": "PROBE",
+          "number": "1"
+        },
+        "symbol": {
+          "path": "symbols/PodFeatures.kicad_sym",
+          "sha256": "f66de5538cc957ffe56ee45e5afc2ac4f5c3d8f3a46f4b12bc35f4b0aded14a9"
+        }
+      },
+      "required": true,
+      "role": "Manufactured programming and rail-sense pad TP1"
+    },
+    {
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "id": "probe-tp2",
+      "instances": [
+        {
+          "native_net": "/POD_UART_RX",
+          "net": "POD_UART_RX",
+          "reference": "TP2",
+          "sheet": "/"
+        }
+      ],
+      "kind": "bare_copper_probe",
+      "lib_id": "PodFeatures:PogoPad",
+      "probe": {
+        "footprint": {
+          "path": "footprints/PodFeatures.pretty/PogoPad_D1.5mm.kicad_mod",
+          "sha256": "51be7d99dff60d92bf8d41f4908d01e48e744ce764396b23f7afb791e1c0b8ae"
+        },
+        "pin": {
+          "electrical_type": "passive",
+          "name": "PROBE",
+          "number": "1"
+        },
+        "symbol": {
+          "path": "symbols/PodFeatures.kicad_sym",
+          "sha256": "f66de5538cc957ffe56ee45e5afc2ac4f5c3d8f3a46f4b12bc35f4b0aded14a9"
+        }
+      },
+      "required": true,
+      "role": "Manufactured programming and rail-sense pad TP2"
+    },
+    {
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "id": "probe-tp3",
+      "instances": [
+        {
+          "native_net": "/GND",
+          "net": "GND",
+          "reference": "TP3",
+          "sheet": "/"
+        }
+      ],
+      "kind": "bare_copper_probe",
+      "lib_id": "PodFeatures:PogoPad",
+      "probe": {
+        "footprint": {
+          "path": "footprints/PodFeatures.pretty/PogoPad_D1.5mm.kicad_mod",
+          "sha256": "51be7d99dff60d92bf8d41f4908d01e48e744ce764396b23f7afb791e1c0b8ae"
+        },
+        "pin": {
+          "electrical_type": "passive",
+          "name": "PROBE",
+          "number": "1"
+        },
+        "symbol": {
+          "path": "symbols/PodFeatures.kicad_sym",
+          "sha256": "f66de5538cc957ffe56ee45e5afc2ac4f5c3d8f3a46f4b12bc35f4b0aded14a9"
+        }
+      },
+      "required": true,
+      "role": "Manufactured programming and rail-sense pad TP3"
+    },
+    {
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "id": "probe-tp4",
+      "instances": [
+        {
+          "native_net": "/MCU_EN",
+          "net": "MCU_EN",
+          "reference": "TP4",
+          "sheet": "/"
+        }
+      ],
+      "kind": "bare_copper_probe",
+      "lib_id": "PodFeatures:PogoPad",
+      "probe": {
+        "footprint": {
+          "path": "footprints/PodFeatures.pretty/PogoPad_D1.5mm.kicad_mod",
+          "sha256": "51be7d99dff60d92bf8d41f4908d01e48e744ce764396b23f7afb791e1c0b8ae"
+        },
+        "pin": {
+          "electrical_type": "passive",
+          "name": "PROBE",
+          "number": "1"
+        },
+        "symbol": {
+          "path": "symbols/PodFeatures.kicad_sym",
+          "sha256": "f66de5538cc957ffe56ee45e5afc2ac4f5c3d8f3a46f4b12bc35f4b0aded14a9"
+        }
+      },
+      "required": true,
+      "role": "Manufactured programming and rail-sense pad TP4"
+    },
+    {
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "id": "probe-tp5",
+      "instances": [
+        {
+          "native_net": "/MCU_BOOT",
+          "net": "MCU_BOOT",
+          "reference": "TP5",
+          "sheet": "/"
+        }
+      ],
+      "kind": "bare_copper_probe",
+      "lib_id": "PodFeatures:PogoPad",
+      "probe": {
+        "footprint": {
+          "path": "footprints/PodFeatures.pretty/PogoPad_D1.5mm.kicad_mod",
+          "sha256": "51be7d99dff60d92bf8d41f4908d01e48e744ce764396b23f7afb791e1c0b8ae"
+        },
+        "pin": {
+          "electrical_type": "passive",
+          "name": "PROBE",
+          "number": "1"
+        },
+        "symbol": {
+          "path": "symbols/PodFeatures.kicad_sym",
+          "sha256": "f66de5538cc957ffe56ee45e5afc2ac4f5c3d8f3a46f4b12bc35f4b0aded14a9"
+        }
+      },
+      "required": true,
+      "role": "Manufactured programming and rail-sense pad TP5"
+    },
+    {
+      "footprint": "PodFeatures:PogoPad_D1.5mm",
+      "id": "probe-tp6",
+      "instances": [
+        {
+          "native_net": "/+3V3",
+          "net": "+3V3",
+          "reference": "TP6",
+          "sheet": "/"
+        }
+      ],
+      "kind": "bare_copper_probe",
+      "lib_id": "PodFeatures:PogoPad",
+      "probe": {
+        "footprint": {
+          "path": "footprints/PodFeatures.pretty/PogoPad_D1.5mm.kicad_mod",
+          "sha256": "51be7d99dff60d92bf8d41f4908d01e48e744ce764396b23f7afb791e1c0b8ae"
+        },
+        "pin": {
+          "electrical_type": "passive",
+          "name": "PROBE",
+          "number": "1"
+        },
+        "symbol": {
+          "path": "symbols/PodFeatures.kicad_sym",
+          "sha256": "f66de5538cc957ffe56ee45e5afc2ac4f5c3d8f3a46f4b12bc35f4b0aded14a9"
+        }
+      },
+      "required": true,
+      "role": "Manufactured programming and rail-sense pad TP6"
+    }
+  ],
+  "source_observation": {
+    "path": "/tmp/agent463-pod-active-cad/native-complete-v6/native.xml",
+    "sha256": "ab65f4c7856bfd8ff1941c7e773ac55f07d4c18fed6c230168d23af0c93ae84b"
+  }
+}

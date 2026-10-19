@@ -36,6 +36,16 @@ assignment, including exposed-pad and ground-stitch declarations. Both actual
 connectors have positive historical stock; neither receives a fabricated
 NO_LCSC or unavailable-part hand-fit declaration. Assembly capability is separate.
 
+The manifest also includes six `bare_copper_probe` entries. Their exact captured
+symbol/footprint hashes and declared native nets are in `probe-selections.json`.
+Its historical native observation is a provenance pointer, not a replacement for
+checking the newly emitted native netlist. All six declared native names have a
+leading slash, including `/GND` and `/+3V3`. No alias inference is performed.
+The existing binding producer checks all 108 physical component refs and writes
+`intent.json` and `binding-fill.json`; five virtual power markers have no part ref.
+`part-deviations.json` is explicitly empty. Source-property adaptations remain
+visible separately and do not fabricate unavailable-part assembly exceptions.
+
 `intent.unbound.json` uses existing intent/1. The flat CAN compiler binds both
 source instances, selects only U100/C100/D100/R100 and records the source-to-
 delivered mapping. `can-library-regeneration.json` makes the actual regenerated
@@ -58,12 +68,12 @@ these as direct conductors or as proof of transfer function.
 
 ## Native evidence
 
-The unbound draft is an explicit intermediate evidence step:
+Emit the bound circuit:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src \
   python3 fixtures/telemetry-pod/electrical/emit_complete.py \
-  --bundle /tmp/pod-complete-new --out /tmp/pod-native-new --unbound-draft
+  --bundle /tmp/pod-complete-new --out /tmp/pod-native-new
 ```
 
 This calls the existing emitter, exports native XML, runs ERC with all severities,
@@ -71,13 +81,17 @@ and compares exact topology using existing native/resolved readers with every
 physical reference anchored. Reports and process logs are retained. Any ERC
 finding or nonpassing graph comparison makes this command nonzero. No project
 severity, exclusion or DRC limit is relaxed. Native-clean graph evidence does
-not establish purchasing properties, component suitability or hardware results.
+not establish component suitability or hardware results. An explicitly requested
+`--unbound-draft` remains an intermediate topology diagnostic without bindings.
 
 The six pads are native in_bom=no/on_board=yes exposed copper with no paste.
-They have no fake supplier identities. Their binding/parts/fabrication consumer
-must use the separately reviewed manufactured-feature contract before the full
-bound circuit can be considered complete; do not skip these parts or disguise
-them as power/DNP. Omitting --unbound-draft requires an actual bound intent.json.
+They have no supplier identities. The reviewed manufactured-feature contract
+binds their CAD and exact pin/net selectors. A later campaign must run the native
+netlist check and a passing `parts_subset` on this same manifest/netlist before
+`part_binding` or `fab_export` admit probes through `probe_manifest`. A direct
+membership diagnostic or binding-fill report cannot substitute for those sealed
+prerequisites. Board geometry, probe access and BOM/CPL omission remain subject
+to their respective native checks; do not disguise probes as power/DNP parts.
 
 ## Decisions and remaining gates
 
