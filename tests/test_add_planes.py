@@ -28,7 +28,7 @@ for i,(name,x,y) in enumerate([('GND',20,20),('+3V3',20,40),('+5V',40,40)]):
     pad=k.PAD(fp);pad.SetNumber('1');pad.SetNet(net);pad.SetAttribute(k.PAD_ATTRIB_PTH)
     pad.SetShape(k.PAD_SHAPE_CIRCLE);pad.SetSize(k.VECTOR2I(k.FromMM(2),k.FromMM(2)))
     pad.SetDrillSize(k.VECTOR2I(k.FromMM(.8),k.FromMM(.8)))
-    layers=k.LSET.AllCuMask();layers.AddLayer(k.F_Mask);layers.AddLayer(k.B_Mask);pad.SetLayerSet(layers)
+    layers=k.LSET(k.LSET.AllCuMask());layers.AddLayer(k.F_Mask);layers.AddLayer(k.B_Mask);pad.SetLayerSet(layers)
     pad.SetPosition(fp.GetPosition());fp.Add(pad)
 owner=k.FOOTPRINT(b);owner.SetReference('ANT1');owner.SetValue('Owned keepout probe — Ω');b.Add(owner)
 owner.SetPosition(k.VECTOR2I(k.FromMM(30),k.FromMM(25)))
