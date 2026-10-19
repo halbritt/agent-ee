@@ -119,8 +119,14 @@ In the output, Default is carried through unchanged.
   prefix is refused.
 
 Place the project and rules beside the board as `<board>.kicad_pro` and
-`<board>.kicad_dru`, for example as the [scaffold](scaffold.md) project
-template. Keep them, and the record, as immutable inputs.
+`<board>.kicad_dru`. Stage-one [scaffolding](scaffold.md) can preserve them as
+captured project rules. The [stage-two producer](scaffold.md#per-net-classes)
+instead accepts the constraint document and calls this emitter after deriving
+the Default class from the fab profile. It refuses class dimensions below the
+fab minimums and keeps the constraints, project, rules and record immutable.
+Its record uses the final project hash after the shared native builder adds
+sheet and filename metadata. The standalone emitter has no fab-profile input;
+its existing behavior is unchanged.
 
 ## Constraint record
 
