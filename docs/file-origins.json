@@ -507,6 +507,7 @@
       "paths": [
         "tests/test_capability_pipeline.py",
         "tests/test_checks.py",
+        "tests/test_component_height.py",
         "tests/test_connectivity_ir.py",
         "tests/test_cpl_rotation.py",
         "tests/test_esp32_footprint_keepout.py",

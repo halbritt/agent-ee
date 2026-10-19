@@ -35,6 +35,10 @@ def parameters(params):
     if criterion == 'imu-axes/1':
         from .imu_axes import parameters as imu_parameters
         imu_parameters(params)
+    if criterion == 'keep-apart/1':
+        from .placement import keep_apart_rules
+        if not keep_apart_rules(params.get('policy')):
+            raise ValueError('keep-apart/1 requires nonempty declared keep_apart rules')
     unknown = set(params) - COMMON - EXTRA.get(criterion, set())
     missing = REQUIRED.get(criterion, set()) - set(params)
     if unknown or missing:
@@ -187,6 +191,8 @@ def _routing(ctx, facts):
 
 
 def evaluate(criterion, facts, report, params, declarations=None):
+    if criterion == 'keep-apart/1':
+        return predicates.keep_apart(facts, params['policy'])
     if criterion == 'imu-axes/1':
         from .imu_axes import evaluate as imu_evaluate
         return imu_evaluate(facts, params, declarations)
@@ -238,7 +244,7 @@ def check_placement(ctx):
     try:
         validate_capture(facts)
         result = evaluate(criterion, facts, report, ctx.params, declarations)
-        advisory = judge(facts, ctx.params['policy']) if 'policy' in ctx.params else None
+        advisory = judge(facts, ctx.params['policy']) if 'policy' in ctx.params and criterion != 'keep-apart/1' else None
     except (ValueError, KeyError, TypeError) as exc:
         raise CheckError('malformed', f'placement input/policy unusable: {exc}') from exc
     proxy = result.pop('proxy', None)

@@ -15,7 +15,8 @@ from .symbol_library import children, parse_sexpr, nanometres
 from .placement import qualified_polygons
 
 CRITERIA = {'outline/1': 'outline', 'layers/1': 'layer_count', 'stackup/1': 'stackup',
-            'mounting-holes/1': 'mounting_holes', 'keepouts/1': 'keepouts'}
+            'mounting-holes/1': 'mounting_holes', 'keepouts/1': 'keepouts',
+            'component-height/1': 'max_component_height_mm'}
 
 
 def parameters(params):
@@ -24,6 +25,10 @@ def parameters(params):
     if not isinstance(params.get('criterion'), str) or params['criterion'] not in CRITERIA:
         raise ValueError(f'board_envelope criterion must be one of {sorted(CRITERIA)}')
     selected = params['criterion'] in ('mounting-holes/1', 'keepouts/1')
+    if params['criterion'] == 'component-height/1':
+        from .component_height import parameters as height_parameters
+        paths = height_parameters(params)
+        return [_path(params['envelope'], 'envelope'), *paths]
     if set(params) != {'criterion', 'envelope'} | ({'id'} if selected else set()):
         raise ValueError('board_envelope params require criterion, envelope and id for holes/keepouts only')
     if selected:
@@ -314,7 +319,10 @@ def check_board_envelope(ctx):
             or not isinstance(native.get('pcbnew_version'), str) or not native['pcbnew_version']):
         raise CheckError('malformed', 'native envelope probe identity is missing or differs from captured board')
     criterion = ctx.params['criterion']
-    if criterion in ('mounting-holes/1', 'keepouts/1'):
+    if criterion == 'component-height/1':
+        from .component_height import evaluate
+        result = evaluate(ctx, record, native)
+    elif criterion in ('mounting-holes/1', 'keepouts/1'):
         try:
             item = selected_item(record, ctx.params)
             if criterion == 'mounting-holes/1':

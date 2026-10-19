@@ -92,10 +92,10 @@ The envelope carries five `obligations`, bound by requirement IDs to revision 2:
 | Obligation | Requirement IDs | Remaining work |
 | --- | --- | --- |
 | Four corner mounting holes | POD-ME-1, POD-AC-7 | Generator selects drill, plating, inset and coordinates |
-| Height at most 12 mm | POD-ME-1 | Check component heights |
+| Height at most 12 mm | POD-ME-1 | Declare `max_component_height_mm` and bind [sourced component heights](board-envelope.md#component-height); TE 776228-1 installed height remains AGENTEE-209 |
 | Harness connector on an edge | POD-CD-HARNESS-CONNECTOR, POD-ME-2 | Generator selects TE 776228-1 anchor and orientation |
 | Module antenna keepout | POD-CD-MCU-AND-RADIO, POD-AC-7 | Bind module transform and board-coordinate keepout |
-| IMU away from tall/heavy parts | POD-ME-4 | Generate and check separation |
+| IMU away from tall/heavy parts | POD-ME-4 | Declare a numeric minimum and grade [courtyard separation](placement.md#keep-tall-and-heavy-parts-apart); the spec gives no numeric distance |
 
 These generator obligations remain unbound until AGENTEE-177/179. Once declared,
 holes and keepouts bind through the [native envelope checks](board-envelope.md#native-envelope-check)

@@ -250,6 +250,17 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             captured(scope.get('board'))
             for path in parameters(params):
                 captured(path, immutable=True)
+            if params['criterion'] == 'component-height/1':
+                if 'facts_check' in params:
+                    prerequisite(params['facts_check'], ('datasheet_facts',))
+                if inputs is not None:
+                    from .envelope_check import captured_record
+                    record, _ = captured_record(scope, params, files, Path(inputs))
+                    if 'max_component_height_mm' not in record:
+                        raise ValueError('component-height/1 needs max_component_height_mm in the envelope')
+                    from .component_height import model_input_paths
+                    for path in model_input_paths(files):
+                        captured(path, immutable=True)
             if params['criterion'] == 'stackup/1':
                 if inputs is None:
                     raise ValueError('stackup copper_weight_oz needs captured source-verified profile inputs')

@@ -1,4 +1,4 @@
-"""IMU criterion: real scaffold, native saved-board probe, DRC and PDF verifier."""
+"""Mechanical placement criteria with real saved-board probes, DRC and PDF verification."""
 import copy
 import subprocess
 import time
@@ -13,6 +13,83 @@ from agent_ee.symbol_library import parse_sexpr
 from agent_ee.symbol_library import children
 from tests.test_scaffold import EnvelopeScaffoldFixture
 from tests.test_esp32_footprint_keepout import multipage_text_pdf
+
+
+class KeepApartTests(unittest.TestCase):
+    def policy(self):
+        return dict(schema='agent-ee.placement-policy/1', keep_apart=[
+            dict(ref='IMU', others=['SMA'], min_distance_mm=15)])
+
+    def test_keep_apart(self):
+        """Actual saved courtyards separated by 5 mm fail the declared 15 mm minimum."""
+        from tests.test_placement_gates_native import NativePlacementGates, placement
+        helper = NativePlacementGates()
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        source = helper.source()
+        board = source / 'project/rc_filter.kicad_pcb'
+        edit = '''import pcbnew as k,sys
+b=k.LoadBoard(sys.argv[1])
+for fp in b.GetFootprints():
+    if fp.GetReference() not in ('J1','R1'): continue
+    fp.SetReference('IMU' if fp.GetReference()=='R1' else 'SMA')
+    for s in fp.GraphicalItems():
+        if s.GetLayer() in (k.F_CrtYd,k.B_CrtYd): s.SetLayer(k.Dwgs_User)
+    fp.SetOrientationDegrees(0)
+    fp.SetPosition(k.VECTOR2I(0,0))
+    shape=k.PCB_SHAPE(fp)
+    shape.SetShape(k.SHAPE_T_RECT)
+    shape.SetLayer(k.F_CrtYd)
+    shape.SetStart(k.VECTOR2I(-1000000,-1000000))
+    shape.SetEnd(k.VECTOR2I(1000000,1000000))
+    shape.SetWidth(50000)
+    fp.Add(shape)
+    fp.SetPosition(k.VECTOR2I(100000000 if fp.GetReference()=='IMU' else 107000000,100000000))
+k.SaveBoard(sys.argv[1],b)
+'''
+        process = subprocess.run(['/usr/bin/python3', '-B', '-c', edit, str(board)],
+                                 capture_output=True, text=True, timeout=60)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        schematic = source / 'project/rc_filter.kicad_sch'
+        schematic.write_text(schematic.read_text().replace('"J1"', '"SMA"').replace('"R1"', '"IMU"'))
+        run, results = helper.run_scope(source, [dict(id='drc', kind='drc'),
+            placement('apart', 'keep-apart/1', drc='drc', policy=self.policy())])
+        self.assertEqual(results['drc']['execution'], 'ok', results['drc'])
+        result = results['apart']
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertEqual(result['details']['measured'][0]['distance_mm'], 5)
+        self.assertEqual(result['details']['defects'][0]['refs'], ['IMU', 'SMA'])
+        self.assertIn('work/apart/placement-judgment.json', result['evidence'])
+        baseline = read_json(run / 'baseline.json')
+        self.assertEqual(baseline['coverage']['checks']['apart']['predicates'], ['placement:keep-apart/1'])
+
+    def test_keep_apart_boundaries_and_unknowns(self):
+        from agent_ee.placement_predicates import keep_apart
+        from tests.test_placement_predicates import probe, part
+        for x, expected in ((22, 'pass'), (21.999999, 'defect'), (6, 'defect'), (5, 'defect')):
+            with self.subTest(x=x):
+                facts = probe([part('IMU', 5, 5), part('SMA', x, 5, side='B')])
+                self.assertEqual(keep_apart(facts, self.policy())['status'], expected)
+        for parts in ([part('IMU', 5, 5)], [part('IMU', 5, 5), part('SMA', 22, 5, courtyard=False)]):
+            self.assertEqual(keep_apart(probe(parts), self.policy())['status'], 'unknown')
+        # Containment has zero separation even when boundaries do not cross.
+        contained = probe([part('IMU', 5, 5, w=10, h=10), part('SMA', 5, 5)])
+        self.assertEqual(keep_apart(contained, self.policy())['measured'][0]['distance_mm'], 0)
+
+    def test_keep_apart_declared_contract(self):
+        from agent_ee.placement_check import parameters
+        from agent_ee.placement import keep_apart_rules
+        params = dict(criterion='keep-apart/1', drc_check='drc', policy=self.policy())
+        self.assertEqual(parameters(params), [])
+        for bad in (None, {}, dict(schema='agent-ee.placement-policy/1', keep_apart=[])):
+            with self.subTest(policy=bad), self.assertRaises(ValueError):
+                parameters({**params, 'policy': bad})
+        for rule in (dict(ref='IMU', others=['IMU'], min_distance_mm=15),
+                     dict(ref='IMU', others=['SMA', 'SMA'], min_distance_mm=15),
+                     dict(ref='IMU', others=['SMA'], min_distance_mm=0),
+                     dict(ref='IMU', others=['SMA'], min_distance_mm=True)):
+            with self.subTest(rule=rule), self.assertRaises(ValueError):
+                keep_apart_rules(dict(schema='agent-ee.placement-policy/1', keep_apart=[rule]))
 
 
 class IMUAxesTests(EnvelopeScaffoldFixture, unittest.TestCase):

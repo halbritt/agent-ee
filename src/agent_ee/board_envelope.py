@@ -42,9 +42,11 @@ CHECK_KINDS = {'outline': ['placement', 'board_envelope'],
                'layer_count': ['fab_package', 'board_envelope'],
                'stackup': ['fab_package', 'board_envelope'], 'fab_profile': ['fab_profile'],
                'mounting_holes': ['placement', 'board_envelope'], 'keepouts': ['placement', 'board_envelope'],
-               'fixed_footprints': ['placement'], 'obligations': ['board_envelope']}
+               'fixed_footprints': ['placement'], 'obligations': ['board_envelope'],
+               'max_component_height_mm': ['board_envelope']}
 # Why a field without a binding has unknown coverage; reported, never assumed.
 UNBOUND = {
+    'max_component_height_mm': 'needs a native component-height/1 check with sourced per-footprint heights',
     'obligations': 'generator mechanics require qualified checks from AGENTEE-177/179',
     'outline': 'needs an exact native board_envelope outline/1 check',
     'layer_count': 'needs an exact native board_envelope layers/1 check',
@@ -660,7 +662,7 @@ def validate(raw, *, profile=None, captured=None):
     schema = envelope.get('schema') if isinstance(envelope, dict) else None
     fields(envelope, 'envelope', ['schema', 'id', 'outline', 'layer_count', 'stackup', 'fab_profile',
                                   'mounting_holes', 'keepouts', 'fixed_footprints']
-           + (['obligations'] if schema == SCHEMAS[1] else []))
+           + (['obligations'] if schema == SCHEMAS[1] else []), ['max_component_height_mm'])
     if schema not in SCHEMAS:
         raise ValueError(f'schema must be one of {SCHEMAS}')
     eid = name(envelope['id'], 'envelope id', ENVELOPE_ID)
@@ -668,6 +670,9 @@ def validate(raw, *, profile=None, captured=None):
         raise ValueError('profile must be bytes')
     vertices, edges, outline = validate_outline(envelope['outline'])
     stackup = validate_stackup(envelope['stackup'], envelope['layer_count'], schema=schema)
+    height = ({'max_component_height_mm': mm(length(envelope['max_component_height_mm'],
+                                                 'max_component_height_mm', positive=True))}
+              if 'max_component_height_mm' in envelope else {})
     copper = copper_names(envelope['layer_count'])
     fab, unresolved = validate_profile(envelope['fab_profile'], profile, captured,
                                        declared_inventory(envelope['layer_count'], copper, edges))
@@ -688,6 +693,7 @@ def validate(raw, *, profile=None, captured=None):
             'unresolved': unresolved, 'acceptance_ready': False,
             'outline': outline, 'layer_count': envelope['layer_count'], 'copper_layers': copper,
             'stackup': stackup, 'fab_profile': fab,
+            **height,
             **({'obligations': obligations} if schema == SCHEMAS[1] else {}),
             'mounting_holes': validate_holes(envelope['mounting_holes'], vertices),
             'keepouts': validate_keepouts(envelope['keepouts'], vertices, copper),
@@ -718,6 +724,11 @@ def derive_requirements(record, source_path):
     out.append(obligation(eid, 'layer-count', '/layer_count', record['copper_layers'],
                           f"the board has exactly {record['layer_count']} copper layers: "
                           f"{', '.join(record['copper_layers'])}.", source_path, CHECK_KINDS['layer_count']))
+    if 'max_component_height_mm' in record:
+        height = record['max_component_height_mm']
+        out.append(obligation(eid, 'component-height', '/max_component_height_mm', height,
+                              f'every footprint has sourced installed height at most {height} mm.',
+                              source_path, CHECK_KINDS['max_component_height_mm']))
     layers = '; '.join(f"{l['name']} {l['kind']} {l['thickness_mm']} mm" +
                        (f" {l['copper_weight_oz']} oz" if 'copper_weight_oz' in l else '')
                        for l in record['stackup']['layers'])
@@ -879,7 +890,8 @@ def bind_native_envelope(item, spec, record, files, others):
 BINDINGS = {('fab_profile', 'fab_profile'): bind_fab_profile,
             ('fixed_footprints', 'placement'): bind_connector_edge,
             **{(field, 'board_envelope'): bind_native_envelope
-               for field in ('outline', 'layer_count', 'stackup', 'mounting_holes', 'keepouts')}}
+               for field in ('outline', 'layer_count', 'stackup', 'mounting_holes', 'keepouts',
+                             'max_component_height_mm')}}
 
 
 def field_of(item):
