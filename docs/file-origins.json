@@ -3261,6 +3261,17 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-57 feature documentation. Names tscircuit circuit-json-routing-analysis (MIT) as a mechanism reference and records that the unlicensed circuit-json-placement-analysis contributed no code, type names or text. No upstream content copied."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/j1/geometry-proposal-v2.json",
+        "fixtures/telemetry-pod/j1/native-registration.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original source-coordinate observations and native pad/courtyard registration facts retained byte-for-byte from the reviewed J1 geometry packet. Numeric measurements, pin identities and provenance hashes only; no vendor PDF text, drawing image or additional third-party CAD body is copied. Historical local paths are evidence locators, not test runtime dependencies. No source rights or physical qualification claim is changed."
     }
   ]
 }
