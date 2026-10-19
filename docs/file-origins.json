@@ -3086,6 +3086,43 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-206 native multilayer and filled-zone tests, including actual owned CAN probe composition and adversarial native fill/identity controls. No vendor design or library bytes."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/electrical/build_complete.py",
+        "fixtures/telemetry-pod/electrical/prepare_intent.py",
+        "fixtures/telemetry-pod/electrical/power_cad.py",
+        "fixtures/telemetry-pod/electrical/mode_cad.py",
+        "fixtures/telemetry-pod/electrical/emit_complete.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-207 captured-input recipes and numerical CAD generators. Uses existing native parsers, flat composition, manifest qualification and schematic emitter; pin names/numbers and land dimensions are factual transcriptions from externally retained sources. No vendor drawings, stock symbol bodies, source sheet bodies or acquisition bytes are embedded. Source-derived outputs remain external with their original rights and review status."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/electrical/power-selections.json",
+        "fixtures/telemetry-pod/electrical/power-source-lock.json",
+        "fixtures/telemetry-pod/electrical/support-decisions.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original actual-pod ordering identities, source hashes, circuit choices and capture locators. Names and describes external supplier/manufacturer/CAD evidence without copying documents, asserting new licences, purchases or qualification."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/electrical/COMPLETE.md",
+        "fixtures/telemetry-pod/electrical/complete-decisions.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original engineering decisions, reproduction instructions and explicit remaining physical/source/assembly/bench limits for AGENTEE-207. No external prose or document bytes copied."
     }
   ]
 }

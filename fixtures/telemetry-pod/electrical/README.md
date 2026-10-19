@@ -1,5 +1,8 @@
 # Actual telemetry pod core input bundle
 
+For the successor complete candidate circuit recipe, see [COMPLETE.md](COMPLETE.md).
+This page describes the preserved eight-part core deliverable.
+
 AGENTEE-207, eight selected core components. This directory contains authored
 selection metadata, decisions, complete core pin allocation and a recipe. Raw
 vendor documents, supplier responses, stock CAD and source designs remain

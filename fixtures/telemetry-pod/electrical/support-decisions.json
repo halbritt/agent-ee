@@ -1,0 +1,145 @@
+{
+  "status": "candidate engineering selections; placement and timing need native and physical review",
+  "parts": [
+    {
+      "reference": "C45",
+      "lcsc": "C694521",
+      "nodes": [
+        "+3V3",
+        "GND"
+      ],
+      "role": "MCU local22uF bulk",
+      "evidence": "ESP32 module datasheet Figure9-1"
+    },
+    {
+      "reference": "C46",
+      "lcsc": "C76711",
+      "nodes": [
+        "+3V3",
+        "GND"
+      ],
+      "role": "MCU local100nF bypass",
+      "evidence": "ESP32 module datasheet Figure9-1"
+    },
+    {
+      "reference": "C47",
+      "lcsc": "C76706",
+      "nodes": [
+        "MCU_EN",
+        "GND"
+      ],
+      "role": "MCU EN1uF delay",
+      "evidence": "ESP32 module datasheet section9 RC10k/1uF recommendation"
+    },
+    {
+      "reference": "R29",
+      "lcsc": "C95204",
+      "nodes": [
+        "+3V3",
+        "MCU_EN"
+      ],
+      "role": "MCU EN10k pullup",
+      "evidence": "ESP32 module datasheet section9 RC10k/1uF recommendation"
+    },
+    {
+      "reference": "R30",
+      "lcsc": "C95204",
+      "nodes": [
+        "+3V3",
+        "MCU_BOOT"
+      ],
+      "role": "MCU BOOT10k pullup",
+      "evidence": "Design choice: preserve normal highGPIO0; pogo programmer pulls low during reset"
+    },
+    {
+      "reference": "C48",
+      "lcsc": "C76711",
+      "nodes": [
+        "+3V3",
+        "GND"
+      ],
+      "role": "IMU VDD100nF bypass",
+      "evidence": "LSM6DSO32 datasheet section6.1 p53: C1,C2=100nF"
+    },
+    {
+      "reference": "C49",
+      "lcsc": "C76711",
+      "nodes": [
+        "+3V3",
+        "GND"
+      ],
+      "role": "IMU VDDIO100nF bypass",
+      "evidence": "LSM6DSO32 datasheet section6.1 p53: C1,C2=100nF"
+    },
+    {
+      "reference": "C50",
+      "lcsc": "C76706",
+      "nodes": [
+        "+3V3",
+        "GND"
+      ],
+      "role": "GNSS local1uF bypass",
+      "evidence": "NEO-M9N integration manual design checklist:1uF atVCC"
+    },
+    {
+      "reference": "C51",
+      "lcsc": "C76711",
+      "nodes": [
+        "+3V3",
+        "GND"
+      ],
+      "role": "GNSS local100nF bypass",
+      "evidence": "Additional engineering local HF bypass; physical impedance remains unqualified"
+    },
+    {
+      "reference": "C52",
+      "lcsc": "C76706",
+      "nodes": [
+        "+3V3",
+        "GND"
+      ],
+      "role": "ADC VDD1uF bypass",
+      "evidence": "MCP3204 datasheet section6.4 recommends1uF"
+    },
+    {
+      "reference": "C53",
+      "lcsc": "C76711",
+      "nodes": [
+        "+3V3",
+        "GND"
+      ],
+      "role": "CAN VIO100nF bypass",
+      "evidence": "Additional local digital-rail bypass; does not modify source C100 mapping"
+    },
+    {
+      "reference": "R31",
+      "lcsc": "C95204",
+      "nodes": [
+        "+3V3",
+        "IMU_CS"
+      ],
+      "role": "IMU CS10k pullup",
+      "evidence": "Engineering reset/default SPI bus isolation, nonselected state"
+    },
+    {
+      "reference": "R32",
+      "lcsc": "C95204",
+      "nodes": [
+        "+3V3",
+        "ADC_CS"
+      ],
+      "role": "ADC CS10k pullup",
+      "evidence": "Engineering reset/default SPI bus isolation, nonselected state"
+    },
+    {
+      "reference": "R33",
+      "lcsc": "C95204",
+      "nodes": [
+        "MCU_BOOT46",
+        "GND"
+      ],
+      "role": "GPIO46 10k strap pulldown",
+      "evidence": "ESP32-S3-WROOM-1 module Table4-1 and Table4-3: GPIO46 low for joint download. External pull-down preserves strap without hard-short if later driven high."
+    }
+  ]
+}
