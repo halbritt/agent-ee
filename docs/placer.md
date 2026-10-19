@@ -24,7 +24,8 @@ uses 1.5 mm to preserve space for J1's reference text outside its courtyard;
 using the copper-edge rule as the courtyard margin alone clipped that text.
 
 The placer sorts explicit priorities first, then descending pad count, then
-reference. It tries four quarter-turn rotations at deterministic positions
+reference (declared group anchors and their members are ordered first; see
+[search](#bounded-search-agentee-212)). It tries four quarter-turn rotations at deterministic positions
 aligned to board vertices (shifted inward by `min_courtyard_edge_mm`) and
 inflated reserved courtyard boxes. It chooses the
 smallest integer Manhattan same-net pad distance to already placed parts,
@@ -44,12 +45,14 @@ placements. A board too small for its parts yields `packing_infeasible`,
 | `courtyard_area` | total same-side courtyard area exceeds board area | `side`, `board_area_nm2`, `required_courtyard_area_nm2` |
 | `min_width` | a part's courtyard convex hull is wider, in its narrowest direction, than the outline's hull | `ref`, `board_min_width_squared_nm2`, `footprint_min_width_squared_nm2` |
 | `diameter` | a part's courtyard is longer than the outline's longest vertex-to-vertex span | `ref`, `board_diameter_squared_nm2`, `footprint_diameter_squared_nm2` |
+| `region_capacity` | a declared group region cannot hold the courtyards that must lie in it ([below](#region-capacity-proofs-agentee-212)) | `group`, `side`, `groups`, `references`, `region_board_area_nm2`, `blocked_area_nm2`, `blocked_by`, `available_area_nm2`, `required_courtyard_area_nm2` |
+| `region_capacity_gap` | the same, with every courtyard and the region grown by half the packing gap | `group`, `side`, `groups`, `references`, `gap_nm`, `grown_region_area_upper_nm2`, `blocked_area_nm2`, `blocked_by`, `available_area_nm2`, `required_grown_courtyard_area_nm2` |
 
 Values are exact `[numerator, denominator]` rationals in square nanometres.
 The width and diameter proofs hold for every rotation, not only quarter turns,
 and cover all courtyards of a part on both sides. A part that could fit only
 at an angle the search does not try is not proved infeasible.
-Budget exhaustion, finite greedy-search
+Budget exhaustion, finite search
 exhaustion and a conflicting fixed placement yield typed unknown results:
 these do not prove geometric infeasibility. Missing/unsupported geometry is
 unknown. Initial rotations and pad rotations must be quarter turns. The placer
@@ -193,17 +196,95 @@ also has at least one constraint:
 Membership alone constrains nothing, so a group without a constraint is
 refused. An anchor reference must be a known non-member, and it must not be
 itself an anchored member, so there are no chains. The packer places movable
-anchors first. It adds region vertices and anchor points to its candidate
-alignments and admits only candidates whose outer courtyard bound satisfies
-the group. A fixed member must already satisfy its group, and its anchor must
-be fixed; otherwise the result is `fixed_conflict`. A region too small for its
-members is a bounded `packing_search_exhausted`, never a defect. A complete
+anchors first, each directly followed by its anchored members. It adds region
+vertices and anchor points to its candidate alignments and admits only
+candidates whose outer courtyard bound satisfies the group; the anchor distance
+binds whichever of anchor and member is placed second, and a member placed
+before its anchor must lie within the sum of both distances of each placed
+member of the same anchor. A fixed member must
+already satisfy its group, and its anchor must be fixed; otherwise the result
+is `fixed_conflict`. A region whose capacity is provably too small for its
+members is `packing_infeasible` with a `region_capacity` or
+`region_capacity_gap` proof; a region the search cannot fill without such a
+proof is a bounded `packing_search_exhausted`, never a defect. A complete
 plan carries `group_grading`, from the same `placement_groups.grade` as the
 registered [`placement-groups/1`](placement.md#placement-check-kind) check, and
 must pass. The writer grades the saved board again and refuses to publish a
 proposal that fails. The pod proposal's 15 groups list membership only, with no
 coordinates or distances, so they do not validate as given. Regions and
 distances are physical design choices that a captured declaration must supply.
+
+### Bounded search (AGENTEE-212)
+
+The real pod placement stopped at the first part that had no admissible
+candidate: the greedy pass never revisited an earlier choice, and it submitted
+every candidate of every part to the predicates. The search keeps the greedy
+choice and adds deterministic backjumping.
+
+- **Ranked first fit.** Each part's candidates are ranked by the same key as
+  before, (wire cost, x, y, rotation), and submitted to the predicates in that
+  order; the first admissible one is taken. That is the candidate the greedy
+  pass chose (the minimum key among admissible candidates), so a layout the
+  greedy pass completed is unchanged. One step is one candidate submitted to the
+  exact predicates (outline, exact obstacles, keepouts, group);
+  `step_budget` bounds them and exhaustion is `packing_budget_exhausted`.
+  Before AGENTEE-212 every generated candidate was a step, including those the
+  reservation-box test rejects; on the pod those were nearly all of them.
+- **Window and reservations.** Candidate generation keeps only positions whose
+  courtyard box lies inside the outline's box shrunk by `min_courtyard_edge_mm`,
+  inside the group region's box, and whose origin lies inside the distance box
+  of every placed anchor partner. It then applies the reservation-box test
+  itself as a sweep over each x (a reserved box blocks an open interval of y),
+  recording the owners of blocking boxes. A rectilinear courtyard or fixed
+  obstacle is exactly the union of its vertical slabs (boxes), so a
+  positive-area overlap between a slab of the candidate's courtyard and a slab
+  of a rectilinear fixed courtyard or declared obstacle on the same side is a
+  polygon overlap, which the exact obstacle test rejects; the sweep drops those
+  too (the gap band is left to the exact test). Each is a necessary condition of a predicate, so no
+  admissible candidate is dropped, and the predicates still recheck every
+  candidate the generation keeps.
+- **Backjumping.** A rejected candidate records the placed movable parts that
+  blocked it (reservation box or keepout owner, or the anchor partner). When a
+  part has no admissible candidate, the search undoes placements back to the
+  latest such part and places the failed part before it. A member blocked
+  through its anchor instead leads the anchor's unit: the member is tried in
+  rank order and the anchor (with the rest of its unit) placed first-fit beside
+  it. The n-th failure of the same part starts at its 2^(n-1)-th latest blocker,
+  so a part that keeps failing moves earlier quickly. An order already tried
+  jumps further back; every part order is tried at most once and backjumps are
+  bounded by `step_budget` too. A part with no
+  movable blocker, or whose every backjump repeats an order, ends the search
+  as `packing_search_exhausted` naming it.
+
+No random numbers or wall-clock limits are used: identical inputs give
+identical plans. Every accepted candidate passes the same exact predicates,
+the complete proposal the same polygon judge and group grading, and fixed parts
+never move. Every result the search returns records
+`search: {strategy: "ranked-first-fit-backjump/1", backjumps, unplaced?}`.
+
+### Region capacity proofs (AGENTEE-212)
+
+After the fixed reservations, each group with a `region` is checked against
+the movable members of every group whose region equals it or (for a
+one-polygon region) lies inside it. Their courtyards, by inner bound, must lie
+in the region and the outline, clear of fixed courtyards, declared obstacles
+and footprint keepouts. Blockers are subtracted by inner bound and only when
+pairwise disjoint.
+
+- `region_capacity` compares courtyard area alone with the region's on-board
+  area less blockers wholly inside the outline.
+- `region_capacity_gap` uses `gap_nm`: courtyards grown by `gap_nm/2` are
+  disjoint and lie in the region grown by `gap_nm/2`. A convex courtyard's grown
+  area is bounded below by Steiner's formula with integer-floor edge lengths
+  and pi taken as 3; another polygon gains at least `gap_nm` times its larger
+  extent; a part with several courtyards on one side counts them ungrown. The
+  grown region is bounded above by an edge strip and a sector of angle below pi
+  per vertex, with integer-ceiling lengths and pi taken as 22/7. Only fixed
+  courtyards and declared obstacles, which keep the gap, are subtracted.
+
+Both are exact rationals, `packing_infeasible`, `outcome=defect`, with
+`steps_used=0`. Edge margin and the width of a region are not used, so a
+region too narrow but large enough by area is still only a search failure.
 
 ### Pad shapes (AGENTEE-109)
 
