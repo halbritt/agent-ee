@@ -1345,3 +1345,11 @@ The board producers apply [native net-name encoding](forward-annotation.md#nativ
 to XML names before writing PCB nets (AGENTEE-220); the placer's netlist binding
 and probe pad validation compare saved pads with the same encoding. This does not normalize the
 XML inventory used by `netlist_parity`, or waive native DRC schematic parity.
+
+## Source-derived passive ratings
+
+`assembly_readiness` validates any `AGENT_EE_Ratings` provenance field written by
+[binding fill](binding-fill.md#source-derived-passive-ratings) (AGENTEE-233).
+A malformed record or a rating that differs from it is an `invalid_rating_provenance`
+defect. Absent ratings remain `missing_rating_property` defects;
+`require_passive_ratings` still defaults to true. No new check kind or predicate is added.

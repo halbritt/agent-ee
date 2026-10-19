@@ -218,3 +218,71 @@ evidence needs its own captured source binding and qualification.
 Legacy captures without a declared selection retain their custody-only behavior.
 Callers migrating a reviewed source decision must supply this reference; the
 producer does not infer selection from prose or arbitrary supplier filenames.
+
+## Source-derived passive ratings
+
+AGENTEE-233 adds an opt-in rating projection for populated resistors and
+capacitors, so `assembly:passive-ratings` can evaluate captured designs without
+handwritten values. `fill(..., ratings=declaration)`, the CLI's `--ratings` and
+`configuration(..., ratings=path)` take a captured declaration:
+
+```json
+{
+  "schema": "agent-ee.passive-rating-sources/1",
+  "catalog": true,
+  "facts": {"path": "rating-facts.json", "sha256": "<facts file hash>"},
+  "extractor": {"path": "/usr/bin/pdftotext", "sha256": "<binary hash>",
+                "version": "pdftotext version 24.02.0"}
+}
+```
+
+`facts` and `extractor` are both null or both present. Without `ratings`, output
+is unchanged. A component is rated when its resolved reference or symbol makes
+it R or C under the same rule the assembly checker uses (`_passive_kind`).
+Ratings come only from two kinds of source:
+
+- **Catalog attribute.** For a named part, the producer reopens the part
+  record's captured JLCPCB response by its pinned hash and takes the single row
+  whose `componentCode` is the purchased LCSC ID and whose `componentModelEn`
+  is the purchased MPN. It maps exactly `Power(Watts)` to `Power` (R) and
+  `Voltage Rating` to `Voltage` (C). The resistor attribute
+  `Voltage-Supply(Max)` is not mapped, because its name does not establish
+  working or overload voltage. Generic and external parts have no captured
+  supplier row here. Their generic `PARAM_*` ratings remain unchanged.
+- **Datasheet fact.** The declared facts file is strict
+  `agent-ee.datasheet-facts/1` and contains only `power_rating` (R) or
+  `voltage_rating` (R or C) facts. Each fact's `part_number` must equal a bound
+  part's MPN. Its cited PDF must be that part's bound artifact, and that
+  artifact must be the [selected source](#captured-datasheet-source-selection).
+  A fact on a part without a declared `source_selection`, on a rejected hash
+  or on any other PDF refuses, naming the fact, the source ID and the hash. The
+  pinned pdftotext verifies every citation in the existing networkless sandbox,
+  using the [datasheet facts](datasheet-facts.md) page and token rules. An
+  unverified, unsupported or unextractable citation refuses when used and is
+  never treated as support. Facts naming no bound R/C part refuse.
+
+Values are compared exactly by SI magnitude (`100mW`, `0.1W` and `1/10 W` are
+equal). Unparseable spellings refuse. If any two sources for one field
+disagree, filling refuses and lists every value and source. A part with no
+source keeps no rating field, and the report records the exact reason under
+`ratings.missing`. The assembly check then still reports
+`missing_rating_property`.
+
+A rated component receives `Power` and/or `Voltage`, spelled as in the
+catalog (or as the fact value plus unit), and `AGENT_EE_Ratings`. Native fields
+hold at most 256 characters, so this field is compact canonical JSON:
+`{"ratings": {...}, "record_sha256": ..., "schema": "agent-ee.passive-rating-binding/1"}`.
+The full record is in `binding-fill.json` under `ratings.derived[reference]`:
+the part ID, LCSC and MPN; per field the value, exact SI value, unit and every
+source (`catalog`: LCSC ID, response path, SHA-256, attribute name;
+`datasheet`: selected source ID, fact ID, PDF path, SHA-256, page); and the
+limitation. `record_sha256` is the canonical identity of that record. Rating
+fields follow the ordinary writer-binding rule: a supplied different value
+refuses. Facts files and cited PDFs are added to the report dependencies. Pass
+them in `configuration(..., dependencies=...)`.
+
+These are rated values only. They establish no derating, applied stress,
+effective capacitance under DC bias, temperature suitability (for example
+105 °C operation) or ordering-suffix correspondence. For example, the pod's
+C694521 row rates `CGA6P3X7R1E226MT000N` at 25 V. That does not establish the
+MT000N/M250AB correspondence, which needs its own cited evidence.

@@ -20,7 +20,7 @@ from test_parts_subset import captured_fixture
 from test_jlc_stock_capture import row, search
 
 
-def named_fixture(root, document, index=0, lcsc='C38695', mpn='TJA1051T/3', package='SOIC-8'):
+def named_fixture(root, document, index=0, lcsc='C38695', mpn='TJA1051T/3', package='SOIC-8', **row_extra):
     """Replace a logical entry by a named synthetic identity, retaining owned CAD."""
     def put(path, data):
         dest = root / path
@@ -34,7 +34,7 @@ def named_fixture(root, document, index=0, lcsc='C38695', mpn='TJA1051T/3', pack
     prefix = f'named/{lcsc}/'
     raw = search(row(lcsc, 50, library='expand', componentModelEn=mpn,
                      componentBrandEn='Synthetic manufacturer', componentSpecificationEn=package,
-                     firstSortName='Synthetic IC/module category'))
+                     firstSortName='Synthetic IC/module category', **row_extra))
     response = put(prefix + 'responses/' + lcsc + '.json', raw)
     response.update(path='responses/' + lcsc + '.json', size_bytes=len(raw))
     _, observed = parse_search_response(raw, lcsc)

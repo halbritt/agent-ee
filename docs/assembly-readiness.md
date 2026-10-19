@@ -172,6 +172,15 @@ reused sheet).
 - **`defect`**
   - `missing_property`: a required property or any-of group is absent.
   - `missing_rating_property`: populated R or C without a rating property.
+  - `invalid_rating_provenance`: a populated R or C carries an
+    `AGENT_EE_Ratings` field ([source-derived ratings](binding-fill.md#source-derived-passive-ratings))
+    that is malformed, names a field that is not a rating for its kind, or
+    whose value differs from the native `Power`/`Voltage` property. The check
+    validates such a field whenever it is present, whatever the value of
+    `require_passive_ratings`. Each component report records
+    `rating_provenance`: `source_backed`, `unsourced`, `invalid`, or null for
+    non-passives. Unsourced hand-entered ratings still satisfy the property
+    rule, as before.
   - `non_native_assembly_marker`: see above.
   - `missing_lcsc`: no `LCSC` value; names the reference.
   - `invalid_lcsc`: value does not match `^C[1-9][0-9]*$`.
