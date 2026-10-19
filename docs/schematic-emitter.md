@@ -136,6 +136,10 @@ KiCad 10.0):
 
 ### Stable identity
 
+For repair candidates, [stable regeneration](schematic-regeneration.md) retains
+actual prior placement and native identities while updating intent. A plain
+emission still packs the complete sheet from scratch.
+
 All UUIDs are `uuid5(namespace, JSON array)`, with the array written in compact
 form:
 

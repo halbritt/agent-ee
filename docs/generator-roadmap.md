@@ -10,6 +10,11 @@ an edit here.
 
 ## Target experience
 
+Stage-three repair turns can opt into [stable schematic regeneration](schematic-regeneration.md)
+(AGENTEE-43): prior symbols retain their placement and identities, new symbols
+occupy free cells, and a hash-bound change report records removals and renames.
+The producer remains subject to native checks and independent review.
+
 The user describes a board, discusses parts with the agent, and says "go". The
 result is a JLCPCB-ready package: Gerbers, drill files, BOM and CPL, from a
 native KiCad project in which every step has tool evidence. The target product

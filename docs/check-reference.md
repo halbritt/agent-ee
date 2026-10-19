@@ -485,6 +485,12 @@ structural, placement and identity hashes. A side that does not parse is
 never "no change". A path `reference` is an immutable baseline input and cannot
 be the scope's writer-mutable board or schematic.
 
+The [stable schematic regeneration helper](schematic-regeneration.md) uses this
+same typed diff and hashes in its diagnostic change report. It is an opt-in
+schematic-stage producer, not another check kind; ERC, netlist parity and review
+still grade the regenerated candidate. A parse failure or human-edit conflict
+produces no schematic output and leaves acceptance unknown.
+
 `design_rules` requires `pack`, `bindings`, `netlist_check` and `cards`. It
 also accepts `facts_check` (an earlier `datasheet_facts` check) and `delegated`.
 The immutable [rule pack](design-rules.md) holds versioned cards, and the

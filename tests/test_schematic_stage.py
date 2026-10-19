@@ -200,6 +200,56 @@ class SchematicStageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no output adopted'):
             adopt(path, receipt, self.design)
 
+    def regeneration(self):
+        state = 'design/generation/emitted-intent.json'
+        write_json(self.design / state, read_json(self.design / INTENT))
+        self.config = configuration(ROOT / 'src', board=BOARD, schematic=SCH, intent=INTENT,
+            seeds=['design/generation/block-seed.json'], layout='design/generation/schematic-layout.json',
+            captures='design/project', footprints='design/generation/footprints.json', regeneration_intent=state)
+        return state
+
+    def test_regeneration_receipts_adopt_intent_and_schematic_then_annotate(self):
+        from agent_ee.symbol_library import children, parse_sexpr
+        state = self.regeneration()
+        before = parse_sexpr((self.design / SCH).read_bytes())
+        intent = read_json(self.design / INTENT)
+        next(c for c in intent['components'] if c['id'] == 'c_out')['value'] = '22u'
+        write_json(self.design / INTENT, intent)
+        path, receipt = self.step(0)
+        self.assertEqual(receipt['status'], 'completed', (path / 'run/console.log').read_text())
+        self.assertIn(state, receipt['outputs'])
+        report = read_json(path / 'run/out/emission.json')
+        self.assertEqual(report['schema'], 'agent-ee.schematic-regeneration/1')
+        self.assertEqual(report['diff']['typed']['transforms'], {})
+        adopt(path, receipt, self.design)
+        self.assertEqual(read_json(self.design / state), intent)
+        after = parse_sexpr((self.design / SCH).read_bytes())
+        self.assertEqual([children(s, 'at') for s in children(before, 'symbol')],
+                         [children(s, 'at') for s in children(after, 'symbol')])
+        second, annotation = self.step(1)
+        self.assertEqual(annotation['status'], 'completed', (second / 'run/console.log').read_text())
+        adopt(second, annotation, self.design)
+        self.assertIn('22u', (self.design / BOARD).read_text())
+        third, noop = self.step(0)
+        self.assertEqual(noop['status'], 'completed', (third / 'run/console.log').read_text())
+        self.assertEqual(noop['outputs'][SCH], receipt['outputs'][SCH])
+
+    def test_regeneration_parse_failure_keeps_prior_candidate_and_state(self):
+        state = self.regeneration()
+        previous_state = (self.design / state).read_bytes()
+        (self.design / SCH).write_bytes(b'(kicad_sch (version 20260306)')
+        path, receipt = self.step(0)
+        self.assertEqual(receipt['exit_code'], 1)
+        self.assertNotEqual(receipt['status'], 'completed')
+        report = read_json(path / 'run/out/emission.json')
+        self.assertEqual(report['outcome'], 'unknown')
+        self.assertTrue(report['findings'])
+        self.assertFalse((path / 'run/out/project').exists())
+        with self.assertRaisesRegex(ValueError, 'no output adopted'):
+            adopt(path, receipt, self.design)
+        self.assertEqual((self.design / state).read_bytes(), previous_state)
+        self.assertEqual((self.design / SCH).read_bytes(), b'(kicad_sch (version 20260306)')
+
 
 if __name__ == '__main__':
     unittest.main()

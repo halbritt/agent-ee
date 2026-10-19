@@ -160,6 +160,9 @@ and their outputs; staged campaigns refuse writer edits to outputs owned by a
 scheduled step. Arbitrary writer commands have no stage-specific OS allowlist.
 A [mutable-intent schematic stage](docs/intent-schematic-stage.md) binds writer-authored
 connectivity intent to receipted emission and forward annotation on each schematic turn.
+[Stable regeneration](docs/schematic-regeneration.md) optionally retains prior
+symbol placement, fields, UUIDs and reference bindings across those turns,
+with explicit change reports and refusal of conflicting native edits.
 [Stage receipts](docs/stage-receipts.md) support artifact-only steps,
 such as fab export, with an empty write scope and retained artifact hashes.
 An artifact-only step is unadoptable if any declared artifact entry lacks a hash.
