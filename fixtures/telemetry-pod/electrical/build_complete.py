@@ -11,6 +11,7 @@ from agent_ee.part_record import prepare_record
 from agent_ee.parts_manifest import qualify_manifest
 from agent_ee.storage import identity
 from agent_ee.connectivity_ir import resolve_intent
+from agent_ee.binding_fill import fill
 from build_core import build as build_core
 from power_cad import write_cad
 from mode_cad import write_primary_spi
@@ -48,7 +49,8 @@ def build(output, roots):
         target.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
 
     for name in ('power-selections.json', 'power-source-lock.json', 'power_cad.py',
-                 'complete-decisions.md', 'support-decisions.json', 'mode_cad.py', 'prepare_intent.py'):
+                 'complete-decisions.md', 'support-decisions.json', 'mode_cad.py', 'prepare_intent.py',
+                 'probe-selections.json'):
         (output / name).write_bytes((here / name).read_bytes())
     original = (output / 'core/requirements/io-map.actual.csv').read_bytes()
     source_rows = list(csv.DictReader(io.StringIO(original.decode())))
@@ -103,6 +105,19 @@ def build(output, roots):
                            part_record_sha256=blob(record_path)['sha256'], decision_ref=decision),
             datasheet=dict(status='captured', required=True, artifact=record['artifact'],
                            provenance=dict(**record['datasheets'], locator='parts[id=' + p['datasheet_id'] + ']'))))
+    probes = load(here / 'probe-selections.json')
+    for part in probes['parts']:
+        library = part['lib_id'].split(':')[0]
+        captured_library = dict(name=library, **part['probe']['symbol'])
+        if library in libraries and libraries[library] != captured_library:
+            raise ValueError('probe symbol conflicts with captured library')
+        libraries[library] = captured_library
+        fp_lib, member = part['footprint'].split(':')
+        members = footprints.setdefault(fp_lib, {})
+        if member in members and members[member] != part['probe']['footprint']:
+            raise ValueError('probe footprint conflicts with captured member')
+        members[member] = part['probe']['footprint']
+    parts.extend(probes['parts'])
     declarations = load(output / 'core/cad/footprint-declarations.json')
     for name in ('DDA0008B', 'DDA0008J_C02'):
         declarations['footprints'].append(dict(footprint='PodPower:' + name,
@@ -117,6 +132,8 @@ def build(output, roots):
         libraries=[dict(name=lib, members=[members[k] for k in sorted(members)]) for lib, members in sorted(footprints.items())])
     assignments = dict(schema='agent-ee.footprint-assignments-input/1', libraries=list(libraries.values()),
         components=[dict(reference=p['id'], lib_id=p['lib_id'], footprint=p['footprint'], assembly=p.get('assembly', 'smd'), connector=None) for p in rows])
+    assignments['components'].extend(dict(reference=p['id'], lib_id=p['lib_id'],
+        footprint=p['footprint'], assembly='smd', connector=None) for p in probes['parts'])
     write('cad/manifest.json', cad)
     write('cad/assignments.json', assignments)
     members = [dict(path=p['path'], sha256=p['sha256']) for p in libraries.values()] + [m for lib in cad['libraries'] for m in lib['members']]
@@ -129,7 +146,11 @@ def build(output, roots):
     # bind its freshly generated CAN libraries in the final CAD declaration.
     # The historical core library captures remain untouched under core/.
     write('parts-electrical.json', manifest)
-    write('part-refs.json', dict(schema='agent-ee.part-refs/1', components={p['component']:dict(part_ref=p['id']) for p in rows}))
+    refs = dict(schema='agent-ee.part-refs/1', components={p['component']:dict(part_ref=p['id']) for p in rows})
+    if set(refs['components']) & set(probes['components']):
+        raise ValueError('probe component collides with purchased part')
+    refs['components'].update(probes['components'])
+    write('part-refs.json', refs)
     write('electrical-selections.json', dict(parts=rows, done=False))
     composed = prepare(output, probe_and_power_features(output))
     for path, raw in composed['captures'].items():
@@ -175,9 +196,14 @@ def build(output, roots):
     result = qualify_manifest(manifest, output)
     write('parts-electrical.json', manifest)
     write('parts-electrical-qualification.json', result)
+    deviations = dict(schema='agent-ee.part-deviations/1', deviations=[])
+    write('part-deviations.json', deviations)
+    bound, binding = fill(output, composed['intent'], manifest, refs, deviations, captures='.')
+    write('intent.json', bound)
+    write('binding-fill.json', binding)
     write('bundle-complete.json', dict(done=False,
-        scope='Complete candidate circuit inputs: 102 purchased components, six manufactured probe proposals and five power markers; canonical binding requires the supported manufactured-feature consumer',
-        manifest=blob('parts-electrical.json'), intent=blob('intent.unbound.json'),
+        scope='Bound candidate circuit inputs: 102 purchased components, six declared manufactured probes and five virtual power markers; native and sealed consumer checks remain required',
+        manifest=blob('parts-electrical.json'), intent=blob('intent.json'),
         source_lock_sha256=hashlib.sha256((here / 'power-source-lock.json').read_bytes()).hexdigest(),
         files=[blob(str(p.relative_to(output))) for p in sorted(output.rglob('*')) if p.is_file()],
         limitations=['Input inventory only; no campaign seal, engineering acceptance or fabrication release.',
