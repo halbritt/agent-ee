@@ -85,6 +85,84 @@ def qualify_record(document, root):
     return dependencies
 
 
+
+def _external_sources(root, identity_source, datasheets, datasheet_id, deviation_ref):
+    from .parts_manifest import _blob, _read_blob, read_captured
+    from .part_decisions import validate_deviation
+    _blob(identity_source, True)
+    if identity_source['locator'] != '/':
+        raise ValueError('external identity locator must name the whole typed declaration: /')
+    declaration = strict_json(_read_blob(root, identity_source))
+    exact_fields(declaration, ('schema', 'mpn', 'manufacturer', 'package', 'evidence_refs'))
+    if declaration['schema'] != 'agent-ee.external-part-identity/1':
+        raise ValueError('expected captured external-part-identity/1 declaration')
+    for field in ('mpn', 'manufacturer', 'package'):
+        nonempty(declaration[field])
+    dependencies = {identity_source['path']: identity_source['sha256']}
+    refs = declaration['evidence_refs']
+    if not isinstance(refs, list) or not refs:
+        raise ValueError('external identity needs captured source evidence')
+    for ref in refs:
+        _blob(ref, True)
+        if not _read_blob(root, ref):
+            raise ValueError('empty external identity source')
+        dependencies[ref['path']] = ref['sha256']
+    exact_fields(deviation_ref, ('path', 'sha256', 'index'))
+    deviation_blob = {k: deviation_ref[k] for k in ('path', 'sha256')}
+    _blob(deviation_blob)
+    deviations = strict_json(_read_blob(root, deviation_blob))
+    exact_fields(deviations, ('schema', 'deviations'))
+    index = deviation_ref['index']
+    if (deviations['schema'] != 'agent-ee.part-deviations/1' or
+            not isinstance(deviations['deviations'], list) or type(index) is not int or
+            not 0 <= index < len(deviations['deviations'])):
+        raise ValueError('external part needs a pinned assembly deviation index')
+    deviation = deviations['deviations'][index]
+    if (not validate_deviation(deviation) or
+            deviation['original'] != {'mpn': declaration['mpn'], 'lcsc': None}):
+        raise ValueError('external identity differs from hand-fit deviation')
+    dependencies[deviation_ref['path']] = deviation_ref['sha256']
+    for ref in deviation['evidence_refs']:
+        exact_fields(ref, ('path', 'locator'))
+        nonempty(ref['locator'])
+        raw = read_captured(root, ref['path'])
+        if not raw:
+            raise ValueError('empty hand-fit evidence')
+        dependencies[ref['path']] = hashlib.sha256(raw).hexdigest()
+    _blob(datasheets)
+    acquisition = strict_json(_read_blob(root, datasheets))
+    bindings = sorted([dict(id=r['id'], datasheet_url=r['url']) for r in acquisition['parts']], key=lambda r: r['id'])
+    acquired, paths = load_acquisition(root, datasheets, bindings)
+    nonempty(datasheet_id)
+    sheet = acquired.get(datasheet_id)
+    if sheet is None or sheet['missing']:
+        raise ValueError('external part requires a captured datasheet')
+    for path in paths:
+        dependencies[path] = hashlib.sha256(read_captured(root, path)).hexdigest()
+    observed = {k: declaration[k] for k in ('mpn', 'manufacturer', 'package')}
+    observed.update(lcsc='NO_LCSC', stock=None, datasheet_url=sheet['url'])
+    artifact = dict(path=(Path(datasheets['path']).parent / sheet['path']).as_posix(), sha256=sheet['sha256'])
+    return observed, artifact, dict(sorted(dependencies.items()))
+
+
+def prepare_external_record(root, identity_source, datasheets, datasheet_id, deviation_ref):
+    """Replay an explicit external identity declaration; never invent a supplier row."""
+    observed, artifact, _ = _external_sources(root, identity_source, datasheets, datasheet_id, deviation_ref)
+    return dict(schema='agent-ee.external-part-record/1', **observed, identity_source=identity_source,
+                datasheets=datasheets, datasheet_id=datasheet_id, artifact=artifact, deviation_ref=deviation_ref)
+
+
+def qualify_external_record(document, root):
+    exact_fields(document, ('schema', 'mpn', 'manufacturer', 'package', 'lcsc', 'stock', 'datasheet_url',
+                            'identity_source', 'datasheets', 'datasheet_id', 'artifact', 'deviation_ref'))
+    if document['schema'] != 'agent-ee.external-part-record/1':
+        raise ValueError('unsupported external part record')
+    observed, artifact, dependencies = _external_sources(root, document['identity_source'], document['datasheets'],
+                                                        document['datasheet_id'], document['deviation_ref'])
+    if any(document[k] != v for k, v in observed.items()) or document['artifact'] != artifact:
+        raise ValueError('external part record differs from captured identity/deviation')
+    return dependencies
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', required=True)

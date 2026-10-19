@@ -365,3 +365,8 @@ for no-step turns it checks the ordinary anchored delivered tree. An ordinary
 successor must come from that proposal, and missing indexes are allowed only for
 a final incomplete implementation without a proposal. Dedicated routing still
 requires an entirely unchanged writer tree before its producers.
+
+The [binding-fill producer](binding-fill.md) may precede schematic emission.
+It writes only the intent and uses the ordinary captured receipt/adoption
+contract. Its manifest, explicit component part references and captured source
+closure stay immutable; a failed binding leaves no adoptable output.

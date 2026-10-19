@@ -186,6 +186,19 @@ def parse_param_value(raw_text: str, prop_name: str = "PARAM_?") -> dict:
     if not isinstance(parsed, dict):
         raise PartBindingMalformedError(f"{prop_name}: JSON root must be an object")
 
+    if prop_name == "PARAM_Datasheet":
+        from .datasheet_capture import validate_url
+        if (set(parsed) != {"schema", "url", "sha256"} or
+                parsed["schema"] != "agent-ee.datasheet-binding/1" or
+                not isinstance(parsed["sha256"], str) or
+                not re.fullmatch("[0-9a-f]{64}", parsed["sha256"])):
+            raise PartBindingMalformedError("PARAM_Datasheet: malformed captured identity")
+        try:
+            validate_url(parsed["url"])
+        except (TypeError, ValueError) as exc:
+            raise PartBindingMalformedError("PARAM_Datasheet: invalid captured URL") from exc
+        return parsed
+
     raw_unit = parsed.get("unit")
     if not isinstance(raw_unit, str) or not raw_unit.strip():
         raise PartBindingMalformedError(f"{prop_name}: requires non-empty string 'unit'")
@@ -926,8 +939,13 @@ def _check_component_bindings(
     if not (dnp or no_lcsc):
         if require_datasheet and not datasheet:
             missing_props.append("Datasheet")
-        if require_params and not params and not comp.get("param_errors"):
+        if require_params and not (set(params) - {"PARAM_Datasheet"}) and not comp.get("param_errors"):
             missing_props.append("PARAM_*")
+
+    if "PARAM_Datasheet" in params and params["PARAM_Datasheet"]["url"] != datasheet:
+        invalid_bindings.append({"reference": ref, "source": source_name,
+            "property": "PARAM_Datasheet", "field": "PARAM_Datasheet",
+            "value": params["PARAM_Datasheet"], "reason": "captured URL differs from Datasheet"})
 
     for prop in missing_props:
         missing_bindings.append({

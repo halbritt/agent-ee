@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .hardware_interface import text, unique_object
 
-MAX_COMPONENTS = 128
+MAX_COMPONENTS = 256
 MAX_TERMINALS = 8192
 MAX_BYTES = 8_000_000
 MAX_SEARCH = 100_000

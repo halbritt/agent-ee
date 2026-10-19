@@ -250,3 +250,12 @@ the AGENTEE-89 owner must bind a relevant sealed parts predicate to the block's
 actual native subject before upgrading that authority. A passing check for
 another subject is insufficient. AGENTEE-29/32 repairs and AGENTEE-33/40 metadata
 integration remain separately owned.
+
+## External hand-fitted identities
+
+AGENTEE-174 adds the explicit `external` selection variant to the same central
+parts manifest. It requires `NO_LCSC`, unknown stock, a rederived captured
+identity declaration, acquired datasheet and a pinned AGENTEE-167 hand-fit
+deviation. It does not create a JLCPCB catalog row. See
+[binding fill](binding-fill.md#external-parts-without-an-lcsc-number) for exact
+record fields, immutable dependency closure and requalification rules.

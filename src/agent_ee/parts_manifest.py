@@ -56,7 +56,7 @@ def _validate_generic_sources(document):
 
 
 def named_selection(part):
-    """A named selection is explicit; unknown kinds are rejected by validation."""
+    """Explicit record selection (named or external); unknown kinds refuse below."""
     return isinstance(part, dict) and 'selection' in part
 
 
@@ -99,7 +99,7 @@ def validate_manifest(document):
         if named_selection(part):
             selection = part['selection']
             exact_fields(selection, ('kind', 'lcsc', 'part_record', 'part_record_sha256', 'decision_ref'))
-            if selection['kind'] != 'named' or selection['lcsc'] != part['lcsc']:
+            if selection['kind'] not in ('named', 'external') or selection['lcsc'] != part['lcsc']:
                 raise ValueError('named selection kind/LCSC mismatch')
             _blob(_named_blob(part))
             _blob(selection['decision_ref'], True)
@@ -121,7 +121,11 @@ def validate_manifest(document):
         for field in ('lib_id', 'footprint'):
             if part[field].count(':') != 1 or not all(part[field].split(':')):
                 raise ValueError('exact library:member identity required')
-        if not re.fullmatch('C[1-9][0-9]*', part['lcsc']):
+        external = named_selection(part) and part['selection']['kind'] == 'external'
+        if external:
+            if part['lcsc'] != 'NO_LCSC' or part['stock'] is not None:
+                raise ValueError('external parts require NO_LCSC and unknown stock')
+        elif not re.fullmatch('C[1-9][0-9]*', part['lcsc']):
             raise ValueError('exact LCSC required')
         if part['stock'] is not None and (type(part['stock']) is not int or part['stock'] < 0):
             raise ValueError('stock must be historical integer or null')
@@ -196,10 +200,11 @@ def dependency_closure(document, root):
     blobs += cad_blobs
     for part in document['parts']:
         if named_selection(part):
-            from .part_record import qualify_record
+            from .part_record import qualify_record, qualify_external_record
             record_blob = _named_blob(part)
             record = strict_json(_read_blob(root, record_blob))
-            dependencies = qualify_record(record, root)
+            qualifier = qualify_external_record if part['selection']['kind'] == 'external' else qualify_record
+            dependencies = qualifier(record, root)
             blobs += [record_blob, part['selection']['decision_ref']]
             blobs += [dict(path=p, sha256=h) for p, h in dependencies.items()]
         if 'pin_contract' in part:
