@@ -727,7 +727,7 @@ def adjudicate(findings, decisions, run_dir):
             raise ValueError(f"decision {fid}: duplicate_of is only allowed when disposition is 'duplicate'")
 
         if disp == "accepted":
-            from .baseline import load_baseline, validate_witnesses
+            from .baseline import advisory_check, load_baseline, validate_advisory_defect, validate_witnesses
             baseline = load_baseline(run_dir) if (run_dir / "candidate.json").exists() else None
             if baseline is not None:
                 if target_finding.get("source") != "check":
@@ -738,7 +738,13 @@ def adjudicate(findings, decisions, run_dir):
                         for r in baseline["requirements"] if target_finding["local_id"] in r["checks"]
                         and (baseline["schema"] == "agent-ee.baseline/1" or
                              target_finding["local_id"] in baseline["coverage"]["requirements"][r["id"]]["acceptance_checks"])]
-                validate_witnesses(run_dir, witnesses, validated_ev)
+                if not witnesses and advisory_check(baseline, target_finding["local_id"]):
+                    # AGENTEE-217: a proved advisory defect is confirmed from its sealed result
+                    # but witnesses no requirement; the check's defect outcome keeps the review failed.
+                    validate_advisory_defect(run_dir, target_finding["local_id"], validated_ev)
+                    item = {**item, "authority": "advisory"}
+                else:
+                    validate_witnesses(run_dir, witnesses, validated_ev)
             if target_finding.get("assessment") != "defect":
                 raise ValueError(
                     f"decision {fid}: 'accepted' requires assessment='defect' "
@@ -795,6 +801,8 @@ def adjudicate(findings, decisions, run_dir):
         else:
             tentative_dup.pop(fid, None)
 
+    advisory = {fid for fid, f in by_id.items() if f.get("authority") == "advisory"}
+    advisory.update(t["id"] for t, _disp, _r, _e, _d, raw in staged if raw.get("authority") == "advisory")
     for fid in list(tentative_dup.keys()):
         visited = [fid]
         cur = tentative_dup.get(fid)
@@ -824,6 +832,12 @@ def adjudicate(findings, decisions, run_dir):
             raise ValueError(
                 f"duplicate {fid} -> {root_id}: accepted or check defect cannot be duplicated into {root_status!r} target"
             )
+        if root_id in advisory and by_id[fid].get("source") == "check" and fid not in advisory:
+            from .baseline import advisory_check, load_baseline
+            if not advisory_check(load_baseline(run_dir), by_id[fid].get("local_id")):
+                raise ValueError(
+                    f"duplicate {fid} -> {root_id}: an acceptance check defect cannot be represented by an advisory finding"
+                )
         if root_status == "noted" and (
             by_id[fid].get("source") == "check"
             or by_id[fid].get("assessment") == "defect"
@@ -860,6 +874,9 @@ def adjudicate(findings, decisions, run_dir):
         else:
             target_finding.pop("duplicate_of", None)
 
+        if raw_item.get("authority") == "advisory":
+            event["authority"] = "advisory"
+            target_finding["authority"] = "advisory"
         if disp == "closed":
             event["closed_in_candidate_id"] = cand_id
             event["closed_in_run_id"] = run_id

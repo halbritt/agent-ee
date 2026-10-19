@@ -5,6 +5,8 @@ process, is captured as a scope/3 candidate and runs through
 ``checks.run_checks``. Native DRC is the independent courtyard authority the
 suggested move is checked against.
 """
+import contextlib
+import io
 import json
 from pathlib import Path
 import shutil
@@ -12,10 +14,13 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from toolchain import require_toolchain
 
 from agent_ee import candidate, checks
+from agent_ee.cli import run_review, verify
+from agent_ee.storage import digest, read_json
 from agent_ee.placement_congestion import _turn
 from agent_ee.placement_probe import extract
 
@@ -27,6 +32,7 @@ STOCK = [{'path': '/usr/share/kicad/symbols', 'at': 'stock/symbols',
          {'path': '/usr/share/kicad/footprints', 'at': 'stock/footprints',
           'include': ['Resistor_SMD.pretty/*', 'Capacitor_SMD.pretty/*', 'Connector_PinHeader_2.54mm.pretty/*']},
          {'path': '/usr/share/kicad/template', 'at': 'stock/template', 'include': ['sym-lib-table', 'fp-lib-table']}]
+PROFILE_CALL = {'harness': 'codex', 'model': 'scripted-transport', 'effort': 'high', 'timeout_s': 30}
 PARAMS = {'clearance_mm': 0.2, 'track_width_mm': 0.25, 'cell_mm': 2.54, 'routing_layers': ['F.Cu', 'B.Cu']}
 # Separate interpreter passes: pcbnew 10.0.7 misbehaves walking a board after Remove().
 UNROUTE = """import sys
@@ -85,11 +91,12 @@ class NativeCongestion(unittest.TestCase):
         (source / 'requirements/placement.md').write_text('Owned AGENTEE-57 placement requirements.\n')
         return source
 
-    def run_scope(self, source, params=None):
-        specs = [{'id': 'drc', 'kind': 'drc'},
+    def scope(self, source, params=None, acceptance='drc'):
+        specs = [{'id': acceptance, 'kind': acceptance},
                  {'id': 'congestion', 'kind': 'placement_congestion', 'params': params or PARAMS}]
-        requirements = [{'id': 'R-drc', 'intent': 'acceptance', 'statement': 'Native DRC',
-                         'source': {'path': 'requirements/placement.md', 'locator': 'drc'}, 'checks': ['drc']},
+        requirements = [{'id': f'R-{acceptance}', 'intent': 'acceptance', 'statement': f'Native {acceptance}',
+                         'source': {'path': 'requirements/placement.md', 'locator': acceptance},
+                         'checks': [acceptance]},
                         {'id': 'I-congestion', 'intent': 'informational', 'statement': 'Pre-route report',
                          'source': {'path': 'requirements/placement.md', 'locator': 'congestion'},
                          'checks': ['congestion']}]
@@ -102,10 +109,65 @@ class NativeCongestion(unittest.TestCase):
         self.count += 1
         path = self.root / f'scope-{self.count}.json'
         path.write_text(json.dumps(scope))
+        return path
+
+    def run_scope(self, source, params=None):
+        path = self.scope(source, params)
         run = self.root / f'run-{self.count}'
         run.mkdir()
         candidate.capture(path, run)
         return run, {r['id']: r for r in checks.run_checks(run, time.monotonic() + 900)}
+
+    def agent(self, run, label, definition, prompt, schema, timeout, *, cancellation=None, executable=None):
+        """Scripted transport: reviewers report nothing; the adjudicator accepts every sealed defect."""
+        packet = read_json(Path(run) / 'packet.json')
+        identity = {key: packet[key] for key in ('candidate_id', 'run_id')}
+        if label == 'adjudicator':
+            defects = [c for c in map(read_json, sorted((Path(run) / 'checks').glob('*.json')))
+                       if c['execution'] == 'ok' and c['outcome'] == 'defect']
+            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/2', **identity, 'decisions': [
+                {'finding_id': 'check/' + c['id'], 'disposition': 'accepted', 'reason': 'Sealed proved defect',
+                 'evidence': [{'path': f"checks/{c['id']}.json", 'locator': 'outcome', 'pointer': '/outcome'}]}
+                for c in defects]}
+        return {'execution': 'ok'}, {'schema': 'agent-ee.review/2', **identity,
+            'packet_sha256': packet['packet_sha256'], 'role': label, 'coverage': ['Scripted initial review'],
+            'limitations': ['No model inference; coordinator contract test only'], 'findings': []}
+
+    def test_full_review_adjudicates_an_advisory_defect_and_fails_closed(self):
+        # AGENTEE-217: congestion is the only defect; ERC is the passing acceptance check.
+        path = self.scope(self.source(move={'C1': [106.5, 100]}), acceptance='erc')
+        scope = json.loads(path.read_text())
+        scope.update(name='advisory congestion', scope='AGENTEE-217 regression',
+                     review_profile={'schema': 'agent-ee.profile/1', 'name': 'scripted-congestion',
+                                     'reviewers': [{**PROFILE_CALL, 'role': 'circuit'},
+                                                   {**PROFILE_CALL, 'role': 'physical'}],
+                                     'adjudicator': PROFILE_CALL})
+        path.write_text(json.dumps(scope))
+        from agent_ee.cli import runtime_files
+        runtime = runtime_files()
+        for name in ('codex', 'codex_tool_host'):
+            runtime[name] = {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+        run = self.root / 'review'
+        with patch('agent_ee.cli.runtime_files', return_value=runtime), \
+             patch('agent_ee.reviewers.dispatch', side_effect=self.agent), contextlib.redirect_stdout(io.StringIO()):
+            status = run_review(path, run, 900)
+            result = verify(run)
+        self.assertEqual(status, 1)
+        self.assertNotIn('error', result)
+        self.assertEqual({c['id']: (c['execution'], c['outcome']) for c in result['checks']},
+                         {'erc': ('ok', 'pass'), 'congestion': ('ok', 'defect')})
+        self.assertEqual((result['state'], result['adjudicated'], result['outcome']),
+                         ('complete', True, 'defects_or_unresolved'))
+        self.assertEqual(read_json(run / 'adjudicator-execution.json')['execution'], 'ok')
+        finding, = result['findings']
+        self.assertEqual((finding['id'], finding['status'], finding['authority'], finding['decision']['authority']),
+                         ('check/congestion', 'accepted', 'advisory', 'advisory'))
+        self.assertNotIn('witnesses', finding)
+        self.assertIn('Authority: advisory check', (run / 'REPORT.md').read_text())
+        from agent_ee.baseline import validate_witnesses
+        with self.assertRaisesRegex(ValueError, 'audited acceptance'):
+            validate_witnesses(run, [{'requirement_id': 'I-congestion', 'check_id': 'congestion'}],
+                               finding['decision']['evidence'])
 
     def native_types(self, run):
         return {v['type'] for v in json.loads((run / 'work/drc/drc.json').read_text())['violations']}

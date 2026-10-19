@@ -89,6 +89,11 @@ minor/info `assessment=concern` that does not establish a violated criterion;
 it needs citations and a reason. Major/blocking or unsupported concerns cannot
 be noted, and defects cannot be hidden as duplicates of noted observations.
 duplicate target must exist and cannot hide unresolved/accepted defects.
+In a scope/3 run, a check with no acceptance predicate and no acceptance mapping
+is advisory. Its defect is accepted from its cited, unchanged, sealed failed
+result with no requirement witness, and is marked `authority: advisory`. It never
+witnesses a requirement, and an acceptance check defect cannot be a duplicate of
+it (AGENTEE-217).
 Closed in SAME candidate is invalid for a claimed repair. Closure needs explicit
 new-candidate linkage + fresh affected checks; coordinate exact closure API.
 Append events rather than deleting earlier findings/dispositions. The CLI owns
