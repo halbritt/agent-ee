@@ -276,3 +276,9 @@ existing inventory guard. The campaign test uses scripted model responses with
 real native presence probes, coordinator seals, adjudication and writer guards.
 It establishes the first repair transition, not live-model review quality or a
 completed generation campaign.
+
+Both scaffold modes accept [named IC/module entries](approved-parts.md#named-ics-and-modules).
+The shared manifest qualifier replays each part record and freezes its response,
+datasheet and decision sources in the baseline. The producer derives the same
+membership check, selectors and fab rules for mixed generic/named manifests.
+This does not emit a completed IC schematic or establish component suitability.

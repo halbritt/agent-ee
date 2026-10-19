@@ -389,3 +389,11 @@ ordering. Missing inputs, incomplete rotation coverage and missing obligations
 fail closed.
 See [CPL integration](cpl-rotation.md#generator-fab-integration) for the input
 tree, evidence layout and the separate non-DNP header export limitation.
+
+AGENTEE-164 adds the [named-part path](approved-parts.md#named-ics-and-modules)
+for stage 2: ICs and modules can enter `parts/1` without extending the generic
+catalog categories. Per-LCSC records replay captured supplier identity and
+AGENTEE-33 datasheets; `parts_subset` and the scaffold producer retain their
+immutable evidence closure. Synthetic tests establish this admission path;
+a live public-search capture and an actual telemetry-pod design remain separate
+qualification work.

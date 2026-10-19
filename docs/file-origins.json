@@ -2811,6 +2811,16 @@
         "AE"
       ],
       "reviewed": "Original regression tests with one owned KiCad 5 style footprint literal and short byte mutations of the captured fixture; no library or design text copied."
+    },
+    {
+      "paths": [
+        "tests/test_approved_parts.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original synthetic named-part response, decision and PDF-envelope literals for AGENTEE-164. Supplier IDs and MPNs are test labels; no vendor document, geometry or live supplier response is copied."
     }
   ]
 }

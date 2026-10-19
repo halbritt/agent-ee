@@ -175,7 +175,9 @@ each assertion's computed interval, witness and operand origins.
 ## Approved parts membership
 
 The [approved-parts manifest](approved-parts.md) uses `agent-ee.parts/1` and
-pins catalog, selection, CAD and datasheet provenance. The `parts_subset` check
+pins generic catalog selection or [named-part records](approved-parts.md#named-ics-and-modules),
+plus CAD and datasheet provenance. Named replay compares exact captured identity;
+it does not rank parts or infer IC suitability. The `parts_subset` check
 takes exactly `manifest`, `netlist_check` and `requirement_id`. Its requirement
 must point to the manifest's captured declaration source. The full dependency
 closure is immutable in scope/2 and scope/3.
