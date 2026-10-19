@@ -46,16 +46,17 @@ production execution still records unavailable/failed tools as incomplete work.
 
 The [container image](container.md) provides the pinned toolchain. Project CI
 runs the suite there with `AGENT_EE_REQUIRE_TOOLCHAIN=1` through
-`scripts/strict_suite.py`, which permits no skips. Tests that need the owner's
-fome-mc object store or the pod's retained external captures fail there and are
-named as not executed, so the hosted strict step fails until those inputs are
-provisioned; see [required external inputs](container.md#required-external-inputs). The full
-gate passes only on a host with those inputs. Set `AGENT_EE_FOME_MC_CHECKOUT`,
-and also `AGENT_EE_POD_INPUTS` / `AGENT_EE_POD_J1_GEOMETRY` when the captures
-were relocated:
+`scripts/strict_suite.py`, which permits no skips. The workflow provisions the
+pinned fome-mc store and the J1 manufacturer drawing first; see
+[required external inputs](container.md#required-external-inputs). Without them
+the tests that need them fail. The full gate passes only with both inputs. Set
+`AGENT_EE_FOME_MC_CHECKOUT` to a fome-mc store containing `1289f31` and
+`AGENT_EE_J1_DRAWING` to the hash-checked drawing
+([acquisition](../fixtures/telemetry-pod/j1/README.md)):
 
 ```sh
-AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=$HOME/git/fome-mc PYTHONPATH=src \
+AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=$HOME/git/fome-mc \
+  AGENT_EE_J1_DRAWING=/path/to/te-776228-1.pdf PYTHONPATH=src \
   /usr/bin/python3 scripts/strict_suite.py --jobs 4
 ```
 

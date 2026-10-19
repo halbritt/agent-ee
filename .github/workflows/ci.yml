@@ -17,6 +17,16 @@ jobs:
     timeout-minutes: 90
     env:
       IMAGE: agent-ee:ci
+      # Required external inputs (docs/container.md#required-external-inputs).
+      # The public fome-mc repository at this exact commit is the fome-mc object
+      # store (tests/toolchain.py FOME_MC_COMMIT). It is read in place, never
+      # copied into the image, the repository or an artifact.
+      FOME_MC_COMMIT: 1289f3149d2bcaa83a3b490a0bfbd11ed8a17589
+      FOME_MC_STORE: build/external/fome-mc
+      # The J1 manufacturer drawing (fixtures/telemetry-pod/j1/README.md); its
+      # hash is the drawing source hash of j1-placement-exclusion.json.
+      J1_DRAWING_URL: https://www.farnell.com/cad/2916153.pdf
+      J1_DRAWING_SHA256: 14bd5c3bb2ca16bfcf01918b678eab1aa19df10001c17735dd1f11356a6e4fe8
       # The three --security-opt relaxations are required for Bubblewrap inside
       # the container; docs/container.md explains each. No container run needs network.
       SANDBOX_OPTS: >-
@@ -52,17 +62,77 @@ jobs:
           sysctl kernel.apparmor_restrict_unprivileged_userns || true
           sudo -n journalctl -k --since '10 minutes ago' --grep='apparmor|RTM_NEWADDR|userns' --no-pager || true
 
+      # Required inputs are acquired here, on the runner, outside the image build,
+      # every test process and every tool sandbox; the containers below stay
+      # --network none and receive them as read-only mounts.
+      # FOME_MC_STORE is under build/, which .gitignore and .dockerignore exclude.
+      - name: Check out the pinned fome-mc object store (public, read-only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: halbritt/fome-mc
+          ref: 1289f3149d2bcaa83a3b490a0bfbd11ed8a17589
+          path: build/external/fome-mc
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          lfs: false
+
+      - name: Verify the fome-mc store is the pinned commit
+        run: |
+          set -euo pipefail
+          head=$(git -C "$FOME_MC_STORE" rev-parse --verify 'HEAD^{commit}')
+          if [ "$head" != "$FOME_MC_COMMIT" ]; then
+            echo "::error::fome-mc HEAD $head is not the pinned $FOME_MC_COMMIT"
+            exit 1
+          fi
+          if git -C "$FOME_MC_STORE" config --local --get-regexp '^(http\..*\.extraheader|credential\.)' ; then
+            echo "::error::credentials persisted in the fome-mc checkout"
+            exit 1
+          fi
+          echo "fome-mc store at $head"
+
+      # Git refuses a repository owned by another user, also inside the tool
+      # sandbox where the environment is reset. As on a native host, the store
+      # belongs to the user that reads it: the image user, after verification.
+      - name: Hand the fome-mc store to the image user
+        run: |
+          set -euo pipefail
+          owner=$(docker run --rm --network none "$IMAGE" sh -c 'echo "$(id -u):$(id -g)"')
+          sudo -n chown -R "$owner" "$FOME_MC_STORE"
+          echo "fome-mc store owned by $owner"
+
+      - name: Acquire the J1 manufacturer drawing (pinned SHA-256)
+        run: |
+          set -euo pipefail
+          dir=$(mktemp -d "$RUNNER_TEMP/agent-ee-j1.XXXXXX")
+          drawing=$dir/te-776228-1.pdf
+          # A transport failure, an oversized body or a hash drift fails the job;
+          # never replace the expected hash with the downloaded one. The PDF stays
+          # outside the checkout and is never committed or uploaded. The distributor
+          # stalls requests carrying curl's default User-Agent (0 bytes until the
+          # time limit, reproduced 2026-10-19), so a browser-style one is sent; no
+          # cookie, token or other credential is.
+          curl --fail --silent --show-error --location --proto '=https' --retry 2 \
+            --max-time 90 --max-filesize 10000000 --user-agent 'Mozilla/5.0 (X11; Linux x86_64)' \
+            "$J1_DRAWING_URL" --output "$drawing"
+          printf '%s  %s\n' "$J1_DRAWING_SHA256" "$drawing" | sha256sum --check --strict
+          chmod 0444 "$drawing"
+          echo "J1_DRAWING=$drawing" >> "$GITHUB_ENV"
+
       # The required full gate. Every module runs, four at a time, in strict mode;
-      # any failure or skip fails the step. Tests whose required inputs are absent
-      # (the owner's fome-mc object store, the pod's retained external captures)
-      # fail and are named in the job summary as not executed; this step stays
-      # red until those inputs are provisioned (docs/container.md).
+      # any failure or skip fails the step. A test whose required input is absent
+      # fails and is named in the job summary as not executed (docs/container.md).
+      # The fome-mc store and the J1 drawing are mounted read-only.
+      # AGENT_EE_POD_INPUTS stays unset: the J1 tests use their committed fixtures.
       - name: Full test suite, strict toolchain mode, no skips
         run: |
           summary=$(mktemp -d "$RUNNER_TEMP/agent-ee-suite-XXXXXX")
           chmod 0777 "$summary"
+          store=$(realpath "$FOME_MC_STORE")
           status=0
           docker run --rm $SANDBOX_OPTS -e AGENT_EE_REQUIRE_TOOLCHAIN=1 -e PYTHONPATH=src -v "$summary:/summary" \
+            -v "$store:/opt/fome-mc:ro" -e AGENT_EE_FOME_MC_CHECKOUT=/opt/fome-mc \
+            -v "$J1_DRAWING:/opt/j1/te-776228-1.pdf:ro" -e AGENT_EE_J1_DRAWING=/opt/j1/te-776228-1.pdf \
             -w /opt/agent-ee "$IMAGE" python3 scripts/strict_suite.py --jobs 4 \
             --summary /summary/strict-suite.md || status=$?
           if [ -f "$summary/strict-suite.md" ]; then

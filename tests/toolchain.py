@@ -105,6 +105,26 @@ def fome_mc_store(repository, *revisions):
     return repository
 
 
+# The fome-mc commit project CI checks out (.github/workflows/ci.yml FOME_MC_COMMIT,
+# kept equal by tests/test_strict_suite.py). A test that reads the store as a
+# checkout reads it at this commit, never at whatever the store's HEAD is.
+FOME_MC_COMMIT = '1289f3149d2bcaa83a3b490a0bfbd11ed8a17589'
+
+
+def fome_mc_checkout(repository, destination, commit=FOME_MC_COMMIT):
+    """A scratch clone at destination whose detached HEAD is the pinned commit.
+
+    It shares the store's objects and has no working tree; the store itself is
+    only read. An absent store or commit is the fome-mc-store gap."""
+    fome_mc_store(repository, commit)
+    def git(*args):
+        return subprocess.run(['git', *args], capture_output=True, text=True, check=True).stdout.strip()
+    full = git('-C', str(repository), 'rev-parse', '--verify', commit + '^{commit}')
+    git('clone', '--quiet', '--shared', '--no-checkout', str(repository), str(destination))
+    git('-C', str(destination), 'update-ref', '--no-deref', 'HEAD', full)
+    return Path(destination)
+
+
 def toolchain_test(test):
     @functools.wraps(test)
     def gated(*args, **kwargs):

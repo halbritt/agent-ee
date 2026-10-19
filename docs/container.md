@@ -14,9 +14,9 @@ strict tests, no skips, documentation checks and both native RC gates. See the
 Hosted CI then failed on every push from 2026-10-18 (last green `18c2d97`); see
 [Hosted CI restore](#hosted-ci-restore-2026-10-18) for the causes and the
 corrections, which have been replayed locally in the image but not yet observed
-on a hosted runner. The required strict suite step stays red on hosted runners
-until the [required external inputs](#required-external-inputs) are provisioned
-there. Other architectures and container engines have not been demonstrated. The first
+on a hosted runner. The workflow now provisions the
+[required external inputs](#required-external-inputs) on the runner; a hosted run
+with them has not yet been observed. Other architectures and container engines have not been demonstrated. The first
 hosted run exposed an AppArmor user-namespace requirement, handled below.
 
 ## Pinned toolchain
@@ -192,16 +192,20 @@ repository. One job:
 1. Builds the image from the checkout.
 2. Runs `agent-ee doctor --checks-only` and exercises the production networkless
    executor before the suite. Failed setup also records host AppArmor diagnostics.
-3. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
+3. Provisions the [required external inputs](#required-external-inputs) on the
+   runner: a credential-free checkout of the public fome-mc repository at the
+   pinned commit, verified before use, and the J1 manufacturer drawing, checked
+   against its pinned SHA-256. A mismatch or failed download fails the job.
+4. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
    through [scripts/strict_suite.py](../scripts/strict_suite.py), four modules at
-   a time. This is the required full gate: it fails if any test fails, errors or
+   a time, with both inputs mounted read-only. This is the required full gate: it fails if any test fails, errors or
    is skipped, or if any module produces no valid result. Its job summary gives
    the module and test counts and names every test that did not execute because a
    [required external input](#required-external-inputs) is absent.
-4. Runs `scripts/check_docs.py` in the image. This step, the conflict-marker
-   check and step 5 also run after a failed suite step, so that their own results
+5. Runs `scripts/check_docs.py` in the image. This step, the conflict-marker
+   check and step 6 also run after a failed suite step, so that their own results
    are reported. Any failed step still fails the job.
-5. Runs checks-only reviews of the RC control and seeded fixtures directly in
+6. Runs checks-only reviews of the RC control and seeded fixtures directly in
    the image, with `--network none` and the runner's non-root UID, then
    `agent-ee verify` on each run. The same gate script the action uses judges
    each `result.json`, receives the verify exit status and appends its report to
@@ -228,28 +232,73 @@ A few tests read pinned objects from the owner's fome-mc Git object store
 reparse regressions over fome-mc design files that this repository cites but
 does not republish, and they use `fome_mc_store` in
 [tests/toolchain.py](../tests/toolchain.py). This is the `fome-mc-store`
-partition. The second partition, `pod-retained-inputs`, covers
-[test_pod_j1_courtyard.py](../tests/test_pod_j1_courtyard.py). Its J1 courtyard
-recipe is pinned to retained external captures that are not committed: the
-vendor drawing PDF and the geometry and registration records
-(`AGENT_EE_POD_INPUTS` and `AGENT_EE_POD_J1_GEOMETRY`, defaulting to the
-preparing host's retained directories).
+partition. Each test names the commit it reads (`df304f3`, `e7f5ae3`,
+`c582b29`). The two catalog tests that read the store as a checkout
+(`test_generate`, `test_rung1_qualified`) used to read whatever the store's HEAD
+was. They now read `FOME_MC_COMMIT` (`1289f31`) through `fome_mc_checkout`, a
+scratch clone that shares the store's objects. The store itself is only read.
 
-These tests are required. Without the input, a test skips by default. Under
-`AGENT_EE_REQUIRE_TOOLCHAIN=1` it always fails, with a message naming the
+[test_pod_j1_courtyard.py](../tests/test_pod_j1_courtyard.py) uses committed
+fixtures and needs only the public TE drawing of the AMPSEAL connector, which
+this repository does not republish. Point `AGENT_EE_J1_DRAWING` at the exact
+PDF, as described in the
+[J1 fixture README](../fixtures/telemetry-pod/j1/README.md). A missing or wrong
+drawing fails these tests in every mode. `AGENT_EE_POD_INPUTS` is an optional
+complete override for a host with the captured inputs; CI leaves it unset.
+
+These tests are required. Without the fome-mc store, a test skips by default.
+Under `AGENT_EE_REQUIRE_TOOLCHAIN=1` it always fails, with a message naming the
 partition; no environment setting turns it into a skip or a pass. The strict
 runner reports each such failure as a required test not executed, by partition,
 in an error annotation and in the job summary. The run still fails. A present
-store whose pinned file does not verify also fails.
+store whose pinned file does not verify also fails. The J1 tests fail directly,
+with their loader's message, and the strict runner reports them as ordinary
+errors. No test uses the second partition, `pod-retained-inputs`, now. It stays
+in the strict runner's list.
 
-The image has no fome-mc store, and the pod captures are not in the repository,
-so the strict suite step fails on hosted runners. Fetching the owner's fome-mc
-repository in the workflow waits for an owner decision on using fome-mc design
-material in hosted CI, even though that repository is public. The retained pod
-captures include a vendor PDF, which this repository does not republish. Host
-gates run with `AGENT_EE_FOME_MC_CHECKOUT` set and the retained captures present,
-so these tests execute there. A run with any of them not executed does not
-satisfy the required full gate.
+Project CI provisions both inputs on the runner, outside the image build, the
+test processes and every tool sandbox. The owner's delegate authorized this
+on 2026-10-19.
+
+- **fome-mc store.** `actions/checkout` fetches the public repository
+  `halbritt/fome-mc` at `1289f3149d2bcaa83a3b490a0bfbd11ed8a17589`
+  (`FOME_MC_COMMIT`, equal to the constant in `tests/toolchain.py`), with full
+  history. It does not persist credentials or fetch submodules or LFS objects.
+  The checkout lives in `build/external/fome-mc`, which `.gitignore` and
+  `.dockerignore` exclude. The checkout action uses the job's read-only token
+  for the fetch only; it does not accept an empty token. A following step fails
+  the job unless `HEAD` is exactly the pinned commit and no credential is
+  configured in the checkout. Every commit the tests pin is an ancestor of
+  `1289f31`.
+- **J1 drawing.** A step downloads `https://www.farnell.com/cad/2916153.pdf`
+  with `curl --fail --proto '=https' --retry 2 --max-time 90 --max-filesize
+  10000000` into the runner's temporary directory, outside the checkout, and checks SHA-256
+  `14bd5c3bb2ca16bfcf01918b678eab1aa19df10001c17735dd1f11356a6e4fe8` (the
+  drawing hash in `j1-placement-exclusion.json`) with `sha256sum --check
+  --strict`. A transport error, an oversized body or any other hash fails the
+  job. The distributor stalls requests that carry curl's default User-Agent
+  (0 bytes until the time limit, reproduced 2026-10-19), so the step sends a
+  browser-style User-Agent and no other header or credential. The PDF is never
+  committed or uploaded.
+
+The strict suite container receives the store at `/opt/fome-mc` and the drawing
+at `/opt/j1/te-776228-1.pdf`, both read-only, with `AGENT_EE_FOME_MC_CHECKOUT`
+and `AGENT_EE_J1_DRAWING` set. It still runs `--network none`. After the
+`HEAD` check, a step changes the store's owner to the image user's UID and GID,
+read from the image. Git refuses a repository owned by another user, including
+inside the tool sandbox, whose environment is reset. A native host has the same
+arrangement: the user who reads the store owns it. No Git trust setting is
+overridden.
+Nothing from fome-mc or the drawing is copied into the image, the repository or
+an artifact. [test_strict_suite.py](../tests/test_strict_suite.py) checks that
+the workflow's pins equal the tests' pins and that the suite step mounts both
+inputs.
+
+Without the provisioning steps, the same image fails the strict gate, naming the
+fome-mc tests as not executed and reporting the J1 tests as errors. Hosts that
+run the full gate set `AGENT_EE_FOME_MC_CHECKOUT` and `AGENT_EE_J1_DRAWING`
+themselves. A run with any required test not executed does not satisfy the
+required full gate.
 
 ### Hosted CI restore (2026-10-18)
 
@@ -267,8 +316,9 @@ image with `AGENT_EE_FOME_MC_CHECKOUT` unset:
   `AGENT_EE_CODEX_BINARY`; fingerprinting and preflight remain real.
 - `test_pod_j1_courtyard` (added at `485ed56`, after the last analysed hosted
   run) read its retained captures from fixed host `/tmp` directories and failed
-  everywhere else. It now uses the `pod-retained-inputs` partition, with the
-  geometry root configurable.
+  everywhere else. agent-463's portability fix (`25a9737`) replaced them with
+  committed fixtures and the `AGENT_EE_J1_DRAWING` prerequisite above; 16c's
+  interim `pod-retained-inputs` guard for these tests was dropped in the merge.
 - `test_tree_hygiene` ran `git ls-files` in `/opt/agent-ee`, which has no `.git`
   because the build context excludes it. Without `.git` it now scans every file
   of the copied tree; a checkout whose Git fails still fails. The host-side

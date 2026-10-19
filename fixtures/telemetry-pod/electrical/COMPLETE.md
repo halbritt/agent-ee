@@ -27,9 +27,10 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src \
 ```
 
 Roots can point to relocated retained captures; every source byte is hash
-checked. `tests/test_pod_j1_courtyard.py` reads the same captures through
-`AGENT_EE_POD_INPUTS` and `AGENT_EE_POD_J1_GEOMETRY`; without them it fails strict runs as the
-`pod-retained-inputs` required input, including hosted CI ([container](../../../docs/container.md#required-external-inputs)). Keep whole acquisition/catalog batches and their recorded failures.
+checked. `tests/test_pod_j1_courtyard.py` reads committed J1 fixtures and the externally
+provisioned drawing named by `AGENT_EE_J1_DRAWING` ([J1 inputs](../j1/README.md),
+[container](../../../docs/container.md#required-external-inputs)); `AGENT_EE_POD_INPUTS` is an
+optional complete override. Keep whole acquisition/catalog batches and their recorded failures.
 Vendor PDFs, stock libraries and both CAN source instances remain external.
 The recipes and numerical metadata do not grant new redistribution rights.
 

@@ -17,10 +17,10 @@ from agent_ee import rung1_campaign as rc
 from agent_ee import rung1_qualified as q
 from agent_ee.storage import canonical, digest
 try:
-    from toolchain import fome_mc_store, require_kicad_route, require_toolchain
+    from toolchain import FOME_MC_COMMIT, fome_mc_checkout, require_kicad_route, require_toolchain
     from test_generate import HEADER, ROWS, git_catalog
 except ImportError:  # run as tests.test_rung1_qualified from the repository root
-    from tests.toolchain import fome_mc_store, require_kicad_route, require_toolchain
+    from tests.toolchain import FOME_MC_COMMIT, fome_mc_checkout, require_kicad_route, require_toolchain
     from tests.test_generate import HEADER, ROWS, git_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -145,15 +145,17 @@ class IntentAndLayoutTest(unittest.TestCase):
         self.assertEqual(policy['obstacles'], [])
         self.assertEqual(validate_declaration(q.placement_declaration())['helper'], 'agent-ee.placer/1')
 
-    def test_prep_against_fome_mc_head_passes_stage_two_and_records_header_schema(self):
-        fome_mc_store(g.CATALOG_CHECKOUT)
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-fome-head-') as tmp:
+    def test_prep_against_pinned_fome_mc_passes_stage_two_and_records_header_schema(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-fome-pinned-') as tmp:
+            # The pinned commit, not the store's moving HEAD (tests/toolchain.py FOME_MC_COMMIT).
+            checkout = fome_mc_checkout(g.CATALOG_CHECKOUT, Path(tmp) / 'fome-mc')
             rundir = Path(tmp) / 'run'
             rundir.mkdir()
-            prep = q.prepare(SPEC, rundir)
+            prep = q.prepare(SPEC, rundir, catalog_checkout=checkout)
             stage2_receipt = json.loads((rundir / 'prep/stages/2-parts/receipt.json').read_text())
             self.assertEqual(stage2_receipt['status'], 'ok')
             self.assertEqual(stage2_receipt['details']['catalog']['header_schema'], 'four_column')
+            self.assertEqual(stage2_receipt['details']['catalog']['checkout_head'], FOME_MC_COMMIT)
             self.assertEqual(stage2_receipt['details']['catalog']['columns'], g.CATALOG_COLUMNS_4)
             capture = q.catalog_attempt(prep, rundir / 'parts-catalog')
             self.assertEqual(capture['header_schema'], 'four_column')

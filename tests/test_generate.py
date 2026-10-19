@@ -18,9 +18,9 @@ from unittest import mock
 from agent_ee import generate as g
 from agent_ee.storage import digest
 try:
-    from toolchain import fome_mc_store
+    from toolchain import FOME_MC_COMMIT, fome_mc_checkout, fome_mc_store
 except ImportError:  # run as tests.test_generate from the repository root
-    from tests.toolchain import fome_mc_store
+    from tests.toolchain import FOME_MC_COMMIT, fome_mc_checkout, fome_mc_store
 try:
     from toolchain import require_kicad_route, require_toolchain
 except ImportError:  # run as tests.test_generate from the repository root
@@ -343,8 +343,10 @@ class PartsTest(unittest.TestCase):
                 stage = g.Stage(Path(tmp) / 'run', 2, 'parts')
                 stage.start()
                 state = {'params': g.parse_spec(SPEC.read_text())}
-                g.stage_parts(stage, state, {'catalog_checkout': g.CATALOG_CHECKOUT})
+                checkout = fome_mc_checkout(g.CATALOG_CHECKOUT, Path(tmp) / 'fome-mc')
+                g.stage_parts(stage, state, {'catalog_checkout': checkout})
                 self.assertEqual(stage.receipt['details']['catalog']['header_schema'], 'four_column')
+                self.assertEqual(stage.receipt['details']['catalog']['checkout_head'], FOME_MC_COMMIT)
                 self.assertEqual(stage.receipt['details']['catalog']['columns'], g.CATALOG_COLUMNS_4)
 
     def test_read_catalog_unknown_header_refused(self):

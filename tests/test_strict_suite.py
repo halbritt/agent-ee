@@ -201,6 +201,64 @@ class RequiredInputTests(unittest.TestCase):
                     toolchain.fome_mc_store(repo, commit, '0123456789abcdef0123456789abcdef01234567')
                 with self.assertRaisesRegex(AssertionError, f'not available at {Path(tmp) / "absent"}'):
                     toolchain.fome_mc_store(Path(tmp) / 'absent', commit)
+            (repo / 'owned.txt').write_text('moved on\n')
+            git('commit', '-q', '-am', 'later')
+            later = git('rev-parse', 'HEAD')
+            with self.env(AGENT_EE_REQUIRE_TOOLCHAIN='1'):
+                # The scratch checkout is at the pinned commit, not the store's moved HEAD.
+                checkout = toolchain.fome_mc_checkout(repo, Path(tmp) / 'pinned', commit[:12])
+                self.assertEqual(subprocess.run(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], env=env,
+                                                capture_output=True, text=True, check=True).stdout.strip(), commit)
+                self.assertEqual(git('rev-parse', 'HEAD'), later)
+                self.assertEqual(git('status', '--porcelain'), '')
+                with self.assertRaisesRegex(AssertionError, 'required input fome-mc-store missing'):
+                    toolchain.fome_mc_checkout(repo, Path(tmp) / 'absent-commit',
+                                               '0123456789abcdef0123456789abcdef01234567')
+                self.assertFalse((Path(tmp) / 'absent-commit').exists())
+
+
+class WorkflowInputTests(unittest.TestCase):
+    """Project CI provisions exactly the pinned required inputs the tests read."""
+    WORKFLOW = (ROOT / '.github/workflows/ci.yml').read_text()
+
+    def suite_step(self):
+        step = self.WORKFLOW.split('- name: Full test suite, strict toolchain mode, no skips', 1)[1]
+        return step.split('\n      - name: ', 1)[0]
+
+    def test_fome_mc_checkout_is_the_tests_pin_without_credentials(self):
+        checkout = self.WORKFLOW.split('- name: Check out the pinned fome-mc object store', 1)[1]
+        checkout = checkout.split('\n      - name: ', 1)[0]
+        for line in ('repository: halbritt/fome-mc', f'ref: {toolchain.FOME_MC_COMMIT}', 'fetch-depth: 0',
+                     'persist-credentials: false', 'submodules: false', 'path: build/external/fome-mc'):
+            self.assertIn('\n          ' + line + '\n', checkout)
+        self.assertNotIn('token', checkout)
+        self.assertIn(f'\n      FOME_MC_COMMIT: {toolchain.FOME_MC_COMMIT}\n', self.WORKFLOW)
+        self.assertIn('\n      FOME_MC_STORE: build/external/fome-mc\n', self.WORKFLOW)
+        self.assertIn('if [ "$head" != "$FOME_MC_COMMIT" ]; then', self.WORKFLOW)
+        # Verified first, then owned by the image user that reads it; no Git trust override.
+        self.assertLess(self.WORKFLOW.index('- name: Verify the fome-mc store is the pinned commit'),
+                        self.WORKFLOW.index('sudo -n chown -R "$owner" "$FOME_MC_STORE"'))
+        self.assertNotIn('safe.directory', self.WORKFLOW)
+        # build/ never enters the image build context or the Git tree.
+        self.assertIn('build', (ROOT / '.dockerignore').read_text().split())
+        self.assertIn('build/', (ROOT / '.gitignore').read_text().split())
+
+    def test_j1_drawing_hash_is_the_decision_source_hash(self):
+        import json
+        decision = json.loads((ROOT / 'fixtures/telemetry-pod/electrical/j1-placement-exclusion.json').read_text())
+        self.assertIn(f"\n      J1_DRAWING_SHA256: {decision['sources']['drawing']['sha256']}\n", self.WORKFLOW)
+        self.assertIn('| sha256sum --check --strict', self.WORKFLOW)
+        self.assertIn('--max-time 90 --max-filesize 10000000', self.WORKFLOW)
+
+    def test_strict_suite_mounts_both_inputs_read_only_and_no_pod_override(self):
+        step = self.suite_step()
+        for fragment in ('-v "$store:/opt/fome-mc:ro" -e AGENT_EE_FOME_MC_CHECKOUT=/opt/fome-mc',
+                         '-v "$J1_DRAWING:/opt/j1/te-776228-1.pdf:ro" -e AGENT_EE_J1_DRAWING=/opt/j1/te-776228-1.pdf',
+                         'scripts/strict_suite.py --jobs 4', '|| status=$?', 'exit "$status"'):
+            self.assertIn(fragment, step)
+        self.assertNotIn('AGENT_EE_POD_INPUTS=', self.WORKFLOW)
+        self.assertNotIn('AGENT_EE_DECLARED_GAPS', self.WORKFLOW)
+        self.assertNotIn('continue-on-error', self.WORKFLOW)
 
 
 if __name__ == '__main__':
