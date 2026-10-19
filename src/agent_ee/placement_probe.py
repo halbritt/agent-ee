@@ -2,14 +2,19 @@
 
 Run under the existing networkless tool sandbox. Separate from electrical and
 copper geometry adapters: unsupported curves/holes never become polygon hulls.
+Courtyard circles and arcs are bounded by exact inner and outer polygons within
+the declared courtyard_curves.ARC_TOLERANCE_NM (AGENTEE-212); outlines and
+rule areas still refuse every curve.
 """
 import argparse
+from fractions import Fraction
 import hashlib
 import json
 from pathlib import Path
 
+from . import courtyard_curves as curves
 from .geometry_probe import pad_attribute
-from .placement import qualified_polygons
+from .placement import area2, cross, intersection_area, qualified_polygons
 
 
 def vector_nm(point):
@@ -27,6 +32,12 @@ def primitive(shape):
                 'corner_radius_nm': int(shape.GetCornerRadius())}
     if kind == pcbnew.SHAPE_T_SEGMENT:
         return {**record, 'kind': 'segment', 'start': vector_nm(shape.GetStart()), 'end': vector_nm(shape.GetEnd())}
+    if kind == pcbnew.SHAPE_T_CIRCLE:
+        # Saved as centre and one point on the circle, so the squared radius is exact.
+        return {**record, 'kind': 'circle', 'center': vector_nm(shape.GetCenter()), 'end': vector_nm(shape.GetEnd())}
+    if kind == pcbnew.SHAPE_T_ARC:
+        return {**record, 'kind': 'arc', 'start': vector_nm(shape.GetStart()), 'mid': vector_nm(shape.GetArcMid()),
+                'end': vector_nm(shape.GetEnd())}
     if kind == pcbnew.SHAPE_T_RECT:
         return {**record, 'kind': 'polygon', 'points': [vector_nm(p) for p in shape.GetRectCorners()]}
     if kind == pcbnew.SHAPE_T_POLY:
@@ -37,44 +48,100 @@ def primitive(shape):
     return {**record, 'kind': 'unsupported', 'native_shape': int(kind)}
 
 
-def prove_contours(primitives, missing, unproven):
-    """Every primitive must belong to an exact-endpoint degree-two closed ring."""
+def prove_contours(primitives, missing, unproven, curves_allowed=False):
+    """Every primitive must belong to an exact-endpoint degree-two closed ring.
+
+    With ``curves_allowed`` (courtyards only), circles are whole contours and arcs
+    are ring edges; the record then carries outer ``polygons`` (a superset of the
+    curved region) and ``inner_polygons`` (a subset), both proven straight."""
     record = {'status': missing if not primitives else unproven, 'primitives': primitives}
-    if not primitives or any(p['kind'] not in ('segment', 'polygon') for p in primitives):
-        return record
-    polygons = [p['points'] for p in primitives if p['kind'] == 'polygon']
-    neighbours = {}
+    kinds = ('segment', 'polygon') + (('circle', 'arc') if curves_allowed else ())
+    if not primitives or any(p['kind'] not in kinds for p in primitives):
+        unsupported = sorted({p.get('native_shape', p['kind']) for p in primitives if p['kind'] not in kinds},
+                             key=str)
+        return {**record, 'reason': f'unsupported primitive {unsupported}'} if primitives else record
+    outer = [p['points'] for p in primitives if p['kind'] == 'polygon']
+    inner = [list(p) for p in outer]
+    try:
+        for p in primitives:
+            if p['kind'] == 'circle':
+                ring_out, ring_in = curves.circle(p['center'], p['end'])
+                outer.append(ring_out)
+                inner.append(ring_in)
+    except curves.CurveError as exc:
+        return {**record, 'reason': str(exc)}
+    edges = []
     segments = set()
     for p in primitives:
-        if p['kind'] != 'segment':
+        if p['kind'] not in ('segment', 'arc'):
             continue
         a, b = tuple(p['start']), tuple(p['end'])
-        edge = tuple(sorted((a, b)))
-        if a == b or edge in segments:
-            return record
-        segments.add(edge)
-        neighbours.setdefault(a, []).append(b)
-        neighbours.setdefault(b, []).append(a)
-    if any(len(adjacent) != 2 for adjacent in neighbours.values()):
+        if p['kind'] == 'segment':
+            edge = tuple(sorted((a, b)))
+            if a == b or edge in segments:
+                return record
+            segments.add(edge)
+            edges.append((a, b, None))
+            continue
+        try:
+            chains = curves.arc(p['start'], p['mid'], p['end'])
+        except curves.CurveError as exc:
+            return {**record, 'reason': str(exc)}
+        edges.append((a, b, (tuple(p['mid']), *chains)))
+    incident = {}
+    for index, (a, b, _) in enumerate(edges):
+        incident.setdefault(a, []).append(index)
+        incident.setdefault(b, []).append(index)
+    if any(len(adjacent) != 2 for adjacent in incident.values()):
         return record
-    remaining = set(neighbours)
+    remaining = set(incident)
     while remaining:
         start = min(remaining)
         ring, previous, current = [], None, start
-        while current not in ring:
-            ring.append(current)
-            adjacent = neighbours[current]
-            following = adjacent[0] if adjacent[0] != previous else adjacent[1]
-            previous, current = current, following
-        if current != start:
-            return record
-        remaining.difference_update(ring)
-        polygons.append([list(p) for p in ring])
+        while True:
+            index = next(i for i in incident[current] if i != previous)
+            a, b, curve = edges[index]
+            following = b if current == a else a
+            if curve is not None and current != a:
+                mid, outside, inside = curve
+                curve = (mid, outside[::-1], inside[::-1])
+            ring.append((current, following, curve))
+            remaining.discard(current)
+            previous, current = index, following
+            if current == start:
+                break
+        # Orientation from the ring through arc midpoints; an arc whose midpoint
+        # lies on the exterior side is convex, its outside chain bounds from outside.
+        sense = area2([q for u, _, c in ring for q in ((u,) if c is None else (u, c[0]))])
+        if sense == 0:
+            return {**record, 'reason': 'zero polygon area'}
+        ring_out, ring_in = [], []
+        for u, v, curve in ring:
+            ring_out.append(list(u))
+            ring_in.append(list(u))
+            if curve is None:
+                continue
+            mid, outside, inside = curve
+            convex = (sense > 0) == (cross(u, v, mid) < 0)
+            ring_out.extend(outside if convex else inside)
+            ring_in.extend(inside if convex else outside)
+        outer.append(ring_out)
+        inner.append(ring_in)
     try:
-        qualified_polygons({'status': 'proven', 'polygons': polygons})
+        qualified_polygons({'status': 'proven', 'polygons': outer})
+        if inner != outer:
+            within = qualified_polygons({'status': 'proven', 'polygons': inner})
+            bounds = qualified_polygons({'status': 'proven', 'polygons': outer})
+            if any(intersection_area(i, o) != Fraction(area2(i), 2) for i, o in zip(within, bounds)):
+                raise ValueError('inner bound not inside outer bound')
     except ValueError as exc:
         return {**record, 'reason': str(exc)}
-    return {**record, 'status': 'proven', 'polygons': polygons}
+    proven = {**record, 'status': 'proven', 'polygons': outer}
+    if inner != outer:
+        proven.update(inner_polygons=inner, approximation={
+            'tolerance_nm': curves.ARC_TOLERANCE_NM, 'polygons': 'outer bound (superset of the curved region)',
+            'inner_polygons': 'inner bound (subset of the curved region)'})
+    return proven
 
 
 def rule_area(zone, owner):
@@ -112,7 +179,7 @@ def extract(board_path):
         for side, layer in (('F', pcbnew.F_CrtYd), ('B', pcbnew.B_CrtYd)):
             shapes = [primitive(s) for s in graphics if s.GetLayer() == layer]
             if shapes:
-                courtyards[side] = prove_contours(shapes, 'courtyard_missing', 'courtyard_unproven')
+                courtyards[side] = prove_contours(shapes, 'courtyard_missing', 'courtyard_unproven', True)
         pads = []
         for pad in fp.Pads():
             pads.append({'uuid': pad.m_Uuid.AsString(), 'number': pad.GetNumber(), 'net': pad.GetNetname(),

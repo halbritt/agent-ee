@@ -882,7 +882,12 @@ comparison; it does not grade placement or relax field value, layer or visibilit
 The [owned-zone write scope](placement-adapter.md#placement-write-scope)
 (AGENTEE-178) admits rigid owner movement and refuses independent zone edits.
 The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned
-footprint-forbidding polygons as exclusions for peer courtyards. These proposal
+footprint-forbidding polygons as exclusions for peer courtyards.
+AGENTEE-212 adds `placement-groups/1` (declared group regions and anchor
+distances) and an optional `envelope` on `outline-containment/1` that grades
+envelope-declared fixed-courtyard overhangs. Curved courtyards are judged on
+exact outer and inner bounds: pass on the outer, defect only on the inner
+([curved courtyards](placement.md#circular-and-arc-courtyards-agentee-212)). These proposal
 rules do not change native DRC grading or the registered keepout predicate's
 unknown boundary for footprint-owned areas.
 A `defect` carries `details.gate_findings`, one identity per proved defect: the

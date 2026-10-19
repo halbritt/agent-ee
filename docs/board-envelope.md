@@ -49,7 +49,7 @@ separates facts read from the saved board from owned assumptions.
 | `fab_profile` | `null` (none selected yet) or `{name, sha256}` naming a captured profile |
 | `mounting_holes` | `{id, at, drill_mm, plated}` plus optional nonnegative `tolerance_mm` (default 0); `id` selects the board reference and the whole hole must lie inside the outline |
 | `keepouts` | `{id, polygon, layers, forbid}`: a simple polygon contained in the closed outline; alternatively replace `polygon` with `antenna: {reference, facts_check}` for the legacy ESP32-S3-WROOM-1 derivation, now explicitly unresolved. Stackup copper layer names and a unique subset of `footprints`, `tracks`, `vias`, `pads`, `copper_pours` |
-| `fixed_footprints` | `{reference, side, edge, position_mm, inset_mm, rotation_deg, insertion, tolerance_mm}` |
+| `fixed_footprints` | `{reference, side, edge, position_mm, inset_mm, rotation_deg, insertion, tolerance_mm}` plus optional `courtyard_overhangs`: a nonempty list of `{edge, max_mm}`, one per distinct axis-aligned outline edge, with positive `max_mm`. It is the only way a fixed courtyard may leave the outline: by at most `max_mm` across that edge, and into the corner between two adjacent declared edges ([AGENTEE-212](placer.md#real-pod-residuals-agentee-212)). The derived fixed-footprint obligation states it, and `outline-containment/1` with `envelope` grades it |
 
 Version 2 changes `stackup` to `{nominal_thickness_mm,
 physical_thickness_mm, layers}` and requires `source` on each layer, in the

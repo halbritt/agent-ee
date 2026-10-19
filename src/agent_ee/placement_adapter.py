@@ -186,6 +186,16 @@ def envelope_references(record):
                   {h['id'] for h in record['mounting_holes']})
 
 
+def envelope_overhangs(record):
+    """Fixed-courtyard overhang allowances an envelope declares (AGENTEE-212).
+
+    Each is bound to one reference and its declared outline edges, each with a
+    maximum distance, and cites the envelope bytes; the packer accepts no other
+    overhang."""
+    from .placement_predicates import envelope_overhangs as declared
+    return declared(record)
+
+
 def envelope_fixed(manifest, inputs, mutable_inputs):
     """Fixed references of every captured envelope that a placement check consumes.
 
@@ -206,6 +216,9 @@ def envelope_fixed(manifest, inputs, mutable_inputs):
         record = validate(path.read_bytes())
         found[rel] = {'path': rel, 'sha256': manifest['files'][rel], 'envelope_id': record['envelope_id'],
                       'references': envelope_references(record)}
+        overhangs = envelope_overhangs(record)
+        if overhangs:
+            found[rel]['overhangs'] = overhangs
     return [found[rel] for rel in sorted(found)]
 
 
@@ -273,6 +286,13 @@ def binding(declaration, manifest, inputs, mutable_inputs):
     board = inputs / bound['board']
     if board.is_symlink() or not board.is_file() or digest(board) != manifest['files'][bound['board']]:
         raise ValueError('captured placement board changed')
+    if 'fixed_overhangs' in policy:
+        raise ValueError('fixed_overhangs come only from a captured envelope, never from the packing policy')
+    overhangs = sorted((o for e in envelopes for o in e.get('overhangs', [])), key=lambda o: o['reference'])
+    if len({o['reference'] for o in overhangs}) != len(overhangs):
+        raise ValueError('several envelopes declare a courtyard overhang for the same reference')
+    if overhangs:
+        policy['fixed_overhangs'] = overhangs
     refs = sorted(set(policy['fixed_refs']) | {r for e in envelopes for r in e['references']})
     protected, protected_refs = protected_footprints(board.read_bytes(), bound['fixed_footprints'], refs)
     record = {'schema': BINDING_SCHEMA, 'declaration_sha256': identity(validate_declaration(declaration)),

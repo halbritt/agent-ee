@@ -5,12 +5,20 @@ for parts it places. Fixed courtyards and declared obstacles are exact polygons
 that keep the gap (AGENTEE-179). Full polygons and the independent placement
 judge validate the proposed plan. A bounded search failure is unknown, never a
 proved design defect.
+
+AGENTEE-212: curved courtyards reserve their outer bound and prove
+infeasibility only with their inner bound; a fixed courtyard may leave the
+outline only inside its envelope-bound overhang band; declared groups (target
+regions, anchor distances) are enforced and graded; any part without a
+qualified mounting-side courtyard is refused by name.
 """
 import copy
 from decimal import Decimal
 from fractions import Fraction
 
-from .placement import area2, cross, edges, intersection_area, judge, qualified_polygons, validate_capture
+from . import placement_groups
+from .placement import (area2, courtyard_bounds, cross, edges, intersection_area, judge, overhang_bands,
+                        qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
 from .symbol_library import LibraryError, nanometres
 
@@ -36,7 +44,9 @@ def transform(fp, position, rotation):
         x, y = rotate([p[0]-origin[0], p[1]-origin[1]], turns)
         return [x+position[0], y+position[1]]
     for courtyard in placed['courtyards'].values():
-        courtyard['polygons'] = [[move(p) for p in poly] for poly in courtyard['polygons']]
+        for key in ('polygons', 'inner_polygons'):
+            if key in courtyard:
+                courtyard[key] = [[move(p) for p in poly] for poly in courtyard[key]]
     for keepout in placed.get('packing_keepouts', []):
         keepout['polygons'] = [[move(p) for p in poly] for poly in keepout['polygons']]
     for pad in placed['pads']:
@@ -89,6 +99,12 @@ def _validate_policy(policy, refs):
         if obstacle.get('side') not in ('F', 'B'):
             raise ValueError('obstacle side required')
         qualified_polygons({'status': 'proven', 'polygons': obstacle['polygons']})
+    overhangs = policy.get('fixed_overhangs', [])
+    if not isinstance(overhangs, list) or any(not isinstance(o, dict) or o.get('reference') not in refs
+                                              for o in overhangs):
+        raise ValueError('fixed_overhangs must declare known references')
+    if 'groups' in policy:
+        placement_groups.validate(policy['groups'], refs)
 
 
 def _qualified(capture):
@@ -101,13 +117,24 @@ def _qualified(capture):
     if any(fp['pads'] for fp in capture['footprints']) and (
             not isinstance(version, str) or version.split('.')[0] != PAD_SHAPE_PCBNEW_MAJOR):
         raise ValueError(f'native pad shape enum not qualified for pcbnew {version!r}')
+    # Fixed or movable, a part without a qualified courtyard is refused by name;
+    # no courtyard is invented from pads, silkscreen or a bounding box.
+    missing = sorted(fp['ref'] for fp in capture['footprints'] if fp['side'] not in fp['courtyards'])
+    if missing:
+        raise ValueError(f"mounting-side courtyard missing: {', '.join(missing)}")
     for fp in capture['footprints']:
         if fp['rotation_deg'] % 90:
             raise ValueError('initial footprint rotations must be quarter turns')
-        if fp['side'] not in fp['courtyards']:
-            raise ValueError('mounting-side courtyard missing')
-        for courtyard in fp['courtyards'].values():
-            courtyard['polygons'] = qualified_polygons(courtyard)
+        for side, courtyard in sorted(fp['courtyards'].items()):
+            try:
+                outer, inner = courtyard_bounds(courtyard)
+            except ValueError as exc:
+                reason = courtyard.get('reason') if isinstance(courtyard, dict) else None
+                raise ValueError(f"{fp['ref']} {side} courtyard not qualified: {exc}" +
+                                 (f' ({reason})' if reason else '')) from None
+            courtyard['polygons'] = outer
+            if inner is not outer:
+                courtyard['inner_polygons'] = inner
         for pad in fp['pads']:
             if not isinstance(pad, dict):
                 raise ValueError('pad record must be an object')
@@ -214,10 +241,12 @@ def _exact(side, polygons):
     return entry
 
 
-def _fits(candidate, outline, margin_nm=0):
+def _fits(candidate, outline, margin_nm=0, band=()):
+    # A band is a declared overhang across outline edges; its regions share no area with the board.
     for courtyard in candidate['courtyards'].values():
         for p in courtyard['polygons']:
-            if intersection_area(p, outline) != Fraction(abs(area2(p)), 2):
+            inside = intersection_area(p, outline) + sum(intersection_area(p, r) for r in band)
+            if inside != Fraction(abs(area2(p)), 2):
                 return False
             if margin_nm > 0 and min(segment_distance2(a, b, c, d)
                                      for a, b in edges(p) for c, d in edges(outline)) < margin_nm * margin_nm:
@@ -225,7 +254,7 @@ def _fits(candidate, outline, margin_nm=0):
     return True
 
 
-def _candidate_positions(fp, rotation, outline, reserved, gap, margin_nm=0):
+def _candidate_positions(fp, rotation, outline, reserved, gap, margin_nm=0, targets=()):
     at_origin = transform(fp, [0, 0], rotation)
     bounds = list(boxes(at_origin).values())
     bounds = [(min(b[0] for b in bounds), min(b[1] for b in bounds),
@@ -242,6 +271,10 @@ def _candidate_positions(fp, rotation, outline, reserved, gap, margin_nm=0):
         for _, (a0, b0, a1, b1) in reserved:
             xs.update((a0-gap-x1, a1+gap-x0, a0-x0, a1-x1))
             ys.update((b0-gap-y1, b1+gap-y0, b0-y0, b1-y1))
+        # Declared group region vertices and anchor points align candidates as outline vertices do.
+        for p in targets:
+            xs.update((p[0]-x0, p[0]-x1, p[0]))
+            ys.update((p[1]-y0, p[1]-y1, p[1]))
     for x in sorted(xs):
         for y in sorted(ys):
             yield x, y
@@ -277,11 +310,19 @@ def _fraction(value):
     return [value.numerator, value.denominator]
 
 
-def _area_impossibility(capture, outline):
+def _inner(courtyard):
+    return courtyard.get('inner_polygons', courtyard['polygons'])
+
+
+def _area_impossibility(capture, outline, bands):
+    # Inner bounds only: an outer curve bound overstates area. A fixed part with a
+    # declared overhang counts only its area on the board; every other courtyard,
+    # fixed or movable, must lie wholly inside the outline.
     board_area = Fraction(abs(area2(outline)), 2)
     for side in ('F', 'B'):
-        area = sum(Fraction(abs(area2(p)), 2) for fp in capture['footprints']
-                   for p in fp['courtyards'].get(side, {}).get('polygons', []))
+        area = sum(intersection_area(p, outline) if fp['ref'] in bands else Fraction(abs(area2(p)), 2)
+                   for fp in capture['footprints'] if side in fp['courtyards']
+                   for p in _inner(fp['courtyards'][side]))
         if area > board_area:
             return {'kind': 'courtyard_area', 'side': side, 'board_area_nm2': _fraction(board_area),
                     'required_courtyard_area_nm2': _fraction(area)}
@@ -313,13 +354,16 @@ def _extent(points):
     return {'min_width_squared_nm2': width, 'diameter_squared_nm2': Fraction(diameter)}
 
 
-def _part_impossibility(capture, outline):
+def _part_impossibility(capture, outline, bands):
     # Every courtyard of a part, on either side, must lie inside the one outline,
     # whatever rigid motion is chosen; this proof is not limited to quarter turns.
+    # A fixed part with a declared overhang need not fit the outline.
     board = _extent(outline)
     for fp in sorted(capture['footprints'], key=lambda f: f['ref']):
+        if fp['ref'] in bands:
+            continue
         part = _extent([p for courtyard in fp['courtyards'].values()
-                        for poly in courtyard['polygons'] for p in poly])
+                        for poly in _inner(courtyard) for p in poly])
         for measure in ('min_width_squared_nm2', 'diameter_squared_nm2'):
             if part[measure] > board[measure]:
                 return {'kind': measure.removesuffix('_squared_nm2'), 'ref': fp['ref'],
@@ -328,17 +372,32 @@ def _part_impossibility(capture, outline):
     return None
 
 
-def _initial_reservations(capture, policy, outline, obstacles):
+def _fixed_refs(capture, policy):
+    return set(policy['fixed_refs']) | {f['ref'] for f in capture['footprints'] if f.get('locked')}
+
+
+def _initial_reservations(capture, policy, outline, obstacles, bands, groups):
     """Fixed parts and declared obstacles become exact polygon obstacles, never boxes."""
-    fixed = set(policy['fixed_refs']) | {f['ref'] for f in capture['footprints'] if f.get('locked')}
+    fixed = _fixed_refs(capture, policy)
     placed = [copy.deepcopy(f) for f in capture['footprints'] if f['ref'] in fixed]
     exact = [_exact(o['side'], qualified_polygons({'status': 'proven', 'polygons': o['polygons']}))
              for o in policy['obstacles']]
     for i, fp in enumerate(placed):
         # Fixed footprints (such as edge-mounted connectors) are exempt from min_courtyard_edge_mm.
-        if not _fits(fp, outline) or _near(fp, exact, policy['gap_nm']) or _keepout_blocked(fp, placed[:i], obstacles):
+        # Only an envelope-bound overhang band lets a fixed courtyard leave the outline.
+        if (not _fits(fp, outline, 0, bands.get(fp['ref'], ())) or _near(fp, exact, policy['gap_nm'])
+                or _keepout_blocked(fp, placed[:i], obstacles)):
             raise ValueError(f"fixed placement {fp['ref']} conflicts with outline, obstacle, keepout or reserved gap")
         exact.extend(_exact(side, c['polygons']) for side, c in sorted(fp['courtyards'].items()))
+    positions = {fp['ref']: fp['position_nm'] for fp in placed}
+    for fp in placed:
+        group = groups.get(fp['ref'])
+        if group is None:
+            continue
+        if 'anchor' in group and placement_groups.anchor_point(group, positions) is None:
+            raise ValueError(f"fixed placement {fp['ref']} in group {group['id']} needs a fixed anchor")
+        if not placement_groups.admits(fp, group, positions):
+            raise ValueError(f"fixed placement {fp['ref']} violates declared group {group['id']}")
     return fixed, placed, exact
 
 
@@ -348,43 +407,60 @@ def pack(capture, policy):
     validate_capture(capture)
     _validate_policy(policy, {f['ref'] for f in capture['footprints']})
     margin_nm = _edge_margin_nm(policy)
+    groups = placement_groups.validate(policy['groups']) if 'groups' in policy else []
+    members = placement_groups.membership(groups)
     try:
         outline = _qualified(capture)
         obstacles = _keepouts(capture)
+        bands = overhang_bands(policy.get('fixed_overhangs', []), outline)
     except ValueError as exc:
         return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, str(exc), margin_nm)
-    proof = _area_impossibility(capture, outline)
+    fixed = _fixed_refs(capture, policy)
+    loose = sorted(set(bands) - fixed)
+    if loose:
+        raise ValueError(f"courtyard overhang declared for movable reference {', '.join(loose)}")
+    proof = _area_impossibility(capture, outline, bands)
     if proof:
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['side']} courtyard area exceeds board area", margin_nm)
         return {**failure, 'proof': proof}
-    proof = _part_impossibility(capture, outline)
+    proof = _part_impossibility(capture, outline, bands)
     if proof:
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['ref']} courtyard {proof['kind'].replace('_', ' ')} exceeds the board's", margin_nm)
         return {**failure, 'proof': proof}
     try:
-        fixed, placed, exact = _initial_reservations(capture, policy, outline, obstacles)
+        fixed, placed, exact = _initial_reservations(capture, policy, outline, obstacles, bands, members)
     except ValueError as exc:
         return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc), margin_nm)
     priorities = {ref: i for i, ref in enumerate(policy['priority_refs'])}
+    # A movable group anchor is placed before every member (anchors are never anchored members).
+    leaders = {g['anchor']['reference'] for g in groups if 'reference' in g.get('anchor', {})}
     queue = sorted((fp for fp in capture['footprints'] if fp['ref'] not in fixed),
-                   key=lambda f: (priorities.get(f['ref'], len(priorities)), -len(f['pads']), f['ref']))
+                   key=lambda f: (f['ref'] not in leaders, priorities.get(f['ref'], len(priorities)),
+                                  -len(f['pads']), f['ref']))
+    positions = {fp['ref']: fp['position_nm'] for fp in placed}
     steps = 0
     reserved = []
     for fp in queue:
         best = None
         anchors = reserved + [(o['side'], o['box']) for o in exact]
         anchors += _keepout_boxes(obstacles + [area for f in placed for area in f.get('packing_keepouts', [])])
+        group = members.get(fp['ref'])
+        targets = [] if group is None else [p for poly in group.get('region', {}).get('polygons', []) for p in poly]
+        if group is not None and 'anchor' in group:
+            targets.append(placement_groups.anchor_point(group, positions))
         for rotation in (0, 90, 180, 270):
-            for position in _candidate_positions(fp, rotation, outline, anchors, policy['gap_nm'], margin_nm):
+            for position in _candidate_positions(fp, rotation, outline, anchors, policy['gap_nm'], margin_nm,
+                                                 targets):
                 if steps == policy['step_budget']:
                     return _failure(capture, policy, 'packing_budget_exhausted', 'unknown', steps,
                                     'deterministic candidate budget exhausted', margin_nm)
                 steps += 1
                 proposed = transform(fp, position, rotation)
                 if (_blocked(proposed, reserved, policy['gap_nm']) or not _fits(proposed, outline, margin_nm) or
-                        _near(proposed, exact, policy['gap_nm']) or _keepout_blocked(proposed, placed, obstacles)):
+                        _near(proposed, exact, policy['gap_nm']) or _keepout_blocked(proposed, placed, obstacles) or
+                        (group is not None and not placement_groups.admits(proposed, group, positions))):
                     continue
                 key = (_wire_cost(proposed, placed, policy['ground_nets']), *position, rotation)
                 if best is None or key < best[0]:
@@ -393,14 +469,20 @@ def pack(capture, policy):
             return _failure(capture, policy, 'packing_search_exhausted', 'unknown', steps,
                             'no candidate in the finite greedy search; infeasibility unproved', margin_nm)
         placed.append(best[1])
+        positions[fp['ref']] = best[1]['position_nm']
         reserved.extend(boxes(best[1]).items())
     proposed_capture = {**capture, 'footprints': placed}
-    judgment = judge(proposed_capture)
+    judgment = judge(proposed_capture, overhangs=policy.get('fixed_overhangs'))
     judgment['basis'] = 'transformed-proposal-not-native'
     if judgment['verdict'] != 'pass':
         return _failure(capture, policy, 'judge_rejected', 'unknown', steps,
                         'independent full-polygon judge rejected complete proposal', margin_nm)
-    return {'schema': 'agent-ee.packing-plan/1', 'board_sha256': capture['board_sha256'],
+    grading = placement_groups.grade(proposed_capture, groups) if groups else None
+    if grading is not None and grading['status'] != 'pass':
+        return _failure(capture, policy, 'judge_rejected', 'unknown', steps,
+                        'declared placement groups not satisfied by the complete proposal', margin_nm)
+    extra = {} if grading is None else {'group_grading': grading}
+    return {**extra, 'schema': 'agent-ee.packing-plan/1', 'board_sha256': capture['board_sha256'],
             'status': 'planned', 'outcome': 'info', 'authority': 'standalone-unsealed-plan',
             'steps_used': steps, 'step_budget': policy['step_budget'],
             'min_courtyard_edge_mm': _margin_mm(margin_nm),

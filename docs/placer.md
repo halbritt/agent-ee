@@ -4,7 +4,8 @@
 [placement probe](placement.md). The policy is captured input, using schema
 `agent-ee.packing-policy/1` and explicit `step_budget`, `gap_nm`, `fixed_refs`,
 `priority_refs`, `ground_nets`, and `obstacles`, plus optional
-`min_courtyard_edge_mm` (default `0.0`). Obstacles declare `side` and
+`min_courtyard_edge_mm` (default `0.0`), envelope-bound `fixed_overhangs` and
+declared `groups` ([AGENTEE-212](#real-pod-residuals-agentee-212)). Obstacles declare `side` and
 closed straight `polygons` in integer nanometres. Locked footprints are fixed
 even when absent from `fixed_refs`; interface-owned fixed references must be
 supplied by the coordinator from captured owner intent. When
@@ -119,6 +120,90 @@ A second run takes the radio's antenna zone only from the explicit
 fixed parts and holes are exempt by reference, but they remain exact
 obstacles. No fastener head, standoff or IMU isolation distance is declared,
 so none is reserved.
+
+### Real-pod residuals (AGENTEE-212)
+
+The released native-v2 pod seed exposed five gaps. Each is closed without a
+global exemption, a clipped zone or an invented courtyard. The seed has 112
+footprints, a 108-component XML export, six circular probe courtyards, outboard
+U1/J2 courtyards, and J1 and H1..H4 without courtyards.
+
+**Missing courtyards are refused by name.** A fixed or movable part without a
+mounting-side courtyard gives `unsupported_geometry`, `outcome=unknown`, with
+every such reference listed. On the seed the reason is
+`mounting-side courtyard missing: H1, H2, H3, H4, J1`. An unqualified
+courtyard is named with its side, status and native reason, for example
+`TP1 F courtyard not qualified: courtyard_unproven (...)`. Nothing is derived
+from pads, silkscreen or a bounding box. J1's nominal flange
+projection (60.8 x 32.1 mm, parenthesized reference dimensions) is not a
+qualified courtyard. It must arrive as reviewed CAD, never from the placer.
+
+**Circular courtyards.** The probe bounds circles and arcs exactly within a
+declared 5 um tolerance ([placement](placement.md#circular-and-arc-courtyards-agentee-212)).
+The packer reserves and checks the outer bound, which contains the circle. Its
+area, width and diameter proofs use the inner bound, so an approximation never
+proves infeasibility. The seed's six 1 mm-radius TP courtyards are now `proven`
+48-gon bounds.
+
+**Declared fixed-courtyard overhang.** `fixed_overhangs` lists envelope-bound
+declarations. Each names a `reference` and its `source` (envelope id, sha256 and
+pointer). It also lists `edges`, each with name, `start_nm`, `end_nm`,
+`outward` and `max_nm`. The placement adapter derives them only from a captured
+envelope's `fixed_footprints[].courtyard_overhangs`
+([board envelope](board-envelope.md)) through
+`placement_adapter.envelope_overhangs`. A captured packing policy that carries
+its own `fixed_overhangs` is refused, and two envelopes declaring the same
+reference are refused. A declared fixed courtyard may leave the outline only
+inside the swept band of each declared edge, plus the corner between two
+adjacent declared edges, and only up to each `max_nm`. Anything beyond is
+still `fixed_conflict`, naming the reference. An undeclared reference keeps
+full containment. A declaration for a movable part raises `ValueError`. An edge
+that is not a proven outline edge is `unsupported_geometry`. A declared
+reference counts only its on-board area in the area proof and takes no part in
+the width or diameter proofs. Every undeclared courtyard, fixed or movable,
+must lie wholly inside the outline. An undeclared outboard courtyard is
+therefore refused in one of two ways. If the area proof holds, the plan is
+`packing_infeasible` with a `courtyard_area` proof (a `defect`). Otherwise it
+is a `fixed_conflict` that names the reference.
+The plan judgment and the writer's saved-board judgment use the same
+declarations and list `declared_overhangs`. On the seed, U1 needs top and right
+allowances (and their corner), J2 the right edge and J1's nominal flange the
+bottom edge. These are geometry facts; the allowance values are owner/engineering
+inputs this item does not choose.
+
+**Board-only exclusion at scale.** The writer leaves a footprint out of the
+netlist inventory comparison only when native `IsBoardOnly` is set, none of its
+pads has a net and the export does not name it (AGENTEE-179). On the seed this
+admits 112 saved footprints against 108 XML components; without the rule the
+same inputs are refused. A hole whose board-only attribute is cleared, that has
+a net, or that the export names is refused.
+
+### Group and region input (AGENTEE-212)
+
+`groups` is a list of declared placement groups (`placement_groups`). Each has
+an `id` and `references`, and a reference belongs to at most one group. A group
+also has at least one constraint:
+
+- `region: {"polygons": [...]}`: straight, proven polygons in nanometres that
+  must contain every courtyard of each member;
+- `anchor: {"reference": REF}` or `anchor: {"point_nm": [x, y]}`, with
+  `max_distance_nm`: the largest Euclidean distance from the anchor to each
+  member's footprint origin. A point anchor expresses a target coordinate.
+
+Membership alone constrains nothing, so a group without a constraint is
+refused. An anchor reference must be a known non-member, and it must not be
+itself an anchored member, so there are no chains. The packer places movable
+anchors first. It adds region vertices and anchor points to its candidate
+alignments and admits only candidates whose outer courtyard bound satisfies
+the group. A fixed member must already satisfy its group, and its anchor must
+be fixed; otherwise the result is `fixed_conflict`. A region too small for its
+members is a bounded `packing_search_exhausted`, never a defect. A complete
+plan carries `group_grading`, from the same `placement_groups.grade` as the
+registered [`placement-groups/1`](placement.md#placement-check-kind) check, and
+must pass. The writer grades the saved board again and refuses to publish a
+proposal that fails. The pod proposal's 15 groups list membership only, with no
+coordinates or distances, so they do not validate as given. Regions and
+distances are physical design choices that a captured declaration must supply.
 
 ### Pad shapes (AGENTEE-109)
 

@@ -2,7 +2,9 @@
 
 Coordinates are integer nanometres. Exact rational clipping avoids epsilon-based
 passes at containment and overlap boundaries. Only simple, straight, closed
-polygons qualify; unsupported geometry remains explicitly unknown.
+polygons qualify; unsupported geometry remains explicitly unknown. A curved
+courtyard is judged through the probe's exact outer and inner straight bounds
+(AGENTEE-212): pass on the outer bound, defect only on the inner one.
 """
 from fractions import Fraction
 import math
@@ -67,7 +69,18 @@ def simple_polygon(raw):
     return points if area2(points) > 0 else list(reversed(points))
 
 
+def convex(points):
+    """True for a counter-clockwise polygon that turns left at every vertex.
+
+    Only meaningful for simple polygons: a self-winding star also turns left."""
+    return len(points) >= 3 and all(cross(points[i-2], points[i-1], p) > 0 for i, p in enumerate(points))
+
+
 def triangles(points):
+    if convex(points):
+        # A fan of a convex polygon; exact and linear, as for curve bounds.
+        yield from ([points[0], points[i], points[i+1]] for i in range(1, len(points)-1))
+        return
     remaining = list(points)
     while len(remaining) > 3:
         for i, b in enumerate(remaining):
@@ -102,6 +115,8 @@ def clipped_area(subject, clip):
 
 
 def intersection_area(left, right):
+    if convex(left) and convex(right):
+        return clipped_area(list(left), right)
     return sum(clipped_area(a, b) for a in triangles(left) for b in triangles(right))
 
 
@@ -120,8 +135,113 @@ def qualified_polygons(record):
     return polygons
 
 
-def _geometry(capture):
-    unknown, failures, courtyard_records = [], [], []
+# Largest curve approximation tolerance a courtyard bound may declare.
+MAX_CURVE_TOLERANCE_NM = 50000
+AXES = {'x+': (1, 0), 'x-': (-1, 0), 'y+': (0, 1), 'y-': (0, -1)}
+SHA256_HEX = set('0123456789abcdef')
+
+
+def courtyard_bounds(record):
+    """(outer, inner) qualified polygons of one courtyard record.
+
+    A straight courtyard is its own bound, returned as the same list. A curved one
+    (AGENTEE-212) carries ``inner_polygons`` and a declared tolerance: the outer
+    bound contains the true region and the inner bound lies within it, so a pass
+    is decided on the outer bound and a defect is proved only on the inner one."""
+    outer = qualified_polygons(record)
+    if 'inner_polygons' not in record:
+        return outer, outer
+    approximation = record.get('approximation')
+    tolerance = approximation.get('tolerance_nm') if isinstance(approximation, dict) else None
+    if type(tolerance) is not int or not 0 < tolerance <= MAX_CURVE_TOLERANCE_NM:
+        raise ValueError('curve bound without a declared approximation tolerance')
+    inner = qualified_polygons({'status': 'proven', 'polygons': record['inner_polygons']})
+    if len(inner) != len(outer):
+        raise ValueError('inner and outer curve bounds differ in contours')
+    return outer, inner
+
+
+def box(polygons):
+    return (min(p[0] for poly in polygons for p in poly), min(p[1] for poly in polygons for p in poly),
+            max(p[0] for poly in polygons for p in poly), max(p[1] for poly in polygons for p in poly))
+
+
+def boxes_meet(left, right):
+    """False when two polygon sets have disjoint or merely touching bounding boxes (zero overlap)."""
+    a, b = box(left), box(right)
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def _overhang_source(source):
+    if (not isinstance(source, dict) or set(source) != {'envelope_id', 'envelope_sha256', 'pointer'}
+            or any(not isinstance(v, str) or not v for v in source.values())
+            or len(source['envelope_sha256']) != 64 or not set(source['envelope_sha256']) <= SHA256_HEX):
+        raise ValueError('courtyard overhang must cite its envelope id, sha256 and pointer')
+
+
+def _overhang_edge(ref, edge, sides, outline):
+    if (not isinstance(edge, dict) or set(edge) != {'name', 'start_nm', 'end_nm', 'outward', 'max_nm'}
+            or edge['outward'] not in AXES or not isinstance(edge['name'], str) or not edge['name']):
+        raise ValueError(f'{ref}: overhang edge needs name, start_nm, end_nm, outward axis and max_nm')
+    ends = []
+    for point in (edge['start_nm'], edge['end_nm']):
+        if not isinstance(point, list) or len(point) != 2 or any(type(v) is not int for v in point):
+            raise ValueError(f'{ref}: overhang edge points must be integer nanometres')
+        ends.append(tuple(point))
+    distance = edge['max_nm']
+    if type(distance) is not int or distance <= 0:
+        raise ValueError(f'{ref}: overhang max_nm must be a positive integer')
+    (sx, sy), (ex, ey) = ends
+    ux, uy = AXES[edge['outward']]
+    if frozenset(ends) not in sides or (ex-sx)*ux + (ey-sy)*uy != 0:
+        raise ValueError(f"{ref}: overhang edge {edge['name']} is not a proven outline edge "
+                         'perpendicular to its outward axis')
+    return ends, (ux*distance, uy*distance)
+
+
+def overhang_bands(declarations, outline):
+    """Declared fixed-courtyard overhangs bound to an envelope: {reference: [region, ...]}.
+
+    Each declaration names a reference and one or more straight edges of the
+    proven outline, each with its outward axis and maximum distance in
+    nanometres. A band is an edge swept outward by its distance; where two
+    declared edges meet at a vertex, the rectangle beyond that corner spanned by
+    both distances is admitted too. The regions share no area with the board or
+    each other, so a courtyard may leave the outline only across declared edges
+    and only that far. Malformed declarations raise ValueError; nothing is
+    exempted by default."""
+    if not isinstance(declarations, list):
+        raise ValueError('courtyard overhangs must be a list')
+    vertices = [tuple(p) for p in outline]
+    sides = {frozenset((vertices[i-1], p)) for i, p in enumerate(vertices)}
+    bands = {}
+    for declaration in declarations:
+        if (not isinstance(declaration, dict) or set(declaration) != {'reference', 'edges', 'source'}
+                or not isinstance(declaration['reference'], str) or not declaration['reference']):
+            raise ValueError('courtyard overhang needs exactly reference, edges and source')
+        ref, declared = declaration['reference'], declaration['edges']
+        if ref in bands:
+            raise ValueError(f'{ref}: more than one courtyard overhang declared')
+        _overhang_source(declaration['source'])
+        if (not isinstance(declared, list) or not declared or
+                len({e.get('name') if isinstance(e, dict) else None for e in declared}) != len(declared)):
+            raise ValueError(f'{ref}: overhang edges must be a nonempty list of distinct edges')
+        swept = [_overhang_edge(ref, edge, sides, outline) for edge in declared]
+        regions = [[a, b, (b[0]+dx, b[1]+dy), (a[0]+dx, a[1]+dy)] for (a, b), (dx, dy) in swept]
+        for i, ((a, b), (dx, dy)) in enumerate(swept):
+            for (c, d), (fx, fy) in swept[i+1:]:
+                for v in {a, b} & {c, d}:
+                    regions.append([v, (v[0]+dx, v[1]+dy), (v[0]+dx+fx, v[1]+dy+fy), (v[0]+fx, v[1]+fy)])
+        regions = [simple_polygon(r) for r in regions]
+        if any(intersection_area(r, outline) for r in regions) or any(
+                intersection_area(r, q) for i, r in enumerate(regions) for q in regions[i+1:]):
+            raise ValueError(f'{ref}: declared overhang regions point into the board or overlap')
+        bands[ref] = regions
+    return bands
+
+
+def _geometry(capture, overhangs=None):
+    unknown, failures, courtyard_records, declared = [], [], [], []
     try:
         outline = qualified_polygons(capture.get('outline'))
         if len(outline) != 1:
@@ -129,6 +249,7 @@ def _geometry(capture):
     except ValueError as exc:
         outline = []
         unknown.append({'kind': 'outline', 'reason': str(exc)})
+    bands = overhang_bands(overhangs, outline[0]) if outline and overhangs is not None else {}
     for fp in sorted(capture['footprints'], key=lambda f: f['ref']):
         courtyards = fp.get('courtyards', {})
         if fp.get('side') not in courtyards:
@@ -137,25 +258,39 @@ def _geometry(capture):
             try:
                 if side not in ('F', 'B'):
                     raise ValueError('unsupported courtyard side')
-                polygons = qualified_polygons(record)
+                polygons, inner = courtyard_bounds(record)
             except ValueError as exc:
                 unknown.append({'kind': 'courtyard', 'ref': fp['ref'], 'side': side, 'reason': str(exc)})
                 continue
-            courtyard_records.append((fp['ref'], side, polygons))
+            courtyard_records.append((fp['ref'], side, polygons, inner))
             if outline:
-                outside = sum(Fraction(abs(area2(p)), 2)-intersection_area(p, outline[0]) for p in polygons)
+                band = bands.get(fp['ref'])
+                def beyond(contours):
+                    return sum(Fraction(abs(area2(p)), 2) - intersection_area(p, outline[0]) -
+                               sum(intersection_area(p, r) for r in band or ()) for p in contours)
+                outside = beyond(inner)
                 if outside > 0:
                     failures.append({'kind': 'outside_outline', 'ref': fp['ref'], 'side': side,
                                      'outside_area_mm2': float(outside / 10**12)})
-    for i, (ref, side, left) in enumerate(courtyard_records):
-        for other, other_side, right in courtyard_records[i+1:]:
-            if side != other_side or ref == other:
+                elif inner is not polygons and beyond(polygons) > 0:
+                    unknown.append({'kind': 'courtyard_approximation', 'ref': fp['ref'], 'side': side,
+                                    'reason': 'outside area lies only between the declared curve bounds'})
+                overhang = sum(intersection_area(p, r) for p in polygons for r in band or ())
+                if overhang > 0:
+                    declared.append({'ref': fp['ref'], 'side': side, 'overhang_area_mm2': float(overhang / 10**12)})
+    for i, (ref, side, left, left_inner) in enumerate(courtyard_records):
+        for other, other_side, right, right_inner in courtyard_records[i+1:]:
+            if side != other_side or ref == other or not boxes_meet(left, right):
                 continue
-            overlap = sum(intersection_area(a, b) for a in left for b in right)
+            overlap = sum(intersection_area(a, b) for a in left_inner for b in right_inner)
             if overlap > 0:
                 failures.append({'kind': 'courtyard_overlap', 'refs': [ref, other], 'side': side,
                                  'overlap_area_mm2': float(overlap / 10**12)})
-    return failures, unknown
+            elif (left_inner is not left or right_inner is not right) and any(
+                    intersection_area(a, b) for a in left for b in right):
+                unknown.append({'kind': 'courtyard_approximation', 'refs': [ref, other], 'side': side,
+                                'reason': 'overlap lies only between the declared curve bounds'})
+    return failures, unknown, declared
 
 
 def validate_capture(capture):
@@ -265,15 +400,17 @@ def _point_segment_distance(p, a, b):
     return math.dist(p, (a[0]+t*dx, a[1]+t*dy))
 
 
-def judge(capture, policy=None):
+def judge(capture, policy=None, overhangs=None):
     """Return geometric facts and advisory score; malformed envelopes raise ValueError.
 
     ``policy`` is a captured declaration, never inferred from reference prefixes
     or capacitor value text. Distances are footprint-centre Euclidean distances.
+    ``overhangs`` are envelope-bound fixed-courtyard overhang declarations
+    (``overhang_bands``); area inside a declared band is reported, not failed.
     This standalone record is not a sealed coordinator check finding.
     """
     validate_capture(capture)
-    failures, unknown = _geometry(capture)
+    failures, unknown, declared = _geometry(capture, overhangs)
     associations, advisories, score = _advisories(capture, policy)
     verdict = 'hard_fail' if failures else 'unknown' if unknown else 'pass'
     off_board = sorted({f['ref'] for f in failures if f['kind'] == 'outside_outline'})
@@ -281,4 +418,5 @@ def judge(capture, policy=None):
             'verdict': verdict, 'outcome': {'hard_fail': 'defect', 'unknown': 'unknown', 'pass': 'pass'}[verdict],
             'score': score, 'hard_failures': failures, 'off_board': off_board, 'unknown': unknown,
             'associations': associations, 'advisories': advisories, 'policy': policy,
-            'authority': 'standalone-unsealed'}
+            'authority': 'standalone-unsealed',
+            **({} if overhangs is None else {'declared_overhangs': declared, 'overhangs': overhangs})}

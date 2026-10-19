@@ -19,8 +19,9 @@ name references, side and intersection/outside area in square millimetres;
 
 A proven contour requires straight, closed, non-self-intersecting geometry.
 Segment endpoints must match exactly and have degree two. Rectangles and simple
-closed native polygons qualify. Curves, open/branching/duplicate edges, holes,
-multiple board contours, nested or touching courtyard contours are unsupported.
+closed native polygons qualify. Curves (except courtyard circles and arcs, below),
+open/branching/duplicate edges, holes, multiple board contours, nested or
+touching courtyard contours are unsupported.
 Missing Edge.Cuts is `outline_missing`; unsupported Edge.Cuts is
 `outline_unproven`. Missing or unproved courtyard coverage gives unknown for
 that part, including absence on the footprint's mounting side. A proved defect
@@ -59,6 +60,62 @@ geometry is written in the test; the 0402 pad offset and size are the generic
 values KiCad's stock 0402 footprint also uses. It is **not** the upstream Konnect fixture: that AGPL design
 file was not copied, so its exact numbers have not been reproduced.
 
+## Circular and arc courtyards (AGENTEE-212)
+
+A courtyard circle (`fp_circle`, saved as centre and one point on it) or arc
+(start, mid, end) is never asserted to be a polygon. `courtyard_curves` replaces
+it by two exact straight bounds, and the probe records them on a `proven`
+courtyard:
+
+- `polygons` is the outer bound. Every segment stays at or beyond the radius,
+  checked with exact rationals, so it contains the true courtyard.
+- `inner_polygons` is the inner bound. Every vertex lies on or inside the
+  circle, so it lies within the true courtyard.
+- `approximation.tolerance_nm` is the declared maximum distance between either
+  bound and the curve: `courtyard_curves.ARC_TOLERANCE_NM` = 5000 nm, the
+  0.005 mm arc error pcbnew itself allows (its `ARC_HIGH_DEF`). Each vertex is
+  checked against it. A record that declares more than 50000 nm is refused.
+
+Floating point only proposes vertices; the exact checks decide. A full circle
+uses a ring of at least 8 vertices, rounded up to a multiple of four; the 1 mm
+radius probe pads of the pod seed use 48. In a contour that mixes segments and
+arcs, the arc's midpoint shows which side is outside. For a convex arc the outer
+bound takes the outside chain; for a concave arc (a notch) it takes the inside
+chain. The inner bound takes the other chain, and it is checked to lie inside
+the outer bound. Collinear arcs, a radius not larger than twice the tolerance,
+and bounds that are not simple polygons stay `courtyard_unproven`, with a
+`reason`. The same applies to unsupported primitives, which are named by native
+shape. Rounded rectangles (`corner_radius`), and curves in Edge.Cuts or in rule
+areas, remain unsupported.
+
+Every consumer decides a pass on the outer bound and proves a defect only on
+the inner bound. The judge's overlap and containment, the predicates
+`edge-clearance/1` and `placement-groups/1`, and the packer's infeasibility
+proofs all follow this rule. A result that lies only between the two bounds
+(within 5 um) is `unknown` with kind `courtyard_approximation`; it is never a
+defect. `courtyard-overlap/1` and `footprint-keepout/1` keep native DRC as the
+defect authority: they cross-check against the inner bound, so a tolerance-band
+contact is not a helper disagreement. Straight courtyards are their own bounds,
+and their records and results are unchanged. Two convex polygons are clipped
+directly, and a convex polygon is fanned rather than ear-clipped, so the 48-gon
+bounds stay fast; the arithmetic is exact either way.
+
+## Declared fixed-courtyard overhang (AGENTEE-212)
+
+`placement.judge(facts, policy=None, overhangs=None)` takes envelope-bound
+declarations. Each names a `reference` and the `source` envelope id, hash and
+pointer. It also lists `edges`: each is a proven outline edge (`start_nm`,
+`end_nm`), its `outward` axis and `max_nm`. `placement.overhang_bands` sweeps
+each declared edge outward by its distance. Where two declared edges meet, it
+also admits the corner rectangle spanned by both distances. The real seed's U1
+needs that: it leaves the board across the top and the right edge.
+These regions must share no area with the board or with each other. Courtyard
+area inside them is listed under `declared_overhangs` and is not a failure. Area
+beyond them, or outside the board for an undeclared reference, is still
+`outside_outline`. An edge that is not on the proven outline, or an axis that
+points into the board, raises `ValueError`. Without `overhangs` the judgment is
+unchanged and has no `declared_overhangs` key.
+
 ## Placement check kind
 
 `placement` (AGENTEE-92) is a registered coordinator check. The coordinator
@@ -74,11 +131,12 @@ Every check names an earlier `drc` check in `drc_check`:
 | `criterion` | Extra parameters | Defect | Unknown |
 | --- | --- | --- | --- |
 | `courtyard-overlap/1` | none | a native `courtyards_overlap` item of any severity, cited with its footprint UUIDs and positions | footprint without a courtyard on its mounting side; native `malformed_courtyard`; the native check ignored by project settings; helper geometry finds an overlap the native report lacks |
-| `outline-containment/1` | none | positive courtyard area outside the single proven outline (the judge above) | missing, open, curved or multiple outlines; missing or unproved courtyard |
+| `outline-containment/1` | optional `envelope` | positive courtyard area outside the single proven outline (the judge above); with `envelope`, only area beyond that envelope's declared `courtyard_overhangs` | missing, open, curved or multiple outlines; missing or unproved courtyard; outside area only between curve bounds |
 | `edge-clearance/1` | `min_courtyard_edge_mm` | exact courtyard-to-Edge.Cuts distance below the minimum, or courtyard crossing/outside the outline | unproved outline or courtyard |
 | `footprint-keepout/1` | none | a native `items_not_allowed` item citing a footprint UUID | footprint-forbidding rule area with holes, arcs or several contours, or owned by a footprint; footprint without a qualified courtyard where such an area applies to its side; helper geometry intersects but native DRC is silent; native check ignored |
 | `connector-edge/1` | `envelope`, `reference` (required for several fixed footprints) | wrong side or rotation; origin farther than `tolerance_mm` from the declared anchor (names edge, measured inset and distance); facing contradicts a declared local mating axis | reference missing or duplicated; outline unproved or declared edge absent from it; facing undeterminable |
 | `ratsnest-mst/1` | optional `max_manhattan_mm`, `max_euclidean_mm` | proved total above a declared maximum | Euclidean interval straddles a maximum; no netted pads |
+| `placement-groups/1` | `groups` (captured `agent-ee.placement-groups/1`, or a packing policy with `groups`) | a member courtyard (inner bound) outside its group region (`outside_group_region`); a member origin farther than `max_distance_nm` from its anchor (`group_anchor_distance`) | member or anchor reference missing or duplicated; member without a qualified courtyard where a region applies; region boundary only between curve bounds |
 
 The prerequisite must be `execution=ok` with outcome `pass` or `defect` for the
 same candidate and board hash. A DRC defect is consumable evidence. It must
@@ -131,6 +189,23 @@ measured; no net is excluded by name. Without a declared maximum the outcome is
 `info` and the check has no acceptance predicate. Declared maxima appear as
 `details.margins` for the convergence reducer.
 
+`outline-containment/1` with `envelope` reads the same captured envelope bytes
+and grades each fixed footprint's declared `courtyard_overhangs`
+([declared overhang](#declared-fixed-courtyard-overhang-agentee-212)). The result
+lists `declared_overhangs` and binds the envelope id and hash. Like any consumed
+envelope, it must be the scope's declared envelope. Without `envelope` the
+criterion is unchanged: no overhang is allowed.
+
+`placement-groups/1` grades declared placement groups on the saved board
+([placer groups](placer.md#group-and-region-input-agentee-212)). `groups` names a
+captured `agent-ee.placement-groups/1` document (`schema` and `groups` only), or
+the captured packing policy whose `groups` the packer enforced. For each group
+member, the predicate checks every courtyard side against the group `region`;
+membership alone grades nothing. It also checks the origin distance from the
+`anchor` (exact squared integers; `measured` reports millimetres). A malformed
+or unconstrained declaration is `malformed`. Proved defects become gate
+findings with the member as entity.
+
 Optional advisory parameters never decide pass or defect. `policy` keeps the
 decoupling score described above. `routing_feedback` names a captured
 kicad-route `result.json` and the captured `reference_files` that kicad-route
@@ -162,6 +237,9 @@ the envelope capture gate described below.
 | Overlapping R/C courtyards cite native DRC | `test_placement_gates_native.NativePlacementGates.test_overlapping_rc_courtyards_defect_cites_the_native_item` checks a defect with C1/R1 UUIDs and the retained native report hash, then verifies the sealed witness |
 | Missing courtyard or unproved outline stays unknown | `test_placement_gates_native.NativePlacementGates.test_missing_courtyard_is_unknown_for_geometric_predicates` rejects a missing C1 courtyard as unknown; `test_placement_native.NativePlacementTest.test_saved_native_control_mutations_and_hash_binding` saves open, missing and curved outline variants and checks unknown results |
 | Moving the header names edge and distance | `test_placement_gates_native.NativePlacementGates.test_connector_edge_on_rc_header` saves a moved J1 and checks the declared `left` edge and 3 mm displacement |
+| Circular courtyards: overlap defect, clear pass | `test_placer_residuals.NativeResidualsTest.test_circular_courtyard_overlap_native_defect_and_clear_pass` saves two 1 mm `fp_circle` probe courtyards 1.5 mm apart (native `courtyards_overlap`, judge overlap, `courtyard-overlap/1` defect) and 2.05 mm apart (none of them) |
+| Declared overhang containment | `test_pod_placement.OverhangPodPlacementTests.test_declared_overhang_native` runs `outline-containment/1` with the scope envelope on a scaffolded board whose SMA stand-in overhangs the right edge as declared, and passes |
+| Group regions and anchors | `test_placer_residuals.NativeGroupCheckTest.test_registered_group_check_passes_and_names_defects` runs the registered `placement-groups/1` check on owned RC variants: pass, then a moved C1 gives `outside_group_region` and `group_anchor_distance` |
 | Same saved board gives identical ratsnest totals | `test_placement_gates_native.NativePlacementGates.test_ratsnest_byte_identical_oracle_and_declared_maxima` compares complete `ratsnest.json` bytes across captures and checks an independent Manhattan MST oracle and exact maximum boundaries |
 
 Run these modules on the native host, with the test helper directory on the
