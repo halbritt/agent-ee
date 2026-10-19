@@ -2853,6 +2853,29 @@
         "AE"
       ],
       "reviewed": "Original tests for AGENTEE-175. Includes an owned native global-label literal and mutations of the admitted captures, source-identity assertions and checks against native exports; no vendor text or library copied."
+    },
+    {
+      "paths": [
+        "src/agent_ee/block_composition.py",
+        "fixtures/fome-mc/pod-can/compose.py",
+        "tests/test_block_composition.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original selected-reference composition implementation, parent generator and regression controls. Uses existing shared native readers and S-expression helpers; emitted source symbol bodies are read from the separately admitted immutable captures, never embedded in this code."
+    },
+    {
+      "paths": [
+        "fixtures/fome-mc/pod-can/composition.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE",
+        "T16"
+      ],
+      "note": "Explicit owner-scoped source reference and native net mappings for the existing admitted CAN capture. Preserves source custody and licence boundaries; no source-review qualification or new publication grant."
     }
   ]
 }

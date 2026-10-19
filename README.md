@@ -396,9 +396,10 @@ fresh checks; upstream parity, functional behavior, heater geometry and independ
 review remain pending, and both source blocks remain unverified.
 
 The [pod CAN reference sets](docs/pod-can.md) capture the wideband TJA1051T/3
-and PSU protection/termination parts together. A native audit checks their CAN
-joins and separate 5 V/3.3 V supplies. Standalone extraction, eight native ports
-and multi-instance provenance remain pending; this is an unverified capture.
+and PSU protection/termination parts together. An explicit captured composition
+plan emits only four parts with eight native ports and provenance covering both
+source instances. S remains grounded and VIO maps explicitly to +3V3. The source
+capture stays unverified; source reviews and actual pod qualification remain open.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes

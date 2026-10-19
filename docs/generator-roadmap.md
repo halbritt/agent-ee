@@ -36,9 +36,10 @@ evidence (AGENTEE-96 to AGENTEE-99).
 | 4 | FOME-MC itself | 15 sheets, 4 layers, about 492 footprints | AGENTEE-99 |
 
 The telemetry pod's [CAN reference-set capture](pod-can.md) binds the two
-pinned source instances and exercises a native interface audit. It does not yet
-produce a standalone block: selected-reference extraction, its eight native
-ports and provenance covering both source instances remain missing.
+pinned source instances. A selected-reference composition plan now emits four
+parts with eight native ports and grades provenance against both source exports.
+AGENTEE-176 may consume that producer; source-review qualification and actual pod
+acceptance remain separate open gates.
 
 What must exist at each stage before a rung can run:
 

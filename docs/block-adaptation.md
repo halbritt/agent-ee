@@ -142,3 +142,29 @@ These controls use original synthetic fixtures, native KiCad exports and ngspice
 They establish software contracts and the ideal RC response, not physical-board
 qualification or third-party publication rights. No owner evidence store is
 created.
+
+## Explicit selected-reference composition (AGENTEE-175)
+
+A scope/3 request may additionally name a captured `composition` JSON path.
+Its `agent-ee.block-composition/1` plan covers every captured source instance,
+selected reference and native net; it declares source hashes, source-to-delivered
+reference/net maps, eight or other explicitly enumerated ports, and reasons.
+The [pod CAN plan](../fixtures/fome-mc/pod-can/composition.json) is the supported
+native example. The plan must be captured as an immutable input. The existing
+instance/1 record adds `composition: {path, sha256, emitted_sha256}`; absent means
+legacy copying. No source block schema or verified status changes.
+
+Only flat, explicit single-unit symbols with resolved visible pins are supported.
+The source-native net map is injective within each source; cross-source joins are
+explicit shared destinations. Port aliases must name a canonical port, and their
+board bindings must agree. Distinct canonical ports cannot share a board binding.
+Source netlist-only requirements remain informational and must map to fresh native
+netlist checks. All other source requirements still need fresh acceptance checks.
+The producer performs native source exports before writing the child; subsequent
+baseline failures restore the empty child and remove the new instance record.
+
+Composition provenance grades selected physical/pin differences as defects and
+retains both source exports. Legacy single-source adaptations continue reporting
+component/net changes as information. Multi-source requests without an explicit
+plan remain unsupported. Neither mode supplies source qualification or electrical
+suitability from provenance alone.
