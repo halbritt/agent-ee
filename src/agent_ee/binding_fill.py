@@ -2,9 +2,9 @@
 import argparse
 import copy
 import hashlib
-import re
 from pathlib import Path
 
+from .datasheet_selection import datasheet
 from .catalog import exact_fields, nonempty, strict_json
 from .connectivity_ir import _read_json, resolve_intent
 from .part_decisions import validate_deviation
@@ -12,29 +12,6 @@ from .parts_manifest import (load_manifest, qualify_manifest, read_captured, _re
                              _path)
 from .storage import canonical, identity, write_json
 from .probe_features import is_probe, declarations, marker, PROPERTY
-
-
-def datasheet(root, part):
-    from .datasheet_facts import load_acquisition
-    sheet = part['datasheet']
-    if sheet['status'] != 'captured':
-        raise ValueError('binding fill requires captured datasheet: ' + part['id'])
-    provenance = sheet['provenance']
-    match = re.fullmatch(r'parts\[id=(.+)\]', provenance['locator'])
-    if match is None:
-        raise ValueError('datasheet provenance must select a captured acquisition id')
-    blob = {k: provenance[k] for k in ('path', 'sha256')}
-    document = strict_json(_read_blob(root, blob))
-    bindings = sorted([{'id': r['id'], 'datasheet_url': r['url']} for r in document['parts']],
-                      key=lambda r: r['id'])
-    acquired, paths = load_acquisition(root, blob, bindings)
-    record = acquired.get(match[1])
-    if record is None or record['missing']:
-        raise ValueError('part datasheet acquisition missing')
-    artifact = {'path': (Path(blob['path']).parent / record['path']).as_posix(), 'sha256': record['sha256']}
-    if artifact != sheet['artifact']:
-        raise ValueError('part datasheet artifact differs from acquisition')
-    return record, {p: hashlib.sha256(read_captured(root, p)).hexdigest() for p in paths}
 
 
 def assembly_declarations(root, document):

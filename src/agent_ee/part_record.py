@@ -64,16 +64,25 @@ def _sources(root, catalog, datasheets, datasheet_id, lcsc):
     return observation, artifact, dict(sorted(dependencies.items()))
 
 
-def prepare_record(root, lcsc, catalog, datasheets, datasheet_id):
+def prepare_record(root, lcsc, catalog, datasheets, datasheet_id, *, source_selection=None):
     """Derive one record from existing captures; performs no acquisition or writes."""
+    from .datasheet_selection import acquisition_source, check_binding
+    if source_selection is not None:
+        datasheets, datasheet_id = acquisition_source(root, source_selection, context=lcsc)
     observation, artifact, _ = _sources(root, catalog, datasheets, datasheet_id, lcsc)
-    return dict(schema=SCHEMA, **observation, catalog=dict(catalog),
-                datasheets=dict(datasheets), datasheet_id=datasheet_id, artifact=artifact)
+    record = dict(schema=SCHEMA, **observation, catalog=dict(catalog),
+                  datasheets=dict(datasheets), datasheet_id=datasheet_id, artifact=artifact)
+    if source_selection is not None:
+        check_binding(root, source_selection, artifact,
+                      {**datasheets, 'locator': 'parts[id=' + datasheet_id + ']'}, context=lcsc)
+        record['source_selection'] = dict(source_selection)
+    return record
 
 
 def qualify_record(document, root):
     """Replay identity and return the complete immutable capture dependency map."""
-    exact_fields(document, ('schema', *FIELDS, 'catalog', 'datasheets', 'datasheet_id', 'artifact'))
+    fields = ('schema', *FIELDS, 'catalog', 'datasheets', 'datasheet_id', 'artifact')
+    exact_fields(document, (*fields, 'source_selection') if 'source_selection' in document else fields)
     if type(document['stock']) is not int or document['stock'] < 0:
         raise ValueError('part-record stock must be a historical nonnegative integer')
     if document['schema'] != SCHEMA:
@@ -82,8 +91,14 @@ def qualify_record(document, root):
                                                   document['datasheet_id'], document['lcsc'])
     if any(document[k] != observation[k] for k in FIELDS) or document['artifact'] != artifact:
         raise ValueError('part record differs from captured identity')
-    return dependencies
-
+    if 'source_selection' in document:
+        from .datasheet_selection import check_binding
+        ref = document['source_selection']
+        check_binding(root, ref, artifact,
+                      {**document['datasheets'], 'locator': 'parts[id=' + document['datasheet_id'] + ']'},
+                      context=document['lcsc'])
+        dependencies[ref['path']] = ref['sha256']
+    return dict(sorted(dependencies.items()))
 
 
 def _external_sources(root, identity_source, datasheets, datasheet_id, deviation_ref):
@@ -170,13 +185,20 @@ def main(argv=None):
     parser.add_argument('--catalog', required=True)
     parser.add_argument('--datasheets', required=True)
     parser.add_argument('--datasheet-id', required=True)
+    parser.add_argument('--source-selection', help='captured source-selection JSON relative to root')
+    parser.add_argument('--source-part-key', help='exact key in source selection (defaults to LCSC)')
     parser.add_argument('--out', required=True, help='new canonical path relative to root')
     args = parser.parse_args(argv)
     from .parts_manifest import _path, read_captured
     try:
         def blob(path):
             return dict(path=path, sha256=hashlib.sha256(read_captured(args.root, path)).hexdigest())
-        record = prepare_record(args.root, args.lcsc, blob(args.catalog), blob(args.datasheets), args.datasheet_id)
+        ref = ({**blob(args.source_selection), 'part_key': args.source_part_key or args.lcsc}
+               if args.source_selection else None)
+        if args.source_part_key and ref is None:
+            raise ValueError('--source-part-key requires --source-selection')
+        record = prepare_record(args.root, args.lcsc, blob(args.catalog), blob(args.datasheets),
+                                args.datasheet_id, source_selection=ref)
         output = Path(args.root) / _path(args.out)
         # Resolve the parent by the same no-link policy as captured inputs.
         if output.parent.resolve(strict=True) != output.parent.absolute():

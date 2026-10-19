@@ -1265,3 +1265,12 @@ its artifacts. Those inputs are immutable verification dependencies. The check
 always produces information or unknown coverage, never a pass or defect, and
 cannot satisfy scope/3 acceptance requirements. Failed rendering retains missing
 visual evidence without preventing review; malformed critique remains unusable.
+
+## Captured datasheet source selection
+
+`parts_subset` qualification also enforces any declared
+[datasheet source selection](binding-fill.md#captured-datasheet-source-selection)
+(AGENTEE-237). Rejected PDF hashes, missing or ambiguous selections, and bindings
+that differ from the selected acquisition refuse before native projection.
+The selection and acquisition dependencies are immutable; no new check kind or
+predicate is introduced. Source selection alone does not verify electrical ratings.

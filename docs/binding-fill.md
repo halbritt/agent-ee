@@ -146,3 +146,68 @@ still required. No network, model, purchase or upload operation is performed.
 ## Required copper probes
 
 A declared [bare copper probe feature](probe-features.md) receives only the source-derived `AGENT_EE_Probe` identity property. Binding fill requires its exact reference allocation and intent net and refuses supplier, DNP and assembly claims. Missing declared probes are refused by reference.
+
+## Captured datasheet source selection
+
+AGENTEE-237 adds an explicit source-decision input to the part-record producer.
+A captured datasheet may include `source_selection: {path, sha256, part_key}`.
+The named `agent-ee.part-record/1` may carry the same reference; its manifest
+entry must retain it. Generic and external manifest entries can also declare a
+selection. The referenced file has this strict shape (hash placeholders must be
+replaced with actual SHA-256 values):
+
+```json
+{
+  "schema": "agent-ee.datasheet-source-selection/1",
+  "parts": {
+    "C123": {
+      "selected": [{
+        "id": "general-family",
+        "sha256": "<selected PDF hash>",
+        "provenance": {
+          "path": "datasheets/manifest.json",
+          "sha256": "<acquisition manifest hash>",
+          "locator": "parts[id=catalog-alias]"
+        }
+      }],
+      "rejected": [{
+        "id": "supplier-wrong-family",
+        "sha256": "<rejected PDF hash>",
+        "reason": "Wrong family for the purchased part"
+      }]
+    }
+  }
+}
+```
+
+Each entry has exactly `selected` and `rejected` lists. Every source has a
+nonempty ID and PDF hash; selected sources have acquisition provenance and
+rejected sources have a reason. Exactly one selected source is required for the
+declared `part_key`. Missing keys, zero or multiple selections, duplicate IDs,
+and selected/rejected conflicts refuse. Rejection takes precedence by PDF hash,
+including when a source is acquired under another ID or URL. The manifest
+qualifier reports the logical part, purchase ID, all allocated sheet/reference
+instances and the rejected source IDs/hashes. It replays the selected acquisition
+using the same helper as binding fill and freezes its dependencies and the
+selection file in the immutable closure.
+
+`prepare_record(..., source_selection=ref)` uses the selected provenance in
+place of the supplier-default datasheet arguments. The CLI accepts
+`--source-selection sources.json --source-part-key C123` (the key defaults to
+`--lcsc`). Put the resulting record's `artifact`, `datasheets`, `datasheet_id`
+and `source_selection` into the manifest's datasheet declaration. Existing
+qualification rejects a stale manifest instead of silently rebinding it.
+Binding fill then projects the selected acquisition URL/hash into `Datasheet`
+and `PARAM_Datasheet`.
+
+The acquisition ID is a source alias, never a replacement purchase ID. Stock,
+MPN, manufacturer and supplier package still come from the purchased LCSC row;
+CAD and instance allocation still come from the manifest's qualified assignments.
+For example, purchasing C694521 can use a catalog acquired as C76706 without
+changing the purchased part. Selecting a family catalog does not prove exact
+ordering-suffix correspondence or authorize ratings: later exact-ordering
+evidence needs its own captured source binding and qualification.
+
+Legacy captures without a declared selection retain their custody-only behavior.
+Callers migrating a reviewed source decision must supply this reference; the
+producer does not infer selection from prose or arbitrary supplier filenames.

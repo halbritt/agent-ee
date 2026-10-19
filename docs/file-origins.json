@@ -3303,6 +3303,16 @@
         "AE"
       ],
       "note": "AGENTEE-75 original dated JLCPCB via profile, numeric/name-only records and host-capture metadata. Source URLs, raw response hashes, UTC timestamps and interpretation limits are recorded in source-capture.json and docs/fab-profile.md. No vendor prose, graphics, code, designs or libraries are copied; raw HTML remains worker scratch only. Existing source-bound compiler and original routing fixtures supply the mechanism."
+    },
+    {
+      "paths": [
+        "tests/test_datasheet_selection.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-237 synthetic source-selection tests and authored PDF envelope bytes. No vendor PDF, third-party design or library content is copied; identifiers and URLs are synthetic test labels."
     }
   ]
 }
