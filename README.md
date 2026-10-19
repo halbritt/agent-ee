@@ -163,7 +163,10 @@ exceeds the decoder's recursion limit, remain recorded as unresolved. These tool
 prepare inputs, but do not choose executable acceptance checks or generate a
 verified circuit. The [requirement-record compiler](docs/requirement-scope.md)
 turns an owner-authored record of spec quotes and check mappings into a scope/2;
-it refuses unmapped requirements and uncited spec sentences. [Spec capture](docs/spec-record.md)
+it refuses unmapped requirements and uncited spec sentences. Its
+[spec-record map path](docs/requirement-map.md) compiles scope/3 with registered
+check predicates, explicit limitations and bench obligations; prose needs
+explicit paragraph or byte-span accounting. [Spec capture](docs/spec-record.md)
 turns a markdown spec's table rows, bullets and numbered items into requirement
 IDs with byte-exact locators, verbatim cell text and per-item hashes; it refuses
 malformed tables and colliding IDs with the byte offset and infers no values.

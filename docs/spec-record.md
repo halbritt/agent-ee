@@ -7,7 +7,7 @@ prose entry with the same kind of locator. The capture uses only the Python
 standard library. It makes no model calls, needs no network and infers nothing:
 cell text is kept verbatim (markdown escapes included), IDs come from the codes
 you declare and the spec's own first cells and item numbers, and typed values
-are left to the requirement map (AGENTEE-159).
+are left to the [requirement map](requirement-map.md) (AGENTEE-159).
 
 It is the stage-1 input for boards that are not the rung-1 RC low-pass. The
 rung-1 RC spec keeps the existing regex path in `generate.parse_spec`; this
