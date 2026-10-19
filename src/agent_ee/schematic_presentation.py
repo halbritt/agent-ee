@@ -151,8 +151,9 @@ class _Cluster:
         for pin, net, x, y, away in item['labels']:
             self.points.add((x, y))
             if net is not None:
-                self.label_boxes.setdefault((x, y), []).append(len(self.boxes))
-                self.boxes.append(label_box(x, y, away, net['name'], is_global(net)))
+                box = label_box(x, y, away, net['name'], is_global(net))
+                self.label_boxes.setdefault((x, y), []).append(box)
+                self.boxes.append(box)
                 self._target(item, pin['number'], net, (x, y), away, False)
 
     def _target(self, item, number, net, point, away, owned):
@@ -220,8 +221,9 @@ class _Cluster:
                 self.parts.append((placed, anchor))
                 self.boxes += [*shapes, far_label, wire_box]
                 self.points |= {end, far}
-                if target['end'] != target['point']:
+                if target['end'] != target['point'] and not target.get('fanned'):
                     self.junctions.append((target['end'], (item['comp']['id'], item['unit'], a)))
+                target.pop('fanned', None)
                 self.segments.append((target['end'], end))
                 self.wires.append((target['end'], end, (item['comp']['id'], item['unit'], a)))
                 target['end'] = end
@@ -262,8 +264,8 @@ class _Cluster:
 
     def _fan_run(self, item, away, y, run):
         saved = list(self.boxes), set(self.points), list(self.segments), list(self.wires)
-        drop = {i for x, _, _, fixed in run if not fixed for i in self.label_boxes[x, y]}
-        self.boxes = [b for i, b in enumerate(self.boxes) if i not in drop]
+        drop = {id(b) for x, _, _, fixed in run if not fixed for b in self.label_boxes[x, y]}
+        self.boxes = [b for b in self.boxes if id(b) not in drop]
         uy = -1 if away == 90 else 1
         moved = {}
         for i, (x, number, net, fixed) in enumerate(run):
@@ -280,6 +282,9 @@ class _Cluster:
             self.segments.append(((x, y), end))
             self.wires.append(((x, y), end, ('fan', item['comp']['id'], item['unit'], number)))
             moved[number] = (*end, side)
+        for target in self.targets:
+            if not target['satellite'] and target['key'][2] in moved:
+                target['end'], target['fanned'] = moved[target['key'][2]][:2], True
         self.moved.update(moved)
 
     def box(self):
@@ -491,7 +496,6 @@ def arrange(units, resolved, global_nets, spec, namespace):
     relabel = {}
     for group in groups:
         anchors = [u for u in group['items'] if roles[u['comp']['id'], u['unit']] == 'anchor']
-        clusters = [_Cluster(u, i, is_global) for i, u in enumerate(anchors)]
         satellites = [u for u in group['items'] if roles[u['comp']['id'], u['unit']] == 'satellite']
         loose = [u for u in group['items'] if roles[u['comp']['id'], u['unit']] == 'marker']
 
@@ -501,48 +505,72 @@ def arrange(units, resolved, global_nets, spec, namespace):
         def preference(net, target, cluster):
             return (rail(net), target['satellite'], fanout[net['id']], cluster.index, _natural(target['key'][2]))
 
-        def hint(unit):
-            """Lowest anchor pin first: downward combs then never cross a later pin's wire."""
-            best = min(((preference(net, t, c), -t['point'][1], t['point'][0]) for number, net in unit['nets'].items()
-                        for c in clusters for t in c.targets if t['net']['id'] == net['id']), default=None)
-            return best[1:] if best else (0, 0)
+        def sweep(order):
+            clusters = [_Cluster(u, i, is_global) for i, u in enumerate(anchors)]
+            relabel_local = {}
 
-        satellites.sort(key=lambda u: (level.get((u['comp']['id'], u['unit']), MAX_STEPS), inline(u), *hint(u),
-                                       _natural_ref(u['comp']['reference'])))
+            def hint(unit):
+                """Lowest anchor pin first: downward combs then never cross a later pin's wire."""
+                best = min(((preference(net, t, c), -t['point'][1], t['point'][0]) for number, net in unit['nets'].items()
+                            for c in clusters for t in c.targets if t['net']['id'] == net['id']), default=None)
+                return best[1:] if best else (0, 0)
 
-        def place(sat, fallback):
-            options = []
-            for number, net in sat['nets'].items():
-                other = next(n for n in sat['nets'] if n != number)
+            ordered = order if order is not None else sorted(
+                satellites,
+                key=lambda u: (level.get((u['comp']['id'], u['unit']), MAX_STEPS), inline(u), *hint(u),
+                               _natural_ref(u['comp']['reference'])),
+            )
+
+            def place(sat, fallback):
+                options = []
+                for number, net in sat['nets'].items():
+                    other = next(n for n in sat['nets'] if n != number)
+                    for cluster in clusters:
+                        for target in cluster.targets:
+                            if target['net']['id'] == net['id'] and not target['closed']:
+                                options.append((preference(net, target, cluster), cluster, target, number, other))
+                options.sort(key=lambda o: o[0])
+                # The fallback: a shunt part that cannot hang beside any target
+                # continues an anchor pin in line instead.
+                tries = [(o, False) for o in options]
+                if fallback and not inline(sat):
+                    tries += [(o, True) for o in options if not o[2]['satellite']]
+                for (_, cluster, target, a, b), last in tries:
+                    if cluster.attach(sat, target, a, b, inline(sat), last):
+                        relabel_local.setdefault((sat['comp']['id'], sat['unit']), {})[a] = None
+                        return True
+                return False
+
+            # Sweep until nothing more fits: a part whose target is the far pin of
+            # a later part gets another try; the in-line fallback comes last,
+            # after dense edge runs have fanned out to staggered columns.
+            pending, fallback = list(ordered), False
+            while pending:
+                remaining = [sat for sat in pending if not place(sat, fallback)]
+                if len(remaining) == len(pending):
+                    if fallback:
+                        break
+                    for cluster in clusters:
+                        cluster.fan()
+                    fallback = True
+                pending = remaining
+            if not fallback:
                 for cluster in clusters:
-                    for target in cluster.targets:
-                        if target['net']['id'] == net['id'] and not target['closed']:
-                            options.append((preference(net, target, cluster), cluster, target, number, other))
-            options.sort(key=lambda o: o[0])
-            # The fallback: a shunt part that cannot hang beside any target
-            # continues an anchor pin in line instead.
-            tries = [(o, False) for o in options]
-            if fallback and not inline(sat):
-                tries += [(o, True) for o in options if not o[2]['satellite']]
-            for (_, cluster, target, a, b), last in tries:
-                if cluster.attach(sat, target, a, b, inline(sat), last):
-                    relabel.setdefault((sat['comp']['id'], sat['unit']), {})[a] = None
-                    return True
-            return False
+                    cluster.fan()
+            return ordered, clusters, relabel_local, pending
 
-        # Sweep until nothing more fits: a part whose target is the far pin of
-        # a later part gets another try; the in-line fallback comes last.
-        pending, fallback = satellites, False
+        order, clusters, relabel_local, pending = sweep(None)
         while pending:
-            remaining = [sat for sat in pending if not place(sat, fallback)]
-            if len(remaining) == len(pending):
-                if fallback:
-                    break
-                fallback = True
-            pending = remaining
+            unplaced = {(u['comp']['id'], u['unit']) for u in pending}
+            nxt = [*pending, *(u for u in order if (u['comp']['id'], u['unit']) not in unplaced)]
+            _, nxt_clusters, nxt_relabel, nxt_pending = sweep(nxt)
+            if len(nxt_pending) >= len(pending):
+                break
+            order, clusters, relabel_local, pending = nxt, nxt_clusters, nxt_relabel, nxt_pending
+        for key, mapping in relabel_local.items():
+            relabel.setdefault(key, {}).update(mapping)
         loose += pending
         for cluster in clusters:
-            cluster.fan()
             if cluster.moved:
                 item = cluster.parts[0][0]
                 relabel.setdefault((item['comp']['id'], item['unit']), {}).update(cluster.moved)

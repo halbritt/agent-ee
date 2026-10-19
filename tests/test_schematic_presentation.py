@@ -255,6 +255,127 @@ class PresentationRulesTests(unittest.TestCase):
             self.assertEqual(all(y == target['point'][1] for _, y in ends), along, last)
             self.assertEqual(target['closed'], along)
 
+    def test_multiple_edge_runs_on_one_anchor_fan_without_stale_label_boxes(self):
+        # AGENTEE-255: two fanned runs on one anchor must remove each run's own
+        # vertical label boxes rather than shifting indices into earlier fan boxes.
+        g = presentation.GRID
+        pins = [
+            ({'number': '1'}, {'id': 'n1', 'name': 'A1'}, -5 * g, -3 * g, 90),
+            ({'number': '2'}, {'id': 'n2', 'name': 'A2'}, -4 * g, -3 * g, 90),
+            ({'number': '3'}, {'id': 'n3', 'name': 'B1'}, 4 * g, -3 * g, 90),
+            ({'number': '4'}, {'id': 'n4', 'name': 'B2'}, 5 * g, -3 * g, 90),
+        ]
+        item = {
+            'comp': {'id': 'u_multi', 'reference': 'U9'},
+            'unit': 1,
+            'shapes': [(-6 * g, -2 * g, 6 * g, 2 * g)],
+            'labels': pins,
+        }
+        cluster = presentation._Cluster(item, 0, lambda net: False)
+        vertical_boxes = [presentation.label_box(x, y, away, net['name'], False) for _, net, x, y, away in pins]
+        for box in vertical_boxes:
+            self.assertIn(box, cluster.boxes)
+        cluster.fan()
+        self.assertEqual(set(cluster.moved), {'1', '2', '3', '4'})
+        for box in vertical_boxes:
+            self.assertNotIn(box, cluster.boxes, 'every original vertical label box was removed')
+        for number, (_, net, _, _, _) in zip(('1', '2', '3', '4'), pins):
+            fx, fy, side = cluster.moved[number]
+            fanned_box = presentation.label_box(fx, fy, side, net['name'], False)
+            self.assertIn(fanned_box, cluster.boxes, f'fanned horizontal label box for pin {number} is reserved')
+            self.assertFalse(cluster.free([fanned_box], ((0, -10 * g), (0, -11 * g)), [(0, -11 * g)]))
+
+    def test_edge_run_fans_before_inline_shunt_fallback(self):
+        # AGENTEE-255: when a shunt capacitor on the middle pin of a dense edge
+        # run can only attach via the in-line fallback, the run fans first so
+        # the label becomes horizontal and the fallback wire continues from it.
+        intent = load('presentation.intent.json')
+        intent['nets'] = [
+            dict(id='left', name='L' * 50, terminals=[
+                dict(component='j_in', pin=dict(number='1')),
+                dict(component='j_out', pin=dict(number='1')),
+            ]),
+            dict(id='ref', name='SENSOR_REF_2V5', terminals=[
+                dict(component='j_in', pin=dict(number='2')),
+                dict(component='c_in', pin=dict(number='1')),
+            ]),
+            dict(id='right', name='R' * 50, terminals=[
+                dict(component='j_in', pin=dict(number='3')),
+                dict(component='j_out', pin=dict(number='3')),
+            ]),
+            dict(id='gnd', name='GND', terminals=[
+                dict(component='c_in', pin=dict(number='2')),
+                dict(component='j_out', pin=dict(number='2')),
+                dict(component='gnd', pin=dict(number='1')),
+            ]),
+        ]
+        keep = {'j_in', 'c_in', 'j_out', 'gnd'}
+        intent['components'] = [c for c in intent['components'] if c['id'] in keep]
+        intent['no_connects'] = []
+        layout = self.fanned()
+        layout['groups'] = [
+            dict(id='input', title='Input connector', components=['j_in', 'c_in', 'gnd']),
+            dict(id='output', title='Output connector', components=['j_out']),
+        ]
+        data = functional(intent=intent, layout=layout)['presentation.kicad_sch']
+        root, _, _, wires, *_ = sheet(data)
+        points = endpoints(intent, data)
+        angles = {(n[1], at(n)): int(children(n, 'at')[0][3])
+                  for n in children(root, 'label') + children(root, 'global_label')}
+        p2 = points['J1', '2']
+        c1_1 = points['C1', '1']
+        self.assertNotIn(('SENSOR_REF_2V5', p2), angles, 'pin 2 fanned before C1 attached in-line')
+        fanned = [pt for (name, pt), ang in angles.items() if name == 'SENSOR_REF_2V5' and ang in (0, 180)]
+        self.assertEqual(len(fanned), 1)
+        self.assertIn((p2, fanned[0]), [tuple(w) for w in wires] + [(w[1], w[0]) for w in wires])
+        self.assertEqual(abs(c1_1[1] - fanned[0][1]), presentation.GRID, 'C1 sits 1 grid step from the fanned label')
+
+    def test_group_sweep_retries_blocked_series_satellites_ahead_of_shunts(self):
+        # AGENTEE-255: when a shunt part on one pin hangs across a neighbour pin
+        # and blocks a single-target series resistor whose other net leaves the
+        # group, retrying with pending parts first wires both.
+        intent = load('presentation.intent.json')
+        for cid, ref in (('r_ser', 'R1'), ('r_load', 'R2')):
+            intent['components'].append(dict(id=cid, reference=ref, lib_id='OwnedGen:CAP', value='10k',
+                                             footprint='OwnedFP:CAP_2PAD', units=[1]))
+        intent['nets'] = [
+            dict(id='vin', name='VIN', terminals=[
+                dict(component='j_in', pin=dict(number='3')),
+                dict(component='c_in', pin=dict(number='1')),
+            ]),
+            dict(id='sig', name='S', terminals=[
+                dict(component='j_in', pin=dict(number='2')),
+                dict(component='r_ser', pin=dict(number='2')),
+            ]),
+            dict(id='div', name='ANT_BIAS', terminals=[
+                dict(component='r_ser', pin=dict(number='1')),
+                dict(component='j_out', pin=dict(number='1')),
+                dict(component='r_load', pin=dict(number='1')),
+            ]),
+            dict(id='gnd', name='GND', terminals=[
+                dict(component='c_in', pin=dict(number='2')),
+                dict(component='j_out', pin=dict(number='2')),
+                dict(component='r_load', pin=dict(number='2')),
+                dict(component='gnd', pin=dict(number='1')),
+            ]),
+        ]
+        keep = {'j_in', 'c_in', 'r_ser', 'j_out', 'r_load', 'gnd'}
+        intent['components'] = [c for c in intent['components'] if c['id'] in keep]
+        intent['no_connects'] = [
+            dict(component='j_in', pin=dict(number='1')),
+            dict(component='j_out', pin=dict(number='3')),
+        ]
+        layout = rows_layout()
+        layout['presentation'] = 'functional'
+        layout['transforms'] = {'j_in': {'rotation': 180, 'mirror': None}}
+        data = functional(intent=intent, layout=layout)['presentation.kicad_sch']
+        _, _, _, wires, *_ = sheet(data)
+        points = endpoints(intent, data)
+        self.assertIn((points['J1', '2'], points['R1', '2']),
+                      [tuple(w) for w in wires] + [(w[1], w[0]) for w in wires],
+                      'R1 is wired to J1 pin 2 after promoting it ahead of C1')
+        self.assertTrue(any(points['C1', '1'] in w for w in wires), 'C1 is still wired to J1')
+
     def test_stacked_fields_sit_on_one_side_reference_first(self):
         _, _, units = self.units()
         cap = next(u for u in units if u['comp']['reference'] == 'C3')
