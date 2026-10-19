@@ -274,7 +274,7 @@ kicad-route is the routing stage (decision 3, AGENTEE-93). The
 [routing adapter](routing-adapter.md) runs one attempt as a coordinator step of
 the implementation (AGENTEE-95) in the networkless sandbox. The writer neither
 runs the router nor supplies its arguments. The adapter is pinned to
-kicad-route `e497916`. At that commit agent-ee relies on the following from
+kicad-route `a132899`. At that commit agent-ee relies on the following from
 `src/kicad_route/cli.py`, checked by the adapter rather than trusted:
 
 - **Exit codes** (`overall_exit`, `ledger.REFUSED_EXIT`): 0 complete and valid;
@@ -287,7 +287,8 @@ kicad-route `e497916`. At that commit agent-ee relies on the following from
   uses the board from 3, and treats any other combination as a contradiction.
 - **Outputs**: `--out` is accepted before or after `run`; the adapter uses `run --out /work/routing/out --json`. Each attempt writes
   `OUT/runs/<name>/<label>/<stamp>/` with a mutable `latest` link and no
-  top-level result. `result.json` requires schema `kicad-route/route/1`; unknown versions are
+  top-level result. `result.json` requires schema `kicad-route/route/1`, or `route/2` only with
+  coordinator-declared `diff_pairs: "auto"`; unknown versions are
   refused. The pin has no `--version` flag, so the tool version is recorded as unknown. Backend
   identity comes verbatim from `result.json`. agent-ee retains and hashes
   `result.json`, `attempt.json`, `RESULT.md`, `validate/` and the logs.

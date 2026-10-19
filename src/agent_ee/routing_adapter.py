@@ -54,7 +54,7 @@ def preflight(checkout, state=None, backend='krt'):
 
 
 def step(*, project, board, schematic, name, label, checkout, state=None, budget=300, timeout=None,
-         backend='krt'):
+         backend='krt', diff_pairs=None):
     """The AGENTEE-95 step declaration for one attempt. Raises ValueError if the tool does not qualify."""
     check = preflight(checkout, state, backend)
     if check['problems']:
@@ -64,6 +64,8 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
     args = ['--project', project, '--board', board, '--schematic', schematic, '--name', name,
             '--label', label, '--budget', str(budget), '--timeout', str(timeout), '--backend', backend,
             '--state', 'separate' if separate else 'checkout']
+    if diff_pairs is not None:
+        args += ['--diff-pairs', diff_pairs]
     request = attempt.parse_request(args)  # the same validation the sandbox applies
     return _step(request, check['checkout'], check['state'] if separate else None)
 
@@ -86,7 +88,7 @@ def _step(request, checkout, state):
 def validate_declaration(value):
     """Strict campaign opt-in; command, mounts, pin and environment are not configurable."""
     required = {'schema', 'project', 'board', 'schematic', 'name', 'label', 'checkout'}
-    optional = {'state', 'budget', 'timeout', 'backend'}
+    optional = {'state', 'budget', 'timeout', 'backend', 'diff_pairs'}
     if (not isinstance(value, dict) or value.get('schema') != 'agent-ee.routing-adapter/1' or
             not required <= set(value) or not set(value) <= required | optional):
         raise ValueError('expected agent-ee.routing-adapter/1 declaration')
@@ -104,10 +106,12 @@ def validate_declaration(value):
     request = attempt.parse_request(_request_argv({
         **{k: value[k] for k in ('project', 'board', 'schematic', 'name', 'label')},
         'backend': value.get('backend', 'krt'), 'budget_s': budget, 'timeout_s': timeout,
-        'state': 'separate' if separate else 'checkout'}))
+        'state': 'separate' if separate else 'checkout',
+        **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {})}))
     return {'schema': value['schema'], **{k: request[k] for k in ('project', 'board', 'schematic', 'name', 'label')},
             'checkout': checkout, 'state': state if separate else None, 'budget': request['budget_s'],
-            'timeout': request['timeout_s'], 'backend': request['backend']}
+            'timeout': request['timeout_s'], 'backend': request['backend'],
+            **({'diff_pairs': request['diff_pairs']} if 'diff_pairs' in request else {})}
 
 
 def campaign_spec(declaration, manifest, mutable):
@@ -124,7 +128,8 @@ def campaign_spec(declaration, manifest, mutable):
     request = attempt.parse_request(_request_argv({
         **{k: value[k] for k in ('project', 'board', 'schematic', 'name', 'label', 'backend')},
         'budget_s': value['budget'], 'timeout_s': value['timeout'],
-        'state': 'separate' if value['state'] else 'checkout'}))
+        'state': 'separate' if value['state'] else 'checkout',
+        **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {})}))
     return validate_step(_step(request, value['checkout'], value['state']), host=False)
 
 
@@ -472,6 +477,8 @@ def _request_argv(request):
     flags = {'project': '--project', 'board': '--board', 'schematic': '--schematic', 'name': '--name',
              'label': '--label', 'budget_s': '--budget', 'timeout_s': '--timeout', 'backend': '--backend',
              'state': '--state'}
+    if 'diff_pairs' in request:
+        flags['diff_pairs'] = '--diff-pairs'
     if set(request) != set(flags):
         raise ValueError('routing adapter request has unknown or missing fields')
     argv = []

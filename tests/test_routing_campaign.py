@@ -152,6 +152,26 @@ class RoutingCampaignTests(unittest.TestCase):
                     campaign.run_campaign(self.root / 'campaign.json', self.root / 'campaign')
                 self.assertFalse((self.root / 'campaign').exists())
 
+    def test_pair_opt_in_survives_binding_receipt_and_campaign_replay(self):
+        declaration = {**self.spec(), 'diff_pairs': 'auto'}
+        normalized = routing.validate_declaration(declaration)
+        self.assertEqual(normalized['diff_pairs'], 'auto')
+        spec = routing.campaign_spec(normalized, {'scope': self.scope}, self.scope['mutable_inputs'])
+        self.assertEqual(spec['argv'][-2:], ['--diff-pairs', 'auto'])
+        self.assertEqual(routing.validate_campaign_step(spec), spec)
+        status, state, work = self.run_campaign(declaration)
+        self.assertEqual((status, state['state']), (0, 'criteria_satisfied'))
+        receipts = list(work.rglob('routing/attempt/result.json'))
+        self.assertEqual(len(receipts), 1)
+        result = read_json(receipts[0])
+        self.assertEqual(result['schema'], 'kicad-route/route/2')
+        self.assertEqual(result['pairs'], [])
+        binding = state['routing_binding']
+        self.assertEqual(binding['spec']['argv'][-2:], ['--diff-pairs', 'auto'])
+        with self.assertRaisesRegex(ValueError, 'differs from its declaration'):
+            routing.validate_binding(binding, {k: v for k, v in declaration.items() if k != 'diff_pairs'},
+                                     {'scope': self.scope}, self.scope['mutable_inputs'], policy_files())
+
     def test_routing_step_dispatch_waits_for_the_routing_stage(self):
         spec = self.spec()
         manifest = {'scope': {'stages': {'order': ['placement', 'routing']}}}
