@@ -519,6 +519,7 @@
         "tests/test_seeded_benchmark.py",
         "tests/test_seeded_operations.py",
         "tests/test_shared_sexpr.py",
+        "tests/test_scaffold_rule_areas.py",
         "tests/test_symbol_context.py",
         "tests/test_pod_symbols.py",
         "tests/test_footprint_assignment.py"
