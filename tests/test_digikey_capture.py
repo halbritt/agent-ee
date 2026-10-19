@@ -494,8 +494,11 @@ class DigiKeyCaptureTests(unittest.TestCase):
                 verify_external_identity(self.root, {**identity, field: 'forged'})
 
     def test_no_check_or_offline_module_imports_the_producer(self):
+        # AGENTEE-248: the host-side datasheet cascade producer replays captures
+        # through load_capture; it is itself guarded against check/offline importers
+        # (test_datasheet_cascade), so no check reaches this module transitively.
         root = Path(dk.__file__).parent
-        importers = [p.name for p in root.glob('*.py') if p.name != 'digikey_capture.py'
+        importers = [p.name for p in root.glob('*.py') if p.name not in ('digikey_capture.py', 'datasheet_cascade.py')
                      and 'digikey_capture' in p.read_text(encoding='utf-8')]
         self.assertEqual(importers, [])
 

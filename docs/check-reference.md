@@ -1355,6 +1355,9 @@ visual evidence without preventing review; malformed critique remains unusable.
 that differ from the selected acquisition refuse before native projection.
 The selection and acquisition dependencies are immutable; no new check kind or
 predicate is introduced. Source selection alone does not verify electrical ratings.
+The host-side [datasheet source cascade](datasheet-cascade.md) (AGENTEE-248)
+produces such a selection, including an optional `failed` list. No check runs it,
+and checks see only its captured outputs.
 
 ## Native net-name encoding (AGENTEE-220)
 

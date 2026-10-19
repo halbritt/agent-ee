@@ -1849,6 +1849,16 @@
     },
     {
       "paths": [
+        "src/agent_ee/datasheet_cascade.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-248 host-side cascade producer and offline replay. The PDF header marker appears only in documentation of the envelope rule; no third-party document, response or design is embedded."
+    },
+    {
+      "paths": [
         "src/agent_ee/datasheet_capture.py"
       ],
       "kind": "owned-source",
@@ -2056,6 +2066,16 @@
         "AE"
       ],
       "reviewed": "Original regression-test code; the HTML literal is a synthetic non-JSON body the DigiKey v4 parser must refuse and the PDF literal is a minimal owned envelope served by a loopback stub. Part numbers, manufacturers and responses are invented; no DigiKey response or datasheet is copied."
+    },
+    {
+      "paths": [
+        "tests/test_datasheet_cascade.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code; the HTML literal is a synthetic bot-challenge body and the PDF literals are minimal owned envelopes served by a loopback stub. The stub exa-search script prints owned JSON naming loopback URLs. No DigiKey, JLCPCB, LCSC or Exa response or datasheet is copied."
     },
     {
       "paths": [

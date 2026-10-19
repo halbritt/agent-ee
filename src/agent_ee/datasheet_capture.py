@@ -178,8 +178,9 @@ def _limits(timeout, max_bytes):
         raise ValueError('invalid PDF byte limit')
 
 
-def _capture_parts(parts, stage, timeout, max_bytes):
-    records, fetched = [], {}
+def _capture_parts(parts, stage, timeout, max_bytes, fetched=None):
+    # ``fetched`` lets a host-side cascade fetch candidates one at a time into one stage.
+    records, fetched = [], {} if fetched is None else fetched
     for part in parts:
         url = part['datasheet_url']
         if url not in fetched:

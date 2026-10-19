@@ -215,6 +215,12 @@ changing the purchased part. Selecting a family catalog does not prove exact
 ordering-suffix correspondence or authorize ratings: later exact-ordering
 evidence needs its own captured source binding and qualification.
 
+An entry may also carry an optional `failed` list of
+`{id, reason, provenance}` records. These are candidates whose acquisition
+produced no PDF. The [datasheet source cascade](datasheet-cascade.md) writes
+this list. A selected ID listed as failed is refused. Without the list, the
+meaning is unchanged.
+
 Legacy captures without a declared selection retain their custody-only behavior.
 Callers migrating a reviewed source decision must supply this reference; the
 producer does not infer selection from prose or arbitrary supplier filenames.
