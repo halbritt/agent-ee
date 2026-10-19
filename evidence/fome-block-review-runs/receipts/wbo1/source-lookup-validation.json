@@ -1,0 +1,10 @@
+{
+  "default_lookup_citation_statuses": [
+    "verified"
+  ],
+  "repository_identity": "/home/halbritt/git/fome-mc",
+  "unavailable_store_block_status": "unverified",
+  "unavailable_store_citation_statuses": [
+    "unverified"
+  ]
+}

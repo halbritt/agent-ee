@@ -404,6 +404,9 @@
         "fixtures/fome-mc/wbo1/blocks/wbo1/block.json",
         "fixtures/fome-mc/rules/severities.json",
         "fixtures/fome-mc/pod-can/block/block.json"
+      ],
+      "capture_sources": [
+        "/fixtures/fome-mc/"
       ]
     }
   },
@@ -3021,6 +3024,17 @@
         "AE"
       ],
       "reviewed": "AGENTEE-205 original documentation of owned pin-resolution recovery, source inventory, bounded attempts and offline replay; no external text copied."
+    },
+    {
+      "paths": [
+        "evidence/fome-block-review-runs/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T16"
+      ],
+      "note": "AGENTEE-149 metadata receipts for host reviews of the pinned FOME block fixtures. Full raw runs with third-party web and vendor document bytes remain host-only in the assigned scratch directory. Planning documents remain pinned-identity citations; no vendor-document bytes are admitted."
     }
   ]
 }

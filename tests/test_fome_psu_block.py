@@ -10,7 +10,7 @@ import time
 import unittest
 from pathlib import Path
 
-import block_inventory_fixture as owned
+from tests import block_inventory_fixture as owned
 from agent_ee.block_inventory import capture_inventory, validate_inventory
 from agent_ee.reference_blocks import validate_block
 from agent_ee.storage import digest, identity, read_json, write_json
@@ -51,6 +51,23 @@ def tree(root):
 class CommittedCaptureTests(unittest.TestCase):
     def setUp(self):
         self.record = read_json(BLOCK / 'block.json')
+
+    def test_review_receipt_cannot_substitute_for_the_host_only_run(self):
+        receipt = REPO / 'evidence/fome-block-review-runs/receipts/psu'
+        result = read_json(receipt / 'result.json')
+        baseline = read_json(receipt / 'baseline.json')
+        manifest = read_json(receipt / 'candidate.json')
+        ref, = self.record['runs']
+        self.assertEqual((ref['run_id'], ref['candidate_id'], ref['baseline_id']),
+                         (result['run_id'], result['candidate_id'], baseline['baseline_id']))
+        for path, captured in ref['files'].items():
+            self.assertEqual(self.record['files'][path], manifest['files'][captured])
+        self.assertEqual(result['state'], 'incomplete')
+        self.assertFalse(result['adjudicated'])
+        self.assertEqual(validate_block(BLOCK)['runs'],
+                         [dict(run_id=ref['run_id'], status='unavailable')])
+        with self.assertRaisesRegex(ValueError, 'candidate snapshot changed'):
+            validate_block(BLOCK, {ref['run_id']: receipt})
 
     def test_capture_records_pinned_commit_and_payload_hashes(self):
         self.assertEqual(self.record['source']['commit'], COMMIT)
@@ -169,7 +186,7 @@ class UnassignedAllCaptureTests(unittest.TestCase):
     """An unassigned entry may name a whole sheet occurrence; assignment stays exhaustive."""
 
     def setUp(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-106-')
         self.addCleanup(self.tmp.cleanup)
@@ -210,7 +227,7 @@ class NativeReviewScopeTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         from agent_ee.cli import run_review
         cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-106-review-')
@@ -261,7 +278,7 @@ class AdaptationSmokeTests(unittest.TestCase):
     """block_adaptation instantiates the PSU block on the owned standalone board."""
 
     def setUp(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-106-adapt-')
         self.addCleanup(self.tmp.cleanup)

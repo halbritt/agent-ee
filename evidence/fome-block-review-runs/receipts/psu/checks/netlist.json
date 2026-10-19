@@ -1,0 +1,73 @@
+{
+  "candidate_id": "1d1a619470a38dc6646e7af098b799792d7236f34ba2aca4f40d899504c331b2",
+  "details": {
+    "components": 43,
+    "dnp_refs": [],
+    "nets": 34,
+    "refs": [
+      "C10",
+      "C108",
+      "C11",
+      "C12",
+      "C13",
+      "C14",
+      "C2",
+      "C3",
+      "C4",
+      "C5",
+      "C6",
+      "C7",
+      "C8",
+      "C9",
+      "D1",
+      "D19",
+      "D3",
+      "D4",
+      "D5",
+      "J1",
+      "J2",
+      "J3",
+      "J4",
+      "L1",
+      "L2",
+      "Q1",
+      "R1",
+      "R10",
+      "R124",
+      "R2",
+      "R3",
+      "R4",
+      "R5",
+      "R6",
+      "R7",
+      "R8",
+      "R9",
+      "U1",
+      "U2",
+      "U3",
+      "U4",
+      "U5",
+      "U6"
+    ],
+    "schematic_files": [
+      "fome-mc-psu.kicad_sch",
+      "sheets/psu.kicad_sch",
+      "mcu-stub.kicad_sch"
+    ],
+    "sheet_instances": 3
+  },
+  "evidence": [
+    "work/netlist/execution.json",
+    "work/netlist/console.log",
+    "work/netlist/design.xml",
+    "work/netlist/connectivity.json"
+  ],
+  "execution": "ok",
+  "id": "netlist",
+  "kind": "netlist",
+  "limitations": [
+    "stock template tables not captured: sym-lib-table, fp-lib-table"
+  ],
+  "outcome": "info",
+  "summary": "native XML netlist exported from a complete 3-instance hierarchy: 43 component(s), 34 net(s), 0 DNP"
+}

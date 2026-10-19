@@ -29,6 +29,7 @@ product's hardware qualification.
 | Capture declared datasheet URLs before offline verification | [Datasheet acquisition](datasheet-capture.md) |
 | Capture JLCPCB stock per LCSC id (owner-run) for assembly readiness | [JLCPCB stock capture](jlc-stock-capture.md) |
 | Capture reference blocks and verify their native evidence coverage | [Reference block interface](reference-block-interface.md) |
+| Inspect the incomplete wbo1 and PSU host review attempts | [FOME block host review attempts](fome-block-review-runs.md) |
 | Capture a design's block plan as draft block entries; check a block adaptation | [Block inventory](block-inventory.md) |
 | Review the captured fome-mc PSU block as the rung-2 power reference | [fome-mc PSU block](fome-psu-block.md) |
 | Verify captured routing constraints | [Routing rules](routing-rules.md) |

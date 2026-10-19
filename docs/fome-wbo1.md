@@ -77,3 +77,18 @@ firmware decoder capture, active-model/LSU evidence, catalog/parts qualification
 and Q301 copper geometry. Domain/current declarations and draft parts also keep block
 validation `unverified`. Passing the adaptation regression does not satisfy
 those engineering requirements.
+
+## Reviewed attempt (AGENTEE-149)
+
+The host attempt on 2026-10-18 used the committed scope/3 baseline
+`75f7d6eccce9627f0ce521306673149f0583b82b3e2ada3f4a949126ef068177`
+and `profiles/codex-baseline.json`. Both independent reviewer responses were
+refused with `citation pointer requires a valid JSON document`. The run is
+`incomplete`; adjudication did not run. Its identity is attached to the wbo1
+record, which stays unverified. The golden wbo2 target has no attached run.
+
+The [run record](fome-block-review-runs.md) gives identities, native results,
+host-only evidence locations and remaining requirements. Committed metadata
+receipts do not replace the complete sealed run. Adding the run reference changes
+the live fixture's reference-architecture hash and `expected-baseline.json`;
+the reviewed baseline and candidate remain unchanged in the retained evidence.

@@ -26,6 +26,7 @@ destination.mkdir()
 for name in ("wbo1", "wbo2"):
     original = templates / name
     request = read_json(original / "block.json")
+    request["runs"] = []  # Reproduce acquisition before the later review ledger.
     supplements = {
         path: (original / path).read_bytes()
         for path in request["files"]
@@ -36,9 +37,12 @@ for name in ("wbo1", "wbo2"):
                   supplements=supplements)
 ```
 
-Compare each published directory byte for byte with the committed template.
+Compare captured payloads and contracts byte for byte with the committed template.
+The wbo1 template also records the later AGENTEE-149 attempt in `runs`; a fresh
+capture has an empty run ledger. Its `block.json` therefore differs only there.
 Run this twice inside `bwrap --unshare-net` to check offline reproducibility.
 Validation checks external citations in the local pinned Git object store;
 missing repositories or objects leave those citations unverified.
-No source run is attached: `reference_blocks.validate` must exit 1 with
-`status: unverified`. No owner evidence store is created.
+The attached wbo1 run is incomplete; wbo2 has no run. Both validators must exit 1
+with `status: unverified`. See `docs/fome-block-review-runs.md` for the host-only
+raw evidence and committed receipts. No owner evidence store is created.

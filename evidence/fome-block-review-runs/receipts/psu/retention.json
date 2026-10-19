@@ -1,0 +1,1220 @@
+{
+  "baseline_id": "985999e2ca757f18288362526bb83b16d54d049b1da312d9a1fceecc4cdb8c48",
+  "candidate_id": "1d1a619470a38dc6646e7af098b799792d7236f34ba2aca4f40d899504c331b2",
+  "complete_run_retained_in_repository": false,
+  "item": "AGENTEE-149",
+  "raw_directory": "/tmp/agent-ee-burndown-20261017/workers/ee149-fome-block-review-runs/scratch/raw-runs/psu",
+  "raw_files": {
+    "REPORT.md": {
+      "bytes": 3327,
+      "sha256": "d384fd4cc203b30f06b8e15ea718e93d787369c89bf43dad2397d375e9206f8b"
+    },
+    "baseline.json": {
+      "bytes": 6035,
+      "sha256": "d3eb2860560057af6d46faabab0cdbd4eb9d42fb9a78ed7def282e60b4b77078"
+    },
+    "candidate.json": {
+      "bytes": 15231,
+      "sha256": "2e39f0f6a6d7a40462a232c602c42c24cd2e1ef8947c2d3cb4b30cc38ca4a90a"
+    },
+    "checks/brownout-floor.json": {
+      "bytes": 301,
+      "sha256": "3cde417f5e9bb8cde3421e22ae2ec12bb3cb17d57dfb5c267e10a9ebabc94271"
+    },
+    "checks/c12-part.json": {
+      "bytes": 313,
+      "sha256": "42900d3c171402b78470a2da8b19bde2d76d0401cecf9bd03ffa02d8fcfaeedb"
+    },
+    "checks/c4-rating.json": {
+      "bytes": 300,
+      "sha256": "6f22a714434f925a82d38cc8bfdfa13cfcc4a995f724adc8fa2d1515ab6f006e"
+    },
+    "checks/capacitor-ratings.json": {
+      "bytes": 308,
+      "sha256": "e61f9a5e806f1c88cc1c060686d43bc1d4184af7f9664f7ac254f96cab5753fc"
+    },
+    "checks/erc.json": {
+      "bytes": 2039,
+      "sha256": "ce9038b00915e5ed79442a1ea04feca30cae8d75bb28a45f4c22e865b97c9937"
+    },
+    "checks/input-filter.json": {
+      "bytes": 384,
+      "sha256": "d007923d23eb075ae95ef3954afdae6543db978e93b2a6105e5747a817d21b63"
+    },
+    "checks/interface.json": {
+      "bytes": 153106,
+      "sha256": "a783cbe0d91863ac5a842fd1bcab54c8bacf4b0f9b49bcf2d05b410242d9297b"
+    },
+    "checks/netlist.json": {
+      "bytes": 1307,
+      "sha256": "9fc251961a425f2041735d62569f9cafbb44a7e0cca255c7987f5329277ae503"
+    },
+    "checks/rail-regulation.json": {
+      "bytes": 302,
+      "sha256": "6a68effa7acca7b324bab54735a2f59235cb5aee06368acc74eeb7c11d6ac0c0"
+    },
+    "checks/reverse-block.json": {
+      "bytes": 300,
+      "sha256": "014a470657794b72e47303b1be388665817688be0657a2b379524af0173ec223"
+    },
+    "checks/tvs-clamp.json": {
+      "bytes": 304,
+      "sha256": "9e74ec90c6a1286a774b9f58e4f181e88d71c55f2aea41e71a15356ef0387451"
+    },
+    "inputs/block-contract.json": {
+      "bytes": 19163,
+      "sha256": "4d7171833ded33c3adb335524d954d027f24910bf348c3e09c998befcf6152dd"
+    },
+    "inputs/block.json": {
+      "bytes": 24479,
+      "sha256": "b3cfe9c37eb390fe5e00930423f91575fd4f9f70c1d0867704da8435da006e2e"
+    },
+    "inputs/board-interface.json": {
+      "bytes": 43257,
+      "sha256": "2d1df2fb83987b6cbfe7f5f1f9cc7bcaa39bc2f3836a921c23af5c4998061beb"
+    },
+    "inputs/connectivity.json": {
+      "bytes": 7766,
+      "sha256": "049d90194a0593d171aafa7089c316be0cba7595c7035289359765c0b832d7e2"
+    },
+    "inputs/fome-mc-psu.kicad_pcb": {
+      "bytes": 240,
+      "sha256": "8d531672f32644d0dcf5f93dfc8dd81d1bfce94685ad075c0082af6713f36461"
+    },
+    "inputs/fome-mc-psu.kicad_pro": {
+      "bytes": 1849,
+      "sha256": "f41d459fd0143c4b35f4a6e63bb8c8fa491f4dbf00c6b51ff746ac4868931afd"
+    },
+    "inputs/fome-mc-psu.kicad_sch": {
+      "bytes": 17367,
+      "sha256": "2f8ef63cba7684e57a09dbc2638ffd46b3f876956d04f0b704ae8cfd337fb79d"
+    },
+    "inputs/interface.json": {
+      "bytes": 57908,
+      "sha256": "3b669a4dd35d10db8b469769d03c65ae815752dc202bab5218aac41179453351"
+    },
+    "inputs/libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": {
+      "bytes": 1208,
+      "sha256": "dd9906f8e7914fdd389fc776c9ce5037109e3229a42d5ff1fc90e8f42b262c73"
+    },
+    "inputs/libs/symbols/infineon_psu.lib": {
+      "bytes": 1084,
+      "sha256": "a28de6754df60efe6f201f81de74ee43fed69b987cec45992541bfea590df6f4"
+    },
+    "inputs/libs/symbols/lmr14020.lib": {
+      "bytes": 573,
+      "sha256": "e38cf910613cec6f8c14146ef3765ade941e6c1df73713debdcdc6a0e6d960c0"
+    },
+    "inputs/mcu-stub.kicad_sch": {
+      "bytes": 3477,
+      "sha256": "f02cf57211f187b12f90a5ed26b96c11e1a55560eae9baefa60d51d672ed16d0"
+    },
+    "inputs/parts.json": {
+      "bytes": 7503,
+      "sha256": "4c0b7743b49dbfe7e95565af1a0b452e94acfbaf4f485454a1531c7d0cc32a31"
+    },
+    "inputs/requirements.md": {
+      "bytes": 4790,
+      "sha256": "1615ecb66fb539f2197395586179632beab174dbb6f50be36cb3b069e1ad3cb9"
+    },
+    "inputs/sheets/psu.kicad_sch": {
+      "bytes": 189601,
+      "sha256": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb"
+    },
+    "packet.json": {
+      "bytes": 477071,
+      "sha256": "ea150bd28450b36c43202d604c7a7c2c841c5b44dea402f7f62a1a8bb5144443"
+    },
+    "result.json": {
+      "bytes": 279996,
+      "sha256": "75ca85567651165d2ec7b957cdd603ecb55d4a60ff77ffb0ef5763b349dd8c94"
+    },
+    "review-attempts/circuit/0/execution.json": {
+      "bytes": 6423,
+      "sha256": "13820a4206d3d6e4946350fbb38425488c9a0060cbb672e9aea325bfb7ffa19a"
+    },
+    "review-attempts/circuit/0/prompt.txt": {
+      "bytes": 383634,
+      "sha256": "8531ff77d082c04c4604e2e6c80b0fac2edec9c5f004d5ac6a39167652447ade"
+    },
+    "review-attempts/circuit/0/response.json": {
+      "bytes": 13731,
+      "sha256": "526673b7e8b2bf29eedb4c4d355f52f180c2eb6686cdd63ed38fe811ad398025"
+    },
+    "review-attempts/circuit/0/review-work/circuit/console.log": {
+      "bytes": 731934,
+      "sha256": "8df3704be895f948b2cb1b3fe60dc45b098eb9594eb0db35888434c547911136"
+    },
+    "review-attempts/circuit/0/review-work/circuit/execution.json": {
+      "bytes": 5466,
+      "sha256": "95a495d8fc2db14110dde14366a6ce36083b80b0a2dcc6f17e1c0eb1c44a63ce"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/ao4485.pdf": {
+      "bytes": 371710,
+      "sha256": "a7856f1f385cd3f8cdf645a60547afa400f57a66cc82c29a769ea566fdadf997"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/ao4485.txt": {
+      "bytes": 23176,
+      "sha256": "f00b7b0f9b01577c19e579aeb531f8aea7037e932534ddb8339fb349d87043db"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/c6-source-web.txt": {
+      "bytes": 10386,
+      "sha256": "12a5a89b270068868742e24af22c4bc56405682e36c3ebebc25410d5725895c3"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/calculate.py": {
+      "bytes": 2465,
+      "sha256": "f7e0ac5264399ac737001ef371443e1a7ce214edfa9da52787903a940dca04d4"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/calculations.json": {
+      "bytes": 4808,
+      "sha256": "19897b71e4bddacf1e55af67c2862a131d704252766ac198c3688a9e42a44da3"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/catalog-details-web.json": {
+      "bytes": 29092,
+      "sha256": "fbc43eaf60525d8b926c51a26baeeee24c5c4500964702ff35eeef80b681d812"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/catalog-details-web.txt": {
+      "bytes": 28648,
+      "sha256": "0e5fd198db6c7ab6012f2c005a4d5bcb8fc3c57352d7943b82efb5a795328a3b"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/catalog-find.txt": {
+      "bytes": 10916,
+      "sha256": "4d855bbff60e4e6018a092e7deb15e3bb42f9590b2859e83a0a8651d22edc3fd"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/catalog-web.json": {
+      "bytes": 22713,
+      "sha256": "c5ad3a55fa42e7579535e8274197ff9ce1176942debd5c38988b6122a78d9554"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/catalog-web.txt": {
+      "bytes": 21906,
+      "sha256": "efc6c505c797d66eeec7555dafb052a38fdbab472b6c097396960196778abd20"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/design.xml": {
+      "bytes": 73853,
+      "sha256": "a0777acb97c7aec69042e3b042ea5c5e40b6f40870627e946d0ca7c31c8e8fb1"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/export-comparison.json": {
+      "bytes": 370,
+      "sha256": "aaa35793b53e501b7d3f8d70b597cd798a654ff983ea20fc3fa8ec835d527406"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/inspect_native.py": {
+      "bytes": 2704,
+      "sha256": "409a795217f0a6ea9242113f35fad6c8a9e89fc3db012419007dab2231f036ae"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/lmr16020.pdf": {
+      "bytes": 3153510,
+      "sha256": "6d893731e57590b98ea210562d0a47b653ed1e9af378130178fb415ebdb45395"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/lmr16020.txt": {
+      "bytes": 123868,
+      "sha256": "2be7f3134d5ebb2e9aa568632352826cbe211edfab00fdf863e824608b4d38d4"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/native-inspection.json": {
+      "bytes": 112902,
+      "sha256": "1a0e78dbf9b04f2dc2a7abab0e548b6d71714d9fd25538333cecae4b6ca993f1"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/native-inspection.log": {
+      "bytes": 22953,
+      "sha256": "f42788932587eed860a936f647c3f105cb6e8135ab88a6c3ad2807fc5bb1150c"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/netlist-stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/netlist-stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/review-log.json": {
+      "bytes": 6992,
+      "sha256": "4bef5d60ed0ace79fad299b32f943e979233d93ce2e892f272806b563c661f34"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/smcj-web.txt": {
+      "bytes": 408,
+      "sha256": "d1ccbc778516a88172a36aae6d111f0ad0a7a0ce5fa2e9b32e2e9c20a2c5ca4e"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/tls-web.json": {
+      "bytes": 21226,
+      "sha256": "a84e81ca42785b11ddb94e0ef448fc0efe87059f8711777ed28cd7b9dfeab313"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/tls-web.txt": {
+      "bytes": 20853,
+      "sha256": "ba1b70bc4b43bfba62440139b73a2cea64ad1908e1322503bcccec7dc490af86"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/tls115d0ej.pdf": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/tlv757p.pdf": {
+      "bytes": 2856589,
+      "sha256": "239d1f1e9bce270377e9af29bd06a5f99fe45f489878612d249d88cf9f2dd7a1"
+    },
+    "review-attempts/circuit/0/review-work/circuit/experiments/tlv757p.txt": {
+      "bytes": 189174,
+      "sha256": "69647d726fec5e6668d1f82abf434ed97d97d1bc7ac2c2345fd979495336f1bb"
+    },
+    "review-attempts/circuit/0/review-work/circuit/kicad-config/10.0/eeschema.json": {
+      "bytes": 12148,
+      "sha256": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb"
+    },
+    "review-attempts/circuit/0/review-work/circuit/kicad-config/10.0/kicad.json": {
+      "bytes": 5767,
+      "sha256": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650"
+    },
+    "review-attempts/circuit/0/review-work/circuit/kicad-config/10.0/kicad_common.json": {
+      "bytes": 2510,
+      "sha256": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e"
+    },
+    "review-attempts/circuit/0/review-work/circuit/kicad-config/10.0/symbol_editor.json": {
+      "bytes": 4247,
+      "sha256": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa"
+    },
+    "review-attempts/circuit/0/review-work/circuit/preflight/probe/console.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/circuit/0/review-work/circuit/preflight/probe/execution.json": {
+      "bytes": 1978,
+      "sha256": "19d3e797a58e8fb766152b729b0a27b3244165730c76c72772ca795832aaded3"
+    },
+    "review-attempts/circuit/0/review-work/circuit/preflight/probe/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/circuit/0/review-work/circuit/preflight/probe/stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/circuit/0/review-work/circuit/preflight/receipt.json": {
+      "bytes": 17694,
+      "sha256": "16511b9035ffa70acf4b80180dd5cb26898a4fd7bd9b149f643147a87785ad15"
+    },
+    "review-attempts/circuit/0/review-work/circuit/schema.json": {
+      "bytes": 12117,
+      "sha256": "6e3a5811402e6a85cba53c9b50fe83a87f7108810263bb0a70302d7a6fc09a5d"
+    },
+    "review-attempts/circuit/0/review-work/circuit/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/circuit/0/review-work/circuit/stdout.log": {
+      "bytes": 731934,
+      "sha256": "8df3704be895f948b2cb1b3fe60dc45b098eb9594eb0db35888434c547911136"
+    },
+    "review-attempts/circuit/0/schema.json": {
+      "bytes": 12117,
+      "sha256": "aeb845014537675b83e8cc56b06ca716f4c881cc6d2f51728cb14b8fd89b09c8"
+    },
+    "review-attempts/physical/0/execution.json": {
+      "bytes": 6425,
+      "sha256": "5f6c56bdb19700d11b68e510f10d48ca42780e33a3d0c0b7c3c2f0808f7334a5"
+    },
+    "review-attempts/physical/0/prompt.txt": {
+      "bytes": 383671,
+      "sha256": "43135254a6e10495aa65857c7dba43593cbc035ca00b15dbe7a9ef96b63fa46a"
+    },
+    "review-attempts/physical/0/response.json": {
+      "bytes": 9772,
+      "sha256": "42f5f766077d129da3229babc8cdf8b15f1f864208bb64b92afe8e13d4e774c8"
+    },
+    "review-attempts/physical/0/review-work/physical/console.log": {
+      "bytes": 359171,
+      "sha256": "fb089f08f0cfa8cb559f95c54e65565562eaf24e13d8dd72f1bd4f040a1605b9"
+    },
+    "review-attempts/physical/0/review-work/physical/execution.json": {
+      "bytes": 5467,
+      "sha256": "f890f95e578bb6c5fdb0853d22309ba300c39c2f21b1df2aa3e8d44596da24b2"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/analyze.py": {
+      "bytes": 3462,
+      "sha256": "ab243b7942260c81c89ef63362bf9452980931463227cd971fc52e7e5731c9b2"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/ao4485.pdf": {
+      "bytes": 371710,
+      "sha256": "a7856f1f385cd3f8cdf645a60547afa400f57a66cc82c29a769ea566fdadf997"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/ao4485.txt": {
+      "bytes": 23176,
+      "sha256": "f00b7b0f9b01577c19e579aeb531f8aea7037e932534ddb8339fb349d87043db"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/baseline-hashes.json": {
+      "bytes": 114,
+      "sha256": "78de899a054490641842ec737e4f85591b7fe696074cf1bd46f1ec36f7f3c854"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/calculations.json": {
+      "bytes": 3432,
+      "sha256": "aeb22f9a61ba7ae9e1e02a40f62e1247060da0670ec8ff5aa81e727e97e63e4c"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/commands.json": {
+      "bytes": 810,
+      "sha256": "a6faded23864d8a28142e493745a638a0a8134c2adad4a1b249ce8e9d706ad7b"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/independent.xml": {
+      "bytes": 73853,
+      "sha256": "4600a2c51b5802d9aaf1e42d8c1362fbc46a1012cdf5afd4f58b925aca6d1c98"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/inspection.json": {
+      "bytes": 1822,
+      "sha256": "bb667524031f3873e168485c7bc2bcca7cc30fe6a1f0709561da6840080cc802"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/lmr16020.pdf": {
+      "bytes": 3153510,
+      "sha256": "6d893731e57590b98ea210562d0a47b653ed1e9af378130178fb415ebdb45395"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/lmr16020.txt": {
+      "bytes": 123868,
+      "sha256": "2be7f3134d5ebb2e9aa568632352826cbe211edfab00fdf863e824608b4d38d4"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/native-symbols.json": {
+      "bytes": 25125,
+      "sha256": "5a413e9885157c40962dfa596d24fc6b8529b6eb6d70743138b360496e9b4e63"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/notes.md": {
+      "bytes": 4991,
+      "sha256": "70370232b182cd19aed98a3bf8df8bc291dc7271c10c00b2cc17fd1a3abe9ea1"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/references.json": {
+      "bytes": 1029,
+      "sha256": "42b75878a326649566870c85082b657d45791cd220c47e758c277793dceaa21d"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/tls115d0ej.pdf": {
+      "bytes": 1887890,
+      "sha256": "65b8bf634a491696adeb2f687d5374ad793dae75a22c95a1c6faabcaa8e05459"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/tls115d0ej.txt": {
+      "bytes": 56663,
+      "sha256": "128f5d4bce69540121d6ae0ba9791401e164f081b15cf689df8f47b78be3ed34"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/tlv757p.pdf": {
+      "bytes": 2856589,
+      "sha256": "239d1f1e9bce270377e9af29bd06a5f99fe45f489878612d249d88cf9f2dd7a1"
+    },
+    "review-attempts/physical/0/review-work/physical/experiments/tlv757p.txt": {
+      "bytes": 189174,
+      "sha256": "69647d726fec5e6668d1f82abf434ed97d97d1bc7ac2c2345fd979495336f1bb"
+    },
+    "review-attempts/physical/0/review-work/physical/kicad-config/10.0/eeschema.json": {
+      "bytes": 12148,
+      "sha256": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb"
+    },
+    "review-attempts/physical/0/review-work/physical/kicad-config/10.0/kicad.json": {
+      "bytes": 5767,
+      "sha256": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650"
+    },
+    "review-attempts/physical/0/review-work/physical/kicad-config/10.0/kicad_common.json": {
+      "bytes": 2510,
+      "sha256": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e"
+    },
+    "review-attempts/physical/0/review-work/physical/kicad-config/10.0/symbol_editor.json": {
+      "bytes": 4247,
+      "sha256": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa"
+    },
+    "review-attempts/physical/0/review-work/physical/preflight/probe/console.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/physical/0/review-work/physical/preflight/probe/execution.json": {
+      "bytes": 1979,
+      "sha256": "8c4fabc8934c5265a4a10fae85808b1aa430066595149b3111d4edb9189be65c"
+    },
+    "review-attempts/physical/0/review-work/physical/preflight/probe/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/physical/0/review-work/physical/preflight/probe/stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/physical/0/review-work/physical/preflight/receipt.json": {
+      "bytes": 17699,
+      "sha256": "6041e9c0548b04326b9f2a9577478bacf58e1230ef579aaca0eeb9a75f919062"
+    },
+    "review-attempts/physical/0/review-work/physical/schema.json": {
+      "bytes": 12118,
+      "sha256": "9fd254a4d50d663f46e6194c32229024079ca82d8e366da7306cc4764c331c46"
+    },
+    "review-attempts/physical/0/review-work/physical/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-attempts/physical/0/review-work/physical/stdout.log": {
+      "bytes": 359171,
+      "sha256": "fb089f08f0cfa8cb559f95c54e65565562eaf24e13d8dd72f1bd4f040a1605b9"
+    },
+    "review-attempts/physical/0/schema.json": {
+      "bytes": 12118,
+      "sha256": "4d4a59779624c89fbc8ae951b4e271f654033ff50cbed9cdb683f13a339bdaa3"
+    },
+    "review-executions/circuit.json": {
+      "bytes": 12289,
+      "sha256": "4ec33edd20c878505e2cbd1d9c6669a9e23f6d7388c3cfd035532f34198bf8e7"
+    },
+    "review-executions/physical.json": {
+      "bytes": 11144,
+      "sha256": "de9dfa2f4f6f43204c57d0d20d393ca448e623ed0dc59b7e7b1cc6f91dff3a78"
+    },
+    "review-work/circuit/console.log": {
+      "bytes": 731934,
+      "sha256": "8df3704be895f948b2cb1b3fe60dc45b098eb9594eb0db35888434c547911136"
+    },
+    "review-work/circuit/execution.json": {
+      "bytes": 5466,
+      "sha256": "95a495d8fc2db14110dde14366a6ce36083b80b0a2dcc6f17e1c0eb1c44a63ce"
+    },
+    "review-work/circuit/experiments/ao4485.pdf": {
+      "bytes": 371710,
+      "sha256": "a7856f1f385cd3f8cdf645a60547afa400f57a66cc82c29a769ea566fdadf997"
+    },
+    "review-work/circuit/experiments/ao4485.txt": {
+      "bytes": 23176,
+      "sha256": "f00b7b0f9b01577c19e579aeb531f8aea7037e932534ddb8339fb349d87043db"
+    },
+    "review-work/circuit/experiments/c6-source-web.txt": {
+      "bytes": 10386,
+      "sha256": "12a5a89b270068868742e24af22c4bc56405682e36c3ebebc25410d5725895c3"
+    },
+    "review-work/circuit/experiments/calculate.py": {
+      "bytes": 2465,
+      "sha256": "f7e0ac5264399ac737001ef371443e1a7ce214edfa9da52787903a940dca04d4"
+    },
+    "review-work/circuit/experiments/calculations.json": {
+      "bytes": 4808,
+      "sha256": "19897b71e4bddacf1e55af67c2862a131d704252766ac198c3688a9e42a44da3"
+    },
+    "review-work/circuit/experiments/catalog-details-web.json": {
+      "bytes": 29092,
+      "sha256": "fbc43eaf60525d8b926c51a26baeeee24c5c4500964702ff35eeef80b681d812"
+    },
+    "review-work/circuit/experiments/catalog-details-web.txt": {
+      "bytes": 28648,
+      "sha256": "0e5fd198db6c7ab6012f2c005a4d5bcb8fc3c57352d7943b82efb5a795328a3b"
+    },
+    "review-work/circuit/experiments/catalog-find.txt": {
+      "bytes": 10916,
+      "sha256": "4d855bbff60e4e6018a092e7deb15e3bb42f9590b2859e83a0a8651d22edc3fd"
+    },
+    "review-work/circuit/experiments/catalog-web.json": {
+      "bytes": 22713,
+      "sha256": "c5ad3a55fa42e7579535e8274197ff9ce1176942debd5c38988b6122a78d9554"
+    },
+    "review-work/circuit/experiments/catalog-web.txt": {
+      "bytes": 21906,
+      "sha256": "efc6c505c797d66eeec7555dafb052a38fdbab472b6c097396960196778abd20"
+    },
+    "review-work/circuit/experiments/design.xml": {
+      "bytes": 73853,
+      "sha256": "a0777acb97c7aec69042e3b042ea5c5e40b6f40870627e946d0ca7c31c8e8fb1"
+    },
+    "review-work/circuit/experiments/export-comparison.json": {
+      "bytes": 370,
+      "sha256": "aaa35793b53e501b7d3f8d70b597cd798a654ff983ea20fc3fa8ec835d527406"
+    },
+    "review-work/circuit/experiments/inspect_native.py": {
+      "bytes": 2704,
+      "sha256": "409a795217f0a6ea9242113f35fad6c8a9e89fc3db012419007dab2231f036ae"
+    },
+    "review-work/circuit/experiments/lmr16020.pdf": {
+      "bytes": 3153510,
+      "sha256": "6d893731e57590b98ea210562d0a47b653ed1e9af378130178fb415ebdb45395"
+    },
+    "review-work/circuit/experiments/lmr16020.txt": {
+      "bytes": 123868,
+      "sha256": "2be7f3134d5ebb2e9aa568632352826cbe211edfab00fdf863e824608b4d38d4"
+    },
+    "review-work/circuit/experiments/native-inspection.json": {
+      "bytes": 112902,
+      "sha256": "1a0e78dbf9b04f2dc2a7abab0e548b6d71714d9fd25538333cecae4b6ca993f1"
+    },
+    "review-work/circuit/experiments/native-inspection.log": {
+      "bytes": 22953,
+      "sha256": "f42788932587eed860a936f647c3f105cb6e8135ab88a6c3ad2807fc5bb1150c"
+    },
+    "review-work/circuit/experiments/netlist-stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/circuit/experiments/netlist-stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/circuit/experiments/review-log.json": {
+      "bytes": 6992,
+      "sha256": "4bef5d60ed0ace79fad299b32f943e979233d93ce2e892f272806b563c661f34"
+    },
+    "review-work/circuit/experiments/smcj-web.txt": {
+      "bytes": 408,
+      "sha256": "d1ccbc778516a88172a36aae6d111f0ad0a7a0ce5fa2e9b32e2e9c20a2c5ca4e"
+    },
+    "review-work/circuit/experiments/tls-web.json": {
+      "bytes": 21226,
+      "sha256": "a84e81ca42785b11ddb94e0ef448fc0efe87059f8711777ed28cd7b9dfeab313"
+    },
+    "review-work/circuit/experiments/tls-web.txt": {
+      "bytes": 20853,
+      "sha256": "ba1b70bc4b43bfba62440139b73a2cea64ad1908e1322503bcccec7dc490af86"
+    },
+    "review-work/circuit/experiments/tls115d0ej.pdf": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/circuit/experiments/tlv757p.pdf": {
+      "bytes": 2856589,
+      "sha256": "239d1f1e9bce270377e9af29bd06a5f99fe45f489878612d249d88cf9f2dd7a1"
+    },
+    "review-work/circuit/experiments/tlv757p.txt": {
+      "bytes": 189174,
+      "sha256": "69647d726fec5e6668d1f82abf434ed97d97d1bc7ac2c2345fd979495336f1bb"
+    },
+    "review-work/circuit/kicad-config/10.0/eeschema.json": {
+      "bytes": 12148,
+      "sha256": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb"
+    },
+    "review-work/circuit/kicad-config/10.0/kicad.json": {
+      "bytes": 5767,
+      "sha256": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650"
+    },
+    "review-work/circuit/kicad-config/10.0/kicad_common.json": {
+      "bytes": 2510,
+      "sha256": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e"
+    },
+    "review-work/circuit/kicad-config/10.0/symbol_editor.json": {
+      "bytes": 4247,
+      "sha256": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa"
+    },
+    "review-work/circuit/preflight/probe/console.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/circuit/preflight/probe/execution.json": {
+      "bytes": 1978,
+      "sha256": "19d3e797a58e8fb766152b729b0a27b3244165730c76c72772ca795832aaded3"
+    },
+    "review-work/circuit/preflight/probe/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/circuit/preflight/probe/stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/circuit/preflight/receipt.json": {
+      "bytes": 17694,
+      "sha256": "16511b9035ffa70acf4b80180dd5cb26898a4fd7bd9b149f643147a87785ad15"
+    },
+    "review-work/circuit/schema.json": {
+      "bytes": 12117,
+      "sha256": "6e3a5811402e6a85cba53c9b50fe83a87f7108810263bb0a70302d7a6fc09a5d"
+    },
+    "review-work/circuit/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/circuit/stdout.log": {
+      "bytes": 731934,
+      "sha256": "8df3704be895f948b2cb1b3fe60dc45b098eb9594eb0db35888434c547911136"
+    },
+    "review-work/physical/console.log": {
+      "bytes": 359171,
+      "sha256": "fb089f08f0cfa8cb559f95c54e65565562eaf24e13d8dd72f1bd4f040a1605b9"
+    },
+    "review-work/physical/execution.json": {
+      "bytes": 5467,
+      "sha256": "f890f95e578bb6c5fdb0853d22309ba300c39c2f21b1df2aa3e8d44596da24b2"
+    },
+    "review-work/physical/experiments/analyze.py": {
+      "bytes": 3462,
+      "sha256": "ab243b7942260c81c89ef63362bf9452980931463227cd971fc52e7e5731c9b2"
+    },
+    "review-work/physical/experiments/ao4485.pdf": {
+      "bytes": 371710,
+      "sha256": "a7856f1f385cd3f8cdf645a60547afa400f57a66cc82c29a769ea566fdadf997"
+    },
+    "review-work/physical/experiments/ao4485.txt": {
+      "bytes": 23176,
+      "sha256": "f00b7b0f9b01577c19e579aeb531f8aea7037e932534ddb8339fb349d87043db"
+    },
+    "review-work/physical/experiments/baseline-hashes.json": {
+      "bytes": 114,
+      "sha256": "78de899a054490641842ec737e4f85591b7fe696074cf1bd46f1ec36f7f3c854"
+    },
+    "review-work/physical/experiments/calculations.json": {
+      "bytes": 3432,
+      "sha256": "aeb22f9a61ba7ae9e1e02a40f62e1247060da0670ec8ff5aa81e727e97e63e4c"
+    },
+    "review-work/physical/experiments/commands.json": {
+      "bytes": 810,
+      "sha256": "a6faded23864d8a28142e493745a638a0a8134c2adad4a1b249ce8e9d706ad7b"
+    },
+    "review-work/physical/experiments/independent.xml": {
+      "bytes": 73853,
+      "sha256": "4600a2c51b5802d9aaf1e42d8c1362fbc46a1012cdf5afd4f58b925aca6d1c98"
+    },
+    "review-work/physical/experiments/inspection.json": {
+      "bytes": 1822,
+      "sha256": "bb667524031f3873e168485c7bc2bcca7cc30fe6a1f0709561da6840080cc802"
+    },
+    "review-work/physical/experiments/lmr16020.pdf": {
+      "bytes": 3153510,
+      "sha256": "6d893731e57590b98ea210562d0a47b653ed1e9af378130178fb415ebdb45395"
+    },
+    "review-work/physical/experiments/lmr16020.txt": {
+      "bytes": 123868,
+      "sha256": "2be7f3134d5ebb2e9aa568632352826cbe211edfab00fdf863e824608b4d38d4"
+    },
+    "review-work/physical/experiments/native-symbols.json": {
+      "bytes": 25125,
+      "sha256": "5a413e9885157c40962dfa596d24fc6b8529b6eb6d70743138b360496e9b4e63"
+    },
+    "review-work/physical/experiments/notes.md": {
+      "bytes": 4991,
+      "sha256": "70370232b182cd19aed98a3bf8df8bc291dc7271c10c00b2cc17fd1a3abe9ea1"
+    },
+    "review-work/physical/experiments/references.json": {
+      "bytes": 1029,
+      "sha256": "42b75878a326649566870c85082b657d45791cd220c47e758c277793dceaa21d"
+    },
+    "review-work/physical/experiments/tls115d0ej.pdf": {
+      "bytes": 1887890,
+      "sha256": "65b8bf634a491696adeb2f687d5374ad793dae75a22c95a1c6faabcaa8e05459"
+    },
+    "review-work/physical/experiments/tls115d0ej.txt": {
+      "bytes": 56663,
+      "sha256": "128f5d4bce69540121d6ae0ba9791401e164f081b15cf689df8f47b78be3ed34"
+    },
+    "review-work/physical/experiments/tlv757p.pdf": {
+      "bytes": 2856589,
+      "sha256": "239d1f1e9bce270377e9af29bd06a5f99fe45f489878612d249d88cf9f2dd7a1"
+    },
+    "review-work/physical/experiments/tlv757p.txt": {
+      "bytes": 189174,
+      "sha256": "69647d726fec5e6668d1f82abf434ed97d97d1bc7ac2c2345fd979495336f1bb"
+    },
+    "review-work/physical/kicad-config/10.0/eeschema.json": {
+      "bytes": 12148,
+      "sha256": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb"
+    },
+    "review-work/physical/kicad-config/10.0/kicad.json": {
+      "bytes": 5767,
+      "sha256": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650"
+    },
+    "review-work/physical/kicad-config/10.0/kicad_common.json": {
+      "bytes": 2510,
+      "sha256": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e"
+    },
+    "review-work/physical/kicad-config/10.0/symbol_editor.json": {
+      "bytes": 4247,
+      "sha256": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa"
+    },
+    "review-work/physical/preflight/probe/console.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/physical/preflight/probe/execution.json": {
+      "bytes": 1979,
+      "sha256": "8c4fabc8934c5265a4a10fae85808b1aa430066595149b3111d4edb9189be65c"
+    },
+    "review-work/physical/preflight/probe/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/physical/preflight/probe/stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/physical/preflight/receipt.json": {
+      "bytes": 17699,
+      "sha256": "6041e9c0548b04326b9f2a9577478bacf58e1230ef579aaca0eeb9a75f919062"
+    },
+    "review-work/physical/schema.json": {
+      "bytes": 12118,
+      "sha256": "9fd254a4d50d663f46e6194c32229024079ca82d8e366da7306cc4764c331c46"
+    },
+    "review-work/physical/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review-work/physical/stdout.log": {
+      "bytes": 359171,
+      "sha256": "fb089f08f0cfa8cb559f95c54e65565562eaf24e13d8dd72f1bd4f040a1605b9"
+    },
+    "work/.navigation/binding.json": {
+      "bytes": 1593,
+      "sha256": "5d1ee8cc465346b270aa144a27e228b9fba67ee25173147f7e8c560822cefd7c"
+    },
+    "work/.navigation/index.json": {
+      "bytes": 425775,
+      "sha256": "0b57b7cfdbabbb014e2435bb1021c21e64d572abe69e556f438a40d567e08c67"
+    },
+    "work/erc/console.log": {
+      "bytes": 54,
+      "sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf"
+    },
+    "work/erc/erc.json": {
+      "bytes": 1857,
+      "sha256": "a7cb84c678b634354df542a9cbb7b9fec077ebd6be523537c6b40586f8848f7f"
+    },
+    "work/erc/execution.json": {
+      "bytes": 2452,
+      "sha256": "dac64408191bf8188adebac008e0b1caf334ec48eb598589362fd0d42d4d179e"
+    },
+    "work/erc/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": {
+      "bytes": 9704,
+      "sha256": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899"
+    },
+    "work/erc/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": {
+      "bytes": 2296,
+      "sha256": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390"
+    },
+    "work/erc/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": {
+      "bytes": 112,
+      "sha256": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214"
+    },
+    "work/erc/home/.cache/fontconfig/16326683038b281783a0ef8c680e3a10-le64.cache-9": {
+      "bytes": 9888,
+      "sha256": "0563d0fa156a760813b5cc25ea8df81cd7cc27e5fbf7bebe20babcd2b975ae9b"
+    },
+    "work/erc/home/.cache/fontconfig/188ac73a183f12857f63bb60a4a6d603-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "e26f2fedb964ac614c7a6e555f2d1ff6c567eb8084820fa8a86ed6a7e79cc29c"
+    },
+    "work/erc/home/.cache/fontconfig/3047814df9a2f067bd2d96a2b9c36e5a-le64.cache-9": {
+      "bytes": 23056,
+      "sha256": "868c372e3d34d51d9f4708e3f00c597a015e60d7ea579a1aafdaceae162f7adb"
+    },
+    "work/erc/home/.cache/fontconfig/32b6488e5b8292a2e95c79d947e009e8-le64.cache-9": {
+      "bytes": 104,
+      "sha256": "dd1dfb14281478435cf4f5818bbd9e486e7b37cfff94ed966454b21d717037c4"
+    },
+    "work/erc/home/.cache/fontconfig/3830d5c3ddfd5cd38a049b759396e72e-le64.cache-9": {
+      "bytes": 312,
+      "sha256": "1be6bb8210900af8c0fe1cf0a5379b889e0902d7ec3c3ad93b94d381a7861a1d"
+    },
+    "work/erc/home/.cache/fontconfig/3f7329c5293ffd510edef78f73874cfd-le64.cache-9": {
+      "bytes": 3568,
+      "sha256": "b8c1ea6ce9249f498732b1688f75447c5beb452a24c9d5969778818bb0e0e760"
+    },
+    "work/erc/home/.cache/fontconfig/467c019e582ee353435ea5c21d137ef6-le64.cache-9": {
+      "bytes": 149944,
+      "sha256": "8e4dfa1d306da9f5d763d0c1206d2f04e51374798b5a30da454808bf8a90d206"
+    },
+    "work/erc/home/.cache/fontconfig/4c599c202bc5c08e2d34565a40eac3b2-le64.cache-9": {
+      "bytes": 104,
+      "sha256": "918406b9c772e387606f92986fdbc4f9dc814da4d2bfb6721ecdb5e0b4947780"
+    },
+    "work/erc/home/.cache/fontconfig/4d6aee6d44eccb37054d3216e945f618-le64.cache-9": {
+      "bytes": 14696,
+      "sha256": "706675b3e6abd23275c0e7119a294d9dfe73160bb6286738de72f2a672e928ce"
+    },
+    "work/erc/home/.cache/fontconfig/573ec803664ed168555e0e8b6d0f0c7f-le64.cache-9": {
+      "bytes": 352,
+      "sha256": "1ab7cbfeba052c940fcf5c06ffb25964047d12318f0463f0a09b946a0ed524a9"
+    },
+    "work/erc/home/.cache/fontconfig/57e423e26b20ab21d0f2f29c145174c3-le64.cache-9": {
+      "bytes": 336,
+      "sha256": "fc2f48bf5da9d1e2edbc19361a6d4bbecc15ffd2d692d76ba37d7940dc0f56a5"
+    },
+    "work/erc/home/.cache/fontconfig/6333f38776742d18e214673cd2c24e34-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "7d6339aaeff84a46690e1d149d199893b027b6f40de87d062ac286ffc5fa15de"
+    },
+    "work/erc/home/.cache/fontconfig/6aa41aa22e18b8fa06a12da28ea9c28b-le64.cache-9": {
+      "bytes": 19088,
+      "sha256": "7b7e3c7b26a4d8fe5743f9d282cdaefb01ac6bced883666ce2740bd3b4124a62"
+    },
+    "work/erc/home/.cache/fontconfig/6cc790b63b123a6a96ee260fcdad32a9-le64.cache-9": {
+      "bytes": 62112,
+      "sha256": "885e8da686f2ce25047f045ac4e7a3046a516bfae8decc7117e9642172315b5f"
+    },
+    "work/erc/home/.cache/fontconfig/707971e003b4ae6c8121c3a920e507f5-le64.cache-9": {
+      "bytes": 160,
+      "sha256": "ea03c07b3de82819b8c190c254efd912cd6459e77c29be71658a0398edd9095b"
+    },
+    "work/erc/home/.cache/fontconfig/7ef2298fde41cc6eeb7af42e48b7d293-le64.cache-9": {
+      "bytes": 13160,
+      "sha256": "8d0bebc9536f314ca084487ed75bc56e015376eca7caa374f2ee392717e4ad15"
+    },
+    "work/erc/home/.cache/fontconfig/8a687c406b77f27d99abfeeba937fcce-le64.cache-9": {
+      "bytes": 1992,
+      "sha256": "fb87588416da30d5cd466552f5d240272f0cbf99ecd04250aa5ed88f56b749b8"
+    },
+    "work/erc/home/.cache/fontconfig/8f02d4cb045bd6ce15663e43f347c9f8-le64.cache-9": {
+      "bytes": 60472,
+      "sha256": "e3ce6d863af245dfeb14c5f3e51b8518751704637c8e07f84325eb665107ec70"
+    },
+    "work/erc/home/.cache/fontconfig/95530828ff6c81d309f8258d8d02a23e-le64.cache-9": {
+      "bytes": 112,
+      "sha256": "875b748fd3b0ed88679c9b876dd52f09644c569b0a6e5e14d8644e1e6d613ca8"
+    },
+    "work/erc/home/.cache/fontconfig/99e8ed0e538f840c565b6ed5dad60d56-le64.cache-9": {
+      "bytes": 10848,
+      "sha256": "34bd856f91e1870ab723d8507342961d49c76634157e69693c913fdc3f250320"
+    },
+    "work/erc/home/.cache/fontconfig/CACHEDIR.TAG": {
+      "bytes": 200,
+      "sha256": "05e7633fb31bf1f6f8d89020c16b9f24587fdf7638e951c9745b192f5fc3b682"
+    },
+    "work/erc/home/.cache/fontconfig/a4e60e8d1e10d2fdff3fe3037a1845fb-le64.cache-9": {
+      "bytes": 54136,
+      "sha256": "34d83fbd0edc79d5301021c75e855e1d8562faba0b73cc0cb9a0565502060960"
+    },
+    "work/erc/home/.cache/fontconfig/bb9ef35e7661cc55c3d6e0d2d8cc2051-le64.cache-9": {
+      "bytes": 35480,
+      "sha256": "a70b1c6e43fc409a6c35e82f6183e3713e706b0680e952b8ddf1392badd5e404"
+    },
+    "work/erc/home/.cache/fontconfig/bf3b770c553c462765856025a94f1ce6-le64.cache-9": {
+      "bytes": 33112,
+      "sha256": "c6816c28f507347e005206c21dea57659e4f804edd7add7982f96c144bdceeb7"
+    },
+    "work/erc/home/.cache/fontconfig/c277e94e32b20404286a1ddafa5a80f0-le64.cache-9": {
+      "bytes": 1976,
+      "sha256": "fc00c94c58e6f35b8c91be48d79eedbbaa7c4dc8ec5d1d24e869f581c04f9cc3"
+    },
+    "work/erc/home/.cache/fontconfig/c57959a16110560c8d0fcea73374aeeb-le64.cache-9": {
+      "bytes": 19296,
+      "sha256": "f71c1645cf5131b8b44312013a98254870ff33338d45b83dfda9fd59e83d0b23"
+    },
+    "work/erc/home/.cache/fontconfig/c855463f699352c367813e37f3f70ea7-le64.cache-9": {
+      "bytes": 304,
+      "sha256": "629fd5a7257d778d1eab8cffdb518d469732f773c0920f809b1b93d3edb43ec2"
+    },
+    "work/erc/home/.cache/fontconfig/cabbd14511b9e8a55e92af97fb3a0461-le64.cache-9": {
+      "bytes": 173664,
+      "sha256": "da21d7e633da02823512fa2f67eed41d2a0d704b01011fc7e9835bacc5340525"
+    },
+    "work/erc/home/.cache/fontconfig/d3e5c4ee2ceb1fc347f91d4cefc53bc0-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "6992bb61ebf116e7b7024d299d06f61acebea6bca58e8c30a15beee46a8e7484"
+    },
+    "work/erc/home/.cache/fontconfig/d52a8644073d54c13679302ca1180695-le64.cache-9": {
+      "bytes": 90632,
+      "sha256": "68ba8fbf0c3783e8312962fe85ebdf58e6dcab32c02e5b4faf8f3c12ea898f68"
+    },
+    "work/erc/home/.cache/fontconfig/d589a48862398ed80a3d6066f4f56f4c-le64.cache-9": {
+      "bytes": 51736,
+      "sha256": "efd2971e07bb53c4ed1ef07289d58a4cdd9eb44deff4bcaf71e1aba7aa80660b"
+    },
+    "work/erc/home/.cache/fontconfig/d82eb4fd963d448e2fcb7d7b793b5df3-le64.cache-9": {
+      "bytes": 216,
+      "sha256": "7e4c44566d18183565d91ce74cdd446c28f8c61955c0d03f87c65a9660c5b0cd"
+    },
+    "work/erc/home/.cache/fontconfig/da43223dd54fb3bb4243ae19d4b583b2-le64.cache-9": {
+      "bytes": 2656,
+      "sha256": "8344c56226aeba058aa4f7ae965b6ec9e7e29f8ba85757ee7e66494fd15ea520"
+    },
+    "work/erc/home/.cache/fontconfig/da82082e1ef13c4097208324d67c180c-le64.cache-9": {
+      "bytes": 7032,
+      "sha256": "c154e52209ffc926973f2eff83bf4deb903c50d885ebb31f859428dcc6fa013c"
+    },
+    "work/erc/home/.cache/fontconfig/e0aa53bcfa504e64f87823c16bc01eb6-le64.cache-9": {
+      "bytes": 2800,
+      "sha256": "8c5661d02c1c4eae89e67695885065a18a0dd672fe6b946e38c6914f4be1ec21"
+    },
+    "work/erc/home/.cache/fontconfig/e13b20fdb08344e0e664864cc2ede53d-le64.cache-9": {
+      "bytes": 177456,
+      "sha256": "cd33da978bfc9da3e43184d4d97f4d568fc72bce6d352b6765818f5d9f26099e"
+    },
+    "work/erc/home/.cache/fontconfig/e52a45a1c8c8fe895fc0fc8c4e6999b8-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "ed83d8aaa9ed316f276fd4ff27a9177630359dc88f7eda1ad3453a84ac7d85b0"
+    },
+    "work/erc/home/.cache/fontconfig/f1f2465696798768e9653f19e17ccdc8-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "623c8046ef4b21d68ae8bb021772afe9e51aea495bc038e73382c6916cc707d6"
+    },
+    "work/erc/home/.cache/fontconfig/fe547fea3a41b43a38975d292a2b19c7-le64.cache-9": {
+      "bytes": 112,
+      "sha256": "4b1a5363ab5cbc0cfdcfeaf18f8f498e41f3597f28b6602bdd994ff2f7f8d5f2"
+    },
+    "work/erc/kicad-config/10.0/cvpcb.json": {
+      "bytes": 8409,
+      "sha256": "3a24bbacab369da74efdaff851be8869d8ca2e5e4ca28304f9eb57041bdad759"
+    },
+    "work/erc/kicad-config/10.0/eeschema.json": {
+      "bytes": 12148,
+      "sha256": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb"
+    },
+    "work/erc/kicad-config/10.0/kicad.json": {
+      "bytes": 5767,
+      "sha256": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650"
+    },
+    "work/erc/kicad-config/10.0/kicad_common.json": {
+      "bytes": 2510,
+      "sha256": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e"
+    },
+    "work/erc/kicad-config/10.0/symbol_editor.json": {
+      "bytes": 4247,
+      "sha256": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa"
+    },
+    "work/erc/kicad-version/console.log": {
+      "bytes": 7,
+      "sha256": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7"
+    },
+    "work/erc/kicad-version/execution.json": {
+      "bytes": 1987,
+      "sha256": "a3d80ce4c63a23e858a71745672bd6e01ffed8c4a4bb3357494b45ceede623c1"
+    },
+    "work/erc/kicad-version/kicad-config/10.0/kicad.json": {
+      "bytes": 5767,
+      "sha256": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650"
+    },
+    "work/erc/kicad-version/kicad-config/10.0/kicad_common.json": {
+      "bytes": 2510,
+      "sha256": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e"
+    },
+    "work/erc/kicad-version/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "work/erc/kicad-version/stdout.log": {
+      "bytes": 7,
+      "sha256": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7"
+    },
+    "work/erc/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "work/erc/stdout.log": {
+      "bytes": 54,
+      "sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf"
+    },
+    "work/interface/interface.json": {
+      "bytes": 141965,
+      "sha256": "b70ab20143c429279ec37c610ac61db48fd241e56623e5a51392f0681a8554b4"
+    },
+    "work/netlist/connectivity.json": {
+      "bytes": 17200,
+      "sha256": "b3f10d987207123a38b79330d8507d764073ea73325325f1c1bd9347dcc8395a"
+    },
+    "work/netlist/console.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "work/netlist/design.xml": {
+      "bytes": 73853,
+      "sha256": "5edb9944f8524bd7cd2e27f6eac667b4be753d5ffd8eeeedacefd3e0cdafcd73"
+    },
+    "work/netlist/execution.json": {
+      "bytes": 2412,
+      "sha256": "378dd01083b069c4457c339bc42c8c836a747ddf97350b0e7214ba672148020d"
+    },
+    "work/netlist/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": {
+      "bytes": 9704,
+      "sha256": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899"
+    },
+    "work/netlist/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": {
+      "bytes": 2296,
+      "sha256": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390"
+    },
+    "work/netlist/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": {
+      "bytes": 112,
+      "sha256": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214"
+    },
+    "work/netlist/home/.cache/fontconfig/16326683038b281783a0ef8c680e3a10-le64.cache-9": {
+      "bytes": 9888,
+      "sha256": "0563d0fa156a760813b5cc25ea8df81cd7cc27e5fbf7bebe20babcd2b975ae9b"
+    },
+    "work/netlist/home/.cache/fontconfig/188ac73a183f12857f63bb60a4a6d603-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "e26f2fedb964ac614c7a6e555f2d1ff6c567eb8084820fa8a86ed6a7e79cc29c"
+    },
+    "work/netlist/home/.cache/fontconfig/3047814df9a2f067bd2d96a2b9c36e5a-le64.cache-9": {
+      "bytes": 23056,
+      "sha256": "868c372e3d34d51d9f4708e3f00c597a015e60d7ea579a1aafdaceae162f7adb"
+    },
+    "work/netlist/home/.cache/fontconfig/32b6488e5b8292a2e95c79d947e009e8-le64.cache-9": {
+      "bytes": 104,
+      "sha256": "dd1dfb14281478435cf4f5818bbd9e486e7b37cfff94ed966454b21d717037c4"
+    },
+    "work/netlist/home/.cache/fontconfig/3830d5c3ddfd5cd38a049b759396e72e-le64.cache-9": {
+      "bytes": 312,
+      "sha256": "1be6bb8210900af8c0fe1cf0a5379b889e0902d7ec3c3ad93b94d381a7861a1d"
+    },
+    "work/netlist/home/.cache/fontconfig/3f7329c5293ffd510edef78f73874cfd-le64.cache-9": {
+      "bytes": 3568,
+      "sha256": "b8c1ea6ce9249f498732b1688f75447c5beb452a24c9d5969778818bb0e0e760"
+    },
+    "work/netlist/home/.cache/fontconfig/467c019e582ee353435ea5c21d137ef6-le64.cache-9": {
+      "bytes": 149944,
+      "sha256": "8e4dfa1d306da9f5d763d0c1206d2f04e51374798b5a30da454808bf8a90d206"
+    },
+    "work/netlist/home/.cache/fontconfig/4c599c202bc5c08e2d34565a40eac3b2-le64.cache-9": {
+      "bytes": 104,
+      "sha256": "918406b9c772e387606f92986fdbc4f9dc814da4d2bfb6721ecdb5e0b4947780"
+    },
+    "work/netlist/home/.cache/fontconfig/4d6aee6d44eccb37054d3216e945f618-le64.cache-9": {
+      "bytes": 14696,
+      "sha256": "706675b3e6abd23275c0e7119a294d9dfe73160bb6286738de72f2a672e928ce"
+    },
+    "work/netlist/home/.cache/fontconfig/573ec803664ed168555e0e8b6d0f0c7f-le64.cache-9": {
+      "bytes": 352,
+      "sha256": "1ab7cbfeba052c940fcf5c06ffb25964047d12318f0463f0a09b946a0ed524a9"
+    },
+    "work/netlist/home/.cache/fontconfig/57e423e26b20ab21d0f2f29c145174c3-le64.cache-9": {
+      "bytes": 336,
+      "sha256": "fc2f48bf5da9d1e2edbc19361a6d4bbecc15ffd2d692d76ba37d7940dc0f56a5"
+    },
+    "work/netlist/home/.cache/fontconfig/6333f38776742d18e214673cd2c24e34-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "7d6339aaeff84a46690e1d149d199893b027b6f40de87d062ac286ffc5fa15de"
+    },
+    "work/netlist/home/.cache/fontconfig/6aa41aa22e18b8fa06a12da28ea9c28b-le64.cache-9": {
+      "bytes": 19088,
+      "sha256": "7b7e3c7b26a4d8fe5743f9d282cdaefb01ac6bced883666ce2740bd3b4124a62"
+    },
+    "work/netlist/home/.cache/fontconfig/6cc790b63b123a6a96ee260fcdad32a9-le64.cache-9": {
+      "bytes": 62112,
+      "sha256": "885e8da686f2ce25047f045ac4e7a3046a516bfae8decc7117e9642172315b5f"
+    },
+    "work/netlist/home/.cache/fontconfig/707971e003b4ae6c8121c3a920e507f5-le64.cache-9": {
+      "bytes": 160,
+      "sha256": "ea03c07b3de82819b8c190c254efd912cd6459e77c29be71658a0398edd9095b"
+    },
+    "work/netlist/home/.cache/fontconfig/7ef2298fde41cc6eeb7af42e48b7d293-le64.cache-9": {
+      "bytes": 13160,
+      "sha256": "8d0bebc9536f314ca084487ed75bc56e015376eca7caa374f2ee392717e4ad15"
+    },
+    "work/netlist/home/.cache/fontconfig/8a687c406b77f27d99abfeeba937fcce-le64.cache-9": {
+      "bytes": 1992,
+      "sha256": "fb87588416da30d5cd466552f5d240272f0cbf99ecd04250aa5ed88f56b749b8"
+    },
+    "work/netlist/home/.cache/fontconfig/8f02d4cb045bd6ce15663e43f347c9f8-le64.cache-9": {
+      "bytes": 60472,
+      "sha256": "e3ce6d863af245dfeb14c5f3e51b8518751704637c8e07f84325eb665107ec70"
+    },
+    "work/netlist/home/.cache/fontconfig/95530828ff6c81d309f8258d8d02a23e-le64.cache-9": {
+      "bytes": 112,
+      "sha256": "875b748fd3b0ed88679c9b876dd52f09644c569b0a6e5e14d8644e1e6d613ca8"
+    },
+    "work/netlist/home/.cache/fontconfig/99e8ed0e538f840c565b6ed5dad60d56-le64.cache-9": {
+      "bytes": 10848,
+      "sha256": "34bd856f91e1870ab723d8507342961d49c76634157e69693c913fdc3f250320"
+    },
+    "work/netlist/home/.cache/fontconfig/CACHEDIR.TAG": {
+      "bytes": 200,
+      "sha256": "05e7633fb31bf1f6f8d89020c16b9f24587fdf7638e951c9745b192f5fc3b682"
+    },
+    "work/netlist/home/.cache/fontconfig/a4e60e8d1e10d2fdff3fe3037a1845fb-le64.cache-9": {
+      "bytes": 54136,
+      "sha256": "34d83fbd0edc79d5301021c75e855e1d8562faba0b73cc0cb9a0565502060960"
+    },
+    "work/netlist/home/.cache/fontconfig/bb9ef35e7661cc55c3d6e0d2d8cc2051-le64.cache-9": {
+      "bytes": 35480,
+      "sha256": "a70b1c6e43fc409a6c35e82f6183e3713e706b0680e952b8ddf1392badd5e404"
+    },
+    "work/netlist/home/.cache/fontconfig/bf3b770c553c462765856025a94f1ce6-le64.cache-9": {
+      "bytes": 33112,
+      "sha256": "c6816c28f507347e005206c21dea57659e4f804edd7add7982f96c144bdceeb7"
+    },
+    "work/netlist/home/.cache/fontconfig/c277e94e32b20404286a1ddafa5a80f0-le64.cache-9": {
+      "bytes": 1976,
+      "sha256": "fc00c94c58e6f35b8c91be48d79eedbbaa7c4dc8ec5d1d24e869f581c04f9cc3"
+    },
+    "work/netlist/home/.cache/fontconfig/c57959a16110560c8d0fcea73374aeeb-le64.cache-9": {
+      "bytes": 19296,
+      "sha256": "f71c1645cf5131b8b44312013a98254870ff33338d45b83dfda9fd59e83d0b23"
+    },
+    "work/netlist/home/.cache/fontconfig/c855463f699352c367813e37f3f70ea7-le64.cache-9": {
+      "bytes": 304,
+      "sha256": "629fd5a7257d778d1eab8cffdb518d469732f773c0920f809b1b93d3edb43ec2"
+    },
+    "work/netlist/home/.cache/fontconfig/cabbd14511b9e8a55e92af97fb3a0461-le64.cache-9": {
+      "bytes": 173664,
+      "sha256": "da21d7e633da02823512fa2f67eed41d2a0d704b01011fc7e9835bacc5340525"
+    },
+    "work/netlist/home/.cache/fontconfig/d3e5c4ee2ceb1fc347f91d4cefc53bc0-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "6992bb61ebf116e7b7024d299d06f61acebea6bca58e8c30a15beee46a8e7484"
+    },
+    "work/netlist/home/.cache/fontconfig/d52a8644073d54c13679302ca1180695-le64.cache-9": {
+      "bytes": 90632,
+      "sha256": "68ba8fbf0c3783e8312962fe85ebdf58e6dcab32c02e5b4faf8f3c12ea898f68"
+    },
+    "work/netlist/home/.cache/fontconfig/d589a48862398ed80a3d6066f4f56f4c-le64.cache-9": {
+      "bytes": 51736,
+      "sha256": "efd2971e07bb53c4ed1ef07289d58a4cdd9eb44deff4bcaf71e1aba7aa80660b"
+    },
+    "work/netlist/home/.cache/fontconfig/d82eb4fd963d448e2fcb7d7b793b5df3-le64.cache-9": {
+      "bytes": 216,
+      "sha256": "7e4c44566d18183565d91ce74cdd446c28f8c61955c0d03f87c65a9660c5b0cd"
+    },
+    "work/netlist/home/.cache/fontconfig/da43223dd54fb3bb4243ae19d4b583b2-le64.cache-9": {
+      "bytes": 2656,
+      "sha256": "8344c56226aeba058aa4f7ae965b6ec9e7e29f8ba85757ee7e66494fd15ea520"
+    },
+    "work/netlist/home/.cache/fontconfig/da82082e1ef13c4097208324d67c180c-le64.cache-9": {
+      "bytes": 7032,
+      "sha256": "c154e52209ffc926973f2eff83bf4deb903c50d885ebb31f859428dcc6fa013c"
+    },
+    "work/netlist/home/.cache/fontconfig/e0aa53bcfa504e64f87823c16bc01eb6-le64.cache-9": {
+      "bytes": 2800,
+      "sha256": "8c5661d02c1c4eae89e67695885065a18a0dd672fe6b946e38c6914f4be1ec21"
+    },
+    "work/netlist/home/.cache/fontconfig/e13b20fdb08344e0e664864cc2ede53d-le64.cache-9": {
+      "bytes": 177456,
+      "sha256": "cd33da978bfc9da3e43184d4d97f4d568fc72bce6d352b6765818f5d9f26099e"
+    },
+    "work/netlist/home/.cache/fontconfig/e52a45a1c8c8fe895fc0fc8c4e6999b8-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "ed83d8aaa9ed316f276fd4ff27a9177630359dc88f7eda1ad3453a84ac7d85b0"
+    },
+    "work/netlist/home/.cache/fontconfig/f1f2465696798768e9653f19e17ccdc8-le64.cache-9": {
+      "bytes": 120,
+      "sha256": "623c8046ef4b21d68ae8bb021772afe9e51aea495bc038e73382c6916cc707d6"
+    },
+    "work/netlist/home/.cache/fontconfig/fe547fea3a41b43a38975d292a2b19c7-le64.cache-9": {
+      "bytes": 112,
+      "sha256": "4b1a5363ab5cbc0cfdcfeaf18f8f498e41f3597f28b6602bdd994ff2f7f8d5f2"
+    },
+    "work/netlist/kicad-config/10.0/eeschema.json": {
+      "bytes": 12148,
+      "sha256": "ad360fd6896e8d8f65059a2aaff40139e8c37f5f758954d3b94be9033fb114fb"
+    },
+    "work/netlist/kicad-config/10.0/kicad.json": {
+      "bytes": 5767,
+      "sha256": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650"
+    },
+    "work/netlist/kicad-config/10.0/kicad_common.json": {
+      "bytes": 2510,
+      "sha256": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e"
+    },
+    "work/netlist/kicad-config/10.0/symbol_editor.json": {
+      "bytes": 4247,
+      "sha256": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa"
+    },
+    "work/netlist/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "work/netlist/stdout.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "work/verification/evidence.json": {
+      "bytes": 3326,
+      "sha256": "29f4642ef93ac74b247de06ac45231b5fb6a72b3d7be3fd21cf75a3dfb3e3320"
+    }
+  },
+  "raw_snapshot_verification": "passed before and after relocation",
+  "reason": "Both investigations retained third-party web text; PSU investigations also retained vendor PDFs and their extractions. Full raw evidence remains host-only in assigned scratch. Receipts cannot be used as run locations.",
+  "retained_files": [
+    "candidate.json",
+    "baseline.json",
+    "result.json",
+    "REPORT.md",
+    "work/verification/evidence.json",
+    "checks/rail-regulation.json",
+    "checks/reverse-block.json",
+    "checks/netlist.json",
+    "checks/brownout-floor.json",
+    "checks/c12-part.json",
+    "checks/capacitor-ratings.json",
+    "checks/tvs-clamp.json",
+    "checks/erc.json",
+    "checks/c4-rating.json",
+    "checks/input-filter.json",
+    "checks/interface.json",
+    "review-executions/circuit.json",
+    "review-executions/physical.json"
+  ],
+  "run_id": "877a075f-51d6-4cf2-a627-8ee5fb441305"
+}
