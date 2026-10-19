@@ -5,7 +5,6 @@ import shutil
 import tempfile
 import time
 import unittest
-from collections import Counter
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -48,8 +47,12 @@ def catalog(tmp, parts):
 
 def footprint(ref, pads, layer='F.Cu'):
     """Pads are (number, kind) or (number, kind, extra native children such as a pad property)."""
-    body = ''.join(f'(pad "{number}" {kind} rect (at 0 0) (size 1 1) {extra[0] if extra else ""}(layers "{layer}"))'
-                   for number, kind, *extra in pads)
+    body = []
+    for number, kind, *extra in pads:
+        shape, drill = ('circle', '(drill 0.3)') if kind == 'thru_hole' else ('rect', '')
+        body.append(f'(pad "{number}" {kind} {shape} (at 0 0) (size 1 1) {drill} '
+                    f'{extra[0] if extra else ""}(layers "{layer}"))')
+    body = ''.join(body)
     return (f'(footprint "lib:FP" (layer "{layer}") (property "Reference" "{ref}" (at 0 0 0)) '
             f'(property "Value" "v" (at 0 0 0)) {body})')
 
@@ -165,7 +168,7 @@ class InputReaderTests(unittest.TestCase):
         self.assertEqual(j3['tht_excluded'], [via('9', 1, 'pad_prop_heatsink')])
         self.assertEqual([(g['pad'], g['count']) for g in j3['tht_unclassified']], [('9', 1), ('SH', 2)])
         self.assertIn('lacks native pad_prop_heatsink or pad_prop_mechanical', j3['tht_unclassified'][0]['reason'])
-        self.assertIn('no SMD pad SH', j3['tht_unclassified'][1]['reason'])
+        self.assertIn('containment in same-numbered SMD copper is unproved', j3['tht_unclassified'][1]['reason'])
         # Unpropertied vias (AGENTEE-221 pre-patch U5) stay conservative THT joints, reported.
         self.assertEqual((joints['U5']['smt'], joints['U5']['tht'], joints['U5']['tht_excluded']), (9, 8, []))
         self.assertEqual([(g['pad'], g['count']) for g in joints['U5']['tht_unclassified']], [('9', 8)])
@@ -175,6 +178,41 @@ class InputReaderTests(unittest.TestCase):
         # Another property, or more than one, is not the thermal-via contract: counted.
         self.assertEqual((joints['U2']['smt'], joints['U2']['tht'], joints['U2']['tht_excluded']), (1, 2, []))
         self.assertEqual(joints['U2']['tht_unclassified'][0]['count'], 2)
+
+    def test_containment_boundaries_and_unknown_geometry_stay_conservative(self):
+        smd = '(pad "1" smd rect (at 0 0) (size 2 1) (layers "F.Cu"))'
+        via = ('(pad "1" thru_hole circle (at 0.7 0) (size 0.6 0.6) (drill 0.3) '
+               '(property pad_prop_heatsink) (layers "*.Cu"))')
+        cases = [
+            ('exact boundary', smd, via, 0),
+            ('one nm outside', smd, via.replace('0.7 0', '0.700001 0'), 1),
+            ('annulus outside but drill inside', smd, via.replace('0.7 0', '0.8 0'), 1),
+            ('slot drill', smd, via.replace('(drill 0.3)', '(drill oval 0.3 0.4)'), 1),
+            ('offset drill', smd, via.replace('(drill 0.3)', '(drill 0.3 (offset 0.1 0))'), 1),
+            ('missing drill', smd, via.replace('(drill 0.3)', ''), 1),
+            ('oversize drill', smd, via.replace('(drill 0.3)', '(drill 0.8)'), 1),
+            ('oval annulus', smd, via.replace('circle', 'oval'), 1),
+            ('rect rotated 90 fits', smd.replace('(at 0 0)', '(at 0 0 90)'),
+             via.replace('0.7 0', '0 0.7'), 0),
+            ('rect rotated 90 outside', smd.replace('(at 0 0)', '(at 0 0 90)'), via, 1),
+            ('rect rotated 45 unknown', smd.replace('(at 0 0)', '(at 0 0 45)'), via, 1),
+            ('rounded copper unknown', smd.replace('rect', 'roundrect'), via, 1),
+            ('custom stack unknown', smd.replace('(size 2 1)', '(size 2 1) (padstack (mode custom))'), via, 1),
+            ('paste only is not copper', smd.replace('F.Cu', 'F.Paste'), via, 1),
+            ('wrong copper side', smd, via.replace('*.Cu', 'B.Cu'), 1),
+            ('circle boundary', smd.replace('rect', 'circle').replace('2 1', '2 2'), via, 0),
+            ('circle corner outside', smd.replace('rect', 'circle').replace('2 1', '2 2'),
+             via.replace('0.7 0', '0.6 0.6'), 1),
+            ('fractional nm unknown', smd, via.replace('0.7 0', '0.7000001 0'), 1),
+        ]
+        for name, copper, hole, tht in cases:
+            with self.subTest(name=name):
+                board = ('(kicad_pcb (footprint "Owned:Geometry" '
+                         '(property "Reference" "U1") ' + copper + hole + '))').encode()
+                result = designator_joints(board)['U1']
+                self.assertEqual(result['tht'], tht)
+                self.assertEqual(sum(g['count'] for g in result['tht_unclassified']), tht)
+                self.assertEqual(sum(g['count'] for g in result['tht_excluded']), 1 - tht)
 
     def test_pcb_summary_reads_native_units_and_refuses_gaps(self):
         native = {'board': {'has_outline': True, 'width': '36.0000 mm', 'height': '20.0000 mm',
@@ -519,10 +557,13 @@ class NativeThermalViaJointTests(unittest.TestCase):
         require_toolchain(native=True)
         import pcbnew
         from test_footprint_library import HEATSINK, power_pad
+        # Dockerfile installs the pinned kicad-footprints package containing these files.
         stock = Path('/usr/share/kicad/footprints')
         picks = {'U1': (stock / 'RF_Module.pretty', 'ESP32-S3-WROOM-1'),
                  'J2': (stock / 'Connector_Coaxial.pretty', 'SMA_Molex_73251-1153_EdgeMount_Horizontal'),
-                 'J3': (stock / 'Connector_USB.pretty', 'USB_C_Receptacle_HRO_TYPE-C-31-M-12')}
+                 'J3': (stock / 'Connector_USB.pretty', 'USB_C_Receptacle_HRO_TYPE-C-31-M-12'),
+                 'J4': (stock / 'Connector_USB.pretty', 'USB_Micro-B_Amphenol_10118193-0001LF_Horizontal'),
+                 'J5': (stock / 'Connector_USB.pretty', 'USB_C_Receptacle_CNCTech_C-ARA1-AK51X')}
         with tempfile.TemporaryDirectory() as tmp:
             owned = Path(tmp) / 'Owned.pretty'
             owned.mkdir()
@@ -530,34 +571,39 @@ class NativeThermalViaJointTests(unittest.TestCase):
                 (owned / f'{name}.kicad_mod').write_text(power_pad(extra).replace('"So8Tv"', f'"{name}"', 1))
             picks.update(U5=(owned, 'So8Bare'), U6=(owned, 'So8Tv'))
             board, expected = pcbnew.BOARD(), {}
-            via_props = {pcbnew.PAD_PROP_HEATSINK: 'pad_prop_heatsink',
-                         pcbnew.PAD_PROP_MECHANICAL: 'pad_prop_mechanical'}
             for ref, (lib, name) in picks.items():
                 fp = pcbnew.FootprintLoad(str(lib), name)
                 self.assertIsNotNone(fp, name)
                 fp.SetReference(ref)
                 board.Add(fp)
                 pads = [p for p in fp.Pads() if p.GetNumber()]
-                smd = {p.GetNumber() for p in pads if p.GetAttribute() == pcbnew.PAD_ATTRIB_SMD}
                 pth = [p for p in pads if p.GetAttribute() == pcbnew.PAD_ATTRIB_PTH]
-                vias = Counter((p.GetNumber(), via_props[p.GetProperty()]) for p in pth
-                               if p.GetProperty() in via_props and p.GetNumber() in smd)
-                expected[ref] = (len(pads) - len(pth), len(pth) - sum(vias.values()),
-                                 sorted((pad, n, prop) for (pad, prop), n in vias.items()))
+                # Independent fixed expectations, rather than reimplementing the production predicate.
+                excluded_counts = {'U1': 12, 'J2': 0, 'J3': 0, 'J4': 0, 'J5': 0, 'U5': 0, 'U6': 0}
+                n = excluded_counts[ref]
+                groups = [('41', n, 'pad_prop_heatsink')] if ref == 'U1' else []
+                expected[ref] = (len(pads) - len(pth), len(pth) - n, groups)
             path = Path(tmp) / 'thermal.kicad_pcb'
             self.assertTrue(pcbnew.SaveBoard(str(path), board))
             joints = designator_joints(path.read_bytes())
+            for fp in board.GetFootprints():
+                fp.SetOrientationDegrees(37)
+            self.assertTrue(pcbnew.SaveBoard(str(path), board))
+            self.assertEqual(designator_joints(path.read_bytes()), joints)
         found = {ref: (j['smt'], j['tht'], [(g['pad'], g['count'], g['property']) for g in j['tht_excluded']])
                  for ref, j in joints.items()}
         self.assertEqual(found, expected)
-        # The pod cases: 12 heatsink vias in U1 pad 41, 2 mechanical vias in J2 pad 2, 8 in a patched power pad.
+        # ESP32 vias fit; SMA annuli and the owned SO-8 vias extend outside their SMD copper.
         self.assertEqual(found['U1'][1:], (0, [('41', 12, 'pad_prop_heatsink')]))
-        self.assertEqual(found['J2'][1:], (0, [('2', 2, 'pad_prop_mechanical')]))
-        self.assertEqual(found['U6'][1:], (0, [('9', 8, 'pad_prop_heatsink')]))
+        self.assertEqual(found['J2'][1:], (2, []))
+        self.assertEqual(found['J4'][1:], (2, []))
+        self.assertEqual(found['J5'][1:], (18, []))
+        self.assertEqual(found['U6'][1:], (8, []))
         # Unmarked power-pad vias and USB-C shield anchors (mechanical, no SMD pad SH) stay THT joints, reported.
         self.assertEqual(found['U5'][1:], (8, []))
         self.assertEqual(found['J3'][1:], (4, []))
         self.assertEqual([(g['pad'], g['count']) for g in joints['U5']['tht_unclassified']], [('9', 8)])
         self.assertEqual([(g['pad'], g['count']) for g in joints['J3']['tht_unclassified']], [('SH', 4)])
-        for ref in ('U1', 'J2', 'U6'):
-            self.assertEqual(joints[ref]['tht_unclassified'], [])
+        self.assertEqual(joints['U1']['tht_unclassified'], [])
+        for ref, count in (('J2', 2), ('J4', 2), ('J5', 18), ('U6', 8)):
+            self.assertEqual(sum(g['count'] for g in joints[ref]['tht_unclassified']), count)

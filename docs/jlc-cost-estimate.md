@@ -53,20 +53,28 @@ separate `fab_export` check for the estimate to consume.
   joints.
 - **Vias in SMD pads** (AGENTEE-228): a `thru_hole` pad is excluded from the
   THT joints when it carries exactly one native `(property pad_prop_heatsink)`
-  or `(property pad_prop_mechanical)` and its number also names an `smd` pad of
-  the same footprint. These are the thermal and stitching vias of the
-  [AGENTEE-221 contract](footprint-libraries.md), for example the 12 heatsink
-  vias in pad 41 of `ESP32-S3-WROOM-1` or the 2 mechanical vias in pad 2 of an
-  edge-mount SMA. The property is read by
-  `footprint_library.thermal_via_property`, the same reader the footprint
-  index uses for thermal-via declarations. The exclusion is recorded per
-  designator in `tht_excluded` (pad, count, property, reason). Every other `thru_hole` pad stays a THT joint, which is the
-  conservative choice. It is listed in `tht_unclassified` with a reason when it
-  might still be a via: an unmarked hole in a footprint with `smd` pads, or a
-  heatsink/mechanical pad with no same-numbered `smd` pad, such as the
-  `pad_prop_mechanical` shield anchors `SH` of a USB-C receptacle, which are
-  soldered. Other properties, or more than one property, do not match the
-  contract.
+  or `(property pad_prop_mechanical)` and its entire drill and annulus are
+  provably contained in the copper of one same-numbered `smd` pad on the same
+  footprint. The containment uses exact integer nanometres and includes the
+  boundary. Circular annuli with centred round drills and rectangular or
+  circular SMD copper are supported. Rectangles require cardinal pad rotation
+  relative to the footprint; slots, offsets, custom stacks, rounded/oval SMD
+  shapes and other unqualified geometry remain counted and reported.
+  These properties use the shared [AGENTEE-221 contract](footprint-libraries.md)
+  reader `footprint_library.thermal_via_property`.
+  The 12 heatsink vias in pad 41 of `ESP32-S3-WROOM-1` qualify. The two
+  mechanical vias of `SMA_Molex_73251-1153_EdgeMount_Horizontal` extend outside
+  its SMD copper and remain counted. Sharing a pad number alone never qualifies
+  a hole: USB shield anchors sharing `SH` with SMD pads remain counted.
+  The exclusion is recorded per designator in `tht_excluded` (pad, count,
+  property, reason). Every other `thru_hole` pad stays a THT joint. It is listed
+  in `tht_unclassified` with a reason when it carries a heatsink/mechanical
+  property whose containment cannot be proved, or is an unmarked hole in a
+  footprint with `smd` pads. Other properties, or more than one property, do not
+  match the contract.
+  **Excluding these vias from THT joint counts is an unconfirmed pricing
+  assumption, not verified against a JLCPCB quote.** Geometry proves containment,
+  not how JLCPCB bills the hole.
 - **Sides**: the CPL `Layer` column of the BOM designators.
 - **Part class**: for each unique LCSC ID in the BOM, the snapshot's class
   flags. `library_tier`, or `is_basic = 1`, decides the class. Otherwise both

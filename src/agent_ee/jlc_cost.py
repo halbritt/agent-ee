@@ -14,8 +14,8 @@ arithmetic:
 * Solder joints are the numbered `smd` and `thru_hole` pads of each BOM
   designator's board footprint. A `thru_hole` pad carrying the native
   heatsink/mechanical property (AGENTEE-221 thermal-via contract) whose number
-  also names an `smd` pad of the footprint is a via in that pad, not a THT
-  joint (AGENTEE-228); it is excluded and recorded. Any other `thru_hole` pad
+  also names an `smd` pad containing its drill and annulus is treated as a via
+  for pricing (AGENTEE-228); it is excluded and recorded. Any other `thru_hole` pad
   of a footprint with `smd` pads, or with such a property, stays counted and
   is reported as unclassified. Assembled sides come from the CPL.
 * The PCB line uses the copper layer count and the `pcb_summary.json` bounding
@@ -50,6 +50,7 @@ from .fab_export import natural_key, scan_sexpr, verify_manifest
 from .footprint_library import THERMAL_VIA_PROPERTIES, thermal_via_property
 from .hardware_interface import unique_object
 from .storage import digest, read_json, write_json
+from .symbol_library import LibraryError, children, field, nanometres
 
 REPORT = 'agent-ee.jlc-cost-estimate/1'
 TABLE_SCHEMA = 'agent-ee.jlc-pricing/1'
@@ -250,7 +251,8 @@ def _pad_want(path):
     if len(path) == 1:
         return path[0] == 'kicad_pcb'
     return path[1] == 'footprint' and (len(path) == 2 or (len(path) == 3 and path[2] in ('property', 'pad'))
-                                       or path[2:] == ('pad', 'property'))
+                                       or (len(path) >= 4 and path[2] == 'pad')
+                                       or path[2:] == ('at',))
 
 
 def _pad_groups(groups):
@@ -258,14 +260,70 @@ def _pad_groups(groups):
             for (pad, *extra), n in sorted(groups.items(), key=lambda g: (natural_key(g[0][0]), g[0][1:]))]
 
 
+def _via_inside_smd(via, smd, footprint_angle):
+    """Prove containment using integer nm, with closed boundaries and no tolerance.
+
+    Only circular, centred round drills/annuli and rectangular or circular SMD
+    copper are qualified. Slots, custom stacks, rounded/oval SMD shapes and
+    non-cardinal rectangle rotations remain counted rather than approximated.
+    Pad positions are footprint-local; saved pad angles include the footprint pose.
+    """
+    try:
+        if len(via) < 4 or len(smd) < 4 or via[3] != 'circle' or smd[3] not in ('rect', 'circle'):
+            return False
+        for pad in (via, smd):
+            if any(children(pad, key) for key in ('padstack', 'primitives', 'options', 'offset')):
+                return False
+        via_layer_nodes, smd_layers = children(via, 'layers'), children(smd, 'layers')
+        if len(via_layer_nodes) != 1:
+            return False
+        via_layers = via_layer_nodes[0][1:]
+        if len(smd_layers) != 1:
+            return False
+        copper = set(smd_layers[0][1:]) & {'F.Cu', 'B.Cu'}
+        if not copper or not all(layer in via_layers or '*.Cu' in via_layers for layer in copper):
+            return False
+        diameter, other = map(nanometres, field(via, 'size', 2))
+        drills = children(via, 'drill')
+        if len(drills) != 1 or len(drills[0]) != 2:
+            return False
+        drill = nanometres(field(via, 'drill', 1)[0])
+        if diameter != other or not 0 < drill <= diameter:
+            return False
+        positions = []
+        angles = []
+        for pad in (via, smd):
+            at = children(pad, 'at')
+            if len(at) != 1 or len(at[0]) not in (3, 4):
+                return False
+            positions.append(tuple(map(nanometres, at[0][1:3])))
+            angles.append(nanometres(at[0][3]) if len(at[0]) == 4 else 0)
+        width, height = map(nanometres, field(smd, 'size', 2))
+        if width <= 0 or height <= 0:
+            return False
+        # Doubled distances avoid rounding half-nanometre radii or dimensions.
+        dx, dy = (2 * abs(a - b) for a, b in zip(*positions))
+        if smd[3] == 'circle':
+            return width == height and diameter <= width and dx * dx + dy * dy <= (width - diameter) ** 2
+        angle = (angles[1] - footprint_angle) % 360000000
+        if angle % 90000000:
+            return False
+        if angle in (90000000, 270000000):
+            width, height = height, width
+        return dx + diameter <= width and dy + diameter <= height
+    except (LibraryError, IndexError):
+        # Unsupported/malformed geometry never justifies excluding a priced joint.
+        return False
+
+
 def designator_joints(data):
     """{reference: {'smt', 'tht', 'tht_excluded', 'tht_unclassified'}} from each board footprint's pads.
 
     Numbered smd/thru_hole pads count as SMT/THT joints. A thru_hole pad with
-    a native thermal-via property whose number also names an smd pad is a via
-    in that pad: excluded from `tht` and listed in `tht_excluded`. Other
-    thru_hole pads of a footprint with smd pads, and propertied pads without a
-    same-numbered smd pad (e.g. soldered shield anchors), stay counted and are
+    a native thermal-via property geometrically contained in same-numbered
+    SMD copper is a via in that pad: excluded from `tht` and listed in
+    `tht_excluded`. Other thru_hole pads of a footprint with smd pads, and
+    propertied pads without proved containment (e.g. soldered shield anchors), stay counted and are
     listed in `tht_unclassified`.
     """
     root, _ = scan_sexpr(data, _pad_want)
@@ -284,17 +342,29 @@ def designator_joints(data):
         if any(len(pad) < 3 for pad in pads):
             raise ValueError(f'footprint {refs[0]} has a malformed pad')
         numbered = [pad for pad in pads if pad[1] != '' and pad[2] in PAD_TECHNOLOGY]
-        smd = {pad[1] for pad in numbered if pad[2] == 'smd'}
+        smd_pads = [pad for pad in numbered if pad[2] == 'smd']
+        smd = {pad[1] for pad in smd_pads}
+        pose = children(fp, 'at')
+        try:
+            if not pose:
+                footprint_angle = 0
+            elif len(pose) == 1 and len(pose[0]) in (3, 4):
+                footprint_angle = nanometres(pose[0][3]) if len(pose[0]) == 4 else 0
+            else:
+                footprint_angle = None
+        except LibraryError:
+            footprint_angle = None
         for pad in numbered:
             prop = thermal_via_property(pad) if pad[2] == 'thru_hole' else None
-            if prop and pad[1] in smd:
+            if prop and footprint_angle is not None and any(
+                    other[1] == pad[1] and _via_inside_smd(pad, other, footprint_angle) for other in smd_pads):
                 excluded[pad[1], ('property', prop), ('reason', f'native {prop} via in SMD pad {pad[1]}; '
                                                       'not a soldered THT joint')] += 1
                 continue
             count[PAD_TECHNOLOGY[pad[2]]] += 1
             if prop:
-                unclassified[pad[1], ('reason', f'native {prop} but no SMD pad {pad[1]}; may be a soldered '
-                                      'anchor, counted as a THT joint')] += 1
+                unclassified[pad[1], ('reason', f'native {prop} but containment in same-numbered SMD copper '
+                                      'is unproved; may be a soldered anchor, counted as a THT joint')] += 1
             elif pad[2] == 'thru_hole' and smd:
                 unclassified[pad[1], ('reason', f'thru_hole pad in a footprint with SMD pads lacks native '
                                       f'{" or ".join(THERMAL_VIA_PROPERTIES)}; counted as a THT joint')] += 1
@@ -626,11 +696,12 @@ def check_jlc_cost_estimate(ctx):
         ctx.result['limitations'].append(
             f"{joints['tht_excluded_per_board']} thru_hole via pad(s) per board with a native "
             f"{'/'.join(THERMAL_VIA_PROPERTIES)} property inside a same-numbered SMD pad are excluded from THT joints "
-            '(see joints.per_designator tht_excluded)')
+            '(see joints.per_designator tht_excluded); this is an unconfirmed pricing assumption, '
+            'not verified against a JLCPCB quote')
     if joints['tht_unclassified_per_board']:
         ctx.result['limitations'].append(
             f"{joints['tht_unclassified_per_board']} thru_hole pad(s) per board in footprints with SMD pads, or "
-            'with a via property but no same-numbered SMD pad, are counted as THT joints but may be vias '
+            'with a via property but unproved containment in same-numbered SMD copper, are counted as THT joints '
             '(see joints.per_designator tht_unclassified)')
     if table['provenance']['values'] != 'observed':
         ctx.result['limitations'].append(f"pricing table values are {table['provenance']['values']}, "
