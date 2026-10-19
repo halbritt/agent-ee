@@ -2834,7 +2834,8 @@
     },
     {
       "paths": [
-        "tests/test_pod_ampseal.py"
+        "tests/test_pod_ampseal.py",
+        "tests/test_pod_j1_courtyard.py"
       ],
       "kind": "owned-source",
       "origins": [
@@ -3097,6 +3098,7 @@
         "fixtures/telemetry-pod/electrical/prepare_intent.py",
         "fixtures/telemetry-pod/electrical/power_cad.py",
         "fixtures/telemetry-pod/electrical/mode_cad.py",
+        "fixtures/telemetry-pod/electrical/j1_courtyard.py",
         "fixtures/telemetry-pod/electrical/emit_complete.py"
       ],
       "kind": "owned-source",
@@ -3110,7 +3112,8 @@
         "fixtures/telemetry-pod/electrical/power-selections.json",
         "fixtures/telemetry-pod/electrical/power-source-lock.json",
         "fixtures/telemetry-pod/electrical/support-decisions.json",
-        "fixtures/telemetry-pod/electrical/probe-selections.json"
+        "fixtures/telemetry-pod/electrical/probe-selections.json",
+        "fixtures/telemetry-pod/electrical/j1-placement-exclusion.json"
       ],
       "kind": "owned-metadata",
       "origins": [

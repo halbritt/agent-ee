@@ -241,6 +241,18 @@
       "source": "fixtures/fome-mc/ampseal/capture/ampseal.pretty/ampseal-23.kicad_mod"
     },
     {
+      "path": "j1-source/geometry-proposal-v2.json",
+      "root": "j1",
+      "sha256": "1500fba44b93b59148d85d54d85af6733b01d5305eac4d50964c94e1dcaa65ea",
+      "source": "geometry-proposal-v2.json"
+    },
+    {
+      "path": "j1-source/native-registration.json",
+      "root": "j1",
+      "sha256": "a1b032b0af0e99c54d03f5ab0d83a2f6b1fa92d2a606b1264c3ececa11bc4b16",
+      "source": "native-registration.json"
+    },
+    {
       "path": "power-source/acquisition-adoption/1b0bcb3b671fc2fcfa8ab1938e74d5191322da58252000488f4085c424f6037e.pdf",
       "root": "power",
       "sha256": "f3228b64a892b72a846c88f9c724cbe7f3d0d5b14b6350f48f28e1575f54a18f",

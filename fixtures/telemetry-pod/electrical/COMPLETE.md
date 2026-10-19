@@ -22,7 +22,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src \
   --root power=/tmp/agent463-pod-power-research \
   --root active=/tmp/agent463-pod-active-cad \
   --root antenna=/tmp/agent463-pod-antenna-inputs \
-  --root capacitor=/tmp/agent463-pod-capacitor-closure
+  --root capacitor=/tmp/agent463-pod-capacitor-closure \
+  --root j1=/tmp/agent463-pod-j1-geometry
 ```
 
 Roots can point to relocated retained captures; every source byte is hash
@@ -119,3 +120,38 @@ settling, thermal and fault performance remain open. Source149/204 qualification
 full requirement/check composition, owner PREVIEW_REQUIRED, placement/routing,
 assembly/fabrication and physical bench8/9 gates are not completed by this input
 recipe or an ERC pass. `done:false` is retained throughout.
+
+## J1 candidate placement exclusion
+
+The successor recipe retains the original AMPSEAL capture and derives a separate
+`authored-cad/ampseal.pretty/ampseal-23.kicad_mod` with one front courtyard rectangle.
+`j1-placement-exclusion.json` binds the exact TE drawing, original CAD, reviewed
+nominal geometry and native registration. `j1_courtyard.py` accepts only that
+reviewed decision and checks every source hash before creating the bundle.
+The root named `j1` contains unchanged `geometry-proposal-v2.json` and
+`native-registration.json` from the reviewed source packet. No vendor PDF is
+added to this repository.
+
+The rectangle is x±30.4/y±16.05 mm about contact12, with **zero added margin**.
+Its50µm line is display geometry, not an extra tolerance or assembly allowance.
+It is a front-only candidate exclusion; it does not establish a manufacturer
+maximum courtyard, backside occupancy, assembly/tool/mating access or installed
+height. Native geometric success must retain these limitations. The selected
+vertical776228-1 conflicts with the requested right-angle configuration;12mm
+height compliance remains unresolved.34.25mm is an axial-reference sum, not a
+registered height abovePCB.
+
+`j1-courtyard-derivation.json` records the exact source-to-derived hashes and
+preserved27-pad/additive-rectangle delta. CAD/parts qualification and binding
+reports are regenerated against the derived member. Original source files,
+FPID and purchasing identity remain unchanged. The manifest rejects conflicting
+captures claiming the same FPID; repeated references to identical captured
+bytes retain the existing deterministic path selection.
+
+This bundle does not modify a scaffold. A successor needs a fresh
+`captured-rule-areas.json` bound to its new parts hash, unchanged full U1 zone
+and unknown qualification, retained requirements/limitations, and fresh native
+scaffold receipts. Use the separately reviewed179 hole producer and212 placement
+contract; do not patch the released seed. At the retained pose J1 extends2.55mm
+past the bottom edge and is0.50mm from U1. Overhang/packing-gap choices require
+explicit downstream policy and do not resolve physical acceptance.

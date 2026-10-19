@@ -1,0 +1,70 @@
+{
+  "added_margin_mm": "0",
+  "authority": {
+    "decision": "Root adopted the bounded nominal zero-margin front-only candidate model; independent review of implementation remains required.",
+    "independent_review_sha256": "a772fbf4242ac27b52206edfa5ba66f8703681ec84ec86d592cfd7e6cb76ff4c",
+    "plan_freeze_sha256": "9e235e577cbbba32238a37999757efd3759b6d9cd7347f9b056884f0ba964567"
+  },
+  "derived_path": "authored-cad/ampseal.pretty/ampseal-23.kicad_mod",
+  "fpid": "ampseal:ampseal-23",
+  "layer": "F.CrtYd",
+  "lcsc": "C498958",
+  "limitations": [
+    "Nominal flange projection with zero added margin only; parenthesized reference dimensions do not establish maximum body extent or tolerance clearance.",
+    "No assembly, mating-plug, tool, wire, panel or seal clearance is qualified; backside occupancy remains unallocated. Candidate placement must remain front-only pending separate policy.",
+    "Selected776228-1 is vertical; the requested right-angle requirement remains unmet. Installed height abovePCB is unknown:19.25+15=34.25mm is an axial reference sum, not a registered installed height.12mm compliance is unresolved; sheet2 recommends1.57mm PCB.",
+    "At the retained J1 pose(40,36.5,0 front), nominal bottom overhang is2.55mm and J1\u2013U1 separation is0.50mm. Overhang authorization and packing gap remain explicit downstream candidate policies; this model does not approve them.",
+    "Native geometry success cannot establish physical acceptance, antenna qualification, SMA edge/land qualification, fastener access or any bench requirement."
+  ],
+  "local_polygon_nm": [
+    [
+      -30400000,
+      -16050000
+    ],
+    [
+      30400000,
+      -16050000
+    ],
+    [
+      30400000,
+      16050000
+    ],
+    [
+      -30400000,
+      16050000
+    ]
+  ],
+  "mpn": "776228-1",
+  "origin": "contact12 centre; x toward contact8, y toward contact16; component side, no mirror",
+  "part_ref": "connector-j1",
+  "qualification": {
+    "assembly_clearance_qualified": false,
+    "candidate_generation_only": true,
+    "front_only": true,
+    "installed_height_mm": null,
+    "tolerance_qualified": false
+  },
+  "reference": "J1",
+  "schema": "agent-ee.pod-j1-placement-exclusion/1",
+  "source_locator": "TE drawing776228 C14 sheet1 mating-face reference dimensions(60.8)/(32.1) and centre lines through contact12; sheet2 contact/peg PCB pattern",
+  "sources": {
+    "drawing": {
+      "path": "connector-source/acquisition-te/ce8dfd9de5f67c0f5427e925c999cccd9a8114729a6b8f249b59787fbc427d9c.pdf",
+      "sha256": "14bd5c3bb2ca16bfcf01918b678eab1aa19df10001c17735dd1f11356a6e4fe8"
+    },
+    "footprint": {
+      "path": "footprints/ampseal.pretty/ampseal-23.kicad_mod",
+      "sha256": "09eeab39c4b2c21c8cca8b38da3c996540768856771830b1f57094843852e950"
+    },
+    "geometry": {
+      "path": "j1-source/geometry-proposal-v2.json",
+      "sha256": "1500fba44b93b59148d85d54d85af6733b01d5305eac4d50964c94e1dcaa65ea"
+    },
+    "registration": {
+      "path": "j1-source/native-registration.json",
+      "sha256": "a1b032b0af0e99c54d03f5ab0d83a2f6b1fa92d2a606b1264c3ececa11bc4b16"
+    }
+  },
+  "stroke_semantics": "Display line only; exclusion follows its centreline, no added manufacturing margin.",
+  "stroke_width_mm": "0.05"
+}

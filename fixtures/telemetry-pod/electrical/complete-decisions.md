@@ -91,3 +91,25 @@ comparison is open. Its two plated pad2 holes are electrical ground stitching,
 recorded through existing thermal_via_pads naming without a thermal claim.
 All11 electrical copper pads remain. Assembly capability,1.60mm edge fit,
 retention and enclosure sealing remain unqualified.
+
+
+## J1 nominal candidate placement exclusion
+
+The root-adopted source-bound candidate model uses the TE776228 C14 sheet1
+nominal flange reference dimensions60.8×32.1mm, centered at contact12 as registered
+by sheet2 contact/peg pattern. `j1-placement-exclusion.json` binds exact sources,
+reviewed geometry/registration and the explicit decision. Add only F.CrtYd at
+x±30.4/y±16.05mm, **zero added margin**; preserve original CAD,27 pads, FPID and
+TE776228-1/C498958 identity. This is a front-only candidate placement exclusion,
+not a tolerance-qualified manufacturer courtyard or hardware acceptance.
+
+Tolerance maximums, assembly/tool/mating-plug/wire/panel/seal clearance, backside
+occupancy and fastener access remain unknown. Placement must remain front-only
+until a separate backside policy is adopted. The selected part is vertical,
+not the requested right-angle connector. Installed height abovePCB is unknown;
+19.25+15=34.25mm is an axial-reference sum with no qualified seating/engagement
+datum, so12mm compliance remains unresolved. Sheet2 recommends1.57mm PCB.
+At the retained pose, the nominal rectangle overhangs the bottom by2.55mm and
+has0.50mm separation from U1. The geometry does not authorize overhang, choose
+a packing gap, or erase antenna/SMA/physical/bench holds. These limitations must
+remain captured and visible even if native polygon checks pass.
