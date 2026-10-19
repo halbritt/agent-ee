@@ -28,7 +28,8 @@ ATX = re.compile(rb'( {0,3})(#{1,6})(?:[ \t]+|$)')
 BULLET = re.compile(rb'([-*+])(?:[ \t]+|$)')
 ORDERED = re.compile(rb'(\d{1,9})[.)](?:[ \t]+|$)')
 # Recognize optional outer pipes so unsupported tables reach refusal, never prose.
-DELIMITER = re.compile(rb'\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?')
+# A delimiter row needs at least one pipe; pipe-less ':-' lines stay prose (AGENTEE-203 review gap).
+DELIMITER = re.compile(rb'(?=[^|]*\|)\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?')
 BREAK = re.compile(rb'([-*_])(?:[ \t]*\1){2,}[ \t]*')
 SETEXT = re.compile(rb'(=+|-+)[ \t]*')
 

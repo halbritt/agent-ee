@@ -239,6 +239,13 @@ class RefusalTests(unittest.TestCase):
         self.assertEqual(findings[0]['code'], 'list')
         self.assertIn('table inside a list', findings[0]['message'])
 
+    def test_pipe_less_colon_hyphen_line_stays_prose(self):
+        # AGENTEE-203 review gap: a delimiter row needs at least one pipe, so a pipe-less
+        # ':-' continuation line is ordinary prose, not a refused table delimiter.
+        text = '# Interfaces\n\nCAN1 is the bus.\n:-\nKeep both.\n'
+        record = capture(text.encode(), 'P', {'Interfaces': 'IF'})
+        self.assertEqual([p['text'] for p in record['prose']], ['CAN1 is the bus.\n:-\nKeep both.'])
+
     def test_pipe_prose_and_single_column_table_capture(self):
         text = '# Interfaces\n\nCAN1 | CAN2 are bus names.\nKeep both.\n\n| Name |\n| :---: |\n| CAN1 |\n'
         record = capture(text.encode(), 'P', {'Interfaces': 'IF'})
