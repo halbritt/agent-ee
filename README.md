@@ -188,6 +188,10 @@ connectors receive separate reference-selected witnesses. Capture succeeds for a
 fully bound scope, including id-selected holes and keepouts. Antenna polygons
 are derived from verified datasheet facts and compared to the module-owned rule
 area after its native transform. Unbound generator mechanics remain refusals.
+Declared [keep-apart rules](docs/placement.md#keep-tall-and-heavy-parts-apart)
+grade courtyard separation; [component height](docs/board-envelope.md#component-height)
+grades sourced installed heights against an envelope limit. Missing height
+sources remain unknown, including hand-fitted connectors.
 
 The [telemetry-pod fabrication inputs](docs/telemetry-pod-fab-profile.md) record
 eight dated JLCPCB JLC04161H-7628 limits and bind known mechanics to the pod spec.

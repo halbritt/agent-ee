@@ -50,6 +50,7 @@ separates facts read from the saved board from owned assumptions.
 | `mounting_holes` | `{id, at, drill_mm, plated}` plus optional nonnegative `tolerance_mm` (default 0); `id` selects the board reference and the whole hole must lie inside the outline |
 | `keepouts` | `{id, polygon, layers, forbid}`: a simple polygon contained in the closed outline; alternatively replace `polygon` with `antenna: {reference, facts_check}` for the legacy ESP32-S3-WROOM-1 derivation, now explicitly unresolved. Stackup copper layer names and a unique subset of `footprints`, `tracks`, `vias`, `pads`, `copper_pours` |
 | `fixed_footprints` | `{reference, side, edge, position_mm, inset_mm, rotation_deg, insertion, tolerance_mm}` |
+| `max_component_height_mm` | Optional in both versions; positive numeric installed height limit, exact to 1 nm. Derives its own acceptance obligation and binds only `board_envelope` `component-height/1` |
 
 Version 2 changes `stackup` to `{nominal_thickness_mm,
 physical_thickness_mm, layers}` and requires `source` on each layer, in the
@@ -309,6 +310,66 @@ above and complete obligation coverage; missing manufacturing authority stays un
 | `stackup/1` | `envelope:stackup/1` with captured authority | Saved nominal thickness and ordered layer names/kinds/thicknesses match the profile within its explicit exact tolerance; declared copper weights match its sourced weights |
 | `mounting-holes/1` | `envelope:mounting-holes/1:<id>` | Exactly one footprint with reference `id`, origin within the declared Euclidean tolerance, one round drilled pad whose centre is within the same tolerance, of the declared diameter and PTH/NPTH attribute, and its whole circle inside the native outline |
 | `keepouts/1` | `envelope:keepouts/1:<id>` | At least one saved rule area covers every edge of the declared polygon, all declared copper layers and at least the declared forbid set |
+| `component-height/1` | `envelope:component-height/1` | Every native footprint has a verified applicable installed maximum height or qualified resolved STEP bounds at most `max_component_height_mm` |
+
+### Component height
+
+Declare `max_component_height_mm: 12` in the envelope and map its derived
+`/max_component_height_mm` requirement to one check:
+
+```json
+{"id": "height", "kind": "board_envelope", "params": {
+  "criterion": "component-height/1", "envelope": "envelope.json",
+  "facts_check": "facts", "height_facts": {"C8": "c8-installed-height"}
+}}
+```
+
+`facts_check` names an earlier `datasheet_facts` check. `height_facts` explicitly
+maps reference to fact ID; both parameters are optional but must occur together.
+A selected verified fact must have `kind: "component_height"`, `unit: "mm"`,
+`measurement: "installed_maximum_above_board"`, a positive finite `value`, and
+`part_number` and `footprint_id` matching the captured part binding and native FPID.
+The shared part-binding reader resolves `Partnumber`/`PartNumber`; a missing MPN
+property may use the footprint value as its part identifier. A declared MPN
+overrides a nominal display value such as `100uF`. Conflicting properties or
+saved/native UUID, FPID or value disagreement stay unknown.
+The shared facts schema retains the captured PDF hash, page, locator, quote and
+conditions. PDF verification checks the citation text; installed orientation and
+maximum applicability remain engineer-interpreted assertions. An unverified,
+wrong-part, wrong-footprint, nominal or axial-reference fact stays unknown.
+An explicitly selected unusable fact does not fall through to another source.
+
+For references without a selected fact, the check reuses the fabrication model
+resolver. `model_libraries` has the same stock-variable-to-captured-receipt map
+as [fab consistency](fab-consistency.md). Stock members require their pinned
+receipt hashes; local relative and `${KIPRJMOD}` model paths must resolve inside
+captured inputs. All captured STEP assets and declared receipts become immutable
+capability inputs, including before an empty scaffold gains footprints. Selecting
+these dependencies from mutable board contents would change the baseline during
+generation. A separate sandboxed native probe loads each STEP with KiCad 10.0.7
+`UTILS_STEP_MODEL.LoadSTEP` and records its bounding box. Positive model scale
+and Z offset are applied to the model's maximum outward Z. Upright models are
+qualified: X/Y model rotation must be a multiple of 360 degrees; footprint
+rotation and front/back placement preserve this local height. Multiple models
+must all resolve and load; the largest installed top is graded. Native bounding
+box tolerances are retained, with no inferred acceptance tolerance.
+
+No model, missing model, hidden model, VRML, absolute/embedded/alias model, tilted or
+nonpositive-scale model, invalid STEP or nonpositive/invalid bounds is unknown.
+A native crash, timeout or missing output remains a failed/unknown execution.
+Every footprint is checked, including DNP and hand-fitted parts. A missing source
+never exempts TE 776228-1; AGENTEE-209's unresolved installed-height question
+remains open. No 34.25 mm axial-reference sum is accepted as installed height.
+
+The inclusive limit uses exact decimal source values. A 13 mm capacitor fails
+a 12 mm envelope; exactly 12 mm passes for a verified fact. Per-reference
+verdicts and source provenance are retained in `envelope-judgment.json`, with
+`height-model-request.json` and `height-model-bounds.json` for native models.
+An unknown reference keeps aggregate coverage unknown while preserving any
+other proved defects. This criterion measures outward height above each mounting
+surface; it does not add PCB thickness or prove a two-sided enclosure clearance.
+The pod fixture's generator obligations still need their own bindings; adding
+this field does not silently discharge its legacy `/obligations` entries.
 
 For example, a hole witness uses:
 
@@ -477,9 +538,10 @@ mismatch.
 
 ## Limits
 
-This record states obligations; it does not check placement, courtyards,
-clearances or fabrication. Arcs, cutouts, slots, multiple outlines and oblique
-connector edges are not supported. Keepout and hole bindings do not exist yet.
+The record states obligations; acceptance requires their registered checks.
+Arcs, cutouts, slots, multiple outlines and oblique connector edges are not
+supported by this envelope format. The diagnostic round trip does not replace
+the native hole, keepout or component-height predicates.
 Stackup acceptance needs captured manufacturing authority; several fixed
 footprints need separate reference selectors. Capture reads only
 consumed paths for envelope authority, so an envelope a scope never cites stays

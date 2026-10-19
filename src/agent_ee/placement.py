@@ -202,7 +202,36 @@ def _policy(policy, footprints):
             v = cap.get(key)
             if type(v) not in (int, float) or not math.isfinite(v) or v < 0 or (key != 'deduction' and v == 0):
                 raise ValueError('invalid declared capacitor ' + key)
+    keep_apart_rules(policy)
     return caps
+
+
+def keep_apart_rules(policy):
+    """Validate declared separation inputs without guessing component roles or distances."""
+    from .placement_predicates import exact_nm
+    if not isinstance(policy, dict) or policy.get('schema') != 'agent-ee.placement-policy/1':
+        raise ValueError('unsupported placement policy')
+    rules = policy.get('keep_apart', [])
+    if not isinstance(rules, list):
+        raise ValueError('keep_apart must be a list')
+    pairs = set()
+    for rule in rules:
+        if not isinstance(rule, dict) or set(rule) != {'ref', 'others', 'min_distance_mm'}:
+            raise ValueError('keep_apart needs ref, others and min_distance_mm')
+        ref, others = rule['ref'], rule['others']
+        if not isinstance(ref, str) or not ref.strip():
+            raise ValueError('keep_apart ref must be nonempty text')
+        if (not isinstance(others, list) or not others or
+                any(not isinstance(r, str) or not r.strip() or r == ref for r in others) or
+                len(set(others)) != len(others)):
+            raise ValueError('keep_apart others must be distinct nonempty references, excluding ref')
+        exact_nm(rule['min_distance_mm'], 'min_distance_mm')
+        for other in others:
+            pair = tuple(sorted((ref, other)))
+            if pair in pairs:
+                raise ValueError('duplicate keep_apart pair')
+            pairs.add(pair)
+    return rules
 
 
 def _advisories(capture, policy):
