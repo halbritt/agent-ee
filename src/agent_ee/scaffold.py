@@ -302,6 +302,8 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
             raise ValueError('mounting holes are board-only; remove the pinless symbol/parts instance: ' + hole['id'])
         fp = pcbnew.FOOTPRINT(native)
         fp.SetReference(hole['id'])
+        fp.SetFPID(pcbnew.LIB_ID('',
+            'AgentEE_Mechanical_MountingHole_PTH' if hole['plated'] else 'AgentEE_Mechanical_MountingHole_NPTH'))
         fp.SetValue('MountingHole')
         fp.SetAttributes(pcbnew.FP_BOARD_ONLY | pcbnew.FP_EXCLUDE_FROM_BOM | pcbnew.FP_EXCLUDE_FROM_POS_FILES)
         fp.SetPosition(position(hole['at_mm']))

@@ -123,7 +123,15 @@ for the independent repeated-input and fresh-process reload control.
 
 Mounting holes are constructed directly as locked board-only footprints, with
 one round drilled pad, the declared reference, position, drill and plating,
-and BOM/position-file exclusions. They have no netlist path or schematic symbol.
+and BOM/position-file exclusions. Their footprint IDs are
+`AgentEE_Mechanical_MountingHole_NPTH` and `AgentEE_Mechanical_MountingHole_PTH`,
+respectively. These are local footprint names with an empty library nickname:
+they identify agent-ee's generated parametric mechanical forms without claiming
+a linked library member or vendor catalog part. Native DRC therefore does not
+look for a nonexistent mechanical library. Dimensions remain in the
+captured envelope and embedded footprint geometry; the ID does not assert a
+part number or approved binding. This identity assignment changes no hole
+geometry. They have no netlist path or schematic symbol.
 Each has a straight square courtyard on F.CrtYd and B.CrtYd around its pad
 circle (AGENTEE-179), so the placer and `courtyard-overlap/1` treat it as a
 fixed occupant on both sides. No fastener head or standoff size is declared,

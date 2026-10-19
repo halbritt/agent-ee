@@ -668,6 +668,67 @@ class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
         self.assert_completed(other_path,other_receipt)
         self.assertEqual(pcb.read_bytes(),(other / 'project/design.kicad_pcb').read_bytes())
 
+    def test_mounting_hole_identities_bind_after_native_reload(self):
+        from agent_ee.part_binding import validate_part_bindings
+        for plated in (False, True):
+            with self.subTest(plated=plated):
+                for hole in self.envelope['mounting_holes']:
+                    hole['plated'] = plated
+                self.save()
+                inputs, path, receipt = self.content('plated' if plated else 'bare')
+                self.assert_completed(path, receipt)
+                board = inputs / 'project/design.kicad_pcb'
+                before = board.read_bytes()
+                reloaded = self.root / ('pth.kicad_pcb' if plated else 'npth.kicad_pcb')
+                subprocess.run(['/usr/bin/python3', '-B', '-c',
+                    'import pcbnew,sys; pcbnew.SaveBoard(sys.argv[2],pcbnew.LoadBoard(sys.argv[1]))',
+                    str(board), str(reloaded)], check=True, capture_output=True)
+                drc_path = self.root / ('pth-drc.json' if plated else 'npth-drc.json')
+                subprocess.run(['kicad-cli', 'pcb', 'drc', '--format', 'json',
+                    '--output', str(drc_path), str(board)], check=True, capture_output=True)
+                self.assertNotIn('lib_footprint_issues',
+                    {v['type'] for v in read_json(drc_path)['violations']})
+                report = validate_part_bindings(pcb_bytes=reloaded.read_bytes())
+                self.assertEqual(report['execution'], 'ok', report)
+                holes = {f'H{i}' for i in range(1, 5)}
+                self.assertEqual(set(report['board_components']), holes | {'J1', 'J2', 'U1', 'U2'})
+                self.assertEqual(set(report['virtual_references']), set() if plated else holes)
+                for ref in holes:
+                    component = report['board_components'][ref]
+                    self.assertEqual(component['lib_id'], 'AgentEE_Mechanical_MountingHole_' +
+                                     ('PTH' if plated else 'NPTH'))
+                    self.assertEqual(component['has_copper_pads'], plated)
+                    if plated:
+                        self.assertEqual(report['reference_outcomes'][ref], 'unknown')
+                # Reload and binding are read-only with respect to the produced source.
+                self.assertEqual(board.read_bytes(), before)
+                original = children(parse_sexpr(before), 'footprint')
+                saved = children(parse_sexpr(reloaded.read_bytes()), 'footprint')
+                def hole_geometry(footprints):
+                    return {next(p[2] for p in children(fp, 'property') if p[1] == 'Reference'):
+                            [node for node in fp[2:] if isinstance(node, list) and
+                             node[0] in ('at', 'pad', 'fp_rect')]
+                            for fp in footprints if fp[1].startswith('AgentEE_Mechanical_')}
+                self.assertEqual(hole_geometry(original), hole_geometry(saved))
+                if not plated:
+                    from agent_ee.scaffold import sexpr
+                    from agent_ee.schematic_emit import parse_quoted
+                    from test_part_binding import build_synthetic_pcb, build_synthetic_sch, valid_r1_props
+                    root = parse_quoted(reloaded.read_bytes())
+                    root = [node for node in root if not isinstance(node, list) or
+                            node[0] != 'footprint' or node[1].startswith('AgentEE_Mechanical_')]
+                    bare = validate_part_bindings(pcb_bytes=sexpr(root))
+                    self.assertEqual((bare['execution'], bare['outcome']), ('ok', 'info'))
+                    self.assertEqual(bare['evaluated_references'], [])
+                    props = valid_r1_props()
+                    resistor = dict(properties=props, pads=[
+                        '(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))'])
+                    root.extend(children(parse_quoted(build_synthetic_pcb([resistor])), 'footprint'))
+                    mixed = validate_part_bindings(build_synthetic_sch([{'properties': props}]), sexpr(root))
+                    self.assertEqual((mixed['execution'], mixed['outcome']), ('ok', 'pass'), mixed)
+                    self.assertEqual(mixed['evaluated_references'], ['R1'])
+                    self.assertEqual(set(mixed['virtual_references']), holes)
+
     def test_pad_layers_survive_fresh_process_reload(self):
         """LSET.AllCuMask() is shared native state; a producer that mutates it
         makes KiCad fold *.Mask into *.Cu on save. Only a reload in a new process
