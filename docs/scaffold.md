@@ -195,7 +195,9 @@ or policy cases refuse; they need separately reviewed generation coverage.
 The source must contain exactly one rule area. No selector may hide extra
 zones. Enabled copper-layer applicability and the forbid set must equal the
 original envelope declaration. The source can cover additional disabled
-copper layers; its full original layer set is retained. Every item, source,
+copper layers; its full original layer set remains in the captured CAD/probe.
+KiCad's saved native zone must cover exactly the source's enabled-board layers.
+The saved board's enabled copper layers must still equal the captured envelope. Every item, source,
 part membership, transform and context must match; extra fields (including
 minimum-clearance or accepted-status assertions), ambiguous or missing members,
 symlinks, changed bytes, weakened restrictions and incomplete coverage refuse.
@@ -211,9 +213,11 @@ real source qualification.
 Construction retains the footprint-owned source zone already loaded with the
 fixed component. It adds no derived antenna area or board-level duplicate,
 and never clips the polygon at Edge.Cuts. Before replacing the destination,
-it reloads the saved native board and compares the zone geometry, complete
-layer set, flags, ownership, FPID and pose with a separately loaded captured
-member at that pose. Geometry must survive native serialization exactly. This
+it reloads the saved native board and compares the zone geometry, exact enabled
+layer applicability, flags, ownership, FPID and pose with a separately loaded
+captured member at that pose. Only the expected layer set is intersected with
+the envelope's enabled layers; the saved zone is never filtered. Missing an
+enabled layer still refuses. Geometry must survive native serialization exactly. This
 is CAD fidelity evidence; the source probe/context digests are not review seals
 or accepted check results.
 

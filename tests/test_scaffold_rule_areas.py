@@ -19,6 +19,11 @@ CAD = b'''(footprint "ESP32-S3-WROOM-1" (version 20241229) (generator "pcbnew")
 (copperpour not_allowed) (footprints not_allowed))
 (polygon (pts (xy -24 -6.75) (xy 24 -6.75) (xy 24 -27.75) (xy -24 -27.75)))))'''
 
+# Original source fixture models KiCad library applicability on all 32 copper
+# layers; a native four-layer board serializes only the four enabled layers.
+CAD = CAD.replace(b'"F.Cu" "In1.Cu" "In2.Cu" "B.Cu"',
+    (' '.join('"'+x+'"' for x in ['F.Cu','B.Cu',*[f'In{i}.Cu' for i in range(1,31)]])).encode())
+
 
 def setup_record(root):
     """Owned synthetic source bytes; patch only the trusted source pin in tests."""
@@ -206,13 +211,29 @@ class CapturedRuleAreaContractTests(unittest.TestCase):
         path = self.root / 'native.kicad_pcb'
         self.assertTrue(pcbnew.SaveBoard(str(path),board))
         saved = pcbnew.LoadBoard(str(path))
-        verify_native_retention(saved,retention['items'],self.root)
+        verify_native_retention(saved,retention['items'],self.root,
+                                copper_layers=self.envelope['copper_layers'])
         from agent_ee.placement_probe import rule_area
         zone = list(next(iter(saved.GetFootprints())).Zones())[0]
         measured = rule_area(zone,'U1')
         self.assertEqual(measured['outline']['polygons'],
                          [[[38500000,-250000],[86500000,-250000],[86500000,-21250000],[38500000,-21250000]]])
         self.assertEqual((self.root/'cad/ESP32-S3-WROOM-1.kicad_mod').read_bytes(), CAD)
+        self.assertEqual(len(retention['items']['radio']['rule_areas']['rule_areas'][0]['layers']),32)
+        self.assertEqual(set(measured['layers']),set(self.envelope['copper_layers']))
+        missing_layer = pcbnew.LoadBoard(str(path))
+        missing_zone = next(iter(next(iter(missing_layer.GetFootprints())).Zones()))
+        layers = pcbnew.LSET(missing_zone.GetLayerSet())
+        layers.RemoveLayer(pcbnew.In1_Cu)
+        missing_zone.SetLayerSet(layers)
+        with self.assertRaisesRegex(ValueError,'differs from captured CAD geometry'):
+            verify_native_retention(missing_layer,retention['items'],self.root,
+                                    copper_layers=self.envelope['copper_layers'])
+        changed_stack = pcbnew.LoadBoard(str(path))
+        changed_stack.SetCopperLayerCount(2)
+        with self.assertRaisesRegex(ValueError,'copper layers differ'):
+            verify_native_retention(changed_stack,retention['items'],self.root,
+                                    copper_layers=self.envelope['copper_layers'])
         for mutate in (lambda f,z: f.SetPosition(pcbnew.VECTOR2I(62000000,6500000)),
                        lambda f,z: z.SetDoNotAllowPads(False),
                        lambda f,z: z.Move(pcbnew.VECTOR2I(0,1000000)),
@@ -224,7 +245,8 @@ class CapturedRuleAreaContractTests(unittest.TestCase):
             z = list(f.Zones())[0]
             mutate(f,z)
             with self.assertRaises(ValueError):
-                verify_native_retention(changed,retention['items'],self.root)
+                verify_native_retention(changed,retention['items'],self.root,
+                                        copper_layers=self.envelope['copper_layers'])
 
 
 # Production writer integration over the existing original mechanics fixture.

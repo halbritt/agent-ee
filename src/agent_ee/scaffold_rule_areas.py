@@ -90,7 +90,7 @@ def load_retention(inputs, path, envelope_rel, parts_rel, envelope, document):
     return dict(items=items, dependencies=dependencies)
 
 
-def verify_native_retention(board, items, inputs):
+def verify_native_retention(board, items, inputs, *, copper_layers):
     """Compare saved native zones to separately loaded captured CAD at the same pose.
 
     This is generation fidelity only. No manufacturer minimum or outside-board
@@ -98,6 +98,9 @@ def verify_native_retention(board, items, inputs):
     """
     import pcbnew
     from .placement_probe import rule_area
+    enabled = sorted(pcbnew.LayerName(layer) for layer in board.GetEnabledLayers().CuStack())
+    if enabled != sorted(copper_layers):
+        raise ValueError('saved native copper layers differ from the captured envelope')
 
     def geometry(fp):
         result = []
@@ -130,5 +133,10 @@ def verify_native_retention(board, items, inputs):
             raise ValueError('retained CAD failed native load')
         expected.SetPosition(point)
         actual, baseline = geometry(fp), geometry(expected)
+        # KiCad serializes a library's all-copper zone onto enabled board layers.
+        # Keep the raw probe unchanged; only this expected native applicability
+        # is projected. Never filter the actual saved zone or its restrictions.
+        for area in baseline:
+            area['layers'] = sorted(set(area['layers']) & set(enabled))
         if len(actual) != 1 or actual != baseline:
             raise ValueError('saved native rule area differs from captured CAD geometry')

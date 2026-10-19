@@ -370,7 +370,8 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
             for rel, pin in retention['dependencies'].items():
                 if hashlib.sha256(read_captured(inputs, rel)).hexdigest() != pin:
                     raise ValueError('captured rule-area dependency changed during generation: ' + rel)
-            verify_native_retention(pcbnew.LoadBoard(str(staged)), retention['items'], inputs)
+            verify_native_retention(pcbnew.LoadBoard(str(staged)), retention['items'], inputs,
+                                    copper_layers=record['copper_layers'])
         if read_captured(inputs, board_rel) != source:
             raise ValueError('scaffold board changed during content generation')
         os.replace(staged, target)
