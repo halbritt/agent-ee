@@ -13,6 +13,7 @@ from .catalog import exact_fields, nonempty, strict_json
 from .footprint_library import _members, check_assignments, validate_declaration
 from .part_selection import selection_check
 from .storage import identity
+from .probe_features import is_probe
 
 SCHEMA = 'agent-ee.parts/1'
 PREDICATE = 'parts:declared-membership-multiplicity/1'
@@ -96,6 +97,18 @@ def validate_manifest(document):
         raise ValueError('nonempty bounded parts required')
     ids, selectors, selection_ids = set(), set(), set()
     for part in parts:
+        if is_probe(part):
+            from .probe_features import validate_part
+            validate_part(part)
+            if part['id'] in ids:
+                raise ValueError('duplicate logical part')
+            ids.add(part['id'])
+            for selector in part['instances']:
+                key = selector['sheet'], selector['reference']
+                if key in selectors:
+                    raise ValueError('unique sheet/reference selector required')
+                selectors.add(key)
+            continue
         fields = ('id', 'role', 'required', 'instances', 'selection_id', *IDENTITY_FIELDS,
                   'stock', 'datasheet')
         if named_selection(part):
@@ -206,6 +219,9 @@ def dependency_closure(document, root):
         raise ValueError('CAD member closure identity mismatch')
     blobs += cad_blobs
     for part in document['parts']:
+        if is_probe(part):
+            blobs += [part['probe']['symbol'], part['probe']['footprint']]
+            continue
         if named_selection(part):
             from .part_record import qualify_record, qualify_external_record
             record_blob = _named_blob(part)
@@ -231,7 +247,7 @@ def dependency_closure(document, root):
 def qualify_manifest(document, root):
     """Rederive selection and captured CAD identities; never authenticate approval."""
     closure = dependency_closure(document, root)
-    generic = [p for p in document['parts'] if not named_selection(p)]
+    generic = [p for p in document['parts'] if not named_selection(p) and not is_probe(p)]
     selection, choices, quantities = None, {}, {}
     if document['catalog'] is not None:
         requirements = strict_json(_read_blob(root, document['selection']['requirements']))
@@ -253,7 +269,18 @@ def qualify_manifest(document, root):
         raise ValueError('CAD assignments must name each logical part exactly once')
     missing = []
     for part in document['parts']:
-        if named_selection(part):
+        if is_probe(part):
+            from .probe_features import qualify
+            qualify(part, root)
+            libraries = [lib for lib in declaration['libraries'] if lib['name'] == part['lib_id'].split(':')[0]]
+            if (len(libraries) != 1 or any(libraries[0][k] != part['probe']['symbol'][k]
+                                          for k in ('path', 'sha256'))):
+                raise ValueError('probe symbol differs from captured CAD assignment')
+            cad_members = {lib + ':' + Path(blob['path']).stem: blob for lib, blob in
+                           _members(strict_json(_read_blob(root, document['cad']['manifest'])))}
+            if cad_members.get(part['footprint']) != part['probe']['footprint']:
+                raise ValueError('probe footprint differs from captured CAD assignment')
+        elif named_selection(part):
             record = strict_json(_read_blob(root, _named_blob(part)))
             if any(part[k] != record[k] for k in ('lcsc', 'mpn', 'manufacturer', 'package', 'stock')):
                 raise ValueError('named identity/stock differs from captured part record: ' + part['id'])
@@ -271,7 +298,7 @@ def qualify_manifest(document, root):
                 raise ValueError('instance capacity differs from per-board selection quantity')
         if any(part[k] != assignments[part['id']][k] for k in ('lib_id', 'footprint')):
             raise ValueError('CAD identity differs from logical part: ' + part['id'])
-        if part['datasheet']['status'] == 'unavailable' and part['datasheet']['required']:
+        if not is_probe(part) and part['datasheet']['status'] == 'unavailable' and part['datasheet']['required']:
             missing.append(dict(part_id=part['id'], reason=part['datasheet']['reason']))
     cad_manifest = strict_json(_read_blob(root, document['cad']['manifest']))
     captures = {p: read_captured(root, p) for p in closure}
@@ -291,7 +318,7 @@ def prepare_manifest(proposal, root):
     This function creates neither an approval receipt nor approval authority.
     """
     document = copy.deepcopy(proposal)
-    generic = [p for p in document['parts'] if not named_selection(p)]
+    generic = [p for p in document['parts'] if not named_selection(p) and not is_probe(p)]
     if generic:
         catalog = document['catalog']
         requirements = strict_json(_read_blob(root, document['selection']['requirements']))

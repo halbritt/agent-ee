@@ -54,6 +54,8 @@ ALLOWED_CHECK_PARAMS = frozenset((
     "require_datasheet",
     "require_params",
     "calibration_inputs",
+    "probe_manifest",
+    "netlist_check",
 ))
 
 
@@ -996,6 +998,8 @@ def validate_part_bindings(
     require_params: bool = False,
     schematic_path: str = "",
     sheets: dict[str, bytes] | None = None,
+    probes: dict | None = None,
+    native_graph: dict | None = None,
 ) -> dict:
     """Validate schematic and/or board part bindings and cross-check parity.
 
@@ -1043,6 +1047,32 @@ def validate_part_bindings(
     evaluated_refs: set[str] = set()
     exempt_refs: set[str] = set()
     virtual_refs: set[str] = set()
+    from .probe_features import (PROPERTY, validate_schematic, validate_board, native_component)
+    probes = probes or {}
+    probe_refs = set(probes) | {r for r, c in {**sch_bindings, **pcb_bindings}.items()
+                               if PROPERTY in c['properties']}
+    valid_probes = set()
+    if probe_refs:
+        try:
+            if sch_bytes is not None:
+                found = validate_schematic(sch_bytes, probes)
+                for data in (sheets or {}).values():
+                    found.update(validate_schematic(data, probes))
+                if found != set(probes):
+                    raise ValueError('missing probe feature(s): ' + ', '.join(sorted(set(probes) - found)))
+                if native_graph is None:
+                    raise ValueError('probe native connectivity evidence required')
+                for ref, record in probes.items():
+                    if ref not in native_graph['components']:
+                        raise ValueError(ref + ': missing probe feature in native inventory')
+                    native_component(record, native_graph['components'][ref], native_graph)
+            if pcb_bytes is not None:
+                validate_board(pcb_bytes, probes)
+            valid_probes = set(probes)
+        except (ValueError, KeyError, TypeError) as exc:
+            for ref in sorted(probe_refs):
+                invalid_bindings.append(dict(reference=ref, source='probe', property=PROPERTY,
+                    field=PROPERTY, reason=str(exc)))
 
     if sch_bytes is not None:
         for ref in sorted(sch_bindings):
@@ -1053,6 +1083,8 @@ def validate_part_bindings(
                 virtual_refs.add(ref)
                 continue
             evaluated_refs.add(ref)
+            if ref in valid_probes:
+                continue
             if comp["exempt"]:
                 exempt_refs.add(ref)
             _check_component_bindings(
@@ -1072,6 +1104,8 @@ def validate_part_bindings(
                 virtual_refs.add(ref)
                 continue
             evaluated_refs.add(ref)
+            if ref in valid_probes:
+                continue
             if comp["exempt"]:
                 exempt_refs.add(ref)
             _check_component_bindings(
@@ -1268,6 +1302,13 @@ def capability(params, scope, files, inputs=None) -> dict:
     if not isinstance(cal_inputs, list):
         raise ValueError("calibration_inputs must be a list")
     immutable = []
+    from .probe_features import immutable_inputs
+    immutable += immutable_inputs(params, files, inputs, scope)
+    if 'probe_manifest' in params:
+        if not isinstance(params.get('netlist_check'), str) or not params['netlist_check']:
+            raise ValueError('probe_manifest requires a native netlist_check')
+    elif 'netlist_check' in params:
+        raise ValueError('netlist_check requires probe_manifest')
     for item in cal_inputs:
         if not isinstance(item, str):
             raise ValueError("calibration_inputs entries must be strings")
@@ -1331,6 +1372,17 @@ def check_part_binding(ctx):
     except OSError as exc:
         raise CheckError("malformed", f"unable to read captured design files: {exc}") from exc
 
+    probes, native_graph = None, None
+    if 'probe_manifest' in ctx.params:
+        from .probe_features import load_for_check
+        from .native_netlist import read_native_inventory
+        from .datasheet_facts import prerequisite
+        try:
+            probes = load_for_check(ctx)
+            xml = prerequisite(ctx, ctx.params['netlist_check'], 'netlist', 'design.xml')
+            native_graph = read_native_inventory(xml)
+        except (OSError, ValueError) as exc:
+            raise CheckError('unsupported', str(exc)) from exc
     report = validate_part_bindings(
         sch_bytes,
         pcb_bytes,
@@ -1338,6 +1390,8 @@ def check_part_binding(ctx):
         require_params=require_params,
         schematic_path=sch_rel or "",
         sheets=sheets,
+        probes=probes,
+        native_graph=native_graph,
     )
     if len(report["schematic_files"]) > 1:
         input_digests["sheets"] = [

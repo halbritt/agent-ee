@@ -671,3 +671,5 @@ The fome-mc block fixtures under `fixtures/fome-mc/` are the one exception
 with a recorded owner decision (2026-10-18). The owner holds the rights to
 fome-mc. Those files are still outside the MIT grant. See their
 [licence notice](fixtures/fome-mc/LICENSE-NOTICE.md).
+
+[Captured bare copper probe features](docs/probe-features.md) carry required pad, net and CAD identity through binding, board construction and fab export without a supplier or BOM/CPL row.

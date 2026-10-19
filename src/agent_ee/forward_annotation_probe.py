@@ -69,6 +69,10 @@ def _set_fields(fp, fields):
         if not known:
             # Symbol fields copied to a footprint stay hidden, as native update does.
             next(f for f in fp.GetFields() if f.GetName() == name).SetVisible(False)
+    from .probe_features import PROPERTY
+    if PROPERTY in fields:
+        fp.SetExcludedFromBOM(True)
+        fp.SetExcludedFromPosFiles(True)
 
 
 def apply(board_path, plan, library_dir, out):

@@ -116,7 +116,7 @@ def validate_params(params):
     registration is checked against the captured project file at run time).
     """
     if (not isinstance(params, dict) or 'netlist_check' not in params or
-            not set(params) <= {'netlist_check', 'assembly_exclusion', 'bom_variant'}):
+            not set(params) <= {'netlist_check', 'assembly_exclusion', 'bom_variant', 'probe_manifest'}):
         raise ValueError('fab_export/1 params must be {"netlist_check"} plus optional '
                          '"assembly_exclusion" and "bom_variant"; layer and output overrides are refused in v1')
     if not isinstance(params['netlist_check'], str) or not params['netlist_check']:
@@ -231,13 +231,15 @@ def _lists(node, head):
     return [x for x in node[1:] if isinstance(x, list) and x and x[0] == head]
 
 
-def board_facts(data):
+def board_facts(data, probes=None):
     """Layer table and footprint inventory of a captured board.
 
     Raises ValueError for unparseable bytes and returns `unsupported` reasons
     for features this v1 exporter cannot represent honestly.
     """
     root, heads = scan_sexpr(data, _board_want)
+    from .probe_features import PROPERTY, validate_board
+    probe_refs = validate_board(data, probes or {}) if probes or PROPERTY.encode() in data else set()
     if root[0] != 'kicad_pcb':
         raise ValueError('not a kicad_pcb file')
     unsupported = []
@@ -276,6 +278,8 @@ def board_facts(data):
             raise ValueError(f'footprint {ref} repeats an assembly rule property')
         record = {'ref': ref, 'side': 'Top' if side == 'F.Cu' else 'Bottom', 'dnp': dnp,
                   'attributes': sorted(attrs), 'fields': dict(fields)}
+        if ref in probe_refs:
+            record['probe'] = True
         footprints.append(record)
         if not REF_RE.match(ref):
             unsupported.append(f'footprint reference {ref!r} is not a plain designator')
@@ -284,7 +288,7 @@ def board_facts(data):
             unsupported.append(f'duplicate footprint reference {ref}')
         seen.add(ref)
         excluded = attrs & {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
-        if excluded and not dnp:
+        if excluded and not dnp and ref not in probe_refs:
             unsupported.append(f'populated footprint {ref} carries {sorted(excluded)}; '
                                'v1 refuses non-DNP exclusions')
     populated = sorted((f['ref'] for f in footprints if not f['dnp']), key=natural_key)
@@ -300,7 +304,7 @@ def schematic_variants(data):
     return 'variant' in heads
 
 
-def part_bindings(xml_path):
+def part_bindings(xml_path, probes=None):
     """Binding inputs from the native XML netlist for every physical component.
 
     Returns (components, unsupported). Each component has its schematic `dnp`
@@ -309,7 +313,16 @@ def part_bindings(xml_path):
     any assembly-rule field (RULE_FIELDS) it carries. Which components are
     assembled is decided by `assembly_exclusions` and `assembled_parts`.
     """
+    from .probe_features import PROPERTY, native_component
     root = ET.parse(xml_path).getroot()
+    probes = probes or {}
+    if probes:
+        from .native_netlist import read_native_inventory
+        graph = read_native_inventory(xml_path)
+        for ref, record in probes.items():
+            if ref not in graph['components']:
+                raise ValueError(ref + ': missing probe feature')
+            native_component(record, graph['components'][ref], graph)
     components, unsupported = {}, []
     for comp in root.findall('./components/comp'):
         ref = comp.get('ref') or ''
@@ -322,6 +335,8 @@ def part_bindings(xml_path):
         fields = {}
         for field in comp.findall('./fields/field'):
             fields[field.get('name')] = (field.text or '').strip()
+        if PROPERTY in fields and ref not in probes:
+            raise ValueError(ref + ': probe has no immutable source declaration')
         components[ref] = {'dnp': 'dnp' in props,
                            'excluded': sorted(set(props) & {'exclude_from_bom', 'exclude_from_board'}),
                            'value': (comp.findtext('value') or '').strip(),
@@ -329,6 +344,8 @@ def part_bindings(xml_path):
                            'lcsc': fields.get('LCSC', ''), 'manufacturer': fields.get('Manufacturer', ''),
                            'Partnumber': fields.get('Partnumber', ''), 'PartNumber': fields.get('PartNumber', ''),
                            'fields': {name: fields[name] for name in sorted(RULE_FIELDS) if name in fields}}
+        if ref in probes:
+            components[ref]['probe'] = True
     return components, unsupported
 
 
@@ -394,6 +411,11 @@ def assembled_parts(components, footprints, excluded=()):
     parts, disagreements, unsupported = {}, [], []
     for ref in sorted(components, key=natural_key):
         comp = components[ref]
+        if comp.get('probe'):
+            matched = [fp for fp in footprints if fp['ref'] == ref and fp.get('probe')]
+            if len(matched) != 1:
+                unsupported.append(ref + ': missing or swapped probe feature on board')
+            continue
         if ref in board_dnp and board_dnp[ref] != comp['dnp']:
             disagreements.append({'designator': ref, 'schematic_dnp': comp['dnp'], 'board_dnp': board_dnp[ref]})
         assembled = not board_dnp.get(ref, comp['dnp'])
@@ -774,7 +796,15 @@ def check_fab_export(ctx):
     details = ctx.result['details']
     details.update(board_path=board_rel, board_sha256=board_sha)
     try:
-        facts = board_facts((ctx.inputs / board_rel).read_bytes())
+        from .probe_features import immutable_inputs, load_for_check, validate_schematic
+        immutable_inputs(params, ctx.manifest['files'], ctx.inputs, ctx.scope)
+        probes = load_for_check(ctx) if 'probe_manifest' in params else {}
+        facts = board_facts((ctx.inputs / board_rel).read_bytes(), probes)
+        seen = set()
+        for rel in prior.get('details', {}).get('schematic_files', [ctx.scope['schematic']]):
+            seen.update(validate_schematic((ctx.inputs / rel).read_bytes(), probes))
+        if seen != set(probes):
+            raise ValueError('missing probe feature(s): ' + ', '.join(sorted(set(probes) - seen)))
     except ValueError as exc:
         raise _error('malformed', f'board unreadable for fab export: {exc}') from exc
     details['board'] = {k: facts[k] for k in ('copper_layers', 'board_non_dnp', 'footprints')}
@@ -790,8 +820,8 @@ def check_fab_export(ctx):
         except (OSError, ValueError) as exc:
             raise _error('malformed', f'schematic {rel} unreadable: {exc}') from exc
     try:
-        components, part_problems = part_bindings(xml)
-    except (ET.ParseError, OSError) as exc:
+        components, part_problems = part_bindings(xml, probes)
+    except (ET.ParseError, OSError, ValueError) as exc:
         raise _error('malformed', f'native XML netlist unreadable: {exc}') from exc
     rule = params.get('assembly_exclusion')
     excluded, exclusion_problems = assembly_exclusions(rule, components, facts['footprints'])
@@ -820,7 +850,7 @@ def check_fab_export(ctx):
     if fab.exists() or fab.is_symlink():
         raise _error('malformed', 'fab staging directory already exists; refusing stale outputs')
     try:
-        _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded, parts)
+        _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded, parts, probes)
     except BaseException:
         if fab.is_dir():
             shutil.rmtree(ctx.work / 'fab.incomplete', ignore_errors=True)
@@ -853,7 +883,7 @@ def _variant_record(ctx, prior, variant):
             **record}
 
 
-def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded, parts):
+def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab, rule, excluded, parts, probes):
     details = ctx.result['details']
     variant = details.get('bom_variant')
     version_dir = _step(ctx, 'version', ['kicad-cli', 'version'])
@@ -1003,10 +1033,11 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
     native_refs = sorted((r[0] for r in native), key=natural_key)
     cpl_refs = sorted((r[0] for r in cpl), key=natural_key)
     bom_refs = sorted((ref for row in rows for ref in row[0].split(',')), key=natural_key)
-    assembled = [ref for ref in facts['board_non_dnp'] if ref not in excluded_refs]
+    position_expected = [ref for ref in facts['board_non_dnp'] if ref not in probes]
+    assembled = [ref for ref in position_expected if ref not in excluded_refs]
     details['designators'] = {'board_non_dnp': facts['board_non_dnp'], 'excluded': excluded_refs,
                               'assembled': assembled, 'native_pos': native_refs, 'cpl': cpl_refs,
-                              'bom': bom_refs, 'agree': native_refs == facts['board_non_dnp'] and
+                              'bom': bom_refs, 'agree': native_refs == position_expected and
                               assembled == cpl_refs == bom_refs}
     details['bom_rows'] = len(rows)
     details['cpl_rows'] = len(cpl)
@@ -1017,7 +1048,7 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
         details['flagged_parts'] = flagged
         raise _error('unsupported', 'BOM has parts without a complete LCSC/manufacturer/part-number '
                                     'binding: ' + ', '.join(f['reference'] for f in flagged))
-    if native_refs != facts['board_non_dnp']:
+    if native_refs != position_expected:
         raise _error('malformed', f'native position file designators {native_refs} differ from the board '
                                   f'non-DNP footprints {facts["board_non_dnp"]}')
     if bom_refs != assembled or cpl_refs != assembled:
@@ -1041,6 +1072,8 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
     if variant is not None:
         manifest['bom_variant'] = {key: variant[key] for key in
                                    ('name', 'project', 'registered', 'native_bom_sha256', 'binding_changes')}
+    if probes:
+        manifest['probe_features'] = probes
     write_json(fab / 'manifest.json', manifest)
     try:
         verify_manifest(fab, read_json(fab / 'manifest.json'))

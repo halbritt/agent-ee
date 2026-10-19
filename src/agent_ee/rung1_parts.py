@@ -45,6 +45,9 @@ def fields_for_rung(document, qualified, params):
         params['header']['ref']: ('Connector_Generic:Conn_01x03',
                                 'Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical', 'connector'),
     }
+    from .probe_features import is_probe
+    if any(is_probe(p) for p in document['parts']):
+        raise ValueError('rung-1 RC producer does not support bare_copper_probe features')
     selections = {p['id']: p for p in qualified['selection']['parts']}
     fields, records = {}, {}
     for part in document['parts']:
