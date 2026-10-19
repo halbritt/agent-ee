@@ -1,4 +1,5 @@
 """Real scaffold/receipt/check execution; synthetic inputs never qualify pod hardware."""
+import copy
 from pathlib import Path
 import shutil
 import sys
@@ -87,6 +88,10 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         self.assertFalse(receipt['done'])
         self.assertTrue(receipt['first_capture_binding']['bound'])
         self.assertEqual(before,{str(p):digest(p) for p in self.source.rglob('*') if p.is_file()})
+        # Plans without envelope content keep exactly the one scaffold pre_receipt.
+        self.assertEqual([l['binding'] for l in config['pre_receipts']],[{'pre_receipt':1}])
+        self.assertNotIn('envelope_content',receipt)
+        self.assertFalse((self.root/'run/content-receipt').exists())
         link=config['pre_receipts'][0]
         retained=validate_pre_receipt(self.root/'run',link)
         self.assertEqual(retained['spec']['stage'],'scaffold')
@@ -241,6 +246,133 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         self.plan['placement_adapter']['helper']='invented-placer'
         with self.assertRaisesRegex(ValueError,'placement helper'):
             pod.validate_plan(self.plan)
+
+    def use_envelope_content(self, fixed=False, **content):
+        # Original synthetic mechanics: board-only holes and a rule area, no part placement.
+        envelope=copy.deepcopy(self.envelope)
+        if not fixed:
+            envelope['fixed_footprints']=[]
+        envelope['mounting_holes']=[dict(id=f'H{i}',at=at,drill_mm=3.2,plated=False,tolerance_mm=0)
+                                    for i,at in enumerate(([100,100],[112,100]),1)]
+        envelope['keepouts']=[dict(id='content-clearance',polygon=[[104,104],[106,104],[106,106],[104,106]],
+                                   layers=['F.Cu','B.Cu'],forbid=['tracks','vias'])]
+        write_json(self.source/'envelope.json',envelope)
+        self.plan['envelope_content']=content
+        self.save()
+
+    def start_campaign(self, run='run', name='campaign'):
+        from agent_ee import campaign
+        with mock.patch.object(campaign,'continue_campaign',return_value=0) as launched:
+            self.assertEqual(campaign.run_campaign(self.root/run/'campaign.json',self.root/name),0)
+        launched.assert_called_once()
+        return self.root/name
+
+    def verify_first_capture(self, root):
+        # Real run-1 capture of the prepared candidate, then the campaign's own pre_receipt verifier.
+        from agent_ee.candidate import capture
+        from agent_ee.stage_receipts import verify_pre_receipts
+        (root/'runs/1').mkdir(parents=True)
+        capture(self.root/'run/scope.json',root/'runs/1')
+        state={**read_json(root/'state.json'),'history':[{'run':str(root/'runs/1')}]}
+        verify_pre_receipts(root,state,read_json(root/'config.json')['pre_receipts'])
+
+    def test_envelope_content_joins_source_bound_pre_receipt_chain(self):
+        from agent_ee.stage_receipts import after_tree, validate_pre_receipt_chain
+        from agent_ee.symbol_library import children, parse_sexpr
+        self.use_envelope_content(intent='intent.json')
+        before={str(p):digest(p) for p in self.source.rglob('*') if p.is_file()}
+        with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
+            record=self.build()
+        run=self.root/'run'
+        config=read_json(run/'campaign.json')
+        self.assertEqual([l['path'] for l in config['pre_receipts']],
+                         ['scaffold-receipt/receipt.json','content-receipt/receipt.json'])
+        self.assertEqual([l['binding'] for l in config['pre_receipts']],[{'pre_receipt':1},{'pre_receipt':2}])
+        self.assertEqual(record['envelope_content'],config['pre_receipts'][1])
+        self.assertTrue(record['first_capture_binding']['bound'])
+        scaffolded,content=validate_pre_receipt_chain(run,config['pre_receipts'])
+        self.assertEqual(content['spec']['step'],'envelope-content')
+        self.assertEqual(content['inputs'],after_tree(scaffolded))
+        board=self.scope['board']
+        self.assertEqual(content['changed'],[board])
+        argv=content['spec']['argv']
+        for flag,value in (('--envelope','envelope.json'),('--parts','parts.json'),('--board',board),
+                           ('--intent','intent.json')):
+            self.assertEqual(argv[argv.index(flag)+1],value)
+        for rel in ('envelope.json','parts.json','intent.json'):
+            self.assertEqual(content['inputs'][rel],digest(self.source/rel))
+        self.assertEqual(digest(run/'inputs'/board),content['outputs'][board])
+        holes=[fp for fp in children(parse_sexpr((run/'inputs'/board).read_bytes()),'footprint')
+               if children(fp,'attr') and 'board_only' in children(fp,'attr')[0]]
+        self.assertEqual(len(holes),2)
+        self.assertEqual(before,{str(p):digest(p) for p in self.source.rglob('*') if p.is_file()})
+        root=self.start_campaign()
+        self.assertEqual([l['path'] for l in read_json(root/'config.json')['pre_receipts']],
+                         ['pre-receipts/1/receipt.json','pre-receipts/2/receipt.json'])
+        self.verify_first_capture(root)
+
+    def test_envelope_content_custody_refusals(self):
+        from agent_ee import campaign
+        self.use_envelope_content()
+        with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
+            self.build()
+        path=self.root/'run/campaign.json'
+        config=read_json(path)
+        links=config['pre_receipts']
+        for label,changed,message in (
+                ('out of order',links[::-1],'must form one ordered chain'),
+                ('hash mismatch',[links[0],{**links[1],'sha256':'0'*64}],'changed, unsafe or missing'),
+                ('rebound',[links[0],{**links[1],'binding':{'pre_receipt':1}}],'foreign stage receipt binding')):
+            with self.subTest(label):
+                write_json(path,{**config,'pre_receipts':changed})
+                with self.assertRaisesRegex(ValueError,message):
+                    campaign.run_campaign(path,self.root/'campaign')
+                self.assertFalse((self.root/'campaign').exists())
+        # Dropping the content receipt leaves a chain that no longer reaches the candidate.
+        write_json(path,{**config,'pre_receipts':links[:1]})
+        root=self.start_campaign(name='scaffold-only')
+        with self.assertRaisesRegex(ValueError,'differs from first capture: '+self.scope['board']):
+            self.verify_first_capture(root)
+        # An unreceipted board edit after preparation is not bound by the chain.
+        write_json(path,config)
+        root=self.start_campaign(name='edited')
+        board=self.root/'run/inputs'/self.scope['board']
+        board.write_bytes(board.read_bytes()+b'\n')
+        with self.assertRaisesRegex(ValueError,'differs from first capture: '+self.scope['board']):
+            self.verify_first_capture(root)
+
+    def test_envelope_content_inputs_refused_before_output(self):
+        for content,message in (({'intent':'absent.json'},'uncaptured pod envelope_content intent'),
+                                ({'layout':self.scope['board']},'uncaptured pod envelope_content layout'),
+                                ({'intent':self.scope['schematic']},'uncaptured|collides')):
+            with self.subTest(content=content):
+                self.use_envelope_content(**content)
+                with self.assertRaisesRegex(ValueError,message):
+                    pod.build(self.plan_path,self.root/'refused')
+                self.assertFalse((self.root/'refused').exists())
+        for content in ({'envelope':'envelope.json'},{'net_constraints':'intent.json'},[],
+                        {'intent':'../intent.json'},{'imu_reference':''}):
+            with self.subTest(content=content),self.assertRaises(ValueError):
+                pod.validate_plan({**self.plan,'envelope_content':content})
+        # The envelope declares fixed J1, which needs the emitter's intent and layout.
+        self.use_envelope_content(fixed=True,intent='intent.json')
+        with self.assertRaisesRegex(ValueError,'require declared envelope_content intent and layout'):
+            pod.build(self.plan_path,self.root/'refused')
+        self.assertFalse((self.root/'refused').exists())
+
+    def test_failed_envelope_content_retains_receipt_without_campaign(self):
+        # The real producer refuses an IMU reference that selects no fixed footprint.
+        self.use_envelope_content(imu_reference='U99')
+        with self.assertRaisesRegex(ValueError,'envelope-content failed'):
+            self.build('failed')
+        root=self.root/'failed'
+        self.assertFalse((root/'campaign.json').exists())
+        self.assertEqual(read_json(root/'driver-receipt.json')['status'],'preparing')
+        receipt=read_json(root/'content-receipt/receipt.json')
+        self.assertEqual(receipt['status'],'failed')
+        self.assertIn('declared fixed footprint',(root/'content-receipt/run/console.log').read_text())
+        board=self.scope['board']
+        self.assertEqual(digest(root/'inputs'/board),receipt['inputs'][board])
 
     def test_run_cli_propagates_campaign_incomplete(self):
         with mock.patch.object(pod,'build'), mock.patch('agent_ee.campaign.run_campaign',return_value=1):

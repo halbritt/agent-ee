@@ -22,6 +22,8 @@ ORDER = ['schematic', 'placement', 'routing', 'verification']
 STEPS = [('binding-fill', 'schematic'), ('emit-schematic', 'schematic'),
          ('forward-annotate', 'schematic'), ('place-board', 'placement'),
          ('add-planes', 'routing')]
+# Optional envelope-content inputs; envelope, parts and board are the plan's and scope's own.
+CONTENT_PATHS = ('intent', 'layout', 'antenna_facts', 'captured_rule_areas')
 SOURCE = Path(__file__).resolve().parents[1]
 BUDGET_NOTE = ('Historical rung-1 estimate: $10-15 review plus $1-3.6 writing per iteration '
                'for three parts; pod work may multiply this. Estimate, not measurement or spending authority.')
@@ -45,7 +47,7 @@ def validate_plan(plan):
                 'routing_adapter', 'routing_budget_s', 'review_budget_s'}
     if (not isinstance(plan, dict) or plan.get('schema') != SCHEMA or
             not required <= plan.keys() or
-            set(plan) - required - {'max_iterations', 'max_seconds', 'placement_adapter'}):
+            set(plan) - required - {'max_iterations', 'max_seconds', 'placement_adapter', 'envelope_content'}):
         raise ValueError('expected agent-ee.pod-plan/1 fields')
     if not isinstance(plan['scope'], str) or not plan['scope']:
         raise ValueError('scope must name a planning scope file')
@@ -63,6 +65,15 @@ def validate_plan(plan):
         raise ValueError('intent and deviations must be different files')
     if any(Path(p).suffix != '.json' for p in paths):
         raise ValueError('writer inputs must be captured JSON records')
+    if 'envelope_content' in plan:
+        content = plan['envelope_content']
+        if not isinstance(content, dict) or set(content) - {*CONTENT_PATHS, 'imu_reference'}:
+            raise ValueError('envelope_content declares only ' + ', '.join((*CONTENT_PATHS, 'imu_reference')))
+        for key in set(content) & set(CONTENT_PATHS):
+            _path(content[key])
+        if 'imu_reference' in content and (not isinstance(content['imu_reference'], str) or
+                                           not content['imu_reference']):
+            raise ValueError('envelope_content imu_reference must name a fixed footprint reference')
     if 'placement_adapter' in plan:
         from .placement_adapter import validate_declaration as placement_declaration
         placement_declaration(plan['placement_adapter'])
@@ -186,6 +197,28 @@ def _scaffold_step(plan_dir, outputs):
         artifacts=['scaffold/scaffold-receipt.json'], adoptable_exits=[0], timeout_s=300)
 
 
+def _content_step(plan, scope):
+    """The shared envelope-content producer, bound to the plan's envelope and parts and the scope board."""
+    return stage_receipts.validate_step(scaffold.content_step(
+        SOURCE.parent, plan['envelope'], plan['parts'], scope['board'], **plan['envelope_content']))
+
+
+def _validate_content(plan, scope, sources):
+    """Every declared content input is captured, distinct from native outputs, and sufficient."""
+    content = plan['envelope_content']
+    natives = {scope['board'], scope['schematic']}
+    for key in sorted(set(content) & set(CONTENT_PATHS)):
+        if content[key] not in sources:
+            raise ValueError(f'uncaptured pod envelope_content {key}: {content[key]}')
+        if content[key] in natives:
+            raise ValueError(f'envelope_content {key} collides with a native output')
+    from .board_envelope import validate as envelope_record
+    record = envelope_record(Path(sources[plan['envelope']]).read_bytes())
+    if record['fixed_footprints'] and not {'intent', 'layout'} <= content.keys():
+        raise ValueError('envelope fixed footprints require declared envelope_content intent and layout')
+    return _content_step(plan, scope)
+
+
 def run_scaffold(recipe):
     """Only the shared scaffold producer writes native files, in the receipt sandbox."""
     recipe = read_json(recipe)
@@ -207,6 +240,7 @@ def build(plan_path, out, *, dry_run=False):
     for key in ('envelope', 'parts', 'spec', 'spec_record'):
         if plan[key] not in sources:
             raise ValueError(f'uncaptured pod {key}: {plan[key]}')
+    content_spec = _validate_content(plan, scope, sources) if 'envelope_content' in plan else None
     if out.exists() or out.is_symlink():
         raise ValueError('pod output must not exist')
     out = out.resolve()
@@ -260,21 +294,29 @@ def build(plan_path, out, *, dry_run=False):
     stage_receipts.adopt(receipt_dir, receipt, inputs)
     if stage_receipts.file_tree(inputs) != (expected, []):
         raise ValueError('receipted scaffold differs from validated preparation')
+    link = dict(path='scaffold-receipt/receipt.json', sha256=digest(receipt_dir / 'receipt.json'), binding={'pre_receipt': 1})
+    links = [link]
+    if content_spec is not None:
+        # Envelope content consumes the adopted scaffold in place; its board is the only write.
+        content_dir = out / 'content-receipt'
+        content = stage_receipts.run_step(content_dir, inputs, content_spec, {'pre_receipt': 2})
+        stage_receipts.adopt(content_dir, content, inputs)
+        links.append(dict(path='content-receipt/receipt.json', sha256=digest(content_dir / 'receipt.json'),
+                          binding={'pre_receipt': 2}))
     final_scope = _final_scope(initial, plan, inputs)
     files, _, _ = candidate.source_manifest(final_scope, out)
     final_validation = validate_configuration(plan, final_scope, files, inputs)
     if final_validation != validation:
         raise ValueError('pod validation changed after scaffold execution')
-    binding = stage_receipts.pre_receipt_binding(receipt, files)
+    receipts = stage_receipts.validate_pre_receipt_chain(out, links)
+    binding = stage_receipts.pre_receipt_binding(receipts[-1], files)
     if not binding['bound']:
-        raise ValueError('scaffold pre_receipt does not bind the initial candidate')
+        raise ValueError('pre_receipt chain does not bind the initial candidate')
     final_scope['inputs'] = [dict(path='inputs/' + e['at'], at=e['at']) for e in final_scope['inputs']]
-    link = dict(path='scaffold-receipt/receipt.json', sha256=digest(receipt_dir / 'receipt.json'), binding={'pre_receipt': 1})
-    stage_receipts.validate_pre_receipt(out, link)
     config = dict(schema='agent-ee.campaign/1', scope='scope.json',
                   review_profile=plan['review_profile'], implementation=plan['implementation'],
                   writer_editable=validation['writer_inputs'],
-                  implementation_steps=validation['implementation_steps'], pre_receipts=[link],
+                  implementation_steps=validation['implementation_steps'], pre_receipts=links,
                   routing_adapter=plan['routing_adapter'],
                   **({'placement_adapter': plan['placement_adapter']} if 'placement_adapter' in plan else {}),
                   max_iterations=validation['max_iterations'], max_seconds=validation['max_seconds'],
@@ -282,7 +324,8 @@ def build(plan_path, out, *, dry_run=False):
     write_json(out / 'scope.json', final_scope)
     write_json(out / 'campaign.json', config)
     record.update(status='prepared', campaign_sha256=digest(out / 'campaign.json'),
-                  scope_sha256=digest(out / 'scope.json'), scaffold=link, first_capture_binding=binding)
+                  scope_sha256=digest(out / 'scope.json'), scaffold=link, first_capture_binding=binding,
+                  **({'envelope_content': links[1]} if content_spec is not None else {}))
     write_json(out / 'driver-receipt.json', record)
     if dry_run:
         run_dry(out)

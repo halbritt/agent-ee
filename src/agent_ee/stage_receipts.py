@@ -913,6 +913,16 @@ def validate_pre_receipt(base, link):
     return receipt
 
 
+def validate_pre_receipt_chain(base, declarations):
+    """Declared order is custody order: each receipt consumes its predecessor's exact after-tree."""
+    receipts = [validate_pre_receipt(base, link) for link in validate_pre_receipts(declarations)]
+    for number in range(1, len(receipts)):
+        if receipts[number]['inputs'] != after_tree(receipts[number - 1]):
+            raise ValueError(f'pre_receipt {number + 1} does not consume the after-tree of pre_receipt '
+                             f'{number}; declared pre_receipts must form one ordered chain')
+    return receipts
+
+
 def import_pre_receipts(root, declarations, source):
     """Copy retained runs, preserving artifact links without following them, then revalidate."""
     imported = []
@@ -963,13 +973,13 @@ def verify_pre_receipts(root, state, declarations):
         if Path(state['history'][0]['run']) != first:
             raise ValueError('pre_receipt requires campaign run 1')
         captured = read_json(first / 'candidate.json')['files']
-    for link in declarations:
-        receipt = validate_pre_receipt(root, link)
-        if captured is not None:
-            relation = pre_receipt_binding(receipt, captured)
-            if not relation['bound']:
-                raise ValueError('pre_receipt output differs from first capture: ' +
-                                 ', '.join(relation['differences']))
+    receipts = validate_pre_receipt_chain(root, declarations)
+    if captured is not None:
+        # Earlier receipts bind run 1 through the chain; the last one's after-tree is the capture.
+        relation = pre_receipt_binding(receipts[-1], captured)
+        if not relation['bound']:
+            raise ValueError('pre_receipt output differs from first capture: ' +
+                             ', '.join(relation['differences']))
 
 
 def verify_campaign_receipts(root, state, steps=None, plans=None):

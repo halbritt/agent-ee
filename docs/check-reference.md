@@ -32,7 +32,8 @@ An artifact-only step with a null artifact entry is refused with
 `missing_artifact:<path>` and cannot be adopted.
 Campaign [`pre_receipts`](stage-receipts.md#receipts-before-the-first-capture) bind
 coordinator receipts made before the campaign to its first capture. Start copies and
-revalidates them; `verify-campaign` refuses changed, missing or unbound imports.
+revalidates them as one ordered custody chain; `verify-campaign` refuses changed, missing,
+reordered or unbound imports.
 They do not replace fresh checks or the declared-stage done binding.
 The [mutable-intent schematic stage](intent-schematic-stage.md) adds no check kind:
 its emission and annotation receipts bind authored inputs to native outputs.

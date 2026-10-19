@@ -220,6 +220,9 @@ Each entry has exactly `path`, `sha256` and `binding`. The path names `receipt.j
 relative to the configuration file or absolute. The digest is 64 lowercase hex characters;
 the nonempty binding object must equal the retained coordinator receipt's binding exactly.
 Start refuses missing, changed, invalid or unadoptable receipts before creating the campaign.
+Declared order is custody order (AGENTEE-224): `validate_pre_receipt_chain` requires each
+later receipt's input tree to equal its predecessor's exact after-tree, so reordered entries
+or an unreceipted edit between two pre-receipts refuse start.
 It copies each complete retained receipt directory into `<campaign>/pre-receipts/N/`,
 preserving artifact links without following them, and revalidates the copy. The frozen
 `config.json` replaces the source path with `pre-receipts/N/receipt.json` and retains the
@@ -231,8 +234,11 @@ state anchors to agree with the frozen configuration, revalidates every receipt 
 its after-tree to equal run 1's capture exactly in every top-level folder represented by its
 inputs or outputs. Missing or changed files and extra captured files within those folders
 refuse verification. Other captured folders, such as stock libraries absent from the receipt,
-are permitted. Each pre-receipt must bind independently to that same first capture. A receipt
-without a first capture is unbound and refuses verification.
+are permitted. Verification revalidates the same ordered chain; the last pre-receipt's
+after-tree must bind that first capture, and each earlier one binds it through the chain.
+A single pre-receipt therefore binds exactly as before. Dropping a later receipt leaves an
+earlier after-tree that differs from the capture and refuses. A receipt without a first
+capture is unbound and refuses verification.
 
 Pre-receipts do not become `implementation_steps` and do not supply the declared-stage
 `stage_done` binding. In rung 1, `scaffold` remains outside the scope's stage order. Its
