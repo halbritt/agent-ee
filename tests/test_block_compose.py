@@ -2,6 +2,7 @@
 import copy
 import hashlib
 from pathlib import Path
+import re
 import shutil
 import tempfile
 import time
@@ -88,6 +89,58 @@ class FlatComposeTests(unittest.TestCase):
         self.assertEqual(graph['components']['R100']['properties']['LCSC'], 'C22787')
         self.assertEqual(result['block_instances'][0]['references'], {'C308':'C100','D4':'D100','R9':'R100','U307':'U100'})
         self.assertEqual(len(result['block_instances'][0]['source_parts']), 4)
+
+    def assert_library_erc_matches(self, result):
+        report, files = emit_schematic(result['intent'], result['captures'],
+            {'schema': 'agent-ee.schematic-layout/1', 'namespace': '76c559cf-c0b2-412c-b59f-5f08dd59a919',
+             'project': 'flat', 'transforms': {}},
+            symbol_table={lib['name']: '${KIPRJMOD}/' + lib['path'] for lib in result['intent']['libraries']})
+        self.assertEqual(report['execution'], 'ok', report)
+        publish(files, self.root / 'project')
+        for path, data in result['captures'].items():
+            target = self.root / 'project' / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        native = execute(self.root, self.root / 'erc', ['kicad-cli', 'sch', 'erc',
+            '--format', 'json', '--severity-all', '-o', '/work/erc.json',
+            '/candidate/project/flat.kicad_sch'], timeout=120)
+        self.assertEqual((native['execution'], native['exit_code']), ('ok', 0), native)
+        violations = [v for sheet in read_json(self.root / 'erc/erc.json')['sheets']
+                      for v in sheet['violations']]
+        self.assertFalse([v for v in violations if v['type'] == 'lib_symbol_mismatch'], violations)
+
+    def test_legacy_symbols_match_derived_libraries_in_native_erc(self):
+        result = self.compose()
+        self.assert_library_erc_matches(result)
+        from agent_ee.symbol_library import children, parse_sexpr
+        library = parse_sexpr(result['captures']['libraries/Block_63616e_446576696365.kicad_sym'])
+        self.assertEqual(children(library, 'version')[0][1], '20241209')
+        for definition in children(library, 'symbol'):
+            if definition[1] in ('C', 'R_Small'):
+                self.assertEqual(next(p[2] for p in children(definition, 'property') if p[1] == 'Datasheet'), '')
+
+    def test_modern_literal_tilde_survives_composition_and_native_erc(self):
+        # Synthetic version variant of the captured fixture: unlike its legacy
+        # source, modern KiCad treats these same '~' property values literally.
+        block = read_json(self.root / 'block/block.json')
+        plan = read_json(self.root / 'composition.json')
+        for source in plan['sources']:
+            if source['sheet'] != 'sheets/psu.kicad_sch':
+                continue  # One derived library deliberately mixes both formats.
+            path = self.root / 'block' / source['sheet']
+            path.write_bytes(re.sub(rb'\(version [0-9]+\)', b'(version 20260306)', path.read_bytes(), count=1))
+            source['sha256'] = block['files'][source['sheet']] = hashlib.sha256(path.read_bytes()).hexdigest()
+        write_json(self.root / 'block/block.json', block)
+        write_json(self.root / 'composition.json', plan)
+        result = self.compose()
+        self.assert_library_erc_matches(result)
+        from agent_ee.symbol_library import children, parse_sexpr
+        library = parse_sexpr(result['captures']['libraries/Block_63616e_446576696365.kicad_sym'])
+        self.assertEqual(children(library, 'version')[0][1], '20250318')
+        for definition in children(library, 'symbol'):
+            if definition[1] in ('C', 'R_Small'):
+                self.assertEqual(next(p[2] for p in children(definition, 'property') if p[1] == 'Datasheet'),
+                                 '~' if definition[1] == 'R_Small' else '')
 
     def prepare_checks(self, result):
         from agent_ee.block_adaptation import _requirement_intent, _source
