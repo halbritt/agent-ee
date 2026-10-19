@@ -14,29 +14,72 @@ sys.path.insert(0, str(RECIPE))
 from agent_ee.symbol_library import parse_sexpr, children, field
 
 
+def load_sources(decision, environ):
+    """Offline, exact-byte inputs; the vendor PDF is provisioned by the caller."""
+    plan = json.loads(decision)
+    root = environ.get('AGENT_EE_POD_INPUTS')
+    drawing = environ.get('AGENT_EE_J1_DRAWING')
+    if not root and not drawing:
+        raise ValueError('set AGENT_EE_J1_DRAWING to the externally provisioned exact PDF '
+                         'or AGENT_EE_POD_INPUTS to a complete captured input root; '
+                         'see fixtures/telemetry-pod/j1/README.md')
+    inputs = {}
+    for label, blob in plan['sources'].items():
+        if label == 'drawing' and drawing:
+            path = Path(drawing)
+        elif root:
+            path = Path(root) / blob['path']
+        elif label == 'footprint':
+            path = ROOT / 'fixtures/fome-mc/ampseal/capture/ampseal.pretty/ampseal-23.kicad_mod'
+        else:
+            path = ROOT / 'fixtures/telemetry-pod/j1' / Path(blob['path']).name
+        if not path.is_file():
+            raise ValueError('required exact retained J1 source absent: ' + str(path))
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != blob['sha256']:
+            raise ValueError('J1 source hash mismatch: ' + str(path))
+        inputs[blob['path']] = raw
+    return inputs
+
+
+class J1SourceProvisioningTests(unittest.TestCase):
+    def test_missing_or_wrong_drawing_fails_without_skip(self):
+        decision = (RECIPE / 'j1-placement-exclusion.json').read_bytes()
+        with tempfile.TemporaryDirectory() as tmp:
+            corrupt = Path(tmp) / 'wrong.pdf'
+            corrupt.write_bytes(b'%PDF-1.4\nnot the captured drawing\n')
+            for env, message in [({}, 'set AGENT_EE_J1_DRAWING'),
+                    ({'AGENT_EE_J1_DRAWING': str(Path(tmp)/'absent.pdf')}, 'source absent'),
+                    ({'AGENT_EE_J1_DRAWING': str(corrupt)}, 'source hash mismatch')]:
+                with self.subTest(env=env), self.assertRaisesRegex(ValueError, message):
+                    load_sources(decision, env)
+
+
 class J1CourtyardTests(unittest.TestCase):
     def setUp(self):
         self.producer = importlib.import_module('j1_courtyard')
         self.decision = (RECIPE / 'j1-placement-exclusion.json').read_bytes()
-        self.root = Path(os.environ.get('AGENT_EE_POD_INPUTS',
-            '/tmp/agent463-pod-preparation-20261018/native-v2/scaffold/inputs'))
         plan = json.loads(self.decision)
-        self.inputs = {}
-        for label, blob in plan['sources'].items():
-            if label in ('geometry', 'registration'):
-                path = Path('/tmp/agent463-pod-j1-geometry') / Path(blob['path']).name
-            else:
-                path = self.root / blob['path']
-            if not path.is_file():
-                if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
-                    self.fail('required exact retained J1 source absent: ' + str(path))
-                self.skipTest('exact retained J1 source absent: ' + str(path))
-            self.inputs[blob['path']] = path.read_bytes()
+        self.inputs = load_sources(self.decision, os.environ)
         self.source_path = plan['sources']['footprint']['path']
 
     def derive(self, inputs=None, decision=None):
         return self.producer.derive(self.inputs if inputs is None else inputs,
                                     self.decision if decision is None else decision)
+
+    def test_explicit_input_root_keeps_all_four_source_bindings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel, raw in self.inputs.items():
+                path = root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(raw)
+            env = {'AGENT_EE_POD_INPUTS': str(root)}
+            self.assertEqual(load_sources(self.decision, env), self.inputs)
+            geometry = json.loads(self.decision)['sources']['geometry']['path']
+            (root / geometry).write_bytes(self.inputs[geometry]+b' ')
+            with self.assertRaisesRegex(ValueError, 'source hash mismatch'):
+                load_sources(self.decision, env)
 
     def test_adds_only_front_rectangle_and_is_deterministic(self):
         raw, receipt = self.derive()

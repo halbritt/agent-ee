@@ -3145,6 +3145,17 @@
         "AE"
       ],
       "reviewed": "Original agent-ee six-pad pogo tracer authored under owner direction by agent-463, frozen 2026-10-18. Copied byte-exact only after verifying all four freeze input hashes; freeze.json SHA-256 a54bb1c2d678fdb74cc87405c983ac7dcb4f7d6be3d7b6e80a84cae185bcee09. No vendor design, symbol, footprint or text."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/j1/geometry-proposal-v2.json",
+        "fixtures/telemetry-pod/j1/native-registration.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original source-coordinate observations and native pad/courtyard registration facts retained byte-for-byte from the reviewed J1 geometry packet. Numeric measurements, pin identities and provenance hashes only; no vendor PDF text, drawing image or additional third-party CAD body is copied. Historical local paths are evidence locators, not test runtime dependencies. No source rights or physical qualification claim is changed."
     }
   ]
 }

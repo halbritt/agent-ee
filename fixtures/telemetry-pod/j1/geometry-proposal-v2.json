@@ -1,0 +1,107 @@
+{
+  "board_relation": {
+    "board_outline_mm": [
+      0,
+      0,
+      80,
+      50
+    ],
+    "bottom_overhang_nominal_mm": "2.55",
+    "requires_explicit_overhang_contract": true
+  },
+  "fpid": "ampseal:ampseal-23",
+  "geometry": {
+    "added_clearance_nm": 0,
+    "board_polygon_nm": [
+      [
+        9600000,
+        20450000
+      ],
+      [
+        70400000,
+        20450000
+      ],
+      [
+        70400000,
+        52550000
+      ],
+      [
+        9600000,
+        52550000
+      ]
+    ],
+    "guaranteed_maximum": false,
+    "kind": "conservative rectangular bound of nominal flange projection",
+    "local_polygon_nm": [
+      [
+        -30400000,
+        -16050000
+      ],
+      [
+        30400000,
+        -16050000
+      ],
+      [
+        30400000,
+        16050000
+      ],
+      [
+        -30400000,
+        16050000
+      ]
+    ],
+    "qualified_courtyard": false,
+    "z_projection": "Entire connector/flange projected onto board plane; under-body volume not allocated"
+  },
+  "height_reference": {
+    "axial_reference_sum_mm": "34.25",
+    "limitation": "Do not equate axial sum to height above PCB without seating-plane and engagement registration.",
+    "qualified_installed_height_above_pcb_mm": null,
+    "recommended_pcb_thickness_mm": "1.57",
+    "source_locator": "Sheet1 sectionA-A19.25+15 axial references; sheet2 recommended PCB layout title"
+  },
+  "missing_for_qualified_courtyard": [
+    "Tolerance-qualified maximum body/flange extent and registration to board datum; parenthesized dimensions alone are not a guaranteed maximum.",
+    "Explicit mechanical choice for assembly/placement clearance, mating plug/tool/wire sweep and panel/enclosure/seal access.",
+    "Bind PCB seating plane and maximum installed height; resolve or explicitly retain vertical-vs-right-angle and bottom-overhang acceptance conflicts."
+  ],
+  "mpn": "776228-1",
+  "reference": "J1",
+  "registration": {
+    "evidence": "native-registration.json",
+    "native_origin": "Contact12 centre",
+    "qualification": "Nominal registration supported by matching numbered contact/peg pattern and visible symmetry; no tolerance-qualified maximum offset supplied.",
+    "source_locator": "Sheet1 mating-face centre lines through middle contact12; sheet2 contact/peg PCB pattern",
+    "source_to_native": "component-side x right toward8, y down toward16; no mirror"
+  },
+  "schema": "agent463.source-geometry-proposal/1",
+  "source": {
+    "drawing": "776228",
+    "path": "/tmp/agent463-pod-preparation-20261018/native-v2/scaffold/inputs/connector-source/acquisition-te/ce8dfd9de5f67c0f5427e925c999cccd9a8114729a6b8f249b59787fbc427d9c.pdf",
+    "revision": "C14",
+    "sha256": "14bd5c3bb2ca16bfcf01918b678eab1aa19df10001c17735dd1f11356a6e4fe8",
+    "sheets": 2
+  },
+  "source_dimensions": [
+    {
+      "id": "flange-width",
+      "kind": "parenthesized reference",
+      "locator": "Upper left mating-face view; outermost horizontal dimension (60.8)",
+      "mm": "60.8",
+      "page": 1
+    },
+    {
+      "id": "flange-height",
+      "kind": "parenthesized reference",
+      "locator": "Upper left mating-face view; outermost vertical dimension (32.1)",
+      "mm": "32.1",
+      "page": 1
+    }
+  ],
+  "status": "nominal-source-bound-proposal-not-qualified-courtyard",
+  "unwaived_conflicts": [
+    "Selected776228-1 is vertical; canonical requested right-angle orientation remains unmet.",
+    "Axial reference dimensions19.25+15mm sum to34.25mm; not qualified PCB-top installed height. Exact PCB seating plane and maximum-height datum remain unbound; canonical12mm height compliance is unresolved and unwaived.",
+    "New nominal exclusion still falls outside board at frozen pose; does not satisfy fixed courtyard containment."
+  ]
+}
