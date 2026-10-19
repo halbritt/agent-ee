@@ -40,8 +40,8 @@ The project template supplies design rules and net classes. Scaffolding changes
 only project filename and sheet metadata. The board receives the envelope's
 exact straight-edge outline, even copper-layer count, total thickness and each
 stackup layer's thickness. It contains no components, nets, tracks, vias or
-zones. Holes, keepouts and fixed components remain work for later design stages;
-scaffolding does not claim those envelope obligations pass. Copper weights
+zones until the stage-three pre-receipt below writes the declared mechanics.
+Scaffolding does not claim those envelope obligations pass. Copper weights
 remain declarations because native board files have no corresponding field.
 
 Every non-root native UUID path in the parts selectors produces a child sheet,
@@ -68,6 +68,168 @@ supply the root UUID that their schematic emitter derives, together with stock
 library tables. They run the builder as an in-place `write-scaffold` stage step
 that is imported as a campaign pre-receipt. The physical layer order and
 byte-identity tests here are the single source of truth for the board it emits.
+
+
+## Stage-three envelope content (AGENTEE-177)
+
+After outline preparation and before campaign run 1, `content_step` declares an
+`agent-ee.stage-step/1` with `stage: scaffold`. Run it through `run_step` and
+`adopt`, then pass its receipt as a campaign `pre_receipts` entry with binding
+`{"pre_receipt": 1}`. It is preparation, outside `implementation_steps`.
+The write source is `design/BOARD`: ee139's in-place layout. The board is its
+only write; captured planning records, libraries and project rules stay intact.
+
+```python
+from agent_ee.scaffold import content_step
+from agent_ee.stage_receipts import run_step, adopt
+from agent_ee.storage import digest
+
+step = content_step(repository, "envelope.json", "parts.json", "project/design.kicad_pcb",
+                    intent="intent.json", layout="layout.json",
+                    imu_reference="U3", antenna_facts="antenna-facts.json")
+receipt = run_step(receipt_dir, scaffold_inputs, step, {"pre_receipt": 1})
+adopt(receipt_dir, receipt, scaffold_inputs)  # Refuses a failed receipt.
+pre_receipt = {"path": str(receipt_dir / "receipt.json"),
+               "sha256": digest(receipt_dir / "receipt.json"), "binding": {"pre_receipt": 1}}
+```
+
+All paths except `repository`, `receipt_dir` and `scaffold_inputs` are relative
+to the captured input inventory. `intent` and `layout` are the existing
+connectivity-intent and schematic-layout records used by the schematic emitter.
+The writer calls that emitter to obtain native paths, including sheet and unit
+UUIDs; it does not implement a second UUID recipe. Each fixed reference must
+select one manifest instance with matching symbol and footprint identity.
+The existing captured manifest qualifier verifies its catalog replay and CAD
+closure before native footprint loading. Library footprint bytes supply all
+pads and graphics. The declared position, rotation and front/back side are
+applied with pcbnew, then the footprint is locked. Forward annotation binds by
+native path and retains the footprint UUID and transform.
+
+Mounting holes are constructed directly as locked board-only footprints, with
+one round drilled pad, the declared reference, position, drill and plating,
+and BOM/position-file exclusions. They have no netlist path or schematic symbol.
+`Mechanical:MountingHole` has no pins: putting it in connectivity intent still
+produces `empty_pins`; this preparation step does not relax the resolver.
+NPTH pad size equals drill size. Declared PTH holes receive a 0.3 mm annulus;
+fabrication checks still judge that generated choice. Each hole pad carries every
+copper layer plus F.Mask and B.Mask, built on an owned copy of KiCad's shared
+`LSET.AllCuMask()`: mutating that static set in place makes later saves fold
+`*.Mask` into `*.Cu`, so pads reload without solder-mask openings. The pod contract fixture
+uses four 3.2 mm NPTH holes at a 4 mm inset, the owner-authorized default; a
+production generator must retain that default as a recorded deviation.
+
+Polygon keepouts become named board-level rule areas with the declared layers
+and forbid set. The legacy dynamic antenna generation path requires captured
+facts, but AGENTEE-211 deliberately refuses deriving a manufacturer clearance
+from module dimensions. It cannot publish antenna content until a separately
+explicit construction contract is supplied. Captured CAD geometry is not a
+manufacturer-derived minimum and does not qualify antenna placement.
+
+`imu_reference` explicitly selects one fixed footprint. The writer places
+`IMU_AXES  X forward  Y left  Z up` on F.SilkS, 4 mm below that anchor in board
+coordinates. It does not infer IMU pin/axis mapping or choose a harness part.
+The 776228-1 versus 776087-1 identity/orientation question remains open in
+AGENTEE-209. The declared captured footprint and transform are used verbatim.
+
+The native entry point is `python -m agent_ee.scaffold --inputs INPUTS
+--envelope ENVELOPE --parts PARTS --board BOARD [--intent INTENT --layout LAYOUT]
+[--imu-reference REF] [--antenna-facts FACTS]`; `content_step` runs it through
+`/usr/bin/python3` in the networkless executor. Fixed content requires both
+emitter inputs. Missing members, inconsistent identities, unknown references,
+non-quarter-turn antenna transforms and populated input boards are refused.
+The initial board must match the declared outline and stackup. Construction
+uses a private native board and replaces the file only after a successful save;
+a failed step publishes no changed board. Repeated preparation from identical
+inputs produces identical bytes. Reapplying to a populated board is refused.
+
+`verify-campaign` imports and verifies the stage receipt against run 1's exact
+capture, including input and output hashes. A changed receipt or different
+initial board is refused. The stage-one scaffold receipt predates this content;
+its candidate hash is not the new board's candidate hash. Keep both records,
+and use the stage receipt for campaign binding.
+
+[test_scaffold.py](../tests/test_scaffold.py) exercises original mechanical
+stand-ins for AMPSEAL, SMA, IMU and radio on the pod envelope, native hole and
+keepout checks, front/back transforms, byte identity, exact pad layer sets
+(copper and mask) after a fresh-process reload, forward annotation with a
+real KiCad XML export, and campaign pre-receipt verification. Model responses
+in the campaign protocol test are scripted; native tools and receipts are real.
+These tests establish generator mechanics, not physical component suitability,
+12 mm height, IMU isolation or a complete telemetry-pod campaign.
+
+### Explicit captured antenna CAD retention
+
+The optional `captured_rule_areas="retained.json"` argument to `content_step`
+(or CLI `--captured-rule-areas retained.json`) enables **generation only** from
+exact captured CAD. It does not qualify manufacturer clearance or satisfy a
+check/prerequisite. Without it, the legacy dynamic derivation remains refused.
+The existing envelope, facts-check reference and unresolved obligations are
+preserved. In particular, `board_envelope` `keepouts/1` remains **unknown** for
+the dynamic antenna declaration after successful construction.
+
+The input is strict JSON with exactly these fields:
+
+| Field | Value/contract |
+| --- | --- |
+| `schema` | `agent-ee.captured-rule-areas/1` |
+| `purpose` | `retain-captured-cad-only` |
+| `envelope` | `{path, sha256}` for the exact writer envelope |
+| `parts` | `{path, sha256}` for the exact qualified parts manifest |
+| `items` | Nonempty array covering every dynamic antenna item exactly once |
+
+Each item has exactly:
+
+| Field | Value/contract |
+| --- | --- |
+| `keepout_id` | Original dynamic envelope keepout ID |
+| `reference` | Its unique fixed native component reference |
+| `footprint` | Exact parts/CAD identity `RF_Module:ESP32-S3-WROOM-1` |
+| `pose` | `{anchor_mm, rotation_deg, side}` exactly as normalized by `board_envelope.validate` |
+| `source` | `{path, sha256}` of the unique captured footprint manifest member |
+| `rule_areas` | Complete `probe_rule_areas` result recomputed from that source, including original zone polygon, flags, layers and digest |
+| `policy` | Exact `esp32_s3_wroom_1_placement_policy("outside_board", pdf_path=...)` declaration |
+| `context` | Complete `antenna_placement_context` result recomputed using captured guideline bytes |
+
+This bounded path supports the actual front/zero-degree pose only. Other poses
+or policy cases refuse; they need separately reviewed generation coverage.
+The source must contain exactly one rule area. No selector may hide extra
+zones. Enabled copper-layer applicability and the forbid set must equal the
+original envelope declaration. The source can cover additional disabled
+copper layers; its full original layer set remains in the captured CAD/probe.
+KiCad's saved native zone must cover exactly the source's enabled-board layers.
+The saved board's enabled copper layers must still equal the captured envelope. Every item, source,
+part membership, transform and context must match; extra fields (including
+minimum-clearance or accepted-status assertions), ambiguous or missing members,
+symlinks, changed bytes, weakened restrictions and incomplete coverage refuse.
+
+Capture the record, footprint, parts/CAD dependency closure and the exact pinned
+guideline PDF as ordinary immutable scope inputs. The stage step explicitly
+requires the record, and its receipt retains the entire input tree. The writer
+rechecks every retention dependency before publication and refuses collisions
+with its sole board write. No PDFs or stock vendor CAD are embedded in this
+repository. Test policy sources are explicitly synthetic and cannot establish
+real source qualification.
+
+Construction retains the footprint-owned source zone already loaded with the
+fixed component. It adds no derived antenna area or board-level duplicate,
+and never clips the polygon at Edge.Cuts. Before replacing the destination,
+it reloads the saved native board and compares the zone geometry, exact enabled
+layer applicability, flags, ownership, FPID and pose with a separately loaded
+captured member at that pose. Only the expected layer set is intersected with
+the envelope's enabled layers; the saved zone is never filtered. Missing an
+enabled layer still refuses. Geometry must survive native serialization exactly. This
+is CAD fidelity evidence; the source probe/context digests are not review seals
+or accepted check results.
+
+For the actual pod, reuse the bound intent's emitter layout so fixed components
+have the same native paths as subsequent forward annotation. A pathless preview
+board would duplicate fixed electrical parts. The expected eventual inventory
+is 108 electrical footprints plus four board-only mounting holes, not a claim
+that placement has completed. Normal netlist/parts/probe checks and receipts
+remain necessary. Source placement applicability, feed-point/corner geometry,
+housing clearance, physical overhang/containment, RF performance and bench
+obligations remain unresolved. The captured 48 x 21 mm polygon is not a
+manufacturer minimum, and the datasheet's pin label 15 is never a clearance.
 
 ## Stage-two producer
 
