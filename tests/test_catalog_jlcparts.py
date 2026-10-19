@@ -109,6 +109,43 @@ class NativeCatalogTests(unittest.TestCase):
         self.assertEqual(rows[0]['mfr'], '')
         self.assertEqual(rows[0]['attributes']['upstream_manufacturer'], '')
 
+    def test_dcdc_mapping(self):
+        claims = {'Voltage - Input (Max)': '40V', 'Current - Output': '1000mA',
+                  'Synchronous Rectifier': 'Yes', 'Frequency - Switching': '500kHz',
+                  'Operating Temperature': '-40℃~+125℃', 'Topology': 'Buck'}
+
+        def edit(connection):
+            for number, attributes in ((1, claims), (2, {}), (3, {**claims, 'Synchronous Rectifier': 'No'})):
+                connection.execute('UPDATE jlc_components SET category=?, subcategory=?, package=?, attributes=? '
+                                   'WHERE lcsc=?', ('Power Management ICs', 'DC-DC Converters', 'SOIC-8',
+                                                    json.dumps(attributes), number))
+        capture_catalog(self.source(edit), self.root, self.root / 'snapshot')
+        snapshot = load_catalog(self.root / 'snapshot', digest(self.root / 'snapshot/manifest.json'))
+        self.assertEqual(snapshot['manifest']['row_counts']['switching_regulator'], 3)
+        first, unknown, asynchronous = snapshot['rows']
+        self.assertEqual(first['category'], 'switching_regulator')
+        self.assertEqual(first['package'], 'SOIC-8')
+        self.assertEqual(first['normalized'], {
+            'input_voltage_max': dict(min='40', max='40', unit='V'),
+            'output_current': dict(min='1', max='1', unit='A'), 'topology': {'value': 'sync'},
+            'switching_frequency': dict(min='500000', max='500000', unit='Hz'),
+            'temperature': dict(min='-40', max='125', unit='degC')})
+        for key, value in claims.items():
+            self.assertEqual(first['attributes']['upstream:' + key], value)
+        self.assertEqual(unknown['normalized'], {})
+        self.assertEqual(asynchronous['normalized']['topology'], {'value': 'async'})
+        self.assertEqual(first['attributes']['upstream_subcategory'], 'DC-DC Converters')
+        self.assertEqual(first['provenance']['row'], 1)
+
+    def test_dcdc_ambiguous_ratings_and_rectification_stay_unknown(self):
+        from agent_ee.catalog import normalized_attributes
+        claims = {'Voltage - Input (Max)': 'up to 40V', 'Current - Output': '1A per channel',
+                  'Synchronous Rectifier': 'Optional', 'Frequency - Switching': '300kHz/600kHz',
+                  'Topology': 'Buck'}
+        raw = json.loads(attributes(json.dumps(claims), 'switching_regulator'))
+        self.assertEqual(normalized_attributes(raw), {})
+        self.assertEqual(raw['upstream:Topology'], 'Buck')
+
     def test_real_sandbox_offline_1k_0603_query(self):
         import os
         from agent_ee.executor import sandbox_argv

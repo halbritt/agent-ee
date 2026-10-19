@@ -19,6 +19,7 @@ CATEGORY_MAP = {
     'Resistors': 'resistor', 'Capacitors': 'capacitor', 'Inductors': 'inductor', 'Inductors, Coils, Chokes': 'inductor',
     'Diodes': 'diode', 'Connectors': 'connector', 'LED Indication - Discrete': 'led',
     'Voltage Regulators - Linear, Low Drop Out (LDO) Regulators': 'regulator',
+    'DC-DC Converters': 'switching_regulator',
 }
 COMPONENT_COLUMNS = ('lcsc', 'fetched_at', 'present', 'sync_seen', 'category', 'subcategory',
                      'mfr', 'package', 'joints', 'manufacturer', 'library_type', 'preferred',
@@ -136,6 +137,15 @@ def attributes(text, category):
                               ('Voltage - Output (Min/Fixed)', 'Voltage - Output (Max)', 'output_voltage')):
         if low in original and high in original:
             mapped[target] = original[low] + ' .. ' + original[high]
+    if category == 'switching_regulator':
+        for source, target in (('Voltage - Input (Max)', 'input_voltage_max'),
+                               ('Current - Output', 'output_current'),
+                               ('Frequency - Switching', 'switching_frequency')):
+            if source in original:
+                mapped[target] = original[source].replace('~', ' .. ')
+        rectifier = {'Yes': 'sync', 'No': 'async'}.get(original.get('Synchronous Rectifier'))
+        if rectifier is not None:
+            mapped['topology'] = rectifier
     return canonical(mapped).decode()
 
 

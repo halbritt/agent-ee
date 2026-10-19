@@ -145,6 +145,14 @@ prefers Basic, then Preferred, then Extended, followed by known price, lower
 price, higher available stock and numeric LCSC ID. The report records matched
 intervals, rejection reasons, exclusion counts and the deciding rank key.
 
+The `switching_regulator` category supports SI input-voltage maximum, output
+current, switching frequency and temperature constraints plus exact
+`topology: {"kind":"equals","value":"sync"}` (or `async`) and the captured
+package string. Only declared constraints affect eligibility; missing typed
+claims exclude rows with per-attribute `unknown_attribute` reasons. The
+[switching-regulator example](part-selection.md) and native DC-DC mapping use
+the same snapshot reader, immutable baseline and sealed receipt path.
+
 An empty selection returns `execution: ok`, `outcome: unknown`, `chosen: null`
 and reason `no candidate`. Invalid requirements or snapshots return
 `execution: failed`, `outcome: unknown`. An unparseable attribute excludes its

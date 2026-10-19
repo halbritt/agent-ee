@@ -34,7 +34,8 @@ CSV headers contain exactly `lcsc,mfr,mpn,package,category,stock,price1,is_basic
 `is_preferred,last_seen,attributes` in any order. SQLite sources have an ordinary
 `components` table with those columns in that order and text cells; views and
 numeric coercion are unsupported. Categories are resistor, capacitor, inductor,
-diode, led, connector and regulator. `stock` is a nonnegative integer;
+diode, led, connector, regulator (linear/LDO) and switching_regulator. `stock` is
+a nonnegative integer;
 `price1` is decimal USD per unit. An empty stock or price cell means unknown.
 Booleans are explicitly `0` or `1`. `last_seen` must not exceed `snapshot_date`.
 `attributes` is a JSON object mapping attribute names to original text.
@@ -51,16 +52,26 @@ Typed attribute names and SI units are:
 | resistance | ohm |
 | capacitance | F |
 | inductance | H |
-| voltage, input_voltage, output_voltage, dropout | V |
+| voltage, input_voltage, output_voltage, dropout, input_voltage_max | V |
 | power | W |
-| quiescent_current | A |
+| quiescent_current, output_current | A |
+| switching_frequency | Hz |
 | temperature | degC |
+| topology | Enum: `sync` or `async` |
 
 Values require explicit units: `10 kohm +/-1%`, `100 nF ±10%`, `50 V`, or
 `-40 degC .. 85 degC`. Prefix case matters (`M` is mega, `m` is milli).
 Unparseable and absent attributes remain unknown, with raw text preserved;
 they never acquire a guessed nominal value or tolerance. Normalization is a
 catalog claim, not verification against a datasheet.
+
+`switching_regulator` supports `input_voltage_max`, `output_current`, `topology`,
+`switching_frequency` and `temperature`, with the row's exact `package` string.
+Numeric values normalize to SI intervals. `topology` normalizes to
+`{"value":"sync"}` or `{"value":"async"}`; it describes synchronous or
+asynchronous rectification, not buck versus boost conversion. Other spellings
+remain unknown. Selection requires only the attributes explicitly constrained
+by the caller. No MPN, description or package string supplies a missing rating.
 
 `capture_catalog(source_manifest, source_root, destination)` builds a new
 private staging directory, validates SQLite integrity, and atomically publishes
@@ -72,10 +83,11 @@ Ordinary ZIP/CSV expansion is limited to 1 GiB. Native split ZIP64 extraction
 has a separate 8 GiB limit and streams to private temporary files.
 
 The DB has `component_base` and one derived table per category. Base rows contain
-the source columns plus canonical JSON `normalized` SI intervals and `provenance`.
+the source columns plus canonical JSON `normalized` typed claims and `provenance`.
 Category tables add `<attribute>_min` and `<attribute>_max` decimal-text columns
-for the applicable attributes. Decimal text retains exact values without binary
-float rounding. NULL interval endpoints mean unknown. Provenance records the
+for numeric attributes and a `topology` text column for the enum. Decimal text
+retains exact values without binary float rounding. NULL typed cells mean unknown.
+Provenance records the
 volume path, one-based parsed record number (after headers, cumulative across
 sorted ZIP CSV members), and canonical raw-row SHA-256. The volume SHA pins the
 original bytes. Source URL/commit are recorded declarations, not authenticated
@@ -94,12 +106,17 @@ constraints cannot be dropped). It then revalidates every base row as captured
 data rather than trusting the hashes: canonical JSON text, integer or NULL stock,
 decimal-text or NULL price, 0/1 flags, unique LCSC identity and unique source
 record, and provenance naming a pinned volume with a positive record number and
-SHA-256. Normalized SI intervals and every other derived field are recomputed from
-the retained raw `attributes` and source cells with this module's normalization
+SHA-256. Normalized SI intervals, enum values and every other derived field are
+recomputed from the retained raw `attributes` and source cells with this module's normalization
 and must match exactly. Rows last seen after `snapshot_date` or before `stale_before`
 are refused. Category tables must equal the revalidated base rows. Counts and
 canonical row identity are checked last; it returns `manifest` and the rederived
 `rows`.
+
+The reader also accepts the exact original seven-category table/count layout.
+New captures include the switching-regulator table, even when empty. A partial
+table set or a switching-regulator row in the legacy layout fails closed;
+existing snapshots are never rewritten or silently re-pinned.
 
 A content hash only proves the bytes are the pinned bytes. Without rederivation,
 a newly pinned snapshot could carry intervals that contradict its own raw claims,
@@ -185,7 +202,8 @@ updates can change the pinned inputs.
 `jlcparts-v2-stocked-split-zip` is an explicit compact import profile, not the
 entire upstream universe. It retains present rows with positive captured stock
 in supported categories: resistors, capacitors, inductors, diodes, connectors,
-discrete LED indicators and linear/LDO regulators. Other families, absent parts
+discrete LED indicators, linear/LDO regulators and the `DC-DC Converters`
+subcategory as `switching_regulator`. Other families, absent parts
 and zero-stock rows are excluded. Missing parts in this profile do not prove
 unavailability in the complete upstream catalog. The pinned one-year
 `stale_before` cutoff applies to the retained row's UTC `fetched_at` date.
@@ -218,8 +236,20 @@ Existing snapshots keep their captured attributes: the importer does not add a
 newly recognized rating to an old snapshot silently. Re-capture source bytes or
 record an explicit derived capture with its source hashes and importer identity.
 Absent, ambiguous or unparseable attributes stay unknown. This
-initial regulator mapping requires both input/output range endpoints; it does
+linear/LDO regulator mapping requires both input/output range endpoints; it does
 not infer omitted endpoints from a maximum or fixed nominal rating. Unknown limits cannot support selection constraints.
+
+For switching regulators the adapter maps `Voltage - Input (Max)` to
+`input_voltage_max`, `Current - Output` to `output_current`, and
+`Frequency - Switching` to `switching_frequency`. `Synchronous Rectifier` maps
+exact `Yes`/`No` claims to `sync`/`async`; `Operating Temperature` uses the
+existing temperature mapping. Unsupported strings (including optional
+rectification, multiple frequencies or ratings without units) remain unknown.
+The original `Topology` claim is retained under `upstream:Topology` but does
+not establish rectification. Each normalized claim is traceable through the
+retained raw row, source position/hash and pinned volume; no datasheet fact or
+current-stock claim is inferred. The owned `test_dcdc_mapping` fixture exercises
+the native split-ZIP capture and offline rederivation, without publishing supplier data.
 
 Output uses the existing `agent-ee.catalog/1` schema, normalization, typed
 tables and atomic publication path. Its manifest retains every archive pin;

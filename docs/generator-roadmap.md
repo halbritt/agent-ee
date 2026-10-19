@@ -397,3 +397,11 @@ AGENTEE-33 datasheets; `parts_subset` and the scaffold producer retain their
 immutable evidence closure. Synthetic tests establish this admission path;
 a live public-search capture and an actual telemetry-pod design remain separate
 qualification work.
+
+AGENTEE-165 adds generic `switching_regulator` selection with typed input-voltage
+maximum, output-current, frequency and temperature claims, exact `sync`/`async`
+rectification, and captured package matching. The native DC-DC importer preserves
+source claims; selection receipts name unknown-attribute exclusions. This shares
+the catalog replay already consumed by `parts/1` and complements AGENTEE-164's
+exact named-IC records. It does not add parametric claims to named records or
+select an actual pod regulator without captured rows and declared constraints.

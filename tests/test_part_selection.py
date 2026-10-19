@@ -44,6 +44,92 @@ class SelectionTests(unittest.TestCase):
         part.update(overrides)
         return dict(schema='agent-ee.part-requirements/1', build_quantity=10, stock_floor=100, parts=[part])
 
+    def switching_requirements(self):
+        return self.requirements(id='U1', category='switching_regulator', package='SOIC-8', constraints={
+            'input_voltage_max': {'kind': 'at_least', 'min': '40 V'},
+            'output_current': {'kind': 'at_least', 'min': '1 A'},
+            'topology': {'kind': 'equals', 'value': 'sync'}})
+
+    def switching_row(self, lcsc, **attributes):
+        claims = dict(input_voltage_max='40 V', output_current='1 A', topology='sync')
+        claims.update(attributes)
+        return self.row(lcsc, category='switching_regulator', package='SOIC-8', attributes=json.dumps(claims))
+
+    def test_switching_regulator_constraints(self):
+        snapshot, pin = self.snapshot([
+            self.switching_row('C1'), self.switching_row('C2', input_voltage_max='36 V'),
+            self.switching_row('C3', output_current='900 mA'), self.switching_row('C4', topology='async'),
+            self.switching_row('C5', input_voltage_max='60 V', output_current='2 A')])
+        requirements = self.switching_requirements()
+        selected = select_parts(snapshot, pin, requirements)
+        part = selected['parts'][0]
+        self.assertEqual((selected['execution'], selected['outcome']), ('ok', 'pass'))
+        self.assertEqual(part['chosen']['lcsc'], 'C1')
+        self.assertEqual([p['row']['lcsc'] for p in part['ranked']], ['C1', 'C5'])
+        self.assertEqual(part['ranked'][0]['matched_constraints']['topology'], {
+            'candidate': {'value': 'sync'}, 'requirement': {'kind': 'equals', 'value': 'sync'}})
+        self.assertEqual({r['lcsc']: r['reasons'][0]['attribute'] for r in part['rejected']},
+                         {'C2': 'input_voltage_max', 'C3': 'output_current', 'C4': 'topology'})
+        self.assertEqual(part['exclusion_counts'], {'constraint_mismatch': 3})
+        self.assertTrue(all(not r['reasons'][0]['unknown'] for r in part['rejected']))
+        self.assertEqual(canonical(selected), canonical(select_parts(snapshot, pin, requirements)))
+        # Frequency and temperature are absent: undeclared constraints cannot exclude a row.
+        self.assertNotIn('switching_frequency', part['chosen']['normalized'])
+
+    def test_missing_attribute_excludes_row(self):
+        rows = []
+        for number, key in enumerate(('input_voltage_max', 'output_current', 'topology'), 1):
+            row = self.switching_row('C' + str(number))
+            attributes = json.loads(row['attributes'])
+            del attributes[key]
+            row['attributes'] = json.dumps(attributes)
+            rows.append(row)
+        rows += [self.switching_row('C4', topology='maybe'),
+                 self.switching_row('C5', input_voltage_max='40'),
+                 self.switching_row('C6', output_current='up to 1 A')]
+        snapshot, pin = self.snapshot(rows)
+        selected = select_parts(snapshot, pin, self.switching_requirements())
+        part = selected['parts'][0]
+        self.assertEqual((selected['execution'], selected['outcome'], part['chosen']), ('ok', 'unknown', None))
+        self.assertEqual((part['ranked'], part['excluded_rows']), ([], 6))
+        self.assertEqual(part['exclusion_counts'], {'unknown_attribute': 6})
+        self.assertEqual([r['reasons'] for r in part['rejected']], [
+            [{'code': 'unknown_attribute', 'attribute': key, 'unknown': True}]
+            for key in ('input_voltage_max', 'output_current', 'topology', 'topology',
+                        'input_voltage_max', 'output_current')])
+
+    def test_topology_constraint_requires_exact_enum_equality(self):
+        from agent_ee.part_selection import selection_check
+        snapshot, pin = self.snapshot([self.switching_row('C1')])
+        for invalid in ({'kind': 'equals', 'value': 'synchronous'},
+                        {'kind': 'at_least', 'min': 'sync'}, {'kind': 'equals', 'value': True},
+                        {'kind': 'equals', 'value': 'sync', 'extra': 1}):
+            requirements = self.switching_requirements()
+            requirements['parts'][0]['constraints']['topology'] = invalid
+            with self.subTest(invalid=invalid):
+                result = selection_check(snapshot, pin, requirements)
+                self.assertEqual((result['execution'], result['outcome'], result['parts']),
+                                 ('failed', 'unknown', []))
+
+    def test_switching_frequency_temperature_and_async_constraints(self):
+        rows = [self.switching_row('C1', topology='async', switching_frequency='500 kHz',
+                                  temperature='-40 degC .. 125 degC'),
+                self.switching_row('C2', topology='async', switching_frequency='1 MHz',
+                                  temperature='-40 degC .. 125 degC'),
+                self.switching_row('C3', topology='async', switching_frequency='500 kHz',
+                                  temperature='0 degC .. 85 degC'),
+                self.switching_row('C4', topology='async')]
+        snapshot, pin = self.snapshot(rows)
+        requirements = self.switching_requirements()
+        requirements['parts'][0]['constraints'].update(
+            topology={'kind': 'equals', 'value': 'async'},
+            switching_frequency={'kind': 'within', 'min': '400 kHz', 'max': '600 kHz'},
+            temperature={'kind': 'covers', 'min': '-20 degC', 'max': '105 degC'})
+        part = select_parts(snapshot, pin, requirements)['parts'][0]
+        self.assertEqual([r['row']['lcsc'] for r in part['ranked']], ['C1'])
+        self.assertEqual(part['exclusion_counts'], {'constraint_mismatch': 2, 'unknown_attribute': 2})
+        self.assertEqual([r['lcsc'] for r in part['rejected']], ['C2', 'C3', 'C4'])
+
     def test_exact_value_interval_selection_and_determinism(self):
         snapshot, expected = self.snapshot([
             self.row('C1'), self.row('C2', attributes=json.dumps({'resistance': '110 kohm +/-1%', 'voltage': '50 V'})),
