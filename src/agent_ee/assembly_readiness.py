@@ -82,6 +82,7 @@ ALLOWED_PARAM_KEYS = frozenset((
     "calibration_inputs",
     "deviations",
     "hand_fit_policy",
+    "rating_provenance",
 ))
 
 CATALOG_SQLITE_COLUMNS = (
@@ -862,6 +863,10 @@ def validate_params(params):
     if hand_fit_policy is not None:
         hand_fit_policy = _validate_hand_fit_policy(hand_fit_policy, deviations)
 
+    rating_provenance = params.get("rating_provenance")
+    if rating_provenance is not None:
+        rating_provenance = _validate_rating_provenance(rating_provenance)
+
     return {
         "catalog": catalog,
         "catalog_sha256": catalog_sha256,
@@ -876,7 +881,22 @@ def validate_params(params):
         "stock_floor": stock_floor,
         "deviations": deviations,
         "hand_fit_policy": hand_fit_policy,
+        "rating_provenance": rating_provenance,
     }
+
+
+def _validate_rating_provenance(raw):
+    """Captured binding-fill receipt (coordinator-pinned) and its binding-fill.json artifact."""
+    from .hardware_interface import exact_keys
+    exact_keys(raw, "receipt receipt_sha256 report")
+    for key in ("receipt", "report"):
+        if not isinstance(raw[key], str) or str(safe_relative(raw[key])) != raw[key]:
+            raise ValueError(f"rating_provenance.{key} must be a normalized captured path")
+    if raw["receipt"] == raw["report"]:
+        raise ValueError("rating_provenance receipt and report must be distinct files")
+    if not isinstance(raw["receipt_sha256"], str) or not SHA256_RE.fullmatch(raw["receipt_sha256"]):
+        raise ValueError("rating_provenance.receipt_sha256 must be a 64-character lowercase hex digest")
+    return dict(raw)
 
 
 def _validate_hand_fit_policy(raw, deviations):
@@ -925,6 +945,11 @@ def capability(params, files, inputs=None):
         if cfg["hand_fit_policy"]["source"] not in files:
             raise ValueError("hand_fit_policy.source must be a captured input")
         immutable_inputs.append(cfg["hand_fit_policy"]["source"])
+    if cfg["rating_provenance"] is not None:
+        for key in ("receipt", "report"):
+            if cfg["rating_provenance"][key] not in files:
+                raise ValueError(f"rating_provenance.{key} must be a captured input")
+            immutable_inputs.append(cfg["rating_provenance"][key])
     if inputs is not None:
         catalog_path = Path(inputs) / catalog_rel
         if catalog_path.is_file():
@@ -957,6 +982,8 @@ def capability(params, files, inputs=None):
         predicates.append("assembly:passive-ratings")
     if cfg["max_extended_parts"] is not None:
         predicates.append("assembly:extended-parts-limit")
+    if cfg["rating_provenance"] is not None:
+        predicates.append("assembly:rating-provenance")
 
     return {
         "immutable_inputs": sorted(set(immutable_inputs)),
@@ -1267,6 +1294,17 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
     declared_deviation, findings = _assembly_deviations(Path(inputs_root), cfg, extracted, catalog, captured_files,
                                                         citation)
     declared_refs = {d['reference'] for d in declared_deviation}
+    rating_records, rating_records_error = None, None
+    if cfg["rating_provenance"] is not None:
+        from .passive_ratings import load_provenance
+        try:
+            rating_records = load_provenance(Path(inputs_root), cfg["rating_provenance"])
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            # Unavailable provenance is unknown coverage, never a pass.
+            rating_records_error = str(exc)
+            findings.append({"severity": "unknown", "code": "rating_provenance_unavailable",
+                             "provenance": cfg["rating_provenance"],
+                             "message": f"receipted rating provenance is unavailable: {exc}"})
     missing_properties_by_ref = {}
     missing_rating_refs = []
     missing_lcsc_refs = []
@@ -1347,10 +1385,20 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
 
         passive_type = _passive_kind(comp)
         has_rating = True
-        rating_provenance = None
+        rating_provenance = rating_record = None
         if passive_type in ("R", "C"):
-            from .passive_ratings import PROPERTY as RATING_PROVENANCE, validate_binding
+            from .passive_ratings import PROPERTY as RATING_PROVENANCE, resolve_record, validate_binding
             problems = validate_binding(props, passive_type)
+            if cfg["rating_provenance"] is None:
+                rating_record = "undeclared" if RATING_PROVENANCE in props else None
+            elif rating_records is None:
+                rating_record = "unavailable" if RATING_PROVENANCE in props else None
+            elif not problems:
+                problems = resolve_record(props, ref, rating_records)
+                rating_record = ("unresolved" if problems else
+                                 "receipt_bound" if RATING_PROVENANCE in props else None)
+            else:
+                rating_record = "unresolved"
             rating_provenance = ('invalid' if problems else
                                  'source_backed' if RATING_PROVENANCE in props else 'unsourced')
             if problems:
@@ -1434,6 +1482,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             "passive_kind": passive_type,
             "has_rating_property": has_rating if passive_type else None,
             "rating_provenance": rating_provenance,
+            "rating_record": rating_record,
         })
 
     capture = catalog.get("capture")
@@ -1592,6 +1641,12 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             ),
         })
 
+    undeclared = [c["reference"] for c in component_reports if c["rating_record"] == "undeclared"]
+    if undeclared:
+        findings.append({"severity": "info", "code": "undeclared_rating_provenance", "references": undeclared,
+                         "message": "AGENT_EE_Ratings record_sha256 is format-checked only; no receipted "
+                                    "rating_provenance is declared to resolve it"})
+
     defect_findings = [f for f in findings if f["severity"] == "defect"]
     unknown_findings = [f for f in findings if f["severity"] == "unknown"]
 
@@ -1601,6 +1656,9 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
             f"assembly_readiness reported {len(defect_findings)} defect(s) and "
             f"{len(unknown_findings)} unknown(s) across {len(populated)} populated component(s)"
         )
+    elif rating_records_error is not None:
+        outcome = "unknown"
+        summary = "assembly_readiness cannot certify pass: receipted rating provenance is unavailable"
     elif unknown_findings:
         outcome = "unknown"
         summary = (
@@ -1669,6 +1727,13 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
         "declared_deviation": declared_deviation,
         "deviations_sha256": digest(Path(inputs_root) / cfg['deviations']) if cfg['deviations'] else None,
         "hand_fit_policy": citation,
+        "rating_provenance": None if cfg["rating_provenance"] is None else {
+            **cfg["rating_provenance"],
+            "report_sha256": (digest(Path(inputs_root) / cfg["rating_provenance"]["report"])
+                              if rating_records is not None else None),
+            "records": None if rating_records is None else len(rating_records),
+            "error": rating_records_error,
+        },
         "ignored_non_assembly": [
             {"reference": c["reference"], "lib_id": c["lib_id"], "reason": c["ignore_reason"]}
             for c in ignored_non_assembly

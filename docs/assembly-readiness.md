@@ -74,10 +74,12 @@ Live JLCPCB stock reaches it only through an owner-run
   - `assembly:stock-coverage`
   - `assembly:passive-ratings` (when `require_passive_ratings` is `true`, the default)
   - `assembly:extended-parts-limit` (when `max_extended_parts` is set)
+  - `assembly:rating-provenance` (when `rating_provenance` is set)
 - **Captured inputs:** `scope.schematic`.
 - **Immutable baseline inputs:** `params["catalog"]`, plus `database.path` for
   an `agent-ee.catalog/1` manifest, or every retained `responses/*.json` file
-  for a JLCPCB stock capture.
+  for a JLCPCB stock capture, plus `rating_provenance.receipt` and
+  `rating_provenance.report` when declared.
 
 ## Parameters (`params`)
 
@@ -96,6 +98,7 @@ Live JLCPCB stock reaches it only through an owner-run
 | `stock_floor` | `int >= 0` | `0` | Minimum stock per LCSC ID: `threshold = max(quantity_per_board * boards, stock_floor)`. |
 | `deviations` | `str \| None` | `None` | Captured mutable `agent-ee.part-deviations/1` file shared with `part_decisions`. |
 | `hand_fit_policy` | `object \| None` | `None` | Citation of a captured owner decision: `source`, `sha256`, `line`, `quote` and exact `identities`. See [owner hand-fit policy](#owner-hand-fit-policy). |
+| `rating_provenance` | `object \| None` | `None` | Receipted binding-fill provenance: `receipt` (captured stage receipt of the `binding-fill` step), `receipt_sha256` (coordinator pin) and `report` (captured `binding-fill.json`). See [receipt-bound rating provenance](#receipt-bound-rating-provenance). |
 
 `property` lookups for `Footprint`, `LCSC` and `Manufacturer` also accept the
 common aliases (`footprint`, `LCSC Part`, `jlcpcb_part`, `Mfr`, ...); other
@@ -262,7 +265,8 @@ reused sheet).
     `require_passive_ratings`. Each component report records
     `rating_provenance`: `source_backed`, `unsourced`, `invalid`, or null for
     non-passives. Unsourced hand-entered ratings still satisfy the property
-    rule, as before.
+    rule, as before. With `rating_provenance` declared the field must also
+    resolve to its receipted record (see below).
   - `non_native_assembly_marker`: see above.
   - `missing_lcsc`: no `LCSC` value; names the reference.
   - `invalid_lcsc`: value does not match `^C[1-9][0-9]*$`.
@@ -276,6 +280,11 @@ reused sheet).
   - `extended_parts_limit_exceeded`: unique Extended IDs exceed
     `max_extended_parts`.
 - **`unknown`** (never `pass`)
+  - `rating_provenance_unavailable`: `rating_provenance` is declared but the
+    receipt or report is missing, the receipt differs from its pin, is not an
+    adoptable `binding-fill` receipt with `--ratings`, the report is not its
+    recorded `out/binding-fill.json` artifact, or a report record does not
+    match its identity.
   - `missing_stock_telemetry`: stock is `null`.
   - `stale_stock_telemetry`: `last_seen` is missing, is after the evaluation
     date, is earlier than `stale_before`, or is older than
@@ -283,6 +292,41 @@ reused sheet).
     age is declared anywhere (no catalog or parameter `stale_before`, no
     `max_stock_age_days`, no `max_age_hours`).
 - **`ok`**: fresh positive stock covering the threshold.
+
+## Receipt-bound rating provenance
+
+`AGENT_EE_Ratings` carries only a compact `record_sha256`
+([binding fill](binding-fill.md#source-derived-passive-ratings)). Without
+`rating_provenance` the check validates its format and its agreement with the
+native `Power`/`Voltage` properties only, and reports an info
+`undeclared_rating_provenance` finding naming the components it could not
+resolve (AGENTEE-242). Declaring the provenance binds each field to the full
+record:
+
+```json
+{
+  "rating_provenance": {
+    "receipt": "provenance/binding-fill.receipt.json",
+    "receipt_sha256": "<sha256 of the receipt.json the coordinator adopted>",
+    "report": "provenance/binding-fill.json"
+  }
+}
+```
+
+The receipt's own identity is recomputed, and its recorded
+`out/binding-fill.json` artifact hash must be the captured report's. For each
+populated R or C, the native field's `record_sha256` must equal
+`ratings.derived[reference].record_sha256`. Its ratings must equal the record's
+values, and the native `LCSC` and every present `MPN`/`Partnumber`/`PartNumber`
+must equal the record's part. A component the report derived but that carries
+no `AGENT_EE_Ratings` is refused. Any mismatch, a forged 64-hex hash or a
+self-consistent forged record included, is an `invalid_rating_provenance`
+defect. Unavailable provenance is `unknown`, never `pass`. A determinate defect
+elsewhere still gives `defect`. Each component report records `rating_record`:
+`receipt_bound`, `unresolved`, `unavailable`, `undeclared`, or null. The report
+echoes `rating_provenance` with `report_sha256`, `records` and `error`. The
+check reads the captured receipt JSON. It does not replay the retained
+receipt directory, so the coordinator pin is the authority for that receipt.
 
 ## Execution and outcome
 
