@@ -1005,8 +1005,8 @@
     },
     "dimension_mapping": {
       "constraint_path": "rf-net-constraints.json",
-      "constraint_sha256": "2822674985f68021f5af6e8835fbf1d7a730e82ea107b84065617ae321e6fda8",
-      "net": "RF_IN",
+      "constraint_sha256": "bc12f8bf01a4dcf2a232f24998d24318c53940b1ba5c0f364952a7e67835fcf2",
+      "net": "/POD_GNSS_RF",
       "netclass": "RF_50",
       "mm_per_mil": 0.0254,
       "lower_width": {
@@ -1037,6 +1037,27 @@
         "design_bound": null,
         "native_control_max_mm": 15,
         "native_control_is_design_bound": false
+      },
+      "net_adaptation": {
+        "source_repository_path": "fixtures/telemetry-pod/electrical/pin-allocation.json",
+        "source": {
+          "path": "electrical/pin-allocation.json",
+          "sha256": "3fe884c9260f2f7c005fc4ac7482e9419006009953f7bc02d0f1758ec64be956"
+        },
+        "changes": [
+          {
+            "field": "Net",
+            "source": "RF_IN",
+            "native": "/POD_GNSS_RF",
+            "signal_name": "RF_IN",
+            "terminals": [
+              "U3.11",
+              "J2.1"
+            ]
+          }
+        ],
+        "reason": "RF_IN is the NEO-M9N pin name; pin-allocation.json connects U3 pin 11 to POD_GNSS_RF. prepare_intent.py uses that conductor at the SMA. KiCad root-sheet labels export with a leading slash. Calculator dimensions and raw capture identities are unchanged.",
+        "scope": "RF_50 exact native net binding; no geometry or impedance claim"
       }
     },
     "additional_calculations_attempted": false,

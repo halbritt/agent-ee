@@ -3,7 +3,8 @@
 This is the in-sandbox half of the routing adapter. It imports only the
 standard library, so the coordinator can run it as
 ``/usr/bin/python3 -I -B /opt/agent-ee-routing/kicad_route_attempt.py`` from a
-read-only single-file mount whose bytes it hashes.
+read-only script mount whose bytes it hashes. Exact net binding reuses the
+shared net_binding and symbol_library modules, mounted read-only beside it.
 
 The adapter checks kicad-route's versioned result contract and the mounted
 code byte for byte against one qualified pin. Unknown schemas and changed
@@ -802,6 +803,29 @@ def write_report(path, report):
     return report
 
 
+def constraint_binding_problems(candidate_root, request):
+    """Refuse unmatched exact constraint assignments before invoking the router."""
+    project = candidate_root / request['project'] / Path(request['board']).with_suffix('.kicad_pro')
+    if not project.is_file():
+        return []  # Native router policy handles projects without a settings file.
+    try:
+        value = json.loads(project.read_bytes())
+        if (isinstance(value, dict) and isinstance(value.get('net_settings', {}), dict) and
+                value.get('net_settings', {}).get('netclass_patterns', []) == []):
+            return []
+        if __package__:
+            from .net_binding import require_project_nets
+        else:
+            # These immutable sibling files are included in the step's hashed mounts.
+            sys.path.insert(0, str(Path(__file__).parent))
+            from net_binding import require_project_nets
+        board = candidate_root / request['project'] / request['board']
+        require_project_nets(value, board.read_bytes())
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return [f'net constraint binding refused: {exc}']
+    return []
+
+
 def attempt(request, layout, cancel=None):
     """Run one attempt and write routing/adapter-report.json. Returns the report."""
     cancel = cancel if cancel is not None else {'requested': False}
@@ -833,6 +857,7 @@ def attempt(request, layout, cancel=None):
     for name in (request['board'], request['schematic']):
         if f'{project}/{name}' not in inputs:
             problems.append(f'candidate lacks {project}/{name}')
+    problems += constraint_binding_problems(candidate_root, request)
     commit = None
     try:
         commit = checkout_commit(checkout)

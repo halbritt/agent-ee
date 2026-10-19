@@ -13,6 +13,28 @@ Compilation puts it in scope limitations, outside executable acceptance
 requirements. `tests.test_requirement_map` verifies that distinction and the
 propagation of limitations into native run results and sealed evidence.
 
+## Exact native net binding (AGENTEE-230)
+
+`RF_IN` is the receiver's pin name, not the pod board's net name. The
+[pin allocation](../fixtures/telemetry-pod/electrical/pin-allocation.json)
+connects NEO-M9N U3 pin 11 (`RF_IN`) to `POD_GNSS_RF`.
+`electrical/prepare_intent.py` preserves that conductor and assigns it to SMA
+J2 pin 1. KiCad exports the root-sheet label as `/POD_GNSS_RF`.
+RF_50 now declares that exact native name, including the leading slash.
+The emitted exact pattern leaves `/` literal so both KiCad and the pinned
+router bind RF_50; the previous `\/` spelling made KRT use Default width.
+The capture's `dimension_mapping.net_adaptation` records the source hash,
+terminal mapping and reason using the explicit source/native adaptation
+pattern. Its updated constraint hash binds the renamed declaration. Calculator
+geometry, unit conversion and raw request/result hashes are unchanged.
+
+Emission with a supplied board, standalone CLI emission, DRC setup, copper-width
+binding and router setup refuse absent exact constraint nets with their missing
+names. The width capability also refuses an absent binding before capture.
+A net need not have routed copper to exist: pad nets count. Generated scaffold
+settings are planning output until populated-board checks establish membership.
+They do not qualify a net by declaring a class alone.
+
 ## Captured calculation
 
 The host fetched the [JLCPCB calculator page](https://jlcpcb.com/pcb-impedance-calculator/)
@@ -81,8 +103,8 @@ candidate capture, executor, `geometry` `copper-width/1`, `routing_rules` and
 sealed evidence. U_GNSS and J_SMA are pad labels, not actual device models.
 
 The source-bound probe starts without tracks. The pinned router receives the
-emitted RF_50 project/rules in the networkless sandbox; the test verifies its
-stage receipt and independently checks its unchanged output. Widths at the
+emitted RF_50 project/rules for `/POD_GNSS_RF` in the networkless sandbox;
+the test verifies its stage receipt and independently checks its unchanged output. Widths at the
 emitted 0.335 mm minimum pass; narrowing one segment to 0.334999 mm produces a
 width defect. The recorded 50 ohm target remains `recorded_not_enforced`.
 
@@ -92,6 +114,8 @@ The earlier synthetic controls remain separate:
 - A 0.299999 mm segment fails the synthetic width minimum.
 - Moving the SMA pad to 40 mm and extending connected copper fails native length.
 - Missing copper leaves length coverage unknown.
+- Renaming a recorded native net refuses DRC and width checks, and router setup
+  refuses the missing exact name before invoking the routing tool.
 - Lowering the project width below the recorded minimum refuses capture.
 
 These software probes have no ground plane or actual device footprints. They

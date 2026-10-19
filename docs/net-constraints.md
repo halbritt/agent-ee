@@ -8,9 +8,21 @@ per-net minimums from it. It is a stage 3 transform that feeds stages 4 and 5 of
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.net_constraints constraints.json \
-  --project template/board.kicad_pro --envelope requirements/envelope.json \
+  --project template/board.kicad_pro --board design/board.kicad_pcb \
+  --envelope requirements/envelope.json \
   [--rules template/board.kicad_dru] --out NEW_DIRECTORY
 ```
+
+`--board` is required: every class net must exist in the saved native board.
+Missing names refuse emission (exit 2) before project or DRC-rule bytes are
+written. Names are exact, including root-sheet `/` prefixes. The shared
+S-expression reader handles KiCad 10 named pad/copper nets and older numeric
+net tables. No routed copper is required for a pad net to bind.
+
+The Python `emit(..., board_raw=...)` API performs the same check. Omitting
+`board_raw` supports planning transforms such as the scaffold producer; this
+does not prove board membership. DRC and router setup independently refuse
+unmatched emitted literal assignments when applying the resulting project.
 
 The command runs offline and uses only the standard library. The same inputs
 always produce the same bytes. Exit codes:
@@ -107,7 +119,9 @@ In the output, Default is carried through unchanged.
   class-name order.
 - **Net assignments.** Nets are assigned through `netclass_patterns`. KiCad
   matches a pattern either as an anchored regular expression or as a wildcard,
-  so every character other than a letter, digit or `_` is backslash-escaped.
+  so every character other than a letter, digit, `_` or `/` is backslash-escaped.
+  `/` is already literal; escaping it makes the pinned router miss the class
+  and route at Default width. Native DRC would reject that narrower route.
   The pattern then matches only the literal name. Native tests confirm that
   `USB_D+` does not capture `USB_DD`.
 - **DRC rules.** A netclass width alone is only KiCad's default routing width.
@@ -137,7 +151,8 @@ its existing behavior is unchanged.
 - the method, `temperature_rise_c` and the stackup copper layers;
 - each class: declared fields, `ipc2152` area, width, governing layer and
   thickness, `min_track_width_mm`, rule name and impedance status;
-- the net-to-class map;
+- the net-to-class map and `board_binding` status/hash (`unbound` for planning
+  output without `board_raw`; application checks bind against the current board);
 - `findings`, `outcome`, `acceptance_ready: false` and the limitations.
 
 ## Copper-width binding
@@ -145,13 +160,15 @@ its existing behavior is unchanged.
 A `geometry` check with `criterion: "copper-width/1"` may add
 `"net_constraints": "<captured record path>"`. The record must have outcome
 `pass`. The board-sibling `.kicad_pro` must be captured, carry every recorded
-class with exactly the recorded escaped patterns, and have a `track_width` at
-least the recorded minimum. Each track or arc is then held to the larger of
+class with exactly the recorded literal patterns, and have a `track_width` at
+least the recorded minimum. Legacy escaped `/` patterns remain accepted here.
+Every recorded net must exist in the board, including classes with no width. Each track or arc is then held to the larger of
 `min_track_width_mm` and its net's recorded minimum.
 
 The record and the project become immutable baseline inputs in scope/2 and
-scope/3. A record or project that is missing, does not pass, or does not match
-makes the capability unsupported, and execution gives `unsupported/unknown`.
+scope/3. Missing, non-passing or mismatched policy inputs, or any recorded net
+absent from the board, make the capability unsupported. Execution gives
+`unsupported/unknown` with the missing names.
 `copper-width.json` stores `net_limits_mm`, each primitive's limit, and the
 record and project hashes.
 

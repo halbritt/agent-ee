@@ -515,6 +515,7 @@
         "tests/test_findings.py",
         "tests/test_footprint_library.py",
         "tests/test_hardware_interface.py",
+        "tests/test_net_constraints.py",
         "tests/test_packet_index.py",
         "tests/test_routing_equivalence.py",
         "tests/test_seeded_benchmark.py",

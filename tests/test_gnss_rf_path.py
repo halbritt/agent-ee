@@ -28,16 +28,17 @@ class NativeRfMechanismTests(unittest.TestCase):
         self.root = Path(tmp.name)
 
     def run_probe(self, *, width=0.3, sma_x=10, routed=True, project_width=None,
-                  captured=False):
+                  captured=False, missing_native_net=False):
         import pcbnew as k
 
         source = self.root / 'source'
         source.mkdir()
+        net = '/POD_GNSS_RF' if captured else 'RF_IN'
         # Deliberately synthetic: these bounds cannot qualify a pod RF path.
         rules = {'schema': 'agent-ee.routing-rules/1', 'constraints': [
             {'id': 'rf-length', 'requirement': 'R-rf-length', 'kind': 'length',
-             'nets': ['RF_IN'], 'max_mm': 15}]}
-        scope = make_scope(source, rules, lengths=(sma_x,), net_names=('RF_IN',),
+             'nets': [net], 'max_mm': 15}]}
+        scope = make_scope(source, rules, lengths=(sma_x,), net_names=(net,),
                            width=width, layers=4, outline=(80, 50))
         board_path = source / 'test.kicad_pcb'
         board = k.LoadBoard(str(board_path))
@@ -56,7 +57,7 @@ class NativeRfMechanismTests(unittest.TestCase):
         intent = json.loads(raw)
         artifacts = emit(raw,
                          (ROOT / 'fixtures/netclass-completeness/native.kicad_pro').read_bytes(),
-                         envelope_raw=envelope)
+                         envelope_raw=envelope, board_raw=board_path.read_bytes())
         self.assertEqual(json.loads(artifacts['record'])['outcome'], 'pass')
         if captured:
             for name in ('rf-net-constraints.json', 'rf-source-capture.json', 'envelope.json'):
@@ -85,6 +86,9 @@ class NativeRfMechanismTests(unittest.TestCase):
                 'Captured W1 lower width rounded upward by the emitter; W2 upper taper is metadata only.',
                 'The 15 mm length bound is test-only; actual pod RF maximum length remains unbound.',
                 'No actual devices, ground plane, exact coplanar gap, mask or impedance qualification.']
+            if missing_native_net:
+                board_path.write_bytes(board_path.read_bytes().replace(
+                    b'"/POD_GNSS_RF"', b'"/RENAMED_RF"'))
             router_input = self.root / 'router-input'
             shutil.copytree(source, router_input / 'project')
             step = routing_adapter.step(project='project', board='test.kicad_pcb',
@@ -95,6 +99,14 @@ class NativeRfMechanismTests(unittest.TestCase):
                 {'implementation': 1, 'receipt_index': 1})
             stage_receipts.validate_receipt(receipt_dir)
             summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
+            if missing_native_net:
+                self.assertEqual(summary['classification'], 'not_run', summary)
+                self.assertEqual(summary['proposal'], 'none')
+                report = read_json(receipt_dir / 'run/routing/adapter-report.json')
+                self.assertIsNone(report['process'], 'routing tool must not run with an unmatched constraint')
+                self.assertIn('constraint nets absent from board: /POD_GNSS_RF',
+                              str(report['semantics']['reasons']))
+                return summary, json.loads(artifacts['record'])
             self.assertEqual(summary['classification'], 'complete', summary)
             self.assertEqual(summary['proposal'], 'eligible', summary)
             shutil.copyfile(receipt_dir / 'run/routing/candidate/project/test.kicad_pcb', board_path)
@@ -113,6 +125,9 @@ class NativeRfMechanismTests(unittest.TestCase):
         verify_evidence(run, results, required=True)
         self.assertEqual(before, digest(board_path))
         return {r['id']: r for r in results}
+
+    def test_absent_pod_net_is_refused_before_native_router_invocation(self):
+        self.run_probe(captured=True, missing_native_net=True)
 
     def test_captured_width_routes_then_narrower_segment_is_a_defect(self):
         import pcbnew as k
@@ -136,13 +151,13 @@ class NativeRfMechanismTests(unittest.TestCase):
         board = k.LoadBoard(str(board_path))
         tracks = list(board.GetTracks())
         self.assertTrue(tracks)
-        self.assertTrue(all(t.GetWidth() == 335000 and t.GetNetname() == 'RF_IN' for t in tracks))
+        self.assertTrue(all(t.GetWidth() == 335000 and t.GetNetname() == '/POD_GNSS_RF' for t in tracks))
         tracks[0].SetWidth(334999)
         k.SaveBoard(str(board_path), board)
         negative = self.evaluate(self.source, 'narrower')
         self.assertEqual((negative['width']['execution'], negative['width']['outcome']), ('ok', 'defect'))
         offender, = negative['width']['details']['offending_primitives']
-        self.assertEqual((offender['net'], offender['limit_mm']), ('RF_IN', 0.335))
+        self.assertEqual((offender['net'], offender['limit_mm']), ('/POD_GNSS_RF', 0.335))
         self.assertEqual(negative['routing']['outcome'], 'pass')
         after = {p.name: digest(p) for p in self.source.iterdir() if p.is_file()}
         self.assertEqual({n for n in before if before[n] != after[n]}, {'test.kicad_pcb'})
@@ -184,6 +199,20 @@ class NativeRfMechanismTests(unittest.TestCase):
 
 
 class CapturedRfDeclarationTests(unittest.TestCase):
+    def test_native_net_is_backed_by_pin_allocation_and_explicit_adaptation(self):
+        capture = read_json(ROOT / 'fixtures/telemetry-pod/rf-source-capture.json')
+        mapping = capture['w2_continuation']['dimension_mapping']
+        adaptation = mapping['net_adaptation']
+        allocation_path = ROOT / 'fixtures/telemetry-pod' / adaptation['source']['path']
+        self.assertEqual(digest(allocation_path), adaptation['source']['sha256'])
+        gnss, = [c for c in read_json(allocation_path)['components'] if c['component'] == 'gnss']
+        pin, = [p for p in gnss['pins'] if p['number'] == '11']
+        self.assertEqual((gnss['reference'], pin['name'], pin['net']), ('U3', 'RF_IN', 'POD_GNSS_RF'))
+        change, = adaptation['changes']
+        self.assertEqual((change['source'], change['native']), ('RF_IN', '/' + pin['net']))
+        self.assertEqual(mapping['net'], change['native'])
+        self.assertIn('U3.11', change['terminals'])
+
     def test_source_widths_and_gap_feed_existing_emitter_without_impedance_acceptance(self):
         capture_path = ROOT / 'fixtures/telemetry-pod/rf-source-capture.json'
         capture = read_json(capture_path)['w2_continuation']
@@ -193,7 +222,7 @@ class CapturedRfDeclarationTests(unittest.TestCase):
         calculation = capture['calculation']
         self.assertEqual((calculation['solver_status'], calculation['result_valid']), (0, 1))
         cls, = read_json(path)['classes']
-        self.assertEqual((cls['name'], cls['nets']), ('RF_50', ['RF_IN']))
+        self.assertEqual((cls['name'], cls['nets']), ('RF_50', ['/POD_GNSS_RF']))
         for label, result_field, constraint_field in (
                 ('lower_width', 'W1', 'track_width_mm'), ('gap', 'D1', 'clearance_mm'),
                 ('upper_width', 'W2', None)):

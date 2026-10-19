@@ -21,6 +21,9 @@ from .storage import digest
 
 ADAPTER_AT = '/opt/agent-ee-routing/kicad_route_attempt.py'
 ADAPTER_SOURCE = Path(attempt.__file__).resolve()
+BINDING_MOUNTS = [{'source': str(ADAPTER_SOURCE.with_name(name)),
+                   'at': '/opt/agent-ee-routing/' + name}
+                  for name in ('net_binding.py', 'symbol_library.py')]
 # Hashing the adapter, code and state mounts, and retaining diagnostics, happen
 # after the router's own timeout inside the same step budget.
 STEP_MARGIN_S = 300
@@ -73,7 +76,7 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
 def _step(request, checkout, state):
     """Pure declaration construction, also used for retained campaign replay."""
     mounts = [{'source': str(ADAPTER_SOURCE), 'at': ADAPTER_AT},
-              {'source': checkout, 'at': attempt.SANDBOX['checkout']}]
+              {'source': checkout, 'at': attempt.SANDBOX['checkout']}, *BINDING_MOUNTS]
     if state is not None:
         mounts.append({'source': state, 'at': attempt.SANDBOX['state']})
     target = f'{request["project"]}/{request["board"]}'
@@ -167,13 +170,15 @@ def validate_campaign_step(spec, *, host=True):
     checkout = mounts.get(attempt.SANDBOX['checkout'])
     separate = request['state'] == 'separate'
     state = mounts.get(attempt.SANDBOX['state']) if separate else None
-    expected_mounts = {ADAPTER_AT, attempt.SANDBOX['checkout']}
+    expected_mounts = {ADAPTER_AT, attempt.SANDBOX['checkout'], *(m['at'] for m in BINDING_MOUNTS)}
     if separate:
         expected_mounts.add(attempt.SANDBOX['state'])
     if (set(mounts) != expected_mounts or spec['argv'][:4] != [attempt.PYTHON, '-I', '-B', ADAPTER_AT] or
             (host and mounts[ADAPTER_AT] != str(ADAPTER_SOURCE))):
         raise ValueError('campaign routing step differs from the pinned adapter command or mounts')
     if host:
+        if any(mounts[m['at']] != m['source'] for m in BINDING_MOUNTS):
+            raise ValueError('routing binding helper mounts differ from captured policy')
         check = preflight(checkout, state, request['backend'])
         if check['problems']:
             raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))

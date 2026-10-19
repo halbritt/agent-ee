@@ -79,13 +79,13 @@ class EmitterTests(unittest.TestCase):
         for cls in settings['classes']:
             self.assertEqual(set(cls), DEFAULT_KEYS, cls['name'])
         self.assertEqual(settings['netclass_assignments'], {})
-        self.assertEqual(sorted(p['pattern'] for p in settings['netclass_patterns']), ['\\/IN', '\\/OUT'])
+        self.assertEqual(sorted(p['pattern'] for p in settings['netclass_patterns']), ['/IN', '/OUT'])
         self.assertNotIn('GND', record['nets'])
 
     def test_literal_patterns_escape_regex_and_wildcards(self):
         self.assertEqual(exact_pattern('USB_D+'), 'USB_D\\+')
         self.assertEqual(exact_pattern('N*1?'), 'N\\*1\\?')
-        self.assertEqual(exact_pattern('/A.B'), '\\/A\\.B')
+        self.assertEqual(exact_pattern('/A.B'), '/A\\.B')
 
     def test_diff_pair_and_impedance_with_stackup_are_recorded_not_enforced(self):
         doc = document(classes=[{'name': 'USB', 'requirement': 'R-usb', 'nets': ['USB_D-', 'USB_D+'],
@@ -187,6 +187,12 @@ class EmitterTests(unittest.TestCase):
             record, project = Path(tmp, 'record.json'), Path(tmp, 'board.kicad_pro')
             record.write_bytes(artifacts['record'])
             project.write_bytes(artifacts['project'])
+            project.with_suffix('.kicad_pcb').write_bytes((REPO / 'fixtures/rc/control/rc_filter.kicad_pcb').read_bytes())
+            self.assertEqual(net_minimums(record, project), {'/IN': 1.012, '/OUT': 0.25})
+            legacy = json.loads(artifacts['project'])
+            for pattern in legacy['net_settings']['netclass_patterns']:
+                pattern['pattern'] = pattern['pattern'].replace('/', r'\/')
+            project.write_text(json.dumps(legacy))
             self.assertEqual(net_minimums(record, project), {'/IN': 1.012, '/OUT': 0.25})
             data = json.loads(artifacts['project'])
             data['net_settings']['classes'][1]['track_width'] = 0.25
@@ -194,7 +200,7 @@ class EmitterTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'below the recorded minimum'):
                 net_minimums(record, project)
             data = json.loads(artifacts['project'])
-            data['net_settings']['netclass_patterns'][0]['pattern'] = '/IN'
+            data['net_settings']['netclass_patterns'][0]['pattern'] = '/WRONG_IN'
             project.write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError, 'does not carry'):
                 net_minimums(record, project)
@@ -235,7 +241,8 @@ class EmitterTests(unittest.TestCase):
             root = Path(tmp)
             (root / 'board.kicad_pro').write_bytes(TEMPLATE)
             argv = [sys.executable, '-m', 'agent_ee.net_constraints', str(CONSTRAINTS),
-                    '--project', str(root / 'board.kicad_pro')]
+                    '--project', str(root / 'board.kicad_pro'),
+                    '--board', str(REPO / 'fixtures/rc/control/rc_filter.kicad_pcb')]
             env = {'PYTHONPATH': str(REPO / 'src')}
             ok = subprocess.run(argv + ['--envelope', str(REPO / 'fixtures/board-envelope/rc.envelope.json'),
                                         '--out', str(root / 'ok')], env=env, capture_output=True)
@@ -247,6 +254,64 @@ class EmitterTests(unittest.TestCase):
             self.assertEqual([p.name for p in (root / 'unknown').iterdir()], ['net-constraints.record.json'])
             refused = subprocess.run(argv + ['--out', str(root / 'ok')], env=env, capture_output=True)
             self.assertEqual(refused.returncode, 2)
+
+
+class NetBindingTests(unittest.TestCase):
+    def test_emission_requires_every_declared_net_in_supplied_board(self):
+        from agent_ee.net_binding import board_net_names
+        board = (REPO / 'fixtures/rc/control/rc_filter.kicad_pcb').read_bytes()
+        self.assertEqual(board_net_names(board), {'/IN', '/OUT', 'GND'})
+        good = emit(CONSTRAINTS.read_bytes(), TEMPLATE, envelope_raw=ENVELOPE, board_raw=board)
+        self.assertIn('project', good)
+        for field in ('track_width_mm', 'clearance_mm', 'impedance_ohm'):
+            with self.subTest(field=field):
+                doc = {'schema': 'agent-ee.net-constraints/1', 'classes': [
+                    {'name': 'MISSING', 'requirement': 'R', 'nets': ['RF_IN', '/absent'], field: 1}]}
+                with self.assertRaisesRegex(ValueError, 'constraint nets absent from board: /absent, RF_IN'):
+                    emit(json.dumps(doc).encode(), TEMPLATE, envelope_raw=ENVELOPE, board_raw=board)
+
+    def test_parser_uses_native_net_forms_not_label_text(self):
+        from agent_ee.net_binding import board_net_names
+        raw = b'(kicad_pcb (net 1 "/OLD") (footprint "X" (pad "1" (net "/NEW"))) (gr_text "RF_IN"))'
+        self.assertEqual(board_net_names(raw), {'/OLD', '/NEW'})
+        for raw in (b'(kicad_sch (net "RF_IN"))', b'(kicad_pcb (net))', b'(kicad_pcb'):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                board_net_names(raw)
+
+    def test_all_recorded_classes_bind_even_without_a_width(self):
+        for field in ('clearance_mm', 'impedance_ohm'):
+            doc = {'schema': 'agent-ee.net-constraints/1', 'classes': [
+                {'name': 'RF', 'requirement': 'R', 'nets': ['RF_IN'], field: 1}]}
+            artifacts, _ = run(doc)
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / 'r.json').write_bytes(artifacts['record'])
+                (root / 'board.kicad_pro').write_bytes(artifacts['project'])
+                shutil.copyfile(REPO / 'fixtures/rc/control/rc_filter.kicad_pcb', root / 'board.kicad_pcb')
+                with self.assertRaisesRegex(ValueError, 'constraint nets absent from board: RF_IN'):
+                    net_minimums(root / 'r.json', root / 'board.kicad_pro')
+                (root / 'board.kicad_pcb').unlink()
+                with self.assertRaises(OSError):
+                    net_minimums(root / 'r.json', root / 'board.kicad_pro')
+
+    def test_router_preflight_refuses_absent_exact_constraint_names(self):
+        from agent_ee.kicad_route_attempt import constraint_binding_problems
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / 'project'
+            project.mkdir()
+            artifacts, _ = run(document())
+            (project / 'board.kicad_pro').write_bytes(artifacts['project'])
+            board = (REPO / 'fixtures/rc/control/rc_filter.kicad_pcb').read_bytes()
+            path = project / 'board.kicad_pcb'
+            path.write_bytes(board)
+            request = {'project': 'project', 'board': 'board.kicad_pcb'}
+            self.assertEqual(constraint_binding_problems(root, request), [])
+            path.write_bytes(board.replace(b'"/IN"', b'"/RENAMED"'))
+            self.assertEqual(constraint_binding_problems(root, request),
+                             ['net constraint binding refused: constraint nets absent from board: /IN'])
+            path.write_bytes(b'(kicad_pcb')
+            self.assertTrue(constraint_binding_problems(root, request))
 
 
 class NativeNetclassTests(unittest.TestCase):
@@ -343,6 +408,18 @@ print(sorted({(t.GetNetname(), t.GetNetClassName()) for t in b.GetTracks()}))'''
         descriptor = self.width_descriptor(run_dir)
         self.assertEqual(descriptor['status'], 'unsupported')
         self.assertIn('below the recorded minimum', descriptor['unsupported_reasons'][0]['message'])
+
+    def test_absent_recorded_net_refuses_drc_width_and_capability(self):
+        source = self.project()
+        board = source / 'rc_filter.kicad_pcb'
+        board.write_bytes(board.read_bytes().replace(b'"/IN"', b'"/RENAMED"'))
+        run_dir, results = self.review(source)
+        for result in results:
+            self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+            self.assertIn('constraint nets absent from board: /IN', result['summary'])
+        descriptor = self.width_descriptor(run_dir)
+        self.assertEqual(descriptor['status'], 'unsupported')
+        self.assertIn('/IN', str(descriptor['unsupported_reasons']))
 
     def test_record_and_project_are_immutable_baseline_inputs(self):
         run_dir, _ = self.review(self.project())

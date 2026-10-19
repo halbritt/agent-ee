@@ -104,7 +104,8 @@ class RequirementMapTests(unittest.TestCase):
                      'single authorized W2 continuation', 'solver status 0 and valid geometry',
                      'HTTP acceptance is not a successful calculation',
                      'rf-net-constraints.json', 'upper W2 width 0.321716796875 mm',
-                     '0.335 mm', 'recorded_not_enforced',
+                     '0.335 mm', 'recorded_not_enforced', '/POD_GNSS_RF',
+                     'Unmatched constraint nets are refused',
                      'RF maximum length remains unbound', '15 mm is a test value only'):
             self.assertIn(fact, limitation)
         self.assertNotIn(rid, compile_coverage(scope, self.provenance_files())['requirements'])

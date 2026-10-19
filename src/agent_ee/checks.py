@@ -368,6 +368,14 @@ def check_drc(ctx):
     except ValueError as exc:
         raise CheckError("unsupported", str(exc)) from exc
     board = ctx.candidate_path(ctx.scope["board"])
+    project = (ctx.inputs / ctx.scope["board"]).with_suffix('.kicad_pro')
+    if project.is_file():
+        from .net_binding import require_project_nets
+        try:
+            require_project_nets(json.loads(project.read_bytes()),
+                                 (ctx.inputs / ctx.scope["board"]).read_bytes())
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise CheckError("unsupported", f"DRC net constraint binding: {exc}") from exc
     ctx.candidate_path(ctx.scope["schematic"])  # parity needs it alongside
     ctx.seed_kicad_config()
     ctx.execute(["kicad-cli", "pcb", "drc", "--format", "json", "--severity-all",

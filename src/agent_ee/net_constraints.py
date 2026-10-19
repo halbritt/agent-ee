@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 
 from .board_envelope import validate as validate_envelope
+from .net_binding import board_net_names, exact_pattern, require_nets
 from .netclass_completeness import DEFAULT_KEYS, evaluate as default_gaps, load_json
 from .routing_rules import NET, number, rule_text
 from .storage import canonical
@@ -43,11 +44,6 @@ def ipc2152_area_mil2(current_a, rise_c):
 
 def width_um(area_mil2, thickness_mm):
     return math.ceil(area_mil2 / (thickness_mm / 0.0254) * 0.0254 * 1000)
-
-
-def exact_pattern(net):
-    """KiCad matches a pattern as anchored regex or wildcard; escape both to literal text."""
-    return ''.join(c if c.isalnum() or c == '_' else '\\' + c for c in net)
 
 
 def pair_roles(nets):
@@ -171,9 +167,11 @@ def governing_copper(envelope):
     return min(layers, key=lambda l: Decimal(l['effective_thickness_mm'])), layers
 
 
-def emit(constraints_raw, project_raw, *, envelope_raw=None, rules_raw=None):
+def emit(constraints_raw, project_raw, *, envelope_raw=None, rules_raw=None, board_raw=None):
     """Return {name: bytes}; refuse malformed inputs with ValueError."""
     rise, classes = parse_document(constraints_raw)
+    if board_raw is not None:
+        require_nets((n for c in classes for n in c["nets"]), board_net_names(board_raw))
     project = template_project(project_raw)
     base_rules = template_rules(rules_raw) if rules_raw is not None else None
     envelope = validate_envelope(envelope_raw) if envelope_raw is not None else None
@@ -224,6 +222,9 @@ def emit(constraints_raw, project_raw, *, envelope_raw=None, rules_raw=None):
     outcome = 'unknown' if findings else 'pass'
     report = {'schema': RECORD, 'outcome': outcome, 'acceptance_ready': False, 'findings': findings,
               'source_sha256': hashlib.sha256(constraints_raw).hexdigest(),
+              'board_binding': {'status': 'bound' if board_raw is not None else 'unbound',
+                                'board_sha256': hashlib.sha256(board_raw).hexdigest()
+                                if board_raw is not None else None},
               'template_project_sha256': hashlib.sha256(project_raw).hexdigest(),
               'template_rules_sha256': hashlib.sha256(rules_raw).hexdigest() if rules_raw is not None else None,
               'envelope_sha256': envelope['envelope_sha256'] if envelope else None,
@@ -233,7 +234,9 @@ def emit(constraints_raw, project_raw, *, envelope_raw=None, rules_raw=None):
               'limitations': ['Impedance targets are recorded only; no geometry is computed or enforced.',
                               'Widths use the unmodified IPC-2152 generic-chart fit; no plane, board '
                               'thickness or copper-thickness modifiers.',
-                              'Net names are exact native names; undeclared nets remain in Default.']}
+                              'Net names are exact native names; undeclared nets remain in Default.',
+                              'Planning output without board_raw does not establish board membership; '
+                              'consumers must bind every declared net to the saved board.']}
     artifacts = {}
     if outcome == 'pass':
         settings = project['net_settings']
@@ -266,10 +269,12 @@ def net_minimums(record_path, project_path):
     patterns = settings.get('netclass_patterns')
     if not isinstance(patterns, list):
         raise ValueError('captured project has no netclass_patterns')
+    require_nets((n for c in record['classes'] for n in c['nets']),
+                 board_net_names(Path(project_path).with_suffix('.kicad_pcb').read_bytes()))
     limits = {}
     for spec in record['classes']:
         expected = sorted(exact_pattern(n) for n in spec['nets'])
-        actual = sorted(str(p.get('pattern')) for p in patterns
+        actual = sorted(str(p.get('pattern')).replace(r'\/', '/') for p in patterns
                         if isinstance(p, dict) and p.get('netclass') == spec['name'])
         if spec['name'] not in classes or actual != expected:
             raise ValueError(f'captured project does not carry recorded netclass {spec["name"]}')
@@ -286,6 +291,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('constraints', type=Path)
     parser.add_argument('--project', required=True, type=Path, help='template .kicad_pro (Default netclass only)')
+    parser.add_argument('--board', required=True, type=Path, help='native board whose exact nets must bind')
     parser.add_argument('--rules', type=Path, help='template .kicad_dru to extend')
     parser.add_argument('--envelope', type=Path, help='agent-ee.envelope/1 stackup source')
     parser.add_argument('--out', required=True, type=Path)
@@ -293,7 +299,7 @@ def main():
     try:
         if args.project.suffix != '.kicad_pro':
             raise ValueError('--project must be a .kicad_pro')
-        artifacts = emit(args.constraints.read_bytes(), args.project.read_bytes(),
+        artifacts = emit(args.constraints.read_bytes(), args.project.read_bytes(), board_raw=args.board.read_bytes(),
                          envelope_raw=args.envelope.read_bytes() if args.envelope else None,
                          rules_raw=args.rules.read_bytes() if args.rules else None)
         args.out.mkdir(parents=False, exist_ok=False)
