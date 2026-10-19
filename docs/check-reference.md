@@ -794,7 +794,7 @@ rotation, or `flip` to the declared side. Hints are advisory and never applied.
 
 ## Board envelope predicates
 
-`board_envelope` takes exactly `criterion` and a captured immutable `envelope`
+`board_envelope` takes `criterion` and a captured immutable `envelope`
 path. `outline/1` compares the exact declared Edge.Cuts polygon against saved
 geometry and a native closed-contour probe. `layers/1` compares the exact ordered
 copper layer set against saved and native enabled layers. Each check binds one
@@ -808,7 +808,20 @@ nominal copper weights come from the cited declaration, with no oz-to-mm convers
 Missing or unverified authority stays unknown and capture refuses it. Each
 `placement` `connector-edge/1` check selects a fixed `reference` and supplies
 `placement:connector-edge/1:<reference>`; a single fixed footprint may omit the
-selector and retain the legacy predicate. Holes and keepouts remain unbound. See the [native envelope contract](board-envelope.md#native-envelope-check)
+selector and retain the legacy predicate.
+
+`mounting-holes/1` and `keepouts/1` also require `id`, selecting one declared item
+and one requirement per check. Their predicates are
+`envelope:mounting-holes/1:<id>` and `envelope:keepouts/1:<id>`. Holes compare the
+unique same-reference footprint, inclusive position tolerance, exact round drill,
+plating and whole-hole outline containment. Keepouts require a saved board-level
+or footprint-owned rule area covering the complete polygon on every declared
+layer with at least the declared forbid set. Native loading supplies transformed
+board coordinates. An `antenna: {reference, facts_check}` declaration derives
+ESP32-S3-WROOM-1 geometry through AGENTEE-170 from a prior verified
+`datasheet_facts` result, applies the module transform and requires its owned
+area. Missing native output or unverified facts stay unknown; measured mismatches
+are per-item defects. See the [native envelope contract](board-envelope.md#native-envelope-check)
 for evidence, binding and failure boundaries. Envelope/2 preserves nominal
 and physical thickness separately and derives each generator mechanical
 obligation as unresolved; no existing criterion binds those obligations.

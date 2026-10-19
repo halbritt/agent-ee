@@ -30,7 +30,7 @@ directory; discard it and use a new one.
 A structural pass is not placement, fabrication or acceptance evidence. The
 validation record always carries `acceptance_ready: false`. The registered
 [`board_envelope` check](#native-envelope-check) compares outline, copper layers
-and source-bound stackup. Acceptance still needs the
+and source-bound stackup, declared holes and saved keepouts. Acceptance still needs the
 [baseline integration](#baseline-integration) and mapped checks for every obligation.
 
 ## Record
@@ -47,8 +47,8 @@ separates facts read from the saved board from owned assumptions.
 | `layer_count` | Integer 2 to 32, equal to the stackup copper count |
 | `stackup` | `thickness_mm` and `layers` from top to bottom, alternating `copper` (`name`, `thickness_mm`, `copper_weight_oz`) and `dielectric` (`name`, `thickness_mm`). Copper names are exactly `F.Cu`, `In1.Cu` … `B.Cu`. Layer thicknesses must sum exactly to `thickness_mm` |
 | `fab_profile` | `null` (none selected yet) or `{name, sha256}` naming a captured profile |
-| `mounting_holes` | `{id, at, drill_mm, plated}`; the whole hole must lie inside the outline |
-| `keepouts` | `{id, polygon, layers, forbid}`: a simple polygon contained in the closed outline, stackup copper layer names, and a unique subset of `footprints`, `tracks`, `vias`, `pads`, `copper_pours` |
+| `mounting_holes` | `{id, at, drill_mm, plated}` plus optional nonnegative `tolerance_mm` (default 0); `id` selects the board reference and the whole hole must lie inside the outline |
+| `keepouts` | `{id, polygon, layers, forbid}`: a simple polygon contained in the closed outline; alternatively replace `polygon` with `antenna: {reference, facts_check}` for the ESP32-S3-WROOM-1 datasheet derivation. Stackup copper layer names and a unique subset of `footprints`, `tracks`, `vias`, `pads`, `copper_pours` |
 | `fixed_footprints` | `{reference, side, edge, position_mm, inset_mm, rotation_deg, insertion, tolerance_mm}` |
 
 Version 2 changes `stackup` to `{nominal_thickness_mm,
@@ -177,7 +177,7 @@ check evaluates that exact field:
 | Profile reference | `fab_profile` (AGENTEE-75) | Bound when the check's `fab_profile` parameter names captured bytes with the referenced SHA-256 |
 | Fixed footprint | `placement` (AGENTEE-92) | Bound to a `connector-edge/1` check whose `envelope` parameter names these exact captured envelope bytes, when no other requirement maps that check. The criterion grades side, anchor within tolerance, exact rotation, insertion side and the declared edge on the saved outline |
 | Outline | `board_envelope`, `placement` | Bound to `board_envelope` with `criterion: "outline/1"` over these exact captured envelope bytes. Placement's `outline-containment/1` does not bind this field |
-| Keepouts, mounting holes | `placement` | None: `footprint-keepout/1` grades rule areas already saved, and no predicate checks declared holes |
+| Keepouts, mounting holes | `board_envelope`, `placement` | `keepouts/1` or `mounting-holes/1`, selecting the declared `id`; placement alone does not bind either field |
 | Layer count | `board_envelope`, `fab_package` (AGENTEE-94; registered as the [done gate](fab-package.md), no envelope binding yet) | Bound to `board_envelope` with `criterion: "layers/1"` over these exact captured envelope bytes |
 | Stackup | `board_envelope`, `fab_package` (AGENTEE-94; registered as the done gate, no envelope binding yet) | Bound to `stackup/1` when the referenced source-verified profile declares the ordered stackup, copper weights and explicit layer-thickness matching tolerance |
 
@@ -264,9 +264,9 @@ before the coverage audit, capture:
 
 A scope containing outline, layers, a source-bound stackup, the referenced
 profile and separately selected fixed connectors can now capture with all
-obligations listed as bound in `baseline.json`. Holes, keepouts and unresolved
-generator mechanics still have no binding. Capture refuses those obligations
-by name and writes no baseline or candidate record. Using an envelope only as
+obligations listed as bound in `baseline.json`. Declared holes and keepouts also
+bind through their id-selected checks. Unresolved generator mechanics still
+have no binding. Capture refuses those obligations by name and writes no baseline or candidate record. Using an envelope only as
 `connector-edge/1` data still requires declaring it and covering every obligation.
 The complete pod fixture retains its AGENTEE-177/179 mechanical obligations;
 a scoped contract fixture does not establish acceptance of the complete pod.
@@ -287,14 +287,15 @@ full DRC:
 
 ## Native envelope check
 
-`board_envelope` takes exactly two parameters:
+`board_envelope` takes `criterion` and `envelope`. The hole and keepout criteria
+also require an `id` selecting exactly one declared item:
 
 ```json
 {"id": "envelope-outline", "kind": "board_envelope",
  "params": {"criterion": "outline/1", "envelope": "requirements/envelope.json"}}
 ```
 
-Use one check per field and one requirement per check. The envelope path must
+Use one check per field (or per hole/keepout) and one requirement per check. The envelope path must
 name captured immutable bytes; the scope's board remains a candidate design
 input. Baseline compilation records the envelope dependency and refuses a
 criterion mapped to another field, different envelope bytes, or a check shared
@@ -306,6 +307,56 @@ above and complete obligation coverage; missing manufacturing authority stays un
 | `outline/1` | `envelope:outline/1` | Exact Edge.Cuts segment inventory against the envelope, corroborated by a native load proving one closed straight contour |
 | `layers/1` | `envelope:layers/1` | Exact ordered copper layer names, corroborated by native enabled layer IDs and names |
 | `stackup/1` | `envelope:stackup/1` with captured authority | Saved nominal thickness and ordered layer names/kinds/thicknesses match the profile within its explicit exact tolerance; declared copper weights match its sourced weights |
+| `mounting-holes/1` | `envelope:mounting-holes/1:<id>` | Exactly one footprint with reference `id`, origin within the declared Euclidean tolerance, one round drilled pad whose centre is within the same tolerance, of the declared diameter and PTH/NPTH attribute, and its whole circle inside the native outline |
+| `keepouts/1` | `envelope:keepouts/1:<id>` | At least one saved rule area covers every edge of the declared polygon, all declared copper layers and at least the declared forbid set |
+
+For example, a hole witness uses:
+
+```json
+{"id": "hole-h1", "kind": "board_envelope",
+ "params": {"criterion": "mounting-holes/1", "envelope": "requirements/envelope.json", "id": "H1"}}
+```
+
+Hole judgments retain `id`, native footprint/pad observations and mismatch reasons.
+Missing or duplicate mounting references are defects. Duplicate native footprint
+or pad UUIDs make the probe fail with unknown coverage; they cannot overwrite
+observations or alias rule-area ownership. Position tolerance includes
+its boundary for both the footprint origin and the drilled-pad centre; drill
+diameter is exact. KiCad copper-shape offsets do not move the drill and do not
+fail this criterion. Slotted or multiple drilled pads do not satisfy the declared
+round hole.
+
+Generic keepouts may match board-level or footprint-owned rule areas. Native
+KiCad loading supplies board coordinates for both, including a moved/rotated
+footprint's saved owned polygon. Polygon coverage tests complete edges, so a
+concave notch cannot pass merely because the vertices lie inside. Missing areas,
+insufficient layers, a missing forbidden item or a shrunk polygon are defects;
+unsupported relevant contours or placement-area semantics leave coverage unknown. No DRC result substitutes
+for this declaration comparison. This check grades saved rule-area fidelity;
+placement/routing checks still grade objects that violate the area.
+
+For an ESP32-S3-WROOM-1 antenna declaration, use `antenna` instead of `polygon`:
+
+```json
+{"id": "antenna", "antenna": {"reference": "U1", "facts_check": "antenna-facts"},
+ "layers": ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"],
+ "forbid": ["footprints", "tracks", "vias", "pads", "copper_pours"]}
+```
+
+`facts_check` must select a prior `datasheet_facts` check. At execution, its
+candidate-bound `facts.json` must contain verified records for AGENTEE-170's
+four Figure 11-1 dimensions. `footprint_library.derive_antenna_keepout` derives
+the module-origin polygon from those values; the envelope supplies no coordinates
+for it. The check transforms that polygon using the unique named module's native
+origin, side and exact quarter-turn rotation, then compares only that footprint's
+owned rule areas. The derived clearance may extend past the board edge; this
+criterion does not select module placement or clip the datasheet polygon.
+The judgment retains the derivation, source hash, compared polygon and area UUID.
+Missing or inapplicable facts, an ambiguous module or an unqualified rotation
+stay unknown. A board-level substitute cannot satisfy this owned antenna binding.
+The existing [AGENTEE-170 metadata](footprint-libraries.md#footprint-owned-keepout-rule-areas-and-esp32-s3-wroom-1)
+records the fact IDs and datum. The module's antenna-area width/depth alone in
+`antenna-facts.json` does not supply the base-board clearance dimension.
 
 Launch preflight requires the recorded `pcbnew` runtime. The coordinator runs
 `agent_ee.envelope_probe` in the networkless tool sandbox,

@@ -171,7 +171,9 @@ binding only when declared or consumed by the scope. The registered native check
 compares exact outline and copper layers, and grades stackup against the referenced
 source-verified profile without converting thickness to copper ounces. Several fixed
 connectors receive separate reference-selected witnesses. Capture succeeds for a
-fully bound scope and still refuses holes, keepouts and unbound generator mechanics.
+fully bound scope, including id-selected holes and keepouts. Antenna polygons
+are derived from verified datasheet facts and compared to the module-owned rule
+area after its native transform. Unbound generator mechanics remain refusals.
 
 The [telemetry-pod fabrication inputs](docs/telemetry-pod-fab-profile.md) record
 eight dated JLCPCB JLC04161H-7628 limits and bind known mechanics to the pod spec.

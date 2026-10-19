@@ -622,7 +622,8 @@ class EnvelopeObligationTests(unittest.TestCase):
     def test_only_profile_and_single_connector_bind_and_the_rest_stay_unknown(self):
         self.assertEqual(set(BINDINGS), {('fab_profile', 'fab_profile'), ('fixed_footprints', 'placement'),
                                        ('outline', 'board_envelope'), ('layer_count', 'board_envelope'),
-                                       ('stackup', 'board_envelope')})
+                                       ('stackup', 'board_envelope'), ('mounting_holes', 'board_envelope'),
+                                       ('keepouts', 'board_envelope')})
         report = self.coverage(mapped_scope(self.document))
         self.assertEqual({k: (r['status'], r['locator'], r['checks']) for k, r in report.items()}, {
             PROFILE_ID: ('bound', '/fab_profile', ['fab']),

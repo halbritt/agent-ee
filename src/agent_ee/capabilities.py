@@ -257,6 +257,14 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                     raise ValueError(reason)
                 for path in dependencies:
                     captured(path, immutable=True)
+            if params['criterion'] in ('mounting-holes/1', 'keepouts/1'):
+                if inputs is None:
+                    raise ValueError('selected envelope items need captured envelope inputs')
+                from .envelope_check import captured_record, selected_item
+                record, _ = captured_record(scope, params, files, Path(inputs))
+                item = selected_item(record, params)
+                if 'antenna' in item:
+                    prerequisite(item['antenna']['facts_check'], ('datasheet_facts',))
             result['predicates'] = predicate_names(params)
         elif kind == 'placement':
             from .placement_check import parameters, predicate_names

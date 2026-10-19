@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 from .placement_probe import extract as placement_extract
+from .placement_probe import vector_nm
+from .geometry_probe import pad_vec
 
 
 def extract(path):
@@ -13,6 +15,20 @@ def extract(path):
     before = path.read_bytes()
     placement = placement_extract(path)
     board = pcbnew.LoadBoard(str(path))
+    footprints = list(board.GetFootprints())
+    if len({fp.m_Uuid.AsString() for fp in footprints}) != len(footprints):
+        raise ValueError('duplicate native footprint UUID makes rule-area ownership ambiguous')
+    drills = {}
+    for fp in footprints:
+        for pad in fp.Pads():
+            uid = pad.m_Uuid.AsString()
+            if uid in drills:
+                raise ValueError('duplicate native pad UUID makes drill inventory ambiguous')
+            drills[uid] = {'drill_nm': vector_nm(pad_vec(pad, pad.GetDrillSize)),
+                           'offset_nm': vector_nm(pad_vec(pad, pad.GetOffset))}
+    for fp in placement['footprints']:
+        for pad in fp['pads']:
+            pad.update(drills[pad['uuid']])
     copper = [{'id': int(layer), 'name': board.GetLayerName(layer)}
               for layer in board.GetEnabledLayers().CuStack()]
     if path.read_bytes() != before or placement['board_sha256'] != hashlib.sha256(before).hexdigest():
@@ -21,7 +37,8 @@ def extract(path):
             'pcbnew_version': pcbnew.Version(), 'copper': copper,
             'has_stackup': bool(board.GetDesignSettings().m_HasStackup),
             'thickness_nm': int(board.GetDesignSettings().GetBoardThickness()),
-            'outline': placement['outline']}
+            'outline': placement['outline'], 'footprints': placement['footprints'],
+            'rule_areas': placement['rule_areas']}
 
 
 def main():

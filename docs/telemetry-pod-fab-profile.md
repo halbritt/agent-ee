@@ -97,7 +97,10 @@ The envelope carries five `obligations`, bound by requirement IDs to revision 2:
 | Module antenna keepout | POD-CD-MCU-AND-RADIO, POD-AC-7 | Bind module transform and board-coordinate keepout |
 | IMU away from tall/heavy parts | POD-ME-4 | Generate and check separation |
 
-These remain unbound until AGENTEE-177/179. Empty geometry lists mean those
+These generator obligations remain unbound until AGENTEE-177/179. Once declared,
+holes and keepouts bind through the [native envelope checks](board-envelope.md#native-envelope-check)
+from AGENTEE-162, including an antenna polygon derived from AGENTEE-170 facts.
+Empty geometry lists mean those
 choices have not been made. The validator returns `structural: pass`,
 `outcome: unknown`, `acceptance_ready: false`; deriving requirements preserves
 every obligation. Mapping one to an existing check cannot make it bound.
