@@ -43,6 +43,28 @@ def _blob(value, locator=False):
         nonempty(value['locator'])
 
 
+def _validate_generic_sources(document):
+    catalog = document['catalog']
+    exact_fields(catalog, ('snapshot', 'manifest_sha256', 'database_sha256', 'snapshot_date'))
+    _path(catalog['snapshot'])
+    _sha(catalog['manifest_sha256'])
+    _sha(catalog['database_sha256'])
+    nonempty(catalog['snapshot_date'])
+    exact_fields(document['selection'], ('requirements', 'result'))
+    for blob in document['selection'].values():
+        _blob(blob)
+
+
+def named_selection(part):
+    """A named selection is explicit; unknown kinds are rejected by validation."""
+    return isinstance(part, dict) and 'selection' in part
+
+
+def _named_blob(part):
+    selection = part['selection']
+    return dict(path=selection['part_record'], sha256=selection['part_record_sha256'])
+
+
 def validate_manifest(document):
     """Validate the complete versioned proposal; no I/O or authority inference."""
     exact_fields(document, ('schema', 'declaration_source', 'catalog', 'selection', 'cad',
@@ -56,15 +78,10 @@ def validate_manifest(document):
     exact_fields(fields, ('lcsc', 'mpn', 'manufacturer'))
     if len(set(nonempty(v) for v in fields.values())) != 3:
         raise ValueError('distinct exact native property fields required')
-    catalog = document['catalog']
-    exact_fields(catalog, ('snapshot', 'manifest_sha256', 'database_sha256', 'snapshot_date'))
-    _path(catalog['snapshot'])
-    _sha(catalog['manifest_sha256'])
-    _sha(catalog['database_sha256'])
-    nonempty(catalog['snapshot_date'])
-    exact_fields(document['selection'], ('requirements', 'result'))
-    for blob in document['selection'].values():
-        _blob(blob)
+    if document['catalog'] is not None:
+        _validate_generic_sources(document)
+    elif document['selection'] is not None:
+        raise ValueError('catalog and selection must both be null for named-only parts')
     exact_fields(document['cad'], ('manifest', 'assignments', 'members_sha256'))
     for name in ('manifest', 'assignments'):
         _blob(document['cad'][name])
@@ -76,7 +93,21 @@ def validate_manifest(document):
     for part in parts:
         fields = ('id', 'role', 'required', 'instances', 'selection_id', *IDENTITY_FIELDS,
                   'stock', 'datasheet')
+        if named_selection(part):
+            fields += ('selection', 'package')
         exact_fields(part, (*fields, 'pin_contract') if isinstance(part, dict) and 'pin_contract' in part else fields)
+        if named_selection(part):
+            selection = part['selection']
+            exact_fields(selection, ('kind', 'lcsc', 'part_record', 'part_record_sha256', 'decision_ref'))
+            if selection['kind'] != 'named' or selection['lcsc'] != part['lcsc']:
+                raise ValueError('named selection kind/LCSC mismatch')
+            _blob(_named_blob(part))
+            _blob(selection['decision_ref'], True)
+            nonempty(part['package'])
+            if not isinstance(part['datasheet'], dict) or part['datasheet'].get('status') != 'captured':
+                raise ValueError('named part requires a captured datasheet')
+        elif document['catalog'] is None:
+            raise ValueError('generic parts require canonical catalog selection')
         if 'pin_contract' in part:
             _blob(part['pin_contract'])
         for field in ('id', 'role', 'selection_id', *IDENTITY_FIELDS):
@@ -146,11 +177,13 @@ def _read_blob(root, blob):
 def dependency_closure(document, root):
     """Validate pins and return every immutable path/hash, excluding candidate CAD."""
     validate_manifest(document)
-    blobs = [document['declaration_source'], *document['selection'].values(),
-             document['cad']['manifest'], document['cad']['assignments']]
+    blobs = [document['declaration_source'], document['cad']['manifest'], document['cad']['assignments']]
+    if document['selection'] is not None:
+        blobs += list(document['selection'].values())
     catalog = document['catalog']
-    blobs += [dict(path=catalog['snapshot'] + '/manifest.json', sha256=catalog['manifest_sha256']),
-              dict(path=catalog['snapshot'] + '/catalog.sqlite3', sha256=catalog['database_sha256'])]
+    if catalog is not None:
+        blobs += [dict(path=catalog['snapshot'] + '/manifest.json', sha256=catalog['manifest_sha256']),
+                  dict(path=catalog['snapshot'] + '/catalog.sqlite3', sha256=catalog['database_sha256'])]
     members = _members(strict_json(_read_blob(root, document['cad']['manifest'])))
     declaration = strict_json(_read_blob(root, document['cad']['assignments']))
     validate_declaration(declaration)
@@ -162,6 +195,13 @@ def dependency_closure(document, root):
         raise ValueError('CAD member closure identity mismatch')
     blobs += cad_blobs
     for part in document['parts']:
+        if named_selection(part):
+            from .part_record import qualify_record
+            record_blob = _named_blob(part)
+            record = strict_json(_read_blob(root, record_blob))
+            dependencies = qualify_record(record, root)
+            blobs += [record_blob, part['selection']['decision_ref']]
+            blobs += [dict(path=p, sha256=h) for p, h in dependencies.items()]
         if 'pin_contract' in part:
             blobs.append(part['pin_contract'])
         if part['datasheet']['status'] == 'captured':
@@ -179,31 +219,44 @@ def dependency_closure(document, root):
 def qualify_manifest(document, root):
     """Rederive selection and captured CAD identities; never authenticate approval."""
     closure = dependency_closure(document, root)
-    requirements = strict_json(_read_blob(root, document['selection']['requirements']))
-    expected = strict_json(_read_blob(root, document['selection']['result']))
-    catalog = document['catalog']
-    selection = selection_check(Path(root) / catalog['snapshot'], catalog['manifest_sha256'], requirements)
-    if selection != expected or selection['execution'] != 'ok' or selection['outcome'] != 'pass':
-        raise ValueError('canonical captured selection unavailable or differs from rederivation')
-    if (selection['snapshot_sha256'] != catalog['database_sha256'] or
-            selection['snapshot_date'] != catalog['snapshot_date']):
-        raise ValueError('catalog snapshot identity mismatch')
-    choices = {p['id']: p['chosen'] for p in selection['parts']}
-    quantities = {p['id']: p['quantity_per_board'] for p in requirements['parts']}
-    if set(choices) != {p['selection_id'] for p in document['parts']}:
-        raise ValueError('selection allocation coverage differs from declared parts')
+    generic = [p for p in document['parts'] if not named_selection(p)]
+    selection, choices, quantities = None, {}, {}
+    if document['catalog'] is not None:
+        requirements = strict_json(_read_blob(root, document['selection']['requirements']))
+        expected = strict_json(_read_blob(root, document['selection']['result']))
+        catalog = document['catalog']
+        selection = selection_check(Path(root) / catalog['snapshot'], catalog['manifest_sha256'], requirements)
+        if selection != expected or selection['execution'] != 'ok' or selection['outcome'] != 'pass':
+            raise ValueError('canonical captured selection unavailable or differs from rederivation')
+        if (selection['snapshot_sha256'] != catalog['database_sha256'] or
+                selection['snapshot_date'] != catalog['snapshot_date']):
+            raise ValueError('catalog snapshot identity mismatch')
+        choices = {p['id']: p['chosen'] for p in selection['parts']}
+        quantities = {p['id']: p['quantity_per_board'] for p in requirements['parts']}
+    if set(choices) != {p['selection_id'] for p in generic}:
+        raise ValueError('selection allocation coverage differs from declared generic parts')
     declaration = strict_json(_read_blob(root, document['cad']['assignments']))
     assignments = {c['reference']: c for c in declaration['components']}
     if set(assignments) != {p['id'] for p in document['parts']}:
         raise ValueError('CAD assignments must name each logical part exactly once')
     missing = []
     for part in document['parts']:
-        row = choices[part['selection_id']]
-        if any(part[field] != row[key] for field, key in
-               (('lcsc', 'lcsc'), ('mpn', 'mpn'), ('manufacturer', 'mfr'), ('stock', 'stock'))):
-            raise ValueError('declared identity/stock differs from canonical catalog row: ' + part['id'])
-        if len(part['instances']) != quantities[part['selection_id']]:
-            raise ValueError('instance capacity differs from per-board selection quantity')
+        if named_selection(part):
+            record = strict_json(_read_blob(root, _named_blob(part)))
+            if any(part[k] != record[k] for k in ('lcsc', 'mpn', 'manufacturer', 'package', 'stock')):
+                raise ValueError('named identity/stock differs from captured part record: ' + part['id'])
+            sheet = part['datasheet']
+            if (sheet['artifact'] != record['artifact'] or
+                    {k: sheet['provenance'][k] for k in ('path', 'sha256')} != record['datasheets'] or
+                    sheet['provenance']['locator'] != 'parts[id=' + record['datasheet_id'] + ']'):
+                raise ValueError('named datasheet differs from captured part record')
+        else:
+            row = choices[part['selection_id']]
+            if any(part[field] != row[key] for field, key in
+                   (('lcsc', 'lcsc'), ('mpn', 'mpn'), ('manufacturer', 'mfr'), ('stock', 'stock'))):
+                raise ValueError('declared identity/stock differs from canonical catalog row: ' + part['id'])
+            if len(part['instances']) != quantities[part['selection_id']]:
+                raise ValueError('instance capacity differs from per-board selection quantity')
         if any(part[k] != assignments[part['id']][k] for k in ('lib_id', 'footprint')):
             raise ValueError('CAD identity differs from logical part: ' + part['id'])
         if part['datasheet']['status'] == 'unavailable' and part['datasheet']['required']:
@@ -223,14 +276,16 @@ def prepare_manifest(proposal, root):
     This function creates neither an approval receipt nor approval authority.
     """
     document = copy.deepcopy(proposal)
-    catalog = document['catalog']
-    requirements = strict_json(_read_blob(root, document['selection']['requirements']))
-    selection = selection_check(Path(root) / catalog['snapshot'], catalog['manifest_sha256'], requirements)
-    if selection.get('outcome') != 'pass':
-        raise ValueError('canonical selection unavailable')
-    choices = {p['id']: p['chosen'] for p in selection['parts']}
-    for part in document['parts']:
-        row = choices[part['selection_id']]
-        part.update(lcsc=row['lcsc'], mpn=row['mpn'], manufacturer=row['mfr'], stock=row['stock'])
+    generic = [p for p in document['parts'] if not named_selection(p)]
+    if generic:
+        catalog = document['catalog']
+        requirements = strict_json(_read_blob(root, document['selection']['requirements']))
+        selection = selection_check(Path(root) / catalog['snapshot'], catalog['manifest_sha256'], requirements)
+        if selection.get('outcome') != 'pass':
+            raise ValueError('canonical selection unavailable')
+        choices = {p['id']: p['chosen'] for p in selection['parts']}
+        for part in generic:
+            row = choices[part['selection_id']]
+            part.update(lcsc=row['lcsc'], mpn=row['mpn'], manufacturer=row['mfr'], stock=row['stock'])
     qualify_manifest(document, root)
     return document

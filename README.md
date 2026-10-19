@@ -343,6 +343,11 @@ explicit requirement. Their [full-feed runtime qualification](docs/catalog.md#fu
 uses a declared 600-second helper ceiling and retains sealed evidence in private
 scratch. They do not authenticate upstream claims or establish
 circuit acceptance. Snapshot stock and prices describe their recorded dates.
+[Named ICs and modules](docs/approved-parts.md#named-ics-and-modules) can enter
+`parts/1` through per-LCSC records derived offline from captured JLCPCB responses
+and datasheet acquisitions. The subset check and scaffold producer replay exact
+identity and freeze those sources; suitability and live stock need separate evidence.
+
 An [approved-parts manifest](docs/approved-parts.md) freezes the declared parts
 and their catalog, CAD and datasheet provenance in the campaign baseline.
 The `parts_subset` check compares native symbol/footprint/supplier identities
