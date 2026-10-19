@@ -127,7 +127,7 @@ def parse_search_response(raw, lcsc):
     if isinstance(stock, bool) or not isinstance(stock, int) or stock < 0:
         raise ValueError('stockCount must be a non-negative integer')
     library = row.get('componentLibraryType')
-    if library not in TIERS:
+    if not isinstance(library, str) or library not in TIERS:
         raise ValueError(f'unsupported componentLibraryType {library!r}')
     preferred = row.get('preferredComponentFlag', False)
     if not isinstance(preferred, bool):
@@ -154,24 +154,29 @@ def _utc(value, label):
 
 
 def is_capture(doc):
-    """A producer capture carries its request list; looser jlc-catalog/1 files do not."""
-    return isinstance(doc, dict) and doc.get('schema') == SCHEMA and 'requests' in doc
+    """The JLC schema always requires verifiable producer requests."""
+    return isinstance(doc, dict) and doc.get('schema') == SCHEMA
 
 
 def response_paths(doc):
     """Relative paths of retained responses, for immutable-input declaration."""
+    if not isinstance(doc.get('requests'), list):
+        raise ValueError('JLC capture requests must be a list')
     return sorted(r['response']['path'] for r in doc.get('requests', [])
                   if isinstance(r, dict) and isinstance(r.get('response'), dict)
                   and isinstance(r['response'].get('path'), str))
 
 
-def validate_capture(doc, read_response):
+def validate_capture(doc, read_response, *, response_verdicts=None):
     """Validate a producer capture and re-derive every part from its raw bytes.
 
     ``read_response(rel_path)`` returns the retained bytes (the caller resolves
     paths inside captured inputs). Returns ``{as_of, completed_at, requested,
-    not_found, failed}``. The summary ``parts`` must equal the re-parse exactly.
+    not_found, failed, response_verdicts}``. The summary ``parts`` must equal
+    the re-parse exactly. An optional verdict dict preserves progress on failure.
     """
+    if response_verdicts is None:
+        response_verdicts = {}
     if not is_capture(doc) or set(doc) != CAPTURE_KEYS:
         raise ValueError(f'{SCHEMA} capture requires exactly {sorted(CAPTURE_KEYS)}')
     as_of = _utc(doc['as_of'], 'as_of')
@@ -215,6 +220,7 @@ def validate_capture(doc, read_response):
                 record['reason'] is not None and not isinstance(record['reason'], str)):
             raise ValueError(f'{lcsc}: exactly failed requests carry a reason')
         if response is None:
+            response_verdicts[lcsc] = {'path': None, 'sha256': None, 'verdict': 'missing'}
             if status != 'failed':
                 raise ValueError(f'{lcsc}: {status} requires a retained response')
             failed[lcsc] = record['reason']
@@ -223,9 +229,20 @@ def validate_capture(doc, read_response):
             raise ValueError(f'{lcsc}.response requires exactly {sorted(RESPONSE_KEYS)}')
         if response['path'] != f'responses/{lcsc}.json':
             raise ValueError(f'{lcsc}.response.path must be responses/{lcsc}.json')
-        raw = read_response(response['path'])
+        verdict = {'path': response['path'], 'sha256': response['sha256'], 'verdict': 'unverified'}
+        response_verdicts[lcsc] = verdict
+        if (not isinstance(response['sha256'], str) or not SHA256_RE.fullmatch(response['sha256']) or
+                type(response['size_bytes']) is not int or not 0 <= response['size_bytes'] <= MAX_BYTES):
+            raise ValueError(f'{lcsc}.response requires a lowercase SHA-256 and bounded integer size_bytes')
+        try:
+            raw = read_response(response['path'])
+        except (OSError, ValueError):
+            verdict['verdict'] = 'missing'
+            raise
         if len(raw) != response['size_bytes'] or hashlib.sha256(raw).hexdigest() != response['sha256']:
+            verdict['verdict'] = 'mismatch'
             raise ValueError(f'{lcsc} retained response does not match its size/sha256')
+        verdict['verdict'] = 'verified'
         if status == 'failed':
             failed[lcsc] = record['reason']
             continue
@@ -241,7 +258,7 @@ def validate_capture(doc, read_response):
     if doc['parts'] != derived:
         raise ValueError('parts do not equal the observations re-derived from retained responses')
     return {'as_of': doc['as_of'], 'completed_at': doc['completed_at'],
-            'requested': requested, 'not_found': not_found, 'failed': failed}
+            'requested': requested, 'not_found': not_found, 'failed': failed, 'response_verdicts': response_verdicts}
 
 
 # ------------------------------------------------------------- producer (host only)

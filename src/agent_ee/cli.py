@@ -402,15 +402,15 @@ def validate_scope(scope):
         seen.add(role)
 
 
-def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=0, fab_context=None):
+def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=0, fab_context=None, stock_context=None):
     from .locking import writer_lock
     with writer_lock(out):
         return _run_review(scope_path, out, max_seconds, checks_only=checks_only,
                            previous=previous, profile=profile, expected_baseline=expected_baseline, output_stream=output_stream,
-                           max_schema_resubmissions=max_schema_resubmissions, fab_context=fab_context)
+                           max_schema_resubmissions=max_schema_resubmissions, fab_context=fab_context, stock_context=stock_context)
 
 
-def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=0, fab_context=None):
+def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=0, fab_context=None, stock_context=None):
     from .checks import run_checks
     from .findings import adjudicate, collect_findings
     from .reviewers import adjudicator_call, build_packet, initial_reviews
@@ -455,10 +455,10 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         launch_context = {'expected': result['launch_expectation'],
                           'max_schema_resubmissions': max_schema_resubmissions}
         save_result(run, result)
-        if fab_context is None:
+        if fab_context is None and stock_context is None:
             result["checks"] = run_checks(run, deadline)
         else:
-            result["checks"] = run_checks(run, deadline, fab_context=fab_context)
+            result["checks"] = run_checks(run, deadline, fab_context=fab_context, stock_context=stock_context)
         from .baseline import freeze_evidence
         freeze_evidence(run, result["checks"])
         result["findings"] = collect_findings([], result["checks"])

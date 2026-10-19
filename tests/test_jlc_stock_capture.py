@@ -172,6 +172,9 @@ class JlcStockCaptureTests(unittest.TestCase):
         self.assertEqual((record['status'], record['response'], record['reason']),
                          ('failed', None, 'fetch deadline exceeded'))
         self.assertEqual(doc['parts'], {})
+        checked = validate_capture(doc, lambda rel: (self.root / 'slow' / rel).read_bytes())
+        self.assertEqual(checked['response_verdicts']['C2'],
+                         {'path': None, 'sha256': None, 'verdict': 'missing'})
 
     def test_cli_publishes_capture_and_reports_failed_ids(self):
         server = stub(self, {'C5': (200, search(row('C5', 10)))})
@@ -207,6 +210,7 @@ class JlcStockCaptureTests(unittest.TestCase):
         bad = {'duplicate rows': search(row('C7', 1), row('C7', 2)), 'lcsc stock only': search(lcsc_only),
                'bool stock': search(row('C7', True)), 'negative stock': search(row('C7', -1)),
                'unknown tier': search(row('C7', 1, library='consigned')),
+               'malformed tier': search(row('C7', 1, library=[])),
                'code': search(row('C7', 1), code=500), 'no list': b'{"code":200,"data":{}}',
                'duplicate key': b'{"code":200,"code":200,"data":{"componentPageInfo":{"list":[]}}}',
                'nan': b'{"code":200,"data":{"componentPageInfo":{"list":[]}},"x":NaN}',
@@ -233,6 +237,12 @@ class JlcStockCaptureTests(unittest.TestCase):
             'invented part': lambda d: d['parts'].update(C6={**d['parts']['C5'], 'lcsc': 'C6'}),
             'status': lambda d: d['requests'][1].update(status='found'),
             'hash': lambda d: d['requests'][0]['response'].update(sha256='0' * 64),
+            'boolean size': lambda d: d['requests'][0]['response'].update(size_bytes=True),
+            'negative size': lambda d: d['requests'][0]['response'].update(size_bytes=-1),
+            'uppercase hash': lambda d: d['requests'][0]['response'].update(sha256='A' * 64),
+            'unknown request key': lambda d: d['requests'][0].update(source_url='unverified'),
+            'unknown source key': lambda d: d['source'].update(producer='unverified'),
+            'unknown response key': lambda d: d['requests'][0]['response'].update(http_status=200),
             'path': lambda d: d['requests'][0]['response'].update(path='../C5.json'),
             'fetched before as_of': lambda d: d['requests'][0].update(fetched_at='2000-01-01T00:00:00+00:00'),
             'stale_before': lambda d: d.update(stale_before='2026-01-01'),

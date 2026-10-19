@@ -5,7 +5,11 @@ kicad-cli; components reach the check only through the native XML netlist,
 exported inside the same sandbox the check uses.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import contextlib
+import copy
+import hashlib
+import io
 import re
 import shutil
 import sqlite3
@@ -22,6 +26,8 @@ from agent_ee import executor
 from agent_ee.assembly_readiness import (
     AssemblyReadinessExecutionError,
     evaluate_assembly_readiness,
+    campaign_stock_context,
+    verify_stock_context,
     load_catalog_snapshot,
     read_netlist_components,
     verify_netlist_coverage,
@@ -30,7 +36,7 @@ from agent_ee.assembly_readiness import (
 from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import run_checks, sheet_instances
-from agent_ee.jlc_stock_capture import capture_jlc_stock, ids_from_netlist
+from agent_ee.jlc_stock_capture import DEFAULT_ENDPOINT, capture_jlc_stock, ids_from_netlist
 from agent_ee.storage import digest, read_json, write_json
 from tests.test_jlc_stock_capture import JlcStub, row, search
 from tests.toolchain import require_toolchain
@@ -460,6 +466,10 @@ class AssemblyReadinessTests(unittest.TestCase):
                     {"as_of": "2026-10-15T12:00:00Z", "max_age_hours": 24}),
             ("unknown", ["stale_stock_telemetry"]))
         self.assertEqual(outcome([{**fresh, "last_seen": "2026-10-20"}]), ("unknown", ["stale_stock_telemetry"]))
+        self.assertEqual(
+            outcome([{**fresh, "last_seen": "2026-10-15T13:00:00Z"}],
+                    {"as_of": "2026-10-15T12:00:00Z", "max_age_hours": 24}),
+            ("unknown", ["stale_stock_telemetry"]))
         # No declared maximum age anywhere: freshness cannot be established.
         self.assertEqual(outcome([fresh], stale_before=None), ("unknown", ["stale_stock_telemetry"]))
         self.assertEqual(outcome([fresh], {"max_stock_age_days": 3}, stale_before=None), ("pass", []))
@@ -790,6 +800,9 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.addCleanup(server.close)
         doc = capture_jlc_stock(ids, parent / "jlc", allow_network=True, endpoint=server.url, min_interval=1.0)
         self.assertEqual(len(server.requests), len(ids))
+        # Owned synthetic bytes exercise the consumer's production source contract.
+        doc['source']['endpoint'] = DEFAULT_ENDPOINT
+        write_json(parent / "jlc/catalog.json", doc)
         return doc
 
     @staticmethod
@@ -816,7 +829,9 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.assertEqual(report["catalog"]["as_of"], run)
         self.assertEqual(report["catalog"]["capture"], {
             "as_of": doc["as_of"], "completed_at": doc["completed_at"],
-            "requested": ["C17024", "C25804", "C90001", "C90002"], "not_found": ["C90001"], "failed": ["C90002"]})
+            "requested": ["C17024", "C25804", "C90001", "C90002"], "not_found": ["C90001"], "failed": ["C90002"],
+            "response_verdicts": {r["lcsc"]: {"path": r["response"]["path"], "sha256": r["response"]["sha256"],
+                                                 "verdict": "verified"} for r in doc["requests"]}})
         self.assertEqual(report["parts"]["C17024"]["tier"], "Preferred")
         self.assertEqual(report["parts"]["C25804"]["last_seen"],
                          next(r["fetched_at"] for r in doc["requests"] if r["lcsc"] == "C25804"))
@@ -898,11 +913,197 @@ class AssemblyReadinessTests(unittest.TestCase):
         res = run_checks(run_dir, time.monotonic() + 300.0)[0]
         self.assertEqual((res["execution"], res["outcome"]), ("ok", "pass"), res["summary"])
         self.assertEqual(res["details"]["catalog"]["capture"]["requested"], ["C17024", "C25804"])
+        self.assertEqual(res['details']['policy']['max_age_hours'], 12)
+
+        # A retained review start takes precedence over a caller's backdated as_of.
+        started = self.shifted(doc['as_of'], 25)
+        write_json(run_dir / 'result.json', {'started_utc': started})
+        stale = run_checks(run_dir, time.monotonic() + 300.0)[0]
+        self.assertEqual((stale['execution'], stale['outcome']), ('failed', 'unknown'))
+        self.assertIn('stale', stale['summary'])
+        self.assertEqual(stale['details']['stock_evaluation']['as_of'], started)
+        (run_dir / 'result.json').unlink()
 
         (run_dir / "inputs/design/jlc/responses/C17024.json").unlink()
         missing = run_checks(run_dir, time.monotonic() + 300.0)[0]
         self.assertEqual((missing["execution"], missing["outcome"]), ("failed", "unknown"), missing["summary"])
         self.assertIn("C17024", missing["summary"])
+
+    def test_response_hash_mismatch_unknown(self):
+        self.jlc_capture(self.root, {"C25804": (200, search(row("C25804", 500)))}, ["C25804"])
+        (self.root / "top.kicad_sch").write_text(schematic("top", [part("R1")]))
+        scope = {"schema": "agent-ee.scope/1", "inputs": [{"path": str(self.root / "top.kicad_sch"),
+                 "at": "top.kicad_sch"}, {"path": str(self.root / "jlc"), "at": "jlc"}],
+                 "schematic": "top.kicad_sch", "checks": [{"id": "asm", "kind": "assembly_readiness",
+                 "params": {"catalog": "jlc/catalog.json"}}]}
+        write_json(self.root / "scope.json", scope)
+        run = self.root / "run"
+        run.mkdir()
+        capture(self.root / "scope.json", run)
+        (run / "inputs/jlc/responses/C25804.json").write_bytes(search(row("C25804", 501)))
+        result = run_checks(run, time.monotonic() + 120)[0]
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+        self.assertEqual(result['details']['response_verdicts']['C25804']['verdict'], 'mismatch')
+        self.assertIn('work/asm/assembly-readiness.json', result['evidence'])
+
+        (run / 'inputs/jlc/responses/C25804.json').unlink()
+        missing = run_checks(run, time.monotonic() + 120)[0]
+        self.assertEqual((missing['execution'], missing['outcome']), ('failed', 'unknown'))
+        self.assertEqual(missing['details']['response_verdicts']['C25804']['verdict'], 'missing')
+
+        # A parent symlink must not substitute bytes from outside captured inputs.
+        (run / 'inputs/jlc/responses').rmdir()
+        (run / 'inputs/jlc/responses').symlink_to(self.root / 'jlc/responses', target_is_directory=True)
+        linked = run_checks(run, time.monotonic() + 120)[0]
+        self.assertEqual((linked['execution'], linked['outcome']), ('failed', 'unknown'))
+        self.assertIn('symlink', linked['summary'])
+
+    def test_invalid_check_params_are_unsupported(self):
+        (self.root / 'top.kicad_sch').write_text(schematic('top', [part('R1')]))
+        scope = {'schema': 'agent-ee.scope/1', 'inputs': [
+                 {'path': str(self.root / 'top.kicad_sch'), 'at': 'top.kicad_sch'}],
+                 'schematic': 'top.kicad_sch', 'checks': [
+                 {'id': 'asm', 'kind': 'assembly_readiness', 'params': {}}]}
+        write_json(self.root / 'scope.json', scope)
+        run = self.root / 'run'
+        run.mkdir()
+        capture(self.root / 'scope.json', run)
+        result = run_checks(run, time.monotonic() + 120)[0]
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'))
+        self.assertIn("'catalog' path", result['summary'])
+
+    def test_unknown_key_refused(self):
+        doc = self.jlc_capture(self.root, {"C25804": (200, search(row("C25804", 500)))}, ["C25804"])
+        original = read_json(self.root / "jlc/catalog.json")
+        for key in ('source_url', 'response_sha256', 'stockNumber'):
+            with self.subTest(key=key):
+                doc = read_json(self.root / "jlc/catalog.json")
+                doc['parts']['C25804'][key] = 'unverified'
+                write_json(self.root / "jlc/catalog.json", doc)
+                with self.assertRaises(AssemblyReadinessExecutionError):
+                    load_catalog_snapshot(self.root, "jlc/catalog.json")
+                write_json(self.root / "jlc/catalog.json", original)
+        # G3: removing requests must never select the legacy snapshot loader.
+        doc = dict(original)
+        del doc['requests']
+        write_json(self.root / "jlc/catalog.json", doc)
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'requires exactly'):
+            load_catalog_snapshot(self.root, "jlc/catalog.json")
+        legacy = self.catalog([{'lcsc': 'C25804', 'stock': 500, 'source_url': 'ignored?'}])
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'unknown keys'):
+            load_catalog_snapshot(self.root, legacy)
+
+    def test_lcsc_stocknumber_rejected(self):
+        doc = self.jlc_capture(self.root, {"C25804": (200, search(row("C25804", 500)))}, ["C25804"])
+        # Even a response shaped like JLCPCB cannot promote LCSC figures.
+        doc['source']['endpoint'] = 'https://wmsc.lcsc.com/wmsc/stockNumber'
+        write_json(self.root / "jlc/catalog.json", doc)
+        with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'LCSC and other sources are refused'):
+            load_catalog_snapshot(self.root, "jlc/catalog.json")
+        doc['source']['endpoint'] = DEFAULT_ENDPOINT
+        raw = search({**row('C25804', 500), 'stockNumber': 999999})
+        (self.root / 'jlc/responses/C25804.json').write_bytes(raw)
+        doc['requests'][0]['response'].update(sha256=hashlib.sha256(raw).hexdigest(), size_bytes=len(raw))
+        write_json(self.root / "jlc/catalog.json", doc)
+        self.assertEqual(load_catalog_snapshot(self.root, "jlc/catalog.json")['parts']['C25804']['stock'], 500)
+        del_row = row('C25804', 500)
+        del del_row['stockCount']
+        del_row['stockNumber'] = 999999
+        from agent_ee.jlc_stock_capture import parse_search_response
+        with self.assertRaisesRegex(ValueError, 'stockCount'):
+            parse_search_response(search(del_row), 'C25804')
+
+    def test_as_of_from_receipt(self):
+        from agent_ee.cli import run_review, verify
+        from agent_ee.stage_receipts import run_step
+        source = self.root / 'source'
+        source.mkdir()
+        doc = self.jlc_capture(source, {"C25804": (200, search(row("C25804", 500)))}, ["C25804"])
+        (source / 'top.kicad_sch').write_text(schematic('top', [part('R1')]))
+        (source / 'top.kicad_pcb').write_text('(kicad_pcb (version 20221018))')
+        spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'schematic', 'step': 'generate',
+                'argv': ['/usr/bin/cp', '/candidate/top.kicad_sch', '/work/top.kicad_sch'],
+                'writes': {'top.kicad_sch': 'top.kicad_sch'}}
+        receipt_dir = self.root / 'generation'
+        receipt = run_step(receipt_dir, source, spec, {'pre_receipt': 1})
+        self.assertEqual(receipt['status'], 'completed', receipt)
+        link = {'path': 'generation/receipt.json', 'sha256': digest(receipt_dir / 'receipt.json'),
+                'binding': receipt['binding']}
+        scope = {'schema': 'agent-ee.scope/1', 'name': 'stock-receipt', 'scope': 'JLC stock receipt binding',
+                 'inputs': [{'path': str(p), 'at': p.name} for p in sorted(source.iterdir())],
+                 'schematic': 'top.kicad_sch', 'board': 'top.kicad_pcb',
+                 'checks': [{'id': 'asm', 'kind': 'assembly_readiness',
+                 'params': {'catalog': 'jlc/catalog.json', 'as_of': doc['as_of'], 'max_age_hours': 1000}}]}
+        context = campaign_stock_context(self.root, {'history': []}, {'pre_receipts': [link]}, scope)
+        self.assertEqual(context['receipt']['sha256'], link['sha256'])
+        write_json(self.root / 'scope.json', scope)
+        run = self.root / 'run'
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_review(self.root / 'scope.json', run, 120, checks_only=True, stock_context=context)
+        verify(run)
+        result = read_json(run / 'checks/asm.json')
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result['summary'])
+        stamp = datetime.fromtimestamp(receipt['started_unix'] + receipt['duration_s'], timezone.utc).isoformat()
+        self.assertEqual(result['details']['catalog']['as_of'], stamp)
+        self.assertEqual(result['details']['policy']['max_age_hours'], 24)
+        verify_stock_context(run, {'checks': [result]}, context)
+
+        # Campaign history selects its anchored generation output, ignoring later placement.
+        work = self.root / 'implementations/1'
+        work.mkdir(parents=True)
+        shutil.copytree(receipt_dir, work / 'generation')
+        placement = run_step(work / 'placement', source, {**spec, 'stage': 'placement'}, {'iteration': 1})
+        self.assertEqual(placement['status'], 'completed', placement)
+        index = work / 'stage-receipts.json'
+        write_json(index, {'receipts': [
+            {'path': 'generation/receipt.json', 'sha256': digest(work / 'generation/receipt.json')},
+            {'path': 'placement/receipt.json', 'sha256': digest(work / 'placement/receipt.json')}]})
+        history_state = {'history': [{}], 'stage_receipts': {'1': digest(index)}}
+        history_context = campaign_stock_context(self.root, history_state, {}, scope)
+        self.assertEqual(history_context['receipt']['sha256'], context['receipt']['sha256'])
+        self.assertEqual(history_context['receipt']['path'], str(work / 'generation/receipt.json'))
+        write_json(index, {'receipts': []})
+        with self.assertRaisesRegex(ValueError, 'index changed'):
+            campaign_stock_context(self.root, history_state, {}, scope)
+
+        omitted = copy.deepcopy(result)
+        del omitted['details']['stock_evaluation']
+        with self.assertRaisesRegex(ValueError, 'lacks its evaluation witness'):
+            verify_stock_context(run, {'checks': [omitted]}, context)
+        witness_path = run / 'work/asm/stock-evaluation.json'
+        witness = read_json(witness_path)
+        forged = copy.deepcopy(result)
+        forged['details']['stock_evaluation']['as_of'] = doc['as_of']
+        write_json(witness_path, forged['details']['stock_evaluation'])
+        with self.assertRaisesRegex(ValueError, 'time differs'):
+            verify_stock_context(run, {'checks': [forged]}, context)
+        write_json(witness_path, witness)
+        with self.assertRaisesRegex(ValueError, 'context differs'):
+            verify_stock_context(run, {'checks': [result]}, {'receipt': None})
+        # Caller backdates as_of to the capture; the actual generation time still makes it stale.
+        stale = read_json(run / 'inputs/jlc/catalog.json')
+        stale['as_of'] = self.shifted(stamp, -25)
+        stale['completed_at'] = self.shifted(stamp, -24.5)
+        stale['requests'][0]['fetched_at'] = stale['as_of']
+        stale['parts']['C25804']['last_seen'] = stale['as_of']
+        write_json(run / 'inputs/jlc/catalog.json', stale)
+        result = run_checks(run, time.monotonic() + 120, stock_context=context)[0]
+        self.assertEqual((result['execution'], result['outcome']), ('failed', 'unknown'))
+        self.assertIn('stale', result['summary'])
+        self.assertEqual(result['details']['response_verdicts']['C25804']['verdict'], 'verified')
+        missing = run_checks(run, time.monotonic() + 120, stock_context={'receipt': None})[0]
+        self.assertEqual((missing['execution'], missing['outcome']), ('failed', 'unknown'))
+        self.assertIn('requires a generation stage receipt', missing['summary'])
+        verify_stock_context(run, {'checks': [missing]}, {'receipt': None})
+        promoted = copy.deepcopy(missing)
+        promoted.update(execution='ok', outcome='pass')
+        with self.assertRaisesRegex(ValueError, 'must remain failed/unknown'):
+            verify_stock_context(run, {'checks': [promoted]}, {'receipt': None})
+        # A changed anchor is never accepted, even when the stock itself is fresh.
+        (receipt_dir / 'receipt.json').write_text('{}')
+        changed = run_checks(run, time.monotonic() + 120, stock_context=context)[0]
+        self.assertEqual((changed['execution'], changed['outcome']), ('failed', 'unknown'))
+        self.assertIn('receipt changed', changed['summary'])
 
 
 if __name__ == "__main__":
