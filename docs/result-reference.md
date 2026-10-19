@@ -314,28 +314,63 @@ system Python, Claude/Codex/Agy binaries, the Codex tool host and the `_pcbnew` 
 OS/shared-library image. See [security](security.md) for the guarantees this
 provides and the host-modification limits.
 
-No digest is reused across verification calls (AGENTEE-250). File status cannot prove
+No file digest is reused from a file's status (AGENTEE-250). File status cannot prove
 unchanged bytes for a file this user, a writer sandbox or an agent process can write: a
 shared writable mapping changes a file's bytes without changing its size, mtime or
-ctime. Root ownership is no exception on a host where this user has sudo, so
-root-owned tools are hashed on every call too.
+ctime. Root ownership is no exception on a host where this user has sudo. So
+`storage.digest()` and `storage.digest_fd()` read and hash the bytes on every call,
+inside a verification call too; no verification path (`cli.verify`, `cli.verify_records`,
+`campaign.verify_campaign_records`) enters a digest scope.
 
-Within one verification call (`verify`, a campaign verification, one `runtime_files()`
-observation) each file is hashed once. A file with the same device, inode, size, mtime,
-ctime, owner and mode as when the call hashed it reuses that observation; a rename over
-it or a status change hashes it again. A verification establishes that each file had its
-recorded bytes at some instant during the call, and one hash per file establishes
-exactly that. The observations end with the outermost call and are discarded on entry
-to and exit from every sandboxed tool run, so nothing is reused by a later call. A
-campaign verification still verifies every retained run against one host policy and
-tool observation.
+Two narrower savings remain, neither of which lets a hash vouch for bytes read later:
 
-On the campaign test fixture with a 32 MiB owned candidate file, three campaign
-verifications read 583 MB before this change and 343 MB after. One `runtime_files()`
-observation on the development host reads 0.94 GB instead of 1.23 GB, because a binary
-reached under two names is hashed once, and a campaign verification takes one
-observation instead of one per retained run. Each campaign verification still re-hashes
-every retained run's candidate files, so its reads grow with the number of runs.
+- One host observation per campaign verification. `verify_campaign_records` passes one
+  `host` record to every retained run's `verify`, so the policy files (`src/agent_ee/*.py`)
+  and `runtime_files()` are observed once per campaign verification instead of once per
+  retained run (`cli.observed`). Every retained run is still compared with that
+  observation; a standalone `verify` takes its own. Nothing in the call reads, parses or
+  executes a policy or runtime file against that observation. A module first imported
+  later in the call loads its own bytes, as before this change.
+- One fingerprint per file within one `runtime_files()` observation. Only
+  `storage.fingerprint()` consults a `digest_scope()`, and only `cli.runtime_files` opens
+  one: a binary reached under two names (`claude` through `PATH` and through
+  `executable_for`, `ngspice` and `/usr/bin/ngspice`) is hashed once when its device,
+  inode, size, mtime, ctime, owner and mode are unchanged. Nothing in that scope reads,
+  parses or executes those binaries. The `pcbnew_extension()` probe runs
+  `/usr/bin/python3` and loads `_pcbnew`. That system Python is fingerprinted once,
+  under one name, and never served from reuse; `_pcbnew` is fingerprinted after the
+  probe. The scope ends with the observation, and `executor.execute()` discards it on
+  entry and exit.
+
+Audit of hash-then-read pairs in the verification paths (agent-469's within-call probe).
+Each is a fresh `digest()` followed by a separate read, unchanged from before AGENTEE-250.
+None is served from a reused observation, so an in-place change between two hashes of
+the same file in one call is caught by the later hash:
+
+| Path | Hashed | Read, parsed or re-hashed later in the same call |
+|---|---|---|
+| `candidate.verify_snapshot` | `inputs/**` | `cli.artifacts` re-hashes `inputs/**`. `baseline.load_baseline` → `compile_baseline` hashes each consumed baseline source against its pin, then reads it. |
+| `cli.artifacts` | `checks/*`, `reviews/*`, `review-executions/*`, `review-attempts/*`, `events/*.json`, `adjudicator-execution.json`, `work/**` | `baseline.verify_evidence`/`evidence_seal` re-hash check results and cited artifacts. `cli.verify_records` parses `checks/<id>.json` and `reviews/<role>.json` for projection equality. `preflight.verify_calls` parses `adjudicator-execution.json` and review executions. |
+| `cli.verify_records` | `candidate.json` (`manifest_sha256`), `packet.json` | `packet_index.verify_navigation` parses `packet.json`. `candidate.json` was parsed earlier by `verify_snapshot`. |
+| `campaign.verify_campaign_records` | `config.json`, `implementations/*/implementation-execution.json`, `history/<n>.json` | `config.json` is parsed before its hash. The execution record is parsed by `verify_role_call`, and the history snapshot by `read_json(snapshot)`, after their hashes. |
+
+`tests/test_campaign.py` covers this:
+`test_in_place_change_within_one_verification_call_fails_closed` changes a candidate input
+after the snapshot hash, and a check record (whitespace only, then content) after the
+artifact inventory. Each change goes through a shared mapping with status unchanged,
+inside one `verify` call, and each call is refused. The status-validated in-call reuse
+of an earlier AGENTEE-250 revision accepted the first two. The window between a fresh
+hash and the separate read that follows it is the same as before AGENTEE-250. It is
+closed only where a later hash or parse in the call re-checks the bytes.
+
+Measured with `/proc/self/io` rchar on the campaign test fixture (two retained runs)
+plus a 32 MiB owned candidate file. One campaign verification that really hashes the
+host runtime reads 2.67 GB before AGENTEE-250 and 1.13 GB after. Three campaign
+verifications with the fixture's patched runtime observation read 583 MB before and
+571 MB after, because every candidate file is still hashed twice per retained run (snapshot and
+artifact inventory). One `runtime_files()` observation reads 1.24 GB before and 0.94 GB
+after. A campaign verification's host term is now constant; its candidate term still
+grows with the number of retained runs.
 
 ## Version-2 witnesses and evidence seal
 

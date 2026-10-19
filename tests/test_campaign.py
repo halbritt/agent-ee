@@ -238,17 +238,18 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             verify_campaign(self.root / "campaign")
 
     @toolchain_test
-    def test_campaign_verification_hashes_each_file_once_per_call(self):
-        # AGENTEE-250: one verification call hashes each file once; no reuse crosses calls.
+    def test_campaign_verification_hash_counts_for_a_fixed_candidate(self):
+        # AGENTEE-250: one host observation per campaign verification, every candidate and
+        # record digest a fresh read, and no reuse across calls.
         import mmap
         import os
         import time
-        from agent_ee import storage
+        from agent_ee import cli, storage
         from agent_ee.cli import main
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 0)
         time.sleep(2.2)
-        counts = {}
+        counts, observations = {}, {}
         original = storage._hash_stream
 
         def counted(stream, checkpoint):
@@ -260,24 +261,42 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             return original(stream, checkpoint)
         rooted = set()
 
+        def observing(name, observe):
+            def wrapper(*args, **kwargs):
+                observations[name] = observations.get(name, 0) + 1
+                return observe(*args, **kwargs)
+            return wrapper
+
         def hashes(action):
             counts.clear()
-            with patch('agent_ee.storage._hash_stream', side_effect=counted):
+            observations.clear()
+            with patch('agent_ee.storage._hash_stream', side_effect=counted), \
+                    patch('agent_ee.cli.runtime_files', side_effect=observing('runtime', cli.runtime_files)), \
+                    patch('agent_ee.cli.policy_files', side_effect=observing('policy', cli.policy_files)):
                 action()
-            return dict(counts)
+            return dict(counts), dict(observations)
         root = self.root / "campaign"
-        inputs = {(i.st_dev, i.st_ino) for i in (os.stat(p) for p in root.glob('runs/*/inputs/**/*') if p.is_file())}
-        once = hashes(lambda: verify_campaign(root))
-        self.assertTrue(inputs and inputs <= once.keys())
-        self.assertEqual(max(once.values()), 1, once)
+        self.assertEqual(len(read_json(root / "state.json")["history"]), 2)
+        key = lambda p: (os.stat(p).st_dev, os.stat(p).st_ino)
+        inputs = {key(p): p.name for p in root.glob('runs/*/inputs/**/*') if p.is_file()}
+        policy = {key(p) for p in Path(cli.__file__).parent.glob('*.py')}
+        once, observed = hashes(lambda: verify_campaign(root))
+        # Both retained runs are checked against one observation of the host files.
+        self.assertEqual(observed, {'runtime': 1, 'policy': 1})
+        self.assertEqual({once[k] for k in policy}, {1})
+        # Each candidate file is hashed by the snapshot and again by the artifact inventory;
+        # baseline sources once more per baseline compilation, each right before its read.
+        sources = {'requirements', 'targets'}
+        self.assertEqual({once[k] for k, name in inputs.items() if name not in sources}, {2}, once)
+        self.assertLessEqual(max(once[k] for k, name in inputs.items() if name in sources), 9, once)
         # Every call re-hashes every file, root-owned runtime files (the measurement tool) included.
-        repeated = hashes(lambda: [verify_campaign(root) for _ in range(3)])
-        self.assertEqual({repeated[k] for k in inputs}, {3}, repeated)
+        repeated, observed = hashes(lambda: [verify_campaign(root) for _ in range(3)])
+        self.assertEqual(observed, {'runtime': 3, 'policy': 3})
         self.assertEqual(repeated, {k: 3 * v for k, v in once.items()})
-        self.assertTrue(rooted and all(repeated[k] == 3 for k in rooted), rooted)
+        self.assertTrue(rooted and all(repeated[k] == 3 * once[k] for k in rooted), rooted)
         with contextlib.redirect_stdout(io.StringIO()):
-            command = hashes(lambda: self.assertEqual(main(['verify-campaign', str(root)]), 0))
-        self.assertEqual(max(command.values()), 1, command)
+            command, _ = hashes(lambda: self.assertEqual(main(['verify-campaign', str(root)]), 0))
+        self.assertEqual(command, once)
         # A candidate byte changed between calls without any status change still fails closed.
         target = root / "runs/1/inputs/design/board"
         with target.open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as mapped:
@@ -297,6 +316,54 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
         with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
             verify_campaign(root)
+
+    def _changed_within_call(self, rel, hook, offset, value):
+        """Change run/rel[offset] through a shared mapping, size, mtime and ctime unchanged,
+        right after cli.<hook> first returns inside one verify() call; return its error."""
+        import mmap
+        import os
+        import time
+        from agent_ee import cli, storage
+        target = self.root / 'run' / rel
+        original, seen = getattr(cli, hook), {}
+
+        def then_change(*args, **kwargs):
+            outcome = original(*args, **kwargs)
+            if not seen:
+                seen['before'] = storage._status(os.stat(target))
+                mapped[offset] = value
+                seen['after'] = storage._status(os.stat(target))
+            return outcome
+        with target.open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as mapped:
+            mapped[offset] = mapped[offset]  # an already dirty shared page takes later writes silently
+            time.sleep(2.2)
+            with patch('agent_ee.cli.' + hook, side_effect=then_change), \
+                    self.assertRaises(ValueError) as caught:
+                verify(self.root / 'run', current_source=False)
+        self.assertEqual(seen['before'], seen['after'])
+        return str(caught.exception)
+
+    @toolchain_test
+    def test_in_place_change_within_one_verification_call_fails_closed(self):
+        # AGENTEE-250, agent-469's within-scope probe on the acceptance path: a file hashed
+        # earlier in the call changes without a status change; the later digest of it in the
+        # same call must read the new bytes and refuse. A status-validated in-call memo
+        # (35a8738) accepted the first two cases.
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_review(self.root / 'scope.json', self.root / 'run', 30)
+        self.assertEqual(verify(self.root / 'run', current_source=False)['state'], 'complete')
+        board = (self.root / 'run/inputs/design/board').read_bytes()
+        self.assertEqual(self._changed_within_call('inputs/design/board', 'verify_snapshot', 0, ord('B')),
+                         'execution/review evidence changed; prior acceptance is stale')
+        (self.root / 'run/inputs/design/board').write_bytes(board)
+        check = self.root / 'run/checks/response.json'
+        data = check.read_bytes()
+        # JSON whitespace: the projection parse alone sees equal content.
+        self.assertEqual(self._changed_within_call('checks/response.json', 'artifacts', data.index(b' '), ord('\t')),
+                         'evidence seal contradicts retained check artifacts')
+        check.write_bytes(data)
+        self.assertEqual(self._changed_within_call('checks/response.json', 'artifacts', data.index(b'"') + 1, ord('Z')),
+                         'check differs from retained result')
 
     def test_finding_retry_limit_below_two_refused_before_campaign_creation(self):
         self.scope['checks'][0]['stage'] = 'schematic'

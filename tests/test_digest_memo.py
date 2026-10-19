@@ -1,8 +1,10 @@
-"""No digest is reused across verification calls (AGENTEE-250).
+"""digest() never reuses an observation (AGENTEE-250).
 
 File status cannot prove unchanged bytes, and with sudo no file is immutable to this
-user's processes, so every call hashes every file; within one verification call each
-file is hashed once. Every mutation case below must yield the true digest."""
+user's processes, so digest() and digest_fd() hash the bytes on every call, inside a
+digest_scope() too. Only fingerprint(), for runtime files nothing in the scope reads,
+reuses an observation, and only within one scope. Every mutation case below must yield
+the true digest."""
 import errno
 import hashlib
 import mmap
@@ -15,7 +17,7 @@ from unittest.mock import patch
 
 from agent_ee import executor, storage
 from agent_ee.candidate import verify_snapshot
-from agent_ee.storage import digest, digest_fd, digest_scope
+from agent_ee.storage import digest, digest_fd, digest_scope, fingerprint
 
 try:
     from toolchain import toolchain_test
@@ -156,66 +158,115 @@ class CrossCallRehashTests(Counted):
         expected = digest(RUNTIME)
         for _ in range(2):
             with digest_scope():
-                self.assertEqual(digest(RUNTIME), expected)
-                self.assertEqual(digest(RUNTIME), expected)
+                self.assertEqual(fingerprint(RUNTIME), expected)
+                self.assertEqual(fingerprint(RUNTIME), expected)
         self.assertEqual(digest(RUNTIME), expected)
         self.assertEqual(len(self.hashed), 4)
 
 
-class VerificationScopeTests(Counted):
-    def test_one_call_hashes_a_file_once_and_never_beyond_the_call(self):
+class DigestInScopeTests(Counted):
+    """Inside a scope digest() still reads the bytes, so no stale pin pairs with a later read."""
+
+    def test_agent469_within_scope_probe_returns_true_digest(self):
+        # agent-469's within-scope reproducer: hash, change through a shared mapping with
+        # status unchanged, hash again inside the same scope. The second digest is the truth.
+        path = self.file('payload.bin', b'A' * 4096)
+        with path.open('r+b') as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_WRITE) as mapped:
+            mapped[0] = ord('B')
+            self.settle()
+            with digest_scope():
+                original = digest(path)
+                before = os.stat(path)
+                mapped[1] = ord('C')
+                after = os.stat(path)
+                returned = digest(path)
+                actual = sha(path.read_bytes())
+                fd_returned = digest_fd(os.open(path, os.O_RDONLY))
+        self.assertEqual(storage._status(before), storage._status(after))
+        self.assertNotEqual(original, actual)
+        self.assertEqual(returned, actual)
+        self.assertEqual(fd_returned, actual)
+        self.assertEqual(len(self.hashed), 3)
+
+    def test_digest_neither_reads_nor_feeds_fingerprint_observations(self):
+        path = self.file('a', b'alpha')
+        with digest_scope():
+            fingerprint(path)
+            digest(path)
+            digest(path)
+            self.assertEqual(len(storage._scope.get()), 1)
+            other = self.file('b', b'bravo')
+            digest(other)
+            self.assertEqual(len(storage._scope.get()), 1)
+        self.assertEqual(len(self.hashed), 4)
+
+
+class FingerprintScopeTests(Counted):
+    def test_one_observation_fingerprints_a_file_once_and_never_beyond_it(self):
         path = self.file('a', b'alpha')
         with digest_scope():
             with digest_scope():
-                self.assertEqual(digest(path), sha(b'alpha'))
-            self.assertEqual(digest(path), sha(b'alpha'))
-            self.assertEqual(digest_fd(os.open(path, os.O_RDONLY)), sha(b'alpha'))
+                self.assertEqual(fingerprint(path), sha(b'alpha'))
+            self.assertEqual(fingerprint(path), sha(b'alpha'))
+            link = self.root / 'second-name'
+            link.symlink_to(path)
+            self.assertEqual(fingerprint(link), sha(b'alpha'))
         self.assertEqual(len(self.hashed), 1)
         with digest_scope():
-            digest(path)
-        digest(path)
-        self.assertEqual(len(self.hashed), 3)
+            fingerprint(path)
+        fingerprint(path)
+        fingerprint(path)
+        self.assertEqual(len(self.hashed), 4)
         self.assertIsNone(storage._scope.get())
 
-    def test_status_or_inode_change_within_a_call_is_hashed_again(self):
+    def test_status_or_inode_change_within_an_observation_is_hashed_again(self):
         path, other = self.file('a', b'alpha'), self.file('b', b'bravo')
         with digest_scope():
-            self.assertEqual(digest(path), sha(b'alpha'))
+            self.assertEqual(fingerprint(path), sha(b'alpha'))
             os.replace(other, path)
-            self.assertEqual(digest(path), sha(b'bravo'))
+            self.assertEqual(fingerprint(path), sha(b'bravo'))
             path.write_bytes(b'longer bytes')
-            self.assertEqual(digest(path), sha(b'longer bytes'))
+            self.assertEqual(fingerprint(path), sha(b'longer bytes'))
 
     @toolchain_test
-    def test_tool_execution_discards_the_call_observations(self):
+    def test_tool_execution_discards_the_observations(self):
         inputs, work = self.root / 'inputs', self.root / 'work'
         inputs.mkdir()
         work.mkdir()
         path = self.file('a', b'alpha')
         with digest_scope():
-            digest(path)
+            fingerprint(path)
             self.assertTrue(storage._scope.get())
             record = executor.execute(inputs, work, ['/usr/bin/true'])
             self.assertEqual(record['execution'], 'ok')
             self.assertEqual(storage._scope.get(), {})
-            digest(path)
+            fingerprint(path)
         self.assertEqual(len(self.hashed), 2)
 
     def test_checkpoint_still_runs_on_reuse(self):
         path = self.file('a', b'alpha')
         calls = []
         with digest_scope():
-            digest(path, checkpoint=lambda: calls.append(1))
+            fingerprint(path, checkpoint=lambda: calls.append(1))
             hashed = len(calls)
-            digest(path, checkpoint=lambda: calls.append(1))
+            fingerprint(path, checkpoint=lambda: calls.append(1))
         self.assertGreaterEqual(hashed, 1)
         self.assertEqual(len(calls), hashed + 1)
 
         def refuse():
             raise ValueError('cancelled')
         with digest_scope(), self.assertRaisesRegex(ValueError, 'cancelled'):
-            digest(path)
-            digest(path, checkpoint=refuse)
+            fingerprint(path)
+            fingerprint(path, checkpoint=refuse)
+
+    def test_only_runtime_fingerprints_take_a_scope(self):
+        # Verification paths take no scope: every candidate and record digest is a fresh read.
+        import inspect
+        from agent_ee import campaign, cli
+        for function in (cli.verify, cli.verify_records, cli.artifacts, campaign.verify_campaign_records):
+            self.assertNotIn('digest_scope', inspect.getsource(function), function.__name__)
+        self.assertIn('digest_scope', inspect.getsource(cli.runtime_files))
+        self.assertIn('runtime_digest', inspect.getsource(cli._runtime_files))
 
 
 if __name__ == '__main__':
