@@ -1,101 +1,109 @@
 # GNSS RF path (AGENTEE-186)
 
 The pod targets a 50 ohm coplanar path from NEO-M9N RF_IN to SMA on F.Cu over
-the In1.Cu ground plane of JLC04161H-7628. **The impedance and source-derived
-routing dimensions remain unverified.** No RF_50 production constraint document
-has been emitted from calculator data.
+the In1.Cu ground plane of JLC04161H-7628. A successful host-side JLCPCB
+calculation now supplies the declared dimensions in
+[RF_50 net constraints](../fixtures/telemetry-pod/rf-net-constraints.json).
+**Actual impedance remains unverified.** The existing emitter records
+`impedance_ohm: 50` as `recorded_not_enforced`.
 
 The [requirement map](../fixtures/telemetry-pod/requirement-map.json) preserves
-this target and the missing evidence under `POD-IF-GNSS-ANTENNA`. Compilation
-puts it in scope limitations, outside executable acceptance requirements.
-`tests.test_requirement_map` checks that distinction; its native checks-only
-test also verifies that compiled limitations survive into the run result and
-evidence index.
+this target and its remaining evidence gaps under `POD-IF-GNSS-ANTENNA`.
+Compilation puts it in scope limitations, outside executable acceptance
+requirements. `tests.test_requirement_map` verifies that distinction and the
+propagation of limitations into native run results and sealed evidence.
 
-## Captured calculator failures
+## Captured calculation
 
 The host fetched the [JLCPCB calculator page](https://jlcpcb.com/pcb-impedance-calculator/)
-and public client on 2026-10-19 UTC (2026-10-18 local). Earlier workers stopped
-before calculation submission under narrower authorization. Decision a2
+and public client on 2026-10-19 UTC (2026-10-18 local). Decision a2
 (agent-463 under the owner's delegated authority, 2026-10-18 19:38) authorized
-the bounded anonymous recipe lookup, supporting endpoints, calculation POST
-and UUID-bound WebSocket transport, including ordinary anonymous initialization.
+three anonymous calculations with public recipe/supporting endpoints and
+UUID-bound WebSocket results. All three selected inverse W1 and returned
+solver status 6 with null geometry after their HTTP submissions were accepted.
 
-The authorized workflow fetched the model recipe through
-`POST /api/jlcTools/impedance/selectPageImpedancePicture`, the standard
-JLC04161H-7628 template, coating and copper configuration, and parameter ranges.
-It submitted exactly three calculations through
-`POST /api/jlcTools/impedance/calc`, receiving results through
-`wss://tools.jlc.com/jlcTools/webSocket/{uuid}`. Each POST returned HTTP 200
-and submission success. **Each bound solver result returned status 6 and a
-null result.** The error suggests missing or invalid parameters; its precise
-cause is unknown. No login, payment, credential, upload or captcha was needed.
-The three-calculation budget is exhausted; no fourth calculation was submitted.
+Offline inspection then established that the captured public client's automatic
+inverse path selects W2 (upper width), using bounds 2–150 mil. The earlier
+requests selected W1 (lower width), using bounds 1–200 mil. Agent-463 authorized
+exactly one further calculation on 2026-10-18 at 20:00: preserve attempt 3's
+uncoated model and physical inputs, change only the inverse target/bounds to
+W2/2–150, and use a fresh request identity. That request returned **solver
+status 0, `dResultValid: 1`** and calculated widths. No further calculation,
+hidden field, gap/model sweep, login, payment, upload or captcha bypass occurred.
+The successful request needs no new recipe/support call.
 
-The fetched standard template and fixture agree on 0.2104 mm prepreg,
-dielectric constant 4.4 and 0.035 mm F.Cu over the 0.0152 mm In1.Cu reference
-copper. The requests
-use H1=8.2835 mil and T1=1.3780 mil at the public client's four-decimal conversion
-precision. T1 explicitly models the fixture's 0.035 mm copper rather than
-silently using the client's 1.6 mil plated-copper default. The input gaps below
-were selected for the bounded calculation; they are not calculated outputs.
-
-| Submission | Target | Input gap | Recipe and variation | Observed result |
+| Submission | Inverse target | Input gap | Model and variation | Solver result |
 | --- | --- | --- | --- | --- |
-| 1 | 50 ohm | 5 mil / 0.127 mm | Coated coplanar with lower ground; public client visible fields | Solver status 6, null geometry |
-| 2 | 50 ohm | 6 mil / 0.1524 mm | Same recipe with its exact non-null hidden G1=20 and HZ0=53 fields | Solver status 6, null geometry |
-| 3 | 50 ohm | 8 mil / 0.2032 mm | Public uncoated coplanar with lower ground recipe; visible fields | Solver status 6, null geometry |
+| 1 | W1, 1–200 mil | 5 mil | Coated coplanar with lower ground; visible fields | Status 6, null geometry |
+| 2 | W1, 1–200 mil | 6 mil | Same recipe plus fetched hidden G1/HZ0 fields | Status 6, null geometry |
+| 3 | W1, 1–200 mil | 8 mil | Uncoated coplanar with lower ground; visible fields | Status 6, null geometry |
+| 4 | W2, 2–150 mil | 8 mil | Attempt 3 model and physical inputs preserved | Status 0, valid geometry |
 
-Each request asks for inverse W1 calculation. Coating and taper inputs come
-from the fetched recipes/configuration; neither alternative claims actual
-mask or impedance qualification. Plans and the two bounded diagnostic amendments
-were recorded in the worker result before the corresponding submissions.
+The source template and fixture bind 0.2104 mm prepreg with dielectric constant
+4.4, 0.035 mm F.Cu and 0.0152 mm In1.Cu reference copper. The request uses
+H1=8.2835 mil and T1=1.3780 mil at the public client's four-decimal conversion
+precision. T1 models the fixture's copper rather than the client's 1.6 mil
+plated-copper default. The model is
+`SurfaceCoplanarWaveguideWithLowerGnd1B`; it does not model solder mask.
 
-[Capture metadata](../fixtures/telemetry-pod/rf-source-capture.json) retains
-URL, UTC timestamp, tool, request and response identities, and every received
-socket message and sent control frame hash. Raw vendor bytes stay in worker
-scratch; they are not committed or an owner evidence store. The historical
-`raw_captures` and `continuation` describe the earlier workers;
-`anonymous_workflow` records the three actual calculations. Hashes establish
-byte identity, not vendor authentication or committed offline replay. HTTP
-submission success cannot supply calculated width or gap.
+| Source field | Result in mil | Converted mm | Declaration |
+| --- | --- | --- | --- |
+| W1, lower width | 13.166015625 | 0.334416796875 | RF_50 `track_width_mm` |
+| W2, upper width | 12.666015625 | 0.321716796875 | Retained taper metadata; no separate KiCad width |
+| D1, selected gap preserved in result | 8 | 0.2032 | RF_50 `clearance_mm` |
 
-Completion requires a successful source-bound result with its selected coplanar
-gap, calculated width, target, stackup and signal/reference copper identities.
-Further host calculations need a new bounded plan. Only a successful result can
-populate `RF_50` through the existing [net-constraint emitter](net-constraints.md).
-Its `impedance_ohm: 50` must retain `recorded_not_enforced`; no check may claim
-verified impedance. The pod RF maximum length also needs a captured design
-bound. It remains a scope limitation; the fixture's 15 mm test bound does not
-supply one. The spec's 500 mm antenna cable limit applies to the cable to the
-SMA, not the PCB RF trace.
+The unit conversion is exactly 0.0254 mm/mil. KiCad represents planar copper;
+the declaration uses the lower W1 width and retains W2 explicitly. The existing
+emitter rounds the minimum upward to **0.335 mm**, a small difference from the
+solver geometry. The server reports 49.6637289254 ohm for its modeled geometry
+within the requested 50 ±0.5 ohm target. This numeric result does not verify the
+rounded KiCad route or actual pod impedance. A minimum clearance also does not
+hold the coplanar gap to an exact value or establish return-plane continuity.
+
+[Capture metadata](../fixtures/telemetry-pod/rf-source-capture.json) records
+URLs, UTC timestamps, tools, raw hashes, fresh request identities, all received
+socket frames/payloads and sent control frames. Its `w2_continuation` binds the
+single new result, upper/lower/gap mapping and constraint-file hash. Earlier
+records remain historical. Raw vendor bytes stay in worker scratch; no owner
+evidence store or vendor code/text is committed. Hashes establish byte identity,
+not vendor authentication or committed offline replay. Checks use no network.
+
+The RF maximum length remains a scope limitation until a design bound is
+captured. The controls' 15 mm maximum is test-only. The spec's 500 mm antenna
+cable limit applies to the cable to SMA, not the PCB trace. No length requirement
+is inferred from that cable limit or from the impedance result.
 
 ## Native mechanism controls
 
-`tests.test_gnss_rf_path` generates original four-layer two-terminal boards
-using `tests.routing_fixture`. U_GNSS and J_SMA are pad labels, not models of
-the actual parts. It reuses the existing emitter, candidate capture, executor,
-`geometry` `copper-width/1`, `routing_rules`, and evidence sealing. No second
-parser, schema, solver or pipeline is added.
+`tests.test_gnss_rf_path` uses original four-layer two-terminal boards from
+`tests.routing_fixture`, the existing emitter, routing adapter, stage receipts,
+candidate capture, executor, `geometry` `copper-width/1`, `routing_rules` and
+sealed evidence. U_GNSS and J_SMA are pad labels, not actual device models.
 
-The test choices are **0.3 mm width, 0.2 mm clearance and 15 mm maximum length**.
-They are synthetic bounds, not JLCPCB calculation values or pod requirements.
-The controls establish:
+The source-bound probe starts without tracks. The pinned router receives the
+emitted RF_50 project/rules in the networkless sandbox; the test verifies its
+stage receipt and independently checks its unchanged output. Widths at the
+emitted 0.335 mm minimum pass; narrowing one segment to 0.334999 mm produces a
+width defect. The recorded 50 ohm target remains `recorded_not_enforced`.
 
-- A 10 mm saved RF_IN path at the declared width passes width and length.
-- A 0.299999 mm segment fails the recorded 0.3 mm width minimum.
+The earlier synthetic controls remain separate:
+
+- A 10 mm authored RF_IN path passes 0.3 mm width and test-only 15 mm length.
+- A 0.299999 mm segment fails the synthetic width minimum.
 - Moving the SMA pad to 40 mm and extending connected copper fails native length.
 - Missing copper leaves length coverage unknown.
-- Lowering the project width below the recorded minimum refuses scope/3 capture.
-- The 50 ohm target remains `recorded_not_enforced` even when dimensions pass.
+- Lowering the project width below the recorded minimum refuses capture.
 
-These boards contain no ground plane and are authored routed controls, not
-router-produced proposals. They do not meet the source-bound routed-probe
-deliverable. Native measurement, a width minimum and clearance defaults cannot
-establish coplanar impedance, exact width/gap, return continuity, device matching
-or actual pod acceptance.
+These software probes have no ground plane or actual device footprints. They
+establish dimensional check behavior, not exact gap, return geometry, impedance
+or complete pod acceptance.
 
 ```sh
-AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests \
-  python3 -m unittest tests.test_gnss_rf_path tests.test_requirement_map -v
+AGENT_EE_REQUIRE_TOOLCHAIN=1 \
+AGENT_EE_KICAD_ROUTE_CHECKOUT=/home/halbritt/git/agent-ee/build/kicad-route-pin-a132899 \
+PYTHONPATH=src:tests python3 -m unittest tests.test_gnss_rf_path tests.test_requirement_map -v
 ```
+
+Set `AGENT_EE_RF_EVIDENCE` to a new scratch directory to retain the source-bound
+router receipt and positive/narrower check runs instead of removing them after
+the test. Re-running these offline tests submits no calculator requests.
