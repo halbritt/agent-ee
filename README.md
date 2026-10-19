@@ -340,7 +340,9 @@ board thickness, leaves that rule unknown.
 that derived quantities match retained raw attributes. A pinned jlcparts feed
 has a bounded host downloader and a native stocked-parts adapter; raw data stays
 in private scratch. [Part selection](docs/part-selection.md)
-compares declared intervals and stock within that snapshot. Both now have checks
+compares declared intervals, switching-regulator rectification and stock within
+that snapshot. The DC-DC importer retains raw claims and typed ratings; missing
+constrained attributes exclude a row with a reason in the receipt. Both have checks
 that use the captured baseline, sandbox and coordinator seal; selection binds one
 explicit requirement. Their [full-feed runtime qualification](docs/catalog.md#full-feed-runtime-qualification)
 uses a declared 600-second helper ceiling and retains sealed evidence in private

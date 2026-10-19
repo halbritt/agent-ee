@@ -1,0 +1,34 @@
+{
+  "currency": "USD",
+  "database": {
+    "path": "catalog.sqlite3",
+    "sha256": "a72bfe61b683054bec5edb366dee3aba10102ea1b5afb5122be400724a2b42bb",
+    "size_bytes": 69632
+  },
+  "pruned_rows": 0,
+  "row_counts": {
+    "capacitor": 0,
+    "component_base": 1,
+    "connector": 0,
+    "diode": 0,
+    "inductor": 0,
+    "led": 0,
+    "regulator": 1,
+    "resistor": 0
+  },
+  "rows_sha256": "526bd3d5e78f91ec536c10ca2522d7623318abe8cc33d67f16316b5bdba12e93",
+  "schema": "agent-ee.catalog/1",
+  "snapshot_date": "2026-10-17",
+  "source_commit": "owned-probe",
+  "source_url": "https://example.invalid/owned",
+  "sqlite_version": "3.45.1",
+  "stale_before": null,
+  "volumes": [
+    {
+      "format": "csv",
+      "path": "owned.csv",
+      "sha256": "8a32295a34ecb6007d67faf02117189a190a561b4ddd400958701a669c870fd9",
+      "size_bytes": 341
+    }
+  ]
+}

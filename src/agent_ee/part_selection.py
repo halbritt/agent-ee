@@ -4,7 +4,7 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 import sqlite3
 
-from .catalog import (CATEGORY_ATTRIBUTES, UNITS, attribute_interval, decimal_number,
+from .catalog import (CATEGORY_ATTRIBUTES, ENUM_ATTRIBUTES, UNITS, attribute_interval, decimal_number,
                       decimal_text, exact_fields, load_catalog, nonempty, quantity, strict_json)
 from .storage import identity
 
@@ -23,6 +23,11 @@ def constraint_interval(attribute, declaration):
     if not isinstance(declaration, dict):
         raise ValueError('constraint must be a mapping')
     kind = declaration.get('kind')
+    if attribute in ENUM_ATTRIBUTES:
+        exact_fields(declaration, ('kind', 'value'))
+        if kind != 'equals' or declaration['value'] not in ENUM_ATTRIBUTES[attribute]:
+            raise ValueError('enum constraint requires equals and a supported value')
+        return dict(declaration)
     unit = UNITS[attribute]
     if kind == 'within' and 'nominal' in declaration:
         exact_fields(declaration, ('kind', 'nominal', 'tolerance_percent'))
@@ -81,6 +86,8 @@ def validate_requirements(requirements):
 
 
 def satisfies(candidate, requirement):
+    if requirement['kind'] == 'equals':
+        return candidate['value'] == requirement['value']
     low, high = Decimal(candidate['min']), Decimal(candidate['max'])
     kind = requirement['kind']
     if kind == 'within':

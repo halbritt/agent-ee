@@ -18,10 +18,14 @@ from .storage import canonical, digest, identity, rename_noreplace, write_json
 
 COLUMNS = ('lcsc', 'mfr', 'mpn', 'package', 'category', 'stock', 'price1',
            'is_basic', 'is_preferred', 'last_seen', 'attributes')
-CATEGORIES = ('resistor', 'capacitor', 'inductor', 'diode', 'led', 'connector', 'regulator')
-UNITS = {'resistance': 'ohm', 'capacitance': 'F', 'inductance': 'H', 'voltage': 'V',
-         'power': 'W', 'temperature': 'degC', 'input_voltage': 'V',
-         'output_voltage': 'V', 'dropout': 'V', 'quiescent_current': 'A'}
+LEGACY_CATEGORIES = ('resistor', 'capacitor', 'inductor', 'diode', 'led', 'connector', 'regulator')
+CATEGORIES = (*LEGACY_CATEGORIES, 'switching_regulator')
+LEGACY_UNITS = {'resistance': 'ohm', 'capacitance': 'F', 'inductance': 'H', 'voltage': 'V',
+                'power': 'W', 'temperature': 'degC', 'input_voltage': 'V',
+                'output_voltage': 'V', 'dropout': 'V', 'quiescent_current': 'A'}
+UNITS = {**LEGACY_UNITS, 'input_voltage_max': 'V', 'output_current': 'A',
+         'switching_frequency': 'Hz'}
+ENUM_ATTRIBUTES = {'topology': ('sync', 'async')}
 MAX_VOLUME_BYTES = 512 * 1024 * 1024
 MAX_TOTAL_BYTES = 1024 * 1024 * 1024
 DERIVED_COLUMNS = COLUMNS + ('normalized', 'provenance')
@@ -33,16 +37,19 @@ CATEGORY_ATTRIBUTES = {
     'led': ('voltage', 'power', 'temperature'),
     'connector': ('voltage', 'temperature'),
     'regulator': ('input_voltage', 'output_voltage', 'dropout', 'quiescent_current', 'power', 'temperature'),
+    'switching_regulator': ('input_voltage_max', 'output_current', 'topology', 'switching_frequency', 'temperature'),
 }
 
 
 def category_columns(category):
-    return tuple(f'{key}_{end}' for key in CATEGORY_ATTRIBUTES[category] for end in ('min', 'max'))
+    return tuple(column for key in CATEGORY_ATTRIBUTES[category]
+                 for column in ((key,) if key in ENUM_ATTRIBUTES else (f'{key}_min', f'{key}_max')))
 
 
 def interval_cells(row, category):
     return tuple(row['normalized'].get(key, {}).get(end)
-                 for key in CATEGORY_ATTRIBUTES[category] for end in ('min', 'max'))
+                 for key in CATEGORY_ATTRIBUTES[category]
+                 for end in (('value',) if key in ENUM_ATTRIBUTES else ('min', 'max')))
 
 
 def exact_fields(record, fields):
@@ -135,15 +142,20 @@ def _attribute_endpoints(text, unit, policy):
         return decimal_text(low), decimal_text(high)
 
 
-def normalized_attributes(attributes):
+def normalized_attributes(attributes, *, legacy=False):
+    # The exact table layout pins the vocabulary used by its producer. New
+    # attributes must stay unknown when replaying an original seven-category snapshot.
+    units = LEGACY_UNITS if legacy else UNITS
     normalized = {}
     for key, text in attributes.items():
-        if key in UNITS:
+        if key in units:
             try:
-                normalized[key] = attribute_interval(text, UNITS[key])
+                normalized[key] = attribute_interval(text, units[key])
             except ValueError:
                 # Preserve raw text; this attribute cannot support a constraint.
                 continue
+        elif not legacy and key in ENUM_ATTRIBUTES and text in ENUM_ATTRIBUTES[key]:
+            normalized[key] = {'value': text}
     return normalized
 
 
@@ -162,7 +174,7 @@ def strict_json(text):
         raise ValueError('JSON nesting too deep') from exc
 
 
-def normalize_row(raw, provenance, snapshot_date):
+def normalize_row(raw, provenance, snapshot_date, *, legacy=False):
     exact_fields(raw, COLUMNS)
     row = dict(raw)
     for key in ('lcsc', 'mpn', 'package', 'category'):
@@ -193,7 +205,7 @@ def normalize_row(raw, provenance, snapshot_date):
     if not isinstance(attributes, dict) or any(not isinstance(k, str) or not k or not isinstance(v, str) for k, v in attributes.items()):
         raise ValueError('attributes must be a text mapping')
     row['attributes'] = attributes
-    row['normalized'] = normalized_attributes(attributes)
+    row['normalized'] = normalized_attributes(attributes, legacy=legacy)
     row['provenance'] = provenance
     return row
 
@@ -319,8 +331,16 @@ def capture_rows(manifest, source_root):
     return sorted(rows, key=lambda row: int(row['lcsc'][1:])), pruned
 
 
-def row_counts(rows):
-    return {'component_base': len(rows), **{category: sum(row['category'] == category for row in rows) for category in CATEGORIES}}
+def row_counts(rows, categories=CATEGORIES):
+    return {'component_base': len(rows), **{category: sum(row['category'] == category for row in rows) for category in categories}}
+
+
+def snapshot_categories(manifest):
+    """Accept the original exact table set or the extended one, never a partial set."""
+    for categories in (CATEGORIES, LEGACY_CATEGORIES):
+        if isinstance(manifest['row_counts'], dict) and set(manifest['row_counts']) == {'component_base', *categories}:
+            return categories
+    raise ValueError('unsupported snapshot category counts')
 
 
 def rows_sha256(rows):
@@ -395,7 +415,7 @@ def capture_catalog(source_manifest, source_root, destination):
             shutil.rmtree(stage)
 
 
-def rederived_row(cells, manifest):
+def rederived_row(cells, manifest, *, legacy=False):
     """Rebuild the raw source row from retained fields and rerun the pinned normalization.
 
     Hashes only show the bytes are the pinned bytes; they do not show the derived
@@ -425,7 +445,7 @@ def rederived_row(cells, manifest):
             or not isinstance(provenance['raw_sha256'], str)
             or not re.fullmatch('[0-9a-f]{64}', provenance['raw_sha256'])):
         raise ValueError('snapshot row lacks valid raw source provenance')
-    row = normalize_row(raw, provenance, manifest['snapshot_date'])
+    row = normalize_row(raw, provenance, manifest['snapshot_date'], legacy=legacy)
     # Comparing the canonical rederivation to the retained text validates exact
     # JSON types as well as values, without decoding/encoding each full row twice.
     for key in DERIVED_COLUMNS:
@@ -446,7 +466,8 @@ def read_database(payload, manifest):
         connection.execute('PRAGMA trusted_schema=OFF')
         if connection.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
             raise ValueError('corrupt snapshot database')
-        expected = {'component_base', *CATEGORIES}
+        categories = snapshot_categories(manifest)
+        expected = {'component_base', *categories}
         tables = connection.execute("SELECT name,type,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").fetchall()
         if set(tables) != {(name, 'table', table_sql(name)) for name in expected}:
             raise ValueError('unsupported snapshot tables or schema')
@@ -454,7 +475,9 @@ def read_database(payload, manifest):
         # Sorting row references after validation avoids a SQLite external sort
         # of the entire wide table (including all retained upstream attributes).
         for cells in connection.execute('SELECT * FROM component_base'):
-            row = rederived_row(cells, manifest)
+            row = rederived_row(cells, manifest, legacy=categories == LEGACY_CATEGORIES)
+            if row['category'] not in categories:
+                raise ValueError('row category outside snapshot table set')
             source = (row['provenance']['volume'], row['provenance']['row'])
             if row['lcsc'] in identities or source in sources:
                 raise ValueError('duplicate snapshot LCSC identity or source record')
@@ -464,7 +487,7 @@ def read_database(payload, manifest):
         rows.sort(key=lambda row: int(row['lcsc'][1:]))
         by_lcsc = {row['lcsc']: row for row in rows}
         counts = row_counts(rows)
-        for category in CATEGORIES:
+        for category in categories:
             # SQLite compares the wide base cells in place. Only the narrow SI
             # columns cross into Python; every typed row must join its category,
             # and the primary key plus count establishes complete coverage.
@@ -513,7 +536,7 @@ def load_catalog(snapshot_directory, expected_manifest_sha256):
         raise ValueError('invalid pruned row count')
     nonempty(manifest['sqlite_version'])
     rows = read_database(payload, manifest)
-    if not rows or row_counts(rows) != manifest['row_counts'] or rows_sha256(rows) != manifest['rows_sha256']:
+    if not rows or row_counts(rows, snapshot_categories(manifest)) != manifest['row_counts'] or rows_sha256(rows) != manifest['rows_sha256']:
         raise ValueError('snapshot row identity/count mismatch')
     return {'manifest': manifest, 'rows': rows}
 
