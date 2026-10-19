@@ -65,8 +65,10 @@ output, unsupported component or absent measurement means unknown coverage,
 not a confirmed electrical defect and not a passing check.
 
 Checks are executed once for each captured candidate; failed or malformed check
-output is never schema-resubmitted. Campaigns may resubmit only model records
-under the [bounded output rule](campaign-guide.md#bounded-output-resubmission).
+output is never schema-resubmitted. Campaigns and standalone reviews default to
+one model-output resubmission per role under the
+[bounded output rule](campaign-guide.md#bounded-output-resubmission);
+`run_review(..., max_schema_resubmissions=0)` keeps a single model call.
 Adjudicator citations may reference the verified immutable `baseline.json` for
 context, but accepted defects still require their sealed failed-check citation.
 New reviewer and adjudicator `/2` citations require a resolvable JSON `pointer`,

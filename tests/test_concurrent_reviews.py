@@ -432,6 +432,89 @@ class ConcurrentReviewTests(unittest.TestCase):
         self.assertEqual([r["role"] for r in result["reviews"]], ["circuit", "physical"])
         self.assert_concurrent_initial_reviews(run)
 
+    def run_citation_resubmission(self, *, repair=True, **options):
+        require_toolchain(native=True)
+        self.configure_coordinator_scope()
+        for settings in self.settings.values():
+            settings['sleep'] = .01
+        write_json(self.root / 'scope.json', self.scope)
+        run = self.root / 'citation-review'
+
+        def dispatch(*args, **kwargs):
+            record, value = self.harness(*args, **kwargs)
+            _, role, _, prompt = args[:4]
+            attempt = self.calls.count(role) - 1
+            limit = options.get('max_schema_resubmissions', 1)
+            self.assertEqual('If an OUTPUT VALIDATION ERROR is appended' in prompt, bool(limit))
+            if attempt:
+                self.assertIn('OUTPUT VALIDATION ERROR:', prompt)
+                self.assertIn('does not resolve', prompt)
+                self.assertIn('same judgment and finding set', prompt)
+            citation = {'path': 'checks/netlist.json', 'locator': 'native netlist execution',
+                        'pointer': '/execution' if attempt and repair else '/missing'}
+            if role == 'adjudicator':
+                value['decisions'] = [{'finding_id': initial + '/navigation', 'disposition': 'noted',
+                    'reason': 'The native netlist execution is recorded.', 'evidence': [citation]}
+                    for initial in ('circuit', 'physical')]
+            else:
+                value['findings'] = [{'id': 'navigation', 'title': 'Netlist execution record',
+                    'location': 'checks/netlist.json', 'condition': 'native export',
+                    'mechanism': 'Recorded tool execution provides a navigation target.',
+                    'severity': 'info', 'assessment': 'concern', 'evidence': [citation],
+                    'reasoning': 'Navigation observation only; no design violation claimed.'}]
+            return record, value
+
+        with patch('agent_ee.reviewers.dispatch', side_effect=dispatch), contextlib.redirect_stdout(io.StringIO()):
+            status = run_review(self.root / 'scope.json', run, 120, **options)
+        result = read_json(run / 'result.json')
+        self.assertIsNone(result.get('error'))
+        self.assertEqual(result['checks'][0]['execution'], 'ok')
+        self.assertEqual(result['max_schema_resubmissions'], options.get('max_schema_resubmissions', 1))
+        records = list(result['review_executions'])
+        if result['adjudicated']:
+            records.append(read_json(run / 'adjudicator-execution.json'))
+        for record in records:
+            for number, attempt in enumerate(record['attempts']):
+                archive = run / attempt['path']
+                self.assertEqual(read_json(archive / 'execution.json')['execution'],
+                                 'ok' if number and repair else 'malformed')
+                first_prompt = (run / record['attempts'][0]['path'] / 'prompt.txt').read_text()
+                if number:
+                    self.assertTrue((archive / 'prompt.txt').read_text().startswith(
+                        first_prompt + '\nOUTPUT VALIDATION ERROR:\n'))
+                payload = read_json(archive / 'response.json')
+                field = 'decisions' if payload['schema'] == 'agent-ee.decisions/2' else 'findings'
+                self.assertEqual(payload[field][0]['evidence'][0]['pointer'],
+                                 '/execution' if number and repair else '/missing')
+        from agent_ee.cli import verify
+        self.assertEqual(verify(run)['outcome'], result['outcome'])
+        return status, result, records
+
+    def test_standalone_default_repairs_reviewer_and_adjudicator_citations(self):
+        status, result, records = self.run_citation_resubmission()
+        self.assertEqual(status, 0)
+        self.assertEqual(result['outcome'], 'criteria_satisfied')
+        self.assertCountEqual(self.calls, ['circuit', 'circuit', 'physical', 'physical',
+                                          'adjudicator', 'adjudicator'])
+        self.assertTrue(all(r['resubmissions_used'] == 1 for r in records))
+        self.assertEqual([f['status'] for f in result['findings']], ['noted', 'noted'])
+
+    def test_standalone_default_stops_after_one_unsuccessful_citation_repair(self):
+        status, result, records = self.run_citation_resubmission(repair=False)
+        self.assertEqual(status, 1)
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertCountEqual(self.calls, ['circuit', 'circuit', 'physical', 'physical'])
+        self.assertTrue(all(r['execution'] == 'malformed' and r['resubmissions_used'] == 1 for r in records))
+        self.assertFalse(result['adjudicated'])
+
+    def test_standalone_explicit_zero_keeps_single_call_citation_refusal(self):
+        status, result, records = self.run_citation_resubmission(max_schema_resubmissions=0)
+        self.assertEqual(status, 1)
+        self.assertEqual(result['outcome'], 'incomplete')
+        self.assertCountEqual(self.calls, ['circuit', 'physical'])
+        self.assertTrue(all(r['execution'] == 'malformed' and r['resubmissions_used'] == 0 for r in records))
+        self.assertFalse(result['adjudicated'])
+
     def test_coordinator_reports_failure_incomplete_and_does_not_adjudicate(self):
         require_toolchain(native=True)
         self.configure_coordinator_scope()

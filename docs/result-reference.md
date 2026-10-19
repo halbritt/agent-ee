@@ -208,9 +208,10 @@ per-field resolution errors and the kinds appropriate for its bytes. With
 the reviewer receives that error and instructions to correct affected locator
 fields while preserving its judgment and finding set. Adding valid lines while
 retaining an invalid pointer or XPath still fails. Each refused response remains
-in its own attempt archive. Campaigns default to one resubmission; standalone
-`run_review` callers must pass `max_schema_resubmissions=1` to enable it (the
-standalone `review` CLI currently uses the single-call default).
+in its own attempt archive. Campaigns, standalone `run_review` calls and the
+`review` CLI default to one resubmission per role. `run_review` callers can pass
+`max_schema_resubmissions=0` to retain a single call. The original prompt carries
+the resubmission notice; the second call appends the exact validation error.
 
 Citations may name `baseline.json` when its raw file bytes match the canonical
 serialized bytes of the captured scope/2 or scope/3 immutable baseline (never
@@ -254,11 +255,12 @@ readable under the compatibility rule above), exact `candidate_id`
 and `run_id`, and a `decisions` list. Each item requires `finding_id`,
 `disposition`, `reason`, `evidence`. Optional keys are `duplicate_of`, `checks`
 and `previous_run`. This is a structural example requiring real identities,
-an existing finding and engineer-checked counter-evidence before application:
+an existing finding and engineer-checked counter-evidence before application.
+Replace the example pointer with a target verified in the captured JSON bytes:
 
 ```json
 {
-  "schema": "agent-ee.decisions/1",
+  "schema": "agent-ee.decisions/2",
   "candidate_id": "COPY_CURRENT_CANDIDATE_ID",
   "run_id": "COPY_CURRENT_RUN_ID",
   "decisions": [
@@ -269,7 +271,8 @@ an existing finding and engineer-checked counter-evidence before application:
       "evidence": [
         {
           "path": "work/netlist/connectivity.json",
-          "locator": "Replace with the exact component, population and net relationship."
+          "locator": "Replace with the exact component, population and net relationship.",
+          "pointer": "/components/R1"
         }
       ]
     }
