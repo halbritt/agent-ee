@@ -1514,6 +1514,53 @@
     },
     {
       "paths": [
+        "fixtures/stock-stage-gate-pod-v5/README.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-251 fixture documentation: what was copied byte for byte from pod v5 campaign run 1, what was reduced, and the hand-authored board stand-in. Names KiCad library footprints only to say they are not redistributed; copies no third-party text."
+    },
+    {
+      "paths": [
+        "fixtures/stock-stage-gate-pod-v5/run/inputs/project/telemetry-pod.kicad_pcb"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-251 hand-authored stand-in board: eight Owned:Placeholder footprints carrying only Reference properties H1-H4, J1, J2, U1, U2, with no pads or graphics. It does not reproduce the captured pod board, which embeds KiCad 10.0.7 stock footprint graphics; no stock library or external design bytes."
+    },
+    {
+      "paths": [
+        "fixtures/stock-stage-gate-pod-v5/run/inputs/assembly-stock/catalog.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "AGENTEE-251 byte-for-byte copy of the agent_ee.jlc_stock_capture catalog from pod v5 campaign run 1: per-part factual records (LCSC id, manufacturer, MPN, package, category name, library tier, unit price, stock count, capture timestamps). Factual numeric/name records as in fixtures/passive-corners and fixtures/telemetry-pod; no JLCPCB or LCSC page text, HTML or images."
+    },
+    {
+      "paths": [
+        "fixtures/stock-stage-gate-pod-v5/run/baseline-id.json",
+        "fixtures/stock-stage-gate-pod-v5/run/candidate.json",
+        "fixtures/stock-stage-gate-pod-v5/run/checks/assembly.json",
+        "fixtures/stock-stage-gate-pod-v5/run/work/assembly/stage-subject.json",
+        "fixtures/stock-stage-gate-pod-v5/run/work/assembly/stage-subject/console.log",
+        "fixtures/stock-stage-gate-pod-v5/run/work/assembly/stage-subject/execution.json",
+        "fixtures/stock-stage-gate-pod-v5/run/work/assembly/stage-subject/native-observation.json",
+        "fixtures/stock-stage-gate-pod-v5/run/work/assembly/stage-subject/references.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "AGENTEE-251 agent-ee run records from pod v5 campaign run 1 (main 255782f), copied byte for byte except candidate.json (schema, candidate_id and scope verbatim; files reduced to three hashes) and baseline-id.json (baseline_id only); see the fixture README. Content is reference designators, LCSC ids, SHA-256 identities, Bubblewrap argv, gate findings, KiCad 10.0.7 assertion lines from pcbnew.LoadBoard and requirement statements quoted from the owner's telemetry pod spec (fixtures/telemetry-pod, origin AE). The run's input tree also held KiCad stock footprints; none of their content appears in these files, and the captured inputs are not retained."
+    },
+    {
+      "paths": [
         "fixtures/generation/"
       ],
       "kind": "owned-fixture",

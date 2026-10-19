@@ -1,0 +1,542 @@
+{
+  "candidate_id": "1be24cee0ea5c37663eb05bfd40633726894c3850569b590ab5a8cb3c25cb46f",
+  "details": {
+    "gate_findings": [
+      {
+        "check_id": "assembly",
+        "entity": "C1",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C10",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C100",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C11",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C12",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C13",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C14",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C15",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C16",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C17",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C18",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C19",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C2",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C20",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C21",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C22",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C3",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C30",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C31",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C32",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C33",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C34",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C35",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C36",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C37",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C38",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C39",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C4",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C40",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C41",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C42",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C43",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C44",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C45",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C46",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C47",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C48",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C49",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C5",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C50",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C51",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C52",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C53",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C6",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C7",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C8",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "C9",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "D1",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "D100",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "D2",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "D3",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "L1",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "L2",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "L3",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "Q1",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R1",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R10",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R100",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R11",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R12",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R13",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R14",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R15",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R16",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R17",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R18",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R19",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R2",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R20",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R21",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R22",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R23",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R24",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R25",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R26",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R27",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R28",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R29",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R3",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R30",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R31",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R32",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R33",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R4",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R5",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R6",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "R7",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "TP1",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "TP2",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "TP3",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "TP4",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "TP5",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "TP6",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U10",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U100",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U11",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U12",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U3",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U4",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U5",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U6",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U7",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U8",
+        "kind": "stage_not_reached"
+      },
+      {
+        "check_id": "assembly",
+        "entity": "U9",
+        "kind": "stage_not_reached"
+      }
+    ],
+    "reason": "stage_not_reached",
+    "stage": "verification"
+  },
+  "evidence": [
+    "work/assembly/stage-subject/execution.json",
+    "work/assembly/stage-subject/console.log",
+    "work/assembly/stage-subject/native-observation.json",
+    "work/assembly/stage-subject/references.json",
+    "work/assembly/stage-subject.json"
+  ],
+  "execution": "ok",
+  "id": "assembly",
+  "kind": "assembly_readiness",
+  "limitations": [],
+  "outcome": "defect",
+  "summary": "verification: expected native content absent"
+}

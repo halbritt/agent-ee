@@ -117,6 +117,19 @@ instant when invoking `run_checks` directly. Direct Python calls to
 `evaluate_assembly_readiness` remain an explicit evaluation API requiring
 `as_of` and staleness for JLC captures; they do not assert a campaign binding.
 
+Campaign replay requires that witness for every completed JLC stock check,
+except one a coordinator stage gate stopped before its handler ran
+(`stage_not_reached` or `stage_blocked`; AGENTEE-251). The result's own
+fields do not establish that exception. Replay reconstructs the gate from the
+immutable stage declaration and baseline, using the shared `stages.verify_gate`.
+For a presence gate it re-reads the captured native subject and the sealed probe.
+For a blocked gate it uses the earlier sealed check results. The details must
+equal exactly what the gate writes, with gate findings recomputed from the
+sealed presence witness. The evidence may cite only the gate's own witnesses.
+No `stock-evaluation.json`, `assembly-readiness.json` or `design.xml` may exist
+in the check's workspace. A gated check carrying a stock witness is refused.
+Once the gate opens, the same freshness and policy rules apply unchanged.
+
 A capture more than 24 hours old at evaluation is refused as stale/unknown.
 A future capture is refused. A populated id that was never requested or whose
 request failed is unknown evidence, never proof of absence. Only a verified

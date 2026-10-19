@@ -1,0 +1,1115 @@
+{
+  "candidate_id": "1be24cee0ea5c37663eb05bfd40633726894c3850569b590ab5a8cb3c25cb46f",
+  "files": {
+    "assembly-stock/catalog.json": "a6d7d4416fe91dc4145dab8f24d03f4b37aaa7417f10ef90a63c47971855704e",
+    "project/telemetry-pod.kicad_pcb": "d19712e55664ebf4142760feee69d7fd68b98b9bb91a16f380ac1c03cd240247",
+    "project/telemetry-pod.kicad_sch": "7459ab2e4ac8ea009f20f1abce7ed08b4c94417646c1221ce553ccde7b35f00e"
+  },
+  "schema": "agent-ee.candidate/1",
+  "scope": {
+    "baseline": {
+      "reference_architectures": [
+        "requirements-map/spec.md"
+      ],
+      "requirements": [
+        {
+          "checks": [
+            "erc",
+            "placement-drc",
+            "routing-drc",
+            "drc"
+          ],
+          "id": "POD-AC-3",
+          "intent": "acceptance",
+          "source": {
+            "locator": "{\"byte_end\": 11023, \"byte_start\": 10731, \"cells\": {}, \"heading_path\": [\"Telemetry pod requirements\", \"Acceptance criteria\"], \"item\": 3, \"list\": 1, \"row\": null, \"table\": null}",
+            "path": "requirements-map/spec.md"
+          },
+          "statement": "ERC and DRC report zero errors and zero unwaived warnings under the fome-mc toolchain rules. A warning is waived only by an owner-recorded disposition bound to the exact violation (rule, items, reason, location hash); a moved or new violation needs a new disposition, and agents do not waive."
+        },
+        {
+          "checks": [
+            "severity"
+          ],
+          "id": "POD-AC-4-emitted-findings",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Acceptance criteria item 4",
+            "path": "spec.md"
+          },
+          "statement": "Pinned offline schematic/PCB/cross/EMC emitted findings have zero errors and all warnings dispositioned; heuristic coverage is not electrical certification."
+        },
+        {
+          "checks": [
+            "netlist",
+            "geometry",
+            "fab"
+          ],
+          "id": "POD-AC-6-package",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Acceptance criteria item 6",
+            "path": "spec.md"
+          },
+          "statement": "Fabrication outputs exist, are internally consistent with captured native design and are sealed. Owner DFM and preview acceptance remain external obligations."
+        },
+        {
+          "checks": [
+            "intent-parity"
+          ],
+          "id": "POD-AC-1-generation-parity",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Acceptance criterion 1 and required interfaces",
+            "path": "spec.md"
+          },
+          "statement": "Generated schematic exactly preserves the separately captured expected topology. This does not establish interface electrical performance."
+        },
+        {
+          "checks": [
+            "part-bindings"
+          ],
+          "id": "POD-AC-2-binding-parity",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Acceptance criterion 2",
+            "path": "spec.md"
+          },
+          "statement": "Native component identity/datasheet properties are present and agree between schematic and board. Part suitability, canonical decision presence and deviation approval remain separate obligations."
+        },
+        {
+          "checks": [
+            "parts"
+          ],
+          "id": "POD-AC-2-parts-membership",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Circuit decisions",
+            "path": "complete-decisions.md"
+          },
+          "statement": "Every required captured part/probe is present in the generated schematic with exact captured identities; source consistency is distinct from electrical suitability."
+        },
+        {
+          "checks": [
+            "assembly"
+          ],
+          "id": "POD-AC-5-stock-and-metadata",
+          "intent": "acceptance",
+          "source": {
+            "locator": "{\"byte_end\": 11688, \"byte_start\": 11238, \"cells\": {}, \"heading_path\": [\"Telemetry pod requirements\", \"Acceptance criteria\"], \"item\": 5, \"list\": 1, \"row\": null, \"table\": null}",
+            "path": "requirements-map/spec.md"
+          },
+          "statement": "Native purchased BOM components have source identity, passive rating metadata and fresh captured JLC stock for one board. Assembly eligibility and owner obligations remain separate."
+        },
+        {
+          "checks": [
+            "netlist",
+            "interface"
+          ],
+          "id": "POD-AC-1-captured-conductors",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Circuit decisions",
+            "path": "complete-decisions.md"
+          },
+          "statement": "Captured interface components, direct conductors and literal values agree with pre-generation decisions; no electrical transfer or full AC1 claim."
+        },
+        {
+          "checks": [
+            "package-nc"
+          ],
+          "id": "POD-AC-1-package-pin-isolation",
+          "intent": "acceptance",
+          "source": {
+            "locator": "no_connects for imu10/11, gnss15/16/17, adc5/6",
+            "path": "campaign/expected-intent.json"
+          },
+          "statement": "Seven captured internal NC/RESERVED package pins have no exported connection to any other terminal. No explicit graphical marker claim."
+        },
+        {
+          "checks": [
+            "power-interface"
+          ],
+          "id": "POD-AC-1-power-interface",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Power in and Sensor supply interface rows",
+            "path": "spec.md"
+          },
+          "statement": "Captured power-input protection and sensor/CAN supply identities and connectivity agree with intended circuit; no functional or hardware qualification."
+        },
+        {
+          "checks": [
+            "pinout-electrical",
+            "pinout-ble"
+          ],
+          "id": "POD-AC-1-pinout",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Acceptance criteria / item 1",
+            "path": "spec.md"
+          },
+          "statement": "Captured connector rows, directly provable conductors and declared MCU path obligations are evaluated. Unresolved indirect paths and BLE stay unknown until supported; no functional or bench acceptance."
+        }
+      ],
+      "targets": [
+        "requirements-map/spec-record.json",
+        "requirements-map/requirement-map.json",
+        "campaign/pod-criteria.json",
+        "spec.md",
+        "spec-record.json",
+        "campaign/expected-intent.json",
+        "campaign/plane-plan.json"
+      ]
+    },
+    "board": "project/telemetry-pod.kicad_pcb",
+    "checks": [
+      {
+        "id": "erc",
+        "kind": "erc",
+        "params": {},
+        "stage": "schematic"
+      },
+      {
+        "id": "netlist",
+        "kind": "netlist",
+        "params": {},
+        "stage": "schematic"
+      },
+      {
+        "id": "interface",
+        "kind": "hardware_interface",
+        "params": {
+          "contract": "interface-v5/captured-conductors.interface.json",
+          "netlist_check": "netlist"
+        },
+        "stage": "schematic"
+      },
+      {
+        "id": "package-nc",
+        "kind": "topology_rules",
+        "params": {
+          "netlist_check": "netlist",
+          "rules": "interface-v5/package-nc.topology.json"
+        },
+        "stage": "schematic"
+      },
+      {
+        "id": "power-interface",
+        "kind": "hardware_interface",
+        "params": {
+          "contract": "power-interface/captured-conductors.interface.json",
+          "netlist_check": "netlist"
+        },
+        "stage": "schematic"
+      },
+      {
+        "id": "intent-parity",
+        "kind": "netlist_parity",
+        "params": {
+          "multiset": "exactly",
+          "netlist_check": "netlist",
+          "predicate": "topology",
+          "source": {
+            "kind": "intent",
+            "path": "campaign/expected-intent.json"
+          }
+        },
+        "stage": "schematic"
+      },
+      {
+        "id": "parts",
+        "kind": "parts_subset",
+        "params": {
+          "manifest": "parts-electrical.json",
+          "netlist_check": "netlist",
+          "requirement_id": "POD-AC-2-parts-membership"
+        },
+        "stage": "schematic"
+      },
+      {
+        "id": "part-bindings",
+        "kind": "part_binding",
+        "params": {
+          "netlist_check": "netlist",
+          "probe_manifest": "parts-electrical.json",
+          "require_datasheet": true,
+          "require_params": false
+        },
+        "stage": "schematic"
+      },
+      {
+        "id": "pinout-electrical",
+        "kind": "hardware_interface",
+        "params": {
+          "contract": "pinout-checks/electrical.interface.json",
+          "netlist_check": "netlist"
+        },
+        "stage": "schematic"
+      },
+      {
+        "id": "placement-drc",
+        "kind": "drc",
+        "params": {
+          "projection": "placement-stage/1"
+        },
+        "stage": "placement"
+      },
+      {
+        "id": "routing-drc",
+        "kind": "drc",
+        "params": {},
+        "stage": "routing"
+      },
+      {
+        "id": "drc",
+        "kind": "drc",
+        "params": {},
+        "stage": "verification"
+      },
+      {
+        "id": "geometry",
+        "kind": "geometry",
+        "params": {},
+        "stage": "verification"
+      },
+      {
+        "id": "severity",
+        "kind": "kicad_happy_severity_gate",
+        "params": {
+          "dispositions": "campaign/analyzer-dispositions.json",
+          "installation": "/home/halbritt/git/kicad-happy",
+          "installation_sha256": "ba9f02f12de12b1567d28208092ed8be360673b311d2b62bb313ecfd9e925562"
+        },
+        "stage": "verification"
+      },
+      {
+        "id": "assembly",
+        "kind": "assembly_readiness",
+        "params": {
+          "boards": 1,
+          "catalog": "assembly-stock/catalog.json",
+          "deviations": "part-deviations.json",
+          "hand_fit_policy": {
+            "identities": [
+              {
+                "lcsc": "C498958",
+                "mpn": "776228-1"
+              }
+            ],
+            "line": 76,
+            "quote": "5. Every BOM line has an LCSC part number that is in stock at JLCPCB on the day of generation, captured from JLCPCB's public component search per LCSC id with the response hash and UTC timestamp as evidence. Parts JLCPCB does not stock or assemble (the 776228-1 header, and the NEO-M9N or SMA connector if unstocked) are hand-fitted after delivery: excluded from assembly with a not\\_assembled marker and a recorded deviation naming the purchase source.",
+            "sha256": "09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493",
+            "source": "spec.md"
+          },
+          "require_passive_ratings": true
+        },
+        "stage": "verification"
+      },
+      {
+        "id": "pinout-ble",
+        "kind": "hardware_interface",
+        "params": {
+          "contract": "pinout-checks/ble.interface.json",
+          "netlist_check": "netlist"
+        },
+        "stage": "verification"
+      },
+      {
+        "id": "fab",
+        "kind": "fab_package",
+        "params": {
+          "netlist_check": "netlist"
+        },
+        "stage": "verification"
+      }
+    ],
+    "generation": {
+      "done_check": "fab",
+      "schema": "agent-ee.generation/1"
+    },
+    "inputs": [
+      {
+        "at": "antenna",
+        "path": "inputs/antenna"
+      },
+      {
+        "at": "antenna-facts.json",
+        "path": "inputs/antenna-facts.json"
+      },
+      {
+        "at": "assembly-stock",
+        "path": "inputs/assembly-stock"
+      },
+      {
+        "at": "authored-cad",
+        "path": "inputs/authored-cad"
+      },
+      {
+        "at": "binding-delta.json",
+        "path": "inputs/binding-delta.json"
+      },
+      {
+        "at": "binding-fill.json",
+        "path": "inputs/binding-fill.json"
+      },
+      {
+        "at": "block-instances.json",
+        "path": "inputs/block-instances.json"
+      },
+      {
+        "at": "c40-citation-verification.json",
+        "path": "inputs/c40-citation-verification.json"
+      },
+      {
+        "at": "cad",
+        "path": "inputs/cad"
+      },
+      {
+        "at": "campaign",
+        "path": "inputs/campaign"
+      },
+      {
+        "at": "can-library-regeneration.json",
+        "path": "inputs/can-library-regeneration.json"
+      },
+      {
+        "at": "capacitor-closure",
+        "path": "inputs/capacitor-closure"
+      },
+      {
+        "at": "captured-rule-areas.json",
+        "path": "inputs/captured-rule-areas.json"
+      },
+      {
+        "at": "complete-decisions.md",
+        "path": "inputs/complete-decisions.md"
+      },
+      {
+        "at": "composition-freeze.json",
+        "path": "inputs/composition-freeze.json"
+      },
+      {
+        "at": "composition-qualification.json",
+        "path": "inputs/composition-qualification.json"
+      },
+      {
+        "at": "composition.json",
+        "path": "inputs/composition.json"
+      },
+      {
+        "at": "connector-source",
+        "path": "inputs/connector-source"
+      },
+      {
+        "at": "core",
+        "path": "inputs/core"
+      },
+      {
+        "at": "datasheets",
+        "path": "inputs/datasheets"
+      },
+      {
+        "at": "electrical-selections.json",
+        "path": "inputs/electrical-selections.json"
+      },
+      {
+        "at": "emitter-layout.json",
+        "path": "inputs/emitter-layout.json"
+      },
+      {
+        "at": "envelope.json",
+        "path": "inputs/envelope.json"
+      },
+      {
+        "at": "fab-profile.json",
+        "path": "inputs/fab-profile.json"
+      },
+      {
+        "at": "features",
+        "path": "inputs/features"
+      },
+      {
+        "at": "footprints",
+        "path": "inputs/footprints"
+      },
+      {
+        "at": "historical-pre-composition",
+        "path": "inputs/historical-pre-composition"
+      },
+      {
+        "at": "historical-pre-correction",
+        "path": "inputs/historical-pre-correction"
+      },
+      {
+        "at": "historical-v1-proposal",
+        "path": "inputs/historical-v1-proposal"
+      },
+      {
+        "at": "imu",
+        "path": "inputs/imu"
+      },
+      {
+        "at": "intent.json",
+        "path": "inputs/intent.json"
+      },
+      {
+        "at": "intent.unbound.json",
+        "path": "inputs/intent.unbound.json"
+      },
+      {
+        "at": "interface",
+        "path": "inputs/interface"
+      },
+      {
+        "at": "interface-v5",
+        "path": "inputs/interface-v5"
+      },
+      {
+        "at": "j1-courtyard-derivation.json",
+        "path": "inputs/j1-courtyard-derivation.json"
+      },
+      {
+        "at": "j1-placement-exclusion.json",
+        "path": "inputs/j1-placement-exclusion.json"
+      },
+      {
+        "at": "j1-source",
+        "path": "inputs/j1-source"
+      },
+      {
+        "at": "j1_courtyard.py",
+        "path": "inputs/j1_courtyard.py"
+      },
+      {
+        "at": "libraries",
+        "path": "inputs/libraries"
+      },
+      {
+        "at": "mechanical",
+        "path": "inputs/mechanical"
+      },
+      {
+        "at": "mode_cad.py",
+        "path": "inputs/mode_cad.py"
+      },
+      {
+        "at": "part-deviations.json",
+        "path": "inputs/part-deviations.json"
+      },
+      {
+        "at": "part-property-adaptations.json",
+        "path": "inputs/part-property-adaptations.json"
+      },
+      {
+        "at": "part-refs.json",
+        "path": "inputs/part-refs.json"
+      },
+      {
+        "at": "parts-electrical.json",
+        "path": "inputs/parts-electrical.json"
+      },
+      {
+        "at": "passive-rating-facts.json",
+        "path": "inputs/passive-rating-facts.json"
+      },
+      {
+        "at": "passive-ratings.json",
+        "path": "inputs/passive-ratings.json"
+      },
+      {
+        "at": "passive-source-selection.json",
+        "path": "inputs/passive-source-selection.json"
+      },
+      {
+        "at": "pin-allocation.actual.json",
+        "path": "inputs/pin-allocation.actual.json"
+      },
+      {
+        "at": "pinout-checks",
+        "path": "inputs/pinout-checks"
+      },
+      {
+        "at": "pinout-paths",
+        "path": "inputs/pinout-paths"
+      },
+      {
+        "at": "pinout-v5",
+        "path": "inputs/pinout-v5"
+      },
+      {
+        "at": "placement",
+        "path": "inputs/placement"
+      },
+      {
+        "at": "power-interface",
+        "path": "inputs/power-interface"
+      },
+      {
+        "at": "power-selections.json",
+        "path": "inputs/power-selections.json"
+      },
+      {
+        "at": "power-source",
+        "path": "inputs/power-source"
+      },
+      {
+        "at": "power-source-lock.json",
+        "path": "inputs/power-source-lock.json"
+      },
+      {
+        "at": "power_cad.py",
+        "path": "inputs/power_cad.py"
+      },
+      {
+        "at": "prepare_intent.py",
+        "path": "inputs/prepare_intent.py"
+      },
+      {
+        "at": "probe-selections.json",
+        "path": "inputs/probe-selections.json"
+      },
+      {
+        "at": "project",
+        "path": "inputs/project"
+      },
+      {
+        "at": "provenance",
+        "path": "inputs/provenance"
+      },
+      {
+        "at": "records",
+        "path": "inputs/records"
+      },
+      {
+        "at": "requirement-map.json",
+        "path": "inputs/requirement-map.json"
+      },
+      {
+        "at": "requirements",
+        "path": "inputs/requirements"
+      },
+      {
+        "at": "requirements-map",
+        "path": "inputs/requirements-map"
+      },
+      {
+        "at": "resolved-intent.unbound.json",
+        "path": "inputs/resolved-intent.unbound.json"
+      },
+      {
+        "at": "rf-net-constraints.json",
+        "path": "inputs/rf-net-constraints.json"
+      },
+      {
+        "at": "rf-source-capture.json",
+        "path": "inputs/rf-source-capture.json"
+      },
+      {
+        "at": "source-capture.json",
+        "path": "inputs/source-capture.json"
+      },
+      {
+        "at": "source-correction-decision.txt",
+        "path": "inputs/source-correction-decision.txt"
+      },
+      {
+        "at": "sources",
+        "path": "inputs/sources"
+      },
+      {
+        "at": "spec-record.json",
+        "path": "inputs/spec-record.json"
+      },
+      {
+        "at": "spec.md",
+        "path": "inputs/spec.md"
+      },
+      {
+        "at": "support-decisions.json",
+        "path": "inputs/support-decisions.json"
+      },
+      {
+        "at": "symbols",
+        "path": "inputs/symbols"
+      },
+      {
+        "at": "templates",
+        "path": "inputs/templates"
+      }
+    ],
+    "limitations": [
+      "Example map for review; all declared limitations and bench obligations remain unverified even when native checks pass.",
+      "Bounded preparation only: no verified pod_driver campaign, complete placement/routing, fabrication acceptance or hardware qualification. All canonical limitations and bench obligations remain unresolved.",
+      "J1 exclusion uses nominal 60.8 x 32.1 mm reference flange dimensions, front only with zero added margin. No manufacturer maximum or assembly clearance claim. J1 bottom overhang is 2.55 mm; installed height, requested right-angle compatibility and mounting fastener/tool/backside clearance remain unresolved. Hole courtyards bound pads only.",
+      "Captured placement/policy.json and placement/groups.json are exploratory input data only. This partial scope does not register placement, outline or group acceptance; later checks must bind these exact files/envelope and same-board native DRC.",
+      "POD-FN-LATERAL-LONGITUDINAL-VERTICAL-ACCELERATION: NOT CHECKED: Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared.",
+      "POD-FN-YAW-ROLL-PITCH-RATE: NOT CHECKED: Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared.",
+      "POD-FN-LEAN-AND-PITCH-ANGLE: NOT CHECKED: Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared.",
+      "POD-FN-FRONT-FORK-TRAVEL: NOT CHECKED: Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared.",
+      "POD-FN-REAR-SHOCK-TRAVEL: NOT CHECKED: Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared.",
+      "POD-FN-FRONT-AND-REAR-BRAKE-PRESSURE: NOT CHECKED: Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared.",
+      "POD-FN-POSITION-SPEED-HEADING-ALTITUDE: NOT CHECKED: Firmware quantities, filtering, scaling and publication rates need firmware and bench evidence; no complete executable mapping is declared.",
+      "POD-IF-CAN1: NOT CHECKED: ISO 11898-2 physical-layer operation at 500 kbit/s, CAN 2.0B timing, required transmit frame rates and received-frame firmware behavior require circuit, timing and built-board evidence. Native net connectivity alone does not establish them; criterion 8 remains a separate bench obligation.",
+      "POD-IF-BLUETOOTH-LE: NOT CHECKED: BLE 5.0 RaceChrono GATT behavior and radio range to a phone in a tank bag or jacket pocket require firmware and installed-board measurements. Module identity and antenna keepout checks do not establish radio performance; criterion 9 remains a separate bench obligation.",
+      "POD-IF-POWER-IN: NOT CHECKED: Operation over 9 V to 16 V, ISO 7637-2 automotive transient survival with the stated 40 V clamp, reverse-polarity survival and the under-2 A power budget require captured protection/power analysis and physical evidence. Wiring and part identity checks alone do not establish survival or operation.",
+      "POD-IF-SENSOR-SUPPLY: NOT CHECKED: The pod owns the 5 V sensor rail; its 5.00 V +/-1% at 200 mA and connector-referenced ratiometry require a captured circuit contract and physical load measurements. ECU 5V_SENSOR_2 is unused.",
+      "POD-IF-ANALOG-INPUTS: NOT CHECKED: Four 0-5 V channels with 12-bit resolution, connector-referenced ratiometry to the pod sensor supply, 16 V input protection and 200 Hz per-channel acquisition require circuit/error-budget, firmware and physical evidence. Native connectivity alone does not establish the analog transfer function or sampling performance.",
+      "POD-IF-GNSS-ANTENNA: NOT CHECKED: NEO-M9N RF_IN to SMA targets 50 ohm coplanar routing on F.Cu over In1.Cu GND using JLC04161H-7628. Impedance remains unverified: a captured calculator result is not actual board impedance verification. The anonymous host workflow at https://jlcpcb.com/pcb-impedance-calculator/ made three W1 calculation submissions with solver status 6 and null geometry; HTTP acceptance is not a successful calculation. The single authorized W2 continuation returned solver status 0 and valid geometry with attempt 3 physical inputs preserved. See rf-source-capture.json for raw request/result identities and hashes. Source-derived RF_50 lower W1 width 0.334416796875 mm and clearance 0.2032 mm are declared in rf-net-constraints.json; upper W2 width 0.321716796875 mm is retained separately. The existing emitter rounds the planar width minimum upward to 0.335 mm and keeps impedance recorded_not_enforced. Native minimum width and clearance checks cannot establish exact coplanar gap, solder mask, return geometry or impedance. RF maximum length remains unbound without a captured design bound; 15 mm is a test value only. A complete pinout and captured electrical contracts are also required before hardware_interface can cover this interface; physical and firmware performance remains unverified.",
+      "POD-IF-PROGRAMMING-AND-DEBUG: NOT CHECKED: A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified.",
+      "POD-IF-HARNESS-CONNECTOR: NOT CHECKED: A complete pinout and captured electrical contracts are required before hardware_interface can cover this interface; physical and firmware performance remains unverified.",
+      "POD-CD-MCU-AND-RADIO: NOT CHECKED: Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision.",
+      "POD-CD-CAN-TRANSCEIVER: NOT CHECKED: Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision.",
+      "POD-CD-IMU: NOT CHECKED: Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision.",
+      "POD-CD-GNSS: NOT CHECKED: Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision.",
+      "POD-CD-ANALOG-FRONT-END: NOT CHECKED: Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision.",
+      "POD-CD-POWER: NOT CHECKED: Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision.",
+      "POD-CD-HARNESS-CONNECTOR: NOT CHECKED: Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision.",
+      "POD-CD-BOARD: NOT CHECKED: Part identity, suitability and allowed deviations need a populated parts manifest and captured contracts; property equality alone cannot prove this decision.",
+      "POD-ME-1: NOT CHECKED: Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate.",
+      "POD-ME-2: NOT CHECKED: Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate.",
+      "POD-ME-3: NOT CHECKED: Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate.",
+      "POD-ME-4: NOT CHECKED: Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate.",
+      "POD-ME-5: NOT CHECKED: Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate.",
+      "POD-ME-6: NOT CHECKED: Complete mechanical, mounting, environment and datasheet declarations are not yet captured for an executable predicate.",
+      "POD-AC-1: NOT CHECKED: No complete pod pinout contract is captured yet; hardware_interface must verify its declared pins without claiming firmware or radio performance.",
+      "POD-AC-2: NOT CHECKED: A pod parts manifest and approved deviations are not captured yet; part_binding only compares properties and does not establish the required part set.",
+      "POD-AC-4: NOT CHECKED: The registered kicad_happy_severity_gate requires a captured analyzer pin, policy and warning dispositions; those pod inputs are not supplied by this accounting fixture.",
+      "POD-AC-5: Fresh 40-ID JLC catalog captured 2026-10-19T16:21:00Z to16:24:53Z; assembly_readiness is declared with passive-rating checks enabled. Native-v5 is missing79passive rating fields. Stock alone does not establish assembly eligibility. Generation-time freshness must pass on the actual run; refresh if stale. Hand-fit exceptions must meet captured deviation rules; no positive-stock part is silently exempted.",
+      "POD-AC-6: NOT CHECKED: fab_package and jlc_dfm require a generated candidate, sealed exports and the owner-saved supplier report; the owner placement-preview obligations also remain open.",
+      "POD-AC-7: NOT CHECKED: board_envelope, placement and dfa_dft need complete mechanical declarations; silkscreen axes and antenna datasheet keepout coverage are not declared here.",
+      "POD-AC-8: BENCH REQUIRED: CAN frame rates within 5% and ECU .mlg channel logging on a built pod.; procedure: Connect the built pod and ECU to a bench CAN bus; retain timestamped traffic for all six specified frame IDs, compare rates with the spec, and retain an ECU .mlg file showing lean, brake pressure and suspension travel.",
+      "POD-AC-9: BENCH REQUIRED: RaceChrono Pro BLE pairing and combined ECU RPM, pod lean and 25 Hz GPS speed.; procedure: Pair RaceChrono Pro with the built pod over BLE; retain the app session showing ECU RPM alongside pod lean and GPS speed and measure the GPS update rate against 25 Hz.",
+      "POD-FN-P1: NOT CHECKED: CAN1/BLE forwarding, logging and no-control-output obligations need captured connectivity plus firmware and physical evidence; no full executable mapping is declared.",
+      "POD-FN-P2: NOT CHECKED: CAN forwarding and subscription filtering need firmware evidence. The 12-bit analog channels are ratiometric to the pod-owned 5 V sensor supply and do not use ECU 5V_SENSOR_2; circuit and bench evidence is not captured.",
+      "POD-ME-P1: NOT CHECKED: Tail-cowl installation, sealing and vibration survival require installation and physical qualification evidence.",
+      "Campaign configuration candidate only: plane plan, additional criterion coverage, producer corrections and full independent review remain outstanding. No campaign execution or fabrication release.",
+      "AC4 emitted findings are executable; electrical suitability and full analyzer coverage remain unqualified. AC6 package existence is executable; owner DFM and preview remain required.",
+      "RF_50 input now binds native /POD_GNSS_RF and project/rules are emitted into the scaffold. campaign/rf-emission-template.record.json hashes the pre-scaffold template, not the final project metadata. No sealed net-constraint acceptance record is claimed from that provenance artifact; native effective net assignment and width/clearance witnesses remain required. Target impedance, exact coplanar geometry and reference continuity remain unverified.",
+      "Reviewed ground plane plan is captured unchanged; execution after completed placement and before routing is still required. AGENTEE-230/231 controls and fresh post-placement pour reference are required before routed acceptance.",
+      "Preparation v9 combines source-correction-v4 and reviewed thermal inputs; it is not an accepted campaign.",
+      "Internal NC topology rules prove exported isolation only; false XML no_connect_marker does not prove marker absence.",
+      "Native generation must use a reviewed composed tool candidate with content receipts, mounting-hole identities and corrected net escaping.",
+      "Package-NC requirement source uses immutable campaign/expected-intent.json; generated intent.json remains a coordinator output. Captured expected intent content is unchanged.",
+      "Reviewed240 authored path declarations expand pinout to82predicates, partitioned losslessly:81electrical schematic predicates and BLE-RADIO:net at verification. Historical native-v5 comparison satisfies81; fresh generated candidate checks required. No functional performance or BLE acceptance claim.",
+      "Generation inputs v3 retain explicit passive source selections and schema-verified C40 50V fact. Ratings propagation and reviewed hand-fit policy require integrated production tools. This scope is a proposal, not an executed campaign.",
+      "Functional schematic presentation explicitly selected from reviewed222 authored groups. Original namespace, project and transforms are unchanged. Fresh native topology/ERC and rendered review remain required; stable schematic regeneration is unsupported in this presentation.",
+      "BLE verification precedes the required final fab_package completion gate; check content and requirement mappings unchanged.",
+      "Reviewed239c owner_hand_fit policy is declared only for J1 exact776228-1/C498958 from full captured spec line76. Native markers and assembler BOM/CPL exclusion must be verified on generated candidate; no purchase or mechanical-fit acceptance."
+    ],
+    "mutable_inputs": [
+      "intent.json",
+      "intent.unbound.json",
+      "part-deviations.json",
+      "project/telemetry-pod.kicad_pcb",
+      "project/telemetry-pod.kicad_sch"
+    ],
+    "name": "Telemetry pod full interface and explicit pinout obligations",
+    "requirements": [
+      "requirements-map/spec.md",
+      "campaign/analyzer-dispositions.json",
+      "complete-decisions.md",
+      "rf-net-constraints.json",
+      "campaign/rf-emission-template.record.json",
+      "campaign/rf-net-adaptation.json",
+      "project/telemetry-pod.kicad_dru"
+    ],
+    "review_profile": {
+      "adjudicator": {
+        "effort": "high",
+        "harness": "claude",
+        "model": "claude-fable-5",
+        "timeout_s": 900
+      },
+      "name": "claude-donor-budget-v1",
+      "reviewers": [
+        {
+          "effort": "high",
+          "harness": "claude",
+          "model": "claude-fable-5",
+          "role": "circuit",
+          "timeout_s": 900
+        },
+        {
+          "effort": "high",
+          "harness": "claude",
+          "model": "claude-fable-5",
+          "role": "physical",
+          "timeout_s": 900
+        }
+      ],
+      "schema": "agent-ee.profile/1",
+      "tool_mode": "investigate"
+    },
+    "schema": "agent-ee.scope/3",
+    "schematic": "project/telemetry-pod.kicad_sch",
+    "scope": "Prepare the actual captured circuit and fixed mechanical candidate. This limited scope checks native validity; it does not establish full pod acceptance.",
+    "stages": {
+      "finding_retry_limit": 2,
+      "order": [
+        "schematic",
+        "placement",
+        "routing",
+        "verification"
+      ],
+      "schema": "agent-ee.stages/1",
+      "subjects": {
+        "placement": {
+          "kind": "footprints",
+          "path": "project/telemetry-pod.kicad_pcb",
+          "references": [
+            "C1",
+            "C10",
+            "C100",
+            "C11",
+            "C12",
+            "C13",
+            "C14",
+            "C15",
+            "C16",
+            "C17",
+            "C18",
+            "C19",
+            "C2",
+            "C20",
+            "C21",
+            "C22",
+            "C3",
+            "C30",
+            "C31",
+            "C32",
+            "C33",
+            "C34",
+            "C35",
+            "C36",
+            "C37",
+            "C38",
+            "C39",
+            "C4",
+            "C40",
+            "C41",
+            "C42",
+            "C43",
+            "C44",
+            "C45",
+            "C46",
+            "C47",
+            "C48",
+            "C49",
+            "C5",
+            "C50",
+            "C51",
+            "C52",
+            "C53",
+            "C6",
+            "C7",
+            "C8",
+            "C9",
+            "D1",
+            "D100",
+            "D2",
+            "D3",
+            "H1",
+            "H2",
+            "H3",
+            "H4",
+            "J1",
+            "J2",
+            "L1",
+            "L2",
+            "L3",
+            "Q1",
+            "R1",
+            "R10",
+            "R100",
+            "R11",
+            "R12",
+            "R13",
+            "R14",
+            "R15",
+            "R16",
+            "R17",
+            "R18",
+            "R19",
+            "R2",
+            "R20",
+            "R21",
+            "R22",
+            "R23",
+            "R24",
+            "R25",
+            "R26",
+            "R27",
+            "R28",
+            "R29",
+            "R3",
+            "R30",
+            "R31",
+            "R32",
+            "R33",
+            "R4",
+            "R5",
+            "R6",
+            "R7",
+            "TP1",
+            "TP2",
+            "TP3",
+            "TP4",
+            "TP5",
+            "TP6",
+            "U1",
+            "U10",
+            "U100",
+            "U11",
+            "U12",
+            "U2",
+            "U3",
+            "U4",
+            "U5",
+            "U6",
+            "U7",
+            "U8",
+            "U9"
+          ]
+        },
+        "routing": {
+          "kind": "tracks",
+          "minimum": 1,
+          "path": "project/telemetry-pod.kicad_pcb"
+        },
+        "schematic": {
+          "kind": "symbols",
+          "path": "project/telemetry-pod.kicad_sch",
+          "references": [
+            "C1",
+            "C10",
+            "C100",
+            "C11",
+            "C12",
+            "C13",
+            "C14",
+            "C15",
+            "C16",
+            "C17",
+            "C18",
+            "C19",
+            "C2",
+            "C20",
+            "C21",
+            "C22",
+            "C3",
+            "C30",
+            "C31",
+            "C32",
+            "C33",
+            "C34",
+            "C35",
+            "C36",
+            "C37",
+            "C38",
+            "C39",
+            "C4",
+            "C40",
+            "C41",
+            "C42",
+            "C43",
+            "C44",
+            "C45",
+            "C46",
+            "C47",
+            "C48",
+            "C49",
+            "C5",
+            "C50",
+            "C51",
+            "C52",
+            "C53",
+            "C6",
+            "C7",
+            "C8",
+            "C9",
+            "D1",
+            "D100",
+            "D2",
+            "D3",
+            "J1",
+            "J2",
+            "L1",
+            "L2",
+            "L3",
+            "Q1",
+            "R1",
+            "R10",
+            "R100",
+            "R11",
+            "R12",
+            "R13",
+            "R14",
+            "R15",
+            "R16",
+            "R17",
+            "R18",
+            "R19",
+            "R2",
+            "R20",
+            "R21",
+            "R22",
+            "R23",
+            "R24",
+            "R25",
+            "R26",
+            "R27",
+            "R28",
+            "R29",
+            "R3",
+            "R30",
+            "R31",
+            "R32",
+            "R33",
+            "R4",
+            "R5",
+            "R6",
+            "R7",
+            "TP1",
+            "TP2",
+            "TP3",
+            "TP4",
+            "TP5",
+            "TP6",
+            "U1",
+            "U10",
+            "U100",
+            "U11",
+            "U12",
+            "U2",
+            "U3",
+            "U4",
+            "U5",
+            "U6",
+            "U7",
+            "U8",
+            "U9"
+          ]
+        },
+        "verification": {
+          "kind": "footprints",
+          "path": "project/telemetry-pod.kicad_pcb",
+          "references": [
+            "C1",
+            "C10",
+            "C100",
+            "C11",
+            "C12",
+            "C13",
+            "C14",
+            "C15",
+            "C16",
+            "C17",
+            "C18",
+            "C19",
+            "C2",
+            "C20",
+            "C21",
+            "C22",
+            "C3",
+            "C30",
+            "C31",
+            "C32",
+            "C33",
+            "C34",
+            "C35",
+            "C36",
+            "C37",
+            "C38",
+            "C39",
+            "C4",
+            "C40",
+            "C41",
+            "C42",
+            "C43",
+            "C44",
+            "C45",
+            "C46",
+            "C47",
+            "C48",
+            "C49",
+            "C5",
+            "C50",
+            "C51",
+            "C52",
+            "C53",
+            "C6",
+            "C7",
+            "C8",
+            "C9",
+            "D1",
+            "D100",
+            "D2",
+            "D3",
+            "H1",
+            "H2",
+            "H3",
+            "H4",
+            "J1",
+            "J2",
+            "L1",
+            "L2",
+            "L3",
+            "Q1",
+            "R1",
+            "R10",
+            "R100",
+            "R11",
+            "R12",
+            "R13",
+            "R14",
+            "R15",
+            "R16",
+            "R17",
+            "R18",
+            "R19",
+            "R2",
+            "R20",
+            "R21",
+            "R22",
+            "R23",
+            "R24",
+            "R25",
+            "R26",
+            "R27",
+            "R28",
+            "R29",
+            "R3",
+            "R30",
+            "R31",
+            "R32",
+            "R33",
+            "R4",
+            "R5",
+            "R6",
+            "R7",
+            "TP1",
+            "TP2",
+            "TP3",
+            "TP4",
+            "TP5",
+            "TP6",
+            "U1",
+            "U10",
+            "U100",
+            "U11",
+            "U12",
+            "U2",
+            "U3",
+            "U4",
+            "U5",
+            "U6",
+            "U7",
+            "U8",
+            "U9"
+          ]
+        }
+      }
+    }
+  }
+}

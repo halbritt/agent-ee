@@ -1831,19 +1831,72 @@ def stock_evaluation_params(ctx):
     return params
 
 
-def verify_stock_context(run, result, expected):
-    """Campaign replay checks the sealed stock witness against anchored receipt selection."""
+STAGE_GATE_REASONS = ('stage_not_reached', 'stage_blocked')
+
+
+def _verify_stage_gated(run, check, manifest, baseline):
+    """A coordinator stage gate stopped this check before its handler, so no stock was evaluated.
+
+    Established from sealed run evidence, never from the result's own fields: the
+    stage verdict is reconstructed from the immutable stage declaration and the
+    native presence probe (or earlier check results), the details and gate findings
+    must be exactly what the gate writes, and no stock-evaluation artifact may exist.
+    """
+    from .baseline import load_baseline
+    from .stages import validate_gate_findings, verify_gate
+    run = Path(run)
+    reason = check['details']['reason']
+    if baseline is None:
+        baseline = load_baseline(run)
+    if baseline is None:
+        raise ValueError('stage-gated stock check requires an immutable baseline')
+    verify_gate(run, check, manifest, baseline)
+    validate_gate_findings(check)
+    stage = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])['stage']
+    work = f"work/{check['id']}"
+    expected = {'reason': reason, 'stage': stage}
+    if reason == 'stage_not_reached':
+        subject = manifest['scope']['stages']['subjects'][stage]
+        missing = read_json(run / work / 'stage-subject.json')['missing']
+        entities = [subject['path']] if subject['kind'] == 'tracks' else missing
+        expected['gate_findings'] = [{'check_id': check['id'], 'entity': ref, 'kind': 'stage_not_reached'}
+                                     for ref in entities]
+        summary, witnesses = f'{stage}: expected native content absent', {work + '/stage-subject.json'}
+    else:
+        # A presence probe may precede the blocked gate; its files are the only other evidence.
+        summary, witnesses = f'{stage} gate blocked by earlier checks', {work + '/stage-subject.json',
+                                                                          work + '/stage-gate.json'}
+    if check['details'] != expected or check['summary'] != summary:
+        raise ValueError('stage-gated stock check differs from its recomputed stage gate')
+    evidence = [e['path'] if isinstance(e, dict) else e for e in check['evidence']]
+    if any(rel not in witnesses and not rel.startswith(work + '/stage-subject/') for rel in evidence):
+        raise ValueError('stage-gated stock check cites evidence beyond its stage gate')
+    if any((run / work / name).exists() for name in ('stock-evaluation.json', 'assembly-readiness.json', 'design.xml')):
+        raise ValueError('stage-gated stock check retains stock evaluation artifacts')
+
+
+def verify_stock_context(run, result, expected, baseline=None):
+    """Campaign replay checks the sealed stock witness against anchored receipt selection.
+
+    ``baseline`` is the caller's already-verified immutable baseline; when absent it
+    is recompiled from the run, and is only needed to reconstruct a stage gate.
+    """
     manifest = read_json(Path(run) / 'candidate.json')
     specs = {s['id']: s for s in manifest['scope']['checks']}
     for check in result['checks']:
         if check['kind'] != 'assembly_readiness':
             continue
         witness = check.get('details', {}).get('stock_evaluation')
+        gated = check.get('details', {}).get('reason') in STAGE_GATE_REASONS
+        if gated and witness is not None:
+            raise ValueError('stage-gated stock check cannot carry a stock evaluation witness')
         if witness is None:
             if check['execution'] == 'ok':
                 catalog = specs[check['id']]['params']['catalog']
                 if is_capture(_load_strict_json(Path(run) / 'inputs' / catalog)):
-                    raise ValueError('JLC stock check lacks its evaluation witness')
+                    if not gated:
+                        raise ValueError('JLC stock check lacks its evaluation witness')
+                    _verify_stage_gated(run, check, manifest, baseline)
             continue
         if witness['context'] != expected:
             raise ValueError('stock evaluation context differs from the anchored generation receipt')
