@@ -56,8 +56,16 @@ when any listed set differs from what the pinned files name.
 | `git`, `docker` CLI | binary SHA-256 | GPL-2.0, Apache-2.0 | host only: ancestry, archive, image launch |
 | DejaVu fonts 2.37 and fontconfig in the image | image ID; substitution map | Bitstream Vera (permissive); HPND-style | substitutes for `Arial`, `Arial Black` and `Futura` text in `tmf8829` |
 
-Each licence class cites a licence file by hash: the installed package
-`copyright` file, or Docker's README. KiCad's Debian `copyright` file says GPL v2.
+Each licence class cites a licence file by path and SHA-256: the installed
+package `copyright` file, or Docker's README. KiCad's Debian `copyright` file says GPL v2.
+Each tool's evidence names its `location`. `runtime` evidence (KiCad, Bubblewrap,
+Python, Git) lives where the checks and the suite run, in the image or on a
+native host with the same toolchain, and must match byte for byte. A changed or
+missing file fails, and a native runtime tool can never be scoped out of it.
+`outer-host` evidence (the `docker` CLI that launches the image) is pinned by
+path and hash only. It is verified wherever its binary or licence file exists.
+Inside the image, where neither exists, `closure` reports it as
+`outer-host-absent` under `licence_evidence` and does not skip it silently.
 Font licence files are inside the image, so the image identity pins them. Fonts
 are a real dependency. DRC text-thickness and silkscreen records depend on the
 substitute font, and `closure` requires each run's console substitutions to
@@ -79,7 +87,8 @@ python3 scripts/seeded_benchmark.py closure benchmarks/seeded/expectations.json 
   for each placed symbol.
 - It recomputes each library origin against the installed stock set and checks
   each licence class.
-- It checks the alternate footprints and the hashes of the tool licence files.
+- It checks the alternate footprints and the tool licence files by location and
+  reports the result for each tool (`verified` or `outer-host-absent`).
 - For each retained run, it requires the closure's image, binary hashes and KiCad
   version. Every consumed input must be a pinned native file, a captured
   dependency or a generated benchmark file.

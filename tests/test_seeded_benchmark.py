@@ -586,7 +586,7 @@ class DependencyClosureTests(unittest.TestCase):
         import json
         import tempfile
         from pathlib import Path
-        from agent_ee.benchmark_run import LIBRARY_LICENCES, NATIVE_RUNTIME, load_manifest, verify_closure
+        from agent_ee.benchmark_run import LIBRARY_LICENCES, NATIVE_RUNTIME, load_manifest, tool_licences, verify_closure
         from agent_ee.storage import digest
         seeded = Path(__file__).resolve().parents[1]/'benchmarks/seeded'
         closure = json.loads((seeded/'dependency-closure.json').read_text())
@@ -599,9 +599,18 @@ class DependencyClosureTests(unittest.TestCase):
                 self.assertEqual(row['licence_class'],LIBRARY_LICENCES[row['origin']])
         tools = {t['name']:t for t in closure['tools']}
         self.assertTrue(set(NATIVE_RUNTIME)<=set(tools))
+        # Only the container runtime that launches the image is outer; it is absent inside the image.
+        self.assertEqual({n for n,t in tools.items() if t['licence_evidence']['location']=='outer-host'},{'docker'})
+        docker = tools['docker']
+        outer = Path(docker['path']).exists() or Path(docker['licence_evidence']['path']).exists()
+        expected = {n:'verified' for n in tools}
+        if not outer:
+            expected['docker'] = 'outer-host-absent'
+        self.assertEqual(tool_licences(closure['tools']),expected)
         for tool in tools.values():
             self.assertTrue(tool['licence_class'])
-            self.assertEqual(digest(tool['licence_evidence']['path']),tool['licence_evidence']['sha256'],tool['name'])
+            if tool['licence_evidence']['location']=='runtime' or outer:
+                self.assertEqual(digest(tool['licence_evidence']['path']),tool['licence_evidence']['sha256'],tool['name'])
         self.assertEqual(closure['alternate_library']['record_sha256'],digest(seeded/'alternate-library.json'))
         self.assertFalse(closure['redistribution']['benchmark_publishes'])
         with tempfile.TemporaryDirectory() as tmp:
@@ -609,6 +618,56 @@ class DependencyClosureTests(unittest.TestCase):
             changed.write_text(json.dumps({**closure,'manifest_sha256':'0'*64}))
             with self.assertRaisesRegex(ValueError,'different manifest'):
                 verify_closure(seeded/'expectations.json',Path(tmp)/'cache',changed)
+
+
+class ToolLicenceTests(unittest.TestCase):
+    def tool(self, root, name, location, text='licence\n', binary=True):
+        from pathlib import Path
+        from agent_ee.benchmark import sha
+        evidence = Path(root)/(name.strip('/').replace('/','-')+'.copyright');evidence.write_text(text)
+        path = Path(root)/(name.strip('/').replace('/','-')+'.bin')
+        if binary:
+            path.write_text('binary')
+        return {'name':name,'path':str(path),'sha256':'1'*64,'licence_class':'GPL (copyleft)',
+                'licence_evidence':{'location':location,'path':str(evidence),'sha256':sha(b'licence\n')}}
+
+    def test_runtime_and_present_outer_evidence_verify_and_absent_outer_is_explicit(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import tool_licences
+        with tempfile.TemporaryDirectory() as tmp:
+            native = self.tool(tmp,'kicad-cli','runtime');docker = self.tool(tmp,'docker','outer-host')
+            self.assertEqual(tool_licences([native,docker]),{'kicad-cli':'verified','docker':'verified'})
+            Path(docker['path']).unlink();Path(docker['licence_evidence']['path']).unlink()
+            self.assertEqual(tool_licences([native,docker]),{'kicad-cli':'verified','docker':'outer-host-absent'})
+
+    def test_tampered_absent_unscoped_or_rescoped_evidence_is_refused(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import tool_licences
+        with tempfile.TemporaryDirectory() as tmp:
+            tampered = self.tool(tmp,'bwrap','runtime',text='changed\n')
+            absent = self.tool(tmp,'/usr/bin/python3','runtime');Path(absent['licence_evidence']['path']).unlink()
+            native_outer = self.tool(tmp,'pcbnew','outer-host',binary=False)
+            Path(native_outer['licence_evidence']['path']).unlink()
+            outer_tampered = self.tool(tmp,'docker','outer-host',text='changed\n',binary=False)
+            outer_licence_only = self.tool(tmp,'podman','outer-host',binary=False)
+            Path(outer_licence_only['licence_evidence']['path']).write_text('changed\n')
+            outer_binary_only = self.tool(tmp,'nerdctl','outer-host')
+            Path(outer_binary_only['licence_evidence']['path']).unlink()
+            unscoped = self.tool(tmp,'git','runtime');del unscoped['licence_evidence']['location']
+            unknown = self.tool(tmp,'git','host')
+            relative = self.tool(tmp,'git','runtime');relative['licence_evidence']['path'] = 'copyright'
+            unclassed = self.tool(tmp,'git','runtime');unclassed['licence_class'] = ''
+            cases = [(tampered,'missing or changed: bwrap'),(absent,'missing or changed: /usr/bin/python3'),
+                     (native_outer,'must be verified in the runtime: pcbnew'),
+                     (outer_tampered,'missing or changed: docker'),(outer_licence_only,'missing or changed: podman'),
+                     (outer_binary_only,'missing or changed: nerdctl'),
+                     (unscoped,'evidence missing: git'),(unknown,'evidence missing: git'),
+                     (relative,'evidence missing: git'),(unclassed,'evidence missing: git')]
+            for tool,message in cases:
+                with self.subTest(message=message), self.assertRaisesRegex(ValueError,message):
+                    tool_licences([tool])
 
 
 class FontSubstitutionTests(unittest.TestCase):

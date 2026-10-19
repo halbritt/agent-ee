@@ -1,5 +1,5 @@
 {
-  "schema": "agent-ee.benchmark-dependency-closure/1",
+  "schema": "agent-ee.benchmark-dependency-closure/2",
   "manifest_sha256": "88fa3fb7eee3ba0f2f9ccb3d153eac185bd0a3e816c3fac0328d6fb6f25f1c52",
   "image_id": "sha256:d6094c3b35574d45654b2744b3323966a9937757b2df5e5e85960b20459e0234",
   "image": {
@@ -576,6 +576,7 @@
       "version": "10.0.7",
       "licence_class": "GPL (copyleft)",
       "licence_evidence": {
+        "location": "runtime",
         "path": "/usr/share/doc/kicad/copyright",
         "sha256": "881837e20f6788ecac3225804e0dc9fac56de54da22f71669fdad3ac59d0e499"
       },
@@ -589,6 +590,7 @@
       "version": "10.0.7~ubuntu24.04.1",
       "licence_class": "GPL (copyleft)",
       "licence_evidence": {
+        "location": "runtime",
         "path": "/usr/share/doc/kicad/copyright",
         "sha256": "881837e20f6788ecac3225804e0dc9fac56de54da22f71669fdad3ac59d0e499"
       },
@@ -602,6 +604,7 @@
       "version": "0.9.0-1ubuntu0.3",
       "licence_class": "LGPL-2.0-or-later (weak copyleft)",
       "licence_evidence": {
+        "location": "runtime",
         "path": "/usr/share/doc/bubblewrap/copyright",
         "sha256": "229a402fddba5c81005950f28de162359383cba731f5b859b8f82a03c338bf01"
       },
@@ -615,6 +618,7 @@
       "version": "3.12.3-1ubuntu0.17",
       "licence_class": "PSF-2.0 (permissive)",
       "licence_evidence": {
+        "location": "runtime",
         "path": "/usr/share/doc/python3.12-minimal/copyright",
         "sha256": "f1cbf908e1daa8789b389fdcf17811ed36b675d736b39a103591399861350382"
       },
@@ -628,6 +632,7 @@
       "version": "1:2.43.0-1ubuntu7.3",
       "licence_class": "GPL-2.0 (copyleft)",
       "licence_evidence": {
+        "location": "runtime",
         "path": "/usr/share/doc/git/copyright",
         "sha256": "e7efbd67e2dac6d950e4607b541778a610561ec77562b8b0a9704a7a3fcbc39c"
       },
@@ -641,6 +646,7 @@
       "version": "5:29.8.2-1~ubuntu.24.04~noble",
       "licence_class": "Apache-2.0 (permissive)",
       "licence_evidence": {
+        "location": "outer-host",
         "path": "/usr/share/doc/docker-ce/README.md",
         "sha256": "455e8580e7f49de89b0b1983489973e4f578c17f3c2e75f9b587c7a6c17ae5b2"
       },
