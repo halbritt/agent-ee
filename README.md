@@ -318,6 +318,8 @@ Default netclass field presence for the qualified KiCad settings schema. It does
 not establish that the declared clearance or track-width values are suitable.
 The [pod driver](docs/pod-driver.md#net-constraint-application) can apply captured
 net constraints under receipt and register saved native class-assignment checks.
+Standalone class-assignment checks also refuse declared-class patterns that
+match undeclared board nets or use legacy escaped slashes.
 [Net constraints](docs/net-constraints.md) turn the intent's per-net current,
 clearance, differential-pair and impedance declarations into native netclasses
 and DRC width rules. Widths for declared currents come from an IPC-2152 fit, and

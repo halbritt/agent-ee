@@ -1368,7 +1368,12 @@ Parameters are captured `project`, `record` and `constraints` paths; see
 [net constraints](net-constraints.md#campaign-application-and-native-assignment-check-agentee-232).
 The check verifies each declared class, each exact net's effective assignment,
 minimum width and clearance. Missing or unassigned nets and classes are defects;
-unavailable native evidence stays unknown. Project and rules hashes must agree
+unavailable native evidence stays unknown. Native KiCad pattern matching also
+refuses declared-class patterns matching extra undeclared board nets, naming
+each extra net, and legacy backslash-escaped slashes. This is independent of the
+record hash comparison, including standalone scopes. Literal `/POD_GNSS_RF` is
+accepted. The native report retains per-pattern matched net names.
+Project and rules hashes must agree
 with the record. The constraint document, record, project and emitted rules are
 immutable baseline policy. Capability predicate: `netclass:effective-assignment`.
 Impedance stays `recorded_not_enforced`; native DRC checks actual copper.

@@ -221,6 +221,21 @@ Default assignments and dimensions below the minimum give `ok/defect`.
 A crashed tool, absent output or malformed report gives unknown, never pass.
 Project or rules bytes differing from the record also give a defect.
 
+Standalone checks also inspect the saved project's `netclass_patterns`
+independently of that hash comparison (AGENTEE-244). The native probe tests each
+pattern against every saved board net using an isolated KiCad `NET_SETTINGS`
+matcher, retaining its class, pattern and exact matched net names in the native
+report's `patterns` list. For a declared class, a match outside that class's
+recorded net set gives `pattern_matches_undeclared_net`, naming the class,
+pattern and extra net. Legacy backslash-escaped slash patterns for declared
+classes give `legacy_escaped_slash`, even though KiCad accepts them: the pinned
+router does not. Literal `/POD_GNSS_RF` remains accepted. These checks also run
+when a hand-edited project's hash has been recomputed in the record. They use
+KiCad's regex and wildcard semantics, without a Python approximation. A missing
+or malformed native pattern report cannot pass. Patterns of unrelated classes
+are outside the declared constraint check; existing assignment checks still
+apply to every declared net.
+
 The check takes `project`, `record` and `constraints` captured paths. The project
 must be the board-sibling `.kicad_pro`. The passing record must bind the original
 constraint bytes and agree with their declarations. Constraints, record,
