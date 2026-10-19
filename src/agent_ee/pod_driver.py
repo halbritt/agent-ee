@@ -76,7 +76,9 @@ def validate_plan(plan):
             raise ValueError('envelope_content imu_reference must name a fixed footprint reference')
     if 'placement_adapter' in plan:
         from .placement_adapter import validate_declaration as placement_declaration
-        placement_declaration(plan['placement_adapter'])
+        placement = placement_declaration(plan['placement_adapter'])
+        if placement['helper'] is None or placement['policy'] is None:
+            raise ValueError('pod placement_adapter requires a helper and a captured packing policy')
     validate_profile(plan['review_profile'])
     validate_profile({**plan['review_profile'], 'adjudicator': plan['implementation']})
     iterations = _integer(plan.get('max_iterations', 10), 'max_iterations', 8, 100)
@@ -141,6 +143,21 @@ def validate_configuration(plan, scope, files, inputs):
     if placer:
         from .placement_adapter import bind_declaration
         placement = bind_declaration(plan['placement_adapter'], {'scope': scope, 'files': files}, sorted(mutable))
+        from .placer import _validate_policy
+        path = inputs / placement['policy']
+        if path.is_symlink() or not path.is_file() or digest(path) != files[placement['policy']]:
+            raise ValueError('captured placement policy changed')
+        try:
+            policy = read_json(path)
+            if not isinstance(policy, dict):
+                raise ValueError('expected an agent-ee.packing-policy/1 object')
+            if 'fixed_overhangs' in policy:
+                raise ValueError('fixed_overhangs come only from a captured envelope, never from the packing policy')
+            # The scaffold is still empty. Resolve references against the declared placement
+            # subjects here; the adapter binds them to native footprints on each candidate.
+            _validate_policy(policy, set(declaration['subjects'].get('placement', {}).get('references', [])))
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise ValueError(f'invalid pod placement policy {placement["policy"]}: {exc}') from exc
     from .routing_adapter import campaign_spec, validate_campaign_step
     from .campaign import validate_routing_predecessors
     validate_routing_predecessors(normalized, scope)
@@ -216,6 +233,8 @@ def _validate_content(plan, scope, sources):
     record = envelope_record(Path(sources[plan['envelope']]).read_bytes())
     if record['fixed_footprints'] and not {'intent', 'layout'} <= content.keys():
         raise ValueError('envelope fixed footprints require declared envelope_content intent and layout')
+    if any('antenna' in area for area in record['keepouts']) and 'antenna_facts' not in content:
+        raise ValueError('antenna keepout requires declared envelope_content antenna_facts')
     return _content_step(plan, scope)
 
 

@@ -141,6 +141,16 @@ input/output binding passes, and the final scope passes the validators again.
 If scaffold execution fails, its failed receipt and a `status: preparing` driver
 record remain, without a usable campaign file or a prepared claim.
 
+The pod's optional `placement_adapter` must declare both a helper and a captured
+immutable packing policy. Null declarations are refused by `validate_plan`.
+`validate_configuration` validates the policy JSON with the existing packer's
+schema and value validator before output creation or campaign iteration 1;
+references are checked against the declared placement subjects because the
+scaffold is initially empty. Policy-supplied `fixed_overhangs` are refused:
+those allowances come only from captured envelopes. Invalid policies report
+`invalid pod placement policy PATH: REASON`; valid declarations retain their
+existing configuration and receipt format.
+
 ## Envelope content
 
 When the plan declares `envelope_content`, the shared
@@ -154,7 +164,7 @@ one scaffold pre-receipt, no content receipt.
 Before any output exists, the driver refuses an unknown `envelope_content`
 field, a non-canonical or uncaptured input, an input naming the native board
 or schematic, and an envelope with fixed footprints but no declared `intent`
-and `layout`. After adopting the scaffold, it runs the content step through
+and `layout`, or an antenna keepout without declared `antenna_facts`. After adopting the scaffold, it runs the content step through
 `run_step` with binding `{pre_receipt: 2}` and adopts its board. A failed
 producer retains `content-receipt/` and a `status: preparing` driver record,
 without `campaign.json`.

@@ -35,6 +35,9 @@ coordinator receipts made before the campaign to its first capture. Start copies
 revalidates them as one ordered custody chain; `verify-campaign` refuses changed, missing,
 reordered or unbound imports.
 They do not replace fresh checks or the declared-stage done binding.
+The [pod driver](pod-driver.md) preflights its required placement helper, captured
+packing-policy schema and values, and antenna-facts declaration before creating
+output. These configuration refusals add no check kind or acceptance evidence.
 The [mutable-intent schematic stage](intent-schematic-stage.md) adds no check kind:
 its emission and annotation receipts bind authored inputs to native outputs.
 Pin-resolution failures retain named diagnostic findings and refuse adoption;
