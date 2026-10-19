@@ -34,6 +34,29 @@ def assembly_declarations(root, document):
     return assembly, dependencies
 
 
+def _child_instances(selected, part, component, claimed):
+    """Declared hierarchical instances of a component in a (possibly reused) child sheet, or None.
+
+    Each ``{sheet, reference}`` must be a non-root allocation of the part and is
+    claimed by one component only; the root-sheet rule applies when none are declared.
+    """
+    if 'instances' not in selected:
+        return None
+    instances = selected['instances']
+    if not isinstance(instances, list) or not instances:
+        raise ValueError('declared instances must be a nonempty list: ' + component)
+    allocated = {(s['sheet'], s['reference']) for s in part['instances']}
+    for instance in instances:
+        exact_fields(instance, ('sheet', 'reference'))
+        key = nonempty(instance['sheet']), nonempty(instance['reference'])
+        if key[0] == '/' or '/' in key[1] or key not in allocated:
+            raise ValueError('declared instance outside the part\'s child-sheet allocation: ' + component)
+        if key in claimed:
+            raise ValueError('declared instance claimed twice: ' + key[0] + key[1])
+        claimed.add(key)
+    return copy.deepcopy(instances)
+
+
 def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None):
     """Return new intent and evidence; supplied objects/files are never modified.
 
@@ -70,7 +93,7 @@ def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None):
     missing_probes = set(probes) - {c['reference'] for c in physical.values()}
     if missing_probes:
         raise ValueError('missing probe feature(s): ' + ', '.join(sorted(missing_probes)))
-    output, records = copy.deepcopy(intent), []
+    output, records, claimed = copy.deepcopy(intent), [], set()
     rating_report = None
     if ratings is not None:
         from . import passive_ratings
@@ -84,20 +107,25 @@ def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None):
         if comp['id'] not in physical:
             continue
         selected = refs['components'][comp['id']]
-        exact_fields(selected, ('part_ref',))
+        exact_fields(selected, ('part_ref', 'instances') if isinstance(selected, dict) and 'instances' in selected
+                     else ('part_ref',))
         nonempty(selected['part_ref'])
         if selected['part_ref'] not in parts:
             raise ValueError('unknown part_ref: ' + selected['part_ref'])
         part = parts[selected['part_ref']]
+        instances = _child_instances(selected, part, comp['id'], claimed)
         library = comp['lib_id'].split(':')[0]
         actual_library = next(lib for lib in intent['libraries'] if lib['name'] == library)
         if actual_library['sha256'] != expected_libraries.get(library):
             raise ValueError('component symbol capture differs from part_ref CAD')
         if any(comp[k] != part[k] for k in ('lib_id', 'footprint')):
             raise ValueError('component CAD differs from part_ref: ' + comp['id'])
-        if not any(s['sheet'] == '/' and s['reference'] == comp['reference'] for s in part['instances']):
+        if instances is None and not any(s['sheet'] == '/' and s['reference'] == comp['reference']
+                                         for s in part['instances']):
             raise ValueError('component reference outside part instance allocation: ' + comp['id'])
         if is_probe(part):
+            if instances is not None:
+                raise ValueError('probe features take root-sheet allocations only: ' + comp['id'])
             record = probes[comp['reference']]
             connected = [net['name'] for net in resolved['nets'] if
                          any(t['component'] == comp['id'] and t['pin'] == record['pin']['number']
@@ -142,20 +170,25 @@ def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None):
                 rated_mpns.add(part['mpn'])
                 derived = passive_ratings.derive(root, part, kind, catalog=ratings['catalog'], facts=facts,
                                                  verified=verified)
+                # A reused child sheet's symbol carries one field for all its instances;
+                # each hierarchical instance gets its own entry for the same part record.
+                keys = [comp['reference']] if instances is None else [s['sheet'] + s['reference'] for s in instances]
                 if 'missing' in derived:
-                    rating_report['missing'][comp['reference']] = derived['missing']
+                    rating_report['missing'].update(dict.fromkeys(keys, derived['missing']))
                 else:
                     collisions = set(derived['fields']) & set(fields)
                     if collisions:
                         raise ValueError('rating field collides with binding: ' + ', '.join(sorted(collisions)))
                     fields.update(derived['fields'])
-                    rating_report['derived'][comp['reference']] = {
-                        'record': derived['record'], 'record_sha256': derived['record_sha256']}
+                    rating_report['derived'].update({key: {'record': derived['record'],
+                                                           'record_sha256': derived['record_sha256']}
+                                                     for key in keys})
         for name, value in comp.get('part_binding', {}).items():
             if name not in fields or value != fields[name]:
                 raise ValueError('writer binding mismatch: ' + comp['id'] + '/' + name)
         comp['part_binding'] = fields
         records.append({'component': comp['id'], 'reference': comp['reference'], 'part_ref': part['id'],
+                        **({} if instances is None else {'instances': instances}),
                         'fields': fields, 'assembly_deviation': matches[0][0] if matches else None})
     if rating_report is not None:
         unused = sorted(f['id'] for f in facts if f['part_number'] not in rated_mpns)

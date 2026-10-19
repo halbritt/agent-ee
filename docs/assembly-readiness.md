@@ -339,10 +339,13 @@ echoes `rating_provenance` with `report_sha256`, `records` and `error`. The
 check reads the captured receipt JSON. It does not replay the retained
 receipt directory, so the coordinator pin is the authority for that receipt.
 
-Limitation: binding fill allocates rating records by root-sheet reference. A
-hierarchical design that reuses a child sheet has instance references the
-report does not derive, so their `AGENT_EE_Ratings` fields fail closed as
-`invalid_rating_provenance`.
+A component outside the root sheet resolves first by its hierarchical path,
+the native sheet names plus the reference (for example `/A/R101`), and then by
+its bare reference. Binding fill gives each declared child-sheet instance such
+a key ([declared instances](binding-fill.md#explicit-component-references)),
+so every instance of a reused child sheet resolves to its own entry
+(AGENTEE-252). An instance the report does not represent still fails closed as
+`invalid_rating_provenance` (`names no receipted rating record`).
 
 ## Execution and outcome
 

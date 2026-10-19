@@ -1372,7 +1372,9 @@ receipt, its pinned sha256 and its `binding-fill.json` artifact. Each
 `record_sha256` must then resolve to the receipted record, or the check reports
 `invalid_rating_provenance`. Unavailable provenance is `unknown`, and so is an
 `AGENT_EE_Ratings` field when no `rating_provenance` is declared
-(`undeclared_rating_provenance`). See
+(`undeclared_rating_provenance`). Instances of a reused child sheet resolve by
+hierarchical path (`/A/R101`, AGENTEE-252); an unrepresented instance stays
+`invalid_rating_provenance`. See
 [receipt-bound rating provenance](assembly-readiness.md#receipt-bound-rating-provenance).
 
 ## Saved native net-class assignment

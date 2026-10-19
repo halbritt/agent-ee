@@ -27,6 +27,22 @@ Unknown symbols, mismatched symbol-capture hashes, CAD identities or root-sheet
 instance allocations refuse. Pin-accounting errors remain the emitter's
 responsibility, so the existing writer repair loop can receive its diagnostics.
 
+A component of a child sheet, including one reused by several sheet symbols,
+declares its hierarchical instances explicitly (AGENTEE-252):
+
+```json
+{"amp/R1": {"part_ref": "bias-resistor",
+            "instances": [{"sheet": "/A/", "reference": "R101"},
+                          {"sheet": "/B/", "reference": "R201"}]}}
+```
+
+Each instance must be a non-root `{sheet, reference}` allocation of that part
+in the manifest, and no instance may be claimed twice. The declared instances
+replace the root-sheet rule for that component; without them the root-sheet
+rule applies unchanged. Probe features take root-sheet allocations only. The
+component's report record then lists its `instances`. The intent is unchanged:
+the instances only name where the one bound symbol is placed.
+
 AGENTEE-176 flat composition uses IDs such as `can/R9` and separately preserves
 immutable `source_parts` and `references` in each block-instance record. The
 caller explicitly maps those IDs to final manifest entries. Source references
@@ -272,7 +288,12 @@ A rated component receives `Power` and/or `Voltage`, spelled as in the
 catalog (or as the fact value plus unit), and `AGENT_EE_Ratings`. Native fields
 hold at most 256 characters, so this field is compact canonical JSON:
 `{"ratings": {...}, "record_sha256": ..., "schema": "agent-ee.passive-rating-binding/1"}`.
-The full record is in `binding-fill.json` under `ratings.derived[reference]`:
+The full record is in `binding-fill.json` under `ratings.derived[key]`. The key
+is the reference for a root-sheet component. For a component with declared
+child-sheet instances, each instance gets its own entry keyed by its
+hierarchical path, the sheet names plus the reference (`/A/R101`, `/B/R201`).
+All of these entries hold the same part record (`ratings.missing` uses the same
+keys). The record holds
 the part ID, LCSC and MPN; per field the value, exact SI value, unit and every
 source (`catalog`: LCSC ID, response path, SHA-256, attribute name;
 `datasheet`: selected source ID, fact ID, PDF path, SHA-256, page); and the
