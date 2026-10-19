@@ -502,6 +502,12 @@ class SchematicTurnTest(unittest.TestCase):
         from agent_ee.placement_probe import extract
         self.assertEqual(edge_clearance(extract(board), q.EDGE_CLEARANCE_NM)['status'], 'pass')
         self.assertEqual((self.design / 'project' / board.name).read_bytes(), before)
+        # Courtyard clearance alone missed J1's reference text crossing Edge.Cuts.
+        review, _ = q.review_checks_only(self.rundir, q.rehearsal_scope(
+            self.scope_path, design, base / 'after-placement.scope.json'), 'placed-native-checks')
+        for cid in ('drc-placement', 'courtyard', 'outline'):
+            check = json.loads((review / 'checks' / f'{cid}.json').read_text())
+            self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check)
 
     def test_erc_passes_and_intent_parity_passes(self):
         checks = self.checks()

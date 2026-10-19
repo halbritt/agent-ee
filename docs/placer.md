@@ -16,6 +16,12 @@ footprints (`fixed_refs` and `locked`) are exempt by reference. The margin used
 is recorded as `min_courtyard_edge_mm` in the plan and in
 `placement-result.json`.
 
+The margin measures courtyard polygons, not text or copper. A driver must
+declare enough space for its footprints' other features and grade the saved
+board with native DRC. The [rung-1 policy](rung1-qualified.md#placement-policy)
+uses 1.5 mm to preserve space for J1's reference text outside its courtyard;
+using the copper-edge rule as the courtyard margin alone clipped that text.
+
 The placer sorts explicit priorities first, then descending pad count, then
 reference. It tries four quarter-turn rotations at deterministic positions
 aligned to board vertices (shifted inward by `min_courtyard_edge_mm`) and

@@ -199,8 +199,10 @@ def footprint_manifest(parts):
                           for n, m in sorted(libraries.items())]}
 
 
-EDGE_CLEARANCE_MM = 0.5  # the template board's copper-to-edge clearance (board setup, 0.5 mm)
-EDGE_CLEARANCE_NM = 500_000
+# Preserve the former 0.5 mm edge bands + 1 mm packing gap: J1's reference
+# text extends beyond its courtyard and clips the edge at a 0.5 mm inset.
+EDGE_CLEARANCE_MM = 1.5
+EDGE_CLEARANCE_NM = 1_500_000
 
 
 def packing_policy(params, outline=None):
