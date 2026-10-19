@@ -3239,6 +3239,28 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-37 shortlist regression tests. The KiCad symbol-library literals are short owned snippets written here; the stock Device and power libraries are read from the installed toolchain at runtime and never embedded. SchGen's load_related_symbols (pick libraries, then symbols, chunked; filtered to existing names) is a mechanism reference only; no SchGen code, prompt text, dataset or kicad-skip material was copied."
+    },
+    {
+      "paths": [
+        "src/agent_ee/placement_congestion.py",
+        "tests/test_placement_congestion.py",
+        "tests/test_placement_congestion_native.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-57 original pre-route placement/congestion analysis, tests (owned synthetic probe captures and pcbnew edits of the owned RC fixture) and documentation. The routing-difficulty mechanism (per-region failure probability, 5/2/1 % bands, deterministic tie-break, free space per direction) follows tscircuit circuit-json-routing-analysis (MIT) as a reference only; no code was ported. tscircuit circuit-json-placement-analysis has no licence: none of its code, type names or text was used, and the issue taxonomy derives from agent-ee's own placement probe and predicate vocabulary. RUDY wire density is a published academic estimate. No upstream source, fixture or design file was retrieved or copied."
+    },
+    {
+      "paths": [
+        "docs/placement-congestion.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-57 feature documentation. Names tscircuit circuit-json-routing-analysis (MIT) as a mechanism reference and records that the unlicensed circuit-json-placement-analysis contributed no code, type names or text. No upstream content copied."
     }
   ]
 }

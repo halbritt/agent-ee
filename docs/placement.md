@@ -274,6 +274,11 @@ hashes), and `ratsnest.json` for the MST proxy. Capability predicates are
 `placement:<criterion>`, or one `placement:ratsnest-mst/1:<metric>:max` per
 declared maximum. Envelope and routing paths are immutable inputs.
 
+The advisory [`placement_congestion`](placement-congestion.md) check (AGENTEE-57)
+reads the same probe without a DRC prerequisite. It reports pad overlaps,
+courtyard issues, congested regions and suggested moves for the repair writer.
+It never passes a board and does not change these predicates.
+
 Native tests generate owned boards, save/reload them, exercise the real probe
 inside Bubblewrap, and compare native DRC courtyard overlap with the judge.
 These are software geometry qualifications, not fabrication approval. Copper,

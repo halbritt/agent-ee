@@ -498,7 +498,9 @@ and supplier qualification remain pending; the kernel alone cannot accept a part
 The [placement check](docs/placement.md#placement-check-kind) grades one
 declared criterion per check: native DRC courtyard overlap and footprint
 keepouts from an earlier DRC, outline containment, courtyard edge clearance,
-declared connector edges and a pad-centre ratsnest proxy. An
+declared connector edges and a pad-centre ratsnest proxy. The advisory
+[pre-route congestion report](docs/placement-congestion.md) ranks pad overlaps,
+courtyard issues and congested regions with suggested moves; it never passes a board. An
 [initial placer](docs/placer.md) proposes deterministic positions on an isolated
 copy and validates the saved result with native tools. On placement turns of a staged campaign, the
 [placement campaign adapter](docs/placement-adapter.md) gives the writer the
