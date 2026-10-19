@@ -1364,7 +1364,9 @@ The optional `rating_provenance` parameter (AGENTEE-242) adds the
 `assembly:rating-provenance` predicate. It names the captured binding-fill stage
 receipt, its pinned sha256 and its `binding-fill.json` artifact. Each
 `record_sha256` must then resolve to the receipted record, or the check reports
-`invalid_rating_provenance`. Unavailable provenance is `unknown`. See
+`invalid_rating_provenance`. Unavailable provenance is `unknown`, and so is an
+`AGENT_EE_Ratings` field when no `rating_provenance` is declared
+(`undeclared_rating_provenance`). See
 [receipt-bound rating provenance](assembly-readiness.md#receipt-bound-rating-provenance).
 
 ## Saved native net-class assignment

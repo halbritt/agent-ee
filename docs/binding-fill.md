@@ -279,7 +279,7 @@ source (`catalog`: LCSC ID, response path, SHA-256, attribute name;
 limitation. `record_sha256` is the canonical identity of that record.
 `assembly_readiness` resolves it against the receipted report when its
 [`rating_provenance`](assembly-readiness.md#receipt-bound-rating-provenance)
-is declared (AGENTEE-242). Rating
+is declared (AGENTEE-242); undeclared, the check is `unknown`. Rating
 fields follow the ordinary writer-binding rule: a supplied different value
 refuses. Facts files and cited PDFs are added to the report dependencies. Pass
 them in `configuration(..., dependencies=...)`.

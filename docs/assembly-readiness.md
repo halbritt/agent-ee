@@ -263,8 +263,9 @@ reused sheet).
     whose value differs from the native `Power`/`Voltage` property. The check
     validates such a field whenever it is present, whatever the value of
     `require_passive_ratings`. Each component report records
-    `rating_provenance`: `source_backed`, `unsourced`, `invalid`, or null for
-    non-passives. Unsourced hand-entered ratings still satisfy the property
+    `rating_provenance`: `source_backed` (resolved to its receipted record),
+    `unverified` (field present but not resolved), `unsourced`, `invalid`, or
+    null for non-passives. Unsourced hand-entered ratings still satisfy the property
     rule, as before. With `rating_provenance` declared the field must also
     resolve to its receipted record (see below).
   - `non_native_assembly_marker`: see above.
@@ -280,6 +281,9 @@ reused sheet).
   - `extended_parts_limit_exceeded`: unique Extended IDs exceed
     `max_extended_parts`.
 - **`unknown`** (never `pass`)
+  - `undeclared_rating_provenance`: a populated R or C carries a well-formed
+    `AGENT_EE_Ratings` field but the scope declares no `rating_provenance` to
+    resolve its `record_sha256`; names the `references`.
   - `rating_provenance_unavailable`: `rating_provenance` is declared but the
     receipt or report is missing, the receipt differs from its pin, is not an
     adoptable `binding-fill` receipt with `--ratings`, the report is not its
@@ -297,11 +301,17 @@ reused sheet).
 
 `AGENT_EE_Ratings` carries only a compact `record_sha256`
 ([binding fill](binding-fill.md#source-derived-passive-ratings)). Without
-`rating_provenance` the check validates its format and its agreement with the
-native `Power`/`Voltage` properties only, and reports an info
-`undeclared_rating_provenance` finding naming the components it could not
-resolve (AGENTEE-242). Declaring the provenance binds each field to the full
-record:
+`rating_provenance` the check still validates its format and its agreement
+with the native `Power`/`Voltage` properties, and a disagreement stays an
+`invalid_rating_provenance` defect. A well-formed field it cannot resolve is an
+unknown `undeclared_rating_provenance` finding, so the outcome is `unknown`,
+never `pass` (AGENTEE-242). A design whose passives carry no `AGENT_EE_Ratings`
+is unaffected. Pod and campaign scopes that run `binding-fill --ratings` must
+therefore declare `rating_provenance` on their `assembly_readiness` check and
+capture the adopted `binding-fill` stage `receipt.json` and its
+`run/out/binding-fill.json` as candidate inputs, with the coordinator-pinned
+`receipt_sha256`. The check does not discover campaign stage receipts itself.
+Declaring the provenance binds each field to the full record:
 
 ```json
 {
@@ -323,10 +333,16 @@ no `AGENT_EE_Ratings` is refused. Any mismatch, a forged 64-hex hash or a
 self-consistent forged record included, is an `invalid_rating_provenance`
 defect. Unavailable provenance is `unknown`, never `pass`. A determinate defect
 elsewhere still gives `defect`. Each component report records `rating_record`:
-`receipt_bound`, `unresolved`, `unavailable`, `undeclared`, or null. The report
+`receipt_bound`, `unresolved` (malformed, drifted or mismatched),
+`unavailable`, `undeclared`, or null. The report
 echoes `rating_provenance` with `report_sha256`, `records` and `error`. The
 check reads the captured receipt JSON. It does not replay the retained
 receipt directory, so the coordinator pin is the authority for that receipt.
+
+Limitation: binding fill allocates rating records by root-sheet reference. A
+hierarchical design that reuses a child sheet has instance references the
+report does not derive, so their `AGENT_EE_Ratings` fields fail closed as
+`invalid_rating_provenance`.
 
 ## Execution and outcome
 

@@ -278,7 +278,7 @@ def load_provenance(root, declaration):
         raise ValueError('stage receipt is not a binding-fill step with declared ratings')
     if receipt['status'] not in ADOPTABLE:
         raise ValueError(f'binding-fill receipt status {receipt["status"]} is not adoptable')
-    if receipt['artifacts'].get('out/binding-fill.json') != digest(report_path):
+    if not isinstance(receipt['artifacts'], dict) or receipt['artifacts'].get('out/binding-fill.json') != digest(report_path):
         raise ValueError('binding-fill report is not the receipted artifact')
     report = strict_json(report_path.read_bytes())
     if not isinstance(report, dict) or report.get('schema') != 'agent-ee.binding-fill/1':
@@ -288,7 +288,8 @@ def load_provenance(root, declaration):
         raise ValueError('binding-fill report carries no ratings provenance')
     for ref, entry in ratings['derived'].items():
         exact_fields(entry, ('record', 'record_sha256'))
-        if entry['record_sha256'] != identity(entry['record']) or entry['record'].get('schema') != BINDING:
+        if (not isinstance(entry['record'], dict) or entry['record_sha256'] != identity(entry['record']) or
+                entry['record'].get('schema') != BINDING):
             raise ValueError(f'receipted rating record for {ref} does not match its identity')
     return ratings['derived']
 

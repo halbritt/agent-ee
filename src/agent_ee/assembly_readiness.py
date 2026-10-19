@@ -1389,18 +1389,20 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
         if passive_type in ("R", "C"):
             from .passive_ratings import PROPERTY as RATING_PROVENANCE, resolve_record, validate_binding
             problems = validate_binding(props, passive_type)
-            if cfg["rating_provenance"] is None:
+            if problems:
+                rating_record = "unresolved"
+            elif cfg["rating_provenance"] is None:
                 rating_record = "undeclared" if RATING_PROVENANCE in props else None
             elif rating_records is None:
                 rating_record = "unavailable" if RATING_PROVENANCE in props else None
-            elif not problems:
+            else:
                 problems = resolve_record(props, ref, rating_records)
                 rating_record = ("unresolved" if problems else
                                  "receipt_bound" if RATING_PROVENANCE in props else None)
-            else:
-                rating_record = "unresolved"
+            # Only a record resolved against the receipted report is source-backed.
             rating_provenance = ('invalid' if problems else
-                                 'source_backed' if RATING_PROVENANCE in props else 'unsourced')
+                                 'source_backed' if rating_record == "receipt_bound" else
+                                 'unverified' if RATING_PROVENANCE in props else 'unsourced')
             if problems:
                 findings.append({
                     "severity": "defect",
@@ -1643,9 +1645,10 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
 
     undeclared = [c["reference"] for c in component_reports if c["rating_record"] == "undeclared"]
     if undeclared:
-        findings.append({"severity": "info", "code": "undeclared_rating_provenance", "references": undeclared,
-                         "message": "AGENT_EE_Ratings record_sha256 is format-checked only; no receipted "
-                                    "rating_provenance is declared to resolve it"})
+        # A record_sha256 nothing resolves is an unverified provenance claim: fail closed.
+        findings.append({"severity": "unknown", "code": "undeclared_rating_provenance", "references": undeclared,
+                         "message": "AGENT_EE_Ratings record_sha256 cannot be resolved; no receipted "
+                                    "rating_provenance is declared"})
 
     defect_findings = [f for f in findings if f["severity"] == "defect"]
     unknown_findings = [f for f in findings if f["severity"] == "unknown"]
@@ -1662,7 +1665,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
     elif unknown_findings:
         outcome = "unknown"
         summary = (
-            f"assembly_readiness cannot certify pass: {len(unknown_findings)} stock telemetry "
+            f"assembly_readiness cannot certify pass: {len(unknown_findings)} "
             f"unknown(s) across {len(populated)} populated component(s)"
         )
     elif not populated:
