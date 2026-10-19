@@ -114,6 +114,17 @@ Malformed NPTH geometry encountered during that qualification is `malformed`.
 Missing, empty, repeated or non-atom pad layer lists are also `malformed`, so
 ambiguous coverage cannot qualify a footprint as virtual.
 
+Scaffold-generated mounting holes declare
+`AgentEE_Mechanical_MountingHole_NPTH` or `AgentEE_Mechanical_MountingHole_PTH`.
+These local names identify agent-ee-owned parametric mechanical forms. Their
+library nickname is empty; no linked library or catalog identity is claimed.
+The ID alone grants no exemption: the existing geometry qualifier and mechanical
+marker determine whether a hole is non-copper. Plated holes retain their copper
+claim and need ordinary bindings; missing bindings remain unknown. An empty or
+missing footprint ID remains malformed, including legacy bare holes. Regenerate
+those from captured inputs with the updated producer; binding validation does
+not mutate or repair source boards.
+
 ### DNP and Explicit `no-LCSC` Markers
 
 A DNP or no-LCSC marker replaces the `LCSC` code only. `Manufacturer` and

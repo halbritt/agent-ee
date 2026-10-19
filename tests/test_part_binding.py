@@ -465,6 +465,34 @@ class PartBindingTests(unittest.TestCase):
                     self.assertEqual(report["evaluated_references"], [])
                     self.assertFalse(report["board_components"][ref]["has_copper_pads"])
 
+    def test_empty_or_missing_footprint_identity_is_never_exempt(self):
+        for pad in ('(pad "" np_thru_hole circle (size 3 3) (drill 3) (layers "*.Cu" "*.Mask"))',
+                    '(pad "1" smd rect (size 1 1) (layers "F.Cu"))', ''):
+            for identity in ('""', '"   "', ''):
+                with self.subTest(pad=pad, identity=identity):
+                    pcb = build_synthetic_pcb([{
+                        'lib_id': '', 'attrs': ['board_only', 'exclude_from_bom'],
+                        'properties': {'Reference': 'H1'}, 'pads': [pad]}])
+                    pcb = pcb.replace(b'(footprint ""', ('(footprint ' + identity).encode())
+                    report = validate_part_bindings(pcb_bytes=pcb)
+                    self.assertEqual((report['execution'], report['outcome']), ('malformed', 'unknown'))
+                    self.assertIn('missing library identifier', report['errors'][0])
+
+    def test_generated_hole_identity_does_not_exempt_copper(self):
+        for pad in ('(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))',
+                    '(pad "" np_thru_hole circle (at 0 0) (size 3 3) (drill 1) (layers "*.Cu" "*.Mask"))',
+                    '(pad "" thru_hole circle (at 0 0) (size 3.6 3.6) (drill 3) (layers "*.Cu" "*.Mask"))'):
+            with self.subTest(pad=pad):
+                pcb = build_synthetic_pcb([{
+                    'lib_id': 'AgentEE_Mechanical_MountingHole_NPTH',
+                    'attrs': ['board_only', 'exclude_from_bom'],
+                    'properties': {'Reference': 'H1'}, 'pads': [pad]}])
+                report = validate_part_bindings(pcb_bytes=pcb)
+                self.assertEqual((report['execution'], report['outcome']), ('ok', 'unknown'))
+                self.assertEqual(report['virtual_references'], [])
+                self.assertTrue(report['board_components']['H1']['has_copper_pads'])
+                self.assertEqual(report['evaluated_references'], ['H1'])
+
     def test_malformed_npth_geometry_is_unknown_not_virtual(self):
         for preceding in ([], ['(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))']):
             with self.subTest(preceding=preceding):

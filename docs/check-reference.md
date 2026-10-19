@@ -1062,7 +1062,11 @@ disagreement between two non-empty schematic and board values, or a malformed
 reference. Copper-layer pads keep a footprint bindable even with `virtual`,
 `board_only` or `REF**` markers; the report retains the marker and records
 `has_copper_pads`. Marked footprints without copper pads stay exempt, including
-bare NPTH holes qualified by the existing native geometry reader.
+bare NPTH holes qualified by the existing native geometry reader. Scaffold holes
+carry declared `AgentEE_Mechanical_MountingHole_NPTH` or
+`AgentEE_Mechanical_MountingHole_PTH` identities; these confer no catalog binding
+or geometry exemption. Empty or missing footprint IDs remain malformed, and
+plated holes retain the ordinary copper binding obligation.
 Unparseable `PARAM_*` JSON, ambiguous pad layers and an uncaptured child sheet
 are `malformed`. See [part binding](part-binding.md) for the schema, markers and
 per-reference outcomes. The [Rung-1 parts adapter](rung1-parts.md) projects
