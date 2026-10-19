@@ -711,7 +711,7 @@ def derive_requirements(record, source_path):
     for index, keepout in enumerate(record['keepouts']):
         polygon = (', '.join(point_text(p) for p in keepout['polygon_mm']) + ' mm'
                    if 'polygon_mm' in keepout else
-                   f"the ESP32-S3-WROOM-1 datasheet-derived antenna polygon owned by "
+                   f"a source-qualified ESP32-S3-WROOM-1 placement-case polygon (currently unresolved) owned by "
                    f"{keepout['antenna']['reference']} using verified {keepout['antenna']['facts_check']} facts")
         out.append(obligation(eid, f"keepout-{keepout['id']}", f'/keepouts/{index}', keepout,
                               f"keepout {keepout['id']} forbids {', '.join(keepout['forbid'])} on "

@@ -89,25 +89,9 @@ def hole_verdict(hole, native):
 
 
 def antenna_polygon(declaration, native, verified_facts):
-    """Use AGENTEE-170's derivation, then an exact native footprint transform."""
-    from .footprint_library import derive_antenna_keepout, ESP32_FOOTPRINT_ID
-    from .placement_predicates import native_rotation
-    derived = derive_antenna_keepout(verified_facts)
-    matches = [fp for fp in native['footprints'] if fp['ref'] == declaration['reference']]
-    if len(matches) != 1 or matches[0]['fpid'] != ESP32_FOOTPRINT_ID:
-        raise ValueError('antenna needs one ESP32-S3-WROOM-1 footprint at its declared reference')
-    fp = matches[0]
-    angle = native_rotation(fp['rotation_deg'])
-    if angle % 90 or fp['side'] not in ('F', 'B'):
-        raise ValueError('antenna transform needs a front/back footprint and an exact quarter turn')
-    cos, sin = {0: (1, 0), 90: (0, 1), 180: (-1, 0), 270: (0, -1)}[int(angle)]
-    polygon = []
-    for x, y in derived['polygon_nm']:
-        if fp['side'] == 'B':
-            y = -y
-        polygon.append((fp['position_nm'][0] + x*cos + y*sin,
-                        fp['position_nm'][1] - x*sin + y*cos))
-    return polygon, fp['uuid'], derived
+    """Legacy dynamic declarations retain an explicit source-qualification hold."""
+    from .footprint_library import derive_antenna_keepout
+    return derive_antenna_keepout(verified_facts)
 
 
 def item_verdict(item_id, defects, unknown, measured):
