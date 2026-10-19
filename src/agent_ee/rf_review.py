@@ -9,6 +9,7 @@ declaration, calculator output, clearance pass or plane coverage is input to the
 review, never RF qualification; this module records no measurement.
 """
 import copy
+import hashlib
 import json
 import re
 from pathlib import Path, PurePosixPath
@@ -44,6 +45,9 @@ RF_EXPECTED_KINDS = ("net_class_assignment", "routing_rules", "geometry")
 ROUTING_DIR = "work/rf-routing"
 ROUTING_SCHEMA = "agent-ee.rf-routing-evidence/1"
 ROUTING_STATUSES = ("verified", "missing_evidence", "invalid", "stale")
+# The router's native inventory of the validated board (AGENTEE-258), retained by the adapter.
+FACTS_FILE = "validate/candidate-facts.json"
+RETAINED_KEYS = ("adapter_report", "reference_continuity", "native_facts")
 CATEGORIES = ("schematic", "board", "stackup", "rf_constraints", "rf_captures", "planes",
               "antenna_and_module_sources", "datasheets")
 
@@ -229,14 +233,15 @@ def _declaration(scope):
     return declared
 
 
-def decide(scope, files, read, routing=None):
+def decide(scope, files, read, routing=None, evidence=None):
     """Explicit applicability and exact source binding for one captured candidate.
 
     ``files`` maps captured relative paths to SHA-256; ``read(rel)`` returns their
     bytes. Detected RF indicators always make the review required: a declaration
     cannot waive them. Without indicators the not-applicable basis is recorded.
     ``routing`` is the run's retained routing adapter evidence (``retained_routing``);
-    None is missing evidence."""
+    None is missing evidence. ``evidence`` holds its retained measurement bytes as
+    parsed by ``retained_evidence``; None leaves per-net layer requirements unknown."""
     declared = _declaration(scope)
     indicators, sources = [], {c: [] for c in CATEGORIES}
 
@@ -353,10 +358,11 @@ def decide(scope, files, read, routing=None):
     routing = _bound_routing(routing, scope, files)
     if applicable:
         missing += routing_missing(routing)
-    layer_requirements = _layer_requirements(sources["rf_captures"], read, impedance, rf_nets, board, routing)
+    layer_requirements = _layer_requirements(sources["rf_captures"], read, impedance, rf_nets, board, routing,
+                                             evidence or {})
     missing += [f"RF layer requirement {r['signal_layer']} over {r['reference_layer']} for "
                 f"{', '.join(r['nets']) or 'undeclared RF nets'} ({r['source']}): {r['status']}; {r['reason']}"
-                for r in layer_requirements]
+                for r in layer_requirements if r["status"] != "pass"]
     decision = {"schema": SCHEMA, "role": ROLE, "applicable": applicable, "required": applicable,
                 "basis": basis, "declared": copy.deepcopy(declared), "indicators": indicators,
                 "rf_nets": sorted(rf_nets), "rf_related_nets": sorted(related), "impedance_declarations": impedance, "expects": expects,
@@ -370,8 +376,9 @@ def decide(scope, files, read, routing=None):
 
 def decide_run(run_dir, manifest):
     run_dir = Path(run_dir)
+    routing = retained_routing(run_dir)
     return decide(manifest["scope"], manifest["files"], lambda rel: (run_dir / "inputs" / rel).read_bytes(),
-                  retained_routing(run_dir))
+                  routing, retained_evidence(run_dir, routing))
 
 
 def native_evidence(checks, decision=None):
@@ -384,7 +391,7 @@ def native_evidence(checks, decision=None):
     routing = (decision or {}).get("routing_adapter") or _missing_routing("no RF decision bound to this packet")
     return {"present": present, "absent_kinds": absent,
             "routing_adapter": {k: routing.get(k) for k in ("status", "reason", "record_sha256", "adapter_report",
-                                                            "reference_continuity", "layer_policy")},
+                                                            "reference_continuity", "native_facts", "layer_policy")},
             "rule": "absent evidence is unknown, never pass; present native passes and routing adapter grades are "
                     "inputs, not RF qualification"}
 
@@ -408,8 +415,9 @@ def capture_routing(run, manifest, context):
 
     ``context`` is None (no routing step supplied) or ``{"receipt": None | {"path",
     "sha256"}}`` naming an anchored AGENTEE-95 routing receipt. The receipt is
-    re-verified with the routing adapter's own verifier; the adapter report and
-    reference-continuity measurement are copied into the run and bound by SHA-256.
+    re-verified with the routing adapter's own verifier; the adapter report,
+    reference-continuity measurement and native board facts are copied into the
+    run and bound by SHA-256.
     Anything absent, unverifiable or of another board is recorded as such, never
     as a pass."""
     from .kicad_route_attempt import POLICY_FILE
@@ -452,12 +460,18 @@ def capture_routing(run, manifest, context):
             if sha != retained:
                 raise ValueError("reference continuity measurement differs from the adapter report")
             continuity = {"path": f"{ROUTING_DIR}/reference-continuity.json", "sha256": sha}
+        facts, retained = None, report["retained"].get("attempt/" + FACTS_FILE)
+        if retained is not None:
+            sha = _copy_bound(routing / "attempt" / FACTS_FILE, out / "native-facts.json")
+            if sha != retained:
+                raise ValueError("native board facts differ from the adapter report")
+            facts = {"path": f"{ROUTING_DIR}/native-facts.json", "sha256": sha}
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as exc:
         return finish("invalid", f"routing adapter evidence failed verification: {exc}")
     extra = {"candidate_sha256": summary["candidate_sha256"], "classification": summary["classification"],
              "backend": summary["backend"],
              "adapter_report": {"path": f"{ROUTING_DIR}/adapter-report.json", "sha256": report_sha},
-             "reference_continuity": continuity,
+             "reference_continuity": continuity, "native_facts": facts,
              "declared_layer_policy": report["request"].get("layer_policy"),
              "layer_policy": summary.get("layer_policy")}
     if summary["candidate_sha256"] != record["board"]["sha256"]:
@@ -478,7 +492,7 @@ def retained_routing(run_dir):
         if not isinstance(record, dict) or record.get("schema") != ROUTING_SCHEMA or \
                 record.get("status") not in ROUTING_STATUSES:
             raise ValueError("malformed routing evidence record")
-        for key in ("adapter_report", "reference_continuity"):
+        for key in RETAINED_KEYS:
             entry = record.get(key)
             if entry is not None:
                 copied = run_dir / entry["path"]
@@ -489,6 +503,25 @@ def retained_routing(run_dir):
         return {"schema": ROUTING_SCHEMA, "status": "invalid", "reason": f"retained routing evidence: {exc}",
                 "record_sha256": sha}
     return {**record, "record_sha256": sha}
+
+
+def retained_evidence(run_dir, routing):
+    """The verified record's retained measurements, parsed from bytes whose SHA-256 it binds.
+
+    Only a verified record supplies evidence; an absent, changed or unparseable copy is None."""
+    out = {}
+    for key in ("reference_continuity", "native_facts"):
+        entry, value = (routing or {}).get(key) if (routing or {}).get("status") == "verified" else None, None
+        if entry is not None:
+            path = Path(run_dir) / entry["path"]
+            try:
+                data = None if path.is_symlink() else path.read_bytes()
+                if data is not None and hashlib.sha256(data).hexdigest() == entry["sha256"]:
+                    value = json.loads(data)
+            except (OSError, ValueError, UnicodeDecodeError):
+                value = None
+        out[key] = value if isinstance(value, dict) else None
+    return out
 
 
 def _bound_routing(routing, scope, files):
@@ -529,39 +562,94 @@ def _stackup_statements(value, pointer=""):
             yield from _stackup_statements(item, f"{pointer}/{n}")
 
 
-def _layer_requirements(captures, read, impedance, rf_nets, board, routing):
+def _reference_net_matches(declared, statements):
+    """The declared reference net is a ground, and every net a captured statement names is it."""
+    if not isinstance(declared, str) or not GROUND_NET.search(declared):
+        return False
+    named = {ref.split()[1] for ref in statements if len(ref.split()) > 1}
+    return all(name.lstrip("/") == declared.lstrip("/") for name in named)
+
+
+def _layer_requirement_status(signal, layer, nets, board_sha, continuity, measured, facts, matched):
+    """(status, reason, per-net grade): pass only on the verified board's own evidence."""
+    from .kicad_route_attempt import per_net_layer_grade
+    per_net = None
+    if facts is not None and nets:
+        per_net = per_net_layer_grade({"per_net_signal_layers": {n: [signal] for n in nets}}, facts, board_sha)
+    if (per_net or {}).get("status") == "defect":
+        return "defect", f"verified native facts of this board place RF copper outside {signal}", per_net
+    if (continuity or {}).get("status") == "defect":
+        return ("defect", "the verified routing reference continuity grade reports a defect on this reference",
+                per_net)
+    if facts is None or per_net is None:
+        return ("unknown", "no verified native board facts of this candidate's RF nets are bound; a global "
+                "signal-layer allowlist is not per-net enforcement", per_net)
+    if per_net["status"] != "pass":
+        return ("unknown", "per-net signal layers of this board are unknown: "
+                f"{per_net.get('reason') or '; '.join(per_net['problems'])}", per_net)
+    if continuity is None or not matched:
+        return ("unknown", f"the verified routing layer policy declares no ground reference on {layer} under "
+                f"{', '.join(nets)}; continuity beneath the RF copper is unknown", per_net)
+    if continuity.get("status") != "pass":
+        return "unknown", f"the verified routing reference continuity grade is {continuity.get('status')}", per_net
+    # Every routed segment and arc of the net in the native facts has a continuous record on this layer.
+    copper = {t["uuid"] for t in facts["tracks"] if t.get("net") in nets}
+    covered = {t.get("uuid") for t in (measured or {}).get("tracks", [])
+               if isinstance(t, dict) and t.get("net") in nets and t.get("reference_layer") == layer and
+               t.get("status") == "continuous"}
+    if (measured or {}).get("board_sha256") != board_sha or not copper or copper - covered:
+        return ("unknown", f"the reference measurement does not cover every {', '.join(nets)} track of this board "
+                f"on {layer}", per_net)
+    return ("pass", f"verified native facts place all {', '.join(nets)} copper on {signal}, and the verified "
+            f"measurement finds continuous {layer} reference fill under every track; not impedance qualification",
+            per_net)
+
+
+def _layer_requirements(captures, read, impedance, rf_nets, board, routing, evidence):
     """Per-net RF signal/reference layer requirements stated in captured RF sources.
 
-    No registered check and no adapter grade enforces a per-net signal layer, and
-    a global signal-layer allowlist is not per-net enforcement, so a requirement is
-    never satisfied here: unknown, or defect when the verified reference continuity
-    grade for its reference layer reports one."""
+    The requirement's own layers are graded with the routing adapter's per-net
+    grader (AGENTEE-258) on the native facts retained with the verified receipt,
+    so a global allowlist or a looser router declaration never satisfies it. It
+    passes only when every net's copper is on its signal layer and the verified
+    reference continuity (AGENTEE-231) of a declared ground on its reference layer
+    covers every one of those tracks; defect on a measured violation; else unknown."""
     nets = sorted({n for d in impedance if "impedance_ohm" in d for n in d["nets"]} or rf_nets)
-    policy = routing.get("layer_policy") if routing["status"] == "verified" else None
-    declared = routing.get("declared_layer_policy") if routing["status"] == "verified" else None
+    verified = routing["status"] == "verified"
+    policy = routing.get("layer_policy") if verified else None
+    declared = routing.get("declared_layer_policy") if verified else None
     reference = (declared or {}).get("reference") or {}
+    board_sha = (routing.get("board") or {}).get("sha256") if verified else None
+    facts = evidence.get("native_facts") if verified else None
+    if facts is not None and (facts.get("sha256") != board_sha or routing.get("candidate_sha256") != board_sha):
+        facts = None
     found = {}
     for entry in captures:
         doc = _json(read, entry["path"][len("inputs/"):])
         for pointer, signal, ref in _stackup_statements(doc or {}):
             layer = ref.split()[0] if ref.split() else ref
-            found.setdefault((entry["path"], signal, layer), {"declared": ref, "locators": []})["locators"].append(pointer)
+            seen = found.setdefault((entry["path"], signal, layer), {"declared": ref, "locators": [], "statements": []})
+            seen["locators"].append(pointer)
+            seen["statements"].append(ref)
     out = []
     for (source, signal, layer), seen in sorted(found.items()):
         continuity = None
         if (policy is not None and layer in (reference.get("layers") or []) and nets and
                 set(nets) <= set(reference.get("rf_nets") or [])):
             continuity = (policy.get("items") or {}).get("reference_continuity")
-        status = "defect" if (continuity or {}).get("status") == "defect" else "unknown"
+        matched = _reference_net_matches(reference.get("net"), seen["statements"])
+        status, reason, per_net = _layer_requirement_status(
+            signal, layer, nets, board_sha, continuity, evidence.get("reference_continuity"), facts, matched)
+        router_item = ((policy or {}).get("items") or {}).get("per_net_signal_layers")
         out.append({"source": source, "locators": seen["locators"], "signal_layer": signal, "reference_layer": layer,
-                    "reference_declared": seen["declared"], "nets": nets, "status": status,
-                    "reason": ("the verified routing reference continuity grade reports a defect on this reference"
-                               if status == "defect" else
-                               "no registered check or routing adapter grade enforces this per-net signal layer; a "
-                               "global signal-layer allowlist is not per-net enforcement"),
+                    "reference_declared": seen["declared"], "nets": nets, "status": status, "reason": reason,
                     "related_evidence": {
                         "global_signal_layers": (declared or {}).get("signal_layers"),
                         "reference_continuity": None if continuity is None else continuity.get("status"),
+                        "reference_net": reference.get("net") if continuity is not None else None,
+                        "per_net_signal_layers": per_net,
+                        "router_per_net_signal_layers": None if router_item is None else {
+                            k: router_item.get(k) for k in ("status", "declared", "board_sha256")},
                         "board_rf_copper_layers": {n: (board.get("rf_copper") or {}).get(n, {}).get("layers")
                                                    for n in nets}}})
     return out
@@ -612,8 +700,10 @@ def prompt(decision, evidence):
             "check/experiment evidence. rf_review.routing_adapter is the routing adapter evidence bound to this "
             "candidate by SHA-256 (status verified, missing_evidence, invalid or stale; only verified grades are "
             "evidence, and a layer policy pass is never RF qualification). rf_review.rf_layer_requirements are "
-            "per-net signal/reference layer requirements from captured RF sources; none is enforced by a check, so "
-            "treat each as unknown (or defect where so graded), never satisfied. RF binding: " + json.dumps({"rf_review": decision, "native_evidence": evidence}))
+            "per-net signal/reference layer requirements from captured RF sources, graded on this board's verified "
+            "native facts and reference continuity: pass means all copper of the net is on the signal layer over "
+            "continuous declared reference fill, never impedance, gap, stitching or RF qualification; unknown is "
+            "unknown, not pass. RF binding: " + json.dumps({"rf_review": decision, "native_evidence": evidence}))
 
 
 def validate_assessment(value, review_findings, run_dir, *, require_structured=True):
@@ -679,10 +769,10 @@ def validate_assessment(value, review_findings, run_dir, *, require_structured=T
     if by_topic["width_gap_layer_transitions_launches"] == "supported" and any(
             r["status"] != "pass" for r in decision.get("rf_layer_requirements", [])):
         raise ValueError("rf topic width_gap_layer_transitions_launches cannot be supported while an RF layer "
-                         "requirement is unenforced")
+                         "requirement is unenforced (not pass)")
     sources = {e["path"] for entries in decision["sources"].values() for e in entries}
     sources |= {(decision.get("routing_adapter") or {}).get(k, {}).get("path")
-                for k in ("adapter_report", "reference_continuity")
+                for k in RETAINED_KEYS
                 if (decision.get("routing_adapter") or {}).get(k)}
     for finding in review_findings:
         cited = [e["path"] for e in finding["evidence"]]

@@ -2371,7 +2371,8 @@
     {
       "paths": [
         "tests/test_route_layer_policy.py",
-        "tests/test_per_net_layers.py"
+        "tests/test_per_net_layers.py",
+        "tests/test_rf_layer_wiring.py"
       ],
       "kind": "owned-source",
       "origins": [
