@@ -859,11 +859,14 @@ copper layer set against saved and native enabled layers. Each check binds one
 field and one requirement, with predicates `envelope:outline/1` or
 `envelope:layers/1`.
 
-`stackup/1` is refused as executable acceptance coverage: KiCad thickness does
-not establish nominal copper ounces. Direct execution retains diagnostic facts
-and returns unknown. Complete scope/3 envelope capture still requires that
-manufacturing authority; holes, keepouts and multiple fixed connectors also
-remain unsupported for acceptance. See the [native envelope contract](board-envelope.md#native-envelope-check)
+`stackup/1` supplies `envelope:stackup/1` only when the scope's declared profile
+matches the envelope reference and contains a source-verified stackup declaration.
+Saved layer thicknesses use the profile's explicit exact matching tolerance;
+nominal copper weights come from the cited declaration, with no oz-to-mm conversion.
+Missing or unverified authority stays unknown and capture refuses it. Each
+`placement` `connector-edge/1` check selects a fixed `reference` and supplies
+`placement:connector-edge/1:<reference>`; a single fixed footprint may omit the
+selector and retain the legacy predicate. Holes and keepouts remain unbound. See the [native envelope contract](board-envelope.md#native-envelope-check)
 for evidence, binding and failure boundaries. Envelope/2 preserves nominal
 and physical thickness separately and derives each generator mechanical
 obligation as unresolved; no existing criterion binds those obligations.

@@ -98,6 +98,34 @@ check still grades only entries in `limits`; it makes no board-thickness
 acceptance claim. The envelope's independent stackup obligation remains
 unknown without qualified manufacturing authority and source coverage.
 
+## Stackup authority
+
+Fab-profile/2 may declare `stackup` with exactly `name`, `layer_count`,
+`nominal_thickness_mm`, `thickness_mm`, `layers`,
+`layer_thickness_tolerance_mm` and `source`. Layers reuse envelope/1's alternating
+copper/dielectric shape, including explicit copper weights; their exact sum is
+`thickness_mm` (physical thickness). The separate nominal thickness is the
+board order. The name identifies the cited stack; the source uses the existing
+path/hash/identity/date/page/exact-quote verifier. Fab-profile/1 refuses this metadata.
+
+The explicit nonnegative layer tolerance bounds the difference between each
+saved or envelope layer thickness and its declared profile thickness, using
+exact rational arithmetic and an inclusive boundary. It is a **saved-design
+matching policy**, not a claim about manufactured per-layer tolerances. The pod
+profile declares zero: its saved layers must retain the published values exactly.
+The cited ±10% finished-board tolerance remains a separate nominal-versus-physical
+bound and is never applied to individual layers. No copper weight is computed
+from thickness. A declared 2 oz layer against the profile's 1 oz is a defect even
+when the saved thickness is unchanged.
+
+The compiler retains `stackup.execution` and normalized `expected` metadata,
+with cited source paths in `immutable_inputs`. Missing or invalid citations
+leave it unsupported; the fab descriptor refuses that metadata. The independent
+`board_envelope` `stackup/1` criterion consumes the authority and retains it in
+`envelope-judgment.json`. Native fab limit predicates remain unchanged. Citation
+verification proves occurrence in captured text, not supplier authenticity or
+semantic interpretation of an arbitrary quotation.
+
 ## Board outline qualification
 
 Board size and edge clearance need one simple polygon built from exact saved

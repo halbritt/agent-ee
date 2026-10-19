@@ -177,10 +177,10 @@ malformed tables and colliding IDs with the byte offset and infers no values.
 [Board envelope declarations](docs/board-envelope.md) bind mechanical constraints
 and derived requirements into the captured baseline. A reference document becomes
 binding only when declared or consumed by the scope. The registered native check
-compares exact outline and copper layers. Complete production envelope capture
-remains unavailable: stackup lacks qualified copper-weight authority, and holes,
-keepouts and multiple fixed connectors lack individual bindings. Capture refuses
-those gaps.
+compares exact outline and copper layers, and grades stackup against the referenced
+source-verified profile without converting thickness to copper ounces. Several fixed
+connectors receive separate reference-selected witnesses. Capture succeeds for a
+fully bound scope and still refuses holes, keepouts and unbound generator mechanics.
 
 The [telemetry-pod fabrication inputs](docs/telemetry-pod-fab-profile.md) record
 eight dated JLCPCB JLC04161H-7628 limits and bind known mechanics to the pod spec.
