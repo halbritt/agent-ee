@@ -2776,6 +2776,16 @@
         "AE"
       ],
       "reviewed": "Original regression tests with one owned KiCad 5 style footprint literal and short byte mutations of the captured fixture; no library or design text copied."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/requirement-map.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-159 accounting example naming captured requirement IDs and component/interface facts. It copies no vendor text or third-party design/library bytes; explicit limitations are not owner waivers or acceptance."
     }
   ]
 }
