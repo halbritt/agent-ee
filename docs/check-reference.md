@@ -117,6 +117,13 @@ boundaries. A quote that cuts a page token is rejected with
 `quote_truncates_a_page_token`; any unverified citation leaves the check
 `unsupported/unknown` and cannot support dependent checks.
 
+The separate [datasheet footprint authoring tool](datasheet-footprint.md#fact-coverage)
+also restricts coordinate citations to quoted pitch/span declarations. Pitch
+scales must match centered geometric site indices; spans permit signed halves.
+Other scales produce `unsupported_coordinate_scale` coverage gaps and prevent
+library publication even if the quoted fact is verified. This tool adds no
+registered check kind.
+
 | Kind | Native/helper arguments | Individual ceiling |
 | --- | --- | --- |
 | `erc` | `kicad-cli version` (sealed under `kicad-version/`), then `kicad-cli sch erc --format json --severity-all --units mm -o /work/erc.json SCHEMATIC` | 60 s, 900 s |

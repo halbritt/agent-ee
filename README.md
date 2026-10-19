@@ -495,6 +495,9 @@ and recorded with commit, path, blob id and SHA-256 (the telemetry pod's AMPSEAL
 when two isolated agent extractions of one captured PDF agree within 0.01 mm,
 every pad value equals a verified page-cited fact, kicad-cli loads the result and
 the footprint assignment check confirms symbol pin/pad parity.
+Coordinate citations require quoted pitch/span declarations and supported
+centered pad indices or half-spans; arbitrary rational multipliers leave
+coverage unknown.
 A [land-pattern geometry kernel](docs/land-geometry.md) compares supported pad
 shapes using exact areas or certified bounds. Its supplier/native check adapter
 and supplier qualification remain pending; the kernel alone cannot accept a part.

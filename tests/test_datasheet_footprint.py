@@ -250,6 +250,97 @@ class DatasheetFootprintTests(unittest.TestCase):
         self.assertEqual({(g['number'], g['field'], g['reason']) for g in report['coverage_gaps']},
                          {('4', 'w', 'dimension_must_equal_fact')})
 
+    def test_contrived_rational_coordinate_is_uncited_despite_verified_fact(self):
+        a = self.extraction()
+        a['pads'][0]['x'] = '-0.913'
+        a['pads'][0]['cite']['x'] = cite('e', '-913/950')
+        report = self.accept(self.run_pair(a, copy.deepcopy(a)))
+        self.assertEqual((report['execution'], report['decision']), ('unsupported', 'unknown'))
+        self.assert_unpublished(report)
+        self.assertTrue(all(f['status'] == 'verified' for f in report['facts']))
+        self.assertEqual({(g['number'], g['field'], g['reason']) for g in report['coverage_gaps']},
+                         {('1', 'x', 'unsupported_coordinate_scale'), ('3', 'x', 'unsupported_coordinate_scale')})
+
+    def test_coordinate_scales_require_the_fact_role_and_centered_pad_index(self):
+        for fact, scale, x in (('A', '-1', '-0.60'), ('C', '-1/2', '-1.10'),
+                               ('e', '-2', '-1.90'), ('e', '-1/2', '-0.475')):
+            with self.subTest(fact=fact, scale=scale):
+                a = self.extraction()
+                a['pads'][0]['x'] = x
+                a['pads'][0]['cite']['x'] = cite(fact, scale)
+                tag = fact + scale.replace('/', '_')
+                report = self.accept(self.run_pair(a, copy.deepcopy(a), run='run-' + tag), 'out-' + tag)
+                self.assertEqual((report['execution'], report['decision']), ('unsupported', 'unknown'))
+                self.assert_unpublished(report, 'out-' + tag)
+                self.assertTrue(all(f['status'] == 'verified' for f in report['facts']))
+                self.assertIn(('1', 'x', 'unsupported_coordinate_scale'),
+                              {(g['number'], g['field'], g['reason']) for g in report['coverage_gaps']})
+
+    def test_span_only_allows_signed_half_not_arbitrary_or_whole_multiples(self):
+        for scale, y in (('3/2', '3.30'), ('1', '2.20'), ('7/11', '1.40')):
+            with self.subTest(scale=scale):
+                a = self.extraction()
+                for p in a['pads'][:3]:
+                    p['y'] = y
+                    p['cite']['y'] = cite('C', scale)
+                tag = scale.replace('/', '_')
+                report = self.accept(self.run_pair(a, copy.deepcopy(a), run='run-' + tag), 'out-' + tag)
+                self.assertEqual((report['execution'], report['decision']), ('unsupported', 'unknown'))
+                self.assert_unpublished(report, 'out-' + tag)
+                self.assertEqual({(g['number'], g['field'], g['reason']) for g in report['coverage_gaps']},
+                                 {(str(n), 'y', 'unsupported_coordinate_scale') for n in (1, 2, 3)})
+
+    def test_integer_and_half_integer_pitch_indices_publish_independent_of_pad_order(self):
+        for count in (4, 5):
+            with self.subTest(count=count):
+                a = self.extraction()
+                a['circuit'] = None
+                a['pads'] = []
+                for i in range(count):
+                    numerator = 2 * i - (count - 1)
+                    scale = str(numerator // 2) if numerator % 2 == 0 else f'{numerator}/2'
+                    x = format(Decimal('0.95') * Decimal(numerator) / 2, 'f')
+                    a['pads'].append(pad(str(10 + i), 'P' + str(i), x, '1.10', '0.60', '1.00',
+                                         {'x': cite('e', scale) if numerator else None,
+                                          'y': cite('C', '1/2'), 'w': cite('A'), 'h': cite('B')}))
+                b = copy.deepcopy(a)
+                b['pads'].reverse()
+                tag = str(count)
+                report = self.accept(self.run_pair(a, b, run='run-' + tag), 'out-' + tag)
+                self.assertEqual((report['execution'], report['decision'], report['published']),
+                                 ('ok', 'accepted', True), report['reason'])
+                self.assertEqual(report['coverage_gaps'], [])
+                self.assertTrue(all(f['status'] == 'verified' for f in report['facts']))
+
+    def test_vertical_pitch_and_column_span_publish(self):
+        text_pdf(self.pdf, [line.replace('Row spacing', 'Column span') for line in LINES])
+        self.sha = hashlib.sha256(self.pdf.read_bytes()).hexdigest()
+        self.request['pdf']['sha256'] = self.sha
+        a = self.extraction()
+        for fact in a['facts']:
+            fact['source']['quote'] = fact['source']['quote'].replace('Row spacing', 'Column span')
+        for p in a['pads']:
+            p['x'], p['y'] = p['y'], p['x']
+            p['cite']['x'], p['cite']['y'] = p['cite']['y'], p['cite']['x']
+        report = self.accept(self.run_pair(a, copy.deepcopy(a)))
+        self.assertEqual((report['execution'], report['decision'], report['published']),
+                         ('ok', 'accepted', True), report['reason'])
+        self.assertEqual(report['coverage_gaps'], [])
+
+    def test_multidimension_quote_and_metadata_cannot_supply_another_facts_role(self):
+        a = self.extraction()
+        a['facts'][0]['source']['quote'] = '\n'.join(LINES[1:5])
+        a['facts'][0]['source']['locator'] = 'Pad pitch'
+        a['facts'][0]['conditions'] = 'pitch'
+        a['pads'][0]['x'] = '-0.60'
+        a['pads'][0]['cite']['x'] = cite('A', '-1')
+        report = self.accept(self.run_pair(a, copy.deepcopy(a)))
+        self.assertEqual((report['execution'], report['decision']), ('unsupported', 'unknown'))
+        self.assert_unpublished(report)
+        self.assertTrue(all(f['status'] == 'verified' for f in report['facts']))
+        self.assertIn(('1', 'x', 'unsupported_coordinate_scale'),
+                      {(g['number'], g['field'], g['reason']) for g in report['coverage_gaps']})
+
     def test_agent_failure_or_timeout_is_failed_and_never_accepted_alone(self):
         for failure in ('sandbox-timeout', 'timeout', 'failed', 'unavailable', OSError('harness vanished')):
             with self.subTest(failure=failure):
