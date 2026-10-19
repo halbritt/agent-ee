@@ -161,21 +161,27 @@ def fill(root, intent, manifest, refs, deviations, *, captures):
                     'limitations': ['Captured identity projection only; no suitability, stock, purchase or hardware acceptance.']}
 
 
-def configuration(source_root, *, intent, manifest, part_refs, deviations, captures, dependencies):
-    """One ordinary receipted producer preceding emit/annotate; intent is its only write."""
+def configuration(source_root, *, intent, manifest, part_refs, deviations, captures, dependencies, output=None):
+    """One ordinary receipted producer preceding emit/annotate; its bound intent is its only write.
+
+    By default the intent is filled in place. A distinct `output` keeps the read intent
+    writer-owned and makes the bound projection a coordinator output (pod campaigns)."""
     from .stage_receipts import validate_step
-    for path in (intent, manifest, part_refs, deviations, captures, *dependencies):
+    output = intent if output is None else output
+    for path in (intent, output, manifest, part_refs, deviations, captures, *dependencies):
         _path(path)
-    if intent in {manifest, part_refs, deviations, *dependencies}:
+    if output in {manifest, part_refs, deviations, *dependencies}:
         raise ValueError('binding source cannot be the output intent')
+    if intent in {manifest, part_refs, deviations, *dependencies}:
+        raise ValueError('binding source cannot be the read intent')
     return validate_step({'schema': 'agent-ee.stage-step/1', 'stage': 'schematic', 'step': 'binding-fill',
         'argv': ['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
                  '-m', 'agent_ee.binding_fill', '--intent', intent, '--manifest', manifest,
                  '--part-refs', part_refs, '--deviations', deviations, '--captures', captures],
         'mounts': [{'source': str(Path(source_root).absolute()), 'at': '/tool/agent-ee'}],
         'source': '/tool/agent-ee', 'version_argv': ['/usr/bin/python3', '--version'],
-        'inputs': sorted({manifest, part_refs, deviations, *dependencies}),
-        'writes': {intent: 'out/intent.json'}, 'artifacts': ['out/binding-fill.json'],
+        'inputs': sorted({manifest, part_refs, deviations, *dependencies} | ({intent} - {output})),
+        'writes': {output: 'out/intent.json'}, 'artifacts': ['out/binding-fill.json'],
         'adoptable_exits': [0], 'timeout_s': 120})
 
 
