@@ -1,0 +1,112 @@
+{
+  "done": false,
+  "limitations": [
+    "Eight core populated components only; power/protection, analog conditioning/reference, active antenna bias, support passives, programming pads and connectors remain incomplete.",
+    "Historical stock observations dated 2026-10-19 UTC; generation-day capture must be refreshed for a later actual generation. No purchase or availability guarantee.",
+    "The selected N8 module, NEO-M9N, LSM6DSO32 and MCP3204-BI/SL are rated through 85 C, conflicting with the specification requirement that parts be rated to at least 105 C. No waiver or substitute is accepted here.",
+    "TE 776228-1 is described as vertical by its manufacturer while the canonical specification says right-angle. Connector selection/mechanics remain unresolved; no part substitution or requirement change.",
+    "Both-source CAN custody comes from reviewed 175/176. Source-review qualification under149/204 remains unverified; materializing source files or CAD does not qualify the block.",
+    "Part identity and captured pad/pin parity do not establish engineering suitability, EMC, transient survival, sensor accuracy, native ERC/DRC, placement, routing, assembly/fab, firmware or bench acceptance.",
+    "CAN source property reconciliation must be an explicit reported adaptation before174 binding_fill: original blank Datasheet and extra Description/PN/LCSC_ext properties are not silently erased or accepted.",
+    "No complete intent, generated pod schematic/PCB, campaign or actual-pod acceptance is produced by this core recipe."
+  ],
+  "parts": [
+    {
+      "catalog": "stock-core-second/catalog.json",
+      "component": "mcu",
+      "datasheet_id": "esp32",
+      "datasheets": "datasheets-core/manifest.json",
+      "footprint": "RF_Module:ESP32-S3-WROOM-1",
+      "id": "mcu",
+      "lcsc": "C2913198",
+      "lib_id": "RF_Module:ESP32-S3-WROOM-1",
+      "reference": "U1",
+      "role": "mcu"
+    },
+    {
+      "catalog": "stock-core-second/catalog.json",
+      "component": "imu",
+      "datasheet_id": "lsm6dso32",
+      "datasheets": "datasheets-current/manifest.json",
+      "footprint": "Package_LGA:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y",
+      "id": "imu",
+      "lcsc": "C1864162",
+      "lib_id": "Pod:LSM6DSO32",
+      "reference": "U2",
+      "role": "imu"
+    },
+    {
+      "catalog": "stock-core-second/catalog.json",
+      "component": "gnss",
+      "datasheet_id": "neo-m9n",
+      "datasheets": "datasheets-core/manifest.json",
+      "footprint": "RF_GPS:ublox_NEO",
+      "id": "gnss",
+      "lcsc": "C5119087",
+      "lib_id": "RF_GPS:NEO-M9N",
+      "reference": "U3",
+      "role": "gnss"
+    },
+    {
+      "catalog": "stock-core-second/catalog.json",
+      "component": "adc",
+      "datasheet_id": "mcp3204",
+      "datasheets": "datasheets-core/manifest.json",
+      "footprint": "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm",
+      "id": "adc",
+      "lcsc": "C107363",
+      "lib_id": "Analog_ADC:MCP3204",
+      "reference": "U4",
+      "role": "adc"
+    },
+    {
+      "catalog": "stock-core-first/catalog.json",
+      "component": "can/U307",
+      "datasheet_id": "tja1051",
+      "datasheets": "datasheets-core/manifest.json",
+      "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+      "id": "can",
+      "lcsc": "C38695",
+      "lib_id": "Block_63616e_496e746572666163655f43414e5f4c494e:TJA1051T-3",
+      "reference": "U100",
+      "role": "can"
+    },
+    {
+      "catalog": "stock-core-first/catalog.json",
+      "component": "can/D4",
+      "datasheet_id": "pesd-tech-public",
+      "datasheets": "datasheets-current/manifest.json",
+      "footprint": "Package_TO_SOT_SMD:SOT-323_SC-70",
+      "id": "can-esd",
+      "lcsc": "C907839",
+      "lib_id": "Block_63616e_446576696365:D_TVS_x2_AAC",
+      "reference": "D100",
+      "role": "can-esd"
+    },
+    {
+      "catalog": "stock-core-first/catalog.json",
+      "component": "can/R9",
+      "datasheet_id": "termination",
+      "datasheets": "datasheets-current/manifest.json",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "id": "can-termination",
+      "lcsc": "C22787",
+      "lib_id": "Block_63616e_446576696365:R_Small",
+      "reference": "R100",
+      "role": "can-termination"
+    },
+    {
+      "catalog": "stock-can-decoupling/catalog.json",
+      "component": "can/C308",
+      "datasheet_id": "can-decoupling",
+      "datasheets": "datasheets-current/manifest.json",
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "id": "can-decoupling",
+      "lcsc": "C1525",
+      "lib_id": "Block_63616e_446576696365:C",
+      "reference": "C100",
+      "role": "can-decoupling"
+    }
+  ],
+  "scope": "AGENTEE-207 actual core-only selection inputs"
+}

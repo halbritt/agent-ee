@@ -1,0 +1,874 @@
+{
+  "components": [
+    {
+      "component": "mcu",
+      "evidence": [
+        {
+          "locator": "ESP32 module data sheet sections3 Pin Definitions and4 Boot Configurations",
+          "path": "datasheets-core/bcd526f54b8de686cec4db67219e36ea7ace50cddb0c92f3dfdac49cf99ffd2e.pdf",
+          "sha256": "27d71971da07c280c6068d08c74720d1a25b8f20cf8494dc1765bdd28d40d435"
+        }
+      ],
+      "lib_id": "RF_Module:ESP32-S3-WROOM-1",
+      "part_ref": "mcu",
+      "pins": [
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "1"
+        },
+        {
+          "disposition": "connect",
+          "name": "3V3",
+          "net": "+3V3",
+          "number": "2"
+        },
+        {
+          "disposition": "connect",
+          "name": "EN",
+          "net": "MCU_EN",
+          "number": "3"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO4",
+          "net": "TWAI_TX",
+          "number": "4"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO5",
+          "net": "TWAI_RX",
+          "number": "5"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO6",
+          "net": "IMU_INT1",
+          "number": "6"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO7",
+          "net": "GNSS_PPS",
+          "number": "7"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO15",
+          "net": null,
+          "number": "8"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO16",
+          "net": null,
+          "number": "9"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO17",
+          "net": "GNSS_RX_IN",
+          "number": "10"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO18",
+          "net": "GNSS_TX_OUT",
+          "number": "11"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO8",
+          "net": null,
+          "number": "12"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "USB_D-",
+          "net": null,
+          "number": "13"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "USB_D+",
+          "net": null,
+          "number": "14"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO3",
+          "net": null,
+          "number": "15"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO46",
+          "net": "GND",
+          "number": "16"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO9",
+          "net": "ADC_CS",
+          "number": "17"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO10",
+          "net": "IMU_CS",
+          "number": "18"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO11",
+          "net": "SPI_MOSI",
+          "number": "19"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO12",
+          "net": "SPI_SCK",
+          "number": "20"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO13",
+          "net": "SPI_MISO",
+          "number": "21"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO14",
+          "net": null,
+          "number": "22"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO21",
+          "net": null,
+          "number": "23"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO47",
+          "net": null,
+          "number": "24"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO48",
+          "net": null,
+          "number": "25"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO45",
+          "net": null,
+          "number": "26"
+        },
+        {
+          "disposition": "connect",
+          "name": "IO0",
+          "net": "MCU_BOOT",
+          "number": "27"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO35",
+          "net": null,
+          "number": "28"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO36",
+          "net": null,
+          "number": "29"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO37",
+          "net": null,
+          "number": "30"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO38",
+          "net": null,
+          "number": "31"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO39",
+          "net": null,
+          "number": "32"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO40",
+          "net": null,
+          "number": "33"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO41",
+          "net": null,
+          "number": "34"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO42",
+          "net": null,
+          "number": "35"
+        },
+        {
+          "disposition": "connect",
+          "name": "RXD0",
+          "net": "POD_UART_RX",
+          "number": "36"
+        },
+        {
+          "disposition": "connect",
+          "name": "TXD0",
+          "net": "POD_UART_TX",
+          "number": "37"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO2",
+          "net": null,
+          "number": "38"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "IO1",
+          "net": null,
+          "number": "39"
+        },
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "40"
+        },
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "41"
+        }
+      ],
+      "reference": "U1",
+      "source": "ESP32 module data sheet sections3 Pin Definitions and4 Boot Configurations"
+    },
+    {
+      "component": "imu",
+      "evidence": [
+        {
+          "locator": "LSM6DSO32 data sheet section4.1, Table2 device pin description",
+          "path": "datasheets-current/fce1bf36cb460a31e2d1f3ede054b5d2e68f07b8f9039cb09062522e9bcf4e2c.pdf",
+          "sha256": "d1776336f5060da06c4fa4c3aac293372e20cffa4f9d72fe3296b9a56ed6c0b7"
+        }
+      ],
+      "lib_id": "Pod:LSM6DSO32",
+      "part_ref": "imu",
+      "pins": [
+        {
+          "disposition": "connect",
+          "name": "SDO",
+          "net": "SPI_MISO",
+          "number": "1"
+        },
+        {
+          "disposition": "connect",
+          "name": "SDx",
+          "net": "GND",
+          "number": "2"
+        },
+        {
+          "disposition": "connect",
+          "name": "SCx",
+          "net": "GND",
+          "number": "3"
+        },
+        {
+          "disposition": "connect",
+          "name": "INT1",
+          "net": "IMU_INT1",
+          "number": "4"
+        },
+        {
+          "disposition": "connect",
+          "name": "VDDIO",
+          "net": "+3V3",
+          "number": "5"
+        },
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "6"
+        },
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "7"
+        },
+        {
+          "disposition": "connect",
+          "name": "VDD",
+          "net": "+3V3",
+          "number": "8"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "INT2",
+          "net": null,
+          "number": "9"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "NC",
+          "net": null,
+          "number": "10"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "NC",
+          "net": null,
+          "number": "11"
+        },
+        {
+          "disposition": "connect",
+          "name": "CS",
+          "net": "IMU_CS",
+          "number": "12"
+        },
+        {
+          "disposition": "connect",
+          "name": "SCL",
+          "net": "SPI_SCK",
+          "number": "13"
+        },
+        {
+          "disposition": "connect",
+          "name": "SDA",
+          "net": "SPI_MOSI",
+          "number": "14"
+        }
+      ],
+      "reference": "U2",
+      "source": "LSM6DSO32 data sheet section4.1, Table2 device pin description"
+    },
+    {
+      "component": "gnss",
+      "evidence": [
+        {
+          "locator": "NEO-M9N data sheet section2 Pin definition; integration manual R10 pp30-33 and69-71 for unused pins",
+          "path": "datasheets-core/77a91ad2ec0cb517250cf68189d10140001682ec6b9c40cc264afb36ff9d972e.pdf",
+          "sha256": "e21b35c1a4fd04f353e298a3c3c411c08e683a318d87ad3af9f570da40a40150"
+        },
+        {
+          "locator": "R10 pp30-33,69-71 and73: module internal RF DC block",
+          "path": "reference/neo-integration-manual.pdf",
+          "sha256": "fd4fcb8e8db2da98515f168b21c7adb9e5b8869380ecc0aed430897ac2f91e4b"
+        }
+      ],
+      "lib_id": "RF_GPS:NEO-M9N",
+      "part_ref": "gnss",
+      "pins": [
+        {
+          "disposition": "no_connect",
+          "name": "~{SAFEBOOT}",
+          "net": null,
+          "number": "1"
+        },
+        {
+          "disposition": "connect",
+          "name": "D_SEL",
+          "net": "+3V3",
+          "number": "2"
+        },
+        {
+          "disposition": "connect",
+          "name": "TIMEPULSE",
+          "net": "GNSS_PPS",
+          "number": "3"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "EXTINT",
+          "net": null,
+          "number": "4"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "USB_DM",
+          "net": null,
+          "number": "5"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "USB_DP",
+          "net": null,
+          "number": "6"
+        },
+        {
+          "disposition": "connect",
+          "name": "VDD_USB",
+          "net": "GND",
+          "number": "7"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "~{RESET}",
+          "net": null,
+          "number": "8"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "VCC_RF",
+          "net": null,
+          "number": "9"
+        },
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "10"
+        },
+        {
+          "disposition": "connect",
+          "name": "RF_IN",
+          "net": "POD_GNSS_RF",
+          "number": "11"
+        },
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "12"
+        },
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "13"
+        },
+        {
+          "disposition": "connect",
+          "name": "LNA_EN",
+          "net": "GNSS_LNA_EN",
+          "number": "14"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "RESERVED",
+          "net": null,
+          "number": "15"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "RESERVED",
+          "net": null,
+          "number": "16"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "RESERVED",
+          "net": null,
+          "number": "17"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "SDA/~{SPI_CS}",
+          "net": null,
+          "number": "18"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "SCL/SPI_CLK",
+          "net": null,
+          "number": "19"
+        },
+        {
+          "disposition": "connect",
+          "name": "TXD/SPI_MISO",
+          "net": "GNSS_TX_OUT",
+          "number": "20"
+        },
+        {
+          "disposition": "connect",
+          "name": "RXD/SPI_MOSI",
+          "net": "GNSS_RX_IN",
+          "number": "21"
+        },
+        {
+          "disposition": "connect",
+          "name": "V_BCKP",
+          "net": "+3V3",
+          "number": "22"
+        },
+        {
+          "disposition": "connect",
+          "name": "VCC",
+          "net": "+3V3",
+          "number": "23"
+        },
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "24"
+        }
+      ],
+      "reference": "U3",
+      "source": "NEO-M9N data sheet section2 Pin definition; integration manual R10 pp30-33 and69-71 for unused pins"
+    },
+    {
+      "component": "adc",
+      "evidence": [
+        {
+          "locator": "MCP3204 data sheet pin diagram and section3 Pin Descriptions",
+          "path": "datasheets-core/b0cadbda0fc05c619ebdfee6b96c09d99814bba70e534c0fdbbfe7ffe3f241ac.pdf",
+          "sha256": "89bc1e17c35e2bb1c7b8fbf0b775b3729ce9fe4d27f7e9c052a774757afc0c20"
+        }
+      ],
+      "lib_id": "Analog_ADC:MCP3204",
+      "part_ref": "adc",
+      "pins": [
+        {
+          "disposition": "connect",
+          "name": "CH0",
+          "net": "ADC_AIN0",
+          "number": "1"
+        },
+        {
+          "disposition": "connect",
+          "name": "CH1",
+          "net": "ADC_AIN1",
+          "number": "2"
+        },
+        {
+          "disposition": "connect",
+          "name": "CH2",
+          "net": "ADC_AIN2",
+          "number": "3"
+        },
+        {
+          "disposition": "connect",
+          "name": "CH3",
+          "net": "ADC_AIN3",
+          "number": "4"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "NC",
+          "net": null,
+          "number": "5"
+        },
+        {
+          "disposition": "no_connect",
+          "name": "NC",
+          "net": null,
+          "number": "6"
+        },
+        {
+          "disposition": "connect",
+          "name": "DGND",
+          "net": "GND",
+          "number": "7"
+        },
+        {
+          "disposition": "connect",
+          "name": "~{CS}/SHDN",
+          "net": "ADC_CS",
+          "number": "8"
+        },
+        {
+          "disposition": "connect",
+          "name": "Din",
+          "net": "SPI_MOSI",
+          "number": "9"
+        },
+        {
+          "disposition": "connect",
+          "name": "Dout",
+          "net": "SPI_MISO",
+          "number": "10"
+        },
+        {
+          "disposition": "connect",
+          "name": "CLK",
+          "net": "SPI_SCK",
+          "number": "11"
+        },
+        {
+          "disposition": "connect",
+          "name": "AGND",
+          "net": "GND",
+          "number": "12"
+        },
+        {
+          "disposition": "connect",
+          "name": "Vref",
+          "net": "SENSOR_REF_2V5",
+          "number": "13"
+        },
+        {
+          "disposition": "connect",
+          "name": "Vdd",
+          "net": "+3V3",
+          "number": "14"
+        }
+      ],
+      "reference": "U4",
+      "source": "MCP3204 data sheet pin diagram and section3 Pin Descriptions"
+    },
+    {
+      "component": "can/U307",
+      "evidence": [
+        {
+          "locator": "NXP TJA1051 data sheet section6 Pinning; source176 exact selected native connections",
+          "path": "datasheets-core/7cdf4f56dd2ee4a581372db4f54b0460f24080b359e20336f56a93bcecfc0715.pdf",
+          "sha256": "6637cd500dda3c1c951ce29bed7fe909f11f9a3bef64b096dbb486827add9f11"
+        }
+      ],
+      "lib_id": "Block_63616e_496e746572666163655f43414e5f4c494e:TJA1051T-3",
+      "part_ref": "can",
+      "pins": [
+        {
+          "disposition": "connect",
+          "name": "TXD",
+          "net": "TWAI_TX",
+          "number": "1"
+        },
+        {
+          "disposition": "connect",
+          "name": "GND",
+          "net": "GND",
+          "number": "2"
+        },
+        {
+          "disposition": "connect",
+          "name": "VCC",
+          "net": "+5V_CAN",
+          "number": "3"
+        },
+        {
+          "disposition": "connect",
+          "name": "RXD",
+          "net": "TWAI_RX",
+          "number": "4"
+        },
+        {
+          "disposition": "connect",
+          "name": "VIO",
+          "net": "+3V3",
+          "number": "5"
+        },
+        {
+          "disposition": "connect",
+          "name": "CANL",
+          "net": "POD_CAN_N",
+          "number": "6"
+        },
+        {
+          "disposition": "connect",
+          "name": "CANH",
+          "net": "POD_CAN_P",
+          "number": "7"
+        },
+        {
+          "disposition": "connect",
+          "name": "S",
+          "net": "GND",
+          "number": "8"
+        }
+      ],
+      "reference": "U100",
+      "source": "NXP TJA1051 data sheet section6 Pinning; source176 exact selected native connections"
+    },
+    {
+      "component": "can/D4",
+      "evidence": [
+        {
+          "locator": "TECH PUBLIC supplier PDF pp1-2 pin topology; source176 exact selected native connections",
+          "path": "datasheets-current/a02be00fc3187b19989ad92a989faf04a320a11231c2d8ccdd017eda6bd19883.pdf",
+          "sha256": "b1cae7e9b1903cc2b5029dc600f48ddbbd920dfa8be4fce4977faf13631878e3"
+        }
+      ],
+      "lib_id": "Block_63616e_446576696365:D_TVS_x2_AAC",
+      "part_ref": "can-esd",
+      "pins": [
+        {
+          "disposition": "connect",
+          "name": "A1",
+          "net": "POD_CAN_N",
+          "number": "1"
+        },
+        {
+          "disposition": "connect",
+          "name": "A2",
+          "net": "POD_CAN_P",
+          "number": "2"
+        },
+        {
+          "disposition": "connect",
+          "name": "common",
+          "net": "GND",
+          "number": "3"
+        }
+      ],
+      "reference": "D100",
+      "source": "TECH PUBLIC supplier PDF pp1-2 pin topology; source176 exact selected native connections"
+    },
+    {
+      "component": "can/R9",
+      "evidence": [
+        {
+          "locator": "Source176 PSU R9 two-terminal native netlist; supplier exact resistance coding",
+          "path": "datasheets-current/e445b401ee1a15a7c907976a895e8588445660220d8a0dd6d71b13d0e31ae9b8.pdf",
+          "sha256": "11cd644d5d8a34a6d12775afb80bf58d8fc11f0c3b700dbd0f7a59942ceaa5ef"
+        }
+      ],
+      "lib_id": "Block_63616e_446576696365:R_Small",
+      "part_ref": "can-termination",
+      "pins": [
+        {
+          "disposition": "connect",
+          "name": "",
+          "net": "POD_CAN_P",
+          "number": "1"
+        },
+        {
+          "disposition": "connect",
+          "name": "",
+          "net": "POD_CAN_N",
+          "number": "2"
+        }
+      ],
+      "reference": "R100",
+      "source": "Source176 PSU R9 two-terminal native netlist; supplier exact resistance coding"
+    },
+    {
+      "component": "can/C308",
+      "evidence": [
+        {
+          "locator": "Source176 wbo1 C308 two-terminal native netlist; supplier exact capacitor code",
+          "path": "datasheets-current/6b1f4a5c0e27cb364413b0026a3a3dd89a5e667554df78583448d756f907cc4c.pdf",
+          "sha256": "96baebe4bd0ce363e87be28b5b003f511f1502e084a6fc4f02333ded56c808f6"
+        }
+      ],
+      "lib_id": "Block_63616e_446576696365:C",
+      "part_ref": "can-decoupling",
+      "pins": [
+        {
+          "disposition": "connect",
+          "name": "",
+          "net": "+5V_CAN",
+          "number": "1"
+        },
+        {
+          "disposition": "connect",
+          "name": "",
+          "net": "GND",
+          "number": "2"
+        }
+      ],
+      "reference": "C100",
+      "source": "Source176 wbo1 C308 two-terminal native netlist; supplier exact capacitor code"
+    }
+  ],
+  "done": false,
+  "harness_boundaries": [
+    {
+      "net": "POD_CAN_P",
+      "pin": "1"
+    },
+    {
+      "net": "POD_CAN_N",
+      "pin": "2"
+    },
+    {
+      "net": "POD_12V_IN",
+      "pin": "3"
+    },
+    {
+      "net": "GND",
+      "pin": "4"
+    },
+    {
+      "net": "POD_5V_SENSOR",
+      "pin": "5"
+    },
+    {
+      "net": "POD_FRONT_FORK_SIGNAL",
+      "pin": "6"
+    },
+    {
+      "net": "POD_SENSOR_RETURN",
+      "pin": "7"
+    },
+    {
+      "net": "POD_5V_SENSOR",
+      "pin": "8"
+    },
+    {
+      "net": "POD_REAR_SHOCK_SIGNAL",
+      "pin": "9"
+    },
+    {
+      "net": "POD_SENSOR_RETURN",
+      "pin": "10"
+    },
+    {
+      "net": "POD_5V_SENSOR",
+      "pin": "11"
+    },
+    {
+      "net": "POD_FRONT_BRAKE_SIGNAL",
+      "pin": "12"
+    },
+    {
+      "net": "POD_SENSOR_RETURN",
+      "pin": "13"
+    },
+    {
+      "net": "POD_5V_SENSOR",
+      "pin": "14"
+    },
+    {
+      "net": "POD_REAR_BRAKE_SIGNAL",
+      "pin": "15"
+    },
+    {
+      "net": "POD_SENSOR_RETURN",
+      "pin": "16"
+    }
+  ],
+  "harness_no_connects": [
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23"
+  ],
+  "notes": [
+    "GNSS_RX_IN is named for receiver input: MCU GPIO17/module10 to GNSS RXD21; GNSS_TX_OUT is receiver output: GNSS TXD20 to MCU GPIO18/module11.",
+    "SPI1 here is a design bus name only: GPIO12/module20 SCK, GPIO11/module19 MOSI, GPIO13/module21 MISO, distinct CS GPIO10/module18 IMU and GPIO9/module17 ADC. Firmware must configure the GPIO matrix; no firmware is supplied.",
+    "MCU EN requires pull-up/RC and UART pogo access; BOOT GPIO0 requires pull-up/pogo. GPIO46/module16 is grounded to select documented download mode jointly with BOOT. GPIO45 is unused with its internal pull-down; GPIO3 is floating and does not select JTAG with the default unprogrammed eFuses; all remaining unused GPIO pads intentionally open.",
+    "IMU SDx/SCx tied GND for primary SPI mode, INT2 open, reserved NC10/11 open; VDD and VDDIO need local decoupling not yet included.",
+    "GNSS D_SEL high; unused USB D+/D- open and V_USB ground; V_BCKP tied VCC; SAFEBOOT_N, RESET_N, EXTINT, reserved15-17 and unused I2C open. VCC_RF open; LNA_EN feeds the proposed external current limiter from3V3. Final antenna circuit not yet adopted.",
+    "ADC_AIN0-3 and SENSOR_REF_2V5 are analog-front-end output boundaries, not direct 5V harness nets. MCP3204 NC5/6 open. Final acquisition/settling/protection requires proposed buffer/divider/filter adoption.",
+    "CAN S is explicitly GND via U100.8, not an independent MCU signal. Source VIO +3V3_WBO1 maps to +3V3. Source +5V maps to dedicated +5V_CAN. R100 remains120 ohms, not the60-ohm adaptation test.",
+    "Core no_connect declarations record design intent; they have not yet passed native ERC or electrical review.",
+    "External net names align with frozen188c io-map.csv at1f89cff: POD_CAN_H/L, POD_12V_IN, POD_5V_SENSOR, POD_SENSOR_RETURN, four POD_*_SIGNAL nets and POD_UART_TX/RX. GNSS RF_IN11 uses POD_GNSS_RF at the SMA/bias-tee conductor: the captured integration manual p73 states the module contains its own DC block. The bias supply network and SMA component remain incomplete.",
+    "Explicit naming adaptation: source CAN_H/POD_CAN_H at J1.1/U100.7 becomes native POD_CAN_P; source CAN_L/POD_CAN_L at J1.2/U100.6 becomes native POD_CAN_N. Logical signal names remain CAN_H/CAN_L. The original188 CSV is preserved; only its two CAN Net fields change in the derived actual-design CSV. Pair naming enables existing detection, not numerical routing qualification."
+  ],
+  "scope": "Explicit core design assignment, not emitted/native connectivity proof"
+}

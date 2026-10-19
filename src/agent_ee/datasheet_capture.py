@@ -47,7 +47,9 @@ def _fetch(url, seconds, max_bytes):
         validate_url(url)
         # Ignore ambient proxy credentials/configuration; only explicit URLs travel.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _Redirects())
-        with opener.open(url, timeout=seconds) as response:
+        request = urllib.request.Request(url, headers={
+            'User-Agent': 'agent-ee/1 (public datasheet acquisition)'})
+        with opener.open(request, timeout=seconds) as response:
             record['final_url'] = validate_url(response.geturl())
             raw = response.read(max_bytes + 1)
             if len(raw) > max_bytes:

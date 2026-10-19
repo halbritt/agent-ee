@@ -1,0 +1,439 @@
+{
+  "files": [
+    {
+      "origin": "Existing captured canonical requirement or reviewed169 declaration",
+      "path": "cad/footprint-declarations.json",
+      "root": "repo",
+      "sha256": "5c0e58d33ad5c61ea9086cd98ce7b359eb9318ab37523c625aa1764015d2c54a",
+      "source": "fixtures/telemetry-pod/esp32-s3-wroom-1/footprint-declarations.json"
+    },
+    {
+      "origin": "Both pinned source instances from reviewed175/176; external only, source qualification remains unverified",
+      "path": "can-source/block/block-contract.json",
+      "root": "flat",
+      "sha256": "00d3f5e9a1c28debaace20258a8e4903b26db6ee41928b5283b09d30aa09afe1",
+      "source": "positive/block/block-contract.json"
+    },
+    {
+      "origin": "Both pinned source instances from reviewed175/176; external only, source qualification remains unverified",
+      "path": "can-source/block/block.json",
+      "root": "flat",
+      "sha256": "783d449db7a9d9ae95d43e503f90ba33c04877823b0c462d57576f039dca505c",
+      "source": "positive/block/block.json"
+    },
+    {
+      "origin": "Both pinned source instances from reviewed175/176; external only, source qualification remains unverified",
+      "path": "can-source/block/connectivity.json",
+      "root": "flat",
+      "sha256": "587fd3388cee6f00dbcd5afa203938fe071af348409e847accb39ad269cdb565",
+      "source": "positive/block/connectivity.json"
+    },
+    {
+      "origin": "Both pinned source instances from reviewed175/176; external only, source qualification remains unverified",
+      "path": "can-source/block/interface.json",
+      "root": "flat",
+      "sha256": "763c33336aee28ee381b0020cdbd06ecd1f73637b77d6e8ddf8683d6d23d22a6",
+      "source": "positive/block/interface.json"
+    },
+    {
+      "origin": "Both pinned source instances from reviewed175/176; external only, source qualification remains unverified",
+      "path": "can-source/block/parts.json",
+      "root": "flat",
+      "sha256": "3420b95b765b1fcb915729d361c630cd203f15fcc2d195f554b0d5a45b8990e9",
+      "source": "positive/block/parts.json"
+    },
+    {
+      "origin": "Both pinned source instances from reviewed175/176; external only, source qualification remains unverified",
+      "path": "can-source/block/requirements.md",
+      "root": "flat",
+      "sha256": "4d666baa949b2800a55891a80bcc66a45612fc0d880dafa7174b785c09a79e87",
+      "source": "positive/block/requirements.md"
+    },
+    {
+      "origin": "Both pinned source instances from reviewed175/176; external only, source qualification remains unverified",
+      "path": "can-source/block/sheets/psu.kicad_sch",
+      "root": "flat",
+      "sha256": "56b2f632b74713032e0434dd8cedae496b24c5e05ee5d71b4f5e7e39976f5dcb",
+      "source": "positive/block/sheets/psu.kicad_sch"
+    },
+    {
+      "origin": "Both pinned source instances from reviewed175/176; external only, source qualification remains unverified",
+      "path": "can-source/block/sheets/wbo1.kicad_sch",
+      "root": "flat",
+      "sha256": "ec97cadaadee84d832538dab36dd6d0ce2335169b13834b4cda03fa0128c7c73",
+      "source": "positive/block/sheets/wbo1.kicad_sch"
+    },
+    {
+      "origin": "Reviewed176 source composition evidence; fixture interface bindings are not an actual pod interface",
+      "path": "can-source/composition.json",
+      "root": "flat",
+      "sha256": "de2c0bcd506a2a33bd191f3db4c425306f2c934866b09f23e2f08e11d2e43279",
+      "source": "positive/composition.json"
+    },
+    {
+      "origin": "Reviewed176 control only; preserve source-to-delivered reference map without claiming actual pod joins",
+      "path": "can-source/control-block-instances.json",
+      "root": "flat",
+      "sha256": "489a394aefe9cb42299baa0c93d8b7858330aab035fc8cc0f4907b0efae5664b",
+      "source": "block-instances.json"
+    },
+    {
+      "origin": "Reviewed176 source composition evidence; fixture interface bindings are not an actual pod interface",
+      "path": "can-source/instance.json",
+      "root": "flat",
+      "sha256": "4b5e18fa353121280416ee115511f34ba3568ee79f4f9ca91618fa7e7ea2cf09",
+      "source": "positive/instance.json"
+    },
+    {
+      "origin": "Reviewed176 source composition evidence; fixture interface bindings are not an actual pod interface",
+      "path": "can-source/interface.json",
+      "root": "flat",
+      "sha256": "a282f95be5ae19e8f35410e50fff7e63422d3d49e63cf3c5871130babfc8cfa6",
+      "source": "positive/interface.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-core/77a91ad2ec0cb517250cf68189d10140001682ec6b9c40cc264afb36ff9d972e.pdf",
+      "root": "core",
+      "sha256": "e21b35c1a4fd04f353e298a3c3c411c08e683a318d87ad3af9f570da40a40150",
+      "source": "datasheets-core/77a91ad2ec0cb517250cf68189d10140001682ec6b9c40cc264afb36ff9d972e.pdf"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-core/7cdf4f56dd2ee4a581372db4f54b0460f24080b359e20336f56a93bcecfc0715.pdf",
+      "root": "core",
+      "sha256": "6637cd500dda3c1c951ce29bed7fe909f11f9a3bef64b096dbb486827add9f11",
+      "source": "datasheets-core/7cdf4f56dd2ee4a581372db4f54b0460f24080b359e20336f56a93bcecfc0715.pdf"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-core/b0cadbda0fc05c619ebdfee6b96c09d99814bba70e534c0fdbbfe7ffe3f241ac.pdf",
+      "root": "core",
+      "sha256": "89bc1e17c35e2bb1c7b8fbf0b775b3729ce9fe4d27f7e9c052a774757afc0c20",
+      "source": "datasheets-core/b0cadbda0fc05c619ebdfee6b96c09d99814bba70e534c0fdbbfe7ffe3f241ac.pdf"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-core/bcd526f54b8de686cec4db67219e36ea7ace50cddb0c92f3dfdac49cf99ffd2e.pdf",
+      "root": "core",
+      "sha256": "27d71971da07c280c6068d08c74720d1a25b8f20cf8494dc1765bdd28d40d435",
+      "source": "datasheets-core/bcd526f54b8de686cec4db67219e36ea7ace50cddb0c92f3dfdac49cf99ffd2e.pdf"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-core/manifest.json",
+      "root": "core",
+      "sha256": "15ac9ebd556e3e6de2a9ac8a7141fe8acf066c9382d421b60eb18e1f538a9ca4",
+      "source": "datasheets-core/manifest.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-current/6b1f4a5c0e27cb364413b0026a3a3dd89a5e667554df78583448d756f907cc4c.pdf",
+      "root": "core",
+      "sha256": "96baebe4bd0ce363e87be28b5b003f511f1502e084a6fc4f02333ded56c808f6",
+      "source": "datasheets-current/6b1f4a5c0e27cb364413b0026a3a3dd89a5e667554df78583448d756f907cc4c.pdf"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-current/a02be00fc3187b19989ad92a989faf04a320a11231c2d8ccdd017eda6bd19883.pdf",
+      "root": "core",
+      "sha256": "b1cae7e9b1903cc2b5029dc600f48ddbbd920dfa8be4fce4977faf13631878e3",
+      "source": "datasheets-current/a02be00fc3187b19989ad92a989faf04a320a11231c2d8ccdd017eda6bd19883.pdf"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-current/e445b401ee1a15a7c907976a895e8588445660220d8a0dd6d71b13d0e31ae9b8.pdf",
+      "root": "core",
+      "sha256": "11cd644d5d8a34a6d12775afb80bf58d8fc11f0c3b700dbd0f7a59942ceaa5ef",
+      "source": "datasheets-current/e445b401ee1a15a7c907976a895e8588445660220d8a0dd6d71b13d0e31ae9b8.pdf"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-current/fce1bf36cb460a31e2d1f3ede054b5d2e68f07b8f9039cb09062522e9bcf4e2c.pdf",
+      "root": "core",
+      "sha256": "d1776336f5060da06c4fa4c3aac293372e20cffa4f9d72fe3296b9a56ed6c0b7",
+      "source": "datasheets-current/fce1bf36cb460a31e2d1f3ede054b5d2e68f07b8f9039cb09062522e9bcf4e2c.pdf"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "datasheets-current/manifest.json",
+      "root": "core",
+      "sha256": "6830ffa1feba3935d77e8bbffaad745a26c435d1e9662d3c4fd4b5d2312d8505",
+      "source": "datasheets-current/manifest.json"
+    },
+    {
+      "origin": "Installed stock footprint; external only; exact captured native parity required",
+      "path": "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
+      "root": "kicad",
+      "sha256": "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5",
+      "source": "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod"
+    },
+    {
+      "origin": "Installed stock footprint; external only; exact captured native parity required",
+      "path": "footprints/Package_LGA.pretty/LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y.kicad_mod",
+      "root": "kicad",
+      "sha256": "0484532e7987014dc4fb9505de57868e23da41a6c5f10673c4e221600d489ace",
+      "source": "footprints/Package_LGA.pretty/LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y.kicad_mod"
+    },
+    {
+      "origin": "Installed stock footprint; external only; exact captured native parity required",
+      "path": "footprints/Package_SO.pretty/SOIC-14_3.9x8.7mm_P1.27mm.kicad_mod",
+      "root": "kicad",
+      "sha256": "a885b619b22880c9559522d2bf865b059d80453b95a98defc9e6ceef284da1fc",
+      "source": "footprints/Package_SO.pretty/SOIC-14_3.9x8.7mm_P1.27mm.kicad_mod"
+    },
+    {
+      "origin": "Installed stock footprint; external only; exact captured native parity required",
+      "path": "footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod",
+      "root": "kicad",
+      "sha256": "074ecb2092b24fa4b4b9cdd7c926fc587b0d7d6d21e7341e57935fd42d36894f",
+      "source": "footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod"
+    },
+    {
+      "origin": "Installed stock footprint; external only; exact captured native parity required",
+      "path": "footprints/Package_TO_SOT_SMD.pretty/SOT-323_SC-70.kicad_mod",
+      "root": "kicad",
+      "sha256": "74e071f8714739c788536a0b053956a4f21489ee5173faf675e1a7ade4445ba8",
+      "source": "footprints/Package_TO_SOT_SMD.pretty/SOT-323_SC-70.kicad_mod"
+    },
+    {
+      "origin": "Installed stock footprint; external only; exact captured native parity required",
+      "path": "footprints/RF_GPS.pretty/ublox_NEO.kicad_mod",
+      "root": "kicad",
+      "sha256": "20314cedf3a482365ba836836824ae90fbdf35daa32fcc4297283f4ab558ec5e",
+      "source": "footprints/RF_GPS.pretty/ublox_NEO.kicad_mod"
+    },
+    {
+      "origin": "Installed stock footprint; external only; exact captured native parity required",
+      "path": "footprints/RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod",
+      "root": "kicad",
+      "sha256": "d0cfbb31fef0c47396c0d061ec5a3bff60f0567d8d4ea8dd4769c84f52bd656f",
+      "source": "footprints/RF_Module.pretty/ESP32-S3-WROOM-1.kicad_mod"
+    },
+    {
+      "origin": "Installed stock footprint; external only; exact captured native parity required",
+      "path": "footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod",
+      "root": "kicad",
+      "sha256": "7190ac4a00125b807e54129ef0d87d87f2a658eeb74d025a7028203419b09f23",
+      "source": "footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod"
+    },
+    {
+      "origin": "Symbol capture provenance",
+      "path": "provenance/Analog_ADC.capture.json",
+      "root": "core",
+      "sha256": "978939981efe6075cab7e57117c33c76f99f20e2ba9a5043aafa4c9a165f25db",
+      "source": "cad/Analog_ADC.capture.json"
+    },
+    {
+      "origin": "Symbol capture provenance",
+      "path": "provenance/RF_GPS.capture.json",
+      "root": "core",
+      "sha256": "b5a6799c7a458e643cb424f7f9409874e2d6bb2415a73aafc28c98e638f04a7a",
+      "source": "cad/RF_GPS.capture.json"
+    },
+    {
+      "origin": "Symbol capture provenance",
+      "path": "provenance/RF_Module.capture.json",
+      "root": "core",
+      "sha256": "17138e9e13d3f05d1cf84272fba9597f98a3fbb3c6f7f75f78f19e972dbebd16",
+      "source": "cad/RF_Module.capture.json"
+    },
+    {
+      "origin": "Entire original partial acquisition batch retained for GNSS manual custody; other entries are not adopted parts",
+      "path": "reference/acquisition/2b09978c5a36002dc49ca4300f119423ba99e96ccefbd1cd5eae582fb1690617.pdf",
+      "root": "power",
+      "sha256": "f9b1af285622c0cf1a5991f9641a6e64c5e6d899e52cc0b1632808742019579f",
+      "source": "acquisition/2b09978c5a36002dc49ca4300f119423ba99e96ccefbd1cd5eae582fb1690617.pdf"
+    },
+    {
+      "origin": "Entire original partial acquisition batch retained for GNSS manual custody; other entries are not adopted parts",
+      "path": "reference/acquisition/31757ce81cf7a7b021f5f859736b428c4a5e5003a27545549aab9b9ac86f03a4.pdf",
+      "root": "power",
+      "sha256": "c175a1861cb8e09cc46b01fa9dd3e307052ccd55d5fef9584fbbc920de12a3e4",
+      "source": "acquisition/31757ce81cf7a7b021f5f859736b428c4a5e5003a27545549aab9b9ac86f03a4.pdf"
+    },
+    {
+      "origin": "Entire original partial acquisition batch retained for GNSS manual custody; other entries are not adopted parts",
+      "path": "reference/acquisition/402991ee7566b52693f3ab3400d2e42d878be51ba4de90e8cac049be6104f524.pdf",
+      "root": "power",
+      "sha256": "fd4fcb8e8db2da98515f168b21c7adb9e5b8869380ecc0aed430897ac2f91e4b",
+      "source": "acquisition/402991ee7566b52693f3ab3400d2e42d878be51ba4de90e8cac049be6104f524.pdf"
+    },
+    {
+      "origin": "Entire original partial acquisition batch retained for GNSS manual custody; other entries are not adopted parts",
+      "path": "reference/acquisition/7438702fe3f737612ed5c8f133f60b81eda9c68e3b74ddeffe913858f59c4892.pdf",
+      "root": "power",
+      "sha256": "88e453700cea2b263cdb5b44fce1e883e0f6d3b975457f879ac1423eeea42071",
+      "source": "acquisition/7438702fe3f737612ed5c8f133f60b81eda9c68e3b74ddeffe913858f59c4892.pdf"
+    },
+    {
+      "origin": "Entire original partial acquisition batch retained for GNSS manual custody; other entries are not adopted parts",
+      "path": "reference/acquisition/cb8ebe03bcc7860306c5e291bd6d892cb951f20cf5f21f15ecbcd8efd3029dd1.pdf",
+      "root": "power",
+      "sha256": "c5be6bd4f8a480f1dc9a6bea9469e7ab8867a0c83341c1a1f9c153bc015db09b",
+      "source": "acquisition/cb8ebe03bcc7860306c5e291bd6d892cb951f20cf5f21f15ecbcd8efd3029dd1.pdf"
+    },
+    {
+      "origin": "Entire original partial acquisition batch retained for GNSS manual custody; other entries are not adopted parts",
+      "path": "reference/acquisition/manifest.json",
+      "root": "power",
+      "sha256": "c483188c50c6fab8f73c603dbb18128382cbe4aa11e60d17e507c3027067e530",
+      "source": "acquisition/manifest.json"
+    },
+    {
+      "origin": "Real manufacturer manual bytes captured by parallel207 research; acquisition manifest retained at source",
+      "path": "reference/neo-integration-manual.pdf",
+      "root": "power",
+      "sha256": "fd4fcb8e8db2da98515f168b21c7adb9e5b8869380ecc0aed430897ac2f91e4b",
+      "source": "acquisition/402991ee7566b52693f3ab3400d2e42d878be51ba4de90e8cac049be6104f524.pdf"
+    },
+    {
+      "origin": "Verbatim pinned188c fixture from git commit1f89cff8026f07551af6c3568b151ab356a986ee; source never modified",
+      "path": "requirements/io-map.source.csv",
+      "root": "core",
+      "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+      "source": "io-source/io-map.csv"
+    },
+    {
+      "origin": "Existing captured canonical requirement or reviewed169 declaration",
+      "path": "requirements/spec-record.json",
+      "root": "repo",
+      "sha256": "58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250",
+      "source": "fixtures/telemetry-pod/spec-record.json"
+    },
+    {
+      "origin": "Existing captured canonical requirement or reviewed169 declaration",
+      "path": "requirements/spec.md",
+      "root": "repo",
+      "sha256": "09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493",
+      "source": "fixtures/telemetry-pod/spec.md"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-can-decoupling/catalog.json",
+      "root": "core",
+      "sha256": "73692d483cf0059fabec0a0403c2a47d0893a016795b4e541cf241fd681f4795",
+      "source": "stock-can-decoupling/catalog.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-can-decoupling/responses/C1525.json",
+      "root": "core",
+      "sha256": "31ce061c74ddef074ccdacc8c4e10e9112892b6630b64dd1e78178ca7fe6c502",
+      "source": "stock-can-decoupling/responses/C1525.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-core-first/catalog.json",
+      "root": "core",
+      "sha256": "33a8e8bac3e9fc8cb398cd7dc3f8998b706bdbfb3e057e88e85c5110a287610c",
+      "source": "stock-core-first/catalog.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-core-first/responses/C22787.json",
+      "root": "core",
+      "sha256": "b031c687e4859470f5aecf6d38308b4b44715964f1af1cb1e6da4a236639a302",
+      "source": "stock-core-first/responses/C22787.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-core-first/responses/C38695.json",
+      "root": "core",
+      "sha256": "78bd313507745af6e58256bdf4e141b5239adfa228d43bfeb5374a6a60f59aa3",
+      "source": "stock-core-first/responses/C38695.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-core-first/responses/C907839.json",
+      "root": "core",
+      "sha256": "bcbe85d5138973e81da8de25f3981f1ea5564a8bc4d169c822253e336ad747bf",
+      "source": "stock-core-first/responses/C907839.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-core-second/catalog.json",
+      "root": "core",
+      "sha256": "e465ae6af0f20d716eb6dad9d22f53660e25fac9ee5cd9986ba9abf18bb061e4",
+      "source": "stock-core-second/catalog.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-core-second/responses/C107363.json",
+      "root": "core",
+      "sha256": "61a45a28e88ee90bd3011e0c00f970b5fb13396114f106c2e5d8dfd3ac21091b",
+      "source": "stock-core-second/responses/C107363.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-core-second/responses/C1864162.json",
+      "root": "core",
+      "sha256": "d9d689a667e53273150393ddc623956b060f654f7b6467be9fbb5f7cd37c2aef",
+      "source": "stock-core-second/responses/C1864162.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-core-second/responses/C2913198.json",
+      "root": "core",
+      "sha256": "8437ebb67bba9084d6f9b396f101620331a40b6745d3de16d8bed101cdf059cf",
+      "source": "stock-core-second/responses/C2913198.json"
+    },
+    {
+      "origin": "Existing native acquisition receipt and exact raw response/PDF; external only",
+      "path": "stock-core-second/responses/C5119087.json",
+      "root": "core",
+      "sha256": "7741786e6374ee1f849ec758b433f3b805ea54552cf29095d67c80fb4e542ebf",
+      "source": "stock-core-second/responses/C5119087.json"
+    },
+    {
+      "origin": "Existing native stock symbol subset capture; external only",
+      "path": "symbols/Analog_ADC.kicad_sym",
+      "root": "core",
+      "sha256": "f718af5e9f94a3892925af04ad4b23fd582aa5d7e1a6b4029e150e444be8193e",
+      "source": "cad/Analog_ADC.kicad_sym"
+    },
+    {
+      "origin": "Reviewed176 deterministic flat CAN library; exact same hash in positive control; source custody retained separately",
+      "path": "symbols/Block_63616e_446576696365.kicad_sym",
+      "root": "flat",
+      "sha256": "048fae2850e11eb4e82b7423934c365283809bd2183a250ce04c6814b47a86c5",
+      "source": "adapted/libraries/Block_63616e_446576696365.kicad_sym"
+    },
+    {
+      "origin": "Reviewed176 deterministic flat CAN library; exact same hash in positive control; source custody retained separately",
+      "path": "symbols/Block_63616e_496e746572666163655f43414e5f4c494e.kicad_sym",
+      "root": "flat",
+      "sha256": "c2855f63887e1f72cb170ed6e11775bf48824e795d53f6ad315152ba45b8a64c",
+      "source": "adapted/libraries/Block_63616e_496e746572666163655f43414e5f4c494e.kicad_sym"
+    },
+    {
+      "origin": "Reviewed168 agent-ee owned symbol library",
+      "path": "symbols/Pod.kicad_sym",
+      "root": "repo",
+      "sha256": "3484c0974dd499caf48b1c53083087648675256979e9474d66e44ac5ad89afa0",
+      "source": "fixtures/telemetry-pod/libs/Pod.kicad_sym"
+    },
+    {
+      "origin": "Existing native stock symbol subset capture; external only",
+      "path": "symbols/RF_GPS.kicad_sym",
+      "root": "core",
+      "sha256": "29381ed67fac5b68def2e817d93a97e0299bcf8c19c8b69731c0c8a272251c13",
+      "source": "cad/RF_GPS.kicad_sym"
+    },
+    {
+      "origin": "Existing native stock symbol subset capture; external only",
+      "path": "symbols/RF_Module.kicad_sym",
+      "root": "core",
+      "sha256": "ad427c46f8d046f47595edd16128520b75d9b386cc36a14e4d8f75ae036ab23d",
+      "source": "cad/RF_Module.kicad_sym"
+    }
+  ],
+  "roots": [
+    "core",
+    "repo",
+    "flat",
+    "kicad",
+    "power"
+  ],
+  "scope": "Exact runtime-only inputs for the core recipe; hashes convey custody, not permission or qualification"
+}

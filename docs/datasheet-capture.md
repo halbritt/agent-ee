@@ -30,6 +30,10 @@ reason. A missing URL has a null timestamp; an attempted URL has a timestamp. A 
 response is retained has a null final URL. Failed downloads have no file or hash.
 
 HTTP and HTTPS are allowed, including local HTTP for owned test fixtures.
+Requests identify the client as `agent-ee/1 (public datasheet acquisition)`.
+This is an explicit client identity, not browser impersonation. Ambient proxies
+remain disabled; source refusal remains missing coverage.
+
 Credentials, fragments, control characters, unsupported schemes and invalid ports
 are rejected; redirect targets receive the same validation. Ambient proxy
 settings are ignored. This is an owner-invoked downloader: HTTP(S) may reach

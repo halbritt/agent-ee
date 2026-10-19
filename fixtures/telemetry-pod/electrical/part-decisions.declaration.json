@@ -1,0 +1,106 @@
+{
+  "decisions": [
+    {
+      "footprint_hint": null,
+      "function": "MCU and radio",
+      "lcsc": null,
+      "mpn": "ESP32-S3-WROOM-1-N8",
+      "normalization": {
+        "reason": "Explicit N8 ordering code gives the specified 8 MB flash without added PSRAM; captured manufacturer ordering table. The 85 C rating conflict remains open.",
+        "source_mpn": "ESP32-S3-WROOM-1"
+      },
+      "requirement_id": "POD-CD-MCU-AND-RADIO",
+      "symbol_hint": null
+    },
+    {
+      "footprint_hint": null,
+      "function": "CAN transceiver",
+      "lcsc": "C38695",
+      "mpn": "TJA1051T/3/1J",
+      "normalization": {
+        "reason": "Captured JLC ordering suffix and NXP ordering table identify the SO8 VIO variant; no replacement of the selected family.",
+        "source_mpn": "TJA1051T/3"
+      },
+      "requirement_id": "POD-CD-CAN-TRANSCEIVER",
+      "symbol_hint": null
+    },
+    {
+      "footprint_hint": null,
+      "function": "CAN transceiver",
+      "lcsc": "C907839",
+      "mpn": "PESD1CAN-UX",
+      "requirement_id": "POD-CD-CAN-TRANSCEIVER",
+      "symbol_hint": null
+    },
+    {
+      "footprint_hint": null,
+      "function": "CAN transceiver",
+      "lcsc": "C22787",
+      "mpn": null,
+      "requirement_id": "POD-CD-CAN-TRANSCEIVER",
+      "symbol_hint": null
+    },
+    {
+      "footprint_hint": null,
+      "function": "IMU",
+      "lcsc": null,
+      "mpn": "LSM6DSO32TR",
+      "normalization": {
+        "reason": "Captured ST ordering table identifies TR as tape-and-reel; same LGA14 device.",
+        "source_mpn": "LSM6DSO32"
+      },
+      "requirement_id": "POD-CD-IMU",
+      "symbol_hint": null
+    },
+    {
+      "footprint_hint": null,
+      "function": "GNSS",
+      "lcsc": null,
+      "mpn": "NEO-M9N-00B",
+      "normalization": {
+        "reason": "Captured u-blox data sheet and JLC row identify the exact NEO-M9N-00B module; antenna remains a separate incomplete component obligation.",
+        "source_mpn": "NEO-M9N"
+      },
+      "requirement_id": "POD-CD-GNSS",
+      "symbol_hint": null
+    },
+    {
+      "footprint_hint": null,
+      "function": "Analog front end",
+      "lcsc": null,
+      "mpn": "MCP3204-BI/SL",
+      "normalization": {
+        "reason": "Captured Microchip ordering table: B accuracy grade, industrial temperature, SOIC14 SL. Analog protection/reference network remains incomplete.",
+        "source_mpn": "MCP3204"
+      },
+      "requirement_id": "POD-CD-ANALOG-FRONT-END",
+      "symbol_hint": null
+    }
+  ],
+  "exclusions": [
+    {
+      "classification": "unresolved_part_decision",
+      "evidence_refs": [],
+      "reason": "Power/protection proposal awaits explicit adoption and complete captured selected components; this core subset cannot satisfy the decision.",
+      "requirement_id": "POD-CD-POWER"
+    },
+    {
+      "classification": "unresolved_part_decision",
+      "evidence_refs": [],
+      "reason": "Header orientation conflicts with exact named MPN; header/plug/contacts/cavity plugs and assembly declarations are not complete in this core subset.",
+      "requirement_id": "POD-CD-HARNESS-CONNECTOR"
+    },
+    {
+      "classification": "non_part_constraint",
+      "evidence_refs": [
+        {
+          "locator": "Component decisions: Board",
+          "path": "requirements/spec.md"
+        }
+      ],
+      "reason": "This row specifies board layers/material/stackup and a selection preference, not an MPN. These remain mechanical/fabrication obligations outside populated-part identity.",
+      "requirement_id": "POD-CD-BOARD"
+    }
+  ],
+  "section": "Component decisions"
+}

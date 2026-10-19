@@ -53,7 +53,7 @@ A **blob** is exactly `{path, sha256}`; a **located blob** adds `locator`.
 | `declaration_source` | Located blob identifying the captured allowlist/requirement source; no invented approving identity |
 | `catalog` | `snapshot` directory, `manifest_sha256`, `database_sha256`, `snapshot_date`; null for named-only manifests |
 | `selection` | `requirements` blob and `result` blob for canonical `agent-ee.part-requirements/1` and its complete result; null with a null catalog for named-only manifests |
-| `cad` | `manifest` blob, `assignments` blob, `members_sha256` |
+| `cad` | `manifest` blob, `assignments` blob, `members_sha256`; optional `declarations` blob |
 | `property_fields` | Distinct exact native property names under `lcsc`, `mpn`, `manufacturer`; no inferred aliases |
 | `population` | `native-dnp-optional-only/1` |
 | `parts` | Nonempty list of at most 4096 logical parts |
@@ -94,6 +94,16 @@ is `storage.identity(sorted(member_blobs, key=lambda m: m['path']))`, over all
 footprint members and captured symbol-library blobs, without library `name`
 fields. Duplicate paths are rejected. Both CAD records and all their members
 are immutable dependencies.
+
+An optional `cad.declarations` pins the existing
+`agent-ee.footprint-declarations/1` input to the assignment checker. It is a
+separate immutable dependency, with its bytes and hash checked again on replay;
+it is not part of the CAD member digest. For example, the captured ESP32 pad 41
+thermal-via declaration permits the existing checker to distinguish thermal
+vias from mixed assembly. It does not exempt arbitrary copper or waive pin/pad
+parity. Missing, changed or malformed declaration bytes refuse qualification.
+Omitting the field preserves the previous checker behavior, including refusal
+of undeclared thermal vias. Declaration contents remain subject to review.
 
 Canonical selection is recomputed from captured requirements and the pinned
 catalog snapshot, then compared with the entire captured selection result.
