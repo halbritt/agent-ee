@@ -1,0 +1,1000 @@
+{
+  "files": [
+    {
+      "path": "capacitor-closure/acquisition/401b20e9f0898b9456aabd8f90c1eed5cf71966049bdaa6d890230940e37c305.pdf",
+      "root": "capacitor",
+      "sha256": "0300355da8809e80204630546a57445a0693a8681f09c26486edbcd1461329dd",
+      "source": "acquisition/401b20e9f0898b9456aabd8f90c1eed5cf71966049bdaa6d890230940e37c305.pdf"
+    },
+    {
+      "path": "capacitor-closure/acquisition/manifest.json",
+      "root": "capacitor",
+      "sha256": "846442dfc038bc48ce9c895e52d032695fe77ca9d6f8597b09b603f65bd50f08",
+      "source": "acquisition/manifest.json"
+    },
+    {
+      "path": "capacitor-closure/bindings.json",
+      "root": "capacitor",
+      "sha256": "34602cf99737a303c2bb7bbf4bf9e4ffd941a2cc66b7d37c8d3102ba792b5345",
+      "source": "bindings.json"
+    },
+    {
+      "path": "capacitor-closure/freeze.json",
+      "root": "capacitor",
+      "sha256": "bbd445a005aa49c9c7dc0c8eb5d9a4db37227c342e28e1d96043f640811e8a74",
+      "source": "freeze.json"
+    },
+    {
+      "path": "capacitor-closure/report.md",
+      "root": "capacitor",
+      "sha256": "9f362f0fe4b0a7fc67597b7b34ef465c936b460b7523dd753cb22cfb90da8691",
+      "source": "report.md"
+    },
+    {
+      "path": "connector-source/acquisition-molex-retry/51952567592f862257faf27ada51ab65d688858349be5a4763cc3804d1cbd2e4.pdf",
+      "root": "antenna",
+      "sha256": "252330f9eaf1469a8b5e2613297b15db5543c3934072f769233915f6468e5580",
+      "source": "acquisition-molex-retry/51952567592f862257faf27ada51ab65d688858349be5a4763cc3804d1cbd2e4.pdf"
+    },
+    {
+      "path": "connector-source/acquisition-molex-retry/manifest.json",
+      "root": "antenna",
+      "sha256": "70b70286a830a1f06eaeb8be1a536035a5715da30cc90a47986eadd66b56648b",
+      "source": "acquisition-molex-retry/manifest.json"
+    },
+    {
+      "path": "connector-source/acquisition-te/ce8dfd9de5f67c0f5427e925c999cccd9a8114729a6b8f249b59787fbc427d9c.pdf",
+      "root": "antenna",
+      "sha256": "14bd5c3bb2ca16bfcf01918b678eab1aa19df10001c17735dd1f11356a6e4fe8",
+      "source": "acquisition-te/ce8dfd9de5f67c0f5427e925c999cccd9a8114729a6b8f249b59787fbc427d9c.pdf"
+    },
+    {
+      "path": "connector-source/acquisition-te/manifest.json",
+      "root": "antenna",
+      "sha256": "e2a6228cc3f7727a2c95f6883d690542291b0199a4d2ec153e1f45583b216f0a",
+      "source": "acquisition-te/manifest.json"
+    },
+    {
+      "path": "connector-source/cad/provenance.json",
+      "root": "antenna",
+      "sha256": "10ccef034a48c31a73c9b5cf0891f705d370e58598733784cbcab619ad44c174",
+      "source": "cad/provenance.json"
+    },
+    {
+      "path": "connector-source/capture.json",
+      "root": "repo",
+      "sha256": "0622fd098ac87cfa435c3d233fab60f9a8733766c086cf68e64321630f017eae",
+      "source": "fixtures/fome-mc/ampseal/capture/capture.json"
+    },
+    {
+      "path": "connector-source/connector-addendum.md",
+      "root": "antenna",
+      "sha256": "70f7bd9364fdad8482106b17fabb0a9cf6a3a984cd3e77e1c50a5c9bc3f12748",
+      "source": "connector-addendum.md"
+    },
+    {
+      "path": "connector-source/connector-import-index.json",
+      "root": "antenna",
+      "sha256": "fb6f726b9ff10a97cda38d9e8fcc8786c69ce941a4dbd1ecaf0fff5d5311f2c3",
+      "source": "connector-import-index.json"
+    },
+    {
+      "path": "connector-source/freeze-connector-addendum.json",
+      "root": "antenna",
+      "sha256": "b94428569013f8ca9d97eef8b50c5ee43a4077bb77d08adf60cfdf46a99b6e58",
+      "source": "freeze-connector-addendum.json"
+    },
+    {
+      "path": "connector-source/j1-part-record.json",
+      "root": "antenna",
+      "sha256": "159f831663f4f0fda07cf6ad2aa52ab7bc28712c0a5fcc4343e259775fc53484",
+      "source": "j1-part-record.json"
+    },
+    {
+      "path": "connector-source/j2-part-record.json",
+      "root": "antenna",
+      "sha256": "fe9975e80be4aedee3701936ae8422a768863f63ae5f23dd8fb89e91ba603ec6",
+      "source": "j2-part-record.json"
+    },
+    {
+      "path": "connector-source/land-comparison.json",
+      "root": "repo",
+      "sha256": "89cf407b75f8d1b73f405ab03800e5b3ca68189ad9b421c503f8b7424800dac2",
+      "source": "fixtures/pod/ampseal/land-comparison.json"
+    },
+    {
+      "path": "connector-source/orientation-erratum.md",
+      "root": "antenna",
+      "sha256": "186e2d1686b8a3aa71bc9d3d95d131e5fd25cbd282ce125790c22909193f1d2a",
+      "source": "orientation-erratum.md"
+    },
+    {
+      "path": "connector-source/stock-sma/catalog.json",
+      "root": "antenna",
+      "sha256": "16adf410ccbd0a1a3e79989462945d4036b6f72a14d94bc9f756a8178e61afe8",
+      "source": "stock-sma/catalog.json"
+    },
+    {
+      "path": "connector-source/stock-sma/responses/C841205.json",
+      "root": "antenna",
+      "sha256": "b3457e4a1fbf1b5d80efa2959bb9a7bd3350c14e604a64586f1dc1081d3a73cf",
+      "source": "stock-sma/responses/C841205.json"
+    },
+    {
+      "path": "connector-source/stock-te/catalog.json",
+      "root": "antenna",
+      "sha256": "2792c29a24a18e220009bea07d396d79d9b1afe6f16f7a6811306cfccb997c6c",
+      "source": "stock-te/catalog.json"
+    },
+    {
+      "path": "connector-source/stock-te/responses/C498958.json",
+      "root": "antenna",
+      "sha256": "f53f64bff5991765741d578362e4df1d48d1e72a0c6cb92c8414da8b29c26c8a",
+      "source": "stock-te/responses/C498958.json"
+    },
+    {
+      "path": "features/capture.json",
+      "root": "active",
+      "sha256": "105c7280ed21861780ea1f69b16f34d49cac54e15223d8630cab2df7010315c7",
+      "source": "pogo-proposal/capture.json"
+    },
+    {
+      "path": "features/proposal.json",
+      "root": "active",
+      "sha256": "d5174a941cf2bf68c975ca5334b9e76df32c5b892a2679fd18dcf69278870ec3",
+      "source": "pogo-proposal/proposal.json"
+    },
+    {
+      "path": "features/source-freeze.json",
+      "root": "active",
+      "sha256": "a54bb1c2d678fdb74cc87405c983ac7dcb4f7d6be3d7b6e80a84cae185bcee09",
+      "source": "pogo-proposal/freeze.json"
+    },
+    {
+      "path": "footprints/Capacitor_SMD.pretty/C_0603_1608Metric.kicad_mod",
+      "root": "kicad",
+      "sha256": "fe0dbfefbb181a0466f93a8de52d84ba7b00fcd9acdbb69575f4128a0af4e405",
+      "source": "footprints/Capacitor_SMD.pretty/C_0603_1608Metric.kicad_mod"
+    },
+    {
+      "path": "footprints/Capacitor_SMD.pretty/C_0805_2012Metric.kicad_mod",
+      "root": "kicad",
+      "sha256": "62775a51fe74ba7f1b572de327bdbd3fc92582721b2abcaa47787865590d89cb",
+      "source": "footprints/Capacitor_SMD.pretty/C_0805_2012Metric.kicad_mod"
+    },
+    {
+      "path": "footprints/Capacitor_SMD.pretty/C_1210_3225Metric.kicad_mod",
+      "root": "kicad",
+      "sha256": "e1dae516e079b70c4736d001fb81bfb4ef5f9c2a37c8175223a44f83a04ff75f",
+      "source": "footprints/Capacitor_SMD.pretty/C_1210_3225Metric.kicad_mod"
+    },
+    {
+      "path": "footprints/Connector_Coaxial.pretty/SMA_Molex_73251-1153_EdgeMount_Horizontal.kicad_mod",
+      "root": "antenna",
+      "sha256": "109d98146d6d01a82932050c7c1c94acc804b4f1bd13a3911dbd7a6450f165b9",
+      "source": "cad/SMA_Molex_73251-1153_EdgeMount_Horizontal.kicad_mod"
+    },
+    {
+      "path": "footprints/Diode_SMD.pretty/D_SMC.kicad_mod",
+      "root": "kicad",
+      "sha256": "f17a366cbe28020fc5f12a4a5cecd11590af4d96b61ad8d82c33dc2393a3b64b",
+      "source": "footprints/Diode_SMD.pretty/D_SMC.kicad_mod"
+    },
+    {
+      "path": "footprints/Diode_SMD.pretty/D_SOD-123.kicad_mod",
+      "root": "kicad",
+      "sha256": "fd16785935b01254e1076f490e12f0f096da73cf087adefce51225585c62557a",
+      "source": "footprints/Diode_SMD.pretty/D_SOD-123.kicad_mod"
+    },
+    {
+      "path": "footprints/Inductor_SMD.pretty/L_0603_1608Metric.kicad_mod",
+      "root": "kicad",
+      "sha256": "a2a9c562208496756e22f3ab19e0bd6db2341d14da92e7c767d5eafd1bb45d38",
+      "source": "footprints/Inductor_SMD.pretty/L_0603_1608Metric.kicad_mod"
+    },
+    {
+      "path": "footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod",
+      "root": "kicad",
+      "sha256": "074ecb2092b24fa4b4b9cdd7c926fc587b0d7d6d21e7341e57935fd42d36894f",
+      "source": "footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod"
+    },
+    {
+      "path": "footprints/Package_SO.pretty/TSSOP-14_4.4x5mm_P0.65mm.kicad_mod",
+      "root": "kicad",
+      "sha256": "e4bf82cea6d3b3259ddf42469b1407628ad1181a28ae6f3f340190c0cca31ccd",
+      "source": "footprints/Package_SO.pretty/TSSOP-14_4.4x5mm_P0.65mm.kicad_mod"
+    },
+    {
+      "path": "footprints/Package_TO_SOT_SMD.pretty/SOT-23-5.kicad_mod",
+      "root": "kicad",
+      "sha256": "455a3f7c3e5eb5b8847eaa5df23e18651e78ab9f75afd09a0883758a0d901761",
+      "source": "footprints/Package_TO_SOT_SMD.pretty/SOT-23-5.kicad_mod"
+    },
+    {
+      "path": "footprints/Package_TO_SOT_SMD.pretty/SOT-23-6.kicad_mod",
+      "root": "kicad",
+      "sha256": "f341c73aac9dcb553456f68bf3fee3d26eb14acf6d8a1cae82b50418fe1d71ca",
+      "source": "footprints/Package_TO_SOT_SMD.pretty/SOT-23-6.kicad_mod"
+    },
+    {
+      "path": "footprints/PodFeatures.pretty/PogoPad_D1.5mm.kicad_mod",
+      "root": "active",
+      "sha256": "51be7d99dff60d92bf8d41f4908d01e48e744ce764396b23f7afb791e1c0b8ae",
+      "source": "pogo-proposal/PogoPad_D1.5mm.kicad_mod"
+    },
+    {
+      "path": "footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod",
+      "root": "kicad",
+      "sha256": "7190ac4a00125b807e54129ef0d87d87f2a658eeb74d025a7028203419b09f23",
+      "source": "footprints/Resistor_SMD.pretty/R_0603_1608Metric.kicad_mod"
+    },
+    {
+      "path": "footprints/Resistor_SMD.pretty/R_1206_3216Metric.kicad_mod",
+      "root": "kicad",
+      "sha256": "c7320668dc81bbb954cb4f15e4e7a766c120059343d43551468c8f7ccc8fde37",
+      "source": "footprints/Resistor_SMD.pretty/R_1206_3216Metric.kicad_mod"
+    },
+    {
+      "path": "footprints/ampseal.pretty/ampseal-23.kicad_mod",
+      "root": "repo",
+      "sha256": "09eeab39c4b2c21c8cca8b38da3c996540768856771830b1f57094843852e950",
+      "source": "fixtures/fome-mc/ampseal/capture/ampseal.pretty/ampseal-23.kicad_mod"
+    },
+    {
+      "path": "power-source/acquisition-adoption/1b0bcb3b671fc2fcfa8ab1938e74d5191322da58252000488f4085c424f6037e.pdf",
+      "root": "power",
+      "sha256": "f3228b64a892b72a846c88f9c724cbe7f3d0d5b14b6350f48f28e1575f54a18f",
+      "source": "acquisition-adoption/1b0bcb3b671fc2fcfa8ab1938e74d5191322da58252000488f4085c424f6037e.pdf"
+    },
+    {
+      "path": "power-source/acquisition-adoption/c9a2236e061021db944581507b83a6c66725c43d3de8498e19665bb16c3ebab4.pdf",
+      "root": "power",
+      "sha256": "f577c8d1308b14988f439f6e31c1fb173014ba21fcee02e8cf386a087a5664a8",
+      "source": "acquisition-adoption/c9a2236e061021db944581507b83a6c66725c43d3de8498e19665bb16c3ebab4.pdf"
+    },
+    {
+      "path": "power-source/acquisition-adoption/d6b3c62b2d37a5cb6776d49d62cc4a48cd4fe7226fbd93e52583822adbdae3d0.pdf",
+      "root": "power",
+      "sha256": "6ad9e31b95374c9bd582b821c528c91cb5813772e74e68f80cf81d0c10772b13",
+      "source": "acquisition-adoption/d6b3c62b2d37a5cb6776d49d62cc4a48cd4fe7226fbd93e52583822adbdae3d0.pdf"
+    },
+    {
+      "path": "power-source/acquisition-adoption/manifest.json",
+      "root": "power",
+      "sha256": "d3fc252df8fea1436eb9b04faf9296d64d043eb34ba4d4fc98320b0e9ca9b519",
+      "source": "acquisition-adoption/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-auto-caps/3730fc86031735264f0a038d01d213d5b806f7e15aa01dbf0a2df46e67d78712.pdf",
+      "root": "power",
+      "sha256": "8951f7833e66860611146aca8f3d3758fb0622c407e6b68320a3f2f4589d255d",
+      "source": "acquisition-auto-caps/3730fc86031735264f0a038d01d213d5b806f7e15aa01dbf0a2df46e67d78712.pdf"
+    },
+    {
+      "path": "power-source/acquisition-auto-caps/af7ab261cd82a89576086a52e1dde1aaa9fdf1d8a1364544153fd90567a31812.pdf",
+      "root": "power",
+      "sha256": "ff9b0a373980f01928802dd577ef6ccc96176e5223d34766228b417ca1bf9592",
+      "source": "acquisition-auto-caps/af7ab261cd82a89576086a52e1dde1aaa9fdf1d8a1364544153fd90567a31812.pdf"
+    },
+    {
+      "path": "power-source/acquisition-auto-caps/bc52d3a949459c00dc1c341919a9735c6bf0b82406b40a636efe79188076b7fd.pdf",
+      "root": "power",
+      "sha256": "abf066648e0a368a0f6ceb8c6f2f0c0aa9de72c4999cab14e554f133c4643e15",
+      "source": "acquisition-auto-caps/bc52d3a949459c00dc1c341919a9735c6bf0b82406b40a636efe79188076b7fd.pdf"
+    },
+    {
+      "path": "power-source/acquisition-auto-caps/f5cba5a82253f88a6d50a684e00fe78826165c5a8a2d1a42f9d41bb28b00befa.pdf",
+      "root": "power",
+      "sha256": "8e82a91f5dcec8feba018f5cbd9b6999f380370e000cb5ae4b8051b92fa99aae",
+      "source": "acquisition-auto-caps/f5cba5a82253f88a6d50a684e00fe78826165c5a8a2d1a42f9d41bb28b00befa.pdf"
+    },
+    {
+      "path": "power-source/acquisition-auto-caps/manifest.json",
+      "root": "power",
+      "sha256": "3e8c5ff40a146ae658fcf36d2e13a18b9bbd202e14365951cf10e25d88f1db9f",
+      "source": "acquisition-auto-caps/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-final-adopt/2610fbb215351b8b45475fdc807dffe3aa2ffc609a4eaf561e79f61b81ae8ba7.pdf",
+      "root": "power",
+      "sha256": "33b13191ad54693f9a4f52e226b354757ad092d2cec6b2c31dba2fecb710d0c6",
+      "source": "acquisition-final-adopt/2610fbb215351b8b45475fdc807dffe3aa2ffc609a4eaf561e79f61b81ae8ba7.pdf"
+    },
+    {
+      "path": "power-source/acquisition-final-adopt/manifest.json",
+      "root": "power",
+      "sha256": "c3966863f6f6fa8e782f04a935c8996e3c4bf60b9788649bf3f323cba99db1ea",
+      "source": "acquisition-final-adopt/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-passive-exact/7f8040ff30575f0dea0a4805d4d71f5a69f97d78179a1331486678f83e69a9dc.pdf",
+      "root": "power",
+      "sha256": "d8b97e97fcdc223160e113f8b0e803bf9c843f48e635eb595bcb984c94ab238b",
+      "source": "acquisition-passive-exact/7f8040ff30575f0dea0a4805d4d71f5a69f97d78179a1331486678f83e69a9dc.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passive-exact/manifest.json",
+      "root": "power",
+      "sha256": "dae34b7cace6122814e30effdaecf92f618df50c6b8a34d25727919ed5554158",
+      "source": "acquisition-passive-exact/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/12d35a93a218663b64b6926e3333c283c954263d84e3645b3079af51f4f26ac8.pdf",
+      "root": "power",
+      "sha256": "c983a26f83ea68de59c2986d60815ac1893accc3ff47b5eed8638a6fde1df15b",
+      "source": "acquisition-passives-1/12d35a93a218663b64b6926e3333c283c954263d84e3645b3079af51f4f26ac8.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/31dcfee0c881aec5faa07dff6cbb1538c3b56d14b890cce930ca276dceea4ae4.pdf",
+      "root": "power",
+      "sha256": "96baebe4bd0ce363e87be28b5b003f511f1502e084a6fc4f02333ded56c808f6",
+      "source": "acquisition-passives-1/31dcfee0c881aec5faa07dff6cbb1538c3b56d14b890cce930ca276dceea4ae4.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/568de3f85af600c6d92620d18e52e9e44383e6e90efdecf23313283a831b82e7.pdf",
+      "root": "power",
+      "sha256": "5a7926dd7ffb3281e0df2fe4dc468fdc95d78246bb633ef83b0ad4a5a3f34d25",
+      "source": "acquisition-passives-1/568de3f85af600c6d92620d18e52e9e44383e6e90efdecf23313283a831b82e7.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/5f048753376f883d75ac1ccf8c9476540f2b77646df70b155c64fb54512af18c.pdf",
+      "root": "power",
+      "sha256": "96baebe4bd0ce363e87be28b5b003f511f1502e084a6fc4f02333ded56c808f6",
+      "source": "acquisition-passives-1/5f048753376f883d75ac1ccf8c9476540f2b77646df70b155c64fb54512af18c.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/701aae6bb1d93d647e4d20b9f04771729ee51fb9cb1a633c53e8fcbb9e75f7c8.pdf",
+      "root": "power",
+      "sha256": "0a729d144519a7021c82a0ef242b064e467c70d44afcf9eabd6c7ffdc4b673a3",
+      "source": "acquisition-passives-1/701aae6bb1d93d647e4d20b9f04771729ee51fb9cb1a633c53e8fcbb9e75f7c8.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/7de2372d6ac89f25ba79d9ba640029f49edcca877e6cb3a1e21659d367cb41b2.pdf",
+      "root": "power",
+      "sha256": "45736551c293444013721b068eef78e766d56e74b4ea39a0544890e6f24b635c",
+      "source": "acquisition-passives-1/7de2372d6ac89f25ba79d9ba640029f49edcca877e6cb3a1e21659d367cb41b2.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/87ba60f5cd72a5004b42569fcfefef4e0d310099f554d2377291860cdb27d01c.pdf",
+      "root": "power",
+      "sha256": "e7dbabb0611925227ccfc429c14c8833a7b1f2c755684444124446f20b22a229",
+      "source": "acquisition-passives-1/87ba60f5cd72a5004b42569fcfefef4e0d310099f554d2377291860cdb27d01c.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/88073ff1a0234062435905a9d33e3c30b77832ee019dc8ee9c5a599025151782.pdf",
+      "root": "power",
+      "sha256": "0a729d144519a7021c82a0ef242b064e467c70d44afcf9eabd6c7ffdc4b673a3",
+      "source": "acquisition-passives-1/88073ff1a0234062435905a9d33e3c30b77832ee019dc8ee9c5a599025151782.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/9a0da6593a9c6b20af96671eae5970d69de21848208b73ae7f1e171889843d53.pdf",
+      "root": "power",
+      "sha256": "0fbd7d137524820f0160594065cbceb8c6b3188757c328416d08fceb7418202f",
+      "source": "acquisition-passives-1/9a0da6593a9c6b20af96671eae5970d69de21848208b73ae7f1e171889843d53.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/c78a8563c100bc6ebee75a66191cd136f1f5df59b1e8bc56871c92be445ba737.pdf",
+      "root": "power",
+      "sha256": "96baebe4bd0ce363e87be28b5b003f511f1502e084a6fc4f02333ded56c808f6",
+      "source": "acquisition-passives-1/c78a8563c100bc6ebee75a66191cd136f1f5df59b1e8bc56871c92be445ba737.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/cd526507a4888c45b384362d29899a9fec04747d73fde571846dcb726ce954f8.pdf",
+      "root": "power",
+      "sha256": "96baebe4bd0ce363e87be28b5b003f511f1502e084a6fc4f02333ded56c808f6",
+      "source": "acquisition-passives-1/cd526507a4888c45b384362d29899a9fec04747d73fde571846dcb726ce954f8.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/e12952a5717dc6a69bf62d260ace66561db142307a7991a0cb5b033c81a81d7b.pdf",
+      "root": "power",
+      "sha256": "0a729d144519a7021c82a0ef242b064e467c70d44afcf9eabd6c7ffdc4b673a3",
+      "source": "acquisition-passives-1/e12952a5717dc6a69bf62d260ace66561db142307a7991a0cb5b033c81a81d7b.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/e171be81af1fd58fcb06f260ba912d6d565041a69a7e6dd28d81f471710e97b2.pdf",
+      "root": "power",
+      "sha256": "4746ff205f5df05b8703d29c99a31aba2dfbc8e9ec679fb47b59d08985496ef5",
+      "source": "acquisition-passives-1/e171be81af1fd58fcb06f260ba912d6d565041a69a7e6dd28d81f471710e97b2.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/f0af36c4610db770cddb3187f5886f7dfecee94bebb3cbfbaa2a5814081aebab.pdf",
+      "root": "power",
+      "sha256": "3f16305b69b019bfa37f51cdb23dcba7c4c7d2bae6c9690cc97ed36729283027",
+      "source": "acquisition-passives-1/f0af36c4610db770cddb3187f5886f7dfecee94bebb3cbfbaa2a5814081aebab.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/f18f5ecadcf0226f50c08c8c79b5421051058049b4113d69c876494f87443bd6.pdf",
+      "root": "power",
+      "sha256": "0a729d144519a7021c82a0ef242b064e467c70d44afcf9eabd6c7ffdc4b673a3",
+      "source": "acquisition-passives-1/f18f5ecadcf0226f50c08c8c79b5421051058049b4113d69c876494f87443bd6.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/f95024639ad15fbd3ad968ee32ca3f0ce53faef2e965907fd3a868dacd13b689.pdf",
+      "root": "power",
+      "sha256": "0a729d144519a7021c82a0ef242b064e467c70d44afcf9eabd6c7ffdc4b673a3",
+      "source": "acquisition-passives-1/f95024639ad15fbd3ad968ee32ca3f0ce53faef2e965907fd3a868dacd13b689.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-1/manifest.json",
+      "root": "power",
+      "sha256": "e327c13795cfc9ac81b8666a9a29295b1fe375b02cfc695c8733d1b8bc2b47be",
+      "source": "acquisition-passives-1/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-passives-2/51ccf8d88415271513905842ff6d9aa7a8955cf1a534b673238dc2a1edaffeaf.pdf",
+      "root": "power",
+      "sha256": "e7dbabb0611925227ccfc429c14c8833a7b1f2c755684444124446f20b22a229",
+      "source": "acquisition-passives-2/51ccf8d88415271513905842ff6d9aa7a8955cf1a534b673238dc2a1edaffeaf.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-2/a2680f573d31682972abd2fec94ee7324caadc2af6d0e7e025e029c7040ad332.pdf",
+      "root": "power",
+      "sha256": "e7dbabb0611925227ccfc429c14c8833a7b1f2c755684444124446f20b22a229",
+      "source": "acquisition-passives-2/a2680f573d31682972abd2fec94ee7324caadc2af6d0e7e025e029c7040ad332.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-2/e3d2e2d81040d65adc04a563bd574a4165452761455af7aa856285e69f035797.pdf",
+      "root": "power",
+      "sha256": "e7dbabb0611925227ccfc429c14c8833a7b1f2c755684444124446f20b22a229",
+      "source": "acquisition-passives-2/e3d2e2d81040d65adc04a563bd574a4165452761455af7aa856285e69f035797.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-2/manifest.json",
+      "root": "power",
+      "sha256": "84a14cb5d03508249e210864e7a2e6fca95c1dee7f8f13189403373cb5214579",
+      "source": "acquisition-passives-2/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-passives-retry/ce3f0562457e47306cef36edf6ef8b428a01724f1d6acdf8310872bc43d5f0ce.pdf",
+      "root": "power",
+      "sha256": "e7dbabb0611925227ccfc429c14c8833a7b1f2c755684444124446f20b22a229",
+      "source": "acquisition-passives-retry/ce3f0562457e47306cef36edf6ef8b428a01724f1d6acdf8310872bc43d5f0ce.pdf"
+    },
+    {
+      "path": "power-source/acquisition-passives-retry/manifest.json",
+      "root": "power",
+      "sha256": "2aa3f17dd8d1f8359a116f199bf62f4cd35e9be1740df87cf053a236f56056b9",
+      "source": "acquisition-passives-retry/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-protection-resolved/120215f78f3abcdf1719371f93b746ffeba97d637f352d4cc131baf373fc88cc.pdf",
+      "root": "power",
+      "sha256": "6e610db955ed876306999009c62b242f7de9bb05e2cd9717288a96586a5093ea",
+      "source": "acquisition-protection-resolved/120215f78f3abcdf1719371f93b746ffeba97d637f352d4cc131baf373fc88cc.pdf"
+    },
+    {
+      "path": "power-source/acquisition-protection-resolved/1dc767476fed5a9be7fa02315690660bb392383f9aec1d3c6cf50fe8983e4e2c.pdf",
+      "root": "power",
+      "sha256": "571f24a8367ffab61981ddb3cbbb3eb316b2bf9918913e58d6a17e9411ef6578",
+      "source": "acquisition-protection-resolved/1dc767476fed5a9be7fa02315690660bb392383f9aec1d3c6cf50fe8983e4e2c.pdf"
+    },
+    {
+      "path": "power-source/acquisition-protection-resolved/manifest.json",
+      "root": "power",
+      "sha256": "ac34198e677a1b4d664f6e635cb4eb6e41636e2f895454ebc9ed6a0645a29eba",
+      "source": "acquisition-protection-resolved/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-protection/d11833e51c114e81f0a87f6758def7d1e4b4d82130e7797a8a1c3341bc6ae91e.pdf",
+      "root": "power",
+      "sha256": "fc7b222019dd531fb42b6379462461b6626cc63573e63ce6f0a08805e8e970b6",
+      "source": "acquisition-protection/d11833e51c114e81f0a87f6758def7d1e4b4d82130e7797a8a1c3341bc6ae91e.pdf"
+    },
+    {
+      "path": "power-source/acquisition-protection/manifest.json",
+      "root": "power",
+      "sha256": "367297be1c55b2bc7dc9b663dd51e6cbcfa7066bd912337e5a39191242b7ba20",
+      "source": "acquisition-protection/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-supplement/afc93a93d54d32630e2b1821fd3bd325907bdfe92605ebc0fe22cdfcb0b46999.pdf",
+      "root": "power",
+      "sha256": "d9b1dafa25c0fa45eeb22fc4258fbdee3cafffb0bd14741e3cd9e35ea98f8e4c",
+      "source": "acquisition-supplement/afc93a93d54d32630e2b1821fd3bd325907bdfe92605ebc0fe22cdfcb0b46999.pdf"
+    },
+    {
+      "path": "power-source/acquisition-supplement/e6af2a2fa244eda794e2840cd76eba2c0faa226ef1f0f4e132dfcb53b3abc930.pdf",
+      "root": "power",
+      "sha256": "ae020244567f34db96d4095a581b0e54d9c90284ebb7c5488c9b454c17b8c98d",
+      "source": "acquisition-supplement/e6af2a2fa244eda794e2840cd76eba2c0faa226ef1f0f4e132dfcb53b3abc930.pdf"
+    },
+    {
+      "path": "power-source/acquisition-supplement/manifest.json",
+      "root": "power",
+      "sha256": "4508b6ca4a1c7277c0098bf3b04fc8ac30b39e0a8e44c5a985a6d542dead436e",
+      "source": "acquisition-supplement/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-tracker/f0068c8d96247b629703e6eacc46990097dff6779f4204d95b88ed3118e22827.pdf",
+      "root": "power",
+      "sha256": "a045677f8bb2b173e62689f5a7998a3c4afb7b1b9949a1d0e82e67803771b37a",
+      "source": "acquisition-tracker/f0068c8d96247b629703e6eacc46990097dff6779f4204d95b88ed3118e22827.pdf"
+    },
+    {
+      "path": "power-source/acquisition-tracker/manifest.json",
+      "root": "power",
+      "sha256": "92a0f7a1a580f355b60c3d2c03fd9ee11f3976f672de91361d28a68d1e271080",
+      "source": "acquisition-tracker/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition-ua-supplement/1ca62229550d6563985708be4c25d8cd1df2bd312d7e838a0bad3f2799006fb6.pdf",
+      "root": "power",
+      "sha256": "175824e1809b9ee239012a5704fd17ae29ec274f70cb3f451245b662f1964c59",
+      "source": "acquisition-ua-supplement/1ca62229550d6563985708be4c25d8cd1df2bd312d7e838a0bad3f2799006fb6.pdf"
+    },
+    {
+      "path": "power-source/acquisition-ua-supplement/afc93a93d54d32630e2b1821fd3bd325907bdfe92605ebc0fe22cdfcb0b46999.pdf",
+      "root": "power",
+      "sha256": "d9b1dafa25c0fa45eeb22fc4258fbdee3cafffb0bd14741e3cd9e35ea98f8e4c",
+      "source": "acquisition-ua-supplement/afc93a93d54d32630e2b1821fd3bd325907bdfe92605ebc0fe22cdfcb0b46999.pdf"
+    },
+    {
+      "path": "power-source/acquisition-ua-supplement/e6af2a2fa244eda794e2840cd76eba2c0faa226ef1f0f4e132dfcb53b3abc930.pdf",
+      "root": "power",
+      "sha256": "ae020244567f34db96d4095a581b0e54d9c90284ebb7c5488c9b454c17b8c98d",
+      "source": "acquisition-ua-supplement/e6af2a2fa244eda794e2840cd76eba2c0faa226ef1f0f4e132dfcb53b3abc930.pdf"
+    },
+    {
+      "path": "power-source/acquisition-ua-supplement/manifest.json",
+      "root": "power",
+      "sha256": "7880409afd27f76a7fda3a29c94e32f37708e9e4006d289b583361d8f9325c11",
+      "source": "acquisition-ua-supplement/manifest.json"
+    },
+    {
+      "path": "power-source/acquisition/2b09978c5a36002dc49ca4300f119423ba99e96ccefbd1cd5eae582fb1690617.pdf",
+      "root": "power",
+      "sha256": "f9b1af285622c0cf1a5991f9641a6e64c5e6d899e52cc0b1632808742019579f",
+      "source": "acquisition/2b09978c5a36002dc49ca4300f119423ba99e96ccefbd1cd5eae582fb1690617.pdf"
+    },
+    {
+      "path": "power-source/acquisition/31757ce81cf7a7b021f5f859736b428c4a5e5003a27545549aab9b9ac86f03a4.pdf",
+      "root": "power",
+      "sha256": "c175a1861cb8e09cc46b01fa9dd3e307052ccd55d5fef9584fbbc920de12a3e4",
+      "source": "acquisition/31757ce81cf7a7b021f5f859736b428c4a5e5003a27545549aab9b9ac86f03a4.pdf"
+    },
+    {
+      "path": "power-source/acquisition/402991ee7566b52693f3ab3400d2e42d878be51ba4de90e8cac049be6104f524.pdf",
+      "root": "power",
+      "sha256": "fd4fcb8e8db2da98515f168b21c7adb9e5b8869380ecc0aed430897ac2f91e4b",
+      "source": "acquisition/402991ee7566b52693f3ab3400d2e42d878be51ba4de90e8cac049be6104f524.pdf"
+    },
+    {
+      "path": "power-source/acquisition/7438702fe3f737612ed5c8f133f60b81eda9c68e3b74ddeffe913858f59c4892.pdf",
+      "root": "power",
+      "sha256": "88e453700cea2b263cdb5b44fce1e883e0f6d3b975457f879ac1423eeea42071",
+      "source": "acquisition/7438702fe3f737612ed5c8f133f60b81eda9c68e3b74ddeffe913858f59c4892.pdf"
+    },
+    {
+      "path": "power-source/acquisition/cb8ebe03bcc7860306c5e291bd6d892cb951f20cf5f21f15ecbcd8efd3029dd1.pdf",
+      "root": "power",
+      "sha256": "c5be6bd4f8a480f1dc9a6bea9469e7ab8867a0c83341c1a1f9c153bc015db09b",
+      "source": "acquisition/cb8ebe03bcc7860306c5e291bd6d892cb951f20cf5f21f15ecbcd8efd3029dd1.pdf"
+    },
+    {
+      "path": "power-source/acquisition/manifest.json",
+      "root": "power",
+      "sha256": "c483188c50c6fab8f73c603dbb18128382cbe4aa11e60d17e507c3027067e530",
+      "source": "acquisition/manifest.json"
+    },
+    {
+      "path": "power-source/calculations-v2.json",
+      "root": "power",
+      "sha256": "ef8657265751f1266c090ffe5b5dd1bd3ed0de3bee969d3eaf3e13ef46868f39",
+      "source": "calculations-v2.json"
+    },
+    {
+      "path": "power-source/freeze-passives-v2.json",
+      "root": "power",
+      "sha256": "9c5d04f77a656f074583e03bc53b2cd8d64fcca9f0b7f648c8a607e8bb6114ab",
+      "source": "freeze-passives-v2.json"
+    },
+    {
+      "path": "power-source/freeze-v1.json",
+      "root": "power",
+      "sha256": "52a2a205708900d8e1de27349d574a673ab245232df1af3acb5a6236d5b67fb1",
+      "source": "freeze-v1.json"
+    },
+    {
+      "path": "power-source/passive-selections-v2.json",
+      "root": "power",
+      "sha256": "6d5f1160a6c0572e5efbf06963bc444b61218b86c37726848dfc24399ecb38fe",
+      "source": "passive-selections-v2.json"
+    },
+    {
+      "path": "power-source/passive-supplement-v2.md",
+      "root": "power",
+      "sha256": "9c35a2bcb30562449f0f9ed96cc82b8434120456b436c7b59df745ec0c51dcc8",
+      "source": "passive-supplement-v2.md"
+    },
+    {
+      "path": "power-source/pins-and-values-v2.json",
+      "root": "power",
+      "sha256": "1a9c13539b98b2cd1dfdd0fe8d636eb84a662a246a50f03b4a9b38fcd60bbb17",
+      "source": "pins-and-values-v2.json"
+    },
+    {
+      "path": "power-source/pins-and-values.json",
+      "root": "power",
+      "sha256": "8634b8197bb9ee761a36a3402777c903e3735ad8a170f9b48b96774a333629bd",
+      "source": "pins-and-values.json"
+    },
+    {
+      "path": "power-source/proposal.md",
+      "root": "power",
+      "sha256": "23abb8baef48f04993cf1cb216330859dae62f5a9b20b7a67d40ac0f790b9d2b",
+      "source": "proposal.md"
+    },
+    {
+      "path": "power-source/selected-parts.json",
+      "root": "power",
+      "sha256": "44ef97938bbf505742d61b56498d88b3654e98329e5e0a77a77bdb42d5aa77c4",
+      "source": "selected-parts.json"
+    },
+    {
+      "path": "power-source/sources-supplement-v2.json",
+      "root": "power",
+      "sha256": "2e35db3fc72eeaa0355a5d1495c7e6bfc3f0c72cb1789990b5cb79c6d0911cd6",
+      "source": "sources-supplement-v2.json"
+    },
+    {
+      "path": "power-source/sources.json",
+      "root": "power",
+      "sha256": "89d21de50faab877ea88b91309f394c32731e38a3a8e744a315029a091e2cc79",
+      "source": "sources.json"
+    },
+    {
+      "path": "power-source/stock-auto-caps/catalog.json",
+      "root": "power",
+      "sha256": "187b76c61862c8b6a8a291cd1c65e87dac4b06be8be1d76efce98a6f19e1b1a6",
+      "source": "stock-auto-caps/catalog.json"
+    },
+    {
+      "path": "power-source/stock-auto-caps/responses/C329955.json",
+      "root": "power",
+      "sha256": "a83e94f38db554dfc20619a9bad037d328ebd3b79e2b74f2fefd3f3716c6c920",
+      "source": "stock-auto-caps/responses/C329955.json"
+    },
+    {
+      "path": "power-source/stock-auto-caps/responses/C694521.json",
+      "root": "power",
+      "sha256": "28d203e987148663f5ec39725dcf2cb62191aa59f235b4949e27cb0845c992ae",
+      "source": "stock-auto-caps/responses/C694521.json"
+    },
+    {
+      "path": "power-source/stock-auto-caps/responses/C76706.json",
+      "root": "power",
+      "sha256": "1fd8b65295af0c43bfb51cd6a553c26e30fac03ee3d2dac4212bb7b6df72fb75",
+      "source": "stock-auto-caps/responses/C76706.json"
+    },
+    {
+      "path": "power-source/stock-auto-caps/responses/C76711.json",
+      "root": "power",
+      "sha256": "560fd620a68686188f11347f4cdf3ffaf6e9c22684a1fe5a86e1f7578bcab8f6",
+      "source": "stock-auto-caps/responses/C76711.json"
+    },
+    {
+      "path": "power-source/stock-choke/catalog.json",
+      "root": "power",
+      "sha256": "078249a32c4fa0fd1bf0b2a75f3dfabcddff36d288bc89b806dd13df588be2d7",
+      "source": "stock-choke/catalog.json"
+    },
+    {
+      "path": "power-source/stock-choke/responses/C98080.json",
+      "root": "power",
+      "sha256": "a460ce9e0a1151e15bbb7ea14fdf1febd192fed12499d09cac5f9691a67841b7",
+      "source": "stock-choke/responses/C98080.json"
+    },
+    {
+      "path": "power-source/stock-input-tvs/catalog.json",
+      "root": "power",
+      "sha256": "0d822bfe126ae180fa32de28e5988ac9335c7674e9f7bb391f63a913348db198",
+      "source": "stock-input-tvs/catalog.json"
+    },
+    {
+      "path": "power-source/stock-input-tvs/responses/C151279.json",
+      "root": "power",
+      "sha256": "318846059cac7eac052f64f7f199e6690439664057021c0e30c207f69ed3ad2b",
+      "source": "stock-input-tvs/responses/C151279.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/catalog.json",
+      "root": "power",
+      "sha256": "d857982501c500d50534e1839fc37cc4ca5fd1746fbf515cf3be642c229fc58a",
+      "source": "stock-passives-1/catalog.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C110776.json",
+      "root": "power",
+      "sha256": "d1669f8eabece73703580f545537e9bc788c07c37bb93e2f6d0931c41b1376f3",
+      "source": "stock-passives-1/responses/C110776.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C124196.json",
+      "root": "power",
+      "sha256": "7941bdc542ddd642fadaff01f90d972daa6097ebdfc0d21782c3e3ccc7b1db3a",
+      "source": "stock-passives-1/responses/C124196.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C14675.json",
+      "root": "power",
+      "sha256": "f65f8c722ce6c85e07d86fcc897f1cb238a1086652e38d9744a66bdfd39a692d",
+      "source": "stock-passives-1/responses/C14675.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C1591.json",
+      "root": "power",
+      "sha256": "1e90287c045eb212a7bc1e6c734819193f153a69ea4c9458764791cc1948c426",
+      "source": "stock-passives-1/responses/C1591.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C17288249.json",
+      "root": "power",
+      "sha256": "bea44be5b4c447d54fad9899f959a91d421e8d41657c5188e10964f9c31f547a",
+      "source": "stock-passives-1/responses/C17288249.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C19947708.json",
+      "root": "power",
+      "sha256": "7ed45081daa9886fe48960dcba567dc70aed0bbe36619e933866578b325a3751",
+      "source": "stock-passives-1/responses/C19947708.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C2045384.json",
+      "root": "power",
+      "sha256": "bed47b551d8b164c96a6cc77c5d0351461e7de18fb22d7dd3b88bc41b4bcd5a3",
+      "source": "stock-passives-1/responses/C2045384.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C2167328.json",
+      "root": "power",
+      "sha256": "18ea92ebf41a1abee9f835f27837a8c3cc3fe279a8576cd3367d5905d8852047",
+      "source": "stock-passives-1/responses/C2167328.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C307542.json",
+      "root": "power",
+      "sha256": "53c835d710002e95bdc3c503e1a0fec7e72064633a4fa8d266b44be759d3395d",
+      "source": "stock-passives-1/responses/C307542.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C309062.json",
+      "root": "power",
+      "sha256": "d6a0928cf5b04aecd65d7b3bb8a7e3ed1364efc27714bd507ce3a418127cfb6f",
+      "source": "stock-passives-1/responses/C309062.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C452751.json",
+      "root": "power",
+      "sha256": "7df4e10dc83efc29f1b20a0598598a03c0a66961e66f9150f5ade7fe331e2238",
+      "source": "stock-passives-1/responses/C452751.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C469656.json",
+      "root": "power",
+      "sha256": "5e4678f34bfb9c3eec448ac1d06fe18c2d6ea746fec7f6084919f6ec2af68990",
+      "source": "stock-passives-1/responses/C469656.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C59782.json",
+      "root": "power",
+      "sha256": "f47c7520ee743a76bcace8090deecb2a716dbfde745ed4ab8358a0a4ad7b1d13",
+      "source": "stock-passives-1/responses/C59782.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C728588.json",
+      "root": "power",
+      "sha256": "bee90b8c20609b72d14b78a70c55675b6b958f849818f3a23cf54f01da3aa5c4",
+      "source": "stock-passives-1/responses/C728588.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C861458.json",
+      "root": "power",
+      "sha256": "fb8a55c28eda3e58fdeabf062deac6ec85a55d780c00bdd733c7203041ec1b51",
+      "source": "stock-passives-1/responses/C861458.json"
+    },
+    {
+      "path": "power-source/stock-passives-1/responses/C95204.json",
+      "root": "power",
+      "sha256": "432fd74c12d4548be7925143e8de4c8b2a5e0731ddb7865337581a92aeb78a94",
+      "source": "stock-passives-1/responses/C95204.json"
+    },
+    {
+      "path": "power-source/stock-passives-2/catalog.json",
+      "root": "power",
+      "sha256": "4a1b8a6fc19526762e15588342e82cce508fb01a05dac81d0340099901aa9a1d",
+      "source": "stock-passives-2/catalog.json"
+    },
+    {
+      "path": "power-source/stock-passives-2/responses/C105579.json",
+      "root": "power",
+      "sha256": "78b50aa7cc93fa2f127e12824e83b2747b8ea575b0139f824cc992aeafe32f11",
+      "source": "stock-passives-2/responses/C105579.json"
+    },
+    {
+      "path": "power-source/stock-passives-2/responses/C105588.json",
+      "root": "power",
+      "sha256": "14d0f7e691b21c1badbe73ffa743ab77568c01aa6f773387770f18d5029cdf3e",
+      "source": "stock-passives-2/responses/C105588.json"
+    },
+    {
+      "path": "power-source/stock-passives-2/responses/C108080.json",
+      "root": "power",
+      "sha256": "012dd881338718e6d7f5aa42259e7aaff38fc6a0194b95d4e3ea649e03540f8a",
+      "source": "stock-passives-2/responses/C108080.json"
+    },
+    {
+      "path": "power-source/stock-passives-2/responses/C112305.json",
+      "root": "power",
+      "sha256": "dad7944106ce8d0f05e88a2f4a1ba6e926c19417021248ef94355b0a22f119a4",
+      "source": "stock-passives-2/responses/C112305.json"
+    },
+    {
+      "path": "power-source/stock-protection/catalog.json",
+      "root": "power",
+      "sha256": "ff0a3fe52afd9d91a4fcb510f7954f6071cfd8d2c8f84271e3c3ccb41cf7bb10",
+      "source": "stock-protection/catalog.json"
+    },
+    {
+      "path": "power-source/stock-protection/responses/C224045.json",
+      "root": "power",
+      "sha256": "8e3e7a17e8861e093392db06a1d5d045bb418fca603042763bd13e8693ee4dbb",
+      "source": "stock-protection/responses/C224045.json"
+    },
+    {
+      "path": "power-source/stock-protection/responses/C5311564.json",
+      "root": "power",
+      "sha256": "f0e1a85324f10c5f08d46a9af6fbc115197a5a0861acb9008c22049efa9aa97d",
+      "source": "stock-protection/responses/C5311564.json"
+    },
+    {
+      "path": "power-source/stock-shortlist/catalog.json",
+      "root": "power",
+      "sha256": "9fc2c256a5ef1ca6ab5e86a4a837c7999b070e388c6a0311eab6ac6bc4684890",
+      "source": "stock-shortlist/catalog.json"
+    },
+    {
+      "path": "power-source/stock-shortlist/responses/C130055.json",
+      "root": "power",
+      "sha256": "6ecc312f02b17fb9c669710e0dc9646a94c6c11fa097890332ba7a32bfc67d83",
+      "source": "stock-shortlist/responses/C130055.json"
+    },
+    {
+      "path": "power-source/stock-shortlist/responses/C154901.json",
+      "root": "power",
+      "sha256": "fe72badee9d9ec3bec2db19cb8b84657a2e5f5acbd0d4e7f8a2fd7d6f1898d4d",
+      "source": "stock-shortlist/responses/C154901.json"
+    },
+    {
+      "path": "power-source/stock-shortlist/responses/C208539.json",
+      "root": "power",
+      "sha256": "3eddb28a193710c9285451c5a837c19d49642bbbaff3a499a0fec1f482e09ef9",
+      "source": "stock-shortlist/responses/C208539.json"
+    },
+    {
+      "path": "power-source/stock-shortlist/responses/C2879422.json",
+      "root": "power",
+      "sha256": "33c32c984d91617585616b7be712ca0d978badb06d8b3857ad7493b1c0390841",
+      "source": "stock-shortlist/responses/C2879422.json"
+    },
+    {
+      "path": "power-source/stock-shortlist/responses/C523802.json",
+      "root": "power",
+      "sha256": "50e6766461be6474639c2c2e528387da99d71f7449f11d48d3ac0552c1c31d23",
+      "source": "stock-shortlist/responses/C523802.json"
+    },
+    {
+      "path": "power-source/stock-shortlist/responses/C545190.json",
+      "root": "power",
+      "sha256": "57777403c24ac37d64d0645ab21b6f5ff770e4e16b0e05205ef36e81cf248433",
+      "source": "stock-shortlist/responses/C545190.json"
+    },
+    {
+      "path": "power-source/stock-shortlist/responses/C81563.json",
+      "root": "power",
+      "sha256": "5ec1c46c97d9396d75c8150919eb16b8ea8fe8b1de200175b3cc18020a856145",
+      "source": "stock-shortlist/responses/C81563.json"
+    },
+    {
+      "path": "power-source/stock-tracker-reference/catalog.json",
+      "root": "power",
+      "sha256": "c0b67b5f20c4d3cc42092372c69cb3e62d3f02cc2a3a26d9b94f4159725d39d2",
+      "source": "stock-tracker-reference/catalog.json"
+    },
+    {
+      "path": "power-source/stock-tracker-reference/responses/C129339.json",
+      "root": "power",
+      "sha256": "30217a613c4e3d20bcb8ebe2e9d321613f1cbd9aeead582a47ab969d4297432a",
+      "source": "stock-tracker-reference/responses/C129339.json"
+    },
+    {
+      "path": "power-source/stock-tracker-reference/responses/C27804.json",
+      "root": "power",
+      "sha256": "6975320c18a88b6443887fe3574515b76fad5c1189a76c90e981af2b48e8bb6d",
+      "source": "stock-tracker-reference/responses/C27804.json"
+    },
+    {
+      "path": "power-source/stock-tracker-reference/responses/C92494.json",
+      "root": "power",
+      "sha256": "2535903fc5e34855f589abf5e2ef95843fd289ed58051c71cfb347af0732d223",
+      "source": "stock-tracker-reference/responses/C92494.json"
+    },
+    {
+      "path": "symbols/Connector.capture.json",
+      "root": "active",
+      "sha256": "eb2bd7735bede0995cf9aeccce430b03ca3a1ff8c2db2243dbc21d95695611fb",
+      "source": "captured-stock/Connector.capture.json"
+    },
+    {
+      "path": "symbols/Connector.kicad_sym",
+      "root": "active",
+      "sha256": "45a07de2ee612fd70807ce22b0e8261a3a9b1a98c9b7d36b7c4dce4c59ef20fc",
+      "source": "captured-stock/Connector.kicad_sym"
+    },
+    {
+      "path": "symbols/Connector_Generic.capture.json",
+      "root": "active",
+      "sha256": "730262ac93c83047f5ff72720440f0380bd1454cf33ef77e7bf2991fa0a91fb8",
+      "source": "captured-stock/Connector_Generic.capture.json"
+    },
+    {
+      "path": "symbols/Connector_Generic.kicad_sym",
+      "root": "active",
+      "sha256": "fa686881a81894f204046223c2f16cd53a7d2b6a6d2cfe868dea8450e7c70ed3",
+      "source": "captured-stock/Connector_Generic.kicad_sym"
+    },
+    {
+      "path": "symbols/Device.capture.json",
+      "root": "active",
+      "sha256": "975f702a6757f9f94fac1bfdb6a64e5ee7526c135a299ac517b8b27748d622cf",
+      "source": "captured-stock/Device.capture.json"
+    },
+    {
+      "path": "symbols/Device.kicad_sym",
+      "root": "active",
+      "sha256": "a0d4a03fc9c54f74662cb3c3c76bb3d972d4ea3bbdf51c12f7145a5963d4d427",
+      "source": "captured-stock/Device.kicad_sym"
+    },
+    {
+      "path": "symbols/PodFeatures.kicad_sym",
+      "root": "active",
+      "sha256": "f66de5538cc957ffe56ee45e5afc2ac4f5c3d8f3a46f4b12bc35f4b0aded14a9",
+      "source": "pogo-proposal/PodFeatures.kicad_sym"
+    },
+    {
+      "path": "symbols/Reference_Voltage.capture.json",
+      "root": "active",
+      "sha256": "9d0bf7d9bc809004e0d6f96b041768f327cfe9ce2b4794e4fc0281747a8bd8f3",
+      "source": "captured-stock/Reference_Voltage.capture.json"
+    },
+    {
+      "path": "symbols/Reference_Voltage.kicad_sym",
+      "root": "active",
+      "sha256": "2f8db9d98616eb089d4e70779c3807e465d71717d2ad79b1c77da473064ab702",
+      "source": "captured-stock/Reference_Voltage.kicad_sym"
+    },
+    {
+      "path": "symbols/Transistor_FET.capture.json",
+      "root": "active",
+      "sha256": "6671cb83f5ff5cf3347b9cf5c81712dde409d3fdfab2d257c26656867d36f42e",
+      "source": "captured-stock/Transistor_FET.capture.json"
+    },
+    {
+      "path": "symbols/Transistor_FET.kicad_sym",
+      "root": "active",
+      "sha256": "02677a5ad15f4ad32237c3d692381be6de7c14a4ac033046e0cf54cb1d8bae89",
+      "source": "captured-stock/Transistor_FET.kicad_sym"
+    },
+    {
+      "path": "symbols/power.capture.json",
+      "root": "active",
+      "sha256": "9c3b094772ea69b19ca49f24004cc1960530b686e02410d9dd050fddd5d04da4",
+      "source": "captured-stock/power.capture.json"
+    },
+    {
+      "path": "symbols/power.kicad_sym",
+      "root": "active",
+      "sha256": "5308c8c77530d5ba458ca658925119069cb6cb8ad6fbf424d88afb1fdb4e3ef1",
+      "source": "captured-stock/power.kicad_sym"
+    }
+  ]
+}
