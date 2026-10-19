@@ -71,6 +71,14 @@ by the captured canonical binding; neither omission nor writer text proves an
 accepted adaptation. The source properties remain available for comparison.
 Source-review qualification under 149/204 remains unverified.
 
+Native CAN nets use `POD_CAN_P` for CAN_H (J1.1/U100.7/D100.2/R100.1) and
+`POD_CAN_N` for CAN_L (J1.2/U100.6/D100.1/R100.2). This explicit naming adaptation
+enables the existing canonical pair detector. The pinned188c CSV remains
+verbatim; a separate derived actual-design CSV changes only the two native Net
+tokens and retains all physical signal names and other cells. Neither the
+adaptation nor pair detection establishes coupled routing or numerical
+length/skew compliance. No185 fixture bounds are promoted to pod requirements.
+
 ## Pin allocation decisions
 
 `pin-allocation.json` assigns all 108 physical core pins against the exact captured

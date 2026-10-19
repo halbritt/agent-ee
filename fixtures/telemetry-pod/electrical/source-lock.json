@@ -288,6 +288,13 @@
       "source": "acquisition/402991ee7566b52693f3ab3400d2e42d878be51ba4de90e8cac049be6104f524.pdf"
     },
     {
+      "origin": "Verbatim pinned188c fixture from git commit1f89cff8026f07551af6c3568b151ab356a986ee; source never modified",
+      "path": "requirements/io-map.source.csv",
+      "root": "core",
+      "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c",
+      "source": "io-source/io-map.csv"
+    },
+    {
       "origin": "Existing captured canonical requirement or reviewed169 declaration",
       "path": "requirements/spec-record.json",
       "root": "repo",

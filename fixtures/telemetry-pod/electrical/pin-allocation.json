@@ -672,13 +672,13 @@
         {
           "disposition": "connect",
           "name": "CANL",
-          "net": "POD_CAN_L",
+          "net": "POD_CAN_N",
           "number": "6"
         },
         {
           "disposition": "connect",
           "name": "CANH",
-          "net": "POD_CAN_H",
+          "net": "POD_CAN_P",
           "number": "7"
         },
         {
@@ -706,13 +706,13 @@
         {
           "disposition": "connect",
           "name": "A1",
-          "net": "POD_CAN_L",
+          "net": "POD_CAN_N",
           "number": "1"
         },
         {
           "disposition": "connect",
           "name": "A2",
-          "net": "POD_CAN_H",
+          "net": "POD_CAN_P",
           "number": "2"
         },
         {
@@ -740,13 +740,13 @@
         {
           "disposition": "connect",
           "name": "",
-          "net": "POD_CAN_H",
+          "net": "POD_CAN_P",
           "number": "1"
         },
         {
           "disposition": "connect",
           "name": "",
-          "net": "POD_CAN_L",
+          "net": "POD_CAN_N",
           "number": "2"
         }
       ],
@@ -785,11 +785,11 @@
   "done": false,
   "harness_boundaries": [
     {
-      "net": "POD_CAN_H",
+      "net": "POD_CAN_P",
       "pin": "1"
     },
     {
-      "net": "POD_CAN_L",
+      "net": "POD_CAN_N",
       "pin": "2"
     },
     {
@@ -867,7 +867,8 @@
     "ADC_AIN0-3 and SENSOR_REF_2V5 are analog-front-end output boundaries, not direct 5V harness nets. MCP3204 NC5/6 open. Final acquisition/settling/protection requires proposed buffer/divider/filter adoption.",
     "CAN S is explicitly GND via U100.8, not an independent MCU signal. Source VIO +3V3_WBO1 maps to +3V3. Source +5V maps to dedicated +5V_CAN. R100 remains120 ohms, not the60-ohm adaptation test.",
     "Core no_connect declarations record design intent; they have not yet passed native ERC or electrical review.",
-    "External net names align with frozen188c io-map.csv at1f89cff: POD_CAN_H/L, POD_12V_IN, POD_5V_SENSOR, POD_SENSOR_RETURN, four POD_*_SIGNAL nets and POD_UART_TX/RX. GNSS RF_IN11 uses POD_GNSS_RF at the SMA/bias-tee conductor: the captured integration manual p73 states the module contains its own DC block. The bias supply network and SMA component remain incomplete."
+    "External net names align with frozen188c io-map.csv at1f89cff: POD_CAN_H/L, POD_12V_IN, POD_5V_SENSOR, POD_SENSOR_RETURN, four POD_*_SIGNAL nets and POD_UART_TX/RX. GNSS RF_IN11 uses POD_GNSS_RF at the SMA/bias-tee conductor: the captured integration manual p73 states the module contains its own DC block. The bias supply network and SMA component remain incomplete.",
+    "Explicit naming adaptation: source CAN_H/POD_CAN_H at J1.1/U100.7 becomes native POD_CAN_P; source CAN_L/POD_CAN_L at J1.2/U100.6 becomes native POD_CAN_N. Logical signal names remain CAN_H/CAN_L. The original188 CSV is preserved; only its two CAN Net fields change in the derived actual-design CSV. Pair naming enables existing detection, not numerical routing qualification."
   ],
   "scope": "Explicit core design assignment, not emitted/native connectivity proof"
 }

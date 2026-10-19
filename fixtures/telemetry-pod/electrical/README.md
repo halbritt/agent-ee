@@ -21,7 +21,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src \
   --root power=/tmp/agent463-pod-power-research
 ```
 
-The output must not exist. Roots may point to retained copies elsewhere; all 60
+The output must not exist. Roots may point to retained copies elsewhere; all 61
 input files must match `source-lock.json`. The recipe does no network access and
 does not manufacture acquisition receipts. Different library versions or later
 supplier captures require explicit new pins and review. A failed run may leave
@@ -43,6 +43,13 @@ include 176's four deterministic CAN references. A complete design must extend
 this file and the manifest to cover all physical components. `bundle.json`
 indexes the resulting files and keeps `done:false`; it is an informational input
 inventory, not a campaign seal or acceptance record.
+
+`requirements/io-map.source.csv` preserves the exact188c fixture. The separate
+`io-map.actual.csv` changes only its CAN Net tokens from `POD_CAN_H/L` to
+`POD_CAN_P/N`, enabling existing pair detection while retaining physical signal
+names CAN_H/CAN_L. `io-map-aliases.json` binds both hashes and the explicit pin
+mapping. Other unresolved source CSV fields remain unresolved; this naming
+adaptation does not create a complete interface contract or numeric route limit.
 
 ## Electrical boundaries and remaining work
 

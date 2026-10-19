@@ -1,0 +1,39 @@
+{
+  "changes": [
+    {
+      "connector_pin": "AMPSEAL-1",
+      "field": "Net",
+      "native": "POD_CAN_P",
+      "signal_name": "CAN_H",
+      "source": "POD_CAN_H",
+      "terminals": [
+        "J1.1",
+        "U100.7",
+        "D100.2",
+        "R100.1"
+      ]
+    },
+    {
+      "connector_pin": "AMPSEAL-2",
+      "field": "Net",
+      "native": "POD_CAN_N",
+      "signal_name": "CAN_L",
+      "source": "POD_CAN_L",
+      "terminals": [
+        "J1.2",
+        "U100.6",
+        "D100.1",
+        "R100.2"
+      ]
+    }
+  ],
+  "derived_path": "requirements/io-map.actual.csv",
+  "reason": "Use the existing canonical P/N naming contract for pair detection while preserving physical CAN_H/CAN_L meanings and all original source CSV bytes. No fixture length/skew bounds are adopted.",
+  "scope": "Actual-design native CAN naming adaptation; no electrical topology or numeric rule change",
+  "source": {
+    "path": "requirements/io-map.source.csv",
+    "sha256": "da0b40e76ea1f584c41480cc41d8353978931802b64a0b84923d87f9306cd98c"
+  },
+  "source_commit": "1f89cff8026f07551af6c3568b151ab356a986ee",
+  "source_repository_path": "fixtures/telemetry-pod/io-map.csv"
+}

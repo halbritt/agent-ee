@@ -6,7 +6,9 @@ approve, or emit a schematic. Vendor PDFs, stock CAD, and source design bytes
 stay in the caller's external output directory.
 """
 import argparse
+import csv
 import hashlib
+import io
 import json
 from pathlib import Path
 
@@ -77,9 +79,33 @@ def build(output, roots):
         return dict(path=path, sha256=hashlib.sha256((output / path).read_bytes()).hexdigest())
 
     for name in ('design-decisions.md', 'source-lock.json', 'core-selections.json', 'part-decisions.declaration.json',
+                 'net-adaptations.json',
                  'pin-allocation.json'):
         (output / name).write_bytes((here / name).read_bytes())
     validate_pin_allocation(json.loads((output / 'pin-allocation.json').read_text()), selections, output)
+    adaptation = json.loads((output / 'net-adaptations.json').read_text())
+    original = (output / adaptation['source']['path']).read_bytes()
+    if hashlib.sha256(original).hexdigest() != adaptation['source']['sha256']:
+        raise ValueError('CAN naming source mismatch')
+    derived = original
+    for change in adaptation['changes']:
+        old, new = (',' + change['source'] + ',').encode(), (',' + change['native'] + ',').encode()
+        if derived.count(old) != 1:
+            raise ValueError('expected one exact native Net token per CAN alias')
+        derived = derived.replace(old, new)
+    source_rows = list(csv.DictReader(io.StringIO(original.decode())))
+    derived_rows = list(csv.DictReader(io.StringIO(derived.decode())))
+    expected_rows = json.loads(json.dumps(source_rows))
+    for change in adaptation['changes']:
+        matches = [r for r in expected_rows if r['Connector_Pin'] == change['connector_pin']
+                   and r['Signal_Name'] == change['signal_name']]
+        if len(matches) != 1 or matches[0][change['field']] != change['source']:
+            raise ValueError('CAN alias does not identify the original source cell')
+        matches[0][change['field']] = change['native']
+    if derived_rows != expected_rows:
+        raise ValueError('CAN naming changed an undeclared CSV field')
+    (output / adaptation['derived_path']).write_bytes(derived)
+    write('io-map-aliases.json', dict(**adaptation, derived=blob(adaptation['derived_path'])))
     decision = dict(**blob('design-decisions.md'), locator='Core selection decisions')
     libraries = []
     for name in sorted({p['lib_id'].split(':')[0] for p in selections['parts']}):
