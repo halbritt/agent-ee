@@ -73,11 +73,21 @@ settings = {'backend': opts['--backend'], 'budget_s': int(opts['--budget']), 'pr
             'pour_area_loss_pct': None, 'pour_min_spokes': None, 'backend_args': [],
             'backend_env': {'KICAD_X': '1'} if name == 'backend_env' else {}, 'reserve_spokes': None,
             'stall_s': None, 'barrier': None, 'mode': 'all', 'rule_floor_sha256': None}
-attempt = {'backend': opts['--backend'], 'project': project, 'board': board, 'schematic': sch,
+paired = opts.get('--diff-pairs') == 'auto'
+plans = scenario.get('pairs', [])
+if paired:
+    settings.update(diff_pairs='auto', pairs=plans)
+attempt = {'schema': 'kicad-route/attempt/2' if paired else 'kicad-route/attempt/1',
+           'backend': opts['--backend'], 'project': project, 'board': board, 'schematic': sch,
            'input_fingerprint': fingerprint, 'source': {'source_dir': str(src)},
            'reference_dir': f'reference/{src.name}', 'candidate_dir': f'candidate/{src.name}',
            'reference_facts': 'facts/reference-facts.json', 'baseline': {'report': None},
            'scope': {'nets': [], 'mode': 'all'}, 'settings': settings, 'floor': None, 'rules_files': {}}
+if paired:
+    attempt.update(pairs=[{**p, 'initially_connected': False} for p in plans],
+                   pair_routing={p['p']: {'status': 'COUPLED'} for p in plans})
+if name == 'missing_attempt_schema':
+    del attempt['schema']
 if name == 'missing_attempt_rules':
     del attempt['rules_files']
 if name == 'unknown_attempt_version':
@@ -143,6 +153,8 @@ result = {'schema': 'kicad-route/route/1', 'measurement': False, 'evidence': {},
           'routing': routing[routing_status], 'validation': validation, 'candidate': candidate,
           'run_dir': os.path.relpath(run), 'runtime_s': 0.1, 'tool_versions': {'kicad-cli': None},
           'finished_utc': '2026-10-17T00:00:00+00:00', 'exit_code': code, 'ledger': {}}
+if paired:
+    result.update(schema='kicad-route/route/2', pairs=[{**p, 'routed': True} for p in plans])
 if name == 'result_exit_mismatch':
     result['exit_code'] = 2
 if name == 'unknown_result_version':

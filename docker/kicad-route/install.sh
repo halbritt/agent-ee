@@ -17,7 +17,7 @@ MANIFEST=/opt/kicad-route.install.json
 LOCK=$(dirname -- "$(readlink -f -- "$0")")/krt-requirements.txt
 
 KICAD_ROUTE_URL=https://github.com/halbritt/kicad-route.git
-KICAD_ROUTE_COMMIT=e4979160a19b89837f9a9e9e25db620f3449f40a
+KICAD_ROUTE_COMMIT=a132899a26ed9d7bf95c9978f0c1c992ee066f63
 KRT_URL=https://github.com/drandyhaas/KiCadRoutingTools.git
 KRT_TAG=v0.23.1
 KRT_COMMIT=295f9ee197517e8323726853361eb137cc08ba9e

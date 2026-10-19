@@ -29,7 +29,8 @@ CONTRADICTIONS = ('exit0_incomplete', 'exit2_not_run', 'result_exit_mismatch', '
                   'candidate_symlink', 'two_attempts', 'latest_elsewhere', 'unknown_key', 'malformed_json',
                   'missing_candidate', 'board_hash_mismatch', 'backend_env', 'extra_candidate_file',
                   'reference_differs', 'touch_input', 'exit_signal', 'missing_result_version',
-                  'unknown_attempt_version', 'missing_attempt_rules', 'unknown_refusal_version', 'human_refusal')
+                  'unknown_attempt_version', 'missing_attempt_schema', 'missing_attempt_rules',
+                  'unknown_refusal_version', 'human_refusal')
 
 
 def files_under(root, skip=()):
@@ -449,6 +450,61 @@ class RetainedVerificationTest(unittest.TestCase):
                     'candidate_sha256': result['validation']['validated_board_sha256'],
                     'backend': {'status': 'reported', 'reason': None, 'value': result['backend']},
                     'tool_version': attempt.TOOL_VERSION, 'reproducibility': attempt.REPRODUCIBILITY['krt']})
+
+    def test_pair_opt_in_binds_empty_and_nonempty_plans(self):
+        plan = {'p': 'CAN+', 'n': 'CAN-', 'netclass': 'CAN', 'width_mm': 0.25, 'gap_mm': 0.2}
+        for plans in ([], [plan]):
+            with self.subTest(plans=plans):
+                case = self.case({'name': 'complete', 'pairs': plans}, REQUEST + ['--diff-pairs', 'auto'])
+                self.assertEqual(case.exit, 0, case.report['semantics'])
+                self.assertEqual(case.verify()['proposal'], 'eligible')
+                self.assertEqual(case.report['request']['diff_pairs'], 'auto')
+                self.assertEqual(case.report['process']['argv'][-2:], ['--diff-pairs', 'auto'])
+
+    def test_pair_schemas_and_keys_require_the_coordinator_opt_in_on_replay(self):
+        for file, mutate in (
+                ('result.json', lambda v: v.update(schema='kicad-route/route/2', pairs=[])),
+                ('result.json', lambda v: v.update(pairs=[])),
+                ('result.json', lambda v: v['settings'].update(diff_pairs='auto', pairs=[])),
+                ('attempt.json', lambda v: v.update(schema='kicad-route/attempt/2')),
+                ('attempt.json', lambda v: v.update(pairs=[], pair_routing={}))):
+            with self.subTest(file=file, mutate=mutate):
+                case = self.case('complete')
+                forge(case, files={file: mutate})
+                with self.assertRaisesRegex(ValueError, 'classify as contradiction'):
+                    case.verify()
+
+    def test_declared_pairs_refuse_downgrades_missing_keys_and_mismatched_plans(self):
+        plan = {'p': 'CAN+', 'n': 'CAN-', 'netclass': 'CAN', 'width_mm': 0.25, 'gap_mm': 0.2}
+        mutations = (
+            ('result.json', lambda v: v.update(schema='kicad-route/route/1')),
+            ('result.json', lambda v: v.update(schema='kicad-route/route-validate/2')),
+            ('attempt.json', lambda v: v.update(schema='kicad-route/attempt/1')),
+            ('attempt.json', lambda v: v.pop('schema')),
+            ('attempt.json', lambda v: v.pop('pair_routing')),
+            ('result.json', lambda v: v.pop('pairs')),
+            ('result.json', lambda v: v['settings'].pop('diff_pairs')),
+            ('result.json', lambda v: v['settings'].pop('pairs')),
+            ('result.json', lambda v: v['settings'].update(pairs=None)),
+            ('result.json', lambda v: v.update(pairs=[])),
+            ('attempt.json', lambda v: v['pairs'][0].update(n='OTHER-')),
+            ('attempt.json', lambda v: v['pairs'][0].update(initially_connected='unknown')),
+            ('attempt.json', lambda v: v['pair_routing'].update(OTHER={})),
+            ('result.json', lambda v: v['pairs'][0].update(width_mm=0.5)),
+            ('attempt.json', lambda v: v.update(unexpected=True)),
+        )
+        for file, mutate in mutations:
+            with self.subTest(file=file, mutate=mutate):
+                case = self.case({'name': 'complete', 'pairs': [plan]}, REQUEST + ['--diff-pairs', 'auto'])
+                forge(case, files={file: mutate})
+                with self.assertRaisesRegex(ValueError, 'classify as contradiction'):
+                    case.verify()
+
+    def test_pair_request_rejects_unsupported_modes_and_backend(self):
+        for args in (['--diff-pairs', 'manual'], ['--diff-pairs', ''],
+                     ['--diff-pairs', 'auto', '--backend', 'freerouting']):
+            with self.subTest(args=args), self.assertRaisesRegex(attempt.RequestError, 'diff-pairs'):
+                attempt.parse_request(REQUEST + args)
 
     def test_a_fixture_attempt_is_not_a_pinned_kicad_route_attempt(self):
         case = self.case('complete')
