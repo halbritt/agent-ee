@@ -420,17 +420,57 @@ def content_step(source_root, envelope, parts, board, *, intent=None, layout=Non
 
 def library_tables(document, inputs, project):
     """Build project-local tables pointing exclusively at captured CAD members."""
-    assignments = strict_json(read_captured(inputs, document['cad']['assignments']['path']))
-    manifest = strict_json(read_captured(inputs, document['cad']['manifest']['path']))
+    captures = {}
+    for key in ('assignments', 'manifest'):
+        declaration = document['cad'][key]
+        raw = read_captured(inputs, declaration['path'])
+        if hashlib.sha256(raw).hexdigest() != declaration['sha256']:
+            raise ValueError('captured CAD ' + key + ' hash mismatch')
+        captures[key] = strict_json(raw)
+    assignments, manifest = captures['assignments'], captures['manifest']
     libraries = {'sym-lib-table': [(item['name'], item['path']) for item in assignments['libraries']]}
-    footprints = {}
+    footprints, identities = {}, set()
     for name, member in _members(manifest):
-        parent = str(PurePosixPath(member['path']).parent)
-        if name in footprints and footprints[name] != parent:
-            raise ValueError('one captured footprint library must have one directory')
-        footprints[name] = parent
-    libraries['fp-lib-table'] = list(footprints.items())
-    result = {}
+        path = PurePosixPath(member['path'])
+        fpid = name + ':' + path.stem
+        if fpid in identities:
+            raise ValueError('duplicate captured footprint identity: ' + fpid)
+        identities.add(fpid)
+        raw = read_captured(inputs, member['path'])
+        if hashlib.sha256(raw).hexdigest() != member['sha256']:
+            raise ValueError('captured footprint hash mismatch: ' + member['path'])
+        footprints.setdefault(name, []).append((member, raw))
+    result, rows, copies = {}, [], []
+    copy_root = PurePosixPath(project) / 'captured-footprints'
+    for name, members in sorted(footprints.items()):
+        parents = {str(PurePosixPath(member['path']).parent) for member, _ in members}
+        if len(parents) == 1:
+            rows.append((name, next(iter(parents))))
+            continue
+        # Nicknames remain unchanged; only their generated directory is new.
+        if name in ('.', '..') or '/' in name or '\\' in name:
+            raise ValueError('split footprint library nickname is not a directory name: ' + name)
+        directory = copy_root / (name + '.pretty')
+        rows.append((name, str(directory)))
+        for member, raw in members:
+            path = str(directory / PurePosixPath(member['path']).name)
+            if path in result:
+                raise ValueError('generated footprint path collision: ' + path)
+            result[path] = raw
+            copies.append(dict(footprint=name + ':' + PurePosixPath(path).stem,
+                               path=path, source=dict(member)))
+    if copies:
+        # Reserve the whole namespace: an unlisted captured member must not be
+        # made loadable alongside the qualified copies by the generated table.
+        target = inputs / copy_root
+        if target.exists() or target.is_symlink() or any(
+                p.is_symlink() or (p.exists() and not p.is_dir())
+                for p in target.parents if p != inputs and inputs in p.parents):
+            raise ValueError('generated footprint library namespace collides with captured inputs')
+        result[str(copy_root / 'manifest.json')] = json_bytes(dict(
+            schema='agent-ee.scaffold-library-copies/1',
+            manifest=dict(document['cad']['manifest']), copies=copies))
+    libraries['fp-lib-table'] = rows
     for kind, rows in libraries.items():
         node = [kind.replace('-', '_'), ['version', '7']]
         for name, path in sorted(rows):
@@ -815,7 +855,10 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
             outputs.update(net_outputs)
             derivation['net_constraints']['record'] = record_rel
             scope['requirements'] = sorted({*scope['requirements'], plan['net_constraints'], *net_outputs})
-        outputs.update(library_tables(document, inputs, str(PurePosixPath(sch).parent)))
+        library_outputs = library_tables(document, inputs, str(PurePosixPath(sch).parent))
+        if library_outputs.keys() & (outputs.keys() | files.keys()):
+            raise ValueError('generated library artifacts collide with captured or native outputs')
+        outputs.update(library_outputs)
         if protected & outputs.keys():
             raise ValueError('scaffold library tables collide with immutable planning inputs')
         for rel, data in outputs.items():

@@ -57,6 +57,18 @@ sources remain immutable. Only the root schematic, pre-created child schematics
 and board appear in `mutable_inputs`. A writer still cannot add or delete a
 captured file, or edit an immutable file.
 
+A footprint nickname spanning multiple captured directories is consolidated into
+`PROJECT/captured-footprints/NAME.pretty`. Only declared members are copied,
+byte for byte, after verifying their hashes; original captures and manifests
+remain unchanged. Single-directory libraries keep their existing paths.
+`captured-footprints/manifest.json` (`agent-ee.scaffold-library-copies/1`) records
+the source CAD manifest pin and each original FPID, generated path, and source
+path/hash. The scaffold receipt inventories this mapping and every generated
+member; they remain immutable in the resulting scope. Duplicate footprint
+identities, occupied generated library namespaces, and library-output collisions
+with captured or native output paths refuse preparation. No library member or
+acceptance requirement is inferred from a directory listing.
+
 ### Shared builder
 
 `agent_ee.scaffold.native_files` is the only empty-scaffold builder on main. Given
