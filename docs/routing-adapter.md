@@ -221,6 +221,67 @@ is not `pass`, and a policy-failed board other than the validated one.
 Undeclared attempts are unchanged. Their argv, settings, report and verify summary
 have no policy fields.
 
+### Per-net signal layers (AGENTEE-258)
+
+The optional `layer_policy.per_net_signal_layers` maps exact board net names to
+nonempty allowed copper-layer lists. Each list must be a subset of the global
+`signal_layers`. This illustrates the declaration shape for the pod's RF net:
+
+```json
+{"signal_layers": ["F.Cu", "B.Cu"], "pour_area_loss_pct": 0.5,
+ "per_net_signal_layers": {"/POD_GNSS_RF": ["F.Cu"]},
+ "reference": {"net": "/GND", "layers": ["In1.Cu"], "rf_nets": ["/POD_GNSS_RF"]}}
+```
+
+The 0.5 % bound here is an example, not a source-backed pod limit. AGENTEE-257
+must determine its basis before campaign adoption; this feature supplies no new
+area-loss threshold or RF qualification.
+
+This declaration adds `items.per_net_signal_layers` to the adapter grade. It
+reads the pinned native `validate/candidate-facts.json`, bound to the validated
+board hash, and checks every segment, arc and via of each listed net. All copper
+layers between a via's endpoints in the native copper stack count, including
+intermediate planes. A through-via therefore violates an F.Cu-only declaration.
+Input copper has no exemption. Violations list UUID, net, kind, full layers and
+disallowed layers, and withhold the candidate with `policy_failed`.
+
+Missing or malformed native geometry, an absent declared layer, missing native
+facts, a mismatched board hash, or a net with no measured routed copper is unknown.
+A measured violation remains a defect alongside unknown geometry. The existing
+`reference` declaration independently measures full-track fill coverage for its
+`rf_nets`, including plane interruptions and via antipads described above. Declare
+both fields to enforce signal layers and the reference plane; neither establishes
+impedance qualification.
+
+Every per-net item records `board_sha256`, the router-validated board hash it
+grades, and every declared item also records `declared`, the per-net map it
+checked. Once the inventory is readable it also lists `copper_measured` per net,
+`violations` and `problems`. For a delivered board `board_sha256`
+equals the summary's `candidate_sha256` and the native facts' `sha256`; for a
+withheld board it equals `rejected_candidate_sha256`. A consumer such as the RF
+assessment (AGENTEE-259) binds the item to a candidate only by comparing that
+hash with the candidate it assesses. `routing_adapter.verify` regrades the item
+from the retained facts, so an edited item fails replay. A board whose copper
+layers do not use the canonical `F.Cu`, `In<n>.Cu`, `B.Cu` names is unknown.
+
+`per_net_layer_grade(policy, facts, validated_board_sha256)` returns unknown when
+the per-net declaration is absent. A global allowlist is never evidence for an
+undeclared per-net requirement. To preserve existing global-only verdicts, the
+adapter adds this item to its overall policy grade only when declared; consumers
+must treat a missing item as unknown for any per-net requirement. There is no new
+scope check kind or automatic RF requirement satisfaction. AGENTEE-257 owns the
+pod's policy determination and campaign adoption; this mechanism does not choose
+those values. Frozen adapter bindings must be recaptured after this change.
+
+[`test_per_net_layers.py`](../tests/test_per_net_layers.py) exercises native
+routing of original boards: a compliant net under the pod-shaped declaration
+(F.Cu only over an In1.Cu GND reference, B.Cu globally allowed), a back-layer
+segment permitted globally but forbidden for the net (the global items all pass),
+a via to another layer, and a reference void under part of the route. Each checks
+the item's `board_sha256` against the delivered or rejected board. Contract probes
+also cover arcs, blind via spans, absent declarations, malformed inventory and
+changed replay grades.
+
 The native test [`test_route_layer_policy.py`](../tests/test_route_layer_policy.py)
 uses an original four-layer probe with GND planes on In1 and In2. An F.Cu/B.Cu
 allowlist delivers a board with no inner tracks, and its grade passes, including
