@@ -271,14 +271,24 @@ def split_pages(text):
 
 
 def page_support(source, pages):
-    """Status and reason of an exact quote on its cited physical page of extracted text."""
+    """Status and reason of an exact, token-bounded quote on its cited physical page."""
     if source['page'] > len(pages):
         return 'rejected', 'page_out_of_range'
     if not pages[source['page'] - 1].strip():
         return 'unsupported', 'page_has_no_text'
-    if source['quote'] not in pages[source['page'] - 1]:
+    page, quote = pages[source['page'] - 1], source['quote']
+    start = page.find(quote)
+    if start < 0:
         return 'rejected', 'quote_absent_from_page'
-    return 'verified', 'exact_quote_and_value_supported'
+    # Preserve the exact quote match; edge whitespace already delimits its tokens.
+    tokens = quote.strip()
+    leading = len(quote) - len(quote.lstrip())
+    trailing = len(quote.rstrip())
+    while start >= 0:
+        if starts_token(page, start + leading, tokens) and ends_token(page, start + trailing, tokens):
+            return 'verified', 'exact_quote_and_value_supported'
+        start = page.find(quote, start + 1)
+    return 'rejected', 'quote_truncates_a_page_token'
 
 
 def verification_inputs(scope, inputs):

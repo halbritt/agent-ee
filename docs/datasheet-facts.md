@@ -44,6 +44,13 @@ is never a complete token. There is no OCR, Unicode normalization or
 model-generated replacement text. Pin-function facts additionally require the
 pin as a complete token under the same rules.
 
+The quote must also start and end at complete tokens on its cited page, using
+the same lexical boundaries. `Pad pitch e 0.9` cannot cite `Pad pitch e 0.95`,
+and `CAN 6` cannot cite `XCAN 6`. If every exact occurrence cuts a token,
+the fact is rejected with `quote_truncates_a_page_token`. A later complete
+occurrence on that page still supports the quote. This shared rule applies
+to the facts check and datasheet-footprint extraction alike.
+
 These are boundaries, not interpretation. The checker does not compare
 numeric equivalence (`5E+3` versus `5000`), convert or validate units, or
 decide what a sign, range or expression means. Slash or space separation

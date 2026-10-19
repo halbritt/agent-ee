@@ -111,6 +111,12 @@ The native commands below show sandbox paths; `/candidate` is the captured
 `inputs/`, `/work` is this check's scratch. They document the emitted arguments,
 not commands to paste into a host shell with nonexistent sandbox paths.
 
+The [datasheet facts check](datasheet-facts.md) requires both the declared value
+in its quote and the quote on its cited PDF page to have complete token
+boundaries. A quote that cuts a page token is rejected with
+`quote_truncates_a_page_token`; any unverified citation leaves the check
+`unsupported/unknown` and cannot support dependent checks.
+
 | Kind | Native/helper arguments | Individual ceiling |
 | --- | --- | --- |
 | `erc` | `kicad-cli version` (sealed under `kicad-version/`), then `kicad-cli sch erc --format json --severity-all --units mm -o /work/erc.json SCHEMATIC` | 60 s, 900 s |

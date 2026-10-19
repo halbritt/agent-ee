@@ -128,7 +128,7 @@ Each cited fact is verified with the shared rules. The installed pdftotext
 must match the declaration before and after extraction. It runs in the
 networkless sandbox and extracts the document once. The value must be a
 complete token of the quote, and the quote must be on its cited physical page.
-This consumer adds one rule: the quote must not cut a printed page token.
+The shared verifier also requires the quote not to cut a printed page token.
 `Pad pitch e 0.9` is not support when the page prints `0.95`.
 
 Each missing, unknown, mismatched or unverified citation is listed in
