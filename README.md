@@ -95,6 +95,12 @@ Git-backed store until the owner decides on publication (AGENTEE-118). Sources
 and generated designs remain outside the repository; dependency closure and
 owner review are outstanding.
 
+The [false-positive calibration](docs/fp-calibration.md) measures the reviewers
+themselves. It shows each profile reviewer pairs made from a design and its seeded
+variants, in both orders and repeatedly. Every variant's label is first proven by
+native netlist identity. The report gives false-positive and false-negative rates
+and order sensitivity, and is computed only from the retained verdicts.
+
 The optional [pin-contract check](docs/pin-contracts.md) checks page-cited voltage,
 connection and capacitor/pull-up obligations against native connectivity. Missing
 contracts, unverified citations and ambiguous identities remain unknown coverage.

@@ -113,6 +113,8 @@ unresolved control findings per kind and leaves false-alarm rates unavailable
 until negative opportunities and decisions exist. Zero confirmed false alarms
 before that work does not mean the controls are defect-free. Model results, if
 added later, must stay in a separate report.
+Reviewer false-positive rates are measured separately by the
+[false-positive calibration](fp-calibration.md) (AGENTEE-70).
 
 Reruns compare check execution/outcome, details, native violation records,
 numerical values and locators. Native finding/item array order is incidental and
