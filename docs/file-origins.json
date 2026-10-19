@@ -431,6 +431,7 @@
         "action.yml",
         "bin/",
         "docker/agent-ee.apparmor",
+        "docker/image-context.json",
         "docker/kicad-route/",
         "pyproject.toml",
         "profiles/",

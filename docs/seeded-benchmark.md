@@ -58,18 +58,32 @@ when any listed set differs from what the pinned files name.
 
 Each licence class cites a licence file by path and SHA-256: the installed
 package `copyright` file, or Docker's README. KiCad's Debian `copyright` file says GPL v2.
-Each tool's evidence names its `location`. `runtime` evidence (KiCad, Bubblewrap,
-Python, Git) lives where the checks and the suite run, in the image or on a
-native host with the same toolchain, and must match byte for byte. A changed or
-missing file fails, and a native runtime tool can never be scoped out of it.
+Each tool's evidence names its `location`, and the verifier's code-owned policy
+(`TOOL_LOCATIONS` in `benchmark_run.py`) fixes both the tool set and each
+location. The closure must list exactly KiCad (`kicad-cli`, `pcbnew`),
+Bubblewrap, Python, Git and `docker`. `docker` is the only `outer-host` tool; every other
+tool is `runtime`. A closure that omits, adds, duplicates or relabels a tool is refused,
+whatever its JSON says.
+`runtime` evidence lives where the checks and the suite run, in the image or on
+a native host with the same toolchain, and must match byte for byte. A changed
+or missing file fails.
 `outer-host` evidence (the `docker` CLI that launches the image) is pinned by
 path and hash only. It is verified wherever its binary or licence file exists.
-Inside the image, where neither exists, `closure` reports it as
-`outer-host-absent` under `licence_evidence` and does not skip it silently.
-Font licence files are inside the image, so the image identity pins them. Fonts
-are a real dependency. DRC text-thickness and silkscreen records depend on the
-substitute font, and `closure` requires each run's console substitutions to
-equal the recorded map.
+Where neither exists, `closure` reports `outer-host-absent` only with positive
+evidence that it runs inside an agent-ee image (`image_context`). That evidence is
+Docker's `/.dockerenv`, the image context record
+[docker/image-context.json](../docker/image-context.json) that the Dockerfile
+installs at `/usr/local/share/agent-ee/image-context.json`, and every runtime
+binary matching its closure hash. Otherwise, as on a host where Docker is
+uninstalled, or in an image built before the record existed (such as the
+pinned `sha256:d6094c3b…0234`), the result is `unknown`. Neither
+`outer-host-absent` nor `unknown` counts as verification. Both are listed
+under `unverified`.
+Fonts are a real dependency. DRC text-thickness and silkscreen records depend on
+the substitute font, and `closure` requires each run's console substitutions to
+equal the recorded map. Each font package's `copyright` file is digested
+wherever it exists and must match. Inside the image it must exist. Outside the
+image an absent file is `unknown` (`font_licence_evidence`).
 Redistribution eligibility comes from the upstream grants only. The benchmark
 publishes nothing. Publishing boards, derivatives or results stays an owner gate.
 One gap remains: the alternate library's upstream source commit cannot be
@@ -87,8 +101,11 @@ python3 scripts/seeded_benchmark.py closure benchmarks/seeded/expectations.json 
   for each placed symbol.
 - It recomputes each library origin against the installed stock set and checks
   each licence class.
-- It checks the alternate footprints and the tool licence files by location and
-  reports the result for each tool (`verified` or `outer-host-absent`).
+- It checks the alternate footprints. It checks the tool set and locations
+  against the code-owned policy, and the tool and font licence files by
+  location. It reports each result (`verified`, `outer-host-absent` with
+  positive image context, or `unknown`). Every result other than `verified` is
+  also listed under `unverified`.
 - For each retained run, it requires the closure's image, binary hashes and KiCad
   version. Every consumed input must be a pinned native file, a captured
   dependency or a generated benchmark file.

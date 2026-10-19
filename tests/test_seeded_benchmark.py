@@ -670,6 +670,154 @@ class ToolLicenceTests(unittest.TestCase):
                     tool_licences([tool])
 
 
+class ClosureEvidenceTests(unittest.TestCase):
+    """Code-owned tool locations, positive image context and digested font licences."""
+
+    def closure(self, root):
+        import json
+        from pathlib import Path
+        from agent_ee.benchmark import sha
+        from agent_ee.benchmark_run import IMAGE_CONTEXT_RECORD, TOOL_LOCATIONS
+        root = Path(root);tools = [];packages = []
+        for name,location in TOOL_LOCATIONS.items():
+            stem = name.strip('/').replace('/','-')
+            (root/(stem+'.bin')).write_text('binary '+name);(root/(stem+'.copyright')).write_text('licence\n')
+            tools.append({'name':name,'path':str(root/(stem+'.bin')),'sha256':sha(('binary '+name).encode()),
+                'licence_class':'GPL (copyleft)','licence_evidence':{'location':location,
+                'path':str(root/(stem+'.copyright')),'sha256':sha(b'licence\n')}})
+        for name in ('fonts-dejavu-core','fontconfig'):
+            (root/(name+'.copyright')).write_text('font licence\n')
+            packages.append({'package':name,'version':'1','licence_class':'permissive','licence_evidence':
+                {'location':'image','path':str(root/(name+'.copyright')),'sha256':sha(b'font licence\n')}})
+        (root/'dockerenv').write_text('');(root/'image-context.json').write_text(json.dumps(IMAGE_CONTEXT_RECORD))
+        paths = {'container':str(root/'dockerenv'),'record':str(root/'image-context.json')}
+        return {'tools':tools,'fonts':{'packages':packages}}, paths
+
+    def without(self, path):
+        from pathlib import Path
+        Path(path).unlink()
+
+    def test_outer_host_absent_needs_positive_image_context_otherwise_unknown(self):
+        import copy
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import closure_evidence
+        with tempfile.TemporaryDirectory() as tmp:
+            closure,paths = self.closure(tmp);tools = {t['name']:t for t in closure['tools']}
+            result = closure_evidence(closure,**paths)
+            self.assertEqual(set(result['licence_evidence'].values()),{'verified'})
+            self.assertEqual(result['image_context'],{'established':True,'problems':[]})
+            self.assertEqual(result['unverified'],[])
+            self.without(tools['docker']['path']);self.without(tools['docker']['licence_evidence']['path'])
+            result = closure_evidence(closure,**paths)
+            self.assertEqual(result['licence_evidence']['docker'],'outer-host-absent')
+            self.assertEqual(result['unverified'],['docker'])
+            # A host without docker is not the image: each missing piece of evidence leaves docker unknown.
+            Path(tmp,'other.bin').write_text('other')
+            cases = {'container marker':dict(paths,container=str(Path(tmp)/'absent')),
+                     'record absent':dict(paths,record=str(Path(tmp)/'absent'))}
+            for label,changed in cases.items():
+                with self.subTest(label=label):
+                    result = closure_evidence(closure,**changed)
+                    self.assertEqual(result['licence_evidence']['docker'],'unknown')
+                    self.assertFalse(result['image_context']['established'])
+                    self.assertEqual(result['unverified'],['docker'])
+            Path(paths['record']).write_text('{"schema": "agent-ee.image-context/1", "outer_host_tools": []}')
+            self.assertEqual(closure_evidence(closure,**paths)['licence_evidence']['docker'],'unknown')
+            Path(paths['record']).write_text('not json')
+            self.assertEqual(closure_evidence(closure,**paths)['licence_evidence']['docker'],'unknown')
+        for runtime in ('kicad-cli','pcbnew','bwrap','/usr/bin/python3','git'):
+            with self.subTest(runtime=runtime), tempfile.TemporaryDirectory() as tmp:
+                closure,paths = self.closure(tmp);tools = {t['name']:t for t in closure['tools']}
+                self.without(tools['docker']['path']);self.without(tools['docker']['licence_evidence']['path'])
+                changed = copy.deepcopy(closure)
+                next(t for t in changed['tools'] if t['name']==runtime)['sha256'] = '0'*64
+                result = closure_evidence(changed,**paths)
+                self.assertEqual(result['licence_evidence']['docker'],'unknown')
+                self.assertEqual(result['image_context']['problems'],['runtime binary differs from closure: '+runtime])
+
+    def test_relabelled_omitted_or_extra_tools_are_refused_by_policy(self):
+        import copy
+        import tempfile
+        from agent_ee.benchmark_run import closure_evidence, tool_licences
+        with tempfile.TemporaryDirectory() as tmp:
+            closure,paths = self.closure(tmp)
+            def relabel(name,location):
+                changed = copy.deepcopy(closure)
+                next(t for t in changed['tools'] if t['name']==name)['licence_evidence']['location'] = location
+                return changed
+            relabelled = [(relabel('git','outer-host'),'must be verified in the runtime: git'),
+                          (relabel('docker','runtime'),'must be verified on the outer host: docker'),
+                          (relabel('kicad-cli','outer-host'),'must be verified in the runtime: kicad-cli')]
+            for changed,message in relabelled:
+                with self.subTest(message=message):
+                    with self.assertRaisesRegex(ValueError,message):
+                        tool_licences(changed['tools'])
+                    with self.assertRaisesRegex(ValueError,message):
+                        closure_evidence(changed,**paths)
+            extra = dict(closure['tools'][0],name='podman')
+            sets = {'omit git':[t for t in closure['tools'] if t['name']!='git'],
+                    'omit docker':[t for t in closure['tools'] if t['name']!='docker'],
+                    'extra tool':closure['tools']+[extra],
+                    'duplicate':closure['tools']+[closure['tools'][0]]}
+            for label,tools in sets.items():
+                with self.subTest(label=label), self.assertRaisesRegex(ValueError,'tool set differs from policy'):
+                    closure_evidence(dict(closure,tools=tools),**paths)
+
+    def test_font_licences_are_digested_where_present_and_required_in_the_image(self):
+        import copy
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import closure_evidence
+        with tempfile.TemporaryDirectory() as tmp:
+            closure,paths = self.closure(tmp);font = closure['fonts']['packages'][0]
+            host = dict(paths,container=str(Path(tmp)/'absent'))
+            self.assertEqual(closure_evidence(closure,**host)['font_licence_evidence'],
+                             {'fonts-dejavu-core':'verified','fontconfig':'verified'})
+            Path(font['licence_evidence']['path']).write_text('changed\n')
+            for label,context in (('host',host),('image',paths)):
+                with self.subTest(label=label), self.assertRaisesRegex(ValueError,'font licence evidence missing or changed: fonts-dejavu-core'):
+                    closure_evidence(closure,**context)
+            self.without(font['licence_evidence']['path'])
+            result = closure_evidence(closure,**host)
+            self.assertEqual(result['font_licence_evidence']['fonts-dejavu-core'],'unknown')
+            self.assertEqual(result['unverified'],['fonts-dejavu-core'])
+            with self.assertRaisesRegex(ValueError,'font licence evidence missing or changed: fonts-dejavu-core'):
+                closure_evidence(closure,**paths)
+            for key,value in (('location','runtime'),('sha256','0'),('path','copyright')):
+                changed = copy.deepcopy(closure);changed['fonts']['packages'][1]['licence_evidence'][key] = value
+                with self.subTest(key=key), self.assertRaisesRegex(ValueError,'font licence evidence missing: fontconfig'):
+                    closure_evidence(changed,**host)
+            changed = copy.deepcopy(closure);changed['fonts']['packages'].append(changed['fonts']['packages'][1])
+            with self.assertRaisesRegex(ValueError,'font package listed twice: fontconfig'):
+                closure_evidence(changed,**host)
+
+    def test_committed_closure_evidence_where_the_suite_runs(self):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import json
+        from pathlib import Path
+        from agent_ee.benchmark_run import CONTAINER_MARKER, IMAGE_CONTEXT, closure_evidence
+        from agent_ee.storage import digest
+        closure = json.loads((Path(__file__).resolve().parents[1]/'benchmarks/seeded/dependency-closure.json').read_text())
+        result = closure_evidence(closure)
+        tools = {t['name']:t for t in closure['tools']}
+        docker = tools['docker']
+        outer = Path(docker['path']).exists() or Path(docker['licence_evidence']['path']).exists()
+        image = (Path(CONTAINER_MARKER).is_file() and Path(IMAGE_CONTEXT).is_file() and
+                 all(digest(t['path'])==t['sha256'] for n,t in tools.items() if n!='docker'))
+        self.assertEqual(result['image_context']['established'],image)
+        expected = {n:'verified' for n in tools}
+        if not outer:
+            expected['docker'] = 'outer-host-absent' if image else 'unknown'
+        self.assertEqual(result['licence_evidence'],expected)
+        fonts = {p['package']:'verified' if Path(p['licence_evidence']['path']).is_file() else 'unknown'
+                 for p in closure['fonts']['packages']}
+        self.assertEqual(result['font_licence_evidence'],fonts)
+        if image:
+            self.assertEqual(set(fonts.values()),{'verified'})
+
+
 class FontSubstitutionTests(unittest.TestCase):
     def test_console_substitutions_are_read_exactly(self):
         import tempfile
