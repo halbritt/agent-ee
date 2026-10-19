@@ -182,3 +182,33 @@ skip.
 - Net renames need an exact one-to-one match on retained pad membership.
   Splits and merges are pad reassignments: the old copper keeps its net and
   appears as a stale net for DRC to report.
+
+## Native net-name encoding (AGENTEE-220)
+
+Both forward annotation and `board_build` use `agent_ee.board_net_names.from_xml`
+only at the XML-to-board boundary. KiCad 10.0.7's XML exporter decodes a literal
+slash in a net name, whereas its native S-expression exporter and PCB parity
+retain `{slash}`. Global names and generated no-connect names therefore encode
+`/` as `{slash}` before planning board nets. Braces (including `~{...}` overbar
+markup), spaces, colons, quotes and backslashes remain unchanged. This is net-name
+encoding, separate from S-expression string quoting. Already encoded slash tokens
+stay encoded. Names that collide after conversion are refused before writing.
+
+Declared sheet-name prefixes remain structural paths. XML loses the distinction
+between extra local-name slashes and sheet separators: a local label `A/B` and a
+net `B` in sheet `A` can export the same name. Local names with a slash after the
+most specific declared sheet prefix are refused rather than guessed. Global
+labels deliberately shaped like absolute sheet paths are outside this XML-only
+adapter's qualified input domain. Supporting those inputs would require an
+escaped native-netlist input, which this XML-only adapter does not provide. Native XML inventories, topology parity,
+and schematic label text keep their original representation. Scaffold writes
+no schematic nets and needs no conversion. The emitter continues to accept its
+existing safe-label grammar; generated NC names are produced by KiCad itself.
+
+`test_native_net_name_escaping_matches_native_export_and_parity` modifies only
+an original owned fixture's emitted NC pin name and global label. It compares
+native XML and S-expression exports, applies both board producers, reloads their
+outputs in fresh processes, checks pad copper layers, and requires zero native
+schematic-parity mismatches. Reannotation has no net changes. Refusal tests cover
+encoding collisions and ambiguous local slashes; the hierarchical fixture checks
+that declared sheet separators match the native exporter.

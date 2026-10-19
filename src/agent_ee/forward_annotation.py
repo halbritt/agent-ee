@@ -24,7 +24,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from . import native_netlist
+from . import board_net_names, native_netlist
 from .footprint_library import FootprintError, index_footprints, load_document
 
 PLAN_SCHEMA = 'agent-ee.forward-annotation-plan/1'
@@ -66,6 +66,7 @@ def _inventory(xml_bytes):
 
     Both come from the AGENTEE-41 reader and its own bounded parser; the
     elements supply only the symbol fields that the reader does not expose.
+    The board-name projection uses that parsed root; inventory names stay raw.
     """
     with tempfile.TemporaryDirectory(prefix='agent-ee-annotation-xml-') as tmp:
         path = Path(tmp) / 'netlist.xml'
@@ -73,6 +74,7 @@ def _inventory(xml_bytes):
         try:
             inventory = native_netlist.read_native_inventory(path)
             root = native_netlist._parse(path)
+            names = board_net_names.from_xml(root)
         except (ValueError, TypeError, UnicodeError, ET.ParseError) as exc:
             raise AnnotationError('native_netlist', str(exc)) from exc
     elements = {}
@@ -80,7 +82,7 @@ def _inventory(xml_bytes):
         elements[comp.get('ref')] = comp
     if set(elements) != set(inventory['components']) or len(root.findall('./components/comp')) != len(elements):
         raise AnnotationError('native_netlist', 'parsed components differ from the native inventory')
-    return inventory, elements
+    return inventory, elements, names
 
 
 def _fields(elements):
@@ -111,7 +113,7 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
                 add=[], remove=[], update=[], retain=[], board_only=[], renames=[], new_nets=[], pads=[],
                 stale_nets=[], counts={})
     try:
-        inventory, elements = _inventory(xml_bytes)
+        inventory, elements, names = _inventory(xml_bytes)
         from .probe_features import PROPERTY, parse_marker, native_component, footprint_signature
         from .symbol_library import parse_sexpr
         for ref, fields in _fields(elements).items():
@@ -137,7 +139,7 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
             raise AnnotationError('footprint_library_coverage',
                                   '; '.join(f.get('message', f['code']) for f in index['findings']))
         library = {fp['lib_id']: fp for fp in index['footprints']}
-        _plan(plan, inventory, _fields(elements), facts, library)
+        _plan(plan, inventory, _fields(elements), facts, library, names)
     except AnnotationError as exc:
         plan['findings'].append(dict(code=exc.code, location=exc.location, message=str(exc)))
         return _seal(plan)
@@ -151,13 +153,13 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
     return _seal(plan)
 
 
-def _plan(plan, inventory, fields, facts, library):
+def _plan(plan, inventory, fields, facts, library, names):
     components = inventory['components']
     pad_net = {}
     for net in inventory['nets'].values():
         for ref, pin in net['terminals']:
-            pad_net[ref, pin] = net['name']
-    netlist_names = {net['name'] for net in inventory['nets'].values()}
+            pad_net[ref, pin] = names[net['name']]
+    netlist_names = {names[net['name']] for net in inventory['nets'].values()}
     # Native identity: sheet path plus any unit UUID of the symbol.
     owner = {}
     for ref, comp in components.items():
@@ -318,7 +320,7 @@ def plan(board, xml, manifest, footprint_root, work):
         return _failed(PLAN_SCHEMA, 'footprint_library_coverage', str(exc))
     try:
         from .probe_features import PROPERTY, parse_marker, validate_board
-        _, elements = _inventory(xml_bytes)
+        _, elements, _ = _inventory(xml_bytes)
         probes = {ref: parse_marker(fields[PROPERTY]) for ref, fields in _fields(elements).items()
                   if PROPERTY in fields}
         validate_board(Path(board).read_bytes(), probes, require_all=False)
@@ -567,7 +569,7 @@ def apply(plan_record, board, xml, manifest, footprint_root, out, work, *, backu
             if hashlib.sha256(output).hexdigest() != _sha256(work / 'verify' / 'facts-input' / 'board.kicad_pcb'):
                 raise AnnotationError('verification', 'saved board changed after verification')
         from .probe_features import PROPERTY, parse_marker, validate_board
-        _, elements = _inventory(Path(xml).read_bytes())
+        _, elements, _ = _inventory(Path(xml).read_bytes())
         probes = {ref: parse_marker(fields[PROPERTY]) for ref, fields in _fields(elements).items()
                   if PROPERTY in fields}
         try:
