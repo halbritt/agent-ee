@@ -590,7 +590,23 @@
     }
   ],
   "role": "power",
-  "runs": [],
+  "runs": [
+    {
+      "baseline_id": "985999e2ca757f18288362526bb83b16d54d049b1da312d9a1fceecc4cdb8c48",
+      "candidate_id": "1d1a619470a38dc6646e7af098b799792d7236f34ba2aca4f40d899504c331b2",
+      "files": {
+        "block-contract.json": "block-contract.json",
+        "connectivity.json": "connectivity.json",
+        "interface.json": "interface.json",
+        "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod": "libs/footprints/sunlord-MWSA0503.pretty/MWSA0503.kicad_mod",
+        "libs/symbols/infineon_psu.lib": "libs/symbols/infineon_psu.lib",
+        "libs/symbols/lmr14020.lib": "libs/symbols/lmr14020.lib",
+        "parts.json": "parts.json",
+        "sheets/psu.kicad_sch": "sheets/psu.kicad_sch"
+      },
+      "run_id": "877a075f-51d6-4cf2-a627-8ee5fb441305"
+    }
+  ],
   "schema": "agent-ee.block/1",
   "sheet": "sheets/psu.kicad_sch",
   "source": {

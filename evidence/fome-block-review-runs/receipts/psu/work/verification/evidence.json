@@ -1,0 +1,70 @@
+{
+  "baseline_id": "985999e2ca757f18288362526bb83b16d54d049b1da312d9a1fceecc4cdb8c48",
+  "candidate_id": "1d1a619470a38dc6646e7af098b799792d7236f34ba2aca4f40d899504c331b2",
+  "checks": {
+    "brownout-floor": {
+      "artifacts": {},
+      "result": "3cde417f5e9bb8cde3421e22ae2ec12bb3cb17d57dfb5c267e10a9ebabc94271"
+    },
+    "c12-part": {
+      "artifacts": {},
+      "result": "42900d3c171402b78470a2da8b19bde2d76d0401cecf9bd03ffa02d8fcfaeedb"
+    },
+    "c4-rating": {
+      "artifacts": {},
+      "result": "6f22a714434f925a82d38cc8bfdfa13cfcc4a995f724adc8fa2d1515ab6f006e"
+    },
+    "capacitor-ratings": {
+      "artifacts": {},
+      "result": "e61f9a5e806f1c88cc1c060686d43bc1d4184af7f9664f7ac254f96cab5753fc"
+    },
+    "erc": {
+      "artifacts": {
+        "work/erc/console.log": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+        "work/erc/erc.json": "a7cb84c678b634354df542a9cbb7b9fec077ebd6be523537c6b40586f8848f7f",
+        "work/erc/execution.json": "dac64408191bf8188adebac008e0b1caf334ec48eb598589362fd0d42d4d179e",
+        "work/erc/kicad-version/console.log": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7",
+        "work/erc/kicad-version/execution.json": "a3d80ce4c63a23e858a71745672bd6e01ffed8c4a4bb3357494b45ceede623c1",
+        "work/erc/kicad-version/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "work/erc/kicad-version/stdout.log": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7"
+      },
+      "result": "ce9038b00915e5ed79442a1ea04feca30cae8d75bb28a45f4c22e865b97c9937"
+    },
+    "input-filter": {
+      "artifacts": {
+        "work/netlist/connectivity.json": "b3f10d987207123a38b79330d8507d764073ea73325325f1c1bd9347dcc8395a",
+        "work/netlist/design.xml": "5edb9944f8524bd7cd2e27f6eac667b4be753d5ffd8eeeedacefd3e0cdafcd73"
+      },
+      "result": "d007923d23eb075ae95ef3954afdae6543db978e93b2a6105e5747a817d21b63"
+    },
+    "interface": {
+      "artifacts": {
+        "work/interface/interface.json": "b70ab20143c429279ec37c610ac61db48fd241e56623e5a51392f0681a8554b4",
+        "work/netlist/design.xml": "5edb9944f8524bd7cd2e27f6eac667b4be753d5ffd8eeeedacefd3e0cdafcd73"
+      },
+      "result": "a783cbe0d91863ac5a842fd1bcab54c8bacf4b0f9b49bcf2d05b410242d9297b"
+    },
+    "netlist": {
+      "artifacts": {
+        "work/netlist/connectivity.json": "b3f10d987207123a38b79330d8507d764073ea73325325f1c1bd9347dcc8395a",
+        "work/netlist/console.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "work/netlist/design.xml": "5edb9944f8524bd7cd2e27f6eac667b4be753d5ffd8eeeedacefd3e0cdafcd73",
+        "work/netlist/execution.json": "378dd01083b069c4457c339bc42c8c836a747ddf97350b0e7214ba672148020d"
+      },
+      "result": "9fc251961a425f2041735d62569f9cafbb44a7e0cca255c7987f5329277ae503"
+    },
+    "rail-regulation": {
+      "artifacts": {},
+      "result": "6a68effa7acca7b324bab54735a2f59235cb5aee06368acc74eeb7c11d6ac0c0"
+    },
+    "reverse-block": {
+      "artifacts": {},
+      "result": "014a470657794b72e47303b1be388665817688be0657a2b379524af0173ec223"
+    },
+    "tvs-clamp": {
+      "artifacts": {},
+      "result": "9e74ec90c6a1286a774b9f58e4f181e88d71c55f2aea41e71a15356ef0387451"
+    }
+  },
+  "schema": "agent-ee.evidence/1"
+}

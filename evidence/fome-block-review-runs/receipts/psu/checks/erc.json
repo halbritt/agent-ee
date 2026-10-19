@@ -1,0 +1,78 @@
+{
+  "candidate_id": "1d1a619470a38dc6646e7af098b799792d7236f34ba2aca4f40d899504c331b2",
+  "details": {
+    "by_severity": {},
+    "by_type": {},
+    "erc_coordinates": {
+      "coordinate_units": "mm",
+      "regime": "native",
+      "report_kicad_version": "10.0.7",
+      "scale": 1,
+      "status": "trusted",
+      "version": "10.0.7"
+    },
+    "ignored_checks": [
+      "single_global_label",
+      "endpoint_off_grid",
+      "four_way_junction",
+      "simulation_model_issue",
+      "lib_symbol_issues",
+      "lib_symbol_mismatch",
+      "footprint_link_issues",
+      "footprint_filter"
+    ],
+    "kicad_cli": {
+      "path": "/usr/bin/kicad-cli",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61",
+      "version": "10.0.7"
+    },
+    "kicad_version": "10.0.7",
+    "locations": [],
+    "schematic_files": [
+      "fome-mc-psu.kicad_sch",
+      "sheets/psu.kicad_sch",
+      "mcu-stub.kicad_sch"
+    ],
+    "sheets_checked": 3,
+    "tool": {
+      "argv": [
+        "kicad-cli",
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--units",
+        "mm",
+        "-o",
+        "/work/erc.json",
+        "/candidate/fome-mc-psu.kicad_sch"
+      ],
+      "console_sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
+      "duration_s": 1.2,
+      "exit_code": 0
+    },
+    "unwaived": 0,
+    "unwaived_by_severity": {},
+    "violations": 0,
+    "waived": [],
+    "waived_by_severity": {}
+  },
+  "evidence": [
+    "work/erc/kicad-version/execution.json",
+    "work/erc/kicad-version/console.log",
+    "work/erc/kicad-version/stdout.log",
+    "work/erc/kicad-version/stderr.log",
+    "work/erc/execution.json",
+    "work/erc/console.log",
+    "work/erc/erc.json"
+  ],
+  "execution": "ok",
+  "id": "erc",
+  "kind": "erc",
+  "limitations": [
+    "stock template tables not captured: sym-lib-table, fp-lib-table"
+  ],
+  "outcome": "pass",
+  "summary": "ERC ran on 3 sheet instance(s) with zero unwaived violations; 0 waived"
+}

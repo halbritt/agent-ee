@@ -1,0 +1,197 @@
+{
+  "block_id": "fome-mc/psu",
+  "covered_requirements": [],
+  "draft_parts": true,
+  "external_sources": [
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-native",
+      "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "What \"verified block\" means, items 1 and 4",
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+      },
+      "status": "verified"
+    },
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-interface",
+      "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN)",
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+      },
+      "status": "verified"
+    },
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-tvs-clamp",
+      "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "6.3 Power Supply, item 1, Sacrificial Crowbar TVS (D1 & D22 SMCJ24A, C224045)",
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+      },
+      "status": "verified"
+    },
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-reverse-block",
+      "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "6.3 Power Supply, item 1, P-Channel MOSFET Reverse-Polarity Block (Q1 AO4485, C51499)",
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+      },
+      "status": "verified"
+    },
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-c12-part",
+      "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs, C12",
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+      },
+      "status": "verified"
+    },
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-c4-rating",
+      "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs, C4",
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+      },
+      "status": "verified"
+    },
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-brownout-floor",
+      "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "6.3 Power Supply, item 3, Reconciled U3 (LMR16020PDDAR) Cranking Brownout Margin (FOMEMC-17)",
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+      },
+      "status": "verified"
+    },
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-rails",
+      "source": {
+        "blob": "ffa17817a39b5ce12f3c071230d2a395a95f0efd",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "Block catalogue / Power supply (psu.kicad_sch, without CAN), Requirements",
+        "path": "docs/BLOCK_LIBRARY.md",
+        "repository": "fome-mc",
+        "sha256": "9544f3b3eda941cf79ad69f574832dd7844685fbc1e837baaadfaaded257859a"
+      },
+      "status": "verified"
+    },
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-capacitor-ratings",
+      "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "6.3 Power Supply, item 2, Hybrid-Polymer Bulk, 16 V X7R +5V Output & Soft-Terminated 50 V X7R MLCCs",
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+      },
+      "status": "verified"
+    },
+    {
+      "detail": "Pinned commit/path/blob and SHA-256 verified offline",
+      "requirement": "psu-input-filter",
+      "source": {
+        "blob": "53b60f15a26a5e0db05d2168a93a84df65188adb",
+        "commit": "df304f3321296f7e517e0d2e2aa52e1380d52993",
+        "kind": "pinned-external",
+        "locator": "6.3 Power Supply, item 2, No Boost Pre-Regulator",
+        "path": "docs/DESIGN.md",
+        "repository": "fome-mc",
+        "sha256": "2313a4fb7835d0621c45fe01b9acbd193ad22dcd95d25bc2b70706f614e026ae"
+      },
+      "status": "verified"
+    }
+  ],
+  "limitations": [
+    "Provenance only; adaptations require fresh board checks.",
+    "Declared parts membership is not owner approval, live availability or hardware acceptance.",
+    "Run references do not establish a containing campaign's current escalation state.",
+    "Only native hardware-interface requirement subjects are qualified; other check families and optional layouts remain unverified."
+  ],
+  "missing_requirements": [
+    "psu-interface",
+    "psu-native"
+  ],
+  "parts_membership": {
+    "evidence": [],
+    "status": "unverified"
+  },
+  "pending_requirements": [
+    "psu-tvs-clamp",
+    "psu-reverse-block",
+    "psu-c12-part",
+    "psu-c4-rating",
+    "psu-brownout-floor",
+    "psu-rails",
+    "psu-capacitor-ratings",
+    "psu-input-filter"
+  ],
+  "runs": [
+    {
+      "run_id": "877a075f-51d6-4cf2-a627-8ee5fb441305",
+      "status": "unverified"
+    }
+  ],
+  "schema": "agent-ee.block-report/1",
+  "status": "unverified",
+  "undeclared_ports": [
+    "12V_PROT",
+    "12V_RAW",
+    "5V_SENSOR_1",
+    "5V_SENSOR_1_PG",
+    "5V_SENSOR_2",
+    "5V_SENSOR_2_PG",
+    "CANH",
+    "CANH2",
+    "CANL",
+    "CANL2",
+    "RXDCAN",
+    "RXDCAN2",
+    "TXDCAN",
+    "TXDCAN2",
+    "VBOOST"
+  ],
+  "unresolved_libraries": []
+}

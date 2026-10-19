@@ -394,6 +394,9 @@ The owner decision of 2026-10-18 permits the [pinned wideband reference](docs/fo
 under `fixtures/fome-mc/wbo1/`. Its native wbo1-to-wbo2 adaptation fixture uses
 fresh checks; upstream parity, functional behavior, heater geometry and independent
 review remain pending, and both source blocks remain unverified.
+The [FOME host review attempts](docs/fome-block-review-runs.md) retain failed
+review identities for wbo1 and PSU. Invalid citations prevented adjudication;
+committed metadata receipts give no passing credit.
 
 [Captured library checks](docs/footprint-libraries.md) compare declared symbol pins
 with footprint pad inventories. [Symbol context](docs/symbol-context.md) exposes

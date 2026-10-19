@@ -1,0 +1,5453 @@
+{
+  "candidate_id": "1d1a619470a38dc6646e7af098b799792d7236f34ba2aca4f40d899504c331b2",
+  "details": {
+    "invariants": [
+      {
+        "actual": {
+          "components": {
+            "C10": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C10",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C_Small",
+              "uuid": "00000000-0000-0000-0000-00005e97cf52",
+              "value": "100n"
+            }
+          }
+        },
+        "expected": {
+          "component": "C10",
+          "id": "C10:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C10:present",
+        "locators": [
+          "components/comp[@ref='C10'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e97cf52"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C10": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C10",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C_Small",
+              "uuid": "00000000-0000-0000-0000-00005e97cf52",
+              "value": "100n"
+            }
+          }
+        },
+        "expected": {
+          "component": "C10",
+          "equals": "100n",
+          "id": "C10:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C10:value",
+        "locators": [
+          "components/comp[@ref='C10'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e97cf52"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C108": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C108",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "51499005-0000-4000-8000-000000000001",
+              "value": "100n"
+            }
+          }
+        },
+        "expected": {
+          "component": "C108",
+          "id": "C108:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C108:present",
+        "locators": [
+          "components/comp[@ref='C108'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 51499005-0000-4000-8000-000000000001"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C108": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C108",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "51499005-0000-4000-8000-000000000001",
+              "value": "100n"
+            }
+          }
+        },
+        "expected": {
+          "component": "C108",
+          "equals": "100n",
+          "id": "C108:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C108:value",
+        "locators": [
+          "components/comp[@ref='C108'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 51499005-0000-4000-8000-000000000001"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C108": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C108",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "51499005-0000-4000-8000-000000000001",
+              "value": "100n"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "6",
+              "net_name": "/12V_RAW",
+              "pin": "1",
+              "terminal": "C108.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C108.1:net",
+          "kind": "named_net",
+          "names": [
+            "/12V_RAW"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C108.1"
+        },
+        "id": "C108.1:net",
+        "locators": [
+          "components/comp[@ref='C108'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 51499005-0000-4000-8000-000000000001"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C108": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C108",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "51499005-0000-4000-8000-000000000001",
+              "value": "100n"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C108.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C108.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C108.2"
+        },
+        "id": "C108.2:net",
+        "locators": [
+          "components/comp[@ref='C108'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 51499005-0000-4000-8000-000000000001"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C11": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C11",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005e9972d1",
+              "value": "330p"
+            }
+          }
+        },
+        "expected": {
+          "component": "C11",
+          "id": "C11:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C11:present",
+        "locators": [
+          "components/comp[@ref='C11'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e9972d1"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C11": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C11",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005e9972d1",
+              "value": "330p"
+            }
+          }
+        },
+        "expected": {
+          "component": "C11",
+          "equals": "330p",
+          "id": "C11:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C11:value",
+        "locators": [
+          "components/comp[@ref='C11'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e9972d1"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C11": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C11",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005e9972d1",
+              "value": "330p"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "2",
+              "net_name": "+5V",
+              "pin": "1",
+              "terminal": "C11.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C11.1:net",
+          "kind": "named_net",
+          "names": [
+            "+5V"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C11.1"
+        },
+        "id": "C11.1:net",
+        "locators": [
+          "components/comp[@ref='C11'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e9972d1"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C12": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C12",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005d927061",
+              "value": "10u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C12",
+          "id": "C12:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C12:present",
+        "locators": [
+          "components/comp[@ref='C12'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d927061"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C12": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C12",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005d927061",
+              "value": "10u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C12",
+          "equals": "10u",
+          "id": "C12:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C12:value",
+        "locators": [
+          "components/comp[@ref='C12'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d927061"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C12": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C12",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005d927061",
+              "value": "10u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "2",
+              "net_name": "+5V",
+              "pin": "1",
+              "terminal": "C12.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C12.1:net",
+          "kind": "named_net",
+          "names": [
+            "+5V"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C12.1"
+        },
+        "id": "C12.1:net",
+        "locators": [
+          "components/comp[@ref='C12'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d927061"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C12": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C12",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005d927061",
+              "value": "10u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C12.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C12.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C12.2"
+        },
+        "id": "C12.2:net",
+        "locators": [
+          "components/comp[@ref='C12'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d927061"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C13": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C13",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005f0b490b",
+              "value": "10u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C13",
+          "id": "C13:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C13:present",
+        "locators": [
+          "components/comp[@ref='C13'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0b490b"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C13": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C13",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005f0b490b",
+              "value": "10u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C13",
+          "equals": "10u",
+          "id": "C13:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C13:value",
+        "locators": [
+          "components/comp[@ref='C13'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0b490b"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C13": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C13",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005f0b490b",
+              "value": "10u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "2",
+              "net_name": "+5V",
+              "pin": "1",
+              "terminal": "C13.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C13.1:net",
+          "kind": "named_net",
+          "names": [
+            "+5V"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C13.1"
+        },
+        "id": "C13.1:net",
+        "locators": [
+          "components/comp[@ref='C13'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0b490b"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C13": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C13",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005f0b490b",
+              "value": "10u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C13.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C13.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C13.2"
+        },
+        "id": "C13.2:net",
+        "locators": [
+          "components/comp[@ref='C13'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0b490b"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C14": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C14",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dd425bd",
+              "value": "4.7u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C14",
+          "id": "C14:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C14:present",
+        "locators": [
+          "components/comp[@ref='C14'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dd425bd"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C14": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C14",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dd425bd",
+              "value": "4.7u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C14",
+          "equals": "4.7u",
+          "id": "C14:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C14:value",
+        "locators": [
+          "components/comp[@ref='C14'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dd425bd"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C14": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C14",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dd425bd",
+              "value": "4.7u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "1",
+              "net_name": "+3V3",
+              "pin": "1",
+              "terminal": "C14.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C14.1:net",
+          "kind": "named_net",
+          "names": [
+            "+3V3"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C14.1"
+        },
+        "id": "C14.1:net",
+        "locators": [
+          "components/comp[@ref='C14'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dd425bd"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C14": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C14",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dd425bd",
+              "value": "4.7u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C14.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C14.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C14.2"
+        },
+        "id": "C14.2:net",
+        "locators": [
+          "components/comp[@ref='C14'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dd425bd"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C2": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db70151",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C2",
+          "id": "C2:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C2:present",
+        "locators": [
+          "components/comp[@ref='C2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db70151"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C2": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db70151",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C2",
+          "equals": "1u",
+          "id": "C2:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C2:value",
+        "locators": [
+          "components/comp[@ref='C2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db70151"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C2": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db70151",
+              "value": "1u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C2.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C2.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C2.2"
+        },
+        "id": "C2.2:net",
+        "locators": [
+          "components/comp[@ref='C2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db70151"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C3": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db6782a",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C3",
+          "id": "C3:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C3:present",
+        "locators": [
+          "components/comp[@ref='C3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db6782a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C3": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db6782a",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C3",
+          "equals": "1u",
+          "id": "C3:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C3:value",
+        "locators": [
+          "components/comp[@ref='C3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db6782a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C3": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db6782a",
+              "value": "1u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "3",
+              "net_name": "/5V_SENSOR_1",
+              "pin": "1",
+              "terminal": "C3.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C3.1:net",
+          "kind": "named_net",
+          "names": [
+            "/5V_SENSOR_1"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C3.1"
+        },
+        "id": "C3.1:net",
+        "locators": [
+          "components/comp[@ref='C3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db6782a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C3": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db6782a",
+              "value": "1u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C3.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C3.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C3.2"
+        },
+        "id": "C3.2:net",
+        "locators": [
+          "components/comp[@ref='C3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db6782a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C4": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C4",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db22d8f",
+              "value": "4.7u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C4",
+          "id": "C4:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C4:present",
+        "locators": [
+          "components/comp[@ref='C4'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db22d8f"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C4": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C4",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db22d8f",
+              "value": "4.7u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C4",
+          "equals": "4.7u",
+          "id": "C4:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C4:value",
+        "locators": [
+          "components/comp[@ref='C4'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db22d8f"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C4": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C4",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005db22d8f",
+              "value": "4.7u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C4.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C4.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C4.2"
+        },
+        "id": "C4.2:net",
+        "locators": [
+          "components/comp[@ref='C4'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db22d8f"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C5": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C5",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dbe55df",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C5",
+          "id": "C5:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C5:present",
+        "locators": [
+          "components/comp[@ref='C5'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55df"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C5": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C5",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dbe55df",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C5",
+          "equals": "1u",
+          "id": "C5:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C5:value",
+        "locators": [
+          "components/comp[@ref='C5'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55df"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C5": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C5",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dbe55df",
+              "value": "1u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C5.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C5.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C5.2"
+        },
+        "id": "C5.2:net",
+        "locators": [
+          "components/comp[@ref='C5'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55df"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C6": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:CP",
+              "uuid": "00000000-0000-0000-0000-00005db0f6e7",
+              "value": "47u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C6",
+          "id": "C6:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C6:present",
+        "locators": [
+          "components/comp[@ref='C6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db0f6e7"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C6": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:CP",
+              "uuid": "00000000-0000-0000-0000-00005db0f6e7",
+              "value": "47u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C6",
+          "equals": "47u",
+          "id": "C6:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C6:value",
+        "locators": [
+          "components/comp[@ref='C6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db0f6e7"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C6": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:CP",
+              "uuid": "00000000-0000-0000-0000-00005db0f6e7",
+              "value": "47u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "11",
+              "net_name": "/VBOOST",
+              "pin": "1",
+              "terminal": "C6.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C6.1:net",
+          "kind": "named_net",
+          "names": [
+            "/VBOOST"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C6.1"
+        },
+        "id": "C6.1:net",
+        "locators": [
+          "components/comp[@ref='C6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db0f6e7"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C6": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:CP",
+              "uuid": "00000000-0000-0000-0000-00005db0f6e7",
+              "value": "47u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C6.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C6.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C6.2"
+        },
+        "id": "C6.2:net",
+        "locators": [
+          "components/comp[@ref='C6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db0f6e7"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C7": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C7",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005d9e5c9a",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C7",
+          "id": "C7:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C7:present",
+        "locators": [
+          "components/comp[@ref='C7'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d9e5c9a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C7": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C7",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005d9e5c9a",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C7",
+          "equals": "1u",
+          "id": "C7:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C7:value",
+        "locators": [
+          "components/comp[@ref='C7'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d9e5c9a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C7": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C7",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005d9e5c9a",
+              "value": "1u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "11",
+              "net_name": "/VBOOST",
+              "pin": "1",
+              "terminal": "C7.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C7.1:net",
+          "kind": "named_net",
+          "names": [
+            "/VBOOST"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C7.1"
+        },
+        "id": "C7.1:net",
+        "locators": [
+          "components/comp[@ref='C7'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d9e5c9a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C7": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C7",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005d9e5c9a",
+              "value": "1u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C7.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C7.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C7.2"
+        },
+        "id": "C7.2:net",
+        "locators": [
+          "components/comp[@ref='C7'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d9e5c9a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C8": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C8",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005e99fa62",
+              "value": "10n"
+            }
+          }
+        },
+        "expected": {
+          "component": "C8",
+          "id": "C8:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C8:present",
+        "locators": [
+          "components/comp[@ref='C8'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e99fa62"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C8": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C8",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005e99fa62",
+              "value": "10n"
+            }
+          }
+        },
+        "expected": {
+          "component": "C8",
+          "equals": "10n",
+          "id": "C8:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C8:value",
+        "locators": [
+          "components/comp[@ref='C8'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e99fa62"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C8": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C8",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005e99fa62",
+              "value": "10n"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C8.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C8.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C8.2"
+        },
+        "id": "C8.2:net",
+        "locators": [
+          "components/comp[@ref='C8'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e99fa62"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C9": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C9",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dbe55cc",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C9",
+          "id": "C9:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C9:present",
+        "locators": [
+          "components/comp[@ref='C9'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55cc"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C9": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C9",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dbe55cc",
+              "value": "1u"
+            }
+          }
+        },
+        "expected": {
+          "component": "C9",
+          "equals": "1u",
+          "id": "C9:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "C9:value",
+        "locators": [
+          "components/comp[@ref='C9'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55cc"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C9": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C9",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dbe55cc",
+              "value": "1u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "4",
+              "net_name": "/5V_SENSOR_2",
+              "pin": "1",
+              "terminal": "C9.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C9.1:net",
+          "kind": "named_net",
+          "names": [
+            "/5V_SENSOR_2"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C9.1"
+        },
+        "id": "C9.1:net",
+        "locators": [
+          "components/comp[@ref='C9'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55cc"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "C9": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "C9",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:C",
+              "uuid": "00000000-0000-0000-0000-00005dbe55cc",
+              "value": "1u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "C9.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "C9.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "C9.2"
+        },
+        "id": "C9.2:net",
+        "locators": [
+          "components/comp[@ref='C9'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55cc"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "D1": {
+              "pin_names": {
+                "1": "K",
+                "2": "A"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "D1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:D_Zener",
+              "uuid": "00000000-0000-0000-0000-00005da74381",
+              "value": "SMCJ24A"
+            }
+          }
+        },
+        "expected": {
+          "component": "D1",
+          "id": "D1:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "D1:present",
+        "locators": [
+          "components/comp[@ref='D1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005da74381"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "D1": {
+              "pin_names": {
+                "1": "K",
+                "2": "A"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "D1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:D_Zener",
+              "uuid": "00000000-0000-0000-0000-00005da74381",
+              "value": "SMCJ24A"
+            }
+          }
+        },
+        "expected": {
+          "component": "D1",
+          "equals": "SMCJ24A",
+          "id": "D1:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "D1:value",
+        "locators": [
+          "components/comp[@ref='D1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005da74381"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "D1": {
+              "pin_names": {
+                "1": "K",
+                "2": "A"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "D1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:D_Zener",
+              "uuid": "00000000-0000-0000-0000-00005da74381",
+              "value": "SMCJ24A"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "6",
+              "net_name": "/12V_RAW",
+              "pin": "1",
+              "terminal": "D1.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "D1.1:net",
+          "kind": "named_net",
+          "names": [
+            "/12V_RAW"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "D1.1"
+        },
+        "id": "D1.1:net",
+        "locators": [
+          "components/comp[@ref='D1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005da74381"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "D1": {
+              "pin_names": {
+                "1": "K",
+                "2": "A"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "D1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:D_Zener",
+              "uuid": "00000000-0000-0000-0000-00005da74381",
+              "value": "SMCJ24A"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "D1.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "D1.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "D1.2"
+        },
+        "id": "D1.2:net",
+        "locators": [
+          "components/comp[@ref='D1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005da74381"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "D19": {
+              "pin_names": {
+                "1": "K",
+                "2": "A"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "D19",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:D_Zener",
+              "uuid": "51499002-0000-4000-8000-000000000001",
+              "value": "BZT52C12"
+            }
+          }
+        },
+        "expected": {
+          "component": "D19",
+          "id": "D19:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "D19:present",
+        "locators": [
+          "components/comp[@ref='D19'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 51499002-0000-4000-8000-000000000001"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "D19": {
+              "pin_names": {
+                "1": "K",
+                "2": "A"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "D19",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:D_Zener",
+              "uuid": "51499002-0000-4000-8000-000000000001",
+              "value": "BZT52C12"
+            }
+          }
+        },
+        "expected": {
+          "component": "D19",
+          "equals": "BZT52C12",
+          "id": "D19:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "D19:value",
+        "locators": [
+          "components/comp[@ref='D19'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 51499002-0000-4000-8000-000000000001"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "D3": {
+              "pin_names": {
+                "1": "K",
+                "2": "A"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "D3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:D_Schottky",
+              "uuid": "00000000-0000-0000-0000-00005e9d2c4f",
+              "value": "D_Schottky"
+            }
+          }
+        },
+        "expected": {
+          "component": "D3",
+          "id": "D3:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "D3:present",
+        "locators": [
+          "components/comp[@ref='D3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e9d2c4f"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "D3": {
+              "pin_names": {
+                "1": "K",
+                "2": "A"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "D3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:D_Schottky",
+              "uuid": "00000000-0000-0000-0000-00005e9d2c4f",
+              "value": "D_Schottky"
+            }
+          }
+        },
+        "expected": {
+          "component": "D3",
+          "equals": "D_Schottky",
+          "id": "D3:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "D3:value",
+        "locators": [
+          "components/comp[@ref='D3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e9d2c4f"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "D3": {
+              "pin_names": {
+                "1": "K",
+                "2": "A"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "D3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:D_Schottky",
+              "uuid": "00000000-0000-0000-0000-00005e9d2c4f",
+              "value": "D_Schottky"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "D3.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "D3.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "D3.2"
+        },
+        "id": "D3.2:net",
+        "locators": [
+          "components/comp[@ref='D3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e9d2c4f"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "L1": {
+              "pin_names": {
+                "1": "1",
+                "2": "2"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "L1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:L",
+              "uuid": "00000000-0000-0000-0000-00005db21ea1",
+              "value": "2.2u"
+            }
+          }
+        },
+        "expected": {
+          "component": "L1",
+          "id": "L1:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "L1:present",
+        "locators": [
+          "components/comp[@ref='L1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db21ea1"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "L1": {
+              "pin_names": {
+                "1": "1",
+                "2": "2"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "L1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:L",
+              "uuid": "00000000-0000-0000-0000-00005db21ea1",
+              "value": "2.2u"
+            }
+          }
+        },
+        "expected": {
+          "component": "L1",
+          "equals": "2.2u",
+          "id": "L1:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "L1:value",
+        "locators": [
+          "components/comp[@ref='L1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db21ea1"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "L1": {
+              "pin_names": {
+                "1": "1",
+                "2": "2"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "L1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:L",
+              "uuid": "00000000-0000-0000-0000-00005db21ea1",
+              "value": "2.2u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "11",
+              "net_name": "/VBOOST",
+              "pin": "2",
+              "terminal": "L1.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "L1.2:net",
+          "kind": "named_net",
+          "names": [
+            "/VBOOST"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "L1.2"
+        },
+        "id": "L1.2:net",
+        "locators": [
+          "components/comp[@ref='L1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db21ea1"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "L2": {
+              "pin_names": {
+                "1": "1",
+                "2": "2"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "L2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:L",
+              "uuid": "00000000-0000-0000-0000-00005d92626a",
+              "value": "10u"
+            }
+          }
+        },
+        "expected": {
+          "component": "L2",
+          "id": "L2:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "L2:present",
+        "locators": [
+          "components/comp[@ref='L2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d92626a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "L2": {
+              "pin_names": {
+                "1": "1",
+                "2": "2"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "L2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:L",
+              "uuid": "00000000-0000-0000-0000-00005d92626a",
+              "value": "10u"
+            }
+          }
+        },
+        "expected": {
+          "component": "L2",
+          "equals": "10u",
+          "id": "L2:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "L2:value",
+        "locators": [
+          "components/comp[@ref='L2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d92626a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "L2": {
+              "pin_names": {
+                "1": "1",
+                "2": "2"
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "L2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:L",
+              "uuid": "00000000-0000-0000-0000-00005d92626a",
+              "value": "10u"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "2",
+              "net_name": "+5V",
+              "pin": "2",
+              "terminal": "L2.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "L2.2:net",
+          "kind": "named_net",
+          "names": [
+            "+5V"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "L2.2"
+        },
+        "id": "L2.2:net",
+        "locators": [
+          "components/comp[@ref='L2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005d92626a"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "Q1": {
+              "pin_names": {
+                "1": "S",
+                "2": "S",
+                "3": "S",
+                "4": "G",
+                "5": "D",
+                "6": "D",
+                "7": "D",
+                "8": "D"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8"
+              ],
+              "populated": true,
+              "reference": "Q1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Transistor_FET:IRF7404",
+              "uuid": "00000000-0000-0000-0000-00005db79df4",
+              "value": "AO4485"
+            }
+          }
+        },
+        "expected": {
+          "component": "Q1",
+          "id": "Q1:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "Q1:present",
+        "locators": [
+          "components/comp[@ref='Q1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db79df4"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "Q1": {
+              "pin_names": {
+                "1": "S",
+                "2": "S",
+                "3": "S",
+                "4": "G",
+                "5": "D",
+                "6": "D",
+                "7": "D",
+                "8": "D"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8"
+              ],
+              "populated": true,
+              "reference": "Q1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Transistor_FET:IRF7404",
+              "uuid": "00000000-0000-0000-0000-00005db79df4",
+              "value": "AO4485"
+            }
+          }
+        },
+        "expected": {
+          "component": "Q1",
+          "equals": "AO4485",
+          "id": "Q1:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "Q1:value",
+        "locators": [
+          "components/comp[@ref='Q1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db79df4"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "Q1": {
+              "pin_names": {
+                "1": "S",
+                "2": "S",
+                "3": "S",
+                "4": "G",
+                "5": "D",
+                "6": "D",
+                "7": "D",
+                "8": "D"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8"
+              ],
+              "populated": true,
+              "reference": "Q1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Transistor_FET:IRF7404",
+              "uuid": "00000000-0000-0000-0000-00005db79df4",
+              "value": "AO4485"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "6",
+              "net_name": "/12V_RAW",
+              "pin": "5",
+              "terminal": "Q1.5"
+            }
+          ]
+        },
+        "expected": {
+          "id": "Q1.5:net",
+          "kind": "named_net",
+          "names": [
+            "/12V_RAW"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "Q1.5"
+        },
+        "id": "Q1.5:net",
+        "locators": [
+          "components/comp[@ref='Q1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db79df4"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "Q1": {
+              "pin_names": {
+                "1": "S",
+                "2": "S",
+                "3": "S",
+                "4": "G",
+                "5": "D",
+                "6": "D",
+                "7": "D",
+                "8": "D"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8"
+              ],
+              "populated": true,
+              "reference": "Q1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Transistor_FET:IRF7404",
+              "uuid": "00000000-0000-0000-0000-00005db79df4",
+              "value": "AO4485"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "6",
+              "net_name": "/12V_RAW",
+              "pin": "6",
+              "terminal": "Q1.6"
+            }
+          ]
+        },
+        "expected": {
+          "id": "Q1.6:net",
+          "kind": "named_net",
+          "names": [
+            "/12V_RAW"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "Q1.6"
+        },
+        "id": "Q1.6:net",
+        "locators": [
+          "components/comp[@ref='Q1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db79df4"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "Q1": {
+              "pin_names": {
+                "1": "S",
+                "2": "S",
+                "3": "S",
+                "4": "G",
+                "5": "D",
+                "6": "D",
+                "7": "D",
+                "8": "D"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8"
+              ],
+              "populated": true,
+              "reference": "Q1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Transistor_FET:IRF7404",
+              "uuid": "00000000-0000-0000-0000-00005db79df4",
+              "value": "AO4485"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "6",
+              "net_name": "/12V_RAW",
+              "pin": "7",
+              "terminal": "Q1.7"
+            }
+          ]
+        },
+        "expected": {
+          "id": "Q1.7:net",
+          "kind": "named_net",
+          "names": [
+            "/12V_RAW"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "Q1.7"
+        },
+        "id": "Q1.7:net",
+        "locators": [
+          "components/comp[@ref='Q1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db79df4"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "Q1": {
+              "pin_names": {
+                "1": "S",
+                "2": "S",
+                "3": "S",
+                "4": "G",
+                "5": "D",
+                "6": "D",
+                "7": "D",
+                "8": "D"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8"
+              ],
+              "populated": true,
+              "reference": "Q1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Transistor_FET:IRF7404",
+              "uuid": "00000000-0000-0000-0000-00005db79df4",
+              "value": "AO4485"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "6",
+              "net_name": "/12V_RAW",
+              "pin": "8",
+              "terminal": "Q1.8"
+            }
+          ]
+        },
+        "expected": {
+          "id": "Q1.8:net",
+          "kind": "named_net",
+          "names": [
+            "/12V_RAW"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "Q1.8"
+        },
+        "id": "Q1.8:net",
+        "locators": [
+          "components/comp[@ref='Q1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db79df4"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R1": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005db99a44",
+              "value": "10k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R1",
+          "id": "R1:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R1:present",
+        "locators": [
+          "components/comp[@ref='R1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db99a44"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R1": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005db99a44",
+              "value": "10k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R1",
+          "equals": "10k",
+          "id": "R1:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R1:value",
+        "locators": [
+          "components/comp[@ref='R1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db99a44"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R1": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005db99a44",
+              "value": "10k"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "12",
+              "net_name": "/mcu/5V_SENSOR_1_PG",
+              "pin": "1",
+              "terminal": "R1.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "R1.1:net",
+          "kind": "named_net",
+          "names": [
+            "/mcu/5V_SENSOR_1_PG"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "R1.1"
+        },
+        "id": "R1.1:net",
+        "locators": [
+          "components/comp[@ref='R1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db99a44"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R1": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005db99a44",
+              "value": "10k"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "1",
+              "net_name": "+3V3",
+              "pin": "2",
+              "terminal": "R1.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "R1.2:net",
+          "kind": "named_net",
+          "names": [
+            "+3V3"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "R1.2"
+        },
+        "id": "R1.2:net",
+        "locators": [
+          "components/comp[@ref='R1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db99a44"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R124": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R124",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "51499003-0000-4000-8000-000000000001",
+              "value": "47k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R124",
+          "id": "R124:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R124:present",
+        "locators": [
+          "components/comp[@ref='R124'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 51499003-0000-4000-8000-000000000001"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R124": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R124",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "51499003-0000-4000-8000-000000000001",
+              "value": "47k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R124",
+          "equals": "47k",
+          "id": "R124:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R124:value",
+        "locators": [
+          "components/comp[@ref='R124'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 51499003-0000-4000-8000-000000000001"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R124": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R124",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "51499003-0000-4000-8000-000000000001",
+              "value": "47k"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "R124.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "R124.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "R124.2"
+        },
+        "id": "R124.2:net",
+        "locators": [
+          "components/comp[@ref='R124'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 51499003-0000-4000-8000-000000000001"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R2": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e725aea",
+              "value": "1"
+            }
+          }
+        },
+        "expected": {
+          "component": "R2",
+          "id": "R2:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R2:present",
+        "locators": [
+          "components/comp[@ref='R2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e725aea"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R2": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e725aea",
+              "value": "1"
+            }
+          }
+        },
+        "expected": {
+          "component": "R2",
+          "equals": "1",
+          "id": "R2:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R2:value",
+        "locators": [
+          "components/comp[@ref='R2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e725aea"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R3": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e99b9c6",
+              "value": "10k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R3",
+          "id": "R3:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R3:present",
+        "locators": [
+          "components/comp[@ref='R3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e99b9c6"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R3": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e99b9c6",
+              "value": "10k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R3",
+          "equals": "10k",
+          "id": "R3:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R3:value",
+        "locators": [
+          "components/comp[@ref='R3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e99b9c6"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R3": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e99b9c6",
+              "value": "10k"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "R3.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "R3.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "R3.2"
+        },
+        "id": "R3.2:net",
+        "locators": [
+          "components/comp[@ref='R3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e99b9c6"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R4": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R4",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005dbe5600",
+              "value": "10k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R4",
+          "id": "R4:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R4:present",
+        "locators": [
+          "components/comp[@ref='R4'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe5600"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R4": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R4",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005dbe5600",
+              "value": "10k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R4",
+          "equals": "10k",
+          "id": "R4:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R4:value",
+        "locators": [
+          "components/comp[@ref='R4'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe5600"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R4": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R4",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005dbe5600",
+              "value": "10k"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "13",
+              "net_name": "/mcu/5V_SENSOR_2_PG",
+              "pin": "1",
+              "terminal": "R4.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "R4.1:net",
+          "kind": "named_net",
+          "names": [
+            "/mcu/5V_SENSOR_2_PG"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "R4.1"
+        },
+        "id": "R4.1:net",
+        "locators": [
+          "components/comp[@ref='R4'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe5600"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R4": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R4",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005dbe5600",
+              "value": "10k"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "1",
+              "net_name": "+3V3",
+              "pin": "2",
+              "terminal": "R4.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "R4.2:net",
+          "kind": "named_net",
+          "names": [
+            "+3V3"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "R4.2"
+        },
+        "id": "R4.2:net",
+        "locators": [
+          "components/comp[@ref='R4'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe5600"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R5": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R5",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e98c8e8",
+              "value": "12k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R5",
+          "id": "R5:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R5:present",
+        "locators": [
+          "components/comp[@ref='R5'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e98c8e8"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R5": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R5",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e98c8e8",
+              "value": "12k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R5",
+          "equals": "12k",
+          "id": "R5:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R5:value",
+        "locators": [
+          "components/comp[@ref='R5'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e98c8e8"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R5": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R5",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e98c8e8",
+              "value": "12k"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "R5.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "R5.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "R5.2"
+        },
+        "id": "R5.2:net",
+        "locators": [
+          "components/comp[@ref='R5'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e98c8e8"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R6": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e98b781",
+              "value": "68k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R6",
+          "id": "R6:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R6:present",
+        "locators": [
+          "components/comp[@ref='R6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e98b781"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R6": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e98b781",
+              "value": "68k"
+            }
+          }
+        },
+        "expected": {
+          "component": "R6",
+          "equals": "68k",
+          "id": "R6:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "R6:value",
+        "locators": [
+          "components/comp[@ref='R6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e98b781"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "R6": {
+              "pin_names": {
+                "1": "",
+                "2": ""
+              },
+              "pins": [
+                "1",
+                "2"
+              ],
+              "populated": true,
+              "reference": "R6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Device:R",
+              "uuid": "00000000-0000-0000-0000-00005e98b781",
+              "value": "68k"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "2",
+              "net_name": "+5V",
+              "pin": "2",
+              "terminal": "R6.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "R6.2:net",
+          "kind": "named_net",
+          "names": [
+            "+5V"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "R6.2"
+        },
+        "id": "R6.2:net",
+        "locators": [
+          "components/comp[@ref='R6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e98b781"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U1": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005db63988",
+              "value": "TLS115D0E"
+            }
+          }
+        },
+        "expected": {
+          "component": "U1",
+          "id": "U1:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "U1:present",
+        "locators": [
+          "components/comp[@ref='U1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db63988"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U1": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005db63988",
+              "value": "TLS115D0E"
+            }
+          }
+        },
+        "expected": {
+          "component": "U1",
+          "equals": "TLS115D0E",
+          "id": "U1:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "U1:value",
+        "locators": [
+          "components/comp[@ref='U1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db63988"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U1": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005db63988",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "3",
+              "net_name": "/5V_SENSOR_1",
+              "pin": "1",
+              "terminal": "U1.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U1.1:net",
+          "kind": "named_net",
+          "names": [
+            "/5V_SENSOR_1"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U1.1"
+        },
+        "id": "U1.1:net",
+        "locators": [
+          "components/comp[@ref='U1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db63988"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U1": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005db63988",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "3",
+              "terminal": "U1.3"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U1.3:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U1.3"
+        },
+        "id": "U1.3:net",
+        "locators": [
+          "components/comp[@ref='U1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db63988"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U1": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005db63988",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "12",
+              "net_name": "/mcu/5V_SENSOR_1_PG",
+              "pin": "4",
+              "terminal": "U1.4"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U1.4:net",
+          "kind": "named_net",
+          "names": [
+            "/mcu/5V_SENSOR_1_PG"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U1.4"
+        },
+        "id": "U1.4:net",
+        "locators": [
+          "components/comp[@ref='U1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db63988"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U1": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005db63988",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "2",
+              "net_name": "+5V",
+              "pin": "5",
+              "terminal": "U1.5"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U1.5:net",
+          "kind": "named_net",
+          "names": [
+            "+5V"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U1.5"
+        },
+        "id": "U1.5:net",
+        "locators": [
+          "components/comp[@ref='U1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db63988"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U1": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U1",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005db63988",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "9",
+              "terminal": "U1.9"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U1.9:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U1.9"
+        },
+        "id": "U1.9:net",
+        "locators": [
+          "components/comp[@ref='U1'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005db63988"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U2": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005dbe55f0",
+              "value": "TLS115D0E"
+            }
+          }
+        },
+        "expected": {
+          "component": "U2",
+          "id": "U2:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "U2:present",
+        "locators": [
+          "components/comp[@ref='U2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55f0"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U2": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005dbe55f0",
+              "value": "TLS115D0E"
+            }
+          }
+        },
+        "expected": {
+          "component": "U2",
+          "equals": "TLS115D0E",
+          "id": "U2:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "U2:value",
+        "locators": [
+          "components/comp[@ref='U2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55f0"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U2": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005dbe55f0",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "4",
+              "net_name": "/5V_SENSOR_2",
+              "pin": "1",
+              "terminal": "U2.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U2.1:net",
+          "kind": "named_net",
+          "names": [
+            "/5V_SENSOR_2"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U2.1"
+        },
+        "id": "U2.1:net",
+        "locators": [
+          "components/comp[@ref='U2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55f0"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U2": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005dbe55f0",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "3",
+              "terminal": "U2.3"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U2.3:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U2.3"
+        },
+        "id": "U2.3:net",
+        "locators": [
+          "components/comp[@ref='U2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55f0"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U2": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005dbe55f0",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "13",
+              "net_name": "/mcu/5V_SENSOR_2_PG",
+              "pin": "4",
+              "terminal": "U2.4"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U2.4:net",
+          "kind": "named_net",
+          "names": [
+            "/mcu/5V_SENSOR_2_PG"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U2.4"
+        },
+        "id": "U2.4:net",
+        "locators": [
+          "components/comp[@ref='U2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55f0"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U2": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005dbe55f0",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "2",
+              "net_name": "+5V",
+              "pin": "5",
+              "terminal": "U2.5"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U2.5:net",
+          "kind": "named_net",
+          "names": [
+            "+5V"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U2.5"
+        },
+        "id": "U2.5:net",
+        "locators": [
+          "components/comp[@ref='U2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55f0"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U2": {
+              "pin_names": {
+                "1": "OUT",
+                "2": "",
+                "3": "GND",
+                "4": "PG",
+                "5": "ADJ",
+                "6": "",
+                "7": "EN",
+                "8": "IN",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U2",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "infineon_psu:TLS115",
+              "uuid": "00000000-0000-0000-0000-00005dbe55f0",
+              "value": "TLS115D0E"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "9",
+              "terminal": "U2.9"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U2.9:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U2.9"
+        },
+        "id": "U2.9:net",
+        "locators": [
+          "components/comp[@ref='U2'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005dbe55f0"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U3": {
+              "pin_names": {
+                "1": "BOOT",
+                "2": "VIN",
+                "3": "EN",
+                "4": "RT",
+                "5": "FB",
+                "6": "SS",
+                "7": "GND",
+                "8": "SW",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "lmr14020:LMR14020",
+              "uuid": "00000000-0000-0000-0000-00005e958e81",
+              "value": "LMR16020PDDAR"
+            }
+          }
+        },
+        "expected": {
+          "component": "U3",
+          "id": "U3:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "U3:present",
+        "locators": [
+          "components/comp[@ref='U3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e958e81"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U3": {
+              "pin_names": {
+                "1": "BOOT",
+                "2": "VIN",
+                "3": "EN",
+                "4": "RT",
+                "5": "FB",
+                "6": "SS",
+                "7": "GND",
+                "8": "SW",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "lmr14020:LMR14020",
+              "uuid": "00000000-0000-0000-0000-00005e958e81",
+              "value": "LMR16020PDDAR"
+            }
+          }
+        },
+        "expected": {
+          "component": "U3",
+          "equals": "LMR16020PDDAR",
+          "id": "U3:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "U3:value",
+        "locators": [
+          "components/comp[@ref='U3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e958e81"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U3": {
+              "pin_names": {
+                "1": "BOOT",
+                "2": "VIN",
+                "3": "EN",
+                "4": "RT",
+                "5": "FB",
+                "6": "SS",
+                "7": "GND",
+                "8": "SW",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "lmr14020:LMR14020",
+              "uuid": "00000000-0000-0000-0000-00005e958e81",
+              "value": "LMR16020PDDAR"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "11",
+              "net_name": "/VBOOST",
+              "pin": "2",
+              "terminal": "U3.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U3.2:net",
+          "kind": "named_net",
+          "names": [
+            "/VBOOST"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U3.2"
+        },
+        "id": "U3.2:net",
+        "locators": [
+          "components/comp[@ref='U3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e958e81"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U3": {
+              "pin_names": {
+                "1": "BOOT",
+                "2": "VIN",
+                "3": "EN",
+                "4": "RT",
+                "5": "FB",
+                "6": "SS",
+                "7": "GND",
+                "8": "SW",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "lmr14020:LMR14020",
+              "uuid": "00000000-0000-0000-0000-00005e958e81",
+              "value": "LMR16020PDDAR"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "11",
+              "net_name": "/VBOOST",
+              "pin": "3",
+              "terminal": "U3.3"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U3.3:net",
+          "kind": "named_net",
+          "names": [
+            "/VBOOST"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U3.3"
+        },
+        "id": "U3.3:net",
+        "locators": [
+          "components/comp[@ref='U3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e958e81"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U3": {
+              "pin_names": {
+                "1": "BOOT",
+                "2": "VIN",
+                "3": "EN",
+                "4": "RT",
+                "5": "FB",
+                "6": "SS",
+                "7": "GND",
+                "8": "SW",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "lmr14020:LMR14020",
+              "uuid": "00000000-0000-0000-0000-00005e958e81",
+              "value": "LMR16020PDDAR"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "7",
+              "terminal": "U3.7"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U3.7:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U3.7"
+        },
+        "id": "U3.7:net",
+        "locators": [
+          "components/comp[@ref='U3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e958e81"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U3": {
+              "pin_names": {
+                "1": "BOOT",
+                "2": "VIN",
+                "3": "EN",
+                "4": "RT",
+                "5": "FB",
+                "6": "SS",
+                "7": "GND",
+                "8": "SW",
+                "9": "GND"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9"
+              ],
+              "populated": true,
+              "reference": "U3",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "lmr14020:LMR14020",
+              "uuid": "00000000-0000-0000-0000-00005e958e81",
+              "value": "LMR16020PDDAR"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "9",
+              "terminal": "U3.9"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U3.9:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U3.9"
+        },
+        "id": "U3.9:net",
+        "locators": [
+          "components/comp[@ref='U3'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005e958e81"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U6": {
+              "pin_names": {
+                "1": "IN",
+                "2": "GND",
+                "3": "EN",
+                "4": "NC",
+                "5": "OUT"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5"
+              ],
+              "populated": true,
+              "reference": "U6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Regulator_Linear:TLV75733PDBV",
+              "uuid": "00000000-0000-0000-0000-00005f0c658b",
+              "value": "TLV75733PDBVR"
+            }
+          }
+        },
+        "expected": {
+          "component": "U6",
+          "id": "U6:present",
+          "kind": "component",
+          "populated": true,
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "U6:present",
+        "locators": [
+          "components/comp[@ref='U6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0c658b"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U6": {
+              "pin_names": {
+                "1": "IN",
+                "2": "GND",
+                "3": "EN",
+                "4": "NC",
+                "5": "OUT"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5"
+              ],
+              "populated": true,
+              "reference": "U6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Regulator_Linear:TLV75733PDBV",
+              "uuid": "00000000-0000-0000-0000-00005f0c658b",
+              "value": "TLV75733PDBVR"
+            }
+          }
+        },
+        "expected": {
+          "component": "U6",
+          "equals": "TLV75733PDBVR",
+          "id": "U6:value",
+          "kind": "value",
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          }
+        },
+        "id": "U6:value",
+        "locators": [
+          "components/comp[@ref='U6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0c658b"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U6": {
+              "pin_names": {
+                "1": "IN",
+                "2": "GND",
+                "3": "EN",
+                "4": "NC",
+                "5": "OUT"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5"
+              ],
+              "populated": true,
+              "reference": "U6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Regulator_Linear:TLV75733PDBV",
+              "uuid": "00000000-0000-0000-0000-00005f0c658b",
+              "value": "TLV75733PDBVR"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "2",
+              "net_name": "+5V",
+              "pin": "1",
+              "terminal": "U6.1"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U6.1:net",
+          "kind": "named_net",
+          "names": [
+            "+5V"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U6.1"
+        },
+        "id": "U6.1:net",
+        "locators": [
+          "components/comp[@ref='U6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0c658b"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U6": {
+              "pin_names": {
+                "1": "IN",
+                "2": "GND",
+                "3": "EN",
+                "4": "NC",
+                "5": "OUT"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5"
+              ],
+              "populated": true,
+              "reference": "U6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Regulator_Linear:TLV75733PDBV",
+              "uuid": "00000000-0000-0000-0000-00005f0c658b",
+              "value": "TLV75733PDBVR"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "18",
+              "net_name": "GND",
+              "pin": "2",
+              "terminal": "U6.2"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U6.2:net",
+          "kind": "named_net",
+          "names": [
+            "GND"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U6.2"
+        },
+        "id": "U6.2:net",
+        "locators": [
+          "components/comp[@ref='U6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0c658b"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U6": {
+              "pin_names": {
+                "1": "IN",
+                "2": "GND",
+                "3": "EN",
+                "4": "NC",
+                "5": "OUT"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5"
+              ],
+              "populated": true,
+              "reference": "U6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Regulator_Linear:TLV75733PDBV",
+              "uuid": "00000000-0000-0000-0000-00005f0c658b",
+              "value": "TLV75733PDBVR"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "2",
+              "net_name": "+5V",
+              "pin": "3",
+              "terminal": "U6.3"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U6.3:net",
+          "kind": "named_net",
+          "names": [
+            "+5V"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U6.3"
+        },
+        "id": "U6.3:net",
+        "locators": [
+          "components/comp[@ref='U6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0c658b"
+        ],
+        "status": "satisfied"
+      },
+      {
+        "actual": {
+          "components": {
+            "U6": {
+              "pin_names": {
+                "1": "IN",
+                "2": "GND",
+                "3": "EN",
+                "4": "NC",
+                "5": "OUT"
+              },
+              "pins": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5"
+              ],
+              "populated": true,
+              "reference": "U6",
+              "sheet": "/00000000-0000-0000-0000-00005da72eff/",
+              "symbol": "Regulator_Linear:TLV75733PDBV",
+              "uuid": "00000000-0000-0000-0000-00005f0c658b",
+              "value": "TLV75733PDBVR"
+            }
+          },
+          "terminals": [
+            {
+              "net_code": "1",
+              "net_name": "+3V3",
+              "pin": "5",
+              "terminal": "U6.5"
+            }
+          ]
+        },
+        "expected": {
+          "id": "U6.5:net",
+          "kind": "named_net",
+          "names": [
+            "+3V3"
+          ],
+          "requirement": "psu-interface",
+          "source": {
+            "locator": "requirements/psu-interface/source",
+            "path": "block-contract.json"
+          },
+          "terminal": "U6.5"
+        },
+        "id": "U6.5:net",
+        "locators": [
+          "components/comp[@ref='U6'], sheet /00000000-0000-0000-0000-00005da72eff/, UUID 00000000-0000-0000-0000-00005f0c658b"
+        ],
+        "status": "satisfied"
+      }
+    ],
+    "violations": []
+  },
+  "evidence": [
+    "work/netlist/design.xml",
+    "work/interface/interface.json"
+  ],
+  "execution": "ok",
+  "id": "interface",
+  "kind": "hardware_interface",
+  "limitations": [
+    "Only declared schematic identities and direct conductors are protected; undeclared topology, PCB routing, physical access and electrical transfer are outside coverage."
+  ],
+  "location": "",
+  "outcome": "pass",
+  "summary": "0 interface violation(s); complete=True"
+}

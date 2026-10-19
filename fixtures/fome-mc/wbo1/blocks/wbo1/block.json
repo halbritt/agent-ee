@@ -415,7 +415,20 @@
     }
   ],
   "role": "sensor-interface",
-  "runs": [],
+  "runs": [
+    {
+      "baseline_id": "75f7d6eccce9627f0ce521306673149f0583b82b3e2ada3f4a949126ef068177",
+      "candidate_id": "46310254a330cbb063e68fcc16e7d081352143919b963630c5fc51c9aa5b09d0",
+      "files": {
+        "block-contract.json": "blocks/wbo1/block-contract.json",
+        "connectivity.json": "blocks/wbo1/connectivity.json",
+        "interface.json": "blocks/wbo1/interface.json",
+        "parts.json": "blocks/wbo1/parts.json",
+        "sheets/wbo1.kicad_sch": "blocks/wbo1/sheets/wbo1.kicad_sch"
+      },
+      "run_id": "0f41455d-4252-48d9-b43d-e79dfa3df22d"
+    }
+  ],
   "schema": "agent-ee.block/1",
   "sheet": "sheets/wbo1.kicad_sch",
   "source": {

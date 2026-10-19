@@ -1,0 +1,183 @@
+{
+  "candidate_id": "46310254a330cbb063e68fcc16e7d081352143919b963630c5fc51c9aa5b09d0",
+  "files": {
+    "COVERAGE.md": "7ad526d3d1c2b4f3c61758c7d41bb293f86cdb90409f96b4fa0d98521517601a",
+    "blocks/wbo1/block-contract.json": "35285288eebb0cea6946e438334e66ca1aac3d9e1d1ffbedbf24b7ffc117934c",
+    "blocks/wbo1/block.json": "d6a6fc79239b3315d974b215eee426776c0d467ec3ff6cfc587e9ed7c654fda3",
+    "blocks/wbo1/connectivity.json": "63f3f04579b2fa9bcd82b625d2bc3ecdcbcb52d70a8f2e596b93a0dcc462e81c",
+    "blocks/wbo1/interface.json": "fbc966ec23ba72cb2ec494ccfbdf4430d869415189d2ab20b1611c73585d4f6f",
+    "blocks/wbo1/parts.json": "c12be7320681b3bb0f1152044d3b951926decb719043977087577163b4c610bb",
+    "blocks/wbo1/sheets/wbo1.kicad_sch": "ec97cadaadee84d832538dab36dd6d0ce2335169b13834b4cda03fa0128c7c73",
+    "blocks/wbo2/block-contract.json": "aa63affa098dc34e5ccbb8d00dcc7b2947e9b3237b8b74d6c9740af9dcec898e",
+    "blocks/wbo2/block.json": "c95cc5aa1006340007cd1ff929f7139bf8b93613c508d2086a93cdbf1ae480cb",
+    "blocks/wbo2/connectivity.json": "7267ae5f6d6d95aaf710a72cbdd7024fa8fe3e0bfe7d86c883f165f4af1e7837",
+    "blocks/wbo2/interface.json": "731dbf83ada0678a731f3365392a606e425c6e0c586579c121097a28070421d4",
+    "blocks/wbo2/parts.json": "7dfc0153ec07724fd4c25b8e8cd89553ab76e1e4d1184bf23ec1941f29d645f3",
+    "blocks/wbo2/sheets/wbo2.kicad_sch": "053a946392cf7f4d2f2dc869a196adcd146125274cc608691281e34b3cdf7376",
+    "interface.json": "382a375067f6c59acc420f2585a8fc0adbf59aaa8f11b4157cdae6830f0d7f84",
+    "project/reference.kicad_pcb": "947738d7d1e40ceac9712afdcb1d0ddddebd11d8257c7a415ba7445bddec2a0c",
+    "project/reference.kicad_sch": "92ecffc78894dac88ffd5aeec3ae32dc0903661c199f9cd4b35d25b5bcb3fd4e",
+    "project/wbo1.kicad_sch": "ec97cadaadee84d832538dab36dd6d0ce2335169b13834b4cda03fa0128c7c73",
+    "project/wbo2.kicad_sch": "053a946392cf7f4d2f2dc869a196adcd146125274cc608691281e34b3cdf7376"
+  },
+  "profile_path": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/profiles/codex-baseline.json",
+  "profile_sha256": "c8230858c89caccce95cbcb9bd12d18e6541389cadc4ae5f1938abeecbf5fabf",
+  "schema": "agent-ee.candidate/1",
+  "scope": {
+    "baseline": {
+      "reference_architectures": [
+        "blocks/wbo1/block.json",
+        "blocks/wbo2/block.json"
+      ],
+      "requirements": [
+        {
+          "checks": [
+            "erc",
+            "netlist"
+          ],
+          "id": "native",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Native checks",
+            "path": "COVERAGE.md"
+          },
+          "statement": "The captured two-channel reference loads natively, passes ERC and exports its physical components."
+        },
+        {
+          "checks": [
+            "interface"
+          ],
+          "id": "wideband-interface",
+          "intent": "acceptance",
+          "source": {
+            "locator": "Captured native interface",
+            "path": "COVERAGE.md"
+          },
+          "statement": "Retain captured wbo1 component values, external nets, PB1 ground, channel 2 PA8 high, and separate VDDA rails."
+        }
+      ],
+      "targets": [
+        "COVERAGE.md"
+      ]
+    },
+    "board": "project/reference.kicad_pcb",
+    "checks": [
+      {
+        "id": "erc",
+        "kind": "erc"
+      },
+      {
+        "id": "netlist",
+        "kind": "netlist"
+      },
+      {
+        "id": "interface",
+        "kind": "hardware_interface",
+        "params": {
+          "contract": "interface.json",
+          "netlist_check": "netlist"
+        }
+      }
+    ],
+    "inputs": [
+      {
+        "at": "blocks",
+        "path": "blocks"
+      },
+      {
+        "at": "project/reference.kicad_sch",
+        "path": "reference.kicad_sch"
+      },
+      {
+        "at": "project/reference.kicad_pcb",
+        "path": "reference.kicad_pcb"
+      },
+      {
+        "at": "project/wbo1.kicad_sch",
+        "path": "blocks/wbo1/sheets/wbo1.kicad_sch"
+      },
+      {
+        "at": "project/wbo2.kicad_sch",
+        "path": "blocks/wbo2/sheets/wbo2.kicad_sch"
+      },
+      {
+        "at": "interface.json",
+        "path": "interface.json"
+      },
+      {
+        "at": "COVERAGE.md",
+        "path": "COVERAGE.md"
+      }
+    ],
+    "limitations": [
+      "No fabrication or physical-board qualification. Empty original board supplies the required schematic-review container only.",
+      "Upstream Rev C parity, functional models, parts qualification, heater geometry and independent reviews are pending."
+    ],
+    "mutable_inputs": [],
+    "name": "Pinned fome-mc wbo1 reference audit",
+    "requirements": [
+      "COVERAGE.md"
+    ],
+    "review_profile": {
+      "adjudicator": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "timeout_s": 900
+      },
+      "name": "codex-donor-budget-v1",
+      "reviewers": [
+        {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "role": "circuit",
+          "timeout_s": 900
+        },
+        {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "role": "physical",
+          "timeout_s": 900
+        }
+      ],
+      "schema": "agent-ee.profile/1",
+      "tool_mode": "investigate"
+    },
+    "schema": "agent-ee.scope/3",
+    "schematic": "project/reference.kicad_sch",
+    "scope": "Native acquisition evidence for the rung-2 wideband reference. Incomplete engineering coverage; see COVERAGE.md."
+  },
+  "scope_path": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/reference.scope.json",
+  "scope_sha256": "1798f5460da8d92255f29f8b3a178ffa8ef82afe9d0524008bfb3e5d203931ee",
+  "source_revisions": {
+    "COVERAGE.md": "a3b5fe78a02ceead0a94918ddb76cbc2a0e13c53",
+    "blocks": "a3b5fe78a02ceead0a94918ddb76cbc2a0e13c53",
+    "interface.json": "a3b5fe78a02ceead0a94918ddb76cbc2a0e13c53",
+    "project/reference.kicad_pcb": "a3b5fe78a02ceead0a94918ddb76cbc2a0e13c53",
+    "project/reference.kicad_sch": "a3b5fe78a02ceead0a94918ddb76cbc2a0e13c53",
+    "project/wbo1.kicad_sch": "a3b5fe78a02ceead0a94918ddb76cbc2a0e13c53",
+    "project/wbo2.kicad_sch": "a3b5fe78a02ceead0a94918ddb76cbc2a0e13c53"
+  },
+  "sources": {
+    "COVERAGE.md": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/COVERAGE.md",
+    "blocks/wbo1/block-contract.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo1/block-contract.json",
+    "blocks/wbo1/block.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo1/block.json",
+    "blocks/wbo1/connectivity.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo1/connectivity.json",
+    "blocks/wbo1/interface.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo1/interface.json",
+    "blocks/wbo1/parts.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo1/parts.json",
+    "blocks/wbo1/sheets/wbo1.kicad_sch": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo1/sheets/wbo1.kicad_sch",
+    "blocks/wbo2/block-contract.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo2/block-contract.json",
+    "blocks/wbo2/block.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo2/block.json",
+    "blocks/wbo2/connectivity.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo2/connectivity.json",
+    "blocks/wbo2/interface.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo2/interface.json",
+    "blocks/wbo2/parts.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo2/parts.json",
+    "blocks/wbo2/sheets/wbo2.kicad_sch": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo2/sheets/wbo2.kicad_sch",
+    "interface.json": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/interface.json",
+    "project/reference.kicad_pcb": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/reference.kicad_pcb",
+    "project/reference.kicad_sch": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/reference.kicad_sch",
+    "project/wbo1.kicad_sch": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo1/sheets/wbo1.kicad_sch",
+    "project/wbo2.kicad_sch": "/home/halbritt/git/agent-ee-worktrees/ee149-fome-block-review-runs/fixtures/fome-mc/wbo1/blocks/wbo2/sheets/wbo2.kicad_sch"
+  }
+}

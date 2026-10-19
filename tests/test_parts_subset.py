@@ -31,7 +31,7 @@ class MembershipTests(unittest.TestCase):
 
 
 def comparison_fixture():
-    from test_native_binding import native_graph
+    from tests.test_native_binding import native_graph
     graph = native_graph()
     graph['components'] = {'R1': graph['components']['R1']}
     comp = graph['components']['R1']
@@ -125,8 +125,8 @@ class ComparisonBoundaryTests(unittest.TestCase):
 def captured_fixture(test, root, trio=False):
     """Original synthetic declarations and catalog; never real owner part approval."""
     import copy
-    from test_part_selection import SelectionTests
-    from test_native_binding import GEN, LIBRARY
+    from tests.test_part_selection import SelectionTests
+    from tests.test_native_binding import GEN, LIBRARY
     from agent_ee.part_selection import selection_check
     from agent_ee.storage import write_json, digest, identity
     helper = SelectionTests()
@@ -271,7 +271,7 @@ class CapturedManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'symlink'):
             dependency_closure(self.document, self.root)
     def test_repinned_catalog_cannot_contradict_its_captured_raw_attributes(self):
-        from catalog_repin import repin, set_derived
+        from tests.catalog_repin import repin, set_derived
         from agent_ee.parts_manifest import qualify_manifest
         from agent_ee.storage import digest
         snapshot = self.root / 'snapshot'
@@ -285,7 +285,7 @@ class CapturedManifestTests(unittest.TestCase):
 
     def test_malformed_or_duplicate_native_evidence_is_unknown_not_partial_pass(self):
         import xml.etree.ElementTree as ET
-        from test_native_binding import FIXTURE
+        from tests.test_native_binding import FIXTURE
         from agent_ee.parts_subset import evaluate
         path = self.root / 'native.xml'
         for mutation in ('duplicate_component', 'duplicate_footprint', 'malformed'):
@@ -312,7 +312,7 @@ class NativePartsPipelineTests(unittest.TestCase):
     def setUp(self):
         import tempfile
         from pathlib import Path
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory(prefix='agent-ee-86-')))
         self.document = captured_fixture(self, self.root)
@@ -515,7 +515,7 @@ class NativePartsPipelineTests(unittest.TestCase):
         verify(run)
 
     def test_actual_child_instances_are_separate_capacity_obligations(self):
-        from test_native_binding import GEN
+        from tests.test_native_binding import GEN
         from agent_ee.storage import read_json, write_json, digest
         requirements = read_json(self.root / 'selection-requirements.json')
         requirements['parts'][0]['quantity_per_board'] = 3

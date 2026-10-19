@@ -1,0 +1,35 @@
+{
+  "baseline_id": "75f7d6eccce9627f0ce521306673149f0583b82b3e2ada3f4a949126ef068177",
+  "candidate_id": "46310254a330cbb063e68fcc16e7d081352143919b963630c5fc51c9aa5b09d0",
+  "checks": {
+    "erc": {
+      "artifacts": {
+        "work/erc/console.log": "cfdf963bee55096380425aaad09cbdeb6d4442ad3f24f3b416af267bef2e5e0c",
+        "work/erc/erc.json": "1e5bd9e10317fb995e689d4ca16818b1aada9b4ec1874429a9bcf075b5ae89c4",
+        "work/erc/execution.json": "c38a3a12cde12386a077aaa28eb76d5b2a1c0c96d0cf5fb636a7a48cc22ef446",
+        "work/erc/kicad-version/console.log": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7",
+        "work/erc/kicad-version/execution.json": "a76b8226c3e7989c3bc79c3368f4278a483e1054e65f8b6c69753dd51f63f9ad",
+        "work/erc/kicad-version/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "work/erc/kicad-version/stdout.log": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7"
+      },
+      "result": "c00c2d73c52329f149094ec454ccc4b65723aca06f4913cb4fbec24cef8147ae"
+    },
+    "interface": {
+      "artifacts": {
+        "work/interface/interface.json": "b57b5defc770361a049ccaf5a9e528f33366e6af3f477d6837b84c5715da797d",
+        "work/netlist/design.xml": "864b1891b69488a796563cd0663b1d948ad209bed83d07766a0890bb6d213f05"
+      },
+      "result": "774ffdd511fa46cbe1d43bf069dd41832f144eb318b18f24acb2e115ac19e80a"
+    },
+    "netlist": {
+      "artifacts": {
+        "work/netlist/connectivity.json": "02578115b542f23cf232a1f97c77ed3b8b1aa2c55cb5f9c59af19ff40724e3e2",
+        "work/netlist/console.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "work/netlist/design.xml": "864b1891b69488a796563cd0663b1d948ad209bed83d07766a0890bb6d213f05",
+        "work/netlist/execution.json": "8a552de273fd7ee95596f2704b99a8e1452e1779c2717f25b2f3543aa4de2502"
+      },
+      "result": "8ae39d6025eaab1d98b2e71deafbb5fd5b612882f5e3d2a0a336c3aca69cd991"
+    }
+  },
+  "schema": "agent-ee.evidence/1"
+}

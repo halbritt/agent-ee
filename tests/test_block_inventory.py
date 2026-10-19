@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import block_inventory_fixture as fixture
+from tests import block_inventory_fixture as fixture
 from agent_ee.block_inventory import (adapt_connectivity, capture_inventory, compare_connectivity,
                                       validate_inventory)
 from agent_ee.reference_blocks import block_contract, hierarchy_ports, validate_block, verify_external_source
@@ -65,7 +65,7 @@ class InventoryStructureTests(unittest.TestCase):
 
 class InventoryCaptureTests(unittest.TestCase):
     def setUp(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-105-')
         self.addCleanup(self.tmp.cleanup)
@@ -456,7 +456,7 @@ class QualificationScriptTests(unittest.TestCase):
     """The opt-in private-inventory qualification, exercised on the owned design only."""
 
     def setUp(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-105-qualify-')
         self.addCleanup(self.tmp.cleanup)

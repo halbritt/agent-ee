@@ -171,7 +171,14 @@ the baseline changed. The current scope compiles baseline
 `985999e2ca757f18288362526bb83b16d54d049b1da312d9a1fceecc4cdb8c48` with
 candidate `5f8f54c3ed67490b08bc8228d173363e118bd445752597bc08484e352f9a51ca`.
 A checks-only run executes all 11 checks with the results in the table above.
-No reviewed run exists yet on this baseline.
+AGENTEE-149 attempted a host review on this baseline using
+`profiles/codex-baseline.json`: run `877a075f-51d6-4cf2-a627-8ee5fb441305`,
+candidate `1d1a619470a38dc6646e7af098b799792d7236f34ba2aca4f40d899504c331b2`.
+Both independent reviewer responses were refused with
+`citation pointer requires a valid JSON document`, so adjudication did not run.
+The run is incomplete and its reference keeps the block unverified. The
+[run record](fome-block-review-runs.md) describes retention limits and the
+unverified hypotheses that remain requirements for a later qualification.
 
 The two earlier runs below used the superseded scope at `e869806`, which fixed
 that baseline before its first run. They share baseline `39534bca406c7a37c771c42aca233a68aa6a8cc30cc30495d04e9ff68e2ba431`
@@ -196,8 +203,8 @@ reviewers independently reported the same defects in the captured sheet:
 - The SMCJ24A clamp leaves about 1.1 V of margin to the 40 V parts.
 - The board gives `+5V` and `+3V3` no header.
 
-Independent review and adjudication of a run on the current baseline remain to
-be done.
+Validated independent review and adjudication remain to be done. No inference
+retry or manual disposition was used to turn a refused response into acceptance.
 
 ## Adaptation
 
@@ -244,7 +251,10 @@ PYTHONPATH=src python3 scripts/qualify_block_inventory.py \
 ```
 
 It prints `status: qualified` with `expected.differing: []`. The output
-directory must lie outside the work tree.
+directory must lie outside the work tree. That byte-for-byte result describes
+the acquisition before AGENTEE-149 appended the run ledger. A new capture has
+empty `runs`; its `block.json` and the report's `block_sha256` therefore differ
+from the annotated fixture. Payload and contract hashes are unchanged.
 
 ## Limits
 

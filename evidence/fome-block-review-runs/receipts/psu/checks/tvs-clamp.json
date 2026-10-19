@@ -1,0 +1,11 @@
+{
+  "candidate_id": "1d1a619470a38dc6646e7af098b799792d7236f34ba2aca4f40d899504c331b2",
+  "details": {},
+  "evidence": [],
+  "execution": "unsupported",
+  "id": "tvs-clamp",
+  "kind": "datasheet_limits",
+  "limitations": [],
+  "outcome": "unknown",
+  "summary": "unknown check kind 'datasheet_limits'"
+}

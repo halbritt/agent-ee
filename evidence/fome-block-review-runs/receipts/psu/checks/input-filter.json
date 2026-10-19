@@ -1,0 +1,14 @@
+{
+  "candidate_id": "1d1a619470a38dc6646e7af098b799792d7236f34ba2aca4f40d899504c331b2",
+  "details": {},
+  "evidence": [
+    "work/netlist/design.xml",
+    "work/netlist/connectivity.json"
+  ],
+  "execution": "unsupported",
+  "id": "input-filter",
+  "kind": "rc_transient",
+  "limitations": [],
+  "outcome": "unknown",
+  "summary": "net names collide after SPICE node sanitisation"
+}

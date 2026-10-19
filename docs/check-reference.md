@@ -711,6 +711,10 @@ records are refused (exit 2), distinct from valid unverified records (exit 1)
 and unexpected internal errors (exit 3, with a diagnostic traceback).
 Run provenance does not establish a containing campaign's current state.
 Adapted blocks require fresh checks on the new board candidate.
+The [FOME host attempts](fome-block-review-runs.md) bind incomplete reviewed runs
+to the wbo1 and PSU records. Their metadata receipts omit host-only third-party
+documents and cannot be supplied as complete run locations. A mapped local
+object store verifies the pinned citations but gives no missing review credit.
 
 ## Footprint assignment
 

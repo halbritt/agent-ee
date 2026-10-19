@@ -1,0 +1,46 @@
+{
+  "errors": [
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "./unused"
+      },
+      "finding_id": "circuit-erc-power",
+      "path": "inputs/project/wbo1.kicad_sch",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "./unused"
+      },
+      "finding_id": "circuit-vdda-order",
+      "path": "inputs/project/wbo1.kicad_sch",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "physical-erc-power-drive",
+      "path": "inputs/project/wbo1.kicad_sch",
+      "role": "physical"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "physical-erc-power-drive",
+      "path": "inputs/project/wbo1.kicad_sch",
+      "role": "physical"
+    }
+  ],
+  "method": "Existing validate_citation over returned evidence citations, without modifying or resubmitting responses. Locators and document text omitted.",
+  "run_id": "0f41455d-4252-48d9-b43d-e79dfa3df22d"
+}
