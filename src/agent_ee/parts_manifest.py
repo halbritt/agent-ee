@@ -82,8 +82,13 @@ def validate_manifest(document):
         _validate_generic_sources(document)
     elif document['selection'] is not None:
         raise ValueError('catalog and selection must both be null for named-only parts')
-    exact_fields(document['cad'], ('manifest', 'assignments', 'members_sha256'))
-    for name in ('manifest', 'assignments'):
+    cad_fields = ('manifest', 'assignments', 'members_sha256')
+    if isinstance(document['cad'], dict) and 'declarations' in document['cad']:
+        cad_fields += ('declarations',)
+    exact_fields(document['cad'], cad_fields)
+    for name in ('manifest', 'assignments', 'declarations'):
+        if name not in document['cad']:
+            continue
         _blob(document['cad'][name])
     _sha(document['cad']['members_sha256'])
     parts = document['parts']
@@ -182,6 +187,8 @@ def dependency_closure(document, root):
     """Validate pins and return every immutable path/hash, excluding candidate CAD."""
     validate_manifest(document)
     blobs = [document['declaration_source'], document['cad']['manifest'], document['cad']['assignments']]
+    if 'declarations' in document['cad']:
+        blobs.append(document['cad']['declarations'])
     if document['selection'] is not None:
         blobs += list(document['selection'].values())
     catalog = document['catalog']
@@ -268,7 +275,10 @@ def qualify_manifest(document, root):
             missing.append(dict(part_id=part['id'], reason=part['datasheet']['reason']))
     cad_manifest = strict_json(_read_blob(root, document['cad']['manifest']))
     captures = {p: read_captured(root, p) for p in closure}
-    cad = check_assignments(cad_manifest, captures, declaration, native_membership=True)
+    declarations = (strict_json(_read_blob(root, document['cad']['declarations']))
+                    if 'declarations' in document['cad'] else None)
+    cad = check_assignments(cad_manifest, captures, declaration, native_membership=True,
+                            declarations=declarations)
     if cad['execution'] != 'ok' or cad['outcome'] != 'pass' or cad['coverage'] != 'complete':
         raise ValueError('captured CAD assignments unavailable or inconsistent')
     return dict(dependencies=closure, selection=selection, cad=cad, missing_provenance=missing)
