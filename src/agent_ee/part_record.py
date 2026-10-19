@@ -101,6 +101,32 @@ def qualify_record(document, root):
     return dict(sorted(dependencies.items()))
 
 
+def datasheet_url_crosscheck(document, root, identity_url=None):
+    """Compare a replayed record's acquisition URL with catalog URL claims.
+
+    Sources are the verified JLCPCB response's ``dataManualUrl`` and, when the
+    caller supplies one, the identity index's raw URL for the same LCSC id.
+    ``agree``/``differ`` are informational; no URL claim gains datasheet authority
+    or changes the record. Without any catalog URL claim the verdict is unknown.
+    """
+    from .jlc_stock_capture import response_datasheet_url
+    from .parts_manifest import read_captured
+    qualify_record(document, root)
+    stock = strict_json(read_captured(root, document['catalog']['path']))
+    request = next(r for r in stock['requests'] if r['lcsc'] == document['lcsc'])
+    path = (Path(document['catalog']['path']).parent / request['response']['path']).as_posix()
+    raw = read_captured(root, path)
+    if hashlib.sha256(raw).hexdigest() != request['response']['sha256']:
+        raise ValueError('retained JLCPCB response changed after replay')
+    if identity_url is not None:
+        nonempty(identity_url)
+    claims = {'jlc_response': response_datasheet_url(raw, document['lcsc']), 'identity_index': identity_url}
+    present = [url for url in claims.values() if url is not None]
+    verdict = 'unknown' if not present else 'agree' if all(u == document['datasheet_url'] for u in present) else 'differ'
+    return {'lcsc': document['lcsc'], 'acquisition_url': document['datasheet_url'], **claims,
+            'response_sha256': request['response']['sha256'], 'verdict': verdict}
+
+
 def _external_sources(root, identity_source, datasheets, datasheet_id, deviation_ref):
     from .parts_manifest import _blob, _read_blob, read_captured
     from .part_decisions import validate_deviation

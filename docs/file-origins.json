@@ -2332,6 +2332,16 @@
     },
     {
       "paths": [
+        "catalog-sources/jlcparts-identity-2026-09-14.json"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-247 identity-index source manifest: the same jlcparts commit, URL, byte counts and SHA-256 facts as catalog-sources/jlcparts-2026-09-14.json under the jlcparts-v2-identity-split-zip profile name. The source-db-v2 layout it names is read from the MIT-licensed yaqwsx/jlcparts producer's published format; no upstream catalog rows, data or software are vendored, and pinning the public source grants no permission to redistribute its data. Tests build owned synthetic archives only."
+    },
+    {
+      "paths": [
         "src/agent_ee/block_adaptation.py",
         "tests/test_block_adaptation.py"
       ],

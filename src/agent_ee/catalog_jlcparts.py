@@ -28,23 +28,23 @@ COMPONENT_COLUMNS = ('lcsc', 'fetched_at', 'present', 'sync_seen', 'category', '
                      'website_component_id', 'attrition')
 
 
-def split_volumes(volumes):
+def split_volumes(volumes, profile=FORMAT):
     ordered = sorted(volumes, key=lambda v: v['path'])
     expected = [f'cache.z{n:02}' for n in range(1, len(ordered))] + ['cache.zip']
     if len(ordered) < 2 or len(ordered) > 100 or [v['path'] for v in ordered] != expected:
         raise ValueError('expected contiguous cache.z01 ... cache.zip volumes')
-    if any(v['format'] != FORMAT for v in ordered):
+    if any(v['format'] != profile for v in ordered):
         raise ValueError('mixed native and normalized catalog volumes')
     return ordered
 
 
-def reassemble(volumes, root, destination):
+def reassemble(volumes, root, destination, profile=FORMAT):
     """Verify every volume before interpreting ZIP metadata; translate disk offsets.
 
     This intentionally accepts only the pinned producer's single-entry ZIP64
     layout. zipfile handles the directory, compression, CRC and member validation.
     """
-    volumes = split_volumes(volumes)
+    volumes = split_volumes(volumes, profile)
     with destination.open('xb') as output:
         for volume in volumes:
             path = root / volume['path']

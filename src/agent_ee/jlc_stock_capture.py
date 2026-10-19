@@ -141,6 +141,24 @@ def parse_search_response(raw, lcsc):
                      'price1': _price1(row.get('componentPrices'))}
 
 
+def response_datasheet_url(raw, lcsc):
+    """The ``dataManualUrl`` of the exact matching row in retained bytes, or None.
+
+    Separate from ``parse_search_response`` so ``agent-ee.jlc-catalog/1`` part
+    keys are unchanged. The URL is an unfetched vendor claim, never authority.
+    """
+    status, _ = parse_search_response(raw, lcsc)
+    if status != 'found':
+        return None
+    row = next(r for r in _strict_json(raw)['data']['componentPageInfo']['list'] if r.get('componentCode') == lcsc)
+    url = row.get('dataManualUrl')
+    if url is None:
+        return None
+    if not isinstance(url, str):
+        raise ValueError('dataManualUrl must be a string or null')
+    return url.strip() or None
+
+
 def _utc(value, label):
     if not isinstance(value, str) or not value.endswith('+00:00'):
         raise ValueError(f'{label} must be an ISO-8601 UTC timestamp')

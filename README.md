@@ -420,6 +420,10 @@ explicit requirement. Their [full-feed runtime qualification](docs/catalog.md#fu
 uses a declared 600-second helper ceiling and retains sealed evidence in private
 scratch. They do not authenticate upstream claims or establish
 circuit acceptance. Snapshot stock and prices describe their recorded dates.
+A separate pinned [catalog identity index](docs/catalog-identity.md) retains
+non-passive LCSC/MPN/manufacturer/package/tier/stock/datasheet-URL facts and
+resolves declared MPNs offline to candidate LCSC ids and datasheet URLs;
+ambiguous matches need an explicit reasoned narrowing and misses stay unknown.
 [Named ICs and modules](docs/approved-parts.md#named-ics-and-modules) can enter
 `parts/1` through per-LCSC records derived offline from captured JLCPCB responses
 and datasheet acquisitions. The subset check and scaffold producer replay exact
