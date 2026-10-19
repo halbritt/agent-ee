@@ -840,8 +840,12 @@ symbols stay distinct, and an empty schematic is `info`, not `pass`.
 A [JLCPCB stock capture](jlc-stock-capture.md) comes from the owner-run
 host-side producer, one rate-limited request per LCSC id. When it is the
 catalog, the check re-derives every part from the captured raw responses. It
-requires the run's `as_of` and a declared staleness, and it fails a capture
-that is stale or lacks an observation for a populated id.
+uses the generation receipt's completion time in campaigns (review time for
+standalone checks) with a 24-hour maximum age. It fails a capture that is stale
+or lacks an observation for a populated id. The [JLC catalog schema](jlc-catalog.md)
+requires retained response hashes and requests; unknown keys and LCSC warehouse
+sources are refused. Per-part hash verdicts and the evaluation-time witness are
+retained as evidence.
 
 ## Schematic readability lint
 

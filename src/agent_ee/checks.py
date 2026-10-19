@@ -1043,7 +1043,7 @@ CHECK_FUNCS = {'jlc_dfm': check_jlc_dfm, "design_rules": check_design_rules, 'jl
 
 # ------------------------------------------------------------------ entry point
 
-def run_checks(run_dir, deadline, *, fab_context=None):
+def run_checks(run_dir, deadline, *, fab_context=None, stock_context=None):
     """Run every scope check; write checks/<id>.json immediately; return results."""
     run_dir = Path(run_dir)
     manifest = read_json(run_dir / "candidate.json")
@@ -1064,6 +1064,7 @@ def run_checks(run_dir, deadline, *, fab_context=None):
         seen.add(cid)
         ctx = Ctx(run_dir, manifest, spec, deadline)
         ctx.fab_context = fab_context
+        ctx.stock_context = stock_context
         func = CHECK_FUNCS.get(spec.get("kind"))
         try:
             if ctx.remaining() < MIN_CHECK_SECONDS:

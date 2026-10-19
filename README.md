@@ -363,7 +363,10 @@ engineering claims.
 producer. It sends one rate-limited request per LCSC id to the public JLCPCB
 search endpoint and keeps each raw response, hashed and time-stamped.
 `assembly_readiness` consumes the capture offline: it re-derives every part
-from those bytes and binds `as_of` to the run. It refuses a capture that is
+from those bytes and binds `as_of` to the generation receipt in campaigns
+(review time for standalone checks), with a 24-hour maximum age. The
+[JLC catalog schema](docs/jlc-catalog.md) requires verifiable responses and
+reports per-part hash verdicts. It refuses a capture that is
 stale or lacks an observation for a populated id. Its response mapping is not
 yet qualified against a live JLCPCB response.
 
