@@ -63,9 +63,10 @@ source board:
 
 - the declared `fixed_footprints` UUIDs;
 - the policy's `fixed_refs`;
-- the `fixed_footprints[].reference` of every captured envelope named by a
-  `placement` check's `envelope` parameter, read from the envelope bytes with the
-  [AGENTEE-85 validator](board-envelope.md);
+- the `fixed_footprints[].reference` and `mounting_holes[].id` of every
+  captured envelope named by a `placement` check's `envelope` parameter, read
+  from the envelope bytes with the [AGENTEE-85 validator](board-envelope.md)
+  (holes since AGENTEE-179; the scaffold gives each hole its id as reference);
 - footprints locked on the source board.
 
 A missing or ambiguous reference refuses the binding. It never shrinks the set.

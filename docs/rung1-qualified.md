@@ -198,9 +198,9 @@ side, one obstacle per band. The placer grades courtyards against the outline
 only. In a dry run without the bands it put C1's pad 0.255 mm from the edge, and
 native DRC reported `copper_edge_clearance` against the template board's 0.5 mm
 rule, so the placement stage could not pass. The bands, with the policy's 1 mm
-gap, keep every courtyard 1.5 mm inside the edge. The placer reserves one
-bounding box per obstacle, so a single obstacle holding all four bands
-reserves the whole board (`packing_search_exhausted`).
+gap, keep every courtyard 1.5 mm inside the edge. Since AGENTEE-179 the placer
+treats each obstacle polygon exactly. Before that it reserved one bounding box
+per obstacle, which is why the bands are four separate obstacles.
 
 ### Iteration budget
 

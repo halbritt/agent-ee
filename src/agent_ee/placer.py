@@ -1,13 +1,16 @@
 """Deterministic net-aware greedy placement, over captured geometry only.
 
-The search is deliberately conservative: inflated courtyard boxes reserve space;
-full polygons and the independent placement judge validate the proposed plan.
-A bounded search failure is unknown, never a proved design defect.
+The search is deliberately conservative: inflated courtyard boxes reserve space
+for parts it places. Fixed courtyards and declared obstacles are exact polygons
+that keep the gap (AGENTEE-179). Full polygons and the independent placement
+judge validate the proposed plan. A bounded search failure is unknown, never a
+proved design defect.
 """
 import copy
 from fractions import Fraction
 
-from .placement import area2, cross, intersection_area, judge, qualified_polygons, validate_capture
+from .placement import area2, cross, edges, intersection_area, judge, qualified_polygons, validate_capture
+from .placement_predicates import segment_distance2
 
 
 # Native pcbnew PAD_SHAPE values, read from the KiCad 10.0.7 bindings.
@@ -167,6 +170,32 @@ def _blocked(candidate, reserved, gap):
     return False
 
 
+def _near(candidate, exact, gap):
+    """True when a courtyard overlaps, or comes closer than the gap to, an exact obstacle.
+
+    Boxes only prefilter; a concave courtyard's notch stays usable.
+    """
+    for side, (x0, y0, x1, y1) in boxes(candidate).items():
+        for obstacle in exact:
+            if obstacle['side'] != side:
+                continue
+            a0, b0, a1, b1 = obstacle['box']
+            if x1+gap <= a0 or a1+gap <= x0 or y1+gap <= b0 or b1+gap <= y0:
+                continue
+            for c in candidate['courtyards'][side]['polygons']:
+                for p in obstacle['polygons']:
+                    if intersection_area(c, p) > 0 or (gap and min(
+                            segment_distance2(a, b, d, e) for a, b in edges(c) for d, e in edges(p)) < gap*gap):
+                        return True
+    return False
+
+
+def _exact(side, polygons):
+    entry = {'side': side, 'polygons': polygons}
+    entry['box'] = boxes({'courtyards': {side: entry}})[side]
+    return entry
+
+
 def _fits(candidate, outline):
     return all(intersection_area(p, outline) == Fraction(abs(area2(p)), 2)
                for courtyard in candidate['courtyards'].values() for p in courtyard['polygons'])
@@ -267,18 +296,16 @@ def _part_impossibility(capture, outline):
 
 
 def _initial_reservations(capture, policy, outline, obstacles):
+    """Fixed parts and declared obstacles become exact polygon obstacles, never boxes."""
     fixed = set(policy['fixed_refs']) | {f['ref'] for f in capture['footprints'] if f.get('locked')}
     placed = [copy.deepcopy(f) for f in capture['footprints'] if f['ref'] in fixed]
-    reserved = []
-    for obstacle in policy['obstacles']:
-        shell = {'courtyards': {obstacle['side']: {'polygons': obstacle['polygons']}}}
-        reserved.extend(boxes(shell).items())
+    exact = [_exact(o['side'], qualified_polygons({'status': 'proven', 'polygons': o['polygons']}))
+             for o in policy['obstacles']]
     for i, fp in enumerate(placed):
-        if (not _fits(fp, outline) or _blocked(fp, reserved, policy['gap_nm']) or
-                _keepout_blocked(fp, placed[:i], obstacles)):
-            raise ValueError('fixed placement conflicts with outline, obstacle or reserved gap')
-        reserved.extend(boxes(fp).items())
-    return fixed, placed, reserved
+        if not _fits(fp, outline) or _near(fp, exact, policy['gap_nm']) or _keepout_blocked(fp, placed[:i], obstacles):
+            raise ValueError(f"fixed placement {fp['ref']} conflicts with outline, obstacle, keepout or reserved gap")
+        exact.extend(_exact(side, c['polygons']) for side, c in sorted(fp['courtyards'].items()))
+    return fixed, placed, exact
 
 
 def pack(capture, policy):
@@ -302,17 +329,18 @@ def pack(capture, policy):
                            f"{proof['ref']} courtyard {proof['kind'].replace('_', ' ')} exceeds the board's")
         return {**failure, 'proof': proof}
     try:
-        fixed, placed, reserved = _initial_reservations(capture, policy, outline, obstacles)
+        fixed, placed, exact = _initial_reservations(capture, policy, outline, obstacles)
     except ValueError as exc:
         return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc))
     priorities = {ref: i for i, ref in enumerate(policy['priority_refs'])}
     queue = sorted((fp for fp in capture['footprints'] if fp['ref'] not in fixed),
                    key=lambda f: (priorities.get(f['ref'], len(priorities)), -len(f['pads']), f['ref']))
     steps = 0
+    reserved = []
     for fp in queue:
         best = None
-        anchors = reserved + _keepout_boxes(obstacles + [area for f in placed
-                                                        for area in f.get('packing_keepouts', [])])
+        anchors = reserved + [(o['side'], o['box']) for o in exact]
+        anchors += _keepout_boxes(obstacles + [area for f in placed for area in f.get('packing_keepouts', [])])
         for rotation in (0, 90, 180, 270):
             for position in _candidate_positions(fp, rotation, outline, anchors, policy['gap_nm']):
                 if steps == policy['step_budget']:
@@ -321,7 +349,7 @@ def pack(capture, policy):
                 steps += 1
                 proposed = transform(fp, position, rotation)
                 if (_blocked(proposed, reserved, policy['gap_nm']) or not _fits(proposed, outline) or
-                        _keepout_blocked(proposed, placed, obstacles)):
+                        _near(proposed, exact, policy['gap_nm']) or _keepout_blocked(proposed, placed, obstacles)):
                     continue
                 key = (_wire_cost(proposed, placed, policy['ground_nets']), *position, rotation)
                 if best is None or key < best[0]:

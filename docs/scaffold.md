@@ -95,6 +95,10 @@ native path and retains the footprint UUID and transform.
 Mounting holes are constructed directly as locked board-only footprints, with
 one round drilled pad, the declared reference, position, drill and plating,
 and BOM/position-file exclusions. They have no netlist path or schematic symbol.
+Each has a straight square courtyard on F.CrtYd and B.CrtYd around its pad
+circle (AGENTEE-179), so the placer and `courtyard-overlap/1` treat it as a
+fixed occupant on both sides. No fastener head or standoff size is declared,
+so the courtyard reserves none.
 `Mechanical:MountingHole` has no pins: putting it in connectivity intent still
 produces `empty_pins`; this preparation step does not relax the resolver.
 NPTH pad size equals drill size. Declared PTH holes receive a 0.3 mm annulus;

@@ -32,12 +32,19 @@ def _authorization(source, destination, authorization):
     return root
 
 
-def _netlist_binding(netlist, facts):
+def _netlist_binding(netlist, facts, board_only=frozenset()):
+    """`board_only` names native board-only footprints, such as scaffold mounting holes.
+
+    They have no schematic symbol, so they are absent from the export; one with a net,
+    or one that the export also names, is refused."""
     root = ET.fromstring(netlist)
     if root.tag != 'export' or root.find('components') is None or root.find('nets') is None:
         raise ValueError('native XML export components/nets required')
     refs = [c.get('ref') for c in root.findall('components/comp')]
-    if len(set(refs)) != len(refs) or set(refs) != {f['ref'] for f in facts['footprints']}:
+    if board_only & set(refs) or any(pad['net'] for f in facts['footprints'] if f['ref'] in board_only
+                                     for pad in f['pads']):
+        raise ValueError('board-only footprint has a net or a native netlist component')
+    if len(set(refs)) != len(refs) or set(refs) != {f['ref'] for f in facts['footprints']} - board_only:
         raise ValueError('native netlist component inventory differs from saved board')
     assignments, names = {}, set()
     for net in root.findall('nets/net'):
@@ -65,7 +72,8 @@ def _netlist_binding(netlist, facts):
 def _unrouted_board(source):
     import pcbnew
     board = pcbnew.LoadBoard(str(source))
-    if len(board.GetTracks()) or len(board.Zones()):
+    # Board rule areas are inputs: the packer reads footprint keepouts as obstacles.
+    if len(board.GetTracks()) or any(not zone.GetIsRuleArea() for zone in board.Zones()):
         raise ValueError('initial placer refuses existing tracks, vias or zones')
     for fp in board.GetFootprints():
         if any(not zone.GetIsRuleArea() for zone in fp.Zones()):
@@ -162,6 +170,10 @@ def _saved_judgment(output, plan):
     return facts, judge(facts)
 
 
+def _board_only(board):
+    return frozenset(fp.GetReference() for fp in board.GetFootprints() if fp.IsBoardOnly())
+
+
 def _evaluate_proposal(board, output, plan, netlist_bytes):
     import pcbnew
     pads = _pad_inventory(board)
@@ -171,7 +183,7 @@ def _evaluate_proposal(board, output, plan, netlist_bytes):
     saved, judgment = _saved_judgment(output, plan)
     write_json(output.parent / 'placement-probe.json', saved)
     write_json(output.parent / 'placement-judgment.json', judgment)
-    _netlist_binding(netlist_bytes, saved)
+    _netlist_binding(netlist_bytes, saved, _board_only(board))
     overlaps = _native_drc(output, output.parent)
     if judgment['verdict'] != 'pass' or overlaps:
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
@@ -210,8 +222,8 @@ def place_candidate(source, netlist, destination, request):
     with writer_lock(destination):
         _authorization(source, destination, request['authorization'])
         facts = extract(source)
-        _netlist_binding(netlist_bytes, facts)
         board = _unrouted_board(source)
+        _netlist_binding(netlist_bytes, facts, _board_only(board))
         plan = pack(facts, request['policy'])
         refusal = plan['status'] == 'planned' and _padstack_refusal(board)
         if refusal:
