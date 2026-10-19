@@ -22,3 +22,24 @@ fabricator facts. `fab_profile` is `null` because no real fabricator's
 AGENTEE-75 profile has been captured, so validation reports
 `fab_profile_selected` as unresolved rather than supplying defaults. Tests
 reference owned synthetic profiles written at run time, not fixture facts.
+
+## JLCPCB 2-layer profile and RC variant (2026-10-19)
+
+`jlc-2layer/fab-profile.json` is an original `agent-ee.fab-profile/2` record
+(`jlc-2layer-fr4-1oz`). It follows the telemetry-pod pattern. On 2026-10-19 the
+host fetched JLCPCB pages with Python `urllib.request.urlopen`; this was a capture
+step, not a check. The worker reduced the responses to
+`jlc-2layer/sources/jlcpcb-2layer.txt`, which holds numbers and names only, with
+no vendor prose or graphics. `jlc-2layer/source-capture.json` records each URL,
+UTC time, response SHA-256 and byte count, the table locators and the
+interpretation limits. Raw responses stay in the worker's scratch directory and
+are not committed.
+
+The profile declares no `stackup`. JLCPCB publishes 1 oz (35 µm) outer copper
+and one FR-4 dielectric for 2-layer boards, but no dielectric thickness. The
+manifest lists the pages searched under `stackup_authority`.
+
+`rc-jlc-2layer.envelope.json` is `rc.envelope.json` with only `fab_profile`
+changed, to reference that profile's name and SHA-256. Its 0.035/1.53/0.035 mm
+stackup and 1 oz weights remain the owned assumptions described above, not
+fabricator facts.
