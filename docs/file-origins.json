@@ -3076,6 +3076,16 @@
         "AE"
       ],
       "reviewed": "Original CSV compiler and original probe tests; textual owner-repository contract cross-check only; no donor code or symbols copied."
+    },
+    {
+      "paths": [
+        "tests/test_routing_layers.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-206 native multilayer and filled-zone tests, including actual owned CAN probe composition and adversarial native fill/identity controls. No vendor design or library bytes."
     }
   ]
 }

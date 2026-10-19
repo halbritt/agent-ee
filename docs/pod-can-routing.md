@@ -69,8 +69,9 @@ exercise routing behavior; no transceiver, real connector, source qualification
 or schematic/PCB parity acceptance is asserted. Other native DRC findings remain
 visible. Zero gap findings does not establish coupling percentage or impedance.
 
-The existing routing_rules topology excludes zones anywhere on the board,
-branched nets, arcs and multilayer paths. Thus an actual pod containing pours or
-branched CAN protection/termination cannot inherit this fixture's pass; it needs
-separately supported topology/checks or an explicit unresolved limitation.
+The original 185 fixture qualifies a two-layer track path. AGENTEE-206 adds
+[separate native plane connectivity and multilayer track coverage](routing-rules.md#filled-planes-and-multilayer-connectivity-agentee-206), with a four-layer CAN
+probe. Branched CAN protection/termination and arcs remain unqualified; an actual
+pod cannot inherit this fixture's pass. Zone-connected nets cannot obtain numeric
+length/skew qualification solely from native connectivity.
 Source review, full pod ERC/DRC, bench obligations and fabrication remain open.
