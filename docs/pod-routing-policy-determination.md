@@ -21,6 +21,18 @@ the return corridor and the stitching pitch. The geometric routing guard is not 
 RF qualification. The section [What stays unqualified](#what-stays-unqualified)
 lists what remains open and how each item would be closed.
 
+Two tracker items carry work this page cannot do:
+
+- **AGENTEE-260** owns the pre-routing, coordinator-owned derivation and its
+  sequencing. The numeric `pour_area_loss_pct` cannot exist when the campaign is
+  configured: it is derived from the placed, planed, unrouted board, after
+  placement and before routing. Campaign configuration can only declare the
+  method and the inputs.
+- **AGENTEE-261** owns the RF geometry checks this page leaves unenforced: the exact
+  grounded-CPW gap and coplanar ground, the stitching-via pitch along the RF
+  corridor, and branched RF net length. AGENTEE-258/259 (per-net signal layers
+  and their wiring into the RF assessment) do not close those items.
+
 This is a specialist determination for routing preparation. It does not change an
 owner requirement, a physical limit or a sealed input. It adopts no constraint
 value: adoption stays with the pod lane.
@@ -39,13 +51,17 @@ Hashes were recomputed with `sha256sum` on 2026-10-19:
 | `pod-generation-inputs-v3/sources/jlcpcb-stackup.txt` (JLC04161H-7628) | `02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4` |
 | `pod-generation-inputs-v3/fab-profile.json` | `02e484728bbcf695422ab2aa70ff3923ddd82b871fc28715aa1e9e9104822632` |
 | `pod-generation-inputs-v3/spec.md` | `09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493` |
+| `pod-generation-inputs-v3/complete-decisions.md` ("engineering selections under the owner's delegated authority") | `f09a0b56852332738ce3d2f342f0bc815732cc8b59e751e6b2b5cb14e4b08dcb` |
+| `calc-4-result.json`: the raw JLC impedance-solver response behind the RF capture (`dErEff` 2.94025199985, 49.6637289254 Ω) | `d05e15b93f02b3cc12b9b967c093503c60a3c72338a2f35ddccd96d4998b89af` |
 | `pod-generation-inputs-v3/antenna/policy.json` (ESP32 antenna `outside_board`) | `62bd9a2f35edcdadbf8c5ca3bf863d3824d0c82be684dbf426e687a99ce1d163` |
 | `pod-generation-inputs-v3/sources/esp32-guidelines.pdf` (cited by that policy, §1.4.7) | `057f6df63e10a2dfc155cf19d942adf5780127d839626e2beb4c1a61efeaf3a5` |
 | native-v5 `telemetry-pod.kicad_pcb` (the staged board the plane plan was reviewed on) | `4fe774b5751af2b7cbd7169a81356fe5d57b741dd25c12a63c1d75639a484087` |
 | native-v5 `telemetry-pod.kicad_pro` | `84ec00618f295150ad6c27e9e2c84d2d713cd10794e8d58d2e07107ccc802800` |
 
 All paths are under `/tmp/agent469-coordination/`, except native-v5, which is under
-`/tmp/agent463-pod-preparation-20261018/native-v5/scaffold/inputs/project/`.
+`/tmp/agent463-pod-preparation-20261018/native-v5/scaffold/inputs/project/`, and
+`calc-4-result.json`, which is under
+`/tmp/agent-ee-burndown-20261017/workers/ee186e-gnss-rf-w2/scratch/`.
 The live `routing-policy-intake.json` beside the snapshot now hashes
 `487abc8fc0f032494186858990f0d302576d9f3e835d24118c79285579b261c5`. It differs from
 intake-at-assignment only in `specialist_resolution_request` (status
@@ -117,11 +133,17 @@ states a plane-area or via-count limit for the pod.
    plane fill measured on native-v5 (3741.6545 mm² per inner layer) is a
    staged-board fill. It lacks the antipads and thermal cuts of the 104 unplaced
    footprints, so it is not the reference the router will divide by.
-2. **The bound encodes a via count, and no source gives one.** With an outer-only
-   allowlist, the loss is about the number of signal through-vias times one
-   antipad. `spec.md`, the envelope, the fab profile, the RF capture and the plane
-   review bound neither the via count nor the plane area. Choosing that count is an
-   engineering decision with a recorded basis: see [via budget N](#via-budget-n).
+2. **The bound is derived from a via budget, and no source gives one.** With an
+   outer-only allowlist, the router-induced loss is about the number of signal
+   through-vias times one antipad, so the bound is derived as an area from a
+   chosen via count. `spec.md`, the envelope, the fab profile, the RF capture and
+   the plane review bound neither the via count nor the plane area. Choosing that
+   count is an engineering decision with a recorded basis: see
+   [via budget N](#via-budget-n). The check then enforces the area, not the count
+   ([what is enforced](#what-the-check-enforces-area-not-via-count)).
+
+Because of reason 1, the number can only be derived after placement and before
+routing. That sequencing, and who derives the number, is AGENTEE-260.
 
 ## The decision rule
 
@@ -148,11 +170,12 @@ Why the rule admits legitimate routes and still rejects bad ones:
   rejects any route that needs a single via. The native test demonstrates this
   below.
 - **It is not chosen to pass.** It is fixed by `N` and the board before any
-  adoptable routing result exists. A route within budget passes: its loss is at
-  most `N` whole antipads, because overlapping antipads or antipads at the plane
-  edge cost less. A route fails when it uses more signal vias than the budget, or
-  when its vias cut the plane into fragments that the refill removes beyond the
-  budget's area.
+  adoptable routing result exists. A route with at most `N` signal through-vias
+  passes the area item: its loss is at most `N` whole worst-class antipads,
+  because overlapping antipads, antipads at the plane edge and smaller-class
+  antipads cost less. A route fails when its router-induced loss on some
+  `net@layer` exceeds the bound, whether from too many antipads or from fragments
+  the refill removes. That is an area outcome, not a via count; see below.
 - **A failure is evidence for a decision.** A routed attempt whose loss exceeds
   the bound is evidence for re-placement or for re-running the
   [via-budget method](#via-budget-n) on a new board. It is never a reason to
@@ -166,6 +189,34 @@ continuity under signals other than the RF net, and the RF structure itself are
 outside it; see [What stays unqualified](#what-stays-unqualified). The pin's own
 `pour_integrity` failures (`lost_fill_contact`, `isolated_island`,
 `spokes_below_minimum`) still apply on top.
+
+### What the check enforces: area, not via count
+
+`N` is the engineering choice from which the bound is derived. It is not what any
+check grades. Both graders compare plane **area**:
+
+- kicad-route's `pour_integrity` `area_loss` fails a `net@layer` whose area loss
+  exceeds the bound;
+- agent-ee's layer-policy item `area_loss` (`kicad_route_attempt.area_loss`)
+  grades that same recorded comparison against the declared bound.
+
+Neither counts vias. A route can therefore satisfy the area bound with a via count
+different from `N`:
+
+- **more than `N` signal vias** when their antipads overlap, sit at the plane edge
+  or belong to a net class with a smaller via or clearance than the worst class
+  the bound was derived from;
+- **any number of `/GND` vias**, which join the inner `/GND` planes and remove no
+  fill from them ([measured](#evidence-on-the-staged-pod-board-not-a-bound));
+- a different via mix on a pour whose area `A(p)` is larger than the governing
+  pour's, since the bound is one percentage for every `net@layer`.
+
+A route can also fail with fewer than `N` vias, when a fragment the refill removes
+pushes the loss over the bound. **No check enforces the via count itself.**
+`routing_rules` `via_count` counts vias on named nets with qualified two-pad
+routes; it is not a board-wide signal-via total. A board-wide count, if one is
+wanted, would be a new check. The retained `V_i` and `N` are a record of the
+derivation, not a grade.
 
 ## Recipe
 
@@ -294,7 +345,8 @@ boards:
 
 ## Classification of the open decisions
 
-The first determination listed eight owner questions. Each is classified here as:
+The first determination listed eight owner questions (Q1–Q8) and one owner fact
+(Q9, the antenna and cable). Each is classified here as:
 
 - **(a)** decided by a captured source, which is cited;
 - **(b)** an engineering choice, with a method and a recorded basis in
@@ -304,51 +356,103 @@ The first determination listed eight owner questions. Each is classified here as
 
 | # | Decision | Class | Decision and basis |
 | --- | --- | --- | --- |
-| Q1 | Signal through-via budget `N` | (b) | Measured routed demand on the placed board plus a stated margin. Enforced through the derived `pour_area_loss_pct`. See [via budget N](#via-budget-n) |
+| Q1 | Signal through-via budget `N` | (b) | Measured routed demand on the placed board plus a stated margin. `N` is converted into the derived `pour_area_loss_pct`; checks enforce that plane-area bound, not the via count ([area, not via count](#what-the-check-enforces-area-not-via-count)). See [via budget N](#via-budget-n) |
 | Q2 | `layer_costs` (F.Cu vs B.Cu preference) | (b) | Omitted (equal costs). The captured stackup is symmetric and both inner layers are `/GND`, so neither outer layer has a better reference for non-RF nets. The RF layer is a per-net requirement, not a cost. See [layer costs](#layer-costs) |
 | Q3 | RF line structure | (a) | The RF calculation capture: `W2_SurfaceCoplanarWaveguideWithLowerGnd1B`, a grounded coplanar waveguide (GCPW) on F.Cu over In1.Cu, with W1 0.334416796875 mm, D1 0.2032 mm and 49.6637289254 Ω. It is kept as captured, and microstrip is never substituted silently. Implementing it needs F.Cu `/GND` coplanar copper, which the reviewed plane plan does not have. See [RF structure](#rf-structure-gcpw-on-fcu-over-in1) |
-| Q4 | Maximum RF routed length | (b), **unknown today** | Method: a loss-budget derivation from the antenna gain, the cable loss, the NEO-M9N data sheet and the loss per length. The captured sources lack the antenna, the cable and the dielectric loss tangent, so the bound stays unknown. The antenna and cable identity is the one (c) item below. See [RF length bound](#rf-length-bound) |
-| Q5 | Return corridor width under the RF trace, and stitching | (b) | Guard 1.19 mm beyond each track edge on In1 and on the F.Cu coplanar ground. Stitching pitch at most 4.45 mm (λg/20 at 1605.375 MHz, worst-case εeff). See [return corridor, guard width and stitching](#return-corridor-guard-width-and-stitching) |
+| Q4 | Maximum RF routed length | (b), **unknown today** | Method: a loss-budget derivation from the antenna gain, the cable loss, the NEO-M9N data sheet and the loss per length. The captured sources lack an antenna and cable data sheet and the dielectric loss tangent, so the bound stays unknown. The antenna and cable are themselves a (b) selection that still needs a sourced candidate (below). See [RF length bound](#rf-length-bound) |
+| Q5 | Return corridor width under the RF trace, and stitching | (b) | Guard 1.19 mm beyond each track edge on In1 and on the F.Cu coplanar ground: an unsourced geometric guard choice, not RF evidence. Stitching pitch at most 4.45 mm (λg/20 at 1605.375 MHz, conservative εeff). See [return corridor, guard width and stitching](#return-corridor-guard-width-and-stitching) |
 | Q6 | Ground under the module antenna or the captured keepout | (a) | Review-225 finding 4: the captured ESP32-S3-WROOM-1 keepout (`antenna/policy.json`, `outside_board`, esp32-guidelines §1.4.7) governs the antenna region, which has no copper on any layer. Solid `/GND` lies under the module body. `spec.md`'s "solid ground under the module antenna" is read as shorthand for the module and RF path, as review-225 already reviewed. Not reopened |
 | Q7 | In2.Cu as a second RF reference | (a) | The RF calculation's model has one lower ground, In1.Cu, under F.Cu. In2.Cu is not part of the calculated structure, so no second reference is declared. The pod lane gave the same direction |
 | Q8 | `/POD_GNSS_RF` F.Cu-only end to end | (a) | The RF calculation defines the candidate structure on F.Cu over In1. Any other layer is not the calculated line. Enforcement is a check gap owned by AGENTEE-258/259, not an open decision |
-| — | Which external active antenna and cable the product uses | (c) | See [the single owner fact](#the-single-owner-fact) |
+| Q9 | Which external active antenna and cable the product uses | (b), **needs a sourced candidate** | `spec.md` fixes the antenna type and installation; `complete-decisions.md` delegates component selection to engineering. See [antenna and cable selection](#antenna-and-cable-engineering-selection-under-delegation) |
 
-### The single owner fact
+No item is class (c) after this classification. The installation facts that
+`spec.md` does not state are listed separately
+[below](#installation-facts-not-stated-in-specmd); none of them blocks the
+selection or the length method.
 
-`spec.md` fixes "NEO-M9N with an external active antenna on an SMA connector",
-mounted in the cowl, with a cable "no longer than 500 mm". It names neither the
-antenna model nor the cable type. Those two parts set the LNA gain at the antenna
-and the cable loss. Together with the board loss, those set the gain the receiver
-sees at RF_IN. The NEO-M9N data sheet (Table 11) caps that gain at
-`Ext_gain` 30 dB and states sensitivity only "with a good external LNA"
-(Tables 1 and 2, footnote 5). The antenna and cable are off-board product parts the owner
-installs. Their choice changes GNSS performance. No captured source names them,
-and no engineering method can infer which antenna the owner will fit.
+### Antenna and cable: engineering selection under delegation
 
-The fact needed is: **which active antenna (part number) and cable (type and
-length up to 500 mm) the pod is used with, or a delegation to engineering to
-choose them with captured data sheets.** With either answer, the
-[RF length bound](#rf-length-bound) becomes a calculation. Without it, the bound
-stays unknown, and no check may claim it.
+`spec.md` fixes the antenna arrangement:
+
+- "NEO-M9N with an external active antenna on an SMA connector" (component
+  decisions);
+- the enclosure has "the SMA antenna connector" as one of only two penetrations;
+- "GNSS antenna mounted inside the cowl, as high as possible and facing up. The
+  cowl is fiberglass and therefore transparent to GNSS and BLE", with an "antenna
+  cable no longer than 500 mm to the SMA connector" (mechanical).
+
+It names neither the antenna model nor the cable type. `complete-decisions.md`
+states that the candidate's component identities "are engineering selections
+under the owner's delegated authority". The antenna and cable are therefore an
+engineering selection under that delegation, class (b), not an owner fact. The
+earlier determination's request for an owner answer is withdrawn.
+
+The selection is still open: **no candidate antenna or cable data sheet is
+captured.** A candidate needs, from captured manufacturer sources:
+
+- an active GNSS antenna with an SMA plug or a pigtail of at most 500 mm ending
+  in one, covering GPS L1 and GLONASS L1OF up to 1605.375 MHz (the highest NEO-M9N
+  signal, Table 3), with a stated LNA gain range `G_a`, noise figure `F_a`,
+  supply voltage range and current;
+- if the cable is separate, its type and loss per metre at about 1.6 GHz, at a
+  length of at most 500 mm;
+- a check that the antenna's supply range matches the board's antenna supply,
+  and that `G_a − L_c − L_b` stays at or below the NEO-M9N `Ext_gain` 30 dB
+  (Table 11) at the shortest board trace.
+
+Those parts set the gain and noise figure the receiver sees at RF_IN, so the
+[RF length bound](#rf-length-bound) stays **unknown** until the candidate's
+captured data sheets exist. No check may claim the bound before then. The
+selection also remains a candidate: the antenna's in-cowl performance stays
+unqualified (`complete-decisions.md` keeps "EMC/RF/antenna/enclosure performance"
+open).
+
+### Installation facts not stated in `spec.md`
+
+These are genuine installation facts that the specification leaves open. They
+refine the analysis; none is needed to select a candidate or to run the length
+method, because a worst case can be taken:
+
+- **Installed cable length.** `spec.md` gives only the upper bound, 500 mm. Until
+  a measured route length in the cowl exists, the length method takes each rule's
+  own worst case: 500 mm (most cable loss) for the noise-figure rule, and the
+  shortest plausible cable (least loss) for the `Ext_gain` ceiling.
+- **Antenna mounting surface.** `spec.md` says inside the cowl, high and facing
+  up, but not whether the antenna sits on a metal ground plane. Many active patch
+  antennas specify gain on a stated ground plane. Until the mounting surface is
+  known, the selection uses the data sheet's gain for the no-ground-plane or
+  smallest stated ground-plane case, or prefers an antenna specified without one.
 
 ## Engineering paths
 
-Every number below is derived from a captured source. Each path names its
-pass/fail rule and the check that enforces it. "Unenforced" means no existing
-check kind grades the rule. It is then an open gap, never a pass.
+Every input below comes from a captured source. The thresholds applied to those
+inputs (the 90 % containment of the guard width, the λg/20 stitching fraction,
+the 10 % via margin and the 0.1 dB noise-figure allowance) are engineering
+choices, stated as such; they are not sourced and are not RF qualification. Each
+path names its pass/fail rule and the check that enforces it. "Unenforced" means
+no existing check kind grades the rule. It is then an open gap, never a pass.
 
 The derivations below reproduce with this standard-library snippet. The inputs
 are the RF capture `w2_continuation` (H 0.2104 mm, εr 4.4, emitted width 0.335 mm,
-D1 0.2032 mm) and NEO-M9N Table 3 (GLONASS L1OF up to 1602 MHz + 6 × 562.5 kHz):
+D1 0.2032 mm), the solver's `dErEff` from `calc-4-result.json`, GPS L1
+1575.42 MHz, and NEO-M9N Table 3 (GLONASS L1OF up to 1602 MHz + 6 × 562.5 kHz):
 
 ```python
 import math
 
 C, ER, H, W, D1 = 299_792_458.0, 4.4, 0.2104, 0.335, 0.2032
+ER_EFF_SOLVER = 2.94025199985                 # calc-4-result.json impedance_calc_result.dErEff
+F_L1 = 1575.42e6                              # GPS L1
 F_MAX = 1602e6 + 6 * 562.5e3                  # 1605.375 MHz, the highest NEO-M9N signal
 lambda_g_min = C / F_MAX * 1e3 / math.sqrt(ER)  # 89.026 mm: eps_eff < eps_r on any line partly in air
-pitch = math.floor(lambda_g_min / 20 * 100) / 100  # 4.45 mm
+pitch = math.floor(lambda_g_min / 20 * 100) / 100  # 4.45 mm (governing)
+
+for f in (F_L1, F_MAX):                       # comparison only, not governing
+    lam_g = C / f * 1e3 / math.sqrt(ER_EFF_SOLVER)
+    print(f / 1e6, round(lam_g, 3), math.floor(lam_g / 20 * 100) / 100, math.floor(lam_g / 10 * 100) / 100)
+# 1575.42 110.977 5.54 11.09
+# 1605.375 108.906 5.44 10.89
 
 
 def outside(g):
@@ -361,8 +465,10 @@ lo, hi = 0.0, 100.0
 for _ in range(200):
     mid = (lo + hi) / 2
     lo, hi = (mid, hi) if outside(mid) > 0.10 else (lo, mid)
-guard = math.ceil(hi * 100) / 100              # 1.19 mm (exact root 1.1812 mm)
+guard = math.ceil(hi * 100) / 100              # 1.19 mm (exact root 1.1812 mm); 0.10 is a chosen heuristic
 alpha_d_coefficient = 27.3 * math.sqrt(ER) / (C / F_MAX * 1e3)  # 0.30665 dB/mm per unit tan(delta)
+q = (ER_EFF_SOLVER - 1) / (ER - 1)            # quasi-TEM filling factor, comparison only
+alpha_d_solver = 27.3 * ER / math.sqrt(ER_EFF_SOLVER) * q / (C / F_MAX * 1e3)  # 0.21407
 ```
 
 ### Via budget N
@@ -421,9 +527,13 @@ different router order. Only routed demand on the same board measures that need.
 **Pass/fail.** The adoptable attempt passes when every `net@layer` loss is within
 the derived bound. This is enforced by the existing layer-policy item
 `area_loss` (`kicad_route_attempt.area_loss`), plus the pin's `pour_integrity`.
-The diagnostic attempts, `V_i`, `N` and the derivation are retained together with
-the board hash. `routing_rules` `via_count` is not used: it counts vias on named
-nets with qualified two-pad routes, not a board-wide total.
+Both grade plane area. Neither grades the adoptable route's via count, which may
+differ from `N` in either direction while the area passes or fails
+([area, not via count](#what-the-check-enforces-area-not-via-count)). The
+diagnostic attempts, `V_i`, `N` and the derivation are retained together with
+the board hash as the derivation record. `routing_rules` `via_count` is not
+used: it counts vias on named nets with qualified two-pad routes, not a
+board-wide total.
 
 **Not decided by this budget.** Whether the demand is acceptable for plane
 function. That is graded by the RF corridor below and by `pour_integrity`,
@@ -470,9 +580,9 @@ In1 reference is present (below).
 
 - the width minimum is enforced (`geometry` `copper-width/1`, router `RF_50`);
 - the clearance minimum is enforced (`RF_50` clearance 0.2032 mm, DRC);
-- the exact gap, its upper side included, is **unenforced**: no check kind measures
-  it. It needs a new post-route coplanar-gap measurement, which the coordinator
-  should assign (AGENTEE-259 or a new item).
+- the exact gap, its upper side included, and the presence of the coplanar ground
+  are **unenforced**: no check kind measures them. AGENTEE-261 owns that
+  post-route measurement; AGENTEE-258/259 do not cover it.
 
 ### Return corridor, guard width and stitching
 
@@ -481,8 +591,24 @@ case as a current filament at the track edge over an infinite plane, ignoring th
 F.Cu coplanar ground, which only pulls return current closer. By image theory, the
 plane current density is ∝ h / (h² + x²). The share outside a corridor that
 extends `g` beyond each edge is
-`[(π/2 − atan(g/h)) + (π/2 − atan((W + g)/h))] / π`. The engineering threshold is
-**at least 90 % containment**. Sensitivity:
+`[(π/2 − atan(g/h)) + (π/2 − atan((W + g)/h))] / π`. The threshold chosen here is
+**at least 90 % containment**.
+
+> [!IMPORTANT]
+> The 90 % image-current containment threshold, and so g = 1.19 mm, is an
+> **unsourced engineering heuristic**: a geometric guard choice for routing, not
+> RF evidence and not RF qualification. No captured source states a containment
+> fraction or a corridor width for this line. The model is a quasi-static
+> filament over an infinite plane; it does not show that the line meets its
+> impedance, loss or coupling targets with this corridor, or fails them without
+> it. Evidence that would replace the threshold: a 2D/3D field-solver run of the
+> calculated GCPW cross-section on the captured stackup, giving impedance and
+> return-current distribution versus In1 and coplanar-ground width; or a
+> fabricated coupon of the same stackup with the corridor narrowed in steps,
+> measured by TDR/VNA. Either would set the corridor from evidence; until then
+> 1.19 mm is a recorded choice.
+
+Sensitivity of the choice:
 
 | Containment | g (mm) | corridor W + 2g (mm) |
 | --- | --- | --- |
@@ -490,8 +616,8 @@ extends `g` beyond each edge is
 | **90 %** | **1.19** (root 1.1812) | **2.715** |
 | 95 % | 2.52 | 5.375 |
 
-The common 3H rule (D1 + 3H = 0.8344 mm) is smaller than the 90 % value, so
-1.19 mm governs. The guard applies to:
+The common 3H rule (D1 + 3H = 0.8344 mm), also a heuristic, is smaller than the
+90 % value, so 1.19 mm governs. The guard applies to:
 
 - In1.Cu: continuous `/GND` fill under the RF track grown by 1.19 mm per side, with
   no antipad of another net's via inside it;
@@ -502,8 +628,31 @@ The common 3H rule (D1 + 3H = 0.8344 mm) is smaller than the 90 % value, so
 L1OF at 1602 MHz + 6 × 562.5 kHz = 1605.375 MHz, so λ0 = 186.743 mm. On any line
 partly in air, εeff < εr = 4.4, which bounds the guided wavelength from below:
 λg ≥ λ0 / √4.4 = 89.026 mm. Stitching at λg/20 is chosen over the looser λg/10,
-which would be 8.903 mm. The pitch is therefore **at most 4.45 mm** (4.451 mm,
-rounded down). This applies:
+which would be 8.903 mm. The λg/20 fraction is itself a common design rule of
+thumb, not a captured source. The pitch is therefore **at most 4.45 mm** (4.451 mm,
+rounded down).
+
+For comparison, the captured solver result (`calc-4-result.json`,
+`impedance_calc_result.dErEff` 2.94025199985) gives the εeff of the calculated
+cross-section. The guided wavelengths below use `λg = c / (f √εeff)`; pitches are
+rounded down to 0.01 mm:
+
+| Frequency | εeff | λ0 (mm) | λg (mm) | λg/20 (mm) | λg/10 (mm) |
+| --- | --- | --- | --- | --- | --- |
+| 1575.42 MHz (GPS L1) | 2.94025199985 (solver) | 190.294 | 110.977 | 5.54 | 11.09 |
+| 1605.375 MHz (GLONASS L1OF k = 6) | 2.94025199985 (solver) | 186.743 | 108.906 | 5.44 | 10.89 |
+| 1575.42 MHz | 4.4 (bound) | 190.294 | 90.719 | 4.53 | 9.07 |
+| **1605.375 MHz** | **4.4 (bound)** | **186.743** | **89.026** | **4.45** | **8.90** |
+
+The governing value stays the conservative 4.45 mm (bound row, highest
+frequency). The solver value is a single quasi-static result for the calculated
+cross-section (W1 0.334416796875 mm, D1 0.2032 mm), not for the routed geometry,
+the taper, the launches or fabrication spread. Using the εr bound makes the pitch
+independent of that value and about 18 % tighter than the solver-based 5.44 mm
+at the same frequency. Field-solver or coupon evidence on the routed structure
+could justify the looser pitch; nothing here does.
+
+This applies:
 
 - along both coplanar ground strips, `/GND` through-vias joining F.Cu ground to
   In1 (and In2), at most 4.45 mm apart, each via pad wholly inside the strip;
@@ -519,16 +668,16 @@ These are frequency-derived at the GNSS band only. They do not qualify the
 | Rule | Enforcement |
 | --- | --- |
 | In1 fill covers the RF track footprint, and no RF via passes through In1 | Existing `reference_continuity` (layer-policy item) |
-| In1 fill covers the track grown by 1.19 mm per side; no foreign antipad inside | **Unenforced.** `reference_continuity` measures the track footprint only. It needs a guard-width parameter: AGENTEE-258/259 scope (258 asks to reuse the 231 continuity geometry) |
-| F.Cu coplanar strip present to 1.19 mm, stitched at ≤ 4.45 mm, launch vias present | **Unenforced.** No check kind measures stitching pitch. New check; coordinator to assign |
+| In1 fill covers the track grown by 1.19 mm per side; no foreign antipad inside | **Unenforced.** `reference_continuity` measures the track footprint only. AGENTEE-258 asks for the declared reference under the routed length (reusing the 231 continuity geometry), not a guard width; AGENTEE-261 names the guard-width proxy only to say it is not qualification. A guard-width parameter is in neither ticket's stated scope; coordinator to assign |
+| F.Cu coplanar strip present to 1.19 mm, stitched at ≤ 4.45 mm, launch vias present | **Unenforced.** No check kind measures the coplanar ground or stitching pitch. AGENTEE-261 owns both; AGENTEE-258/259 do not cover them |
 | RF track only on F.Cu, end to end | **Unenforced** per net. AGENTEE-258/259. Global `signal_layers` does not enforce it |
 
 ### RF length bound
 
-**Status: unknown.** The bound stays unknown until the [owner fact](#the-single-owner-fact)
-and one material fact are captured. `rf-source-capture.json` records it as
-`unbound` (its 15 mm `native_control_max_mm` is test-only), and nothing here
-changes that.
+**Status: unknown.** The bound stays unknown until a sourced antenna and cable
+candidate ([Q9](#antenna-and-cable-engineering-selection-under-delegation)) and one
+material fact are captured. `rf-source-capture.json` records it as `unbound` (its
+15 mm `native_control_max_mm` is test-only), and nothing here changes that.
 
 **Method.** The signal chain is: antenna LNA (gain `G_a`, noise figure `F_a`) →
 cable (loss `L_c`) → board trace (loss `L_b = α × ℓ`) → RF_IN (`NFtot` 3.5 dB,
@@ -545,35 +694,45 @@ GPS-only, Table 11). The bound `ℓ_max` is the largest `ℓ` that satisfies bot
 **Loss per length `α`.** The conductor loss follows from the captured geometry and
 copper. The dielectric loss needs the 7628 prepreg loss tangent `tan δ` at about
 1.6 GHz, which no captured source states. With εeff ≤ εr, the dielectric term is
-bounded by `α_d ≤ 27.3 √εr tan δ / λ0` = 0.30665 × tan δ dB/mm at 1605.375 MHz.
-A measured loss per length on a test coupon of the same stackup would replace the
-formula.
+bounded by `α_d ≤ 27.3 √εr tan δ / λ0` = 0.30665 × tan δ dB/mm at 1605.375 MHz
+(0.30093 × tan δ at 1575.42 MHz). This is the all-dielectric bound. The usual
+quasi-TEM filling-factor form, `α_d = 27.3 × (εr / √εeff) × ((εeff − 1) / (εr − 1)) × tan δ / λ0`,
+with the solver's εeff 2.94025199985 gives 0.21407 × tan δ dB/mm at 1605.375 MHz
+and 0.21008 × tan δ at 1575.42 MHz. The εr bound is kept as the governing value:
+it is the larger loss, so it gives the shorter, conservative `ℓ_max`, and it
+does not depend on the quasi-TEM approximation or on a solver value computed for
+the calculated cross-section only. A measured loss per length on a test coupon of the same
+stackup would replace both.
 
 **Evidence needed to close:**
 
-- the antenna data sheet (`G_a` minimum and maximum, `F_a`);
-- the cable data sheet (loss per metre at 1.6 GHz) and its length;
+- the candidate antenna data sheet (`G_a` minimum and maximum, `F_a`);
+- the candidate cable data sheet (loss per metre at 1.6 GHz) and its length, at
+  most 500 mm;
 - the JLC 7628 prepreg `tan δ`, or a coupon loss measurement.
 
 **Pass/fail once bound.** The routed `/POD_GNSS_RF` length from J2.1 to U3.11,
 plus the L3.2 and D3.1 stubs, must not exceed `ℓ_max`. `routing_rules` `length` is
 the existing kind. It qualifies only two-pad, unbranched SMD routes, but
 `/POD_GNSS_RF` has four pads (J2.1, U3.11, L3.2, D3.1). It would therefore be
-unknown on this net, never a pass. A branched-net length measurement is a further
-gap to assign when the bound exists.
+unknown on this net, never a pass. The branched-net length check is AGENTEE-261,
+not AGENTEE-258/259.
 
 ## What stays unqualified
 
 The layer policy is a geometric routing guard: allowed layers, a pour-area bound
-and 2D fill coverage under RF tracks. The engineering paths above add rules for
-corridor, stitching, structure and length. Those rules are not RF qualification
-either. Field-solver and bench work stay unclaimed. None of the items below is
-qualified by the guard:
+(derived from a via budget, but grading area, not via count) and 2D fill coverage
+under RF tracks. The engineering paths above add rules for corridor, stitching,
+structure and length. Those rules are not RF qualification either: the corridor
+width rests on an unsourced containment heuristic, and the stitching pitch on a
+λg/20 rule of thumb with a conservative εeff. Passing any of them is a geometric
+result only. Field-solver and bench work stay unclaimed. None of the items below
+is qualified by the guard:
 
 | Item | What the guard does today | What stays open | Evidence or check that would close it |
 | --- | --- | --- | --- |
-| Routed impedance of `/POD_GNSS_RF` | Nothing until AGENTEE-230 binds `RF_50` (min width 0.335 mm, clearance 0.2032 mm) to `/POD_GNSS_RF`. Then KRT routes at the class width | The calculated structure is a GCPW with F.Cu ground at D1 0.2032 mm ([Q3](#classification-of-the-open-decisions)). The reviewed plane plan has no F.Cu copper, and the class clearance is a minimum, not an exact gap. The RF capture records impedance as `recorded_not_enforced` | The post-placement F.Cu coplanar-zone proposal and its review ([RF structure](#rf-structure-gcpw-on-fcu-over-in1)). A post-route exact-gap check. Field-solver verification of the as-routed geometry and fabricated-board TDR/VNA measurement for qualification (unclaimed) |
-| Reference and return-path continuity under the RF trace after placement | `reference_continuity`: 2D coverage of the In1.Cu `/GND` fill under each RF track footprint on the routed candidate. An RF via through In1 is a defect | The 1.19 mm corridor, coplanar stitching at ≤ 4.45 mm and launch vias ([corridor](#return-corridor-guard-width-and-stitching)). Return paths of signals other than the RF net. The area bound does not cover fragmentation within budget | Guard-width coverage (AGENTEE-258/259). A stitching-pitch check (to assign). RF field and bench qualification remain separate and unclaimed |
+| Routed impedance of `/POD_GNSS_RF` | Nothing until AGENTEE-230 binds `RF_50` (min width 0.335 mm, clearance 0.2032 mm) to `/POD_GNSS_RF`. Then KRT routes at the class width | The calculated structure is a GCPW with F.Cu ground at D1 0.2032 mm ([Q3](#classification-of-the-open-decisions)). The reviewed plane plan has no F.Cu copper, and the class clearance is a minimum, not an exact gap. The RF capture records impedance as `recorded_not_enforced` | The post-placement F.Cu coplanar-zone proposal and its review ([RF structure](#rf-structure-gcpw-on-fcu-over-in1)). A post-route exact-gap check (AGENTEE-261). Field-solver verification of the as-routed geometry and fabricated-board TDR/VNA measurement for qualification (unclaimed) |
+| Reference and return-path continuity under the RF trace after placement | `reference_continuity`: 2D coverage of the In1.Cu `/GND` fill under each RF track footprint on the routed candidate. An RF via through In1 is a defect | The 1.19 mm corridor (an unsourced geometric guard), coplanar stitching at ≤ 4.45 mm and launch vias ([corridor](#return-corridor-guard-width-and-stitching)). Return paths of signals other than the RF net. The area bound does not cover fragmentation within budget | Guard-width coverage (in no ticket's stated scope; coordinator to assign). A stitching-pitch check (AGENTEE-261). A field-solver or coupon basis for the guard width. RF field and bench qualification remain separate and unclaimed |
 | Antenna keepouts | U1's footprint-owned rule area (no copper or pours on all four layers) lies outside the outline (review-225 §1.3). Router copper inside a keepout rule area is a new native DRC violation, which fails validation (`cli.py` lines 833–839) | Whether the captured keepout matches the module documentation at the final placed position. The keepout-versus-`spec.md` wording is settled ([Q6](#classification-of-the-open-decisions)). The GNSS antenna is external through J2, so it has no board keepout | A placement-stage check that U1's overhang and keepout match the captured source at the final position |
 | Per-net F.Cu-only routing of `/POD_GNSS_RF` | `signal_layers` is global: B.Cu is allowed for every net. On native-v5 every `/POD_GNSS_RF` pad is an F.Cu SMD pad (J2.1, U3.11, L3.2, D3.1). Any B.Cu RF segment would therefore need a via through In1, which `reference_continuity` grades a defect | That consequence holds only while every RF pad stays on F.Cu. A placement side flip of J2, U3, L3 or D3, or a through-hole RF pad, would allow a B.Cu RF track that the 2D check measures against In1 and can pass | Re-check the RF pad layers on the placed board before routing, as a precondition of the recipe. The per-net layer check is AGENTEE-258/259 |
-| RF length | Nothing | Unknown bound ([RF length](#rf-length-bound)). A branched-net length measurement | The owner fact, the loss-tangent capture, then a branched-net length check |
+| RF length | Nothing | Unknown bound ([RF length](#rf-length-bound)). A branched-net length measurement | A sourced antenna and cable candidate ([Q9](#antenna-and-cable-engineering-selection-under-delegation)), the loss-tangent capture or a coupon, then the branched-net length check (AGENTEE-261) |
