@@ -237,6 +237,53 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with self.assertRaisesRegex(ValueError, "history result link"):
             verify_campaign(self.root / "campaign")
 
+    @toolchain_test
+    def test_campaign_verification_hashes_each_file_once_per_run(self):
+        # AGENTEE-250: repeated verification within one run reuses stat-validated digests only.
+        import os
+        import time
+        from agent_ee import storage
+        from agent_ee.cli import main
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 0)
+        time.sleep(storage.RACY_NS / 1e9 + 0.2)
+        counts = {}
+        original = storage._hash_stream
+
+        def counted(stream, checkpoint):
+            info = os.fstat(stream.fileno())
+            key = (info.st_dev, info.st_ino)
+            counts[key] = counts.get(key, 0) + 1
+            return original(stream, checkpoint)
+
+        def hashes(action):
+            counts.clear()
+            with patch('agent_ee.storage._hash_stream', side_effect=counted):
+                action()
+            return dict(counts)
+        root = self.root / "campaign"
+        inputs = {(i.st_dev, i.st_ino) for i in (os.stat(p) for p in root.glob('runs/*/inputs/**/*') if p.is_file())}
+        unmemoized = hashes(lambda: [verify_campaign(root) for _ in range(3)])
+        with storage.digest_memo():
+            memoized = hashes(lambda: [verify_campaign(root) for _ in range(3)])
+        self.assertTrue(inputs and inputs <= memoized.keys())
+        self.assertGreater(min(unmemoized[k] for k in inputs), 3)
+        self.assertEqual(max(memoized.values()), 1, memoized)
+        self.assertLess(sum(memoized.values()) * 3, sum(unmemoized.values()))
+        # The command entry point is one run: each file is hashed at most once.
+        with contextlib.redirect_stdout(io.StringIO()):
+            command = hashes(lambda: self.assertEqual(main(['verify-campaign', str(root)]), 0))
+        self.assertEqual(max(command.values()), 1, command)
+        # A candidate byte changed mid-run, same size and restored mtime, still fails closed.
+        target = root / "runs/1/inputs/design/board"
+        before = os.stat(target)
+        with storage.digest_memo():
+            verify_campaign(root)
+            target.write_text("BOARD")
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+            with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
+                verify_campaign(root)
+
     def test_finding_retry_limit_below_two_refused_before_campaign_creation(self):
         self.scope['checks'][0]['stage'] = 'schematic'
         self.scope['stages'] = {'schema': 'agent-ee.stages/1', 'order': ['schematic'],

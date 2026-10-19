@@ -1,18 +1,88 @@
 """Atomic records and explicit content identity."""
 
+import contextlib
 import hashlib
 import json
 import os
 import secrets
+import time
 from pathlib import Path
 
 
-def digest(path):
+# A file whose status changed this recently may still change within one timestamp tick
+# without a visible status change, so its digest is never reused (as Git treats racy entries).
+RACY_NS = 2_000_000_000
+_memo = None
+
+
+@contextlib.contextmanager
+def digest_memo():
+    """Reuse file digests within one command run while the file status is unchanged.
+
+    An entry is keyed by device and inode and reused only while size, mtime and ctime all
+    equal the status observed before and after the bytes were hashed, and that status is
+    older than RACY_NS at hashing time. Any write, truncation, rename-over or timestamp
+    change alters ctime, so a file changed mid-run is hashed again and the changed digest
+    fails the caller's comparison exactly as before. Nothing outlives the outermost block.
+    """
+    global _memo
+    if _memo is not None:
+        yield
+        return
+    _memo = {}
+    try:
+        yield
+    finally:
+        _memo = None
+
+
+def _status(info):
+    return info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def _hash_stream(stream, checkpoint):
     h = hashlib.sha256()
+    while True:
+        if checkpoint is not None:
+            checkpoint()
+        block = stream.read(1024 * 1024)
+        if not block:
+            return h.hexdigest()
+        h.update(block)
+
+
+def _memo_digest(stream, checkpoint):
+    memo = _memo
+    if memo is None:
+        return _hash_stream(stream, checkpoint)
+    before = os.fstat(stream.fileno())
+    key = (before.st_dev, before.st_ino)
+    cached = memo.get(key)
+    if cached is not None and cached[0] == _status(before):
+        if checkpoint is not None:
+            checkpoint()
+        return cached[1]
+    started = time.time_ns()
+    value = _hash_stream(stream, checkpoint)
+    after = os.fstat(stream.fileno())
+    if (_status(after) == _status(before) and
+            max(before.st_mtime_ns, before.st_ctime_ns) < started - RACY_NS):
+        memo[key] = (_status(before), value)
+    else:
+        memo.pop(key, None)
+    return value
+
+
+def digest(path, *, checkpoint=None):
+    """SHA-256 of the file bytes; checkpoint, when given, runs before each block."""
     with Path(path).open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(block)
-    return h.hexdigest()
+        return _memo_digest(stream, checkpoint)
+
+
+def digest_fd(descriptor):
+    """SHA-256 of an already opened regular file; consumes descriptor."""
+    with os.fdopen(descriptor, "rb") as stream:
+        return _memo_digest(stream, None)
 
 
 def canonical(value):

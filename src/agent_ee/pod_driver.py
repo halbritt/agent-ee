@@ -15,7 +15,7 @@ from . import candidate, scaffold, stage_receipts, stages
 from .baseline import compile_baseline
 from .cli import validate_scope
 from .profiles import validate_profile
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, digest_memo, identity, read_json, write_json
 
 SCHEMA = 'agent-ee.pod-plan/1'
 ORDER = ['schematic', 'placement', 'routing', 'verification']
@@ -465,6 +465,12 @@ def dry_stage_results(checks, scope):
 
 
 def main(argv=None):
+    # One command run is the only lifetime of the stat-validated digest memo (AGENTEE-250).
+    with digest_memo():
+        return _main(argv)
+
+
+def _main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] == '_constraints':
         recipe = read_json(argv[1])

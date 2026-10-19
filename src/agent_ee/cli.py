@@ -16,7 +16,7 @@ import uuid
 from pathlib import Path
 
 from .candidate import capture, safe_relative, verify_snapshot, verify_source
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, digest_memo, identity, read_json, write_json
 
 
 def policy_files():
@@ -29,17 +29,7 @@ LOADED_POLICY_FILES = policy_files()
 
 def runtime_files(*, checkpoint=None):
     def fingerprint(path):
-        if checkpoint is None:
-            return digest(path)
-        import hashlib
-        value = hashlib.sha256()
-        with Path(path).open('rb') as stream:
-            while True:
-                checkpoint()
-                block = stream.read(1024 * 1024)
-                if not block:
-                    return value.hexdigest()
-                value.update(block)
+        return digest(path) if checkpoint is None else digest(path, checkpoint=checkpoint)
 
     files = {}
     for name in ("kicad-cli", "ngspice", "/usr/bin/ngspice", "bwrap", "/usr/bin/python3", "claude"):
@@ -641,6 +631,12 @@ def print_runtime_observations(observations):
 
 
 def main(argv=None):
+    # One command run is the only lifetime of the stat-validated digest memo (AGENTEE-250).
+    with digest_memo():
+        return _main(argv)
+
+
+def _main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     scaffold_parser = sub.add_parser('scaffold', help='create an empty native candidate from captured planning inputs')

@@ -314,6 +314,17 @@ system Python, Claude/Codex/Agy binaries, the Codex tool host and the `_pcbnew` 
 OS/shared-library image. See [security](security.md) for the guarantees this
 provides and the host-modification limits.
 
+Within one `agent-ee` or `pod_driver` command, a file digest is computed once and
+reused only while the file keeps the same device, inode, size, mtime and ctime,
+observed both before and after hashing. Files whose status changed less than two
+seconds before hashing are always hashed again. Any later write, truncation, rename
+over the file or timestamp reset changes ctime, so the file is hashed again and the
+changed digest fails the same comparison as before. Every check still runs, and the
+reuse never carries over to another command (AGENTEE-250). Repeated campaign
+verification used to re-read every retained run, the Python policy files and about
+1 GB of harness binaries on each pass. It now hashes each unchanged file once per
+command.
+
 ## Version-2 witnesses and evidence seal
 
 Scope version 2 changes the **scope** contract; candidate, packet and result
