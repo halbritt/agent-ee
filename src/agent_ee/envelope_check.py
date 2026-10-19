@@ -12,21 +12,143 @@ from . import board_envelope as envelope
 from .placement_check import _captured, _path
 from .storage import write_json
 from .symbol_library import children, parse_sexpr, nanometres
+from .placement import qualified_polygons
 
-CRITERIA = {'outline/1': 'outline', 'layers/1': 'layer_count', 'stackup/1': 'stackup'}
+CRITERIA = {'outline/1': 'outline', 'layers/1': 'layer_count', 'stackup/1': 'stackup',
+            'mounting-holes/1': 'mounting_holes', 'keepouts/1': 'keepouts'}
 
 
 def parameters(params):
-    if not isinstance(params, dict) or set(params) != {'criterion', 'envelope'}:
-        raise ValueError('board_envelope params require exactly criterion and envelope')
-    if not isinstance(params['criterion'], str) or params['criterion'] not in CRITERIA:
+    if not isinstance(params, dict):
+        raise ValueError('board_envelope params must be an object')
+    if not isinstance(params.get('criterion'), str) or params['criterion'] not in CRITERIA:
         raise ValueError(f'board_envelope criterion must be one of {sorted(CRITERIA)}')
+    selected = params['criterion'] in ('mounting-holes/1', 'keepouts/1')
+    if set(params) != {'criterion', 'envelope'} | ({'id'} if selected else set()):
+        raise ValueError('board_envelope params require criterion, envelope and id for holes/keepouts only')
+    if selected:
+        envelope.name(params['id'], 'envelope item id')
     return [_path(params['envelope'], 'envelope')]
 
 
 def predicate_names(params):
     parameters(params)
-    return [f"envelope:{params['criterion']}"]
+    return [f"envelope:{params['criterion']}" + (':' + params['id'] if 'id' in params else '')]
+
+
+def selected_item(record, params):
+    items = [item for item in record[CRITERIA[params['criterion']]] if item['id'] == params['id']]
+    if len(items) != 1:
+        raise ValueError(f"declared envelope item {params['id']} missing or ambiguous")
+    return items[0]
+
+
+def point_nm(values):
+    return envelope.point([Decimal(v) for v in values], 'point')
+
+
+def covers(saved, declared):
+    return all(envelope.segment_inside(a, declared[(i + 1) % len(declared)], saved)
+               for i, a in enumerate(declared))
+
+
+def hole_verdict(hole, native):
+    """Select the declared reference and corroborate the whole drilled circle."""
+    defects, unknown = [], []
+    matches = [fp for fp in native['footprints'] if fp['ref'] == hole['id']]
+    measured = {'footprints': matches}
+    if len(matches) != 1:
+        defects.append('expected exactly one mounting footprint with this reference')
+    else:
+        fp = matches[0]
+        at, tolerance = point_nm(hole['at_mm']), nanometres(hole['tolerance_mm'])
+        if sum((a - b) ** 2 for a, b in zip(fp['position_nm'], at)) > tolerance ** 2:
+            defects.append('footprint origin exceeds declared position tolerance')
+        drilled = [p for p in fp['pads'] if any(p['drill_nm'])]
+        if len(drilled) != 1:
+            defects.append('expected exactly one drilled pad')
+        else:
+            pad, drill = drilled[0], nanometres(hole['drill_mm'])
+            if pad['attribute'] != ('PTH' if hole['plated'] else 'NPTH'):
+                defects.append('drilled pad plating differs from declaration')
+            if pad['drill_nm'] != [drill, drill]:
+                defects.append('round drill diameter differs from drill_mm')
+            # PAD.GetPosition is the drill anchor; GetOffset moves only the copper shape.
+            if sum((a - b) ** 2 for a, b in zip(pad['position_nm'], at)) > tolerance ** 2:
+                defects.append('drilled pad centre exceeds declared position tolerance')
+            try:
+                outline, = qualified_polygons(native['outline'])
+                centre = tuple(pad['position_nm'])
+                if not envelope.strictly_inside(centre, outline) or any(
+                        4 * envelope.distance2(centre, a, outline[(i + 1) % len(outline)]) < drill ** 2
+                        for i, a in enumerate(outline)):
+                    defects.append('drilled circle is not inside the native outline')
+            except ValueError as exc:
+                unknown.append('native hole containment unavailable: ' + str(exc))
+    return item_verdict(hole['id'], defects, unknown, measured)
+
+
+def antenna_polygon(declaration, native, verified_facts):
+    """Use AGENTEE-170's derivation, then an exact native footprint transform."""
+    from .footprint_library import derive_antenna_keepout, ESP32_FOOTPRINT_ID
+    from .placement_predicates import native_rotation
+    derived = derive_antenna_keepout(verified_facts)
+    matches = [fp for fp in native['footprints'] if fp['ref'] == declaration['reference']]
+    if len(matches) != 1 or matches[0]['fpid'] != ESP32_FOOTPRINT_ID:
+        raise ValueError('antenna needs one ESP32-S3-WROOM-1 footprint at its declared reference')
+    fp = matches[0]
+    angle = native_rotation(fp['rotation_deg'])
+    if angle % 90 or fp['side'] not in ('F', 'B'):
+        raise ValueError('antenna transform needs a front/back footprint and an exact quarter turn')
+    cos, sin = {0: (1, 0), 90: (0, 1), 180: (-1, 0), 270: (0, -1)}[int(angle)]
+    polygon = []
+    for x, y in derived['polygon_nm']:
+        if fp['side'] == 'B':
+            y = -y
+        polygon.append((fp['position_nm'][0] + x*cos + y*sin,
+                        fp['position_nm'][1] - x*sin + y*cos))
+    return polygon, fp['uuid'], derived
+
+
+def item_verdict(item_id, defects, unknown, measured):
+    return {'id': item_id, 'status': 'unknown' if unknown else 'defect' if defects else 'pass',
+            'defects': defects, 'unknown': unknown, 'saved': measured}
+
+
+def keepout_verdict(keepout, native, verified_facts=None):
+    defects, unknown, candidates = [], [], []
+    measured = {'rule_areas': candidates}
+    owner = None
+    try:
+        if 'antenna' in keepout:
+            declared, owner, derivation = antenna_polygon(keepout['antenna'], native, verified_facts)
+            measured['derivation'] = derivation
+        else:
+            declared = [point_nm(p) for p in keepout['polygon_mm']]
+        measured['declared_polygon_nm'] = [list(p) for p in declared]
+    except ValueError as exc:
+        return item_verdict(keepout['id'], [], [str(exc)], measured)
+    for area in native['rule_areas']:
+        if owner is not None and area['owner'] != owner:
+            continue
+        if not set(keepout['layers']) <= set(area['layers']):
+            continue
+        forbid = {('copper_pours' if k == 'zone_fills' else k) for k, enabled in area['forbid'].items() if enabled}
+        if not set(keepout['forbid']) <= forbid:
+            continue
+        if area['placement_area']:
+            unknown.append(f"rule area {area['uuid']} has unqualified placement-area semantics")
+            continue
+        try:
+            polygon, = qualified_polygons(area['outline'])
+            candidates.append({'uuid': area['uuid'], 'owner': area['owner'], 'covers': covers(polygon, declared)})
+        except ValueError as exc:
+            unknown.append(f"rule area {area['uuid']} cannot be compared: {exc}")
+    if any(c['covers'] for c in candidates):
+        unknown = []  # One fully proven area suffices; other areas cannot invalidate coverage.
+    elif not unknown:
+        defects.append('no saved rule area covers the declared polygon, layers and forbid set')
+    return item_verdict(keepout['id'], defects, unknown, measured)
 
 
 def one(node, key):
@@ -208,7 +330,27 @@ def check_board_envelope(ctx):
             or not isinstance(native.get('pcbnew_version'), str) or not native['pcbnew_version']):
         raise CheckError('malformed', 'native envelope probe identity is missing or differs from captured board')
     criterion = ctx.params['criterion']
-    result = compare_saved(criterion, record, facts)
+    if criterion in ('mounting-holes/1', 'keepouts/1'):
+        try:
+            item = selected_item(record, ctx.params)
+            if criterion == 'mounting-holes/1':
+                result = hole_verdict(item, native)
+            else:
+                verified = None
+                if 'antenna' in item:
+                    from .datasheet_facts import prerequisite
+                    from .storage import read_json
+                    path = prerequisite(ctx, item['antenna']['facts_check'], 'datasheet_facts', 'facts.json',
+                                        allow_unsupported=True)
+                    verified = read_json(path)['facts']
+                    if not verified or any(r.get('status') != 'verified' or 'fact' not in r for r in verified):
+                        raise ValueError('antenna needs verified datasheet fact records')
+                result = keepout_verdict(item, native, verified)
+            result['criterion'] = criterion
+        except (ValueError, KeyError, TypeError) as exc:
+            raise CheckError('unsupported', f"{ctx.params['id']}: native envelope item unavailable: {exc}") from exc
+    else:
+        result = compare_saved(criterion, record, facts)
     if criterion == 'layers/1' and 'unavailable' not in facts['layers']:
         if native.get('copper') != facts['layers']['copper']:
             result['unknown'].append('native enabled copper differs from saved layer table')
@@ -240,5 +382,6 @@ def check_board_envelope(ctx):
     ctx.result['details'].update(judgment)
     if result['status'] == 'unknown':
         raise CheckError('unsupported', '; '.join(result['unknown']))
+    label = criterion + (' ' + ctx.params['id'] if 'id' in ctx.params else '')
     ctx.result.update(execution='ok', outcome=result['status'],
-                      summary=f"{criterion}: {len(result['defects'])} exact envelope mismatch(es)")
+                      summary=f"{label}: {len(result['defects'])} exact envelope mismatch(es)")

@@ -41,7 +41,7 @@ MAX_PLACES = 32
 CHECK_KINDS = {'outline': ['placement', 'board_envelope'],
                'layer_count': ['fab_package', 'board_envelope'],
                'stackup': ['fab_package', 'board_envelope'], 'fab_profile': ['fab_profile'],
-               'mounting_holes': ['placement'], 'keepouts': ['placement'],
+               'mounting_holes': ['placement', 'board_envelope'], 'keepouts': ['placement', 'board_envelope'],
                'fixed_footprints': ['placement'], 'obligations': ['board_envelope']}
 # Why a field without a binding has unknown coverage; reported, never assumed.
 UNBOUND = {
@@ -50,9 +50,8 @@ UNBOUND = {
     'layer_count': 'needs an exact native board_envelope layers/1 check',
     'stackup': 'needs native stackup facts and qualified captured copper_weight_oz authority',
     'fab_profile': 'needs one fab_profile check over the referenced profile bytes',
-    'mounting_holes': 'no registered predicate checks declared mounting holes',
-    'keepouts': 'no registered predicate binds a declared keepout to a saved rule area '
-                '(placement footprint-keepout/1 grades only rule areas already saved)',
+    'mounting_holes': 'needs an id-selected native mounting-holes/1 check',
+    'keepouts': 'needs an id-selected native keepouts/1 check',
     'fixed_footprints': 'needs one placement connector-edge/1 check over these envelope bytes '
                         'selecting this fixed reference'}
 
@@ -515,7 +514,7 @@ def unique_names(items, key, label, namespace):
 def validate_holes(holes, vertices):
     records = []
     for hole in holes:
-        fields(hole, f"mounting hole {hole['id']}", ['id', 'at', 'drill_mm', 'plated'])
+        fields(hole, f"mounting hole {hole['id']}", ['id', 'at', 'drill_mm', 'plated'], ['tolerance_mm'])
         at = point(hole['at'], f"mounting hole {hole['id']} at")
         drill = length(hole['drill_mm'], f"mounting hole {hole['id']} drill_mm", positive=True)
         if not isinstance(hole['plated'], bool):
@@ -524,7 +523,9 @@ def validate_holes(holes, vertices):
         if not strictly_inside(at, vertices) or any(
                 4 * distance2(at, vertices[i], vertices[(i + 1) % n]) < drill * drill for i in range(n)):
             raise ValueError(f"mounting hole {hole['id']} is not inside the outline")
-        records.append({'id': hole['id'], 'at_mm': mm_point(at), 'drill_mm': mm(drill), 'plated': hole['plated']})
+        tolerance = length(hole.get('tolerance_mm', 0), 'hole tolerance_mm')
+        records.append({'id': hole['id'], 'at_mm': mm_point(at), 'drill_mm': mm(drill),
+                        'plated': hole['plated'], 'tolerance_mm': mm(tolerance)})
     return records
 
 
@@ -532,14 +533,24 @@ def validate_keepouts(keepouts, vertices, copper):
     records = []
     for keepout in keepouts:
         kid = keepout['id']
-        fields(keepout, f'keepout {kid}', ['id', 'polygon', 'layers', 'forbid'])
-        polygon = keepout['polygon']
-        if not isinstance(polygon, list) or not 3 <= len(polygon) <= MAX_VERTICES:
-            raise ValueError(f'keepout {kid} polygon needs 3 to {MAX_VERTICES} vertices')
-        points = [point(p, f'keepout {kid} vertex') for p in polygon]
-        simple_polygon(points, f'keepout {kid}')
-        if not all(segment_inside(points[i], points[(i + 1) % len(points)], vertices) for i in range(len(points))):
-            raise ValueError(f'keepout {kid} is not contained in the outline')
+        fields(keepout, f'keepout {kid}', ['id', 'layers', 'forbid'], ['polygon', 'antenna'])
+        if ('polygon' in keepout) == ('antenna' in keepout):
+            raise ValueError(f'keepout {kid} needs exactly one of polygon or antenna')
+        geometry = {}
+        if 'antenna' in keepout:
+            antenna = fields(keepout['antenna'], 'antenna', ['reference', 'facts_check'])
+            for key in antenna:
+                name(antenna[key], 'antenna ' + key)
+            geometry['antenna'] = dict(antenna)
+        else:
+            polygon = keepout['polygon']
+            if not isinstance(polygon, list) or not 3 <= len(polygon) <= MAX_VERTICES:
+                raise ValueError(f'keepout {kid} polygon needs 3 to {MAX_VERTICES} vertices')
+            points = [point(p, f'keepout {kid} vertex') for p in polygon]
+            simple_polygon(points, f'keepout {kid}')
+            if not all(segment_inside(points[i], points[(i + 1) % len(points)], vertices) for i in range(len(points))):
+                raise ValueError(f'keepout {kid} is not contained in the outline')
+            geometry['polygon_mm'] = [mm_point(p) for p in points]
         layers, forbid = keepout['layers'], keepout['forbid']
         if (not isinstance(layers, list) or not layers or len(set(map(str, layers))) != len(layers)
                 or any(layer not in copper for layer in layers)):
@@ -547,7 +558,7 @@ def validate_keepouts(keepouts, vertices, copper):
         if (not isinstance(forbid, list) or not forbid or len(set(map(str, forbid))) != len(forbid)
                 or any(item not in FORBID for item in forbid)):
             raise ValueError(f'keepout {kid} forbid must be a unique nonempty subset of {list(FORBID)}')
-        records.append({'id': kid, 'polygon_mm': [mm_point(p) for p in points],
+        records.append({'id': kid, **geometry,
                         'layers': [c for c in copper if c in layers],
                         'forbid': [f for f in FORBID if f in forbid]})
     return records
@@ -694,13 +705,17 @@ def derive_requirements(record, source_path):
     for index, hole in enumerate(record['mounting_holes']):
         out.append(obligation(eid, f"hole-{hole['id']}", f'/mounting_holes/{index}', hole,
                               f"mounting hole {hole['id']} is a {'plated' if hole['plated'] else 'non-plated'} "
-                              f"{hole['drill_mm']} mm hole centred at {point_text(hole['at_mm'])} mm.",
+                              f"{hole['drill_mm']} mm hole centred at {point_text(hole['at_mm'])} mm "
+                              f"within {hole['tolerance_mm']} mm.",
                               source_path, CHECK_KINDS['mounting_holes']))
     for index, keepout in enumerate(record['keepouts']):
-        polygon = ', '.join(point_text(p) for p in keepout['polygon_mm'])
+        polygon = (', '.join(point_text(p) for p in keepout['polygon_mm']) + ' mm'
+                   if 'polygon_mm' in keepout else
+                   f"the ESP32-S3-WROOM-1 datasheet-derived antenna polygon owned by "
+                   f"{keepout['antenna']['reference']} using verified {keepout['antenna']['facts_check']} facts")
         out.append(obligation(eid, f"keepout-{keepout['id']}", f'/keepouts/{index}', keepout,
                               f"keepout {keepout['id']} forbids {', '.join(keepout['forbid'])} on "
-                              f"{', '.join(keepout['layers'])} inside polygon {polygon} mm.",
+                              f"{', '.join(keepout['layers'])} inside polygon {polygon}.",
                               source_path, CHECK_KINDS['keepouts']))
     for index, fixed in enumerate(record['fixed_footprints']):
         out.append(obligation(eid, f"fixed-{fixed['reference']}", f'/fixed_footprints/{index}', fixed,
@@ -816,6 +831,10 @@ def bind_native_envelope(item, spec, record, files, others):
         raise ValueError('native envelope check does not bind these captured envelope bytes')
     if others:
         raise ValueError(f"native envelope check {spec['id']} also mapped by {others}; one field per witness")
+    if field in ('mounting_holes', 'keepouts'):
+        selected = record[field][int(item['source']['locator'].rsplit('/', 1)[1])]
+        if params['id'] != selected['id']:
+            raise ValueError(f"native envelope selector {params['id']} does not cover {selected['id']}")
     if field == 'stackup':
         return stackup_authority_reason(record)
     return None
@@ -826,7 +845,7 @@ def bind_native_envelope(item, spec, record, files, others):
 BINDINGS = {('fab_profile', 'fab_profile'): bind_fab_profile,
             ('fixed_footprints', 'placement'): bind_connector_edge,
             **{(field, 'board_envelope'): bind_native_envelope
-               for field in ('outline', 'layer_count', 'stackup')}}
+               for field in ('outline', 'layer_count', 'stackup', 'mounting_holes', 'keepouts')}}
 
 
 def field_of(item):
