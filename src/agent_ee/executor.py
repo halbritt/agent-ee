@@ -11,7 +11,7 @@ import time
 from threading import Event, Lock
 from pathlib import Path
 
-from .storage import forget_scope, json_bytes, publish
+from .storage import json_bytes, publish
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 # Written by the executor into the tool's writable scratch after the tool exits.
@@ -136,15 +136,12 @@ def _displace(directory, before):
 
 
 def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra_ro=(), cancellation=None):
-    # A tool may change files in place; no digest observation spans its run (AGENTEE-250).
-    forget_scope()
     work, directory = _open_work(work)
     try:
         return _execute(inputs, work, directory, argv, timeout=timeout, stdin=stdin, network=network,
                         extra_ro=extra_ro, cancellation=cancellation)
     finally:
         os.close(directory)
-        forget_scope()
 
 
 def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro, cancellation):

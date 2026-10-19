@@ -1,7 +1,5 @@
 """Atomic records and explicit content identity."""
 
-import contextlib
-import contextvars
 import hashlib
 import json
 import os
@@ -9,82 +7,12 @@ import secrets
 from pathlib import Path
 
 
-# No digest is reused across verification calls: file status cannot prove unchanged bytes
-# (a shared writable mapping changes them silently), and with sudo no file is immutable to
-# this user's processes (AGENTEE-250).
-_scope = contextvars.ContextVar("agent_ee_digest_scope", default=None)
-
-
-def _status(info):
-    return info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_uid, info.st_mode
-
-
-def _hash_stream(stream, checkpoint):
+def digest(path):
     h = hashlib.sha256()
-    while True:
-        if checkpoint is not None:
-            checkpoint()
-        block = stream.read(1024 * 1024)
-        if not block:
-            return h.hexdigest()
-        h.update(block)
-
-
-@contextlib.contextmanager
-def digest_scope():
-    """Hash each file at most once within one verification call (AGENTEE-250).
-
-    A verification call establishes that each file had its recorded bytes at some instant
-    during the call; it never pins bytes for later readers. One hash per file inside the
-    call establishes exactly that, so a file (device, inode and status) already hashed in
-    the active scope reuses that observation. A nested scope joins the enclosing one, the
-    outermost exit discards every entry, and executor.execute() discards them on entry
-    and exit so no observation spans a tool run. No reuse crosses verification calls.
-    """
-    if _scope.get() is not None:
-        yield
-        return
-    token = _scope.set({})
-    try:
-        yield
-    finally:
-        _scope.reset(token)
-
-
-def forget_scope():
-    """Discard the active verification scope's observations, if any."""
-    observed = _scope.get()
-    if observed is not None:
-        observed.clear()
-
-
-def _scoped_digest(stream, checkpoint):
-    before = os.fstat(stream.fileno())
-    key = (before.st_dev, before.st_ino)
-    observed = _scope.get()
-    if observed is not None and key in observed and observed[key][0] == _status(before):
-        if checkpoint is not None:
-            checkpoint()
-        return observed[key][1]
-    value = _hash_stream(stream, checkpoint)
-    if observed is not None:
-        observed[key] = (_status(before), value)
-    return value
-
-
-def digest(path, *, checkpoint=None, follow_symlinks=True):
-    """SHA-256 of the file bytes; checkpoint, when given, runs before each block.
-
-    follow_symlinks=False refuses a link at path with OSError(ELOOP)."""
-    opener = None if follow_symlinks else (lambda name, flags: os.open(name, flags | os.O_NOFOLLOW))
-    with open(path, "rb", opener=opener) as stream:
-        return _scoped_digest(stream, checkpoint)
-
-
-def digest_fd(descriptor):
-    """SHA-256 of an already opened regular file; consumes descriptor."""
-    with os.fdopen(descriptor, "rb") as stream:
-        return _scoped_digest(stream, None)
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def canonical(value):
