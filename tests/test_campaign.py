@@ -238,8 +238,9 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             verify_campaign(self.root / "campaign")
 
     @toolchain_test
-    def test_campaign_verification_hashes_each_file_once_per_run(self):
-        # AGENTEE-250: repeated verification within one run reuses stat-validated digests only.
+    def test_campaign_verification_hashes_each_file_once_per_call(self):
+        # AGENTEE-250: one verification call hashes each file once; no reuse crosses calls.
+        import mmap
         import os
         import time
         from agent_ee import storage
@@ -254,7 +255,10 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             info = os.fstat(stream.fileno())
             key = (info.st_dev, info.st_ino)
             counts[key] = counts.get(key, 0) + 1
+            if info.st_uid == 0:
+                rooted.add(key)
             return original(stream, checkpoint)
+        rooted = set()
 
         def hashes(action):
             counts.clear()
@@ -263,19 +267,34 @@ Path(sys.argv[2]).write_text(json.dumps(report))
             return dict(counts)
         root = self.root / "campaign"
         inputs = {(i.st_dev, i.st_ino) for i in (os.stat(p) for p in root.glob('runs/*/inputs/**/*') if p.is_file())}
-        unmemoized = hashes(lambda: [verify_campaign(root) for _ in range(3)])
+        once = hashes(lambda: verify_campaign(root))
+        self.assertTrue(inputs and inputs <= once.keys())
+        self.assertEqual(max(once.values()), 1, once)
+        # Every call re-hashes every file, inside one command run too: candidate files are user-writable.
         with storage.digest_memo():
-            memoized = hashes(lambda: [verify_campaign(root) for _ in range(3)])
-        self.assertTrue(inputs and inputs <= memoized.keys())
-        self.assertGreater(min(unmemoized[k] for k in inputs), 3)
-        self.assertEqual(max(memoized.values()), 1, memoized)
-        self.assertLess(sum(memoized.values()) * 3, sum(unmemoized.values()))
-        # The command entry point is one run: each file is hashed at most once.
+            repeated = hashes(lambda: [verify_campaign(root) for _ in range(3)])
+        self.assertEqual({repeated[k] for k in inputs}, {3}, repeated)
+        # Only root-owned runtime files (the measurement tool) are hashed once per command.
+        self.assertEqual({k: v for k, v in repeated.items() if k not in rooted},
+                         {k: 3 * v for k, v in once.items() if k not in rooted})
+        self.assertTrue(rooted and all(repeated[k] == 1 for k in rooted), rooted)
         with contextlib.redirect_stdout(io.StringIO()):
             command = hashes(lambda: self.assertEqual(main(['verify-campaign', str(root)]), 0))
         self.assertEqual(max(command.values()), 1, command)
-        # A candidate byte changed mid-run, same size and restored mtime, still fails closed.
+        # A candidate byte changed between calls without any status change still fails closed.
         target = root / "runs/1/inputs/design/board"
+        with target.open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as mapped:
+            mapped[0] = mapped[0]
+            time.sleep(storage.RACY_NS / 1e9 + 0.2)
+            with storage.digest_memo():
+                verify_campaign(root)
+                before = os.stat(target)
+                mapped[0] = ord('B')
+                self.assertEqual(storage._status(os.stat(target)), storage._status(before))
+                with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
+                    verify_campaign(root)
+                mapped[0] = ord('b')
+        # The same holds for a rewrite whose timestamps are restored.
         before = os.stat(target)
         with storage.digest_memo():
             verify_campaign(root)
