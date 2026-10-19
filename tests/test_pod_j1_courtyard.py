@@ -11,7 +11,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 RECIPE = ROOT / 'fixtures/telemetry-pod/electrical'
 sys.path.insert(0, str(RECIPE))
+sys.path.insert(0, str(ROOT / 'tests'))
 from agent_ee.symbol_library import parse_sexpr, children, field
+from toolchain import unavailable
 
 
 class J1CourtyardTests(unittest.TestCase):
@@ -24,13 +26,13 @@ class J1CourtyardTests(unittest.TestCase):
         self.inputs = {}
         for label, blob in plan['sources'].items():
             if label in ('geometry', 'registration'):
-                path = Path('/tmp/agent463-pod-j1-geometry') / Path(blob['path']).name
+                path = Path(os.environ.get('AGENT_EE_POD_J1_GEOMETRY',
+                    '/tmp/agent463-pod-j1-geometry')) / Path(blob['path']).name
             else:
                 path = self.root / blob['path']
             if not path.is_file():
-                if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') == '1':
-                    self.fail('required exact retained J1 source absent: ' + str(path))
-                self.skipTest('exact retained J1 source absent: ' + str(path))
+                # Retained external captures (vendor drawing, geometry) are not committed.
+                unavailable('pod-retained-inputs', 'exact retained J1 source absent: ' + str(path))
             self.inputs[blob['path']] = path.read_bytes()
         self.source_path = plan['sources']['footprint']['path']
 

@@ -15,6 +15,10 @@ import unittest
 from agent_ee import rule_severities
 from agent_ee.rule_severities import capture, template, validate, verify
 from agent_ee.storage import json_bytes, read_json
+try:
+    from toolchain import fome_mc_store
+except ImportError:  # run as tests.test_rule_severities from the repository root
+    from tests.toolchain import fome_mc_store
 
 ROOT = Path(__file__).resolve().parents[1]
 RULES = ROOT / 'fixtures/fome-mc/rules'
@@ -35,9 +39,8 @@ class CommittedRecordTests(unittest.TestCase):
         validate(self.record)
         self.assertEqual(self.record['source']['commit'], COMMIT)
         self.assertEqual(self.record['source']['path'], 'fome-mc.kicad_pro')
-        status = verify(self.record, FOME_MC) if FOME_MC.is_dir() else dict(status='unverified')
-        if status['status'] != 'verified':
-            self.skipTest(f'fome-mc object store with {COMMIT[:12]} not available at {FOME_MC}')
+        status = verify(self.record, fome_mc_store(FOME_MC, COMMIT))
+        self.assertEqual(status['status'], 'verified', status)
         self.assertEqual(status['detail'], 'Pinned commit/path/blob and SHA-256 verified offline')
 
     def test_record_carries_the_fome_mc_ignores_named_by_the_pod_criterion(self):
@@ -60,8 +63,7 @@ class CommittedRecordTests(unittest.TestCase):
                          dict(rule_severities=self.record['drc']['severities']))
 
     def test_changed_record_fails_verification(self):
-        if not FOME_MC.is_dir():
-            self.skipTest(f'fome-mc object store not available at {FOME_MC}')
+        fome_mc_store(FOME_MC, COMMIT)
         changed = copy.deepcopy(self.record)
         changed['drc']['severities']['clearance'] = 'warning'
         with self.assertRaisesRegex(ValueError, 'differ from the pinned project file'):

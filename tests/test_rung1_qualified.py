@@ -17,10 +17,10 @@ from agent_ee import rung1_campaign as rc
 from agent_ee import rung1_qualified as q
 from agent_ee.storage import canonical, digest
 try:
-    from toolchain import require_kicad_route, require_toolchain
+    from toolchain import fome_mc_store, require_kicad_route, require_toolchain
     from test_generate import HEADER, ROWS, git_catalog
 except ImportError:  # run as tests.test_rung1_qualified from the repository root
-    from tests.toolchain import require_kicad_route, require_toolchain
+    from tests.toolchain import fome_mc_store, require_kicad_route, require_toolchain
     from tests.test_generate import HEADER, ROWS, git_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -146,6 +146,7 @@ class IntentAndLayoutTest(unittest.TestCase):
         self.assertEqual(validate_declaration(q.placement_declaration())['helper'], 'agent-ee.placer/1')
 
     def test_prep_against_fome_mc_head_passes_stage_two_and_records_header_schema(self):
+        fome_mc_store(g.CATALOG_CHECKOUT)
         with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-fome-head-') as tmp:
             rundir = Path(tmp) / 'run'
             rundir.mkdir()

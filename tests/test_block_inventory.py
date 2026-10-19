@@ -356,8 +356,10 @@ class FomeMcInventoryFixtureTests(unittest.TestCase):
         source = dict(kind='pinned-external', repository='fome-mc', commit=self.COMMIT, path=plan,
                       blob=entry['git_blob'], sha256=entry['sha256'])
         # The plan is cited, not committed; only the pinned blob of a local object store supplies its text.
-        if verify_external_source(source, str(repository) if repository.is_dir() else None)['status'] != 'verified':
-            self.skipTest(f'fome-mc object store with {self.COMMIT[:12]} not available at {repository}')
+        from tests.toolchain import fome_mc_store
+        fome_mc_store(repository, self.COMMIT)
+        status = verify_external_source(source, str(repository))
+        self.assertEqual(status['status'], 'verified', status)
         text = subprocess.run(['git', '-C', str(repository), 'cat-file', 'blob', entry['git_blob']],
                               capture_output=True, text=True, check=True).stdout
         catalogue = text.split('\n## Block catalogue\n', 1)[1].split('\n## ', 1)[0]

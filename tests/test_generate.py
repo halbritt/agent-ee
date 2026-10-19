@@ -18,6 +18,10 @@ from unittest import mock
 from agent_ee import generate as g
 from agent_ee.storage import digest
 try:
+    from toolchain import fome_mc_store
+except ImportError:  # run as tests.test_generate from the repository root
+    from tests.toolchain import fome_mc_store
+try:
     from toolchain import require_kicad_route, require_toolchain
 except ImportError:  # run as tests.test_generate from the repository root
     from tests.toolchain import require_kicad_route, require_toolchain
@@ -287,6 +291,7 @@ class PartsTest(unittest.TestCase):
                 g.stage_parts(stage, {'params': state['params']}, {'catalog_checkout': checkout})
 
     def test_read_catalog_four_column(self):
+        fome_mc_store(g.CATALOG_CHECKOUT, 'e7f5ae3', 'c582b29')
         _, raw_e7, source_e7 = g.capture_catalog(rev='e7f5ae3')
         _, raw_c5, source_c5 = g.capture_catalog(rev='c582b29')
         self.assertTrue(source_e7['checkout_head'].startswith('e7f5ae3'))

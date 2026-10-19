@@ -73,6 +73,46 @@ def require_toolchain(*, native=False, tools=()):
         raise unittest.SkipTest(reason)
 
 
+# Prerequisite partitions a strict run may declare as named, reported gaps.
+DECLARABLE_GAPS = ('fome-mc-store', 'pod-retained-inputs')
+DECLARED_GAP = 'declared gap '
+
+
+def declared_gaps():
+    names = {n.strip() for n in os.environ.get('AGENT_EE_DECLARED_GAPS', '').split(',') if n.strip()}
+    unknown = sorted(names.difference(DECLARABLE_GAPS))
+    if unknown:
+        raise AssertionError('AGENT_EE_DECLARED_GAPS names unknown gap(s): ' + ', '.join(unknown))
+    return names
+
+
+def unavailable(gap, reason):
+    """An absent prerequisite of the named partition: a skip, or a failure under
+    AGENT_EE_REQUIRE_TOOLCHAIN=1 unless that run declares the gap in
+    AGENT_EE_DECLARED_GAPS; a declared gap skips with a reason naming it so the
+    runner reports it (docs/container.md). Never a pass."""
+    if os.environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') != '1':
+        raise unittest.SkipTest(reason)
+    if gap in declared_gaps():
+        raise unittest.SkipTest(f'{DECLARED_GAP}{gap}: {reason}')
+    raise AssertionError(f'AGENT_EE_REQUIRE_TOOLCHAIN=1: {reason} '
+                         f'(a strict run may only declare it: AGENT_EE_DECLARED_GAPS={gap})')
+
+
+def fome_mc_store(repository, *revisions):
+    """The local fome-mc Git object store holding every pinned revision (HEAD if none).
+
+    fome-mc design material is read from the owner's store, never committed or
+    fetched here; an absent store or revision is the fome-mc-store gap."""
+    repository = Path(repository)
+    missing = [rev for rev in revisions or ('HEAD',) if not repository.is_dir() or subprocess.run(
+        ['git', '-C', str(repository), 'cat-file', '-e', rev + '^{commit}'], capture_output=True).returncode]
+    if missing:
+        unavailable('fome-mc-store', f'fome-mc object store with {", ".join(r[:12] for r in missing)} '
+                                     f'not available at {repository}')
+    return repository
+
+
 def toolchain_test(test):
     @functools.wraps(test)
     def gated(*args, **kwargs):

@@ -22,7 +22,7 @@ from agent_ee.fab_roundtrip import (ParseError, compare_copper, expected_copper,
                                     histograms_match, parse_excellon, parse_gerber)
 from agent_ee.reference_blocks import verify_external_source
 from agent_ee.storage import digest, read_json, write_json
-from toolchain import require_toolchain
+from toolchain import fome_mc_store, require_toolchain
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures/fab-export'
 GERBER = (b'%TF.FileFunction,Copper,L1,Top*%\n%FSLAX46Y46*%\n%MOMM*%\n%LPD*%\nG01*\n'
@@ -549,8 +549,9 @@ class FomeMcReparseProbeTests(unittest.TestCase):
     def test_fome_mc_gerbers_reparse_without_unknowns_and_conserve_copper(self):
         require_toolchain(native=True)
         repository = Path(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', str(Path.home() / 'git/fome-mc')))
-        if verify_external_source(self.SOURCE, str(repository) if repository.is_dir() else None)['status'] != 'verified':
-            self.skipTest(f'fome-mc object store with {self.SOURCE["commit"][:12]} not available at {repository}')
+        fome_mc_store(repository, self.SOURCE['commit'])
+        status = verify_external_source(self.SOURCE, str(repository))
+        self.assertEqual(status['status'], 'verified', status)
         with tempfile.TemporaryDirectory(prefix='agent-ee-fome-probe-') as tmp:
             inputs, work = Path(tmp) / 'inputs', Path(tmp) / 'work'
             inputs.mkdir()
