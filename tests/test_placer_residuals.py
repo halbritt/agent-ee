@@ -24,7 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_ee import courtyard_curves as curves
 from agent_ee import placement_groups
 from agent_ee.placement import area2, courtyard_bounds, intersection_area, judge, overhang_bands
-from agent_ee.placement_predicates import envelope_overhangs, outline_containment, point_segment2
+from agent_ee.placement_predicates import (courtyard_overlap, envelope_overhangs, footprint_keepout,
+                                           outline_containment, point_segment2)
 from agent_ee.placement_probe import prove_contours
 from agent_ee.placer import pack
 from test_placement import MM, capture, part, rectangle
@@ -68,6 +69,12 @@ def fixed(ref, edge, along, inset, overhangs=None, insertion='from_top'):
     if overhangs is not None:
         item['courtyard_overhangs'] = [dict(edge=e, max_mm=d) for e, d in overhangs]
     return item
+
+
+# Half the step of a 1 mm circle's 48-vertex bounds: the inner bound's deepest chord.
+MIDCHORD = math.pi / 48
+EMPTY_DRC = {'kicad_version': '10.0.7', 'violations': [], 'unconnected_items': [], 'schematic_parity': [],
+             'ignored_checks': [], 'included_severities': ['error', 'warning', 'exclusion']}
 
 
 # The real seed's fixed U1 and J2 courtyard extents (mm), as numbers: U1 leaves the
@@ -120,6 +127,78 @@ class CurvedCourtyardTest(unittest.TestCase):
         # Outlines and rule areas still refuse every curve.
         outline = prove_contours([{'kind': 'circle', 'center': [0, 0], 'end': [MM, 0]}], 'm', 'outline_unproven')
         self.assertEqual(outline['status'], 'outline_unproven')
+
+    def test_radii_up_to_twice_the_tolerance_and_degenerate_arcs_are_refused_by_name(self):
+        tolerance = curves.ARC_TOLERANCE_NM
+        def circle(r, x=0, y=0):
+            return prove_contours([{'kind': 'circle', 'center': [x, y], 'end': [x + r, y]}],
+                                  'courtyard_missing', 'courtyard_unproven', True)
+        def d_shape(r):
+            return prove_contours([{'kind': 'segment', 'start': [0, -r], 'end': [0, r]},
+                                   {'kind': 'arc', 'start': [0, -r], 'mid': [r, 0], 'end': [0, r]}],
+                                  'courtyard_missing', 'courtyard_unproven', True)
+        too_small = 'curve radius not larger than twice the declared tolerance'
+        # 1 nm and 1000 nm once raised a math domain error from the step count.
+        for r in (1, 1000, 2 * tolerance):
+            for record in (circle(r), d_shape(r)):
+                self.assertEqual((record['status'], record.get('reason')), ('courtyard_unproven', too_small), r)
+            with self.assertRaisesRegex(curves.CurveError, too_small):
+                curves.circle([0, 0], [r, 0])
+            with self.assertRaisesRegex(curves.CurveError, too_small):
+                curves.arc([0, -r], [r, 0], [0, r])
+        for record in (circle(2 * tolerance + 1), d_shape(2 * tolerance + 1)):
+            self.assertEqual(record['status'], 'proven', record.get('reason'))
+            self.assertEqual(record['approximation']['tolerance_nm'], tolerance)
+        for primitives, reason in (
+                ([{'kind': 'arc', 'start': [0, 0], 'mid': [MM, MM], 'end': [0, 0]}], 'arc start equals end'),
+                ([{'kind': 'segment', 'start': [0, 0], 'end': [2*MM, 0]},
+                  {'kind': 'arc', 'start': [0, 0], 'mid': [0, 0], 'end': [2*MM, 0]}],
+                 'degenerate arc: start, mid and end are collinear')):
+            record = prove_contours(primitives, 'courtyard_missing', 'courtyard_unproven', True)
+            self.assertEqual((record['status'], record['reason']), ('courtyard_unproven', reason))
+        # The packer and the judge refuse a 1 nm probe courtyard by name.
+        board = capture([part('C2', 15, 15), part('TP1', 5, 5)])
+        board['footprints'][1]['courtyards']['F'] = circle(1, 5*MM, 5*MM)
+        report = pack(board, request(fixed_refs=[]))
+        self.assertEqual((report['status'], report['outcome'], report['placements']),
+                         ('unsupported_geometry', 'unknown', []))
+        self.assertTrue(report['reason'].startswith('TP1 F courtyard not qualified: courtyard_unproven ('), report)
+        judged = judge(board)
+        self.assertEqual(judged['verdict'], 'unknown')
+        self.assertEqual([(u['kind'], u['ref'], u['side']) for u in judged['unknown']], [('courtyard', 'TP1', 'F')])
+
+    def test_overlap_and_keepout_predicates_leave_the_tolerance_band_unknown(self):
+        # The reviewer's 1.998 mm midchord pair: the circles overlap by 2 um, the inner
+        # bounds do not, the outer bounds do. Native silence cannot make it a pass.
+        dx, dy = round(1_998_000 * math.cos(MIDCHORD)), round(1_998_000 * math.sin(MIDCHORD))
+        def pair(dx, dy):
+            board = capture([probe_part('TP1', 10, 10), probe_part('TP2', 10 + dx / MM, 10 + dy / MM)])
+            return courtyard_overlap(board, EMPTY_DRC)
+        band = pair(dx, dy)
+        self.assertEqual((band['status'], band['defects']), ('unknown', []))
+        self.assertEqual([(u['kind'], u['refs']) for u in band['unknown']], [('courtyard_approximation', ['TP1', 'TP2'])])
+        axis = pair(1_998_000, 0)  # The inner bounds overlap: the helper disagrees with native silence.
+        self.assertEqual([u['kind'] for u in axis['unknown']], ['helper_disagreement'])
+        self.assertEqual((pair(2_010_000, 0)['status'], pair(2_010_000, 0)['unknown']), ('pass', []))
+        # A native item for the pair stays the defect, without a second unknown.
+        board = capture([probe_part('TP1', 10, 10), probe_part('TP2', 10 + dx / MM, 10 + dy / MM)])
+        self.assertEqual(board['footprints'][1]['courtyards']['F']['primitives'][0]['center'], [10*MM + dx, 10*MM + dy])
+        native = dict(EMPTY_DRC, violations=[{'type': 'courtyards_overlap', 'severity': 'error',
+                                              'items': [{'uuid': 'TP1'}, {'uuid': 'TP2'}]}])
+        flagged = courtyard_overlap(board, native)
+        self.assertEqual((flagged['status'], flagged['unknown']), ('defect', []))
+        # A footprint keepout 1 um beyond the true circle meets only the outer bound.
+        def keepout(x0):
+            board = capture([probe_part('TP1', 10, 10)], rectangle(0, 0, 30, 30))
+            board['rule_areas'] = [{'uuid': 'ko', 'name': 'ko', 'owner': 'board', 'layers': ['F.Cu'],
+                                    'forbid': {'footprints': True}, 'placement_area': False,
+                                    'outline': {'status': 'proven', 'polygons': [rectangle(x0, 0, 10, 30)]}}]
+            return footprint_keepout(board, EMPTY_DRC)
+        report = keepout(11.001)
+        self.assertEqual(report['status'], 'unknown')
+        self.assertEqual([(u['kind'], u['areas']) for u in report['unknown']], [('courtyard_approximation', ['ko'])])
+        self.assertEqual([u['kind'] for u in keepout(10.99)['unknown']], ['helper_disagreement'])
+        self.assertEqual(keepout(11.01)['status'], 'pass')
 
     def test_circular_courtyards_pack_and_overlap_is_a_defect_only_on_the_inner_bound(self):
         board = capture([part('U1', 1, 1), probe_part('TP1', 15, 15), probe_part('TP2', 15, 15)])
@@ -598,33 +677,61 @@ class NativeResidualsTest(unittest.TestCase):
         self.assertIn('fixed placement U1 conflicts', named['reason'])
         self.assertFalse((self.scratch / 'u1-undeclared').exists())
 
-    def test_circular_courtyard_overlap_native_defect_and_clear_pass(self):
+    def probe_pair(self, source, name, offset_nm):
+        """TP1 at (10, 10) mm and TP2 offset from it, saved and native-DRC checked:
+        (native overlap pairs, judge overlap pairs, judge TP1/TP2 unknowns, predicate)."""
         import pcbnew as k
-        from agent_ee.placement_predicates import courtyard_overlap
         from agent_ee.placement_probe import extract
+        board = k.LoadBoard(str(source))
+        for fp in board.GetFootprints():
+            if fp.GetReference() in ('TP1', 'TP2'):
+                dx, dy = offset_nm if fp.GetReference() == 'TP2' else (0, 0)
+                fp.SetPosition(k.VECTOR2I(10 * MM + dx, 10 * MM + dy))
+        path = self.root / f'{name}.kicad_pcb'
+        k.SaveBoard(str(path), board)
+        report = self.root / f'{name}-drc.json'
+        run = subprocess.run(['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
+                              '--output', str(report), str(path)], capture_output=True, text=True, timeout=120)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        facts = extract(path)
+        ids = {fp['uuid']: fp['ref'] for fp in facts['footprints']}
+        drc = json.loads(report.read_text())
+        native = sorted(sorted(ids[i['uuid']] for i in v['items']) for v in drc['violations']
+                        if v['type'] == 'courtyards_overlap')
+        judged = judge(facts)
+        overlaps = [f['refs'] for f in judged['hard_failures'] if f['kind'] == 'courtyard_overlap']
+        band = [u['kind'] for u in judged['unknown'] if u.get('refs') == ['TP1', 'TP2']]
+        return native, overlaps, band, courtyard_overlap(facts, drc)
+
+    def test_circular_courtyard_overlap_native_defect_and_clear_pass(self):
         source = native_pod(self.root / 'pod.kicad_pcb', holes=((4, 4), (34, 4), (76, 46), (4, 46)))
         outcomes = {}
         for name, x in (('overlap', 11.5), ('clear', 12.05)):
-            board = k.LoadBoard(str(source))
-            for fp in board.GetFootprints():
-                if fp.GetReference() in ('TP1', 'TP2'):
-                    fp.SetPosition(k.VECTOR2I(round((10 if fp.GetReference() == 'TP1' else x) * MM), 10 * MM))
-            path = self.root / f'{name}.kicad_pcb'
-            k.SaveBoard(str(path), board)
-            report = self.root / f'{name}-drc.json'
-            run = subprocess.run(['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
-                                  '--output', str(report), str(path)], capture_output=True, text=True, timeout=120)
-            self.assertEqual(run.returncode, 0, run.stderr)
-            facts = extract(path)
-            ids = {fp['uuid']: fp['ref'] for fp in facts['footprints']}
-            drc = json.loads(report.read_text())
-            native = sorted(sorted(ids[i['uuid']] for i in v['items']) for v in drc['violations']
-                            if v['type'] == 'courtyards_overlap')
-            judged = judge(facts)
-            overlaps = [f['refs'] for f in judged['hard_failures'] if f['kind'] == 'courtyard_overlap']
-            outcomes[name] = (native, overlaps, courtyard_overlap(facts, drc)['status'])
+            native, overlaps, _, predicate = self.probe_pair(source, name, (round((x - 10) * MM), 0))
+            outcomes[name] = (native, overlaps, predicate['status'])
         self.assertEqual(outcomes['overlap'], ([['TP1', 'TP2']], [['TP1', 'TP2']], 'defect'))
         self.assertEqual(outcomes['clear'], ([], [], 'pass'))
+
+    def test_circle_tolerance_band_stays_unknown_under_native_drc_silence(self):
+        # Reviewer probe 1e: 1 mm circles 1.998 mm apart overlap by 2 um and native DRC
+        # reports nothing. Along the axis the inner bounds overlap (the judge proves the
+        # defect, the predicate names the disagreement); at the midchord only the
+        # tolerance band does, and both stay unknown. Silence never upgrades a band to pass.
+        source = native_pod(self.root / 'pod.kicad_pcb', holes=((4, 4), (34, 4), (76, 46), (4, 46)))
+        cases = {'axis': (1_998_000, 0),
+                 'midchord': (round(1_998_000 * math.cos(MIDCHORD)), round(1_998_000 * math.sin(MIDCHORD))),
+                 'band_clear': (2_002_000, 0), 'clear': (2_010_000, 0)}
+        outcomes = {}
+        for name, offset in cases.items():
+            native, overlaps, band, predicate = self.probe_pair(source, name, offset)
+            outcomes[name] = (native, overlaps, band, predicate['status'], [u['kind'] for u in predicate['unknown']])
+        self.assertEqual(outcomes['axis'], ([], [['TP1', 'TP2']], [], 'unknown', ['helper_disagreement']))
+        self.assertEqual(outcomes['midchord'], ([], [], ['courtyard_approximation'], 'unknown',
+                                                ['courtyard_approximation']))
+        # 2 um clear in truth, inside the outer bounds' 5 um: unknown, not pass.
+        self.assertEqual(outcomes['band_clear'], ([], [], ['courtyard_approximation'], 'unknown',
+                                                  ['courtyard_approximation']))
+        self.assertEqual(outcomes['clear'], ([], [], [], 'pass', []))
 
     def test_board_only_holes_are_excluded_at_seed_scale_and_only_under_the_rule(self):
         import pcbnew as k

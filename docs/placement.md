@@ -82,9 +82,11 @@ radius probe pads of the pod seed use 48. In a contour that mixes segments and
 arcs, the arc's midpoint shows which side is outside. For a convex arc the outer
 bound takes the outside chain; for a concave arc (a notch) it takes the inside
 chain. The inner bound takes the other chain, and it is checked to lie inside
-the outer bound. Collinear arcs, a radius not larger than twice the tolerance,
-and bounds that are not simple polygons stay `courtyard_unproven`, with a
-`reason`. The same applies to unsupported primitives, which are named by native
+the outer bound. Collinear arcs, an arc whose start equals its end, a radius
+not larger than twice the tolerance (checked exactly before any step count, so
+a 1 nm circle is refused rather than raising), and bounds that are not simple
+polygons stay `courtyard_unproven`, with a `reason`. The packer and the judge
+then refuse that footprint by name. The same applies to unsupported primitives, which are named by native
 shape. Rounded rectangles (`corner_radius`), and curves in Edge.Cuts or in rule
 areas, remain unsupported.
 
@@ -94,8 +96,12 @@ the inner bound. The judge's overlap and containment, the predicates
 proofs all follow this rule. A result that lies only between the two bounds
 (within 5 um) is `unknown` with kind `courtyard_approximation`; it is never a
 defect. `courtyard-overlap/1` and `footprint-keepout/1` keep native DRC as the
-defect authority: they cross-check against the inner bound, so a tolerance-band
-contact is not a helper disagreement. Straight courtyards are their own bounds,
+defect authority. They cross-check the inner bound: an inner-bound intersection
+that native DRC lacks is a `helper_disagreement`. A pair or keepout that meets
+only the outer bound is `courtyard_approximation`, also `unknown`. Native DRC
+silence never turns that band into a pass: two 1 mm circles 1.998 mm apart
+overlap by 2 um, and native DRC reports nothing for them. Outer bounds that do
+not meet prove the pair clear. Straight courtyards are their own bounds,
 and their records and results are unchanged. Two convex polygons are clipped
 directly, and a convex polygon is fanned rather than ear-clipped, so the 48-gon
 bounds stay fast; the arithmetic is exact either way.
@@ -130,10 +136,10 @@ Every check names an earlier `drc` check in `drc_check`:
 
 | `criterion` | Extra parameters | Defect | Unknown |
 | --- | --- | --- | --- |
-| `courtyard-overlap/1` | none | a native `courtyards_overlap` item of any severity, cited with its footprint UUIDs and positions | footprint without a courtyard on its mounting side; native `malformed_courtyard`; the native check ignored by project settings; helper geometry finds an overlap the native report lacks |
+| `courtyard-overlap/1` | none | a native `courtyards_overlap` item of any severity, cited with its footprint UUIDs and positions | footprint without a courtyard on its mounting side; native `malformed_courtyard`; the native check ignored by project settings; helper geometry finds an overlap the native report lacks; a pair the native report lacks overlaps only between curve bounds (`courtyard_approximation`) |
 | `outline-containment/1` | optional `envelope` | positive courtyard area outside the single proven outline (the judge above); with `envelope`, only area beyond that envelope's declared `courtyard_overhangs` | missing, open, curved or multiple outlines; missing or unproved courtyard; outside area only between curve bounds |
 | `edge-clearance/1` | `min_courtyard_edge_mm` | exact courtyard-to-Edge.Cuts distance below the minimum, or courtyard crossing/outside the outline | unproved outline or courtyard |
-| `footprint-keepout/1` | none | a native `items_not_allowed` item citing a footprint UUID | footprint-forbidding rule area with holes, arcs or several contours, or owned by a footprint; footprint without a qualified courtyard where such an area applies to its side; helper geometry intersects but native DRC is silent; native check ignored |
+| `footprint-keepout/1` | none | a native `items_not_allowed` item citing a footprint UUID | footprint-forbidding rule area with holes, arcs or several contours, or owned by a footprint; footprint without a qualified courtyard where such an area applies to its side; helper geometry intersects but native DRC is silent; intersection only between curve bounds (`courtyard_approximation`); native check ignored |
 | `connector-edge/1` | `envelope`, `reference` (required for several fixed footprints) | wrong side or rotation; origin farther than `tolerance_mm` from the declared anchor (names edge, measured inset and distance); facing contradicts a declared local mating axis | reference missing or duplicated; outline unproved or declared edge absent from it; facing undeterminable |
 | `ratsnest-mst/1` | optional `max_manhattan_mm`, `max_euclidean_mm` | proved total above a declared maximum | Euclidean interval straddles a maximum; no netted pads |
 | `placement-groups/1` | `groups` (captured `agent-ee.placement-groups/1`, or a packing policy with `groups`) | a member courtyard (inner bound) outside its group region (`outside_group_region`); a member origin farther than `max_distance_nm` from its anchor (`group_anchor_distance`) | member or anchor reference missing or duplicated; member without a qualified courtyard where a region applies; region boundary only between curve bounds |
@@ -238,6 +244,7 @@ the envelope capture gate described below.
 | Missing courtyard or unproved outline stays unknown | `test_placement_gates_native.NativePlacementGates.test_missing_courtyard_is_unknown_for_geometric_predicates` rejects a missing C1 courtyard as unknown; `test_placement_native.NativePlacementTest.test_saved_native_control_mutations_and_hash_binding` saves open, missing and curved outline variants and checks unknown results |
 | Moving the header names edge and distance | `test_placement_gates_native.NativePlacementGates.test_connector_edge_on_rc_header` saves a moved J1 and checks the declared `left` edge and 3 mm displacement |
 | Circular courtyards: overlap defect, clear pass | `test_placer_residuals.NativeResidualsTest.test_circular_courtyard_overlap_native_defect_and_clear_pass` saves two 1 mm `fp_circle` probe courtyards 1.5 mm apart (native `courtyards_overlap`, judge overlap, `courtyard-overlap/1` defect) and 2.05 mm apart (none of them) |
+| Circular courtyards: native silence in the tolerance band | `test_placer_residuals.NativeResidualsTest.test_circle_tolerance_band_stays_unknown_under_native_drc_silence` saves 1 mm circles 1.998 mm apart along the axis (native silent, judge overlap, predicate `helper_disagreement`) and at the inner bound's midchord (native silent, judge and predicate `courtyard_approximation`), 2.002 mm apart (`courtyard_approximation`) and 2.01 mm apart (pass) |
 | Declared overhang containment | `test_pod_placement.OverhangPodPlacementTests.test_declared_overhang_native` runs `outline-containment/1` with the scope envelope on a scaffolded board whose SMA stand-in overhangs the right edge as declared, and passes |
 | Group regions and anchors | `test_placer_residuals.NativeGroupCheckTest.test_registered_group_check_passes_and_names_defects` runs the registered `placement-groups/1` check on owned RC variants: pass, then a moved C1 gives `outside_group_region` and `group_anchor_distance` |
 | Same saved board gives identical ratsnest totals | `test_placement_gates_native.NativePlacementGates.test_ratsnest_byte_identical_oracle_and_declared_maxima` compares complete `ratsnest.json` bytes across captures and checks an independent Manhattan MST oracle and exact maximum boundaries |

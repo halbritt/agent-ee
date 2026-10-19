@@ -41,6 +41,17 @@ def _repeats(chain):
     return any(a == b for a, b in zip(chain, chain[1:]))
 
 
+def _radius(r2, tolerance):
+    """The float radius of an exact squared radius proved larger than twice the tolerance.
+
+    Runs before any step count: below that radius no chain fits within the
+    tolerance and the step formula leaves its domain."""
+    _, hi = _sqrt_bounds(r2)
+    if hi <= 2 * tolerance:
+        raise CurveError('curve radius not larger than twice the declared tolerance')
+    return math.sqrt(r2)
+
+
 def _steps(sweep, radius, tolerance, minimum):
     # Half-angle h with both r(1/cos h - 1) and r(1 - cos h) at most half the tolerance.
     h = min(math.acos(radius / (radius + tolerance / 2)), math.acos(1 - tolerance / (2 * radius)))
@@ -70,10 +81,8 @@ def _outside(c, r2, angles, half_step, tolerance, ends=()):
 
 def _inside(c, r2, angles, tolerance, ends=()):
     """Vertices at the given angles on or inside the circle, chords within tolerance of it."""
-    radius = math.sqrt(r2)
+    radius = _radius(r2, tolerance)
     _, hi = _sqrt_bounds(r2)
-    if hi <= 2 * tolerance:
-        raise CurveError('curve radius not larger than twice the declared tolerance')
     bump = 2
     while bump <= tolerance / 4:
         points = [_point(c, radius - bump, a) for a in angles]
@@ -93,7 +102,7 @@ def circle(center, end, tolerance=ARC_TOLERANCE_NM):
     r2 = _dist2(end, c)
     if r2 == 0:
         raise CurveError('zero-radius circle')
-    radius = math.sqrt(r2)
+    radius = _radius(r2, tolerance)
     n = _steps(2 * math.pi, radius, tolerance, MIN_FULL_CIRCLE_STEPS)
     n += -n % 4
     step = 2 * math.pi / n
@@ -118,14 +127,13 @@ def arc(start, mid, end, tolerance=ARC_TOLERANCE_NM):
         raise CurveError('arc start equals end')
     c = _circumcentre(start, end, mid)
     r2 = _dist2(start, c)
-    radius = math.sqrt(r2)
+    radius = _radius(r2, tolerance)
     turn = 2 * math.pi
     base = math.atan2(float(start[1]-c[1]), float(start[0]-c[0]))
-    sweep = (math.atan2(float(end[1]-c[1]), float(end[0]-c[0])) - base) % turn
-    through = (math.atan2(float(mid[1]-c[1]), float(mid[0]-c[0])) - base) % turn
-    direction = 1 if through < sweep else -1
-    if direction < 0:
-        sweep = turn - sweep
+    # Start, mid and end lie on the arc in order: its turning sense is the exact
+    # orientation of that triangle (never zero once the circumcentre exists).
+    direction = 1 if (mid[0]-start[0])*(end[1]-start[1]) - (mid[1]-start[1])*(end[0]-start[0]) > 0 else -1
+    sweep = (direction * (math.atan2(float(end[1]-c[1]), float(end[0]-c[0])) - base)) % turn
     n = _steps(sweep, radius, tolerance, 1)
     step = sweep / n
     # Circumscribed vertices between the tangents at start, at each step and at end.

@@ -886,7 +886,9 @@ footprint-forbidding polygons as exclusions for peer courtyards.
 AGENTEE-212 adds `placement-groups/1` (declared group regions and anchor
 distances) and an optional `envelope` on `outline-containment/1` that grades
 envelope-declared fixed-courtyard overhangs. Curved courtyards are judged on
-exact outer and inner bounds: pass on the outer, defect only on the inner
+exact outer and inner bounds: pass on the outer, defect only on the inner;
+a result only between them is `courtyard_approximation` (unknown), even where
+native DRC is silent
 ([curved courtyards](placement.md#circular-and-arc-courtyards-agentee-212)). These proposal
 rules do not change native DRC grading or the registered keepout predicate's
 unknown boundary for footprint-owned areas.
