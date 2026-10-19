@@ -137,7 +137,7 @@ class PreflightTests(unittest.TestCase):
         with patch('agent_ee.cli.shutil.which', side_effect=which), \
                 patch('agent_ee.harnesses.executable_for', return_value=None), \
                 patch('agent_ee.cli.pcbnew_extension', return_value=(None, '')), \
-                patch('agent_ee.cli.digest', side_effect=lambda path: 'hash:' + path):
+                patch('agent_ee.cli.runtime_digest', side_effect=lambda path, **_: 'hash:' + path):
             actual = runtime_files()
         self.runtime_patch.start()
         self.assertEqual(actual['ngspice']['path'], '/shadow/ngspice')

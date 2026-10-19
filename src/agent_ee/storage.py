@@ -11,7 +11,8 @@ from pathlib import Path
 
 # No digest is reused across verification calls: file status cannot prove unchanged bytes
 # (a shared writable mapping changes them silently), and with sudo no file is immutable to
-# this user's processes (AGENTEE-250).
+# this user's processes (AGENTEE-250). digest() and digest_fd() always hash the bytes;
+# only fingerprint() reuses an observation, and only inside a digest_scope().
 _scope = contextvars.ContextVar("agent_ee_digest_scope", default=None)
 
 
@@ -32,14 +33,14 @@ def _hash_stream(stream, checkpoint):
 
 @contextlib.contextmanager
 def digest_scope():
-    """Hash each file at most once within one verification call (AGENTEE-250).
+    """One host fingerprint observation: fingerprint() hashes each file once (AGENTEE-250).
 
-    A verification call establishes that each file had its recorded bytes at some instant
-    during the call; it never pins bytes for later readers. One hash per file inside the
-    call establishes exactly that, so a file (device, inode and status) already hashed in
-    the active scope reuses that observation. A nested scope joins the enclosing one, the
-    outermost exit discards every entry, and executor.execute() discards them on entry
-    and exit so no observation spans a tool run. No reuse crosses verification calls.
+    Inside the scope a file (device, inode and status) already fingerprinted reuses that
+    observation, e.g. a binary reached under two names. The claim is only that the file
+    had those bytes at some instant of the observation; nothing in the scope reads, parses
+    or executes against a reused value, which is why digest() never consults the scope. A
+    nested scope joins the enclosing one, the outermost exit discards every entry, and
+    executor.execute() discards them on entry and exit so no observation spans a tool run.
     """
     if _scope.get() is not None:
         yield
@@ -52,39 +53,48 @@ def digest_scope():
 
 
 def forget_scope():
-    """Discard the active verification scope's observations, if any."""
+    """Discard the active fingerprint scope's observations, if any."""
     observed = _scope.get()
     if observed is not None:
         observed.clear()
 
 
-def _scoped_digest(stream, checkpoint):
-    before = os.fstat(stream.fileno())
-    key = (before.st_dev, before.st_ino)
-    observed = _scope.get()
-    if observed is not None and key in observed and observed[key][0] == _status(before):
-        if checkpoint is not None:
-            checkpoint()
-        return observed[key][1]
-    value = _hash_stream(stream, checkpoint)
-    if observed is not None:
-        observed[key] = (_status(before), value)
-    return value
+def _open(path, follow_symlinks):
+    opener = None if follow_symlinks else (lambda name, flags: os.open(name, flags | os.O_NOFOLLOW))
+    return open(path, "rb", opener=opener)
 
 
 def digest(path, *, checkpoint=None, follow_symlinks=True):
-    """SHA-256 of the file bytes; checkpoint, when given, runs before each block.
+    """SHA-256 of the file bytes, always read now; checkpoint, when given, runs before each block.
 
     follow_symlinks=False refuses a link at path with OSError(ELOOP)."""
-    opener = None if follow_symlinks else (lambda name, flags: os.open(name, flags | os.O_NOFOLLOW))
-    with open(path, "rb", opener=opener) as stream:
-        return _scoped_digest(stream, checkpoint)
+    with _open(path, follow_symlinks) as stream:
+        return _hash_stream(stream, checkpoint)
 
 
 def digest_fd(descriptor):
-    """SHA-256 of an already opened regular file; consumes descriptor."""
+    """SHA-256 of an already opened regular file, always read now; consumes descriptor."""
     with os.fdopen(descriptor, "rb") as stream:
-        return _scoped_digest(stream, None)
+        return _hash_stream(stream, None)
+
+
+def fingerprint(path, *, checkpoint=None):
+    """digest() for a runtime fingerprint that no reader in the active scope consumes.
+
+    Inside a digest_scope() a file already fingerprinted with the same device, inode and
+    status reuses that value; outside one it is digest()."""
+    with _open(path, True) as stream:
+        before = os.fstat(stream.fileno())
+        key = (before.st_dev, before.st_ino)
+        observed = _scope.get()
+        if observed is not None and key in observed and observed[key][0] == _status(before):
+            if checkpoint is not None:
+                checkpoint()
+            return observed[key][1]
+        value = _hash_stream(stream, checkpoint)
+        if observed is not None:
+            observed[key] = (_status(before), value)
+        return value
 
 
 def canonical(value):

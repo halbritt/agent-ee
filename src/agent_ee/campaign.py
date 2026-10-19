@@ -10,7 +10,7 @@ from .baseline import load_baseline
 from .convergence import advance
 from .locking import writer_lock
 from .profiles import validate_profile
-from .storage import digest, digest_scope, read_json, write_json
+from .storage import digest, read_json, write_json
 
 IMPLEMENTATION_SCHEMA = {"type": "object", "additionalProperties": False,
     "required": ["summary"], "properties": {"summary": {"type": "string"}}}
@@ -620,12 +620,6 @@ def verify_campaign(root, *, observations=None):
 
 def verify_campaign_records(root, *, observations=None):
     """Existing integrity decisions; caller establishes coherent reads if needed."""
-    # One campaign verification call hashes each file once; every retained run is still verified.
-    with digest_scope():
-        return _verify_campaign_records(root, observations=observations)
-
-
-def _verify_campaign_records(root, *, observations):
     from .cli import verify
 
     root = Path(root).resolve()
@@ -669,6 +663,8 @@ def _verify_campaign_records(root, *, observations):
     history = []
     diagnostic = {"state": "running"}
     feedback_seen = False
+    # One observation of the host's policy and runtime files serves every retained run (AGENTEE-250).
+    host = {}
     for index, stored in enumerate(state["history"], 1):
         run = root / "runs" / str(index)
         if stored.get('bench_transaction'):
@@ -682,7 +678,7 @@ def _verify_campaign_records(root, *, observations):
                 digest(snapshot) != stored["result_sha256"]):
             raise ValueError("campaign history result link changed")
         changes = []
-        current = verify(run, current_source=False, observations=changes, invoked=writer)
+        current = verify(run, current_source=False, observations=changes, invoked=writer, host=host)
         if observations is not None:
             # Every retained run reports the same unused-harness change; record it once.
             observations.extend(change for change in changes if change not in observations)
