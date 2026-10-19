@@ -16,7 +16,7 @@ from .placement import area2, edges, intersection_area, intersects, judge, on_se
 from .symbol_library import LibraryError, nanometres
 
 CRITERIA = ('courtyard-overlap/1', 'outline-containment/1', 'edge-clearance/1',
-            'footprint-keepout/1', 'connector-edge/1', 'ratsnest-mst/1')
+            'footprint-keepout/1', 'connector-edge/1', 'ratsnest-mst/1', 'imu-axes/1')
 SIDE_LAYER = {'F': 'F.Cu', 'B': 'B.Cu'}
 AXES = {'x+': (1, 0), 'x-': (-1, 0), 'y+': (0, 1), 'y-': (0, -1)}
 INSERTIONS = ('through_edge', 'from_top', 'from_bottom')

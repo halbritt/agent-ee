@@ -280,6 +280,12 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                 if inputs is not None:
                     from .placement_check import connector_declarations
                     connector_declarations(validate((Path(inputs) / params['envelope']).read_bytes()), params)
+            if params['criterion'] == 'imu-axes/1':
+                prerequisite(params['facts_check'], ('datasheet_facts',))
+                if inputs is not None:
+                    from .board_envelope import validate
+                    from .imu_axes import envelope_declaration
+                    envelope_declaration(validate((Path(inputs) / params['envelope']).read_bytes()), params)
             result['predicates'] = predicate_names(params)
         elif kind == 'dfa_dft':
             from .dfa_dft import capability as dfa_dft_capability

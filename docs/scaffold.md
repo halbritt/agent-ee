@@ -113,9 +113,12 @@ checks can establish citation support and saved geometry acceptance.
 
 `imu_reference` explicitly selects one fixed footprint. The writer places
 `IMU_AXES  X forward  Y left  Z up` on F.SilkS, 4 mm below that anchor in board
-coordinates. It does not infer IMU pin/axis mapping or choose a harness part.
-The 776228-1 versus 776087-1 identity/orientation question remains open in
-AGENTEE-209. The declared captured footprint and transform are used verbatim.
+coordinates. The registered [IMU axes check](placement.md#imu-axes) can grade
+that marking and the declared transform against a verified part/footprint axis
+fact. The scaffold does not infer IMU pin/axis mapping or choose a harness part.
+AGENTEE-209 carries the unresolved IMU choice and header orientation. The
+header part is TE 776228-1 per the owner decision; the declared captured footprint
+and transform are used verbatim.
 
 The native entry point is `python -m agent_ee.scaffold --inputs INPUTS
 --envelope ENVELOPE --parts PARTS --board BOARD [--intent INTENT --layout LAYOUT]
