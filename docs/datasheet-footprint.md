@@ -115,10 +115,28 @@ published.
 ## Fact coverage
 
 Every pad value must equal a cited fact. A dimension (`w`, `h`, hole size)
-must equal its fact exactly, with scale `1`. A coordinate may be a declared
-rational multiple of one cited fact, such as `-1/2` of a row spacing or `-1`
-of a pitch. A coordinate of exactly `0` is the declared origin and needs no
-fact. A fact must:
+must equal its fact exactly, with scale `1`. Coordinate scales are restricted
+to the role declared in the fact's verified quote:
+
+| Quoted declaration | Supported coordinate scales |
+| --- | --- |
+| `Pad pitch e 0.95`, `Lead pitch F 2.54`, `Pin pitch e 0.50` or `Pitch e 0.95` | The site's centered index `i - (N-1)/2`, where `i` is its sorted geometric position in a row of `N` distinct sites of the same pad kind and perpendicular coordinate. Every site must equal its index times the pitch. Three sites permit `-1, 0, 1`; four permit `-3/2, -1/2, 1/2, 3/2`. Pin numbers and extraction order do not define the index. |
+| `Row spacing C 2.20` or `Row span C 2.20` | Only `-1/2` or `1/2`, on `y`. |
+| `Column spacing C 2.20` or `Column span C 2.20` | Only `-1/2` or `1/2`, on `x`. |
+| `Pad span C 2.20`, `Pin span C 2.20` or `Lead span C 2.20` | Only `-1/2` or `1/2`, on the cited axis. |
+
+Labels are case insensitive. The optional dimension symbol is an ASCII letter
+followed by letters, digits or underscores; an optional trailing `mm` is
+accepted. The quote must contain only that single declaration, with a positive
+value exactly as spelled in the fact. Other labels, ambiguous multi-dimension
+quotes, sparse or shifted pitch rows and arbitrary rational scales remain
+unsupported. No role is inferred from the fact ID, locator or conditions.
+For example, `-913/950` of the quoted `0.95` pitch cannot cite `-0.913`.
+An unsupported coordinate receives `unsupported_coordinate_scale` in
+`coverage_gaps`, even when the dimension fact itself is verified. This
+restriction uses the existing `{fact, scale}` bindings and shared fact format.
+
+A coordinate of exactly `0` is the declared origin and needs no fact. A fact must:
 
 - name the request's part and PDF;
 - have unit `mm`;

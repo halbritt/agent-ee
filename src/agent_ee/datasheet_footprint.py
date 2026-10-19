@@ -381,6 +381,33 @@ def compare(a, b):
     return differences + circuit, mapping
 
 
+def _coordinate_scale_supported(pad, key, fact, scale, pads):
+    """A quoted pitch declares a centered row; a quoted span declares its halves."""
+    declaration = re.fullmatch(
+        r'(?P<role>(?:(?:pad|pin|lead)[ \t]+)?pitch|'
+        r'(?:row|column)[ \t]+(?:spacing|span)|(?:pad|pin|lead)[ \t]+span)'
+        r'[ \t]+(?:[A-Za-z][A-Za-z0-9_]*[ \t]+)?' + re.escape(fact['value']) + r'(?:[ \t]+mm)?',
+        fact['source']['quote'], re.IGNORECASE)
+    if declaration is None or Decimal(fact['value']) <= 0:
+        return False
+    role = declaration['role'].lower().split()
+    if role[-1] != 'pitch':
+        if (role[0] == 'row' and key != 'y') or (role[0] == 'column' and key != 'x'):
+            return False
+        return abs(scale) == Fraction(1, 2)
+    other = 'y' if key == 'x' else 'x'
+    positions = sorted({Fraction(p[key]) for p in pads
+                        if p[other] == pad[other] and p['kind'] == pad['kind']})
+    # Indices are geometric sites, not pin numbers or extraction-list order.
+    # Every site must fit the same centered pitch, so sparse/arbitrary integers
+    # cannot justify an otherwise unsupported coordinate.
+    pitch = Fraction(Decimal(fact['value']))
+    return len(positions) > 1 and all(
+        position == pitch * Fraction(2 * i - len(positions) + 1, 2)
+        for i, position in enumerate(positions)) and scale == Fraction(
+            2 * positions.index(Fraction(pad[key])) - len(positions) + 1, 2)
+
+
 def _coverage(label, extraction, request, verified):
     gaps, cited = [], set()
     for pad in extraction['pads']:
@@ -411,6 +438,8 @@ def _coverage(label, extraction, request, verified):
                 reason = 'value_differs_from_fact'
             elif verified.get((label, binding['fact']), {}).get('status') != 'verified':
                 reason = 'fact_unverified'
+            elif key in ('x', 'y') and not _coordinate_scale_supported(pad, key, fact, scale, extraction['pads']):
+                reason = 'unsupported_coordinate_scale'
             if reason:
                 gaps.append(dict(where, fact=binding['fact'], reason=reason))
     return gaps, cited
@@ -787,8 +816,13 @@ def _prompt(request, label):
         'An np_thru_hole pad has number "" and name "" and copper equal to its hole.\n'
         '- name is the datasheet pin name for that pad number.\n'
         '- cite every value: {fact, scale}. fact is the id of one of your facts; value = scale x fact value. '
-        'w, h and hole sizes use scale "1" exactly. A coordinate may use a rational scale of a cited pitch or span '
-        '(for example "-1/2" of a row spacing). Only a coordinate of exactly 0 may be cited as null.\n'
+        'w, h and hole sizes use scale "1" exactly. Coordinate facts must quote a single dimension declaration: '
+        '"[Pad/Pin/Lead] pitch [symbol] value [mm]", "Row/Column spacing/span [symbol] value [mm]", or '
+        '"Pad/Pin/Lead span [symbol] value [mm]" (optional words in brackets; case insensitive). '
+        'Pitch scales are the geometric site indices i-(N-1)/2 in a complete centered row of N sites of the same '
+        'pad kind and perpendicular coordinate; every site must match the pitch. Span scales are only "1/2" '
+        'or "-1/2"; row spacing/span binds y, column spacing/span binds x. Other scales or quote labels are '
+        'unsupported coverage. Only a coordinate of exactly 0 may be cited as null.\n'
         '- Each fact is kind "dimension", unit "mm", value spelled exactly as printed (a plain decimal), with '
         f'source path "{pdf["path"]}", sha256 "{pdf["sha256"]}", the one-based physical page, a locator, and a '
         'quote copied exactly from `pdftotext -layout` output of that page that contains the value as a complete '
