@@ -198,6 +198,11 @@ to fresh board checks. It is a standalone scaffold seam; AGENTEE-87 still owns
 the command that creates the complete empty candidate. Two properties of the
 current reducer also stop a generation campaign early, and AGENTEE-88 addresses them:
 
+The [block-first gate](block-first.md) (AGENTEE-46) now checks each child in a
+separate captured harness, revalidates its sealed evidence and interface before
+integration, and publishes a hierarchy only after fresh integrated checks. The
+caller still chooses the architecture and supplies the schematic proposal.
+
 Opt-in [staged campaigns](staged-campaign.md) implement AGENTEE-48/88 in the
 existing check scheduler and convergence reducer:
 

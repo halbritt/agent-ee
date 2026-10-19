@@ -1181,3 +1181,13 @@ networkless executor; the owner performs the upload outside agent-ee.
 [Probe features](probe-features.md) extend the existing `parts_subset`, `part_binding` and `fab_export` checks without new predicates. `part_binding` accepts optional `probe_manifest` plus `netlist_check`; `fab_export` accepts optional `probe_manifest`. Both bind the complete source closure as immutable inputs. Required physical membership, pin/net identity, native schematic/board flags and saved pad geometry remain checked while qualified probes are absent from assembly CSV files. Marker-only, missing, swapped and byte-changed features are refused.
 
 Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.
+
+## Block-first integration
+
+The [block-first coordinator gate](block-first.md) uses existing `erc`, `netlist`
+and exact topology `netlist_parity` checks for each child sheet in its own
+captured harness. Additional declared checks, including pin contracts, retain
+their ordinary semantics. All block snapshots and sealed checks are revalidated
+before integrated checks run. Missing, defective or stale block evidence refuses
+publication of the proposed hierarchy; interface changes require a new block run.
+This adds no check kind and supplies no reviewer or campaign acceptance.

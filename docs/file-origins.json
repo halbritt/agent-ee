@@ -3145,6 +3145,18 @@
         "AE"
       ],
       "reviewed": "Original agent-ee six-pad pogo tracer authored under owner direction by agent-463, frozen 2026-10-18. Copied byte-exact only after verifying all four freeze input hashes; freeze.json SHA-256 a54bb1c2d678fdb74cc87405c983ac7dcb4f7d6be3d7b6e80a84cae185bcee09. No vendor design, symbol, footprint or text."
+    },
+    {
+      "paths": [
+        "src/agent_ee/block_first.py",
+        "tests/block_first_fixture.py",
+        "tests/test_block_first.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-46 coordinator gate, synthetic two-pin IC and resistor symbols, native hierarchical harness, independently authored XML topology expectations and regression tests. The ticket names atopile wrapper packages and the SchGen module library as mechanism references only; no source code, donor designs, library graphics or source text was copied."
     }
   ]
 }
