@@ -2370,6 +2370,16 @@
     },
     {
       "paths": [
+        "tests/test_pour_budget.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original pour-budget tests: an invented four-layer probe with GND planes and two signal net classes, a minimal empty schematic format literal, and the owned layer-policy probe from test_route_layer_policy. No copied design or library assets; the probe does not represent the telemetry pod."
+    },
+    {
+      "paths": [
         "tests/test_routing_campaign.py"
       ],
       "kind": "owned-source",
