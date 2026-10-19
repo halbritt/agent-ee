@@ -15,7 +15,7 @@ from agent_ee.candidate import capture
 from agent_ee.capabilities import describe_check
 from agent_ee.checks import Ctx, CheckError, check_part_decisions, run_checks
 from agent_ee.native_netlist import read_native_inventory
-from agent_ee.part_decisions import compile_decisions, evaluate
+from agent_ee.part_decisions import compile_decisions, evaluate, validate_deviation
 from agent_ee.spec_record import capture as capture_spec
 from agent_ee.storage import json_bytes, read_json, write_json
 from tests.test_native_binding import FIXTURE, GEN
@@ -118,6 +118,22 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(result['records'][-1]['deviation'], item)
         del item['purchase_source']
         self.assertEqual(self.result([item])['outcome'], 'defect')
+
+    def test_assembly_policy_class_is_shape_only_and_unsupported_policy_refused(self):
+        item = {'requirement_id': 'TEST-CD-HARNESS', 'original': {'mpn': '776228-1', 'lcsc': None},
+                'assembly': 'consigned', 'reason': 'Hand-fit after delivery', 'policy': 'owner_hand_fit',
+                'stock_deviation': {'reason': 'Owner hand-fit policy'}, 'purchase_source': 'Owned supplier list',
+                'evidence_refs': [{'path': 'evidence.txt', 'locator': 'purchase source'}]}
+        self.assertTrue(validate_deviation(item))
+        self.assertEqual(self.result([item])['outcome'], 'pass')
+        for policy in ('owner_hand_fit_v2', '', None, ['owner_hand_fit']):
+            with self.subTest(policy=policy):
+                self.assertRaisesRegex(ValueError, 'unsupported assembly deviation policy',
+                                       validate_deviation, dict(item, policy=policy))
+                self.assertEqual(self.result([dict(item, policy=policy)])['outcome'], 'defect')
+        substitution = deviation()
+        substitution['policy'] = 'owner_hand_fit'
+        self.assertRaisesRegex(ValueError, 'expected fields', validate_deviation, substitution)
 
     def test_deviation_without_reason_or_evidence_defect(self):
         for field, value in [('reason', ''), ('evidence_refs', []),

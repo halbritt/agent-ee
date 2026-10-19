@@ -95,6 +95,7 @@ Live JLCPCB stock reaches it only through an owner-run
 | `as_of` | `str \| None` | catalog `snapshot_date` for legacy snapshots | Evaluation date or ISO-8601 timestamp. For JLCPCB captures the coordinator overrides this with the generation receipt completion time (campaign) or review time (standalone); direct evaluation API calls require it. |
 | `stock_floor` | `int >= 0` | `0` | Minimum stock per LCSC ID: `threshold = max(quantity_per_board * boards, stock_floor)`. |
 | `deviations` | `str \| None` | `None` | Captured mutable `agent-ee.part-deviations/1` file shared with `part_decisions`. |
+| `hand_fit_policy` | `object \| None` | `None` | Citation of a captured owner decision: `source`, `sha256`, `line`, `quote` and exact `identities`. See [owner hand-fit policy](#owner-hand-fit-policy). |
 
 `property` lookups for `Footprint`, `LCSC` and `Manufacturer` also accept the
 common aliases (`footprint`, `LCSC Part`, `jlcpcb_part`, `Mfr`, ...); other
@@ -102,8 +103,7 @@ names are exact. Empty and `~` values count as missing.
 
 ## Declared hand-fit deviations
 
-The owner's telemetry-pod decision permits hand-fitting the TE 776228-1 header,
-and NEO-M9N or an SMA connector if unavailable from JLCPCB. An assembly entry
+An assembly entry
 in the [shared deviations format](part-decisions.md#captured-deviations) must
 name its exact `original.mpn`, `assembly` (`consigned` or `hand_soldered`),
 `purchase_source`, `reason`, `stock_deviation.reason`, and captured
@@ -133,6 +133,88 @@ These parts remain visible in `populated_refs` and `components`, with
 or tier counts. `counts.declared_deviation` and the summary distinguish them
 from JLC assembly parts. Every remaining component grades normally. Substitution
 records remain the `part_decisions` check's presence obligation.
+
+## Owner hand-fit policy
+
+A declaration of the stock-unavailable class above cannot express a part the
+owner wants hand-fitted whatever JLCPCB stocks. An assembly entry with
+`"policy": "owner_hand_fit"` is a distinct class. The deviations file only
+names the class; its authority is the check's `hand_fit_policy` parameter:
+
+```json
+{
+  "hand_fit_policy": {
+    "source": "requirements/spec.md",
+    "sha256": "<sha256 of the captured source>",
+    "line": 76,
+    "quote": "<exact text from that line>",
+    "identities": [{"mpn": "776228-1", "lcsc": "C498958"}]
+  }
+}
+```
+
+`source` must be a captured input other than the deviations file. It becomes an
+immutable input. The check refuses the run (`failed`) if the source bytes
+differ from `sha256` or `quote` is not a substring of line `line`. A
+malformed citation, or an identity whose MPN is not a whole token in `quote`,
+is `unsupported`. A paraphrase is not accepted. The LCSC is bound by the
+scope, not by the quote.
+
+The quote only locates the statement. The checker reads the whole Markdown
+unit holding line `line`, not the quote, so a quote cut off before a condition
+gets the same result. The unit is a list item plus its continuation lines, a
+table row, or a paragraph. The run is refused (`failed`) unless every listed
+identity is named unconditionally:
+
+- the unit affirmatively declares a hand-fit (`hand-fit…`, `hand-solder…`,
+  `fitted by hand` or `soldered by hand`, not negated);
+- the MPN occurs exactly once in the unit;
+- the unit has balanced parentheses. It is not in a code block, a nested list
+  item, or a list item after a lead-in that ends in `:`. Its nearest heading
+  has no conditional qualifier;
+- every conditional qualifier in the unit (`if`, `unless`, `when`, `where`,
+  `provided`, `only`, `except`, `should`, `assuming`, `until`, `once`,
+  `while`, `otherwise`, `in case`, `as long as`, `subject to`, `unstocked`,
+  `unavailable`, `out of stock` and similar) must be confined. A qualifier is
+  confined only when it sits in the last comma-separated conjunct of a
+  parenthesized enumeration, that conjunct starts with `and` or `or`, names a
+  part-like token and has no predicate (`is`, `are`, `be`, `fitted`,
+  `hand-fit…`). Any other qualifier has an unbounded scope, which refuses every
+  identity in the unit. An identity inside a confined conjunct is named only
+  conditionally and is refused.
+
+A conditionally named part can only use the stock-unavailable class.
+
+A policy entry is admitted regardless of positive or zero stock only when:
+
+- its `original` equals one listed identity exactly (MPN and LCSC, null
+  included);
+- with an LCSC, a catalog row for it exists, has that exact MPN, known stock
+  and a fresh `last_seen` (same staleness rules as BOM parts; a JLC capture
+  must also pass its run binding and age gate);
+- without an LCSC, no catalog row has the MPN and no matched native component
+  carries a real LCSC ID;
+- every other rule above holds: populated in-BOM match, the
+  `JLCPCB_Assembly=not_assembled` marker, purchase source, reasons, captured
+  evidence and no duplicates.
+
+An entry without `policy` keeps the stock-unavailable class unchanged: positive
+or null stock is still refused, even when a citation is configured. A `policy`
+entry without a configured citation, for an unlisted identity, or with an
+unsupported value is an `invalid_assembly_deviation` defect. Accepted policy
+entries report `stock_state: owner_hand_fit`, `policy`, `policy_citation` and
+`catalog_observation`; the report's `hand_fit_policy` echoes the verified
+citation. They stay outside `parts`, stock quantities and tier totals.
+
+For the telemetry pod, the canonical owner text is
+[fixtures/telemetry-pod/spec.md](../fixtures/telemetry-pod/spec.md) line 76
+(acceptance criterion 5): "(the 776228-1 header, and the NEO-M9N or SMA
+connector if unstocked)". The header is admitted as a policy identity. Listing
+NEO-M9N or SMA in `hand_fit_policy.identities`, with the full quote or a
+shortened one, refuses the run. They stay stock-unavailable declarations.
+Pod adoption belongs to the pod lane.
+
+## Fabrication exclusion
 
 For fabrication, set the `fab_export` parameter `assembly_exclusion` to
 `JLCPCB_Assembly=not_assembled` and put the marker on both symbol and footprint.

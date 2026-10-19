@@ -81,6 +81,7 @@ ALLOWED_PARAM_KEYS = frozenset((
     "stock_floor",
     "calibration_inputs",
     "deviations",
+    "hand_fit_policy",
 ))
 
 CATALOG_SQLITE_COLUMNS = (
@@ -857,6 +858,10 @@ def validate_params(params):
     if deviations is not None and str(safe_relative(deviations)) != deviations:
         raise ValueError("deviations must be a normalized captured path")
 
+    hand_fit_policy = params.get("hand_fit_policy")
+    if hand_fit_policy is not None:
+        hand_fit_policy = _validate_hand_fit_policy(hand_fit_policy, deviations)
+
     return {
         "catalog": catalog,
         "catalog_sha256": catalog_sha256,
@@ -870,7 +875,40 @@ def validate_params(params):
         "as_of": as_of.strip() if isinstance(as_of, str) else None,
         "stock_floor": stock_floor,
         "deviations": deviations,
+        "hand_fit_policy": hand_fit_policy,
     }
+
+
+def _validate_hand_fit_policy(raw, deviations):
+    """Scope-held citation of a captured owner decision naming the exact hand-fit identities."""
+    from .hardware_interface import exact_keys, text
+    from .part_decisions import names_identity, part
+    exact_keys(raw, "source sha256 line quote identities")
+    source = raw["source"]
+    if not isinstance(source, str) or str(safe_relative(source)) != source:
+        raise ValueError("hand_fit_policy.source must be a normalized captured path")
+    if source == deviations:
+        raise ValueError("hand_fit_policy.source cannot be the mutable deviations file")
+    if not isinstance(raw["sha256"], str) or not SHA256_RE.fullmatch(raw["sha256"]):
+        raise ValueError("hand_fit_policy.sha256 must be a 64-character lowercase hex digest")
+    if isinstance(raw["line"], bool) or not isinstance(raw["line"], int) or raw["line"] < 1:
+        raise ValueError("hand_fit_policy.line must be a positive integer")
+    text(raw["quote"])
+    if "\n" in raw["quote"] or "\r" in raw["quote"]:
+        raise ValueError("hand_fit_policy.quote must be text from one source line")
+    identities = raw["identities"]
+    if not isinstance(identities, list) or not identities:
+        raise ValueError("hand_fit_policy.identities must name at least one exact identity")
+    for identity in identities:
+        part(identity)
+        if identity["mpn"] is None:
+            raise ValueError("hand_fit_policy identity requires an exact MPN")
+        if not names_identity(identity["mpn"], raw["quote"]):
+            raise ValueError(f"hand_fit_policy.quote does not name {identity['mpn']!r}")
+    if len({(i["mpn"], i["lcsc"]) for i in identities}) != len(identities):
+        raise ValueError("duplicate hand_fit_policy identity")
+    return {key: raw[key] for key in ("source", "sha256", "line", "quote")} | {
+        "identities": [dict(i) for i in identities]}
 
 
 def capability(params, files, inputs=None):
@@ -883,6 +921,10 @@ def capability(params, files, inputs=None):
         raise ValueError("deviations must be a captured input")
 
     immutable_inputs = [catalog_rel]
+    if cfg["hand_fit_policy"] is not None:
+        if cfg["hand_fit_policy"]["source"] not in files:
+            raise ValueError("hand_fit_policy.source must be a captured input")
+        immutable_inputs.append(cfg["hand_fit_policy"]["source"])
     if inputs is not None:
         catalog_path = Path(inputs) / catalog_rel
         if catalog_path.is_file():
@@ -922,7 +964,199 @@ def capability(params, files, inputs=None):
     }
 
 
-def _assembly_deviations(inputs, cfg, extracted, catalog, captured_files):
+def _stale_reason(cfg, catalog, lcsc, last_seen):
+    """Why a catalog row's stock observation is stale or unverified at the evaluation time; None when fresh."""
+    as_of_raw = cfg["as_of"] or catalog["as_of"] or catalog["snapshot_date"]
+    as_of_date, as_of_dt = _parse_iso_date_or_datetime(as_of_raw, "as_of")
+    effective_stale_before_str = cfg["stale_before"] or catalog["stale_before"]
+    stale_before_date = None
+    if effective_stale_before_str is not None:
+        stale_before_date, _ = _parse_iso_date_or_datetime(effective_stale_before_str, "stale_before")
+    max_stock_age_days = cfg["max_stock_age_days"]
+    max_age_hours = cfg["max_age_hours"]
+    if last_seen is None:
+        return "missing last_seen timestamp"
+    if stale_before_date is None and max_stock_age_days is None and max_age_hours is None:
+        return ("no maximum stock age is declared (catalog or param stale_before, "
+                "max_stock_age_days or max_age_hours)")
+    seen_date, seen_dt = _parse_iso_date_or_datetime(last_seen, f"{lcsc}.last_seen")
+    age_days = (as_of_date - seen_date).days
+    age_hours = (as_of_dt - seen_dt).total_seconds() / 3600.0
+    if seen_dt > as_of_dt:
+        return f"last_seen {last_seen} is after the evaluation date {as_of_raw}"
+    if stale_before_date is not None and seen_date < stale_before_date:
+        return f"last_seen {last_seen} is older than stale_before {effective_stale_before_str}"
+    if max_stock_age_days is not None and age_days > max_stock_age_days:
+        return (f"last_seen {last_seen} is {age_days} day(s) old as of {as_of_raw} "
+                f"(max_stock_age_days={max_stock_age_days})")
+    if max_age_hours is not None and age_hours > max_age_hours:
+        return (f"last_seen {last_seen} is {age_hours:.1f} hour(s) old as of {as_of_raw} "
+                f"(max_age_hours={max_age_hours})")
+    return None
+
+
+def _verify_hand_fit_policy(inputs, policy):
+    """The cited owner decision must be the pinned captured bytes and hold the exact quote on its line."""
+    path, rel = _resolve_captured_file(inputs, policy["source"], "hand_fit_policy source")
+    actual = digest(path)
+    if actual != policy["sha256"]:
+        raise AssemblyReadinessExecutionError(
+            "failed", f"hand_fit_policy source {rel!r} sha256 mismatch: expected {policy['sha256']}, got {actual}")
+    try:
+        lines = path.read_bytes().decode("utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise AssemblyReadinessExecutionError("failed", f"unreadable hand_fit_policy source: {exc}") from exc
+    if policy["line"] > len(lines) or policy["quote"] not in lines[policy["line"] - 1]:
+        raise AssemblyReadinessExecutionError(
+            "failed", f"hand_fit_policy quote is absent from {rel!r} line {policy['line']}")
+    try:
+        unit = _policy_unit(lines, policy["line"] - 1)
+        for identity in policy["identities"]:
+            _require_unconditional(unit, identity["mpn"])
+    except ValueError as exc:
+        raise AssemblyReadinessExecutionError(
+            "failed", f"hand_fit_policy {rel!r} line {policy['line']}: {exc}") from exc
+    return policy | {"class": "owner_hand_fit"}
+
+
+# The owner text, not the quote, decides whether a policy identity is unconditional.
+# Any qualifier below is conditional unless its scope is provably confined to a
+# sibling part conjunct; otherwise every identity in the unit is refused.
+CONDITIONAL_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:if|unless|when|whenever|where|wherever|whereas|provided|providing|only|except|"
+    r"excepting|should|assuming|suppose|supposing|lest|until|once|while|otherwise|depending|depends|"
+    r"contingent|conditional|conditionally|in\s+case|in\s+the\s+event|as\s+long\s+as|so\s+long\s+as|"
+    r"subject\s+to|unstocked|unavailable|out\s+of\s+stock|not\s+in\s+stock)(?![A-Za-z0-9_])", re.I)
+HAND_FIT_TERM = r"(?:hand[- ]?(?:fit|solder)|(?:fit|fitted|solder|soldered)\s+by\s+hand(?![A-Za-z0-9_]))"
+HAND_FIT_RE = re.compile(r"(?<![A-Za-z0-9_])" + HAND_FIT_TERM, re.I)
+NEGATED_HAND_FIT_RE = re.compile(
+    r"(?:(?<![A-Za-z0-9_])(?:not|never|no|nor|cannot)|n't)\s+(?:[A-Za-z]+\s+){0,2}" + HAND_FIT_TERM, re.I)
+PREDICATE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:is|are|be|been|being|was|were|fitted|assembled|excluded|soldered)(?![A-Za-z0-9_])|"
+    + HAND_FIT_RE.pattern, re.I)
+PART_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_/-])[A-Z0-9][A-Z0-9-]+[A-Z0-9](?![A-Za-z0-9_/-])")
+LIST_ITEM_RE = re.compile(r"^(\s*)(?:[-*+]|[0-9]+[.)])\s+")
+
+
+def _unit_bounds(lines, index):
+    """First and last line of the Markdown block holding lines[index], and whether it is a list item."""
+    def plain(i):
+        line = lines[i]
+        return bool(line.strip()) and not LIST_ITEM_RE.match(line) and not line.lstrip().startswith(("#", "|"))
+
+    if not lines[index].strip() or lines[index].lstrip().startswith(("#", "|")):
+        return index, index, False
+    start = index
+    while LIST_ITEM_RE.match(lines[start]) is None and start > 0 and lines[start - 1].strip() and (
+            plain(start - 1) or LIST_ITEM_RE.match(lines[start - 1])):
+        start -= 1
+    end = index
+    while end + 1 < len(lines) and plain(end + 1):
+        end += 1
+    return start, end, LIST_ITEM_RE.match(lines[start]) is not None
+
+
+def _policy_unit(lines, index):
+    """Whole owner statement holding the cited line; refuses when what governs it is ambiguous."""
+    if sum(1 for line in lines[:index] if line.lstrip().startswith(("```", "~~~"))) % 2:
+        raise ValueError("the cited line is inside a code block")
+    start, end, item = _unit_bounds(lines, index)
+    if item:
+        if LIST_ITEM_RE.match(lines[start]).group(1):
+            raise ValueError("a nested list item may be governed by its parent item")
+        k = start - 1
+        while k >= 0:
+            if not lines[k].strip():
+                k -= 1
+                continue
+            s, e, prior_item = _unit_bounds(lines, k)
+            if lines[e].rstrip().endswith(":"):
+                raise ValueError("the cited list item may complete a lead-in ending in ':'")
+            if not prior_item:
+                break
+            k = s - 1
+    heading = next((line for line in reversed(lines[:start]) if line.lstrip().startswith("#")), "")
+    if CONDITIONAL_RE.search(heading):
+        raise ValueError(f"the governing heading {heading.strip()!r} is conditional")
+    return " ".join(line.strip() for line in lines[start:end + 1])
+
+
+def _confined_spans(unit):
+    """Spans of last parenthesized part conjuncts ('(A, and B if unstocked)') that alone carry a qualifier."""
+    stack, groups = [], []
+    for pos, char in enumerate(unit):
+        if char == "(":
+            stack.append(pos)
+        elif char == ")":
+            if not stack:
+                raise ValueError("unbalanced parentheses make clause boundaries ambiguous")
+            groups.append((stack.pop(), pos))
+    if stack:
+        raise ValueError("unbalanced parentheses make clause boundaries ambiguous")
+    spans = []
+    for match in CONDITIONAL_RE.finditer(unit):
+        pos = match.start()
+        inner = [g for g in groups if g[0] < pos < g[1]]
+        span = None
+        if inner:
+            opening, closing = max(inner)
+            nested = [g for g in groups if opening < g[0] < closing]
+            cuts = [i for i in range(opening + 1, closing) if unit[i] in ",;" and
+                    not any(a < i < b for a, b in nested)]
+            last = (cuts[-1] + 1 if cuts else opening + 1, closing)
+            conjunct = unit[last[0]:last[1]]
+            if (cuts and last[0] <= pos and re.match(r"\s*(?:and|or)\s", conjunct) and
+                    PART_TOKEN_RE.search(conjunct) and not PREDICATE_RE.search(conjunct) and
+                    ":" not in conjunct and ". " not in conjunct):
+                span = last
+        if span is None:
+            raise ValueError(f"conditional qualifier {match.group(0)!r} has a scope that cannot be bounded "
+                             "to another part")
+        spans.append(span)
+    return spans
+
+
+def _require_unconditional(unit, mpn):
+    """The identity must be named once, by a non-negated hand-fit statement, outside every conditional clause."""
+    if not HAND_FIT_RE.search(unit) or NEGATED_HAND_FIT_RE.search(unit):
+        raise ValueError("the cited statement does not affirmatively declare a hand-fit")
+    pattern = r"(?<![A-Za-z0-9_/-])" + re.escape(mpn) + r"(?![A-Za-z0-9_/-])"
+    found = [m.start() for m in re.finditer(pattern, unit)]
+    if len(found) != 1:
+        raise ValueError(f"{mpn!r} is named {len(found)} times in the cited statement; expected exactly once")
+    if any(a <= found[0] < b for a, b in _confined_spans(unit)):
+        raise ValueError(f"{mpn!r} is named only conditionally; a conditional hand-fit must use the "
+                         "stock-unavailable deviation class")
+
+
+def _owner_hand_fit(citation, cfg, catalog, identity, matches):
+    """Admit a declared owner hand-fit regardless of stock, only for an identity the cited decision names."""
+    if citation is None:
+        raise ValueError('owner_hand_fit deviation requires the scope hand_fit_policy citation; '
+                         'the deviations file cannot assert it')
+    if identity not in citation['identities']:
+        raise ValueError(f'identity {identity} is not named by the owner hand-fit policy')
+    if identity['lcsc'] is None:
+        if any(LCSC_RE.fullmatch(_lookup_single_property(c['properties'], 'LCSC') or '') for c in matches):
+            raise ValueError('owner hand-fit identity without LCSC cannot cover a native LCSC id')
+        if any(p['mpn'] == identity['mpn'] for p in catalog['parts'].values()):
+            raise ValueError('catalog lists this MPN; the owner hand-fit identity must name its LCSC')
+        return None
+    row = catalog['parts'].get(identity['lcsc'])
+    if row is None:
+        raise ValueError('owner hand-fit identity has no captured catalog observation')
+    if row['mpn'] != identity['mpn']:
+        raise ValueError(f"catalog row {identity['lcsc']} MPN {row['mpn']!r} differs from the policy identity")
+    if row['stock'] is None:
+        raise ValueError('owner hand-fit identity has unknown stock telemetry')
+    stale = _stale_reason(cfg, catalog, identity['lcsc'], row['last_seen'])
+    if stale is not None:
+        raise ValueError(f'owner hand-fit stock observation is stale or unverified: {stale}')
+    return {'lcsc': row['lcsc'], 'mpn': row['mpn'], 'stock': row['stock'],
+            'last_seen': row['last_seen'], 'tier': row['tier']}
+
+
+def _assembly_deviations(inputs, cfg, extracted, catalog, captured_files, citation=None):
     from .hardware_interface import exact_keys
     from .part_decisions import evidence_references, validate_deviation
 
@@ -951,15 +1185,18 @@ def _assembly_deviations(inputs, cfg, extracted, catalog, captured_files):
                        (identity['lcsc'] is None or c['properties'].get('LCSC') == identity['lcsc'])]
             if not matches:
                 raise ValueError('assembly deviation has no populated BOM component with its exact identity')
-            matched_ids = {_lookup_single_property(c['properties'], 'LCSC') for c in matches}
-            stocked = [p['lcsc'] for p in catalog['parts'].values() if
-                       (p['mpn'] == identity['mpn'] or p['lcsc'] in matched_ids) and
-                       p['stock'] is not None and p['stock'] > 0]
-            if stocked:
-                raise ValueError(f'deviation for stocked part refused: {stocked}')
-            if any(p['stock'] is None for p in catalog['parts'].values() if
-                   p['mpn'] == identity['mpn'] or p['lcsc'] in matched_ids):
-                raise ValueError('unknown stock cannot establish an unavailable part')
+            if 'policy' in deviation:
+                observation = _owner_hand_fit(citation, cfg, catalog, identity, matches)
+            else:
+                matched_ids = {_lookup_single_property(c['properties'], 'LCSC') for c in matches}
+                stocked = [p['lcsc'] for p in catalog['parts'].values() if
+                           (p['mpn'] == identity['mpn'] or p['lcsc'] in matched_ids) and
+                           p['stock'] is not None and p['stock'] > 0]
+                if stocked:
+                    raise ValueError(f'deviation for stocked part refused: {stocked}')
+                if any(p['stock'] is None for p in catalog['parts'].values() if
+                       p['mpn'] == identity['mpn'] or p['lcsc'] in matched_ids):
+                    raise ValueError('unknown stock cannot establish an unavailable part')
             for comp in matches:
                 if comp['reference'] in seen:
                     raise ValueError('duplicate assembly deviation for component')
@@ -972,14 +1209,19 @@ def _assembly_deviations(inputs, cfg, extracted, catalog, captured_files):
                     _capture_gate(catalog['capture'], cfg, [lcsc] if lcsc not in catalog['parts'] else [])
             for comp in matches:
                 seen.add(comp['reference'])
-                declared.append({'reference': comp['reference'], 'sheet': comp['sheet'],
+                entry = {'reference': comp['reference'], 'sheet': comp['sheet'],
                     'sheet_path': comp['sheet_path'], 'uuid': comp['uuid'],
                     'mpn': identity['mpn'], 'lcsc': _lookup_single_property(comp['properties'], 'LCSC') or None,
                     'assembly': deviation['assembly'], 'purchase_source': deviation['purchase_source'],
                     'stock_deviation': deviation['stock_deviation'], 'reason': deviation['reason'],
                     'requirement_id': deviation['requirement_id'], 'evidence': evidence,
                     'declaration_index': index, 'deviations_path': rel, 'deviations_sha256': digest(path),
-                    'assembly_rule': 'JLCPCB_Assembly=not_assembled', 'stock_state': 'declared_deviation'})
+                    'assembly_rule': 'JLCPCB_Assembly=not_assembled', 'stock_state': 'declared_deviation'}
+                if 'policy' in deviation:
+                    entry.update(stock_state='owner_hand_fit', policy=deviation['policy'],
+                                 policy_citation={k: citation[k] for k in ('source', 'sha256', 'line', 'quote')},
+                                 catalog_observation=observation)
+                declared.append(entry)
         except AssemblyReadinessExecutionError:
             raise
         except (ValueError, TypeError, KeyError, OSError) as exc:
@@ -1020,7 +1262,10 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
     excluded_from_bom = extracted["excluded_from_bom"]
     ignored_non_assembly = extracted["ignored_non_assembly"]
 
-    declared_deviation, findings = _assembly_deviations(Path(inputs_root), cfg, extracted, catalog, captured_files)
+    citation = (_verify_hand_fit_policy(Path(inputs_root), cfg["hand_fit_policy"])
+                if cfg["hand_fit_policy"] is not None else None)
+    declared_deviation, findings = _assembly_deviations(Path(inputs_root), cfg, extracted, catalog, captured_files,
+                                                        citation)
     declared_refs = {d['reference'] for d in declared_deviation}
     missing_properties_by_ref = {}
     missing_rating_refs = []
@@ -1201,19 +1446,15 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
 
     # 3. Evaluate matched LCSC parts: 3-state stock, freshness, quantity * boards, and Basic/Preferred/Extended tiers.
     as_of_raw = cfg["as_of"] or catalog["as_of"] or catalog["snapshot_date"]
-    as_of_date, as_of_dt = _parse_iso_date_or_datetime(as_of_raw, "as_of")
+    _parse_iso_date_or_datetime(as_of_raw, "as_of")
     effective_stale_before_str = cfg["stale_before"] or catalog["stale_before"]
-    stale_before_date = None
     if effective_stale_before_str is not None:
-        stale_before_date, _ = _parse_iso_date_or_datetime(effective_stale_before_str, "stale_before")
+        _parse_iso_date_or_datetime(effective_stale_before_str, "stale_before")
 
     boards = cfg["boards"]
     stock_floor = cfg["stock_floor"]
     max_stock_age_days = cfg["max_stock_age_days"]
     max_age_hours = cfg["max_age_hours"]
-    freshness_declared = (
-        stale_before_date is not None or max_stock_age_days is not None or max_age_hours is not None
-    )
 
     tier_counts = {
         "basic_unique": 0,
@@ -1280,41 +1521,8 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
                 ),
             })
         else:
-            is_stale = False
-            stale_reason = None
-            if last_seen is None:
-                is_stale = True
-                stale_reason = "missing last_seen timestamp"
-            elif not freshness_declared:
-                is_stale = True
-                stale_reason = (
-                    "no maximum stock age is declared (catalog or param stale_before, "
-                    "max_stock_age_days or max_age_hours)"
-                )
-            else:
-                seen_date, seen_dt = _parse_iso_date_or_datetime(last_seen, f"{lcsc}.last_seen")
-                age_days = (as_of_date - seen_date).days
-                age_hours = (as_of_dt - seen_dt).total_seconds() / 3600.0
-                if seen_dt > as_of_dt:
-                    is_stale = True
-                    stale_reason = f"last_seen {last_seen} is after the evaluation date {as_of_raw}"
-                elif stale_before_date is not None and seen_date < stale_before_date:
-                    is_stale = True
-                    stale_reason = f"last_seen {last_seen} is older than stale_before {effective_stale_before_str}"
-                elif max_stock_age_days is not None and age_days > max_stock_age_days:
-                    is_stale = True
-                    stale_reason = (
-                        f"last_seen {last_seen} is {age_days} day(s) old as of {as_of_raw} "
-                        f"(max_stock_age_days={max_stock_age_days})"
-                    )
-                elif max_age_hours is not None and age_hours > max_age_hours:
-                    is_stale = True
-                    stale_reason = (
-                        f"last_seen {last_seen} is {age_hours:.1f} hour(s) old as of {as_of_raw} "
-                        f"(max_age_hours={max_age_hours})"
-                    )
-
-            if is_stale:
+            stale_reason = _stale_reason(cfg, catalog, lcsc, last_seen)
+            if stale_reason is not None:
                 stock_state = "unknown"
                 findings.append({
                     "severity": "unknown",
@@ -1460,6 +1668,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
         "excluded_from_bom": [c["reference"] for c in excluded_from_bom],
         "declared_deviation": declared_deviation,
         "deviations_sha256": digest(Path(inputs_root) / cfg['deviations']) if cfg['deviations'] else None,
+        "hand_fit_policy": citation,
         "ignored_non_assembly": [
             {"reference": c["reference"], "lib_id": c["lib_id"], "reason": c["ignore_reason"]}
             for c in ignored_non_assembly
