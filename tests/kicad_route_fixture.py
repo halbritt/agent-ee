@@ -24,7 +24,11 @@ if name == 'argparse':
 args = sys.argv[1:]
 assert args[:2] == ['run', '--out'] and args[3] == '--json', args
 out = Path(args[2])
-opts = dict(zip(args[4::2], args[5::2]))
+# --backend-arg=VALUE tokens, as the adapter passes KRT layer flags (AGENTEE-231).
+backend_args = [a.split('=', 1)[1] for a in args if a.startswith('--backend-arg=')]
+paired_args = [a for a in args if not a.startswith('--backend-arg=')]
+opts = dict(zip(paired_args[4::2], paired_args[5::2]))
+area_bound = float(opts['--pour-area-loss']) if '--pour-area-loss' in opts else None
 
 
 def sha(p):
@@ -55,7 +59,9 @@ if name == 'reference_differs':
 files = {p.name: sha(p) for p in sorted(ref.iterdir())}
 write(run / 'snapshot.json', {'project': project, 'files': files})
 fingerprint = hashlib.sha256(''.join(f'{n}\0{d}\n' for n, d in sorted(files.items())).encode()).hexdigest()
-write(run / 'facts/reference-facts.json', {'nets': {}})
+# As the pin's facts.py: the input board's hash and its tracks.
+write(run / 'facts/reference-facts.json', {'nets': {}, 'tracks': scenario.get('reference_tracks', []),
+                                           'sha256': scenario.get('reference_sha256', files.get(board))})
 if name == 'early_exit':
     sys.exit('could not read the input board: see facts/reference-facts.log')
 if name in ('refused', 'unknown_refusal_version', 'human_refusal'):
@@ -70,7 +76,7 @@ if name in ('refused', 'unknown_refusal_version', 'human_refusal'):
     sys.exit(4)
 settings = {'backend': opts['--backend'], 'budget_s': int(opts['--budget']), 'protect': opts['--protect'],
             'max_iterations': None, 'passes': None, 'default_clearance_mm': None, 'clearance_margin_mm': None,
-            'pour_area_loss_pct': None, 'pour_min_spokes': None, 'backend_args': [],
+            'pour_area_loss_pct': area_bound, 'pour_min_spokes': None, 'backend_args': backend_args,
             'backend_env': {'KICAD_X': '1'} if name == 'backend_env' else {}, 'reserve_spokes': None,
             'stall_s': None, 'barrier': None, 'mode': 'all', 'rule_floor_sha256': None}
 paired = opts.get('--diff-pairs') == 'auto'
@@ -115,7 +121,16 @@ if process_ok:
         f.write(f'\n# {marker}\n')
     # As kicad-cli pcb drc --save-board does at the pin.
     (cand / (Path(board).stem + '.kicad_prl')).write_text('{"board": {}}\n')
-    write(run / 'validate/preservation.json', [{'check': 'footprints', 'status': 'PASS'}])
+    checks = [{'check': 'footprints', 'status': 'PASS'}]
+    if area_bound is not None and not scenario.get('no_pour'):
+        # The pin's pour_integrity record and delta, graded against the declared bound.
+        layers = scenario.get('pour_layers', [{'net_layer': 'GND@In1.Cu', 'area_mm2': [100.0, 100.0],
+                                                'area_delta_pct': 0.0}])
+        over = [r for r in layers if r['area_delta_pct'] is not None and -r['area_delta_pct'] > area_bound]
+        checks.append({'check': 'pour_integrity', 'status': 'FAIL' if over else 'PASS', 'detail': 'fixture'})
+        write(run / 'validate/pour-integrity.json', {'check': 'pour_integrity', 'area_loss_limit_pct': area_bound,
+                                                     'layers': layers})
+    write(run / 'validate/preservation.json', checks)
     (run / 'validate/candidate-drc.log').write_text('fixture DRC log\n')
     (run / 'work').mkdir()
     (run / 'work/krt.log').write_text('fixture backend log\n')
@@ -135,6 +150,11 @@ if name == 'validation_failed':
     validation.update(status='FAIL', reasons=['1 new DRC violations: clearance 1'])
 if name == 'backend_failure':
     validation = {'status': 'NOT_RUN', 'reasons': ['backend produced no candidate']}
+if process_ok and any(c['status'] == 'FAIL' for c in checks):
+    validation.update(status='FAIL', reasons=['preservation pour_integrity: fixture'])
+if process_ok and area_bound is not None:
+    write(run / 'validate/candidate-facts.json', {'sha256': board_sha, 'tracks': scenario.get(
+        'tracks', [{'kind': 'segment', 'layer': 'F.Cu', 'net': '/IN', 'uuid': 'fixture-track-1'}])})
 if name == 'board_hash_mismatch':
     validation['delivered_board_sha256'] = '0' * 64
 code = {'COMPLETE': 0, 'INCOMPLETE': 2, 'NOT_RUN': 2}[routing_status]
