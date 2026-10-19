@@ -27,7 +27,7 @@ do not replace the expected hash with the downloaded hash.
 ```sh
 set -eu
 J1_INPUT_DIR=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/agent-ee-j1.XXXXXX")
-curl --fail --location --retry 2 --max-time 90 \
+curl --fail --location --retry 2 --max-time 90 --max-filesize 10000000 \
   https://www.farnell.com/cad/2916153.pdf \
   --output "$J1_INPUT_DIR/te-776228-1.pdf"
 printf '%s  %s\n' \
