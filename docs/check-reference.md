@@ -391,9 +391,11 @@ surcharge and the joint small-via surcharge from host captures. A 0.25 mm drill
 with a 0.4 mm diameter reports its saved via UUID as an extra charge; a 0.45 mm
 diameter is outside that joint band. Its `/2` `drill_options` declaration checks
 saved integer-nanometre drills against 0.15, 0.2 and 0.25 mm or the continuous
-range from 0.3 mm. Other drills (including 0.22 and 0.28 mm) make drill grading
-unsupported and the check unknown, with saved via UUIDs in `unsupported_vias`.
-Drill surcharge records then stay unevaluated. Supplier process applicability
+range from 0.3 mm. A drill below the sourced 0.15 mm minimum is a `via-drill`
+defect (`below_minimum_vias`), never a surcharge. Other drills (including 0.22 and
+0.28 mm) make drill grading unsupported and the check unknown, with saved via
+UUIDs in `unsupported_vias`; beside a below-minimum drill, unknown takes
+precedence and both lists are kept. Drill surcharge records then stay unevaluated. Supplier process applicability
 and pricing remain unqualified.
 The [telemetry-pod profile](telemetry-pod-fab-profile.md) records
 eight dated JLCPCB native/geometry limits plus a finished-thickness tolerance

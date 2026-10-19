@@ -103,6 +103,32 @@ class StandardProfileContractTest(unittest.TestCase):
         empty = classify_preferred([record], {'outline_xy_mm': [10, 10], 'vias': []})[0]
         self.assertEqual((empty['execution'], empty['status']), ('ok', 'satisfied'))
 
+    def test_below_minimum_drill_needs_native_citation_and_unlisted_drill_takes_precedence(self):
+        record = next(c for c in self.compile()['constraints'] if c['id'] == 'via-drill')
+        low, unlisted = {'uuid': 'a', 'drill_nm': 149999}, {'uuid': 'b', 'drill_nm': 180000}
+        cited = [{'items': [{'uuid': 'a'}]}]
+        cases = (('cited', 'violation', cited, [low], ('ok', 'violation')),
+                 ('satisfied', 'satisfied', [], [low], ('unsupported', 'not_evaluated')),
+                 ('uncited', 'violation', [{'items': [{'uuid': 'z'}]}], [low],
+                  ('unsupported', 'not_evaluated')),
+                 ('mixed', 'violation', cited, [low, unlisted], ('unsupported', 'not_evaluated')))
+        for name, status, findings, vias, expected in cases:
+            with self.subTest(case=name):
+                trial = {**copy.deepcopy(record), 'execution': 'ok', 'status': status,
+                         'native_findings': findings}
+                result = classify_preferred([trial], {'outline_xy_mm': [10, 10], 'vias': vias})[0]
+                self.assertEqual((result['execution'], result['status']), expected)
+                self.assertEqual(result['below_minimum_vias'], [low])
+                if name == 'mixed':
+                    self.assertEqual(result['unsupported_vias'], [unlisted])
+                elif expected[0] == 'unsupported':
+                    self.assertIn('not cited by native DRC', result['reason'])
+        at_minimum = {**copy.deepcopy(record), 'execution': 'ok', 'status': 'satisfied'}
+        result = classify_preferred([at_minimum], {'outline_xy_mm': [10, 10],
+                                                   'vias': [{'uuid': 'c', 'drill_nm': 150000}]})[0]
+        self.assertEqual((result['execution'], result['status']), ('ok', 'satisfied'))
+        self.assertNotIn('below_minimum_vias', result)
+
     def test_options_cannot_default_when_their_source_or_native_run_is_unproved(self):
         original = copy.deepcopy(self.document)
         for field, value in (('quote', 'unrecorded options'), ('sha256', '0' * 64),
@@ -183,18 +209,48 @@ class NativeStandardProfileTest(unittest.TestCase):
         self.assertEqual(result['details']['extra_charges'], [rule])
         self.assertEqual(rules['small-via']['status'], 'satisfied')
 
-    def test_unlisted_drill_below_minimum_is_unknown_and_cannot_be_a_surcharge(self):
+    def test_drill_below_minimum_is_a_defect_and_cannot_be_a_surcharge(self):
         assignments = [('illegal', (.1, .35))] + [
             (f'control{i}', (.3, .6)) for i in range(5)]
         result, rules, saved = self.run_vias(assignments)
-        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
-        self.assertEqual(result['details']['violations'], [])
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertEqual(result['details']['violations'], ['via-drill'])
         self.assertEqual(result['details']['extra_charges'], [])
+        gate = rules['via-drill']
+        self.assertEqual((gate['execution'], gate['status']), ('ok', 'violation'))
+        self.assertEqual(gate['below_minimum_vias'], [{'uuid': saved['illegal'], 'drill_nm': 100000}])
+        self.assertNotIn('unsupported_vias', gate)
+        for ident in ('small-drill', 'small-via'):
+            self.assertNotEqual(rules[ident]['status'], 'extra_charge')
+            self.assertEqual(rules[ident]['offender_ids'], [])
+            self.assertEqual(rules[ident]['minimum_violation_ids'], [saved['illegal']])
+
+    def test_minimum_boundary_is_exact_saved_nanometres(self):
+        result, rules, saved = self.run_vias([
+            ('just_below', (.149999, .6)), ('at_minimum', (.15, .6)),
+            *[(f'control{i}', (.3, .6)) for i in range(4)]])
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertEqual(result['details']['violations'], ['via-drill'])
+        self.assertEqual(rules['via-drill']['below_minimum_vias'],
+                         [{'uuid': saved['just_below'], 'drill_nm': 149999}])
+        self.assertEqual(rules['small-drill']['minimum_violation_ids'], [saved['just_below']])
+        self.assertEqual(rules['small-drill']['offender_ids'], [saved['at_minimum']])
+        self.assertEqual(result['details']['extra_charges'], [rules['small-drill']])
+
+    def test_below_minimum_with_unlisted_drill_is_unknown_keeping_the_defect_visible(self):
+        result, rules, saved = self.run_vias([
+            ('illegal', (.1, .35)), ('unlisted', (.22, .4)),
+            *[(f'control{i}', (.3, .6)) for i in range(4)]])
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertEqual(result['details']['extra_charges'], [])
+        gate = rules['via-drill']
+        self.assertEqual((gate['execution'], gate['status']), ('unsupported', 'not_evaluated'))
+        self.assertEqual(gate['unsupported_vias'], [{'uuid': saved['unlisted'], 'drill_nm': 220000}])
+        self.assertEqual(gate['below_minimum_vias'], [{'uuid': saved['illegal'], 'drill_nm': 100000}])
+        self.assertIn(saved['illegal'], {i['uuid'] for f in gate['native_findings'] for i in f['items']})
         for ident in ('small-drill', 'small-via'):
             self.assertEqual((rules[ident]['execution'], rules[ident]['status']),
                              ('unsupported', 'not_evaluated'))
-        self.assertEqual(rules['via-drill']['unsupported_vias'],
-                         [{'uuid': saved['illegal'], 'drill_nm': 100000}])
 
     def test_unlisted_018_022_and_028_drills_are_unknown_at_both_diameters(self):
         for drill in (.18, .22, .28):

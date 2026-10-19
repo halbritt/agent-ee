@@ -214,13 +214,29 @@ Profiles without the field retain their continuous grading.
 The existing native inventory records every saved via UUID and integer
 `drill_nm`. Before surcharge classification, drills must exactly match a listed
 option or be at least `continuous_from_mm`. There is no rounding tolerance.
-An unlisted drill makes the minimum record `execution=unsupported` and
-`status=not_evaluated`, with the exact `unsupported_vias`. Missing inventory is
-also unsupported; an observed empty inventory has no unsupported vias.
+A drill strictly below the limit's own sourced minimum (integer nanometres) is
+a manufacturing defect, not an unlisted option: the minimum record keeps its
+native `execution=ok`, `status=violation` and lists the saved vias in
+`below_minimum_vias`. That defect needs no new source claim, only the cited
+minimum, and stands only when native DRC cites every such via UUID; a
+below-minimum via the native finding does not cite makes the record unsupported.
+Such a via is a minimum violation, so it is never a surcharge.
+An unlisted drill at or above the minimum makes the minimum record
+`execution=unsupported` and `status=not_evaluated`, with the exact
+`unsupported_vias`. Missing inventory is also unsupported; an observed empty
+inventory has no unsupported vias.
 Both scalar and conjunctive drill surcharge records then remain unknown because
 their minimum is unevaluated. Raw native reports remain retained evidence, but
-cannot establish a drill defect or charge outside the declared options. The
+cannot establish a drill charge outside the declared options. The
 whole check is unknown even if another limit has a proved violation.
+
+When one board has both a below-minimum drill and an unlisted drill, unknown takes
+precedence. The record is unsupported with both `unsupported_vias` and
+`below_minimum_vias`, and its native findings still cite the defective via, so the
+defect is visible in details but the check outcome is `unknown`, never `pass`.
+This is the existing whole-check rule above: any unevaluated record makes the
+check unknown even beside a proved violation. A determinate `defect` would also
+need the surcharge records classified, which the unlisted drill prevents.
 
 ## Conjunctive surcharge rules (fab-profile/2)
 
@@ -296,9 +312,11 @@ of via diameter. Supplier process applicability and pricing remain unqualified.
 For example, a legal 0.25/0.4 mm drill/diameter via yields a `small-via`
 `extra_charge` record listing its saved UUID. At 0.25/0.45 mm, the via is outside
 the joint band. A 0.15/0.6 mm via retains its separate `small-drill` charge.
-A 0.1 mm drill is also outside the ordinary-process options and remains unknown,
-with its native minimum violation retained as diagnostic evidence. A supported
-drill with an undersized diameter still establishes a diameter defect.
+A 0.1 mm drill is below the published 0.15 mm minimum, so the check is a
+`via-drill` defect and the via appears only in the surcharge records'
+`minimum_violation_ids`; 0.149999 mm is a defect and 0.15 mm is the
+surcharged option. A supported drill with an undersized diameter still
+establishes a diameter defect.
 An empty charge list covers the declared rules only; it does not establish an
 order price, annular-ring compliance or complete supplier DFM approval.
 
@@ -317,7 +335,8 @@ reviewed date/values; checks and tests never fetch sources.
 changed, misquoted and unsourced facts, and uses real sandboxed KiCad DRC for
 the examples and both joint boundaries. It checks saved via IDs and reloads
 pad layers in a fresh process. The existing seal helper rejects changed results
-and profile bytes. It also covers unlisted drills, exact nanometre boundaries,
+and profile bytes. It also covers unlisted drills, below-minimum defects, a
+below-minimum plus unlisted mix, exact nanometre boundaries,
 invalid option declarations and missing inventory. The compiler accepts the
 optional `/2` drill field; check kinds and predicate names are unchanged.
 

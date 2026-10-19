@@ -425,12 +425,22 @@ def classify_preferred(records, inventory):
         vias = inventory.get('vias')
         allowed = {Fraction(str(v)) * 1_000_000 for v in options['values_mm']}
         continuous = Fraction(str(options['continuous_from_mm'])) * 1_000_000
-        unknown = None if vias is None else [v for v in vias
-                                            if v['drill_nm'] not in allowed and v['drill_nm'] < continuous]
+        minimum = Fraction(str(record['expected']['value'])) * 1_000_000
+        # Below the sourced minimum is a defect, provided native DRC cites the same
+        # vias; an unlisted drill at or above it is unknown and takes precedence.
+        below = None if vias is None else [v for v in vias if v['drill_nm'] < minimum]
+        unknown = None if vias is None else [v for v in vias if v['drill_nm'] >= minimum and
+                                            v['drill_nm'] not in allowed and v['drill_nm'] < continuous]
+        if below:
+            record['below_minimum_vias'] = below
         if unknown is None or unknown:
             record.update(status='not_evaluated', execution='unsupported',
                           reason='via drill outside sourced options' if unknown else 'via drill inventory missing',
                           unsupported_vias=unknown)
+        elif below and (record['status'] != 'violation' or
+                        not {v['uuid'] for v in below} <= offender_ids(record)):
+            record.update(status='not_evaluated', execution='unsupported',
+                          reason='below-minimum via drill not cited by native DRC', unsupported_vias=[])
     if inventory['outline_xy_mm'] is None:
         for record in records:
             if record['expected'].get('key') == 'min_edge_clearance_mm' and record['status'] == 'satisfied':
