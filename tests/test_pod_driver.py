@@ -374,6 +374,98 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         board=self.scope['board']
         self.assertEqual(digest(root/'inputs'/board),receipt['inputs'][board])
 
+    def use_net_constraints(self):
+        # Qualified owned template; source constraints use the actual pod native name.
+        shutil.copyfile(ROOT/'fixtures/netclass-completeness/native.kicad_pro',
+                        self.source/'project/design.kicad_pro')
+        write_json(self.source/'constraints.json',dict(schema='agent-ee.net-constraints/1',classes=[
+            dict(name='RF_50',requirement='native',nets=['/POD_GNSS_RF'],track_width_mm=.335,
+                 clearance_mm=.2032,impedance_ohm=50)]))
+        self.plan['net_constraints']='constraints.json'
+        self.save()
+
+    def test_net_constraints_receipt_final_project_and_campaign_binding(self):
+        self.use_net_constraints()
+        before={str(p):digest(p) for p in self.source.rglob('*') if p.is_file()}
+        record=self.build()
+        run=self.root/'run'
+        config=read_json(run/'campaign.json')
+        self.assertEqual([l['path'] for l in config['pre_receipts']],
+                         ['scaffold-receipt/receipt.json','constraints-receipt/receipt.json'])
+        self.assertEqual(record['net_constraints'],config['pre_receipts'][1])
+        receipt=read_json(run/'constraints-receipt/receipt.json')
+        self.assertEqual(receipt['status'],'completed')
+        self.assertEqual(receipt['execution']['execution'],'ok')
+        self.assertEqual(receipt['violations'],[])
+        self.assertEqual(receipt['inputs']['constraints.json'],digest(self.source/'constraints.json'))
+        project='project/design.kicad_pro'
+        self.assertNotEqual(receipt['inputs'][project],receipt['outputs'][project])
+        emitted=read_json(run/'inputs/project/design.net-constraints.record.json')
+        self.assertEqual(emitted['project_sha256'],digest(run/'inputs'/project))
+        self.assertEqual(emitted['template_project_sha256'],receipt['inputs'][project])
+        self.assertEqual(emitted['rules_sha256'],digest(run/'inputs/project/design.kicad_dru'))
+        self.assertEqual(emitted['board_binding']['status'],'unbound')
+        self.assertEqual(emitted['classes'][0]['impedance']['status'],'recorded_not_enforced')
+        prepared=read_json(run/'scope.json')
+        native=next(c for c in prepared['checks'] if c['kind']=='net_class_assignment')
+        self.assertEqual(native['stage'],'placement')
+        self.assertIn(native['id'],prepared['baseline']['requirements'][0]['checks'])
+        self.assertEqual(before,{str(p):digest(p) for p in self.source.rglob('*') if p.is_file()})
+        root=self.start_campaign()
+        self.verify_first_capture(root)
+        # No declared net exists in the empty scaffold yet: native absence remains a defect.
+        from agent_ee.checks import Ctx
+        from agent_ee.net_class_assignment import check_net_class_assignment
+        from agent_ee.candidate import capture
+        import time
+        captured=self.root/'assignment'
+        captured.mkdir()
+        manifest=capture(run/'scope.json',captured)
+        ctx=Ctx(captured,manifest,native,time.monotonic()+120)
+        check_net_class_assignment(ctx)
+        self.assertEqual(ctx.result['outcome'],'defect')
+        self.assertIn('net_absent',[d['reason'] for d in ctx.result['details']['defects']])
+
+    def test_constraints_and_content_form_three_receipt_chain(self):
+        self.use_net_constraints()
+        self.use_envelope_content()
+        record=self.build()
+        links=read_json(self.root/'run/campaign.json')['pre_receipts']
+        self.assertEqual([l['binding'] for l in links],[{'pre_receipt':i} for i in (1,2,3)])
+        self.assertEqual(record['envelope_content'],links[2])
+        self.verify_first_capture(self.start_campaign())
+
+    def test_failed_constraint_application_retains_unadoptable_receipt(self):
+        self.use_net_constraints()
+        make_step=pod._constraint_step
+        def failed(*args):
+            return {**make_step(*args),'argv':['/usr/bin/false']}
+        with mock.patch.object(pod,'_constraint_step',side_effect=failed):
+            with self.assertRaises(ValueError):
+                self.build('failed')
+        root=self.root/'failed'
+        self.assertFalse((root/'campaign.json').exists())
+        self.assertEqual(read_json(root/'driver-receipt.json')['status'],'preparing')
+        receipt=read_json(root/'constraints-receipt/receipt.json')
+        self.assertEqual(receipt['status'],'failed')
+        self.assertNotIn('project/design.net-constraints.record.json',receipt['inputs'])
+        self.assertFalse((root/'inputs/project/design.net-constraints.record.json').exists())
+
+    def test_net_constraint_failures_refuse_before_output(self):
+        self.use_net_constraints()
+        constraints=self.source/'constraints.json'
+        original=read_json(constraints)
+        for doc in ({**original,'classes':[]},
+                    {**original,'classes':[{**original['classes'][0],'requirement':'unmapped'}]}):
+            write_json(constraints,doc)
+            with self.assertRaises(ValueError):
+                self.build('refused')
+            self.assertFalse((self.root/'refused').exists())
+        self.plan['net_constraints']='absent.json'
+        self.save()
+        with self.assertRaisesRegex(ValueError,'uncaptured pod net_constraints'):
+            self.build('refused')
+
     def test_run_cli_propagates_campaign_incomplete(self):
         with mock.patch.object(pod,'build'), mock.patch('agent_ee.campaign.run_campaign',return_value=1):
             self.assertEqual(pod.main([str(self.plan_path),'--out',str(self.root/'run'),'--run']),1)

@@ -1309,3 +1309,15 @@ its artifacts. Those inputs are immutable verification dependencies. The check
 always produces information or unknown coverage, never a pass or defect, and
 cannot satisfy scope/3 acceptance requirements. Failed rendering retains missing
 visual evidence without preventing review; malformed critique remains unusable.
+
+## Saved native net-class assignment
+
+`net_class_assignment` reloads a saved board and sibling project through pcbnew.
+Parameters are captured `project`, `record` and `constraints` paths; see
+[net constraints](net-constraints.md#campaign-application-and-native-assignment-check-agentee-232).
+The check verifies each declared class, each exact net's effective assignment,
+minimum width and clearance. Missing or unassigned nets and classes are defects;
+unavailable native evidence stays unknown. Project and rules hashes must agree
+with the record. The constraint document, record, project and emitted rules are
+immutable baseline policy. Capability predicate: `netclass:effective-assignment`.
+Impedance stays `recorded_not_enforced`; native DRC checks actual copper.

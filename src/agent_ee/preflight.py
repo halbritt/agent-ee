@@ -54,7 +54,7 @@ def capture_expectation(result, manifest, definitions, *, inputs=None):
                            'passive_corners': '/usr/bin/ngspice', 'dc_path': 'pcbnew',
                            'assembly_readiness': 'kicad-cli', 'pin_contracts': 'kicad-cli',
                            'board_envelope': 'pcbnew', 'dfm_geometry': 'pcbnew',
-                           'placement_congestion': 'pcbnew'}
+                           'net_class_assignment': 'pcbnew', 'placement_congestion': 'pcbnew'}
     for spec in manifest['scope'].get('checks', []):
         if spec.get('kind') in ('routing_rules', 'fab_profile'):
             required_runtime.update(('kicad-cli', 'pcbnew'))

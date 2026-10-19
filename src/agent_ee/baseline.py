@@ -132,6 +132,9 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "interval_assertions":
             from .interval_assertions import capability
             paths.update(capability(params, scope, files, inputs, spec["id"])["immutable_inputs"])
+        if spec.get("kind") == "net_class_assignment":
+            from .net_class_assignment import capability
+            paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
         if spec.get("kind") == "netclass_completeness":
             from .netclass_completeness import capability
             paths.update(capability(params, files, inputs)["immutable_inputs"])

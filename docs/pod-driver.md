@@ -44,6 +44,7 @@ A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
 | `implementation_steps` | Existing stage-step declarations for the five producers listed below |
 | `routing_adapter` | Existing `agent-ee.routing-adapter/1` declaration; command/pin/exit semantics remain owned by that adapter |
 | `placement_adapter` | Optional existing `agent-ee.placement-adapter/1` declaration for the owned placer; replaces the generic `place-board` step |
+| `net_constraints` | Optional captured constraint document; applies project/rules under receipt and registers native assignment verification; see [application](#net-constraint-application) |
 | `envelope_content` | Optional object declaring the envelope-content pre-receipt's extra inputs: any of `intent`, `layout`, `antenna_facts`, `captured_rule_areas` (captured paths) and `imu_reference`; see [envelope content](#envelope-content) |
 | `review_profile` | Explicit subscription profile with independent reviewers and adjudicator |
 | `implementation` | Explicit subscription writer definition |
@@ -145,11 +146,11 @@ record remain, without a usable campaign file or a prepared claim.
 
 When the plan declares `envelope_content`, the shared
 [stage-three producer](scaffold.md#stage-three-envelope-content-agentee-177)
-`scaffold.content_step` runs as the second pre-receipt, after `write-scaffold`
+`scaffold.content_step` runs after `write-scaffold` and any constraint-application pre-receipt
 and before the campaign. Its envelope and parts are the plan's own `envelope`
 and `parts`; its board is the scope's board and its only write. The declared
 optional inputs are passed verbatim. Plans without the field are unchanged:
-one scaffold pre-receipt, no content receipt.
+no content receipt; the optional constraint receipt is independent.
 
 Before any output exists, the driver refuses an unknown `envelope_content`
 field, a non-canonical or uncaptured input, an input naming the native board
@@ -159,9 +160,9 @@ and `layout`. After adopting the scaffold, it runs the content step through
 producer retains `content-receipt/` and a `status: preparing` driver record,
 without `campaign.json`.
 
-`campaign.json` declares `[scaffold-receipt, content-receipt]` in that order.
+`campaign.json` declares `[scaffold-receipt, content-receipt]` in that order when constraints are absent. With constraints it declares `[scaffold-receipt, constraints-receipt, content-receipt]`.
 `stage_receipts.validate_pre_receipt_chain` requires the content receipt's input
-tree to equal the scaffold receipt's exact after-tree. The content receipt's
+tree to equal its predecessor receipt's exact after-tree. The content receipt's
 after-tree must equal the prepared candidate (`first_capture_binding`). The
 driver record keeps both links as `scaffold` and `envelope_content`. Campaign
 start revalidates the ordered chain; verification binds its last receipt to
@@ -181,6 +182,7 @@ the fresh checks grade the board that results.
 | `scope.json`, `campaign.json` | Ordinary scope/3 and campaign/1, only after final validation |
 | `scaffold-plan/` | Read-only recipe and sandbox input paths |
 | `scaffold-receipt/` | Ordinary sandbox receipt, tool identities and retained output |
+| `constraints-receipt/` | Constraint application receipt, only when `net_constraints` is declared |
 | `content-receipt/` | Envelope-content sandbox receipt, only when `envelope_content` is declared |
 | `driver-receipt.json` | Source hashes, validation identities, config/scope hashes, scaffold binding and inference estimate note |
 | `dry-run/` | Ordinary checks-only review, when requested |
@@ -241,3 +243,28 @@ from the owned emitter to another writer attempt, within the existing stage
 finding limit and campaign deadline. The driver’s `writer_editable` restriction
 continues to apply. Failed producer outputs are never adopted; see
 [intent repair](intent-repair.md) for the exact recovery and replay contract.
+
+## Net constraint application
+
+With `net_constraints`, the driver applies the captured
+[constraint document](net-constraints.md) after scaffold generation and before
+optional envelope content. The project template must meet the existing emitter
+contract: complete Default class, schema 5, no custom classes or assignments.
+A captured sibling rules template is extended. The step writes the final
+project, sibling `.kicad_dru` and sibling `.net-constraints.record.json`; record
+collisions with captured inputs are refused. Source inputs remain unchanged.
+
+`constraints-receipt/` hashes the scaffolded project input, constraints,
+envelope, tool source and all outputs. The emitter records the exact final
+project hash without post-generation mutation. `driver-receipt.json` retains
+this receipt as `net_constraints`. Campaign custody verifies it in the same
+ordered pre-receipt chain as scaffold and envelope content.
+
+The driver adds `net-constraint-assignment` (`net_class_assignment`) at placement,
+mapped to every class's existing baseline requirement ID. Unmapped IDs and check
+ID collisions are refused before publishing output. The check freezes the
+constraints, record, project and rules and uses fresh native evidence to verify
+the actual functional nets after forward annotation. Empty-scaffold absence is
+a defect, never permission to omit verification. Impedance remains recorded only.
+Plans without `net_constraints` retain their existing receipt chain and checks.
+The pod lane owns adoption of this field in its production campaign plan.

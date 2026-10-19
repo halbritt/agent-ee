@@ -200,3 +200,36 @@ What these tests do not establish:
 - Vias, zones, pads and copper pours are outside the width rule.
 - Current is assumed to be continuous and per net.
 - Fusing current, pulsed loads and ambient derating are not modelled.
+
+## Campaign application and native assignment check (AGENTEE-232)
+
+The [pod driver](pod-driver.md#net-constraint-application) accepts an optional
+`net_constraints` path to a captured constraint document. Its
+`apply-net-constraints` pre-receipt consumes the adopted scaffold and applies the
+shared emitter to the final metadata-bearing project. The receipt hashes all
+inputs and the project, sibling rules and constraint record outputs. The emitter
+record is retained byte-for-byte; its `project_sha256` names the final project,
+not the earlier template. No emitter hash is rewritten after generation.
+
+Preparation emits an `unbound` planning record because the empty scaffold has no
+functional nets yet. This grants no acceptance. The automatically registered
+`net_class_assignment` check at placement reloads the saved board and sibling
+project with pcbnew in the networkless tool sandbox. For every declared class it
+checks native class presence, every exact net's effective class, routing width
+and clearance against the recorded minimums. Missing classes, missing nets,
+Default assignments and dimensions below the minimum give `ok/defect`.
+A crashed tool, absent output or malformed report gives unknown, never pass.
+Project or rules bytes differing from the record also give a defect.
+
+The check takes `project`, `record` and `constraints` captured paths. The project
+must be the board-sibling `.kicad_pro`. The passing record must bind the original
+constraint bytes and agree with their declarations. Constraints, record,
+project and emitted rules are immutable baseline inputs; the board remains the
+candidate under review. Capability registration exposes
+`netclass:effective-assignment`; launch preflight requires pcbnew.
+
+This check verifies saved class settings and assignment, not the finished copper
+or arbitrary custom-rule overrides. Keep native DRC and geometry checks.
+Impedance remains `recorded_not_enforced` and `acceptance_ready` stays false.
+The original fixture tests use `/POD_GNSS_RF`, RF_50 width 0.335 mm and clearance
+0.2032 mm, with absent-class, absent-net and unassigned-net controls.
