@@ -126,6 +126,106 @@ class ScaffoldTests(ScaffoldFixture, unittest.TestCase):
                 self.assertTrue(target.resolve().is_relative_to(project.parent.resolve()))
         self.assertNotIn('project/design.kicad_pro', read_json(self.root / 'scaffold/scope.json')['mutable_inputs'])
 
+    def split_library(self):
+        from agent_ee.storage import identity
+        manifest = read_json(self.source / 'cad.json')
+        member = manifest['libraries'][0]['members'][-1]
+        old = member['path']
+        member['path'] = 'secondary/' + old
+        target = self.source / member['path']
+        target.parent.mkdir(parents=True)
+        target.write_bytes((self.source / old).read_bytes())
+        write_json(self.source / 'cad.json', manifest)
+        self.parts['cad']['manifest']['sha256'] = digest(self.source / 'cad.json')
+        assignments = read_json(self.source / 'assignments.json')
+        blobs = [dict(path=x['path'], sha256=x['sha256']) for x in assignments['libraries']]
+        blobs += manifest['libraries'][0]['members']
+        self.parts['cad']['members_sha256'] = identity(sorted(blobs, key=lambda x: x['path']))
+        write_json(self.source / 'parts.json', self.parts)
+        self.scope['inputs'] = [dict(path='source/' + p.relative_to(self.source).as_posix(),
+            at=p.relative_to(self.source).as_posix()) for p in sorted(self.source.rglob('*')) if p.is_file()]
+        write_json(self.scope_path, self.scope)
+        return manifest
+
+    def test_split_library_copies_are_exact_portable_immutable_and_receipted(self):
+        self.split_library()
+        receipt = self.build()
+        inputs = self.root / 'scaffold/inputs'
+        mapping = read_json(inputs / 'project/captured-footprints/manifest.json')
+        self.assertEqual(mapping['schema'], 'agent-ee.scaffold-library-copies/1')
+        self.assertEqual(len(mapping['copies']), 2)
+        self.assertEqual(mapping['manifest'], self.parts['cad']['manifest'])
+        for row in mapping['copies']:
+            self.assertEqual((inputs / row['path']).read_bytes(), (self.source / row['source']['path']).read_bytes())
+            self.assertEqual(digest(inputs / row['path']), row['source']['sha256'])
+            self.assertEqual(receipt['outputs']['inputs/' + row['path']], row['source']['sha256'])
+            self.assertEqual((inputs / row['source']['path']).read_bytes(), (self.source / row['source']['path']).read_bytes())
+        self.assertIn('inputs/project/captured-footprints/manifest.json', receipt['outputs'])
+        scope = read_json(self.root / 'scaffold/scope.json')
+        self.assertEqual(scope['mutable_inputs'], sorted(self.scope['mutable_inputs']))
+        table = parse_sexpr((inputs / 'project/fp-lib-table').read_bytes())
+        row = children(table, 'lib')[0]
+        self.assertEqual(children(row, 'name')[0][1], 'Owned')
+        self.assertEqual(children(row, 'uri')[0][1], '${KIPRJMOD}/captured-footprints/Owned.pretty')
+        require_toolchain(native=True)
+        # Resolve the generated table URI using native footprint loading after relocation.
+        relocated = self.root / 'relocated'
+        shutil.copytree(inputs, relocated)
+        script = """import pcbnew,sys
+from pathlib import Path
+from agent_ee.symbol_library import parse_sexpr,children
+p=Path(sys.argv[1]); table=parse_sexpr((p/'fp-lib-table').read_bytes())
+for lib in children(table,'lib'):
+    path=p/children(lib,'uri')[0][1].removeprefix('${KIPRJMOD}/')
+    for name in ('R2','PinHeader_1x03'):
+        f=pcbnew.FootprintLoad(str(path),name)
+        assert f is not None and f.GetPadCount()>0,name
+"""
+        subprocess.run(['/usr/bin/python3', '-c', script, str(relocated / 'project')], check=True)
+        self.assertEqual(receipt, self.build('repeat'))
+
+    def test_split_library_duplicate_name_and_hash_tamper_refuse(self):
+        from agent_ee.scaffold import library_tables
+        manifest = self.split_library()
+        original = copy.deepcopy(manifest)
+        member = manifest['libraries'][0]['members'][0]
+        duplicate = dict(member, path='another/' + member['path'])
+        target = self.source / duplicate['path']; target.parent.mkdir(parents=True)
+        target.write_bytes((self.source / member['path']).read_bytes() + b'\n')
+        duplicate['sha256'] = digest(target)
+        manifest['libraries'][0]['members'].append(duplicate)
+        write_json(self.source / 'cad.json', manifest)
+        self.parts['cad']['manifest']['sha256'] = digest(self.source / 'cad.json')
+        with self.assertRaisesRegex(ValueError, 'duplicate.*footprint'):
+            library_tables(self.parts, self.source, 'project')
+        write_json(self.source / 'cad.json', original)
+        self.parts['cad']['manifest']['sha256'] = digest(self.source / 'cad.json')
+        (self.source / member['path']).write_bytes(b'tampered')
+        with self.assertRaisesRegex(ValueError, 'hash'):
+            library_tables(self.parts, self.source, 'project')
+
+    def test_split_library_generated_namespace_collision_publishes_nothing(self):
+        self.split_library()
+        path = self.source / 'project/captured-footprints/Owned.pretty/injected.kicad_mod'
+        path.parent.mkdir(parents=True); path.write_bytes(b'preserve me')
+        self.scope['inputs'].append(dict(path='source/' + path.relative_to(self.source).as_posix(),
+                                         at=path.relative_to(self.source).as_posix()))
+        write_json(self.scope_path, self.scope)
+        with self.assertRaisesRegex(ValueError, 'collid'):
+            self.build()
+        self.assertEqual(path.read_bytes(), b'preserve me')
+        self.assertFalse((self.root / 'scaffold').exists())
+
+    def test_library_table_cannot_overwrite_unqualified_captured_file(self):
+        path = self.source / 'project/fp-lib-table'
+        path.write_bytes(b'captured table sentinel')
+        self.scope['inputs'].append(dict(path='source/project/fp-lib-table', at='project/fp-lib-table'))
+        write_json(self.scope_path, self.scope)
+        with self.assertRaisesRegex(ValueError, 'collid'):
+            self.build()
+        self.assertEqual(path.read_bytes(), b'captured table sentinel')
+        self.assertFalse((self.root / 'scaffold').exists())
+
     def test_precreates_nested_child_sheets_with_exact_native_instance_ids(self):
         import uuid
         a, b = str(uuid.uuid5(uuid.NAMESPACE_URL, 'owned-block-a')), str(uuid.uuid5(uuid.NAMESPACE_URL, 'owned-block-b'))
