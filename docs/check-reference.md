@@ -756,12 +756,16 @@ PCB, cross-analysis and EMC analyzers offline in the sandbox. It requires a
 scope/2 or scope/3 baseline and exactly `installation`, `installation_sha256`
 and `dispositions` parameters. The installation pin follows the existing
 `kicad_happy` inventory. `dispositions` is a captured immutable requirement file
-using `agent-ee.happy-dispositions/1`; every warning finding ID requires its own
+using `agent-ee.happy-dispositions/1`; every warning or assumption-bearing finding ID requires its own
 record with `disposition: accepted_risk|false_positive`, `rationale` and
 `recorded_by`. No disposition can waive an error.
 
-Any error or warning without an exact-ID disposition is `ok/defect`. Valid
-reports with no errors and every warning dispositioned are `ok/pass`; unknown,
+Every error is `ok/defect`. A warning, or any severity with nonempty native
+`assumptions` or `source_path: assumed`, is also a defect without an exact-ID
+disposition. Assumption-bearing info accepts dispositions; plain info does not
+and its dispositions stay unused. `undispositioned_warning_ids` includes both
+warnings and assumptions. Valid reports with no errors and every warning and
+assumption dispositioned are `ok/pass`; unknown,
 missing or malformed analyzer output stays unknown. The exact disposition bytes,
 raw reports and normalized native/disposition pointers are cited and sealed;
 preflight and public `verify` recheck the installed pin. Scope/3 predicates are

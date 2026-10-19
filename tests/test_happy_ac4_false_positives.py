@@ -8,6 +8,7 @@ silence, while the real violations and both agent-469 adversarial controls
 keep failing.
 """
 import io
+import importlib.util
 import os
 import subprocess
 import sys
@@ -163,7 +164,7 @@ class AnalyzerTests(unittest.TestCase):
         for fid in LIMITATIONS - {n['finding_id'] for n in EXPECTED['corrected_notes']}:
             self.assertNotIn(fid, by_id)
 
-    def run_gate(self, root, dispositions):
+    def run_gate(self, root, dispositions, schematic=None):
         require_toolchain(native=True)
         work = self.work('gate')
         source = work / 'dispositions.json'
@@ -171,7 +172,7 @@ class AnalyzerTests(unittest.TestCase):
         scope = {'schema': 'agent-ee.scope/3', 'name': 'AGENTEE-219 reproducer',
                  'scope': 'Analyzer false-positive reproducer only',
                  'limitations': ['No electrical or EMC certification.'],
-                 'inputs': [{'path': str(FIXTURE / 'reproducer.kicad_sch'), 'at': 'project/reproducer.kicad_sch'},
+                 'inputs': [{'path': str(schematic or FIXTURE / 'reproducer.kicad_sch'), 'at': 'project/reproducer.kicad_sch'},
                             {'path': str(FIXTURE / 'reproducer.kicad_pro'), 'at': 'project/reproducer.kicad_pro'},
                             {'path': str(BOARD), 'at': 'project/reproducer.kicad_pcb'},
                             {'path': str(FIXTURE / 'expected.json'), 'at': 'requirements/expected.json'},
@@ -196,10 +197,9 @@ class AnalyzerTests(unittest.TestCase):
         return checks.run_checks(run, time.monotonic() + 900)[0]
 
     def test_severity_gate_keeps_pinned_limitations_blocking_and_corrected_controls_failing(self):
-        # A disposition naming a limitation never waives an error. The
-        # corrected analyzer reuses PP-001 limitation ids for info notes (same
-        # rule and component, new severity): a stale disposition must neither
-        # attach to them nor count, so it is reported unused.
+        # Error dispositions never waive errors. The proposed analyzer's
+        # assumption-bearing info notes now require and accept exact IDs.
+        # These dispositions cover this synthetic fixture only.
         waivers = [{'finding_id': fid, 'disposition': 'false_positive',
                     'rationale': 'AGENTEE-219 analyzer limitation; not a waiver',
                     'recorded_by': 'test author'} for fid in sorted(LIMITATIONS)]
@@ -212,9 +212,46 @@ class AnalyzerTests(unittest.TestCase):
                 normalized = result['details']['normalized']
                 schematic = {fid for fid in normalized['error_finding_ids'] if fid.startswith('schematic:')}
                 self.assertEqual(schematic, expected)
-                self.assertEqual(normalized['unused_disposition_ids'], sorted(LIMITATIONS))
-                self.assertFalse([f['finding_id'] for f in normalized['findings'] if 'disposition' in f
-                                  and f['finding_id'] in LIMITATIONS])
+                assumption_ids = {f['finding_id'] for f in normalized['findings']
+                                  if f['native'].get('assumptions') or f['native'].get('source_path') == 'assumed'}
+                self.assertEqual(normalized['unused_disposition_ids'], sorted(LIMITATIONS - assumption_ids))
+                self.assertEqual({f['finding_id'] for f in normalized['findings']
+                                  if 'disposition' in f and f['finding_id'] in LIMITATIONS},
+                                 assumption_ids & LIMITATIONS)
+
+    def test_native_assumption_info_defect_exact_disposition_pass_and_mismatch_defect(self):
+        # Author an isolated power_out case with the existing owned generator.
+        # No real-pod disposition is authored here.
+        spec = importlib.util.spec_from_file_location('ac4_generator', FIXTURE / 'generate.py')
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        generator.PARTS = [part for part in generator.PARTS if part[0] in ('U3', 'C2', 'U4')]
+        schematic = self.work('isolated-assumption') / 'reproducer.kicad_sch'
+        schematic.write_text(generator.schematic())
+        fid = 'schematic:PP-001:u4'
+        missing = self.run_gate(self.corrected, [], schematic)
+        self.assertEqual((missing['execution'], missing['outcome']), ('ok', 'defect'), missing)
+        normalized = missing['details']['normalized']
+        self.assertEqual(normalized['error_finding_ids'], [])
+        self.assertIn(fid, normalized['undispositioned_warning_ids'])
+        native = next(f for f in normalized['findings'] if f['finding_id'] == fid)
+        self.assertEqual(native['severity'], 'info')
+        self.assertTrue(native['native']['assumptions'])
+        # Supply policy entries for all observed warnings plus the one assumption.
+        entries = [{'finding_id': i, 'disposition': 'accepted_risk',
+                    'rationale': 'Owned synthetic policy regression only; no part qualification',
+                    'recorded_by': 'test author'}
+                   for i in normalized['undispositioned_warning_ids']]
+        passed = self.run_gate(self.corrected, entries, schematic)
+        self.assertEqual((passed['execution'], passed['outcome']), ('ok', 'pass'), passed)
+        matched = next(f for f in passed['details']['normalized']['findings'] if f['finding_id'] == fid)
+        self.assertEqual(matched['disposition']['finding_id'], fid)
+        self.assertEqual(matched['disposition']['raw_output_path'], 'dispositions.json')
+        wrong = [{**e, 'finding_id': fid + '-other'} if e['finding_id'] == fid else e for e in entries]
+        failed = self.run_gate(self.corrected, wrong, schematic)
+        self.assertEqual((failed['execution'], failed['outcome']), ('ok', 'defect'), failed)
+        self.assertEqual(failed['details']['normalized']['undispositioned_warning_ids'], [fid])
+        self.assertIn(fid + '-other', failed['details']['normalized']['unused_disposition_ids'])
 
 
 if __name__ == '__main__':

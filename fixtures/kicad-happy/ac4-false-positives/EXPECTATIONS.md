@@ -35,3 +35,10 @@ The pinned findings are recorded known analyzer limitations, not a pass: the
 severity gate reports them as errors, and a disposition naming them waives
 nothing. The correction is a proposal at an exact kicad-happy commit; adopting it
 is a pin change that needs requalification.
+
+Assumption-bearing info findings require exact immutable dispositions in the
+severity gate; missing or mismatched IDs give a defect. The native test also
+authors an isolated U3/C2/U4 schematic with this generator and proves that an
+exact disposition can pass while a mismatched ID fails. These synthetic test
+entries are not real-pod adjudications. Plain info remains unrestricted and a
+disposition on plain info stays unused.
