@@ -94,6 +94,8 @@ def _validate_policy(policy, refs):
     if type(policy.get('gap_nm')) is not int or policy['gap_nm'] < 0:
         raise ValueError('gap must be nonnegative integer nanometres')
     _edge_margin_nm(policy)
+    if type(policy.get('capacity_proof', False)) is not bool:
+        raise ValueError('capacity_proof must be a boolean')
     for name in ('fixed_refs', 'priority_refs', 'ground_nets'):
         seq = policy.get(name)
         if not isinstance(seq, list) or any(not isinstance(s, str) or not s for s in seq) or len(set(seq)) != len(seq):
@@ -584,6 +586,228 @@ def _region_impossibility(capture, outline, groups, fixed, placed, obstacles, po
     return None
 
 
+def _union_area(rects):
+    """Exact area of a union of closed axis-aligned boxes (x0, y0, x1, y1), by an x sweep."""
+    events = sorted({v for x0, _, x1, _ in rects for v in (x0, x1)})
+    rects = sorted(r for r in rects if r[0] < r[2] and r[1] < r[3])
+    total, active, k = 0, [], 0
+    for xa, xb in zip(events, events[1:]):
+        while k < len(rects) and rects[k][0] <= xa:
+            active.append(rects[k])
+            k += 1
+        active = [r for r in active if r[2] > xa]
+        top = None
+        for _, y0, _, y1 in sorted(active, key=lambda r: r[1]):
+            if top is None or y0 >= top:
+                total += (xb - xa) * (y1 - y0)
+                top = y1
+            elif y1 > top:
+                total += (xb - xa) * (y1 - top)
+                top = y1
+    return total
+
+
+def _admissible(box, forbid):
+    """A closed box less open boxes, as (x0, y0, x1, y1) pieces whose union is that set.
+
+    Between consecutive breakpoints in x (and at each of them) the admitted y
+    values are fixed closed intervals, which may be single points.
+    """
+    bx0, by0, bx1, by1 = box
+    if bx0 > bx1 or by0 > by1:
+        return []
+    xs = sorted({bx0, bx1} | {v for f in forbid for v in (f[0], f[2]) if bx0 < v < bx1})
+    pieces = []
+    for lo, hi in [(x, x) for x in xs] + list(zip(xs, xs[1:])):
+        mid2 = lo + hi  # Twice the element's midpoint: exact in integers.
+        cur = by0
+        for b0, b1 in sorted((f[1], f[3]) for f in forbid if 2 * f[0] < mid2 < 2 * f[2]):
+            if b0 >= cur:
+                if cur <= by1:
+                    pieces.append((lo, cur, hi, min(b0, by1)))
+                cur = b1
+            elif b1 > cur:
+                cur = b1
+        if cur <= by1:
+            pieces.append((lo, cur, hi, by1))
+    return pieces
+
+
+def _square_cover_area(box, blockers, a):
+    """Exact area of the union of every closed a x a axis square inside box that overlaps no blocker's interior.
+
+    That union (the morphological opening of the free space by the square) holds
+    every set in the free space each of whose points lies in such a square. The
+    squares' lower left corners range over a closed box less one open box per
+    blocker.
+    """
+    bx0, by0, bx1, by1 = box
+    forbid = [(x0 - a, y0 - a, x1, y1) for x0, y0, x1, y1 in blockers if x0 < x1 and y0 < y1]
+    return _union_area([(x0, y0, x1 + a, y1 + a) for x0, y0, x1, y1 in _admissible((bx0, by0, bx1 - a, by1 - a), forbid)])
+
+
+def _probe_cover(box, blockers, inner, outer):
+    """Boxes (reach, solid): every free point a set can cover lies in reach and in no solid box's interior.
+
+    A set inside the free space (box less the blockers' interiors) that holds a
+    disc of radius ``inner`` and lies within ``outer`` of that disc's centre puts
+    the centre where the axis cross of half-length ``inner`` is free, and covers
+    only points within ``outer`` of it (an axis box) that are themselves free.
+    This holds at any angle of the set.
+    """
+    bx0, by0, bx1, by1 = box
+    solid = [b for b in blockers if b[0] < b[2] and b[1] < b[3]]
+    forbid = [f for x0, y0, x1, y1 in solid for f in ((x0 - inner, y0, x1 + inner, y1), (x0, y0 - inner, x1, y1 + inner))]
+    reach = [(max(x0 - outer, bx0), max(y0 - outer, by0), min(x1 + outer, bx1), min(y1 + outer, by1))
+             for x0, y0, x1, y1 in _admissible((bx0 + inner, by0 + inner, bx1 - inner, by1 - inner), forbid)]
+    return reach, [(max(x0, bx0), max(y0, by0), min(x1, bx1), min(y1, by1)) for x0, y0, x1, y1 in solid]
+
+
+def _probe_cover_area(box, blockers, inner, outer):
+    """Upper bound of the free area that the sets of ``_probe_cover`` can cover."""
+    reach, solid = _probe_cover(box, blockers, inner, outer)
+    return _union_area(reach + solid) - _union_area(solid)
+
+
+def _complement_boxes(polygon):
+    """Boxes covering a rectilinear polygon's bounding box less the polygon, else None."""
+    slabs = _slabs(polygon)
+    if slabs is None:
+        return None
+    y0, y1 = min(p[1] for p in polygon), max(p[1] for p in polygon)
+    columns = {}
+    for a0, b0, a1, b1 in slabs:
+        columns.setdefault((a0, a1), []).append((b0, b1))
+    out = []
+    for (a0, a1), spans in sorted(columns.items()):
+        cur = y0
+        for b0, b1 in sorted(spans):
+            if b0 > cur:
+                out.append((a0, cur, a1, b0))
+            cur = max(cur, b1)
+        if cur < y1:
+            out.append((a0, cur, a1, y1))
+    return out
+
+
+def _grown_boxes(boxes_, t):
+    """Boxes inside the union of the given boxes grown by distance t (each grown along x and along y)."""
+    return [b for a0, b0, a1, b1 in boxes_ for b in ((a0 - t, b0, a1 + t, b1), (a0, b0 - t, a1, b1 + t))]
+
+
+def _square_size(polygon):
+    """Largest a such that every point of a rectilinear polygon lies in an a x a axis square inside it, else 0.
+
+    A rigid motion carries each square with the polygon, so the size holds at every
+    angle. Candidates are the polygon's coordinate differences, checked exactly
+    against its own square cover.
+    """
+    holes = _complement_boxes(polygon)
+    if holes is None:
+        return 0
+    xs, ys = [p[0] for p in polygon], [p[1] for p in polygon]
+    box = (min(xs), min(ys), max(xs), max(ys))
+    area = Fraction(abs(area2(polygon)), 2)
+    if not holes:
+        return min(box[2] - box[0], box[3] - box[1])
+    limit = min(box[2] - box[0], box[3] - box[1])
+    sizes = sorted({abs(u - v) for coords in (xs, ys) for u in coords for v in coords
+                    if 0 < abs(u - v) <= limit}, reverse=True)
+    return next((a for a in sizes if _square_cover_area(box, holes, a) == area), 0)
+
+
+def _grown_area_low(polygons, r):
+    """Lower bound of the area a part's courtyards on one side cover when grown by r."""
+    if len(polygons) == 1:
+        return _swept_area_low(polygons[0], r)
+    return sum(Fraction(abs(area2(p)), 2) for p in polygons)
+
+
+def _board_capacity(capture, outline, fixed, policy, margin_nm):
+    """Board-wide capacity at the packing gap, per side, with exact rationals (AGENTEE-249).
+
+    With r = gap/2, the movable courtyards grown by r are pairwise disjoint, clear
+    of fixed courtyards and declared obstacles grown by r, and lie in the
+    outline's box offset inward by margin - r. Blocked area counts only boxes
+    inside those grown blockers (a rectilinear polygon's slabs grown along each
+    axis; other polygons count nothing), and, when margin >= r and the outline is
+    rectilinear, the outline's box less the outline, grown by margin - r. So
+    ``available`` is an upper bound and ``required`` (Steiner lower bounds of the
+    grown courtyards) a lower bound, whatever rigid motion each part takes.
+
+    Fragmentation: when every point of a part's courtyards lies in an a x a square
+    inside them, at whatever angle the part is turned, every point of its grown
+    courtyards lies in that square grown by r: a set holding a disc of radius
+    a/2 + r and within a/sqrt(2) + r of its centre (bounded above by an integer
+    ceiling), inside the free space. For every square size a among the parts, the
+    parts with at least that size must fit in the free area such sets can cover.
+    Each row is a necessary condition for every rigid motion; exceeding one is a proof.
+    """
+    r2, t2 = policy['gap_nm'], 2 * margin_nm - policy['gap_nm']  # Half-nanometre units keep r exact.
+    xs, ys = [2 * p[0] for p in outline], [2 * p[1] for p in outline]
+    container = (min(xs) + t2, min(ys) + t2, max(xs) - t2, max(ys) - t2)
+    edge = _complement_boxes([(2 * x, 2 * y) for x, y in outline]) if t2 >= 0 else None
+    sides = {}
+    for side in ('F', 'B'):
+        blockers, names = [], set()
+        sources = [(fp['ref'], _inner(fp['courtyards'][side])) for fp in capture['footprints']
+                   if fp['ref'] in fixed and side in fp['courtyards']]
+        sources += [(f'obstacle {i}', o['polygons']) for i, o in enumerate(policy['obstacles']) if o['side'] == side]
+        for name, polygons in sources:
+            for poly in polygons:
+                slabs = _slabs([(2 * x, 2 * y) for x, y in poly])
+                grown = [b for b in _grown_boxes(slabs or [], r2) if b[0] < container[2] and container[0] < b[2]
+                         and b[1] < container[3] and container[1] < b[3]]
+                if grown:
+                    blockers += grown
+                    names.add(name)
+        if edge:
+            blockers += _grown_boxes(edge, t2)
+        parts = [(fp['ref'], min(_square_size(p) for p in _inner(fp['courtyards'][side])),
+                  _grown_area_low(_inner(fp['courtyards'][side]), Fraction(r2, 2)))
+                 for fp in sorted(capture['footprints'], key=lambda f: f['ref'])
+                 if fp['ref'] not in fixed and side in fp['courtyards']]
+        if not parts:
+            continue
+        rows = []
+        for a in sorted({0} | {a for _, a, _ in parts}):
+            required = sum(area for _, size, area in parts if size >= a)
+            if a:
+                root = math.isqrt(2 * a * a)  # a * sqrt(2) half-nanometres: a/sqrt(2) nm, rounded up.
+                available = _probe_cover_area(container, blockers, a + r2, root + (root * root < 2 * a * a) + r2)
+            else:
+                available = _square_cover_area(container, blockers, 0)
+            available = Fraction(available, 4)
+            row = {'square_nm': a, 'references': sorted(ref for ref, size, _ in parts if size >= a),
+                   'required_grown_courtyard_area_nm2': _fraction(required),
+                   'available_area_upper_nm2': _fraction(available)}
+            if available:
+                ratio = required / available
+                row.update(ratio=_fraction(ratio), ratio_display=f'{math.floor(ratio * 10**6) / 10**6:.6f}')
+            rows.append((required > available, row))
+        sides[side] = {'blocked_by': sorted(names), 'rows': rows}
+    return sides
+
+
+def _capacity_diagnostic(sides, policy, margin_nm):
+    """The capacity rows as a diagnostic: never a pass or fail."""
+    return {'basis': 'diagnostic-only', 'method': 'gapped-free-area/1', 'gap_nm': policy['gap_nm'],
+            'min_courtyard_edge_nm': margin_nm,
+            'sides': {side: {'blocked_by': s['blocked_by'], 'free_area': s['rows'][0][1],
+                             'fragmentation': [row for _, row in s['rows'][1:]]}
+                      for side, s in sides.items()}}
+
+
+def _capacity_impossibility(sides, policy):
+    for side, s in sides.items():
+        for exceeded, row in s['rows']:
+            if exceeded:
+                kind = 'board_capacity_fragmented' if row['square_nm'] else 'board_capacity_gap'
+                return {'kind': kind, 'side': side, 'gap_nm': policy['gap_nm'],
+                        'blocked_by': s['blocked_by'], **row}
+    return None
+
+
 def _fixed_refs(capture, policy):
     return set(policy['fixed_refs']) | {f['ref'] for f in capture['footprints'] if f.get('locked')}
 
@@ -819,6 +1043,15 @@ def pack(capture, policy):
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"group {proof['group']} region cannot hold its {proof['side']} courtyards", margin_nm)
         return {**failure, 'proof': proof}
+    sides = _board_capacity(capture, outline, fixed, policy, margin_nm)
+    capacity = _capacity_diagnostic(sides, policy, margin_nm)
+    # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
+    proof = _capacity_impossibility(sides, policy) if policy.get('capacity_proof') else None
+    if proof:
+        failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
+                           f"{proof['side']} courtyards grown by half the gap exceed the board's free area"
+                           + (f" usable by {proof['square_nm']} nm squares" if proof['square_nm'] else ''), margin_nm)
+        return {**failure, 'proof': proof, 'capacity': capacity}
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members)
     units = [(fp['ref'],) for fp in queue]
     stack, seen, backjumps, failures, peak = [], {tuple(units)}, 0, {}, 0
@@ -827,7 +1060,7 @@ def pack(capture, policy):
         record = search.record(backjumps, unplaced)
         if unplaced is not None:
             record['placed_peak'] = peak  # Diagnostic only: a plan is complete or empty.
-        return {**failure, 'search': record}
+        return {**failure, 'search': record, 'capacity': capacity}
     while len(stack) < len(units):
         unit = units[len(stack)]
         try:
@@ -881,7 +1114,7 @@ def pack(capture, policy):
     if grading is not None and grading['status'] != 'pass':
         return stopped('judge_rejected', 'declared placement groups not satisfied by the complete proposal')
     extra = {} if grading is None else {'group_grading': grading}
-    return {**extra, 'search': search.record(backjumps), 'schema': 'agent-ee.packing-plan/1',
+    return {**extra, 'search': search.record(backjumps), 'capacity': capacity, 'schema': 'agent-ee.packing-plan/1',
             'board_sha256': capture['board_sha256'], 'status': 'planned', 'outcome': 'info', 'authority': 'standalone-unsealed-plan',
             'steps_used': steps, 'step_budget': policy['step_budget'],
             'min_courtyard_edge_mm': _margin_mm(margin_nm),
