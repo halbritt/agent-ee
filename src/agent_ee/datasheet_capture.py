@@ -73,19 +73,24 @@ def _process_identity(pid):
     return starttime, cwd
 
 
-def run_owned_child(command, seconds):
+def run_owned_child(command, seconds, stdin=None):
     """Run one owned capture child under a hard elapsed-time deadline.
 
     Returns its stdout, or None when the deadline expired (the child is then
     killed and reaped). A nonzero exit raises. The child has no tool/check
-    sandbox; only host-side capture producers call this.
+    sandbox; only host-side capture producers call this. ``stdin`` bytes, when
+    given, reach the child through a pipe only (never its argv or environment).
     """
-    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
+    streams = {'stdout': subprocess.PIPE, 'stderr': subprocess.PIPE}
+    if stdin is not None:
+        streams['stdin'] = subprocess.PIPE
+    with subprocess.Popen(command, **streams) as child:
         owner = None
         try:
             owner = _process_identity(child.pid)
             try:
-                stdout, stderr = child.communicate(timeout=seconds)
+                stdout, stderr = (child.communicate(timeout=seconds) if stdin is None else
+                                  child.communicate(input=stdin, timeout=seconds))
             except subprocess.TimeoutExpired:
                 _stop_fetch(child, owner)
                 return None

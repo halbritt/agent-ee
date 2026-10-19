@@ -2048,6 +2048,16 @@
     },
     {
       "paths": [
+        "tests/test_digikey_capture.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code; the HTML literal is a synthetic non-JSON body the DigiKey v4 parser must refuse and the PDF literal is a minimal owned envelope served by a loopback stub. Part numbers, manufacturers and responses are invented; no DigiKey response or datasheet is copied."
+    },
+    {
+      "paths": [
         "tests/test_datasheet_capture.py"
       ],
       "kind": "owned-source",

@@ -1082,6 +1082,10 @@ or lacks an observation for a populated id. The [JLC catalog schema](jlc-catalog
 requires retained response hashes and requests; unknown keys and LCSC warehouse
 sources are refused. Per-part hash verdicts and the evaluation-time witness are
 retained as evidence.
+An external part without an LCSC code can cite an owner-run
+[DigiKey capture](digikey-capture.md) as its identity and purchase-source
+evidence. That capture is a host-side preparation input; DigiKey stock is not
+JLCPCB stock.
 Optional captured `deviations` uses `agent-ee.part-deviations/1`. Valid hand-fit
 records require an exact original MPN, purchase source, captured evidence,
 stock reason and native `JLCPCB_Assembly=not_assembled`. They appear in
