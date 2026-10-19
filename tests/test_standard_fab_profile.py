@@ -9,7 +9,7 @@ from pathlib import Path
 
 import tests.test_fab_profile as base
 from tests.test_fab_profile_conjunctive import via_board
-from agent_ee.fab_profile import compile_profile
+from agent_ee.fab_profile import classify_preferred, compile_profile
 from agent_ee.storage import digest
 
 PRESET = Path(__file__).resolve().parents[1] / 'fixtures/fab-profiles/jlcpcb-standard-2026-10-19'
@@ -65,6 +65,60 @@ class StandardProfileContractTest(unittest.TestCase):
                 rule = next(c for c in self.compile()['constraints'] if c['id'] == 'small-via')
                 self.assertEqual(rule['execution'], 'unsupported', rule)
                 self.assertNotIn('terms', rule)
+
+    def test_options_are_explicit_v2_minimum_drill_metadata(self):
+        self.assertEqual(self.compile()['constraints'][-1]['expected']['drill_options'],
+                         {'values_mm': [.15, .2, .25], 'continuous_from_mm': .3})
+        self.document['schema'] = 'agent-ee.fab-profile/1'
+        with self.assertRaisesRegex(ValueError, 'unknown fabricator limit fields'):
+            self.compile()
+
+    def test_invalid_options_are_refused(self):
+        original = copy.deepcopy(self.document)
+        for options in (None, {}, {'values_mm': [], 'continuous_from_mm': .3},
+                        {'values_mm': [.2, .2], 'continuous_from_mm': .3},
+                        {'values_mm': [.3], 'continuous_from_mm': .3},
+                        {'values_mm': [.1], 'continuous_from_mm': .3},
+                        {'values_mm': [.2000001], 'continuous_from_mm': .3},
+                        {'values_mm': [True], 'continuous_from_mm': .3},
+                        {'values_mm': [10**400], 'continuous_from_mm': .3},
+                        {'values_mm': [float('nan')], 'continuous_from_mm': .3},
+                        {'values_mm': [.2], 'continuous_from_mm': 0}):
+            self.document = copy.deepcopy(original)
+            self.document['limits'][0]['drill_options'] = options
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self.compile()
+        for key, value in (('key', 'min_trace_mm'), ('tier', 'preferred')):
+            self.document = copy.deepcopy(original)
+            self.document['limits'][0][key] = value
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'requires minimum'):
+                self.compile()
+
+    def test_missing_inventory_is_unknown_and_empty_inventory_is_evaluated(self):
+        record = self.compile()['constraints'][-1]
+        record.update(execution='ok', status='satisfied')
+        missing = classify_preferred([copy.deepcopy(record)], {'outline_xy_mm': [10, 10]})[0]
+        self.assertEqual((missing['execution'], missing['status']), ('unsupported', 'not_evaluated'))
+        self.assertIn('inventory missing', missing['reason'])
+        empty = classify_preferred([record], {'outline_xy_mm': [10, 10], 'vias': []})[0]
+        self.assertEqual((empty['execution'], empty['status']), ('ok', 'satisfied'))
+
+    def test_options_cannot_default_when_their_source_or_native_run_is_unproved(self):
+        original = copy.deepcopy(self.document)
+        for field, value in (('quote', 'unrecorded options'), ('sha256', '0' * 64),
+                             ('as_of', '2026-01-01')):
+            self.document = copy.deepcopy(original)
+            self.document['limits'][0]['source'][field] = value
+            with self.subTest(field=field):
+                record = self.compile()['constraints'][-1]
+                self.assertEqual(record['execution'], 'unsupported')
+                self.assertNotIn('rules', record)
+        self.document = original
+        record = self.compile()['constraints'][-1]
+        record.update(execution='failed', status='not_evaluated', reason='native DRC failed')
+        result = classify_preferred([record], {'outline_xy_mm': [10, 10], 'vias': []})[0]
+        self.assertEqual((result['execution'], result['status'], result['reason']),
+                         ('failed', 'not_evaluated', 'native DRC failed'))
 
 
 class NativeStandardProfileTest(unittest.TestCase):
@@ -129,15 +183,53 @@ class NativeStandardProfileTest(unittest.TestCase):
         self.assertEqual(result['details']['extra_charges'], [rule])
         self.assertEqual(rules['small-via']['status'], 'satisfied')
 
-    def test_illegal_drill_stays_a_defect_and_cannot_be_a_surcharge(self):
+    def test_unlisted_drill_below_minimum_is_unknown_and_cannot_be_a_surcharge(self):
         assignments = [('illegal', (.1, .35))] + [
             (f'control{i}', (.3, .6)) for i in range(5)]
         result, rules, saved = self.run_vias(assignments)
-        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
-        self.assertEqual(result['details']['violations'], ['via-drill'])
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertEqual(result['details']['violations'], [])
         self.assertEqual(result['details']['extra_charges'], [])
         for ident in ('small-drill', 'small-via'):
-            self.assertEqual(rules[ident]['minimum_violation_ids'], [saved['illegal']])
+            self.assertEqual((rules[ident]['execution'], rules[ident]['status']),
+                             ('unsupported', 'not_evaluated'))
+        self.assertEqual(rules['via-drill']['unsupported_vias'],
+                         [{'uuid': saved['illegal'], 'drill_nm': 100000}])
+
+    def test_unlisted_018_022_and_028_drills_are_unknown_at_both_diameters(self):
+        for drill in (.18, .22, .28):
+            with self.subTest(drill=drill):
+                result, rules, saved = self.run_vias([
+                    ('small', (drill, .4)), ('large', (drill, .6)),
+                    *[(f'control{i}', (.3, .6)) for i in range(4)]])
+                self.assertEqual((result['execution'], result['outcome']),
+                                 ('unsupported', 'unknown'), result)
+                self.assertEqual(result['details']['extra_charges'], [])
+                gate = rules['via-drill']
+                self.assertEqual(gate['status'], 'not_evaluated')
+                self.assertEqual(gate['unsupported_vias'], sorted(
+                    [{'uuid': saved[n], 'drill_nm': round(drill * 1e6)} for n in ('small', 'large')],
+                    key=lambda v: v['uuid']))
+                for ident in ('small-drill', 'small-via'):
+                    self.assertEqual((rules[ident]['execution'], rules[ident]['status']),
+                                     ('unsupported', 'not_evaluated'))
+
+    def test_options_match_exact_saved_nanometres_without_rounding_tolerance(self):
+        result, rules, saved = self.run_vias([
+            ('below', (.249999, .4)), ('above', (.250001, .4)),
+            ('near_continuous', (.299999, .6)), ('exact', (.25, .4)),
+            ('continuous', (.3, .6)), ('larger', (.35, .6))])
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertEqual([v['uuid'] for v in rules['via-drill']['unsupported_vias']],
+                         sorted(saved[n] for n in ('below', 'above', 'near_continuous')))
+
+    def test_supported_drill_with_illegal_diameter_keeps_its_defect(self):
+        result, rules, saved = self.run_vias([('illegal_pad', (.2, .24)),
+                                            *[(f'control{i}', (.3, .6)) for i in range(5)]])
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+        self.assertEqual(result['details']['violations'], ['via-diameter'])
+        self.assertEqual(result['details']['extra_charges'], [])
+        self.assertEqual(rules['small-via']['minimum_violation_ids'], [saved['illegal_pad']])
 
 
 if __name__ == '__main__':

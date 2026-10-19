@@ -196,6 +196,32 @@ IDs as extra charges. These numbers are test assumptions. The separately capture
 [JLCPCB preset](#dated-jlcpcb-standard-via-preset) uses a 0.45 mm diameter bound
 for the joint surcharge.
 
+## Discrete drill options (fab-profile/2)
+
+A minimum-tier `min_via_drill_mm` limit may also declare `drill_options`:
+
+```json
+{"drill_options": {"values_mm": [0.15, 0.2, 0.25], "continuous_from_mm": 0.3}}
+```
+
+These are the dated preset's sourced options. The limit's source citation must
+cover the options and the continuous range. Every value must be a positive,
+finite whole number of nanometres. The nonempty discrete list must contain
+unique values below `continuous_from_mm`, and no value may be below the limit's
+minimum. Other keys, preferred-tier limits and `/1` profiles refuse this field.
+Profiles without the field retain their continuous grading.
+
+The existing native inventory records every saved via UUID and integer
+`drill_nm`. Before surcharge classification, drills must exactly match a listed
+option or be at least `continuous_from_mm`. There is no rounding tolerance.
+An unlisted drill makes the minimum record `execution=unsupported` and
+`status=not_evaluated`, with the exact `unsupported_vias`. Missing inventory is
+also unsupported; an observed empty inventory has no unsupported vias.
+Both scalar and conjunctive drill surcharge records then remain unknown because
+their minimum is unevaluated. Raw native reports remain retained evidence, but
+cannot establish a drill defect or charge outside the declared options. The
+whole check is unknown even if another limit has a proved violation.
+
 ## Conjunctive surcharge rules (fab-profile/2)
 
 Some fabricators charge extra for a via only when its drill and its finished
@@ -263,13 +289,16 @@ names 0.15 mm drills at any diameter. The
 The joint rule expresses those published small-drill options below that bound;
 **intermediate drill sizes are not qualified by the discrete capabilities text**.
 The 0.2 mm preferred floor similarly models the published 0.15 mm option.
-Apply the preset only within these published options. The check does not enforce
-supplier process applicability or prove a price for arbitrary drill sizes.
+The declared `drill_options` gate enforces those options and the continuous
+range from 0.3 mm. Drills of 0.18, 0.22 and 0.28 mm are unsupported, regardless
+of via diameter. Supplier process applicability and pricing remain unqualified.
 
 For example, a legal 0.25/0.4 mm drill/diameter via yields a `small-via`
 `extra_charge` record listing its saved UUID. At 0.25/0.45 mm, the via is outside
 the joint band. A 0.15/0.6 mm via retains its separate `small-drill` charge.
-An illegal 0.1 mm drill remains a manufacturing defect, excluded from charges.
+A 0.1 mm drill is also outside the ordinary-process options and remains unknown,
+with its native minimum violation retained as diagnostic evidence. A supported
+drill with an undersized diameter still establishes a diameter defect.
 An empty charge list covers the declared rules only; it does not establish an
 order price, annular-ring compliance or complete supplier DFM approval.
 
@@ -278,7 +307,7 @@ records the two host-captured URLs, UTC timestamps, raw response SHA-256 values,
 byte counts, table/section locators and the interpretation above. As in the
 [telemetry-pod capture](telemetry-pod-fab-profile.md#sources-and-replay), the
 committed [numeric record](../fixtures/fab-profiles/jlcpcb-standard-2026-10-19/jlcpcb-vias.txt)
-contains original numbers/names only. Each profile citation binds an exact line
+contains original numbers/names only. Each profile citation binds exact text
 and its SHA-256; citation occurrence proves neither vendor authenticity nor
 semantic interpretation. Raw vendor HTML remains in worker scratch, outside
 Git and any owner evidence store. Refreshes require a new host capture and
@@ -288,8 +317,9 @@ reviewed date/values; checks and tests never fetch sources.
 changed, misquoted and unsourced facts, and uses real sandboxed KiCad DRC for
 the examples and both joint boundaries. It checks saved via IDs and reloads
 pad layers in a fresh process. The existing seal helper rejects changed results
-and profile bytes. No check registration, runtime schema or compiler changes
-are needed.
+and profile bytes. It also covers unlisted drills, exact nanometre boundaries,
+invalid option declarations and missing inventory. The compiler accepts the
+optional `/2` drill field; check kinds and predicate names are unchanged.
 
 ## Evidence and failure
 

@@ -16,7 +16,15 @@
         "source": "JLCPCB published capabilities and extra-charge policy; agent-ee numeric record",
         "as_of": "2026-10-19",
         "page": 1,
-        "quote": "via / drill / diameter / minimum: 0.15 / 0.25 mm"
+        "quote": "JLCPCB / FR-4 / 2-layer / multilayer / 2026-10-19\n\nAgent-ee recorded facts (numbers and names only).\nvia / drill / diameter / minimum: 0.15 / 0.25 mm\nvia / drill / preferred: 0.2 mm\nvia / drill / diameter / extra-charge: 0.2, 0.25 / <0.45 mm\nvia / drill / extra-charge / any diameter: 0.15 mm\nstandard / hole / minimum: 0.3 mm\nsmall-via / drill / diameter / bounds: <0.3 / <0.45 mm"
+      },
+      "drill_options": {
+        "values_mm": [
+          0.15,
+          0.2,
+          0.25
+        ],
+        "continuous_from_mm": 0.3
       }
     },
     {

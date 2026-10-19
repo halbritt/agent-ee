@@ -37,7 +37,7 @@
     "standard-hole": "Extra-charge article / 4. Small Size Holes / standard hole diameter >=0.3 mm"
   },
   "interpretation_limits": [
-    "The joint <0.3 mm drill AND <0.45 mm diameter rule models the published 0.2 and 0.25 mm drill options below the separately published standard-hole boundary. Intermediate drill sizes are not qualified by the discrete capabilities text.",
+    "The joint <0.3 mm drill AND <0.45 mm diameter rule models the published 0.2 and 0.25 mm drill options below the separately published standard-hole boundary. The drill_options gate accepts the published 0.15, 0.2 and 0.25 mm options or the standard range >=0.3 mm; all other drills remain unknown.",
     "The separate preferred 0.2 mm drill rule covers the published 0.15 mm drill option at any diameter. The <=1 mm special process for 0.1 mm drills is excluded.",
     "This is an explicit via-only FR-4 profile for 2-layer and multilayer boards using the ordinary process. No automatic applicability gate, complete DFM, annular-ring, pricing, assembly or supplier approval is claimed.",
     "Source verification proves occurrence in the original numeric record, not authenticity or interpretation of vendor bytes. Raw response hashes cannot replay absent vendor pages."

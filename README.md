@@ -381,7 +381,8 @@ fabrication limits through the same native rules. It also compares layer count
 and outline size with the saved board and lists legal surcharged features
 separately. Its `/2` conjunctive rules charge a via only when the drill and the
 diameter are both under their bounds. An explicit [dated JLCPCB via preset](docs/fab-profile.md#dated-jlcpcb-standard-via-preset)
-records the published small-via surcharge options; it covers a subset of DFM
+records the published small-via surcharge options and reports unlisted small
+drills as unknown; it covers a subset of DFM
 and supplies no pricing or supplier approval.
 The [DFM geometry check](docs/dfm-geometry.md) applies seven deterministic rules
 with captured thresholds to exact pcbnew geometry from the saved board: annular
