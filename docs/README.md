@@ -67,6 +67,7 @@ product's hardware qualification.
 | Record a board's outline, stackup, keepouts and fixed connectors before generation | [Board envelope](board-envelope.md) |
 | Record coordinator-run writer-side steps and their exact applicability | [Stage receipts](stage-receipts.md) |
 | Prepare and run synthetic seeded controls/variants | [Seeded benchmark](seeded-benchmark.md) |
+| Measure reviewer false positives on proven-equivalent design variants | [False-positive calibration](fp-calibration.md) |
 | Restore or reproduce the evaluation | [Evidence reproduction](reproducing-evidence.md) |
 | Check the proposed license and each file's origin and publication status | [Third-party origins](third-party-origins.md) |
 
