@@ -138,6 +138,7 @@ not commands to paste into a host shell with nonexistent sandbox paths.
 | `package_consistency` | `/usr/bin/python3 -B -m agent_ee.package_consistency /candidate/CATALOG MANIFEST_SHA256 /work/request.json /work/catalog-rows.json`; coordinator then compares preceding native XML names through the captured table ([details](package-consistency.md)) | 600 s |
 | `geometry` | `/usr/bin/python3 -B -m agent_ee.geometry_probe BOARD -o /work/geometry.json` | 600 s |
 | `dfm_geometry` | Same probe with `--dfm`, then a coordinator evaluation against the captured profile; see [DFM geometry](dfm-geometry.md) | 900 s |
+| `placement_congestion` | `/usr/bin/python3 -B -m agent_ee.placement_probe BOARD --out /work/placement-probe.json`, then an offline coordinator analysis of the captured probe ([details](placement-congestion.md)) | 600 s |
 | `measurements` | Declared pinned producer argv, then `/usr/bin/python3 /candidate/ADAPTER /work/request.json /work/measurements.json` | Default 600 s per producer/parser call |
 | `coupled_margins` | Coordinator joins earlier scalar results; no external solver launched | Enclosing run deadline |
 | `rc_transient` | `ngspice -n -b -o /work/ngspice.log /work/control.sp` | 600 s |
@@ -898,6 +899,20 @@ earlier `datasheet_facts` result for part/footprint-specific axis mapping and th
 ordinary earlier DRC result. Missing markers are defects; unreadable markings or
 unverified axis facts are unknown. See [IMU axes](placement.md#imu-axes) for the
 required parameters, qualified text and evidence limits.
+
+## Pre-route placement congestion
+
+`placement_congestion` (AGENTEE-57) is advisory. It runs the read-only placement
+probe and reports ranked typed issues, congested regions and suggested moves:
+`pad_overlap`, `courtyard_overlap`, `outside_outline`, `pad_clearance` and
+`ratsnest_rotation`. Each region carries a failure probability, and its severity
+band is computed from that probability on read. Proved pad, courtyard or outline
+geometry, or a region above a declared `max_failure_probability`, is a `defect`.
+A defect carries `gate_findings` with a `move` or `rotate` `suggested_fix`.
+Otherwise the outcome is `info`; the check never passes. The capability has no
+predicate, so only `informational` requirements may map it. A failed or unusable
+probe is unknown. See [placement congestion](placement-congestion.md) for
+parameters, the clearance and congestion model, and validation.
 
 ## Board envelope predicates
 

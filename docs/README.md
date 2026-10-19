@@ -43,6 +43,7 @@ product's hardware qualification.
 | Give the writer rule-card guidance that only qualified adapters grade | [Design-rule cards](design-rules.md) |
 | Check a board against a captured fabricator profile | [Fab profiles](fab-profile.md) |
 | Run DFM geometry rules (annular ring, aspect ratio, acid traps, bridge gap, spacing, skew, copper balance) | [DFM geometry](dfm-geometry.md) |
+| Report pre-route pad overlaps, congested regions and suggested moves for the placement writer | [Placement congestion](placement-congestion.md) |
 | Check assigned footprints against catalog package names | [Package consistency](package-consistency.md) |
 | Gate the BOM for JLC assembly: LCSC binding, stock freshness, Extended parts | [Assembly readiness](assembly-readiness.md) |
 | Check source-bound component choices and captured deviations | [Component decisions](part-decisions.md) |

@@ -15,7 +15,7 @@ from .storage import identity
 KINDS = frozenset(('part_decisions', 'jlc_dfm', 'fab_package', 'cpl_rotation', 'jlc_cost_estimate', 'block_provenance', 'fab_roundtrip', 'parts_subset', 'fab_consistency', 'fab_export', 'package_consistency', 'part_binding', 'catalog', 'part_selection', 'land_pattern', 'erc', 'drc', 'netlist', 'geometry', 'rc_transient',
                    'measurements', 'coupled_margins', 'datasheet_facts', 'pin_map', 'pin_contracts', 'active_spice',
                    'kicad_happy', 'kicad_happy_severity_gate', 'hardware_interface', 'passive_corners', 'dc_path',
-                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_equivalence', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names', 'topology_rules', 'regeneration_determinism', 'design_rules', 'interval_assertions'))
+                   'netclass_completeness', 'footprint_assignment', 'symbol_pins', 'routing_equivalence', 'routing_rules', 'netlist_parity', 'netlist_extra', 'fab_profile', 'placement', 'board_envelope', 'assembly_readiness', 'schematic_lint', 'dfa_dft', 'dfm_geometry', 'net_names', 'topology_rules', 'regeneration_determinism', 'design_rules', 'interval_assertions', 'placement_congestion'))
 DOMAINS = frozenset(('electrical', 'thermal', 'parasitic', 'manufacturing', 'supply_chain'))
 
 
@@ -291,6 +291,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                     from .imu_axes import envelope_declaration
                     envelope_declaration(validate((Path(inputs) / params['envelope']).read_bytes()), params)
             result['predicates'] = predicate_names(params)
+        elif kind == 'placement_congestion':
+            from .placement_congestion import capability as congestion_capability
+            captured(scope.get('board'))
+            result['predicates'] = congestion_capability(params)
         elif kind == 'dfa_dft':
             from .dfa_dft import capability as dfa_dft_capability
             captured(scope.get('board'))

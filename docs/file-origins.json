@@ -3145,6 +3145,28 @@
         "AE"
       ],
       "reviewed": "Original agent-ee six-pad pogo tracer authored under owner direction by agent-463, frozen 2026-10-18. Copied byte-exact only after verifying all four freeze input hashes; freeze.json SHA-256 a54bb1c2d678fdb74cc87405c983ac7dcb4f7d6be3d7b6e80a84cae185bcee09. No vendor design, symbol, footprint or text."
+    },
+    {
+      "paths": [
+        "src/agent_ee/placement_congestion.py",
+        "tests/test_placement_congestion.py",
+        "tests/test_placement_congestion_native.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "AGENTEE-57 original pre-route placement/congestion analysis, tests (owned synthetic probe captures and pcbnew edits of the owned RC fixture) and documentation. The routing-difficulty mechanism (per-region failure probability, 5/2/1 % bands, deterministic tie-break, free space per direction) follows tscircuit circuit-json-routing-analysis (MIT) as a reference only; no code was ported. tscircuit circuit-json-placement-analysis has no licence: none of its code, type names or text was used, and the issue taxonomy derives from agent-ee's own placement probe and predicate vocabulary. RUDY wire density is a published academic estimate. No upstream source, fixture or design file was retrieved or copied."
+    },
+    {
+      "paths": [
+        "docs/placement-congestion.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-57 feature documentation. Names tscircuit circuit-json-routing-analysis (MIT) as a mechanism reference and records that the unlicensed circuit-json-placement-analysis contributed no code, type names or text. No upstream content copied."
     }
   ]
 }

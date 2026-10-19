@@ -1001,6 +1001,7 @@ from .design_diff import check_regeneration_determinism
 from .design_rules import check_design_rules
 from .interval_assertions import check_interval_assertions
 from .placement_check import check_placement
+from .placement_congestion import check_placement_congestion
 from .envelope_check import check_board_envelope
 from .assembly_readiness import check_assembly_readiness
 from .dfa_dft import check_dfa_dft
@@ -1040,7 +1041,8 @@ CHECK_FUNCS = {
 
                "geometry": check_geometry, "rc_transient": check_rc_transient,
                "passive_corners": check_passive_corners, "dc_path": check_dc_path,
-               "placement": check_placement, "board_envelope": check_board_envelope,
+               "placement": check_placement, "placement_congestion": check_placement_congestion,
+               "board_envelope": check_board_envelope,
                "assembly_readiness": check_assembly_readiness, "dfa_dft": check_dfa_dft,
                "dfm_geometry": check_dfm_geometry}
 
