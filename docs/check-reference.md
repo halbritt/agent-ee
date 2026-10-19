@@ -577,14 +577,16 @@ are outside this routing-width criterion. See [coverage](coverage.md) for the
 complete class/count contract. Opting in changes the scope/2 baseline identity;
 existing baseline criteria keep their historical meaning.
 
-The [GNSS RF controls](gnss-rf-path.md) exercise this per-net width binding and
-native maximum length with synthetic dimensions. They do not establish a
-JLCPCB calculation or impedance. The pod requirement map keeps the 50 ohm target
-as a limitation. The authorized anonymous host workflow captured three accepted
-calculation POSTs, each followed by a UUID/accessId-bound WebSocket solver failure
-(status 6, null geometry). HTTP success supplies no RF width/gap. No source-derived
-RF_50 constraints were emitted. The RF maximum length remains unbound; the
-controls' 15 mm is a test value only.
+The [GNSS RF controls](gnss-rf-path.md) exercise per-net width binding and
+native maximum length. A single authorized W2 calculation returned valid geometry
+after three failed W1 calculations. RF_50 declares lower W1 width 0.334416796875 mm
+and selected gap 0.2032 mm; upper W2 width 0.321716796875 mm stays source metadata.
+The existing emitter rounds the minimum up to 0.335 mm. A pinned-router probe
+passes this minimum and fails after one segment is narrowed to 0.334999 mm.
+The pod map keeps impedance as a limitation and the emitter records the target
+as `recorded_not_enforced`. Minimum width/clearance checks do not verify exact
+coplanar gap or impedance. The RF maximum length remains unbound; the separate
+synthetic controls' 15 mm is test-only.
 
 Width is not ampacity. A zone's `filled` flag is not a full polygon/return-path
 analysis. Review actual saved native polygons and connectivity when needed;

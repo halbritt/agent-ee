@@ -1,7 +1,7 @@
 {
   "work_item": "AGENTEE-186",
   "as_of": "2026-10-19",
-  "status": "calculation_failed",
+  "status": "calculation_captured_impedance_unverified",
   "raw_captures": [
     {
       "file": "calculator.html",
@@ -30,15 +30,17 @@
   "raw_bytes_committed": false,
   "retention": "Raw responses remain worker scratch only, not an owner evidence store. Only original source identities and capture observations are committed.",
   "observations": [
-    "Historical raw_captures and continuation describe the earlier workers, before decision a2.",
-    "Decision a2 authorized the anonymous model recipe, supporting endpoints, calculation POST and WebSocket workflow.",
-    "The workflow completed three accepted calculation POSTs, but all solver results failed; no width/gap was extracted."
+    "Historical raw_captures, continuation and anonymous_workflow retain the earlier worker attempts.",
+    "Attempts 1 through 3 selected W1 and returned solver status 6 with null geometry.",
+    "The single authorized W2 continuation returned status 0 and dResultValid=1 with calculated upper/lower widths.",
+    "Source-derived RF_50 dimensions are declared; the target remains recorded_not_enforced and actual RF maximum length remains unbound."
   ],
-  "blocked_need": "Three authorized anonymous host calculations were HTTP-accepted but each UUID/accessId-bound WebSocket outcome reported solver status 6 and null result. No successful calculated width/gap exists. The response suggests missing or invalid parameters; no exact cause, authentication requirement or service outage is established. Further calculation diagnosis needs a new bounded plan; no fourth request was submitted.",
+  "blocked_need": "Actual RF maximum length has no captured design bound. No additional calculator requests are authorized; the dimensional declaration does not verify actual pod impedance, coplanar gap or return geometry.",
   "interpretation_limits": [
-    "HTTP success confirms submission only; solver status 6 with null geometry is not a successful impedance calculation.",
+    "HTTP success confirms submission only; the separately bound status-0, valid socket result supplies dimensions.",
     "Raw hashes identify bytes, not vendor authentication or committed offline replay. Raw vendor bytes remain worker scratch only, not an owner evidence store.",
-    "No source-derived RF_50 constraints exist. Native control dimensions remain synthetic.",
+    "KiCad uses the lower W1 width as its planar minimum and rounds upward to 0.001 mm through the existing emitter; the upper W2 taper is retained as source metadata, not modeled in KiCad.",
+    "Clearance is the selected D1 minimum, not enforcement of an exact coplanar gap. The uncoated model and fixture copper override do not qualify actual solder-mask or fabricated geometry.",
     "RF maximum length remains unbound without a captured design bound; 15 mm is test-only. Impedance remains unverified."
   ],
   "previous_get_only_blocker": "A host-side calculator calculation and capture beyond an ordinary HTTPS public-page fetch. The assignment only authorizes that fetch; no calculation POST, login, interactive automation or paid service was attempted.",
@@ -815,5 +817,235 @@
       }
     ],
     "client_hash_probe_runtime": "v24.21.0"
+  },
+  "w2_continuation": {
+    "authority": "agent-463 under owner delegated authority, 2026-10-18 20:00: exactly one W2 inverse calculation preserving attempt 3 physical inputs; no hidden fields, model/gap sweep or retry.",
+    "base": "2190f81f052dde018ac2d3011755a015721fcb1a",
+    "status": "captured_valid_geometry_impedance_unverified",
+    "raw_capture_directory": "/tmp/agent-ee-burndown-20261017/workers/ee186e-gnss-rf-w2/scratch",
+    "raw_captures": [
+      {
+        "file": "calc-4-result.json",
+        "bytes": 513,
+        "sha256": "d05e15b93f02b3cc12b9b967c093503c60a3c72338a2f35ddccd96d4998b89af",
+        "captured_at": "2026-10-19T03:06:05.940134+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/d5eb899b-0fe5-4167-9cea-b8b5369a351b",
+        "representation": "decoded_json"
+      },
+      {
+        "file": "calc-4.json",
+        "bytes": 62,
+        "sha256": "0d051687fa479a00fca4f10e2b426a932c3ee835d10143dc51afd44f4e477c1f",
+        "captured_at": "2026-10-19T03:06:05.444962+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "resolved_url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "http_status": 200,
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "calc-4.json.request.json",
+        "bytes": 398,
+        "sha256": "097a9a1df8f89a6110e0592d816b3f4d23a82b442cabf82cf9ae3fdc7782c003",
+        "captured_at": "2026-10-19T03:06:04.145349+00:00",
+        "tool": "Python 3.12.3 urllib.request (host, not a check)",
+        "url": "https://jlcpcb.com/api/jlcTools/impedance/calc",
+        "method": "POST",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "fourth-ws-001-received.frame",
+        "bytes": 692,
+        "sha256": "95d2e5bfdf3683dbe855ebed0c6ab833b4f2feda8065d957e4af6c6784b499c9",
+        "captured_at": "2026-10-19T03:06:05.939694+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/d5eb899b-0fe5-4167-9cea-b8b5369a351b",
+        "direction": "received",
+        "opcode": 1,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "fourth-ws-001-received.payload",
+        "bytes": 688,
+        "sha256": "c9b5c8c9c1e627c1edb4b7d84e27022940f3b110a17e6abff6cb7555a8e79ccc",
+        "captured_at": "2026-10-19T03:06:05.939910+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/d5eb899b-0fe5-4167-9cea-b8b5369a351b",
+        "direction": "received",
+        "opcode": 1,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "fourth-ws-002-sent.frame",
+        "bytes": 8,
+        "sha256": "a970da7d3340bf0b7ecba5d9f7d36cd6e19f273b8e11239d57e924888f8b7661",
+        "captured_at": "2026-10-19T03:06:05.940313+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/d5eb899b-0fe5-4167-9cea-b8b5369a351b",
+        "direction": "sent",
+        "opcode": 8,
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "fourth-ws-handshake.request",
+        "bytes": 235,
+        "sha256": "7e1c26c90aa0a4acd62b825970437be4c8b9b4fc09c9ed6dd4e89d10ddbd3a48",
+        "captured_at": "2026-10-19T03:06:03.574558+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/d5eb899b-0fe5-4167-9cea-b8b5369a351b",
+        "direction": "sent",
+        "representation": "raw_bytes"
+      },
+      {
+        "file": "fourth-ws-handshake.response",
+        "bytes": 407,
+        "sha256": "84d75b2a6838061e8c21f9ae2e2540bca24acd099ea90d12305590c45273f64c",
+        "captured_at": "2026-10-19T03:06:04.144931+00:00",
+        "tool": "Python 3.12.3 ssl/socket RFC6455 client (host, not a check)",
+        "url": "wss://tools.jlc.com/jlcTools/webSocket/d5eb899b-0fe5-4167-9cea-b8b5369a351b",
+        "direction": "received",
+        "representation": "raw_bytes"
+      }
+    ],
+    "producer_identities": [
+      {
+        "file": "capture.py",
+        "sha256": "550f1454e1f1381c3df88acdb3650682d1aaa4b0bca5895c124b64829e618169",
+        "bytes": 2320
+      },
+      {
+        "file": "calculate.py",
+        "sha256": "e280888ce56591f2ced783d22a892ede141742890a918ccc53e0a44fb0519bcd",
+        "bytes": 5581
+      },
+      {
+        "file": "record_capture.py",
+        "sha256": "2e515accb60aea757aeb0e0c50105778ae336fb15b5c3f6dd2cf27277c2be9cc",
+        "bytes": 6858
+      }
+    ],
+    "source_stackup": {
+      "name": "JLC04161H-7628",
+      "profile_path": "fab-profile.json",
+      "profile_sha256": "02e484728bbcf695422ab2aa70ff3923ddd82b871fc28715aa1e9e9104822632",
+      "template_id": "30726297697b4c18a0946278a48fb7d8",
+      "signal_layer": "F.Cu",
+      "reference_layer": "In1.Cu",
+      "reference_net": "GND",
+      "dielectric_mm": 0.2104,
+      "dielectric_constant": 4.4,
+      "signal_copper_mm": 0.035,
+      "reference_copper_mm": 0.0152
+    },
+    "public_client": {
+      "file": "5164550de9f6c4318dc0.js",
+      "sha256": "29bba50d37ada0c4d9397c316b805844fd4ee10fc28358dfd742198055c05ed0",
+      "automatic_selector_utf8_byte_offset": 41306,
+      "inverse_calc_utf8_byte_offset": 37781,
+      "ranges_file": "ranges.json",
+      "ranges_sha256": "926130a81d5f4db8968b0df0029a07815fb8a12f8a3b9c3858d24ffe8c8006b4",
+      "capture_directory": "/tmp/agent-ee-burndown-20261017/workers/ee186d-gnss-rf-capture/scratch"
+    },
+    "prior_request_sha256": "05328670b2cd18dc96e4a6761430ed56aac3206af0ce0de09db9db86f449aa4e",
+    "changed_fields": {
+      "impedance_calc_mark": {
+        "from": "W1_SurfaceCoplanarWaveguideWithLowerGnd1B",
+        "to": "W2_SurfaceCoplanarWaveguideWithLowerGnd1B"
+      },
+      "removed_bounds": {
+        "MinW1": 1,
+        "MaxW1": 200
+      },
+      "added_bounds": {
+        "MinW2": 2,
+        "MaxW2": 150
+      },
+      "fresh_identity_fields": [
+        "accessId",
+        "uuid"
+      ]
+    },
+    "calculation_post_count": 1,
+    "support_requests": 0,
+    "calculation": {
+      "id": 4,
+      "request_body_file": "calc-4.json.request.json",
+      "response_file": "calc-4.json",
+      "result_message_file": "fourth-ws-001-received.payload",
+      "access_id": "88b3fc3f-f258-4088-8d68-1ff6d8ba6d64",
+      "uuid": "d5eb899b-0fe5-4167-9cea-b8b5369a351b",
+      "model": "W2_SurfaceCoplanarWaveguideWithLowerGnd1B",
+      "input_parameters": {
+        "H1": 8.2835,
+        "Er1": 4.4,
+        "W1": 7.0,
+        "W2": 6.5,
+        "D1": 8,
+        "T1": 1.378,
+        "Zo": 50,
+        "dCalculateMode": 3,
+        "isLinkComputingMode": false,
+        "W2LinkW1Incr": 0.5,
+        "ZoTol": 0.5,
+        "MinW2": 2,
+        "MaxW2": 150
+      },
+      "http_status": 200,
+      "post_accepted": true,
+      "solver_status": 0,
+      "result_valid": 1,
+      "calculated_impedance_ohm": 49.6637289254,
+      "geometry_mil": {
+        "D1": 8,
+        "W1": 13.166015625,
+        "W2": 12.666015625
+      }
+    },
+    "dimension_mapping": {
+      "constraint_path": "rf-net-constraints.json",
+      "constraint_sha256": "2822674985f68021f5af6e8835fbf1d7a730e82ea107b84065617ae321e6fda8",
+      "net": "RF_IN",
+      "netclass": "RF_50",
+      "mm_per_mil": 0.0254,
+      "lower_width": {
+        "result_field": "jBackCalc.W1",
+        "mil": 13.166015625,
+        "mm": 0.334416796875,
+        "constraint_field": "track_width_mm"
+      },
+      "upper_width": {
+        "result_field": "jBackCalc.W2",
+        "mil": 12.666015625,
+        "mm": 0.321716796875,
+        "constraint_field": null,
+        "status": "retained_taper_metadata_only"
+      },
+      "gap": {
+        "result_field": "jBackCalc.D1",
+        "mil": 8,
+        "mm": 0.2032,
+        "constraint_field": "clearance_mm",
+        "status": "selected_input_preserved_in_result"
+      },
+      "emitted_min_track_width_mm": 0.335,
+      "impedance_target_ohm": 50,
+      "impedance_status": "recorded_not_enforced",
+      "rf_maximum_length": {
+        "status": "unbound",
+        "design_bound": null,
+        "native_control_max_mm": 15,
+        "native_control_is_design_bound": false
+      }
+    },
+    "additional_calculations_attempted": false,
+    "login_attempted": false,
+    "credentials_used": false,
+    "payment_attempted": false,
+    "project_uploaded": false,
+    "captcha_encountered": false,
+    "raw_bytes_committed": false,
+    "transport_limit": "All received frames/payloads and sent control frames are retained. A close frame was sent before closing the socket; no server close reply was awaited."
   }
 }

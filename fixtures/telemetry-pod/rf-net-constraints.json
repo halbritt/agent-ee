@@ -1,0 +1,15 @@
+{
+  "schema": "agent-ee.net-constraints/1",
+  "classes": [
+    {
+      "name": "RF_50",
+      "requirement": "POD-RF-WIDTH",
+      "nets": [
+        "RF_IN"
+      ],
+      "track_width_mm": 0.334416796875,
+      "clearance_mm": 0.2032,
+      "impedance_ohm": 50
+    }
+  ]
+}

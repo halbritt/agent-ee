@@ -1,16 +1,19 @@
-"""Synthetic RF controls; dimensions are test choices, never calculator evidence."""
+"""RF width controls from a captured calculation; length bounds remain test-only."""
+from decimal import Decimal
 import json
+import os
 from pathlib import Path
+import shutil
 import tempfile
 import time
 import unittest
 
-from agent_ee import candidate, checks
+from agent_ee import candidate, checks, routing_adapter, stage_receipts
 from agent_ee.baseline import freeze_evidence, verify_evidence
 from agent_ee.net_constraints import emit
 from agent_ee.storage import digest, read_json, write_json
 from tests.routing_fixture import make_scope
-from tests.toolchain import require_toolchain
+from tests.toolchain import require_kicad_route, require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,7 +27,8 @@ class NativeRfMechanismTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
 
-    def run_probe(self, *, width=0.3, sma_x=10, routed=True, project_width=None):
+    def run_probe(self, *, width=0.3, sma_x=10, routed=True, project_width=None,
+                  captured=False):
         import pcbnew as k
 
         source = self.root / 'source'
@@ -39,7 +43,7 @@ class NativeRfMechanismTests(unittest.TestCase):
         board = k.LoadBoard(str(board_path))
         for fp in board.GetFootprints():
             fp.SetReference('U_GNSS' if fp.GetReference() == 'J00' else 'J_SMA')
-        if not routed:
+        if not routed or captured:
             for track in list(board.GetTracks()):
                 board.Remove(track)
         k.SaveBoard(str(board_path), board)
@@ -47,10 +51,17 @@ class NativeRfMechanismTests(unittest.TestCase):
         intent = {'schema': 'agent-ee.net-constraints/1', 'classes': [
             {'name': 'RF_50', 'requirement': 'R-rf-width', 'nets': ['RF_IN'],
              'track_width_mm': 0.3, 'clearance_mm': 0.2, 'impedance_ohm': 50}]}
-        artifacts = emit(json.dumps(intent).encode(),
+        raw = ((ROOT / 'fixtures/telemetry-pod/rf-net-constraints.json').read_bytes()
+               if captured else json.dumps(intent).encode())
+        intent = json.loads(raw)
+        artifacts = emit(raw,
                          (ROOT / 'fixtures/netclass-completeness/native.kicad_pro').read_bytes(),
                          envelope_raw=envelope)
         self.assertEqual(json.loads(artifacts['record'])['outcome'], 'pass')
+        if captured:
+            for name in ('rf-net-constraints.json', 'rf-source-capture.json', 'envelope.json'):
+                shutil.copyfile(ROOT / 'fixtures/telemetry-pod' / name, source / name)
+                scope['inputs'].append({'path': name, 'at': name})
         for name, key in (('test.kicad_pro', 'project'), ('test.kicad_dru', 'rules'),
                           ('net-constraints.record.json', 'record')):
             (source / name).write_bytes(artifacts[key])
@@ -63,21 +74,78 @@ class NativeRfMechanismTests(unittest.TestCase):
             'criterion': 'copper-width/1', 'covered_primitives': ['PCB_TRACK', 'PCB_ARC'],
             'min_track_width_mm': 0.09, 'exclude_nets': [],
             'net_constraints': 'net-constraints.record.json'}})
+        requirement = intent['classes'][0]['requirement']
         scope['baseline']['requirements'].append({
-            'id': 'R-rf-width', 'intent': 'acceptance', 'statement': 'Synthetic RF width minimum.',
-            'source': {'path': 'requirements.txt', 'locator': 'R-rf-width'}, 'checks': ['width']})
+            'id': requirement, 'intent': 'acceptance', 'statement': 'Meet the declared RF width minimum.',
+            'source': {'path': 'requirements.txt', 'locator': requirement}, 'checks': ['width']})
         scope['limitations'] = ['Synthetic width/gap/length test choices; no captured calculator '
                                 'result, ground plane, actual devices or impedance qualification.']
+        if captured:
+            scope['limitations'] = [
+                'Captured W1 lower width rounded upward by the emitter; W2 upper taper is metadata only.',
+                'The 15 mm length bound is test-only; actual pod RF maximum length remains unbound.',
+                'No actual devices, ground plane, exact coplanar gap, mask or impedance qualification.']
+            router_input = self.root / 'router-input'
+            shutil.copytree(source, router_input / 'project')
+            step = routing_adapter.step(project='project', board='test.kicad_pcb',
+                schematic='test.kicad_sch', name='rf', label='source-width-probe',
+                checkout=require_kicad_route(), budget=120)
+            receipt_dir = self.root / 'route'
+            receipt = stage_receipts.run_step(receipt_dir, router_input, step,
+                {'implementation': 1, 'receipt_index': 1})
+            stage_receipts.validate_receipt(receipt_dir)
+            summary = routing_adapter.verify(receipt_dir / 'run', receipt=receipt)
+            self.assertEqual(summary['classification'], 'complete', summary)
+            self.assertEqual(summary['proposal'], 'eligible', summary)
+            shutil.copyfile(receipt_dir / 'run/routing/candidate/project/test.kicad_pcb', board_path)
         write_json(source / 'scope.json', scope)
+        self.source = source
+        return self.evaluate(source, 'run'), json.loads(artifacts['record'])
+
+    def evaluate(self, source, name):
+        board_path = source / 'test.kicad_pcb'
         before = digest(board_path)
-        run = self.root / 'run'
+        run = self.root / name
         run.mkdir()
         candidate.capture(source / 'scope.json', run)
         results = checks.run_checks(run, time.monotonic() + 300)
         freeze_evidence(run, results)
         verify_evidence(run, results, required=True)
         self.assertEqual(before, digest(board_path))
-        return {r['id']: r for r in results}, json.loads(artifacts['record'])
+        return {r['id']: r for r in results}
+
+    def test_captured_width_routes_then_narrower_segment_is_a_defect(self):
+        import pcbnew as k
+
+        # Retain real router/check receipts when the host validation requests them.
+        evidence = os.environ.get('AGENT_EE_RF_EVIDENCE')
+        if evidence:
+            self.root = Path(evidence)
+            self.root.mkdir()
+        results, record = self.run_probe(captured=True)
+        for result in results.values():
+            self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        cls, = record['classes']
+        self.assertEqual(cls['min_track_width_mm'], 0.335)
+        self.assertEqual(cls['impedance']['status'], 'recorded_not_enforced')
+        self.assertEqual(cls['impedance']['target_ohm'], 50)
+        board_path = self.source / 'test.kicad_pcb'
+        routed = self.root / 'route/run/routing/candidate/project/test.kicad_pcb'
+        self.assertEqual(digest(board_path), digest(routed))
+        before = {p.name: digest(p) for p in self.source.iterdir() if p.is_file()}
+        board = k.LoadBoard(str(board_path))
+        tracks = list(board.GetTracks())
+        self.assertTrue(tracks)
+        self.assertTrue(all(t.GetWidth() == 335000 and t.GetNetname() == 'RF_IN' for t in tracks))
+        tracks[0].SetWidth(334999)
+        k.SaveBoard(str(board_path), board)
+        negative = self.evaluate(self.source, 'narrower')
+        self.assertEqual((negative['width']['execution'], negative['width']['outcome']), ('ok', 'defect'))
+        offender, = negative['width']['details']['offending_primitives']
+        self.assertEqual((offender['net'], offender['limit_mm']), ('RF_IN', 0.335))
+        self.assertEqual(negative['routing']['outcome'], 'pass')
+        after = {p.name: digest(p) for p in self.source.iterdir() if p.is_file()}
+        self.assertEqual({n for n in before if before[n] != after[n]}, {'test.kicad_pcb'})
 
     def test_declared_width_and_short_path_pass_without_verifying_impedance(self):
         results, record = self.run_probe()
@@ -113,6 +181,43 @@ class NativeRfMechanismTests(unittest.TestCase):
     def test_lowered_project_width_cannot_override_recorded_rf_minimum(self):
         with self.assertRaisesRegex(ValueError, 'RF_50 track_width is below the recorded minimum'):
             self.run_probe(project_width=0.1)
+
+
+class CapturedRfDeclarationTests(unittest.TestCase):
+    def test_source_widths_and_gap_feed_existing_emitter_without_impedance_acceptance(self):
+        capture_path = ROOT / 'fixtures/telemetry-pod/rf-source-capture.json'
+        capture = read_json(capture_path)['w2_continuation']
+        mapping = capture['dimension_mapping']
+        path = capture_path.parent / mapping['constraint_path']
+        self.assertEqual(digest(path), mapping['constraint_sha256'])
+        calculation = capture['calculation']
+        self.assertEqual((calculation['solver_status'], calculation['result_valid']), (0, 1))
+        cls, = read_json(path)['classes']
+        self.assertEqual((cls['name'], cls['nets']), ('RF_50', ['RF_IN']))
+        for label, result_field, constraint_field in (
+                ('lower_width', 'W1', 'track_width_mm'), ('gap', 'D1', 'clearance_mm'),
+                ('upper_width', 'W2', None)):
+            with self.subTest(dimension=label):
+                dimension = mapping[label]
+                mil = Decimal(str(calculation['geometry_mil'][result_field]))
+                self.assertEqual(Decimal(str(dimension['mm'])), mil * Decimal('0.0254'))
+                self.assertEqual(dimension['constraint_field'], constraint_field)
+                if constraint_field:
+                    self.assertEqual(cls[constraint_field], dimension['mm'])
+        self.assertEqual(mapping['lower_width']['mil'] - mapping['upper_width']['mil'],
+                         calculation['input_parameters']['W2LinkW1Incr'])
+        self.assertEqual(calculation['geometry_mil']['D1'], calculation['input_parameters']['D1'])
+        produced = emit(path.read_bytes(),
+            (ROOT / 'fixtures/netclass-completeness/native.kicad_pro').read_bytes(),
+            envelope_raw=(ROOT / 'fixtures/telemetry-pod/envelope.json').read_bytes())
+        record = json.loads(produced['record'])
+        self.assertEqual(record['outcome'], 'pass')
+        self.assertFalse(record['acceptance_ready'])
+        emitted, = record['classes']
+        self.assertEqual(emitted['min_track_width_mm'], mapping['emitted_min_track_width_mm'])
+        self.assertEqual(emitted['impedance']['status'], 'recorded_not_enforced')
+        self.assertEqual(emitted['impedance']['target_ohm'], 50)
+        self.assertEqual(mapping['rf_maximum_length']['status'], 'unbound')
 
 
 if __name__ == '__main__':
