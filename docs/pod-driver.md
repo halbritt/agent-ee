@@ -44,6 +44,7 @@ A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
 | `implementation_steps` | Existing stage-step declarations for the five producers listed below |
 | `routing_adapter` | Existing `agent-ee.routing-adapter/1` declaration; command/pin/exit semantics remain owned by that adapter |
 | `placement_adapter` | Optional existing `agent-ee.placement-adapter/1` declaration for the owned placer; replaces the generic `place-board` step |
+| `envelope_content` | Optional object declaring the envelope-content pre-receipt's extra inputs: any of `intent`, `layout`, `antenna_facts`, `captured_rule_areas` (captured paths) and `imu_reference`; see [envelope content](#envelope-content) |
 | `review_profile` | Explicit subscription profile with independent reviewers and adjudicator |
 | `implementation` | Explicit subscription writer definition |
 | `routing_budget_s` | Integer matching the routing adapter's budget |
@@ -140,6 +141,37 @@ input/output binding passes, and the final scope passes the validators again.
 If scaffold execution fails, its failed receipt and a `status: preparing` driver
 record remain, without a usable campaign file or a prepared claim.
 
+## Envelope content
+
+When the plan declares `envelope_content`, the shared
+[stage-three producer](scaffold.md#stage-three-envelope-content-agentee-177)
+`scaffold.content_step` runs as the second pre-receipt, after `write-scaffold`
+and before the campaign. Its envelope and parts are the plan's own `envelope`
+and `parts`; its board is the scope's board and its only write. The declared
+optional inputs are passed verbatim. Plans without the field are unchanged:
+one scaffold pre-receipt, no content receipt.
+
+Before any output exists, the driver refuses an unknown `envelope_content`
+field, a non-canonical or uncaptured input, an input naming the native board
+or schematic, and an envelope with fixed footprints but no declared `intent`
+and `layout`. After adopting the scaffold, it runs the content step through
+`run_step` with binding `{pre_receipt: 2}` and adopts its board. A failed
+producer retains `content-receipt/` and a `status: preparing` driver record,
+without `campaign.json`.
+
+`campaign.json` declares `[scaffold-receipt, content-receipt]` in that order.
+`stage_receipts.validate_pre_receipt_chain` requires the content receipt's input
+tree to equal the scaffold receipt's exact after-tree. The content receipt's
+after-tree must equal the prepared candidate (`first_capture_binding`). The
+driver record keeps both links as `scaffold` and `envelope_content`. Campaign
+start revalidates the ordered chain; verification binds its last receipt to
+run 1. A reordered, rebound, changed or omitted receipt is refused, and so is
+a board edited after preparation.
+
+The step reads the intent and layout as captured at preparation. Writer edits
+to them during the campaign do not rerun this step; forward annotation and
+the fresh checks grade the board that results.
+
 ## Retained output
 
 | Path | Meaning |
@@ -149,6 +181,7 @@ record remain, without a usable campaign file or a prepared claim.
 | `scope.json`, `campaign.json` | Ordinary scope/3 and campaign/1, only after final validation |
 | `scaffold-plan/` | Read-only recipe and sandbox input paths |
 | `scaffold-receipt/` | Ordinary sandbox receipt, tool identities and retained output |
+| `content-receipt/` | Envelope-content sandbox receipt, only when `envelope_content` is declared |
 | `driver-receipt.json` | Source hashes, validation identities, config/scope hashes, scaffold binding and inference estimate note |
 | `dry-run/` | Ordinary checks-only review, when requested |
 | `dry-run-record.json` | Exact check results, stage reachability and sealed result hash; always `done: false`, `inference: false` |
@@ -192,7 +225,10 @@ small budgets, subscription-route refusal, removed bench obligations, widened
 writes, tampered scaffold receipts and failed scaffold execution. They also
 prepare a plan with the owned placement adapter, pass the engine's own campaign
 start validation (without launching an iteration), and refuse the adapter beside
-a generic placement step or with an uncaptured policy.
+a generic placement step or with an uncaptured policy. With `envelope_content`
+they run the real content producer after the scaffold, start the campaign, capture
+run 1 and verify the chain. They also refuse reordered, rebound, changed or omitted
+receipts, a later board edit, uncaptured or undeclared inputs and a failed producer.
 `tests.test_routing_campaign.RoutingPredecessorTests` tests real sandbox producers
 and the owned router protocol against the existing synthetic router; it exercises
 live and retained chain tampering and earlier-stage dispatch. These tests prove

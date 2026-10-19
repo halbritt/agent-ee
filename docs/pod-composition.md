@@ -36,8 +36,10 @@ also lists every other gate independently, so fixing one does not hide the next:
 - no `generation` marker or `fab_package` done check;
 - `spec.md` and `spec-record.json` are not baseline targets;
 - no captured `agent-ee.plane-plan/1`, so no `add-planes` step;
-- the driver records only the write-scaffold pre-receipt, while the actual
-  preparation also needed the `envelope-content` producer.
+- the driver recorded only the write-scaffold pre-receipt, while the actual
+  preparation also needed the `envelope-content` producer. AGENTEE-224 adds the
+  optional `envelope_content` plan field, which runs that producer as the second
+  pre-receipt; the recipe's record of this gap predates it.
 
 Because the configuration is refused, no checks-only dry run was attempted, and
 no substitute scope or plan was used. `next_steps` in the recipe gives one

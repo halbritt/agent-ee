@@ -458,10 +458,9 @@ def run_campaign(config_path, out):
     from .stage_receipts import validate_step
     for spec in steps:
         validate_step(spec)
-    from .stage_receipts import validate_pre_receipts, validate_pre_receipt, import_pre_receipts
+    from .stage_receipts import validate_pre_receipts, validate_pre_receipt_chain, import_pre_receipts
     pre_receipts = validate_pre_receipts(config.get('pre_receipts', []))
-    for link in pre_receipts:
-        validate_pre_receipt(config_path.parent, link)
+    validate_pre_receipt_chain(config_path.parent, pre_receipts)
     if 'routing_adapter' in config:
         from .routing_adapter import campaign_spec, validate_campaign_step
         spec = campaign_spec(config['routing_adapter'], {'scope': scope}, scope.get('mutable_inputs',
