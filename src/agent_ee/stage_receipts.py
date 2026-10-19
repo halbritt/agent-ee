@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path, PurePosixPath
 
 from .executor import execute
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, digest_fd, identity, read_json, write_json
 
 STEP_SCHEMA = 'agent-ee.stage-step/1'
 RECEIPT_SCHEMA = 'agent-ee.stage-receipt/1'
@@ -171,11 +171,7 @@ def validate_step(spec, *, host=True):
 
 
 def _digest_fd(descriptor):
-    h = hashlib.sha256()
-    with os.fdopen(descriptor, 'rb') as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b''):
-            h.update(block)
-    return h.hexdigest()
+    return digest_fd(descriptor)
 
 
 def _lookup(root, rel):

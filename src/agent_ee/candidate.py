@@ -1,5 +1,6 @@
 """Capture declared inputs; never follow undeclared live filesystem links."""
 
+import errno
 import fnmatch
 import shutil
 import subprocess
@@ -110,7 +111,12 @@ def verify_snapshot(run_dir):
         if p.is_symlink():
             raise ValueError(f"snapshot gained a live link: {p}")
         if p.is_file():
-            actual[p.relative_to(root).as_posix()] = digest(p)
+            try:
+                actual[p.relative_to(root).as_posix()] = digest(p, follow_symlinks=False)
+            except OSError as error:
+                if error.errno != errno.ELOOP:
+                    raise
+                raise ValueError(f"snapshot gained a live link: {p}") from None
     if actual != m["files"] or identity({"scope": m["scope"], "files": actual}) != m["candidate_id"]:
         raise ValueError("candidate snapshot changed; evidence is stale")
     from .baseline import load_baseline

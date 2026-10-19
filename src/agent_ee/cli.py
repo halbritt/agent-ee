@@ -16,7 +16,7 @@ import uuid
 from pathlib import Path
 
 from .candidate import capture, safe_relative, verify_snapshot, verify_source
-from .storage import digest, identity, read_json, write_json
+from .storage import digest, digest_scope, identity, read_json, write_json
 
 
 def policy_files():
@@ -28,18 +28,14 @@ LOADED_POLICY_FILES = policy_files()
 
 
 def runtime_files(*, checkpoint=None):
+    # One host observation: a binary reached under two names (claude) is hashed once.
+    with digest_scope():
+        return _runtime_files(checkpoint)
+
+
+def _runtime_files(checkpoint):
     def fingerprint(path):
-        if checkpoint is None:
-            return digest(path)
-        import hashlib
-        value = hashlib.sha256()
-        with Path(path).open('rb') as stream:
-            while True:
-                checkpoint()
-                block = stream.read(1024 * 1024)
-                if not block:
-                    return value.hexdigest()
-                value.update(block)
+        return digest(path) if checkpoint is None else digest(path, checkpoint=checkpoint)
 
     files = {}
     for name in ("kicad-cli", "ngspice", "/usr/bin/ngspice", "bwrap", "/usr/bin/python3", "claude"):
@@ -175,6 +171,13 @@ def verify(run, *, current_source=True, observations=None, invoked=()):
 
 def verify_records(run, result, *, current_source=True, observations=None, invoked=()):
     """Validate an explicit projection; callers separately bind publication intent."""
+    # One verification call hashes each file once, e.g. inputs for snapshot, baseline and artifacts.
+    with digest_scope():
+        return _verify_records(run, result, current_source=current_source, observations=observations,
+                               invoked=invoked)
+
+
+def _verify_records(run, result, *, current_source, observations, invoked):
     manifest = verify_source(run) if current_source else verify_snapshot(run)
     if manifest["candidate_id"] != result.get("candidate_id"):
         raise ValueError("result candidate identity differs from snapshot")

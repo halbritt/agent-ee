@@ -237,6 +237,67 @@ Path(sys.argv[2]).write_text(json.dumps(report))
         with self.assertRaisesRegex(ValueError, "history result link"):
             verify_campaign(self.root / "campaign")
 
+    @toolchain_test
+    def test_campaign_verification_hashes_each_file_once_per_call(self):
+        # AGENTEE-250: one verification call hashes each file once; no reuse crosses calls.
+        import mmap
+        import os
+        import time
+        from agent_ee import storage
+        from agent_ee.cli import main
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(run_campaign(self.root / "campaign.json", self.root / "campaign"), 0)
+        time.sleep(2.2)
+        counts = {}
+        original = storage._hash_stream
+
+        def counted(stream, checkpoint):
+            info = os.fstat(stream.fileno())
+            key = (info.st_dev, info.st_ino)
+            counts[key] = counts.get(key, 0) + 1
+            if info.st_uid == 0:
+                rooted.add(key)
+            return original(stream, checkpoint)
+        rooted = set()
+
+        def hashes(action):
+            counts.clear()
+            with patch('agent_ee.storage._hash_stream', side_effect=counted):
+                action()
+            return dict(counts)
+        root = self.root / "campaign"
+        inputs = {(i.st_dev, i.st_ino) for i in (os.stat(p) for p in root.glob('runs/*/inputs/**/*') if p.is_file())}
+        once = hashes(lambda: verify_campaign(root))
+        self.assertTrue(inputs and inputs <= once.keys())
+        self.assertEqual(max(once.values()), 1, once)
+        # Every call re-hashes every file, root-owned runtime files (the measurement tool) included.
+        repeated = hashes(lambda: [verify_campaign(root) for _ in range(3)])
+        self.assertEqual({repeated[k] for k in inputs}, {3}, repeated)
+        self.assertEqual(repeated, {k: 3 * v for k, v in once.items()})
+        self.assertTrue(rooted and all(repeated[k] == 3 for k in rooted), rooted)
+        with contextlib.redirect_stdout(io.StringIO()):
+            command = hashes(lambda: self.assertEqual(main(['verify-campaign', str(root)]), 0))
+        self.assertEqual(max(command.values()), 1, command)
+        # A candidate byte changed between calls without any status change still fails closed.
+        target = root / "runs/1/inputs/design/board"
+        with target.open('r+b') as stream, mmap.mmap(stream.fileno(), 0) as mapped:
+            mapped[0] = mapped[0]
+            time.sleep(2.2)
+            verify_campaign(root)
+            before = os.stat(target)
+            mapped[0] = ord('B')
+            self.assertEqual(storage._status(os.stat(target)), storage._status(before))
+            with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
+                verify_campaign(root)
+            mapped[0] = ord('b')
+        # The same holds for a rewrite whose timestamps are restored.
+        before = os.stat(target)
+        verify_campaign(root)
+        target.write_text("BOARD")
+        os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        with self.assertRaisesRegex(ValueError, "candidate snapshot changed"):
+            verify_campaign(root)
+
     def test_finding_retry_limit_below_two_refused_before_campaign_creation(self):
         self.scope['checks'][0]['stage'] = 'schematic'
         self.scope['stages'] = {'schema': 'agent-ee.stages/1', 'order': ['schematic'],

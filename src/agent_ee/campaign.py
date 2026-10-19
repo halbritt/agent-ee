@@ -9,7 +9,7 @@ from pathlib import Path
 from .convergence import advance
 from .locking import writer_lock
 from .profiles import validate_profile
-from .storage import digest, read_json, write_json
+from .storage import digest, digest_scope, read_json, write_json
 
 IMPLEMENTATION_SCHEMA = {"type": "object", "additionalProperties": False,
     "required": ["summary"], "properties": {"summary": {"type": "string"}}}
@@ -628,6 +628,12 @@ def verify_campaign(root, *, observations=None):
 
 def verify_campaign_records(root, *, observations=None):
     """Existing integrity decisions; caller establishes coherent reads if needed."""
+    # One campaign verification call hashes each file once; every retained run is still verified.
+    with digest_scope():
+        return _verify_campaign_records(root, observations=observations)
+
+
+def _verify_campaign_records(root, *, observations):
     from .cli import verify
 
     root = Path(root).resolve()
