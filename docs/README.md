@@ -32,6 +32,7 @@ product's hardware qualification.
 | Capture declared datasheet URLs before offline verification | [Datasheet acquisition](datasheet-capture.md) |
 | Capture JLCPCB stock per LCSC id (owner-run) for assembly readiness | [JLCPCB stock capture](jlc-stock-capture.md) |
 | Capture DigiKey API v4 identity, datasheet URL and ratings for external parts (owner-run) | [DigiKey capture](digikey-capture.md) |
+| Resolve a part's datasheet across DigiKey, JLCPCB/LCSC and optional Exa search into a source selection | [Datasheet source cascade](datasheet-cascade.md) |
 | Capture reference blocks and verify their native evidence coverage | [Reference block interface](reference-block-interface.md) |
 | Inspect the incomplete wbo1 and PSU host review attempts | [FOME block host review attempts](fome-block-review-runs.md) |
 | Capture a design's block plan as draft block entries; check a block adaptation | [Block inventory](block-inventory.md) |

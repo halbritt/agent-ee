@@ -13,35 +13,48 @@ def validate_ref(ref):
     nonempty(ref['part_key'])
 
 
-def selected_source(root, ref, *, context):
-    """Return the sole selected source; rejected hashes always take precedence."""
-    from .parts_manifest import _blob, _read_blob, _sha
-    validate_ref(ref)
-    document = strict_json(_read_blob(root, ref))
+def validate_document(document, *, context):
+    """Strict selection shape; an optional ``failed`` list records unacquired sources."""
+    from .parts_manifest import _blob, _sha
     exact_fields(document, ('schema', 'parts'))
     if document['schema'] != 'agent-ee.datasheet-source-selection/1' or not isinstance(document['parts'], dict):
         raise ValueError(context + ': invalid datasheet source selection')
     for key, entry in document['parts'].items():
         nonempty(key)
-        exact_fields(entry, ('selected', 'rejected'))
-        for field in ('selected', 'rejected'):
+        fields = ('selected', 'rejected', 'failed') if isinstance(entry, dict) and 'failed' in entry else (
+            'selected', 'rejected')
+        exact_fields(entry, fields)
+        for field in fields:
             if not isinstance(entry[field], list):
                 raise ValueError(context + ': source decisions must be lists')
             ids = set()
             for source in entry[field]:
-                exact_fields(source, ('id', 'sha256', 'provenance') if field == 'selected'
-                             else ('id', 'sha256', 'reason'))
+                exact_fields(source, {'selected': ('id', 'sha256', 'provenance'), 'rejected': ('id', 'sha256', 'reason'),
+                                      'failed': ('id', 'reason', 'provenance')}[field])
                 nonempty(source['id'])
-                _sha(source['sha256'])
+                if field != 'failed':
+                    _sha(source['sha256'])
                 if source['id'] in ids:
                     raise ValueError(context + ': duplicate source id ' + source['id'])
                 ids.add(source['id'])
-                if field == 'selected':
+                if field != 'rejected':
                     _blob(source['provenance'], True)
                     if re.fullmatch(r'parts\[id=(.+)\]', source['provenance']['locator']) is None:
                         raise ValueError(context + ': source needs exact acquisition locator')
-                else:
+                if field != 'selected':
                     nonempty(source['reason'])
+        # A source without acquired bytes can never be the selected one.
+        failed = {s['id'] for s in entry.get('failed', [])}
+        if failed & {s['id'] for s in entry['selected']}:
+            raise ValueError(context + ': selected source is recorded as failed: ' + key)
+    return document
+
+
+def selected_source(root, ref, *, context):
+    """Return the sole selected source; rejected hashes always take precedence."""
+    from .parts_manifest import _read_blob
+    validate_ref(ref)
+    document = validate_document(strict_json(_read_blob(root, ref)), context=context)
     entry = document['parts'].get(ref['part_key'])
     if entry is None or len(entry['selected']) != 1:
         ids = [] if entry is None else [s['id'] for s in entry['selected']]

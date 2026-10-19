@@ -480,6 +480,13 @@ field. An adapter projects a found part into an
 hand-fit purchase-source evidence. Its response mapping is not yet qualified
 against a live DigiKey response.
 
+The [datasheet source cascade](docs/datasheet-cascade.md) walks DigiKey, then
+JLCPCB/LCSC catalog URLs, then an optional Exa search (`--allow-network`, in a
+bounded child with retained raw JSON). It fetches candidates in order and skips
+non-PDF responses and previously rejected hashes. It writes a replayable
+`agent-ee.datasheet-source-selection/1` decision that records every selected,
+rejected and failed source.
+
 [Reference-block capture](docs/reference-block-interface.md) retains files from a
 pinned local commit without Git transports or replacement refs, and checks
 declared ports against the native sheet. Missing captured blobs are refused;

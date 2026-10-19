@@ -146,6 +146,27 @@ class SourceSelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing.*C38695-exact-ordering'):
             self.prepare()
 
+    def test_failed_sources_are_recorded_but_never_selectable(self):
+        # AGENTEE-248: an optional failed list records unacquired candidates.
+        failed = dict(id='supplier-html', reason='HTML bot challenge, not a PDF envelope',
+                      provenance={**self.provenance, 'locator': 'parts[id=supplier-html]'})
+        self.decision['parts']['C38695']['failed'] = [failed]
+        self.pin_decision()
+        self.assertEqual(self.prepare()['datasheet_id'], 'catalog-alias')
+        for change, pattern in (({**failed, 'id': 'general-family'}, 'selected source is recorded as failed'),
+                                ({**failed, 'reason': ''}, 'nonempty'),
+                                ({k: v for k, v in failed.items() if k != 'provenance'}, 'expected fields'),
+                                ({**failed, 'provenance': {**self.provenance, 'locator': 'x'}}, 'exact acquisition'),
+                                ({**failed, 'sha256': 'a' * 64}, 'expected fields')):
+            self.decision['parts']['C38695']['failed'] = [change]
+            self.pin_decision()
+            with self.subTest(pattern=pattern), self.assertRaisesRegex(ValueError, pattern):
+                self.prepare()
+        self.decision['parts']['C38695']['failed'] = [failed, failed]
+        self.pin_decision()
+        with self.assertRaisesRegex(ValueError, 'duplicate source id'):
+            self.prepare()
+
     def test_generic_manifest_also_refuses_rejected_source(self):
         # Retain the generic catalog fixture instead of the named replacement.
         from test_parts_subset import captured_fixture
