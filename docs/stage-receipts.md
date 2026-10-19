@@ -365,3 +365,11 @@ for no-step turns it checks the ordinary anchored delivered tree. An ordinary
 successor must come from that proposal, and missing indexes are allowed only for
 a final incomplete implementation without a proposal. Dedicated routing still
 requires an entirely unchanged writer tree before its producers.
+
+## Owned schematic pin-resolution repair
+
+A failed owned emit step still adopts no output. Staged campaigns with a frozen
+writer allowlist may retain that failed attempt and return its verified pin
+diagnostics to a bounded writer repair attempt. See [intent repair](intent-repair.md)
+for eligibility, budgets and offline custody. Other step failures keep their
+existing terminal behavior.
