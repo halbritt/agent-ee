@@ -150,6 +150,130 @@ class ForwardAnnotationTests(unittest.TestCase):
         report = self.drc(project, 'baseline')
         self.assertEqual((report['violations'], report['unconnected_items'], report['schematic_parity']), ([], [], []))
 
+    def test_native_net_name_escaping_matches_native_export_and_parity(self):
+        """Original fixture: pin-name slash and label slash, braces and spaces."""
+        self.maxDiff = None
+        def edit(data):
+            return (data.replace(b'(name "NC"', b'(name "SDA/~{SPI_CS} {X}:Q"')
+                    .replace(b'(label "VOUT"', b'(global_label "A/B {C} D:E" (shape input)'))
+        project, xml = self.project(self.intent(), 'escaping', edit=edit)
+        work = self.tmp / 'escaping-native-netlist'
+        run_native(project, work, 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadsexpr',
+                   '-o', '/work/design.net', '/candidate/regulator.kicad_sch')
+        native = parse_sexpr((work / 'design.net').read_bytes())
+        expected = {children(n, 'name')[0][1] for n in children(children(native, 'nets')[0], 'net')}
+        raw = {n['name'] for n in read_native_inventory(xml)['nets'].values()}
+        self.assertIn('A/B {C} D:E', raw)
+        self.assertIn('unconnected-(U1-SDA/~{SPI_CS}_{X}:Q-Pad4)', raw)
+        self.assertIn('A{slash}B {C} D:E', expected)
+        self.assertIn('unconnected-(U1-SDA{slash}~{SPI_CS}_{X}:Q-Pad4)', expected)
+        before = self.geometry(project, 'escape-before')
+        plan, _ = self.annotate(project, xml, 'escaping')
+        after = self.geometry(project, 'escape-after')
+        # A separate process reloads the saved board and extracts pad copper layers.
+        for key in ('footprints', 'pads'):
+            def layers(items):
+                return sorted((p['uuid'], p.get('layer'), p.get('flash_layers')) for p in items)
+            self.assertEqual(layers(before[key]), layers(after[key]))
+        self.assertEqual(self.drc(project, 'escaping')['schematic_parity'], [])
+        self.assertEqual({p['net'] for p in plan['pads']}, expected)
+        # The placer binds the raw XML export to the annotated board's encoded pad nets.
+        from agent_ee.placement_probe import extract
+        from agent_ee.placer_runner import _netlist_binding
+        facts = extract(project / 'regulator.kicad_pcb')
+        _netlist_binding(xml.read_bytes(), facts)
+        for fp in facts['footprints']:
+            for pad in fp['pads']:
+                if pad['net'] and '{slash}' in pad['net']:
+                    pad['net'] = pad['net'].replace('{slash}', '/')
+        with self.assertRaisesRegex(ValueError, 'terminal nets differ'):
+            _netlist_binding(xml.read_bytes(), facts)
+        again = fa.plan(project / 'regulator.kicad_pcb', xml, self.manifest, PROJECT, self.tmp / 'escape-again')
+        self.assertEqual(again['execution'], 'ok', again['findings'])
+        self.assertEqual((again['renames'], again['new_nets'], again['counts']['pad_changes']), ([], [], 0))
+        # Both XML-to-board producers use the same conversion; parity retains raw XML names.
+        from agent_ee.board_build import read_netlist
+        self.assertEqual({n['name'] for n in read_netlist(xml.read_bytes())['nets']}, expected)
+        self.assertEqual({n['name'] for n in read_native_inventory(xml)['nets'].values()}, raw)
+        from agent_ee.board_build import read_envelope
+        envelope = read_envelope(dict(schema='agent-ee.rung1-envelope/0-experimental',
+            outline_mm=dict(x=100, y=100, w=30, h=20), copper_layers=2,
+            stackup='template-2-layer', fixed_refs=[]))
+        spec = dict(netlist=read_netlist(xml.read_bytes()), envelope=envelope,
+            template='/candidate/regulator.kicad_pcb', output='/work/regulator.kicad_pcb',
+            seed_hashes=['0' * 64], footprints={
+                lib['name'] + ':' + Path(m['path']).stem: '/candidate/' + m['path']
+                for lib in self.manifest['libraries'] for m in lib['members']})
+        (project / 'build-spec.json').write_text(json.dumps(spec))
+        work = self.tmp / 'escaping-board-build'
+        run_native(project, work, '/usr/bin/python3', '-B', '-m', 'agent_ee.board_build',
+                   '--construct', '/candidate/build-spec.json')
+        shutil.copyfile(work / 'regulator.kicad_pcb', project / 'regulator.kicad_pcb')
+        rebuilt = self.geometry(project, 'escape-built-reload')
+        self.assertEqual({p['net'] for p in rebuilt['pads']}, expected)
+        # Rebuilt UUIDs differ; compare saved copper-layer inventories by reference/pad.
+        def pad_layers(report):
+            return sorted((f['ref'], p['pad'], p['flash_layers'])
+                          for f in report['footprints'] for p in f['pads'])
+        self.assertEqual(pad_layers(before), pad_layers(rebuilt))
+        self.assertEqual(self.drc(project, 'escape-built')['schematic_parity'], [])
+
+    def test_xml_board_encoding_character_table_against_native_export(self):
+        from agent_ee.board_build import read_netlist
+        for index, name in enumerate(('A/B', 'A{B', 'A}B', 'A B', "A:B'C", 'A{slash}B', '~{RESET}/X')):
+            with self.subTest(name=name):
+                def edit(data):
+                    return data.replace(b'(label "VOUT"',
+                        ('(global_label ' + json.dumps(name) + ' (shape input)').encode())
+                project, xml = self.project(self.intent(), 'characters-' + str(index), edit=edit)
+                work = self.tmp / ('characters-native-' + str(index))
+                run_native(project, work, 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadsexpr',
+                           '-o', '/work/design.net', '/candidate/regulator.kicad_sch')
+                native = parse_sexpr((work / 'design.net').read_bytes())
+                self.assertEqual({n['name'] for n in read_netlist(xml.read_bytes())['nets']},
+                    {children(n, 'name')[0][1] for n in children(children(native, 'nets')[0], 'net')})
+
+    def test_net_encoding_refuses_collisions_and_ambiguous_local_slashes(self):
+        from agent_ee.board_build import BoardBuildError, read_netlist
+        project, xml = self.project(self.intent(), 'encoding-refusals')
+        empty = dict(footprints=[], tracks=[], zones=[], edge_bbox_nm=[0, 0, 10000000, 10000000])
+        captured = {m['path']: (PROJECT / m['path']).read_bytes()
+                    for lib in self.manifest['libraries'] for m in lib['members']}
+        original = xml.read_bytes()
+        for old, new, message in [
+                (b'name="/VOUT"', b'name="/A/B"', 'ambiguous local net slash'),
+                (b'name="/VIN"', b'name="A/B"', None)]:
+            data = original.replace(old, new)
+            if message is None:
+                data = data.replace(b'name="/VOUT"', b'name="A{slash}B"')
+                message = 'collide after board encoding'
+            self.assertNotEqual(data, original)
+            plan = fa.build_plan(data, '0' * 64, empty, self.manifest, captured)
+            self.assertEqual(plan['execution'], 'failed', plan)
+            self.assertIn(message, plan['findings'][0]['message'])
+            with self.assertRaisesRegex(BoardBuildError, message):
+                read_netlist(data)
+        self.assertEqual((project / 'regulator.kicad_pcb').read_bytes(), BOARD.read_bytes())
+
+    def test_single_name_encoding_agrees_with_xml_projection(self):
+        """One declared XML name (probe records) takes the board form `from_xml` gives."""
+        import xml.etree.ElementTree as ET
+        from agent_ee.board_net_names import encode_net, from_xml
+        names = ['A/B {C} D:E', 'unconnected-(U3-SDA/~{SPI_CS}-Pad18)', 'unconnected-(U3-SCL/SPI_CLK-Pad19)',
+                 '/VOUT', '/Sub/X', 'GND', 'A{slash}C', '~{RESET}/X']
+        root = ET.fromstring('<export><design><sheet name="/" tstamps="/"/><sheet name="/Sub/" tstamps="/1/"/>'
+            '</design><components/><nets>' + ''.join(
+                '<net code="%d" name=%s/>' % (i, json.dumps(n)) for i, n in enumerate(names)) + '</nets></export>')
+        projected = from_xml(root)
+        self.assertEqual(projected['unconnected-(U3-SDA/~{SPI_CS}-Pad18)'], 'unconnected-(U3-SDA{slash}~{SPI_CS}-Pad18)')
+        self.assertEqual(projected['/Sub/X'], '/Sub/X')
+        self.assertEqual({n: encode_net(n) for n in names}, projected)
+        self.assertEqual({n: encode_net(n, {'/', '/Sub/'}) for n in names}, projected)
+        # Without sheet paths an extra local slash stays literal, so it cannot match KiCad's board form.
+        self.assertEqual(encode_net('/A/B'), '/A/B')
+        with self.assertRaisesRegex(ValueError, 'ambiguous local net slash'):
+            encode_net('/A/B', {'/'})
+
     def test_adding_one_component_preserves_layout_and_reapply_is_a_noop(self):
         def add(i):
             i['components'].append(dict(id='c_extra', reference='C2', lib_id='OwnedGen:CAP', value='100n',
@@ -469,6 +593,12 @@ class ForwardAnnotationTests(unittest.TestCase):
         local = ident('symbol', 'filter.kicad_sch', 'c_in', 1)
         plan = fa.build_plan(xml.read_bytes(), '0' * 64, empty, self.manifest, captured)
         self.assertEqual(plan['execution'], 'ok', plan['findings'])
+        native_work = self.tmp / 'hierarchy-native-netlist'
+        run_native(project, native_work, 'kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadsexpr',
+                   '-o', '/work/design.net', '/candidate/two_level.kicad_sch')
+        native = parse_sexpr((native_work / 'design.net').read_bytes())
+        self.assertEqual({p['net'] for p in plan['pads']},
+                         {children(n, 'name')[0][1] for n in children(children(native, 'nets')[0], 'net')})
         self.assertEqual({a['reference']: a['path'] for a in plan['add']}, {
             'J1': '/' + ident('symbol', 'two_level.kicad_sch', 'j_in', 1),
             'C1': '/' + ident('symbol', 'two_level.kicad_sch', 'c_bulk', 1),

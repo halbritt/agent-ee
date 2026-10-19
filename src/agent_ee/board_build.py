@@ -61,7 +61,7 @@ def _text(node, path):
 
 
 def read_netlist(xml_bytes):
-    """Return components and nets exactly as the native XML export states them."""
+    """Return native XML components and nets encoded for the board writer."""
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError as exc:
@@ -97,9 +97,14 @@ def read_netlist(xml_bytes):
         components.append({'ref': ref, 'value': _text(comp, 'value') or '', 'footprint': footprint,
                            'fields': fields, 'properties': properties, 'uuid': stamps[0],
                            'sheet_uuids': sheet.get('tstamps') or '/', 'pins': pins})
+    from .board_net_names import from_xml
+    try:
+        board_names = from_xml(root)
+    except ValueError as exc:
+        raise BoardBuildError(str(exc)) from exc
     nets, names, terminals = [], set(), {}
     for net in root.findall('nets/net'):
-        name = net.get('name')
+        name = board_names.get(net.get('name'))
         if not name or name in names:
             raise BoardBuildError(f'missing or duplicate net name {name!r}')
         names.add(name)

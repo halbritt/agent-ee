@@ -246,3 +246,7 @@ following:
   placer and gives a judge pass, zero parity
   items, zero violations other than unconnected items, and byte-identical
   boards from two builds. The row arithmetic is checked separately.
+
+XML net names are converted by the same [native net-name boundary](forward-annotation.md#native-net-name-encoding-agentee-220)
+as forward annotation. Generated NC and global-name slashes become `{slash}`;
+ambiguous local-name slashes and encoding collisions are refused before construction.

@@ -329,6 +329,8 @@ footprints; it never substitutes rectangles for their pads.
 `placer_runner.place_candidate(source, netlist, destination, request)` is the
 native writer. `netlist` is a captured native XML export: reference inventories
 and every assigned physical terminal net must agree with the saved board.
+XML net names are compared in their [board form](forward-annotation.md#native-net-name-encoding-agentee-220)
+(`{slash}` for a literal slash, AGENTEE-220); an ambiguous local slash is refused.
 The request contains `policy` plus explicit `authorization` with schema
 `agent-ee.placement-write/1`, `single_design_writer: true`, exact
 `source_sha256`, and an existing resolved `writable_root`. Destination must be

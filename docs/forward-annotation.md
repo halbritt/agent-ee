@@ -194,3 +194,57 @@ skip.
 - Net renames need an exact one-to-one match on retained pad membership.
   Splits and merges are pad reassignments: the old copper keeps its net and
   appears as a stale net for DRC to report.
+
+## Native net-name encoding (AGENTEE-220)
+
+Both forward annotation and `board_build` use `agent_ee.board_net_names.from_xml`
+only at the XML-to-board boundary. KiCad 10.0.7's XML exporter decodes a literal
+slash in a net name, whereas its native S-expression exporter and PCB parity
+retain `{slash}`. Global names and generated no-connect names therefore encode
+`/` as `{slash}` before planning board nets. Braces (including `~{...}` overbar
+markup), spaces, colons, quotes and backslashes remain unchanged. This is net-name
+encoding, separate from S-expression string quoting. Already encoded slash tokens
+stay encoded. Names that collide after conversion are refused before writing.
+
+Declared sheet-name prefixes remain structural paths. XML loses the distinction
+between extra local-name slashes and sheet separators: a local label `A/B` and a
+net `B` in sheet `A` can export the same name. Local names with a slash after the
+most specific declared sheet prefix are refused rather than guessed. Global
+labels deliberately shaped like absolute sheet paths are outside this XML-only
+adapter's qualified input domain. Supporting those inputs would require an
+escaped native-netlist input, which this XML-only adapter does not provide. Native XML inventories, topology parity,
+and schematic label text keep their original representation. Scaffold writes
+no schematic nets and needs no conversion. The emitter continues to accept its
+existing safe-label grammar; generated NC names are produced by KiCad itself.
+
+Every consumer that compares raw XML net names with saved PCB pad nets applies
+the same rule rather than its own conversion: `placer_runner` binds the XML
+export to the saved board through `from_xml`, so placement after forward
+annotation and the placement step inside `board_build.build` accept the board
+form. `probe_features.validate_board` compares a probe's saved pad net with
+`board_net_names.encode_net(native_net)`: the declared `native_net` stays the
+exact XML name, and only the board side is encoded. With one declared name and
+no sheet table, a local name is taken verbatim; an ambiguous local slash then
+cannot match the `{slash}` form KiCad saves, so the check still refuses it.
+Consumers that read only XML (`netlist_parity`, probe native identity, part
+bindings) or only the board (DRC, fab inventory, constraint binding) compare
+names within one domain and need no conversion. Declared names checked against
+the board, such as net-constraint nets and placement `ground_nets`, are board
+names and must already use `{slash}` for a literal slash.
+
+`test_native_net_name_escaping_matches_native_export_and_parity` modifies only
+an original owned fixture's emitted NC pin name and global label. It compares
+native XML and S-expression exports, applies both board producers, reloads their
+outputs in fresh processes, checks pad copper layers, and requires zero native
+schematic-parity mismatches. Reannotation has no net changes. Refusal tests cover
+encoding collisions and ambiguous local slashes; the hierarchical fixture checks
+that declared sheet separators match the native exporter. After annotation the
+same test binds the raw XML to the saved board with the placer's binding and
+refuses a board carrying literal slashes. `test_slash_global_net_builds_places_and_passes_native_schematic_parity`
+(`tests/test_board_build.py`) runs the whole build and placement with a global
+`OUT/2` net; `test_slash_pin_name_no_connect_annotates_and_places`
+(`tests/test_pod_placement.py`) annotates a pod-like no-connect pin named
+`SDA/~{SPI_CS}` and places the result in the sandbox; and
+`test_saved_pad_net_is_the_board_form_of_the_declared_native_net`
+(`tests/test_probe_features.py`) covers probe pads on global, local and
+no-connect names.

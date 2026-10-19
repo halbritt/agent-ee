@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 
+from .board_net_names import from_xml
 from .locking import writer_lock
 from .placement import judge
 from .placement_probe import extract
@@ -46,12 +47,14 @@ def _netlist_binding(netlist, facts, board_only=frozenset()):
         raise ValueError('board-only footprint has a net or a native netlist component')
     if len(set(refs)) != len(refs) or set(refs) != {f['ref'] for f in facts['footprints']} - board_only:
         raise ValueError('native netlist component inventory differs from saved board')
-    assignments, names = {}, set()
+    raw = [net.get('name') for net in root.findall('nets/net')]
+    if not all(raw) or len(set(raw)) != len(raw):
+        raise ValueError('ambiguous native net identity')
+    # Saved pads carry the board form of each XML name (AGENTEE-220).
+    board_names = from_xml(root)
+    assignments = {}
     for net in root.findall('nets/net'):
-        name = net.get('name')
-        if not name or name in names:
-            raise ValueError('ambiguous native net identity')
-        names.add(name)
+        name = board_names[net.get('name')]
         for node in net.findall('node'):
             identity = node.get('ref'), node.get('pin')
             if identity in assignments or identity[0] not in refs or not identity[1]:

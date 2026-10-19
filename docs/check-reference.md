@@ -1338,3 +1338,10 @@ visual evidence without preventing review; malformed critique remains unusable.
 that differ from the selected acquisition refuse before native projection.
 The selection and acquisition dependencies are immutable; no new check kind or
 predicate is introduced. Source selection alone does not verify electrical ratings.
+
+## Native net-name encoding (AGENTEE-220)
+
+The board producers apply [native net-name encoding](forward-annotation.md#native-net-name-encoding-agentee-220)
+to XML names before writing PCB nets (AGENTEE-220); the placer's netlist binding
+and probe pad validation compare saved pads with the same encoding. This does not normalize the
+XML inventory used by `netlist_parity`, or waive native DRC schematic parity.

@@ -263,6 +263,9 @@ raises a rule to defect.
 [Forward annotation](docs/forward-annotation.md) plans and applies native-netlist
 changes to a board with protected placement and routing. Full campaign generation
 and hierarchical annotation application remain unqualified.
+The board producers share KiCad native slash escaping for net names; see the
+[qualified encoding boundary](docs/forward-annotation.md#native-net-name-encoding-agentee-220).
+
 [Sub-layout reuse](docs/sublayout-reuse.md) copies a captured module layout's
 placement and routing into new staged instances by anchor offset, quarter-turn
 rotation and a unanimous pad vote for nets. Copper on unmapped nets is withheld
