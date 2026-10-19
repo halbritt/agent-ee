@@ -53,7 +53,9 @@ def main():
     elif args.command=='report':
         print(json.dumps(benchmark.report(args.manifest,args.first,args.second),indent=2,allow_nan=False))
     elif args.command=='closure':
-        print(json.dumps(benchmark.verify_closure(args.manifest,args.cache,args.closure,args.run),indent=2,allow_nan=False))
+        result = benchmark.verify_closure(args.manifest,args.cache,args.closure,args.run)
+        print(json.dumps(result,indent=2,allow_nan=False))
+        return 0 if result['closed'] else 1
     elif args.command=='native-rerun':
         if args.image:
             summary = benchmark.image_native_rerun(args.first,args.output,args.image,args.repeats)
@@ -67,4 +69,4 @@ def main():
 
 
 if __name__=='__main__':
-    main()
+    sys.exit(main())

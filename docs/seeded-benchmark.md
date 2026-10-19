@@ -78,7 +78,14 @@ binary matching its closure hash. Otherwise, as on a host where Docker is
 uninstalled, or in an image built before the record existed (such as the
 pinned `sha256:d6094c3b…0234`), the result is `unknown`. Neither
 `outer-host-absent` nor `unknown` counts as verification. Both are listed
-under `unverified`.
+under `unverified`. The result has `closed: true` only when `unverified` is
+empty: every tool and font licence file must be verified. Otherwise `closed` is
+`false`, and the CLI prints the evidence and exits 1. This includes
+`outer-host-absent` in a positively identified image; identifying the image
+does not verify the outer host licence. A fully verified closure exits 0.
+The code-owned `FONT_PACKAGES` set requires exactly `fonts-dejavu-core`,
+`fonts-dejavu-mono` and `fontconfig`, without duplicates. Both licence helpers
+enforce their exact policy sets for every caller, including direct calls.
 Fonts are a real dependency. DRC text-thickness and silkscreen records depend on
 the substitute font, and `closure` requires each run's console substitutions to
 equal the recorded map. Each font package's `copyright` file is digested
@@ -105,7 +112,8 @@ python3 scripts/seeded_benchmark.py closure benchmarks/seeded/expectations.json 
   against the code-owned policy, and the tool and font licence files by
   location. It reports each result (`verified`, `outer-host-absent` with
   positive image context, or `unknown`). Every result other than `verified` is
-  also listed under `unverified`.
+  also listed under `unverified`; any such entry makes `closed: false` and
+  the CLI exit 1.
 - For each retained run, it requires the closure's image, binary hashes and KiCad
   version. Every consumed input must be a pinned native file, a captured
   dependency or a generated benchmark file.

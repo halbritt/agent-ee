@@ -631,21 +631,29 @@ class ToolLicenceTests(unittest.TestCase):
         return {'name':name,'path':str(path),'sha256':'1'*64,'licence_class':'GPL (copyleft)',
                 'licence_evidence':{'location':location,'path':str(evidence),'sha256':sha(b'licence\n')}}
 
+    def inventory(self, root):
+        from pathlib import Path
+        from agent_ee.benchmark_run import TOOL_LOCATIONS
+        root = Path(root)/'inventory';root.mkdir()
+        return [self.tool(root,name,location) for name,location in TOOL_LOCATIONS.items()]
+
     def test_runtime_and_present_outer_evidence_verify_and_absent_outer_is_explicit(self):
         import tempfile
         from pathlib import Path
         from agent_ee.benchmark_run import tool_licences
         with tempfile.TemporaryDirectory() as tmp:
-            native = self.tool(tmp,'kicad-cli','runtime');docker = self.tool(tmp,'docker','outer-host')
-            self.assertEqual(tool_licences([native,docker]),{'kicad-cli':'verified','docker':'verified'})
+            tools = self.inventory(tmp);docker = next(t for t in tools if t['name']=='docker')
+            expected = {t['name']:'verified' for t in tools}
+            self.assertEqual(tool_licences(tools),expected)
             Path(docker['path']).unlink();Path(docker['licence_evidence']['path']).unlink()
-            self.assertEqual(tool_licences([native,docker]),{'kicad-cli':'verified','docker':'outer-host-absent'})
+            self.assertEqual(tool_licences(tools),dict(expected,docker='outer-host-absent'))
 
     def test_tampered_absent_unscoped_or_rescoped_evidence_is_refused(self):
         import tempfile
         from pathlib import Path
         from agent_ee.benchmark_run import tool_licences
         with tempfile.TemporaryDirectory() as tmp:
+            tools = self.inventory(tmp)
             tampered = self.tool(tmp,'bwrap','runtime',text='changed\n')
             absent = self.tool(tmp,'/usr/bin/python3','runtime');Path(absent['licence_evidence']['path']).unlink()
             native_outer = self.tool(tmp,'pcbnew','outer-host',binary=False)
@@ -667,7 +675,7 @@ class ToolLicenceTests(unittest.TestCase):
                      (relative,'evidence missing: git'),(unclassed,'evidence missing: git')]
             for tool,message in cases:
                 with self.subTest(message=message), self.assertRaisesRegex(ValueError,message):
-                    tool_licences([tool])
+                    tool_licences([t for t in tools if t['name']!=tool['name']]+[tool])
 
 
 class ClosureEvidenceTests(unittest.TestCase):
@@ -685,7 +693,7 @@ class ClosureEvidenceTests(unittest.TestCase):
             tools.append({'name':name,'path':str(root/(stem+'.bin')),'sha256':sha(('binary '+name).encode()),
                 'licence_class':'GPL (copyleft)','licence_evidence':{'location':location,
                 'path':str(root/(stem+'.copyright')),'sha256':sha(b'licence\n')}})
-        for name in ('fonts-dejavu-core','fontconfig'):
+        for name in ('fonts-dejavu-core','fontconfig','fonts-dejavu-mono'):
             (root/(name+'.copyright')).write_text('font licence\n')
             packages.append({'package':name,'version':'1','licence_class':'permissive','licence_evidence':
                 {'location':'image','path':str(root/(name+'.copyright')),'sha256':sha(b'font licence\n')}})
@@ -760,9 +768,15 @@ class ClosureEvidenceTests(unittest.TestCase):
                     'omit docker':[t for t in closure['tools'] if t['name']!='docker'],
                     'extra tool':closure['tools']+[extra],
                     'duplicate':closure['tools']+[closure['tools'][0]]}
+            sets['empty'] = []
+            for name in ('kicad-cli','pcbnew','bwrap','/usr/bin/python3'):
+                sets['omit '+name] = [t for t in closure['tools'] if t['name']!=name]
             for label,tools in sets.items():
-                with self.subTest(label=label), self.assertRaisesRegex(ValueError,'tool set differs from policy'):
-                    closure_evidence(dict(closure,tools=tools),**paths)
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(ValueError,'tool set differs from policy'):
+                        closure_evidence(dict(closure,tools=tools),**paths)
+                    with self.assertRaisesRegex(ValueError,'tool set differs from policy'):
+                        tool_licences(tools)
 
     def test_font_licences_are_digested_where_present_and_required_in_the_image(self):
         import copy
@@ -773,7 +787,7 @@ class ClosureEvidenceTests(unittest.TestCase):
             closure,paths = self.closure(tmp);font = closure['fonts']['packages'][0]
             host = dict(paths,container=str(Path(tmp)/'absent'))
             self.assertEqual(closure_evidence(closure,**host)['font_licence_evidence'],
-                             {'fonts-dejavu-core':'verified','fontconfig':'verified'})
+                             {'fonts-dejavu-core':'verified','fontconfig':'verified','fonts-dejavu-mono':'verified'})
             Path(font['licence_evidence']['path']).write_text('changed\n')
             for label,context in (('host',host),('image',paths)):
                 with self.subTest(label=label), self.assertRaisesRegex(ValueError,'font licence evidence missing or changed: fonts-dejavu-core'):
@@ -791,6 +805,26 @@ class ClosureEvidenceTests(unittest.TestCase):
             changed = copy.deepcopy(closure);changed['fonts']['packages'].append(changed['fonts']['packages'][1])
             with self.assertRaisesRegex(ValueError,'font package listed twice: fontconfig'):
                 closure_evidence(changed,**host)
+
+    def test_font_package_policy_refuses_empty_omitted_added_and_duplicate_inventories(self):
+        import tempfile
+        from agent_ee.benchmark_run import FONT_PACKAGES, closure_evidence, font_licences
+        self.assertEqual(FONT_PACKAGES,{'fonts-dejavu-core','fonts-dejavu-mono','fontconfig'})
+        with tempfile.TemporaryDirectory() as tmp:
+            closure,paths = self.closure(tmp);packages = closure['fonts']['packages']
+            cases = {'empty':([], 'font package set differs from policy'),
+                     'extra':(packages+[dict(packages[0],package='unapproved-font')],
+                              'font package set differs from policy'),
+                     'duplicate':(packages+[packages[0]],'font package listed twice')}
+            for name in FONT_PACKAGES:
+                cases['omit '+name] = ([p for p in packages if p['package']!=name],
+                                      'font package set differs from policy')
+            for label,(changed,message) in cases.items():
+                for in_image in (False,True):
+                    with self.subTest(label=label,in_image=in_image), self.assertRaisesRegex(ValueError,message):
+                        font_licences(changed,in_image)
+                with self.subTest(label=label), self.assertRaisesRegex(ValueError,message):
+                    closure_evidence(dict(closure,fonts={'packages':changed}),**paths)
 
     def test_committed_closure_evidence_where_the_suite_runs(self):
         from toolchain import require_toolchain
@@ -816,6 +850,69 @@ class ClosureEvidenceTests(unittest.TestCase):
         self.assertEqual(result['font_licence_evidence'],fonts)
         if image:
             self.assertEqual(set(fonts.values()),{'verified'})
+
+
+class ClosureStatusTests(unittest.TestCase):
+    def fixture(self, root):
+        import json
+        from agent_ee.benchmark_run import (CLOSURE_SCHEMA, LIBRARY_LICENCES, design_dependencies,
+                                            library_origin)
+        from agent_ee.storage import digest
+        cache = root/'cache';tree = cache/'owned/tree';tree.mkdir(parents=True)
+        board = DependencyClosureTests().board(tree)
+        board.update(id='owned',repo='owned/fixture',commit='1'*40,
+                     license={'hardware_grant':'MIT','publication':'not authorized; no repository copy'})
+        manifest = {'schema':'agent-ee.seeded-benchmark/1','synthetic':True,'boards':[board],
+                    'cases':[],'image_id':'owned-fixture'}
+        manifest_path = root/'manifest.json';manifest_path.write_text(json.dumps(manifest))
+        alternate = cache/'alternate-footprints';alternate.mkdir()
+        (alternate/'LICENSE.md').write_text('Owned fixture MIT licence evidence.\n')
+        record = root/'alternate-library.json'
+        record.write_text(json.dumps({'license_sha256':digest(alternate/'LICENSE.md')}))
+        closure,_ = ClosureEvidenceTests().closure(root)
+        # Force negative image-context evidence on both host and image, so missing
+        # font files exercise the host-unknown path in either test environment.
+        next(t for t in closure['tools'] if t['name']=='git')['sha256'] = '0'*64
+        found = design_dependencies(board,tree);entry = dict(found,board_id='owned',hardware_grant='MIT')
+        stock = '/usr/share/kicad'
+        for key,kind in (('symbol_libraries','symbol'),('footprint_libraries','footprint')):
+            entry[key] = []
+            for name in found[key]:
+                origin = library_origin(kind,name,found['project_tables'],stock)
+                entry[key].append({'nickname':name,'origin':origin,'licence_class':LIBRARY_LICENCES[origin]})
+        closure.update(schema=CLOSURE_SCHEMA,manifest_sha256=digest(manifest_path),image_id='owned-fixture',
+                       boards=[entry],alternate_library={'footprints':[],'record_sha256':digest(record)})
+        path = root/'closure.json';path.write_text(json.dumps(closure))
+        return manifest_path,cache,path,closure
+
+    def test_api_and_cli_closed_only_when_every_licence_is_verified(self):
+        import json
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import verify_closure
+        repository = Path(__file__).resolve().parents[1]
+        for missing in (None,'docker','fonts-dejavu-core','fonts-dejavu-mono','fontconfig'):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as tmp:
+                manifest,cache,path,closure = self.fixture(Path(tmp))
+                if missing=='docker':
+                    tool = next(t for t in closure['tools'] if t['name']==missing)
+                    Path(tool['path']).unlink();Path(tool['licence_evidence']['path']).unlink()
+                elif missing:
+                    font = next(p for p in closure['fonts']['packages'] if p['package']==missing)
+                    Path(font['licence_evidence']['path']).unlink()
+                result = verify_closure(manifest,cache,path)
+                self.assertEqual(result['closed'],missing is None)
+                self.assertEqual(result['unverified'],[missing] if missing else [])
+                if missing:
+                    key = 'licence_evidence' if missing=='docker' else 'font_licence_evidence'
+                    self.assertEqual(result[key][missing],'unknown')
+                process = subprocess.run([sys.executable,str(repository/'scripts/seeded_benchmark.py'),
+                                          'closure',str(manifest),str(cache),'--closure',str(path)],
+                                         capture_output=True,text=True)
+                self.assertEqual(process.returncode,0 if missing is None else 1,process.stderr)
+                self.assertEqual(json.loads(process.stdout),result)
 
 
 class FontSubstitutionTests(unittest.TestCase):

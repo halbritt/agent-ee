@@ -18,6 +18,12 @@ feedback, see the [closed-loop contract and command reference](closed-loop.md).
 The [pod evidence index](evidence-index.md) maps captured criteria to existing
 check results, receipt history and outstanding obligations without running checks.
 
+The [seeded benchmark closure audit](seeded-benchmark.md#dependency-closure)
+requires exact tool and font inventories and verified licence files. Its CLI
+reports `closed: false` and exits 1 when any licence evidence is unverified,
+including an absent outer-host Docker licence inside an identified image.
+This inventory audit adds no candidate check kind.
+
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
 arguments, exit status and console output remain in `work/CHECK_ID/`.
