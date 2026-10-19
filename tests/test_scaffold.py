@@ -711,12 +711,17 @@ class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
         self.assertEqual(mask['after'],mask['before'])
         self.assertEqual(len(mask['before']),32)
 
-    def test_forward_annotation_retains_fixed(self):
+    def test_forward_annotation_retains_fixed_and_seeds_only_new_fields(self):
         from agent_ee import forward_annotation as fa
         from agent_ee.executor import execute
         from agent_ee.schematic_emitter import emit_schematic
         inputs,path,receipt = self.content()
         self.assert_completed(path,receipt)
+        fields = dict(LCSC='C215', Manufacturer='Owned manufacturer',
+                      PARAM_Datasheet='owned-datasheet.pdf', Partnumber='OWNED-215')
+        for comp in self.intent['components']:
+            comp['part_binding'] = dict(fields,Description='Updated owned description')
+            comp['value'] += '-annotated'
         result,files = emit_schematic(self.intent,{'Owned.kicad_sym':(inputs / 'Owned.kicad_sym').read_bytes()},
                                      read_json(inputs / 'layout.json'))
         self.assertEqual(result['execution'],'ok',result)
@@ -731,9 +736,81 @@ class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
         self.assertEqual(plan['execution'],'ok',plan)
         self.assertEqual((plan['counts']['retain'],plan['counts']['add'],plan['counts']['remove'],plan['counts']['board_only']),
                          (4,0,0,4))
+        self.assertEqual(plan['counts']['update'],4)
+        source = board.read_bytes()
         out = inputs / 'project/annotated.kicad_pcb'
         result = fa.apply(plan,board,xml,manifest,inputs,out,self.root / 'annotation-apply')
         self.assertEqual(result['execution'],'ok',result)
+        # Independent runs start from the same pre-annotation bytes, rather than
+        # reapplying to an output that already contains all the fields.
+        control_plan = fa.plan(board,xml,manifest,inputs,self.root / 'control-plan')
+        self.assertEqual(control_plan['execution'],'ok',control_plan)
+        control = self.root / 'control.kicad_pcb'
+        control_result = fa.apply(control_plan,board,xml,manifest,inputs,control,self.root / 'control-apply')
+        self.assertEqual(control_result['execution'],'ok',control_result)
+        self.assertEqual(out.read_bytes(),control.read_bytes())
+        self.assertEqual(board.read_bytes(),source)
+
+        def uuids(node):
+            found = []
+            if isinstance(node,list):
+                if node and node[0]=='uuid':
+                    found.append(node[1])
+                for item in node:
+                    found.extend(uuids(item))
+            return found
+
+        old_tree,new_tree = parse_sexpr(source),parse_sexpr(out.read_bytes())
+        old_ids,new_ids = uuids(old_tree),uuids(new_tree)
+        self.assertTrue(set(old_ids).issubset(new_ids))
+        self.assertEqual(len(new_ids),len(set(new_ids)))
+
+        def properties(tree):
+            return {next(p[2] for p in children(fp,'property') if p[1]=='Reference'):
+                    {p[1]:p for p in children(fp,'property')} for fp in children(tree,'footprint')}
+
+        old_props,new_props = properties(old_tree),properties(new_tree)
+        added = []
+        for ref,props in old_props.items():
+            for name,prop in props.items():
+                self.assertEqual(children(prop,'uuid'),children(new_props[ref][name],'uuid'),(ref,name))
+            if ref not in ('J1','J2','U1','U2'):
+                self.assertEqual(new_props[ref],props)
+                continue
+            self.assertEqual(new_props[ref]['Value'][2],props['Value'][2]+'-annotated')
+            self.assertEqual(new_props[ref]['Description'][2],'Updated owned description')
+            for name,text in fields.items():
+                self.assertNotIn(name,props)
+                self.assertEqual(new_props[ref][name][2],text)
+                added.extend(uuids(new_props[ref][name]))
+        self.assertEqual(len(added),16)
+        self.assertTrue(set(added).isdisjoint(old_ids))
+
+        # Reload each saved board in its own process; never share pcbnew's LSET
+        # state with either writer or use the annotation helper as the oracle.
+        reload = ("import json,sys,pcbnew\n"
+            "board=pcbnew.LoadBoard(sys.argv[1])\n"
+            "json.dump(dict(pads={fp.GetReference()+'.'+p.GetNumber():sorted("
+            "pcbnew.BOARD.GetStandardLayerName(l) for l in p.GetLayerSet().Seq()) "
+            "for fp in board.GetFootprints() for p in fp.Pads()},"
+            "fields={fp.GetReference():{f.GetName():[f.m_Uuid.AsString(),f.GetText(),f.IsVisible()] "
+            "for f in fp.GetFields()} for fp in board.GetFootprints()}),open(sys.argv[2],'w'))\n")
+        snapshots = []
+        for index,saved in enumerate((board,out,control)):
+            snapshot = self.root / f'annotation-reload-{index}.json'
+            subprocess.run(['/usr/bin/python3','-B','-c',reload,str(saved),str(snapshot)],
+                           capture_output=True,check=True,timeout=60)
+            snapshots.append(read_json(snapshot))
+        self.assertEqual(snapshots[1],snapshots[2])
+        self.assertEqual(snapshots[0]['pads'],snapshots[1]['pads'])
+        for ref in ('J1','J2','U1','U2'):
+            for name,old_field in snapshots[0]['fields'][ref].items():
+                saved_field = snapshots[1]['fields'][ref][name]
+                self.assertEqual((saved_field[0],saved_field[2]),(old_field[0],old_field[2]),(ref,name))
+            for name,text in fields.items():
+                uid,saved_text,visible = snapshots[1]['fields'][ref][name]
+                self.assertIn(uid,added)
+                self.assertEqual((saved_text,visible),(text,False))
         before = fa.board_facts(board,self.root / 'before')
         after = fa.board_facts(out,self.root / 'after')
         for key in ('uuid','path','position_nm','orientation_deg','layer'):

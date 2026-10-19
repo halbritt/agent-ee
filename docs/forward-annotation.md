@@ -84,6 +84,12 @@ byte-for-byte copy of the input. Otherwise the child:
   fields and staging position, and seeds its UUIDs from the native path;
 - assigns every planned pad net.
 
+New fields on retained footprints receive UUIDv5 identities from the retained
+footprint UUID and field name (AGENTEE-215). Updating an existing field keeps
+its UUID and visibility. New fields stay hidden. Identical pre-annotation board
+and netlist bytes therefore produce identical board bytes for these field
+updates; no retained candidate or historical hash is rewritten.
+
 A separate child process then reads the saved board. The parent refuses
 publication unless the footprint inventory matches the plan, retained
 footprints and pads have unchanged positions, orientation, side and identity,
@@ -160,6 +166,12 @@ raw copper S-expressions for independent extraction, the tests show:
   do-not-populate export is refused as `dnp_unsupported`.
 - For the native export of the emitted two-level design, child-sheet symbols
   bind only under their full native sheet path plus unit UUID.
+- `tests.test_scaffold.EnvelopeScaffoldTests.test_forward_annotation_retains_fixed_and_seeds_only_new_fields`
+  annotates the same original pod-sized scaffold twice in separate native
+  processes. The outputs are byte-identical after adding LCSC, Manufacturer,
+  PARAM_Datasheet and Partnumber to J1/J2/U1/U2. Independent S-expression
+  inventories retain every existing UUID, and fresh-process native reloads
+  preserve pad layers and confirm the new fields are hidden.
 - Publication leaves a planted link or file at the former fixed staging name
   untouched, refuses a live or dangling link at the output name, refuses a
   link in an output or backup ancestor and a linked in-place board, and

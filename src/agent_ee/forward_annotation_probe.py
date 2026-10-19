@@ -12,7 +12,7 @@ import json
 import sys
 import uuid
 
-# Fixed namespace for footprints this helper inserts; keyed by native path.
+# Fixed namespace for generated footprint and field identities.
 FOOTPRINT_NAMESPACE = uuid.UUID('7b1f3c52-8a0e-5d4b-9c61-2e7f0a9d3b85')
 # Destroying a removed FOOTPRINT corrupts pcbnew's SWIG type registry for the
 # rest of the process, so removed proxies live until exit and output facts are
@@ -63,12 +63,18 @@ def _stable_uuids(fp, path):
 
 
 def _set_fields(fp, fields):
+    import pcbnew
     for name, text in sorted(fields.items()):
         known = fp.HasField(name)
         fp.SetField(name, text)
         if not known:
+            field = next(f for f in fp.GetFields() if f.GetName() == name)
+            # Retained footprints must keep all prior UUIDs. Seed only the new
+            # field, independently of field order, values and the output path.
+            seed = json.dumps([fp.m_Uuid.AsString(), 'field', name], separators=(',', ':'))
+            field.SetUuidDirect(pcbnew.KIID(str(uuid.uuid5(FOOTPRINT_NAMESPACE, seed))))
             # Symbol fields copied to a footprint stay hidden, as native update does.
-            next(f for f in fp.GetFields() if f.GetName() == name).SetVisible(False)
+            field.SetVisible(False)
     from .probe_features import PROPERTY
     if PROPERTY in fields:
         fp.SetExcludedFromBOM(True)
