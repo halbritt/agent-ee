@@ -41,7 +41,12 @@ class CaptureTests(unittest.TestCase):
                 record = read_json(root / 'block.json')
                 result = validate_block(root)
                 self.assertEqual(result['status'], 'unverified')
-                self.assertEqual(result['runs'], [])
+                if channel == 'wbo1':
+                    receipt = read_json(REPO / 'evidence/fome-block-review-runs/receipts/wbo1/result.json')
+                    self.assertEqual(result['runs'], [dict(run_id=receipt['run_id'], status='unavailable')])
+                    self.assertEqual(record['runs'][0]['candidate_id'], receipt['candidate_id'])
+                else:
+                    self.assertEqual(result['runs'], [])
                 self.assertEqual(record['source']['commit'], COMMIT)
                 self.assertEqual(set(record['source']['paths']), {record['sheet']})
                 self.assertFalse((root / 'sources').exists())

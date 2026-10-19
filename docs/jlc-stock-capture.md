@@ -56,7 +56,8 @@ catalog.json          agent-ee.jlc-catalog/1
 responses/C25804.json raw response bytes, exactly as received
 ```
 
-`catalog.json` has exactly these keys:
+`catalog.json` follows the [JLC catalog schema](jlc-catalog.md), with exactly
+these keys (including `schema: "agent-ee.jlc-catalog/1"`):
 
 | Key | Meaning |
 |---|---|
@@ -112,12 +113,14 @@ applies the following rules:
 1. **Re-derivation.** Every retained response must exist under the captured
    inputs and match its size and SHA-256. Re-parsing the bytes must reproduce
    each recorded status and the `parts` object exactly. A forged summary or
-   altered bytes give `execution="failed"`.
-2. **Bound to the run.** `params.as_of` is required, and it is the run's
-   evaluation instant. The capture's own `as_of` is never used as the
-   evaluation date. A staleness must also be declared, through
-   `max_age_hours`, `max_stock_age_days` or `stale_before`. Missing either one
-   gives `execution="unsupported"`.
+   altered bytes give `execution="failed", outcome="unknown"`; retained hash
+   verdicts identify the affected responses. The consumer refuses any source
+   other than the documented JLCPCB endpoint and requires `requests`.
+2. **Bound to the run.** Campaign evaluation uses the anchored generation
+   receipt's completion time, while standalone checks use coordinator review
+   time. The check overrides caller `as_of` and declares `max_age_hours: 24`
+   (or preserves a tighter limit). Direct evaluation API calls still require
+   explicit `as_of` and staleness. See [evaluation time](jlc-catalog.md#evaluation-time-and-compatibility).
 3. **Staleness.** The check refuses a capture whose `as_of` is after the run
    `as_of`, or older than the declared staleness (`execution="failed"`). The
    per-part `last_seen` rules then apply as for any catalog.
@@ -128,11 +131,12 @@ applies the following rules:
    `unknown_lcsc_in_catalog` defect.
 
 The report records `catalog.capture` (`as_of`, `completed_at`, `requested`,
-`not_found`, `failed`). The producer's stdout prints the catalog path, its
+`not_found`, `failed`, `response_verdicts`). The producer's stdout prints the catalog path, its
 SHA-256 (for `catalog_sha256`) and the capture `as_of`.
 
-A looser `agent-ee.jlc-catalog/1` document without a `requests` list keeps the
-generic JSON-snapshot rules in [assembly readiness](assembly-readiness.md).
+A document labelled `agent-ee.jlc-catalog/1` without a `requests` list is
+refused. Legacy snapshots use the explicit `agent-ee.catalog-snapshot/1` or
+`agent-ee.catalog/1` schema; they do not establish verified JLCPCB stock.
 
 ## Tests
 

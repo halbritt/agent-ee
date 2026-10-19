@@ -71,8 +71,10 @@ requirements, checks and models.
    other's initial judgments. The two calls run concurrently in separate
    contexts and workspaces; adjudication waits for both to settle.
 5. **Adjudicate centrally.** Findings get explicit dispositions. New reviewer
-   and adjudicator citations include [validated document locations](docs/result-reference.md#structured-citations);
-   retained records keep their versioned compatibility rule. Under scope/2 and scope/3,
+   and adjudicator citations include [validated document locations](docs/result-reference.md#structured-citations).
+   Packets list evidence formats and locator kinds, and citation resubmissions
+   identify the file and required kind (line ranges for native KiCad text).
+   Retained records keep their versioned compatibility rule. Under scope/2 and scope/3,
    an accepted defect must be a coordinator check finding backed by sealed
    evidence and a mapped requirement violation. Reviewer hypotheses need
    reproduction or remain concerns; agreement alone cannot establish a defect.
@@ -131,8 +133,9 @@ scope. It preserves project rules, checks and baseline sources, pre-creates chil
 sheets and leaves native execution to the ordinary review/campaign workflow. Its
 stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
 rules from the envelope, its fab profile and the parts manifest instead, and
-refuses incomplete inputs. Per-net classes and hierarchical staged presence
-remain unavailable.
+refuses incomplete inputs. Optional captured net constraints add per-net classes,
+assignments, width rules and a Default completeness check. Hierarchical staged
+presence remains unavailable.
 
 An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it
@@ -176,10 +179,21 @@ malformed tables and colliding IDs with the byte offset and infers no values.
 [Board envelope declarations](docs/board-envelope.md) bind mechanical constraints
 and derived requirements into the captured baseline. A reference document becomes
 binding only when declared or consumed by the scope. The registered native check
-compares exact outline and copper layers. Complete production envelope capture
-remains unavailable: stackup lacks qualified copper-weight authority, and holes,
-keepouts and multiple fixed connectors lack individual bindings. Capture refuses
-those gaps.
+compares exact outline and copper layers, and grades stackup against the referenced
+source-verified profile without converting thickness to copper ounces. Several fixed
+connectors receive separate reference-selected witnesses. Capture succeeds for a
+fully bound scope and still refuses holes, keepouts and unbound generator mechanics.
+
+The [telemetry-pod fabrication inputs](docs/telemetry-pod-fab-profile.md) record
+eight dated JLCPCB JLC04161H-7628 limits and bind known mechanics to the pod spec.
+The envelope records nominal 1.6 mm and physical 1.5862 mm thickness separately,
+with a cited ±10% tolerance. Generator-selected mechanics remain explicit
+unbound obligations for AGENTEE-177/179, so acceptance stays unknown.
+
+The offline [io-map compiler](docs/io-map.md) turns a declared pinout CSV into
+a hardware-interface contract, preserving no-connects and unresolved pins.
+Concrete MCU rows require a declared direct conductor; indirect CAN transceiver
+and ADC paths are refused by the compiler.
 
 Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
 [captured owner-approved exact violation waivers](docs/violation-waivers.md), native netlist export
@@ -320,7 +334,7 @@ The [routing-rule check](docs/routing-rules.md) tests captured length/skew and
 other supported bounds through native KiCad rules, with complete copper-contact
 coverage required. Arcs, zones and unsupported topology remain unknown.
 The [campaign routing adapter](docs/routing-adapter.md) runs pinned kicad-route
-`e497916` (versioned `kicad-route/route/1` results)
+`a132899` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 with read-only state, retains hashed attempt diagnostics, and verifies routing
 semantics before adopting a proposal. Fresh checks determine acceptance.
 The [fab profile check](docs/fab-profile.md) runs captured, source-cited
@@ -381,7 +395,10 @@ engineering claims.
 producer. It sends one rate-limited request per LCSC id to the public JLCPCB
 search endpoint and keeps each raw response, hashed and time-stamped.
 `assembly_readiness` consumes the capture offline: it re-derives every part
-from those bytes and binds `as_of` to the run. It refuses a capture that is
+from those bytes and binds `as_of` to the generation receipt in campaigns
+(review time for standalone checks), with a 24-hour maximum age. The
+[JLC catalog schema](docs/jlc-catalog.md) requires verifiable responses and
+reports per-part hash verdicts. It refuses a capture that is
 stale or lacks an observation for a populated id. Its response mapping is not
 yet qualified against a live JLCPCB response.
 
@@ -412,6 +429,9 @@ The owner decision of 2026-10-18 permits the [pinned wideband reference](docs/fo
 under `fixtures/fome-mc/wbo1/`. Its native wbo1-to-wbo2 adaptation fixture uses
 fresh checks; upstream parity, functional behavior, heater geometry and independent
 review remain pending, and both source blocks remain unverified.
+The [FOME host review attempts](docs/fome-block-review-runs.md) retain failed
+review identities for wbo1 and PSU. Invalid citations prevented adjudication;
+committed metadata receipts give no passing credit.
 
 The [pod CAN reference sets](docs/pod-can.md) capture the wideband TJA1051T/3
 and PSU protection/termination parts together. An explicit captured composition

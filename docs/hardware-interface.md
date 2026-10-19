@@ -36,6 +36,10 @@ predicate kinds are refused.
 - `terminals` maps logical IDs to a declared `component` ID and string `pin`.
   The native library part must inventory that pin uniquely. Unconnected known
   pins are distinguished from unknown pin mappings.
+  A terminal may instead contain exactly `unresolved` with a nonempty reason;
+  every predicate using it remains `not_evaluated`. An entirely unresolved
+  io-map contract may have an empty `components` mapping when every invariant
+  has a CSV citation; uncited component-free contracts are refused.
 - `allowed_edits` is an explicit positive list. This version supports only
   `{component, property: "value", values: ["10k"]}` for a component with a
   `value` invariant. These exact strings extend the invariant's `equals` value.
@@ -57,6 +61,13 @@ The supported kinds and additional fields are:
 | `named_net` | `terminal`, nonempty `names` | Terminal belongs to one exact permitted native net name. |
 | `same_net` | Two unique `terminals` | Both known terminals belong to the same native conductor. |
 | `different_net` | Two unique `terminals` | Both known terminals belong to distinct native conductors. |
+| `no_connect` | `terminal` | Known terminal has no conductor; ambiguous singleton classification is unknown. |
+| `unresolved` | Nonempty `reason` | Always `not_evaluated`; records an obligation that cannot yet be checked. |
+
+The offline [io-map compiler](io-map.md) emits these predicates from a CSV.
+Invariants may carry its strict `io_map` citation object, including a captured
+CSV hash, row and external destination text. The CSV becomes an immutable scope
+input; destination prose supplies no additional engineering authority.
 
 Names are case-sensitive and retain leading slashes and hierarchical context.
 Aliases must be explicitly listed in immutable `names`. Anonymous nets should

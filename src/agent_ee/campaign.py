@@ -146,6 +146,11 @@ def placement_binding(config, manifest, inputs, mutable):
 
 
 def implement(root, previous, definition, state, deadline):
+    from .intent_retry import implement as repair_intent
+    return repair_intent(root, previous, definition, state, deadline, _implement_once)
+
+
+def _implement_once(root, previous, definition, state, deadline, *, retry=None):
     from .reviewers import reviewer_call
 
     manifest = read_json(previous / "candidate.json")
@@ -221,6 +226,9 @@ def implement(root, previous, definition, state, deadline):
                            **({'inputs': spec['inputs']} if 'inputs' in spec else {}),
                            'scheduled': spec['stage'] in scheduled_stages} for spec in config['implementation_steps']],
                        'step_owned_outputs': sorted({rel for spec in scheduled for rel in spec['writes']})}))
+    if retry is not None:
+        from .intent_retry import seed
+        prompt += seed(work, *retry)
     (work / 'implementation-prompt.txt').write_text(prompt, encoding='utf-8')
     from .preflight import capture_expectation
     original = read_json(previous / 'result.json')
@@ -264,6 +272,8 @@ def implement(root, previous, definition, state, deadline):
     if digest(root / "config.json") != state["config_sha256"]:
         raise ValueError("campaign configuration changed")
     if "stage_receipts" in state:
+        from .intent_retry import pin_source
+        pin_source(work, manifest, state, config, plan)
         run_implementation_steps(work, design, manifest, state, deadline, plan,
                                  source_inputs=previous / "inputs", declaration=config.get("placement_adapter"))
         if plan:
@@ -521,6 +531,8 @@ def record_iteration(root, state, run, config):
     from .fab_stage import campaign_context, pending_checks, verify_check_context
     context = campaign_context(root, state, config, manifest['scope'])
     verify_check_context(run, result, context)
+    from .assembly_readiness import campaign_stock_context, verify_stock_context
+    verify_stock_context(run, result, campaign_stock_context(root, state, config, manifest['scope']))
     record, diagnostic = advance(comparable, result, manifest, budget, pending_fab=pending_checks(result))
     snapshot = root / "history" / f"{len(state['history']) + 1}.json"
     snapshot.parent.mkdir(exist_ok=True)
@@ -581,9 +593,12 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
                     raise ValueError("campaign iteration or wall-clock budget exhausted")
                 from .fab_stage import campaign_context
                 context = campaign_context(root, state, config, read_json(scope_path))
+                from .assembly_readiness import campaign_stock_context
+                stock_context = campaign_stock_context(root, state, config, read_json(scope_path))
                 run_review(scope_path, run, deadline - time.monotonic(), profile=root / "profile.json",
                            expected_baseline=state.get("baseline"),
-                           max_schema_resubmissions=config.get("max_schema_resubmissions", 1), fab_context=context)
+                           max_schema_resubmissions=config.get("max_schema_resubmissions", 1), fab_context=context,
+                           stock_context=stock_context)
             initial_run = None
             record_iteration(root, state, run, config)
             verify_campaign(root)
@@ -709,6 +724,8 @@ def verify_campaign_records(root, *, observations=None):
         preceding = {**state, 'history': history}
         context = campaign_context(root, preceding, config, manifest['scope'])
         verify_check_context(run, result, context)
+        from .assembly_readiness import campaign_stock_context, verify_stock_context
+        verify_stock_context(run, result, campaign_stock_context(root, preceding, config, manifest['scope']))
         record, diagnostic = advance(comparable, result, manifest, budget, pending_fab=pending_checks(result))
         metadata = {"run", "result_sha256", "result_snapshot", "epoch", "calibration_id", "bench_transaction", "bench_attempt_id"}
         if record != {k: v for k, v in stored.items() if k not in metadata}:
@@ -725,6 +742,8 @@ def verify_campaign_records(root, *, observations=None):
     from .stage_receipts import verify_campaign_receipts
     verify_campaign_receipts(root, state, steps=config.get("implementation_steps", []), plans=plans)
     verify_writer_records(root, state, config)
+    from .intent_retry import verify as verify_intent_retries
+    verify_intent_retries(root, state, config)
     from .routing_adapter import verify_campaign_receipt, validate_binding
     routing_binding = state.get('routing_binding')
     if 'routing_adapter' in config and state['history']:

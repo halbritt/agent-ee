@@ -16,7 +16,9 @@ exactly one mapped fabrication requirement, matching the routing witness contrac
 Scope/3 descriptors report one `fab:<limit-id>` predicate per sourced minimum
 limit; preferred limits only classify extra charges. Preflight requires both
 `kicad-cli` and `pcbnew`. No preset, network lookup, pricing service or default
-fabricator is supplied.
+fabricator is selected implicitly. The [telemetry-pod fixture](telemetry-pod-fab-profile.md)
+records a dated subset of JLCPCB JLC04161H-7628 limits; it does not provide
+complete supplier DFM or resolved pod mechanics.
 
 For example, an **owned synthetic assumption**, not a real fabricator's limit:
 
@@ -77,6 +79,52 @@ profile is read through this same compiler before generation. Its sourced
 minimum `max_layers` and `max_board_mm` limits are evaluated against the declared
 layer count and outline on the same fixed axes. Its profile obligation is covered
 only by a `fab_profile` check over the referenced bytes.
+
+## Finished-thickness tolerance
+
+A `/2` profile may also contain top-level `finished_thickness_tolerance` with
+exactly `percent`, `min_nominal_thickness_mm` and `source`. Percent must be
+finite and strictly between 0 and 100; minimum nominal thickness must be
+finite and positive. The source uses the same citation contract as every
+limit. The compiler retains its `execution` and `expected` fields and adds the
+source to `immutable_inputs`. Missing or changed evidence is unsupported,
+and the fab-check descriptor refuses it before native execution.
+A `/1` profile refuses this field.
+
+This bound is consumed by [envelope/2](board-envelope.md) when comparing the
+published physical layer sum to the ordered nominal thickness. It is not a
+native DRC rule, extra-charge rule or scope/3 predicate. The `fab_profile`
+check still grades only entries in `limits`; it makes no board-thickness
+acceptance claim. The envelope's independent stackup obligation remains
+unknown without qualified manufacturing authority and source coverage.
+
+## Stackup authority
+
+Fab-profile/2 may declare `stackup` with exactly `name`, `layer_count`,
+`nominal_thickness_mm`, `thickness_mm`, `layers`,
+`layer_thickness_tolerance_mm` and `source`. Layers reuse envelope/1's alternating
+copper/dielectric shape, including explicit copper weights; their exact sum is
+`thickness_mm` (physical thickness). The separate nominal thickness is the
+board order. The name identifies the cited stack; the source uses the existing
+path/hash/identity/date/page/exact-quote verifier. Fab-profile/1 refuses this metadata.
+
+The explicit nonnegative layer tolerance bounds the difference between each
+saved or envelope layer thickness and its declared profile thickness, using
+exact rational arithmetic and an inclusive boundary. It is a **saved-design
+matching policy**, not a claim about manufactured per-layer tolerances. The pod
+profile declares zero: its saved layers must retain the published values exactly.
+The cited ±10% finished-board tolerance remains a separate nominal-versus-physical
+bound and is never applied to individual layers. No copper weight is computed
+from thickness. A declared 2 oz layer against the profile's 1 oz is a defect even
+when the saved thickness is unchanged.
+
+The compiler retains `stackup.execution` and normalized `expected` metadata,
+with cited source paths in `immutable_inputs`. Missing or invalid citations
+leave it unsupported; the fab descriptor refuses that metadata. The independent
+`board_envelope` `stackup/1` criterion consumes the authority and retains it in
+`envelope-judgment.json`. Native fab limit predicates remain unchanged. Citation
+verification proves occurrence in captured text, not supplier authenticity or
+semantic interpretation of an arbitrary quotation.
 
 ## Board outline qualification
 
@@ -236,17 +284,14 @@ validate defect witnesses, and reject changed sealed artifacts and inputs. A
 public review/verify pipeline covers pass, extra-charge, defect and no-outline
 cases with scripted reviewer transport.
 
-No real fabricator's capability document has been captured, so no real preset is
-qualified. The ticket's standard-preset surcharge criterion remains unmet for a
-real fabricator: the synthetic 0.25 mm example proves classification only.
-An applicable captured source and its permitted retention are still required.
-The [current JLCPCB capability table](https://jlcpcb.com/capabilities/pcb-capabilities/)
-(consulted 2026-10-17, not captured as a profile input) makes its small-via
-surcharge depend on both drill and via diameter. A `/2` conjunctive rule can
-express that joint condition, as the owned synthetic fixture shows. Capturing
-and retaining that table is a separate owner decision, so no JLCPCB rule is
-supplied. The scalar preferred-drill example must not be labelled a qualified
-JLCPCB preset.
+The [telemetry-pod fixture](telemetry-pod-fab-profile.md) records dated JLCPCB
+manufacturing minima from a host capture as original numeric/name records.
+It supplies no surcharge rule. The standard-preset surcharge criterion remains
+unmet for a real fabricator: the synthetic 0.25 mm example proves classification
+only. JLCPCB's small-via surcharge depends on drill and diameter together;
+`/2` can express a joint condition, but this fixture does not qualify that
+conditional policy. Raw vendor pages remain outside the repository. The scalar
+preferred-drill example must not be labelled a qualified JLCPCB surcharge preset.
 Arbitrary-angle minimum bounding dimensions, curved outlines and
 cutouts remain unsupported. Owner review and peer review remain separate from
 these checks.

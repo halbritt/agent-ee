@@ -32,7 +32,7 @@ evidence (AGENTEE-96 to AGENTEE-99).
 | --- | --- | --- | --- |
 | 1 | RC filter; [fixtures/rc](../fixtures/rc/PROVENANCE.md) is the hand-made reference | 3 footprints, 2 layers | AGENTEE-96. Rung 1 evidence: see `build/rung1-evidence-index-2026-10-17.md` (gitignored; AGENTEE-20) and Plane AGENTEE-96 |
 | 2 | One FOME-MC sheet as a standalone board: `sheets/psu.kicad_sch` or `sheets/wbo1.kicad_sch` | One block plus a connector | AGENTEE-97 |
-| 3 | Standalone wideband controller board | Power, wideband channel, MCU core and CAN blocks | AGENTEE-98 |
+| 3 | Telemetry pod | Power, MCU/radio, CAN, IMU, GNSS and analog front end | AGENTEE-98 |
 | 4 | FOME-MC itself | 15 sheets, 4 layers, about 492 footprints | AGENTEE-99 |
 
 The telemetry pod's [CAN reference-set capture](pod-can.md) binds the two
@@ -42,6 +42,10 @@ AGENTEE-176 may consume that producer; source-review qualification and actual po
 acceptance remain separate open gates.
 
 What must exist at each stage before a rung can run:
+
+The pod's pinout CSV now compiles through the [io-map compiler](io-map.md)
+(AGENTEE-188). Its pinned fixture retains unresolved MCU pins and native
+bindings, so it establishes traceability without claiming schematic acceptance.
 
 | Stage | Rung 1 | Rung 2 | Rung 3 | Rung 4 |
 | --- | --- | --- | --- | --- |
@@ -100,8 +104,10 @@ coordinate and export-log checks, and seals the artifact hashes. A scope with a
 `generation` marker is refused at capture without it.
 
 [Net constraints](net-constraints.md) (AGENTEE-47) emit intent netclasses, width
-rules and the record that `copper-width/1` binds. Rung 2's routing row still
-needs those outputs carried into a scaffold template and a native routing attempt.
+rules and the record that `copper-width/1` binds. The [scaffold producer](scaffold.md#per-net-classes)
+(AGENTEE-184) consumes captured constraints directly and emits the classes,
+assignments, rules and record beside the board. A native routing attempt must
+still consume that project; scaffolding establishes no routed-board acceptance.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 
@@ -138,10 +144,10 @@ candidate is an ordinary captured project:
   read-only inputs.
 
 The [board envelope check](board-envelope.md#native-envelope-check) now owns exact
-native outline and copper-layer comparisons. A complete envelope baseline still
-refuses stackup acceptance pending qualified nominal copper-weight authority
-from AGENTEE-94. Holes, keepouts and individual checks for multiple fixed
-connectors also remain gaps; the diagnostic round trip does not satisfy them.
+native outline and copper-layer comparisons. AGENTEE-161 adds source-bound
+profile stackup authority and individual reference selectors for fixed connectors.
+A fully bound scope can capture; holes, keepouts and generator mechanical
+obligations still refuse acceptance. The diagnostic round trip does not satisfy them.
 
 The scope/2 fields that carry it:
 
@@ -282,7 +288,7 @@ kicad-route is the routing stage (decision 3, AGENTEE-93). The
 [routing adapter](routing-adapter.md) runs one attempt as a coordinator step of
 the implementation (AGENTEE-95) in the networkless sandbox. The writer neither
 runs the router nor supplies its arguments. The adapter is pinned to
-kicad-route `e497916`. At that commit agent-ee relies on the following from
+kicad-route `a132899`. At that commit agent-ee relies on the following from
 `src/kicad_route/cli.py`, checked by the adapter rather than trusted:
 
 - **Exit codes** (`overall_exit`, `ledger.REFUSED_EXIT`): 0 complete and valid;
@@ -295,7 +301,8 @@ kicad-route `e497916`. At that commit agent-ee relies on the following from
   uses the board from 3, and treats any other combination as a contradiction.
 - **Outputs**: `--out` is accepted before or after `run`; the adapter uses `run --out /work/routing/out --json`. Each attempt writes
   `OUT/runs/<name>/<label>/<stamp>/` with a mutable `latest` link and no
-  top-level result. `result.json` requires schema `kicad-route/route/1`; unknown versions are
+  top-level result. `result.json` requires schema `kicad-route/route/1`, or `route/2` only with
+  coordinator-declared `diff_pairs: "auto"`; unknown versions are
   refused. The pin has no `--version` flag, so the tool version is recorded as unknown. Backend
   identity comes verbatim from `result.json`. agent-ee retains and hashes
   `result.json`, `attempt.json`, `RESULT.md`, `validate/` and the logs.

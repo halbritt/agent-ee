@@ -71,6 +71,10 @@ context, but accepted defects still require their sealed failed-check citation.
 New reviewer and adjudicator `/2` citations require a resolvable JSON `pointer`,
 text `lines` range or XML `xpath`; descriptive locators in retained `/1` records
 keep their compatibility rule. See [response and citation rules](result-reference.md#structured-citations).
+The packet lists evidence formats and locator kinds, including files omitted
+from excerpts. Native KiCad text requires `lines`; unused JSON/XML fields must
+be omitted. A refused citation names the file and supplied/required kinds in the
+configured bounded resubmission request; unresolved locations remain refused.
 
 Opt-in [staged scopes](staged-campaign.md) first check declared native content.
 A successful native probe that confirms missing expected symbols, footprints or
@@ -324,7 +328,7 @@ verification input; a stage receipt cannot waive it.
 ## Captured routing constraints
 
 The [campaign routing step](routing-adapter.md#the-step) runs pinned kicad-route
-`e497916` (versioned `kicad-route/route/1` results)
+`a132899` (versioned `kicad-route/route/1` results; opt-in `route/2` differential pairs)
 in the writer's sandbox with a read-only checkout and state directory. Its receipt
 records provenance and applicability; it is not an acceptance check. The campaign
 verifies the retained routing result before adopting an exit-0 or exit-2 board and
@@ -362,7 +366,12 @@ are reported as extra charges, never defects. A `fab-profile/2` conjunctive rule
 charges only vias whose drill and diameter are both under its bounds. Each term
 runs its own native DRC, and the rule charges the intersection of the cited via
 UUIDs. Out-of-range numeric profile bounds are unsupported in both descriptors
-and execution. No real fabricator preset exists.
+and execution. The [telemetry-pod profile](telemetry-pod-fab-profile.md) records
+eight dated JLCPCB native/geometry limits plus a finished-thickness tolerance
+from numeric/name captures. Envelope/2 checks the honest physical sum against
+that captured tolerance and retains unbound mechanical obligations. The fab
+check itself makes no thickness verdict; omitted DFM constraints stay explicit. No profile is selected
+implicitly.
 
 ## DFM geometry rules
 
@@ -722,6 +731,15 @@ complete analyzer rule coverage or electrical/EMC certification.
 
 ## Hardware interface invariants
 
+The offline [io-map compiler](io-map.md) produces `agent-ee.interface/1`
+contracts from pinout CSVs. `hardware_interface` binds their CSV hashes as
+immutable inputs, checks `no_connect` predicates against native connectivity,
+and keeps explicit unresolved terminals and predicates unknown. External
+destination text supplies traceability only.
+Concrete MCU rows require an explicit `MCU_Path=direct` declaration. Named
+indirect paths are refused with their CSV row and path name; TBD MCU rows keep
+an unresolved predicate without asserting MCU-to-connector net equality.
+
 `hardware_interface` requires `contract` and an earlier `netlist_check`. The
 [interface reference](hardware-interface.md) defines the captured normative
 schema, immutable inputs, supported predicates and unsupported mapping policy.
@@ -749,6 +767,10 @@ records are refused (exit 2), distinct from valid unverified records (exit 1)
 and unexpected internal errors (exit 3, with a diagnostic traceback).
 Run provenance does not establish a containing campaign's current state.
 Adapted blocks require fresh checks on the new board candidate.
+The [FOME host attempts](fome-block-review-runs.md) bind incomplete reviewed runs
+to the wbo1 and PSU records. Their metadata receipts omit host-only third-party
+documents and cannot be supplied as complete run locations. A mapped local
+object store verifies the pinned citations but gives no missing review credit.
 
 ## Footprint assignment
 
@@ -850,12 +872,17 @@ copper layer set against saved and native enabled layers. Each check binds one
 field and one requirement, with predicates `envelope:outline/1` or
 `envelope:layers/1`.
 
-`stackup/1` is refused as executable acceptance coverage: KiCad thickness does
-not establish nominal copper ounces. Direct execution retains diagnostic facts
-and returns unknown. Complete scope/3 envelope capture still requires that
-manufacturing authority; holes, keepouts and multiple fixed connectors also
-remain unsupported for acceptance. See the [native envelope contract](board-envelope.md#native-envelope-check)
-for evidence, binding and failure boundaries.
+`stackup/1` supplies `envelope:stackup/1` only when the scope's declared profile
+matches the envelope reference and contains a source-verified stackup declaration.
+Saved layer thicknesses use the profile's explicit exact matching tolerance;
+nominal copper weights come from the cited declaration, with no oz-to-mm conversion.
+Missing or unverified authority stays unknown and capture refuses it. Each
+`placement` `connector-edge/1` check selects a fixed `reference` and supplies
+`placement:connector-edge/1:<reference>`; a single fixed footprint may omit the
+selector and retain the legacy predicate. Holes and keepouts remain unbound. See the [native envelope contract](board-envelope.md#native-envelope-check)
+for evidence, binding and failure boundaries. Envelope/2 preserves nominal
+and physical thickness separately and derives each generator mechanical
+obligation as unresolved; no existing criterion binds those obligations.
 
 ## Assembly and test access
 
@@ -889,8 +916,12 @@ symbols stay distinct, and an empty schematic is `info`, not `pass`.
 A [JLCPCB stock capture](jlc-stock-capture.md) comes from the owner-run
 host-side producer, one rate-limited request per LCSC id. When it is the
 catalog, the check re-derives every part from the captured raw responses. It
-requires the run's `as_of` and a declared staleness, and it fails a capture
-that is stale or lacks an observation for a populated id.
+uses the generation receipt's completion time in campaigns (review time for
+standalone checks) with a 24-hour maximum age. It fails a capture that is stale
+or lacks an observation for a populated id. The [JLC catalog schema](jlc-catalog.md)
+requires retained response hashes and requests; unknown keys and LCSC warehouse
+sources are refused. Per-part hash verdicts and the evaluation-time witness are
+retained as evidence.
 Optional captured `deviations` uses `agent-ee.part-deviations/1`. Valid hand-fit
 records require an exact original MPN, purchase source, captured evidence,
 stock reason and native `JLCPCB_Assembly=not_assembled`. They appear in
@@ -1010,7 +1041,12 @@ changed or missing retained inputs still fail ordinary `agent-ee verify`.
 receipt is provenance and cannot satisfy a requirement. `scaffold --scope`
 preserves the explicit planning scope's checks and baseline. `scaffold --plan`
 derives `erc`, `netlist`, `parts_subset`, `drc` and `fab_profile` checks, their
-mappings and the project rules from the envelope, profile and parts manifest. Native ERC/DRC run through the
+mappings and the project rules from the envelope, profile and parts manifest.
+With captured `net_constraints` and `netclass_qualification` plan paths it also
+emits per-net classes and width rules through the shared net-constraint emitter,
+refuses values below the fab minimums, and derives `netclass_completeness` over
+the output project. This presence check maps to the native requirement and runs
+in the placement stage, before DRC. Native ERC/DRC run through the
 ordinary `review` command. Staged absence is a coordinator defect only after a
 successful native presence observation; hierarchical presence and uncovered
 production envelope obligations continue to fail closed.

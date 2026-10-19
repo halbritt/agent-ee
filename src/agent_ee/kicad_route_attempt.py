@@ -29,7 +29,7 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN = 'e4979160a19b89837f9a9e9e25db620f3449f40a'
+PIN = 'a132899a26ed9d7bf95c9978f0c1c992ee066f63'
 # Tracked code at PIN (git cat-file blob). __pycache__ is never read: the
 # router runs with a private pycache prefix and bytecode writes disabled.
 PINNED_CODE = {
@@ -39,18 +39,20 @@ PINNED_CODE = {
     'src/kicad_route/blocked.py': 'b2dc298ca38dd994479afdb6ced91d8196b0fd1626f2828c0996135ecb57c7f5',
     'src/kicad_route/campaign.py': '5cfad4d863c03578aa02fb2221598e8dcab73b2ac673124f8ff9d440ab4d2aa6',
     'src/kicad_route/canary.py': '38e56e7bd96f01025f9ca8a3c57d4f902f939723f55f50f214395561c3cbbf1c',
-    'src/kicad_route/cli.py': '3fbca381f4ccffdedaefaf1569f4786031608f32dc6a43f24608d358e438c393',
+    'src/kicad_route/cli.py': '97d7c5fbe96a3656ba11719ff665db45724969ae9b62d475cd8549ec7fa7356a',
     'src/kicad_route/common.py': 'ea3aeb3411fc67a44c0f8c34fa69358c75418f63a1c329abc9a428607c88abe6',
-    'src/kicad_route/contract.py': '56c3171679d715e3caa469e1ab55ff18420c1a3bf06fa16edd367a75019243ce',
+    'src/kicad_route/contract.py': '306516b16cc6a55ce62d1915f354c298297bc944f4ae5eccc24a0d49bb83b2b6',
     'src/kicad_route/corpus.py': 'f63cedc1ec87b37b06c1a717f2eb02ec57af34a659b8f7e9e330eff5736bda14',
     'src/kicad_route/decoupling.py': '29724e237cc94c0af783619991dc5659b4b582eb6cdb33fd0d59542a108232f6',
     'src/kicad_route/determinism.py': '653d6c37b4e69d50cd701223e23c6feb2e8afd5b240b5bdd5a5f4c1146af5778',
-    'src/kicad_route/evidence.py': '16ee3ace6fb54c9d365c98b556013f7e2e7269291337d06467beda70bdf5e2c9',
+    'src/kicad_route/diff_pairs.py': 'f1d1070ed0acc459d28cbe7397ae7c22b196f5dbb869e751af24e93a3c1b1092',
+    'src/kicad_route/evidence.py': '6089c25ced84474a08b30c789f2c226455b4ed8d55d3589adbe9b65a464f4096',
     'src/kicad_route/floor.py': '2f954a2d1142c4f68d7e2904781f4470c0976af925a0a91c31c8de26d4f31ae6',
     'src/kicad_route/kicad/barrier.py': 'ffeab974f15db240d55c1d3e8a19450d885be7ab33b7f595fdf79c5f6e2409e4',
     'src/kicad_route/kicad/decoupling.py': '498624e3f38485519865bb871a01e3f62fc3a41c9bde80d2966ae3c05f7e88b5',
     'src/kicad_route/kicad/facts.py': 'cbc90a12bfbbfcb5f9ff4637396992faff128a35a9d13ff494184a5d6e57b316',
     'src/kicad_route/kicad/locks.py': '5b15d4ddfbec9b7e32a841a16f9c1dd383b043c240a293251737e9cba218800a',
+    'src/kicad_route/kicad/pairs.py': '44763bfd3b25871cf9c5b5636d97f4534157920ac83ca755c3d57628638552f9',
     'src/kicad_route/kicad/pour.py': 'a49f64c51854720e8ea680d81b94969dc8242da0c3ee93b72c8948a57b908c14',
     'src/kicad_route/kicad/rename_nets.py': 'a51c1767c0ce1d0edf180700a026d695678228d56ece4bab688d9bfd3d23d2a8',
     'src/kicad_route/kicad/specctra.py': '0cd5031726ab48c7b3c2bf1dd3978837574d7452d7a79dda154123acb1aeb9d1',
@@ -94,7 +96,7 @@ RESULT_KEYS = {'schema', 'measurement', 'evidence', 'tool_identity', 'sandbox', 
                'input', 'settings', 'scope', 'unsupported', 'floor', 'process',
                'routing', 'validation', 'candidate', 'run_dir', 'runtime_s', 'tool_versions',
                'finished_utc', 'exit_code', 'ledger'}
-ATTEMPT_KEYS = {'backend', 'project', 'board', 'schematic', 'input_fingerprint', 'source',
+ATTEMPT_KEYS = {'schema', 'backend', 'project', 'board', 'schematic', 'input_fingerprint', 'source',
                 'reference_dir', 'candidate_dir', 'reference_facts', 'baseline', 'scope',
                 'settings', 'floor', 'rules_files'}
 PROCESS = ('PASS', 'FAIL')
@@ -243,7 +245,7 @@ def _bounded(value, label, low, high):
 def parse_request(argv):
     """The coordinator-declared request. No argparse: its usage exit 2 would read as partial."""
     known = {'--project', '--board', '--schematic', '--name', '--label', '--budget', '--timeout',
-             '--backend', '--state'}
+             '--backend', '--state', '--diff-pairs'}
     if len(argv) % 2:
         raise RequestError('arguments must be --option value pairs')
     raw = {}
@@ -273,6 +275,10 @@ def parse_request(argv):
         raise RequestError(f'backend must be one of {BACKENDS}')
     if request['state'] not in ('checkout', 'separate'):
         raise RequestError('state must be checkout or separate')
+    if '--diff-pairs' in raw:
+        if raw['--diff-pairs'] != 'auto' or request['backend'] != 'krt':
+            raise RequestError('diff-pairs must be auto and requires the krt backend')
+        request['diff_pairs'] = 'auto'
     if request['timeout_s'] <= request['budget_s']:
         raise RequestError('timeout must exceed the router budget')
     return request
@@ -293,7 +299,8 @@ def tool_argv(request, layout):
             '--dir', str(Path(layout['candidate']) / request['project']),
             '--board', request['board'], '--schematic', request['schematic'],
             '--name', request['name'], '--label', request['label'],
-            '--protect', 'existing', '--budget', str(request['budget_s'])]
+            '--protect', 'existing', '--budget', str(request['budget_s']),
+            *(['--diff-pairs', 'auto'] if request.get('diff_pairs') == 'auto' else [])]
 
 
 def tool_env(layout):
@@ -308,12 +315,15 @@ def tool_env(layout):
             'GIT_CEILING_DIRECTORIES': f'{layout["candidate"]}:{work}'}
 
 
-def expected_settings(request, rule_floor):
-    return {'backend': request['backend'], 'budget_s': request['budget_s'], 'protect': 'existing',
+def expected_settings(request, rule_floor, pairs=None):
+    settings = {'backend': request['backend'], 'budget_s': request['budget_s'], 'protect': 'existing',
             'max_iterations': None, 'passes': None, 'default_clearance_mm': None,
             'clearance_margin_mm': None, 'pour_area_loss_pct': None, 'pour_min_spokes': None,
             'backend_args': [], 'backend_env': {}, 'reserve_spokes': None, 'barrier': None, 'stall_s': None,
             'mode': 'all', 'rule_floor_sha256': rule_floor}
+    if request.get('diff_pairs') == 'auto':
+        settings.update(diff_pairs='auto', pairs=pairs)
+    return settings
 
 
 def write_probe(targets):
@@ -407,9 +417,11 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
         return 'contradiction', [f'exit {exit_code} without result.json']
     if exit_code == 4:
         return 'contradiction', ['refusal exit with a result.json']
-    if isinstance(result, dict) and result.get('schema') != RESULT_SCHEMA:
+    paired = request.get('diff_pairs') == 'auto'
+    version = 2 if paired else 1
+    if isinstance(result, dict) and result.get('schema') != f'kicad-route/route/{version}':
         return 'contradiction', ['unknown result schema version']
-    if not isinstance(result, dict) or set(result) != RESULT_KEYS:
+    if not isinstance(result, dict) or set(result) != RESULT_KEYS | ({'pairs'} if paired else set()):
         return 'contradiction', ['result.json shape differs from the pinned tool']
     if result['kind'] != 'route' or not _is_int(result['exit_code']) or result['exit_code'] != exit_code:
         return 'contradiction', ['result.json kind or exit_code contradicts the process exit']
@@ -428,12 +440,17 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
         return 'contradiction', ['result input differs from the requested board or name']
     settings = result['settings']
     floor = settings.get('rule_floor_sha256') if isinstance(settings, dict) else None
-    if settings != expected_settings(request, floor) or not (floor is None or isinstance(floor, str)):
+    pairs = settings.get('pairs') if isinstance(settings, dict) and paired else None
+    if settings != expected_settings(request, floor, pairs) or not (floor is None or isinstance(floor, str)):
         return 'contradiction', ['result settings differ from the fixed adapter settings']
     if not discovered:
         return 'contradiction', ['result.json without exactly one attempt directory']
-    if not isinstance(attempt, dict) or set(attempt) != ATTEMPT_KEYS:
+    if not isinstance(attempt, dict) or set(attempt) != ATTEMPT_KEYS | ({'pairs', 'pair_routing'} if paired else set()):
         return 'contradiction', ['attempt.json missing or shaped differently from the pinned tool']
+    if attempt['schema'] != f'kicad-route/attempt/{version}':
+        return 'contradiction', ['unknown attempt schema version']
+    if paired and not pair_binding(pairs, attempt, result):
+        return 'contradiction', ['pair evidence differs from the declared pair plan']
     dirname = PurePosixPath(request['project']).name
     if (attempt['board'] != request['board'] or attempt['schematic'] != request['schematic'] or
             attempt['backend'] != request['backend'] or attempt['project'] != request['name'] or
@@ -457,6 +474,91 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
     if routing == 'INCOMPLETE':
         return 'incomplete', [f"{result['routing'].get('unconnected_in_scope')} unconnected in scope"]
     return 'contradiction', ['validation PASS with routing NOT_RUN']
+
+
+def pair_binding(plans, record, result):
+    """Bind opt-in pair reports to the same plan; native geometry is not graded here."""
+    keys = {'p', 'n', 'netclass', 'width_mm', 'gap_mm'}
+    if not isinstance(plans, list) or not isinstance(record['pairs'], list):
+        return False
+    if len(plans) != len(record['pairs']) or not isinstance(record['pair_routing'], dict):
+        return False
+    members = set()
+    for plan, pair in zip(plans, record['pairs']):
+        if not isinstance(plan, dict) or set(plan) != keys or not isinstance(pair, dict):
+            return False
+        if set(pair) not in (keys, keys | {'initially_connected'}):
+            return False
+        if {k: pair[k] for k in keys} != plan:
+            return False
+        if 'initially_connected' in pair and not isinstance(pair['initially_connected'], bool):
+            return False
+        if any(not isinstance(plan[k], str) or not plan[k] for k in ('p', 'n', 'netclass')):
+            return False
+        if plan['p'] == plan['n'] or members & {plan['p'], plan['n']}:
+            return False
+        members.update((plan['p'], plan['n']))
+        if any(type(plan[k]) not in (int, float) or not 0 < plan[k] < float('inf')
+               for k in ('width_mm', 'gap_mm')):
+            return False
+    if not set(record['pair_routing']) <= {p['p'] for p in plans}:
+        return False
+    reports = result['pairs']
+    if not isinstance(reports, list) or len(reports) != len(plans):
+        return False
+    for plan, report in zip(plans, reports):
+        if not isinstance(report, dict) or any(report.get(k) != v for k, v in plan.items()):
+            return False
+    return True
+
+
+def pair_coverage(request, result, record, classification):
+    """Describe retained pair evidence, never replace fresh board acceptance checks.
+
+    In particular routing completeness cannot imply coupled routing, and preserved
+    input connectivity cannot claim this invocation created a differential pair.
+    """
+    limitations = ['Pair reports do not qualify length/skew limits or impedance; fresh board checks are required.']
+    coverage = {'status': 'unknown', 'pairs': [], 'limitations': limitations, 'acceptance_ready': False}
+    if request.get('diff_pairs') != 'auto':
+        scope = record.get('scope', {}) if isinstance(record, dict) else {}
+        nets = scope.get('nets', []) if isinstance(scope, dict) else []
+        if (isinstance(nets, list) and all(isinstance(n, str) for n in nets) and
+                any(n.rsplit('/', 1)[-1] == 'CAN+' and n[:-1] + '-' in nets for n in nets)):
+            completed = (classification in ('complete', 'incomplete') or
+                         (classification == 'validation_failed' and isinstance(result, dict) and
+                          result.get('routing', {}).get('status') == 'COMPLETE' and
+                          result.get('process', {}).get('status') == 'PASS'))
+            limitations.append('CAN pair routed single-ended' if completed else
+                                'CAN pair coupling unavailable; single-ended attempt did not complete routing')
+            if classification not in ('complete', 'incomplete'):
+                limitations.append('Single-ended attempt did not produce an eligible board')
+        else:
+            limitations.append('Differential pair routing was not requested; pair geometry is unqualified')
+        return coverage
+    if (classification not in ('complete', 'incomplete') or not isinstance(result, dict) or
+            not isinstance(record, dict) or not pair_binding(result.get('settings', {}).get('pairs'), record, result)):
+        limitations.append('Requested differential pair capability or eligible native pair evidence is unavailable')
+        return coverage
+    reports = result['pairs']
+    if not reports:
+        limitations.append('No differential pairs were detected; no pair geometry is qualified')
+        return coverage
+    for pair in reports:
+        measured = all(type(pair.get(k)) in (int, float) and 0 <= pair[k] < float('inf')
+                       for k in ('length_p', 'length_n', 'skew'))
+        measured = measured and abs(abs(pair['length_p'] - pair['length_n']) - pair['skew']) <= .000002
+        coupled = (pair.get('backend_status') == 'COUPLED' and pair.get('status') == 'ROUTED' and
+                   pair.get('routed') is True and type(pair.get('gap_violations')) is int and
+                   pair['gap_violations'] == 0 and measured)
+        coverage['pairs'].append({'p': pair['p'], 'n': pair['n'],
+            'status': 'reported_coupled' if coupled else 'unknown'})
+        if not coupled:
+            limitations.append(f"{pair['p']}/{pair['n']}: coupled geometry is unqualified "
+                               f"(backend status {pair.get('backend_status')})")
+    if all(p['status'] == 'reported_coupled' for p in coverage['pairs']):
+        coverage['status'] = 'reported_coupled'
+    return coverage
 
 
 def load_json(path, problems, label):
@@ -823,6 +925,10 @@ def _finish(report, routing):
     report['retained'] = dict(sorted(report['retained'].items()))
     proposal, coverage, code = CLASSES[report['semantics']['classification']]
     report['semantics'].update(proposal=proposal, coverage=coverage, adapter_exit=code)
+    result = load_json(routing / 'attempt/result.json', [], 'result')
+    record = load_json(routing / 'attempt/attempt.json', [], 'attempt')
+    report['semantics']['pair_coverage'] = pair_coverage(
+        report['request'], result, record, report['semantics']['classification'])
     return write_report(routing / 'adapter-report.json', report)
 
 

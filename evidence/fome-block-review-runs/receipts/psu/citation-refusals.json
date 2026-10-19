@@ -1,0 +1,196 @@
+{
+  "errors": [
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_01",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_01",
+      "path": "review-work/circuit/experiments/catalog-find.txt",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_01",
+      "path": "review-work/circuit/experiments/lmr16020.txt",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_01",
+      "path": "review-work/circuit/experiments/tls-web.txt",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_02",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_03",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_04",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_04",
+      "path": "review-work/circuit/experiments/lmr16020.txt",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_05",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_05",
+      "path": "review-work/circuit/experiments/lmr16020.txt",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_06",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_06",
+      "path": "review-work/circuit/experiments/c6-source-web.txt",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "."
+      },
+      "finding_id": "circuit_06",
+      "path": "review-work/circuit/experiments/c6-source-web.txt",
+      "role": "circuit"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "./unused"
+      },
+      "finding_id": "physical-c12-selection",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "physical"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "./unused"
+      },
+      "finding_id": "physical-sensor-reference",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "physical"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "./unused"
+      },
+      "finding_id": "physical-sensor-reference",
+      "path": "review-work/physical/experiments/lmr16020.txt",
+      "role": "physical"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "./unused"
+      },
+      "finding_id": "physical-sensor-reference",
+      "path": "review-work/physical/experiments/tls115d0ej.txt",
+      "role": "physical"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "./unused"
+      },
+      "finding_id": "physical-reverse-tvs",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "physical"
+    },
+    {
+      "error": "citation pointer requires a valid JSON document",
+      "fields": {
+        "pointer": "",
+        "xpath": "./unused"
+      },
+      "finding_id": "physical-filter-peak",
+      "path": "inputs/sheets/psu.kicad_sch",
+      "role": "physical"
+    }
+  ],
+  "method": "Existing validate_citation over returned evidence citations, without modifying or resubmitting responses. Locators and document text omitted.",
+  "run_id": "877a075f-51d6-4cf2-a627-8ee5fb441305"
+}

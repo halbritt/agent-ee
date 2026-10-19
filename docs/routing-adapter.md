@@ -25,11 +25,18 @@ adoption, and repeats those checks in `verify-campaign`.
 ## Pinned compatibility
 
 The adapter supports kicad-route commit
-`e4979160a19b89837f9a9e9e25db620f3449f40a` only (AGENTEE-187).
+`a132899a26ed9d7bf95c9978f0c1c992ee066f63` only (AGENTEE-202).
 It requires `result.json` schema `kicad-route/route/1` and the exact top-level
 result and attempt keys written by this pin. Unknown or absent result schema
 versions are contradictions, even when the statuses and exit look successful.
-Upstream `attempt.json` has no schema ID; its pinned shape includes `rules_files`.
+Default `attempt.json` requires `kicad-route/attempt/1`, including `schema` and
+`rules_files`. The coordinator can declare `diff_pairs="auto"` to pass
+`--diff-pairs auto` (KRT only). This requires `route/2` plus `attempt/2`, even
+for an empty detected plan. Only these declared runs admit the result `pairs`,
+attempt `pairs`/`pair_routing`, and settings `diff_pairs`/`pairs` fields.
+Missing fields, downgraded versions, undeclared pair keys, and disagreement
+between the settings plan, attempt plan and result pair identities are
+contradictions. Pair evidence remains provenance; it does not pass a check.
 The adapter checks the tool as well as its reports:
 
 - HEAD is read from the checkout's git files. agent-ee does not run `git`
@@ -51,7 +58,7 @@ does not.
 ## The step
 
 `routing_adapter.step(project=, board=, schematic=, name=, label=, checkout=,
-state=None, budget=300, timeout=None, backend='krt')` returns:
+state=None, budget=300, timeout=None, backend='krt', diff_pairs=None)` returns:
 
 | Field | Value |
 | --- | --- |
@@ -77,7 +84,7 @@ config["routing_adapter"] = {
 }
 ```
 
-The declaration allows only the fields shown plus `state`, `timeout` and `backend`.
+The declaration allows only the fields shown plus `state`, `timeout`, `backend` and opt-in `diff_pairs: "auto"`.
 Defaults match `step()`: state is the checkout, backend is KRT, budget is 300 s,
 and timeout is twice the budget plus 300 s. No argv, mount, environment or pin override
 is accepted. The selected board and schematic must equal the scope's identities,
@@ -249,7 +256,7 @@ A report paired with another attempt's receipt is refused.
 
 `layout` overrides the production sandbox paths and pin. Only the fixture
 router's tests pass it. Without it, a report that claims any pin other than
-`e497916` is refused, so a fixture attempt never verifies as a kicad-route
+`a132899` is refused, so a fixture attempt never verifies as a kicad-route
 attempt.
 
 For every outcome, `verify` refuses a report when:
@@ -423,6 +430,31 @@ that a duplicate or moved segment is unequal. Policy tests include
 shapes, and acceptance of a refilled candidate only when its graded hashes bind.
 Independent integration review remains the coordinator's responsibility.
 
+## Pin qualification record (AGENTEE-202, 2026-10-18)
+
+The current pin is `a132899a26ed9d7bf95c9978f0c1c992ee066f63`, the merge
+of KICADROUTE-61 at `398f6c4`. It replaces `e497916`; the old checkout no
+longer qualifies. `PINNED_CODE` includes the new `diff_pairs.py` and
+`kicad/pairs.py` modules, and changed CLI, contract and evidence blobs.
+`schemas/result-1.json` is byte-identical between the two commits. Default
+route results retain their exact key set; default attempts add the required
+`schema: kicad-route/attempt/1` field. The image installer uses the new pin;
+KRT and its wheel/binary pins are unchanged.
+
+The adapter does not call upstream `validate`; revalidation's
+`route-validate/2` is a different kind and cannot substitute for a route result.
+Campaign declarations bind the pair opt-in to the exact command and frozen
+receipt. Retained verification enforces the version and exact key set together,
+including attempt schema IDs even though upstream's contract checker does not
+cross-check those IDs against shape.
+
+The native suite exercises the default path, opt-in empty-plan routing through
+a stage receipt, and an original two-net pad-row board with a nonempty pair
+plan, all in a read-only sandbox. Policy fixtures additionally exercise missing
+fields, version downgrades, undeclared pair fields and plan mismatches after
+retained hashes have been refreshed.
+Independent pin review remains the coordinator's responsibility.
+
 ## Limits
 
 - One pin. A new kicad-route commit needs a reviewed new pin and fixture
@@ -440,3 +472,11 @@ Independent integration review remains the coordinator's responsibility.
   tests normalized copper geometry equality and records byte differences
   without failing them. The native repeat test compares two real KRT outputs
   and identifies a moved segment.
+
+### CAN pair coverage
+
+The additive `semantics.pair_coverage` diagnostic distinguishes reported coupled
+native routing from missing, preserved, rejected or single-ended geometry.
+Replay rederives it; it never changes routing adoption or grants acceptance.
+See the [CAN native probe](pod-can-routing.md) for captured class/gap settings,
+independent native length/skew checks and the controlled five-millimetre negative.

@@ -1,11 +1,16 @@
 # Board envelope record
 
-An `agent-ee.envelope/1` record states a board's mechanics before "go": the
+An `agent-ee.envelope/1` or `/2` record states a board's mechanics before "go": the
 outline, layer count and stackup, a reference to a captured fabricator
 capability profile, mounting holes, keepouts and fixed footprints such as edge
 connectors (AGENTEE-85). The intent record states electrical intent; the
 envelope adds what an empty candidate needs before any part is placed
 (decisions 1 and 4 in the [generator direction](decisions.md#generator-direction-2026-10-17)).
+
+The [telemetry-pod fabrication inputs](telemetry-pod-fab-profile.md) include a
+source-verified fab profile and a structurally valid envelope/2. It separates
+nominal and physical thickness with a cited tolerance; mechanical obligations
+remain unbound until AGENTEE-177/179. Acceptance remains unknown.
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.board_envelope ENVELOPE.json \
@@ -16,16 +21,17 @@ PYTHONPATH=src python3 -m agent_ee.board_envelope ENVELOPE.json \
 
 The command is offline, standard library only and deterministic. Exit 0 means
 the structure passed and nothing is unresolved. Exit 1 means the structure
-passed but a profile predicate is unresolved, or a saved board does not match.
+passed but a profile/source predicate or mechanical obligation is unresolved, or a saved
+board does not match.
 Exit 2 means the record was refused, or input/output failed. The output
 directory must not already exist. An I/O failure can leave a partial
 directory; discard it and use a new one.
 
 A structural pass is not placement, fabrication or acceptance evidence. The
 validation record always carries `acceptance_ready: false`. The registered
-[`board_envelope` check](#native-envelope-check) compares outline and copper
-layers; acceptance still needs the [baseline integration](#baseline-integration)
-and mapped checks for every obligation.
+[`board_envelope` check](#native-envelope-check) compares outline, copper layers
+and source-bound stackup. Acceptance still needs the
+[baseline integration](#baseline-integration) and mapped checks for every obligation.
 
 ## Record
 
@@ -44,6 +50,27 @@ separates facts read from the saved board from owned assumptions.
 | `mounting_holes` | `{id, at, drill_mm, plated}`; the whole hole must lie inside the outline |
 | `keepouts` | `{id, polygon, layers, forbid}`: a simple polygon contained in the closed outline, stackup copper layer names, and a unique subset of `footprints`, `tracks`, `vias`, `pads`, `copper_pours` |
 | `fixed_footprints` | `{reference, side, edge, position_mm, inset_mm, rotation_deg, insertion, tolerance_mm}` |
+
+Version 2 changes `stackup` to `{nominal_thickness_mm,
+physical_thickness_mm, layers}` and requires `source` on each layer, in the
+fab profile's existing path/hash/source/as_of/page/quote format. Layers must
+sum exactly to the physical thickness. The referenced fab-profile/2 may supply
+`finished_thickness_tolerance: {percent, min_nominal_thickness_mm, source}`.
+The compiler verifies its citation; the envelope compares physical and nominal
+thickness using exact rational arithmetic, including the tolerance endpoints.
+An out-of-range sum or nominal below the captured applicability is refused.
+Missing source evidence stays unknown. The validator's `stackup.thickness_mm`
+is the nominal value for existing native/fab consumers; its additional fields
+retain the physical total, citations and source paths. Version 1 keeps the
+exact shape and sum in the table above and refuses version 2 fields.
+
+Version 2 also requires `obligations`, a list of `{id, requirement_ids,
+statement, owner_items}`. Each ID list is nonempty and unique. These carry
+requirements whose geometry is a generator decision. Every entry derives an
+acceptance requirement with its envelope field hash and remains unresolved;
+there is no caller-supplied pass/bound flag. Baseline capture recognizes both
+versions, freezes verified stackup sources and refuses missing check coverage.
+Existing native outline and layer criteria do not cover these obligations.
 
 A fixed footprint's anchor is its KiCad footprint origin. The anchor is
 `position_mm` along the named edge, measured from the edge's `start`, then
@@ -152,12 +179,14 @@ check evaluates that exact field:
 | Outline | `board_envelope`, `placement` | Bound to `board_envelope` with `criterion: "outline/1"` over these exact captured envelope bytes. Placement's `outline-containment/1` does not bind this field |
 | Keepouts, mounting holes | `placement` | None: `footprint-keepout/1` grades rule areas already saved, and no predicate checks declared holes |
 | Layer count | `board_envelope`, `fab_package` (AGENTEE-94; registered as the [done gate](fab-package.md), no envelope binding yet) | Bound to `board_envelope` with `criterion: "layers/1"` over these exact captured envelope bytes |
-| Stackup | `board_envelope`, `fab_package` (AGENTEE-94; registered as the done gate, no envelope binding yet) | Unknown: `stackup/1` lacks qualified captured manufacturing authority for `copper_weight_oz`, and is refused as executable acceptance coverage |
+| Stackup | `board_envelope`, `fab_package` (AGENTEE-94; registered as the done gate, no envelope binding yet) | Bound to `stackup/1` when the referenced source-verified profile declares the ordered stackup, copper weights and explicit layer-thickness matching tolerance |
 
-`connector-edge/1` returns one verdict for every fixed footprint in its
-envelope. With two or more fixed footprints, a defect cannot be attributed to
-one obligation, so each has unknown coverage. A check mapped by several
-requirements is refused.
+`connector-edge/1` selects one fixed footprint with its `reference` parameter.
+Each reference needs its own check and derived obligation; a missing SMA cannot
+make an AMPSEAL witness unknown. With exactly one fixed footprint, the selector
+may be omitted for compatibility. Multiple footprints without a selector stay
+unknown at binding and are refused as executable capability. A selector for
+another reference, or a check mapped by several requirements, is refused.
 
 A `fab_profile` check's `max_layers` limit bounds only the maximum, so it cannot
 establish "exactly N copper layers". The layer-count obligation is therefore
@@ -233,12 +262,14 @@ before the coverage audit, capture:
    record, the derived requirements and the per-obligation coverage. These are
    part of `baseline_id`, so verification recompiles and compares them.
 
-Today no complete envelope scope can be captured. The outline and layer count
-have real native bindings, but stackup still lacks copper-weight authority, and
-holes and keepouts have no binding. Capture refuses and names uncovered
-obligations with the reason, and writes no baseline or candidate record. A scope
-that uses an envelope only as `connector-edge/1` data is refused the same way.
-It must declare the envelope, and then every obligation must be covered.
+A scope containing outline, layers, a source-bound stackup, the referenced
+profile and separately selected fixed connectors can now capture with all
+obligations listed as bound in `baseline.json`. Holes, keepouts and unresolved
+generator mechanics still have no binding. Capture refuses those obligations
+by name and writes no baseline or candidate record. Using an envelope only as
+`connector-edge/1` data still requires declaring it and covering every obligation.
+The complete pod fixture retains its AGENTEE-177/179 mechanical obligations;
+a scoped contract fixture does not establish acceptance of the complete pod.
 
 Some integration tests stand in for outline, layer-count and stackup bindings
 only inside a test block. They do not establish production acceptance. A separate
@@ -268,14 +299,13 @@ name captured immutable bytes; the scope's board remains a candidate design
 input. Baseline compilation records the envelope dependency and refuses a
 criterion mapped to another field, different envelope bytes, or a check shared
 by other requirements. Generation acceptance requires the scope/3 declaration
-above and complete obligation coverage; registering this family does not bypass
-the stackup refusal.
+above and complete obligation coverage; missing manufacturing authority stays unknown.
 
 | Criterion | Capability predicate | Native comparison |
 | --- | --- | --- |
 | `outline/1` | `envelope:outline/1` | Exact Edge.Cuts segment inventory against the envelope, corroborated by a native load proving one closed straight contour |
 | `layers/1` | `envelope:layers/1` | Exact ordered copper layer names, corroborated by native enabled layer IDs and names |
-| `stackup/1` | No executable acceptance capability | Saved total and per-layer name, order, kind and thickness are diagnostic facts only. Missing nominal copper-weight authority always leaves coverage unknown |
+| `stackup/1` | `envelope:stackup/1` with captured authority | Saved nominal thickness and ordered layer names/kinds/thicknesses match the profile within its explicit exact tolerance; declared copper weights match its sourced weights |
 
 Launch preflight requires the recorded `pcbnew` runtime. The coordinator runs
 `agent_ee.envelope_probe` in the networkless tool sandbox,
@@ -283,10 +313,25 @@ records the board hash and pcbnew version, and retains `envelope-probe.json`,
 `envelope-judgment.json`, the execution record and console. A proven mismatch
 is `execution: ok`, `outcome: defect`. Unsupported Edge.Cuts geometry, malformed
 or contradictory facts, tool failures and missing output cannot pass. Direct
-execution of `stackup/1` always remains unknown, including on the owned
-[explicit-stackup fixture](../tests/fixtures/envelope/rc-explicit-stackup.kicad_pcb).
-No conversion from thickness to ounces is inferred. AGENTEE-94 owns the missing
-manufacturing specification seam.
+execution of `stackup/1` stays unknown without a source-verified `stackup`
+declaration in the envelope's referenced fab-profile/2. The owned
+[explicit-stackup fixture](../tests/fixtures/envelope/rc-explicit-stackup.kicad_pcb)
+alone therefore remains unknown. Authority is resolved from `scope.envelope.profile`,
+whose bytes must match the envelope reference, never from an unrelated check or
+uncited file. The profile, citations and envelope are immutable capability inputs;
+the judgment retains profile identity and compiled authority. No conversion from
+thickness to ounces is inferred. See [profile stackup authority](fab-profile.md#stackup-authority).
+
+`tests.test_envelope_check.PodEnvelopeAcceptanceTests` exercises the scoped pod
+contract with an original scaffold and two fixed connectors. It runs the native
+checks for matching stackup, a 2 oz declaration against a 1 oz profile, a saved
+layer outside the profile tolerance, and an unverified source. It also checks
+separate AMPSEAL/SMA verdicts, the bound-obligation capture receipt, and named
+hole/keepout refusals. Run it on the host with the strict toolchain gate:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_envelope_check -v
+```
 
 ## Consumed envelopes
 
@@ -383,10 +428,9 @@ mismatch.
 
 This record states obligations; it does not check placement, courtyards,
 clearances or fabrication. Arcs, cutouts, slots, multiple outlines and oblique
-connector edges are not supported. Keepout and hole bindings do not exist yet,
-and multiple fixed footprints lack individual selectors. Stackup acceptance
-awaits qualified manufacturing authority in AGENTEE-94, so an envelope scope/3
-is refused at capture until that gap closes. Capture reads only
+connector edges are not supported. Keepout and hole bindings do not exist yet.
+Stackup acceptance needs captured manufacturing authority; several fixed
+footprints need separate reference selectors. Capture reads only
 consumed paths for envelope authority, so an envelope a scope never cites stays
 unenforced. To make an envelope binding, declare it. Profile support means only that the typed, source-quoted minimum
 limits admit the declared values, not that a fabricator accepts the board.

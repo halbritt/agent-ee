@@ -404,10 +404,23 @@
         "fixtures/fome-mc/wbo1/blocks/wbo1/block.json",
         "fixtures/fome-mc/rules/severities.json",
         "fixtures/fome-mc/pod-can/block/block.json"
+      ],
+      "capture_sources": [
+        "/fixtures/fome-mc/"
       ]
     }
   },
   "rules": [
+    {
+      "paths": [
+        "tests/test_citation_locators.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-204 protocol regression tests. The minimal empty schematic S-expression and format samples are authored here; other design bytes come from the existing owned FindingsTests fixture. No retained reviewer response, upstream design or vendor document text is embedded."
+    },
     {
       "paths": [
         ".dockerignore",
@@ -1551,7 +1564,7 @@
       "origins": [
         "AE"
       ],
-      "note": "The owner's telemetry pod requirements spec, revision 2 (2026-10-18, superseding the 2026-10-17 text), copied byte for byte as spec.md from fome-mc telemetry-pod/REQUIREMENTS.md at ca984da, the canonical copy (sha256 09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493; it names third-party parts and links vendor pages but copies no vendor text), and spec-record.json captured from it by agent_ee.spec_record (AGENTEE-158); see docs/spec-record.md. AGENTEE-168 adds original rectangular symbols (no copied upstream graphics), symbol-capture receipts, pin-attribute declarations and stock footprint hash declarations. Datasheet fact files retain only pin names/numbers and authored citation metadata; vendor PDFs and stock footprints are runtime-only and are not committed. See fixtures/telemetry-pod/symbols/README.md for provenance and electrical-type interpretation."
+      "note": "The owner's telemetry pod requirements spec, revision 2 (2026-10-18, superseding the 2026-10-17 text), copied byte for byte as spec.md from fome-mc telemetry-pod/REQUIREMENTS.md at ca984da, the canonical copy (sha256 09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493; it names third-party parts and links vendor pages but copies no vendor text), and spec-record.json captured from it by agent_ee.spec_record (AGENTEE-158); see docs/spec-record.md. AGENTEE-168 adds original rectangular symbols (no copied upstream graphics), symbol-capture receipts, pin-attribute declarations and stock footprint hash declarations. Datasheet fact files retain only pin names/numbers and authored citation metadata; vendor PDFs and stock footprints are runtime-only and are not committed. See fixtures/telemetry-pod/symbols/README.md for provenance and electrical-type interpretation. AGENTEE-160 adds original numeric/name records for JLCPCB capabilities and JLC04161H-7628 stackup, an owned fab-profile/2, spec-bound mechanical inputs, numeric antenna facts and envelope/2 with cited physical/nominal thickness and unbound generator obligations. The additional thickness tolerance is an original numeric record reduced from a host capture of the published capabilities page; no vendor text was copied. Vendor HTML/PDF responses are not committed; source-capture.json records URL/date/hash/tool identities only. See docs/telemetry-pod-fab-profile.md."
     },
     {
       "paths": [
@@ -2232,6 +2245,16 @@
     },
     {
       "paths": [
+        "tests/test_add_planes.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original native plane/routing probe generator and tests: invented pads, four-layer outline and footprint rule area, a minimal empty schematic format literal, and an injected fill polygon. No copied design or library assets; these probes do not represent the telemetry pod."
+    },
+    {
+      "paths": [
         "tests/test_routing_campaign.py"
       ],
       "kind": "owned-source",
@@ -2857,6 +2880,27 @@
     },
     {
       "paths": [
+        "src/agent_ee/binding_fill.py",
+        "tests/test_binding_fill.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-174 deterministic producer and synthetic captured-identity/native 130-component benchmark. Tests reuse owned native-binding and named-parts fixtures; MPN strings are labels, synthetic PDF envelopes are authored here, no vendor geometry/document or live supplier data is copied."
+    },
+    {
+      "paths": [
+        "docs/binding-fill.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-174 public contract and qualification limits."
+    },
+    {
+      "paths": [
         "fixtures/catalog-legacy/README.md",
         "fixtures/catalog-legacy/owned.csv",
         "fixtures/catalog-legacy/provenance.json",
@@ -2868,6 +2912,32 @@
         "AE"
       ],
       "reviewed": "AGENTEE-165 original synthetic catalog claims captured with exact old agent-ee producer c3ec24c936296e2c55cc45924bc67a46b14ec8aa; code and input/output SHA256 in fixture provenance.json. No supplier rows, stock or suitability claims."
+    },
+    {
+      "paths": [
+        "tests/test_routing_adapter.py",
+        "tests/test_can_pair.py",
+        "fixtures/telemetry-pod/can-pair/board.py",
+        "fixtures/telemetry-pod/can-pair/probe.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-185 native CAN probe and adversarial tests using existing shared routing/capture/check infrastructure. Board builder adapts the project-owned two-net native test, with no vendor library assets."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/can-pair/net-constraints.json",
+        "fixtures/telemetry-pod/can-pair/routing-rules.json",
+        "fixtures/telemetry-pod/can-pair/gap.kicad_dru",
+        "fixtures/telemetry-pod/can-pair/requirements.md"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original declared CAN software probe bounds and native gap constraint; not external design data or owner pod qualification."
     },
     {
       "paths": [
@@ -2946,24 +3016,76 @@
     },
     {
       "paths": [
-        "src/agent_ee/binding_fill.py",
-        "tests/test_binding_fill.py"
+        "src/agent_ee/intent_retry.py",
+        "tests/test_campaign_intent_retry.py"
       ],
       "kind": "owned-source",
       "origins": [
         "AE"
       ],
-      "reviewed": "Original AGENTEE-174 deterministic producer and synthetic captured-identity/native 130-component benchmark. Tests reuse owned native-binding and named-parts fixtures; MPN strings are labels, synthetic PDF envelopes are authored here, no vendor geometry/document or live supplier data is copied."
+      "reviewed": "AGENTEE-205 original bounded schematic intent repair and scripted-writer/native-producer regression controls. Reuses owned campaign and schematic fixtures; no supplier or copied third-party source."
     },
     {
       "paths": [
-        "docs/binding-fill.md"
+        "docs/intent-repair.md"
       ],
       "kind": "owned-documentation",
       "origins": [
         "AE"
       ],
-      "reviewed": "Original AGENTEE-174 public contract and qualification limits."
+      "reviewed": "AGENTEE-205 original documentation of owned pin-resolution recovery, source inventory, bounded attempts and offline replay; no external text copied."
+    },
+    {
+      "paths": [
+        "evidence/fome-block-review-runs/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T16"
+      ],
+      "note": "AGENTEE-149 metadata receipts for host reviews of the pinned FOME block fixtures. Full raw runs with third-party web and vendor document bytes remain host-only in the assigned scratch directory. Planning documents remain pinned-identity citations; no vendor-document bytes are admitted."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/io-map.csv"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Owner-authorized AGENTEE-188 input from owner repository fome-mc; commit e33c0e1c55e0a71678decd23d3ae70719a6ebc88, path telemetry-pod/io-map.csv, blob 0ed95d2db05038ba6650d695ffaf6958da2fc007. Byte-exact Git-object capture, no vendor text."
+    },
+    {
+      "paths": [
+        "fixtures/telemetry-pod/fome-mc-can1.interface.json"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Owner-authorized AGENTEE-188 input from owner repository fome-mc; commit d31a690ab169290131b377057c41fe7d82d74bc4, path contracts/psu.interface.json, blob 17fb7ededf81607ec5cbdbc8dd842b637777b1c7. Derived excerpt: four CAN1 named_net invariants and their component/terminal declarations only; no design or library bytes."
+    },
+    {
+      "paths": [
+        "src/agent_ee/io_map.py",
+        "tests/test_io_map.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original CSV compiler and original probe tests; textual owner-repository contract cross-check only; no donor code or symbols copied."
+    },
+    {
+      "paths": [
+        "tests/test_routing_layers.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-206 native multilayer and filled-zone tests, including actual owned CAN probe composition and adversarial native fill/identity controls. No vendor design or library bytes."
     }
   ]
 }

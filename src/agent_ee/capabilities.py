@@ -251,7 +251,16 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             for path in parameters(params):
                 captured(path, immutable=True)
             if params['criterion'] == 'stackup/1':
-                raise ValueError('stackup copper_weight_oz has no qualified captured manufacturing authority')
+                if inputs is None:
+                    raise ValueError('stackup copper_weight_oz needs captured source-verified profile inputs')
+                from .envelope_check import captured_record
+                record, dependencies = captured_record(scope, params, files, Path(inputs))
+                from .board_envelope import stackup_authority_reason
+                reason = stackup_authority_reason(record)
+                if reason:
+                    raise ValueError(reason)
+                for path in dependencies:
+                    captured(path, immutable=True)
             result['predicates'] = predicate_names(params)
         elif kind == 'placement':
             from .placement_check import parameters, predicate_names
@@ -265,9 +274,8 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                 except ImportError:
                     raise ValueError('connector-edge/1 needs the AGENTEE-85 envelope validator') from None
                 if inputs is not None:
-                    from .placement_predicates import envelope_declarations
-                    if not envelope_declarations(validate((Path(inputs) / params['envelope']).read_bytes())):
-                        raise ValueError('envelope declares no fixed connectors')
+                    from .placement_check import connector_declarations
+                    connector_declarations(validate((Path(inputs) / params['envelope']).read_bytes()), params)
             result['predicates'] = predicate_names(params)
         elif kind == 'dfa_dft':
             from .dfa_dft import capability as dfa_dft_capability

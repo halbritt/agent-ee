@@ -327,7 +327,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_snapshot_query_in_networkless_readonly_sandbox(self):
         import subprocess
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         from agent_ee.executor import sandbox_argv
         require_toolchain()
         snapshot = self.root / 'snapshot'
@@ -350,7 +350,7 @@ class CatalogTests(unittest.TestCase):
     def test_1k_0603_query_filters_value_package_and_unknown_stock_offline(self):
         import os
         import subprocess
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         from agent_ee.executor import sandbox_argv
         require_toolchain()
         self.source()
@@ -441,7 +441,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_repinned_derived_interval_contradicting_raw_attribute_is_unknown(self):
         from agent_ee.catalog import catalog_check
-        from catalog_repin import repin, set_derived
+        from tests.catalog_repin import repin, set_derived
         snapshot, original = self.captured('snapshot')
         # Narrower than the retained raw '1 kohm +/-1%' claim; base and category agree.
         tampered = repin(snapshot, lambda connection: set_derived(
@@ -456,7 +456,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_repinned_snapshot_with_valid_rederivation_still_passes(self):
         from agent_ee.catalog import catalog_check
-        from catalog_repin import repin, set_derived
+        from tests.catalog_repin import repin, set_derived
         snapshot, original = self.captured('snapshot')
         rewritten = repin(snapshot, lambda connection: set_derived(
             connection, 'C1', {'resistance': {'min': '990', 'max': '1010', 'unit': 'ohm'}}))
@@ -467,7 +467,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_repinned_semantic_row_tampering_is_unknown(self):
         from agent_ee.catalog import catalog_check
-        from catalog_repin import repin, set_derived
+        from tests.catalog_repin import repin, set_derived
 
         def both(assignment, *values):
             return lambda connection: [connection.execute(f'UPDATE {table} SET {assignment}', values)
@@ -507,7 +507,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_repinned_identity_schema_provenance_and_stale_cutoff_are_unknown(self):
         from agent_ee.catalog import DERIVED_COLUMNS, catalog_check, category_columns
-        from catalog_repin import repin
+        from tests.catalog_repin import repin
         base = dict(lcsc='C1', mfr='Owned fixture', mpn='R1', package='0603', category='resistor',
                     stock='123', price1='0.01', is_basic='1', is_preferred='0', last_seen='2026-01-01',
                     attributes=json.dumps({'resistance': '1 kohm +/-1%'}))
@@ -548,7 +548,7 @@ class CatalogTests(unittest.TestCase):
     def test_canonical_rows_hash_and_numeric_order_survive_physical_reordering(self):
         from agent_ee.catalog import rows_sha256
         from agent_ee.storage import identity
-        from catalog_repin import repin
+        from tests.catalog_repin import repin
         import sqlite3
         self.source()
         with (self.root / 'owned.csv').open() as stream:
@@ -581,7 +581,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_category_join_checks_every_base_cell_and_complete_membership(self):
         from agent_ee.catalog import catalog_check
-        from catalog_repin import repin
+        from tests.catalog_repin import repin
         cases = (
             "DELETE FROM resistor",
             "UPDATE resistor SET lcsc='C999'",
@@ -606,7 +606,7 @@ class CatalogTests(unittest.TestCase):
         # agent-452 ee128 review R1: PRAGMA quick_check does not verify UNIQUE constraints, so a
         # typed table holding C1 twice and omitting C2 keeps the row count and the autoindex name.
         from agent_ee.catalog import DERIVED_COLUMNS, catalog_check, category_columns, table_sql
-        from catalog_repin import repin
+        from tests.catalog_repin import repin
         import sqlite3
         base = dict(lcsc='C1', mfr='Owned fixture', mpn='R1', package='0603', category='resistor',
                     stock='123', price1='0.01', is_basic='1', is_preferred='0', last_seen='2026-10-17')
@@ -643,7 +643,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_rederivation_refuses_json_type_coercion_and_noncanonical_raw_text(self):
         from agent_ee.catalog import catalog_check
-        from catalog_repin import repin
+        from tests.catalog_repin import repin
         for index, (column, text) in enumerate((
                 ('attributes', '{"resistance": "1 kohm +/-1%"}'),
                 ('normalized', '{"resistance":{"max":1010,"min":990,"unit":"ohm"}}'),

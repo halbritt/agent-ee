@@ -1,0 +1,193 @@
+{
+  "baseline_id": "985999e2ca757f18288362526bb83b16d54d049b1da312d9a1fceecc4cdb8c48",
+  "criteria": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "interface",
+      "kind": "hardware_interface",
+      "params": {
+        "contract": "board-interface.json",
+        "netlist_check": "netlist"
+      }
+    },
+    {
+      "id": "input-filter",
+      "kind": "rc_transient",
+      "params": {
+        "ground_net": "GND",
+        "input_net": "/12V_PROT",
+        "measurements": [
+          {
+            "at_ms": 1.0,
+            "name": "vboost_1ms"
+          }
+        ],
+        "netlist_check": "netlist",
+        "output_net": "/VBOOST",
+        "step_v": 1.0,
+        "stop_ms": 1.0
+      }
+    },
+    {
+      "id": "tvs-clamp",
+      "kind": "datasheet_limits"
+    },
+    {
+      "id": "reverse-block",
+      "kind": "active_model"
+    },
+    {
+      "id": "c12-part",
+      "kind": "catalog_part_identity"
+    },
+    {
+      "id": "c4-rating",
+      "kind": "catalog_rating"
+    },
+    {
+      "id": "brownout-floor",
+      "kind": "active_model"
+    },
+    {
+      "id": "rail-regulation",
+      "kind": "active_model"
+    },
+    {
+      "id": "capacitor-ratings",
+      "kind": "catalog_rating"
+    }
+  ],
+  "files": {
+    "block-contract.json": "4d7171833ded33c3adb335524d954d027f24910bf348c3e09c998befcf6152dd",
+    "block.json": "b3cfe9c37eb390fe5e00930423f91575fd4f9f70c1d0867704da8435da006e2e",
+    "board-interface.json": "2d1df2fb83987b6cbfe7f5f1f9cc7bcaa39bc2f3836a921c23af5c4998061beb",
+    "requirements.md": "1615ecb66fb539f2197395586179632beab174dbb6f50be36cb3b069e1ad3cb9"
+  },
+  "reference_architectures": [
+    "block.json"
+  ],
+  "requirements": [
+    {
+      "checks": [
+        "erc",
+        "netlist"
+      ],
+      "id": "psu-native",
+      "source": {
+        "locator": "requirements/psu-native/source",
+        "path": "block-contract.json"
+      },
+      "statement": "The captured block sheets load natively, pass ERC and export a native netlist in which every reference-set component is present."
+    },
+    {
+      "checks": [
+        "interface"
+      ],
+      "id": "psu-interface",
+      "source": {
+        "locator": "requirements/psu-interface/source",
+        "path": "block-contract.json"
+      },
+      "statement": "Every reference-set terminal on a net that leaves the block stays on the named native net, and every reference-set component keeps its populated state and value, as in the captured interface contract."
+    },
+    {
+      "checks": [
+        "tvs-clamp"
+      ],
+      "id": "psu-tvs-clamp",
+      "source": {
+        "locator": "pending_requirements/psu-tvs-clamp/source",
+        "path": "block-contract.json"
+      },
+      "statement": "D1 (SMCJ24A, LCSC C224045, unidirectional, cathode on /12V_RAW, anode on GND) clamps positive load dumps and inductive transients on /12V_RAW below 38.9 V, under every downstream absolute maximum: Q1 AO4485 40 V, TLE9201SG 40 V, B340A 40 V, VNLD5090 42 V, DRV8825 45 V."
+    },
+    {
+      "checks": [
+        "reverse-block"
+      ],
+      "id": "psu-reverse-block",
+      "source": {
+        "locator": "pending_requirements/psu-reverse-block/source",
+        "path": "block-contract.json"
+      },
+      "statement": "Q1 (AO4485 P-MOSFET, LCSC C51499; drain pins 5-8 on /12V_RAW, source pins 1-3 on /12V_PROT) with D19 (BZT52C12 gate-source Zener, C43491) and R124 (47k gate pull-down, C25819) blocks reverse battery without a series diode drop."
+    },
+    {
+      "checks": [
+        "c12-part"
+      ],
+      "id": "psu-c12-part",
+      "source": {
+        "locator": "pending_requirements/psu-c12-part/source",
+        "path": "block-contract.json"
+      },
+      "statement": "C12, the +5V buck output capacitor, is the Murata GCM188R71C106KA64D 10 uF 16 V X7R 0603 (LCSC C3092605)."
+    },
+    {
+      "checks": [
+        "c4-rating"
+      ],
+      "id": "psu-c4-rating",
+      "source": {
+        "locator": "pending_requirements/psu-c4-rating/source",
+        "path": "block-contract.json"
+      },
+      "statement": "C4, the 4.7 uF input RC damper on /12V_PROT via R2, is a 50 V X7R 1210 (Murata GCJ32ER71H475KA12L, LCSC C417122), rated above the 38.9 V SMCJ24A clamp."
+    },
+    {
+      "checks": [
+        "brownout-floor"
+      ],
+      "id": "psu-brownout-floor",
+      "source": {
+        "locator": "pending_requirements/psu-brownout-floor/source",
+        "path": "block-contract.json"
+      },
+      "statement": "+3V3 stays regulated at 3.30 V until U3 (LMR16020PDDAR) reaches its 4.30 V minimum operating VIN, a guaranteed steady-state floor of about 4.80 V at the battery (4.30 V plus the ~0.50 V series path), with the LMR16020 EN UVLO falling at 4.50 V."
+    },
+    {
+      "checks": [
+        "rail-regulation"
+      ],
+      "id": "psu-rails",
+      "source": {
+        "locator": "pending_requirements/psu-rails/source",
+        "path": "block-contract.json"
+      },
+      "statement": "+5V is 5.00 V within 2 % above 5.5 V input; 5V_SENSOR_1 and 5V_SENSOR_2 are 5.00 V within 1 %; +3V3 is 3.30 V within 1 %."
+    },
+    {
+      "checks": [
+        "capacitor-ratings"
+      ],
+      "id": "psu-capacitor-ratings",
+      "source": {
+        "locator": "pending_requirements/psu-capacitor-ratings/source",
+        "path": "block-contract.json"
+      },
+      "statement": "Every PSU capacitor is rated above the clamp voltage of its rail: C2, C5 (/12V_PROT), C7 (/VBOOST), C8 and C10 (U3 soft-start and bootstrap) are 50 V X7R, C6 is the 50 V hybrid polymer and C12 is 16 V on +5V."
+    },
+    {
+      "checks": [
+        "input-filter"
+      ],
+      "id": "psu-input-filter",
+      "source": {
+        "locator": "pending_requirements/psu-input-filter/source",
+        "path": "block-contract.json"
+      },
+      "statement": "/12V_PROT passes through the L1 (2.2 uH) + C6 (47 uF) LC filter directly into /VBOOST (U3 VIN)."
+    }
+  ],
+  "schema": "agent-ee.baseline/1",
+  "targets": [
+    "requirements.md"
+  ]
+}

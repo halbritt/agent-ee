@@ -1,4 +1,4 @@
-"""Offline board envelope record (agent-ee.envelope/1) and derived obligations.
+"""Offline board envelope records (agent-ee.envelope/1 and /2) and obligations.
 
 Geometry is exact integer nanometres in KiCad board axes (y grows downward).
 A structural pass is not fabrication or placement acceptance: obligations are
@@ -20,6 +20,7 @@ from .storage import canonical, digest
 from .symbol_library import LibraryError, children, nanometres, parse_sexpr
 
 SCHEMA = 'agent-ee.envelope/1'
+SCHEMAS = (SCHEMA, 'agent-ee.envelope/2')
 ENVELOPE_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,47}\Z')
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,31}\Z')
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
@@ -41,9 +42,10 @@ CHECK_KINDS = {'outline': ['placement', 'board_envelope'],
                'layer_count': ['fab_package', 'board_envelope'],
                'stackup': ['fab_package', 'board_envelope'], 'fab_profile': ['fab_profile'],
                'mounting_holes': ['placement'], 'keepouts': ['placement'],
-               'fixed_footprints': ['placement']}
+               'fixed_footprints': ['placement'], 'obligations': ['board_envelope']}
 # Why a field without a binding has unknown coverage; reported, never assumed.
 UNBOUND = {
+    'obligations': 'generator mechanics require qualified checks from AGENTEE-177/179',
     'outline': 'needs an exact native board_envelope outline/1 check',
     'layer_count': 'needs an exact native board_envelope layers/1 check',
     'stackup': 'needs native stackup facts and qualified captured copper_weight_oz authority',
@@ -51,8 +53,8 @@ UNBOUND = {
     'mounting_holes': 'no registered predicate checks declared mounting holes',
     'keepouts': 'no registered predicate binds a declared keepout to a saved rule area '
                 '(placement footprint-keepout/1 grades only rule areas already saved)',
-    'fixed_footprints': 'needs one placement connector-edge/1 check over these envelope bytes, '
-                        'and an envelope with exactly one fixed footprint'}
+    'fixed_footprints': 'needs one placement connector-edge/1 check over these envelope bytes '
+                        'selecting this fixed reference'}
 
 
 def load(raw):
@@ -317,11 +319,15 @@ def copper_names(count):
     return ['F.Cu'] + [f'In{i}.Cu' for i in range(1, count - 1)] + ['B.Cu']
 
 
-def validate_stackup(value, count):
+def validate_stackup(value, count, *, schema=SCHEMA):
     if isinstance(count, bool) or not isinstance(count, int) or not 2 <= count <= MAX_COPPER:
         raise ValueError(f'layer_count must be an integer from 2 to {MAX_COPPER}')
-    fields(value, 'stackup', ['thickness_mm', 'layers'])
-    total = length(value['thickness_mm'], 'stackup thickness_mm', positive=True)
+    sourced = schema == SCHEMAS[1]
+    fields(value, 'stackup', ['nominal_thickness_mm', 'physical_thickness_mm', 'layers']
+           if sourced else ['thickness_mm', 'layers'])
+    total = length(value['physical_thickness_mm' if sourced else 'thickness_mm'],
+                   'stackup physical thickness_mm' if sourced else 'stackup thickness_mm', positive=True)
+    nominal = length(value['nominal_thickness_mm'], 'nominal_thickness_mm', positive=True) if sourced else total
     layers = value['layers']
     if not isinstance(layers, list) or not layers:
         raise ValueError('stackup layers must be a nonempty list')
@@ -333,13 +339,15 @@ def validate_stackup(value, count):
         if layer['kind'] != expected:
             raise ValueError('stackup must alternate copper and dielectric, starting and ending with copper')
         if layer['kind'] == 'copper':
-            fields(layer, f'stackup layer {index}', ['name', 'kind', 'thickness_mm', 'copper_weight_oz'])
+            fields(layer, f'stackup layer {index}', ['name', 'kind', 'thickness_mm', 'copper_weight_oz']
+                   + (['source'] if sourced else []))
             weight = scaled(decimal(layer['copper_weight_oz'], 'copper_weight_oz'), 'copper_weight_oz')
             if weight <= 0:
                 raise ValueError('copper_weight_oz must be positive')
             copper.append(layer['name'])
         else:
-            fields(layer, f'stackup layer {index}', ['name', 'kind', 'thickness_mm'])
+            fields(layer, f'stackup layer {index}', ['name', 'kind', 'thickness_mm']
+                   + (['source'] if sourced else []))
             weight = None
         label = layer['name']
         if not isinstance(label, str) or not label.strip() or len(label) > 64 or label in names:
@@ -355,7 +363,52 @@ def validate_stackup(value, count):
         raise ValueError(f'layer_count {count} requires copper layers {copper_names(count)}, got {copper}')
     if summed != total:
         raise ValueError(f'stackup layers sum to {mm(summed)} mm, not thickness_mm {mm(total)}')
-    return {'thickness_mm': mm(total), 'layers': records}
+    return {'thickness_mm': mm(nominal), 'layers': records,
+            **({'nominal_thickness_mm': mm(nominal), 'physical_thickness_mm': mm(total),
+                'sources': [layer['source'] for layer in layers]} if sourced else {})}
+
+
+def stackup_support(stackup, fab, captured):
+    """Verify physical layer citations and the compiler's finished-thickness bound."""
+    from .fab_profile import verify_source
+    unresolved, paths = [], set()
+    files, inputs = captured if captured is not None else ({}, Path(os.devnull))
+    for index, source in enumerate(stackup['sources']):
+        try:
+            paths.add(verify_source(source, inputs, files, fab.get('as_of')))
+        except (ValueError, KeyError, OSError, UnicodeError) as exc:
+            unresolved.append({'predicate': f'stackup_layer_source_{index}', 'reason': str(exc)})
+    tolerance = fab.get('finished_thickness_tolerance', {})
+    if tolerance.get('execution') != 'ready':
+        unresolved.append({'predicate': 'finished_thickness_tolerance',
+                           'reason': tolerance.get('reason', 'no source-verified finished-thickness tolerance')})
+    else:
+        percent = Fraction(str(tolerance['expected']['percent']))
+        nominal, physical = (Fraction(stackup[k]) for k in ('nominal_thickness_mm', 'physical_thickness_mm'))
+        if nominal < Fraction(str(tolerance['expected']['min_nominal_thickness_mm'])):
+            raise ValueError('nominal thickness is below captured tolerance applicability')
+        if abs(physical - nominal) * 100 > nominal * percent:
+            raise ValueError('physical stackup is outside captured finished-thickness tolerance of nominal')
+        stackup['finished_thickness_tolerance'] = tolerance['expected']
+    stackup['source_paths'] = sorted(paths)
+    return unresolved
+
+
+def validate_obligations(items):
+    """Unbound generator decisions are obligations, never caller-asserted passes."""
+    namespace = set()
+    unique_names(items, 'id', 'obligation', namespace)
+    for item in items:
+        fields(item, 'obligation', ['id', 'requirement_ids', 'statement', 'owner_items'])
+        if not isinstance(item['statement'], str) or not item['statement'].strip():
+            raise ValueError('obligation statement required')
+        for field in ('requirement_ids', 'owner_items'):
+            values = item[field]
+            if (not isinstance(values, list) or not 1 <= len(values) <= MAX_ITEMS or
+                    any(not isinstance(v, str) or not ENVELOPE_ID.fullmatch(v) for v in values) or
+                    len(set(values)) != len(values)):
+                raise ValueError(f'obligation {field} needs unique nonempty identifiers')
+    return items
 
 
 def profile_document(profile):
@@ -440,6 +493,10 @@ def validate_profile(value, profile, captured, inventory):
     # source_paths lists only cited sources found in the capture inventory.
     record.update(as_of=compiled['as_of'], support=support, sources_verified=captured is not None,
                   source_paths=compiled['immutable_inputs'])
+    if 'stackup' in compiled:
+        record['stackup'] = compiled['stackup']
+    if 'finished_thickness_tolerance' in compiled:
+        record['finished_thickness_tolerance'] = compiled['finished_thickness_tolerance']
     return record, unresolved
 
 
@@ -562,18 +619,27 @@ def validate(raw, *, profile=None, captured=None):
     stays unresolved rather than assumed.
     """
     envelope = load(raw)
+    schema = envelope.get('schema') if isinstance(envelope, dict) else None
     fields(envelope, 'envelope', ['schema', 'id', 'outline', 'layer_count', 'stackup', 'fab_profile',
-                                  'mounting_holes', 'keepouts', 'fixed_footprints'])
-    if envelope['schema'] != SCHEMA:
-        raise ValueError(f'schema must be {SCHEMA}')
+                                  'mounting_holes', 'keepouts', 'fixed_footprints']
+           + (['obligations'] if schema == SCHEMAS[1] else []))
+    if schema not in SCHEMAS:
+        raise ValueError(f'schema must be one of {SCHEMAS}')
     eid = name(envelope['id'], 'envelope id', ENVELOPE_ID)
     if profile is not None and not isinstance(profile, bytes):
         raise ValueError('profile must be bytes')
     vertices, edges, outline = validate_outline(envelope['outline'])
-    stackup = validate_stackup(envelope['stackup'], envelope['layer_count'])
+    stackup = validate_stackup(envelope['stackup'], envelope['layer_count'], schema=schema)
     copper = copper_names(envelope['layer_count'])
     fab, unresolved = validate_profile(envelope['fab_profile'], profile, captured,
                                        declared_inventory(envelope['layer_count'], copper, edges))
+    obligations = []
+    if schema == SCHEMAS[1]:
+        unresolved.extend(stackup_support(stackup, fab, captured))
+        obligations = validate_obligations(envelope['obligations'])
+        unresolved.extend({'predicate': f"mechanical_{item['id']}",
+                           'reason': f"{item['statement']} Unbound until {', '.join(item['owner_items'])}."}
+                          for item in obligations)
     namespace = set()
     unique_names(envelope['fixed_footprints'], 'reference', 'fixed footprint', namespace)
     unique_names(envelope['mounting_holes'], 'id', 'mounting hole', namespace)
@@ -584,6 +650,7 @@ def validate(raw, *, profile=None, captured=None):
             'unresolved': unresolved, 'acceptance_ready': False,
             'outline': outline, 'layer_count': envelope['layer_count'], 'copper_layers': copper,
             'stackup': stackup, 'fab_profile': fab,
+            **({'obligations': obligations} if schema == SCHEMAS[1] else {}),
             'mounting_holes': validate_holes(envelope['mounting_holes'], vertices),
             'keepouts': validate_keepouts(envelope['keepouts'], vertices, copper),
             'fixed_footprints': validate_fixed(envelope['fixed_footprints'], vertices, edges)}
@@ -643,6 +710,11 @@ def derive_requirements(record, source_path):
                               f"{point_text(fixed['anchor_mm'])} mm, rotation {fixed['rotation_deg']} deg, "
                               f"within {fixed['tolerance_mm']} mm; it is mated {fixed['insertion']} "
                               f"(mating axis {fixed['mating_axis']}).", source_path, CHECK_KINDS['fixed_footprints']))
+    for index, item in enumerate(record.get('obligations', [])):
+        out.append(obligation(eid, f"obligation-{item['id']}", f'/obligations/{index}', item,
+                              item['statement'] + f" Requirement IDs: {', '.join(item['requirement_ids'])}; "
+                              f"checks pending {', '.join(item['owner_items'])}.",
+                              source_path, CHECK_KINDS['obligations']))
     return {'schema': 'agent-ee.envelope-requirements/1', 'envelope_id': eid,
             'envelope_sha256': record['envelope_sha256'], 'source_path': source_path,
             'complete': not record['unresolved'], 'unresolved': record['unresolved'],
@@ -703,13 +775,7 @@ def bind_fab_profile(item, spec, record, files, others):
 
 
 def bind_connector_edge(item, spec, record, files, others):
-    """A placement connector-edge/1 check (AGENTEE-92) over these exact envelope bytes.
-
-    The check grades every fixed footprint of its envelope as one verdict, so it
-    can witness this obligation only when the envelope fixes exactly this one
-    footprint and no other requirement maps the check. Returns an unknown reason
-    when the verdict cannot be attributed; raises on a mapping that cannot apply.
-    """
+    """One selected fixed reference, one witness over these exact envelope bytes."""
     params = spec.get('params') if isinstance(spec.get('params'), dict) else {}
     if params.get('criterion') != 'connector-edge/1':
         raise ValueError(f"envelope obligation {item['id']} maps placement check {spec['id']} with criterion "
@@ -720,10 +786,22 @@ def bind_connector_edge(item, spec, record, files, others):
     if others:
         raise ValueError(f"placement check {spec['id']} for envelope obligation {item['id']} is also mapped by "
                          f'{others}; one connector verdict cannot witness several requirements')
-    if len(record['fixed_footprints']) != 1:
-        return (f"connector-edge/1 grades all {len(record['fixed_footprints'])} fixed footprints as one "
-                'verdict, so a defect cannot be attributed to this one')
+    fixed = record['fixed_footprints'][int(item['source']['locator'].rsplit('/', 1)[1])]
+    if 'reference' not in params:
+        if len(record['fixed_footprints']) != 1:
+            return 'connector-edge/1 needs an explicit reference for each of several fixed footprints'
+    elif params['reference'] != fixed['reference']:
+        raise ValueError(f"connector-edge/1 reference {params['reference']!r} does not cover {fixed['reference']}")
     return None
+
+
+def stackup_authority_reason(record):
+    if record['fab_profile'].get('stackup', {}).get('execution') != 'ready':
+        return 'copper_weight_oz needs qualified captured manufacturing authority; no inferred conversion'
+    missing = [u['reason'] for u in record['unresolved']
+               if u['predicate'].startswith('stackup_layer_source_') or
+               u['predicate'] == 'finished_thickness_tolerance']
+    return '; '.join(missing) if missing else None
 
 
 def bind_native_envelope(item, spec, record, files, others):
@@ -739,7 +817,7 @@ def bind_native_envelope(item, spec, record, files, others):
     if others:
         raise ValueError(f"native envelope check {spec['id']} also mapped by {others}; one field per witness")
     if field == 'stackup':
-        return 'copper_weight_oz needs qualified captured manufacturing authority; no inferred conversion'
+        return stackup_authority_reason(record)
     return None
 
 
@@ -874,7 +952,7 @@ def consumed_paths(scope):
 def envelope_document(files, inputs, rel):
     """(kind, value) for a consumed captured file carrying envelope authority, else None.
 
-    kind is 'envelope' (agent-ee.envelope/1), 'derived' (its validation or
+    kind is 'envelope' (agent-ee.envelope/1 or /2), 'derived' (its validation or
     requirements record) or 'stage_one' (agent-ee.requirements/1 holding
     R-envelope- obligations). Only the scope's own consumed paths are read.
     """
@@ -890,7 +968,7 @@ def envelope_document(files, inputs, rel):
         return None
     if not isinstance(value, dict):
         return None
-    if value.get('schema') == SCHEMA:
+    if value.get('schema') in SCHEMAS:
         return 'envelope', value
     if value.get('schema') in DERIVED:
         return 'derived', value
@@ -967,6 +1045,7 @@ def baseline_envelope(scope, files, inputs):
         raise ValueError(f'requirements cite the declared envelope but are not its derived obligations: {generic}')
     dependencies = {path} | ({declared['profile']} if profile is not None else set())
     dependencies.update(record['fab_profile'].get('source_paths', []))
+    dependencies.update(record['stackup'].get('source_paths', []))
     from .design_dialog import validate_requirements
     expected = dialog_requirements(requirements)['requirements']
     stage_one = sorted(rel for rel, (kind, _, _) in consumed.items() if kind == 'stage_one')
@@ -1098,8 +1177,9 @@ def round_trip(raw, pcb):
         {'missing': len(declared - saved), 'extra': len(saved - declared), 'other': facts['other_edge_cuts']})
     add('/layer_count', 'match' if facts['copper_layers'] == record['copper_layers'] else 'mismatch',
         {'board': facts['copper_layers']})
-    total = length(envelope['stackup']['thickness_mm'], 'thickness')
-    add('/stackup/thickness_mm', 'match' if facts['thickness_nm'] == total else 'mismatch',
+    total = length(Decimal(record['stackup']['thickness_mm']), 'thickness')
+    thickness_field = 'nominal_thickness_mm' if envelope['schema'] == SCHEMAS[1] else 'thickness_mm'
+    add('/stackup/' + thickness_field, 'match' if facts['thickness_nm'] == total else 'mismatch',
         {'board_mm': None if facts['thickness_nm'] is None else mm(facts['thickness_nm'])})
     for index, layer in enumerate(record['stackup']['layers']):
         pointer = f'/stackup/layers/{index}'
@@ -1129,6 +1209,8 @@ def round_trip(raw, pcb):
         for index, _ in enumerate(envelope[key]):
             add(f'/{key}/{index}', 'not_compared', {'reason': 'v1 round trip compares outline, layers, stackup '
                                                               'and fixed footprints only'})
+    for index, _ in enumerate(record.get('obligations', [])):
+        add(f'/obligations/{index}', 'not_compared', {'reason': UNBOUND['obligations']})
     return {'schema': 'agent-ee.envelope-round-trip/1', 'envelope_sha256': record['envelope_sha256'],
             'board_sha256': hashlib.sha256(pcb).hexdigest(), 'fields': results,
             'outcome': ('mismatch' if any(r['status'] == 'mismatch' for r in results) else

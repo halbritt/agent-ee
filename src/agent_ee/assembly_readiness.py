@@ -17,9 +17,9 @@ from .candidate import safe_relative
 from .catalog import decimal_number
 from .fab_export import natural_key
 from .hardware_interface import unique_object
-from .jlc_stock_capture import is_capture, response_paths, validate_capture
+from .jlc_stock_capture import DEFAULT_ENDPOINT, is_capture, response_paths, validate_capture
 from .part_binding import NO_LCSC_VALUES, _is_no_lcsc
-from .storage import digest, write_json
+from .storage import digest, read_json, write_json
 from .symbol_library import LibraryError, parse_sexpr
 
 
@@ -137,7 +137,7 @@ def _resolve_captured_file(inputs_root, rel_path, label):
         inside = False
     if not inside:
         raise AssemblyReadinessExecutionError("failed", f"{label} {rel_path!r} escapes captured inputs")
-    if candidate.is_symlink():
+    if any((root / Path(*rel.parts[:end])).is_symlink() for end in range(1, len(rel.parts) + 1)):
         raise AssemblyReadinessExecutionError("failed", f"{label} {rel_path!r} must not be a symlink")
     if not candidate.is_file():
         raise AssemblyReadinessExecutionError("failed", f"missing {label} file: {rel_path!r}")
@@ -170,6 +170,11 @@ def _parse_iso_date_or_datetime(value, label):
 def _normalize_part_entry(lcsc_key, raw):
     if not isinstance(raw, dict):
         raise ValueError(f"catalog entry for {lcsc_key!r} must be an object")
+    allowed = {"lcsc", "stock", "last_seen", "checked_at", "library_tier", "library_type", "tier",
+               "is_basic", "is_preferred", "mfr", "manufacturer", "mpn", "part_number", "package",
+               "category", "price1"}
+    if set(raw) - allowed:
+        raise ValueError(f"catalog entry {lcsc_key!r} has unknown keys: {sorted(set(raw) - allowed)}")
     lcsc = raw.get("lcsc", lcsc_key)
     if not isinstance(lcsc, str) or not LCSC_RE.fullmatch(lcsc):
         raise ValueError(f"invalid catalog LCSC ID: {lcsc!r}")
@@ -264,8 +269,9 @@ def load_catalog_snapshot(inputs_root: Path, catalog_rel: str, *, expected_sha25
     if schema == "agent-ee.catalog/1":
         return _load_sqlite_catalog_manifest(inputs_root, catalog_path, norm_rel, actual_sha, doc)
     if schema in ("agent-ee.catalog-snapshot/1", "agent-ee.jlc-catalog/1"):
+        verified = _verify_jlc_capture(inputs_root, norm_rel, doc) if is_capture(doc) else None
         catalog = _load_json_catalog_snapshot(norm_rel, actual_sha, doc)
-        catalog["capture"] = _verify_jlc_capture(inputs_root, norm_rel, doc) if is_capture(doc) else None
+        catalog["capture"] = verified
         return catalog
     raise AssemblyReadinessExecutionError("failed", f"unsupported catalog schema: {schema!r}")
 
@@ -282,10 +288,16 @@ def _verify_jlc_capture(inputs_root, catalog_rel, doc):
         path, _ = _resolve_captured_file(inputs_root, combined, "captured JLC response")
         return path.read_bytes()
 
+    verdicts = {}
     try:
-        return validate_capture(doc, read_response)
+        info = validate_capture(doc, read_response, response_verdicts=verdicts)
+        if doc["source"]["endpoint"] != DEFAULT_ENDPOINT:
+            raise ValueError("JLC stock evidence requires the JLCPCB public search endpoint; LCSC and other sources are refused")
+        return info
     except (OSError, ValueError) as exc:
-        raise AssemblyReadinessExecutionError("failed", f"invalid agent-ee.jlc-catalog/1 capture: {exc}") from exc
+        error = AssemblyReadinessExecutionError("failed", f"invalid agent-ee.jlc-catalog/1 capture: {exc}")
+        error.response_verdicts = verdicts
+        raise error from exc
 
 
 def _capture_gate(capture, cfg, unknown_lcsc):
@@ -303,6 +315,8 @@ def _capture_gate(capture, cfg, unknown_lcsc):
     stale = None
     if captured_dt > run_dt:
         stale = f"capture as_of {capture['as_of']} is after the run as_of {cfg['as_of']}"
+    elif _parse_iso_date_or_datetime(capture["completed_at"], "completed_at")[1] > run_dt:
+        stale = "capture completed_at is after the run evaluation time"
     elif cfg["max_age_hours"] is not None and age_hours > cfg["max_age_hours"]:
         stale = f"capture is {age_hours:.1f} hour(s) old at the run (max_age_hours={cfg['max_age_hours']})"
     elif cfg["max_stock_age_days"] is not None and (run_date - captured_date).days > cfg["max_stock_age_days"]:
@@ -1162,7 +1176,11 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
 
     capture = catalog.get("capture")
     if capture is not None:
-        _capture_gate(capture, cfg, unknown_lcsc_by_ref.values())
+        try:
+            _capture_gate(capture, cfg, unknown_lcsc_by_ref.values())
+        except AssemblyReadinessExecutionError as exc:
+            exc.response_verdicts = capture["response_verdicts"]
+            raise
 
     # 3. Evaluate matched LCSC parts: 3-state stock, freshness, quantity * boards, and Basic/Preferred/Extended tiers.
     as_of_raw = cfg["as_of"] or catalog["as_of"] or catalog["snapshot_date"]
@@ -1260,7 +1278,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
                 seen_date, seen_dt = _parse_iso_date_or_datetime(last_seen, f"{lcsc}.last_seen")
                 age_days = (as_of_date - seen_date).days
                 age_hours = (as_of_dt - seen_dt).total_seconds() / 3600.0
-                if seen_date > as_of_date:
+                if seen_dt > as_of_dt:
                     is_stale = True
                     stale_reason = f"last_seen {last_seen} is after the evaluation date {as_of_raw}"
                 elif stale_before_date is not None and seen_date < stale_before_date:
@@ -1396,6 +1414,7 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
                 "requested": capture["requested"],
                 "not_found": capture["not_found"],
                 "failed": sorted(capture["failed"]),
+                "response_verdicts": capture["response_verdicts"],
             },
         },
         "policy": {
@@ -1445,6 +1464,109 @@ def evaluate_assembly_readiness(inputs_root: Path, netlist_path: Path, params: d
     }
 
 
+def campaign_stock_context(root, state, config, scope):
+    """Generation receipt selected only from the coordinator's anchored records."""
+    from .stage_done import _receipts
+    from .stage_receipts import validate_pre_receipt
+    if not any(c['kind'] == 'assembly_readiness' for c in scope.get('checks', [])):
+        return None
+    context = {"receipt": None}
+    schematic = scope.get('schematic')
+
+    def select(path, sha, receipt):
+        if (receipt['spec']['stage'] in ('scaffold', 'schematic') and
+                schematic in receipt['outputs']):
+            context['receipt'] = {'path': str(path), 'sha256': sha, 'binding': receipt['binding']}
+
+    for link in config.get('pre_receipts', []):
+        receipt = validate_pre_receipt(root, link)
+        select(Path(root) / link['path'], link['sha256'], receipt)
+    for number in range(1, len(state['history']) + 1):
+        work = Path(root) / 'implementations' / str(number)
+        for k, sha, receipt in _receipts(root, state, str(number)):
+            link = read_json(work / 'stage-receipts.json')['receipts'][k - 1]
+            select(work / link['path'], sha, receipt)
+    return context
+
+
+def _generation_time(link, manifest):
+    from .stage_receipts import ADOPTABLE, validate_receipt
+    if link is None:
+        raise ValueError('campaign JLC stock evidence requires a generation stage receipt')
+    path = Path(link['path'])
+    if path.is_symlink() or digest(path) != link['sha256']:
+        raise ValueError('generation stage receipt changed')
+    receipt = validate_receipt(path.parent, binding=link['binding'])
+    schematic = manifest['scope']['schematic']
+    if (receipt['status'] not in ADOPTABLE or receipt['spec']['stage'] not in ('scaffold', 'schematic') or
+            receipt['outputs'].get(schematic) != manifest['files'][schematic]):
+        raise ValueError('generation stage receipt is not adoptable or does not bind the captured schematic')
+    return datetime.fromtimestamp(receipt['started_unix'] + receipt['duration_s'], timezone.utc).isoformat()
+
+
+def stock_evaluation_params(ctx):
+    """Bind live-stock age to coordinator time, never to a caller's snapshot date."""
+    from .checks import CheckError
+    params = dict(ctx.params)
+    path, _ = _resolve_captured_file(ctx.inputs, params['catalog'], 'catalog')
+    doc = _load_strict_json(path)
+    if not is_capture(doc):
+        return params
+    context = getattr(ctx, 'stock_context', None)
+    witness = {'context': context}
+    try:
+        if context is None:
+            result = ctx.run_dir / 'result.json'
+            stamp = (read_json(result)['started_utc'] if result.is_file()
+                     else datetime.now(timezone.utc).isoformat())
+            witness.update(source='run_started_utc', as_of=stamp)
+        else:
+            stamp = _generation_time(context['receipt'], ctx.manifest)
+            witness.update(source='generation_receipt_completed', as_of=stamp)
+        params['as_of'] = stamp
+        # The campaign's day-of-generation policy cannot be relaxed by scope params.
+        params['max_age_hours'] = min(24 if params.get('max_age_hours') is None else params['max_age_hours'], 24)
+        witness['max_age_hours'] = params['max_age_hours']
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        witness['error'] = str(exc)
+        raise CheckError('failed', f'JLC stock evaluation time refused: {exc}') from exc
+    finally:
+        write_json(ctx.work / 'stock-evaluation.json', witness)
+        ctx.evidence('stock-evaluation.json')
+        ctx.result['details']['stock_evaluation'] = witness
+    return params
+
+
+def verify_stock_context(run, result, expected):
+    """Campaign replay checks the sealed stock witness against anchored receipt selection."""
+    manifest = read_json(Path(run) / 'candidate.json')
+    specs = {s['id']: s for s in manifest['scope']['checks']}
+    for check in result['checks']:
+        if check['kind'] != 'assembly_readiness':
+            continue
+        witness = check.get('details', {}).get('stock_evaluation')
+        if witness is None:
+            if check['execution'] == 'ok':
+                catalog = specs[check['id']]['params']['catalog']
+                if is_capture(_load_strict_json(Path(run) / 'inputs' / catalog)):
+                    raise ValueError('JLC stock check lacks its evaluation witness')
+            continue
+        if witness['context'] != expected:
+            raise ValueError('stock evaluation context differs from the anchored generation receipt')
+        rel = f"work/{check['id']}/stock-evaluation.json"
+        if rel not in check['evidence'] or read_json(Path(run) / rel) != witness:
+            raise ValueError('stock check omits its sealed evaluation witness')
+        if 'error' in witness and (check['execution'] == 'ok' or check['outcome'] != 'unknown'):
+            raise ValueError('stock evaluation error must remain failed/unknown coverage')
+        if 'error' not in witness:
+            if expected is None or witness['as_of'] != _generation_time(expected['receipt'], manifest):
+                raise ValueError('stock evaluation time differs from the generation receipt')
+            limit = specs[check['id']]['params'].get('max_age_hours')
+            limit = min(24 if limit is None else limit, 24)
+            if witness['source'] != 'generation_receipt_completed' or witness['max_age_hours'] != limit:
+                raise ValueError('stock evaluation policy differs from the campaign policy')
+
+
 def check_assembly_readiness(ctx):
     """Export the native XML netlist in the sandbox, then join it with the captured catalog."""
     from .checks import CheckError, verified_hierarchy
@@ -1473,9 +1595,17 @@ def check_assembly_readiness(ctx):
         raise CheckError("failed", "native XML netlist was not written")
 
     try:
-        report = evaluate_assembly_readiness(ctx.inputs, netlist, ctx.params, expected_sheets=instances,
+        params = stock_evaluation_params(ctx)
+        report = evaluate_assembly_readiness(ctx.inputs, netlist, params, expected_sheets=instances,
                                              hierarchy_files=files, captured_files=ctx.manifest['files'])
     except AssemblyReadinessExecutionError as exc:
+        if hasattr(exc, "response_verdicts"):
+            failure = {"schema": "agent-ee.assembly-readiness/1", "candidate_id": ctx.manifest["candidate_id"],
+                       "execution": exc.execution, "outcome": "unknown", "summary": str(exc),
+                       "response_verdicts": exc.response_verdicts}
+            write_json(ctx.work / "assembly-readiness.json", failure)
+            ctx.evidence("assembly-readiness.json")
+            ctx.result["details"].update(failure)
         raise CheckError(exc.execution, str(exc)) from exc
 
     report["candidate_id"] = ctx.manifest["candidate_id"]

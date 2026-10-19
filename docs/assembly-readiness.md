@@ -46,15 +46,19 @@ Live JLCPCB stock reaches it only through an owner-run
   decimal-text prices are decoded with the catalog decimal reader. A null
   `stale_before` is accepted as an absent policy; stock remains unknown unless
   the check supplies an explicit maximum age or cutoff.
-- **JLCPCB stock capture**: an `agent-ee.jlc-catalog/1` file that carries a
+- **JLCPCB stock capture**: an [`agent-ee.jlc-catalog/1`](jlc-catalog.md) file with its required
   `requests` list comes from the owner-run
   [JLCPCB stock producer](jlc-stock-capture.md). The check re-derives every
   part from the retained raw responses, which are immutable baseline inputs.
-  It requires `as_of` bound to the run and a declared staleness
-  (`unsupported` otherwise). It fails a capture that is older than that
-  staleness, dated after the run, or lacking an observation for a populated
-  LCSC id (never requested, or a failed request). Only an observed not-found
-  gives `unknown_lcsc_in_catalog`. The report carries `catalog.capture`.
+  The coordinator binds evaluation to the generation receipt in campaigns
+  (missing or inapplicable receipts fail) and to review time in standalone checks,
+  with `max_age_hours: 24`. Direct evaluation calls require an explicit
+  `as_of` and staleness (`unsupported` otherwise). It fails a capture older
+  than that staleness, dated after the run, or lacking an observation for a
+  populated LCSC id (never requested, or a failed request). Only an observed
+  not-found gives `unknown_lcsc_in_catalog`. The report carries
+  `catalog.capture`, including per-part response hash verdicts.
+  Missing requests, unknown keys and non-JLCPCB sources are refused.
 - **Retained evidence**: `work/<id>/design.xml`, the executor record and
   `work/<id>/assembly-readiness.json`. The report carries the hashes of each
   schematic file (`schematic.files`), of the netlist (`netlist.sha256`) and
@@ -88,7 +92,7 @@ Live JLCPCB stock reaches it only through an owner-run
 | `max_stock_age_days` | `number >= 0 \| None` | `None` | Maximum age in days of a part's `last_seen` relative to `as_of`. |
 | `max_age_hours` | `number >= 0 \| None` | `None` | Maximum age in hours of a part's `last_seen` relative to `as_of`. |
 | `stale_before` | `str \| None` | catalog `stale_before` | ISO date; earlier `last_seen` observations are stale. |
-| `as_of` | `str \| None` | catalog `snapshot_date` | Evaluation date or ISO-8601 timestamp for stock age. Required for a JLCPCB stock capture, where it binds the evaluation to the run. |
+| `as_of` | `str \| None` | catalog `snapshot_date` for legacy snapshots | Evaluation date or ISO-8601 timestamp. For JLCPCB captures the coordinator overrides this with the generation receipt completion time (campaign) or review time (standalone); direct evaluation API calls require it. |
 | `stock_floor` | `int >= 0` | `0` | Minimum stock per LCSC ID: `threshold = max(quantity_per_board * boards, stock_floor)`. |
 | `deviations` | `str \| None` | `None` | Captured mutable `agent-ee.part-deviations/1` file shared with `part_decisions`. |
 

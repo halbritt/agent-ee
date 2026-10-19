@@ -77,7 +77,7 @@ Every check names an earlier `drc` check in `drc_check`:
 | `outline-containment/1` | none | positive courtyard area outside the single proven outline (the judge above) | missing, open, curved or multiple outlines; missing or unproved courtyard |
 | `edge-clearance/1` | `min_courtyard_edge_mm` | exact courtyard-to-Edge.Cuts distance below the minimum, or courtyard crossing/outside the outline | unproved outline or courtyard |
 | `footprint-keepout/1` | none | a native `items_not_allowed` item citing a footprint UUID | footprint-forbidding rule area with holes, arcs or several contours, or owned by a footprint; footprint without a qualified courtyard where such an area applies to its side; helper geometry intersects but native DRC is silent; native check ignored |
-| `connector-edge/1` | `envelope` | wrong side or rotation; origin farther than `tolerance_mm` from the declared anchor (names edge, measured inset and distance); facing contradicts a declared local mating axis | reference missing or duplicated; outline unproved or declared edge absent from it; facing undeterminable |
+| `connector-edge/1` | `envelope`, `reference` (required for several fixed footprints) | wrong side or rotation; origin farther than `tolerance_mm` from the declared anchor (names edge, measured inset and distance); facing contradicts a declared local mating axis | reference missing or duplicated; outline unproved or declared edge absent from it; facing undeterminable |
 | `ratsnest-mst/1` | optional `max_manhattan_mm`, `max_euclidean_mm` | proved total above a declared maximum | Euclidean interval straddles a maximum; no netted pads |
 
 The prerequisite must be `execution=ok` with outcome `pass` or `defect` for the
@@ -102,10 +102,14 @@ remains a defect beside unrelated unknown coverage; pass needs complete coverage
 the check criteria. The AGENTEE-75 profile has only a copper-to-edge key
 (`min_edge_clearance_mm`); it is not reinterpreted as a courtyard limit.
 
-`connector-edge/1` reads a captured AGENTEE-85 `agent-ee.envelope/1` file through
+`connector-edge/1` reads a captured AGENTEE-85 envelope through
 `board_envelope.validate`. Capture requires that envelope to be declared in the
-scope with every derived obligation covered. One `connector-edge/1` check
-covers the fixed-footprint obligation of an envelope with one fixed footprint
+scope with every derived obligation covered. Each check selects one fixed
+footprint using `reference` (for example `J1`) and witnesses only its obligation,
+with predicate `placement:connector-edge/1:J1`. A single fixed footprint may omit
+the selector and retain `placement:connector-edge/1`. Missing or duplicated saved
+references are unknown only for the selected check; an undeclared selector or
+several declarations without a selector is refused
 ([baseline integration](board-envelope.md#baseline-integration)). `placement_predicates.connector_access` is the
 declared-edge predicate. A declaration names reference,
 side, edge segment and outward axis, anchor, tolerance, optional rotation,
@@ -178,9 +182,10 @@ stackup manufacturing authority; that gate must remain closed. Likewise,
 courtyard limit. The optional routing test uses an owned result record to
 qualify parsing and advisory behavior, not to claim a routing attempt.
 
-An unpatched scope/3 declaration mapping outline, layer count and stackup to
+The RC fixture's scope/3 declaration mapping outline, layer count and stackup to
 their `board_envelope` criteria, the fixed header to `connector-edge/1`, and the
 profile to `fab_profile` is refused before candidate creation:
 `R-envelope-rc-filter-stackup` lacks executable coverage because
-`copper_weight_oz` needs qualified captured manufacturing authority. A passing
-standalone connector judgment cannot close this coordinator-path acceptance gap.
+`copper_weight_oz` needs qualified captured manufacturing authority. A profile
+with source-verified stackup metadata can now supply that authority
+(AGENTEE-161); a passing standalone connector judgment cannot supply it.

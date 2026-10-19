@@ -78,6 +78,13 @@ Packet identity cannot establish that omitted data was inspected. Scope/2 packet
 also include `baseline` and `baseline_access`; see the version-2 record details
 below and [packet ordering](scope-reference.md#packet-ordering-and-omissions).
 
+`citation_files` lists available coordinator evidence files with their byte-derived
+`format` (`JSON`, `XML`, `UTF-8 text` or `binary`) and `locator_kinds`. It includes
+captured inputs and coordinator outputs beyond the excerpt budget. It excludes
+reviewer workspaces and judgments. An unavailable or unsafe path is omitted with
+a `packet_limits` notice. This inventory supplies navigation, not acceptance;
+reviewers must inspect the actual file and resolve every supplied locator.
+
 ## Result projection
 
 `result.json` uses `agent-ee.result/1` and contains:
@@ -185,6 +192,25 @@ For example, `{"path":"work/netlist/connectivity.json","locator":"IN net members
 "pointer":"/nets/~1IN"}` selects the `/IN` net. A line range identifies a text
 location; it does not assert that a prose quote or engineering claim is true.
 The same limit applies to a pointer or XML element selection.
+
+KiCad S-expressions (`.kicad_sch`, `.kicad_pcb`, `.kicad_sym`) and ordinary text
+require `lines`. For example, after inspecting the saved lines:
+`{"path":"inputs/project/board.kicad_sch","locator":"symbol pins","lines":[10,20]}`.
+JSON uses `pointer`; XML uses `xpath`; either may also use `lines` when the bytes
+are UTF-8 text. The actual bytes determine the format, not the filename suffix.
+Binary files need a captured text extraction before they can have a structured
+citation. Omit unused fields: an empty `pointer` is valid only for a JSON root,
+and `xpath:"."` selects only an XML root. Neither is a placeholder for text.
+
+An invalid structured citation reports the exact file, supplied locator kinds,
+per-field resolution errors and the kinds appropriate for its bytes. With
+[bounded resubmission](campaign-guide.md#bounded-output-resubmission) enabled,
+the reviewer receives that error and instructions to correct affected locator
+fields while preserving its judgment and finding set. Adding valid lines while
+retaining an invalid pointer or XPath still fails. Each refused response remains
+in its own attempt archive. Campaigns default to one resubmission; standalone
+`run_review` callers must pass `max_schema_resubmissions=1` to enable it (the
+standalone `review` CLI currently uses the single-call default).
 
 Citations may name `baseline.json` when its raw file bytes match the canonical
 serialized bytes of the captured scope/2 or scope/3 immutable baseline (never

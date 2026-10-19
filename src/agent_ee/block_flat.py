@@ -69,6 +69,7 @@ def _library_id(instance, original):
 
 def _libraries(selected, instance):
     groups = {}
+    versions = {}
     for item in selected:
         original = item['native']['lib_id']
         target, symbol = _library_id(instance, original).split(':')
@@ -78,6 +79,15 @@ def _libraries(selected, instance):
             raise ValueError('inherited source definitions are unsupported')
         definition = copy.deepcopy(definition)
         definition[1] = Quoted(symbol)
+        # Older source formats use '~' for an empty property. Preserve that
+        # meaning when the definition is embedded in the modern schematic.
+        source_version = int(children(item['tree'], 'version')[0][1])
+        version = 20250318 if source_version >= 20250318 else 20241209
+        versions[target] = max(versions.get(target, 20241209), version)
+        if source_version < 20250318:
+            for prop in children(definition, 'property'):
+                if prop[2] == '~':
+                    prop[2] = Quoted('')
         # Legacy pin_names stores the hide flag after offset. The existing emitter
         # serializes atoms before child lists; KiCad accepts either token order.
         for names in children(definition, 'pin_names'):
@@ -95,7 +105,7 @@ def _libraries(selected, instance):
             raise ValueError('conflicting captured symbol definitions')
     manifests, captures = [], {}
     for name, definitions in sorted(groups.items()):
-        tree = ['kicad_symbol_lib', ['version', '20241209'], ['generator', Quoted('agent-ee')],
+        tree = ['kicad_symbol_lib', ['version', str(versions[name])], ['generator', Quoted('agent-ee')],
                 *[definitions[key] for key in sorted(definitions)]]
         data = ('\n'.join(format_sexpr(tree)) + '\n').encode()
         path = 'libraries/' + name + '.kicad_sym'

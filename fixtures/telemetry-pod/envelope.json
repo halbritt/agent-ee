@@ -1,0 +1,221 @@
+{
+  "schema": "agent-ee.envelope/2",
+  "id": "telemetry-pod",
+  "outline": {
+    "edges": [
+      {
+        "name": "top",
+        "start": [
+          0,
+          0
+        ],
+        "end": [
+          80,
+          0
+        ]
+      },
+      {
+        "name": "right",
+        "start": [
+          80,
+          0
+        ],
+        "end": [
+          80,
+          50
+        ]
+      },
+      {
+        "name": "bottom",
+        "start": [
+          80,
+          50
+        ],
+        "end": [
+          0,
+          50
+        ]
+      },
+      {
+        "name": "left",
+        "start": [
+          0,
+          50
+        ],
+        "end": [
+          0,
+          0
+        ]
+      }
+    ]
+  },
+  "layer_count": 4,
+  "stackup": {
+    "nominal_thickness_mm": 1.6,
+    "physical_thickness_mm": 1.5862,
+    "layers": [
+      {
+        "name": "F.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.035,
+        "copper_weight_oz": 1,
+        "source": {
+          "path": "sources/jlcpcb-stackup.txt",
+          "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
+          "source": "https://jlcpcb.com/impedance#JLC04161H-7628",
+          "as_of": "2026-10-18",
+          "page": 1,
+          "quote": "F.Cu / copper: 0.035 mm\n7628 / prepreg: 0.21040 mm\nIn1.Cu / copper: 0.0152 mm\ncore: 1.065 mm\nIn2.Cu / copper: 0.0152 mm\n7628 / prepreg: 0.21040 mm\nB.Cu / copper: 0.035 mm\nouter / copper: 1 oz\ninner / copper: 0.5 oz\n"
+        }
+      },
+      {
+        "name": "dielectric 1",
+        "kind": "dielectric",
+        "thickness_mm": 0.2104,
+        "source": {
+          "path": "sources/jlcpcb-stackup.txt",
+          "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
+          "source": "https://jlcpcb.com/impedance#JLC04161H-7628",
+          "as_of": "2026-10-18",
+          "page": 1,
+          "quote": "7628 / prepreg: 0.21040 mm"
+        }
+      },
+      {
+        "name": "In1.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.0152,
+        "copper_weight_oz": 0.5,
+        "source": {
+          "path": "sources/jlcpcb-stackup.txt",
+          "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
+          "source": "https://jlcpcb.com/impedance#JLC04161H-7628",
+          "as_of": "2026-10-18",
+          "page": 1,
+          "quote": "F.Cu / copper: 0.035 mm\n7628 / prepreg: 0.21040 mm\nIn1.Cu / copper: 0.0152 mm\ncore: 1.065 mm\nIn2.Cu / copper: 0.0152 mm\n7628 / prepreg: 0.21040 mm\nB.Cu / copper: 0.035 mm\nouter / copper: 1 oz\ninner / copper: 0.5 oz\n"
+        }
+      },
+      {
+        "name": "dielectric 2",
+        "kind": "dielectric",
+        "thickness_mm": 1.065,
+        "source": {
+          "path": "sources/jlcpcb-stackup.txt",
+          "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
+          "source": "https://jlcpcb.com/impedance#JLC04161H-7628",
+          "as_of": "2026-10-18",
+          "page": 1,
+          "quote": "core: 1.065 mm"
+        }
+      },
+      {
+        "name": "In2.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.0152,
+        "copper_weight_oz": 0.5,
+        "source": {
+          "path": "sources/jlcpcb-stackup.txt",
+          "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
+          "source": "https://jlcpcb.com/impedance#JLC04161H-7628",
+          "as_of": "2026-10-18",
+          "page": 1,
+          "quote": "F.Cu / copper: 0.035 mm\n7628 / prepreg: 0.21040 mm\nIn1.Cu / copper: 0.0152 mm\ncore: 1.065 mm\nIn2.Cu / copper: 0.0152 mm\n7628 / prepreg: 0.21040 mm\nB.Cu / copper: 0.035 mm\nouter / copper: 1 oz\ninner / copper: 0.5 oz\n"
+        }
+      },
+      {
+        "name": "dielectric 3",
+        "kind": "dielectric",
+        "thickness_mm": 0.2104,
+        "source": {
+          "path": "sources/jlcpcb-stackup.txt",
+          "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
+          "source": "https://jlcpcb.com/impedance#JLC04161H-7628",
+          "as_of": "2026-10-18",
+          "page": 1,
+          "quote": "7628 / prepreg: 0.21040 mm"
+        }
+      },
+      {
+        "name": "B.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.035,
+        "copper_weight_oz": 1,
+        "source": {
+          "path": "sources/jlcpcb-stackup.txt",
+          "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
+          "source": "https://jlcpcb.com/impedance#JLC04161H-7628",
+          "as_of": "2026-10-18",
+          "page": 1,
+          "quote": "F.Cu / copper: 0.035 mm\n7628 / prepreg: 0.21040 mm\nIn1.Cu / copper: 0.0152 mm\ncore: 1.065 mm\nIn2.Cu / copper: 0.0152 mm\n7628 / prepreg: 0.21040 mm\nB.Cu / copper: 0.035 mm\nouter / copper: 1 oz\ninner / copper: 0.5 oz\n"
+        }
+      }
+    ]
+  },
+  "fab_profile": {
+    "name": "jlc04161h-7628",
+    "sha256": "02e484728bbcf695422ab2aa70ff3923ddd82b871fc28715aa1e9e9104822632"
+  },
+  "mounting_holes": [],
+  "keepouts": [],
+  "fixed_footprints": [],
+  "obligations": [
+    {
+      "id": "corner-holes",
+      "requirement_ids": [
+        "POD-ME-1",
+        "POD-AC-7"
+      ],
+      "statement": "Provide four corner mounting holes; generator selects drill, plating, inset and coordinates.",
+      "owner_items": [
+        "AGENTEE-177",
+        "AGENTEE-179"
+      ]
+    },
+    {
+      "id": "height",
+      "requirement_ids": [
+        "POD-ME-1"
+      ],
+      "statement": "Component height above the board is at most 12 mm.",
+      "owner_items": [
+        "AGENTEE-177",
+        "AGENTEE-179"
+      ]
+    },
+    {
+      "id": "harness-edge",
+      "requirement_ids": [
+        "POD-CD-HARNESS-CONNECTOR",
+        "POD-ME-2"
+      ],
+      "statement": "Place TE 776228-1 harness connector on a board edge; generator selects anchor and orientation.",
+      "owner_items": [
+        "AGENTEE-177",
+        "AGENTEE-179"
+      ]
+    },
+    {
+      "id": "antenna",
+      "requirement_ids": [
+        "POD-CD-MCU-AND-RADIO",
+        "POD-AC-7"
+      ],
+      "statement": "Match ESP32-S3-WROOM-1 datasheet antenna keepout; antenna-facts.json cites page 45 Figure 11-1, antenna-width and antenna-depth. Module-relative antenna rectangle is [0,0], [18,0], [18,6], [0,6] mm. Generator must select module transform and a board-coordinate keepout; the module rectangle alone does not establish base-board clearance.",
+      "owner_items": [
+        "AGENTEE-177",
+        "AGENTEE-179"
+      ]
+    },
+    {
+      "id": "imu-separation",
+      "requirement_ids": [
+        "POD-ME-4"
+      ],
+      "statement": "Keep tall or heavy parts, including harness connector, SMA and electrolytic capacitors, away from the IMU.",
+      "owner_items": [
+        "AGENTEE-177",
+        "AGENTEE-179"
+      ]
+    }
+  ]
+}

@@ -28,7 +28,7 @@ hosted run exposed an AppArmor user-namespace requirement, handled below.
 | PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
 | kicad-happy 2.3.1 | Commit `06840467ad0f5d76af45f64449b1f5ecb10f052f` | Installed at `/opt/kicad-happy`, outside the package; build validates commit and plugin metadata |
 | zstd CLI (tests only) | `zstd=1.5.5+dfsg2-2build1.1` | Exact apt version, the image's `libzstd1` version; reference frames for the fab-consistency decoder test |
-| kicad-route with KRT 0.23.1 | kicad-route `e4979160a19b89837f9a9e9e25db620f3449f40a`, KRT tag `v0.23.1` = `295f9ee197517e8323726853361eb137cc08ba9e` | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
+| kicad-route with KRT 0.23.1 | kicad-route `a132899a26ed9d7bf95c9978f0c1c992ee066f63`, KRT tag `v0.23.1` = `295f9ee197517e8323726853361eb137cc08ba9e` | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
 Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
@@ -52,7 +52,7 @@ hash-locked [wheel list](../docker/kicad-route/krt-requirements.txt):
 
 | Input | Pin | Enforcement |
 | --- | --- | --- |
-| kicad-route | Commit `e497916…` from `github.com/halbritt/kicad-route` | Depth-1 fetch of that commit, detached checkout, `HEAD` compared. The routing adapter's preflight again checks `HEAD` and every tracked `bin/`/`src/` blob hash |
+| kicad-route | Commit `a132899…` from `github.com/halbritt/kicad-route` | Depth-1 fetch of that commit, detached checkout, `HEAD` compared. The routing adapter's preflight again checks `HEAD` and every tracked `bin/`/`src/` blob hash |
 | KRT | Tag `v0.23.1`, commit `295f9ee…` from `github.com/drandyhaas/KiCadRoutingTools` | Tag fetched and peeled; must equal the commit. The tag stays so kicad-route's `git describe` reports `v0.23.1` in `result.json` |
 | KRT `requirements.txt` | SHA-256 `139aba6f…` | It lists only version floors, so it is never installed. A changed file fails the build until the wheel lock is reviewed |
 | Python packages | numpy 2.5.4, scipy 1.18.1, shapely 2.2.0, pillow 13.0.0 | CPython 3.12 manylinux x86-64 wheels, `pip download --require-hashes --only-binary=:all: --no-deps`, then installed offline from those files into `/opt/kicad-route/.venv-krt`, a venv of the image's `/usr/bin/python3`. The venv must hold exactly these four distributions |

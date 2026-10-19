@@ -1,7 +1,7 @@
 {
   "blocks": [
     {
-      "block_sha256": "b3cfe9c37eb390fe5e00930423f91575fd4f9f70c1d0867704da8435da006e2e",
+      "block_sha256": "c8cd7f31de74643450e1dc4ae852cec3f75c4efb5e4ef98e94b06799dab7016f",
       "contract_sha256": "4d7171833ded33c3adb335524d954d027f24910bf348c3e09c998befcf6152dd",
       "directory": "psu",
       "id": "fome-mc/psu",

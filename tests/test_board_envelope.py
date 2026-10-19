@@ -15,8 +15,8 @@ from unittest.mock import patch
 from agent_ee.board_envelope import (BINDINGS, CHECK_KINDS, board_facts, derive, obligation_coverage,
                                      require_obligations, round_trip, stage_one_requirements, validate)
 from agent_ee.storage import canonical, digest
-from test_fab_profile import owned_profile
-from toolchain import require_toolchain
+from tests.test_fab_profile import owned_profile
+from tests.toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 RC_ENVELOPE = ROOT / 'fixtures/board-envelope/rc.envelope.json'
@@ -653,7 +653,7 @@ class EnvelopeObligationTests(unittest.TestCase):
                                                   'source': {'path': 'x', 'locator': 'y'}, 'checks': ['connector']})
         with self.assertRaisesRegex(ValueError, r"also mapped by \['R-other'\]"):
             obligation_coverage(scope, self.document, self.record, self.files)
-        # Two fixed connectors share one conjunctive verdict: neither is attributable.
+        # A shared check cannot attribute a verdict to each fixed reference.
         value = profiled(self.profile)
         value['fixed_footprints'].append({**value['fixed_footprints'][0], 'reference': 'J2', 'position_mm': 2})
         self.use(raw(value))
@@ -661,7 +661,8 @@ class EnvelopeObligationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"also mapped by \['R-envelope-rc-filter-fixed-J2'\]"):
             obligation_coverage(scope, self.document, self.record, self.files)
         connector = scope['checks'][2]
-        scope['checks'][2:3] = [{**connector, 'id': f'connector-{ref}'} for ref in ('J1', 'J2')]
+        scope['checks'][2:3] = [{**connector, 'id': f'connector-{ref}', 'params': dict(connector['params'])}
+                              for ref in ('J1', 'J2')]
         for requirement in scope['baseline']['requirements']:
             if requirement['checks'] == ['connector']:
                 requirement['checks'] = ['connector-' + requirement['id'].rsplit('-', 1)[1]]
@@ -670,7 +671,13 @@ class EnvelopeObligationTests(unittest.TestCase):
             with self.subTest(ref):
                 entry = report[f'R-envelope-rc-filter-fixed-{ref}']
                 self.assertEqual(entry['status'], 'unknown')
-                self.assertIn('grades all 2 fixed footprints as one verdict', entry['reason'])
+                self.assertIn('explicit reference', entry['reason'])
+        for check in scope['checks']:
+            if check['id'].startswith('connector-'):
+                check['params']['reference'] = check['id'].rsplit('-', 1)[1]
+        report = self.coverage(scope)
+        self.assertEqual([report[f'R-envelope-rc-filter-fixed-{ref}']['status']
+                          for ref in ('J1', 'J2')], ['bound', 'bound'])
 
     def test_unresolved_profile_is_refused_even_when_every_obligation_binds(self):
         artifacts = derive(RC_ENVELOPE.read_bytes(), source_path=ENVELOPE_PATH)
