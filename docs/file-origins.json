@@ -2231,6 +2231,16 @@
     },
     {
       "paths": [
+        "tests/test_add_planes.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original native plane/routing probe generator and tests: invented pads, four-layer outline and footprint rule area, a minimal empty schematic format literal, and an injected fill polygon. No copied design or library assets; these probes do not represent the telemetry pod."
+    },
+    {
+      "paths": [
         "tests/test_routing_campaign.py"
       ],
       "kind": "owned-source",
