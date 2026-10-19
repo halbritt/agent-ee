@@ -204,6 +204,44 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
             pod.build(self.plan_path,self.root/'refused')
         self.assertFalse((self.root/'refused').exists())
 
+    def use_placement_adapter(self, policy='policy.json'):
+        write_json(self.source/'policy.json',{'schema':'agent-ee.packing-policy/1','fixed_refs':[]})
+        self.plan['implementation_steps']=[s for s in self.plan['implementation_steps'] if s['step']!='place-board']
+        self.plan['placement_adapter']=dict(schema='agent-ee.placement-adapter/1',helper='agent-ee.placer/1',
+            policy=policy,fixed_footprints=[],timeout_s=900)
+        self.save()
+
+    def test_owned_placement_adapter_replaces_generic_placement_step(self):
+        self.use_placement_adapter()
+        with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
+            receipt=self.build()
+        config=read_json(self.root/'run/campaign.json')
+        self.assertEqual(config['placement_adapter'],self.plan['placement_adapter'])
+        self.assertNotIn('placement',[s['stage'] for s in config['implementation_steps']])
+        self.assertEqual(receipt['validation']['placement_adapter']['board'],self.scope['board'])
+        # The engine's own start validation accepts the prepared configuration; no iteration is launched.
+        from agent_ee import campaign
+        with mock.patch.object(campaign,'continue_campaign',return_value=0) as launched:
+            self.assertEqual(campaign.run_campaign(self.root/'run/campaign.json',self.root/'campaign'),0)
+        launched.assert_called_once()
+        self.assertEqual(read_json(self.root/'campaign/config.json')['placement_adapter'],config['placement_adapter'])
+
+    def test_placement_adapter_with_generic_step_or_uncaptured_policy_refused(self):
+        steps=list(self.plan['implementation_steps'])
+        self.use_placement_adapter()
+        self.plan['implementation_steps']=steps
+        self.save()
+        with self.assertRaisesRegex(ValueError,'placement uses the declared placement_adapter'):
+            pod.build(self.plan_path,self.root/'refused')
+        self.assertFalse((self.root/'refused').exists())
+        self.use_placement_adapter(policy='absent-policy.json')
+        with self.assertRaisesRegex(ValueError,'placement policy must be a captured immutable input'):
+            pod.build(self.plan_path,self.root/'refused')
+        self.assertFalse((self.root/'refused').exists())
+        self.plan['placement_adapter']['helper']='invented-placer'
+        with self.assertRaisesRegex(ValueError,'placement helper'):
+            pod.validate_plan(self.plan)
+
     def test_run_cli_propagates_campaign_incomplete(self):
         with mock.patch.object(pod,'build'), mock.patch('agent_ee.campaign.run_campaign',return_value=1):
             self.assertEqual(pod.main([str(self.plan_path),'--out',str(self.root/'run'),'--run']),1)

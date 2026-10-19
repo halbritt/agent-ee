@@ -40,6 +40,7 @@ A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.
 | `writer_inputs` | Exactly `{intent: PATH, deviations: PATH}`; both captured JSON paths |
 | `implementation_steps` | Existing stage-step declarations for the five producers listed below |
 | `routing_adapter` | Existing `agent-ee.routing-adapter/1` declaration; command/pin/exit semantics remain owned by that adapter |
+| `placement_adapter` | Optional existing `agent-ee.placement-adapter/1` declaration for the owned placer; replaces the generic `place-board` step |
 | `review_profile` | Explicit subscription profile with independent reviewers and adjudicator |
 | `implementation` | Explicit subscription writer definition |
 | `routing_budget_s` | Integer matching the routing adapter's budget |
@@ -73,8 +74,18 @@ The ordered generic producers are:
 | schematic | `binding-fill` | Declared derived binding outputs |
 | schematic | `emit-schematic` | Native schematic output |
 | schematic | `forward-annotate` | Native board output |
-| placement | `place-board` | Native board output |
+| placement | `place-board` | Native board output; omitted when `placement_adapter` is declared |
 | routing | `add-planes` | Only the native board; exit 0 only |
+
+The owned placer is a campaign adapter, not a generic step, and the campaign
+refuses an adapter combined with placement steps. With `placement_adapter` the
+driver therefore requires the four other steps, validates the declaration with
+`placement_adapter.validate_declaration`, binds it to the scaffolded candidate
+with `bind_declaration` (captured immutable policy, mutable board), and copies
+it unchanged into `campaign.json`. Placement semantics, helper pin and receipts
+remain owned by that adapter. The owned `binding_fill.configuration` producer
+must use its separate `output` form: the writer intent is its declared input and
+the bound intent is the coordinator output that emission reads.
 
 All generic producers adopt exit 0 only. Their complete argv, mounts, outputs
 and timeouts are supplied by the owned producer modules, not guessed by the
@@ -175,7 +186,10 @@ cannot be combined into an unrelated chain.
 executes the checks-only path using an explicitly synthetic parts fixture. Its
 production driver has no fixture fallback. Tests also cover malformed plans,
 small budgets, subscription-route refusal, removed bench obligations, widened
-writes, tampered scaffold receipts and failed scaffold execution.
+writes, tampered scaffold receipts and failed scaffold execution. They also
+prepare a plan with the owned placement adapter, pass the engine's own campaign
+start validation (without launching an iteration), and refuse the adapter beside
+a generic placement step or with an uncaptured policy.
 `tests.test_routing_campaign.RoutingPredecessorTests` tests real sandbox producers
 and the owned router protocol against the existing synthetic router; it exercises
 live and retained chain tampering and earlier-stage dispatch. These tests prove
