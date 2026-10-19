@@ -531,7 +531,8 @@ def record_iteration(root, state, run, config):
     context = campaign_context(root, state, config, manifest['scope'])
     verify_check_context(run, result, context)
     from .assembly_readiness import campaign_stock_context, verify_stock_context
-    verify_stock_context(run, result, campaign_stock_context(root, state, config, manifest['scope']))
+    verify_stock_context(run, result, campaign_stock_context(root, state, config, manifest['scope']),
+                         baseline=baseline)
     record, diagnostic = advance(comparable, result, manifest, budget, pending_fab=pending_checks(result))
     snapshot = root / "history" / f"{len(state['history']) + 1}.json"
     snapshot.parent.mkdir(exist_ok=True)
@@ -724,7 +725,8 @@ def verify_campaign_records(root, *, observations=None):
         context = campaign_context(root, preceding, config, manifest['scope'])
         verify_check_context(run, result, context)
         from .assembly_readiness import campaign_stock_context, verify_stock_context
-        verify_stock_context(run, result, campaign_stock_context(root, preceding, config, manifest['scope']))
+        verify_stock_context(run, result, campaign_stock_context(root, preceding, config, manifest['scope']),
+                             baseline=state['baseline'])
         record, diagnostic = advance(comparable, result, manifest, budget, pending_fab=pending_checks(result))
         metadata = {"run", "result_sha256", "result_snapshot", "epoch", "calibration_id", "bench_transaction", "bench_attempt_id"}
         if record != {k: v for k, v in stored.items() if k not in metadata}:

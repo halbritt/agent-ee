@@ -680,6 +680,76 @@ class ExistingCampaignStageTests(unittest.TestCase):
                          [identity({'check_id': 'response', 'entity': 'output', 'kind': 'limit'})])
         self.assertEqual(state['state'], 'criteria_satisfied')
 
+    @toolchain_test
+    def test_stage_gated_jlc_stock_checks_replay_through_campaign(self):
+        """AGENTEE-251: a genuine gate before stock evaluation needs no stock witness; forgery still refuses."""
+        import contextlib
+        import io
+        import shutil
+        from pathlib import Path
+        from unittest.mock import patch
+        from agent_ee.assembly_readiness import verify_stock_context
+        from agent_ee.campaign import record_iteration, run_campaign, verify_campaign
+        from agent_ee.jlc_stock_capture import DEFAULT_ENDPOINT, capture_jlc_stock
+        from agent_ee.storage import digest, read_json, write_json
+        from tests.test_jlc_stock_capture import JlcStub, row, search
+        fixture = self.staged_fixture()
+        # A native board in scope requires reviewers to see the pinned kicad-cli.
+        kicad = shutil.which('kicad-cli')
+        patch('agent_ee.cli.runtime_files', return_value={
+            **{name: {'path': '/usr/bin/true', 'sha256': digest('/usr/bin/true')}
+               for name in ('codex', 'codex_tool_host', 'bwrap', '/usr/bin/python3')},
+            'kicad-cli': {'path': kicad, 'sha256': digest(kicad)}}).start()
+        source = fixture.root / 'source'
+        server = JlcStub({'C25804': (200, search(row('C25804', 500)))})
+        self.addCleanup(server.close)
+        doc = capture_jlc_stock(['C25804'], source / 'jlc', allow_network=True, endpoint=server.url, min_interval=1.0)
+        doc['source']['endpoint'] = DEFAULT_ENDPOINT
+        write_json(source / 'jlc/catalog.json', doc)
+        (source / 'design.kicad_pcb').write_bytes(
+            (Path(__file__).resolve().parents[1] / 'fixtures/stages/empty.kicad_pcb').read_bytes())
+        scope = fixture.scope
+        scope['board'] = 'design/design.kicad_pcb'
+        asm = {'id': 'asm', 'kind': 'assembly_readiness', 'stage': 'routing',
+               'params': {'catalog': 'design/jlc/catalog.json'}}
+        scope['checks'] = [scope['checks'][0], {**asm, 'id': 'asm-place', 'stage': 'placement'},
+                           scope['checks'][1], asm]
+        scope['baseline']['requirements'][0]['checks'] += ['asm-place', 'asm']
+        scope['stages']['order'] = ['schematic', 'placement', 'routing']
+        scope['stages']['subjects']['routing'] = {'path': 'design/design.kicad_pcb', 'kind': 'tracks', 'minimum': 1}
+        write_json(fixture.root / 'scope.json', scope)
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_campaign(fixture.root / 'campaign.json', fixture.root / 'campaign')
+        state = verify_campaign(fixture.root / 'campaign')
+        self.assertNotIn('error', state)
+        run = fixture.root / 'campaign/runs/1'
+        checks = {c: read_json(run / 'checks' / (c + '.json')) for c in ('asm-place', 'asm')}
+        self.assertEqual([(c['execution'], c['outcome'], c['details']['reason']) for c in checks.values()],
+                         [('ok', 'defect', 'stage_blocked'), ('ok', 'defect', 'stage_not_reached')])
+        self.assertTrue(all('stock_evaluation' not in c['details'] for c in checks.values()))
+        self.assertEqual(state['history'][0]['earliest_failing_stage'], 'schematic')
+
+        # Re-record the sealed first run; a planted stock artifact refuses the iteration.
+        replay = fixture.root / 'replay'
+        shutil.copytree(fixture.root / 'campaign', replay)
+        replay_state = {**read_json(replay / 'state.json'), 'history': []}
+        del replay_state['baseline']
+        config = read_json(replay / 'config.json')
+        replay_run = replay / 'runs/1'
+        record_iteration(replay, copy.deepcopy(replay_state), replay_run, config)
+        # The evidence seal refuses first; verify_stock_context refuses the same artifact standalone.
+        (replay_run / 'work/asm/stock-evaluation.json').write_text('{}')
+        with self.assertRaisesRegex(ValueError, 'evidence changed'):
+            record_iteration(replay, copy.deepcopy(replay_state), replay_run, config)
+        with self.assertRaisesRegex(ValueError, 'retains stock evaluation artifacts'):
+            verify_stock_context(replay_run, read_json(replay_run / 'result.json'), None)
+        # Once its gate opens, the stock check really evaluates and the unanchored stock fails closed.
+        self.assertEqual((state['state'], state['reason']), ('incomplete', 'execution_incomplete'))
+        self.assertEqual(len(state['history']), 2)
+        evaluated = read_json(fixture.root / 'campaign/runs/2/checks/asm-place.json')
+        self.assertEqual((evaluated['execution'], evaluated['outcome']), ('failed', 'unknown'))
+        self.assertIn('requires a generation stage receipt', evaluated['summary'])
+
 
 class NativeStageTransitionTests(unittest.TestCase):
     setUp = StageExecutionTests.setUp

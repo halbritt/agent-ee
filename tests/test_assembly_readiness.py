@@ -1331,6 +1331,12 @@ class AssemblyReadinessTests(unittest.TestCase):
         del omitted['details']['stock_evaluation']
         with self.assertRaisesRegex(ValueError, 'lacks its evaluation witness'):
             verify_stock_context(run, {'checks': [omitted]}, context)
+        # Forged gate fields cannot excuse an evaluated check whose witness was removed.
+        gated = copy.deepcopy(omitted)
+        gated['details'] = {'reason': 'stage_not_reached', 'stage': 'schematic',
+                            'gate_findings': [{'check_id': 'asm', 'entity': 'R1', 'kind': 'stage_not_reached'}]}
+        with self.assertRaisesRegex(ValueError, 'requires an immutable baseline'):
+            verify_stock_context(run, {'checks': [gated]}, context)
         witness_path = run / 'work/asm/stock-evaluation.json'
         witness = read_json(witness_path)
         forged = copy.deepcopy(result)
@@ -1365,6 +1371,104 @@ class AssemblyReadinessTests(unittest.TestCase):
         changed = run_checks(run, time.monotonic() + 120, stock_context=context)[0]
         self.assertEqual((changed['execution'], changed['outcome']), ('failed', 'unknown'))
         self.assertIn('receipt changed', changed['summary'])
+
+
+
+POD_GATE_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/stock-stage-gate-pod-v5/run"
+
+
+class StockStageGateReplayTests(unittest.TestCase):
+    """AGENTEE-251: a pod v5 pre-stage gate result replays without a stock witness."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.run = Path(tmp.name) / "run"
+        shutil.copytree(POD_GATE_FIXTURE, self.run)
+        self.check = read_json(self.run / "checks/assembly.json")
+        self.baseline = read_json(self.run / "baseline-id.json")
+
+    def verify(self, check, baseline=None):
+        verify_stock_context(self.run, {"checks": [check]}, None, baseline=baseline or self.baseline)
+
+    def test_pod_v5_stage_not_reached_replays_without_stock_witness(self):
+        self.assertEqual((self.check["execution"], self.check["outcome"], self.check["details"]["reason"]),
+                         ("ok", "defect", "stage_not_reached"))
+        self.assertEqual(len(self.check["details"]["gate_findings"]), 104)
+        self.assertNotIn("stock_evaluation", self.check["details"])
+        self.verify(self.check)
+
+    def test_forged_stage_fields_raise(self):
+        for key, value in (("stage", "routing"), ("reason", "stage_blocked")):
+            forged = copy.deepcopy(self.check)
+            forged["details"][key] = value
+            # A forged stage_blocked has no earlier sealed check results to reconstruct from.
+            with self.subTest(key=key), self.assertRaises((ValueError, OSError)):
+                self.verify(forged)
+        forged = copy.deepcopy(self.check)
+        forged["details"]["extra"] = "x"
+        with self.assertRaisesRegex(ValueError, "recomputed stage gate"):
+            self.verify(forged)
+        forged = copy.deepcopy(self.check)
+        forged["summary"] = "verification: passed"
+        with self.assertRaisesRegex(ValueError, "recomputed stage gate"):
+            self.verify(forged)
+
+    def test_tampered_gate_findings_raise(self):
+        dropped = copy.deepcopy(self.check)
+        dropped["details"]["gate_findings"].pop()
+        renamed = copy.deepcopy(self.check)
+        renamed["details"]["gate_findings"][0]["entity"] = "C999"
+        duplicated = copy.deepcopy(self.check)
+        duplicated["details"]["gate_findings"].append(duplicated["details"]["gate_findings"][0])
+        for name, forged in (("dropped", dropped), ("renamed", renamed), ("duplicated", duplicated)):
+            with self.subTest(name), self.assertRaises(ValueError):
+                self.verify(forged)
+
+    def test_tampered_presence_witness_or_reached_stage_raises(self):
+        path = self.run / "work/assembly/stage-subject.json"
+        witness = read_json(path)
+        witness["missing"] = witness["missing"][1:]
+        write_json(path, witness)
+        with self.assertRaisesRegex(ValueError, "expected-content witness"):
+            self.verify(self.check)
+        shutil.copyfile(POD_GATE_FIXTURE / "work/assembly/stage-subject.json", path)
+        self.verify(self.check)
+        # Expected content now present on the board: the stage was reached, so absence is false.
+        board = self.run / "inputs/project/telemetry-pod.kicad_pcb"
+        text = board.read_text().rstrip().removesuffix(")")
+        text += "".join(f' (footprint "Owned:Placeholder" (layer "F.Cu") (at 0 0)\n'
+                        f'  (property "Reference" "{r}" (at 0 0 0) (layer "F.SilkS")))\n'
+                        for r in read_json(path)["missing"])
+        board.write_text(text + ")\n")
+        with self.assertRaisesRegex(ValueError, "lacks successful native observation"):
+            self.verify(self.check)
+
+    def test_gate_fields_on_an_evaluated_check_raise(self):
+        witness = {"schema": "agent-ee.stock-evaluation/1", "context": None}
+        carried = copy.deepcopy(self.check)
+        carried["details"]["stock_evaluation"] = witness
+        with self.assertRaisesRegex(ValueError, "cannot carry a stock evaluation witness"):
+            self.verify(carried)
+        # Witness removed from the result after an actual evaluation: its sealed artifact remains.
+        for name in ("stock-evaluation.json", "assembly-readiness.json", "design.xml"):
+            artifact = self.run / "work/assembly" / name
+            artifact.write_text("{}")
+            with self.subTest(name), self.assertRaisesRegex(ValueError, "retains stock evaluation artifacts"):
+                self.verify(self.check)
+            artifact.unlink()
+        cited = copy.deepcopy(self.check)
+        cited["evidence"].append("work/assembly/assembly-readiness.json")
+        with self.assertRaisesRegex(ValueError, "evidence beyond its stage gate"):
+            self.verify(cited)
+
+    def test_baseline_identity_and_ungated_absence_still_raise(self):
+        with self.assertRaisesRegex(ValueError, "expected-content witness"):
+            self.verify(self.check, {"baseline_id": "0" * 64})
+        ungated = copy.deepcopy(self.check)
+        del ungated["details"]["reason"]
+        with self.assertRaisesRegex(ValueError, "lacks its evaluation witness"):
+            self.verify(ungated)
 
 
 if __name__ == "__main__":
