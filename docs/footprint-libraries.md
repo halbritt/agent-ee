@@ -57,7 +57,15 @@ inferred from names, tags or descriptions. It has two lists:
   leave electrical parity and the connector count. `thermal_via_pads` lists
   numbers whose through-hole copper pads are vias beside an SMD pad with the same
   number. Those pads stay electrical, are marked `thermal_via`, and do not make
-  the footprint mixed technology. `custom_pads` lists numbers whose `custom` or
+  the footprint mixed technology. Each such via must carry exactly one native
+  `(property pad_prop_heatsink)`, or `pad_prop_mechanical` for stitching vias
+  such as the edge-mount SMA ground holes. KiCad 10.0.7 skips those pads when it
+  infers a footprint's type. A plated via without one makes native DRC type an
+  `attr smd` part as through hole (`footprint_type_mismatch`). The index
+  therefore refuses such a declaration as incomplete coverage. A declaration
+  does not override KiCad's type inference, and no DRC waiver applies. The pad
+  property leaves the footprint `smd`, so positions and the CPL keep it as SMD.
+  This was the AGENTEE-221 pod defect. `custom_pads` lists numbers whose `custom` or
   `trapezoid` shapes, `options` or `primitives` are accepted for numbering only;
   the geometry is recorded as `declared_custom` and is not qualified. `padstack`
   is still refused. `assembly` (`smd`, `through_hole` or `null`) stands in for a

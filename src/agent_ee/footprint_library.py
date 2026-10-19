@@ -84,6 +84,9 @@ def _members(manifest):
 
 DECLARATIONS_SCHEMA = 'agent-ee.footprint-declarations/1'
 DECLARED_SHAPES = ('custom', 'trapezoid')
+# Native pad fabrication properties KiCad 10.0.7 leaves out of a footprint's likely
+# assembly type (DRC footprint_type_mismatch); a plated via pad needs one to stay SMD.
+THERMAL_VIA_PROPERTIES = ('pad_prop_heatsink', 'pad_prop_mechanical')
 
 
 def _numbers(value):
@@ -140,6 +143,11 @@ def _apply_declaration(pads, attributes, entry):
             raise FootprintError(f'declared thermal-via pad {number!r} needs SMD and through-hole copper pads')
         for pad in pads:
             if pad['number'] == number and pad['type'] == 'thru_hole':
+                props = [x for x in pad['native'][4:] if isinstance(x, list) and x and x[0] == 'property']
+                if [x[1:] for x in props] not in ([[p]] for p in THERMAL_VIA_PROPERTIES):
+                    raise FootprintError(f'declared thermal-via pad {number!r} through-hole copper lacks native '
+                                         'pad_prop_heatsink; KiCad then types the footprint through-hole '
+                                         '(DRC footprint_type_mismatch)')
                 pad['thermal_via'] = True
     for number in entry['custom_pads']:
         if not any(p['number'] == number and p.get('geometry') == 'declared_custom' for p in pads):

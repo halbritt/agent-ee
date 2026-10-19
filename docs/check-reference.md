@@ -828,7 +828,10 @@ read or parse failures leave unknown coverage. An optional captured
 can declare mechanical copper pads (MP), thermal-via pads, custom pad numbering,
 assembly for attr-less footprints, and pinless symbols. Declared pads are
 reported as mechanical. Undeclared cases keep their extra-pad defect or unknown
-result, and a declaration that applies to nothing is unknown
+result, and a declaration that applies to nothing is unknown. A declared
+thermal-via pad whose plated copper lacks a native `pad_prop_heatsink` or
+`pad_prop_mechanical` property is also unknown, because KiCad's DRC would type
+the SMD footprint as through hole
 ([owner declarations](footprint-libraries.md#owner-declarations)).
 
 Adding `netlist_check` binds each declaration to every native board component
