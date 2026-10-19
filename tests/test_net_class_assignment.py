@@ -64,6 +64,52 @@ class NetClassAssignmentTests(unittest.TestCase):
         self.assertEqual(record['project_sha256'], digest(self.inputs / 'board.kicad_pro'))
         self.assertIn('work/assignment/net-class-native.json', result['evidence'])
 
+    def test_standalone_patterns_independent_of_record_hash(self):
+        from agent_ee.net_class_assignment import evaluate
+        path = self.inputs / 'board.kicad_pro'
+        original = read_json(path)
+        # Regex alternation is not Python fnmatch syntax; wildcard matching is
+        # also native KiCad behavior. Both must identify the exact extra net.
+        for pattern, reason, extra in (
+                ('/(POD_GNSS_RF|OUT)', 'pattern_matches_undeclared_net', '/OUT'),
+                ('/*', 'pattern_matches_undeclared_net', '/OUT'),
+                (r'\/POD_GNSS_RF', 'legacy_escaped_slash', None),
+                ('/POD_GNSS_RF', None, None)):
+            with self.subTest(pattern=pattern):
+                project = copy.deepcopy(original)
+                project['net_settings']['netclass_patterns'] = [
+                    dict(netclass='RF_50', pattern=pattern)]
+                write_json(path, project)
+                record = read_json(self.inputs / 'record.json')
+                record['project_sha256'] = digest(path)
+                write_json(self.inputs / 'record.json', record)
+                result = self.run_check()
+                self.assertEqual(result['execution'], 'ok', result)
+                defects = result['details']['defects']
+                self.assertNotIn('project_differ_from_record', [d['reason'] for d in defects])
+                self.assertEqual(evaluate(record, result['details']['native']), defects)
+                if reason is None:
+                    self.assertEqual(result['outcome'], 'pass', result)
+                    self.assertEqual(result['details']['native']['patterns'][0]['nets'], ['/POD_GNSS_RF'])
+                else:
+                    self.assertEqual(result['outcome'], 'defect', result)
+                    expected = dict(reason=reason, **{'class': 'RF_50'}, pattern=pattern)
+                    if extra is not None:
+                        expected['net'] = extra
+                    self.assertIn(expected, defects)
+
+    def test_pattern_in_other_class_does_not_expand_declared_class(self):
+        path = self.inputs / 'board.kicad_pro'
+        project = read_json(path)
+        other = {**project['net_settings']['classes'][1], 'name': 'OTHER'}
+        project['net_settings']['classes'].append(other)
+        project['net_settings']['netclass_patterns'].append(dict(netclass='OTHER', pattern='/OUT'))
+        write_json(path, project)
+        record = read_json(self.inputs / 'record.json')
+        record['project_sha256'] = digest(path)
+        write_json(self.inputs / 'record.json', record)
+        self.assertEqual(self.run_check()['outcome'], 'pass')
+
     def test_native_missing_class_and_unassigned_net_fail_closed(self):
         path = self.inputs / 'board.kicad_pro'
         original = read_json(path)
@@ -78,6 +124,15 @@ class NetClassAssignmentTests(unittest.TestCase):
                 result = self.run_check()
                 self.assertEqual(result['outcome'], 'defect')
                 self.assertIn(label, [d['reason'] for d in result['details']['defects']])
+
+    def test_absent_project_patterns_preserves_unassigned_defect(self):
+        path = self.inputs / 'board.kicad_pro'
+        project = read_json(path)
+        del project['net_settings']['netclass_patterns']
+        write_json(path, project)
+        result = self.run_check()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'))
+        self.assertIn('net_unassigned', [d['reason'] for d in result['details']['defects']])
 
     def test_native_missing_net_and_below_width_clearance(self):
         board = self.inputs / 'board.kicad_pcb'
@@ -132,6 +187,31 @@ class NetClassAssignmentTests(unittest.TestCase):
                        {'classes':{}, 'nets':{'/POD_GNSS_RF':None}}):
             with self.subTest(native=native), self.assertRaises(ValueError):
                 evaluate(record,native)
+
+    def test_missing_native_pattern_report_never_passes(self):
+        from unittest.mock import patch
+        ctx = checks.Ctx(self.root, self.manifest(), self.spec, time.monotonic() + 120)
+        load = ctx.load_json
+
+        def missing_patterns(*args):
+            native = load(*args)
+            del native['patterns']
+            return native
+
+        with patch.object(ctx, 'load_json', side_effect=missing_patterns):
+            with self.assertRaisesRegex(checks.CheckError, 'lacks project pattern matches'):
+                check_net_class_assignment(ctx)
+        self.assertEqual(ctx.result['outcome'], 'unknown')
+
+    def test_malformed_pattern_evidence_refused(self):
+        from agent_ee.net_class_assignment import evaluate
+        record = read_json(self.inputs / 'record.json')
+        native = dict(classes={'RF_50': dict(track_width_nm=335000, clearance_nm=203200)},
+                      nets={'/POD_GNSS_RF': 'RF_50'})
+        for patterns in (None, {}, [None], [dict(netclass='RF_50', pattern='*', nets=['absent'])],
+                         [dict(netclass='RF_50', pattern='*', nets=[None])]):
+            with self.subTest(patterns=patterns), self.assertRaises(ValueError):
+                evaluate(record, {**native, 'patterns': patterns})
 
     def test_malformed_or_changed_record_refused(self):
         path = self.inputs / 'record.json'

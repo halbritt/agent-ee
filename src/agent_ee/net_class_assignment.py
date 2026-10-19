@@ -67,9 +67,24 @@ def extract(board_path):
                for name, cls in board.GetAllNetClasses().items()}
     nets = {str(net.GetNetname()): str(net.GetNetClassName())
             for net in board.GetNetInfo().NetsByNetcode().values() if net.GetNetname()}
+    patterns = load_json(project).get('net_settings', {}).get('netclass_patterns', [])
+    if (not isinstance(patterns, list) or any(not isinstance(p, dict) or
+            not isinstance(p.get('netclass'), str) or not isinstance(p.get('pattern'), str)
+            for p in patterns)):
+        raise ValueError('project netclass patterns must name a class and pattern')
+    matches = []
+    for entry in patterns:
+        # Use KiCad's regex/wildcard matcher, independently of other assignments
+        # and priorities that may combine classes on the saved board.
+        settings = pcbnew.NET_SETTINGS(None, '')
+        name = entry['netclass']
+        settings.SetNetclass(name, pcbnew.NETCLASS(name))
+        settings.SetNetclassPatternAssignment(entry['pattern'], name)
+        matches.append({**entry, 'nets': sorted(net for net in nets
+                        if settings.GetEffectiveNetClass(net).GetName() == name)})
     return {'schema': 'agent-ee.net-class-native/1', 'pcbnew_version': pcbnew.Version(),
             'board_sha256': digest(board_path), 'project_sha256': digest(project),
-            'classes': classes, 'nets': nets}
+            'classes': classes, 'nets': nets, 'patterns': matches}
 
 
 def evaluate(record, native):
@@ -81,10 +96,26 @@ def evaluate(record, native):
             raise ValueError('native class dimensions must be nonnegative integer nanometres')
     if any(not isinstance(k, str) or not isinstance(v, str) for k, v in native['nets'].items()):
         raise ValueError('native net assignments must be text')
+    patterns = native.get('patterns', [])
+    if (not isinstance(patterns, list) or any(not isinstance(p, dict) or
+            not isinstance(p.get('netclass'), str) or not isinstance(p.get('pattern'), str) or
+            not isinstance(p.get('nets'), list) or
+            any(not isinstance(n, str) or n not in native['nets'] for n in p['nets'])
+            for p in patterns)):
+        raise ValueError('native pattern matches must name classes, patterns and board nets')
     defects = []
     for spec in record['classes']:
         name = spec['name']
         cls = native['classes'].get(name)
+        for entry in patterns:
+            if entry['netclass'] != name:
+                continue
+            if r'\/' in entry['pattern']:
+                defects.append({'class': name, 'pattern': entry['pattern'],
+                                'reason': 'legacy_escaped_slash'})
+            for net in sorted(set(entry['nets']) - set(spec['nets'])):
+                defects.append({'class': name, 'pattern': entry['pattern'], 'net': net,
+                                'reason': 'pattern_matches_undeclared_net'})
         if cls is None:
             defects.append({'class': name, 'reason': 'class_absent'})
         for net in spec['nets']:
@@ -120,6 +151,8 @@ def check_net_class_assignment(ctx):
                 native['board_sha256'] != ctx.manifest['files'][ctx.scope['board']] or
                 native['project_sha256'] != ctx.manifest['files'][ctx.params['project']]):
             raise ValueError('native net-class report does not bind candidate')
+        if 'patterns' not in native:
+            raise ValueError('native net-class report lacks project pattern matches')
         defects = evaluate(record, native)
         if record.get('project_sha256') != native['project_sha256']:
             defects.append({'reason': 'project_differ_from_record'})
