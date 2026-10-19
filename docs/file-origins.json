@@ -3145,6 +3145,16 @@
         "AE"
       ],
       "reviewed": "Original agent-ee six-pad pogo tracer authored under owner direction by agent-463, frozen 2026-10-18. Copied byte-exact only after verifying all four freeze input hashes; freeze.json SHA-256 a54bb1c2d678fdb74cc87405c983ac7dcb4f7d6be3d7b6e80a84cae185bcee09. No vendor design, symbol, footprint or text."
+    },
+    {
+      "paths": [
+        "tests/test_symbol_shortlist.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-37 shortlist regression tests. The KiCad symbol-library literals are short owned snippets written here; the stock Device and power libraries are read from the installed toolchain at runtime and never embedded. SchGen's load_related_symbols (pick libraries, then symbols, chunked; filtered to existing names) is a mechanism reference only; no SchGen code, prompt text, dataset or kicad-skip material was copied."
     }
   ]
 }

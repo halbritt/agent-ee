@@ -140,4 +140,5 @@ conduction model, explicit material contracts and independent owned oracles.
 - [Captured plane production](add-planes.md) — declared routing-stage zones, native fill and DRC, exact preservation of other board bytes, before the owned router.
 - [Placement campaign adapter](placement-adapter.md) — placement turns of a staged campaign: writer context, coordinator-run placer step, placement-only structural write scope with qualified side flips, and retained verification.
 - [Captured symbol context](symbol-context.md) — exact source-bound pin inventory and literal offline lookup tools.
+- [Symbol shortlist](symbol-shortlist.md) — two-stage, library-restricted model pick of `Library:Symbol` names with a deterministic existence gate, lossless chunking and hash-bound owner approval (AGENTEE-37).
 - [Large-symbol capture](symbol-capture.md) — bounded extraction of selected symbols from libraries above the shared reader limit, with source-bound provenance.

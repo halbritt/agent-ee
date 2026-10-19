@@ -370,16 +370,17 @@ def index_footprints(manifest, captured_files, declarations=None):
     return _seal(result)
 
 
-def _symbol_inventory(lib_id, libraries, captured_files, *, _library_cache=None):
-    from .symbol_library import ParsedLibraries, resolve_symbol, LibraryError
-    cache = _library_cache if _library_cache is not None else ParsedLibraries()
-    if not isinstance(lib_id, str) or lib_id.count(':') != 1:
-        raise FootprintError('exact library:symbol identity required')
-    library, symbol = lib_id.split(':')
-    if not library or not symbol or not isinstance(libraries, list):
+def captured_symbol_libraries(libraries, captured_files, cache):
+    """Yield each declared ``(name, path, sha256, symbols)`` after its safety and hash checks.
+
+    Declarations are validated in order, so a consumer that stops early sees the
+    same first error as one reading the whole list. Library bytes are parsed only
+    through the shared reader's content-addressed cache.
+    """
+    from .symbol_library import LibraryError
+    if not isinstance(libraries, list):
         raise FootprintError('explicit captured symbol libraries required')
     names, paths = set(), set()
-    selected = None
     for lib in libraries:
         _object(lib, ('name', 'path', 'sha256'))
         name, path, sha = (lib[x] for x in ('name', 'path', 'sha256'))
@@ -399,12 +400,28 @@ def _symbol_inventory(lib_id, libraries, captured_files, *, _library_cache=None)
             if b'\x00' in data:
                 raise LibraryError('NUL byte in native symbol library')
             symbols = cache.symbols(data)
-            if name == library:
-                if symbol not in symbols:
-                    raise FootprintError('selected symbol absent from captured library: ' + lib_id)
-                selected = resolve_symbol(symbols, symbol, path, sha)
         except LibraryError as exc:
             raise FootprintError(str(exc)) from exc
+        yield name, path, sha, symbols
+
+
+def _symbol_inventory(lib_id, libraries, captured_files, *, _library_cache=None):
+    from .symbol_library import ParsedLibraries, resolve_symbol, LibraryError
+    cache = _library_cache if _library_cache is not None else ParsedLibraries()
+    if not isinstance(lib_id, str) or lib_id.count(':') != 1:
+        raise FootprintError('exact library:symbol identity required')
+    library, symbol = lib_id.split(':')
+    if not library or not symbol or not isinstance(libraries, list):
+        raise FootprintError('explicit captured symbol libraries required')
+    selected = None
+    for name, path, sha, symbols in captured_symbol_libraries(libraries, captured_files, cache):
+        if name == library:
+            if symbol not in symbols:
+                raise FootprintError('selected symbol absent from captured library: ' + lib_id)
+            try:
+                selected = resolve_symbol(symbols, symbol, path, sha)
+            except LibraryError as exc:
+                raise FootprintError(str(exc)) from exc
     if selected is None:
         raise FootprintError('selected symbol library is not captured')
     return selected
