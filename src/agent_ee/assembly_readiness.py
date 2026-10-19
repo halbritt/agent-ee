@@ -1009,7 +1009,124 @@ def _verify_hand_fit_policy(inputs, policy):
     if policy["line"] > len(lines) or policy["quote"] not in lines[policy["line"] - 1]:
         raise AssemblyReadinessExecutionError(
             "failed", f"hand_fit_policy quote is absent from {rel!r} line {policy['line']}")
+    try:
+        unit = _policy_unit(lines, policy["line"] - 1)
+        for identity in policy["identities"]:
+            _require_unconditional(unit, identity["mpn"])
+    except ValueError as exc:
+        raise AssemblyReadinessExecutionError(
+            "failed", f"hand_fit_policy {rel!r} line {policy['line']}: {exc}") from exc
     return policy | {"class": "owner_hand_fit"}
+
+
+# The owner text, not the quote, decides whether a policy identity is unconditional.
+# Any qualifier below is conditional unless its scope is provably confined to a
+# sibling part conjunct; otherwise every identity in the unit is refused.
+CONDITIONAL_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:if|unless|when|whenever|where|wherever|whereas|provided|providing|only|except|"
+    r"excepting|should|assuming|suppose|supposing|lest|until|once|while|otherwise|depending|depends|"
+    r"contingent|conditional|conditionally|in\s+case|in\s+the\s+event|as\s+long\s+as|so\s+long\s+as|"
+    r"subject\s+to|unstocked|unavailable|out\s+of\s+stock|not\s+in\s+stock)(?![A-Za-z0-9_])", re.I)
+HAND_FIT_TERM = r"(?:hand[- ]?(?:fit|solder)|(?:fit|fitted|solder|soldered)\s+by\s+hand(?![A-Za-z0-9_]))"
+HAND_FIT_RE = re.compile(r"(?<![A-Za-z0-9_])" + HAND_FIT_TERM, re.I)
+NEGATED_HAND_FIT_RE = re.compile(
+    r"(?:(?<![A-Za-z0-9_])(?:not|never|no|nor|cannot)|n't)\s+(?:[A-Za-z]+\s+){0,2}" + HAND_FIT_TERM, re.I)
+PREDICATE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:is|are|be|been|being|was|were|fitted|assembled|excluded|soldered)(?![A-Za-z0-9_])|"
+    + HAND_FIT_RE.pattern, re.I)
+PART_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_/-])[A-Z0-9][A-Z0-9-]+[A-Z0-9](?![A-Za-z0-9_/-])")
+LIST_ITEM_RE = re.compile(r"^(\s*)(?:[-*+]|[0-9]+[.)])\s+")
+
+
+def _unit_bounds(lines, index):
+    """First and last line of the Markdown block holding lines[index], and whether it is a list item."""
+    def plain(i):
+        line = lines[i]
+        return bool(line.strip()) and not LIST_ITEM_RE.match(line) and not line.lstrip().startswith(("#", "|"))
+
+    if not lines[index].strip() or lines[index].lstrip().startswith(("#", "|")):
+        return index, index, False
+    start = index
+    while LIST_ITEM_RE.match(lines[start]) is None and start > 0 and lines[start - 1].strip() and (
+            plain(start - 1) or LIST_ITEM_RE.match(lines[start - 1])):
+        start -= 1
+    end = index
+    while end + 1 < len(lines) and plain(end + 1):
+        end += 1
+    return start, end, LIST_ITEM_RE.match(lines[start]) is not None
+
+
+def _policy_unit(lines, index):
+    """Whole owner statement holding the cited line; refuses when what governs it is ambiguous."""
+    if sum(1 for line in lines[:index] if line.lstrip().startswith(("```", "~~~"))) % 2:
+        raise ValueError("the cited line is inside a code block")
+    start, end, item = _unit_bounds(lines, index)
+    if item:
+        if LIST_ITEM_RE.match(lines[start]).group(1):
+            raise ValueError("a nested list item may be governed by its parent item")
+        k = start - 1
+        while k >= 0:
+            if not lines[k].strip():
+                k -= 1
+                continue
+            s, e, prior_item = _unit_bounds(lines, k)
+            if lines[e].rstrip().endswith(":"):
+                raise ValueError("the cited list item may complete a lead-in ending in ':'")
+            if not prior_item:
+                break
+            k = s - 1
+    heading = next((line for line in reversed(lines[:start]) if line.lstrip().startswith("#")), "")
+    if CONDITIONAL_RE.search(heading):
+        raise ValueError(f"the governing heading {heading.strip()!r} is conditional")
+    return " ".join(line.strip() for line in lines[start:end + 1])
+
+
+def _confined_spans(unit):
+    """Spans of last parenthesized part conjuncts ('(A, and B if unstocked)') that alone carry a qualifier."""
+    stack, groups = [], []
+    for pos, char in enumerate(unit):
+        if char == "(":
+            stack.append(pos)
+        elif char == ")":
+            if not stack:
+                raise ValueError("unbalanced parentheses make clause boundaries ambiguous")
+            groups.append((stack.pop(), pos))
+    if stack:
+        raise ValueError("unbalanced parentheses make clause boundaries ambiguous")
+    spans = []
+    for match in CONDITIONAL_RE.finditer(unit):
+        pos = match.start()
+        inner = [g for g in groups if g[0] < pos < g[1]]
+        span = None
+        if inner:
+            opening, closing = max(inner)
+            nested = [g for g in groups if opening < g[0] < closing]
+            cuts = [i for i in range(opening + 1, closing) if unit[i] in ",;" and
+                    not any(a < i < b for a, b in nested)]
+            last = (cuts[-1] + 1 if cuts else opening + 1, closing)
+            conjunct = unit[last[0]:last[1]]
+            if (cuts and last[0] <= pos and re.match(r"\s*(?:and|or)\s", conjunct) and
+                    PART_TOKEN_RE.search(conjunct) and not PREDICATE_RE.search(conjunct) and
+                    ":" not in conjunct and ". " not in conjunct):
+                span = last
+        if span is None:
+            raise ValueError(f"conditional qualifier {match.group(0)!r} has a scope that cannot be bounded "
+                             "to another part")
+        spans.append(span)
+    return spans
+
+
+def _require_unconditional(unit, mpn):
+    """The identity must be named once, by a non-negated hand-fit statement, outside every conditional clause."""
+    if not HAND_FIT_RE.search(unit) or NEGATED_HAND_FIT_RE.search(unit):
+        raise ValueError("the cited statement does not affirmatively declare a hand-fit")
+    pattern = r"(?<![A-Za-z0-9_/-])" + re.escape(mpn) + r"(?![A-Za-z0-9_/-])"
+    found = [m.start() for m in re.finditer(pattern, unit)]
+    if len(found) != 1:
+        raise ValueError(f"{mpn!r} is named {len(found)} times in the cited statement; expected exactly once")
+    if any(a <= found[0] < b for a, b in _confined_spans(unit)):
+        raise ValueError(f"{mpn!r} is named only conditionally; a conditional hand-fit must use the "
+                         "stock-unavailable deviation class")
 
 
 def _owner_hand_fit(citation, cfg, catalog, identity, matches):

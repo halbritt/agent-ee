@@ -1043,7 +1043,10 @@ for that MPN or native LCSC ID refuses the exception; NO_LCSC without a
 declaration remains a defect. A record with `policy: owner_hand_fit` is
 admitted regardless of stock only for an exact identity listed in the scope's
 `hand_fit_policy`, a pinned captured owner decision cited by SHA-256, line and
-exact quote; the identity still needs a fresh, known-stock catalog row. See the
+exact quote. The whole cited Markdown unit must name that identity outside
+every conditional clause. A conditional or ambiguous statement, such as
+NEO-M9N "if unstocked", refuses the run. The identity still needs a fresh,
+known-stock catalog row. See the
 [hand-fit contract](assembly-readiness.md#declared-hand-fit-deviations) and
 [owner hand-fit policy](assembly-readiness.md#owner-hand-fit-policy).
 

@@ -158,8 +158,32 @@ immutable input. The check refuses the run (`failed`) if the source bytes
 differ from `sha256` or `quote` is not a substring of line `line`. A
 malformed citation, or an identity whose MPN is not a whole token in `quote`,
 is `unsupported`. A paraphrase is not accepted. The LCSC is bound by the
-scope, not by the quote. The coordinator's scope review decides whether the
-quote is unconditional for each listed identity; the checker matches strings.
+scope, not by the quote.
+
+The quote only locates the statement. The checker reads the whole Markdown
+unit holding line `line`, not the quote, so a quote cut off before a condition
+gets the same result. The unit is a list item plus its continuation lines, a
+table row, or a paragraph. The run is refused (`failed`) unless every listed
+identity is named unconditionally:
+
+- the unit affirmatively declares a hand-fit (`hand-fit…`, `hand-solder…`,
+  `fitted by hand` or `soldered by hand`, not negated);
+- the MPN occurs exactly once in the unit;
+- the unit has balanced parentheses. It is not in a code block, a nested list
+  item, or a list item after a lead-in that ends in `:`. Its nearest heading
+  has no conditional qualifier;
+- every conditional qualifier in the unit (`if`, `unless`, `when`, `where`,
+  `provided`, `only`, `except`, `should`, `assuming`, `until`, `once`,
+  `while`, `otherwise`, `in case`, `as long as`, `subject to`, `unstocked`,
+  `unavailable`, `out of stock` and similar) must be confined. A qualifier is
+  confined only when it sits in the last comma-separated conjunct of a
+  parenthesized enumeration, that conjunct starts with `and` or `or`, names a
+  part-like token and has no predicate (`is`, `are`, `be`, `fitted`,
+  `hand-fit…`). Any other qualifier has an unbounded scope, which refuses every
+  identity in the unit. An identity inside a confined conjunct is named only
+  conditionally and is refused.
+
+A conditionally named part can only use the stock-unavailable class.
 
 A policy entry is admitted regardless of positive or zero stock only when:
 
@@ -184,9 +208,11 @@ citation. They stay outside `parts`, stock quantities and tier totals.
 
 For the telemetry pod, the canonical owner text is
 [fixtures/telemetry-pod/spec.md](../fixtures/telemetry-pod/spec.md) line 76
-(acceptance criterion 5). It names the 776228-1 header unconditionally and
-NEO-M9N or SMA only "if unstocked". Only the header is a policy identity; NEO-M9N
-and SMA stay stock-unavailable declarations. Pod adoption belongs to the pod lane.
+(acceptance criterion 5): "(the 776228-1 header, and the NEO-M9N or SMA
+connector if unstocked)". The header is admitted as a policy identity. Listing
+NEO-M9N or SMA in `hand_fit_policy.identities`, with the full quote or a
+shortened one, refuses the run. They stay stock-unavailable declarations.
+Pod adoption belongs to the pod lane.
 
 ## Fabrication exclusion
 

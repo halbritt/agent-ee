@@ -552,6 +552,88 @@ class AssemblyReadinessTests(unittest.TestCase):
         with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'sha256 mismatch'):
             self.evaluate(netlist, params)
 
+    SPEC = Path(__file__).resolve().parents[1] / 'fixtures' / 'telemetry-pod' / 'spec.md'
+    SPEC_QUOTE = ('Parts JLCPCB does not stock or assemble (the 776228-1 header, and the NEO-M9N or SMA '
+                  'connector if unstocked) are hand-fitted after delivery')
+
+    def spec_citation(self, params, quote, identities):
+        shutil.copyfile(self.SPEC, self.root / 'spec.md')
+        params['hand_fit_policy'] = {'source': 'spec.md', 'sha256': digest(self.root / 'spec.md'), 'line': 76,
+                                     'quote': quote, 'identities': identities}
+
+    def test_canonical_spec_line_admits_unconditional_header_whatever_the_quote_slice(self):
+        # Acceptance criterion 5 names the header unconditionally; a truncated quote cannot change the outcome.
+        for quote in (self.SPEC_QUOTE, 'the 776228-1 header', 'Parts JLCPCB does not stock or assemble (the 776228-1'):
+            with self.subTest(quote=quote):
+                netlist, params = self.policy_case()
+                self.spec_citation(params, quote, [{'mpn': '776228-1', 'lcsc': 'C90099'}])
+                report = self.evaluate(netlist, params)
+                self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
+                self.assertEqual(report['declared_deviation'][0]['stock_state'], 'owner_hand_fit')
+                self.assertEqual(report['hand_fit_policy']['line'], 76)
+
+    def test_conditionally_named_spec_identity_cannot_use_owner_hand_fit(self):
+        # The same line names NEO-M9N and SMA only "if unstocked": full and truncated quotes both fail closed.
+        netlist, params = self.policy_case()
+        doc = read_json(self.root / 'catalog.json')
+        doc['parts'].append({'lcsc': 'C90098', 'mpn': 'NEO-M9N', 'stock': 40, 'is_basic': False,
+                             'last_seen': '2026-10-15'})
+        write_json(self.root / 'catalog.json', doc)
+        declaration = self.handfit('NEO-M9N', 'hand_soldered', lcsc='C90098')
+        declaration['policy'] = 'owner_hand_fit'
+        write_json(self.root / 'deviations.json', {'schema': 'agent-ee.part-deviations/1', 'deviations': [declaration]})
+        netlist = self.export('neo_policy.kicad_sch', schematic('neo_policy', [part('R1'),
+            part('U1', 'U', lcsc='C90098', part_number=('Partnumber', 'NEO-M9N'), rating=None,
+                 extra={'JLCPCB_Assembly': 'not_assembled'})]))
+        neo = {'mpn': 'NEO-M9N', 'lcsc': 'C90098'}
+        for quote, identities in (
+                (self.SPEC_QUOTE, [neo]),
+                ('Parts JLCPCB does not stock or assemble (the 776228-1 header, and the NEO-M9N', [neo]),
+                ('the NEO-M9N', [neo]),
+                (self.SPEC_QUOTE, [{'mpn': '776228-1', 'lcsc': 'C90099'}, neo]),
+                (self.SPEC_QUOTE, [{'mpn': 'SMA', 'lcsc': None}])):
+            with self.subTest(quote=quote, identities=identities):
+                self.spec_citation(params, quote, identities)
+                with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'named only conditionally') as caught:
+                    self.evaluate(netlist, params)
+                self.assertEqual(caught.exception.execution, 'failed')
+        # Without the class it is the stock-unavailable declaration, and positive stock still refuses it.
+        del declaration['policy']
+        write_json(self.root / 'deviations.json', {'schema': 'agent-ee.part-deviations/1', 'deviations': [declaration]})
+        self.spec_citation(params, self.SPEC_QUOTE, [{'mpn': '776228-1', 'lcsc': 'C90099'}])
+        report = self.evaluate(netlist, params)
+        self.assertEqual((report['outcome'], report['declared_deviation']), ('defect', []))
+        self.assertIn('stocked part refused', report['findings'][0]['message'])
+
+    def test_policy_statement_with_unbounded_or_ambiguous_condition_is_refused(self):
+        header = 'the 776228-1 header'
+        for name, text, message in (
+                ('leading condition', f'If JLCPCB lists no stock, {header} is hand-fitted.', "qualifier 'If'"),
+                ('trailing condition', f'The 776228-1 header is hand-fitted, unless JLCPCB stocks it.', 'unless'),
+                ('predicate conjunct', f'Parts ({header}, and hand-fitted only if unavailable) are hand-fitted.',
+                 "qualifier 'only'"),
+                ('paragraph above', f'When JLCPCB lists no stock,\n{header} is hand-fitted.', "qualifier 'When'"),
+                ('list lead-in', f'Hand-fitted parts:\n\n- the X-1 part.\n- {header} is hand-fitted.', 'lead-in'),
+                ('nested item', f'- Out of stock parts\n  - {header} is hand-fitted.', 'nested list item'),
+                ('item continuation', f'5. The 776228-1 header is hand-fitted\nwhen unstocked.', "'when'"),
+                ('heading', f'## Hand-fit if unstocked\n\n{header} is hand-fitted.', 'governing heading'),
+                ('unbalanced', f'Parts ({header} are hand-fitted.', 'unbalanced parentheses'),
+                ('negated', f'The 776228-1 header is not hand-fitted.', 'affirmatively declare'),
+                ('negated by hand', f'The 776228-1 header is never fitted by hand.', 'affirmatively declare'),
+                ('no hand-fit', f'The 776228-1 header is assembled by JLCPCB.', 'affirmatively declare'),
+                ('named twice', f'{header} is hand-fitted; {header} is listed.', 'named 2 times'),
+                ('code block', f'```\n{header} is hand-fitted.', 'code block')):
+            with self.subTest(name):
+                netlist, params = self.policy_case()
+                (self.root / 'decision.md').write_text(text + '\n')
+                lines = text.split('\n')
+                line = next(i for i, l in enumerate(lines, 1) if '776228-1' in l)
+                params['hand_fit_policy'].update(sha256=digest(self.root / 'decision.md'), line=line,
+                                                 quote='776228-1')
+                with self.assertRaisesRegex(AssemblyReadinessExecutionError, message) as caught:
+                    self.evaluate(netlist, params)
+                self.assertEqual(caught.exception.execution, 'failed')
+
     def test_policy_with_raw_jlc_capture_admits_positive_stock_and_still_gates_freshness(self):
         netlist, params = self.policy_case()
         doc = self.jlc_capture(self.root, {'C25804': (200, search(row('C25804', 500))),
