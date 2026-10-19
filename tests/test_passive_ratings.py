@@ -284,6 +284,61 @@ class PassiveRatingTests(unittest.TestCase):
 
 
 class NativeRatingPropagationTests(unittest.TestCase):
+    def test_ratings_with_separate_output_receipt_fills_only_the_bound_intent(self):
+        # The pod campaign composes AGENTEE-197's separate output with AGENTEE-233's ratings.
+        from toolchain import require_toolchain
+        from agent_ee import binding_fill
+        from agent_ee.parts_manifest import qualify_manifest
+        from agent_ee.stage_receipts import adopt, run_step, validate_receipt
+        require_toolchain(native=True)
+        helper = PassiveRatingTests()
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        root = helper.root
+        helper.select_pdf(['Owned resistor family', 'Rated power 100 mW at 70 C'])
+        helper.facts(helper.fact('100', 'mW', 'Rated power 100 mW'))
+        intent = helper.intent
+        intent['components'] = [{**intent['components'][0], 'id': 'pod/R1', 'reference': 'R1'}]
+        intent['no_connects'] = [{'component': 'pod/R1', 'pin': {'number': p}} for p in ('1', '2')]
+        helper.part['instances'] = [{'sheet': '/', 'reference': 'R1'}]
+        refs = {'schema': 'agent-ee.part-refs/1', 'components': {'pod/R1': {'part_ref': 'resistor'}}}
+        for name, value in [('intent.json', intent), ('intent.bound.json', {}), ('parts.json', helper.parts),
+                            ('refs.json', refs), ('deviations.json', helper.deviations),
+                            ('ratings.json', helper.ratings)]:
+            write_json(root / name, value)
+        shutil.copyfile(root / 'Owned.kicad_sym', root / 'captures.kicad_sym')
+        source = Path(__file__).resolve().parents[1] / 'src'
+        kwargs = dict(intent='intent.json', manifest='parts.json', part_refs='refs.json',
+                      deviations='deviations.json', captures='.',
+                      dependencies=sorted({*qualify_manifest(helper.parts, root)['dependencies'],
+                                           'rating-facts.json', helper.selected['path']}))
+        spec = binding_fill.configuration(source, output='intent.bound.json', ratings='ratings.json', **kwargs)
+        self.assertEqual(spec['writes'], {'intent.bound.json': 'out/intent.json'})
+        self.assertIn('intent.json', spec['inputs'])
+        self.assertIn('ratings.json', spec['inputs'])
+        self.assertNotIn('intent.bound.json', spec['inputs'])
+        self.assertEqual(spec['argv'][spec['argv'].index('--ratings') + 1], 'ratings.json')
+        for clash, message in (({'output': 'ratings.json'}, 'output intent'),
+                               ({'intent': 'ratings.json'}, 'read intent')):
+            with self.subTest(clash=clash), self.assertRaisesRegex(ValueError, message):
+                binding_fill.configuration(source, **{**kwargs, 'output': 'intent.bound.json',
+                                                      'ratings': 'ratings.json', **clash})
+        before = digest(root / 'intent.json')
+        step = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'bind'
+        receipt = run_step(step, root, spec, {'implementation': 1, 'source_candidate_id': 'pod-compose',
+                                               'receipt_index': 1})
+        self.assertEqual(receipt['status'], 'completed', (step / 'run/console.log').read_text())
+        self.assertEqual(validate_receipt(step), receipt)
+        adopt(step, receipt, root)
+        self.assertEqual(digest(root / 'intent.json'), before)
+        report = read_json(step / 'run/out/binding-fill.json')
+        self.assertEqual(set(report['ratings']['derived']), {'R1'})
+        self.assertEqual(report['ratings']['missing'], {})
+        bound = read_json(root / 'intent.bound.json')['components'][0]['part_binding']
+        self.assertEqual(bound['Power'], '100mW')
+        self.assertEqual(json.loads(bound['AGENT_EE_Ratings'])['record_sha256'],
+                         identity(report['ratings']['derived']['R1']['record']))
+
     def test_receipted_fields_reach_native_symbol_board_and_assembly_check(self):
         import xml.etree.ElementTree as ET
         import pcbnew as k
