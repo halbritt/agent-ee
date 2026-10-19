@@ -7,7 +7,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from .storage import digest, write_json
+from .storage import digest, identity, write_json
 
 # Leading underscore cannot alias the compiler's agent_ee_ constraint namespace.
 LOAD_WITNESS = "_agent_ee_tool_load_witness"
@@ -17,17 +17,14 @@ def node(position, layer):
     return (int(position.x), int(position.y), int(layer))
 
 
-def route_coverage(board, net):
+def _path_coverage(board, net):
     """Prove one unbranched path with distinct endpoints inside native pad copper."""
     import pcbnew
     pads = [p for fp in board.GetFootprints() for p in fp.Pads() if p.GetNetname() == net]
     tracks = [t for t in board.GetTracks() if t.GetNetname() == net]
     if len(pads) != 2 or not tracks:
         return {'complete': False, 'reason': 'requires exactly two pads and saved routed copper'}
-    if board.GetCopperLayerCount() != 2:
-        return {'complete': False, 'reason': 'only two-layer route topology qualified'}
-    if list(board.Zones()):
-        return {'complete': False, 'reason': 'board zone geometry unsupported'}
+    copper = set(board.GetEnabledLayers().CuStack())
     graphics = [*board.GetDrawings(),
                 *(g for fp in board.GetFootprints() for g in fp.GraphicalItems())]
     if any(board.GetLayerName(g.GetLayer()).endswith('.Cu') for g in graphics):
@@ -38,10 +35,23 @@ def route_coverage(board, net):
         if t.GetWidth() <= 0:
             return {'complete': False, 'reason': 'nonpositive copper width unsupported'}
         if cls == 'PCB_VIA':
-            if board.GetCopperLayerCount() != 2 or t.GetViaType() != pcbnew.VIATYPE_THROUGH:
-                return {'complete': False, 'reason': 'only two-layer through vias qualified'}
-            a, b = node(t.GetPosition(), pcbnew.F_Cu), node(t.GetPosition(), pcbnew.B_Cu)
+            if t.GetViaType() != pcbnew.VIATYPE_THROUGH:
+                kind = 'micro' if t.GetViaType() == pcbnew.VIATYPE_MICROVIA else 'blind/buried'
+                return {'complete': False, 'reason': kind + ' via path unsupported'}
+            position = t.GetPosition()
+            # Only incident layers bound the measurable barrel path. Unused
+            # through-via layers are neither extra graph branches nor shortcuts.
+            incident = {other.GetLayer() for other in tracks if other.GetClass() == 'PCB_TRACK' and
+                        position in (other.GetStart(), other.GetEnd())}
+            incident.update(layer for p in pads for layer in copper & set(p.GetLayerSet().Seq())
+                            if p.GetEffectiveShape(layer).Collide(position, 0))
+            if (len(incident) != 2 or not incident <= copper or
+                    any(not t.IsOnLayer(layer) or not t.FlashLayer(layer) for layer in incident)):
+                return {'complete': False, 'reason': 'through via needs two distinct incident copper layers'}
+            a, b = (node(position, layer) for layer in sorted(incident))
         elif cls == 'PCB_TRACK':
+            if t.GetLayer() not in copper:
+                return {'complete': False, 'reason': 'track is outside enabled copper layers'}
             a, b = node(t.GetStart(), t.GetLayer()), node(t.GetEnd(), t.GetLayer())
         else:
             return {'complete': False, 'reason': f'unsupported copper primitive {cls}'}
@@ -84,6 +94,49 @@ def route_coverage(board, net):
             'copper_ids': sorted(edges)}
 
 
+def route_coverage(board, net, zone_freshness=None):
+    """Native connectivity and unique numeric-path qualification are distinct."""
+    import pcbnew
+    zones = [z for z in board.Zones() if not z.GetIsRuleArea()]
+    base = {'net': net, 'complete': False, 'measurement_qualified': False}
+    conductor_ids = [item.m_Uuid.AsString() for item in
+                     [*board.GetTracks(), *zones, *(p for fp in board.GetFootprints() for p in fp.Pads())]]
+    if len(conductor_ids) != len(set(conductor_ids)):
+        return {**base, 'reason': 'duplicate native copper identity'}
+    if ((zones and (zone_freshness is None or zone_freshness.get('status') != 'fresh')) or
+            (zone_freshness is not None and zone_freshness.get('status') not in ('fresh', 'not_required'))):
+        return {**base, 'reason': 'zone fill ' + (zone_freshness or {}).get('status', 'unverified')}
+    for item in board.GetTracks():
+        if item.GetNetname() != net:
+            continue
+        if item.GetClass() not in ('PCB_TRACK', 'PCB_VIA'):
+            return {**base, 'reason': 'unsupported copper primitive ' + item.GetClass()}
+        if item.GetClass() == 'PCB_VIA' and item.GetViaType() != pcbnew.VIATYPE_THROUGH:
+            kind = 'micro' if item.GetViaType() == pcbnew.VIATYPE_MICROVIA else 'blind/buried'
+            return {**base, 'reason': kind + ' via connectivity unsupported'}
+    path = _path_coverage(board, net)
+    selected_zones = [z for z in zones if z.GetNetname() == net]
+    if not selected_zones:
+        return {**base, **path, 'measurement_qualified': path['complete']}
+    # No polygon geometry or thermal-spoke inference: KiCad's connectivity
+    # traversal distinguishes separate islands belonging to the same zone.
+    pads = [p for fp in board.GetFootprints() for p in fp.Pads() if p.GetNetname() == net]
+    tracks = [t for t in board.GetTracks() if t.GetNetname() == net]
+    if len(pads) < 2:
+        return {**base, 'reason': 'plane connectivity requires at least two native pads'}
+    if not board.BuildConnectivity():
+        return {**base, 'reason': 'native connectivity build failed'}
+    connected = board.GetConnectivity().GetConnectedItems(pads[0])
+    connected_ids = {item.m_Uuid.AsString() for item in connected}
+    required = {item.m_Uuid.AsString() for item in [*pads, *tracks]}
+    complete = required <= connected_ids
+    return {**base, 'complete': complete,
+            'reason': 'zone-assisted net has no qualified unique numeric path' if complete else
+                      'native net connectivity is disconnected',
+            'native_connected_ids': sorted(connected_ids), 'required_ids': sorted(required),
+            'zone_ids': sorted(z.m_Uuid.AsString() for z in selected_zones)}
+
+
 def physical_contacts(board, tracks, pads):
     """Qualify graph incidence against native finite-width copper shapes.
 
@@ -99,7 +152,7 @@ def physical_contacts(board, tracks, pads):
 
     def layers(item):
         if item.GetClass() == 'PCB_VIA':
-            return {k.F_Cu, k.B_Cu}
+            return {layer for layer in board.GetEnabledLayers().CuStack() if item.IsOnLayer(layer)}
         return {item.GetLayer()}
 
     def endpoints(item, layer):
@@ -147,12 +200,87 @@ def physical_contacts(board, tracks, pads):
     return None
 
 
-def probe_board(path, constraints):
+def _filled_zones(board):
+    """Canonical exact native fill contours, including holes; no geometry inference."""
+    from .routing_equivalence import canonical_ring
+    result = {}
+    for zone in board.Zones():
+        if zone.GetIsRuleArea():
+            continue
+        uid = zone.m_Uuid.AsString()
+        if uid in result:
+            raise ValueError('duplicate native copper zone identity')
+        layers = {}
+        for layer in board.GetEnabledLayers().CuStack():
+            if not zone.IsOnLayer(layer):
+                continue
+            poly = zone.GetFilledPolysList(layer)
+            if poly.ArcCount():
+                raise ValueError('curved filled zone contours unsupported')
+            ring = lambda line: canonical_ring([(int(line.CPoint(j).x), int(line.CPoint(j).y))
+                                                for j in range(line.PointCount())])
+            layers[board.GetLayerName(layer)] = sorted(
+                (ring(poly.Outline(i)), tuple(sorted(ring(poly.Hole(i, h))
+                 for h in range(poly.HoleCount(i))))) for i in range(poly.OutlineCount()))
+        result[uid] = {'net': zone.GetNetname(), 'layers': layers}
+    return result
+
+
+def qualify_zone_fills(path, board, work):
+    """Compare saved copper with native refills on private captured-sibling copies."""
+    import pcbnew
+    zones = [z for z in board.Zones() if not z.GetIsRuleArea()]
+    if any(not z.GetIsRuleArea() for fp in board.GetFootprints() for z in fp.Zones()):
+        return {'status': 'unsupported', 'reason': 'footprint-owned copper zones unsupported'}
+    if not zones:
+        return {'status': 'not_required'}
+    saved = _filled_zones(board)
+    if any(not z.IsFilled() or not all(saved[z.m_Uuid.AsString()]['layers'].values()) for z in zones):
+        return {'status': 'unfilled', 'saved': saved}
+    if any(z.NeedRefill() for z in zones):
+        return {'status': 'stale', 'reason': 'native NeedRefill flag', 'saved': saved}
+    work = Path(work); work.mkdir()
+    source = Path(path)
+    siblings = [source, source.with_suffix('.kicad_pro'), source.with_suffix('.kicad_dru')]
+    originals = {p.name: p.read_bytes() for p in siblings if p.is_file()}
+    source_hashes = {p.name: digest(p) for p in siblings if p.is_file()}
+    private = work / source.name
+    for name, raw in originals.items():
+        (work / name).write_bytes(raw)
+    observations = []
+    for _ in range(2):
+        refreshed = pcbnew.LoadBoard(str(private))
+        if not refreshed.BuildConnectivity() or not pcbnew.ZONE_FILLER(refreshed).Fill(refreshed.Zones()):
+            raise ValueError('native zone refill failed')
+        if not pcbnew.SaveBoard(str(private), refreshed):
+            raise ValueError('native zone refill save failed')
+        # Native save may rewrite project siblings. Each qualification uses the
+        # exact captured settings/rules, never those incidental save products.
+        for suffix in ('.kicad_pro', '.kicad_dru'):
+            sibling = private.with_suffix(suffix)
+            if sibling.name in originals:
+                sibling.write_bytes(originals[sibling.name])
+            else:
+                sibling.unlink(missing_ok=True)
+        observations.append(_filled_zones(pcbnew.LoadBoard(str(private))))
+    if any(digest(p) != source_hashes[p.name] for p in siblings if p.name in source_hashes):
+        raise ValueError('native zone qualification changed captured input')
+    stable = observations[0] == observations[1]
+    status = 'unstable' if not stable else ('fresh' if saved == observations[0] else 'stale')
+    return {'status': status, 'source_hashes': source_hashes, 'saved': saved,
+            'refilled': observations[0], 'repeat': observations[1],
+            'saved_sha256': identity(saved), 'refilled_sha256': identity(observations[0]),
+            'repeat_sha256': identity(observations[1])}
+
+
+def probe_board(path, constraints, work=None):
     import pcbnew
     board = pcbnew.LoadBoard(str(path))
+    freshness = qualify_zone_fills(path, board, work or Path(path).parent / 'zone-freshness')
     nets = sorted({net for c in constraints for net in c.get('nets', [])})
     probe = {'pcbnew_version': pcbnew.Version(), 'board_sha256': digest(path),
-             'routes': {n: route_coverage(board, n) for n in nets}}
+             'zone_freshness': freshness,
+             'routes': {n: route_coverage(board, n, freshness) for n in nets}}
     if any(c.get('kind') == 'fab' for c in constraints):
         from .fab_profile import native_inventory
         probe['fabrication'] = native_inventory(path)
@@ -239,8 +367,8 @@ def run_constraint(source, root, constraint, probe, directory=None):
     if constraint.get('nets'):
         coverage = {n: probe['routes'][n] for n in constraint['nets']}
         record['route_coverage'] = coverage
-        if not all(c['complete'] for c in coverage.values()):
-            return {**record, 'reason': 'missing complete pad-to-pad route coverage'}
+        if not all(c['complete'] and c['measurement_qualified'] for c in coverage.values()):
+            return {**record, 'reason': 'missing qualified unique pad-to-pad measurement path'}
     load_witness = [v for v in report['violations'] if f"rule '{LOAD_WITNESS}'" in v['description']]
     record['tool_load_witness'] = load_witness
     if not load_witness or any(v['severity'] != 'error' for v in load_witness):
@@ -261,7 +389,7 @@ def main(argv=None):
     root = request_path.parent
     source = Path(request['board'])
     constraints = request['compiled']['constraints']
-    probe = probe_board(source, constraints)
+    probe = probe_board(source, constraints, work=root / 'zone-freshness')
     write_json(root / 'routing-probe.json', probe)
     native = root / 'native-rules'
     native.mkdir()

@@ -2879,6 +2879,16 @@
         "AE"
       ],
       "reviewed": "Original declared CAN software probe bounds and native gap constraint; not external design data or owner pod qualification."
+    },
+    {
+      "paths": [
+        "tests/test_routing_layers.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-206 native multilayer and filled-zone tests, including actual owned CAN probe composition and adversarial native fill/identity controls. No vendor design or library bytes."
     }
   ]
 }
