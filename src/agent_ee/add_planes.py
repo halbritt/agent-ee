@@ -127,7 +127,7 @@ def _verify_inputs(candidate, board, plan, generated, out):
     return root
 
 
-def _planned_zone_errors(checks, planned):
+def _planned_zone_errors(checks, planned, always_ids=()):
     """Classify only complete, attributed native records; unknown is a refusal."""
     if not isinstance(checks, dict):
         raise ValueError('native plane DRC report is malformed')
@@ -147,8 +147,9 @@ def _planned_zone_errors(checks, planned):
                 not isinstance(violation.get('items'), list)):
             raise ValueError('native plane DRC violation metadata is malformed')
         items = violation['items']
-        if violation['severity'] == 'error' and not items:
-            raise ValueError('native plane DRC error has no item attribution')
+        isolated_always = violation['type'] == 'isolated_copper' and bool(always_ids)
+        if (violation['severity'] == 'error' or isolated_always) and not items:
+            raise ValueError('native plane DRC violation has no item attribution')
         for item in items:
             if not isinstance(item, dict) or not isinstance(item.get('uuid'), str):
                 raise ValueError('native plane DRC item attribution is malformed')
@@ -158,7 +159,8 @@ def _planned_zone_errors(checks, planned):
                 valid = False
             if not valid:
                 raise ValueError('native plane DRC item attribution is malformed')
-        if violation['severity'] == 'error' and any(item['uuid'] in planned for item in items):
+        if ((violation['severity'] == 'error' and any(item['uuid'] in planned for item in items)) or
+                (isolated_always and any(item['uuid'] in always_ids for item in items))):
             errors.append(violation)
     return errors
 
@@ -186,12 +188,16 @@ def generate(candidate, board, plan_path, out):
         if drc['execution'] != 'ok' or drc['exit_code'] != 0:
             raise ValueError('native plane DRC execution failed')
         checks = read_json(out/'drc/report.json')
-        zone_errors = _planned_zone_errors(checks, zone_ids(plan))
+        planned = zone_ids(plan)
+        always_ids = {uid for uid, spec in zip(planned, plan['zones']) if spec['island_removal']=='always'}
+        zone_errors = _planned_zone_errors(checks, planned, always_ids)
         report.update(pcbnew_version=facts['pcbnew_version'], zones=facts['zones'],
                       drc=dict(violations=len(checks['violations']), planned_zone_errors=zone_errors,
                                report_sha256=digest(out/'drc/report.json')))
         if zone_errors:
-            raise ValueError('native DRC found an error involving a planned zone')
+            refused_ids = sorted({item['uuid'] for violation in zone_errors for item in violation['items']
+                                  if item['uuid'] in (planned if violation['severity']=='error' else always_ids)})
+            raise ValueError('native DRC found an error involving planned zones: ' + ', '.join(refused_ids))
         if (candidate/board).read_bytes() != original or digest(candidate/plan_path) != report['plan_sha256']:
             raise ValueError('captured plane inputs changed during production')
         (out/'board.kicad_pcb').write_bytes(proposed.encode('utf-8'))
