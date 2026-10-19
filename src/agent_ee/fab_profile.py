@@ -125,7 +125,10 @@ def native_rule(record, key, value):
 
 
 def compile_profile(profile, files, inputs):
-    if (not isinstance(profile, dict) or set(profile) != {'schema', 'name', 'as_of', 'limits'} or
+    required = {'schema', 'name', 'as_of', 'limits'}
+    if (not isinstance(profile, dict) or not required <= profile.keys() or
+            set(profile) - required - ({'finished_thickness_tolerance'}
+                                      if profile.get('schema') == SCHEMAS[1] else set()) or
             profile['schema'] not in SCHEMAS or not isinstance(profile['name'], str)
             or not ID.fullmatch(profile['name']) or not isinstance(profile['limits'], list)
             or not profile['limits']):
@@ -164,7 +167,27 @@ def compile_profile(profile, files, inputs):
         else:
             record['geometry'] = key
         records.append(record)
-    return {'schema': 'agent-ee.compiled-fab/1', 'name': profile['name'], 'as_of': as_of,
+    metadata = {}
+    if 'finished_thickness_tolerance' in profile:
+        tolerance = profile['finished_thickness_tolerance']
+        if (not isinstance(tolerance, dict) or set(tolerance) != {'percent', 'min_nominal_thickness_mm', 'source'} or
+                not 0 < number(tolerance['percent'], 'finished thickness tolerance') < 100 or
+                number(tolerance['min_nominal_thickness_mm'], 'minimum nominal thickness') <= 0):
+            raise ValueError('finished_thickness_tolerance needs percent in (0, 100) and source')
+        record = {'expected': copy.deepcopy(tolerance), 'execution': 'unsupported'}
+        try:
+            source = tolerance['source']
+            if isinstance(source, dict) and isinstance(source.get('path'), str):
+                captured_file(inputs, files, source['path'])
+                dependencies.add(source['path'])
+            verify_source(source, inputs, files, as_of)
+        except (ValueError, KeyError, OSError, UnicodeError) as exc:
+            record['reason'] = str(exc)
+        else:
+            record['execution'] = 'ready'
+        # This is an envelope bound, not an isolated native DRC rule or predicate.
+        metadata['finished_thickness_tolerance'] = record
+    return {'schema': 'agent-ee.compiled-fab/1', 'name': profile['name'], 'as_of': as_of, **metadata,
             'constraints': sorted(records, key=lambda c: c['id']),
             'immutable_inputs': sorted(dependencies)}
 
@@ -174,6 +197,9 @@ def capability(params, scope, files, inputs, cid):
         raise ValueError('fab_profile requires only its captured JSON path')
     path = captured_file(inputs, files, params['fab_profile'])
     compiled = compile_profile(load_document(path), files, inputs)
+    tolerance = compiled.get('finished_thickness_tolerance')
+    if tolerance is not None and tolerance['execution'] != 'ready':
+        raise ValueError('finished-thickness tolerance source not verified: ' + tolerance['reason'])
     validate_mappings(compiled['constraints'], scope, files, cid)
     return {'compiled': compiled,
             'immutable_inputs': sorted({params['fab_profile'], *compiled['immutable_inputs'],

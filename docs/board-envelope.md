@@ -1,11 +1,16 @@
 # Board envelope record
 
-An `agent-ee.envelope/1` record states a board's mechanics before "go": the
+An `agent-ee.envelope/1` or `/2` record states a board's mechanics before "go": the
 outline, layer count and stackup, a reference to a captured fabricator
 capability profile, mounting holes, keepouts and fixed footprints such as edge
 connectors (AGENTEE-85). The intent record states electrical intent; the
 envelope adds what an empty candidate needs before any part is placed
 (decisions 1 and 4 in the [generator direction](decisions.md#generator-direction-2026-10-17)).
+
+The [telemetry-pod fabrication inputs](telemetry-pod-fab-profile.md) include a
+source-verified fab profile and a structurally valid envelope/2. It separates
+nominal and physical thickness with a cited tolerance; mechanical obligations
+remain unbound until AGENTEE-177/179. Acceptance remains unknown.
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.board_envelope ENVELOPE.json \
@@ -16,7 +21,8 @@ PYTHONPATH=src python3 -m agent_ee.board_envelope ENVELOPE.json \
 
 The command is offline, standard library only and deterministic. Exit 0 means
 the structure passed and nothing is unresolved. Exit 1 means the structure
-passed but a profile predicate is unresolved, or a saved board does not match.
+passed but a profile/source predicate or mechanical obligation is unresolved, or a saved
+board does not match.
 Exit 2 means the record was refused, or input/output failed. The output
 directory must not already exist. An I/O failure can leave a partial
 directory; discard it and use a new one.
@@ -44,6 +50,27 @@ separates facts read from the saved board from owned assumptions.
 | `mounting_holes` | `{id, at, drill_mm, plated}`; the whole hole must lie inside the outline |
 | `keepouts` | `{id, polygon, layers, forbid}`: a simple polygon contained in the closed outline, stackup copper layer names, and a unique subset of `footprints`, `tracks`, `vias`, `pads`, `copper_pours` |
 | `fixed_footprints` | `{reference, side, edge, position_mm, inset_mm, rotation_deg, insertion, tolerance_mm}` |
+
+Version 2 changes `stackup` to `{nominal_thickness_mm,
+physical_thickness_mm, layers}` and requires `source` on each layer, in the
+fab profile's existing path/hash/source/as_of/page/quote format. Layers must
+sum exactly to the physical thickness. The referenced fab-profile/2 may supply
+`finished_thickness_tolerance: {percent, min_nominal_thickness_mm, source}`.
+The compiler verifies its citation; the envelope compares physical and nominal
+thickness using exact rational arithmetic, including the tolerance endpoints.
+An out-of-range sum or nominal below the captured applicability is refused.
+Missing source evidence stays unknown. The validator's `stackup.thickness_mm`
+is the nominal value for existing native/fab consumers; its additional fields
+retain the physical total, citations and source paths. Version 1 keeps the
+exact shape and sum in the table above and refuses version 2 fields.
+
+Version 2 also requires `obligations`, a list of `{id, requirement_ids,
+statement, owner_items}`. Each ID list is nonempty and unique. These carry
+requirements whose geometry is a generator decision. Every entry derives an
+acceptance requirement with its envelope field hash and remains unresolved;
+there is no caller-supplied pass/bound flag. Baseline capture recognizes both
+versions, freezes verified stackup sources and refuses missing check coverage.
+Existing native outline and layer criteria do not cover these obligations.
 
 A fixed footprint's anchor is its KiCad footprint origin. The anchor is
 `position_mm` along the named edge, measured from the edge's `start`, then

@@ -1,0 +1,285 @@
+{
+  "work_item": "AGENTEE-160",
+  "status": "superseded-by-envelope-2",
+  "spec_record": {
+    "path": "spec-record.json",
+    "sha256": "58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250",
+    "spec_sha256": "09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493"
+  },
+  "requirements": {
+    "POD-ME-1": {
+      "text_sha256": "b2056e3856539308cc07a04405198bef51a3640366dd76c97188f9a8137b0b37",
+      "locator": {
+        "byte_end": 9039,
+        "byte_start": 8855,
+        "cells": {},
+        "heading_path": [
+          "Telemetry pod requirements",
+          "Mechanical and environment"
+        ],
+        "item": 1,
+        "list": 1,
+        "row": null,
+        "table": null
+      }
+    },
+    "POD-ME-2": {
+      "text_sha256": "4198d68437a5915384437a56094ea68cdc49cbac8758c263eadfac63b1e93f44",
+      "locator": {
+        "byte_end": 9361,
+        "byte_start": 9042,
+        "cells": {},
+        "heading_path": [
+          "Telemetry pod requirements",
+          "Mechanical and environment"
+        ],
+        "item": 2,
+        "list": 1,
+        "row": null,
+        "table": null
+      }
+    },
+    "POD-CD-BOARD": {
+      "text_sha256": "3b247d87f448fa36cd79ac2068909292f5ef7dacf47ed08a0ea8a873c9d98d07",
+      "locator": {
+        "byte_end": 8636,
+        "byte_start": 8287,
+        "cells": {
+          "Decision": [
+            8297,
+            8414
+          ],
+          "Function": [
+            8289,
+            8294
+          ],
+          "Not chosen": [
+            8573,
+            8634
+          ],
+          "Why": [
+            8417,
+            8570
+          ]
+        },
+        "heading_path": [
+          "Telemetry pod requirements",
+          "Component decisions"
+        ],
+        "item": null,
+        "list": null,
+        "row": 8,
+        "table": 1
+      }
+    },
+    "POD-CD-MCU-AND-RADIO": {
+      "text_sha256": "f74124997fa35f1385d1e7f7cf8ecd6e235b23a20d18091b3c0b8267332599f9",
+      "locator": {
+        "byte_end": 5756,
+        "byte_start": 5374,
+        "cells": {
+          "Decision": [
+            5392,
+            5428
+          ],
+          "Function": [
+            5376,
+            5389
+          ],
+          "Not chosen": [
+            5637,
+            5754
+          ],
+          "Why": [
+            5431,
+            5634
+          ]
+        },
+        "heading_path": [
+          "Telemetry pod requirements",
+          "Component decisions"
+        ],
+        "item": null,
+        "list": null,
+        "row": 1,
+        "table": 1
+      }
+    },
+    "POD-CD-HARNESS-CONNECTOR": {
+      "text_sha256": "a2b1c553bd772a38240f4082750cfd3e63bd1c73774487bdb5f9deb21d161ce7",
+      "locator": {
+        "byte_end": 8286,
+        "byte_start": 7870,
+        "cells": {
+          "Decision": [
+            7892,
+            8134
+          ],
+          "Function": [
+            7872,
+            7889
+          ],
+          "Not chosen": [
+            8216,
+            8284
+          ],
+          "Why": [
+            8137,
+            8213
+          ]
+        },
+        "heading_path": [
+          "Telemetry pod requirements",
+          "Component decisions"
+        ],
+        "item": null,
+        "list": null,
+        "row": 7,
+        "table": 1
+      }
+    },
+    "POD-CD-GNSS": {
+      "text_sha256": "b5cbf0722a38fd0ebbc7b8331d2fbc0f8935eaf610ecd435c87be9b7cb12a235",
+      "locator": {
+        "byte_end": 7062,
+        "byte_start": 6559,
+        "cells": {
+          "Decision": [
+            6568,
+            6627
+          ],
+          "Function": [
+            6561,
+            6565
+          ],
+          "Not chosen": [
+            6997,
+            7060
+          ],
+          "Why": [
+            6630,
+            6994
+          ]
+        },
+        "heading_path": [
+          "Telemetry pod requirements",
+          "Component decisions"
+        ],
+        "item": null,
+        "list": null,
+        "row": 4,
+        "table": 1
+      }
+    },
+    "POD-AC-7": {
+      "text_sha256": "0bb5335db14fde694e6c7d2e90062496afa1903fff02ba32102d925f23ce7a24",
+      "locator": {
+        "byte_end": 12419,
+        "byte_start": 12218,
+        "cells": {},
+        "heading_path": [
+          "Telemetry pod requirements",
+          "Acceptance criteria"
+        ],
+        "item": 7,
+        "list": 1,
+        "row": null,
+        "table": null
+      }
+    }
+  },
+  "known": {
+    "max_board_mm": [
+      80,
+      50
+    ],
+    "layer_count": 4,
+    "nominal_thickness_mm": 1.6,
+    "max_component_height_mm": 12,
+    "mounting_hole_count": 4,
+    "fab_profile": {
+      "name": "jlc04161h-7628",
+      "sha256": "71eeef06627f83d00f1a35a81d87231987d1a740b6298c0a7f77294786fd0238"
+    },
+    "stackup_layers": [
+      {
+        "name": "F.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.035,
+        "copper_weight_oz": 1
+      },
+      {
+        "name": "prepreg-top",
+        "kind": "dielectric",
+        "thickness_mm": 0.2104
+      },
+      {
+        "name": "In1.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.0152,
+        "copper_weight_oz": 0.5
+      },
+      {
+        "name": "core",
+        "kind": "dielectric",
+        "thickness_mm": 1.065
+      },
+      {
+        "name": "In2.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.0152,
+        "copper_weight_oz": 0.5
+      },
+      {
+        "name": "prepreg-bottom",
+        "kind": "dielectric",
+        "thickness_mm": 0.2104
+      },
+      {
+        "name": "B.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.035,
+        "copper_weight_oz": 1
+      }
+    ],
+    "stackup_source": {
+      "path": "sources/jlcpcb-stackup.txt",
+      "sha256": "02e61b5b1b54092a5930a3ddf601186bc9ea29adb6595c94afb3595aa89a75a4",
+      "capture_manifest": "source-capture.json"
+    },
+    "harness_mpn": "776228-1",
+    "gnss_connector": "SMA",
+    "antenna_module_frame": {
+      "datum": "Top-left corner of module antenna area in Figure 11-1; x right, y toward module body",
+      "polygon_mm": [
+        [
+          0,
+          0
+        ],
+        [
+          18,
+          0
+        ],
+        [
+          18,
+          6
+        ],
+        [
+          0,
+          6
+        ]
+      ],
+      "facts": "antenna-facts.json",
+      "fact_ids": [
+        "antenna-width",
+        "antenna-depth"
+      ],
+      "board_transform": null,
+      "qualification": "Module antenna area only; base-board clearance/cutout and housing are separate constraints. Not an executable board-coordinate keepout."
+    }
+  },
+  "unresolved": {
+    "mechanics": "AGENTEE-177/179 bind generator-selected hole sizes/positions, connector anchors and board-coordinate antenna keepout. Height and IMU separation remain check obligations."
+  },
+  "envelope": "envelope.json"
+}

@@ -355,7 +355,12 @@ are reported as extra charges, never defects. A `fab-profile/2` conjunctive rule
 charges only vias whose drill and diameter are both under its bounds. Each term
 runs its own native DRC, and the rule charges the intersection of the cited via
 UUIDs. Out-of-range numeric profile bounds are unsupported in both descriptors
-and execution. No real fabricator preset exists.
+and execution. The [telemetry-pod profile](telemetry-pod-fab-profile.md) records
+eight dated JLCPCB native/geometry limits plus a finished-thickness tolerance
+from numeric/name captures. Envelope/2 checks the honest physical sum against
+that captured tolerance and retains unbound mechanical obligations. The fab
+check itself makes no thickness verdict; omitted DFM constraints stay explicit. No profile is selected
+implicitly.
 
 ## DFM geometry rules
 
@@ -848,7 +853,9 @@ not establish nominal copper ounces. Direct execution retains diagnostic facts
 and returns unknown. Complete scope/3 envelope capture still requires that
 manufacturing authority; holes, keepouts and multiple fixed connectors also
 remain unsupported for acceptance. See the [native envelope contract](board-envelope.md#native-envelope-check)
-for evidence, binding and failure boundaries.
+for evidence, binding and failure boundaries. Envelope/2 preserves nominal
+and physical thickness separately and derives each generator mechanical
+obligation as unresolved; no existing criterion binds those obligations.
 
 ## Assembly and test access
 

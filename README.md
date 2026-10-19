@@ -181,6 +181,12 @@ remains unavailable: stackup lacks qualified copper-weight authority, and holes,
 keepouts and multiple fixed connectors lack individual bindings. Capture refuses
 those gaps.
 
+The [telemetry-pod fabrication inputs](docs/telemetry-pod-fab-profile.md) record
+eight dated JLCPCB JLC04161H-7628 limits and bind known mechanics to the pod spec.
+The envelope records nominal 1.6 mm and physical 1.5862 mm thickness separately,
+with a cited ±10% tolerance. Generator-selected mechanics remain explicit
+unbound obligations for AGENTEE-177/179, so acceptance stays unknown.
+
 Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
 [captured owner-approved exact violation waivers](docs/violation-waivers.md), native netlist export
 with captured symbol-instance coverage in both directions,
