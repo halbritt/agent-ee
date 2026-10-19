@@ -267,8 +267,11 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
 
     if not isinstance(value, dict):
         raise ValueError("review must be a JSON object")
-    unknown_top = set(value.keys()) - REVIEW_TOP_KEYS
-    missing_top = REVIEW_TOP_KEYS - set(value.keys())
+    from .rf_review import ASSESSMENT_KEY, ROLE as RF_ROLE
+    # The dedicated RF role alone carries, and must carry, its structured assessment.
+    expected_top = REVIEW_TOP_KEYS | ({ASSESSMENT_KEY} if value.get("role") == RF_ROLE else set())
+    unknown_top = set(value.keys()) - expected_top
+    missing_top = expected_top - set(value.keys())
     if missing_top or unknown_top:
         raise ValueError(f"review keys mismatch: missing={sorted(missing_top)}, extra={sorted(unknown_top)}")
     if value.get("schema") not in ("agent-ee.review/1", REVIEW_VERSION):
@@ -352,7 +355,7 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
             normalized["downgraded_from"] = item["downgraded_from"]
         validated_findings.append(normalized)
 
-    return {
+    validated = {
         "schema": value["schema"],
         "candidate_id": candidate_id,
         "run_id": run_id,
@@ -362,6 +365,11 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
         "limitations": limitations,
         "findings": validated_findings,
     }
+    if role == RF_ROLE:
+        from .rf_review import validate_assessment
+        validated[ASSESSMENT_KEY] = validate_assessment(value[ASSESSMENT_KEY], validated_findings, run_dir,
+                                                        require_structured=value["schema"] == REVIEW_VERSION)
+    return validated
 
 
 def collect_findings(reviews, checks):
@@ -572,6 +580,8 @@ def validate_closure(previous_run, current_run, finding_id, check_ids, reason, *
                 f"(execution={chk.get('execution')!r}, outcome={chk.get('outcome')!r})"
             )
 
+    from .rf_review import closure_gate
+    closure_gate(source_finding, old_result, new_result)
     validated_ev = [validate_citation(c, curr_dir) for c in (evidence or [])]
     return {
         "schema": "agent-ee.correction/1",

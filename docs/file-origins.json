@@ -423,6 +423,17 @@
     },
     {
       "paths": [
+        "src/agent_ee/rf_review.py",
+        "tests/test_rf_review.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-243 RF review code and tests. The module matches KiCad item heads such as (footprint \" only to locate top-level board items; the minimal two-footprint RF and resistor/diode boards and one-line schematics in the tests are authored here. No upstream design, library or vendor document bytes are embedded."
+    },
+    {
+      "paths": [
         ".dockerignore",
         ".gitattributes",
         ".gitignore",

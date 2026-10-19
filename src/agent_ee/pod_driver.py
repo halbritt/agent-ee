@@ -41,6 +41,13 @@ def _integer(value, name, low, high):
     return value
 
 
+def _require_rf_reviewer(plan):
+    from .rf_review import ROLE as RF_ROLE
+    # The telemetry pod carries a GNSS receiver-to-SMA path and a BLE module antenna.
+    if RF_ROLE not in [r['role'] for r in plan['review_profile']['reviewers']]:
+        raise ValueError('pod review_profile requires the dedicated rf reviewer (GNSS and BLE RF paths)')
+
+
 def validate_plan(plan):
     required = {'schema', 'scope', 'envelope', 'parts', 'spec', 'spec_record',
                 'writer_inputs', 'implementation_steps', 'review_profile', 'implementation',
@@ -83,6 +90,7 @@ def validate_plan(plan):
             raise ValueError('pod placement_adapter requires a helper and a captured packing policy')
     validate_profile(plan['review_profile'])
     validate_profile({**plan['review_profile'], 'adjudicator': plan['implementation']})
+    _require_rf_reviewer(plan)
     iterations = _integer(plan.get('max_iterations', 10), 'max_iterations', 8, 100)
     routing = _integer(plan['routing_budget_s'], 'routing_budget_s', 1, 3600)
     review = _integer(plan['review_budget_s'], 'review_budget_s', 1, 86400)

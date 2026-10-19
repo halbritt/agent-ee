@@ -57,7 +57,7 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         self.enterContext(mock.patch.object(attempt,'PINNED_CODE',code))
         route=dict(schema='agent-ee.routing-adapter/1',project='project',board='design.kicad_pcb',
                    schematic='design.kicad_sch',name='pod',label='campaign',checkout=str(checkout),budget=300,timeout=900)
-        profile=read_json(ROOT/'profiles/claude-baseline.json')
+        profile=read_json(ROOT/'profiles/pod-review.json')
         self.plan=dict(schema=pod.SCHEMA,scope='planning.scope.json',envelope='envelope.json',parts='parts.json',
             spec='spec.md',spec_record='spec-record.json',writer_inputs={'intent':'intent.json','deviations':'deviations.json'},
             implementation_steps=steps,review_profile=profile,implementation=profile['adjudicator'],

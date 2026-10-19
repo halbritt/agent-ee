@@ -219,6 +219,12 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
                 raise ValueError("measurement check lacks a pinned tool declaration")
             if digest(tool["argv"][0]) != tool["sha256"]:
                 raise ValueError("declared measurement tool changed since review")
+    if result.get("candidate_id"):
+        from .rf_review import decide_run
+        # A record without the decision is accepted only when no RF review is required.
+        expected, stored = decide_run(run, manifest), result.get("rf_review")
+        if (stored is None and expected["required"]) or (stored is not None and stored != expected):
+            raise ValueError("stored RF review decision differs from the captured candidate's RF sources")
     if result.get("outcome") != outcome(result):
         raise ValueError("stored result contradicts its execution and finding records")
     if result["state"] == "complete":
@@ -255,6 +261,9 @@ def outcome(result):
         return "incomplete"
     if len(result.get("reviews", [])) < 2 or not result.get("adjudicated"):
         return "incomplete"
+    from .rf_review import gate as rf_gate
+    if result.get("targeted_review_roles") or rf_gate(result):
+        return "incomplete"
     # A disposition cannot silently change a declared executable criterion.
     if any(c["outcome"] == "defect" for c in result.get("checks", [])):
         return "defects_or_unresolved"
@@ -275,6 +284,13 @@ def render(run, result):
         lines[8:8] = [f"Previous run and its retained findings: [{result['previous_run']}](<{result['previous_run']}/REPORT.md>).", ""]
     for c in result.get("checks", []):
         lines.append(f"| {c['id']} | {c['execution']} | {c['outcome']} | {c['summary'].replace('|', '/')} |")
+    rf = result.get("rf_review")
+    if isinstance(rf, dict):
+        from .rf_review import gate as rf_gate
+        lines += ["", "## RF review applicability", "",
+                  f"RF review {'required' if rf['required'] else 'not applicable'}: " + "; ".join(rf["basis"]) + ".",
+                  f"Binding: `{rf['binding_sha256']}`; gate: {rf_gate(result) or ('satisfied' if rf['required'] else 'not required')}."]
+        lines += ["- Missing RF evidence: " + m for m in rf.get("missing", [])]
     lines += ["", "## Initial reviews", ""]
     for r in result.get("review_executions", []):
         lines.append(f"- {r['role']}: {r['execution']}; requested model {r.get('model_requested', 'not invoked')}.")
@@ -404,15 +420,16 @@ def validate_scope(scope):
         seen.add(role)
 
 
-def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None):
+def run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None):
     from .locking import writer_lock
     with writer_lock(out):
         return _run_review(scope_path, out, max_seconds, checks_only=checks_only,
                            previous=previous, profile=profile, expected_baseline=expected_baseline, output_stream=output_stream,
-                           max_schema_resubmissions=max_schema_resubmissions, fab_context=fab_context, stock_context=stock_context)
+                           max_schema_resubmissions=max_schema_resubmissions, fab_context=fab_context, stock_context=stock_context,
+                           review_roles=review_roles, routing_context=routing_context)
 
 
-def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None):
+def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=None, profile=None, expected_baseline=None, output_stream=None, max_schema_resubmissions=1, fab_context=None, stock_context=None, review_roles=None, routing_context=None):
     from .checks import run_checks
     from .findings import adjudicate, collect_findings
     from .reviewers import adjudicator_call, build_packet, initial_reviews
@@ -451,6 +468,20 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],
                       expected_review_roles=[r["role"] for r in m["scope"].get("review_profile", {}).get("reviewers",
                           [{"role": "circuit"}, {"role": "physical"}])])
+        from . import rf_review
+        # Candidate-bound routing adapter evidence for the RF review; absent or unverifiable is recorded so.
+        rf_review.capture_routing(run, m, routing_context)
+        result["rf_review"] = rf_review.decide_run(run, m)
+        if previous and (Path(previous) / "result.json").is_file():
+            result["rf_invalidation"] = rf_review.invalidation(read_json(Path(previous) / "result.json"),
+                                                               result["rf_review"])
+        if review_roles is not None:
+            unknown = sorted(set(review_roles) - set(result["expected_review_roles"]))
+            if not review_roles or unknown:
+                raise ValueError(f"targeted review roles must name profile reviewers: {unknown or review_roles}")
+            result["targeted_review_roles"] = list(review_roles)
+            result["limitations"].append("Targeted review of roles " + ", ".join(review_roles) +
+                                         " only; other roles and adjudication not run, so the result is incomplete.")
         from .preflight import capture_expectation, profile_definitions
         definitions = profile_definitions(m['scope'])
         result['launch_expectation'] = capture_expectation(result, m, definitions, inputs=run / 'inputs')
@@ -466,17 +497,24 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         result["findings"] = collect_findings([], result["checks"])
         save_result(run, result)
         verify_snapshot(run)
-        if not checks_only and time.monotonic() < deadline:
+        rf_missing = (result["rf_review"]["required"] and
+                      rf_review.ROLE not in result["expected_review_roles"])
+        if rf_missing:
+            result["limitations"].append("RF review required (" + "; ".join(result["rf_review"]["basis"]) +
+                                         ") but the review profile declares no rf reviewer; reviews not dispatched.")
+        if not checks_only and not rf_missing and time.monotonic() < deadline:
             from .profiles import validate_profile
             validate_profile(m["scope"].get("review_profile"))
             packet = build_packet(run, result["checks"], result["run_id"])
             result["limitations"] += packet["packet_limits"]
-            result["reviews"], result["review_executions"] = initial_reviews(run, packet, deadline, launch_context=launch_context)
+            result["reviews"], result["review_executions"] = initial_reviews(run, packet, deadline, launch_context=launch_context,
+                                                                             roles=review_roles)
             result["findings"] = collect_findings(result["reviews"], result["checks"])
             save_result(run, result)
             from .preflight import verify_calls
             verify_calls(run, result, m)
-            if len(result["reviews"]) == len(result["expected_review_roles"]) and time.monotonic() < deadline:
+            if (review_roles is None and len(result["reviews"]) == len(result["expected_review_roles"]) and
+                    time.monotonic() < deadline):
                 execution, decisions = adjudicator_call(run, packet, result["findings"], result["reviews"], deadline, launch_context=launch_context)
                 if decisions is not None:
                     try:
@@ -506,7 +544,11 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         result["runtime_observations"] = drift["unused_changes"]
         if result["policy_files"] != policy_files() or drift["gated"]:
             raise ValueError("implementation or tool runtime changed during review; rerun required")
-        result["state"] = "complete" if not checks_only and result["adjudicated"] else "incomplete"
+        reason = rf_review.gate(result)
+        if reason and not checks_only:
+            result["limitations"].append("RF review gate: " + reason)
+        result["state"] = ("complete" if not checks_only and result["adjudicated"] and reason is None
+                           and review_roles is None else "incomplete")
     except KeyboardInterrupt:
         result["state"] = "interrupted"
         result["error"] = "operator interrupted the run; useful work is preserved"
@@ -536,12 +578,14 @@ def _apply_decisions(run, decisions_path):
     result = verify(run)
     decisions = read_json(decisions_path)
     updated = adjudicate(result["findings"], decisions, run)
+    from .rf_review import gate as rf_gate
     event = run / "events" / (str(uuid.uuid4()) + "-adjudication.json")
     write_json(event, {"at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "decisions": decisions})
     result.update(findings=updated, adjudicated=True)
     if (len(result["reviews"]) >= 2 and all(c["execution"] == "ok" and c["outcome"] != "unknown"
             for c in result["checks"]) and all(r["execution"] == "ok" for r in result["review_executions"])
-            and all(finding_status(f) != "unresolved" for f in updated)):
+            and all(finding_status(f) != "unresolved" for f in updated)
+            and not result.get("targeted_review_roles") and rf_gate(result) is None):
         result["state"] = "complete"
         if result.get("error"):
             result.setdefault("prior_errors", []).append(result.pop("error"))
@@ -574,6 +618,8 @@ def _link_correction(previous, current, finding_id, check_ids, reason):
             raise ValueError("requirements changed; closure under original criteria refused")
     if new["outcome"] != "criteria_satisfied":
         raise ValueError("new review has not satisfied its declared criteria")
+    from .rf_review import changed_categories, closure_gate
+    closure_gate(source, old, new)
     checks = {c["id"]: c for c in new["checks"]}
     if not check_ids or any(cid not in checks or checks[cid]["execution"] != "ok" or
                             checks[cid]["outcome"] != "pass" for cid in check_ids):
@@ -582,6 +628,7 @@ def _link_correction(previous, current, finding_id, check_ids, reason):
         "old_candidate_id": old["candidate_id"], "new_candidate_id": new["candidate_id"],
         "old_run_id": old["run_id"], "new_run_id": new["run_id"], "new_run": str(current),
         "checks": check_ids, "new_result_sha256": digest(current / "result.json")}
+    event["rf_changed_categories"] = changed_categories(old.get("rf_review"), new.get("rf_review"))
     event["changed_inputs"] = {p: {"before": om["files"].get(p), "after": nm["files"].get(p)}
         for p in sorted(om["files"].keys() | nm["files"].keys()) if om["files"].get(p) != nm["files"].get(p)}
     write_json(previous / "events" / (str(uuid.uuid4()) + "-correction.json"), event)
@@ -723,6 +770,9 @@ def main(argv=None):
     review.add_argument("--max-seconds", type=float, default=1200)
     review.add_argument("--checks-only", action="store_true")
     review.add_argument("--profile", help="explicit agent-ee.profile/1 JSON file")
+    review.add_argument("--roles", help="comma-separated profile roles for a targeted, always-incomplete review run")
+    review.add_argument("--routing-receipt", help="routing adapter receipt.json whose routed board is the reviewed "
+                        "board; verified and bound into the RF review (otherwise its evidence is missing)")
     for cmd in ("inspect", "verify"):
         p = sub.add_parser(cmd)
         p.add_argument("run")
@@ -841,7 +891,14 @@ def main(argv=None):
             from .campaign import run_campaign
             return run_campaign(args.config, args.out)
         if args.command == "review":
-            return run_review(args.scope, args.out, args.max_seconds, checks_only=args.checks_only, profile=args.profile)
+            routing_context = None
+            if args.routing_receipt:
+                # Anchored at invocation; the receipt itself is re-verified by the routing adapter.
+                receipt = Path(args.routing_receipt).resolve()
+                routing_context = {"receipt": {"path": str(receipt), "sha256": digest(receipt)}}
+            return run_review(args.scope, args.out, args.max_seconds, checks_only=args.checks_only, profile=args.profile,
+                              review_roles=args.roles.split(",") if args.roles else None,
+                              routing_context=routing_context)
         if args.command == "inspect":
             run = Path(args.run).resolve()
             result = read_json(run / "result.json")

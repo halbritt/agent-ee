@@ -115,6 +115,15 @@ class RoutingCampaignTests(unittest.TestCase):
                         self.assertEqual(receipt['tool']['backend']['value']['name'], 'krt')
                         for artifact in ('result.json', 'attempt.json', 'RESULT.md', 'validate/preservation.json'):
                             self.assertIsNotNone(receipt['artifacts']['routing/attempt/' + artifact])
+                        # AGENTEE-243: the routed candidate's review binds the verified adapter evidence.
+                        rf = read_json(Path(state['history'][1]['run']) / 'work/rf-routing/evidence.json')
+                        self.assertEqual(rf['status'], 'verified', rf['reason'])
+                        self.assertEqual(rf['candidate_sha256'], receipt['outputs']['design/rc.kicad_pcb'])
+                        self.assertEqual(rf['adapter_report']['sha256'],
+                                         receipt['artifacts']['routing/adapter-report.json'])
+                        self.assertIsNone(rf['layer_policy'])
+                        before = read_json(Path(state['history'][0]['run']) / 'work/rf-routing/evidence.json')
+                        self.assertEqual(before['status'], 'missing_evidence')
                     else:
                         self.assertEqual((status, state['state']), (1, 'incomplete'))
                         self.assertEqual(len(state['history']), 1)

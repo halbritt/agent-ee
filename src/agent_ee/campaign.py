@@ -595,10 +595,11 @@ def continue_campaign(root, state, scope_path, deadline, *, initial_run=None):
                 context = campaign_context(root, state, config, read_json(scope_path))
                 from .assembly_readiness import campaign_stock_context
                 stock_context = campaign_stock_context(root, state, config, read_json(scope_path))
+                from .rf_review import campaign_routing_context
                 run_review(scope_path, run, deadline - time.monotonic(), profile=root / "profile.json",
                            expected_baseline=state.get("baseline"),
                            max_schema_resubmissions=config.get("max_schema_resubmissions", 1), fab_context=context,
-                           stock_context=stock_context)
+                           stock_context=stock_context, routing_context=campaign_routing_context(root, state))
             initial_run = None
             record_iteration(root, state, run, config)
             verify_campaign(root)

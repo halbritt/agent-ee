@@ -39,7 +39,11 @@ an explicit profile. Checks-only runs do not require a profile.
 ```
 
 This example demonstrates configuration, not a claim that this allocation is
-best. Roles must be distinct safe lowercase IDs; `adjudicator` is reserved.
+best. The `rf` role is the [dedicated RF reviewer](rf-review.md): its brief is
+mandatory (a `lens` only adds emphasis) and it returns a structured
+`rf_assessment`. A design whose captured sources carry RF indicators cannot
+complete without it. [`profiles/pod-review.json`](../profiles/pod-review.json)
+adds it for the telemetry pod; see [budget implications](rf-review.md#profiles-pod-wiring-and-budget). Roles must be distinct safe lowercase IDs; `adjudicator` is reserved.
 At least two reviewers are required. Optional reviewer `lens` replaces its
 built-in circuit/physical lens. Harness, native model, effort and timeout are
 required for every reviewer and adjudicator. Timeouts are finite 1–3600 seconds,
