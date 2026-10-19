@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 import unittest
 
 from agent_ee.candidate import capture
@@ -92,8 +93,201 @@ class ProducerFixture(ScaffoldFixture):
         self.write()
         return read_json(FOME_RULES / 'severities.json')
 
+    def use_net_constraints(self):
+        """Owned pod-rule assumptions, not electrically qualified pod routing geometry."""
+        self.use_fome_template()
+        self.constraints = dict(schema='agent-ee.net-constraints/1', temperature_rise_c=10, classes=[
+            dict(name='CAN', requirement='can', nets=['CAN+', 'CAN-'], track_width_mm=0.25,
+                 clearance_mm=0.18, diff_pair=dict(gap_mm=0.2, via_gap_mm=0.22)),
+            dict(name='RF_50', requirement='rf', nets=['GNSS_RF'], track_width_mm=0.3,
+                 clearance_mm=0.2, impedance_ohm=50),
+            dict(name='PWR', requirement='power', nets=['+12V', '+5V', '+3.3V'], current_ma=2000)])
+        self.plan.update(net_constraints='constraints.json', netclass_qualification='templates/qualification.json')
+        shutil.copyfile(ROOT / 'fixtures/netclass-completeness/qualification.json',
+                        self.source / 'templates/qualification.json')
+        self.write_constraints()
+
+    def write_constraints(self):
+        write_json(self.source / 'constraints.json', self.constraints)
+        self.write()
+
 
 class ProducerTests(ProducerFixture, unittest.TestCase):
+    def test_net_classes_from_constraints(self):
+        self.use_net_constraints()
+        first, second = self.build('a'), self.build('b')
+        inventories = [{p.relative_to(self.root / name).as_posix(): p.read_bytes()
+                        for p in (self.root / name).rglob('*') if p.is_file()} for name in ('a', 'b')]
+        self.assertEqual(inventories[0], inventories[1])
+        self.assertEqual(first['candidate_id'], second['candidate_id'])
+        project = read_json(self.root / 'a/inputs/project/design.kicad_pro')
+        settings = project['net_settings']
+        default = settings['classes'][0]
+        self.assertEqual(default['clearance'], 0.15)
+        self.assertEqual(settings['classes'][1:], [
+            {**default, 'name': 'CAN', 'priority': 0, 'track_width': 0.25, 'clearance': 0.18,
+             'diff_pair_width': 0.25, 'diff_pair_gap': 0.2, 'diff_pair_via_gap': 0.22},
+            {**default, 'name': 'PWR', 'priority': 1, 'track_width': 1.012},
+            {**default, 'name': 'RF_50', 'priority': 2, 'track_width': 0.3, 'clearance': 0.2}])
+        self.assertEqual(settings['netclass_assignments'], {})
+        self.assertEqual(settings['netclass_patterns'], [
+            dict(netclass='CAN', pattern='CAN\\+'), dict(netclass='CAN', pattern='CAN\\-'),
+            dict(netclass='PWR', pattern='\\+12V'), dict(netclass='PWR', pattern='\\+3\\.3V'),
+            dict(netclass='PWR', pattern='\\+5V'), dict(netclass='RF_50', pattern='GNSS_RF')])
+        derivation = first['derivation']['net_constraints']
+        self.assertEqual(derivation['sha256'], digest(self.source / 'constraints.json'))
+        record_rel = derivation['record']
+        record = read_json(self.root / 'a/inputs' / record_rel)
+        self.assertEqual(record['classes'], derivation['classes'])
+        self.assertEqual(record['nets'], derivation['nets'])
+        self.assertEqual(record['project_sha256'], digest(self.root / 'a/inputs/project/design.kicad_pro'))
+        self.assertEqual(record['rules_sha256'], digest(self.root / 'a/inputs/project/design.kicad_dru'))
+        self.assertEqual(record['classes'][2]['impedance']['status'], 'recorded_not_enforced')
+        rules = (self.root / 'a/inputs/project/design.kicad_dru').read_text()
+        self.assertIn("A.NetClass == 'PWR'", rules)
+        self.assertIn('(constraint track_width (min 1.012mm))', rules)
+        scope = read_json(self.root / 'a/scope.json')
+        self.assertEqual(scope['checks'][3], dict(id='netclasses', kind='netclass_completeness', stage='placement',
+            params=dict(project='project/design.kicad_pro', qualification='templates/qualification.json')))
+        run = self.root / 'capture'
+        run.mkdir()
+        capture(self.root / 'a/scope.json', run)
+        baseline = read_json(run / 'baseline.json')
+        for path in ('constraints.json', record_rel, 'project/design.kicad_pro', 'project/design.kicad_dru',
+                     'templates/qualification.json'):
+            self.assertIn(path, baseline['files'])
+            self.assertNotIn(path, scope['mutable_inputs'])
+
+    def test_class_below_fab_minimum_refused(self):
+        self.use_net_constraints()
+        original = copy.deepcopy(self.constraints)
+        for field, value, message in (
+                ('track_width_mm', 0.1269, 'track_width_mm'),
+                ('clearance_mm', 0.149, 'clearance_mm'),
+                ('diff_pair', dict(gap_mm=0.149), 'gap_mm'),
+                ('diff_pair', dict(gap_mm=0.2, via_gap_mm=0.149), 'via_gap_mm')):
+            with self.subTest(field=field, value=value):
+                self.constraints = copy.deepcopy(original)
+                self.constraints['classes'][0][field] = value
+                self.write_constraints()
+                self.refused('net class CAN ' + message + ' is below fab minimum')
+        # An IPC-derived width must also clear the minimum; no rounding or fallback to Default.
+        self.constraints = copy.deepcopy(original)
+        self.constraints['classes'][2]['current_ma'] = 1
+        self.write_constraints()
+        self.refused('net class PWR track_width is below fab minimum')
+
+    def test_netclass_completeness_on_derived_pod_project(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        self.use_net_constraints()
+        self.build()
+        # Isolate the project-only check from the empty candidate's stage-presence gates.
+        # Keep its actual derived params, project and qualification unchanged.
+        scope = read_json(self.root / 'produced/scope.json')
+        check = next(c for c in scope['checks'] if c['id'] == 'netclasses')
+        del check['stage']
+        del scope['stages']
+        scope['checks'] = [check]
+        scope['baseline']['requirements'] = [dict(id='complete', statement='Complete native Default class.',
+            source=dict(path='native.md', locator='line 1'), checks=['netclasses'])]
+        write_json(self.root / 'produced/qualification.scope.json', scope)
+        run = self.root / 'qualification-run'
+        run.mkdir()
+        capture(self.root / 'produced/qualification.scope.json', run)
+        result, = run_checks(run, time.monotonic() + 30)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertEqual(result['details']['missing'], [])
+        self.assertEqual(result['details']['project_sha256'],
+                         digest(self.root / 'produced/inputs/project/design.kicad_pro'))
+        freeze_evidence(run, [result])
+        verify_evidence(run, [result], required=True)
+
+    def test_class_at_fab_minimum_below_preferred_is_allowed(self):
+        self.use_net_constraints()
+        self.constraints['classes'][0].update(track_width_mm=0.127, clearance_mm=0.15,
+                                             diff_pair=dict(gap_mm=0.15, via_gap_mm=0.15))
+        self.write_constraints()
+        self.build()
+        can = read_json(self.root / 'produced/inputs/project/design.kicad_pro')['net_settings']['classes'][1]
+        self.assertEqual((can['track_width'], can['clearance'], can['diff_pair_gap'], can['diff_pair_via_gap']),
+                         (0.127, 0.15, 0.15, 0.15))
+
+    def test_inherited_width_without_width_constraint_needs_no_custom_rule(self):
+        self.use_net_constraints()
+        self.constraints = dict(schema='agent-ee.net-constraints/1', classes=[
+            dict(name='CAN', requirement='can', nets=['CAN_H', 'CAN_L'], clearance_mm=0.18)])
+        self.write_constraints()
+        receipt = self.build()
+        self.assertFalse((self.root / 'produced/inputs/project/design.kicad_dru').exists())
+        project = read_json(self.root / 'produced/inputs/project/design.kicad_pro')
+        default, can = project['net_settings']['classes']
+        self.assertEqual(can['track_width'], default['track_width'])
+        record = read_json(self.root / 'produced/inputs' / receipt['derivation']['net_constraints']['record'])
+        self.assertIsNone(record['rules_sha256'])
+
+    def test_net_constraints_fail_closed_on_unresolved_or_malformed_inputs(self):
+        self.use_net_constraints()
+        self.constraints['classes'][2]['current_ma'] = 30001
+        self.write_constraints()
+        self.refused('net constraints unresolved:.*outside_fit_range')
+        self.constraints['classes'][2]['current_ma'] = 2000
+        self.constraints['classes'][0]['nets'] = ['CAN_H', 'CAN_L']
+        self.write_constraints()
+        self.refused('diff_pair requires exactly two nets differing only')
+        (self.source / 'constraints.json').write_text('{"schema":')
+        self.write()
+        self.refused('Expecting value')
+
+    def test_net_constraint_capture_and_qualification_are_required(self):
+        self.use_net_constraints()
+        for key in ('net_constraints', 'netclass_qualification'):
+            with self.subTest(key=key):
+                path = self.plan[key]
+                del self.plan[key]
+                self.write()
+                self.refused('net_constraints and netclass_qualification are required together')
+                self.plan[key] = 'absent.json'
+                self.write()
+                self.refused('producer plan ' + key + ' is not captured')
+                self.plan[key] = path
+        write_json(self.source / 'templates/qualification.json', {})
+        self.write()
+        self.refused('expected fields: schema profile native_writer fixture_sha256 sources')
+
+    def test_generated_net_constraint_record_cannot_overwrite_a_capture(self):
+        self.use_net_constraints()
+        (self.source / 'project/design.net-constraints.record.json').write_text('{}')
+        self.write()
+        self.refused('derived net constraint artifacts collide with captured inputs')
+
+    def test_net_constraints_with_hierarchy_preserve_captured_design_replacement(self):
+        import uuid
+        from agent_ee.symbol_library import parse_sexpr
+        self.use_net_constraints()
+        child = str(uuid.uuid5(uuid.NAMESPACE_URL, 'owned-producer-netclasses-child'))
+        self.parts['parts'][1]['instances'][0]['sheet'] = '/' + child + '/'
+        write_json(self.source / 'parts.json', self.parts)
+        child_rel = 'project/block-' + child + '.kicad_sch'
+        (self.source / child_rel).write_text('old captured design to replace')
+        self.write()
+        receipt = self.build()
+        self.assertIn('/' + child + '/', receipt['sheets'])
+        self.assertEqual(parse_sexpr((self.root / 'produced/inputs' / child_rel).read_bytes())[0], 'kicad_sch')
+        scope = read_json(self.root / 'produced/scope.json')
+        self.assertNotIn('stages', scope)
+        self.assertTrue(all('stage' not in c for c in scope['checks']))
+        self.assertEqual(scope['checks'][3]['kind'], 'netclass_completeness')
+
+    def test_degenerate_minimum_via_is_not_masked_by_preferred_values(self):
+        self.use_net_constraints()
+        for pad in (0.25, 0.2):
+            with self.subTest(pad=pad):
+                self.limits = [('min_via_pad_mm', pad, tier) if key == 'min_via_pad_mm' and tier == 'minimum'
+                               else (key, value, tier) for key, value, tier in LIMITS]
+                self.write()
+                self.refused('minimum via pad must exceed via drill, independently of preferred values')
+
     def test_derives_checks_mappings_and_rules_byte_identically(self):
         first, second = self.build('a'), self.build('b')
         inventories = [{p.relative_to(self.root / name).as_posix(): p.read_bytes()
@@ -328,9 +522,9 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
     def test_template_rule_authority_is_refused(self):
         native = read_json(TEMPLATE)
         cases = {
-            'beyond Default need AGENTEE-47': lambda t: t['net_settings']['classes'].append(
+            'beyond Default are refused': lambda t: t['net_settings']['classes'].append(
                 {**t['net_settings']['classes'][0], 'name': 'Power'}),
-            'beyond Default need AGENTEE-47 ': lambda t: t['net_settings']['netclass_patterns'].append(
+            'beyond Default are refused ': lambda t: t['net_settings']['netclass_patterns'].append(
                 dict(netclass='Default', pattern='*')),
             'ignore derived rule severities.*clearance': lambda t: t['board'].update(
                 design_settings=dict(rule_severities=dict(clearance='ignore'))),
@@ -394,6 +588,60 @@ class NativeProducerTests(ProducerFixture, unittest.TestCase):
     def setUp(self):
         require_toolchain(native=True)
         super().setUp()
+
+    def test_native_per_net_classes_and_width_rules_are_loaded(self):
+        from agent_ee.executor import execute
+        self.use_net_constraints()
+        self.build()
+        produced = self.root / 'produced/inputs'
+        script = '''import json, pcbnew as k
+b = k.LoadBoard('/candidate/project/design.kicad_pcb')
+names = ['CAN+', 'CAN-', 'CANN', 'GNSS_RF', '+12V', '+5V', '+3.3V', 'GND']
+resolved = {}
+mm = lambda v: int(round(v * 1e6))
+for name in names:
+    n = k.NETINFO_ITEM(b, name)
+    b.Add(n)
+b.SynchronizeNetsAndNetClasses(False)
+for i, name in enumerate(names):
+    n = b.FindNet(name)
+    c = n.GetNetClassSlow()
+    resolved[name] = dict(name=c.GetName(), width=c.GetTrackWidth(), clearance=c.GetClearance(),
+        gap=c.GetDiffPairGap(), via_gap=c.GetDiffPairViaGap(), pair_width=c.GetDiffPairWidth())
+    t = k.PCB_TRACK(b)
+    t.SetNet(n)
+    t.SetLayer(k.F_Cu)
+    t.SetStart(k.VECTOR2I(mm(100), mm(97 + i)))
+    t.SetEnd(k.VECTOR2I(mm(110), mm(97 + i)))
+    t.SetWidth(mm(0.25 if name == '+12V' else c.GetTrackWidth() / 1e6))
+    b.Add(t)
+print(json.dumps(resolved))
+k.SaveBoard('/work/design.kicad_pcb', b)
+'''
+        work = self.root / 'native-classes'
+        result = execute(produced, work, ['/usr/bin/python3', '-c', script], timeout=60)
+        self.assertEqual(result['execution'], 'ok', (result, (work / 'stderr.log').read_text()))
+        native = json.loads((work / 'stdout.log').read_text())
+        self.assertEqual({name: c['name'] for name, c in native.items()}, {
+            'CAN+': 'CAN', 'CAN-': 'CAN', 'CANN': 'Default', 'GNSS_RF': 'RF_50',
+            '+12V': 'PWR', '+5V': 'PWR', '+3.3V': 'PWR', 'GND': 'Default'})
+        self.assertEqual(native['CAN+'], dict(name='CAN', width=250000, clearance=180000,
+                                            gap=200000, via_gap=220000, pair_width=250000))
+        self.assertEqual(native['GNSS_RF']['width'], 300000)
+        self.assertEqual(native['+12V']['width'], 1012000)
+        self.assertEqual(native['GND']['clearance'], 150000)
+        candidate = self.root / 'native-widths'
+        shutil.copytree(produced, candidate)
+        shutil.copyfile(work / 'design.kicad_pcb', candidate / 'project/design.kicad_pcb')
+        drc_work = self.root / 'native-widths-drc'
+        result = execute(candidate, drc_work, ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
+            '--units', 'mm', '-o', '/work/drc.json', '/candidate/project/design.kicad_pcb'], timeout=120)
+        self.assertEqual(result['execution'], 'ok', result)
+        report = read_json(drc_work / 'drc.json')
+        width_errors = [v for v in report['violations'] if v['type'] == 'track_width']
+        self.assertEqual(len(width_errors), 1, report)
+        self.assertIn("rule 'agent_ee_netclass_PWR' min width 1.0120 mm; actual 0.2500 mm",
+                      width_errors[0]['description'])
 
     def test_cli_produce_and_review_with_native_rules_loaded(self):
         proc = subprocess.run([sys.executable, '-m', 'agent_ee.cli', 'scaffold', str(self.source / 'envelope.json'),

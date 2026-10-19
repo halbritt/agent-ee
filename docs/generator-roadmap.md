@@ -90,8 +90,10 @@ coordinate and export-log checks, and seals the artifact hashes. A scope with a
 `generation` marker is refused at capture without it.
 
 [Net constraints](net-constraints.md) (AGENTEE-47) emit intent netclasses, width
-rules and the record that `copper-width/1` binds. Rung 2's routing row still
-needs those outputs carried into a scaffold template and a native routing attempt.
+rules and the record that `copper-width/1` binds. The [scaffold producer](scaffold.md#per-net-classes)
+(AGENTEE-184) consumes captured constraints directly and emits the classes,
+assignments, rules and record beside the board. A native routing attempt must
+still consume that project; scaffolding establishes no routed-board acceptance.
 Requirements a rung cannot check must be listed as limitations in its scope
 and its record; they are not counted as passing.
 

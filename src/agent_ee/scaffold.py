@@ -31,6 +31,7 @@ PRODUCED_SCHEMA = 'agent-ee.scaffold-receipt/2'
 PLAN_SCHEMA = 'agent-ee.scaffold-plan/1'
 PLAN_FIELDS = ('schema', 'name', 'scope', 'limitations', 'inputs', 'project', 'template', 'fab_profile',
                'native_requirement', 'targets', 'reference_architectures', 'finding_retry_limit')
+NET_PLAN_FIELDS = frozenset({'net_constraints', 'netclass_qualification'})
 # Every fab-profile key with a native KiCad project rule; each is required.
 RULE_KEYS = ('min_clearance_mm', 'min_trace_mm', 'min_via_pad_mm', 'min_via_drill_mm',
              'min_edge_clearance_mm', 'min_hole_to_hole_mm')
@@ -52,7 +53,7 @@ PRODUCER_LIMITATIONS = [
     'the captured fab profile minimum tier; the Default track width and via size take the preferred tier as '
     'routing defaults; other KiCad rule settings keep the captured template values.',
     'Stage subjects are the parts manifest required root-sheet selectors; no fab_package done gate, '
-    'scope/3 envelope acceptance or per-net classes are derived.']
+    'scope/3 envelope acceptance is derived. Per-net classes require captured net constraints.']
 # Stage of each derived check. The fab check's native loading witness needs a saved track.
 STAGES = (('erc', 'schematic'), ('netlist', 'schematic'), ('parts', 'schematic'),
           ('drc', 'placement'), ('fab', 'routing'))
@@ -210,9 +211,15 @@ def validate_plan(plan):
     """Exact producer plan fields; nothing the envelope or parts manifest defines."""
     if not isinstance(plan, dict) or plan.get('schema') != PLAN_SCHEMA:
         raise ValueError('producer plan must be ' + PLAN_SCHEMA)
-    missing, unknown = sorted(set(PLAN_FIELDS) - plan.keys()), sorted(plan.keys() - set(PLAN_FIELDS))
+    missing = sorted(set(PLAN_FIELDS) - plan.keys())
+    unknown = sorted(plan.keys() - set(PLAN_FIELDS) - NET_PLAN_FIELDS)
     if missing or unknown:
         raise ValueError(f'producer plan fields: missing {missing}, unknown {unknown}')
+    if NET_PLAN_FIELDS & plan.keys():
+        if not NET_PLAN_FIELDS <= plan.keys():
+            raise ValueError('producer plan net_constraints and netclass_qualification are required together')
+        for field in sorted(NET_PLAN_FIELDS):
+            canonical(plan[field], field)
     for field in ('name', 'scope'):
         if not isinstance(plan[field], str) or not plan[field].strip():
             raise ValueError(f'producer plan requires nonempty {field}')
@@ -302,6 +309,9 @@ def produced_rules(plan, files, inputs):
             targets.append(cite(preferred, field if applied else None, preferred['expected']['value'],
                                 consumer='Default class routing default' if applied else UNCONSUMED_TARGET))
     values = {item['setting'].rsplit('.', 1)[1]: item['value'] for item in netclass}
+    minimum_values = {key: ready[key, 'minimum']['expected']['value'] for key in NETCLASS_FIELDS}
+    if minimum_values['min_via_pad_mm'] <= minimum_values['min_via_drill_mm']:
+        raise ValueError('fab profile minimum via pad must exceed via drill, independently of preferred values')
     if values['via_diameter'] <= values['via_drill']:
         raise ValueError('fab profile via pad must exceed via drill for the Default class')
     return compiled, requirements[0], rules, netclass, targets
@@ -319,8 +329,7 @@ def produced_project(inputs, template_rel, rules, netclass):
     settings = project['net_settings']
     if ([c['name'] for c in settings['classes']] != ['Default'] or settings.get('netclass_patterns') or
             settings.get('netclass_assignments')):
-        raise ValueError('template net classes beyond Default need AGENTEE-47 net constraints; '
-                         'the producer derives only Default')
+        raise ValueError('template net classes beyond Default are refused; supply captured net constraints instead')
     design = project.get('board', {})
     design = design.get('design_settings', {}) if isinstance(design, dict) else None
     severities = design.get('rule_severities', {}) if isinstance(design, dict) else None
@@ -339,6 +348,34 @@ def produced_project(inputs, template_rel, rules, netclass):
     return project
 
 
+def produced_netclasses(plan, inputs, envelope_rel, project, rules):
+    """Reuse the net-constraint emitter, then enforce the captured fabrication floors."""
+    from .net_constraints import emit, parse_document
+    raw = read_captured(inputs, plan['net_constraints'])
+    # Check declarations before the emitter rounds widths up to its 0.001 mm grid.
+    _, declared = parse_document(raw)
+    minima = {r['key']: r['value'] for r in rules}
+    for spec in declared:
+        for field, key in (('track_width_mm', 'min_trace_mm'), ('clearance_mm', 'min_clearance_mm')):
+            if field in spec and spec[field] < minima[key]:
+                raise ValueError(f"net class {spec['name']} {field} is below fab minimum {key}")
+        for field in ('gap_mm', 'via_gap_mm'):
+            if field in spec.get('diff_pair', {}) and spec['diff_pair'][field] < minima['min_clearance_mm']:
+                raise ValueError(f"net class {spec['name']} {field} is below fab minimum min_clearance_mm")
+    artifacts = emit(raw, json_bytes(project), envelope_raw=read_captured(inputs, envelope_rel))
+    report = strict_json(artifacts['record'])
+    if report['outcome'] != 'pass':
+        raise ValueError('net constraints unresolved: ' + str(report['findings']))
+    project = strict_json(artifacts['project'])
+    for cls in project['net_settings']['classes']:
+        for key, field in NETCLASS_FIELDS.items():
+            if cls[field] < minima[key]:
+                raise ValueError(f"net class {cls['name']} {field} is below fab minimum {key}")
+        if cls['via_diameter'] <= cls['via_drill']:
+            raise ValueError(f"net class {cls['name']} via pad must exceed via drill")
+    return project, artifacts, report
+
+
 def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualification, sch, pcb):
     """Derive the scope/2 checks, mappings and project rules; refuse incomplete inputs by name."""
     record = produced_envelope(plan, files, inputs, envelope_rel)
@@ -351,6 +388,9 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
         raise ValueError('envelope fixed footprints are not declared parts instances: ' + ', '.join(stray))
     compiled, fab_requirement, rules, netclass, targets = produced_rules(plan, files, inputs)
     project = produced_project(inputs, plan['template'], rules, netclass)
+    net_artifacts, net_report = {}, None
+    if 'net_constraints' in plan:
+        project, net_artifacts, net_report = produced_netclasses(plan, inputs, envelope_rel, project, rules)
     native = plan['native_requirement']
     ids = [native['id'], PARTS_REQUIREMENT, fab_requirement]
     if len(set(ids)) != len(ids):
@@ -370,6 +410,10 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
                      manifest=parts_rel, netlist_check='netlist', requirement_id=PARTS_REQUIREMENT)),
                  drc=dict(id='drc', kind='drc'), fab=dict(id='fab', kind='fab_profile',
                                                          params=dict(fab_profile=profile_rel)))
+    if net_report is not None:
+        specs['netclasses'] = dict(id='netclasses', kind='netclass_completeness', params=dict(
+            project=sch.removesuffix('.kicad_sch') + '.kicad_pro', qualification=plan['netclass_qualification']))
+        requirements[0]['checks'].append('netclasses')
     required = [s for part in document['parts'] if part['required'] for s in part['instances']]
     hierarchical = sorted(s['reference'] for s in required if s['sheet'] != '/')
     stages = None
@@ -388,6 +432,9 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
                       finding_retry_limit=plan['finding_retry_limit'])
         staging = dict(status='derived', source=parts_rel + ' required selectors',
                        routing='fab_profile needs a saved track for its native rule-loading witness')
+    if net_report is not None:
+        check = specs['netclasses'] if stages is None else dict(specs['netclasses'], stage='placement')
+        checks.insert(len(checks) - 2, check)
     scope = dict(schema='agent-ee.scope/2', name=plan['name'], scope=plan['scope'],
                  limitations=[*plan['limitations'], *PRODUCER_LIMITATIONS], inputs=plan['inputs'],
                  schematic=sch, board=pcb, mutable_inputs=[], checks=checks,
@@ -409,11 +456,18 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
                 dict(id='parts', kind='parts_subset', source=parts_rel + ' declaration_source'),
                 dict(id='drc', kind='drc', source='plan native_requirement; project rules from ' + profile_rel),
                 dict(id='fab', kind='fab_profile', source=envelope_rel + ' /fab_profile')],
-        not_derived=['Net classes other than Default: AGENTEE-47 net constraints are unavailable.',
-                     'KiCad rule settings outside the six fab-profile keys keep the template values.',
+        not_derived=['KiCad rule settings outside the six fab-profile keys keep the template values.',
                      'fab_package done gate and envelope obligation coverage.'])
     protected = {profile_rel, plan['template'], native['source']['path'], *compiled['immutable_inputs']}
-    return record, scope, project, derivation, protected
+    if net_report is not None:
+        protected.update(plan[field] for field in NET_PLAN_FIELDS)
+        derivation['net_constraints'] = dict(path=plan['net_constraints'], sha256=files[plan['net_constraints']],
+                                            classes=net_report['classes'], nets=net_report['nets'])
+        derivation['checks'].append(dict(id='netclasses', kind='netclass_completeness',
+                                         source=plan['netclass_qualification']))
+    else:
+        derivation['not_derived'].append('Per-net classes: no net_constraints capture supplied.')
+    return record, scope, project, derivation, protected, net_artifacts
 
 
 def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None):
@@ -458,7 +512,7 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
         for rel in (pro, str(PurePosixPath(sch).with_suffix('.kicad_dru'))):
             if rel in files:
                 raise ValueError('the producer derives project rules; refusing captured ' + rel)
-        for field in ('template', 'fab_profile'):
+        for field in ('template', 'fab_profile', *sorted(NET_PLAN_FIELDS & scope.keys())):
             if scope[field] not in files:
                 raise ValueError(f'producer plan {field} is not captured: {scope[field]}')
     if out.exists() or out.is_symlink():
@@ -486,8 +540,9 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
         protected = set(qualification['dependencies']) | {parts_rel, envelope_rel}
         if plan is None:
             project, derivation = strict_json(read_captured(inputs, pro)), None
+            net_artifacts = {}
         else:
-            record, scope, project, derivation, extra = produce(
+            record, scope, project, derivation, extra, net_artifacts = produce(
                 plan, files, inputs, envelope_rel, parts_rel, document, qualification, sch, pcb)
             validate_scope(scope)
             protected |= extra
@@ -500,6 +555,19 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
         seed = identity({'envelope': files[envelope_rel], 'parts': files[parts_rel]})
         root = str(uuid.uuid5(NAMESPACE, seed + ':root'))
         outputs = native_files(record, sch, project, root, seed, plans)
+        if net_artifacts:
+            record_rel = str(PurePosixPath(pro).with_suffix('.net-constraints.record.json'))
+            report = strict_json(net_artifacts['record'])
+            # The shared builder has now added the final sheet and filename metadata.
+            report['project_sha256'] = hashlib.sha256(outputs[pro]).hexdigest()
+            net_outputs = {record_rel: json_bytes(report)}
+            if 'rules' in net_artifacts:
+                net_outputs[str(PurePosixPath(pro).with_suffix('.kicad_dru'))] = net_artifacts['rules']
+            if net_outputs.keys() & files.keys():
+                raise ValueError('derived net constraint artifacts collide with captured inputs')
+            outputs.update(net_outputs)
+            derivation['net_constraints']['record'] = record_rel
+            scope['requirements'] = sorted({*scope['requirements'], plan['net_constraints'], *net_outputs})
         outputs.update(library_tables(document, inputs, str(PurePosixPath(sch).parent)))
         if protected & outputs.keys():
             raise ValueError('scaffold library tables collide with immutable planning inputs')
