@@ -26,6 +26,21 @@ project directory exists. The receipt is always written to a new file. An
 existing output directory is refused. The emitter reads only the declared
 `.kicad_sym` captures and never searches installed libraries or tables.
 
+`part_binding.PARAM_Datasheet` retains the original zero-to-256-character
+free-text validation, including empty strings and local filenames. Values that
+begin with `{` after leading whitespace must instead be canonical structured
+bindings; malformed object-like values never fall back to free text.
+The structured path accepts at most 2048 UTF-8 bytes of canonical
+`agent-ee.datasheet-binding/1` JSON (AGENTEE-293). This fixed bound gives captured
+manufacturer URLs room beyond the 256-character free-text limit, while bounding
+parsing and native property storage. The existing `part_binding.parse_param_value`
+validates the schema, URL and PDF identity; `storage.canonical` defines the exact
+JSON spelling. The emitter preserves the accepted bytes, including the full URL
+and identity. Duplicate keys, noncanonical JSON, controls, backslashes and `${`
+text variables are refused. All ordinary fields, including `Datasheet` and other
+`PARAM_*` properties, keep their 256-character limit. The probe identity property
+retains its separate existing contract.
+
 ## Inputs
 
 - Raw `agent-ee.connectivity-intent/1` or `/2` ([connectivity intent](connectivity-ir.md)).
@@ -370,6 +385,7 @@ Generation either succeeds completely or writes nothing:
 | `impossible_pin_endpoint` | Two pins would share one connection point, other than stacked pins of one unit on one net |
 | `malformed_net_name`, `duplicate_net_name` | Net names must be unique and match `[A-Za-z0-9_+.-]{1,64}`, so bus syntax, markup and text variables cannot change connectivity |
 | `malformed_reference`, `malformed_value`, `malformed_footprint` | References need a number and a `#` prefix exactly for power symbols; values refuse control characters, backslashes and `${`; footprints are empty or `Library:Name` |
+| `malformed_part_binding` | A binding overrides native identity or flags, violates the ordinary text limit, or has an unsafe, malformed, noncanonical or over-2048-byte `PARAM_Datasheet` value |
 | `power_net_mismatch`, `unsupported_power_symbol` | A `power_in` power symbol's value must equal its net's name; power symbols have one connected pin |
 | `paper_overflow` | The content does not fit on A0 |
 | `presentation_conflict` | The functional arrangement's drawn pins, wires and labels do not reproduce the intent partition exactly, a wire passes through a connection point, or a no-connect pin touches a drawn connection (an internal guard; no output is written) |
@@ -378,6 +394,10 @@ Generation either succeeds completely or writes nothing:
 
 Tests: `tests/test_schematic_emitter.py`, using original fixtures in
 `fixtures/generation` ([provenance](../fixtures/generation/PROVENANCE.md)).
+The long datasheet-binding regression uses a representative 152-character
+Microchip URL with an original synthetic PDF identity. It tests the 278-byte
+binding and exact 2048-byte boundary, malformed and unsafe refusals, and native
+forced-save byte preservation followed by XML netlist export.
 Native tests run KiCad 10.0.7 `kicad-cli` through the production Bubblewrap
 executor with networking unshared:
 

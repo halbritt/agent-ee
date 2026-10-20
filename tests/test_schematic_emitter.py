@@ -28,6 +28,15 @@ except ImportError:  # module-qualified invocation from the repository root
 ROOT = Path(__file__).resolve().parents[1] / 'fixtures/generation'
 PROJECT = ROOT / 'project'
 MM = 1000000
+LONG_DATASHEET_URL = ('https://ww1.microchip.com/downloads/aemDocuments/documents/OTH/'
+                     'ProductDocuments/DataSheets/External-CAN-FD-Controller-with-SPI-Interface-DS20006027B.pdf')
+
+
+def datasheet_binding(url=LONG_DATASHEET_URL):
+    # Original synthetic identity; no vendor document bytes are retained.
+    return json.dumps({'schema': 'agent-ee.datasheet-binding/1', 'url': url,
+                       'sha256': hashlib.sha256(b'owned datasheet fixture').hexdigest()},
+                      sort_keys=True, separators=(',', ':'))
 
 
 def load(name):
@@ -308,6 +317,32 @@ class DeterminismTests(unittest.TestCase):
         self.assertIn(['hide', 'yes'], props['LCSC'])
         self.assertEqual(files, emit(intent=intent)[1])
 
+    def test_long_canonical_datasheet_binding_and_exact_byte_limit(self):
+        for raw in (datasheet_binding(), datasheet_binding('https://example.com/' + 'a' * 1902)):
+            with self.subTest(length=len(raw)):
+                self.assertIn(len(raw.encode('utf-8')), (278, 2048))
+                intent = load('regulator.intent.json')
+                intent['components'][0]['part_binding'] = {'PARAM_Datasheet': raw}
+                result, files = emit(intent=intent)
+                self.assertEqual(result['execution'], 'ok', result['findings'])
+                symbol = next(s for s in children(parse_sexpr(files['regulator.kicad_sch']), 'symbol')
+                              if any(p[1:3] == ['Reference', 'J1'] for p in children(s, 'property')))
+                prop = next(p for p in children(symbol, 'property') if p[1] == 'PARAM_Datasheet')
+                self.assertEqual(prop[2].encode('utf-8'), raw.encode('utf-8'))
+                self.assertIn(['hide', 'yes'], prop)
+
+    def test_legacy_datasheet_text_preserves_original_validation(self):
+        for raw in ('', 'owned-datasheet.pdf', '[]', 'x' * 256, 'é' * 256):
+            with self.subTest(value=raw):
+                intent = load('regulator.intent.json')
+                intent['components'][0]['part_binding'] = {'PARAM_Datasheet': raw}
+                result, files = emit(intent=intent)
+                self.assertEqual(result['execution'], 'ok', result['findings'])
+                symbol = next(s for s in children(parse_sexpr(files['regulator.kicad_sch']), 'symbol')
+                              if any(p[1:3] == ['Reference', 'J1'] for p in children(s, 'property')))
+                prop = next(p for p in children(symbol, 'property') if p[1] == 'PARAM_Datasheet')
+                self.assertEqual(prop[2].encode('utf-8'), raw.encode('utf-8'))
+
     def test_derived_metadata_overrides_without_mutating_capture(self):
         intent, captured = derived_inputs(middle='(in_pos_files no) (property "Owner" "middle")',
                                          leaf='(exclude_from_sim yes) (property "Owner" "leaf")')
@@ -390,6 +425,48 @@ class DeterminismTests(unittest.TestCase):
 
 
 class RefusalTests(unittest.TestCase):
+    def test_invalid_structured_datasheet_bindings_are_refused(self):
+        raw = datasheet_binding()
+        invalid = [None, 123, '{', ' {', ' ' + raw, raw + ' ',
+                   json.dumps(json.loads(raw)),
+                   raw.replace('"schema":', '"extra":true,"schema":'),
+                   raw.replace('"schema":', '"schema":"duplicate","schema":'),
+                   raw.replace('binding/1', 'binding/2'),
+                   raw.replace(json.loads(raw)['sha256'], 'invalid'),
+                   datasheet_binding('file:///tmp/document.pdf'),
+                   datasheet_binding('https://example.com/${INJECT}'),
+                   datasheet_binding('https://example.com/\\escape'),
+                   datasheet_binding('https://example.com/\ncontrol'),
+                   datasheet_binding('https://example.com/\x7fcontrol'),
+                   datasheet_binding('https://example.com/\u0080control'),
+                   raw.replace('https:', 'https:\n'),
+                   datasheet_binding('https://example.com/' + 'a' * 1903)]
+        self.assertEqual(len(invalid[-1].encode('utf-8')), 2049)
+        for value in invalid:
+            with self.subTest(value=value):
+                intent = load('regulator.intent.json')
+                intent['components'][0]['part_binding'] = {'PARAM_Datasheet': value}
+                result = self.assertRefused('malformed_part_binding', intent)
+                self.assertEqual(result['findings'][0]['location'],
+                                 '/components/j_in/part_binding/PARAM_Datasheet')
+
+    def test_unsafe_or_overlong_legacy_datasheet_text_is_refused(self):
+        for raw in ('x' * 257, 'é' * 257, '${INJECT}', 'owned\\datasheet.pdf',
+                    'owned\ndatasheet.pdf', 'owned\x7fdatasheet.pdf'):
+            with self.subTest(value=raw):
+                intent = load('regulator.intent.json')
+                intent['components'][0]['part_binding'] = {'PARAM_Datasheet': raw}
+                self.assertRefused('malformed_part_binding', intent)
+
+    def test_ordinary_fields_keep_256_character_limit(self):
+        for field in ('Datasheet', 'Manufacturer', 'PARAM_voltage'):
+            intent = load('regulator.intent.json')
+            intent['components'][0]['part_binding'] = {field: 'x' * 256}
+            self.assertEqual(emit(intent=intent)[0]['execution'], 'ok')
+            intent['components'][0]['part_binding'][field] += 'x'
+            with self.subTest(field=field):
+                self.assertRefused('malformed_part_binding', intent)
+
     def test_private_modifier_requires_bare_token_and_name_value_strings(self):
         for prop in ('(property "private" "N" "V" (at 0 0 0))',
                      '(property private "N" (at 0 0 0))',
@@ -674,6 +751,25 @@ def native_netlist(path):
 
 
 class NativeEmissionTests(unittest.TestCase):
+    def test_long_datasheet_binding_native_roundtrip(self):
+        intent = load('regulator.intent.json')
+        raw = datasheet_binding()
+        intent['components'][0]['part_binding'] = {'PARAM_Datasheet': raw}
+        result, files = emit(intent=intent, **tables())
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        project = native_project({**captures(intent), **files}, Path(self.tmp) / 'datasheet')
+        work = Path(self.tmp) / 'datasheet/work'
+        self.assertNativeResave(project, work, 'regulator', files)
+        run_native(project, work, 'kicad-cli', 'sch', 'export', 'netlist',
+                   '--format', 'kicadxml', '-o', '/work/design.xml',
+                   '/work/resave/copy/regulator.kicad_sch')
+        props = [p for s in children(parse_sexpr((work / 'resave/copy/regulator.kicad_sch').read_bytes()),
+                                     'symbol') for p in children(s, 'property') if p[1] == 'PARAM_Datasheet']
+        self.assertEqual([p[2].encode('utf-8') for p in props], [raw.encode('utf-8')])
+        xml = ET.parse(work / 'design.xml').getroot()
+        exported = xml.findall('./components/comp/fields/field[@name="PARAM_Datasheet"]')
+        self.assertEqual([field.text.encode('utf-8') for field in exported], [raw.encode('utf-8')])
+
     def test_native_refuses_malformed_private_property_shapes(self):
         from agent_ee.schematic_emitter import _scan, _dump
         intent, captured = derived_inputs()

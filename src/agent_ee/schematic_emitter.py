@@ -20,6 +20,8 @@ from decimal import Decimal
 from pathlib import Path, PurePosixPath
 
 from .connectivity_ir import _json_bytes, _read_json, canonical_resolved, resolve_intent, validate_resolved
+from .part_binding import PartBindingMalformedError, parse_param_value
+from .storage import canonical
 from .symbol_context import build_context
 from .symbol_library import LibraryError, ParsedLibraries, children, parse_sexpr
 
@@ -49,6 +51,8 @@ SHEET_FILE = re.compile(r'[A-Za-z0-9_\-]{1,64}\.kicad_sch')
 REFERENCE = re.compile(r'#?[A-Za-z_]{1,16}[0-9]{1,6}')
 FOOTPRINT = re.compile(r'[A-Za-z0-9_+\-.]{1,128}:[A-Za-z0-9_+\-.,]{1,256}')
 TEXT = re.compile(r'[\x20-\x7e\u00a0-\uffff]{0,256}')
+# Canonical binding JSON is ASCII; this is also a UTF-8 byte bound.
+DATASHEET_BINDING_TEXT = re.compile(r'[\x20-\x7e]{1,2048}')
 BARE = re.compile(r'[^\s()";]+')
 XY_WRAP = 99  # Native point-list wrap column (tabs count one), fitted to KiCad 10.0.7 output.
 INSTANCE_FLAGS = (('exclude_from_sim', 'no'), ('in_bom', 'yes'), ('on_board', 'yes'),
@@ -350,6 +354,22 @@ def _field_text(value, code, location):
     return value
 
 
+def _datasheet_binding_text(value, location):
+    if isinstance(value, str) and not value.lstrip().startswith('{'):
+        return _field_text(value, 'malformed_part_binding', location)
+    if (not isinstance(value, str) or not DATASHEET_BINDING_TEXT.fullmatch(value)
+            or '${' in value or '\\' in value):
+        raise EmissionError('malformed_part_binding',
+                            'datasheet binding requires safe canonical JSON of at most 2048 bytes', location)
+    try:
+        parsed = parse_param_value(value, 'PARAM_Datasheet')
+    except PartBindingMalformedError as exc:
+        raise EmissionError('malformed_part_binding', str(exc), location) from exc
+    if canonical(parsed).decode('ascii') != value:
+        raise EmissionError('malformed_part_binding', 'datasheet binding JSON must be canonical', location)
+    return value
+
+
 def _property(prop, value, anchor, matrix, rotation, placed=None):
     """Instance property from a library property, at transformed sheet position.
 
@@ -421,7 +441,9 @@ def _plan(resolved, captured, intent_libraries, transforms, cache, trees):
                                 'exclude_from_board', 'exclude_from_bom', 'exclude_from_sim', 'in_pos_files'}
                     or name.startswith('ki_')):
                 raise EmissionError('malformed_part_binding', 'binding cannot override native identity or flags', location)
-            if name == 'AGENT_EE_Probe':
+            if name == 'PARAM_Datasheet':
+                _datasheet_binding_text(value, location + '/part_binding/' + name)
+            elif name == 'AGENT_EE_Probe':
                 from .probe_features import parse_marker
                 if not isinstance(value, str) or len(value) > 4096 or '${' in value or '\\' in value:
                     raise EmissionError('malformed_part_binding', 'invalid probe identity property', location)

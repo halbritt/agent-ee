@@ -173,7 +173,8 @@ transform using captured axis facts. Hierarchical staged
 presence remains unavailable.
 
 The [schematic emitter](docs/schematic-emitter.md) preserves KiCad 10 private
-symbol metadata and supports explicit component BOM flags. Declared
+symbol metadata, supports explicit component BOM flags, and preserves canonical
+structured datasheet bindings up to 2048 bytes (AGENTEE-293). Declared
 [copper features](docs/fab-export.md#copper-features) qualify for fab BOM/CPL
 exclusion through both fab gates, with manufacturer/distributor binding detection
 and typed refusal of malformed property values (AGENTEE-289, AGENTEE-290).
