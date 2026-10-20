@@ -212,7 +212,7 @@ def main(argv=None):
     parser.add_argument('--source', required=True, help='captured requirement source path')
     parser.add_argument('--source-file', help='file supplying exact source bytes (defaults to --source in cwd)')
     parser.add_argument('--require-source-sha256', action='store_true',
-                        help='refuse compilation if requirement source bytes are unavailable')
+                        help='require source digests (the CLI always requires readable source bytes)')
     parser.add_argument('--locator', required=True)
     parser.add_argument('--bindings', help='interface/1 contract supplying explicit terminal bindings')
     parser.add_argument('--spec-record', help='require complete POD-IF-* row traceability')
@@ -224,10 +224,8 @@ def main(argv=None):
     try:
         try:
             source_bytes = Path(args.source_file if args.source_file is not None else args.source).read_bytes()
-        except FileNotFoundError:
-            if args.source_file is not None or args.require_source_sha256:
-                raise
-            source_bytes = None
+        except FileNotFoundError as exc:
+            parser.exit(2, f'io-map: missing-source (FileNotFoundError): {exc}\n')
         contract = compile_io_map(Path(args.csv).read_bytes(), csv_path=args.csv_path,
             requirement=text(args.requirement), source=dict(path=args.source, locator=args.locator),
             bindings=load(args.bindings), spec_record=load(args.spec_record), paths=load(args.paths),

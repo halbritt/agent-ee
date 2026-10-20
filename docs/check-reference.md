@@ -914,9 +914,10 @@ Invariant `source.sha256` optionally binds exact captured requirement bytes;
 malformed or mismatched hashes are refused. Each local source path must use
 one digest on all its invariants or omit it on all, including validation without
 source bytes. A declared digest adds the requirement file to immutable inputs.
-The compiler's
-`--require-source-sha256` option requires source bytes, while digest-free legacy
-contracts retain their existing validation. See [source options](io-map.md#requirements-source-provenance).
+The compiler CLI always requires readable source bytes and refuses a missing
+source with exit 2 and a typed error before writing a contract;
+`--require-source-sha256` remains accepted. Digest-free legacy contracts retain
+their existing validation. See [source options](io-map.md#requirements-source-provenance).
 Concrete MCU rows require an explicit `MCU_Path=direct` declaration or the IDs
 of declared [indirect paths](io-map.md#indirect-mcu-paths). Undeclared path names
 are refused with their CSV row; TBD MCU rows keep an unresolved predicate without

@@ -331,11 +331,28 @@ class IoMapTests(unittest.TestCase):
 
     def test_cli_reproduces_pod_fixture(self):
         with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / 'contract.json'
-            self.assertEqual(main([str(POD / 'io-map.csv'), '--csv-path', 'io-map.csv',
+            root = Path(tmp)
+            out = root / 'contract.json'
+            args = [str(POD / 'io-map.csv'), '--csv-path', 'io-map.csv',
                 '--requirement', 'POD-AC-1', '--source', 'spec.md', '--locator', 'Acceptance criteria / item 1',
-                '--spec-record', str(POD / 'spec-record.json'), '--out', str(out)]), 0)
-            self.assertEqual(read_json(out), read_json(POD / 'io-map.interface.json'))
+                '--spec-record', str(POD / 'spec-record.json'), '--out', str(out)]
+            stderr, stdout = io.StringIO(), io.StringIO()
+            with contextlib.chdir(root), contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):
+                with self.assertRaises(SystemExit) as refused:
+                    main(args)
+            self.assertEqual(refused.exception.code, 2)
+            self.assertIn('missing-source (FileNotFoundError)', stderr.getvalue())
+            self.assertIn('spec.md', stderr.getvalue())
+            self.assertEqual(stdout.getvalue(), '')
+            self.assertFalse(out.exists())
+            source_bytes = (POD / 'spec.md').read_bytes()
+            (root / 'spec.md').write_bytes(source_bytes)
+            with contextlib.chdir(root):
+                self.assertEqual(main(args), 0)
+            expected = read_json(POD / 'io-map.interface.json')
+            for invariant in expected['invariants']:
+                invariant['source']['sha256'] = hashlib.sha256(source_bytes).hexdigest()
+            self.assertEqual(read_json(out), expected)
 
     def test_fome_mc_can1_contract_cross_check(self):
         fixture = validate_contract(read_json(POD / 'fome-mc-can1.interface.json'))
@@ -681,10 +698,27 @@ class IndirectPathTests(unittest.TestCase):
             (root / 'io-map.csv').write_bytes(csv_bytes(PATH_ROWS))
             write_json(root / 'paths.json', path_declarations())
             write_json(root / 'bindings.json', path_bindings())
-            self.assertEqual(main([str(root / 'io-map.csv'), '--csv-path', 'io-map.csv', '--requirement', 'interface',
+            out = root / 'contract.json'
+            args = [str(root / 'io-map.csv'), '--csv-path', 'io-map.csv', '--requirement', 'interface',
                 '--source', SOURCE['path'], '--locator', SOURCE['locator'], '--bindings', str(root / 'bindings.json'),
-                '--paths', str(root / 'paths.json'), '--out', str(root / 'contract.json')]), 0)
-            self.assertEqual(read_json(root / 'contract.json'), compile_paths())
+                '--paths', str(root / 'paths.json'), '--out', str(out)]
+            stderr, stdout = io.StringIO(), io.StringIO()
+            with contextlib.chdir(root), contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):
+                with self.assertRaises(SystemExit) as refused:
+                    main(args)
+            self.assertEqual(refused.exception.code, 2)
+            self.assertIn('missing-source (FileNotFoundError)', stderr.getvalue())
+            self.assertIn(SOURCE['path'], stderr.getvalue())
+            self.assertEqual(stdout.getvalue(), '')
+            self.assertFalse(out.exists())
+            source_bytes = b'Original owner-declared indirect paths.\r\n'
+            (root / SOURCE['path']).write_bytes(source_bytes)
+            with contextlib.chdir(root):
+                self.assertEqual(main(args), 0)
+            expected = compile_paths()
+            for invariant in expected['invariants']:
+                invariant['source']['sha256'] = hashlib.sha256(source_bytes).hexdigest()
+            self.assertEqual(read_json(out), expected)
 
 
 class NativeIndirectPathTests(unittest.TestCase):
