@@ -1665,7 +1665,7 @@ method and unknown redirect provenance in its report and details. A verified
 citation proves text occurrence only; it supplies no redirect-provenance or
 release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
 
-The fab, `rung1_campaign`, `rung1_qualified`, pod scaffold/constraint, `add_planes` and `binding_fill` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file.
+The fab, `rung1_campaign`, `rung1_qualified`, `rung1_stages`, pod scaffold/constraint, envelope-content, schematic emission/annotation, `add_planes` and `binding_fill` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file. `tests.test_tool_source` discovers source-mount constructors across `src/agent_ee` and exercises every discovered builder against an original source fixture. It also proves prune-after-verified-reuse retention and exclusion of a concurrent prune during a real sandboxed step.
 
 Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
 an `acquisitions` map with acquisition method and redirect provenance, including

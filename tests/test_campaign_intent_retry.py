@@ -169,6 +169,7 @@ class IntentRetryTests(unittest.TestCase):
         copied = self.root / 'changed-source'
         shutil.copytree(spec['mounts'][0]['source'], copied)
         module = copied / 'agent_ee/schematic_stage.py'
+        module.chmod(0o600)
         module.write_text(module.read_text() + '\n# Different source identity.\n')
         spec['mounts'][0]['source'] = str(copied)
         status, state = self.campaign(self.stage['implementation_steps'])

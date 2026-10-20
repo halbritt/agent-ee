@@ -29,6 +29,7 @@ import sys
 from . import rung1_campaign as rc
 from . import rung1_qualified as rq
 from .storage import canonical, digest, identity, read_json, write_json
+from .tool_source import snapshot
 
 QUALIFICATION = 'experimental-unqualified'
 RECORD_SCHEMA = 'agent-ee.rung1-stage-record/0-experimental'
@@ -69,7 +70,7 @@ def requirements_step(source_root=PACKAGE_ROOT):
     return {'schema': 'agent-ee.stage-step/1', 'stage': 'scaffold', 'step': 'compile-requirements',
             'argv': ['/usr/bin/python3', '-B', '-c', code, '/candidate/requirements.record.json',
                      '--out', '/work/compiled'],
-            'mounts': [{'source': str(Path(source_root)), 'at': MOUNT_SOURCE}], 'source': MOUNT_SOURCE,
+            'mounts': [{'source': str(snapshot(source_root)), 'at': MOUNT_SOURCE}], 'source': MOUNT_SOURCE,
             'version_argv': ['/usr/bin/python3', '--version'], 'writes': {},
             'artifacts': ['compiled/scope.json', 'compiled/receipt.json', 'compiled/scaffold'],
             'adoptable_exits': [0], 'timeout_s': 300}

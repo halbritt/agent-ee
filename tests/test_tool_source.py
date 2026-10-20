@@ -105,6 +105,81 @@ class SnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'finite|nonnegative'):
             prune(older_than_days=float('nan'))
 
+    def test_verified_reuse_refreshes_prune_age_but_corruption_does_not(self):
+        from agent_ee.tool_source import prune
+        mounted = snapshot(self.source)
+        stamp = time.time() - 40 * 86400
+        os.utime(mounted, (stamp, stamp))
+        self.assertEqual(snapshot(self.source), mounted)
+        self.assertGreater(mounted.stat().st_mtime, stamp + 86400)
+        self.assertNotIn(mounted, prune(older_than_days=30))
+        self.assertTrue(mounted.exists())
+        (mounted / 'planted').write_text('tamper')
+        os.utime(mounted, (stamp, stamp))
+        with self.assertRaisesRegex(ValueError, 'snapshot changed'):
+            snapshot(self.source)
+        self.assertEqual(mounted.stat().st_mtime, stamp)
+
+    def test_prune_waits_for_real_step_and_releases_after_receipt(self):
+        import subprocess
+        require_toolchain()
+        mounted = snapshot(self.source)
+        design = self.root / 'design'
+        design.mkdir()
+        spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'fab', 'step': 'prune-race',
+                'argv': ['/usr/bin/python3', '-B', '/tool/tool.py'],
+                'version_argv': ['/usr/bin/python3', '--version'],
+                'mounts': [{'source': str(mounted), 'at': '/tool'}], 'source': '/tool',
+                'writes': {}, 'artifacts': ['result.txt']}
+        execute = stage_receipts.execute
+        processes = []
+        def concurrent_prune(*args, **kwargs):
+            if not processes:
+                code = """import fcntl, os
+from pathlib import Path
+from agent_ee.tool_source import prune
+with open(Path(os.environ['AGENT_EE_TOOL_SOURCE_CACHE']) / '.lock') as lock:
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print('step holds lock', flush=True)
+    else:
+        raise RuntimeError('step did not protect its snapshot')
+prune(older_than_days=0)
+"""
+                proc = subprocess.Popen([os.sys.executable, '-c', code],
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                processes.append(proc)
+                self.assertEqual(proc.stdout.readline().strip(), 'step holds lock')
+                self.assertIsNone(proc.poll())
+            self.assertTrue(mounted.exists())
+            return execute(*args, **kwargs)
+        try:
+            with mock.patch.object(stage_receipts, 'execute', side_effect=concurrent_prune):
+                receipt = stage_receipts.run_step(self.root / 'receipt', design, spec, {})
+            self.assertEqual(receipt['status'], 'completed', receipt)
+            self.assertEqual(receipt['violations'], [])
+            stdout, stderr = processes[0].communicate(timeout=10)
+            self.assertEqual(processes[0].returncode, 0, (stdout, stderr))
+            self.assertFalse(mounted.exists())
+            self.assertEqual(stage_receipts.validate_receipt(self.root / 'receipt'), receipt)
+        finally:
+            for proc in processes:
+                if proc.poll() is None:
+                    proc.kill()
+                proc.communicate()
+
+    def test_step_failure_releases_snapshot_lock(self):
+        import fcntl
+        mounted = snapshot(self.source)
+        spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'fab', 'step': 'invalid-design',
+                'argv': ['/usr/bin/true'], 'mounts': [{'source': str(mounted), 'at': '/tool'}],
+                'writes': {}}
+        with self.assertRaises(ValueError):
+            stage_receipts.run_step(self.root / 'receipt', self.root / 'missing', spec, {})
+        with (mounted.parent / '.lock').open() as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
     def test_capture_cleans_crashed_temporary_directory_under_lock(self):
         cache = self.root / 'cache'
         crashed = cache / '.capture-crashed' / 'src'
@@ -341,6 +416,73 @@ class SnapshotTests(unittest.TestCase):
         mounts = [m for s in specs for m in s['mounts'] if m['at'] == '/tool/agent-ee']
         self.assertGreater(len(mounts), 5)
         self.assertTrue(all(m['source'] == expected for m in mounts))
+
+    def test_repository_wide_step_builders_mount_only_snapshots(self):
+        """Discover source-mount constructors; every discovered builder must be exercised."""
+        import ast
+        from agent_ee import (add_planes, binding_fill, pod_driver, rung1_stages,
+                              scaffold, schematic_stage)
+        route = require_kicad_route()
+        repo = self.root / 'repo'
+        repo.mkdir()
+        shutil.copytree(self.source, repo / 'src')
+        with mock.patch.object(pod_driver, 'SOURCE', self.source):
+            cases = {
+                'pod_driver._scaffold_step': [pod_driver._scaffold_step(self.root, ['b.kicad_pcb'])],
+                'pod_driver._constraint_step': [pod_driver._constraint_step(self.root, {'board': 'b.kicad_pcb'})],
+            }
+        cases.update({
+            'add_planes.step': [add_planes.step(self.source, board='b.kicad_pcb', plan='planes.json')],
+            'binding_fill.configuration': [binding_fill.configuration(self.source, intent='intent.json',
+                manifest='parts.json', part_refs='refs.json', deviations='deviations.json',
+                captures='.', dependencies=[])],
+            'fab_stage.step': [fab_stage.step(self.source, 'b.kicad_pcb', 'b.kicad_sch')],
+            'rung1_campaign.scaffold_step': [rc.scaffold_step(self.source, rc.STEPS_DIR, rc.FIXTURE_PROJECT)],
+            'rung1_campaign.step_specs': rc.step_specs(self.source, rc.STEPS_DIR, route),
+            'rung1_qualified.schematic_step_specs': q.schematic_step_specs(source_root=self.source),
+            'rung1_stages.requirements_step': [rung1_stages.requirements_step(self.source)],
+            'scaffold.content_step': [scaffold.content_step(repo, 'envelope.json', 'parts.json', 'b.kicad_pcb')],
+            'schematic_stage.configuration': schematic_stage.configuration(self.source,
+                board='b.kicad_pcb', schematic='b.kicad_sch')['implementation_steps'],
+        })
+        discovered = set()
+        for path in (Path(__file__).resolve().parents[1] / 'src/agent_ee').rglob('*.py'):
+            tree = ast.parse(path.read_text())
+            constants = {node.targets[0].id: node.value.value for node in tree.body
+                         if isinstance(node, ast.Assign) and len(node.targets) == 1
+                         and isinstance(node.targets[0], ast.Name)
+                         and isinstance(node.value, ast.Constant)}
+            # Tuple assignments declare the campaign MOUNT_SOURCE constants.
+            for node in tree.body:
+                if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                        and isinstance(node.targets[0], ast.Tuple)
+                        and isinstance(node.value, ast.Tuple)):
+                    constants.update({key.id: value.value for key, value in
+                        zip(node.targets[0].elts, node.value.elts)
+                        if isinstance(key, ast.Name) and isinstance(value, ast.Constant)})
+            for function in ast.walk(tree):
+                if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for node in ast.walk(function):
+                    values = []
+                    if (isinstance(node, ast.Dict) and any(isinstance(key, ast.Constant)
+                            and key.value == 'source' for key in node.keys)):
+                        values = [value for key, value in zip(node.keys, node.values)
+                                  if isinstance(key, ast.Constant) and key.value == 'at']
+                    elif isinstance(node, ast.Call) and any(kw.arg == 'source' for kw in node.keywords):
+                        values = [kw.value for kw in node.keywords if kw.arg == 'at']
+                    if any((value.value if isinstance(value, ast.Constant) else
+                            constants.get(value.id) if isinstance(value, ast.Name) else None)
+                           == '/tool/agent-ee' for value in values):
+                        discovered.add(path.stem + '.' + function.name)
+        self.assertEqual(discovered, set(cases), 'new source-mount builder needs executable coverage')
+        expected = str(snapshot(self.source))
+        for builder, specs in cases.items():
+            mounts = [m for spec in specs for m in spec['mounts'] if m['at'] == '/tool/agent-ee']
+            self.assertTrue(mounts, builder)
+            for mount in mounts:
+                self.assertEqual(mount['source'], expected, builder)
+                self.assertNotEqual(Path(mount['source']), self.source, builder)
 
     def test_real_receipts_isolate_host_writes_but_refuse_mounted_mutations(self):
         require_toolchain()
