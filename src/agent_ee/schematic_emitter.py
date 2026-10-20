@@ -278,13 +278,14 @@ def _validate_layout(layout, components):
 
 
 def _library_property(prop, location):
-    # KiCad 10 private fields have three leading atoms. A public field can
-    # still have the literal name "private" followed by its value.
-    start = 2 if len(prop) > 3 and prop[1] == 'private' and isinstance(prop[3], str) else 1
+    # Only the bare token is a modifier; a quoted "private" is a public name.
+    start = 2 if len(prop) > 1 and type(prop[1]) is str and prop[1] == 'private' else 1
     atoms = prop[start:start + 2]
-    if (len(atoms) != 2 or any(not isinstance(x, str) for x in atoms)
+    if (len(atoms) != 2 or any(not isinstance(x, Q if start == 2 else str) for x in atoms)
             or any(not isinstance(x, list) for x in prop[start + 2:])):
         raise EmissionError('unsupported_symbol_node', 'malformed library property', location)
+    if start == 2 and atoms[0] in {'Reference', 'Value', 'Footprint', 'Datasheet', 'Description'}:
+        raise EmissionError('unsupported_symbol_node', 'mandatory library property cannot be private', location)
     return atoms[0], atoms[1], start == 2
 
 

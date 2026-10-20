@@ -109,7 +109,11 @@ KiCad 10.0):
   its actual name, retained with its private modifier in the embedded definition,
   and omitted from instance fields. Public and private fields with the same name
   in one source are refused; inherited child fields override parents by name.
-  A public field named `private` remains a public field.
+  Only the bare `private` token is a modifier; both the name and value must
+  be quoted strings. A public field named `private` remains a public field.
+  Malformed properties and private mandatory fields (`Reference`, `Value`,
+  `Footprint`, `Datasheet`, `Description`), including child overrides, are
+  refused with `unsupported_symbol_node`.
   Missing parents, cycles and replacement graphics/pins fail resolution before
   any output is built. Captured library bytes and source locators stay unchanged.
 - Every connected pin endpoint gets a net label at the exact transformed pin
@@ -140,7 +144,7 @@ KiCad 10.0):
   This emission policy does not qualify a fabrication package: current fab
   export still refuses non-DNP native exclusions, including marked assembly
   exclusions. Board propagation and fab BOM/CPL agreement remain unqualified
-  for this policy (AGENTEE-288).
+  for this policy (AGENTEE-289).
 - Pin offsets must be exactly representable on the native 100 nm coordinate
   lattice. Coordinates are never snapped. The editor's customary 1.27 mm grid
   is not an electrical-connectivity restriction; native ERC may still report

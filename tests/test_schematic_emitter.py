@@ -390,6 +390,38 @@ class DeterminismTests(unittest.TestCase):
 
 
 class RefusalTests(unittest.TestCase):
+    def test_private_modifier_requires_bare_token_and_name_value_strings(self):
+        for prop in ('(property "private" "N" "V" (at 0 0 0))',
+                     '(property private "N" (at 0 0 0))',
+                     '(property private N "V")',
+                     '(property private "N" V)'):
+            with self.subTest(prop=prop):
+                intent, captured = derived_inputs(middle=prop)
+                result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+                self.assertEqual(result['execution'], 'failed', result)
+                self.assertEqual(result['findings'][0]['code'], 'unsupported_symbol_node', result)
+                self.assertIsNone(files)
+
+    def test_mandatory_properties_cannot_be_private_in_library_or_child(self):
+        for name in ('Reference', 'Value', 'Footprint', 'Datasheet', 'Description'):
+            for level in ('library', 'child'):
+                with self.subTest(name=name, level=level):
+                    prop = f'(property private "{name}" "hidden" (at 0 0 0))'
+                    if level == 'child':
+                        intent, captured = derived_inputs(leaf=prop)
+                    else:
+                        intent = load('regulator.intent.json')
+                        captured = captures(intent)
+                        path = 'lib/Owned_Gen.kicad_sym'
+                        original = f'(property "{name}"'.encode()
+                        self.assertIn(original, captured[path])
+                        captured[path] = captured[path].replace(original, f'(property private "{name}"'.encode())
+                        intent['libraries'][0]['sha256'] = hashlib.sha256(captured[path]).hexdigest()
+                    result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+                    self.assertEqual(result['execution'], 'failed', result)
+                    self.assertEqual(result['findings'][0]['code'], 'unsupported_symbol_node', result)
+                    self.assertIsNone(files)
+
     def test_private_duplicate_names_and_malformed_properties_refuse(self):
         for extra in ('(property private "OwnedRule_A" "duplicate")',
                       '(property "OwnedRule_A" "public duplicate")',
@@ -642,6 +674,28 @@ def native_netlist(path):
 
 
 class NativeEmissionTests(unittest.TestCase):
+    def test_native_refuses_malformed_private_property_shapes(self):
+        from agent_ee.schematic_emitter import _scan, _dump
+        intent, captured = derived_inputs()
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'), **tables())
+        self.assertEqual(result['execution'], 'ok', result)
+        for index, prop in enumerate(('(property "private" "N" "V" (at 0 0 0))',
+                                      '(property private "N" (at 0 0 0))')):
+            with self.subTest(prop=prop):
+                tree = _scan(files['regulator.kicad_sch'])
+                embedded = next(s for s in children(children(tree, 'lib_symbols')[0], 'symbol')
+                                if s[1] == 'OwnedGen:DERIVED')
+                embedded.append(_scan(prop.encode()))
+                malformed = {**files, 'regulator.kicad_sch': ('\n'.join(_dump(tree)) + '\n').encode()}
+                project = native_project({**captured, **malformed}, Path(self.tmp) / f'malformed-{index}')
+                work = Path(self.tmp) / f'malformed-{index}/work'
+                record = execute(project, work, ['kicad-cli', 'sch', 'export', 'netlist',
+                    '--format', 'kicadxml', '-o', '/work/design.xml', '/candidate/regulator.kicad_sch'], timeout=300)
+                self.assertEqual(record['execution'], 'failed', record)
+                self.assertEqual(record['exit_code'], 3, record)
+                self.assertIn('Failed to load schematic', (work / 'console.log').read_text())
+                self.assertFalse((work / 'design.xml').exists())
+
     def test_pod_owned_symbols(self):
         from test_pod_symbols import EXPECTED, pod_emission_inputs
         intent, captured, layout = pod_emission_inputs()

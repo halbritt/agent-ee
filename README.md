@@ -169,7 +169,7 @@ presence remains unavailable.
 
 The [schematic emitter](docs/schematic-emitter.md) preserves KiCad 10 private
 symbol metadata and supports explicit component BOM flags. Fab BOM/CPL
-qualification of non-DNP copper features remains pending.
+qualification of non-DNP copper features remains pending (AGENTEE-289).
 
 An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it

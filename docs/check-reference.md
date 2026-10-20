@@ -36,7 +36,7 @@ symbol metadata and accepts an explicit boolean component `in_bom` policy.
 These are producer features, with no check registration change. Native netlist
 inventory observes BOM exclusion independently of board membership. Fab export
 still refuses non-DNP native exclusions; emission success does not establish
-BOM/CPL agreement for excluded copper features (AGENTEE-288).
+BOM/CPL agreement for excluded copper features (AGENTEE-289).
 
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
