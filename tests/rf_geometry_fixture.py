@@ -6,7 +6,10 @@ with a 45 degree bend and two T-junction stubs on F.Cu, a GND pour on F.Cu
 whose clearance sets the coplanar gap, a GND plane on In1.Cu and GND stitching
 vias on both sides of every branch. Options produce violating variants.
 """
+import hashlib
 import math
+
+from agent_ee.storage import json_bytes
 
 TRUNK = [(3.0, 8.0), (13.0, 8.0), (15.0, 10.0), (27.0, 10.0)]
 STUBS = {'D3': [(8.0, 8.0), (8.0, 5.0)], 'L3': [(20.0, 10.0), (20.0, 13.0)]}
@@ -240,7 +243,7 @@ CALCULATION = {'schema': 'agent-ee.test-rf-calculation/1', 'result_valid': 1,
 def sourced_declaration(path='project/rf-calculation.json', **overrides):
     """Declaration whose CPW targets are read from the captured calculation by JSON pointer."""
     doc = declaration(**overrides)
-    doc['source'] = {'path': path, 'width_pointer': '/geometry_mil/W1', 'gap_pointer': '/geometry_mil/D1',
-                     'unit': 'mil'}
+    doc['source'] = {'path': path, 'sha256': hashlib.sha256(json_bytes(CALCULATION)).hexdigest(),
+                     'width_pointer': '/geometry_mil/W1', 'gap_pointer': '/geometry_mil/D1', 'unit': 'mil'}
     doc['cpw'] = {k: v for k, v in doc['cpw'].items() if k not in ('width_mm', 'gap_mm')}
     return doc

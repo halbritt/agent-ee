@@ -460,12 +460,13 @@ zone or a missing courtyard, is `unsupported`, and the check becomes
 The [RF geometry check](rf-geometry.md) takes exactly `params.declaration`. That
 is a captured `agent-ee.rf-geometry/1` record for one RF net. It may hold a
 grounded-CPW section (width, gap and tolerance targets, read directly or by JSON
-pointer from a captured calculation record in `mm` or `mil`), a stitching
-section (pitch and band) and an explicit trunk/stub topology with per-branch
+pointer from a captured calculation record in `mm` or `mil`, bound by a required
+declared SHA-256; missing, malformed or mismatched hashes refuse capture), a
+stitching section (pitch and band) and an explicit trunk/stub topology with per-branch
 length bounds. A reported-only electrical length may take its effective
-permittivity from a captured solver record, bound by path, SHA-256 and JSON
-pointer. A hash mismatch, a record without `impedance_calc_status` 0 and
-`dResultValid` 1, or a value below 1.0 refuses, and a value absent at the
+permittivity inline (a finite number at least 1.0) or from a captured solver
+record, bound by path, SHA-256 and JSON pointer. A hash mismatch, a record without
+`impedance_calc_status` 0 and `dResultValid` 1, or a value below 1.0 refuses, and a value absent at the
 pointer is unknown.
 The sandboxed pcbnew probe records facts only. The coordinator
 grades:

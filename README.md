@@ -422,8 +422,8 @@ findings with coordinates and gives no score. A missing fact, such as the saved
 board thickness, leaves that rule unknown.
 The [RF geometry check](docs/rf-geometry.md) grades one declared RF net on the
 routed board against a captured structure: grounded-CPW width, gap and coplanar
-and reference ground (targets may come from a captured calculation), stitching
-via pitch along each branch, routed length per branch of an explicit trunk
+and reference ground (calculation sources require a declared matching SHA-256),
+stitching via pitch along each branch, routed length per branch of an explicit trunk
 and stub tree, and the reference-plane return-corridor guard at a declared width
 with a recorded basis. An absent structure is a defect and never counts as
 microstrip. Missing bounds, widths or fills are unknown. It is not RF

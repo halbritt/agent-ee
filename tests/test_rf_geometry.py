@@ -54,7 +54,8 @@ def parse(doc, sources=None):
     def load(rel):
         if sources is None or rel not in sources:
             raise ValueError(f'source must be a captured input: {rel!r}')
-        return {'document': sources[rel], 'sha256': '0' * 64}
+        return {'document': sources[rel], 'sha256': (hashlib.sha256(json_bytes(fx.CALCULATION)).hexdigest()
+                                                   if sources[rel] == fx.CALCULATION else '0' * 64)}
     return parse_declaration(json.dumps(doc).encode(), load)[1]
 
 
@@ -80,6 +81,31 @@ class DeclarationTests(unittest.TestCase):
                 parse(doc, sources)
         with self.assertRaisesRegex(ValueError, 'captured input'):
             parse(fx.sourced_declaration())
+
+    def test_cpw_source_requires_a_declared_matching_sha256(self):
+        sources = {'project/rf-calculation.json': fx.CALCULATION}
+        for value in (None, '', '0' * 63, 'A' * 64, 123, '0' * 64):
+            doc = fx.sourced_declaration()
+            doc['source']['sha256'] = value
+            with self.subTest(sha256=value), self.assertRaises(ValueError):
+                parse(doc, sources)
+        doc = fx.sourced_declaration()
+        del doc['source']['sha256']
+        with self.assertRaisesRegex(ValueError, 'source requires'):
+            parse(doc, sources)
+        resolved = parse(fx.sourced_declaration(), sources)
+        self.assertEqual(resolved['source']['sha256'], hashlib.sha256(json_bytes(fx.CALCULATION)).hexdigest())
+
+    def test_inline_permittivity_requires_at_least_unity(self):
+        for value in (0.999, 0, -1, None, True, '1', float('nan'), float('inf')):
+            doc = fx.declaration(electrical_length={'effective_permittivity': value,
+                                                     'frequency_hz': 1, 'basis': 'owned test'})
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                parse(doc)
+        for value in (1, 1.0, 3.1):
+            doc = fx.declaration(electrical_length={'effective_permittivity': value,
+                                                     'frequency_hz': 1, 'basis': 'owned test'})
+            self.assertEqual(parse(doc)['electrical_length']['effective_permittivity'], value)
 
     def test_permittivity_binds_the_captured_solver_record_by_sha256_and_pointer(self):
         electrical = parse_bound(bound_declaration())['electrical_length']
@@ -627,6 +653,18 @@ class NativeCheckTests(unittest.TestCase):
         self.assertEqual(electrical['source']['sha256'], SOLVER_SHA256)
         self.assertEqual(electrical['effective_permittivity'], 2.94025199985)
         self.assertTrue(all(b['electrical_length_deg'] > 0 for b in report['sections']['topology']['branches']))
+
+    def test_cpw_source_hash_mismatch_refuses_capture(self):
+        doc = fx.sourced_declaration()
+        doc['source']['sha256'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'source .* has sha256 .* not the declared'):
+            self.run_board(doc)
+
+    def test_inline_subvacuum_permittivity_refuses_capture(self):
+        doc = fx.sourced_declaration(electrical_length={'effective_permittivity': 0.999,
+                                                         'frequency_hz': 1, 'basis': 'owned test'})
+        with self.assertRaisesRegex(ValueError, 'effective_permittivity is below 1.0'):
+            self.run_board(doc)
 
     def test_altered_solver_record_refuses_capture(self):
         altered = SOLVER.read_bytes().replace(b'2.94025199985', b'3.94025199985')

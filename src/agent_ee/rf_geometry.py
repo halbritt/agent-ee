@@ -54,7 +54,7 @@ NATIVE_SCHEMA = 'agent-ee.rf-geometry-native/1'
 RESULT_SCHEMA = 'agent-ee.rf-geometry-result/1'
 TOP_KEYS = {'schema', 'net', 'ground_net', 'signal_layer', 'reference_layer'}
 TOP_OPTIONAL = {'source', 'cpw', 'stitching', 'topology', 'electrical_length', 'guard', 'basis'}
-SOURCE_KEYS = {'path', 'width_pointer', 'gap_pointer'}
+SOURCE_KEYS = {'path', 'sha256', 'width_pointer', 'gap_pointer'}
 SOURCE_OPTIONAL = {'unit'}
 SOURCE_UNITS = {'mm': 1.0, 'mil': 0.0254}
 CPW_KEYS = {'width_tolerance_mm', 'gap_tolerance_mm'}
@@ -171,9 +171,7 @@ def parse_declaration(raw, load_source=None):
             raise ValueError(f'source unit must be one of {sorted(SOURCE_UNITS)}')
         if 'cpw' not in doc:
             raise ValueError('source binds CPW targets and requires cpw')
-        if load_source is None:
-            raise ValueError('source requires captured inputs')
-        captured = load_source(source['path'])
+        captured = _bound_record(source, load_source, 'source')
         resolved['source'] = {'path': source['path'], 'sha256': captured['sha256'],
                               'width_pointer': source['width_pointer'],
                               'gap_pointer': source['gap_pointer'], 'unit': source.get('unit', 'mm')}
@@ -255,6 +253,8 @@ def parse_declaration(raw, load_source=None):
         if 'effective_permittivity' in electrical:
             resolved['electrical_length']['effective_permittivity'] = _number(
                 electrical['effective_permittivity'], 'effective_permittivity')
+            if resolved['electrical_length']['effective_permittivity'] < 1.0:
+                raise ValueError('effective_permittivity is below 1.0')
         else:
             resolved['electrical_length'].update(_bound_permittivity(
                 electrical['effective_permittivity_source'], load_source))
@@ -267,7 +267,7 @@ def _bound_record(binding, load_source, label):
     """The captured record a binding names, refused unless it hashes to the declared SHA-256."""
     if not isinstance(binding['sha256'], str) or not SHA256.fullmatch(binding['sha256']):
         raise ValueError(f'{label} sha256 must be 64 lowercase hex digits')
-    if not isinstance(binding['pointer'], str) or not binding['pointer'].startswith('/'):
+    if 'pointer' in binding and (not isinstance(binding['pointer'], str) or not binding['pointer'].startswith('/')):
         raise ValueError(f'{label} pointer must start with /')
     if load_source is None:
         raise ValueError(f'{label} requires captured inputs')
