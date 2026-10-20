@@ -1,7 +1,7 @@
 # RF geometry
 
 `rf_geometry` checks the routed copper of one declared RF net on the saved
-board against a declared structure. It has three sections:
+board against a declared structure. It has four sections:
 
 - **Grounded CPW**: track width, the gap to coplanar ground on the signal
   layer, and ground copper under the trace and both gaps on the reference
@@ -11,11 +11,14 @@ board against a declared structure. It has three sections:
 - **Branch topology and length**: an explicit trunk and named stubs. The routed
   copper must form exactly that tree, and each branch's routed length is
   checked against its own bound.
+- **Return-corridor guard**: ground copper on the reference layer under every
+  RF track grown by a declared guard width per side, with no antipad or void
+  inside ([below](#return-corridor-guard)).
 
 This is planar copper geometry on the candidate board. It is not RF
-qualification. No field solver, TDR, VNA or bench measurement is claimed, and
-no proxy (guard width, "90% image current") is graded. Impedance stays
-unverified. A structure that is absent is reported as absent. It is never
+qualification. No field solver, TDR, VNA or bench measurement is claimed.
+A guard width is graded only as the geometric guard it declares, never as
+image-current containment. Impedance stays unverified. A structure that is absent is reported as absent. It is never
 graded as microstrip instead.
 
 ## Check declaration
@@ -68,12 +71,14 @@ check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
                         {"name": "bias", "terminal": "L3.2", "max_length_mm": 3.5}]},
  "electrical_length": {"effective_permittivity": 3.1, "frequency_hz": 1575420000,
                        "basis": "declared ErEff, reported only"},
+ "guard": {"source": {"path": "project/guard-basis.json", "pointer": "/guard_mm"},
+           "basis": "free text naming the engineering basis"},
  "basis": "free text"}
 ```
 
 - `net`, `ground_net`, `signal_layer` and `reference_layer` are required. The
   nets must differ, and so must the layers. Layers are KiCad copper layer names.
-  At least one of `cpw`, `stitching` or `topology` must be present.
+  At least one of `cpw`, `stitching`, `topology` or `guard` must be present.
 - `cpw` requires `width_tolerance_mm` and `gap_tolerance_mm`, each a positive
   number or `null`. Targets are given either as `width_mm` and `gap_mm`, or
   through `source`, never both. `source` uses JSON pointers (RFC 6901) into the
@@ -120,9 +125,12 @@ check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
   This resolves to 2.94025199985. It is the solver's modelled value for its own
   geometry, not a measurement of the routed board.
 
+- `guard` is described under [return-corridor guard](#return-corridor-guard).
+
 Coverage predicates are `rf-geometry:cpw-structure`, `rf-geometry:cpw-reference`,
 `rf-geometry:cpw-width`, `rf-geometry:cpw-gap`, `rf-geometry:stitching-pitch`,
-`rf-geometry:branch-topology` and `rf-geometry:branch-length:NAME`. A predicate
+`rf-geometry:branch-topology`, `rf-geometry:branch-length:NAME` and
+`rf-geometry:return-guard`. A predicate
 whose tolerance, pitch or bound is `null` is not offered, and that item reports
 `unknown`.
 
@@ -181,6 +189,79 @@ if its projection lies strictly inside the path and its distance falls within
 consecutive vias, and from each path end, are compared with `max_pitch_mm`.
 Each violating interval is located along the path.
 
+## Return-corridor guard
+
+```json
+{"guard": {"width_mm": 1.0, "basis": "..."}}
+```
+
+```json
+{"guard": {"source": {"path": "project/guard-basis.json", "pointer": "/guard_mm", "unit": "mm"},
+           "basis": "..."}}
+```
+
+`guard` needs a nonempty `basis` and exactly one of `width_mm` or `source`.
+There is no default width. `width_mm` is a positive number or `null`. `source`
+reads the width by JSON pointer from a captured record (`unit` `mm`, the default,
+or `mil`). The record is an immutable input bound by SHA-256, like the CPW
+source. The basis is recorded, not verified: it says where the width comes from.
+The 1.19 mm per side in the
+[pod determination](pod-routing-policy-determination.md#return-corridor-guard-width-and-stitching)
+is an unsourced heuristic. This check does not assume it. A `null` width gives
+`unknown`, and no `rf-geometry:return-guard` predicate is offered. A declaration
+without `guard` does not grade the corridor at all, and the predicate is not
+offered.
+
+The probe (only when a width is declared) records these facts on pcbnew polygons:
+
+- the **corridor**: every RF track on the signal layer grown by the guard per
+  side (round ends), built inside the true shape at a 1 µm chord error, the way
+  reference continuity builds the track footprint;
+- the corridor minus the ground net's copper on the reference layer (zone fill,
+  tracks, flashed pads and vias), unclipped;
+- with one excuse, the clearance the zone filler cut for the RF net's own pads.
+  It is rebuilt as AGENTEE-231
+  [reference continuity](routing-adapter.md#declared-layer-policy-agentee-231)
+  rebuilds it. That is the pad grown by the larger of the smallest ground-zone
+  clearance, the pad clearance and the board minimum, plus the filler's extra
+  clearance, and the hole grown by the lesser of that and the hole clearance.
+  Nothing else is excused;
+- each non-ground item on the reference layer whose clearance shape overlaps
+  the uncovered area: vias of other nets and RF vias (the full via pad grown by
+  the clearance), pads and holes of other nets, tracks, zones of other nets,
+  graphics, and rule areas that forbid zone fill. Each comes with its overlap
+  area, and the area no item explains is reported as `unattributed`.
+
+The coordinator grades in this order:
+
+1. `null` width: `unknown`.
+2. Reference layer absent from the board: `defect` (`reference_layer_absent`).
+3. No RF track on the signal layer, or the RF or ground net absent: `unknown`.
+4. Unfilled ground zones on the reference layer, or a board `.kicad_dru` with
+   clearance constraints (as in reference continuity), make the excuse not
+   evaluable: `unknown`.
+5. Uncovered area above 0.000001 mm² (the reference-continuity tolerance) is a
+   `defect`. Its `reasons` are taken from `foreign_antipad` (an item of another
+   net or of no net), `rf_via_antipad`, `rule_area` and `void` (unattributed
+   area above the tolerance). The items are listed under `foreign`, `rf_vias`
+   and `rule_areas`.
+6. RF tracks off the signal layer are not graded against this reference. They
+   are listed under `ungraded_tracks` and make an otherwise clean result
+   `unknown`.
+7. Otherwise `pass`.
+
+The section records `width_mm`, `basis`, `source` (when used), `guard_nm`,
+`corridor_mm2`, `uncovered_mm2`, `unattributed_mm2` and a `scope` that states it
+is a geometric guard result. A defect has the gate identity `NET:guard` /
+`rf-geometry/return-guard`. Declaring a guard adds `GUARD_LIMITATIONS` to the
+check's limitations.
+
+The CPW `reference` item is separate. It covers the strip `width/2 + gap` and
+excuses nothing. A through-hole RF launch is therefore a CPW `reference_void`
+while the guard excuses the launch's own cut. Foreign items inside the own-pad
+excuse are not seen. Fill polygons are graded as saved, so a stale fill is not
+detected.
+
 ## Outcome
 
 The check outcome is the worst over sections, in the order defect, unknown,
@@ -199,6 +280,7 @@ Each determinate defect gets a `gate_findings` identity:
 | Stitching branch | `NET:BRANCH` | `rf-geometry/stitching-pitch` |
 | Branch length | `NET:BRANCH` | `rf-geometry/branch-length` |
 | Topology finding | `NET:topology` | `rf-geometry/REASON` |
+| Guard | `NET:guard` | `rf-geometry/return-guard` |
 
 Unknowns are never findings and never pass. A crash, a missing native report
 or a board hash mismatch is `malformed`.
@@ -214,7 +296,8 @@ or a board hash mismatch is `malformed`.
 - There is no impedance, loss or coupling calculation.
 
 The check covers the CPW, stitching and branch-length paths that AGENTEE-257b
-found without a native check. AGENTEE-258 and AGENTEE-259 (per-net layers and
+found without a native check, and the In1 return-corridor guard that
+AGENTEE-257c found without one (AGENTEE-263). AGENTEE-258 and AGENTEE-259 (per-net layers and
 RF wiring) are separate. Tests use owned generated boards
 ([rf_geometry_fixture.py](../tests/rf_geometry_fixture.py)) with compliant and
 violating geometry.
