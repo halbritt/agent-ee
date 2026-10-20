@@ -56,6 +56,11 @@ nonzero exit status and fails the build. Before retrying, the wrapper clears
 partial index and package downloads while preserving complete indexes needed
 by install retries.
 
+An invocation without a command exits 2 with a diagnostic on stderr before
+attempting any work. The helper remains available to the routing build stage;
+the final stage removes `/usr/local/bin/apt-retry` after its last apt call
+(the zstd installation).
+
 The existing `Acquire::Retries=5` options remain, with exponential retry delays
 enabled and each delay capped at eight seconds. The outer loop also covers
 body-less HTTP 5xx responses that apt may not retry internally. Updates use
