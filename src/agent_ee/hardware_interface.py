@@ -113,6 +113,7 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
     if not isinstance(invariants, list) or not invariants:
         raise ValueError('expected nonempty invariants')
     ids, protected_values = set(), set()
+    source_digests = {}
     for invariant in invariants:
         kind = invariant.get('kind') if isinstance(invariant, dict) else None
         fields = {'component': 'component populated', 'value': 'component equals',
@@ -148,7 +149,7 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
             _source(source, ())
         else:
             exact_keys(source, 'path locator' + (' sha256' if isinstance(source, dict) and 'sha256' in source else ''))
-            safe_relative(source['path'])
+            path = str(safe_relative(source['path']))
             text(source['locator'])
             if require_source_sha256 and 'sha256' not in source:
                 raise ValueError('requirement source sha256 is required')
@@ -160,6 +161,10 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
                         raise ValueError('missing requirement source bytes')
                     if hashlib.sha256(source_bytes[source['path']]).hexdigest() != source['sha256']:
                         raise ValueError('requirement source sha256 mismatch')
+            sha = source.get('sha256')
+            if path in source_digests and source_digests[path] != sha:
+                raise ValueError('requirement source path must have one sha256 on all invariants or none')
+            source_digests[path] = sha
         if kind == 'unresolved':
             text(invariant['reason'])
         elif kind in ('component', 'value'):
@@ -229,7 +234,7 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
     sources = {i['source']['path'] for i in contract['invariants']
                if i['source'].get('kind') != 'pinned-external' and 'sha256' in i['source']}
     validate_contract(contract, source_bytes={p: (Path(inputs) / p).read_bytes() for p in sources})
-    immutable = {rel}
+    immutable = {rel, *sources}
     for invariant in contract['invariants']:
         citation = invariant.get('io_map')
         if citation:

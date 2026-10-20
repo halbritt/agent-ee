@@ -86,6 +86,53 @@ class IoMapTests(unittest.TestCase):
             compile_io_map(raw, csv_path='io-map.csv', requirement='interface',
                            source={**SOURCE, 'sha256': '0' * 64}, source_bytes=b'requirements')
 
+    def test_one_digest_per_local_path_without_source_bytes(self):
+        original = compile_(csv_bytes(PROBE_ROWS), source_bytes=b'requirements')
+        self.assertEqual(validate_contract(original), original)
+        legacy = compile_(csv_bytes(PROBE_ROWS))
+        self.assertEqual(validate_contract(legacy), legacy)
+        consistent = copy.deepcopy(original)
+        consistent['invariants'][-1]['source'].update(path='./requirements.md', locator='another locator')
+        self.assertEqual(validate_contract(consistent), consistent)
+        for mixed in (False, True):
+            for index in (0, -1):
+                for alias in ('requirements.md', './requirements.md'):
+                    contract = copy.deepcopy(original)
+                    source = contract['invariants'][index]['source']
+                    source['path'] = alias
+                    source['locator'] = 'another locator'
+                    if mixed:
+                        del source['sha256']
+                    else:
+                        source['sha256'] = '0' * 64
+                    with self.subTest(mixed=mixed, index=index, alias=alias):
+                        with self.assertRaisesRegex(ValueError, 'one sha256 on all invariants or none'):
+                            validate_contract(contract)
+        for hashed in (False, True):
+            contract = copy.deepcopy(original)
+            source = contract['invariants'][-1]['source']
+            source['path'] = 'other-requirements.md'
+            if hashed:
+                source['sha256'] = '0' * 64
+            else:
+                del source['sha256']
+            self.assertEqual(validate_contract(contract), contract)
+
+    def test_hashed_requirement_source_is_immutable(self):
+        raw, source_bytes = csv_bytes(PROBE_ROWS), b'requirements\n'
+        scope = dict(baseline=dict(requirements=[dict(id='interface', source=SOURCE, checks=['interface'])]))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'io-map.csv').write_bytes(raw)
+            (root / 'requirements.md').write_bytes(source_bytes)
+            params = dict(contract='contract.json', netlist_check='netlist')
+            files = {'contract.json', 'io-map.csv', 'requirements.md'}
+            for hashed in (False, True):
+                contract = compile_(raw, source_bytes=source_bytes if hashed else None)
+                write_json(root / 'contract.json', contract)
+                expected = ['contract.json', 'io-map.csv'] + (['requirements.md'] if hashed else [])
+                self.assertEqual(capability(params, scope, files, root, 'interface')['immutable_inputs'], expected)
+
     def test_captured_requirement_digest_is_verified_with_legacy_baseline(self):
         raw, source_bytes = csv_bytes(PROBE_ROWS), b'requirements\n'
         contract = compile_(raw, source_bytes=source_bytes)

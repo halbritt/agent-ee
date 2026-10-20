@@ -48,7 +48,9 @@ The Python API accepts `source_bytes=raw_bytes` and
 digest. An already declared digest must match those bytes.
 `validate_contract(contract, source_bytes={captured_path: raw_bytes},
 require_source_sha256=True)` requires local source digests and verifies them.
-When bytes are omitted, validation checks digest syntax only; when supplied,
+Every local source path must use one digest on all its invariants, or omit it
+on all of them, even when bytes are unavailable. Different paths may use
+different digests or independently omit them. When bytes are supplied,
 every hashed local source must have an entry. File bytes are never decoded or
 newline-normalized for hashing. These options do not change pinned-external
 citations, which retain their separate source contract.
