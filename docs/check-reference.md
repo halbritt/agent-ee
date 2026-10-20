@@ -31,6 +31,13 @@ before execution; unsafe generated output records failed generation and unknown
 checks. Summaries require reports bound to retained evaluation trials. It
 registers no new check kind.
 
+The [schematic emitter](schematic-emitter.md#output) retains KiCad 10 private
+symbol metadata and accepts an explicit boolean component `in_bom` policy.
+These are producer features, with no check registration change. Native netlist
+inventory observes BOM exclusion independently of board membership. Fab export
+still refuses non-DNP native exclusions; emission success does not establish
+BOM/CPL agreement for excluded copper features (AGENTEE-288).
+
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
 arguments, exit status and console output remain in `work/CHECK_ID/`.

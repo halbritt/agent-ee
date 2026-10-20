@@ -167,6 +167,10 @@ The [IMU axes criterion](docs/placement.md#imu-axes) checks that marking and the
 transform using captured axis facts. Hierarchical staged
 presence remains unavailable.
 
+The [schematic emitter](docs/schematic-emitter.md) preserves KiCad 10 private
+symbol metadata and supports explicit component BOM flags. Fab BOM/CPL
+qualification of non-DNP copper features remains pending.
+
 An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it
 cannot pass merely because an empty design produces no rule violations. Progress

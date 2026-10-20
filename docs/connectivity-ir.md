@@ -22,7 +22,7 @@ files are distributed with this feature.
 ## Input contract
 
 The schema is `agent-ee.connectivity-intent/1`. All fields below are required;
-`hierarchy`, `ports`, and component `part_binding` are optional. Unknown fields
+`hierarchy`, `ports`, and component `part_binding` and `in_bom` are optional. Unknown fields
 and duplicate JSON keys are malformed.
 
 ```json
@@ -47,6 +47,12 @@ number in the selected units. Each physical pin must occur exactly once across
 nets and explicit no-connects. Nets need two distinct terminals after expansion.
 Logical component IDs and display references must each be unique; net IDs must
 be unique. No pin is guessed, reassigned or silently deduplicated.
+
+`in_bom` is an optional boolean component policy in both intent versions.
+Resolution preserves the value and its source locator. The schematic emitter
+uses it to override the library's BOM flag without setting DNP or removing the
+part from the board. Native BOM exclusion does not yet qualify fab BOM/CPL
+consistency; see [emitter limits](schematic-emitter.md#output).
 
 `part_binding` is an optional opaque JSON object. This resolver preserves it
 without granting sourcing or part-binding validation authority; callers must

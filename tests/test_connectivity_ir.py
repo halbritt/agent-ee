@@ -17,6 +17,25 @@ def intent():
 
 
 class ConnectivityTests(unittest.TestCase):
+    def test_bom_policy_is_typed_preserved_and_bound_to_source(self):
+        from agent_ee.connectivity_ir import validate_resolved, _seal
+        for flag in (True, False):
+            raw = intent()
+            raw['components'][0]['in_bom'] = flag
+            result = resolve_intent(raw, {'Owned.kicad_sym': LIB})
+            validate_resolved(result)
+            self.assertIs(result['components'][0]['in_bom'], flag)
+            self.assertEqual(result['components'][0]['field_sources']['in_bom'], '/components/r/in_bom')
+        result['components'][0]['in_bom'] = 'no'
+        result.pop('canonical_sha256')
+        with self.assertRaisesRegex(ValueError, 'in_bom must be a boolean'):
+            validate_resolved(_seal(result))
+        for invalid in ('yes', 'no', 0, 1, None, [], {}):
+            raw = intent()
+            raw['components'][0]['in_bom'] = invalid
+            result = resolve_intent(raw, {'Owned.kicad_sym': LIB})
+            self.assertEqual((result['execution'], result['outcome']), ('malformed', 'unknown'))
+
     def test_captured_pin_geometry(self):
         result = resolve_intent(intent(), {'Owned.kicad_sym': LIB})
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'))

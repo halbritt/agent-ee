@@ -277,6 +277,17 @@ def _validate_layout(layout, components):
     return namespace, layout['project'], transforms, presentation, groups
 
 
+def _library_property(prop, location):
+    # KiCad 10 private fields have three leading atoms. A public field can
+    # still have the literal name "private" followed by its value.
+    start = 2 if len(prop) > 3 and prop[1] == 'private' and isinstance(prop[3], str) else 1
+    atoms = prop[start:start + 2]
+    if (len(atoms) != 2 or any(not isinstance(x, str) for x in atoms)
+            or any(not isinstance(x, list) for x in prop[start + 2:])):
+        raise EmissionError('unsupported_symbol_node', 'malformed library property', location)
+    return atoms[0], atoms[1], start == 2
+
+
 def _library_symbol(tree, symbol, lib_id, location, sources):
     # The fresh connectivity resolution owns inheritance traversal, cycle/depth
     # bounds and replacement-pin refusal. Consume its ordered source chain.
@@ -292,9 +303,8 @@ def _library_symbol(tree, symbol, lib_id, location, sources):
             if not isinstance(child, list) or not child or child[0] not in SYMBOL_KEYS:
                 raise EmissionError('unsupported_symbol_node', 'unsupported top-level symbol node', location)
             if child[0] == 'property':
-                if len(child) < 3 or not all(isinstance(x, str) for x in child[1:3]):
-                    raise EmissionError('unsupported_symbol_node', 'malformed library property', location)
-                key = ('property', child[1])
+                name, _, _ = _library_property(child, location)
+                key = ('property', name)
             elif child[0] == 'symbol':
                 # KiCad embeds inherited units under the selected symbol's name.
                 if source['symbol'] != symbol:
@@ -321,12 +331,13 @@ def _library_symbol(tree, symbol, lib_id, location, sources):
         if len(found) > 1 or (found and (len(found[0]) != 2 or found[0][1] not in ('yes', 'no'))):
             raise EmissionError('unsupported_symbol_node', 'ambiguous symbol flag ' + key, location)
         flags[key] = found[0][1] if found else default
-    properties = []
+    properties, names = [], []
     for prop in children(node, 'property'):
-        if len(prop) < 3 or not isinstance(prop[1], str) or not isinstance(prop[2], str):
-            raise EmissionError('unsupported_symbol_node', 'malformed library property', location)
-        properties.append(prop)
-    names = [p[1] for p in properties]
+        name, _, private = _library_property(prop, location)
+        names.append(name)
+        # Private metadata belongs to the embedded definition, never instances.
+        if not private:
+            properties.append(prop)
     if len(names) != len(set(names)) or not {'Reference', 'Value'} <= set(names):
         raise EmissionError('unsupported_symbol_node', 'library properties must be unique and complete', location)
     return embedded, flags, properties
@@ -442,6 +453,10 @@ def _plan(resolved, captured, intent_libraries, transforms, cache, trees):
     for comp in resolved['components']:
         location = '/components/' + comp['id']
         embedded, flags, properties = symbols[comp['id']]
+        if 'in_bom' in comp:
+            if comp['power'] and comp['in_bom']:
+                raise EmissionError('assembly_policy', 'power symbols cannot be included in the BOM', location)
+            flags = dict(flags, in_bom='yes' if comp['in_bom'] else 'no')
         if comp['power']:
             # Eeschema places power symbols and flags as virtual markers: the
             # instance is excluded from BOM and board whatever the library says,

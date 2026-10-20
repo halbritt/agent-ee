@@ -105,6 +105,11 @@ KiCad 10.0):
   validated ancestor-to-child source chain. Parent graphics and pins are embedded
   under the selected symbol's unit names; child properties and explicit flags
   override inherited values. The embedded definition has no `extends` dependency.
+  KiCad 10 `(property private "name" "value" ...)` metadata is keyed by
+  its actual name, retained with its private modifier in the embedded definition,
+  and omitted from instance fields. Public and private fields with the same name
+  in one source are refused; inherited child fields override parents by name.
+  A public field named `private` remains a public field.
   Missing parents, cycles and replacement graphics/pins fail resolution before
   any output is built. Captured library bytes and source locators stay unchanged.
 - Every connected pin endpoint gets a net label at the exact transformed pin
@@ -125,6 +130,15 @@ KiCad 10.0):
   `exclude_from_sim` and `in_pos_files` come from the library. The staged
   presence probe ([staged campaign](staged-campaign.md)) therefore counts the
   same physical references as the native netlist (AGENTEE-123).
+- Optional component `in_bom: false` in connectivity intent excludes that
+  instance from the native BOM while retaining its library `on_board` state
+  and leaving DNP unchanged. `true` explicitly includes a physical component;
+  omitted values retain the captured library policy. Power symbols cannot
+  request inclusion. These are boolean values, not KiCad `yes`/`no` strings.
+  This emission policy does not qualify a fabrication package: current fab
+  export still refuses non-DNP native exclusions, including marked assembly
+  exclusions. Board propagation and fab BOM/CPL agreement remain unqualified
+  for this policy (AGENTEE-288).
 - Pin offsets must be exactly representable on the native 100 nm coordinate
   lattice. Coordinates are never snapped. The editor's customary 1.27 mm grid
   is not an electrical-connectivity restriction; native ERC may still report
