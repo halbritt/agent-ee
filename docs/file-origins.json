@@ -3475,6 +3475,26 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-233 synthetic passive-rating tests: owned JLCPCB-shaped rows, authored one-page text PDFs and synthetic part numbers. No vendor PDF, real pod part data, third-party design or library content is copied."
+    },
+    {
+      "paths": [
+        "fixtures/generation-benchmark/exclusions.json",
+        "fixtures/generation-benchmark/generate.py",
+        "fixtures/generation-benchmark/original-series/evaluator/Owned.kicad_sym",
+        "fixtures/generation-benchmark/original-series/evaluator/requirements.md",
+        "fixtures/generation-benchmark/original-series/evaluator/rules.json",
+        "fixtures/generation-benchmark/original-series/evaluator/stock/template/fp-lib-table",
+        "fixtures/generation-benchmark/original-series/evaluator/stock/template/sym-lib-table",
+        "fixtures/generation-benchmark/original-series/pins.json",
+        "fixtures/generation-benchmark/original-series/prompt.md",
+        "fixtures/generation-benchmark/original-series/reference.kicad_sch",
+        "fixtures/generation-benchmark/original-series/task.json"
+      ],
+      "kind": "owned-fixture",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-69 generation benchmark task, prompt, expected topology, symbol library and native reference; generated from the existing original topology fixture generator. No upstream prompts, rules, source, designs or libraries were imported. Pin hashes bind these original files only."
     }
   ]
 }

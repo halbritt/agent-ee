@@ -1,0 +1,65 @@
+{
+  "classes": {
+    "Owned:R": {
+      "class": "resistor",
+      "terminals": {
+        "1": "1",
+        "2": "2"
+      }
+    },
+    "Owned:TP": {
+      "class": "connector",
+      "terminals": {
+        "1": "1"
+      }
+    }
+  },
+  "rules": [
+    {
+      "components": [
+        {
+          "class": "resistor",
+          "role": "first",
+          "terminals": {
+            "1": "IN",
+            "2": "MID"
+          },
+          "value": "1k"
+        },
+        {
+          "class": "resistor",
+          "role": "second",
+          "terminals": {
+            "1": "MID",
+            "2": "OUT"
+          },
+          "value": "1k"
+        },
+        {
+          "class": "connector",
+          "role": "input",
+          "terminals": {
+            "1": "IN"
+          }
+        },
+        {
+          "class": "connector",
+          "role": "output",
+          "terminals": {
+            "1": "OUT"
+          }
+        }
+      ],
+      "fixed_nets": {
+        "IN": "/IN",
+        "MID": "/MID",
+        "OUT": "/OUT"
+      },
+      "id": "series",
+      "match": "exact",
+      "requirement": "SERIES-1",
+      "type": "expected_components"
+    }
+  ],
+  "schema": "agent-ee.topology-rules/1"
+}
