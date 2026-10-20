@@ -28,7 +28,10 @@ The [generation benchmark](generation-benchmark.md) reuses these handlers on
 captured generated outputs, preserves failed execution separately from defects,
 and leaves unknown score coverage explicit. Private prompt paths are refused
 before execution; unsafe generated output records failed generation and unknown
-checks. Summaries require reports bound to retained evaluation trials. It
+checks. Only `prompt.md` can be selected; `--expect-pins` anchors task pins to
+an externally retained digest. Summaries replay scoring from retained task,
+candidate and sealed check evidence, and count failed generation as failed even
+when its check outputs pass. Board references support board-only task pinning. It
 registers no new check kind.
 
 All handlers execute against the captured candidate, not the source checkout.

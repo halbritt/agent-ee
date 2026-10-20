@@ -8,7 +8,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from .baseline import compile_baseline, freeze_evidence, verify_evidence
-from .candidate import capture, safe_relative
+from .candidate import capture, safe_relative, verify_snapshot
 from .catalog import exact_fields, nonempty, strict_json
 from .design_diff import read_side, summarize
 from .executor import SANDBOX_PATH, execute
@@ -44,9 +44,11 @@ def output_files(root):
         return {}, 'non_ordinary_output'
 
 
-def pinned_task(root):
+def pinned_task(root, *, expect_pins=None):
     root = Path(root)
     files = tree_files(root)
+    if expect_pins is not None and files.get('pins.json') != expect_pins:
+        raise ValueError('external pins digest mismatch')
     pin = strict_json((root / 'pins.json').read_bytes())
     exact_fields(pin, ('schema', 'files'))
     if pin['schema'] != 'agent-ee.generation-pins/1' or pin['files'] != {
@@ -64,9 +66,8 @@ def pinned_task(root):
         if str(safe_relative(task[key])) != task[key] or task[key] not in files:
             raise ValueError('missing or non-canonical task ' + key)
     # Only the prompt reaches the generator: never evaluator inputs, the reference or task metadata.
-    if (task['prompt'].startswith('evaluator/') or
-            task['prompt'] in (task['reference'], 'task.json', 'pins.json')):
-        raise ValueError('public prompt must be separate from evaluator inputs')
+    if task['prompt'] != 'prompt.md' or task['prompt'] == task['reference']:
+        raise ValueError('public prompt must be prompt.md, separate from evaluator inputs')
     deliverables = task['deliverables']
     if not isinstance(deliverables, list) or not deliverables or len(set(deliverables)) != len(deliverables):
         raise ValueError('expected unique deliverables')
@@ -116,8 +117,11 @@ def pinned_task(root):
         raise ValueError('unscored deliverable')
     task['files'] = files
     # Existing placement/UUID-insensitive structural projection, deliberately conservative.
-    node, _ = read_side((root / task['reference']).read_bytes(), 'schematic', None)
-    task['fingerprint'] = summarize(node, 'schematic')['hashes']['structural']
+    kind = {'.kicad_sch': 'schematic', '.kicad_pcb': 'board'}.get(Path(task['reference']).suffix)
+    if kind is None:
+        raise ValueError('reference must be a native schematic or board')
+    node, _ = read_side((root / task['reference']).read_bytes(), kind, None)
+    task['fingerprint'] = summarize(node, kind)['hashes']['structural']
     return task
 
 
@@ -182,7 +186,8 @@ def publish_report(store, report):
     return path
 
 
-def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', timeout=120):
+def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', timeout=120,
+             expect_pins=None):
     """Evaluate one retained output; generator result.json claims are never read."""
     from .checks import run_checks
     if type(timeout) is not int or timeout < 1:
@@ -190,7 +195,7 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
     if generation_execution not in ('ok', 'failed'):
         raise ValueError('generation execution must be ok or failed')
     task_root, outputs, trial = Path(task_root), Path(outputs), Path(trial)
-    task = pinned_task(task_root)
+    task = pinned_task(task_root, expect_pins=expect_pins)
     observed, output_error = output_files(outputs)
     if output_error:
         generation_execution = 'failed'
@@ -198,6 +203,9 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
     selected = {k: observed[k] for k in task['deliverables'] if k in observed}
     environment = evaluator_identity()
     trial.mkdir(parents=True, exist_ok=False)
+    shutil.copytree(task_root, trial / 'task')
+    if pinned_task(trial / 'task')['files'] != task['files']:
+        raise ValueError('task changed during capture')
     checks = []
     capture_error = None
     if not missing and output_error is None:
@@ -239,6 +247,7 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
               'evaluation': {'capture_error': capture_error,
                              'checks': [{k: c[k] for k in ('id', 'kind', 'execution', 'outcome')} for c in checks]},
               'scoring': score(task['rules'], checks, missing)}
+    report['result'] = combined_result(generation_execution, report['scoring'])
     path = publish_report(store, report)
     receipt = {'schema': 'agent-ee.generation-evaluation-record/1',
                'report': str(path.resolve()), 'report_sha256': digest(path)}
@@ -251,14 +260,19 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
     return path
 
 
-def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120):
+def combined_result(generation_execution, scoring):
+    return {'generation_execution': generation_execution,
+            'overall_pass': False if generation_execution == 'failed' else scoring['overall_pass']}
+
+
+def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, expect_pins=None):
     """One initial attempt plus at most two repairs, each in its own offline sandbox."""
     if type(attempts) is not int or not 1 <= attempts <= 3:
         raise ValueError('attempts must be 1..3')
     if type(timeout) is not int or timeout < 1:
         raise ValueError('timeout must be a positive integer')
     task_root, scratch = Path(task_root), Path(scratch)
-    task = pinned_task(task_root)
+    task = pinned_task(task_root, expect_pins=expect_pins)
     scratch.mkdir(parents=True, exist_ok=False)
     public = scratch / 'public'
     public.mkdir()
@@ -283,7 +297,8 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120):
         record = execute(public, work, ['/usr/bin/python3', '/candidate/generator.py',
                                         '/candidate/prompt.md', '/work/output'], timeout=timeout)
         path = evaluate(task_root, work / 'output', scratch / f'evaluation-{index + 1}', store,
-                        generation_execution='ok' if record['execution'] == 'ok' else 'failed', timeout=timeout)
+                        generation_execution='ok' if record['execution'] == 'ok' else 'failed', timeout=timeout,
+                        expect_pins=task['files']['pins.json'])
         reports.append(path)
         # Repair feedback reveals only check status, never evaluator rules or criterion text.
         report = strict_json(path.read_bytes())
@@ -349,8 +364,62 @@ def recorded_report(path):
         if ({k: v for k, v in receipt.items() if k != 'trial'} == expected and
                 (trial / 'evaluation.json').is_file() and
                 strict_json((trial / 'evaluation.json').read_bytes()) == expected):
+            replay_report(trial, report)
             return report
     raise ValueError('report is not bound to a recorded evaluation trial')
+
+
+def replay_report(trial, report):
+    """Recompute derived claims without invoking tools or trusting report verdicts."""
+    binding = report['binding']
+    task = pinned_task(trial / 'task', expect_pins=binding['task_files']['pins.json'])
+    if task['files'] != binding['task_files']:
+        raise ValueError('retained task differs from report binding')
+    selected = binding['outputs']
+    if not set(selected) <= set(task['deliverables']):
+        raise ValueError('unexpected bound outputs')
+    output_error = binding['output_error']
+    execution = binding['generation_execution']
+    if execution not in ('ok', 'failed') or output_error not in (None, 'non_ordinary_output'):
+        raise ValueError('invalid generation outcome')
+    if output_error is not None and (execution != 'failed' or selected):
+        raise ValueError('unsafe outputs cannot provide evidence')
+    missing = [] if output_error else sorted(set(task['deliverables']) - set(selected))
+    checks = []
+    capture_error = None
+    if not missing and output_error is None:
+        inputs = tree_files(trial / 'evaluation-inputs')
+        expected_inputs = {k.removeprefix('evaluator/'): v for k, v in task['files'].items()
+                           if k.startswith('evaluator/')}
+        expected_inputs.update(selected)
+        if inputs != expected_inputs:
+            raise ValueError('retained evaluation inputs differ from binding')
+        run = trial / 'run'
+        if (run / 'work/verification/evidence.json').exists():
+            manifest = verify_snapshot(run)
+            expected_scope = {**task['scope'], 'inputs': [
+                {'path': 'evaluation-inputs/' + rel, 'at': rel} for rel in inputs]}
+            if manifest['scope'] != expected_scope or manifest['files'] != expected_inputs:
+                raise ValueError('retained candidate differs from task or outputs')
+            checks = [strict_json((run / 'checks' / (c['id'] + '.json')).read_bytes())
+                      for c in task['scope']['checks']]
+            verify_evidence(run, checks, required=True)
+        else:
+            # Failed capture has no check evidence and can never establish a pass.
+            capture_error = report['evaluation']['capture_error']
+            if capture_error not in ('ValueError', 'FileNotFoundError'):
+                raise ValueError('missing retained evidence seal')
+    scoring = score(task['rules'], checks, missing)
+    derived = {'task': task['id'], 'domain': task['domain'], 'difficulty': task['difficulty'],
+               'fingerprint': task['fingerprint'], 'scoring': scoring,
+               'result': combined_result(execution, scoring),
+               'generation': {'execution': execution, 'missing_deliverables': missing,
+                              'output_error': output_error},
+               'evaluation': {'capture_error': capture_error,
+                              'checks': [{k: c[k] for k in ('id', 'kind', 'execution', 'outcome')}
+                                         for c in checks]}}
+    if any(report.get(k) != v for k, v in derived.items()):
+        raise ValueError('report contradicts retained evidence')
 
 
 def aggregate(paths):
@@ -366,9 +435,9 @@ def aggregate(paths):
                          **average_scores([r['scoring'] for r in group]),
                          'categories': {c: average_scores([r['scoring']['categories'][c] for r in group
                                                           if c in r['scoring']['categories']]) for c in categories},
-                         'passed': sum(r['scoring']['overall_pass'] is True for r in group),
-                         'failed': sum(r['scoring']['overall_pass'] is False for r in group),
-                         'unknown': sum(r['scoring']['overall_pass'] is None for r in group),
+                         'passed': sum(r['result']['overall_pass'] is True for r in group),
+                         'failed': sum(r['result']['overall_pass'] is False for r in group),
+                         'unknown': sum(r['result']['overall_pass'] is None for r in group),
                          'generation_failed': sum(r['generation']['execution'] == 'failed' for r in group)})
     return {'schema': 'agent-ee.generation-summary/1', 'rows': rows}
 
@@ -381,6 +450,7 @@ def main(argv=None):
         run.add_argument('--' + name, required=True)
     run.add_argument('--attempts', type=int, default=3)
     run.add_argument('--timeout', type=int, default=120)
+    run.add_argument('--expect-pins', help='externally retained SHA-256 of task pins.json')
     split = sub.add_parser('split')
     split.add_argument('--exclusions', required=True)
     split.add_argument('--seed', default='0')
@@ -390,7 +460,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.command == 'run':
         result = [str(p) for p in run_task(args.task, args.generator, args.scratch, args.store,
-                                         attempts=args.attempts, timeout=args.timeout)]
+                                         attempts=args.attempts, timeout=args.timeout,
+                                         expect_pins=args.expect_pins)]
     elif args.command == 'split':
         result = split_tasks(args.tasks, strict_json(Path(args.exclusions).read_bytes()), seed=args.seed)
     else:

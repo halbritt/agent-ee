@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from agent_ee.generation_benchmark import (aggregate, average_scores, evaluate, pinned_task, publish_report,
-                                           run_task, score, split_tasks, tree_files)
+                                           main, run_task, score, split_tasks, tree_files)
 from agent_ee.storage import digest, read_json, write_json
 from toolchain import require_toolchain
 
@@ -36,6 +36,63 @@ class TaskTests(unittest.TestCase):
         task = pinned_task(self.task)
         self.assertEqual(task['id'], 'original-series')
         self.assertEqual(len(task['fingerprint']), 64)
+
+    def test_external_pins_digest_refuses_coordinated_task_repin(self):
+        anchor = digest(self.task / 'pins.json')
+        self.assertEqual(pinned_task(self.task, expect_pins=anchor)['id'], 'original-series')
+        (self.task / 'prompt.md').write_text('Changed task')
+        repin(self.task)
+        with self.assertRaisesRegex(ValueError, 'external pins digest'):
+            pinned_task(self.task, expect_pins=anchor)
+        with self.assertRaisesRegex(ValueError, 'external pins digest'):
+            run_task(self.task, self.root / 'absent.py', self.root / 'trial', self.root / 'store',
+                     expect_pins=anchor)
+        with self.assertRaisesRegex(ValueError, 'external pins digest'):
+            main(['run', '--task', str(self.task), '--generator', str(self.root / 'absent.py'),
+                  '--scratch', str(self.root / 'trial'), '--store', str(self.root / 'store'),
+                  '--expect-pins', anchor])
+        self.assertFalse((self.root / 'trial').exists())
+
+    def test_only_prompt_md_can_be_public(self):
+        shutil.copyfile(self.task / 'evaluator/rules.json', self.task / 'notes.md')
+        self.edit(lambda d: d.update(prompt='notes.md'))
+        with self.assertRaisesRegex(ValueError, 'prompt.md'):
+            pinned_task(self.task)
+
+    def test_board_only_task_fingerprint_and_split(self):
+        # Original in-repository board fixture; no third-party design import.
+        board = FIXTURE.parents[1] / 'stages/placed.kicad_pcb'
+        shutil.copyfile(board, self.task / 'reference.kicad_pcb')
+        def board_task(doc):
+            doc['reference'] = 'reference.kicad_pcb'
+            doc['scope'].pop('schematic')
+            doc['scope']['board'] = 'circuit.kicad_pcb'
+            doc['scope'].pop('stages')
+            doc['scope']['checks'] = [{'id': 'width', 'kind': 'geometry',
+                                       'params': {'min_track_width_mm': 0.2}}]
+            doc['scope']['baseline']['requirements'] = [
+                {**doc['scope']['baseline']['requirements'][0], 'checks': ['width']}]
+            doc['deliverables'] = ['circuit.kicad_pcb']
+            doc['rules'] = [{**doc['rules'][0], 'check': 'width', 'deliverables': doc['deliverables']}]
+        self.edit(board_task)
+        task = pinned_task(self.task)
+        self.assertEqual(len(task['fingerprint']), 64)
+        result = split_tasks([self.task], {'schema': 'agent-ee.generation-exclusions/1',
+                                          'version': '1', 'tasks': {}})
+        self.assertEqual(len(result['train']) + len(result['test']), 1)
+        alias = self.root / 'board-alias'
+        shutil.copytree(self.task, alias)
+        doc = read_json(alias / 'task.json')
+        doc['id'] = 'board-alias'
+        write_json(alias / 'task.json', doc)
+        repin(alias)
+        result = split_tasks([self.task, alias], {'schema': 'agent-ee.generation-exclusions/1',
+                                                 'version': '1', 'tasks': {}})
+        self.assertEqual(sorted([len(result['train']), len(result['test'])]), [0, 2])
+        (self.task / 'reference.kicad_pcb').write_text('broken')
+        repin(self.task)
+        with self.assertRaises(ValueError):
+            pinned_task(self.task)
 
     def test_every_task_file_is_pinned_and_extra_files_are_refused(self):
         for rel in read_json(self.task / 'pins.json')['files']:
@@ -226,6 +283,57 @@ class NativeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'one selected attempt'):
             aggregate([first, second])
 
+    def test_failed_generation_with_passing_outputs_has_failed_overall_result(self):
+        self.native_output()
+        path = self.evaluate(generation_execution='failed')
+        report = read_json(path)
+        self.assertTrue(report['scoring']['overall_pass'])
+        self.assertEqual(report['result'], {'generation_execution': 'failed', 'overall_pass': False})
+        self.assertEqual([r['passed'] for r in aggregate([path])['rows']], [0, 0])
+
+    def rewrite_report_receipts(self, path, report):
+        write_json(path, report)
+        receipt = read_json(self.root / 'eval-1/evaluation.json')
+        receipt['report_sha256'] = digest(path)
+        write_json(self.root / 'eval-1/evaluation.json', receipt)
+        for index in (path.parent / 'trials').glob('*.json'):
+            write_json(index, {'trial': str((self.root / 'eval-1').resolve()), **receipt})
+
+    def test_aggregate_recomputes_scoring_after_coordinated_receipt_rewrite(self):
+        self.native_output((FIXTURE / 'reference.kicad_sch').read_bytes().replace(b'"1k"', b'"2k"'))
+        path = self.evaluate()
+        report = read_json(path)
+        self.assertFalse(report['scoring']['overall_pass'])
+        report['scoring'] = score(pinned_task(FIXTURE)['rules'], [
+            {'id': r['check'], 'execution': 'ok', 'outcome': 'pass'}
+            for r in pinned_task(FIXTURE)['rules']])
+        report['evaluation']['checks'] = []
+        self.rewrite_report_receipts(path, report)
+        with self.assertRaisesRegex(ValueError, 'retained evidence'):
+            aggregate([path])
+
+    def test_aggregate_refuses_damaged_sealed_evidence_and_task_snapshot(self):
+        self.native_output()
+        path = self.evaluate()
+        check = self.root / 'eval-1/run/checks/components.json'
+        original = check.read_bytes()
+        doc = read_json(check)
+        doc['outcome'] = 'unknown'
+        write_json(check, doc)
+        with self.assertRaises(ValueError):
+            aggregate([path])
+        check.write_bytes(original)
+        self.assertEqual([r['passed'] for r in aggregate([path])['rows']], [1, 1])
+        seal = self.root / 'eval-1/run/work/verification/evidence.json'
+        original_seal = seal.read_bytes()
+        seal.unlink()
+        with self.assertRaisesRegex(ValueError, 'missing retained evidence seal'):
+            aggregate([path])
+        seal.write_bytes(original_seal)
+        (self.root / 'eval-1/task/prompt.md').write_text('tampered')
+        with self.assertRaises(ValueError):
+            aggregate([path])
+
     def test_aggregate_refuses_changed_or_missing_trial_binding(self):
         path = self.evaluate()
         receipt = self.root / 'eval-1/evaluation.json'
@@ -312,9 +420,17 @@ class NativeTests(unittest.TestCase):
 
     def test_malformed_native_output_is_unknown(self):
         self.native_output(b'broken native schematic')
-        report = read_json(self.evaluate())
+        path = self.evaluate()
+        report = read_json(path)
         self.assertIsNone(report['scoring']['overall_pass'], report)
         self.assertIsNone(report['scoring']['score'])
+        self.assertEqual([r['unknown'] for r in aggregate([path])['rows']], [1, 1])
+        report['scoring'] = score(pinned_task(FIXTURE)['rules'], [
+            {'id': r['check'], 'execution': 'ok', 'outcome': 'pass'}
+            for r in pinned_task(FIXTURE)['rules']])
+        self.rewrite_report_receipts(path, report)
+        with self.assertRaisesRegex(ValueError, 'retained evidence'):
+            aggregate([path])
 
     def test_generator_is_offline_and_cannot_read_evaluator_rules(self):
         generator = self.root / 'generator.py'
