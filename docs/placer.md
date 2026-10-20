@@ -405,7 +405,9 @@ fragmentation row, although they need only about 81 % of the free area.
 
 `placement_adapter.binding` reads the outline and fixed-reference
 [envelope provenance](board-envelope.md#constraint-provenance) from the captured
-placement envelopes. It writes them into the policy as `constraint_provenance:
+placement envelopes, validated against the capture inventory: an owner quote
+whose source is not captured, has changed, does not contain the quote, or is a
+mutable input refuses the envelope (AGENTEE-271). It writes them into the policy as `constraint_provenance:
 {outline, fixed: {reference: entry}}`. A packing policy file that declares it
 is refused by the adapter and the pod driver. If any consumed envelope lacks
 provenance, nothing is written. With several envelopes, any hard statement of a
