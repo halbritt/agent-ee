@@ -51,7 +51,8 @@ be unique. No pin is guessed, reassigned or silently deduplicated.
 `in_bom` is an optional boolean component policy in both intent versions.
 Resolution preserves the value and its source locator. The schematic emitter
 uses it to override the library's BOM flag without setting DNP or removing the
-part from the board. Native BOM exclusion does not yet qualify fab BOM/CPL
+part from the board. The older `schematic_emit` entry point refuses this optional
+field. Native BOM exclusion does not yet qualify fab BOM/CPL
 consistency; see [emitter limits](schematic-emitter.md#output).
 
 `part_binding` is an optional opaque JSON object. This resolver preserves it

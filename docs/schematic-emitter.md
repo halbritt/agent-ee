@@ -135,6 +135,8 @@ KiCad 10.0):
   and leaving DNP unchanged. `true` explicitly includes a physical component;
   omitted values retain the captured library policy. Power symbols cannot
   request inclusion. These are boolean values, not KiCad `yes`/`no` strings.
+  The older `agent_ee.schematic_emit` entry point refuses explicit component
+  BOM policies instead of ignoring them.
   This emission policy does not qualify a fabrication package: current fab
   export still refuses non-DNP native exclusions, including marked assembly
   exclusions. Board propagation and fab BOM/CPL agreement remain unqualified

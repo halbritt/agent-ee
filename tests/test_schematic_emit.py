@@ -61,6 +61,14 @@ def resolved_bytes(intent, captures):
 
 
 class OwnedEmissionTests(unittest.TestCase):
+    def test_component_bom_policy_is_refused_instead_of_ignored(self):
+        for flag in (False, True):
+            with self.subTest(in_bom=flag):
+                intent = owned_intent()
+                intent['components'][0]['in_bom'] = flag
+                with self.assertRaisesRegex(EmitError, 'in_bom policy requires agent_ee.schematic_emitter'):
+                    self.emit_owned(intent=intent)
+
     def test_libraries_are_parsed_once_and_never_retained_between_emissions(self):
         from unittest import mock
         from agent_ee import symbol_library
