@@ -37,9 +37,22 @@ parsing and native property storage. The existing `part_binding.parse_param_valu
 validates the schema, URL and PDF identity; `storage.canonical` defines the exact
 JSON spelling. The emitter preserves the accepted bytes, including the full URL
 and identity. Duplicate keys, noncanonical JSON, controls, backslashes and `${`
-text variables are refused. All ordinary fields, including `Datasheet` and other
-`PARAM_*` properties, keep their 256-character limit. The probe identity property
+text variables are refused. A plain `Datasheet` longer than 256 characters is
+allowed only when it equals the URL in a validated canonical `PARAM_Datasheet`
+on the same component, and is itself safe ASCII of at most 2048 bytes
+(AGENTEE-296). The complete companion JSON must also fit its 2048-byte bound;
+this makes the usable URL bound smaller than 2048 bytes. No normalization or
+prefix matching is applied. Other plain datasheets and `PARAM_*` properties keep
+their existing 256-character limit. The probe identity property
 retains its separate existing contract.
+
+Legacy `Datasheet` and `PARAM_Datasheet` text whose first visible character is
+`[` or `{` after whitespace and Unicode format (`Cf`) prefixes receives a typed
+`suspicious_datasheet_text` receipt finding. This diagnostic preserves legacy
+emission and its `info` outcome, including `[]`; it grants no structured-binding
+status. Object-like `PARAM_Datasheet` text after ordinary whitespace still must
+pass canonical structured validation. The binding validator independently
+refuses arrays and invisible-prefixed JSON as malformed parameters.
 
 ## Inputs
 
@@ -461,7 +474,8 @@ Tests: `tests/test_schematic_emitter.py`, using original fixtures in
 `fixtures/generation` ([provenance](../fixtures/generation/PROVENANCE.md)).
 The long datasheet-binding regression uses a representative 152-character
 Microchip URL with an original synthetic PDF identity. It tests the 278-byte
-binding and exact 2048-byte boundary, malformed and unsafe refusals, and native
+binding and exact 2048-byte boundary, paired plain URLs longer than 256 characters,
+mismatched or invalid companions, invisible-prefix and array diagnostics, and native
 forced-save byte preservation followed by XML netlist export.
 Native tests run KiCad 10.0.7 `kicad-cli` through the production Bubblewrap
 executor with networking unshared:

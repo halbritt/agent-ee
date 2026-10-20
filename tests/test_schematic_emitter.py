@@ -331,6 +331,41 @@ class DeterminismTests(unittest.TestCase):
                 self.assertEqual(prop[2].encode('utf-8'), raw.encode('utf-8'))
                 self.assertIn(['hide', 'yes'], prop)
 
+    def test_long_plain_datasheet_requires_exact_validated_companion(self):
+        url = 'https://example.com/' + 'a' * 1902
+        self.assertEqual(len(datasheet_binding(url).encode('utf-8')), 2048)
+        for reverse in (False, True):
+            intent = load('regulator.intent.json')
+            fields = [('Datasheet', url), ('PARAM_Datasheet', datasheet_binding(url))]
+            intent['components'][0]['part_binding'] = dict(reversed(fields) if reverse else fields)
+            result, files = emit(intent=intent)
+            self.assertEqual(result['execution'], 'ok', result)
+            props = [p[2] for symbol in children(parse_sexpr(files['regulator.kicad_sch']), 'symbol')
+                     for p in children(symbol, 'property') if p[1] == 'Datasheet']
+            self.assertIn(url, props)
+
+    def test_json_looking_legacy_datasheets_have_typed_diagnostics(self):
+        from agent_ee.part_binding import PartBindingMalformedError, parse_param_value
+        for name in ('PARAM_Datasheet', 'Datasheet'):
+            for value in ('[]', '[{}]', ' \t[{}]', '\u200b{}', '\ufeff{}',
+                          '\u2060[]', ' \u200b\ufeff \u2060{}'):
+                with self.subTest(name=name, value=value):
+                    with self.assertRaises(PartBindingMalformedError):
+                        parse_param_value(value, 'PARAM_Datasheet')
+                    intent = load('regulator.intent.json')
+                    intent['components'][0]['part_binding'] = {name: value}
+                    result, files = emit(intent=intent)
+                    # Tabs remain refused by ordinary text safety rules.
+                    if '\t' in value:
+                        self.assertEqual(result['execution'], 'failed')
+                    else:
+                        self.assertEqual(result['execution'], 'ok', result)
+                        self.assertIsNotNone(files)
+                    self.assertIn({'code': 'suspicious_datasheet_text',
+                                   'location': '/components/j_in/part_binding/' + name,
+                                   'message': 'JSON-looking legacy datasheet text is not a structured binding'},
+                                  result['findings'])
+
     def test_legacy_datasheet_text_preserves_original_validation(self):
         for raw in ('', 'owned-datasheet.pdf', '[]', 'x' * 256, 'é' * 256):
             with self.subTest(value=raw):
@@ -425,6 +460,26 @@ class DeterminismTests(unittest.TestCase):
 
 
 class RefusalTests(unittest.TestCase):
+    def test_long_plain_datasheet_refuses_unverified_or_mismatched_binding(self):
+        url = 'https://example.com/' + 'a' * 300
+        cases = [None, 'legacy', '[]', '{}', ' ' + datasheet_binding(url),
+                 datasheet_binding(url + 'b'), datasheet_binding(url).replace('"schema":', '"other":'),
+                 datasheet_binding(url).replace('"sha256":', '"sha256":"invalid","extra":')]
+        for binding in cases:
+            with self.subTest(binding=binding):
+                intent = load('regulator.intent.json')
+                intent['components'][0]['part_binding'] = {'Datasheet': url}
+                if binding is not None:
+                    intent['components'][0]['part_binding']['PARAM_Datasheet'] = binding
+                self.assertRefused('malformed_part_binding', intent=intent)
+        intent = load('regulator.intent.json')
+        intent['components'][0]['part_binding'] = {'Datasheet': url}
+        intent['components'][1]['part_binding'] = {'PARAM_Datasheet': datasheet_binding(url)}
+        self.assertRefused('malformed_part_binding', intent=intent)
+        for url in ('https://example.com/' + 'a' * 1903, 'https://example.com/${INJECT}' + 'a' * 300):
+            intent['components'][0]['part_binding'] = {'Datasheet': url, 'PARAM_Datasheet': datasheet_binding(url)}
+            self.assertRefused('malformed_part_binding', intent=intent)
+
     def test_invalid_structured_datasheet_bindings_are_refused(self):
         raw = datasheet_binding()
         invalid = [None, 123, '{', ' {', ' ' + raw, raw + ' ',
@@ -751,6 +806,29 @@ def native_netlist(path):
 
 
 class NativeEmissionTests(unittest.TestCase):
+    def test_long_paired_datasheet_native_roundtrip(self):
+        intent = load('regulator.intent.json')
+        url = 'https://example.com/' + 'a' * 1902
+        raw = datasheet_binding(url)
+        intent['components'][0]['part_binding'] = {'Datasheet': url, 'PARAM_Datasheet': raw}
+        result, files = emit(intent=intent, **tables())
+        self.assertEqual(result['execution'], 'ok', result)
+        project = native_project({**captures(intent), **files}, Path(self.tmp) / 'paired-datasheet')
+        work = Path(self.tmp) / 'paired-datasheet/work'
+        self.assertNativeResave(project, work, 'regulator', files)
+        saved = parse_sexpr((work / 'resave/copy/regulator.kicad_sch').read_bytes())
+        symbol = next(s for s in children(saved, 'symbol')
+                      if any(p[1:3] == ['Reference', 'J1'] for p in children(s, 'property')))
+        props = {p[1]: p[2] for p in children(symbol, 'property')}
+        self.assertEqual(props['Datasheet'].encode(), url.encode())
+        self.assertEqual(props['PARAM_Datasheet'].encode(), raw.encode())
+        run_native(project, work, 'kicad-cli', 'sch', 'export', 'netlist',
+                   '--format', 'kicadxml', '-o', '/work/design.xml',
+                   '/work/resave/copy/regulator.kicad_sch')
+        comp = ET.parse(work / 'design.xml').find('./components/comp[@ref="J1"]')
+        self.assertEqual(comp.findtext('datasheet'), url)
+        self.assertEqual(comp.findtext('./fields/field[@name="PARAM_Datasheet"]'), raw)
+
     def test_long_datasheet_binding_native_roundtrip(self):
         intent = load('regulator.intent.json')
         raw = datasheet_binding()
