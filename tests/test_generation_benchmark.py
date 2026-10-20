@@ -59,6 +59,32 @@ class TaskTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'prompt.md'):
             pinned_task(self.task)
 
+    def test_prompt_copy_of_private_inputs_is_refused_before_execution(self):
+        nested = self.task / 'evaluator/nested/private.txt'
+        nested.parent.mkdir()
+        nested.write_bytes(b'Private evaluator input\r\n')
+        private = sorted(p for p in (self.task / 'evaluator').rglob('*') if p.is_file())
+        private.append(self.task / 'reference.kicad_sch')
+        for index, source in enumerate(private):
+            (self.task / 'prompt.md').write_bytes(source.read_bytes())
+            repin(self.task)
+            scratch = self.root / f'private-copy-{index}'
+            with self.subTest(source=source.relative_to(self.task)):
+                with self.assertRaisesRegex(ValueError, 'prompt duplicates private input'):
+                    pinned_task(self.task)
+                with self.assertRaisesRegex(ValueError, 'prompt duplicates private input'):
+                    run_task(self.task, self.root / 'absent.py', scratch, self.root / 'store')
+                with self.assertRaisesRegex(ValueError, 'prompt duplicates private input'):
+                    evaluate(self.task, self.root / 'absent-output', scratch, self.root / 'store')
+                self.assertFalse(scratch.exists())
+                self.assertFalse((self.root / 'store').exists())
+
+    def test_prompt_content_comparison_is_byte_exact(self):
+        private = (self.task / 'evaluator/rules.json').read_bytes()
+        (self.task / 'prompt.md').write_bytes(private + b'\n')
+        repin(self.task)
+        self.assertEqual(pinned_task(self.task)['prompt'], 'prompt.md')
+
     def test_board_only_task_fingerprint_and_split(self):
         # Original in-repository board fixture; no third-party design import.
         board = FIXTURE.parents[1] / 'stages/placed.kicad_pcb'

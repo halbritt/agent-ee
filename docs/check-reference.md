@@ -28,11 +28,14 @@ The [generation benchmark](generation-benchmark.md) reuses these handlers on
 captured generated outputs, preserves failed execution separately from defects,
 and leaves unknown score coverage explicit. Private prompt paths are refused
 before execution; unsafe generated output records failed generation and unknown
-checks. Only `prompt.md` can be selected; `--expect-pins` anchors task pins to
-an externally retained digest. Summaries replay scoring from retained task,
-candidate and sealed check evidence, and count failed generation as failed even
-when its check outputs pass. Board references support board-only task pinning. It
-registers no new check kind.
+checks. Only `prompt.md` can be selected, and byte-identical copies of evaluator
+inputs or the reference are refused. Opt-in `--expect-pins` anchors task pins to
+an externally retained digest at execution. Summaries replay scoring from retained
+task, candidate and sealed check evidence, and count recorded failed generation
+as failed even when its check outputs pass. The local evidence seal and generation status do
+not authenticate a store writer, and aggregation has no external task metadata
+anchor; see the feature page's P1/P2/P3d limits. Board references support board-only
+task pinning. It registers no new check kind.
 
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox

@@ -68,6 +68,9 @@ def pinned_task(root, *, expect_pins=None):
     # Only the prompt reaches the generator: never evaluator inputs, the reference or task metadata.
     if task['prompt'] != 'prompt.md' or task['prompt'] == task['reference']:
         raise ValueError('public prompt must be prompt.md, separate from evaluator inputs')
+    if any(files[task['prompt']] == sha for path, sha in files.items()
+           if path.startswith('evaluator/') or path == task['reference']):
+        raise ValueError('prompt duplicates private input')
     deliverables = task['deliverables']
     if not isinstance(deliverables, list) or not deliverables or len(set(deliverables)) != len(deliverables):
         raise ValueError('expected unique deliverables')

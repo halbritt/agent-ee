@@ -33,7 +33,10 @@ or a router's self-report never establishes done.
 The offline [frozen generation benchmark](generation-benchmark.md) (AGENTEE-69)
 measures pinned tasks with evaluator-only checks and unknown-aware bounds.
 AGENTEE-278 adds an optional external pins digest, sealed-evidence score replay,
-an exact public prompt name, board fingerprints and a combined generation result.
+an exact public prompt name with private-input copy refusal, board fingerprints
+and a combined generation result. Local seals and generation status remain
+unauthenticated, and aggregation has no external task metadata anchor; see the
+feature page's threat model.
 An original series-resistor task qualifies the harness; the requested ten
 unlicensed prompts still require owner permission before import.
 
