@@ -1503,3 +1503,13 @@ Project and rules hashes must agree
 with the record. The constraint document, record, project and emitted rules are
 immutable baseline policy. Capability predicate: `netclass:effective-assignment`.
 Impedance stays `recorded_not_enforced`; native DRC checks actual copper.
+
+## Generated silkscreen geometry
+
+The [packed-board producer policy](scaffold.md#packed-board-silkscreen-policy-agentee-276)
+puts mounting-hole and dense chip references on fabrication layers and moves
+silkscreen from envelope-declared overhanging fixed footprints there. The placer
+reserves the native IMU axes text box on its own side. These are recorded design
+geometry choices, not DRC waivers: all remaining silkscreen warnings and errors
+retain the ordinary DRC verdict. Regeneration and fresh captured checks are
+required for an older candidate.

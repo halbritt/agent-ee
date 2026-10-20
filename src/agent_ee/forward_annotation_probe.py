@@ -12,6 +12,8 @@ import json
 import sys
 import uuid
 
+from .silkscreen import prepare_footprint
+
 # Fixed namespace for generated footprint and field identities.
 FOOTPRINT_NAMESPACE = uuid.UUID('7b1f3c52-8a0e-5d4b-9c61-2e7f0a9d3b85')
 # Destroying a removed FOOTPRINT corrupts pcbnew's SWIG type registry for the
@@ -126,6 +128,7 @@ def apply(board_path, plan, library_dir, out):
         fp.SetValue(item['value'])
         fp.SetPosition(pcbnew.VECTOR2I(*item['position_nm']))
         _set_fields(fp, item['fields'])
+        prepare_footprint(fp)
         _stable_uuids(fp, item['path'])
         board.Add(fp)
         footprints[fp.m_Uuid.AsString()] = fp

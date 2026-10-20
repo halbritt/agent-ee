@@ -26,6 +26,7 @@ from .fab_profile import NATIVE, compile_profile
 from .footprint_library import _members
 from .parts_manifest import load_manifest, qualify_manifest, read_captured
 from .schematic_emit import Quoted as Q, format_sexpr
+from .silkscreen import prepare_footprint
 from .storage import digest, identity, json_bytes
 from .symbol_library import children, nanometres, parse_sexpr
 
@@ -123,13 +124,13 @@ def schematic(root_uuid, path, plans, title):
 
 
 def board(record, seed):
-    """Emit only declared outline and stackup; project rules remain in .kicad_pro."""
+    """Emit outline and stackup with power inner layers; project rules stay in .kicad_pro."""
     count = record['layer_count']
     if count % 2:
         raise ValueError('native scaffold requires an even copper layer count')
     copper = record['copper_layers']
     layers = [['0', Q('F.Cu'), 'signal']]
-    layers += [[str(4 + 2 * i), Q(name), 'signal'] for i, name in enumerate(copper[1:-1])]
+    layers += [[str(4 + 2 * i), Q(name), 'power'] for i, name in enumerate(copper[1:-1])]
     layers.append(['2', Q('B.Cu'), 'signal'])
     # KiCad 10 technical-layer numbers, independent of copper layer count.
     layers += [[str(i), Q(name), 'user'] for i, name in (
@@ -297,6 +298,7 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
         fp.SetOrientationDegrees(float(declaration['rotation_deg']))
         fp.SetPosition(position(declaration['anchor_mm']))
         fp.SetLocked(True)
+        prepare_footprint(fp, overhang=bool(declaration.get('courtyard_overhangs')))
         footprints[ref] = fp
 
     for hole in record['mounting_holes']:
@@ -304,6 +306,7 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
             raise ValueError('mounting holes are board-only; remove the pinless symbol/parts instance: ' + hole['id'])
         fp = pcbnew.FOOTPRINT(native)
         fp.SetReference(hole['id'])
+        fp.Reference().SetLayer(pcbnew.F_Fab)
         fp.SetFPID(pcbnew.LIB_ID('',
             'AgentEE_Mechanical_MountingHole_PTH' if hole['plated'] else 'AgentEE_Mechanical_MountingHole_NPTH'))
         fp.SetValue('MountingHole')
