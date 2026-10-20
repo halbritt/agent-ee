@@ -42,6 +42,14 @@ an image whose tools report other versions or whose stock library paths used by
 the RC fixtures are missing. Unpinned dependencies (shared libraries, `git`) are
 fixed by the snapshot timestamp rather than individual version strings.
 
+All image-build `apt-get update` and `apt-get install` invocations use
+`Acquire::Retries=5`, with exponential retry delays enabled and each delay
+capped at eight seconds. This covers the TLS bootstrap, native toolchain,
+routing build stage and final zstd installation. Transient mirror failures
+(such as snapshot HTTP 500/502/503 responses) can recover within five retries
+per file; an exhausted package download still fails the build. Snapshot URLs,
+package version pins and signature verification remain unchanged.
+
 `doctor` reports the installed PDF extractor binary and, when
 `AGENT_EE_KICAD_HAPPY` names an installation, the analyzer version and its
 source-file hashes. Optional tools absent from a basic installation do not
