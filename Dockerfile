@@ -28,6 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Launchpad PPA for KiCad, fingerprint FDA854F61C4D0D9572BB95E5245D5502FAD7A805
 # (matches the PPA's published signing_key_fingerprint).
+COPY --chmod=755 docker/apt-retry.sh /usr/local/bin/apt-retry
 COPY docker/kicad-10.0-releases.asc /usr/share/keyrings/kicad-10.0-releases.asc
 
 RUN set -eu; \
@@ -35,8 +36,8 @@ RUN set -eu; \
     printf '%s\n' 'Types: deb' 'URIs: http://archive.ubuntu.com/ubuntu' 'Suites: noble' \
         'Components: main' 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
         > /etc/apt/sources.list.d/bootstrap.sources; \
-    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 update; \
-    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "ca-certificates=${CA_CERTIFICATES_VERSION}"; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "ca-certificates=${CA_CERTIFICATES_VERSION}"; \
     rm /etc/apt/sources.list.d/bootstrap.sources; \
     printf '%s\n' \
         'Types: deb' "URIs: https://snapshot.ubuntu.com/ubuntu/${APT_SNAPSHOT}" \
@@ -47,8 +48,8 @@ RUN set -eu; \
         'Suites: noble' 'Components: main' \
         'Signed-By: /usr/share/keyrings/kicad-10.0-releases.asc' \
         > /etc/apt/sources.list.d/agent-ee-snapshot.sources; \
-    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 update; \
-    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends \
         "python3=${PYTHON3_VERSION}" \
         "kicad=${KICAD_VERSION}" \
         "kicad-symbols=${KICAD_VERSION}" \
@@ -87,8 +88,8 @@ ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH RUSTUP_TOOLCHAIN=1.99.1
 ARG PYTHON3_PIP_VERSION=24.0+dfsg-1ubuntu1.3
 RUN set -eu; \
-    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 update; \
-    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "python3-pip=${PYTHON3_PIP_VERSION}" build-essential python3-dev; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "python3-pip=${PYTHON3_PIP_VERSION}" build-essential python3-dev; \
     rm -rf /var/lib/apt/lists/*
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN /usr/local/share/agent-ee/kicad-route/install.sh install
@@ -110,8 +111,8 @@ RUN set -eu; \
 # frames from the zstd CLI, from the same snapshot as the image's libzstd1.
 ARG ZSTD_VERSION=1.5.5+dfsg2-2build1.1
 RUN set -eu; \
-    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 update; \
-    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "zstd=${ZSTD_VERSION}"; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
+    apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "zstd=${ZSTD_VERSION}"; \
     apt-mark hold zstd; \
     rm -rf /var/lib/apt/lists/*; \
     zstd --version | grep -q 'v1\.5\.5'
