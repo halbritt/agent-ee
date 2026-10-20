@@ -160,29 +160,40 @@ class GateHardeningTest(unittest.TestCase):
     def test_rigid_intra_footprint_clearance_stays_baseline(self):
         import pcbnew as k
         from agent_ee.placer_runner import _drc_comparison, _drc_item_states, _native_drc
-        source = self.board()
-        board = k.LoadBoard(str(source))
-        fp = next(f for f in board.GetFootprints() if f.GetReference() == 'U1')
-        pad = k.PAD(next(iter(fp.Pads())))
-        pad.SetNumber('2')
-        fp.Add(pad)
-        for i, p in enumerate(fp.Pads()):
-            net = k.NETINFO_ITEM(board, f'net-{i}')
-            board.Add(net)
-            p.SetNet(net)
-        k.SaveBoard(str(source), board)
-        work = self.root / 'rigid'
-        work.mkdir()
-        before = _native_drc(source, work)
-        fp.Move(k.VECTOR2I(1000000, 0))
-        output = work / 'candidate.kicad_pcb'
-        k.SaveBoard(str(output), board)
-        after = _native_drc(output, work)
-        own = {p.m_Uuid.AsString() for p in fp.Pads()}
-        intra = lambda v: len(v['items']) > 1 and {i['uuid'] for i in v['items']} <= own
-        self.assertTrue(any(v['type'] == 'shorting_items' and intra(v) for v in before['violations']))
-        delta = _drc_comparison(before, after, _drc_item_states(source), _drc_item_states(output))
-        self.assertFalse(any(intra(v) for v in delta['blocking_findings']))
+        for distinct in (False, True):
+            with self.subTest(distinct_kiids=distinct):
+                source = self.board()
+                board = k.LoadBoard(str(source))
+                fp = next(f for f in board.GetFootprints() if f.GetReference() == 'U1')
+                first = next(iter(fp.Pads()))
+                pad = k.PAD(fp) if distinct else k.PAD(first)
+                if distinct:
+                    pad.SetAttribute(first.GetAttribute())
+                    pad.SetShape(first.GetShape())
+                    pad.SetSize(first.GetSize())
+                    pad.SetDrillSize(first.GetDrillSize())
+                    pad.SetLayerSet(first.GetLayerSet())
+                    pad.SetPosition(first.GetPosition())
+                pad.SetNumber('2')
+                fp.Add(pad)
+                for i, p in enumerate(fp.Pads()):
+                    net = k.NETINFO_ITEM(board, f'net-{i}')
+                    board.Add(net)
+                    p.SetNet(net)
+                k.SaveBoard(str(source), board)
+                work = self.root / f'rigid-{distinct}'
+                work.mkdir()
+                before = _native_drc(source, work)
+                fp.Move(k.VECTOR2I(1000000, 0))
+                output = work / 'candidate.kicad_pcb'
+                k.SaveBoard(str(output), board)
+                after = _native_drc(output, work)
+                own = {p.m_Uuid.AsString() for p in fp.Pads()}
+                self.assertEqual(len(own), 2 if distinct else 1)
+                intra = lambda v: len(v['items']) > 1 and {i['uuid'] for i in v['items']} <= own
+                self.assertTrue(any(v['type'] == 'shorting_items' and intra(v) for v in before['violations']))
+                delta = _drc_comparison(before, after, _drc_item_states(source), _drc_item_states(output))
+                self.assertFalse(any(intra(v) for v in delta['blocking_findings']))
 
     def test_peer_single_item_custom_rule_reserves_pth_gap(self):
         import pcbnew as k
@@ -209,3 +220,72 @@ class GateHardeningTest(unittest.TestCase):
         facts = extract(source)
         _qualified(facts)
         self.assertTrue(_hole_conflict(*facts['footprints']))
+
+    def _mask_source(self):
+        import pcbnew as k
+        import test_placement_native as fixture
+        maker = fixture.NativePlacementTest()
+        maker.root = self.root
+        original = maker.board()
+        board = k.LoadBoard(str(original))
+        for fp in board.GetFootprints():
+            for pad in fp.Pads():
+                layers = k.LSET()
+                layers.AddLayer(k.F_Cu)
+                layers.AddLayer(k.F_Mask)
+                pad.SetLayerSet(layers)
+                pad.SetLocalSolderMaskMargin(150000)
+        k.SaveBoard(str(original), board)
+        return original
+
+    def _mask_candidate(self, source, name):
+        import pcbnew as k
+        work = self.root / name
+        work.mkdir()
+        output = work / 'candidate.kicad_pcb'
+        board = k.LoadBoard(str(source))
+        next(f for f in board.GetFootprints() if f.GetReference() == 'C1').SetPosition(k.VECTOR2I(3700000, 3000000))
+        k.SaveBoard(str(output), board)
+        return output
+
+    def _share_pad_kiids(self, original, name, uppercase=False):
+        import re
+        text = original.read_text()
+        first, second = re.findall(r'\(pad .*?\(uuid "([0-9a-f-]+)"\)', text, flags=re.S)[:2]
+        source = self.root / f'{name}.kicad_pcb'
+        source.write_text(text.replace(second, first.upper() if uppercase else first))
+        return source
+
+    def test_shared_kiid_across_footprints_refuses_mask_bridge(self):
+        original = self._mask_source()
+        for uppercase in (False, True):
+            with self.subTest(uppercase=uppercase):
+                name = f'shared-mask-{uppercase}'
+                source = self._share_pad_kiids(original, name, uppercase)
+                with self.assertRaisesRegex(ValueError, 'identities ambiguous'):
+                    _proposal_drc(source, self._mask_candidate(source, name))
+
+    def test_shared_kiid_across_moved_footprints_refuses(self):
+        import pcbnew as k
+        source = self._share_pad_kiids(self.board(), 'shared-collision')
+        board = k.LoadBoard(str(source))
+        for fp in board.GetFootprints():
+            fp.Move(k.VECTOR2I(1000000, 0))
+        work = self.root / 'shared-collision'
+        work.mkdir()
+        output = work / 'candidate.kicad_pcb'
+        k.SaveBoard(str(output), board)
+        with self.assertRaisesRegex(ValueError, 'identities ambiguous'):
+            _proposal_drc(source, output)
+
+    def test_rule_level_ignore_refuses(self):
+        original = self._mask_source()
+        for i, severity in enumerate(('(severity ignore)', '(severity\n    ignore)',
+                                      '(SEVERITY IGNORE)', '(severity "ignore")')):
+            with self.subTest(severity=severity):
+                source = self.root / f'rule-ignore-{i}.kicad_pcb'
+                source.write_bytes(original.read_bytes())
+                source.with_suffix('.kicad_dru').write_text(
+                    f'(version 1)\n(rule "allow"\n  {severity}\n  (constraint bridged_mask))\n')
+                with self.assertRaisesRegex(ValueError, 'explicitly ignored'):
+                    _proposal_drc(source, self._mask_candidate(source, f'rule-ignore-{i}'))

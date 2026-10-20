@@ -691,14 +691,20 @@ native pad and footprint-graphic geometry and footprint transforms
 (AGENTEE-325). A cross-footprint violation involving a moved footprint is new,
 even when both items collided in the baseline. A rigid intra-footprint finding
 with unchanged local geometry remains a baseline finding. Missing native item
-geometry refuses comparison. Other categories retain UUID-based reporting.
+geometry refuses comparison. A native item KIID shared across different
+footprints also refuses comparison, including case aliases normalized by KiCad;
+it cannot establish an intra-footprint baseline. Other categories retain UUID-based reporting.
 Any added `shorting_items`, `clearance` or `pth_inside_courtyard` refuses
 publication and retains the findings with the failed candidate. An introduced
 `solder_mask_bridge` between different footprints also blocks publication;
 baseline and intra-footprint mask bridges remain non-blocking and reported.
 Ignoring any of these four categories, a failed tool, missing output,
 incomplete severity coverage or changed evaluation settings also refuses publication. Existing
-courtyard and write-scope gates remain in force. Added `silk_*` findings are
+courtyard and write-scope gates remain in force. Rule-level `(severity ignore)`
+in `.kicad_dru` never appears in native `ignored_checks`, so the gate refuses
+any such token, including case, whitespace and quoted variants. This conservative
+refusal also applies to ignores scoped to unrelated categories; it does not
+evaluate custom-rule conditions. Added `silk_*` findings are
 reported separately in `silkscreen_findings`; they are not shorts.
 
 `tests.test_placer_through_holes` supplies original native PTH/NPTH, slot,
@@ -708,7 +714,9 @@ proposal gate does not replace captured coordinator checks or authorize adoption
 
 `tests.test_placer_gate_hardening` covers moved baseline collisions, rigid
 intra-footprint preservation, peer netclass reservations, per-pad hole
-completeness, native inter-footprint mask bridges and ignored mask checks.
+completeness, native inter-footprint mask bridges and ignored mask checks,
+including shared cross-footprint KIIDs and rule-level ignores. Rigid intra-footprint
+fixtures cover both shared and distinct pad KIIDs.
 Netted original fixtures exercise a 4 mm peer netclass and a 4 mm single-item
 custom rule. A 4 mm custom rule conditional on both pad nets proves the native
 gate refuses a gap that satisfies the board minimum.

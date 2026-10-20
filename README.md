@@ -96,7 +96,8 @@ boundaries. The [placer](docs/placer.md#through-hole-reservations-and-native-pub
 reserves native through-hole copper and drills across both sides and refuses
 proposals that introduce native DRC shorts, clearance, PTH courtyard findings
 or inter-footprint solder-mask bridges. Collision comparisons include saved
-geometry and footprint transforms (AGENTEE-325).
+geometry and footprint transforms (AGENTEE-325). Shared native item identities
+across footprints and custom rules with ignored severity refuse publication.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

@@ -4,6 +4,7 @@ from collections import Counter
 import hashlib
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -182,7 +183,11 @@ def _drc_item_states(path):
                            if item.GetClass() == 'PCB_SHAPE'), key=lambda item: item['shape']['uuid'])
         geometry = json.dumps({'pads': inventory[owner], 'graphics': graphics}, sort_keys=True)
         for item in [fp, *fp.Pads(), *fp.GraphicalItems(), *fp.GetFields()]:
-            states[item.m_Uuid.AsString()] = (owner, geometry, pose)
+            uuid = item.m_Uuid.AsString()
+            if uuid in states and states[uuid][0] != owner:
+                # A KIID shared across footprints would merge their states.
+                raise ValueError('native collision item identities ambiguous')
+            states[uuid] = (owner, geometry, pose)
     return states
 
 
@@ -239,6 +244,9 @@ def _proposal_drc(source, output):
         settings = source.with_suffix(suffix)
         if settings.is_file():
             payload = settings.read_bytes()
+            # Rule-level ignores never reach the report's ignored_checks.
+            if suffix == '.kicad_dru' and re.search(rb'\(\s*severity\s+"?ignore\b', payload, re.I):
+                raise ValueError('native placement DRC evaluation explicitly ignored by a custom rule')
             baseline.with_suffix(suffix).write_bytes(payload)
             output.with_suffix(suffix).write_bytes(payload)
     before = _native_drc(baseline, baseline_dir)

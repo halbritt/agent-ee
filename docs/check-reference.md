@@ -1716,6 +1716,9 @@ AGENTEE-325 binds collision identity to saved geometry and footprint transforms,
 preserving rigid intra-footprint baseline findings. New `shorting_items`,
 `clearance`, `pth_inside_courtyard` and inter-footprint `solder_mask_bridge`
 findings refuse the proposal; baseline and intra-footprint mask bridges remain
-reported and non-blocking. Added silk findings are recorded separately. Native
+reported and non-blocking. Cross-footprint shared native item KIIDs refuse
+comparison. Any `.kicad_dru` rule-level `(severity ignore)` refuses publication,
+including ignores of unrelated categories, because native `ignored_checks`
+does not expose these rules. Added silk findings are recorded separately. Native
 through-hole reservations constrain both packing and targeted plans without changing check
 registration, verdict schemas or coordinator acceptance authority.
