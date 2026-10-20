@@ -51,7 +51,11 @@ connection (`zone_connect 2`), one explicit front/back copper layer,
 anchor, and `gr_poly`, `gr_rect`, `gr_circle` or `gr_line` primitives. Filled
 polygons, rectangles and circles may have zero width; unfilled primitives need
 positive width. Each pad is bounded to 128 primitives and each polygon to
-1024 vertices. Unsupported options, arcs, padstacks, thermal connections and
+1024 vertices. Primitive coordinates are limited to +/-1000 mm and widths to
+1000 mm; the complete local copper extent, including circle radius and stroke
+expansion, must also fit within +/-1000 mm (AGENTEE-304). Larger geometry
+refuses before native loading because KiCad can silently drop or saturate
+overflowing primitives. Unsupported options, arcs, padstacks, thermal connections and
 inherited zone-connect behavior refuse coverage. Polygon contours must be simple.
 
 After the shared parser checks this subset, the ordinary networkless executor
@@ -64,6 +68,12 @@ with `pcbnew_version`, native `number`, `anchor` and the full copper `bbox_nm`
 anchor size. Forward annotation uses the native copper extent for staging.
 A failed child, missing report or mismatched inventory leaves unknown coverage.
 No declaration or CLI option is required for this supported subset.
+
+The native probe currently accepts multiple copper outlines. A detached primitive
+or an unfilled contour separated from its anchor can therefore index as one
+electrical pad. AGENTEE-304's multi-island refusal remains pending reconciliation
+of the existing unfilled-primitive test contract; magnitude refusal alone does
+not establish copper connectivity.
 
 The existing `custom_pads` declaration still enables numbering only and records
 `geometry: "declared_custom"`; it never supplies native geometry evidence or

@@ -234,9 +234,13 @@ def _rule_area(zone):
 
 
 def _custom_pad(pad):
-    """Qualify only bounded solid-connected custom-pad syntax before native loading."""
+    """Qualify bounded custom-pad syntax before native loading."""
     from .symbol_library import children, field, nanometres, LibraryError
     from .board_envelope import simple_polygon
+    from math import isqrt
+    # Stay below KiCad's signed 32-bit nanometre geometry range, including
+    # circle radii and stroke expansion, before the native loader can drop copper.
+    limit_nm = 1_000_000_000
     allowed = {'at', 'size', 'layers', 'uuid', 'options', 'primitives',
                'zone_connect', 'thermal_bridge_angle'}
     nodes = pad[4:]
@@ -274,6 +278,8 @@ def _custom_pad(pad):
                 or len(fields) != len(keys) or {n[0] for n in fields} != keys):
             raise LibraryError('unsupported custom-pad primitive/options')
         width = nanometres(field(primitive, 'width', 1)[0])
+        if width > limit_nm:
+            raise LibraryError('custom-pad primitive width exceeds 1000 mm')
         fill = field(primitive, 'fill', 1)[0] if kind != 'gr_line' else 'no'
         if fill not in ('yes', 'no') or width < 0 or (fill == 'no' and width == 0):
             raise LibraryError('unsupported custom-pad primitive fill/width')
@@ -295,6 +301,18 @@ def _custom_pad(pad):
             end = tuple(map(nanometres, field(primitive, 'end', 2)))
             if start == end or (kind == 'gr_rect' and (start[0] == end[0] or start[1] == end[1])):
                 raise LibraryError('degenerate custom-pad primitive')
+            points = [start, end]
+        if any(abs(v) > limit_nm for point in points for v in point):
+            raise LibraryError('custom-pad primitive coordinate exceeds +/-1000 mm')
+        if kind == 'gr_circle':
+            squared = sum((a - b) ** 2 for a, b in zip(start, end))
+            radius = isqrt(squared)
+            radius += radius * radius < squared
+            extent = max(abs(v) + radius for v in start)
+        else:
+            extent = max(abs(v) for point in points for v in point)
+        if 2 * extent + width > 2 * limit_nm:
+            raise LibraryError('custom-pad primitive copper extent exceeds +/-1000 mm')
 
 
 def _native_custom_geometry(data, footprint):

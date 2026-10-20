@@ -180,7 +180,9 @@ presence remains unavailable.
 The [footprint index](docs/footprint-libraries.md#native-custom-pads-agentee-300)
 qualifies bounded solid-connected custom SMD pads through sandboxed pcbnew loads,
 retaining native copper extents and electrical numbers for forward annotation.
-Unsupported custom-pad constructs remain unknown coverage (AGENTEE-300).
+Primitive coordinates and local copper extents are limited to +/-1000 mm;
+widths are limited to 1000 mm (AGENTEE-304). Unsupported custom-pad constructs
+remain unknown coverage (AGENTEE-300).
 
 The [schematic emitter](docs/schematic-emitter.md) preserves KiCad 10 private
 symbol metadata, supports explicit component BOM flags, and preserves canonical

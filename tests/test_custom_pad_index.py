@@ -106,6 +106,50 @@ class CustomPadIndexTests(unittest.TestCase):
                                  ('failed', 'unknown', 'missing'))
                 self.assertEqual(result['footprints'], [])
 
+    def test_primitive_magnitude_bounds_refuse_without_native_loading(self):
+        from agent_ee.executor import execute as real_execute
+        cases = [
+            PRIMITIVES['rect'].replace('(end 2 1)', '(end 3000 1)'),
+            PRIMITIVES['rect'].replace('(start -1 -1)', '(start -3000 -1)'),
+            PRIMITIVES['poly'].replace('(xy 2 -1)', '(xy 3000 -1)'),
+            PRIMITIVES['line'].replace('(end 2 0)', '(end 0 3000)'),
+            PRIMITIVES['circle'].replace('(center 0 0)', '(center 0 -3000)'),
+            PRIMITIVES['circle'].replace('(end 2 0)', '(end 3000 0)'),
+            PRIMITIVES['line'].replace('(width 0.4)', '(width 3000)'),
+            # Individually bounded circle coordinates can still overflow its radius.
+            '(gr_circle (center -1000 -1000) (end 1000 1000) (width 0) (fill yes))',
+            PRIMITIVES['rect'].replace('(end 2 1)', '(end 1000.000001 1)'),
+            PRIMITIVES['line'].replace('(width 0.4)', '(width 1000.000001)'),
+            PRIMITIVES['rect'].replace('(end 2 1)', '(end 1000 1)').replace('(width 0)', '(width 0.000001)'),
+            '(gr_circle (center 500 0) (end -1 0) (width 0) (fill yes))',
+            '(gr_circle (center 0 0) (end 1000 0) (width 0.000001) (fill yes))',
+        ]
+        for primitive in cases:
+            with self.subTest(primitive=primitive), patch('agent_ee.executor.execute', wraps=real_execute) as execute:
+                result = indexed(custom(primitive))
+                self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                 ('failed', 'unknown', 'missing'))
+                self.assertEqual(result['footprints'], [])
+                self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+                self.assertIn('1000 mm', result['findings'][0]['message'])
+                execute.assert_not_called()
+
+    def test_primitive_magnitude_boundary_is_inclusive(self):
+        cases = [
+            ('(gr_rect (start -1000 -1) (end 1000 1) (width 0) (fill yes))',
+             [-1000000000, -1000000, 1000000000, 1000000]),
+            ('(gr_line (start -1 0) (end 1 0) (width 1000))',
+             [-501000000, -500000000, 501000000, 500000000]),
+            ('(gr_circle (center 0 0) (end 1000 0) (width 0) (fill yes))',
+             [-1000000000, -1000000000, 1000000000, 1000000000]),
+        ]
+        for primitive, bbox in cases:
+            with self.subTest(primitive=primitive):
+                result = indexed(custom(primitive))
+                self.assertEqual(result['coverage'], 'complete', result['findings'])
+                pad = next(p for p in result['footprints'][0]['pads'] if p['number'] == '1')
+                self.assertEqual(pad['native_geometry']['bbox_nm'], bbox)
+
     def test_native_crash_or_missing_output_never_qualifies(self):
         # Transport fault injection tests refusal only; successful cases above use real pcbnew.
         for status in ('failed', 'ok'):
