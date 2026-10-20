@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import json
 import re
+import unicodedata
 import uuid
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
@@ -370,6 +371,32 @@ def _datasheet_binding_text(value, location):
     return value
 
 
+def _plain_datasheet_text(value, binding, location):
+    # Validate the companion even when property order puts Datasheet first.
+    if isinstance(value, str) and len(value) > 256 and binding is not None:
+        _datasheet_binding_text(binding, location.rsplit('/', 1)[0] + '/PARAM_Datasheet')
+        if (isinstance(binding, str) and binding.startswith('{')
+                and DATASHEET_BINDING_TEXT.fullmatch(value)
+                and parse_param_value(binding, 'PARAM_Datasheet')['url'] == value):
+            return value
+    return _field_text(value, 'malformed_part_binding', location)
+
+
+def _legacy_datasheet_findings(components):
+    for comp in components:
+        for name, value in comp.get('part_binding', {}).items():
+            if name not in ('Datasheet', 'PARAM_Datasheet') or not isinstance(value, str):
+                continue
+            if name == 'PARAM_Datasheet' and value.lstrip().startswith('{'):
+                continue  # The structured validator refuses malformed object roots.
+            first = next((char for char in value
+                          if not char.isspace() and unicodedata.category(char) != 'Cf'), '')
+            if first in ('{', '['):
+                yield dict(code='suspicious_datasheet_text',
+                           location='/components/' + comp['id'] + '/part_binding/' + name,
+                           message='JSON-looking legacy datasheet text is not a structured binding')
+
+
 def _property(prop, value, anchor, matrix, rotation, placed=None):
     """Instance property from a library property, at transformed sheet position.
 
@@ -443,6 +470,9 @@ def _plan(resolved, captured, intent_libraries, transforms, cache, trees):
                 raise EmissionError('malformed_part_binding', 'binding cannot override native identity or flags', location)
             if name == 'PARAM_Datasheet':
                 _datasheet_binding_text(value, location + '/part_binding/' + name)
+            elif name == 'Datasheet':
+                _plain_datasheet_text(value, comp.get('part_binding', {}).get('PARAM_Datasheet'),
+                                      location + '/part_binding/' + name)
             elif name == 'AGENT_EE_Probe':
                 from .probe_features import parse_marker
                 if not isinstance(value, str) or len(value) > 4096 or '${' in value or '\\' in value:
@@ -933,6 +963,7 @@ def emit_schematic(intent, captured_libraries, layout, *, expected_resolved=None
                 canonical_resolved(resolved):
             raise EmissionError('resolved_mismatch', 'supplied resolved record differs from fresh resolution')
         components = {c['id']: c for c in resolved['components']}
+        result['findings'].extend(_legacy_datasheet_findings(resolved['components']))
         namespace, project, transforms, presentation, groups = _validate_layout(layout, components)
         if resolved['schema'] == HIERARCHY_SCHEMA:
             if presentation != 'rows':

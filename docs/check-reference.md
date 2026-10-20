@@ -44,8 +44,14 @@ The emitter also accepts canonical structured `PARAM_Datasheet` bindings up to
 2048 bytes, using the existing binding parser; legacy `PARAM_Datasheet` text
 retains its zero-to-256-character validation. Object-like values (leading `{`
 after whitespace) must pass structured validation, with no free-text fallback.
-Ordinary free-text fields remain limited to 256 characters. Native forced-save
-and export regressions cover the long URL allowance and byte preservation (AGENTEE-293).
+A plain `Datasheet` exceeding 256 characters requires an exact URL match to a
+validated canonical binding on the same component and is bounded to 2048 safe
+ASCII bytes; its complete companion JSON must also fit 2048 bytes. Other
+free-text fields retain their limits. JSON-looking legacy text behind Unicode
+format prefixes or with array roots receives `suspicious_datasheet_text`, an
+informational emission diagnostic with no structured-binding acceptance.
+Native forced-save and export regressions cover the paired long URL and byte
+preservation (AGENTEE-293, AGENTEE-296).
 Native netlist inventory observes BOM exclusion independently of board membership.
 Declared [copper features](fab-export.md#copper-features) have a qualified fab exclusion
 policy (AGENTEE-289, AGENTEE-290); other non-DNP native exclusions remain refused.
