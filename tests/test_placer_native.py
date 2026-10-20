@@ -53,6 +53,28 @@ class NativePlacerTest(unittest.TestCase):
             'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
             'source_sha256': hashlib.sha256(self.saved).hexdigest(), 'writable_root': str(self.scratch)}}
 
+    def test_imu_axes_reserved_in_recorded_effective_policy(self):
+        import subprocess
+        script = """
+import pcbnew as k, sys
+b=k.LoadBoard(sys.argv[1])
+t=k.PCB_TEXT(b); t.SetText('IMU_AXES'); t.SetLayer(k.F_SilkS)
+t.SetPosition(k.VECTOR2I(3000000,3000000)); t.SetTextSize(k.VECTOR2I(800000,800000))
+b.Add(t); assert k.SaveBoard(sys.argv[1], b)
+"""
+        result = subprocess.run(['/usr/bin/python3', '-B', '-c', script, str(self.source)],
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.config['authorization']['source_sha256'] = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        source = self.source.read_bytes()
+        result = place_candidate(self.source, self.netlist, self.scratch / 'marked', self.config)
+        self.assertEqual((result['status'], result['outcome']), ('fixed_conflict', 'unknown'), result)
+        self.assertIn('fixed placement U1 conflicts', result['reason'])
+        self.assertTrue(any(o.get('source', '').startswith('IMU_AXES/') for o in result['policy']['obstacles']))
+        self.assertEqual(self.config['policy']['obstacles'], [])
+        self.assertEqual(self.source.read_bytes(), source)
+        self.assertFalse((self.scratch / 'marked').exists())
+
     def test_actual_saved_placements_repeat_and_preserve_static_and_source(self):
         first = place_candidate(self.source, self.netlist, self.scratch / 'one', self.config)
         second = place_candidate(self.source, self.netlist, self.scratch / 'two', self.config)

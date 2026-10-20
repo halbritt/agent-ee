@@ -668,6 +668,30 @@ class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
         self.assert_completed(other_path,other_receipt)
         self.assertEqual(pcb.read_bytes(),(other / 'project/design.kicad_pcb').read_bytes())
 
+    def test_hole_reference_and_inner_plane_policy_native(self):
+        from agent_ee.executor import execute
+        j2 = next(f for f in self.envelope['fixed_footprints'] if f['reference'] == 'J2')
+        j2['courtyard_overhangs'] = [dict(edge='right', max_mm=2)]
+        self.save()
+        inputs, path, receipt = self.content()
+        self.assert_completed(path, receipt)
+        probe = execute(inputs, self.root / 'hygiene', ['/usr/bin/python3', '-B', '-c', """
+import pcbnew as k
+b=k.LoadBoard('/candidate/project/design.kicad_pcb')
+for fp in b.GetFootprints():
+    if fp.IsBoardOnly():
+        assert fp.Reference().GetLayer()==k.F_Fab, fp.GetReference()
+    if fp.GetReference()=='J2':
+        assert fp.Reference().GetLayer()==k.B_Fab
+        assert not any(i.GetLayer() in (k.F_SilkS,k.B_SilkS) for i in [*fp.GraphicalItems(),*fp.GetFields()])
+for layer in (k.In1_Cu,k.In2_Cu):
+    assert b.GetLayerType(layer)==k.LT_POWER
+assert b.GetLayerType(k.F_Cu)==k.LT_SIGNAL
+assert b.GetLayerType(k.B_Cu)==k.LT_SIGNAL
+"""])
+        self.assertEqual((probe['execution'], probe['exit_code']), ('ok', 0),
+                         (self.root / 'hygiene/console.log').read_text())
+
     def test_mounting_hole_identities_bind_after_native_reload(self):
         from agent_ee.part_binding import validate_part_bindings
         for plated in (False, True):

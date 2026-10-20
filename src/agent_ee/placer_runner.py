@@ -14,6 +14,7 @@ from .locking import writer_lock
 from .placement import judge
 from .placement_probe import extract
 from .placer import _failure, pack
+from .silkscreen import reserve_imu_markings
 from .storage import digest, read_json, write_json
 
 
@@ -247,7 +248,7 @@ def place_candidate(source, netlist, destination, request):
         facts = extract(source)
         board = _unrouted_board(source)
         _netlist_binding(netlist_bytes, facts, _board_only(board))
-        policy = _effective_policy(request)
+        policy = reserve_imu_markings(board, _effective_policy(request))
         plan = pack(facts, policy)
         refusal = plan['status'] == 'planned' and _padstack_refusal(board)
         if refusal:

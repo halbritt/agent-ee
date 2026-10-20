@@ -560,3 +560,44 @@ The shared manifest qualifier replays each part record and freezes its response,
 datasheet and decision sources in the baseline. The producer derives the same
 membership check, selectors and fab rules for mixed generic/named manifests.
 This does not emit a completed IC schematic or establish component suitability.
+
+## Packed-board silkscreen policy (AGENTEE-276)
+
+The scaffold uses signal outer copper layers and power inner copper layers. This
+is its generation convention for plane-based multilayer boards; it changes no
+stackup thickness, net assignment or copper geometry. Plane nets and fills still
+come from the captured plane plan and need fresh native checks. Designs requiring
+inner signal layers need a different explicit generation policy.
+
+Board-only mounting-hole references are on F.Fab, preserving their identities
+without printing text over the drill. Fixed footprints with envelope-declared
+`courtyard_overhangs` have their silkscreen graphics and fields moved to the
+corresponding F.Fab/B.Fab layer before saving. This avoids printing the portion
+outside the substrate and retains the complete source drawing for fabrication
+review. This policy moves all silk on those footprints, including pin-one marks;
+assembly review must use the fabrication drawing or a separately placed board
+mark. It does not clip copper, courtyards or antenna rule areas.
+
+The shared producer policy moves only the Reference field of exact standard
+`Resistor_SMD:R_0402_1005Metric`, `R_0603_1608Metric`, the corresponding
+`Capacitor_SMD:C_*` and `Inductor_SMD:L_*` footprints from silkscreen to the
+same-side fabrication layer. Other sizes, custom footprints and hand-solder
+variants retain their source fields. Stage-three fixed-footprint loading and
+forward annotation of newly added footprints both apply it. Forward annotation
+preserves existing footprint presentation. Regenerate older packed candidates
+from their captured inputs to adopt the policy; an existing board does not gain
+new evidence automatically.
+
+The placer derives same-side obstacles from visible board-level `IMU_AXES` text
+on F.SilkS/B.SilkS. Each is its native bounding box with a 0.2 mm margin, plus
+the packing policy's ordinary gap. The resulting plan records the obstacle's
+text UUID and polygon in its effective policy. The source board and captured
+policy remain unchanged. A fixed component conflicting with this reservation
+refuses placement; the marker is never silently removed or moved.
+
+The DRC grading rules, severity settings, exclusions and waivers are unchanged.
+Native DRC continues to grade the complete saved board. The native tests in
+[test_silkscreen.py](../tests/test_silkscreen.py) exercise exact identity selection,
+front/back layers, unchanged pads, same-side reservation refusal, opposite-side
+placement and real before/after silkscreen DRC findings. The scaffold tests also
+load the saved hole fields and copper-layer types through pcbnew.
