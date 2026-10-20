@@ -233,19 +233,62 @@ def _rule_area(zone):
     )
 
 
+def _ceil_hypot(point):
+    from math import isqrt
+    squared = sum(v * v for v in point)
+    root = isqrt(squared)
+    return root + (root * root < squared)
+
+
+def _pad_reach(origin_reach, doubled_extent, label):
+    from .symbol_library import LibraryError
+    # Doubled integer extents retain half-nanometre expansion.
+    if 2 * origin_reach + doubled_extent > 2_000_000_000:
+        raise LibraryError(label + ' reach exceeds 1000 mm from footprint origin')
+
+
+def _pad_body_reach(pad, position, size):
+    """Bound the anchor/body and drill envelope at every pad rotation."""
+    from .symbol_library import children, field, nanometres
+    origin = _ceil_hypot(position)
+    label = 'custom-pad copper' if pad[3] == 'custom' else 'pad copper'
+    extent = list(size)
+    if pad[3] == 'trapezoid' and children(pad, 'rect_delta'):
+        dx, dy = map(nanometres, field(pad, 'rect_delta', 2))
+        extent = [size[0] + abs(dy), size[1] + abs(dx)]
+    # The enclosing rectangle is conservative for rounded/chamfered shapes.
+    doubled_extent = max(extent) if pad[3] in ('circle', 'oval') else _ceil_hypot(extent)
+    _pad_reach(origin, doubled_extent, label)
+    for drill in children(pad, 'drill'):
+        values = drill[1:]
+        offset = [n for n in values if isinstance(n, list)]
+        dimensions = [n for n in values if isinstance(n, str)]
+        if dimensions and dimensions[0] == 'oval':
+            dimensions = dimensions[1:]
+        if len(dimensions) not in (1, 2):
+            continue  # The existing drill grammar below refuses other forms.
+        sizes = list(map(nanometres, dimensions))
+        if len(sizes) == 1:
+            sizes *= 2
+        offset_reach = 0
+        if offset:
+            # KiCad's drill offset translates copper relative to the drill centre.
+            # This does not admit offset syntax to the qualified drill grammar.
+            from .symbol_library import LibraryError
+            if len(offset) != 1 or offset[0][0] != 'offset' or len(offset[0]) != 3:
+                raise LibraryError('unsupported drill offset')
+            offset_reach = _ceil_hypot(tuple(map(nanometres, offset[0][1:])))
+        _pad_reach(origin, max(sizes), 'pad drill')
+        _pad_reach(origin + offset_reach, doubled_extent, label)
+
+
 def _custom_pad(pad):
     """Qualify bounded custom-pad syntax before native loading."""
     from .symbol_library import children, field, nanometres, LibraryError
     from .board_envelope import simple_polygon
-    from math import isqrt
     # Native geometry can silently drop copper at large coordinates. Bound
     # both local extents and rotation-invariant reach before native loading.
     limit_nm = 1_000_000_000
-
-    def ceil_hypot(point):
-        squared = sum(v * v for v in point)
-        root = isqrt(squared)
-        return root + (root * root < squared)
 
     allowed = {'at', 'size', 'layers', 'uuid', 'options', 'primitives',
                'zone_connect', 'thermal_bridge_angle'}
@@ -271,7 +314,9 @@ def _custom_pad(pad):
     at = children(pad, 'at')
     if len(at) != 1 or len(at[0]) not in (3, 4):
         raise LibraryError('pad requires x/y/optional rotation')
-    origin_reach = ceil_hypot(tuple(map(nanometres, at[0][1:3])))
+    position = tuple(map(nanometres, at[0][1:3]))
+    _pad_body_reach(pad, position, list(map(nanometres, field(pad, 'size', 2))))
+    origin_reach = _ceil_hypot(position)
     primitives = children(pad, 'primitives')
     if len(primitives) != 1 or not 1 <= len(primitives[0][1:]) <= 128:
         raise LibraryError('custom pad requires 1..128 supported primitives')
@@ -315,18 +360,17 @@ def _custom_pad(pad):
         if any(abs(v) > limit_nm for point in points for v in point):
             raise LibraryError('custom-pad primitive coordinate exceeds +/-1000 mm')
         if kind == 'gr_circle':
-            radius = ceil_hypot(tuple(a - b for a, b in zip(start, end)))
+            radius = _ceil_hypot(tuple(a - b for a, b in zip(start, end)))
             extent = max(abs(v) + radius for v in start)
-            reach = ceil_hypot(start) + radius
+            reach = _ceil_hypot(start) + radius
         else:
             extent = max(abs(v) for point in points for v in point)
             corners = [(x, y) for x in (start[0], end[0]) for y in (start[1], end[1])] if kind == 'gr_rect' else points
-            reach = max(map(ceil_hypot, corners))
+            reach = max(map(_ceil_hypot, corners))
         if 2 * extent + width > 2 * limit_nm:
             raise LibraryError('custom-pad primitive copper extent exceeds +/-1000 mm')
         # Double the comparison to preserve half-nanometre stroke expansion.
-        if 2 * (origin_reach + reach) + width > 2 * limit_nm:
-            raise LibraryError('custom-pad copper reach exceeds 1000 mm from footprint origin')
+        _pad_reach(origin_reach, 2 * reach + width, 'custom-pad copper')
 
 
 def canonical_custom_pad(pad):
@@ -458,6 +502,7 @@ def _footprint(data, library, source, declared=None):
             size = list(map(nanometres, field(pad, 'size', 2)))
             if any(v <= 0 for v in size):
                 raise LibraryError('nonpositive pad size')
+            _pad_body_reach(pad, (x, y), size)
             drill = children(pad, 'drill')
             if kind in ('thru_hole', 'np_thru_hole'):
                 if len(drill) != 1 or len(drill[0]) not in (2, 4):

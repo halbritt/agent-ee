@@ -1003,6 +1003,14 @@ thermal-via pad whose plated copper lacks a native `pad_prop_heatsink` or
 the SMD footprint as through hole
 ([owner declarations](footprint-libraries.md#owner-declarations)).
 
+All indexed pads, including declared geometry and custom anchors, have a
+rotation-invariant copper/drill reach bound of 1000 mm from the footprint
+origin (AGENTEE-314). It includes pad translation, size, trapezoid delta and
+drill offset where present, using integer ceilings and doubled half extents.
+Over-limit geometry refuses before native loading with `library_coverage`,
+failed execution and unknown coverage. Supported syntax and ordinary index
+record fields are unchanged. See [pad magnitude bounds](footprint-libraries.md#pad-magnitude-bounds-agentee-314).
+
 The shared index also qualifies explicitly solid-connected SMD custom pads
 with rectangular/circular anchors and bounded polygon, rectangle, circle or
 line primitives through a sandboxed pcbnew load (AGENTEE-300). Primitive

@@ -43,6 +43,29 @@ excluded from electrical parity. Numbered copper pads are never silently ignored
 Repeated thermal pads sharing a number remain distinct records without inventing
 extra symbol pins. Custom padstacks and unqualified forms refuse coverage.
 
+## Pad magnitude bounds (AGENTEE-314)
+
+Every indexed pad must fit a rotation-invariant reach of at most 1000 mm
+from the footprint origin before any native load. The bound adds the ceiling
+of the pad translation magnitude to the pad's radial extent. Rectangular,
+rounded and chamfered pads use the enclosing rectangle's half diagonal;
+circles and ovals use half the larger size dimension. Declared trapezoids
+include `rect_delta` in that rectangle. Custom pads also bound their anchor
+size, alongside the primitive limits below. Declarations cannot bypass these
+bounds.
+
+Circular and oval drills use half their larger dimension. Drill offsets add
+their magnitude to the copper reach, but offset drill syntax remains outside
+the qualified drill grammar. Undeclared trapezoids remain unsupported. This
+change does not extend shape qualification or add native geometry fields to
+ordinary-pad records.
+
+Integer square-root ceilings and doubled comparisons retain odd-nanometre
+half extents. Excess copper or drill reach produces `library_coverage`, failed
+execution and unknown coverage, before pcbnew can silently saturate geometry.
+`tests.test_footprint_library.PadReachTests` covers refusals, inclusive bounds
+and exact native bounding boxes for rotated and translated near-limit pads.
+
 ## Native custom pads (AGENTEE-300)
 
 The index natively qualifies SMD custom pads with an explicit solid zone
