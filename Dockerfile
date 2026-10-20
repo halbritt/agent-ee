@@ -94,7 +94,7 @@ RUN set -eu; \
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN /usr/local/share/agent-ee/kicad-route/install.sh install
 
-FROM native
+FROM native AS toolchain
 
 # Installed analyzer tool, kept outside the agent-ee package and candidate.
 # Runtime analysis remains networkless; only the image build fetches this pin.
@@ -132,6 +132,9 @@ RUN --network=none /usr/local/share/agent-ee/kicad-route/install.sh verify
 # the seeded-benchmark closure verifier's positive evidence that it runs inside
 # the image, where the outer-host docker CLI is absent (docs/seeded-benchmark.md).
 COPY docker/image-context.json /usr/local/share/agent-ee/image-context.json
+
+# Source and retained fixtures are deliberately outside the exported CI cache.
+FROM toolchain
 
 # Source-launcher installation, as in docs/installation.md: the launcher uses
 # /usr/bin/python3 (which imports pcbnew) and locates src/ from its checkout.

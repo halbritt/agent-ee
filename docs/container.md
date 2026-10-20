@@ -74,6 +74,61 @@ source-file hashes. Optional tools absent from a basic installation do not
 become required merely by running doctor. An explicitly configured broken
 analyzer does fail the probe.
 
+## Hosted build cache
+
+Project CI uses `docker/setup-buildx-action` with the `docker-container` driver
+and `docker/build-push-action` to load `agent-ee:ci` into the runner's Docker
+engine. It imports and exports a GitHub Actions cache with
+`type=gha,version=2,scope=agent-ee-native-amd64-v1`. Export uses `mode=max` so
+intermediate stages, including the routing build stage's apt install, survive
+between runs. The cache export targets `toolchain`, which ends before the
+application's `COPY .`. A second build on the same builder loads the final
+image without exporting its source layers. Retained design fixtures therefore
+do not enter the remote cache. The workflow does not push an image or upload a
+build record.
+The reusable action's build is unchanged.
+
+The scope names the cache object, not the package identity. BuildKit's layer
+keys include the Dockerfile instructions, consumed build arguments and copied
+inputs. Changing `APT_SNAPSHOT`, a package pin, the Ubuntu digest, the signing
+key or the retry helper invalidates the affected layer and its descendants.
+Changing application source at the final `COPY .` preserves earlier native
+layers. Bump the scope's `v1` suffix to discard the entire hosted cache. There
+is no fallback to a different snapshot or package version.
+
+A warm build reuses the completed apt-install layers, whose original build
+used apt's signed metadata and package hash checks. It does not rerun apt or
+reverify metadata on each cache hit. A cache miss executes the unchanged
+strict apt updates, signature verification and pinned installs; a persistent
+mirror outage still fails closed. Cache eviction, GitHub cache unavailability,
+a first build or an invalidated apt layer can therefore expose a mirror outage.
+The cache is an optimization, not an offline guarantee. The
+[Docker cache backend documentation](https://docs.docker.com/build/cache/backends/gha/)
+describes its authentication, branch visibility and storage limits.
+
+Run the bounded local simulation from the repository root:
+
+```sh
+python3 scripts/check_ci_cache.py build/ci-cache-probe
+```
+
+It builds an original, small native stage using the production Ubuntu digest,
+signed noble release metadata and exact TLS bootstrap package pin. A warm build
+exports inline layer metadata. A second build changes the source payload and
+sets an unreachable local HTTP proxy: the apt step must be `CACHED` and the
+build must succeed. A third build changes the fixture package pin with the
+same unreachable proxy and must fail fetching metadata, proving that a pin
+change invalidates the apt layer. Logs are written under the supplied directory; the inspection image is
+`agent-ee:ee319-cache-probe`. This exercises real apt and BuildKit layer reuse,
+not the complete native image or GitHub's remote cache transport.
+
+After integration, observe the next main-branch CI run without changing pins:
+look for successful cache import/export in the image step, then a subsequent
+run's apt-install steps marked `CACHED`, with the image loaded for Doctor and
+the strict gate. The initial run must populate the cache. Hosted cache restore
+and export require that follow-up run; local evidence does not establish them.
+No hosted run was triggered for this change.
+
 ## Pinned routing tool
 
 The routing stage's external tool is installed in a separate build stage and
