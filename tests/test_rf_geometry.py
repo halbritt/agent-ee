@@ -1,5 +1,6 @@
 """RF geometry on the routed board: grounded CPW, stitching pitch, branch lengths and return guard, fail-closed."""
 import copy
+import hashlib
 import json
 import math
 import tempfile
@@ -15,7 +16,7 @@ from agent_ee.capabilities import describe_check
 from agent_ee.rf_geometry import (
     GUARD_LIMITATIONS, LIMITATIONS, evaluate, parse_declaration, predicates, probe_request,
 )
-from agent_ee.storage import digest, write_json
+from agent_ee.storage import digest, json_bytes, write_json
 
 import rf_geometry_fixture as fx
 
@@ -24,6 +25,8 @@ POD = Path(__file__).resolve().parents[1] / 'fixtures/telemetry-pod'
 SOLVER = POD / 'rf-w2-calc-4-result.json'
 SOLVER_SHA256 = 'd05e15b93f02b3cc12b9b967c093503c60a3c72338a2f35ddccd96d4998b89af'
 ERR_EFF_POINTER = '/impedance_calc_result/dErEff'
+# The owned guard record is written by write_json, so its declared hash is that of its canonical bytes.
+GUARD_SHA256 = hashlib.sha256(json_bytes(fx.GUARD_RECORD)).hexdigest()
 
 
 def bound_declaration(path='project/rf-w2-calc-4-result.json', sha256=SOLVER_SHA256, pointer=ERR_EFF_POINTER,
@@ -121,6 +124,31 @@ class DeclarationTests(unittest.TestCase):
                 self.assertEqual((electrical['effective_permittivity'], electrical['status']), (None, 'unknown'))
                 self.assertIn('absent', electrical['reason'])
 
+    def test_permittivity_below_one_or_from_an_invalid_solver_result_refuses(self):
+        recorded = json.loads(SOLVER.read_bytes())
+
+        def altered(mutate):
+            document = copy.deepcopy(recorded)
+            mutate(document)
+            return document
+        cases = {'below one': lambda d: d['impedance_calc_result'].update(dErEff=0.999),
+                 'status nonzero': lambda d: d.update(impedance_calc_status=1),
+                 'status text': lambda d: d.update(impedance_calc_status='0'),
+                 'status missing': lambda d: d.pop('impedance_calc_status'),
+                 'result invalid': lambda d: d['impedance_calc_result'].update(dResultValid=0),
+                 'result valid bool': lambda d: d['impedance_calc_result'].update(dResultValid=True),
+                 'result valid float': lambda d: d['impedance_calc_result'].update(dResultValid=1.0),
+                 'result valid missing': lambda d: d['impedance_calc_result'].pop('dResultValid'),
+                 'result missing': lambda d: d.pop('impedance_calc_result')}
+        for name, mutate in cases.items():
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                parse_bound(bound_declaration(), altered(mutate))
+        # Missing flags refuse even when the value is absent at the pointer, which alone would be unknown.
+        with self.assertRaisesRegex(ValueError, 'lacks impedance_calc_status'):
+            parse_bound(bound_declaration(pointer='/result/dErEff'), altered(lambda d: d.pop('impedance_calc_status')))
+        unity = parse_bound(bound_declaration(), altered(lambda d: d['impedance_calc_result'].update(dErEff=1.0)))
+        self.assertEqual(unity['electrical_length']['effective_permittivity'], 1.0)
+
     def test_structural_declaration_errors_refuse(self):
         stubs = fx.declaration()['topology']['stubs']
         cases = {
@@ -175,13 +203,15 @@ class GuardDeclarationTests(unittest.TestCase):
 
     def test_width_by_pointer_into_a_captured_record_is_bound_to_its_hash(self):
         sources = {'project/guard.json': fx.GUARD_RECORD}
-        resolved = parse(fx.declaration(guard={'source': {'path': 'project/guard.json', 'pointer': '/guard_mm'},
+        resolved = parse(fx.declaration(guard={'source': {'path': 'project/guard.json', 'sha256': '0' * 64,
+                                                          'pointer': '/guard_mm'},
                                                'basis': 'captured record'}), sources)
         self.assertEqual(resolved['guard']['width_mm'], 1.0)
         self.assertEqual(resolved['guard']['source'], {'path': 'project/guard.json', 'sha256': '0' * 64,
                                                        'pointer': '/guard_mm', 'unit': 'mm'})
-        mil = parse(fx.declaration(guard={'source': {'path': 'project/guard.json', 'pointer': '/guard_mm',
-                                                     'unit': 'mil'}, 'basis': 'captured record'}), sources)
+        mil = parse(fx.declaration(guard={'source': {'path': 'project/guard.json', 'sha256': '0' * 64,
+                                                     'pointer': '/guard_mm', 'unit': 'mil'},
+                                          'basis': 'captured record'}), sources)
         self.assertEqual(mil['guard']['width_mm'], 0.0254)
 
     def test_guard_only_declaration_is_accepted(self):
@@ -191,7 +221,7 @@ class GuardDeclarationTests(unittest.TestCase):
 
     def test_no_default_width_and_malformed_guards_refuse(self):
         sources = {'project/guard.json': fx.GUARD_RECORD}
-        source = {'path': 'project/guard.json', 'pointer': '/guard_mm'}
+        source = {'path': 'project/guard.json', 'sha256': '0' * 64, 'pointer': '/guard_mm'}
         cases = {'empty': {}, 'no width': {'basis': 'x'}, 'no basis': {'width_mm': 1.0},
                  'empty basis': {'width_mm': 1.0, 'basis': ''}, 'both': {'width_mm': 1.0, 'source': source,
                                                                         'basis': 'x'},
@@ -200,10 +230,23 @@ class GuardDeclarationTests(unittest.TestCase):
                  'unit': {'source': {**source, 'unit': 'inch'}, 'basis': 'x'},
                  'pointer': {'source': {**source, 'pointer': '/missing'}, 'basis': 'x'},
                  'nonnumeric': {'source': {**source, 'pointer': '/basis'}, 'basis': 'x'},
-                 'null source': {'source': {**source, 'pointer': '/none'}, 'basis': 'x'}}
+                 'null source': {'source': {**source, 'pointer': '/none'}, 'basis': 'x'},
+                 'rounds to 0 nm': {'width_mm': 4.9e-7, 'basis': 'x'},
+                 'half nm': {'width_mm': 5e-7, 'basis': 'x'},
+                 'source rounds to 0 nm': {'source': {**source, 'pointer': '/tiny'}, 'basis': 'x'},
+                 'no sha256': {'source': {k: v for k, v in source.items() if k != 'sha256'}, 'basis': 'x'},
+                 'short sha256': {'source': {**source, 'sha256': '0' * 63}, 'basis': 'x'},
+                 'upper sha256': {'source': {**source, 'sha256': 'A' * 64}, 'basis': 'x'},
+                 'pointer syntax': {'source': {**source, 'pointer': 'guard_mm'}, 'basis': 'x'}}
+        record = {**fx.GUARD_RECORD, 'none': None, 'tiny': 4e-7}
         for name, guard in cases.items():
             with self.subTest(name=name), self.assertRaises(ValueError):
-                parse(fx.declaration(guard=guard), {'project/guard.json': {**fx.GUARD_RECORD, 'none': None}})
+                parse(fx.declaration(guard=guard), {'project/guard.json': record})
+        with self.assertRaisesRegex(ValueError, 'guard source project/guard.json has sha256 0{64}, not the declared'):
+            parse(fx.declaration(guard={'source': {**source, 'sha256': '1' * 64}, 'basis': 'x'}), sources)
+        # The smallest width that does not round to 0 nm is accepted and probed at 1 nm.
+        smallest = parse(fx.declaration(guard={'width_mm': 6e-7, 'basis': 'x'}))
+        self.assertEqual(probe_request(smallest)['guard_nm'], 1)
         with self.assertRaisesRegex(ValueError, 'captured input'):
             parse(fx.declaration(guard={'source': source, 'basis': 'x'}))
         parse(fx.declaration(guard={'source': source, 'basis': 'x'}), sources)
@@ -445,6 +488,15 @@ class NativeGuardTests(NativeBase):
         _, keepout = self.guard(reference_keepout=(5.0, 9.0, 6.0, 9.5))
         self.assertEqual((keepout['status'], keepout['reasons']), ('defect', ['rule_area']))
 
+    def test_rf_net_copper_on_the_reference_layer_has_its_own_reason(self):
+        _, guard = self.guard(reference_rf_track=[(5.0, 8.0), (7.0, 8.0)])
+        self.assertEqual((guard['status'], guard['reasons']), ('defect', ['rf_net_copper']))
+        self.assertEqual([(c['kind'], c['net']) for c in guard['rf_copper']], [('track', fx.RF_NET)])
+        self.assertEqual((guard['foreign'], guard['rf_vias'], guard['unattributed_mm2']), ([], [], 0.0))
+        self.assertGreater(guard['uncovered_mm2'], 0.1)
+        _, clean = self.guard()
+        self.assertEqual((clean['status'], clean['rf_copper']), ('pass', []))
+
     def test_own_through_hole_launch_cut_is_excused_as_reference_continuity_excuses_it(self):
         out, guard = self.guard(tht_launch=True)
         self.assertEqual((guard['status'], guard['uncovered_mm2']), ('pass', 0.0))
@@ -581,8 +633,9 @@ class NativeCheckTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'effective_permittivity_source .* has sha256'):
             self.run_board(bound_declaration(), solver=altered)
 
-    def guarded(self):
-        return fx.sourced_declaration(guard={'source': {'path': 'project/guard-basis.json', 'pointer': '/guard_mm'},
+    def guarded(self, sha256=GUARD_SHA256):
+        return fx.sourced_declaration(guard={'source': {'path': 'project/guard-basis.json', 'sha256': sha256,
+                                                        'pointer': '/guard_mm'},
                                              'basis': 'owned control record'})
 
     def test_guard_from_a_captured_basis_passes_bound_to_candidate_and_record(self):
@@ -597,6 +650,10 @@ class NativeCheckTests(unittest.TestCase):
         self.assertIn('not RF qualification', GUARD_LIMITATIONS)
         freeze_evidence(run, [result])
         verify_evidence(run, [result], required=True)
+
+    def test_guard_record_hash_mismatch_refuses_capture(self):
+        with self.assertRaisesRegex(ValueError, 'guard source project/guard-basis.json has sha256 .* not the declared'):
+            self.run_board(self.guarded(sha256='0' * 64))
 
     def test_foreign_antipad_in_the_guard_is_a_gate_finding(self):
         run, result = self.run_board(self.guarded(), foreign_via=NativeGuardTests.FOREIGN)
@@ -634,7 +691,8 @@ class CapabilityTests(unittest.TestCase):
             write_json(inputs / 'guard.json', fx.GUARD_RECORD)
             files['guard.json'] = digest(inputs / 'guard.json')
             write_json(inputs / 'rf.json', fx.sourced_declaration(
-                path='calc.json', guard={'source': {'path': 'guard.json', 'pointer': '/guard_mm'}, 'basis': 'x'}))
+                path='calc.json', guard={'source': {'path': 'guard.json', 'sha256': files['guard.json'],
+                                                    'pointer': '/guard_mm'}, 'basis': 'x'}))
             files['rf.json'] = digest(inputs / 'rf.json')
             result = describe_check(spec, check_specs=[spec], files=files, scope=scope, inputs=inputs)
             self.assertEqual(result['immutable_inputs'], ['calc.json', 'guard.json', 'rf.json'])

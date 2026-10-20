@@ -464,7 +464,9 @@ pointer from a captured calculation record in `mm` or `mil`), a stitching
 section (pitch and band) and an explicit trunk/stub topology with per-branch
 length bounds. A reported-only electrical length may take its effective
 permittivity from a captured solver record, bound by path, SHA-256 and JSON
-pointer. A hash mismatch refuses, and a value absent at the pointer is unknown.
+pointer. A hash mismatch, a record without `impedance_calc_status` 0 and
+`dResultValid` 1, or a value below 1.0 refuses, and a value absent at the
+pointer is unknown.
 The sandboxed pcbnew probe records facts only. The coordinator
 grades:
 
@@ -478,9 +480,11 @@ grades:
 - the return-corridor guard: reference-layer ground under every signal-layer RF
   track grown by a declared guard width per side, with no foreign antipad, RF
   via antipad, fill keepout or void inside. The width is declared with a
-  recorded `basis` (inline or by JSON pointer into a captured record). It has
-  no default. A `null` width is unknown. Only the RF net's own pad clearance is
-  excused, as in AGENTEE-231 reference continuity.
+  recorded `basis` (inline or by JSON pointer into a captured record bound by
+  its declared SHA-256; a mismatch refuses). It has no default. A `null` width
+  is unknown, and a width that rounds to 0 nm refuses. Only the RF net's own
+  pad clearance is excused, as in AGENTEE-231 reference continuity; RF-net
+  copper on the reference layer is a defect with its own reason.
 
 A missing coplanar ground or reference is a defect stated as an absent
 structure, never graded as microstrip. A `null` bound, an unfilled zone or an
