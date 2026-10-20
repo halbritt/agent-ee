@@ -1005,7 +1005,15 @@ the SMD footprint as through hole
 
 The shared index also qualifies explicitly solid-connected SMD custom pads
 with rectangular/circular anchors and bounded polygon, rectangle, circle or
-line primitives through a sandboxed pcbnew load (AGENTEE-300). It retains native
+line primitives through a sandboxed pcbnew load (AGENTEE-300). Primitive
+coordinates and local copper extents must fit +/-1000 mm; widths must not
+exceed 1000 mm. The sum of the pad translation magnitude, primitive radial reach
+and half its stroke width must be at most 1000 mm from the footprint origin,
+regardless of pad rotation. Integer ceilings prevent rounding down at the boundary.
+Excess reach refuses before native loading with `library_coverage`.
+The native merged polygon including the anchor must have exactly
+one outline; pcbnew-reported holes within it are allowed (AGENTEE-304). Detached
+islands refuse with `library_coverage` and no qualified footprint. It retains native
 copper bounds and pad identity; unsupported constructs or native failures are
 unknown. Numbering declarations alone never qualify geometry. See
 [native custom pads](footprint-libraries.md#native-custom-pads-agentee-300).

@@ -234,9 +234,19 @@ def _rule_area(zone):
 
 
 def _custom_pad(pad):
-    """Qualify only bounded solid-connected custom-pad syntax before native loading."""
+    """Qualify bounded custom-pad syntax before native loading."""
     from .symbol_library import children, field, nanometres, LibraryError
     from .board_envelope import simple_polygon
+    from math import isqrt
+    # Native geometry can silently drop copper at large coordinates. Bound
+    # both local extents and rotation-invariant reach before native loading.
+    limit_nm = 1_000_000_000
+
+    def ceil_hypot(point):
+        squared = sum(v * v for v in point)
+        root = isqrt(squared)
+        return root + (root * root < squared)
+
     allowed = {'at', 'size', 'layers', 'uuid', 'options', 'primitives',
                'zone_connect', 'thermal_bridge_angle'}
     nodes = pad[4:]
@@ -258,6 +268,10 @@ def _custom_pad(pad):
         raise LibraryError('unsupported custom-pad clearance/anchor')
     if children(pad, 'thermal_bridge_angle'):
         nanometres(field(pad, 'thermal_bridge_angle', 1)[0])
+    at = children(pad, 'at')
+    if len(at) != 1 or len(at[0]) not in (3, 4):
+        raise LibraryError('pad requires x/y/optional rotation')
+    origin_reach = ceil_hypot(tuple(map(nanometres, at[0][1:3])))
     primitives = children(pad, 'primitives')
     if len(primitives) != 1 or not 1 <= len(primitives[0][1:]) <= 128:
         raise LibraryError('custom pad requires 1..128 supported primitives')
@@ -274,6 +288,8 @@ def _custom_pad(pad):
                 or len(fields) != len(keys) or {n[0] for n in fields} != keys):
             raise LibraryError('unsupported custom-pad primitive/options')
         width = nanometres(field(primitive, 'width', 1)[0])
+        if width > limit_nm:
+            raise LibraryError('custom-pad primitive width exceeds 1000 mm')
         fill = field(primitive, 'fill', 1)[0] if kind != 'gr_line' else 'no'
         if fill not in ('yes', 'no') or width < 0 or (fill == 'no' and width == 0):
             raise LibraryError('unsupported custom-pad primitive fill/width')
@@ -295,6 +311,22 @@ def _custom_pad(pad):
             end = tuple(map(nanometres, field(primitive, 'end', 2)))
             if start == end or (kind == 'gr_rect' and (start[0] == end[0] or start[1] == end[1])):
                 raise LibraryError('degenerate custom-pad primitive')
+            points = [start, end]
+        if any(abs(v) > limit_nm for point in points for v in point):
+            raise LibraryError('custom-pad primitive coordinate exceeds +/-1000 mm')
+        if kind == 'gr_circle':
+            radius = ceil_hypot(tuple(a - b for a, b in zip(start, end)))
+            extent = max(abs(v) + radius for v in start)
+            reach = ceil_hypot(start) + radius
+        else:
+            extent = max(abs(v) for point in points for v in point)
+            corners = [(x, y) for x in (start[0], end[0]) for y in (start[1], end[1])] if kind == 'gr_rect' else points
+            reach = max(map(ceil_hypot, corners))
+        if 2 * extent + width > 2 * limit_nm:
+            raise LibraryError('custom-pad primitive copper extent exceeds +/-1000 mm')
+        # Double the comparison to preserve half-nanometre stroke expansion.
+        if 2 * (origin_reach + reach) + width > 2 * limit_nm:
+            raise LibraryError('custom-pad copper reach exceeds 1000 mm from footprint origin')
 
 
 def canonical_custom_pad(pad):
@@ -353,6 +385,10 @@ def _native_custom_geometry(data, footprint):
                 anchor = field(children(pad['native'], 'options')[0], 'anchor', 1)[0]
                 if found['anchor'] != anchor:
                     raise FootprintError('native custom-pad anchor differs from captured footprint')
+                outlines = found['outline_count']
+                if type(outlines) is not int or outlines != 1:
+                    raise FootprintError(f'native custom pad {pad["number"]!r} has {outlines!r} outlines; '
+                                         'exactly one merged copper outline required')
                 bbox = found['bbox_nm']
                 if (len(bbox) != 4 or any(type(v) is not int for v in bbox)
                         or bbox[0] >= bbox[2] or bbox[1] >= bbox[3]):

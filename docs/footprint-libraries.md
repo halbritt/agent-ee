@@ -51,7 +51,20 @@ connection (`zone_connect 2`), one explicit front/back copper layer,
 anchor, and `gr_poly`, `gr_rect`, `gr_circle` or `gr_line` primitives. Filled
 polygons, rectangles and circles may have zero width; unfilled primitives need
 positive width. Each pad is bounded to 128 primitives and each polygon to
-1024 vertices. Unsupported options, arcs, padstacks, thermal connections and
+1024 vertices. Primitive coordinates are limited to +/-1000 mm and widths to
+1000 mm; the complete local copper extent, including circle radius and stroke
+expansion, must also fit within +/-1000 mm (AGENTEE-304). In addition, the
+rotation-invariant copper reach from the footprint origin must be at most
+1000 mm: the ceiling of the pad translation magnitude plus each primitive's
+radial reach plus half its width. Rectangle reach includes all four corners;
+line and polygon reach includes every vertex; circle reach is its centre
+magnitude plus radius. Magnitudes use integer square-root ceilings and the
+width comparison preserves half-nanometre expansion. This conservative bound
+applies at every rotation, including zero. Excess reach refuses with
+`library_coverage`: "custom-pad copper reach exceeds 1000 mm from footprint origin".
+Larger geometry
+refuses before native loading because KiCad can silently drop or saturate
+overflowing primitives. Unsupported options, arcs, padstacks, thermal connections and
 inherited zone-connect behavior refuse coverage. Polygon contours must be simple.
 
 After the shared parser checks this subset, the ordinary networkless executor
@@ -64,6 +77,15 @@ with `pcbnew_version`, native `number`, `anchor` and the full copper `bbox_nm`
 anchor size. Forward annotation uses the native copper extent for staging.
 A failed child, missing report or mismatched inventory leaves unknown coverage.
 No declaration or CLI option is required for this supported subset.
+
+The native merged polygon, including primitives and anchor on the pad's copper
+layer, must have exactly one outline (AGENTEE-304). Detached primitives and
+unfilled contours separated from the anchor refuse with a `library_coverage`
+finding, failed execution and unknown coverage; no footprint record qualifies.
+The probe uses pcbnew `Unfracture` to recover hole contours from its merged
+representation. Holes within that single outline are allowed as reported by
+pcbnew, without Python connectivity approximations. Unfilled contours that touch
+or overlap the anchor can qualify. Missing or invalid native outline evidence also refuses.
 
 The existing `custom_pads` declaration still enables numbering only and records
 `geometry: "declared_custom"`; it never supplies native geometry evidence or

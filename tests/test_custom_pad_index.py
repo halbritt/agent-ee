@@ -64,11 +64,74 @@ class CustomPadIndexTests(unittest.TestCase):
                 with self.subTest(kind=kind, fill=fill):
                     primitive = PRIMITIVES[kind].replace('(width 0)', '(width 0.4)').replace('(fill yes)', f'(fill {fill})')
                     result = indexed(custom(primitive))
+                    if fill == 'no':
+                        self.assert_multi_outline_refusal(result)
+                        continue
                     self.assertEqual(result['execution'], 'ok', result['findings'])
                     pad = next(p for p in result['footprints'][0]['pads'] if p['number'] == '1')
                     # KiCad's stroked circle bounding box conservatively adds 1 nm.
                     expected = [-2200001, -2200001, 2200001, 2200001] if kind == 'circle' else [-1200000, -1200000, 2200000, 1200000]
                     self.assertEqual(pad['native_geometry']['bbox_nm'], expected)
+
+    def assert_multi_outline_refusal(self, result):
+        self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                         ('failed', 'unknown', 'missing'))
+        self.assertEqual(result['footprints'], [])
+        self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+        self.assertIn("custom pad '1'", result['findings'][0]['message'])
+        self.assertIn('2 outlines', result['findings'][0]['message'])
+
+    def test_unfilled_contours_connected_to_anchor_have_native_extents(self):
+        for kind in ('poly', 'rect', 'circle'):
+            primitive = PRIMITIVES[kind].replace('(width 0)', '(width 0.4)').replace('(fill yes)', '(fill no)')
+            if kind == 'circle':
+                primitive = primitive.replace('(center 0 0)', '(center 1.5 0)').replace('(end 2 0)', '(end 3.5 0)')
+            else:
+                primitive = primitive.replace('-1 -1', '-1 -0.5').replace('2 -1', '2 -0.5')
+            for layer in ('F', 'B'):
+                with self.subTest(kind=kind, layer=layer):
+                    text = (custom(primitive).replace('F.Cu', f'{layer}.Cu')
+                            .replace('F.Paste', f'{layer}.Paste').replace('F.Mask', f'{layer}.Mask'))
+                    result = indexed(text)
+                    self.assertEqual(result['coverage'], 'complete', result['findings'])
+                    pad = next(p for p in result['footprints'][0]['pads'] if p['number'] == '1')
+                    self.assertEqual(pad['geometry'], 'native_custom')
+                    expected = ([-700001, -2200001, 3700001, 2200001] if kind == 'circle'
+                                else [-1200000, -700000, 2200000, 1200000])
+                    self.assertEqual(pad['native_geometry']['bbox_nm'], expected)
+
+    def test_detached_primitive_refuses_even_beside_connected_copper(self):
+        island = '(gr_rect (start 10 10) (end 11 11) (width 0) (fill yes))'
+        for primitive in (island, PRIMITIVES['rect'] + island):
+            for layer in ('F', 'B'):
+                with self.subTest(primitive=primitive, layer=layer):
+                    text = (custom(primitive, at='3 4 90').replace('F.Cu', f'{layer}.Cu')
+                            .replace('F.Paste', f'{layer}.Paste').replace('F.Mask', f'{layer}.Mask'))
+                    self.assert_multi_outline_refusal(indexed(text))
+
+    def test_missing_or_invalid_native_outline_evidence_refuses(self):
+        from agent_ee.executor import execute as real_execute
+        for count in (None, 0, True, '1', 1.0, -1):
+            with self.subTest(count=count):
+                def altered(inputs, work, argv, **kwargs):
+                    result = real_execute(inputs, work, argv, **kwargs)
+                    self.assertEqual(result['execution'], 'ok')
+                    path = Path(work) / 'footprint.json'
+                    report = json.loads(path.read_text())
+                    for pad in report['pads']:
+                        if pad['shape'] == 'custom':
+                            if count is None:
+                                pad.pop('outline_count', None)
+                            else:
+                                pad['outline_count'] = count
+                    path.write_text(json.dumps(report))
+                    return result
+                with patch('agent_ee.executor.execute', side_effect=altered):
+                    result = indexed(custom())
+                self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                 ('failed', 'unknown', 'missing'))
+                self.assertEqual(result['footprints'], [])
+                self.assertEqual(result['findings'][0]['code'], 'library_coverage')
 
     def test_translated_rotated_native_extent_and_determinism(self):
         text = custom(at='3 4 90')
@@ -106,6 +169,98 @@ class CustomPadIndexTests(unittest.TestCase):
                                  ('failed', 'unknown', 'missing'))
                 self.assertEqual(result['footprints'], [])
 
+    def test_primitive_magnitude_bounds_refuse_without_native_loading(self):
+        from agent_ee.executor import execute as real_execute
+        cases = [
+            PRIMITIVES['rect'].replace('(end 2 1)', '(end 3000 1)'),
+            PRIMITIVES['rect'].replace('(start -1 -1)', '(start -3000 -1)'),
+            PRIMITIVES['poly'].replace('(xy 2 -1)', '(xy 3000 -1)'),
+            PRIMITIVES['line'].replace('(end 2 0)', '(end 0 3000)'),
+            PRIMITIVES['circle'].replace('(center 0 0)', '(center 0 -3000)'),
+            PRIMITIVES['circle'].replace('(end 2 0)', '(end 3000 0)'),
+            PRIMITIVES['line'].replace('(width 0.4)', '(width 3000)'),
+            # Individually bounded circle coordinates can still overflow its radius.
+            '(gr_circle (center -1000 -1000) (end 1000 1000) (width 0) (fill yes))',
+            PRIMITIVES['rect'].replace('(end 2 1)', '(end 1000.000001 1)'),
+            PRIMITIVES['line'].replace('(width 0.4)', '(width 1000.000001)'),
+            PRIMITIVES['rect'].replace('(end 2 1)', '(end 1000 1)').replace('(width 0)', '(width 0.000001)'),
+            '(gr_circle (center 500 0) (end -1 0) (width 0) (fill yes))',
+            '(gr_circle (center 0 0) (end 1000 0) (width 0.000001) (fill yes))',
+        ]
+        for primitive in cases:
+            with self.subTest(primitive=primitive), patch('agent_ee.executor.execute', wraps=real_execute) as execute:
+                result = indexed(custom(primitive))
+                self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                 ('failed', 'unknown', 'missing'))
+                self.assertEqual(result['footprints'], [])
+                self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+                self.assertIn('1000 mm', result['findings'][0]['message'])
+                execute.assert_not_called()
+
+    def test_rotation_invariant_reach_refuses_before_native_loading(self):
+        square = '(gr_rect (start -1000 -1000) (end 1000 1000) (width 0) (fill yes))'
+        rect = '(gr_rect (start -1 -1) (end 500 1) (width 0) (fill yes))'
+        cases = [
+            (square, '0 0 10'),
+            (square, '0 0 45'),
+            (square.replace('1000', '760'), '0 0 45'),
+            (rect, '1500 0'),
+            (rect, '-1500 0'),
+            # The farthest rectangle corner is neither start nor end.
+            ('(gr_rect (start 600 0) (end 0 900) (width 0) (fill yes))', '0 0'),
+            ('(gr_poly (pts (xy 0 0) (xy 800 800) (xy 0 1)) (width 0) (fill yes))', '0 0'),
+            ('(gr_line (start 0 0) (end 800 800) (width 0.2))', '0 0'),
+            ('(gr_circle (center 700 700) (end 720 700) (width 0) (fill yes))', '0 0'),
+            # Integer ceiling must not round a diagonal or half-nm stroke down.
+            ('(gr_line (start 0 0) (end 999.999999 0.000001) (width 0.000001))', '0 0'),
+            ('(gr_line (start 0 0) (end 999 0) (width 0.000001))', '1 0'),
+            ('(gr_circle (center 0 0) (end 999 0) (width 0) (fill yes))', '1 0.000001'),
+        ]
+        for primitive, at in cases:
+            with self.subTest(primitive=primitive, at=at), patch('agent_ee.executor.execute') as execute:
+                result = indexed(custom(primitive, at=at))
+                self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                 ('failed', 'unknown', 'missing'))
+                self.assertEqual(result['footprints'], [])
+                self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+                self.assertIn('custom-pad copper reach exceeds 1000 mm from footprint origin',
+                              result['findings'][0]['message'])
+                execute.assert_not_called()
+
+    def test_bounded_rotated_translated_reach_keeps_exact_native_extents(self):
+        cases = [
+            ('(gr_rect (start -700 -700) (end 700 700) (width 0) (fill yes))', '0 0 45',
+             [-989949494, -989949494, 989949494, 989949494]),
+            ('(gr_rect (start -500 -500) (end 500 500) (width 0) (fill yes))', '0 0 45',
+             [-707106781, -707106781, 707106781, 707106781]),
+            ('(gr_rect (start -999 -1) (end 999 1) (width 0) (fill yes))', '0 0 33.3',
+             [-835520577, -549309603, 835520577, 549309603]),
+            ('(gr_rect (start -1 -1) (end 600 1) (width 0) (fill yes))', '300 0 45',
+             [298585786, -424971175, 724971175, 1414214]),
+        ]
+        for primitive, at, bbox in cases:
+            with self.subTest(primitive=primitive, at=at):
+                result = indexed(custom(primitive, at=at))
+                self.assertEqual(result['coverage'], 'complete', result['findings'])
+                pad = next(p for p in result['footprints'][0]['pads'] if p['number'] == '1')
+                self.assertEqual(pad['native_geometry']['bbox_nm'], bbox)
+
+    def test_primitive_magnitude_boundary_is_inclusive(self):
+        cases = [
+            ('(gr_line (start -500 0) (end 500 0) (width 1000))',
+             [-1000000000, -500000000, 1000000000, 500000000]),
+            ('(gr_line (start -1 0) (end 1 0) (width 1000))',
+             [-501000000, -500000000, 501000000, 500000000]),
+            ('(gr_circle (center 0 0) (end 1000 0) (width 0) (fill yes))',
+             [-1000000000, -1000000000, 1000000000, 1000000000]),
+        ]
+        for primitive, bbox in cases:
+            with self.subTest(primitive=primitive):
+                result = indexed(custom(primitive))
+                self.assertEqual(result['coverage'], 'complete', result['findings'])
+                pad = next(p for p in result['footprints'][0]['pads'] if p['number'] == '1')
+                self.assertEqual(pad['native_geometry']['bbox_nm'], bbox)
+
     def test_native_crash_or_missing_output_never_qualifies(self):
         # Transport fault injection tests refusal only; successful cases above use real pcbnew.
         for status in ('failed', 'ok'):
@@ -134,6 +289,18 @@ class CustomPadIndexTests(unittest.TestCase):
         pad = next(p for p in result['footprints'][0]['pads'] if p['number'] == '1')
         self.assertEqual(pad['geometry'], 'declared_custom')
         self.assertNotIn('native_geometry', pad)
+
+    def test_numbering_only_multilayer_custom_beside_qualified_pad_is_preserved(self):
+        declared = owner_declarations([('Owned:OwnedCustom', dict(custom_pads=['2']))])
+        other = smd('2', 4, shape='custom', layers='"*.Cu" "*.Mask"',
+                    extra='(options (clearance outline) (anchor rect)) '
+                          f'(primitives {PRIMITIVES["rect"]})')
+        result = indexed(custom().replace(smd('2', 4), other), declarations=declared)
+        self.assertEqual(result['coverage'], 'complete', result['findings'])
+        pads = {p['number']: p for p in result['footprints'][0]['pads']}
+        self.assertEqual(pads['1']['geometry'], 'native_custom')
+        self.assertEqual(pads['2']['geometry'], 'declared_custom')
+        self.assertNotIn('native_geometry', pads['2'])
 
     def test_native_number_disagreement_refuses(self):
         from agent_ee.executor import execute as real_execute
