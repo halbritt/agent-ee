@@ -563,20 +563,45 @@ This does not emit a completed IC schematic or establish component suitability.
 
 ## Packed-board silkscreen policy (AGENTEE-276)
 
-The scaffold uses signal outer copper layers and power inner copper layers. This
-is its generation convention for plane-based multilayer boards; it changes no
-stackup thickness, net assignment or copper geometry. Plane nets and fills still
-come from the captured plane plan and need fresh native checks. Designs requiring
-inner signal layers need a different explicit generation policy.
+Each copper entry in the envelope stackup may declare `role: "plane"` or
+`role: "signal"` (AGENTEE-282). The scaffold emits KiCad `power` or `signal`
+respectively, including on six-layer boards with inner signal layers. An omitted
+role preserves the legacy convention: signal outer copper and power inner copper.
+Dielectrics cannot declare a role. This changes no thickness, net assignment or
+copper geometry. Plane nets and fills still come from the captured plane plan
+and need fresh native checks. Plane-typed layers export as Specctra `power`;
+declare signal layers explicitly when routing must use them. Native reload,
+round-trip role comparison and Specctra export are covered by the six-layer test.
 
 Board-only mounting-hole references are on F.Fab, preserving their identities
 without printing text over the drill. Fixed footprints with envelope-declared
 `courtyard_overhangs` have their silkscreen graphics and fields moved to the
 corresponding F.Fab/B.Fab layer before saving. This avoids printing the portion
 outside the substrate and retains the complete source drawing for fabrication
-review. This policy moves all silk on those footprints, including pin-one marks;
-assembly review must use the fabrication drawing or a separately placed board
-mark. It does not clip copper, courtyards or antenna rule areas.
+review. This policy moves all original silk on those footprints, including pin-one
+marks. The content writer additionally places a same-side board-level callout
+`ASM J1 90deg`, for example, identifying the reference and its declared native
+KiCad footprint angle. Back-side text is mirrored for back-side reading. This
+is an orientation callout; the complete footprint drawing on Fab retains the
+pin-one geometry. It does not infer a manufacturer's pin numbering or mounting
+direction from pad names.
+
+The callout searches from the declared footprint anchor towards the centre of the
+outline bounds in 200 equal steps. Its complete native text bounding box must be
+inside the outline with at least 0.5 mm edge clearance, and at least 1.5 mm from
+same-side footprint and courtyard bounds, pads on that side and existing
+same-side silk. Courtyard bounds are included explicitly because the native
+body bounding box alone does not establish clearance to the courtyard. The
+1.5 mm spacing accommodates the 0.2 mm marker reservation plus ordinary
+0.5/1 mm packing gaps; a larger declared gap can still refuse placement.
+Opposite-side through pads also obstruct the callout. If no position fits,
+generation refuses before replacing the board; a crowded or concave board can
+need a changed placement plan. This bounded search does not guarantee finding
+every feasible position. These board callouts have deterministic UUIDs and are
+reserved by the placer alongside IMU markings. No copper, courtyard or antenna
+geometry is clipped. Native DRC continues to grade every callout, including
+interactions with copper zones or other board geometry outside the search's
+obstacle inventory. Regenerate existing candidates to obtain these marks.
 
 The shared producer policy moves only the Reference field of exact standard
 `Resistor_SMD:R_0402_1005Metric`, `R_0603_1608Metric`, the corresponding
@@ -588,8 +613,8 @@ preserves existing footprint presentation. Regenerate older packed candidates
 from their captured inputs to adopt the policy; an existing board does not gain
 new evidence automatically.
 
-The placer derives same-side obstacles from visible board-level `IMU_AXES` text
-on F.SilkS/B.SilkS. Each is its native bounding box with a 0.2 mm margin, plus
+The placer derives same-side obstacles from visible board-level `IMU_AXES` and
+`ASM` callout text on F.SilkS/B.SilkS. Each is its native bounding box with a 0.2 mm margin, plus
 the packing policy's ordinary gap. The resulting plan records the obstacle's
 text UUID and polygon in its effective policy. The source board and captured
 policy remain unchanged. A fixed component conflicting with this reservation
@@ -599,5 +624,10 @@ The DRC grading rules, severity settings, exclusions and waivers are unchanged.
 Native DRC continues to grade the complete saved board. The native tests in
 [test_silkscreen.py](../tests/test_silkscreen.py) exercise exact identity selection,
 front/back layers, unchanged pads, same-side reservation refusal, opposite-side
-placement and real before/after silkscreen DRC findings. The scaffold tests also
-load the saved hole fields and copper-layer types through pcbnew.
+placement, unplaceable-callout refusal and real before/after silkscreen DRC
+findings. The scaffold tests also load saved hole fields and copper-layer types
+through pcbnew and construct J1/J2/U1 callouts on original pod-sized stand-ins,
+with native DRC and repeated-byte identity. These are mechanics evidence, not
+physical assembly approval of the actual pod parts. Ordinary warnings for
+1206/1210 passives, ICs, SOT-323 and test points remain DRC findings; the dense
+reference policy is deliberately unchanged.

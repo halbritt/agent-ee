@@ -41,6 +41,18 @@ class SavedEnvelopeTests(unittest.TestCase):
             obligation_coverage(scope, requirements, record, files)
 
 class ExactBoundaryTests(unittest.TestCase):
+    def test_explicit_copper_roles_are_checked_without_changing_legacy_verdicts(self):
+        raw = json.loads(RAW)
+        raw['stackup']['layers'][0]['role'] = 'plane'
+        record = validate(json.dumps(raw).encode())
+        mismatch = compare_saved('layers/1', record, saved_structure(PCB))
+        self.assertEqual(mismatch['status'], 'defect')
+        self.assertIn('saved copper role differs for F.Cu', mismatch['defects'])
+        matched = PCB.replace(b'(0 "F.Cu" signal)', b'(0 "F.Cu" power)')
+        self.assertEqual(compare_saved('layers/1', record, saved_structure(matched))['status'], 'pass')
+        self.assertEqual(self.compare('layers/1', PCB)['status'], 'pass')
+        self.assertEqual(self.compare('layers/1', matched)['status'], 'pass')
+
     def compare(self, criterion, pcb):
         return compare_saved(criterion, validate(RAW), saved_structure(pcb))
 

@@ -70,3 +70,21 @@ then duplicates one segment exactly and moves one segment, requiring that each
 comparison identify the differing element and the duplicate's count.
 Set `AGENT_EE_KICAD_ROUTE_CHECKOUT` to the qualified pinned checkout and
 `AGENT_EE_REQUIRE_TOOLCHAIN=1` to require all native prerequisites.
+
+
+AGENTEE-282 retains the entire repeat-run workspace on the first exception,
+including executor console/execution records, both routing runs, adapter reports,
+native result/attempt files, validation logs, candidates and comparison files
+produced before failure. Unittest still reports the original failure; there is
+no retry. The console prints `Native routing failure evidence retained at PATH`.
+`PATH` is a fresh `agent-ee-route-failure-*` directory under the host temporary
+directory (`TMPDIR` when configured), with `failure.json` naming the test and
+exception and `workspace/` containing the artifacts. Symbolic links are retained
+as links. Successful tests create no archive. Use a persistent job scratch
+`TMPDIR` for retained evidence; host temporary-directory cleanup still applies.
+
+The intermittent pin-a132899 repeat-2 adapter exit 65 observed during AGENTEE-276
+remains an unresolved historical incident. A passing later run cannot explain
+it. A future failure now retains the native evidence needed to distinguish an
+exit/status contradiction from missing output or a backend crash. Do not retry a
+failure away or relabel missing coverage as a pass.

@@ -26,7 +26,7 @@ from .fab_profile import NATIVE, compile_profile
 from .footprint_library import _members
 from .parts_manifest import load_manifest, qualify_manifest, read_captured
 from .schematic_emit import Quoted as Q, format_sexpr
-from .silkscreen import prepare_footprint
+from .silkscreen import prepare_footprint, overhang_orientation_mark
 from .storage import digest, identity, json_bytes
 from .symbol_library import children, nanometres, parse_sexpr
 
@@ -124,14 +124,16 @@ def schematic(root_uuid, path, plans, title):
 
 
 def board(record, seed):
-    """Emit outline and stackup with power inner layers; project rules stay in .kicad_pro."""
+    """Emit declared copper roles; legacy envelopes keep power inner layers."""
     count = record['layer_count']
     if count % 2:
         raise ValueError('native scaffold requires an even copper layer count')
     copper = record['copper_layers']
-    layers = [['0', Q('F.Cu'), 'signal']]
-    layers += [[str(4 + 2 * i), Q(name), 'power'] for i, name in enumerate(copper[1:-1])]
-    layers.append(['2', Q('B.Cu'), 'signal'])
+    roles = {layer['name']: ('power' if layer['role'] == 'plane' else 'signal')
+             for layer in record['stackup']['layers'] if 'role' in layer}
+    layers = [['0', Q('F.Cu'), roles.get('F.Cu', 'signal')]]
+    layers += [[str(4 + 2 * i), Q(name), roles.get(name, 'power')] for i, name in enumerate(copper[1:-1])]
+    layers.append(['2', Q('B.Cu'), roles.get('B.Cu', 'signal')])
     # KiCad 10 technical-layer numbers, independent of copper layer count.
     layers += [[str(i), Q(name), 'user'] for i, name in (
         (1, 'F.Mask'), (3, 'B.Mask'), (5, 'F.SilkS'), (7, 'B.SilkS'),
@@ -378,6 +380,11 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
         text.SetTextThickness(120000)
         text.SetUuidDirect(kiid('IMU_AXES'))
         native.Add(text)
+    for ref, declaration in fixed.items():
+        if declaration.get('courtyard_overhangs'):
+            mark = overhang_orientation_mark(native, footprints[ref], record, declaration['rotation_deg'])
+            mark.SetUuidDirect(kiid('assembly-orientation:' + ref))
+            native.Add(mark)
     target = inputs / board_rel
     with tempfile.TemporaryDirectory(prefix='.envelope-', dir=target.parent) as tmp:
         staged = Path(tmp) / target.name
