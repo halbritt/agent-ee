@@ -102,6 +102,11 @@ writable `design/` copy and declared outputs) and `version/`.
   byte-identical: agent-ee's own git identity probes run with `--no-optional-locks` and
   never use `git status` without it or `git describe --dirty`, which rewrite `.git/index`
   when its stat data is stale, as on first use in a fresh container (AGENTEE-269).
+  Host Python imports can also add `__pycache__` files while another process runs
+  a step. Those additions correctly refuse adoption; the sandbox's read-only
+  mount does not prevent host writes. The fab-stage tests use a private source
+  copy without shared bytecode (AGENTEE-299), and a deterministic real-executor
+  regression confirms that bytecode added to the actual mount still refuses.
 - `status`, recomputed from the recorded execution and violations:
 
 | Status | Meaning | Adoptable |

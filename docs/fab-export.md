@@ -408,6 +408,12 @@ those comparisons.
 
 ## Declared fab steps
 
+`tests.test_fab_stage` runs the native declared-step checks with a private copy
+of the tool source, excluding `__pycache__`. Shared source mounts let concurrent
+host imports change the tree during execution and correctly refuse the receipt
+as `mount_changed` / `source_changed` (AGENTEE-299). The fixture isolates those
+writes; production identity checks still hash and compare every mounted file.
+
 When a campaign includes `fab` in `stages.order` and declares a fab step,
 `fab_export`, `cpl_rotation` and `fab_package` consume that step's sealed
 `out/fab` output. The shared [fab-stage producer](../src/agent_ee/fab_stage.py)

@@ -1298,6 +1298,11 @@ package and compare it with fresh sandbox output. Missing step output stays
 unknown and can schedule a coordinator fab turn only when all other checks and
 review are complete. See [declared fab steps](fab-export.md#declared-fab-steps).
 
+The native `tests.test_fab_stage` fixture mounts a private tool source copy so
+parallel host imports cannot change its receipted tree through bytecode caches.
+The same module checks that a bytecode addition to an actual tool mount still
+refuses adoption (AGENTEE-299); check verdicts and receipt validation are unchanged.
+
 See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
 v1 refusals and outcome mapping. It requires an earlier `netlist_check`, refuses
