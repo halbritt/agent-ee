@@ -23,6 +23,7 @@ same routing input (no relaxation after a failed attempt).
 """
 import copy
 import math
+import os
 from pathlib import Path
 import re
 
@@ -31,6 +32,8 @@ from .storage import digest, read_json, write_json
 SCHEMA = 'agent-ee.layer-policy-derivation/1'
 RECORD = 'agent-ee.layer-policy-record/1'
 VIA_BUDGET = 'agent-ee.via-budget/1'
+VIA_BUDGET_PILOT = 'agent-ee.via-budget/2'
+PILOT_DIRECTORY = 'via-budget-pilot'
 DECLARATION = 'layer_policy_provenance'
 BOUNDARY = 'layer-policy'
 RECORD_FILE = 'record.json'
@@ -67,12 +70,29 @@ def config_of(config):
     return value
 
 
+def pilot_budget(counts):
+    """(N, margin) from complete attempts' signal via counts (AGENTEE-257), or ValueError."""
+    if (not isinstance(counts, list) or len(counts) < MIN_PILOT_ATTEMPTS or
+            any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in counts)):
+        raise ValueError(f'via budget basis needs at least {MIN_PILOT_ATTEMPTS} complete attempts\' signal via counts')
+    margin = max(1, math.ceil(0.1 * max(counts)))
+    if max(counts) - min(counts) > margin:
+        raise ValueError('pilot attempts differ by more than the margin; the router is not repeatable '
+                         'enough on this board to choose N')
+    return max(counts) + margin, margin
+
+
 def validate_via_budget(value):
-    """The recorded basis of N (AGENTEE-257 via-budget method); N is recomputed, never trusted."""
+    """The recorded basis of N (AGENTEE-257 via-budget method); N is recomputed, never trusted.
+
+    ``agent-ee.via-budget/2`` also links the coordinator pilot basis by hash (AGENTEE-265);
+    ``verify_pilot`` re-derives V_i from its retained attempt facts at campaign start."""
     from .pour_budget import MAX_VIA_BUDGET
-    if (not isinstance(value, dict) or value.get('schema') != VIA_BUDGET or
-            set(value) != {'schema', 'via_budget', 'board_sha256', 'basis'}):
-        raise ValueError(f'via_budget must be {VIA_BUDGET} with via_budget, board_sha256 and basis')
+    keys = {'schema', 'via_budget', 'board_sha256', 'basis'}
+    if (not isinstance(value, dict) or value.get('schema') not in (VIA_BUDGET, VIA_BUDGET_PILOT) or
+            set(value) != (keys | {'pilot'} if value['schema'] == VIA_BUDGET_PILOT else keys)):
+        raise ValueError(f'via_budget must be {VIA_BUDGET} with via_budget, board_sha256 and basis, '
+                         f'or {VIA_BUDGET_PILOT} with them and the pilot basis link')
     n, board, basis = value['via_budget'], value['board_sha256'], value['basis']
     if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= MAX_VIA_BUDGET:
         raise ValueError(f'via budget must be an integer from 1 to {MAX_VIA_BUDGET}')
@@ -81,17 +101,74 @@ def validate_via_budget(value):
     if (not isinstance(basis, dict) or set(basis) != {'method', 'pilot', 'signal_vias'} or
             basis['method'] != 'routed_demand' or basis['pilot'] != 'diagnostic_not_adoptable'):
         raise ValueError('via budget basis must be routed_demand from a diagnostic, non-adoptable pilot')
-    counts = basis['signal_vias']
-    if (not isinstance(counts, list) or len(counts) < MIN_PILOT_ATTEMPTS or
-            any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in counts)):
-        raise ValueError(f'via budget basis needs at least {MIN_PILOT_ATTEMPTS} complete attempts\' signal via counts')
-    margin = max(1, math.ceil(0.1 * max(counts)))
-    if max(counts) - min(counts) > margin:
-        raise ValueError('pilot attempts differ by more than the margin; the router is not repeatable '
-                         'enough on this board to choose N')
-    if n != max(counts) + margin:
-        raise ValueError(f'via budget {n} is not V_max + max(1, ceil(0.1 V_max)) = {max(counts) + margin}')
+    expected, _ = pilot_budget(basis['signal_vias'])
+    if n != expected:
+        raise ValueError(f'via budget {n} is not V_max + max(1, ceil(0.1 V_max)) = {expected}')
+    if value['schema'] == VIA_BUDGET_PILOT:
+        link = value['pilot']
+        if (not isinstance(link, dict) or set(link) != {'path', 'sha256'} or not isinstance(link['path'], str) or
+                not link['path'] or not isinstance(link['sha256'], str) or not SHA.fullmatch(link['sha256'])):
+            raise ValueError('via budget pilot must link the pilot basis by path and sha256')
+        from .via_budget_pilot import BASIS_FILE
+        if Path(link['path']).name != BASIS_FILE:
+            raise ValueError(f'via budget pilot path must name {BASIS_FILE}')
     return value
+
+
+def pilot_link(config):
+    """The declared pilot basis link, or None for a campaign without a /2 via budget."""
+    value = config_of(config)
+    budget = None if value is None else value.get('via_budget')
+    return None if budget is None or budget['schema'] != VIA_BUDGET_PILOT else budget['pilot']
+
+
+def verify_pilot(base, config, *, imported, tool=None):
+    """Re-derive the declared via budget from the retained pilot facts; raise on any difference.
+
+    ``base`` is the campaign configuration's directory at start and the campaign root after
+    import. ``tool``, when given, is the router identity the campaign binds."""
+    from . import via_budget_pilot as pilot
+    from .routing_adapter import validate_declaration
+    link = pilot_link(config)
+    retained = Path(base) / PILOT_DIRECTORY
+    if link is None:
+        if imported and os.path.lexists(retained):
+            raise ValueError('via budget pilot retained without a declared pilot basis')
+        return None
+    if imported and link['path'] != f'{PILOT_DIRECTORY}/{pilot.BASIS_FILE}':
+        raise ValueError('via budget pilot basis is not campaign-local')
+    path = Path(base) / link['path']
+    if path.is_symlink() or not path.is_file() or digest(path) != link['sha256']:
+        raise ValueError('via budget pilot basis changed, unsafe or missing')
+    basis = pilot.verify(path)
+    if basis['status'] != 'derived':
+        raise ValueError(f'via budget pilot derived no N: {basis["reason"]}')
+    budget = config_of(config)['via_budget']
+    if (basis['board_sha256'], basis['signal_vias'], basis['via_budget']) != (
+            budget['board_sha256'], budget['basis']['signal_vias'], budget['via_budget']):
+        raise ValueError('via budget differs from the V_i re-derived from the retained pilot attempt facts')
+    if basis['declaration'] != validate_declaration(config['routing_adapter']):
+        raise ValueError('via budget pilot forked another routing declaration than the campaign binds')
+    if basis['pilot_policy'] != pilot.pilot_policy(config_of(config)['policy']):
+        raise ValueError('via budget pilot layer policy is not the pilot form of the campaign policy')
+    if tool is not None and any(a['tool'] != tool for a in basis['attempts']):
+        raise ValueError('via budget pilot ran another router than the campaign routing binding')
+    return basis
+
+
+def import_pilot(root, config, source, *, tool=None):
+    """Copy a verified pilot into the campaign root and point the frozen configuration at it.
+
+    The caller verified the source; the copy is verified again where the campaign keeps it."""
+    from . import via_budget_pilot as pilot
+    link = pilot_link(config)
+    if link is None:
+        return config
+    pilot.copy((Path(source) / link['path']).parent, Path(root) / PILOT_DIRECTORY)
+    config = copy.deepcopy(config)
+    config['layer_policy_derivation']['via_budget']['pilot']['path'] = f'{PILOT_DIRECTORY}/{pilot.BASIS_FILE}'
+    verify_pilot(root, config, imported=True, tool=tool)
+    return config
 
 
 def directory(config):

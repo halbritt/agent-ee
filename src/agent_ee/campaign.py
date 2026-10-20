@@ -498,6 +498,13 @@ def run_campaign(config_path, out):
     validate_rating_provenance(config, scope, [validate_step(s, host=False) for s in steps])
     from .layer_policy_lineage import validate_campaign as validate_layer_policy_derivation
     validate_layer_policy_derivation(config, scope)
+    from .layer_policy_lineage import pilot_link, verify_pilot
+    pilot_tool = None
+    if pilot_link(config) is not None:
+        from .stage_receipts import observe_tool
+        # AGENTEE-265: V_i is re-derived from the retained pilot attempt facts, never taken as stated.
+        pilot_tool = observe_tool(spec)
+        verify_pilot(config_path.parent, config, imported=False, tool=pilot_tool)
     # Reuse the subscription route validator for the implementation definition.
     validate_profile({**profile, "adjudicator": config["implementation"]})
     root = Path(out).resolve()
@@ -506,6 +513,9 @@ def run_campaign(config_path, out):
         (root / ".campaign-root").touch()
         if 'pre_receipts' in config:
             config['pre_receipts'] = import_pre_receipts(root, pre_receipts, config_path.parent)
+        if pilot_tool is not None:
+            from .layer_policy_lineage import import_pilot
+            config = import_pilot(root, config, config_path.parent, tool=pilot_tool)
         write_json(root / "config.json", config)
         write_json(root / "profile.json", profile)
         state = {"schema": "agent-ee.campaign-state/1", "state": "running", "history": [],
@@ -833,6 +843,7 @@ def verify_campaign_records(root, *, observations=None):
                     if following.get('scope_path') != str(work / 'proposal.scope.json'):
                         raise ValueError('next campaign run was not captured from this routing proposal')
     lineage.verify_records(root, state, config, derivations)
+    lineage.verify_pilot(root, config, imported=True, tool=(routing_binding or {}).get('tool'))
     from .stage_done import verify_done
     verify_done(root, state, config)
     return {**state, "state": "empirical_superseded"} if feedback_seen else state

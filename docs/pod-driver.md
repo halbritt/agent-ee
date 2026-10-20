@@ -106,6 +106,9 @@ it against the scope and the routing adapter and copies it into `campaign.json`.
 plan without it keeps the routing adapter's declaration. The
 pour area-loss bound is then derived by the coordinator on each routing turn; see
 [derived at the pre-routing boundary](routing-adapter.md#derived-at-the-pre-routing-boundary-agentee-260).
+A `/2` `via_budget` from the [via-budget pilot](routing-adapter.md#via-budget-pilot-agentee-265)
+is copied unchanged, so a relative `pilot.path` resolves against the prepared
+`campaign.json` directory. Campaign start re-derives it.
 
 All generic producers adopt exit 0 only. Their complete argv, mounts, outputs
 and timeouts are supplied by the owned producer modules, not guessed by the

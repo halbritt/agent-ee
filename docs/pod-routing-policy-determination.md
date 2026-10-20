@@ -539,7 +539,10 @@ Both grade plane area. Neither grades the adoptable route's via count, which may
 differ from `N` in either direction while the area passes or fails
 ([area, not via count](#what-the-check-enforces-area-not-via-count)). The
 diagnostic attempts, `V_i`, `N` and the derivation are retained together with
-the board hash as the derivation record. `routing_rules` `via_count` is not
+the board hash as the derivation record. The coordinator step that runs steps 1 to 3
+and retains them is the
+[via-budget pilot](routing-adapter.md#via-budget-pilot-agentee-265) (AGENTEE-265).
+`routing_rules` `via_count` is not
 used: it counts vias on named nets with qualified two-pad routes, not a
 board-wide total.
 

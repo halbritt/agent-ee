@@ -59,9 +59,11 @@ if name == 'reference_differs':
 files = {p.name: sha(p) for p in sorted(ref.iterdir())}
 write(run / 'snapshot.json', {'project': project, 'files': files})
 fingerprint = hashlib.sha256(''.join(f'{n}\0{d}\n' for n, d in sorted(files.items())).encode()).hexdigest()
-# As the pin's facts.py: the input board's hash and its tracks.
+# As the pin's facts.py: the input board's hash and its tracks (and vias, when a scenario states them).
+via_facts = 'vias_by_label' in scenario or 'reference_vias' in scenario
 write(run / 'facts/reference-facts.json', {'nets': {}, 'tracks': scenario.get('reference_tracks', []),
-                                           'sha256': scenario.get('reference_sha256', files.get(board))})
+                                           'sha256': scenario.get('reference_sha256', files.get(board)),
+                                           **({'vias': scenario.get('reference_vias', [])} if via_facts else {})})
 if name == 'early_exit':
     sys.exit('could not read the input board: see facts/reference-facts.log')
 if name in ('refused', 'unknown_refusal_version', 'human_refusal'):
@@ -154,7 +156,9 @@ if process_ok and any(c['status'] == 'FAIL' for c in checks):
     validation.update(status='FAIL', reasons=['preservation pour_integrity: fixture'])
 if process_ok and area_bound is not None:
     write(run / 'validate/candidate-facts.json', {'sha256': board_sha, 'tracks': scenario.get(
-        'tracks', [{'kind': 'segment', 'layer': 'F.Cu', 'net': '/IN', 'uuid': 'fixture-track-1'}])})
+        'tracks', [{'kind': 'segment', 'layer': 'F.Cu', 'net': '/IN', 'uuid': 'fixture-track-1'}]),
+        **({'vias': scenario['vias_by_label'].get(label, scenario['vias_by_label'].get('*', []))}
+           if 'vias_by_label' in scenario else {})})
 if name == 'board_hash_mismatch':
     validation['delivered_board_sha256'] = '0' * 64
 code = {'COMPLETE': 0, 'INCOMPLETE': 2, 'NOT_RUN': 2}[routing_status]
