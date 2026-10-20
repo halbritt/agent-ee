@@ -21,6 +21,19 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'fixtures/cpl-rotation'
 
 
+def setUpModule():
+    # Other shards import from src and can create bytecode during a receipted step.
+    # Keep the mounted tool bytes private; the receipt must still reject any change.
+    tmp = tempfile.TemporaryDirectory(prefix='agent-ee-fab-tool-')
+    unittest.addModuleCleanup(tmp.cleanup)
+    source = Path(tmp.name) / 'src'
+    shutil.copytree(q.PACKAGE_ROOT, source, ignore=shutil.ignore_patterns('__pycache__'))
+    for driver in (g, q, rc):
+        patch = mock.patch.object(driver, 'PACKAGE_ROOT', source)
+        patch.start()
+        unittest.addModuleCleanup(patch.stop)
+
+
 def rotation_inputs(root):
     """Relocate owned supplier provenance, preserving the original raw bytes and hashes."""
     root = Path(root)
@@ -45,6 +58,48 @@ def candidate(root):
 
 
 class InputTests(unittest.TestCase):
+    def test_receipted_tools_use_a_private_source_without_shared_bytecode(self):
+        self.assertNotEqual(q.PACKAGE_ROOT, ROOT / 'src')
+        self.assertEqual(g.PACKAGE_ROOT, q.PACKAGE_ROOT)
+        self.assertEqual(rc.PACKAGE_ROOT, q.PACKAGE_ROOT)
+        self.assertEqual(list(q.PACKAGE_ROOT.rglob('__pycache__')), [])
+        self.assertEqual((q.PACKAGE_ROOT / 'agent_ee/fab_stage.py').read_bytes(),
+                         (ROOT / 'src/agent_ee/fab_stage.py').read_bytes())
+
+    def test_bytecode_added_to_the_actual_tool_mount_still_refuses_adoption(self):
+        import py_compile
+        from agent_ee import stage_receipts
+        require_toolchain()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tool, design = root / 'tool', root / 'design'
+            tool.mkdir()
+            design.mkdir()
+            script = tool / 'export.py'
+            script.write_text("from pathlib import Path; Path('result.txt').write_text('exported')\n")
+            spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'fab', 'step': 'cache-boundary',
+                    'argv': ['/usr/bin/python3', '-B', '/tool/export.py'],
+                    'version_argv': ['/usr/bin/python3', '--version'],
+                    'mounts': [{'source': str(tool), 'at': '/tool'}], 'source': '/tool',
+                    'writes': {}, 'artifacts': ['result.txt']}
+            execute = stage_receipts.execute
+
+            def execute_then_import(*args, **kwargs):
+                result = execute(*args, **kwargs)
+                # Deterministically model a neighboring host import after the initial
+                # identity observation. Every execution and digest remains real.
+                if Path(args[1]).name == 'version':
+                    py_compile.compile(str(script), doraise=True)
+                return result
+
+            with mock.patch.object(stage_receipts, 'execute', side_effect=execute_then_import):
+                receipt = run_step(root / 'receipt', design, spec, {'test': 'cache-boundary'})
+            self.assertEqual((receipt['exit_code'], receipt['status']), (0, 'refused'))
+            self.assertEqual(receipt['violations'], ['mount_changed:/tool', 'source_changed'])
+            self.assertEqual(validate_receipt(root / 'receipt'), receipt)
+            with self.assertRaisesRegex(ValueError, 'no output adopted'):
+                stage_receipts.adopt(root / 'receipt', receipt, design)
+
     def test_missing_policy_or_supplier_set_refuses_before_export(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

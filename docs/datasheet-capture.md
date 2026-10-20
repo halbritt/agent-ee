@@ -152,3 +152,47 @@ request a fresh capture/review after a declaration changes. Neither adapter
 upgrades selection into owner approval. The rung-1 scope declares no
 `datasheet_facts` check, so the stage-2 capture is not yet mounted into its
 review inputs.
+
+## Offline historical import (AGENTEE-306)
+
+Retained bytes with incomplete redirect history use `agent-ee.datasheet-capture/2`.
+Version 1 remains the live-capture contract, including its required successful
+final URL and fetch timestamp. Version 2 contains only successful historical
+imports, with outcome `imported`; mixing live and imported records is refused.
+This separate version prevents a missing final URL from becoming valid live evidence.
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.datasheet_capture --import-historical \
+  --pdf retained.pdf --source-root retained-sources \
+  --source-note sources.json --source-note-sha256 "$NOTE_SHA256" \
+  --entry 0 --id J1 --out build/historical-acquisition
+```
+
+The callable is `import_historical_pdf(pdf, source_root, source_note, part_id, out)`.
+`source_note` is `{path, sha256, entry}`: a contained relative JSON path, its
+externally supplied SHA-256, and a zero-based entry index. The note is a JSON
+list. The selected entry must contain exactly `file`, `sha256`, `url` and
+`captured_at_utc`, with optional `fetched_at`. The PDF hash in that entry must
+match the retained bytes; `file` is a relative historical locator, not a fetch
+instruction. Both recorded times require explicit timezones. The importer checks
+the 20 MiB byte limit and `%PDF-`/`%%EOF` framing, performs no network operation,
+and publishes the PDF, exact source-note bytes and manifest together to a new
+directory. It never edits the retained originals.
+
+Each imported record carries `acquisition_method: historical_import`,
+`redirect_provenance: unknown`, `final_url: null`, `captured_at` copied verbatim
+from `captured_at_utc`, and `fetched_at` copied only when recorded (otherwise
+null). Its `source_note` pointer is relative to the acquisition manifest and
+pins both the complete note and selected entry. No import timestamp replaces a
+historical capture or fetch time. Invented redirects, altered notes or PDFs,
+unbound hashes, and claims that an import was live are refused on replay.
+
+`load_acquisition` replays both versions offline and includes the note in the
+immutable dependency closure. `datasheet_facts` retains the full acquisition
+records in both its report and check details, so citation receipts expose the
+import and unknown redirect provenance. Part records and source selections pin
+the versioned acquisition manifest and record ID. Textual citation checks may
+verify imported PDF text; they do not verify redirect history. Any policy
+requiring redirect provenance must treat `unknown` as unknown coverage, never
+as a pass. Release acceptance remains the owner policy question AGENTEE-271.
+The original-fixture regressions are in `tests/test_datasheet_historical.py`.

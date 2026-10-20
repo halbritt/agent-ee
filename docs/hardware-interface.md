@@ -53,11 +53,15 @@ predicate kinds are refused.
   and contracts for independently witnessed requirements.
 
 Local invariant sources may also carry `sha256`, exactly 64 lowercase hexadecimal
-characters over the source file bytes. Legacy sources without it remain valid.
+characters over the source file bytes. Each local source path must declare the
+same digest on every invariant or omit it on every invariant. This consistency
+check applies even without source bytes. Legacy sources without it remain valid.
 The [compiler and validation options](io-map.md#requirements-source-provenance) can require it;
 when source bytes are supplied, validation refuses missing bytes or a mismatch.
 The hardware-interface capability verifies declared digests against captured
 requirement files while retaining exact baseline `path` and `locator` matching.
+A requirement file with a declared digest also becomes an immutable input.
+Digest-free requirement files retain their existing input policy.
 This optional field keeps schema `agent-ee.interface/1`; it adds provenance
 without changing predicate semantics or the scope baseline schema.
 

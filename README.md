@@ -147,6 +147,10 @@ model or acquire measurements from instruments.
 
 ## What is implemented today
 
+[Historical datasheet imports](docs/datasheet-capture.md#offline-historical-import-agentee-306)
+retain hash-bound source notes and PDF bytes offline, explicitly preserving unknown
+redirect history and unrecorded fetch times (AGENTEE-306).
+
 An original [pod-scale placement qualification](docs/placer.md#pod-scale-qualification-agentee-181)
 exercises 90–112 mechanical stand-ins on both sides across 80 × 50 to
 90 × 65 mm outlines, with a 48 × 21 mm keepout and native placement evidence.
@@ -187,7 +191,9 @@ extents through save/reload (AGENTEE-307).
 
 The [schematic emitter](docs/schematic-emitter.md) preserves KiCad 10 private
 symbol metadata, supports explicit component BOM flags, and preserves canonical
-structured datasheet bindings up to 2048 bytes (AGENTEE-293). Declared
+structured datasheet bindings up to 2048 bytes and matching plain datasheet URLs
+beyond 256 characters (AGENTEE-293, AGENTEE-296). JSON-looking legacy datasheet
+text receives a typed diagnostic. Declared
 [copper features](docs/fab-export.md#copper-features) qualify for fab BOM/CPL
 exclusion through both fab gates, with manufacturer/distributor binding detection
 and typed refusal of malformed property values (AGENTEE-289, AGENTEE-290).
@@ -268,8 +274,10 @@ a hardware-interface contract, preserving no-connects and unresolved pins.
 Concrete MCU rows require a declared direct conductor or a declared indirect
 path through named intermediate parts. Each conductor segment and part identity
 is then checked on the native netlist; transfer behavior is not claimed.
-The compiler records the requirement file's SHA-256 when its bytes are available;
-`--require-source-sha256` refuses missing source bytes for provenance gates.
+The CLI requires readable requirement source bytes and records their SHA-256;
+a missing source exits 2 with a typed error before writing a contract.
+Each local source path uses one digest on all invariants or none; a hashed
+requirement source becomes an immutable hardware-interface input.
 
 Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
 [captured owner-approved exact violation waivers](docs/violation-waivers.md), native netlist export
@@ -856,7 +864,7 @@ fome-mc. Those files are still outside the MIT grant. See their
 
 [Captured bare copper probe features](docs/probe-features.md) carry required pad, net and CAD identity through binding, board construction and fab export without a supplier or BOM/CPL row. Probe identity properties use a KiBot-safe
 encoding; admission checks refuse legacy properties, and
-[legacy boards require migration before KiBot export](docs/probe-features.md#migrating-legacy-inline-json-properties).
+[forward annotation migrates validated legacy properties before KiBot export](docs/probe-features.md#migrating-legacy-inline-json-properties).
 
 The [functional schematic presentation](docs/schematic-emitter.md#detached-text-and-native-measurement-agentee-301)
 places detached fields clear of net labels and gives vertical test points label

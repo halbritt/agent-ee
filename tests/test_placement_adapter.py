@@ -150,6 +150,51 @@ class PropertyDefaultsTest(unittest.TestCase):
         added = self.board(explicit + explicit.replace('(uuid "c1")', '(uuid "c2")'))
         self.assertEqual(pa.write_scope(self.board(self.FIELD), added)['status'], 'refused')
 
+    def test_flip_normalizes_only_custom_property_default_and_refuses_mutations(self):
+        field = self.FIELD.replace('(at 0 0 0)', '(at 0 -2 0)')
+        reflected = (field.replace('(at 0 -2 0)', '(at 0 2 180)')
+                     .replace('F.SilkS', 'B.SilkS')
+                     .replace('(size 1.27 1.27)', '(size 1.27 1.27) (thickness 0.15)')
+                     .replace('(thickness 0.15)))', '(thickness 0.15)) (justify mirror))'))
+        before = TEXT.encode().replace(b'  (path "/r1")', field.encode() + b'  (path "/r1")')
+        after = flipped().replace(b'  (path "/r1")', reflected.encode() + b'  (path "/r1")')
+        for source, target in ((before, after), (after, before)):
+            report = pa.write_scope(source, target)
+            self.assertEqual(report['status'], 'allowed', report['violations'])
+        changes = {
+            'name': ('"JLCPCB_Assembly"', '"other"'),
+            'value': ('"not_assembled"', '"assembled"'),
+            'visibility': ('(hide yes)', '(hide no)'),
+            'hide removed': ('(hide yes)', ''),
+            'layer': ('"B.SilkS"', '"B.Fab"'),
+            'position x': ('(at 0 2 180)', '(at 0.1 2 180)'),
+            'position y': ('(at 0 2 180)', '(at 0 2.1 180)'),
+            'angle': ('(at 0 2 180)', '(at 0 2 90)'),
+            'size': ('(size 1.27 1.27)', '(size 1.28 1.27)'),
+            'justify': ('(justify mirror)', '(justify left mirror)'),
+            'mirror removed': ('(justify mirror)', ''),
+            'thickness': ('(thickness 0.15)', '(thickness 0.16)'),
+            'zero thickness': ('(thickness 0.15)', '(thickness 0)'),
+            'duplicate thickness': ('(thickness 0.15)', '(thickness 0.15) (thickness 0.15)'),
+            'bold': ('(size 1.27 1.27)', '(size 1.27 1.27) bold'),
+            'identity': ('(uuid "c1")', '(uuid "c2")'),
+        }
+        for name, (old, new) in changes.items():
+            with self.subTest(name=name):
+                target = after.replace(reflected.encode(), reflected.replace(old, new).encode())
+                report = pa.write_scope(before, target)
+                self.assertEqual(report['status'], 'refused', report)
+                self.assertTrue(any('property' in v for v in report['violations']), report)
+        for name in ('Datasheet', 'Description', 'Footprint'):
+            with self.subTest(reserved=name):
+                report = pa.write_scope(before.replace(b'JLCPCB_Assembly', name.encode()),
+                                        after.replace(b'JLCPCB_Assembly', name.encode()))
+                self.assertEqual(report['status'], 'refused', report)
+        for old in (b'(size 1 1)', b'(size 0.5 0.5)'):
+            # Built-in Reference/Value and fp_text never receive custom-field tolerance.
+            target = flipped().replace(old, old + b' (thickness 0.15)')
+            self.assertEqual(pa.write_scope(TEXT.encode(), target)['status'], 'refused')
+
     def test_explicit_nondefault_and_nonproperty_fonts_stay_exact(self):
         explicit = self.FIELD.replace('(size 1.27 1.27)', '(size 1.27 1.27) (thickness 0.2)')
         self.assertEqual(pa.write_scope(self.board(explicit), self.board(explicit))['status'], 'allowed')
@@ -962,6 +1007,32 @@ class NativeSideFlipTest(unittest.TestCase):
 
     def test_actual_pcbnew_flips_of_owned_footprints_both_ways_from_every_quarter_turn(self):
         self.flips(self.board, ('C1', 'R1'), [self.fixed])
+
+    def test_native_flip_save_materializes_custom_font_default_without_changing_scope(self):
+        from agent_ee.scaffold import sexpr
+        from agent_ee.schematic_emit import parse_quoted
+        field = parse_quoted(PropertyDefaultsTest.FIELD.replace('(uuid "c1")',
+            '(uuid "33333333-3333-4333-8333-333333333333")').replace('(at 0 0 0)', '(at 0 -2 0)').encode())
+        source = parse_quoted(self.before)
+        fp = next(f for f in pa.children(source, 'footprint') if pa._reference(f) == 'R1')
+        fp.append(field)
+        self.board.write_bytes(sexpr(source))
+        before = self.board.read_bytes()
+        def flip(k, board, fps):
+            fps['R1'].Flip(fps['R1'].GetPosition(), False)
+        after = self.edited('custom-field-flip', flip)
+        target = next(f for f in pa.children(pa._board(after), 'footprint') if pa._reference(f) == 'R1')
+        saved = next(p for p in pa.children(target, 'property') if p[1] == 'JLCPCB_Assembly')
+        self.assertEqual(pa.children(pa.children(saved, 'effects')[0], 'font')[0],
+                         ['font', ['size', '1.27', '1.27'], ['thickness', '0.15']])
+        self.assertEqual(saved[2], 'not_assembled')
+        for start, end in ((before, after), (after, before)):
+            report = pa.write_scope(start, end, [self.fixed])
+            self.assertEqual(report['status'], 'allowed', report['violations'])
+            self.assertEqual(len(report['transforms']), 1)
+            self.assertTrue(report['transforms'][0]['flipped'])
+        self.assertEqual(self.board.read_bytes(), before)
+        self.assertEqual(pa.write_scope(before, after)['after_sha256'], hashlib.sha256(after).hexdigest())
 
     def test_actual_pcbnew_flips_of_rc_library_smd_and_tht_footprints(self):
         source = self.root / 'rc.kicad_pcb'

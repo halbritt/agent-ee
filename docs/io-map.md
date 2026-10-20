@@ -5,12 +5,12 @@
 KiCad netlist. Compilation runs offline before capture. It does not select pins
 or establish that a design meets electrical, radio or firmware requirements.
 
-Reproduce the [pod contract](../fixtures/telemetry-pod/io-map.interface.json):
+Compile the [pod contract](../fixtures/telemetry-pod/io-map.interface.json):
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.io_map fixtures/telemetry-pod/io-map.csv \
   --csv-path io-map.csv --requirement POD-AC-1 --source spec.md \
-  --locator 'Acceptance criteria / item 1' \
+  --source-file fixtures/telemetry-pod/spec.md --locator 'Acceptance criteria / item 1' \
   --spec-record fixtures/telemetry-pod/spec-record.json --out /tmp/pod.interface.json
 ```
 
@@ -25,14 +25,16 @@ MCU pins undecided, so its compiled fixture produces unknown coverage.
 
 ## Requirements source provenance
 
-The compiler records optional `source.sha256`, lowercase hexadecimal SHA-256 of
+The CLI records `source.sha256`, lowercase hexadecimal SHA-256 of
 the exact requirement file bytes, on every invariant. The CLI reads `--source`
 relative to its working directory; `--source-file FILE` supplies those bytes from
-another location without changing the captured path. Use
-`--require-source-sha256` to refuse a missing source file. An explicit
-`--source-file` that cannot be read also fails. For legacy invocations only, a
-missing default source file leaves the digest absent. Other read failures fail.
-Existing digest-free contracts remain valid under `agent-ee.interface/1`.
+another location without changing the captured path. A missing source, with or
+without `--require-source-sha256`, exits 2 with a typed
+`missing-source (FileNotFoundError)` error on stderr before writing any contract.
+Other read failures also fail. The flag remains accepted for existing callers.
+Existing digest-free contracts and Python API compilation without source bytes
+remain valid under `agent-ee.interface/1`. The example above equals the pinned
+fixture apart from the added source digest fields.
 
 For example, run from a captured project root:
 
@@ -48,7 +50,9 @@ The Python API accepts `source_bytes=raw_bytes` and
 digest. An already declared digest must match those bytes.
 `validate_contract(contract, source_bytes={captured_path: raw_bytes},
 require_source_sha256=True)` requires local source digests and verifies them.
-When bytes are omitted, validation checks digest syntax only; when supplied,
+Every local source path must use one digest on all its invariants, or omit it
+on all of them, even when bytes are unavailable. Different paths may use
+different digests or independently omit them. When bytes are supplied,
 every hashed local source must have an entry. File bytes are never decoded or
 newline-normalized for hashing. These options do not change pinned-external
 citations, which retain their separate source contract.

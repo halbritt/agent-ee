@@ -91,14 +91,22 @@ JSON emitted before AGENTEE-279 with a `legacy AGENT_EE_Probe` migration finding
 through `parts_subset`; a legacy board cannot pass `part_binding`, `fab_export`
 or `fab_consistency`. KiBot 1.9.1 cannot export a board carrying it. Only
 forward-annotation planning allows the legacy identity, with the same native
-identity, flags, source bytes and geometry checks. Apply requires the saved
-output to carry the current encoding. Regenerate
-binding fill, the schematic and the board with the current writer, using the same
-immutable captured parts manifest and CAD closure. For an existing placed board,
-forward annotation can propagate the newly emitted schematic properties; validate
-both sides against `probe_features.declarations` and rerun native parity and fab
-checks before using the export. Never derive source approval from an old marker
-alone. No third-party pilot board is migrated by this change.
+identity, flags, source bytes and geometry checks. AGENTEE-302 converts validated
+legacy fields from the native XML and retained board to the KiBot-safe encoding
+in planned adds and updates, preserving the entire decoded record. The plan and
+successful receipt record each change in `probe_migrations`; canonical markers
+pass through unchanged. Malformed, tampered and ambiguous legacy identities stay
+refused. Saved-board field verification and final validation require canonical
+output. See [forward annotation](forward-annotation.md#legacy-probe-migration-agentee-302).
+
+Source XML is not rewritten. Regenerate binding fill and the schematic with the
+current writer from the same immutable captured parts manifest and CAD closure
+before native schematic parity and admission checks: native parity compares the
+field text, and a legacy schematic still fails admission. Validate both sides
+against `probe_features.declarations` and rerun native parity and fab checks
+before using the export. Never derive source approval from an old marker alone.
+The owned fixtures qualify this migration; the private real-pod replay is
+integration evidence, not hardware or fabrication acceptance.
 
 Missing or mismatched declarations cannot qualify probes. Existing verdicts are
 preserved: unsupported source prerequisites remain unknown; determinate invalid

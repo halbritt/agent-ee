@@ -47,8 +47,14 @@ The emitter also accepts canonical structured `PARAM_Datasheet` bindings up to
 2048 bytes, using the existing binding parser; legacy `PARAM_Datasheet` text
 retains its zero-to-256-character validation. Object-like values (leading `{`
 after whitespace) must pass structured validation, with no free-text fallback.
-Ordinary free-text fields remain limited to 256 characters. Native forced-save
-and export regressions cover the long URL allowance and byte preservation (AGENTEE-293).
+A plain `Datasheet` exceeding 256 characters requires an exact URL match to a
+validated canonical binding on the same component and is bounded to 2048 safe
+ASCII bytes; its complete companion JSON must also fit 2048 bytes. Other
+free-text fields retain their limits. JSON-looking legacy text behind Unicode
+format prefixes or with array roots receives `suspicious_datasheet_text`, an
+informational emission diagnostic with no structured-binding acceptance.
+Native forced-save and export regressions cover the paired long URL and byte
+preservation (AGENTEE-293, AGENTEE-296).
 Native netlist inventory observes BOM exclusion independently of board membership.
 Declared [copper features](fab-export.md#copper-features) have a qualified fab exclusion
 policy (AGENTEE-289, AGENTEE-290); other non-DNP native exclusions remain refused.
@@ -922,9 +928,13 @@ immutable inputs, checks `no_connect` predicates against native connectivity,
 and keeps explicit unresolved terminals and predicates unknown. External
 destination text supplies traceability only.
 Invariant `source.sha256` optionally binds exact captured requirement bytes;
-malformed or mismatched hashes are refused. The compiler's
-`--require-source-sha256` option requires source bytes, while digest-free legacy
-contracts retain their existing validation. See [source options](io-map.md#requirements-source-provenance).
+malformed or mismatched hashes are refused. Each local source path must use
+one digest on all its invariants or omit it on all, including validation without
+source bytes. A declared digest adds the requirement file to immutable inputs.
+The compiler CLI always requires readable source bytes and refuses a missing
+source with exit 2 and a typed error before writing a contract;
+`--require-source-sha256` remains accepted. Digest-free legacy contracts retain
+their existing validation. See [source options](io-map.md#requirements-source-provenance).
 Concrete MCU rows require an explicit `MCU_Path=direct` declaration or the IDs
 of declared [indirect paths](io-map.md#indirect-mcu-paths). Undeclared path names
 are refused with their CSV row; TBD MCU rows keep an unresolved predicate without
@@ -1081,7 +1091,8 @@ it does not establish silkscreen or copper clearance. The
 inset and checks native placement DRC to cover J1's reference text too.
 The [placement adapter's property resave rule](placement-adapter.md#property-font-resave-default-agentee-147)
 admits KiCad's omitted 0.15 mm property-font thickness default during transform
-comparison; it does not grade placement or relax field value, layer or visibility checks.
+comparison, including qualified side flips (AGENTEE-313); it does not grade placement
+or relax field value, layer, visibility, size or justification checks.
 The [owned-zone write scope](placement-adapter.md#placement-write-scope)
 (AGENTEE-178) admits rigid owner movement and refuses independent zone edits.
 The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned
@@ -1288,6 +1299,11 @@ package and compare it with fresh sandbox output. Missing step output stays
 unknown and can schedule a coordinator fab turn only when all other checks and
 review are complete. See [declared fab steps](fab-export.md#declared-fab-steps).
 
+The native `tests.test_fab_stage` fixture mounts a private tool source copy so
+parallel host imports cannot change its receipted tree through bytecode caches.
+The same module checks that a bytecode addition to an actual tool mount still
+refuses adoption (AGENTEE-299); check verdicts and receipt validation are unchanged.
+
 See [fab export](fab-export.md) for the `fab_export` staging layout, the
 `agent-ee.fab-manifest/1` manifest, BOM and CPL rules, timestamp normalisation,
 v1 refusals and outcome mapping. It requires an earlier `netlist_check`, refuses
@@ -1492,6 +1508,10 @@ properties carry versioned base64 rather than inline JSON so KiBot exports can
 read them. Exact legacy identities produce a non-pass migration finding in
 admission checks (including `fab_consistency`); only forward-annotation planning
 allows them, and apply requires current encoded properties (AGENTEE-283).
+Forward annotation migrates validated legacy source or retained-board fields to
+canonical encoding and records exact changes in its plan and successful receipt
+(AGENTEE-302). Final board validation requires canonical fields; admission checks
+still refuse a legacy schematic, which must be regenerated before native parity.
 See the [migration and external KiBot regression](probe-features.md#migrating-legacy-inline-json-properties).
 
 Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.
@@ -1619,3 +1639,12 @@ native-qualified custom pads, reusing the footprint index's bounded syntax.
 Its save/reload gate preserves complete primitives, copper extents and pad/net
 identity. Unsupported geometry remains unknown; courtyard packing supplies no
 copper-clearance evidence. This adds no registered check or acceptance predicate.
+
+## Historical datasheet acquisition
+
+The existing `datasheet_facts` check accepts the offline historical
+[`datasheet-capture/2` import](datasheet-capture.md#offline-historical-import-agentee-306).
+It freezes the pinned source note along with the PDF and records the acquisition
+method and unknown redirect provenance in its report and details. A verified
+citation proves text occurrence only; it supplies no redirect-provenance or
+release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
