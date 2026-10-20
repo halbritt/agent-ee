@@ -1726,5 +1726,9 @@ need a footprint declaration. Every other text property and all graphics remain
 unchanged. Fresh native DRC against the immutable baseline gates publication on
 added `silk_overlap` and `silk_over_copper`; unresolved conflicts retain typed
 `placement_silkscreen_conflict` diagnostics with the native items. Explicitly
-ignored conflict categories and missing tool coverage refuse publication. This
+ignored `silk_*` categories and missing tool coverage refuse publication. Other
+footprints' same-side courtyard interiors reserve space for assembled bodies.
+Side-flipped footprints' fields remain unchanged with typed conflicts. Source
+project/rule bytes are restored after the native save. Placement-added
+`silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.

@@ -53,6 +53,120 @@ class SilkArtworkTest(unittest.TestCase):
         k.SaveBoard(str(path), b)
         return path
 
+    def test_native_relocation_reserves_other_courtyard_interiors(self):
+        import pcbnew as k
+        mm = lambda x, y: k.VECTOR2I(int(x*1e6), int(y*1e6))
+        def line(parent, layer, a, b, w=0.05):
+            s = k.PCB_SHAPE(parent); s.SetShape(k.SHAPE_T_SEGMENT); s.SetLayer(layer)
+            s.SetStart(mm(*a)); s.SetEnd(mm(*b)); s.SetWidth(int(w*1e6)); parent.Add(s)
+        def rect(parent, layer, x0, y0, x1, y1, w=0.05):
+            pts = [(x0,y0),(x1,y0),(x1,y1),(x0,y1)]
+            for i in range(4): line(parent, layer, pts[i], pts[(i+1)%4], w)
+        b = k.BOARD()
+        rect(b, k.Edge_Cuts, 0, 0, 40, 40)
+        # A: wide pad at (20,10); its Reference will be placed on the pad.
+        A = k.FOOTPRINT(b); A.SetReference('A1'); A.SetValue('owned'); b.Add(A); A.SetPosition(mm(20, 10))
+        rect(A, k.F_CrtYd, 15.5, 9, 24.5, 11)
+        p = k.PAD(A); p.SetNumber('1'); p.SetShape(k.PAD_SHAPE_RECT); p.SetAttribute(k.PAD_ATTRIB_SMD)
+        ls = k.LSET(); ls.AddLayer(k.F_Cu); ls.AddLayer(k.F_Mask); p.SetLayerSet(ls); p.SetSize(mm(8, 2)); A.Add(p); p.SetPosition(mm(20, 10))
+        # Board silk line blocks the area above A.
+        line(b, k.F_SilkS, (5, 7.5), (35, 7.5), 0.15)
+        # B: big courtyard + fab body right below A, its only pad far away.
+        B = k.FOOTPRINT(b); B.SetReference('B1'); B.SetValue('owned'); b.Add(B); B.SetPosition(mm(20, 16))
+        rect(B, k.F_CrtYd, 10, 11.2, 30, 20); rect(B, k.F_Fab, 10.5, 11.5, 29.5, 19.5, 0.1)
+        q = k.PAD(B); q.SetNumber('1'); q.SetShape(k.PAD_SHAPE_RECT); q.SetAttribute(k.PAD_ATTRIB_SMD)
+        q.SetLayerSet(ls); q.SetSize(mm(1, 1)); B.Add(q); q.SetPosition(mm(20, 19))
+        for fp in (A, B):
+            fp.Value().SetVisible(False)
+            r = fp.Reference(); r.SetLayer(k.F_SilkS); r.SetTextSize(mm(1, 1)); r.SetTextThickness(150000)
+        A.Reference().SetPosition(mm(20, 3)); B.Reference().SetPosition(mm(20, 19))
+        B.Reference().SetPosition(mm(33, 30))
+        src = self.root / 'src.kicad_pcb'; k.SaveBoard(str(src), b)
+        work = self.root / 'out'; work.mkdir(); out = work / 'candidate.kicad_pcb'
+        c = k.LoadBoard(str(src))
+        fa = next(f for f in c.GetFootprints() if f.GetReference() == 'A1'); fa.Reference().SetPosition(mm(20, 10))
+        k.SaveBoard(str(out), c); pre = out.read_bytes()
+        _, delta = _proposal_drc(src, out)
+        self.assertEqual(delta['silkscreen_findings'], [])
+        final = k.LoadBoard(str(out))
+        fields = {fp.GetReference(): fp for fp in final.GetFootprints()}
+        box = fields['A1'].Reference().GetBoundingBox()
+        self.assertFalse(box.Intersects(fields['B1'].GetCourtyard(k.F_CrtYd).BBox()))
+        art = json.loads((work / 'placement-silkscreen.json').read_text())
+        self.assertEqual(len(art['moved_fields']), 1)
+        self.assertEqual(art['findings'], [])
+        self.assertEqual(write_scope(pre, out.read_bytes())['status'], 'allowed')
+
+    def test_flipped_footprint_conflict_is_typed_without_field_relocation(self):
+        import pcbnew as k
+        source = self.board()
+        out = self.output(source)
+        board = k.LoadBoard(str(out))
+        for fp in board.GetFootprints():
+            fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
+        k.SaveBoard(str(out), board)
+        original = out.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'unresolved native silkscreen'):
+            _proposal_drc(source, out)
+        art = json.loads((out.parent / 'placement-silkscreen.json').read_text())
+        self.assertEqual(art['moved_fields'], [])
+        self.assertEqual(len(art['search_diagnostics']), 2)
+        self.assertEqual({d['reason'] for d in art['search_diagnostics']}, {'footprint_side_flipped'})
+        self.assertEqual(len([f for f in art['findings']
+                              if f.get('reason') == 'footprint_side_flipped']), 2)
+        self.assertTrue(all(f['type'] == 'placement_silkscreen_conflict' for f in art['findings']))
+        self.assertEqual(out.read_bytes(), original)
+
+    def test_flipped_conflict_refuses_even_if_other_field_moves_clear(self):
+        import pcbnew as k
+        source = self.board()
+        board = k.LoadBoard(str(source))
+        prints = {fp.GetReference(): fp for fp in board.GetFootprints()}
+        prints['C1'].Flip(prints['C1'].GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
+        k.SaveBoard(str(source), board)
+        out = self.output(source)
+        board = k.LoadBoard(str(out))
+        for fp in board.GetFootprints():
+            if fp.GetReference() == 'U1':
+                fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
+            fp.Reference().SetPosition(k.VECTOR2I(9000000, 4000000))
+        k.SaveBoard(str(out), board)
+        with self.assertRaisesRegex(ValueError, 'unresolved native silkscreen'):
+            _proposal_drc(source, out)
+        art = json.loads((out.parent / 'placement-silkscreen.json').read_text())
+        self.assertEqual([m['reference'] for m in art['moved_fields']], ['C1'])
+        self.assertEqual(art['added_after'], {})
+        self.assertEqual(len(art['findings']), 1)
+        self.assertEqual(art['findings'][0]['type'], 'placement_silkscreen_conflict')
+        self.assertEqual(art['findings'][0]['reason'], 'footprint_side_flipped')
+
+    def test_native_rule_bytes_restored_after_artwork_save(self):
+        import hashlib
+        source = self.board()
+        payloads = {'.kicad_pro': b'{"board":{"design_settings":{"rule_severities":{"silk_overlap":"warning"}}}}',
+                    '.kicad_dru': b'(version 1)\n'}
+        for suffix, payload in payloads.items():
+            source.with_suffix(suffix).write_bytes(payload)
+        out = self.output(source)
+        _, delta = _proposal_drc(source, out)
+        self.assertEqual(delta['silkscreen_findings'], [])
+        art = json.loads((out.parent / 'placement-silkscreen.json').read_text())
+        self.assertTrue(art['moved_fields'])
+        for suffix, payload in payloads.items():
+            expected = hashlib.sha256(payload).hexdigest()
+            for path in (source.with_suffix(suffix), out.with_suffix(suffix),
+                         (out.parent / 'baseline' / out.name).with_suffix(suffix)):
+                self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected)
+
+    def test_ignored_silk_edge_clearance_refuses_native_coverage(self):
+        source = self.board()
+        path = source.with_name('ignored-edge.kicad_pcb')
+        path.write_bytes(source.read_bytes())
+        path.with_suffix('.kicad_pro').write_text(json.dumps({'board': {'design_settings': {
+            'rule_severities': {'silk_edge_clearance': 'ignore'}}}}))
+        with self.assertRaisesRegex(ValueError, 'explicitly ignored'):
+            _native_drc(path, self.root)
+
     def test_native_front_back_relocation_preserves_required_fields_and_scope(self):
         import pcbnew as k
         for back in (False, True):

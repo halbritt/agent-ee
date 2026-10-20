@@ -44,7 +44,7 @@ def _obstacle_boxes(field, items, identities=None):
         yield box
 
 
-def relocate(board, findings):
+def relocate(board, findings, flipped_footprints=frozenset()):
     """Mutate owned board fields within 10 mm of their placed anchors, deterministically.
 
     Native bounding boxes include actual text metrics (as with AGENTEE-301,
@@ -88,7 +88,9 @@ def relocate(board, findings):
         ref, field = fields[uid]
         start = field.GetPosition()
         reason = None
-        if outline['status'] != 'proven' or len(outline['polygons']) != 1:
+        if field.GetParentFootprint().m_Uuid.AsString() in flipped_footprints:
+            reason = 'footprint_side_flipped'
+        elif outline['status'] != 'proven' or len(outline['polygons']) != 1:
             reason = 'outline_unqualified'
         elif (min(field.GetTextSize().x, field.GetTextSize().y) < settings.m_MinSilkTextHeight or
               field.GetEffectiveTextPenWidth() < settings.m_MinSilkTextThickness):
@@ -99,6 +101,13 @@ def relocate(board, findings):
             unresolved.append(dict(uuid=uid, reference=ref, reason=reason))
             continue
         boxes = list(_obstacle_boxes(field, obstacles))
+        # Reserve other components' same-side courtyard interiors for assembled bodies.
+        side = k.F_CrtYd if field.GetLayer() == k.F_SilkS else k.B_CrtYd
+        owner = field.GetParentFootprint().m_Uuid.AsString()
+        for fp in board.GetFootprints():
+            courtyard = fp.GetCourtyard(side)
+            if fp.m_Uuid.AsString() != owner and courtyard.OutlineCount():
+                boxes.append(courtyard.BBox())
         # Smallest displacement first, lexicographic tie break. Keep the native
         # angle and justification, so board-side reading rules cannot change.
         offsets = [(x * 250000, y * 250000) for x in range(-40, 41) for y in range(-40, 41)
