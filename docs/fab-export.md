@@ -48,14 +48,19 @@ present. No feature is inferred from its name or exclusions. Each declaration
 must identify exactly one footprint and a native on-board schematic component.
 The footprint must carry both `exclude_from_bom` and
 `exclude_from_pos_files`, contain at least one surface copper pad, and have
-no model or orderable MPN/LCSC property on either the footprint or native
-symbol. Binding detection ignores case and punctuation, retaining compact aliases
-such as `Partnumber`, `PartNumber`, `MPN` and `PN`. Manufacturer tokens
-(`manufacturer`, `mfr`, `mfg`) and distributor tokens (`lcsc`, `jlcpcb`,
-`digikey`, `mouser`) combined with part, PN, number or stock identity tokens
-are also bindings. Examples include `Mfr Part Number`, `MFR_PN`,
-`Manufacturer PN`, `Digikey_PN` and `Mouser Part Number`. `Manufacturer`
-alone and `JLCPCB_Assembly` remain metadata. Empty binding fields are allowed.
+no model. Copper declarations use a field allow-list on footprint properties,
+captured schematic properties (including hidden fields), variant fields and
+retained native fields: `Reference`, `Value`, `Footprint`, `Datasheet`,
+`Description` and the exact KiCad internal names `ki_keywords`,
+`ki_description`, `ki_fp_filters` and `ki_locked`. Other `ki_*` names receive
+no exemption. Datasheet and Description may
+contain any text, including stock solder-jumper descriptions. Every other field
+must be empty, whitespace-only or `~` (surrounding whitespace is ignored).
+Nonempty manufacturer, distributor, supplier, assembly-policy and arbitrary
+metadata fields refuse the declaration; field-name token matching does not
+qualify copper. Every native field occurrence is retained for this check, so a
+later empty duplicate cannot hide an earlier nonempty field. The general
+orderable-field detector and part-binding policy are unchanged.
 Missing or non-string footprint property values are unqualified footprint
 content. Unreadable property names or references produce a typed board-read
 error. Export refusal summaries list each distinct problem once. Captured

@@ -1277,12 +1277,15 @@ package. An optional declared `assembly_exclusion` rule
 in both the netlist and the board out of the BOM and CPL. The manifest lists
 them in `designators.excluded`. Optional `copper_features: ["JP1"]` admits
 explicitly declared surface copper features only after both native exclusions,
-qualified pad/graphic layers, no model and no footprint/native MPN/LCSC binding
-are verified. They must be absent from BOM/CPL; consistency independently
-replays admission ([copper features](fab-export.md#copper-features)). Binding
-fields include manufacturer/distributor token combinations such as `MFR_PN`,
-`Mfr Part Number` and `Digikey_PN`, plus `PN`; non-string footprint property
-values are unqualified content. Repeated export refusal findings appear once.
+qualified pad/graphic layers, no model and the copper field allow-list are
+verified. Only `Reference`, `Value`, `Footprint`, `Datasheet`, `Description` and
+`ki_keywords`, `ki_description`, `ki_fp_filters` and `ki_locked` may contain
+nonempty values; all other fields (including other `ki_*` names) must be
+empty, whitespace or `~`. This covers footprint, hidden schematic, variant and
+every retained native field occurrence. They must be absent from BOM/CPL;
+consistency independently replays admission
+([copper features](fab-export.md#copper-features)). Malformed field values are
+unqualified content. Repeated export refusal findings appear once.
 A marked part without the rule, or with
 disagreeing sources, is `unsupported`. An optional declared `bom_variant`
 (the generator's `--bom-variant`) is validated against the captured

@@ -375,8 +375,9 @@ across the board and CSVs before completing the package. A declared
 `JLCPCB_Assembly=not_assembled` rule leaves marked populated parts out of the
 BOM and CPL and lists them in the manifest. Explicitly declared
 [copper features](docs/fab-export.md#copper-features), such as solder jumpers,
-need both native exclusions and no model or orderable binding; both fab gates
-verify their absence from the BOM and CPL.
+need both native exclusions, no model and fields qualified by the copper
+allow-list, which admits only exact standard and KiCad internal field names
+with nonempty values; both fab gates verify their absence from the BOM and CPL.
 For recorded hand-fit parts, [assembly readiness](docs/assembly-readiness.md#declared-hand-fit-deviations)
 requires a purchase source, captured evidence and the assembly marker, reports
 them as declared deviations, and grades stock for the remaining BOM. Stock
