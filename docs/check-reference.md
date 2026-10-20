@@ -1085,7 +1085,11 @@ for parameters, the clearance and congestion model, and validation.
 `board_envelope` takes `criterion` and a captured immutable `envelope`
 path. `outline/1` compares the exact declared Edge.Cuts polygon against saved
 geometry and a native closed-contour probe. `layers/1` compares the exact ordered
-copper layer set against saved and native enabled layers. Each check binds one
+copper layer set against saved and native enabled layers. Both `layers/1` and
+`stackup/1` also compare explicit envelope copper `role` values against saved
+KiCad layer types (`plane` maps to `power`, `signal` to `signal`). Missing role
+declarations keep the previous verdicts. Role typing does not establish plane
+net assignments or route completion. Each check binds one
 field and one requirement, with predicates `envelope:outline/1` or
 `envelope:layers/1`.
 A field whose [constraint provenance](board-envelope.md#constraint-provenance)

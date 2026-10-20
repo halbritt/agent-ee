@@ -306,6 +306,42 @@ for lib in children(table,'lib'):
 
 
 class NativeScaffoldTests(ScaffoldFixture, unittest.TestCase):
+    def test_six_layer_mixed_roles_survive_native_reload_and_dsn_export(self):
+        from agent_ee.board_envelope import round_trip
+        from agent_ee.executor import execute
+        self.envelope['layer_count'] = 6
+        copper = ['F.Cu', 'In1.Cu', 'In2.Cu', 'In3.Cu', 'In4.Cu', 'B.Cu']
+        roles = ['signal', 'plane', 'signal', 'signal', 'plane', 'signal']
+        layers = []
+        for index, (name, role) in enumerate(zip(copper, roles)):
+            if index:
+                layers.append(dict(name=f'dielectric {index}', kind='dielectric', thickness_mm=0.278))
+            layers.append(dict(name=name, kind='copper', thickness_mm=0.035, copper_weight_oz=1, role=role))
+        self.envelope['stackup']['layers'] = layers
+        write_json(self.source / 'envelope.json', self.envelope)
+        self.build()
+        work = self.root / 'mixed-roles'
+        result = execute(self.root / 'scaffold/inputs', work, ['/usr/bin/python3', '-B', '-c', '''
+import pcbnew as k
+b=k.LoadBoard('/candidate/project/design.kicad_pcb')
+expected=[k.LT_SIGNAL,k.LT_POWER,k.LT_SIGNAL,k.LT_SIGNAL,k.LT_POWER,k.LT_SIGNAL]
+assert [b.GetLayerType(l) for l in b.GetEnabledLayers().CuStack()]==expected
+assert k.SaveBoard('/work/reloaded.kicad_pcb',b)
+assert k.ExportSpecctraDSN(b,'/work/roles.dsn')
+'''])
+        self.assertEqual((result['execution'], result['exit_code']), ('ok', 0),
+                         (work / 'console.log').read_text())
+        trip = round_trip((self.source / 'envelope.json').read_bytes(), (work / 'reloaded.kicad_pcb').read_bytes())
+        role_results = [r for r in trip['fields'] if r['field'].endswith('/role')]
+        self.assertEqual([r['status'] for r in role_results], ['match'] * 6)
+        raw_dsn = (work / 'roles.dsn').read_bytes()
+        # Specctra's bare quote declaration is not a KiCad string literal.
+        self.assertEqual(raw_dsn.count(b'(string_quote ")'), 1)
+        dsn = parse_sexpr(raw_dsn.replace(b'(string_quote ")', b'(string_quote double_quote)'))
+        structure, = children(dsn, 'structure')
+        exported = {l[1]: children(l, 'type')[0][1] for l in children(structure, 'layer')}
+        self.assertEqual(exported, {n: 'power' if r == 'plane' else 'signal' for n, r in zip(copper, roles)})
+
     def setUp(self):
         require_toolchain(native=True)
         super().setUp()
@@ -627,6 +663,42 @@ class EnvelopeScaffoldFixture(ScaffoldFixture):
 
 
 class EnvelopeScaffoldTests(EnvelopeScaffoldFixture, unittest.TestCase):
+    def test_overhang_j1_j2_u1_get_inboard_orientation_marks_and_keep_fab(self):
+        from agent_ee.executor import execute
+        for declaration in self.envelope['fixed_footprints']:
+            if declaration['reference'] in ('J1', 'J2', 'U1'):
+                declaration['courtyard_overhangs'] = [dict(edge=declaration['edge'], max_mm=2)]
+        self.save()
+        inputs, path, receipt = self.content('assembly')
+        self.assert_completed(path, receipt)
+        work = self.root / 'assembly-probe'
+        probe = execute(inputs, work, ['/usr/bin/python3', '-B', '-c', '''
+import pcbnew as k
+b=k.LoadBoard('/candidate/project/design.kicad_pcb')
+marks={t.GetText():t for t in b.GetDrawings() if t.GetClass()=='PCB_TEXT' and t.GetText().startswith('ASM ')}
+assert set(marks)=={'ASM J1 90deg','ASM J2 270deg','ASM U1 180deg'},set(marks)
+for text,mark in marks.items():
+    box=mark.GetBoundingBox()
+    assert box.GetLeft()>=500000 and box.GetRight()<=79500000
+    assert box.GetTop()>=500000 and box.GetBottom()<=49500000
+    assert mark.GetLayer()==(k.B_SilkS if 'J2' in text else k.F_SilkS)
+    assert mark.IsMirrored()==('J2' in text)
+for fp in b.GetFootprints():
+    if fp.GetReference() in ('J1','J2','U1'):
+        assert fp.Reference().GetLayer()==(k.B_Fab if fp.IsFlipped() else k.F_Fab)
+        assert not any(i.GetLayer() in (k.F_SilkS,k.B_SilkS) for i in [*fp.GraphicalItems(),*fp.GetFields()])
+'''])
+        self.assertEqual((probe['execution'], probe['exit_code']), ('ok', 0), (work / 'console.log').read_text())
+        drc = work / 'assembly-drc.json'
+        subprocess.run(['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
+                        '-o', str(drc), str(inputs / 'project/design.kicad_pcb')], check=True, capture_output=True)
+        self.assertFalse([v for v in read_json(drc)['violations']
+                          if v['type'].startswith('silk_') and 'ASM ' in str(v)], read_json(drc)['violations'])
+        repeated, repeated_path, repeated_receipt = self.content('assembly-repeat')
+        self.assert_completed(repeated_path, repeated_receipt)
+        self.assertEqual((inputs / 'project/design.kicad_pcb').read_bytes(),
+                         (repeated / 'project/design.kicad_pcb').read_bytes())
+
     def test_envelope_content(self):
         from agent_ee.forward_annotation import board_facts
         from agent_ee.executor import execute

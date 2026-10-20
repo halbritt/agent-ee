@@ -162,7 +162,9 @@ assignments, width rules and a Default completeness check. Stage-three preparati
 writes declared holes, keepouts, locked fixed footprints and the IMU marking through
 a campaign pre-receipt. Its [packed-board silkscreen policy](docs/scaffold.md#packed-board-silkscreen-policy-agentee-276)
 keeps hole and dense passive references on fabrication layers, handles declared
-overhang graphics, and reserves the IMU marking during packing.
+overhang graphics, adds in-board reference/angle callouts for overhang parts,
+and reserves those callouts and the IMU marking during packing. Explicit copper
+layer roles support mixed signal/plane stackups.
 The [IMU axes criterion](docs/placement.md#imu-axes) checks that marking and the IMU
 transform using captured axis facts. Hierarchical staged
 presence remains unavailable.

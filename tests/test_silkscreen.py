@@ -11,6 +11,44 @@ from toolchain import require_toolchain
 
 
 class SilkscreenTests(unittest.TestCase):
+    def test_assembly_orientation_front_back_clearance_reservation_and_refusal(self):
+        import shutil
+        shutil.copyfile(Path(__file__).resolve().parents[1] / 'fixtures/board-envelope/rc.envelope.json',
+                        self.inputs / 'envelope.json')
+        self.native('''
+import pcbnew as k
+from agent_ee.board_envelope import validate
+from agent_ee.silkscreen import overhang_orientation_mark, reserve_imu_markings
+from pathlib import Path
+record=validate(Path('/candidate/envelope.json').read_bytes())
+b=k.BOARD()
+fp=k.FOOTPRINT(b);fp.SetReference('J1');fp.SetPosition(k.VECTOR2I(96000000,100000000));b.Add(fp)
+mark=overhang_orientation_mark(b,fp,record,'90');b.Add(mark)
+assert mark.GetText()=='ASM J1 90deg' and mark.GetLayer()==k.F_SilkS
+box=mark.GetBoundingBox()
+assert box.GetLeft()>=96500000 and box.GetTop()>=96500000
+assert box.GetRight()<=115500000 and box.GetBottom()<=107500000
+fp.Flip(fp.GetPosition(),k.FLIP_DIRECTION_TOP_BOTTOM)
+back=overhang_orientation_mark(b,fp,record,'270');b.Add(back)
+assert back.GetLayer()==k.B_SilkS and back.IsMirrored()
+policy={'obstacles':[]}
+obstacles=reserve_imu_markings(b,policy)['obstacles']
+assert policy=={'obstacles':[]} and {o['side'] for o in obstacles}=={'F','B'}
+assert all(o['source'].startswith('ASM/') for o in obstacles)
+assert k.SaveBoard('/work/assembly.kicad_pcb',b)
+saved=k.LoadBoard('/work/assembly.kicad_pcb')
+assert {t.GetText() for t in saved.GetDrawings()}=={'ASM J1 90deg','ASM J1 270deg'}
+# A pad covering the complete board must refuse rather than publish a covered mark.
+pad=k.PAD(fp);pad.SetSize(k.VECTOR2I(100000000,100000000));pad.SetPosition(k.VECTOR2I(100000000,100000000))
+ls=k.LSET();ls.AddLayer(k.B_Cu);pad.SetLayerSet(ls);fp.Add(pad)
+try:
+    overhang_orientation_mark(b,fp,record,'270')
+except ValueError as exc:
+    assert 'no in-board assembly orientation mark fits for J1' in str(exc)
+else:
+    raise AssertionError('covered mark accepted')
+''')
+
     def setUp(self):
         require_toolchain(native=True)
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory(prefix='ee276-')))
@@ -41,6 +79,12 @@ for lib, name in [('Resistor_SMD','R_0402_1005Metric'), ('Capacitor_SMD','C_0603
         assert ref.GetLayer()==fab
 for name in ['R_0805_2012Metric','R_0402_1005Metric_Pad1.00x0.70mm_HandSolder','Other']:
     fp=k.FOOTPRINT(b); fp.SetFPID(k.LIB_ID('Resistor_SMD',name)); fp.Reference().SetLayer(k.F_SilkS)
+    prepare_footprint(fp)
+    assert fp.Reference().GetLayer()==k.F_SilkS
+for lib,name in [('Resistor_SMD','R_1206_3216Metric'),('Capacitor_SMD','C_1210_3225Metric'),
+                 ('Package_TO_SOT_SMD','SOT-323_SC-70'),('TestPoint','TestPoint_Pad_D1.0mm'),
+                 ('Package_SO','SOIC-8_3.9x4.9mm_P1.27mm')]:
+    fp=k.FOOTPRINT(b);fp.SetFPID(k.LIB_ID(lib,name));fp.Reference().SetLayer(k.F_SilkS)
     prepare_footprint(fp)
     assert fp.Reference().GetLayer()==k.F_SilkS
 fp=k.FOOTPRINT(b); fp.Reference().SetLayer(k.B_SilkS)
@@ -117,3 +161,32 @@ assert k.SaveBoard('/work/after.kicad_pcb',b)
         self.assertTrue(silk <= set(reports['before']), reports)
         self.assertFalse(silk & set(reports['after']), reports)
         self.assertEqual({k: v for k, v in reports['before'].items() if k not in silk}, reports['after'])
+
+    def test_non_dense_references_remain_ordinary_native_drc_findings(self):
+        work = self.native('''
+import pcbnew as k
+from agent_ee.silkscreen import prepare_footprint
+b=k.BOARD()
+for index,(lib,name) in enumerate([('Resistor_SMD','R_1206_3216Metric'),
+        ('Capacitor_SMD','C_1210_3225Metric'),('Package_TO_SOT_SMD','SOT-323_SC-70'),
+        ('TestPoint','TestPoint_Pad_D1.0mm'),('Package_SO','SOIC-8_3.9x4.9mm_P1.27mm')]):
+    fp=k.FOOTPRINT(b);fp.SetFPID(k.LIB_ID(lib,name));fp.SetReference('X'+str(index+1))
+    pos=k.VECTOR2I(10000000+index*10000000,10000000)
+    fp.Reference().SetLayer(k.F_SilkS);fp.Reference().SetPosition(pos)
+    pad=k.PAD(fp);pad.SetAttribute(k.PAD_ATTRIB_SMD);pad.SetSize(k.VECTOR2I(4000000,4000000))
+    layers=k.LSET();layers.AddLayer(k.F_Cu);layers.AddLayer(k.F_Mask);pad.SetLayerSet(layers)
+    pad.SetPosition(pos);fp.Add(pad);b.Add(fp)
+assert k.SaveBoard('/work/before.kicad_pcb',b)
+for fp in b.GetFootprints():
+    prepare_footprint(fp)
+assert k.SaveBoard('/work/after.kicad_pcb',b)
+''')
+        findings = []
+        for stage in ('before', 'after'):
+            report = work / (stage + '.json')
+            subprocess.run(['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
+                            '-o', str(report), str(work / (stage + '.kicad_pcb'))],
+                           check=True, capture_output=True, timeout=120)
+            findings.append(Counter(v['type'] for v in read_json(report)['violations']))
+        self.assertGreaterEqual(findings[0]['silk_over_copper'], 5)
+        self.assertEqual(findings[0], findings[1])

@@ -341,7 +341,9 @@ def validate_stackup(value, count, *, schema=SCHEMA):
             raise ValueError('stackup must alternate copper and dielectric, starting and ending with copper')
         if layer['kind'] == 'copper':
             fields(layer, f'stackup layer {index}', ['name', 'kind', 'thickness_mm', 'copper_weight_oz']
-                   + (['source'] if sourced else []))
+                   + (['source'] if sourced else []), ['role'])
+            if 'role' in layer and layer['role'] not in ('plane', 'signal'):
+                raise ValueError('copper layer role must be plane or signal')
             weight = scaled(decimal(layer['copper_weight_oz'], 'copper_weight_oz'), 'copper_weight_oz')
             if weight <= 0:
                 raise ValueError('copper_weight_oz must be positive')
@@ -357,6 +359,7 @@ def validate_stackup(value, count, *, schema=SCHEMA):
         thickness = length(layer['thickness_mm'], f'stackup layer {label} thickness_mm', positive=True)
         summed += thickness
         records.append({'name': label, 'kind': layer['kind'], 'thickness_mm': mm(thickness),
+                        **({'role': layer['role']} if 'role' in layer else {}),
                         **({'copper_weight_oz': fixed_point(weight, MAX_PLACES)} if weight is not None else {})})
     if len(layers) % 2 == 0:
         raise ValueError('stackup must alternate copper and dielectric, starting and ending with copper')
@@ -1461,6 +1464,8 @@ def saved_facts(root):
             'layer': atoms(layer)[0], 'at': (nanometres(values[0]), nanometres(values[1])),
             'rotation_deg': degrees(values[2] if len(values) > 2 else '0', f'footprint {reference[0]} rotation')})
     return {'copper_layers': copper,
+            'copper_types': {n[1]: n[2] for n in (layer_table or [])[1:]
+                             if isinstance(n, list) and len(n) >= 3 and n[1] in copper},
             'thickness_nm': nanometres(atoms(thickness)[0]) if thickness and atoms(thickness) else None,
             'stackup': stackup, 'edge_segments': segments, 'other_edge_cuts': sorted(other),
             'footprints': footprints}
@@ -1496,6 +1501,10 @@ def round_trip(raw, pcb):
             add(pointer + '/thickness_mm', 'match' if found and found['thickness_nm'] is not None and
                 mm(found['thickness_nm']) == layer['thickness_mm'] else 'mismatch', {'board': found and found['name']})
         if layer['kind'] == 'copper':
+            if 'role' in layer:
+                actual = facts['copper_types'].get(layer['name'])
+                expected = 'power' if layer['role'] == 'plane' else 'signal'
+                add(pointer + '/role', 'match' if actual == expected else 'mismatch', {'board': actual})
             add(pointer + '/copper_weight_oz', 'not_in_board', {'reason': 'KiCad boards save copper thickness only'})
     for index, fixed in enumerate(record['fixed_footprints']):
         matches = facts['footprints'].get(fixed['reference'], [])

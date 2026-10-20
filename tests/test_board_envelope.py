@@ -129,6 +129,23 @@ LAYERS_AND_SIZE = [('max_layers', 2, 'count', 'minimum'), ('max_board_mm', [20, 
 
 
 class EnvelopeValidationTests(unittest.TestCase):
+    def test_copper_roles_are_optional_exact_and_never_allowed_on_dielectric(self):
+        legacy = validate(raw(rc()))
+        self.assertNotIn('role', legacy['stackup']['layers'][0])
+        for role in ('plane', 'signal'):
+            value = rc()
+            value['stackup']['layers'][0]['role'] = role
+            self.assertEqual(validate(raw(value))['stackup']['layers'][0]['role'], role)
+        for role in (None, True, 'power', 'mixed', '', ['signal']):
+            value = rc()
+            value['stackup']['layers'][0]['role'] = role
+            with self.subTest(role=role), self.assertRaisesRegex(ValueError, 'role must be plane or signal'):
+                validate(raw(value))
+        value = rc()
+        value['stackup']['layers'][1]['role'] = 'signal'
+        with self.assertRaisesRegex(ValueError, 'unknown.*role'):
+            validate(raw(value))
+
     def test_rc_envelope_validates_structurally_with_profile_unresolved(self):
         record = validate(RC_ENVELOPE.read_bytes())
         self.assertEqual(record['structural'], 'pass')

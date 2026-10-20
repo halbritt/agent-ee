@@ -191,7 +191,8 @@ def saved_structure(pcb):
         if len(copper) < 2 or [l['name'] for l in copper] != sorted(
                 [l['name'] for l in copper], key=envelope.copper_order):
             raise ValueError('missing or reordered native copper layers')
-        result['layers'] = {'copper': copper}
+        result['layers'] = {'copper': copper,
+                            'types': {layer[1]: layer[2] for layer in table[1:] if layer[1] in names}}
     except ValueError as exc:
         result['layers'] = {'unavailable': str(exc)}
     try:
@@ -250,12 +251,20 @@ def compare_saved(criterion, record, facts):
         authority = record['fab_profile'].get('stackup', {})
         if authority.get('execution') != 'ready':
             expected = {'thickness_mm': record['stackup']['thickness_mm'], 'layers': [
-                {k: v for k, v in layer.items() if k != 'copper_weight_oz'}
+                {k: v for k, v in layer.items() if k not in ('copper_weight_oz', 'role')}
                 for layer in record['stackup']['layers']]}
             if source != expected:
                 defects.append('saved structural stackup differs in name, order, kind or exact thickness')
         else:
             defects.extend(compare_stackup(record['stackup'], source, authority['expected']))
+    if field in ('layer_count', 'stackup'):
+        for layer in record['stackup']['layers']:
+            if 'role' in layer:
+                layers = facts['layers']
+                if 'unavailable' in layers:
+                    unknown.append(layers['unavailable'])
+                elif layers['types'].get(layer['name']) != ('power' if layer['role'] == 'plane' else 'signal'):
+                    defects.append(f"saved copper role differs for {layer['name']}")
     if field == 'stackup':
         reason = envelope.stackup_authority_reason(record)
         if reason:

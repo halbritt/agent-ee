@@ -8,6 +8,7 @@ control with every track, via and zone removed; footprint placement, outline,
 schematic, project and library tables are unchanged. This exercises the real
 router; the policy fixture tests live in test_kicad_route_adapter.py.
 """
+import contextlib
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
+import traceback
 import uuid
 from pathlib import Path
 
@@ -123,6 +125,54 @@ k.SaveBoard(sys.argv[1], b)
 '''
 
 
+@contextlib.contextmanager
+def retain_failed_run(root, test_id):
+    """Preserve the first failure's entire native workspace before unittest cleanup."""
+    try:
+        yield
+    except Exception as exc:
+        retained = Path(tempfile.mkdtemp(prefix='agent-ee-route-failure-', dir=root.parent))
+        shutil.copytree(root, retained / 'workspace', symlinks=True)
+        (retained / 'failure.json').write_text(json.dumps({
+            'test': test_id, 'exception_type': type(exc).__name__,
+            'exception': str(exc), 'traceback': traceback.format_exc(),
+        }, indent=2) + '\n', encoding='utf-8')
+        print(f'Native routing failure evidence retained at {retained}', file=sys.stderr, flush=True)
+        raise
+
+
+class NativeFailureRetentionTests(unittest.TestCase):
+    def test_failure_preserves_console_evidence_and_original_exception_without_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'run'
+            (root / 'repeat-2/routing/attempt').mkdir(parents=True)
+            console = root / 'repeat-2/console.log'
+            console.write_bytes(b'first failure exit 65\n')
+            evidence = root / 'repeat-2/routing/attempt/result.json'
+            evidence.write_bytes(b'{"routing":"failed"}\n')
+            calls = 0
+            with self.assertRaisesRegex(AssertionError, '65'):
+                with retain_failed_run(root, self.id()):
+                    calls += 1
+                    raise AssertionError('adapter exit 65')
+            retained, = Path(tmp).glob('agent-ee-route-failure-*')
+            shutil.rmtree(root)
+            self.assertEqual(calls, 1)
+            self.assertEqual((retained / 'workspace/repeat-2/console.log').read_bytes(),
+                             b'first failure exit 65\n')
+            self.assertEqual((retained / 'workspace/repeat-2/routing/attempt/result.json').read_bytes(),
+                             b'{"routing":"failed"}\n')
+            self.assertEqual(json.loads((retained / 'failure.json').read_text())['test'], self.id())
+
+    def test_success_leaves_no_failure_archive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'run'
+            root.mkdir()
+            with retain_failed_run(root, self.id()):
+                pass
+            self.assertEqual(list(Path(tmp).iterdir()), [root])
+
+
 class NativeKicadRouteTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -202,59 +252,60 @@ class NativeKicadRouteTest(unittest.TestCase):
             routing_adapter.verify(work, inputs)
 
     def test_repeated_krt_runs_compare_geometry_and_name_a_moved_segment(self):
-        from agent_ee.routing_equivalence import compare_boards
-        placed = self.placed_rc()
-        spec = self.spec()
-        outputs = []
-        for index in (1, 2):
-            work = self.root / f'repeat-{index}'
-            record = execute(placed, work, spec['argv'], timeout=spec['timeout_s'],
-                             extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
-            self.assertIn(record['exit_code'], (0, 2), record)
-            summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
-            self.assert_native_attempt(work, summary)
-            output = self.root / f'routed-{index}.kicad_pcb'
-            source = work / 'routing/candidate/project/rc_filter.kicad_pcb'
-            self.assertTrue(source.is_file(), (source, summary))
-            shutil.copyfile(source, output)
-            outputs.append(output)
-        report = compare_boards(*outputs)
-        (self.root / 'repeated-comparison.json').write_text(json.dumps(report, indent=2) + '\n')
-        self.assertTrue(report['geometry_equal'], report)
-        self.assertIn('byte_equal', report)
-        raw = outputs[1].read_text()
-        segment = re.search(r'\t\(segment\b.*?\n\t\)', raw, re.S).group()
-        duplicate = re.sub(r'\(uuid "[^"]+"\)', f'(uuid "{uuid.uuid4()}")', segment)
-        duplicated = self.root / 'duplicated.kicad_pcb'
-        duplicated.write_text(raw.rstrip()[:-1] + '\n' + duplicate + '\n)\n')
-        duplicate_report = compare_boards(duplicated, outputs[0])
-        (self.root / 'duplicate-comparison.json').write_text(json.dumps(duplicate_report, indent=2) + '\n')
-        self.assertFalse(duplicate_report['geometry_equal'])
-        self.assertFalse(duplicate_report['byte_equal'])
-        self.assertEqual(len(duplicate_report['board_geometry']), len(report['board_geometry']) + 1)
-        self.assertEqual(len(duplicate_report['only_board']), 1)
-        element = duplicate_report['only_board'][0]
-        self.assertEqual(element['kind'], 'PCB_TRACK')
-        self.assertIn('endpoints_nm', element)
-        self.assertEqual(duplicate_report['only_reference'], [])
-        self.assertEqual(duplicate_report['board_duplicates'], [{'element': element, 'count': 2}])
-        self.assertEqual(duplicate_report['reference_duplicates'], [])
-        self.assertEqual(duplicate_report['count_differences'], [
-            {'element': element, 'board_count': 2, 'reference_count': 1}])
-        import pcbnew as k
-        board = k.LoadBoard(str(outputs[1]))
-        track = next(t for t in board.GetTracks() if t.GetClass() == 'PCB_TRACK')
-        start = track.GetStart()
-        track.SetStart(k.VECTOR2I(start.x + 100000, start.y))
-        moved = self.root / 'moved.kicad_pcb'
-        k.SaveBoard(str(moved), board)
-        report = compare_boards(outputs[0], moved)
-        (self.root / 'moved-comparison.json').write_text(json.dumps(report, indent=2) + '\n')
-        self.assertFalse(report['geometry_equal'])
-        self.assertEqual(len(report['only_board']), 1)
-        self.assertEqual(len(report['only_reference']), 1)
-        self.assertEqual(report['only_reference'][0]['kind'], 'PCB_TRACK')
-        self.assertIn('endpoints_nm', report['only_reference'][0])
+        with retain_failed_run(self.root, self.id()):
+            from agent_ee.routing_equivalence import compare_boards
+            placed = self.placed_rc()
+            spec = self.spec()
+            outputs = []
+            for index in (1, 2):
+                work = self.root / f'repeat-{index}'
+                record = execute(placed, work, spec['argv'], timeout=spec['timeout_s'],
+                                 extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
+                self.assertIn(record['exit_code'], (0, 2), record)
+                summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
+                self.assert_native_attempt(work, summary)
+                output = self.root / f'routed-{index}.kicad_pcb'
+                source = work / 'routing/candidate/project/rc_filter.kicad_pcb'
+                self.assertTrue(source.is_file(), (source, summary))
+                shutil.copyfile(source, output)
+                outputs.append(output)
+            report = compare_boards(*outputs)
+            (self.root / 'repeated-comparison.json').write_text(json.dumps(report, indent=2) + '\n')
+            self.assertTrue(report['geometry_equal'], report)
+            self.assertIn('byte_equal', report)
+            raw = outputs[1].read_text()
+            segment = re.search(r'\t\(segment\b.*?\n\t\)', raw, re.S).group()
+            duplicate = re.sub(r'\(uuid "[^"]+"\)', f'(uuid "{uuid.uuid4()}")', segment)
+            duplicated = self.root / 'duplicated.kicad_pcb'
+            duplicated.write_text(raw.rstrip()[:-1] + '\n' + duplicate + '\n)\n')
+            duplicate_report = compare_boards(duplicated, outputs[0])
+            (self.root / 'duplicate-comparison.json').write_text(json.dumps(duplicate_report, indent=2) + '\n')
+            self.assertFalse(duplicate_report['geometry_equal'])
+            self.assertFalse(duplicate_report['byte_equal'])
+            self.assertEqual(len(duplicate_report['board_geometry']), len(report['board_geometry']) + 1)
+            self.assertEqual(len(duplicate_report['only_board']), 1)
+            element = duplicate_report['only_board'][0]
+            self.assertEqual(element['kind'], 'PCB_TRACK')
+            self.assertIn('endpoints_nm', element)
+            self.assertEqual(duplicate_report['only_reference'], [])
+            self.assertEqual(duplicate_report['board_duplicates'], [{'element': element, 'count': 2}])
+            self.assertEqual(duplicate_report['reference_duplicates'], [])
+            self.assertEqual(duplicate_report['count_differences'], [
+                {'element': element, 'board_count': 2, 'reference_count': 1}])
+            import pcbnew as k
+            board = k.LoadBoard(str(outputs[1]))
+            track = next(t for t in board.GetTracks() if t.GetClass() == 'PCB_TRACK')
+            start = track.GetStart()
+            track.SetStart(k.VECTOR2I(start.x + 100000, start.y))
+            moved = self.root / 'moved.kicad_pcb'
+            k.SaveBoard(str(moved), board)
+            report = compare_boards(outputs[0], moved)
+            (self.root / 'moved-comparison.json').write_text(json.dumps(report, indent=2) + '\n')
+            self.assertFalse(report['geometry_equal'])
+            self.assertEqual(len(report['only_board']), 1)
+            self.assertEqual(len(report['only_reference']), 1)
+            self.assertEqual(report['only_reference'][0]['kind'], 'PCB_TRACK')
+            self.assertIn('endpoints_nm', report['only_reference'][0])
 
     def test_invalid_board_is_a_versioned_refusal_without_a_proposal(self):
         placed = self.placed_rc()
