@@ -96,6 +96,16 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 | A stock-variable model that is not in its declared receipt, has no pinned upstream revision (`existing-local`), is not captured, or differs from its receipt hash; a receipt that is not the captured input or is invalid | `unsupported`, `unknown` |
 | `model_libraries` empty, not an object, mapping a variable that is not `KICADn_3DMODEL_DIR` or `KISYS3DMOD`, or naming a path that is not a captured `.agent-ee-models.json` | `unsupported`, `unknown` |
 
+The captured export check may declare [`copper_features`](fab-export.md#copper-features),
+for example `["JP1"]` for an owned solder jumper. The gate revalidates its
+surface copper/mask/paste pads, silk/fab graphics, both native exclusions,
+and absence of models and orderable footprint/native symbol fields. It reads
+the sealed native netlist directly; a producer pass or its summary cannot
+establish this exception. Invalid declarations are `unsupported/unknown`.
+A qualified feature stays in the sealed board inventory but out of the
+assembled set. Its presence in either CSV is a parity defect. Existing
+undeclared exclusions retain their verdicts.
+
 The assembled board set holds every footprint without `dnp`,
 `exclude_from_bom` or `exclude_from_pos_files`. Defects take priority over
 coverage gaps. Remaining gaps are listed in `details.coverage_gaps` and the

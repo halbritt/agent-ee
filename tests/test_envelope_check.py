@@ -167,7 +167,7 @@ class NativeEnvelopeTests(unittest.TestCase):
     """Registered coordinator execution; complete scope/3 capture still needs stackup authority."""
     def setUp(self):
         import tempfile
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -278,7 +278,7 @@ class PodEnvelopeAcceptanceTests(unittest.TestCase):
     def setUp(self):
         import shutil
         import tempfile
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         from agent_ee.board_envelope import source_inventory
         require_toolchain(native=True)
         self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-envelope-profile-')

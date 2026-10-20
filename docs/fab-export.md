@@ -13,7 +13,9 @@ price queries, and it does not place an order.
 Parameters are `{"netlist_check": "<id>"}` plus an optional
 `"assembly_exclusion": "JLCPCB_Assembly=not_assembled"` (see
 [assembly exclusions](#assembly-exclusions)) and an optional
-`"bom_variant": "<name>"` (see [BOM variant](#bom-variant)). Optional
+`"bom_variant": "<name>"` (see [BOM variant](#bom-variant)).
+`"copper_features": ["JP1"]` declares copper-only footprint designators
+(see [copper features](#copper-features)). Optional
 `probe_manifest` names captured immutable probe declarations and their source
 closure; admission requires a matching earlier passing `parts_subset` check. The named check must be an
 earlier `netlist` check in the same scope. Its result must be `execution=ok` for
@@ -31,6 +33,45 @@ Board-only mechanical footprints carrying all three native attributes
 BOM binding or placement row. Partial exclusion combinations on non-DNP
 footprints still fail closed; this exception does not admit arbitrary excluded
 schematic parts. Qualified probe features retain their separate source checks.
+
+## Copper features
+
+A solder jumper has copper to fabricate, but no component to buy or place.
+Declare it explicitly in the captured export check:
+
+```json
+{"netlist_check": "netlist", "copper_features": ["JP1"]}
+```
+
+The list must contain unique plain designators and must be nonempty when
+present. No feature is inferred from its name or exclusions. Each declaration
+must identify exactly one footprint and a native on-board schematic component.
+The footprint must carry both `exclude_from_bom` and
+`exclude_from_pos_files`, contain at least one surface copper pad, and have
+no model or orderable MPN/LCSC property on either the footprint or native
+symbol. Binding aliases include `Partnumber`, `PartNumber`, `MPN`,
+`Manufacturer Part Number` and LCSC/JLCPCB part fields, ignoring case and
+punctuation. Empty binding fields are allowed. Captured schematic properties
+and variant field clauses are checked too, including fields omitted from the
+default native netlist or hidden by `in_bom=no`.
+
+Qualified pad shapes are rect, roundrect, circle, oval and trapezoid SMD pads
+on copper, mask and paste layers. Custom SMD pads also qualify when their
+line, arc, circle, rectangle, polygon or curve primitives inherit these layers
+without overrides. Drilled pads and padstacks are refused.
+Footprint graphics and displayed properties are restricted to silk/fab layers;
+other physical content, including zones, models and embedded files, is refused.
+The feature remains in the native board inventory and Gerbers, and appears in
+neither BOM nor CPL. KiCad's native position export must also omit it.
+`details.copper_features` lists the captured declaration. The manifest schema
+and `designators.excluded` assembly-rule records are unchanged.
+
+`fab_consistency` independently repeats qualification from captured board bytes
+and the sealed native netlist, using the captured export check's declaration.
+It refuses an invalid declared feature even if the producer reported success.
+A copper designator inserted into either CSV is a `designator_parity` defect.
+Undeclared exclusions retain their existing verdicts. This policy does not
+supply a component binding or exempt other checks of the board.
 
 ## Native steps
 
@@ -273,8 +314,8 @@ a missing board outline; assembly variants on the board, or on the schematic
 without a declared `bom_variant`; duplicate
 or non-plain references; and populated footprints or symbols marked `board_only`,
 `exclude_from_bom`, `exclude_from_pos_files` or `exclude_from_board` (the
-declared `JLCPCB_Assembly` rule is the supported way to keep a populated part
-out of assembly). A board
+declared `JLCPCB_Assembly` rule, qualified board-only mechanical footprints,
+qualified probes and explicitly declared copper features are the supported exceptions). A board
 with no populated footprints is also refused, because the package would be
 empty.
 
@@ -303,6 +344,9 @@ placeholders. Nothing is copied from FOME-MC, a donor or a supplier library.
 - schematic/board DNP disagreement in both directions: the package follows the
   board, completes, and records `details.dnp_disagreements`;
 - the DNP authority and exclusion rules as unit cases;
+- an owned solder-jumper fixture passing export and consistency with native
+  netlist/geometry evidence, missing declarations and partial flags refused,
+  and model/MPN refusals replayed independently by consistency;
 - the declared `JLCPCB_Assembly=not_assembled` rule: an unbound, marked J1 is
   left out of the BOM and CPL, listed in the manifest, and the package passes
   `fab_consistency` with sealed evidence; DNP C3 stays a DNP omission;

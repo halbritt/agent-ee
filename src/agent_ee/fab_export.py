@@ -116,18 +116,159 @@ def validate_params(params):
     registration is checked against the captured project file at run time).
     """
     if (not isinstance(params, dict) or 'netlist_check' not in params or
-            not set(params) <= {'netlist_check', 'assembly_exclusion', 'bom_variant', 'probe_manifest'}):
+            not set(params) <= {'netlist_check', 'assembly_exclusion', 'bom_variant', 'probe_manifest', 'copper_features'}):
         raise ValueError('fab_export/1 params must be {"netlist_check"} plus optional '
-                         '"assembly_exclusion" and "bom_variant"; layer and output overrides are refused in v1')
+                         '"assembly_exclusion", "bom_variant", "probe_manifest" and "copper_features"; layer and output overrides are refused in v1')
     if not isinstance(params['netlist_check'], str) or not params['netlist_check']:
         raise ValueError('netlist_check must name the preceding netlist check')
     rule = params.get('assembly_exclusion')
     if 'assembly_exclusion' in params and (not isinstance(rule, str) or rule not in ASSEMBLY_RULES):
         raise ValueError(f'assembly_exclusion {rule!r} is not one of {sorted(ASSEMBLY_RULES)}')
+    declared_copper_features(params)
     variant = params.get('bom_variant')
     if 'bom_variant' in params and (not isinstance(variant, str) or not variant or variant != variant.strip()):
         raise ValueError(f'bom_variant {variant!r} must be a nonempty variant name')
     return params
+
+
+# Binding aliases are checked on both native symbols and footprint properties.
+def orderable_field(name):
+    return re.sub(r'[^a-z0-9]', '', (name or '').lower()) in {
+        'lcsc', 'lcscpart', 'lcscpartnumber', 'mpn', 'partnumber', 'manufacturerpartnumber',
+        'jlcpcbpart', 'jlcpcbpartnumber'}
+
+
+def declared_copper_features(params):
+    refs = params.get('copper_features', [])
+    if (not isinstance(refs, list) or ('copper_features' in params and not refs) or
+            any(not isinstance(ref, str) or not REF_RE.fullmatch(ref) for ref in refs) or
+            len(set(refs)) != len(refs)):
+        raise ValueError('copper_features must be a nonempty list of unique plain designators')
+    return set(refs)
+
+
+def copper_schematic_problems(data, refs):
+    """Include fields hidden by native default-netlist or non-BOM/variant export."""
+    if not refs:
+        return []
+    from .symbol_library import parse_sexpr
+    root = parse_sexpr(data)
+    if root[0] != 'kicad_sch':
+        raise ValueError('not a kicad_sch file')
+    problems = []
+    for symbol in _lists(root, 'symbol'):
+        nodes, stack = [], [symbol]
+        while stack:
+            node = stack.pop()
+            nodes.append(node)
+            stack.extend(n for n in node[1:] if isinstance(n, list) and n)
+        references = {n[1] for n in nodes if n[0] == 'reference' and len(n) == 2 and isinstance(n[1], str)}
+        references.update(p[2] for p in _lists(symbol, 'property')
+                          if len(p) > 2 and p[1] == 'Reference' and isinstance(p[2], str))
+        for ref in sorted(refs & references, key=natural_key):
+            for node in nodes:
+                if node[0] == 'property' and len(node) > 2:
+                    pairs = [(node[1], node[2])]
+                elif node[0] == 'field':
+                    names, values = _lists(node, 'name'), _lists(node, 'value')
+                    if len(names) != 1 or len(values) != 1 or len(names[0]) != 2 or len(values[0]) != 2:
+                        problems.append(f'copper feature {ref}: unqualified schematic variant field')
+                        continue
+                    pairs = [(names[0][1], values[0][1])]
+                else:
+                    continue
+                for name, value in pairs:
+                    if not isinstance(name, str) or not isinstance(value, str):
+                        problems.append(f'copper feature {ref}: unqualified schematic field')
+                    elif orderable_field(name) and value.strip():
+                        problems.append(f'copper feature {ref}: has orderable schematic/variant field {name}')
+    return sorted(set(problems))
+
+
+def copper_pad(node):
+    layers = _lists(node, 'layers')
+    names = layers[0][1:] if len(layers) == 1 else []
+    allowed_layers = {'F.Cu', 'B.Cu', '*.Cu', 'F.Mask', 'B.Mask', '*.Mask',
+                      'F.Paste', 'B.Paste', '*.Paste'}
+    if (len(node) < 4 or node[2] != 'smd' or not names or
+            any(not isinstance(n, str) or n not in allowed_layers for n in names) or
+            not any(n.endswith('.Cu') for n in names) or _lists(node, 'drill') or _lists(node, 'padstack')):
+        return False
+    primitives = _lists(node, 'primitives')
+    if node[3] != 'custom':
+        return node[3] in {'rect', 'roundrect', 'circle', 'oval', 'trapezoid'} and not primitives
+    if len(primitives) != 1 or len(primitives[0]) < 2:
+        return False
+    # Custom solder-jumper copper inherits the pad layers. No layer overrides
+    # or unrecognised physical objects are admitted inside its primitives.
+    return all(isinstance(p, list) and p and p[0] in {
+        'gr_line', 'gr_arc', 'gr_circle', 'gr_rect', 'gr_poly', 'gr_curve'} and
+        not _lists(p, 'layer') and not _lists(p, 'layers') for p in primitives[0][1:])
+
+
+def copper_feature_problems(data, refs, components=None):
+    """Qualify only explicitly declared copper; never infer a component exemption.
+
+    Both fab gates replay this against captured board bytes and native bindings.
+    Unknown physical footprint content is refused rather than silently ignored.
+    """
+    if not refs:
+        return []
+    from .symbol_library import parse_sexpr
+    root = parse_sexpr(data)
+    if root[0] != 'kicad_pcb':
+        raise ValueError('not a kicad_pcb file')
+    by_ref = {}
+    for fp in _lists(root, 'footprint'):
+        for prop in _lists(fp, 'property'):
+            if len(prop) > 2 and prop[1] == 'Reference':
+                by_ref.setdefault(prop[2], []).append(fp)
+    problems = []
+    metadata = {'layer', 'at', 'uuid', 'tstamp', 'path', 'property', 'attr',
+                'descr', 'tags', 'sheetname', 'sheetfile', 'locked',
+                'duplicate_pad_numbers_are_jumpers', 'solder_mask_margin',
+                'solder_paste_margin', 'solder_paste_ratio', 'clearance',
+                'zone_connect', 'thermal_width', 'thermal_gap', 'embedded_fonts'}
+    graphics = {'fp_text', 'fp_text_box', 'fp_line', 'fp_rect', 'fp_circle', 'fp_arc', 'fp_poly'}
+    graphic_layers = {'F.SilkS', 'B.SilkS', 'F.Fab', 'B.Fab'}
+    for ref in sorted(refs, key=natural_key):
+        reasons = []
+        fps = by_ref.get(ref, [])
+        if len(fps) != 1:
+            problems.append(f'copper feature {ref} needs exactly one board footprint')
+            continue
+        fp = fps[0]
+        attrs = {a for node in _lists(fp, 'attr') for a in node[1:] if isinstance(a, str)}
+        if not {'exclude_from_bom', 'exclude_from_pos_files'} <= attrs:
+            reasons.append('needs both native BOM and position exclusions')
+        pads = _lists(fp, 'pad')
+        if not pads:
+            reasons.append('has no copper pads')
+        for node in fp[2:]:
+            if not isinstance(node, list) or not node:
+                reasons.append('unqualified footprint content')
+                continue
+            head = node[0]
+            if head == 'pad':
+                if not copper_pad(node):
+                    reasons.append('pad is not qualified surface copper/mask/paste')
+            elif head in graphics or head == 'property':
+                layers = _lists(node, 'layer')
+                if head in graphics or layers:
+                    if len(layers) != 1 or len(layers[0]) != 2 or layers[0][1] not in graphic_layers:
+                        reasons.append('graphics are outside silk/fab layers')
+                if head == 'property' and len(node) > 2 and orderable_field(node[1]) and node[2].strip():
+                    reasons.append(f'has orderable footprint field {node[1]}')
+            elif head not in metadata:
+                reasons.append(f'unqualified footprint content {head}')
+        if components is not None:
+            comp = components.get(ref)
+            if comp is None or 'exclude_from_board' in comp['excluded']:
+                reasons.append('needs a native on-board component')
+            elif comp.get('orderable') or any(comp.get(k) for k in ('lcsc', 'Partnumber', 'PartNumber')):
+                reasons.append('has an orderable native MPN/LCSC field')
+        problems.extend(f'copper feature {ref}: {reason}' for reason in sorted(set(reasons)))
+    return problems
 
 
 def capability(params):
@@ -231,7 +372,7 @@ def _lists(node, head):
     return [x for x in node[1:] if isinstance(x, list) and x and x[0] == head]
 
 
-def board_facts(data, probes=None):
+def board_facts(data, probes=None, copper_features=()):
     """Layer table and footprint inventory of a captured board.
 
     Raises ValueError for unparseable bytes and returns `unsupported` reasons
@@ -242,7 +383,7 @@ def board_facts(data, probes=None):
     probe_refs = validate_board(data, probes or {}) if probes or PROPERTY.encode() in data else set()
     if root[0] != 'kicad_pcb':
         raise ValueError('not a kicad_pcb file')
-    unsupported = []
+    unsupported = copper_feature_problems(data, copper_features)
     layer_tables = _lists(root, 'layers')
     if len(layer_tables) != 1:
         raise ValueError('board needs exactly one layers table')
@@ -289,7 +430,7 @@ def board_facts(data, probes=None):
         seen.add(ref)
         excluded = attrs & {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
         mechanical = excluded == {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
-        if excluded and not dnp and ref not in probe_refs and not mechanical:
+        if excluded and not dnp and ref not in probe_refs and not mechanical and ref not in copper_features:
             unsupported.append(f'populated footprint {ref} carries {sorted(excluded)}; '
                                'v1 refuses non-DNP exclusions')
     populated = sorted((f['ref'] for f in footprints if not f['dnp']), key=natural_key)
@@ -344,7 +485,9 @@ def part_bindings(xml_path, probes=None):
                            'footprint': (comp.findtext('footprint') or '').strip(),
                            'lcsc': fields.get('LCSC', ''), 'manufacturer': fields.get('Manufacturer', ''),
                            'Partnumber': fields.get('Partnumber', ''), 'PartNumber': fields.get('PartNumber', ''),
-                           'fields': {name: fields[name] for name in sorted(RULE_FIELDS) if name in fields}}
+                           'fields': {name: fields[name] for name in sorted(RULE_FIELDS) if name in fields},
+                           'orderable': sorted({field.get('name') for field in comp.findall('./fields/field')
+                                                if orderable_field(field.get('name')) and (field.text or '').strip()})}
         if ref in probes:
             components[ref]['probe'] = True
     return components, unsupported
@@ -392,7 +535,7 @@ def assembly_exclusions(rule, components, footprints):
     return excluded, unsupported
 
 
-def assembled_parts(components, footprints, excluded=()):
+def assembled_parts(components, footprints, excluded=(), copper_features=()):
     """BOM parts under the board DNP authority, less rule-excluded designators.
 
     Returns (parts, disagreements, unsupported). The board footprint `dnp`
@@ -420,6 +563,8 @@ def assembled_parts(components, footprints, excluded=()):
         if ref in board_dnp and board_dnp[ref] != comp['dnp']:
             disagreements.append({'designator': ref, 'schematic_dnp': comp['dnp'], 'board_dnp': board_dnp[ref]})
         assembled = not board_dnp.get(ref, comp['dnp'])
+        if ref in copper_features:
+            continue  # Both captured native sources were qualified by the caller.
         if comp['excluded'] and (assembled or not comp['dnp']):
             unsupported.append(f'populated component {ref} carries {comp["excluded"]}; '
                                'v1 refuses non-DNP exclusions')
@@ -800,10 +945,13 @@ def check_fab_export(ctx):
         from .probe_features import immutable_inputs, load_for_check, validate_schematic
         immutable_inputs(params, ctx.manifest['files'], ctx.inputs, ctx.scope)
         probes = load_for_check(ctx) if 'probe_manifest' in params else {}
-        facts = board_facts((ctx.inputs / board_rel).read_bytes(), probes)
+        copper_refs = declared_copper_features(params)
+        facts = board_facts((ctx.inputs / board_rel).read_bytes(), probes, copper_refs)
         seen = set()
         for rel in prior.get('details', {}).get('schematic_files', [ctx.scope['schematic']]):
-            seen.update(validate_schematic((ctx.inputs / rel).read_bytes(), probes))
+            data = (ctx.inputs / rel).read_bytes()
+            seen.update(validate_schematic(data, probes))
+            facts['unsupported'] += copper_schematic_problems(data, copper_refs)
         if seen != set(probes):
             raise ValueError('missing probe feature(s): ' + ', '.join(sorted(set(probes) - seen)))
     except ValueError as exc:
@@ -824,13 +972,15 @@ def check_fab_export(ctx):
         components, part_problems = part_bindings(xml, probes)
     except (ET.ParseError, OSError, ValueError) as exc:
         raise _error('malformed', f'native XML netlist unreadable: {exc}') from exc
+    copper_problems = copper_feature_problems((ctx.inputs / board_rel).read_bytes(), copper_refs, components)
+    details['copper_features'] = sorted(copper_refs, key=natural_key)
     rule = params.get('assembly_exclusion')
     excluded, exclusion_problems = assembly_exclusions(rule, components, facts['footprints'])
     details['assembly_exclusion'] = {'rule': rule, 'declared_by': f'scope check {ctx.cid!r} params',
                                      'scope_sha256': ctx.manifest.get('scope_sha256'), 'excluded': excluded}
     parts, disagreements, assembly_problems = assembled_parts(
-        components, facts['footprints'], {e['designator'] for e in excluded})
-    unsupported += part_problems + exclusion_problems + assembly_problems
+        components, facts['footprints'], {e['designator'] for e in excluded}, copper_refs)
+    unsupported += copper_problems + part_problems + exclusion_problems + assembly_problems
     try:
         rows, flagged = bom_rows(parts)
     except ValueError as exc:
@@ -993,7 +1143,8 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
             if exported is None:
                 raise ValueError('kicad-cli bom wrote no bom.csv')
             varied, variant_problems = variant_parts(exported.read_text(encoding='utf-8'),
-                                                     {e['designator'] for e in excluded})
+                                                     {e['designator'] for e in excluded} |
+                                                     declared_copper_features(ctx.spec.get('params') or {}))
     except (ValueError, KeyError, TypeError, UnicodeError, OSError) as exc:
         raise _error('malformed', f'native fab output unusable: {exc}') from exc
     if variant is not None:

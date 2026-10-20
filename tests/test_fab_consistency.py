@@ -996,9 +996,14 @@ class NativeFabPipelineTests(unittest.TestCase):
                 '(attr smd)', '(attr smd)\n\t\t(model "${KIPRJMOD}/owned.step")', 1))
         self.runs = 0
 
-    def run_case(self, *, board='fab.kicad_pcb', mutate=None, before=None, rule=None, model_libraries=None):
+    def run_case(self, *, board='fab.kicad_pcb', mutate=None, before=None, rule=None, model_libraries=None, copper_features=None, bom_variant=None):
         scope = read_json(REPO / 'fixtures/fab-export/control.scope.json')
         scope.update(schema='agent-ee.scope/3', board='design/' + board)
+        if copper_features is not None:
+            scope['checks'][1]['params']['copper_features'] = copper_features
+        if bom_variant is not None:
+            scope['checks'][1]['params']['bom_variant'] = bom_variant
+            scope['inputs'][0]['include'].append('fab.kicad_pro')
         if rule:
             scope['checks'][1]['params']['assembly_exclusion'] = rule
         scope['inputs'][0]['path'] = str(self.source)
@@ -1043,6 +1048,120 @@ class NativeFabPipelineTests(unittest.TestCase):
         freeze_evidence(self.run_dir, self.results)
         verify_evidence(self.run_dir, self.results, required=True)
         return self.results[-1]
+
+    def test_owned_copper_jumper_passes_both_fab_gates(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        result = self.run_case(copper_features=['JP1'])
+        self.assertEqual([(r['execution'], r['outcome']) for r in self.results[2:]],
+                         [('ok', 'pass'), ('ok', 'pass')], self.results)
+        self.assertEqual(result['details']['copper_features'], ['JP1'])
+        self.assert_witness(result, accepted=False)
+
+    def test_owned_custom_pad_solder_jumper_passes_both_fab_gates(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source, custom=True)
+        result = self.run_case(copper_features=['JP1'])
+        self.assertEqual([(r['execution'], r['outcome']) for r in self.results[2:]],
+                         [('ok', 'pass'), ('ok', 'pass')], self.results)
+        self.assertEqual(result['details']['copper_features'], ['JP1'])
+
+    def test_copper_jumper_undeclared_model_and_mpn_are_refused(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        board = self.source / 'fab.kicad_pcb'
+        schematic = self.source / 'fab.kicad_sch'
+        original_board, original_sch = board.read_text(), schematic.read_text()
+        for fault in ('undeclared', 'model', 'board MPN', 'native MPN', 'native LCSC'):
+            with self.subTest(fault=fault):
+                text, sch = original_board, original_sch
+                if fault == 'model':
+                    text = text.replace('(attr smd exclude_from_bom exclude_from_pos_files)',
+                                        '(attr smd exclude_from_bom exclude_from_pos_files) (model "${KIPRJMOD}/owned.step")')
+                elif fault == 'board MPN':
+                    text = text.replace('(property "Reference" "JP1"',
+                                        '(property "MPN" "BUY-ME" (at 0 0) (layer "F.Fab")) (property "Reference" "JP1"')
+                elif fault.startswith('native'):
+                    field = 'MPN' if fault == 'native MPN' else 'LCSC'
+                    sch = sch.replace('(property "Reference" "JP1"',
+                                      f'(property "{field}" "BUY-ME" (at 0 0 0) (effects (font (size 1 1)))) '
+                                      '(property "Reference" "JP1"')
+                board.write_text(text)
+                schematic.write_text(sch)
+                self.run_case(copper_features=None if fault == 'undeclared' else ['JP1'])
+                export = self.results[2]
+                self.assertEqual((export['execution'], export['outcome']), ('unsupported', 'unknown'), export)
+                self.assertNotEqual(self.results[-1]['outcome'], 'pass')
+
+    def test_consistency_requalifies_copper_even_when_producer_reports_pass(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        board = self.source / 'fab.kicad_pcb'
+        schematic = self.source / 'fab.kicad_sch'
+        original_board, original_sch = board.read_text(), schematic.read_text()
+        producer = checks.CHECK_FUNCS['fab_export']
+
+        def bypass_copper_qualification(ctx):
+            # Fault injection only in the producer; real native exports and sealing
+            # still run. The gate must qualify captured bytes independently.
+            with mock.patch('agent_ee.fab_export.copper_feature_problems', return_value=[]), \
+                    mock.patch('agent_ee.fab_export.copper_schematic_problems', return_value=[]):
+                producer(ctx)
+
+        for fault in ('model', 'board MPN', 'native MPN', 'native LCSC'):
+            with self.subTest(fault=fault):
+                addition = ('(model "${KIPRJMOD}/owned.step")' if fault == 'model' else
+                            '(property "MPN" "BUY-ME" (at 0 0) (layer "F.Fab"))' if fault == 'board MPN' else '')
+                board.write_text(original_board.replace('(attr smd exclude_from_bom exclude_from_pos_files)',
+                    '(attr smd exclude_from_bom exclude_from_pos_files)' + addition))
+                field = 'LCSC' if fault == 'native LCSC' else 'MPN'
+                sch = original_sch if not fault.startswith('native') else original_sch.replace(
+                    '(property "Reference" "JP1"',
+                    f'(property "{field}" "BUY-ME" (at 0 0 0) (effects (font (size 1 1)))) '
+                    '(property "Reference" "JP1"')
+                schematic.write_text(sch)
+                with mock.patch.dict(checks.CHECK_FUNCS, {'fab_export': bypass_copper_qualification}):
+                    result = self.run_case(copper_features=['JP1'])
+                self.assertEqual(self.results[2]['outcome'], 'pass', self.results[2])
+                self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+                self.assertIn('copper feature JP1', result['summary'])
+
+    def test_variant_only_mpn_is_refused_by_both_gates(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        schematic = self.source / 'fab.kicad_sch'
+        schematic.write_text(schematic.read_text().replace('(reference "JP1") (unit 1)',
+            '(reference "JP1") (unit 1) (variant (name "ALT") '
+            '(field (name "Partnumber") (value "BUY-ME")))'))
+        write_json(self.source / 'fab.kicad_pro', {'meta': {'version': 3},
+                   'schematic': {'variants': [{'name': 'ALT'}]}})
+        self.run_case(copper_features=['JP1'], bom_variant='ALT')
+        self.assertEqual((self.results[2]['execution'], self.results[2]['outcome']),
+                         ('unsupported', 'unknown'), self.results[2])
+        producer = checks.CHECK_FUNCS['fab_export']
+
+        def bypass_schematic_qualification(ctx):
+            with mock.patch('agent_ee.fab_export.copper_schematic_problems', return_value=[]):
+                producer(ctx)
+
+        with mock.patch.dict(checks.CHECK_FUNCS, {'fab_export': bypass_schematic_qualification}):
+            result = self.run_case(copper_features=['JP1'], bom_variant='ALT')
+        self.assertEqual(self.results[2]['outcome'], 'pass', self.results[2])
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertIn('schematic/variant field Partnumber', result['summary'])
+
+    def test_copper_jumper_in_bom_or_cpl_is_a_parity_defect(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        for name, row in (('bom.csv', 'JP1,SolderJumper,1,Jumper,Owned,JP,C900123\n'),
+                          ('cpl.csv', 'JP1,120,-100,Top,0\n')):
+            with self.subTest(file=name):
+                def inject(ctx, stage):
+                    path = stage / name
+                    path.write_text(path.read_text() + row)
+                result = self.run_case(copper_features=['JP1'], mutate=inject)
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
+                self.assertIn('designator_parity', {d['code'] for d in result['details']['defects']})
 
     def assert_witness(self, result, *, accepted):
         evidence = [{'path': 'checks/consistency.json', 'locator': 'details.defects'}]
@@ -1169,7 +1288,7 @@ class NativeFabPipelineTests(unittest.TestCase):
                 self.assert_witness(result, accepted=True)
 
     def test_native_rule_exclusion_is_rederived_and_held_to_parity(self):
-        from test_fab_export import RULE, mark_board, mark_schematic
+        from tests.test_fab_export import RULE, mark_board, mark_schematic
         schematic, board = self.source / 'fab.kicad_sch', self.source / 'fab.kicad_pcb'
         schematic.write_text(mark_schematic(schematic.read_text(), 'J1', unbind=True))
         board.write_text(mark_board(board.read_text(), 'J1'))

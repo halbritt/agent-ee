@@ -3,6 +3,7 @@ import copy
 import csv
 import io
 import json
+import re
 import shutil
 import tempfile
 import time
@@ -20,6 +21,7 @@ from agent_ee.fab_export import (BOM_COLUMNS, BOM_HEADER, BOM_HEADER_SHA256, BOM
                                  CPL_COLUMNS, CPL_HEADER, CPL_HEADER_SHA256, CPL_TEMPLATE_SHA256,
                                  GERBER_TIMES, SCHEMA, VARIANT_BOM_FIELDS, ascii_text, assembled_parts,
                                  assembly_exclusions, board_facts, bom_rows, check_fab_export, cpl_rows,
+                                 copper_feature_problems,
                                  header_records, inventory, jlc_template_header, normalise, render_bom,
                                  render_cpl, scan_sexpr, validate_params, variant_parts,
                                  verify_jlc_templates, verify_manifest, write_zip)
@@ -56,6 +58,32 @@ def mark_board(text, ref, value='not_assembled'):
              '\t\t\t(hide yes)\n\t\t\t(uuid "00000000-0000-4000-8000-0000000000a1")\n'
              '\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size 1.27 1.27)\n\t\t\t\t)\n\t\t\t)\n\t\t)\n')
     return text[:at] + field + text[at:]
+
+
+def copper_fixture(source, *, custom=False):
+    """Turn the owned two-pad DNP capacitor into an open solder jumper JP1."""
+    schematic = source / 'fab.kicad_sch'
+    lines = schematic.read_text().splitlines()
+    for i, line in enumerate(lines):
+        if '(property "Reference" "C3"' in line:
+            line = line.replace('"C3"', '"JP1"').replace('(dnp yes)', '(dnp no)')
+            line = line.replace('(in_bom yes)', '(in_bom no)').replace('"100n"', '"Solder jumper"')
+            line = line.replace('agent_fab:C_1608_owned', 'agent_fab:SolderJumper_owned')
+            for name in ('LCSC', 'Manufacturer', 'Partnumber'):
+                line = re.sub(r'\(property "' + name + r'".*?\(hide yes\)\)\)', '', line)
+            lines[i] = line
+    schematic.write_text('\n'.join(lines) + '\n')
+    board = source / 'fab.kicad_pcb'
+    text = board.read_text().replace('"C3"', '"JP1"')
+    start = text.rfind('(footprint ', 0, text.index('(property "Reference" "JP1"'))
+    end = text.index('\n\t(footprint ', start + 1)
+    block = text[start:end].replace('(attr smd dnp)', '(attr smd exclude_from_bom exclude_from_pos_files)')
+    block = block.replace('agent_fab:C_1608_owned', 'agent_fab:SolderJumper_owned')
+    if custom:
+        block = block.replace('smd rect', 'smd custom').replace('(size 0.9 0.95)',
+            '(size 0.9 0.95) (options (clearance outline) (anchor rect)) '
+            '(primitives (gr_rect (start -0.45 -0.475) (end 0.45 0.475) (width 0) (fill yes)))')
+    board.write_text(text[:start] + block + text[end:])
 
 
 def part(lcsc='C900001', value='1µF', footprint='lib:C', maker='Maker', number='PN-1'):
@@ -244,6 +272,82 @@ class BoardFactTests(unittest.TestCase):
                 scan_sexpr(bad, lambda path: True)
 
 
+class CopperFeatureTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.source = Path(self.tmp.name) / 'source'
+        shutil.copytree(FIXTURE, self.source)
+        copper_fixture(self.source)
+        self.data = (self.source / 'fab.kicad_pcb').read_bytes()
+
+    def test_only_declaration_admits_native_exclusions(self):
+        self.assertTrue(board_facts(self.data)['unsupported'])
+        self.assertEqual(board_facts(self.data, copper_features={'JP1'})['unsupported'], [])
+        self.assertTrue(copper_feature_problems(self.data, {'JP2'}))
+
+    def test_declaration_is_validated(self):
+        for refs in (None, 'JP1', [], ['JP1', 'JP1'], ['JP1 ', 'JP2'], [1]):
+            with self.subTest(refs=refs), self.assertRaises(ValueError):
+                validate_params({'netlist_check': 'n', 'copper_features': refs})
+        self.assertEqual(validate_params({'netlist_check': 'n', 'copper_features': ['JP1']})['copper_features'],
+                         ['JP1'])
+
+    def test_orderable_aliases_and_duplicate_native_fields_cannot_hide_binding(self):
+        from agent_ee.fab_export import part_bindings
+        xml = self.source / 'native.xml'
+        for alias in ('MPN', 'mpn', 'PartNumber', 'Manufacturer Part Number', 'LCSC Part #', 'JLCPCB Part #'):
+            with self.subTest(alias=alias):
+                xml.write_text(f'<export><components><comp ref="JP1"><fields>'
+                               f'<field name="{alias}">BUY-ME</field><field name="{alias}"></field>'
+                               '</fields></comp></components></export>')
+                components, problems = part_bindings(xml)
+                self.assertEqual(problems, [])
+                self.assertTrue(copper_feature_problems(self.data, {'JP1'}, components))
+
+    def test_schematic_variant_mpn_cannot_hide_behind_native_bom_exclusion(self):
+        from agent_ee.fab_export import copper_schematic_problems
+        text = (self.source / 'fab.kicad_sch').read_text()
+        self.assertEqual(copper_schematic_problems(text.encode(), {'JP1'}), [])
+        for name in ('MPN', 'Partnumber', 'LCSC'):
+            with self.subTest(name=name):
+                data = text.replace('(reference "JP1") (unit 1)',
+                    '(reference "JP1") (unit 1) (variant (name "ALT") '
+                    f'(field (name "{name}") (value "BUY-ME")))').encode()
+                self.assertTrue(copper_schematic_problems(data, {'JP1'}))
+                self.assertEqual(copper_schematic_problems(data, set()), [])
+
+    def test_custom_copper_primitives_refuse_unknowns_and_layer_overrides(self):
+        from agent_ee.fab_export import copper_pad
+        from agent_ee.symbol_library import parse_sexpr
+        pad = '(pad "1" smd custom (at 0 0) (size 1 1) (layers "F.Cu" "F.Mask") (primitives %s))'
+        primitive = '(gr_rect (start -0.5 -0.5) (end 0.5 0.5) (width 0) (fill yes))'
+        self.assertTrue(copper_pad(parse_sexpr((pad % primitive).encode())))
+        for extra in ('', '(model "part.step")', primitive.replace('(width 0)', '(layer "Edge.Cuts")')):
+            with self.subTest(extra=extra):
+                self.assertFalse(copper_pad(parse_sexpr((pad % extra).encode())))
+
+    def test_shape_and_binding_boundaries(self):
+        attr = b'(attr smd exclude_from_bom exclude_from_pos_files)'
+        for addition in (b'(model "owned.step")', b'(model "")', b'(property "MPN" "BUY-ME")',
+                         b'(property "LCSC" "C900001")', b'(property "PartNumber" "PN")',
+                         b'(zone (net 0))', b'(fp_line (start 0 0) (end 1 1) (layer "Edge.Cuts"))'):
+            with self.subTest(addition=addition):
+                self.assertTrue(copper_feature_problems(self.data.replace(attr, attr + addition), {'JP1'}))
+        for attrs in (b'(attr smd exclude_from_bom)', b'(attr smd exclude_from_pos_files)', b'(attr smd)'):
+            with self.subTest(attrs=attrs):
+                self.assertTrue(copper_feature_problems(self.data.replace(attr, attrs), {'JP1'}))
+        start = self.data.index(b'(property "Reference" "JP1"')
+        for old, new in ((b'smd rect', b'thru_hole rect'), (b'"F.Paste"', b'"Edge.Cuts"')):
+            data = self.data[:start] + self.data[start:].replace(old, new, 1)
+            self.assertTrue(copper_feature_problems(data, {'JP1'}), (old, new))
+        for comp in (None, {'excluded': ['exclude_from_board']},
+                     {'excluded': [], 'orderable': ['MPN']}, {'excluded': [], 'lcsc': 'C1'}):
+            bindings = {} if comp is None else {'JP1': comp}
+            self.assertTrue(copper_feature_problems(self.data, {'JP1'}, bindings))
+        self.assertEqual(copper_feature_problems(self.data, {'JP1'}, {'JP1': {'excluded': []}}), [])
+
+
 class PackagingTests(unittest.TestCase):
     def test_timestamp_normalisation_is_exact_and_refuses_leftovers(self):
         header = ('%TF.CreationDate,2026-10-17T11:58:22-07:00*%\n'
@@ -414,6 +518,15 @@ class CapabilityTests(unittest.TestCase):
     def describe(self, scope):
         return describe_check(scope['checks'][-1], check_specs=scope['checks'], files=self.files, scope=scope)
 
+    def test_scope3_copper_declaration_uses_existing_fab_predicate(self):
+        scope = copy.deepcopy(self.scope)
+        scope['schema'] = 'agent-ee.scope/3'
+        scope['baseline']['requirements'][0]['intent'] = 'acceptance'
+        scope['checks'][1]['params']['copper_features'] = ['JP1']
+        descriptor = compile_baseline(scope, self.files)['coverage']['checks']['fab']
+        self.assertEqual(descriptor['status'], 'supported')
+        self.assertEqual(descriptor['predicates'], ['fab-export:jlcpcb-package/1'])
+
     def test_scope3_coverage_requires_preceding_netlist_and_exact_params(self):
         scope = copy.deepcopy(self.scope)
         scope['schema'] = 'agent-ee.scope/3'
@@ -539,6 +652,15 @@ class NativeFabExportTests(unittest.TestCase):
             verify_manifest(fab, read_json(fab / 'manifest.json'))
         with self.assertRaises(ValueError):
             verify_evidence(run, results, required=True)
+
+    def test_declared_owned_copper_jumper_is_absent_from_native_pos_bom_and_cpl(self):
+        copper_fixture(self.source)
+        self.scope['checks'][1]['params']['copper_features'] = ['JP1']
+        run, result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertIn('JP1', result['details']['board']['board_non_dnp'])
+        for key in ('native_pos', 'bom', 'cpl', 'assembled'):
+            self.assertNotIn('JP1', result['details']['designators'][key])
 
     def test_board_only_holes_require_both_native_exclusions(self):
         path = self.source / 'fab.kicad_pcb'

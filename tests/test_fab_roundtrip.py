@@ -22,7 +22,7 @@ from agent_ee.fab_roundtrip import (ParseError, compare_copper, expected_copper,
                                     histograms_match, parse_excellon, parse_gerber)
 from agent_ee.reference_blocks import verify_external_source
 from agent_ee.storage import digest, read_json, write_json
-from toolchain import fome_mc_store, require_toolchain
+from tests.toolchain import fome_mc_store, require_toolchain
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures/fab-export'
 GERBER = (b'%TF.FileFunction,Copper,L1,Top*%\n%FSLAX46Y46*%\n%MOMM*%\n%LPD*%\nG01*\n'

@@ -13,7 +13,7 @@ from agent_ee.assembly_readiness import load_catalog_snapshot
 from agent_ee.jlc_cost import (designator_joints, entry_freshness, estimate, load_pricing_table,
                                read_pcb_summary, validate_params)
 from agent_ee.storage import digest, read_json, write_json
-from toolchain import require_toolchain
+from tests.toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'fixtures' / 'jlc-cost'
@@ -556,7 +556,7 @@ class NativeThermalViaJointTests(unittest.TestCase):
     def test_saved_board_joints_match_pcbnew_pad_properties(self):
         require_toolchain(native=True)
         import pcbnew
-        from test_footprint_library import HEATSINK, power_pad
+        from tests.test_footprint_library import HEATSINK, power_pad
         # Dockerfile installs the pinned kicad-footprints package containing these files.
         stock = Path('/usr/share/kicad/footprints')
         picks = {'U1': (stock / 'RF_Module.pretty', 'ESP32-S3-WROOM-1'),

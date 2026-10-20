@@ -500,7 +500,7 @@ def power_pad_board(footprint):
 
 class NativePadTests(unittest.TestCase):
     def test_owned_native_inventory_matches_pcbnew(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         import tempfile
         import pcbnew
@@ -524,7 +524,7 @@ class NativePadTests(unittest.TestCase):
 
     def test_thermal_via_property_keeps_smd_footprint_type_in_native_drc_and_cpl(self):
         # AGENTEE-221 fail-before/pass-after: the agent-ee index and KiCad's own DRC agree.
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         import json
         import tempfile
@@ -559,7 +559,7 @@ class NativePadTests(unittest.TestCase):
                 self.assertEqual([r[0] for r in cpl_rows((work / 'pos.csv').read_text())], ['U1'])
 
     def test_declared_fixtures_match_pcbnew_pad_inventory(self):
-        from toolchain import require_toolchain
+        from tests.toolchain import require_toolchain
         require_toolchain(native=True)
         import tempfile
         import pcbnew

@@ -1264,7 +1264,12 @@ disagreement is recorded in `details.dnp_disagreements` and does not block the
 package. An optional declared `assembly_exclusion` rule
 (`JLCPCB_Assembly=not_assembled`) leaves populated parts that carry the marker
 in both the netlist and the board out of the BOM and CPL. The manifest lists
-them in `designators.excluded`. A marked part without the rule, or with
+them in `designators.excluded`. Optional `copper_features: ["JP1"]` admits
+explicitly declared surface copper features only after both native exclusions,
+qualified pad/graphic layers, no model and no footprint/native MPN/LCSC binding
+are verified. They must be absent from BOM/CPL; consistency independently
+replays admission ([copper features](fab-export.md#copper-features)).
+A marked part without the rule, or with
 disagreeing sources, is `unsupported`. An optional declared `bom_variant`
 (the generator's `--bom-variant`) is validated against the captured
 `.kicad_pro` before any kicad-cli command and passed only to the native BOM
@@ -1387,7 +1392,7 @@ objects keep the block unverified. These citations supply no board-check credit.
 
 [`fab_package`](fab-package.md) is the generation done gate (AGENTEE-94). Params
 require `{netlist_check}` with optional `bom_variant`, `assembly_exclusion`,
-`probe_manifest` (delegated to export) and `model_libraries` (delegated to the
+`copper_features`, `probe_manifest` (delegated to export) and `model_libraries` (delegated to the
 consistency gate). Model receipts and probe sources are immutable; probes require
 an earlier matching `parts_subset` check. Only bound [`jlc_dfm`](jlc-dfm.md) checks may follow
 it. An earlier `geometry` check is required. It runs the same export and consistency code on its

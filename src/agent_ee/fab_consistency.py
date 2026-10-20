@@ -935,6 +935,26 @@ def gate(ctx, eid, export_spec, export_result, stage):
                          'disagrees with the sealed geometry')
     # The manifest's exclusions are a claim: re-derive them from the captured
     # export params, the sealed netlist fields and the captured board properties.
+    from .fab_export import (declared_copper_features, copper_feature_problems,
+                             copper_schematic_problems, part_bindings)
+    from .datasheet_facts import prerequisite
+    copper = declared_copper_features(export_spec.get('params') or {})
+    if copper:
+        xml = prerequisite(ctx, nid, 'netlist', 'design.xml')
+        try:
+            bindings, binding_problems = part_bindings(xml, probes)
+            copper_problems = copper_feature_problems(
+                (ctx.inputs / ctx.scope['board']).read_bytes(), copper, bindings)
+            native = read_json(ctx.run_dir / 'checks' / f'{nid}.json')
+            for rel in native.get('details', {}).get('schematic_files', [ctx.scope['schematic']]):
+                if rel not in ctx.manifest['files']:
+                    raise ValueError(f'netlist source {rel!r} is not a captured input')
+                copper_problems += copper_schematic_problems((ctx.inputs / rel).read_bytes(), copper)
+        except (ValueError, ET.ParseError, OSError) as exc:
+            raise CheckError('malformed', f'copper feature evidence unreadable: {exc}') from exc
+        if copper_problems or binding_problems:
+            raise CheckError('unsupported', '; '.join(copper_problems + binding_problems))
+    details['copper_features'] = sorted(copper)
     rule = (export_spec.get('params') or {}).get('assembly_exclusion')
     if manifest['designators']['exclusion_rule'] != rule:
         raise CheckError('malformed', f'stale: manifest exclusion_rule {manifest["designators"]["exclusion_rule"]!r} '
