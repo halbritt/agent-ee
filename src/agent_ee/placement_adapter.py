@@ -620,6 +620,7 @@ def _justify(effects):
 
 
 def _flip_text(before, after, turn):
+    before, after = _property_font_defaults(before), _property_font_defaults(after)
     angles = _mirrored_at(before, after)
     rest = [[c for c in node if not (isinstance(c, list) and c and c[0] in ('at', 'effects'))]
             for node in (before, after)]
