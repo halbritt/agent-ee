@@ -1,6 +1,10 @@
 #!/bin/sh
 # Retry a complete apt command after outages longer than its per-file retries.
 set -eu
+if [ "$#" -eq 0 ]; then
+    echo "apt-retry: a command is required" >&2
+    exit 2
+fi
 attempt=0
 for delay in 0 60 120 240; do
     if [ "$delay" -ne 0 ]; then

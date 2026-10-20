@@ -9,6 +9,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AptRetryTests(unittest.TestCase):
+    def test_empty_command_is_refused_before_attempting_or_waiting(self):
+        result = subprocess.run(['/bin/sh', str(ROOT / 'docker/apt-retry.sh')],
+                                env=dict(os.environ, PATH=''),
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, '')
+        self.assertEqual(result.stderr, 'apt-retry: a command is required\n')
+
+    def test_final_stage_removes_helper_after_last_apt_call(self):
+        dockerfile = (ROOT / 'Dockerfile').read_text()
+        final_stage = dockerfile.rsplit('FROM native\n', 1)[1]
+        removal = '    rm -f /usr/local/bin/apt-retry; \\\n'
+        self.assertEqual(final_stage.count(removal), 1)
+        before, after = final_stage.split(removal)
+        self.assertIn('apt-retry apt-get ', before)
+        self.assertNotIn('apt-retry', after)
+        self.assertIn('apt-mark hold zstd; \\\n' + removal, final_stage)
+
     def run_retry(self, failures, status=100):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

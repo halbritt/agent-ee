@@ -114,6 +114,7 @@ RUN set -eu; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 -o APT::Update::Error-Mode=any update; \
     apt-retry apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "zstd=${ZSTD_VERSION}"; \
     apt-mark hold zstd; \
+    rm -f /usr/local/bin/apt-retry; \
     rm -rf /var/lib/apt/lists/*; \
     zstd --version | grep -q 'v1\.5\.5'
 
