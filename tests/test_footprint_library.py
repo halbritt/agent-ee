@@ -588,3 +588,123 @@ class NativePadTests(unittest.TestCase):
                     native_tht = bool(native.GetAttributes() & pcbnew.FP_THROUGH_HOLE)
                     self.assertEqual(native_smd, 'smd' in fp['attributes'])
                     self.assertEqual(native_tht, 'through_hole' in fp['attributes'])
+
+
+class PadReachTests(unittest.TestCase):
+    """Original ordinary-pad reach controls, including native bbox witnesses."""
+    def indexed(self, shape='rect', at='0 0', size='1 1', extra='', kind='smd'):
+        text = fixture('Reach', [f'(pad "1" {kind} {shape} (at {at}) (size {size}) '
+                                f'(layers "F.Cu") {extra})'])
+        declared = (owner_declarations([('Owned:Reach', dict(custom_pads=['1']))])
+                    if shape == 'trapezoid' else None)
+        return index_footprints(*capture(text, 'Reach'), declarations=declared), text
+
+    def test_ordinary_reach_refuses_before_native_loading(self):
+        from unittest.mock import patch
+        for shape, extra in [('rect', ''), ('roundrect', '(roundrect_rratio 0.2)'),
+                             ('oval', ''), ('circle', ''),
+                             ('trapezoid', '(rect_delta 0.2 0)'),
+                             ('roundrect', '(roundrect_rratio 0.2) (chamfer_ratio 0.2) (chamfer top_left)')]:
+            for at, size in [('1500 0', '1 1'), ('-1500 0 90', '1 1'),
+                             ('0 0 45', '2200 2200'), ('800 800 33.3', '1 1'),
+                             ('999.500001 0', '1 1'), ('0 0', '3000 1'), ('0 0 90', '2000.000001 2000')]:
+                with self.subTest(shape=shape, extra=extra, at=at, size=size), patch('agent_ee.executor.execute') as execute:
+                    result, _ = self.indexed(shape, at, size, extra)
+                    self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                     ('failed', 'unknown', 'missing'))
+                    self.assertEqual(result['footprints'], [])
+                    self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+                    self.assertIn('reach exceeds 1000 mm', result['findings'][0]['message'])
+                    execute.assert_not_called()
+
+        # A preceding qualified custom pad must not trigger native loading
+        # before the later ordinary pad has passed the same reach guard.
+        from tests.test_custom_pad_index import custom
+        text = custom().replace('(at 4 0)', '(at 1500 0)')
+        with patch('agent_ee.executor.execute') as execute:
+            result = index_footprints(*capture(text, 'OwnedCustom'))
+            self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                             ('failed', 'unknown', 'missing'))
+            self.assertIn('pad copper reach exceeds 1000 mm', result['findings'][0]['message'])
+            execute.assert_not_called()
+
+    def test_anchor_drill_and_trapezoid_extents_are_bounded(self):
+        for shape, at, size, extra, kind in [
+            ('custom', '1500 0', '1 1', '(options (clearance outline) (anchor rect)) '
+             '(zone_connect 2) (primitives (gr_rect (start -1 -1) (end 1 1) (width 0) (fill yes)))', 'smd'),
+            ('custom', '0 0', '3000 1', '(options (clearance outline) (anchor rect)) '
+             '(zone_connect 2) (primitives (gr_rect (start -1 -1) (end 1 1) (width 0) (fill yes)))', 'smd'),
+            ('rect', '0 0', '1 1', '(drill 3000)', 'thru_hole'),
+            ('oval', '900 0 45', '1 1', '(drill oval 400 2)', 'np_thru_hole'),
+            ('trapezoid', '0 0', '1 1', '(rect_delta 3000 0)', 'smd'),
+            ('trapezoid', '0 0', '1 1', '(rect_delta -3000 0)', 'smd'),
+            ('trapezoid', '0 0', '1 1', '(rect_delta 0 3000)', 'smd'),
+            ('rect', '0 0', '1 1', '(drill 1 (offset 1500 0))', 'thru_hole'),
+            ('rect', '0 0', '1 1', '(drill 1 (offset -1500 0))', 'thru_hole'),
+            ('rect', '900 0 45', '1 1', '(drill oval 1 2 (offset 200 0))', 'thru_hole'),
+        ]:
+            with self.subTest(shape=shape, extra=extra):
+                result, _ = self.indexed(shape, at, size, extra, kind)
+                self.assertEqual(result['coverage'], 'missing')
+                self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+                self.assertIn('reach exceeds 1000 mm', result['findings'][0]['message'])
+
+    def test_half_nanometre_and_diagonal_boundary_refuse(self):
+        for shape, at, size in [('circle', '999.5 0', '1.000001 1.000001'),
+                                ('oval', '999.5 0', '1.000001 0.5'),
+                                ('rect', '0 0', '1200.000001 1600')]:
+            with self.subTest(shape=shape):
+                result, _ = self.indexed(shape, at, size)
+                self.assertEqual(result['coverage'], 'missing')
+                self.assertIn('reach exceeds 1000 mm', result['findings'][0]['message'])
+
+    def test_bounded_unsupported_syntax_stays_unknown(self):
+        # Magnitude validation grants no new shape or drill grammar coverage.
+        result, _ = self.indexed('rect', extra='(drill 0.5 (offset 0.1 0))', kind='thru_hole')
+        self.assertEqual(result['outcome'], 'unknown')
+        text = fixture('Reach', [smd('1', 0, shape='trapezoid', extra='(rect_delta 0.2 0)')])
+        self.assertEqual(index_footprints(*capture(text, 'Reach'))['outcome'], 'unknown')
+
+    def test_bounded_pads_keep_exact_native_bboxes(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from agent_ee.executor import execute
+        from tests.toolchain import require_toolchain
+        require_toolchain(native=True)
+        for shape, at, size, extra, bbox in [
+            ('rect', '0 0', '1200 1600', '', [-600000000, -800000000, 600000000, 800000000]),
+            ('rect', '0 0 45', '1400 1400', '', [-989949494, -989949494, 989949494, 989949494]),
+            ('rect', '999 0 90', '1 1', '', [998500000, -500000, 999500000, 500000]),
+            ('circle', '999.5 0', '1 1', '', [999000000, -500000, 1000000000, 500000]),
+            ('circle', '0 0', '2000 2000', '(drill 1999)', [-1000000000, -1000000000, 1000000000, 1000000000]),
+            ('oval', '0 0 90', '1600 1200', '(drill oval 1599 1199)', [-600000000, -800000000, 600000000, 800000000]),
+            ('circle', '0 0', '2000 2000', '', [-1000000000, -1000000000, 1000000000, 1000000000]),
+            ('circle', '0 0', '1200 1600', '', [-600000000, -600000000, 600000000, 600000000]),
+            ('oval', '0 0 90', '1600 1200', '', [-600000000, -800000000, 600000000, 800000000]),
+            ('roundrect', '999 0 90', '1 1', '(roundrect_rratio 0.2)', [998500000, -500000, 999500000, 500000]),
+            ('roundrect', '999 0 90', '1 1', '(roundrect_rratio 0.2) (chamfer_ratio 0.2) (chamfer top_left)', [998500000, -500000, 999500000, 500000]),
+            ('trapezoid', '999 0', '1 1', '(rect_delta 0.2 0)', [998500000, -600000, 999500000, 600000]),
+        ]:
+            with self.subTest(shape=shape, at=at):
+                result, text = self.indexed(shape, at, size, extra,
+                                            kind='thru_hole' if '(drill' in extra else 'smd')
+                self.assertEqual(result['coverage'], 'complete', result['findings'])
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    inputs = root / 'inputs'
+                    inputs.mkdir()
+                    (inputs / 'Reach.kicad_mod').write_text(text)
+                    # Independent native bbox witness, without custom-pad identity qualification.
+                    probe = ('import json, pcbnew; from agent_ee.geometry_probe import box_nm; '
+                             'fp = pcbnew.FootprintLoad("/candidate", "Reach"); '
+                             'json.dump({"pads": [{"bbox_nm": box_nm(p.GetBoundingBox())} '
+                             'for p in fp.Pads()]}, open("/work/footprint.json", "x"))')
+                    run = execute(inputs, root / 'work', ['/usr/bin/python3', '-B', '-c', probe])
+                    self.assertEqual(run['execution'], 'ok', (root / 'work/console.log').read_text())
+                    native = json.loads((root / 'work/footprint.json').read_text())
+                    self.assertEqual(native['pads'][0]['bbox_nm'], bbox)
+
+
+if __name__ == '__main__':
+    unittest.main()
