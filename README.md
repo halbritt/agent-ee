@@ -97,7 +97,9 @@ reserves native through-hole copper and drills across both sides and refuses
 proposals that introduce native DRC shorts, clearance or PTH courtyard findings.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
-distances against cited limits; origin-group distance supplies no electrical acceptance.
+copper-centroid distances against cited limits. Captured pad UUIDs select
+multi-pad pins, and coordinator packing binds to the check's immutable locality
+file. Origin-group distance supplies no electrical acceptance.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
