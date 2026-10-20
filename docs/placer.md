@@ -689,3 +689,13 @@ reported separately in `silkscreen_findings`; they are not shorts.
 shape, rotation, opposite-side and settings fixtures, plus DRC regression,
 identity/multiplicity, ignored-category and silk-separation controls. This
 proposal gate does not replace captured coordinator checks or authorize adoption.
+
+AGENTEE-317 refuses ambiguous custom-pad evidence: every pad sharing a custom
+pad's native UUID is marked unsupported, including case, brace and dash aliases
+and collisions across footprints. Unique pads with noncanonical saved UUID
+spellings retain their previous unknown coverage. Non-object `custom_geometry`
+and unqualified `proven` evidence on a stock or custom pad also return
+`unsupported_geometry`, `outcome=unknown`, with no placements. Direct
+`transform` calls raise `ValueError` for non-object evidence; callers must qualify
+`proven` dictionaries before transforming them, as `pack` does. The native
+regressions in `tests.test_placer_custom_pads` cover both refusal paths.

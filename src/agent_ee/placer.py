@@ -60,7 +60,10 @@ def transform(fp, position, rotation):
         for entry in placed.get('packing_pad_geometry', {}).get(kind, []):
             entry['polygons'] = [[move(p) for p in poly] for poly in entry['polygons']]
     for pad in placed['pads']:
-        if pad.get('custom_geometry', {}).get('status') == 'proven':
+        custom = pad.get('custom_geometry', {})
+        if not isinstance(custom, dict):
+            raise ValueError('custom_geometry must be an object')
+        if custom.get('status') == 'proven':
             box = pad['custom_geometry']['bbox_nm']
             corners = [move([x, y]) for x in (box[0], box[2]) for y in (box[1], box[3])]
             pad['custom_geometry']['bbox_nm'] = [min(p[0] for p in corners), min(p[1] for p in corners),
@@ -232,6 +235,8 @@ def _qualified(capture):
                 raise ValueError('pad record must be an object')
             # Only qualified native shapes enter the packing geometry inventory.
             custom = pad.get('custom_geometry', {})
+            if not isinstance(custom, dict):
+                raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: custom_geometry must be an object")
             qualified_custom = (pad.get('shape') == 6 and isinstance(custom, dict)
                                 and custom.get('status') == 'proven'
                                 and isinstance(custom.get('primitives'), list) and custom['primitives']
@@ -240,6 +245,8 @@ def _qualified(capture):
                                 and all(type(v) is int for v in custom['bbox_nm'])
                                 and custom['bbox_nm'][0] < custom['bbox_nm'][2]
                                 and custom['bbox_nm'][1] < custom['bbox_nm'][3])
+            if custom.get('status') == 'proven' and not qualified_custom:
+                raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: custom_geometry not qualified")
             if type(pad.get('shape')) is not int or (pad['shape'] not in PAD_SHAPES and not qualified_custom):
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: native pad shape "
                                  f"{pad.get('shape')!r} not qualified for packing")

@@ -1723,3 +1723,11 @@ New `shorting_items`, `clearance` or `pth_inside_courtyard` findings refuse the
 proposal; added silk findings are recorded separately. Native through-hole
 reservations constrain both packing and targeted plans without changing check
 registration, verdict schemas or coordinator acceptance authority.
+
+AGENTEE-317 marks every pad sharing a custom pad's native UUID unsupported,
+including case, brace and dash aliases. Unique noncanonical UUID spellings
+retain their previous unknown coverage. Non-object `custom_geometry` and
+unqualified `proven` evidence return typed unknown packing coverage, even on
+stock pads. Native write-scope controls refuse unsupported source arcs,
+thermal connections and holes; reflection diagnostics show the actual
+`ValueError` before native console noise. See `tests.test_placer_custom_pads`.

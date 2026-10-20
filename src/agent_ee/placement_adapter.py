@@ -865,7 +865,11 @@ def _native_custom_flips(before, after, selected):
             'from agent_ee.placement_adapter import native_custom_flip_probe; native_custom_flip_probe()'],
             timeout=60)
         if record['execution'] != 'ok':
-            raise ValueError('reflection probe failed: ' + (work / 'console.log').read_text(errors='replace')[-2000:])
+            lines = (work / 'console.log').read_text(errors='replace').splitlines()
+            # SWIG shutdown warnings can bury the actual native refusal.
+            errors = [line for line in lines if line.startswith('ValueError:')]
+            detail = errors[-1][:2000] if errors else '\n'.join(lines)[-2000:]
+            raise ValueError('reflection probe failed: ' + detail)
         try:
             admitted = read_json(work / 'admitted.json')
         except (OSError, ValueError) as exc:

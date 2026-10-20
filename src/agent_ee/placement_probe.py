@@ -7,6 +7,7 @@ the declared courtyard_curves.ARC_TOLERANCE_NM (AGENTEE-212); outlines and
 rule areas still refuse every curve.
 """
 import argparse
+from collections import Counter
 from fractions import Fraction
 import hashlib
 import json
@@ -198,18 +199,29 @@ def custom_pad_geometry(pad):
 
 def _custom_pad_nodes(data):
     """Use the shared bounded reader and AGENTEE-300 qualifier on board pads."""
+    import pcbnew
     from .symbol_library import parse_sexpr, children, field
-    nodes = {}
+    nodes, custom_keys = {}, set()
     for fp in children(parse_sexpr(data), 'footprint'):
         for pad in children(fp, 'pad'):
+            if not children(pad, 'uuid') and not (len(pad) > 3 and pad[3] == 'custom'):
+                # Legacy stock pads may receive their UUID only on native load.
+                continue
+            # Key by the native spelling: KiCad folds case, braces and legacy forms.
+            key = pcbnew.KIID(field(pad, 'uuid', 1)[0]).AsString()
             if len(pad) > 3 and pad[3] == 'custom':
-                nodes[field(pad, 'uuid', 1)[0]] = pad
-    return nodes
+                custom_keys.add(key)
+            # Count all pads: a custom pad can also collide with a stock pad.
+            nodes[key] = None if key in nodes else pad
+    return {key: nodes[key] for key in custom_keys}
 
 
 def _qualify_custom_pad(pad, node):
     from .footprint_library import canonical_custom_pad
-    from .symbol_library import children
+    from .symbol_library import children, field
+    # Canonical UUID lookup detects duplicates without admitting new unique-pad spellings.
+    if field(node, 'uuid', 1)[0] != pad.m_Uuid.AsString():
+        raise ValueError('saved pad UUID spelling not qualified')
     node = canonical_custom_pad(node)
     geometry = custom_pad_geometry(pad)
     from decimal import Decimal, InvalidOperation
@@ -279,6 +291,7 @@ def extract(board_path):
     outline_shapes = [s for s in board.GetDrawings() if s.GetLayer() == pcbnew.Edge_Cuts]
     custom_nodes = _custom_pad_nodes(before) if any(
         p.GetShape() == pcbnew.PAD_SHAPE_CUSTOM for f in board.GetFootprints() for p in f.Pads()) else {}
+    native_uuids = Counter(p.m_Uuid.AsString() for f in board.GetFootprints() for p in f.Pads())
     footprints = []
     markings = [marking(item) for item in board.GetDrawings()]
     areas = [rule_area(z, 'board') for z in board.Zones() if z.GetIsRuleArea()]
@@ -299,9 +312,14 @@ def extract(board_path):
                          'size_nm': vector_nm(pad.GetSize(pcbnew.PADSTACK.ALL_LAYERS)),
                          'rotation_deg': pad.GetOrientationDegrees(), 'attribute': pad_attribute(pad),
                          'layers': sorted(pcbnew.LayerName(layer) for layer in pad.GetLayerSet().Seq())})
-            if pad.GetShape() == pcbnew.PAD_SHAPE_CUSTOM:
+            if pad.m_Uuid.AsString() in custom_nodes and (custom_nodes[pad.m_Uuid.AsString()] is None
+                                                          or native_uuids[pad.m_Uuid.AsString()] > 1):
+                pads[-1]['custom_geometry'] = {'status': 'unsupported',
+                                               'reason': 'duplicate pad UUID: ' + pad.m_Uuid.AsString()}
+            elif pad.GetShape() == pcbnew.PAD_SHAPE_CUSTOM:
                 try:
-                    pads[-1]['custom_geometry'] = _qualify_custom_pad(pad, custom_nodes[pad.m_Uuid.AsString()])
+                    node = custom_nodes[pad.m_Uuid.AsString()]
+                    pads[-1]['custom_geometry'] = _qualify_custom_pad(pad, node)
                 except (ValueError, KeyError) as exc:
                     pads[-1]['custom_geometry'] = {'status': 'unsupported', 'reason': str(exc)}
         footprints.append({'ref': fp.GetReference(), 'uuid': fp.m_Uuid.AsString(), 'value': fp.GetValue(),
