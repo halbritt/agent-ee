@@ -19,13 +19,38 @@ class AptRetryTests(unittest.TestCase):
 
     def test_final_stage_removes_helper_after_last_apt_call(self):
         dockerfile = (ROOT / 'Dockerfile').read_text()
-        final_stage = dockerfile.rsplit('FROM native\n', 1)[1]
+        final_stage = dockerfile.rsplit('FROM native AS toolchain\n', 1)[1]
         removal = '    rm -f /usr/local/bin/apt-retry; \\\n'
         self.assertEqual(final_stage.count(removal), 1)
         before, after = final_stage.split(removal)
         self.assertIn('apt-retry apt-get ', before)
         self.assertNotIn('apt-retry', after)
         self.assertIn('apt-mark hold zstd; \\\n' + removal, final_stage)
+
+    def test_hosted_build_persists_intermediate_layers_and_loads_local_image(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        build = workflow.split('- name: Build the image from the checkout', 1)[1]
+        build = build.split('\n      - name:', 1)[0]
+        self.assertIn('uses: docker/setup-buildx-action@', workflow)
+        self.assertIn('driver: docker-container', workflow)
+        self.assertIn('uses: docker/build-push-action@', build)
+        for setting in ('context: .', 'load: true', 'push: false',
+                        'tags: ${{ env.IMAGE }}', "DOCKER_BUILD_RECORD_UPLOAD: 'false'"):
+            self.assertIn(setting, build)
+        toolchain = workflow.split('- name: Cache the pinned toolchain stages', 1)[1]
+        toolchain = toolchain.split('\n      - name:', 1)[0]
+        self.assertIn('target: toolchain', toolchain)
+        self.assertIn("DOCKER_BUILD_RECORD_UPLOAD: 'false'", toolchain)
+        scope = 'type=gha,version=2,scope=agent-ee-native-amd64-v1'
+        self.assertIn('cache-from: ' + scope + '\n', build)
+        self.assertIn('cache-to: ' + scope + ',mode=max\n', toolchain)
+        self.assertNotIn('cache-to:', build)
+        dockerfile = (ROOT / 'Dockerfile').read_text()
+        cached, source = dockerfile.split('FROM toolchain\n', 1)
+        self.assertNotIn('COPY .', cached)
+        self.assertIn('COPY . /opt/agent-ee', source)
+        for bypass in ('no-cache:', 'build-args:', 'continue-on-error', 'ignore-error=true'):
+            self.assertNotIn(bypass, build)
 
     def run_retry(self, failures, status=100):
         with tempfile.TemporaryDirectory() as directory:
