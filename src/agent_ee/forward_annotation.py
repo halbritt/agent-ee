@@ -120,7 +120,7 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
             if PROPERTY in fields:
                 record = parse_marker(fields[PROPERTY])
                 try:
-                    native_component(record, inventory['components'][ref], inventory)
+                    native_component(record, inventory['components'][ref], inventory, allow_legacy=True)
                     data = captured_footprints[record['footprint_source']['path']]
                     if hashlib.sha256(data).hexdigest() != record['footprint_source']['sha256']:
                         raise ValueError('probe captured footprint bytes changed')
@@ -323,7 +323,7 @@ def plan(board, xml, manifest, footprint_root, work):
         _, elements, _ = _inventory(xml_bytes)
         probes = {ref: parse_marker(fields[PROPERTY]) for ref, fields in _fields(elements).items()
                   if PROPERTY in fields}
-        validate_board(Path(board).read_bytes(), probes, require_all=False)
+        validate_board(Path(board).read_bytes(), probes, require_all=False, allow_legacy=True)
         facts = board_facts(board, work)
         if _sha256(board) != board_sha:
             raise AnnotationError('stale_input', 'board changed during planning')

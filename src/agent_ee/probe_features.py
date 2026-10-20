@@ -187,7 +187,12 @@ def matches_marker(text, record):
     return text in (marker(record), canonical(record).decode())
 
 
-def native_component(record, comp, graph):
+def _reject_legacy_marker(text, record, *, allow_legacy=False):
+    if not allow_legacy and text == canonical(record).decode():
+        raise ValueError(record['reference'] + ': legacy AGENT_EE_Probe property requires forward-annotation migration')
+
+
+def native_component(record, comp, graph, *, allow_legacy=False):
     ref = record['reference']
     if (comp['lib_id'] != record['lib_id'] or comp['footprint'] != record['footprint'] or
             comp['sheet'] != record['sheet'] or not comp['populated'] or
@@ -196,6 +201,7 @@ def native_component(record, comp, graph):
     no_supplier(comp['properties'])
     if not matches_marker(comp['properties'].get(PROPERTY), record):
         raise ValueError(ref + ': probe declaration identity differs')
+    _reject_legacy_marker(comp['properties'].get(PROPERTY), record, allow_legacy=allow_legacy)
     pin = record['pin']['number']
     if set(comp['pins']) != {pin} or any(comp['pin_metadata'][pin][k] != record['pin'][k] for k in ('name', 'electrical_type')):
         raise ValueError(ref + ': probe native pin identity differs')
@@ -221,6 +227,7 @@ def validate_schematic(data, records):
         r = records[ref]
         if not matches_marker(props.get(PROPERTY), r) or field(sym, 'lib_id', 1) != [r['lib_id']]:
             raise ValueError(ref + ': probe declaration identity differs')
+        _reject_legacy_marker(props.get(PROPERTY), r)
         if (field(sym, 'in_bom', 1) != ['no'] or field(sym, 'on_board', 1) != ['yes'] or
                 _one(sym, 'dnp', ['no']) != ['no'] or props.get('Footprint') != r['footprint']):
             raise ValueError(ref + ': probe schematic flags/footprint differ')
@@ -233,7 +240,7 @@ def validate_schematic(data, records):
     return found
 
 
-def validate_board(data, records, *, require_all=True):
+def validate_board(data, records, *, require_all=True, allow_legacy=False):
     if not records and PROPERTY.encode() not in data:
         return set()
     root = parse_sexpr(data)
@@ -248,6 +255,7 @@ def validate_board(data, records, *, require_all=True):
         r = records[ref]
         if not matches_marker(props.get(PROPERTY), r) or fp[1] != r['footprint']:
             raise ValueError(ref + ': probe declaration/footprint identity differs')
+        _reject_legacy_marker(props.get(PROPERTY), r, allow_legacy=allow_legacy)
         if footprint_signature(fp, r['pin']['number']) != r['geometry']:
             raise ValueError(ref + ': probe saved pad geometry changed')
         nets = _one(children(fp, 'pad')[0], 'net')

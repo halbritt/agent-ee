@@ -1409,7 +1409,9 @@ networkless executor; the owner performs the upload outside agent-ee.
 
 [Probe features](probe-features.md) extend the existing `parts_subset`, `part_binding` and `fab_export` checks without new predicates. `part_binding` accepts optional `probe_manifest` plus `netlist_check`; `fab_export` accepts optional `probe_manifest`. Both bind the complete source closure as immutable inputs. Required physical membership, pin/net identity, native schematic/board flags and saved pad geometry remain checked while qualified probes are absent from assembly CSV files. Marker-only, missing, swapped and byte-changed features are refused. New probe
 properties carry versioned base64 rather than inline JSON so KiBot exports can
-read them; exact legacy identities remain readable under the same source checks.
+read them. Exact legacy identities produce a non-pass migration finding in
+admission checks (including `fab_consistency`); only forward-annotation planning
+allows them, and apply requires current encoded properties (AGENTEE-283).
 See the [migration and external KiBot regression](probe-features.md#migrating-legacy-inline-json-properties).
 
 Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.

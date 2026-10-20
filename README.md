@@ -812,4 +812,5 @@ fome-mc. Those files are still outside the MIT grant. See their
 [licence notice](fixtures/fome-mc/LICENSE-NOTICE.md).
 
 [Captured bare copper probe features](docs/probe-features.md) carry required pad, net and CAD identity through binding, board construction and fab export without a supplier or BOM/CPL row. Probe identity properties use a KiBot-safe
-encoding; [legacy boards require migration before KiBot export](docs/probe-features.md#migrating-legacy-inline-json-properties).
+encoding; admission checks refuse legacy properties, and
+[legacy boards require migration before KiBot export](docs/probe-features.md#migrating-legacy-inline-json-properties).

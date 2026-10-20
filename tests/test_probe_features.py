@@ -8,7 +8,7 @@ import time
 import unittest
 import uuid
 
-from agent_ee.storage import digest, identity, read_json, write_json
+from agent_ee.storage import canonical, digest, identity, read_json, write_json
 from agent_ee import probe_features as pf
 from agent_ee.parts_manifest import qualify_manifest
 from agent_ee.binding_fill import fill
@@ -98,6 +98,38 @@ class ProbeContractTests(unittest.TestCase):
         self.assertLess(len(pf.marker(record)), 4096)
         for value in (None, '', 'agent-ee-probe-v2-AAAA'):
             self.assertFalse(pf.matches_marker(value, record))
+
+    def test_emitted_probe_properties_are_kibot_safe_without_native_tools(self):
+        from agent_ee.schematic_emitter import emit_schematic
+        from agent_ee.symbol_library import children, parse_sexpr
+        from agent_ee.storage import canonical
+        intent = self.filled()
+        libraries = {lib['path']: (self.root / lib['path']).read_bytes() for lib in intent['libraries']}
+        result, files = emit_schematic(intent, libraries, {'schema': 'agent-ee.schematic-layout/1',
+            'namespace': '81ae10f4-1c43-4370-88c2-32c41b90fd70', 'project': 'probe', 'transforms': {}})
+        self.assertEqual(result['execution'], 'ok', result)
+        probes = pf.declarations(self.parts, self.root)
+        found = set()
+        # Native board construction copies these custom fields verbatim to footprints.
+        for sym in children(parse_sexpr(files['probe.kicad_sch']), 'symbol'):
+            props = pf.properties(sym)
+            if pf.PROPERTY not in props:
+                continue
+            ref = props['Reference']
+            value = props[pf.PROPERTY]
+            self.assertRegex(value, r'^agent-ee-probe-v1-[A-Za-z0-9+/]+={0,2}\Z')
+            self.assertNotIn(':', value)
+            self.assertEqual(pf.parse_marker(value), probes[ref])
+            found.add(ref)
+        self.assertEqual(found, set(probes))
+        # Demonstrate that the collected contract rejects the old transport and
+        # separators/control characters, even when its decoded record is valid.
+        for value in (canonical(probes['TP1']).decode(), pf.marker(probes['TP1']) + ':Library:Part',
+                      pf.marker(probes['TP1']) + '\n', 'agent-ee-probe-v1-"bad"'):
+            with self.subTest(hostile=value), self.assertRaises(AssertionError):
+                self.assertRegex(value, r'^agent-ee-probe-v1-[A-Za-z0-9+/]+={0,2}\Z')
+                self.assertNotIn(':', value)
+                self.assertNotIn('\n', value)
 
     def test_encoded_marker_rejects_malformed_payload_and_schema(self):
         import base64
@@ -345,6 +377,12 @@ class NativeProbeTests(unittest.TestCase):
             self.fail(str(exc) + '\n' + (self.root / 'construct/construct.stderr.txt').read_text())
         probes = pf.declarations(self.parts, self.root)
         self.assertEqual(pf.validate_board(board.read_bytes(), probes), set(probes))
+        from agent_ee.symbol_library import children, parse_sexpr
+        for fp in children(parse_sexpr(board.read_bytes()), 'footprint'):
+            props = pf.properties(fp)
+            if pf.PROPERTY in props:
+                self.assertRegex(props[pf.PROPERTY], r'^agent-ee-probe-v1-[A-Za-z0-9+/]+={0,2}\Z')
+
         from agent_ee.native_netlist import read_native_inventory
         from agent_ee.part_binding import validate_part_bindings
         report = validate_part_bindings((project / 'probe.kicad_sch').read_bytes(), board.read_bytes(),
@@ -384,6 +422,8 @@ class NativeProbeTests(unittest.TestCase):
             prop = marker_property(fp)
             prop[2] = Q(pf.marker(dict(pf.parse_marker(prop[2]), native_net='/WRONG')))
         edits = {
+            'legacy_marker': lambda fp: marker_property(fp).__setitem__(2, Q(
+                canonical(probes['TP1']).decode())),
             'missing_marker': lambda fp: fp.remove(marker_property(fp)),
             'tampered_marker': tampered_marker,
             'extra_copper': copper,
@@ -428,6 +468,28 @@ class NativeProbeTests(unittest.TestCase):
         result = apply(planned, empty, xml, manifest, self.root, output, self.root / 'annotation-apply')
         self.assertEqual(result['execution'], 'ok', result)
         self.assertEqual(pf.validate_board(output.read_bytes(), probes), set(probes))
+        from agent_ee.scaffold import sexpr
+        from agent_ee.schematic_emit import parse_quoted, Quoted as Q
+        from agent_ee.symbol_library import children
+        legacy = self.root / 'legacy.kicad_pcb'
+        tree = parse_quoted(output.read_bytes())
+        for fp in children(tree, 'footprint'):
+            for prop in children(fp, 'property'):
+                if prop[1] == pf.PROPERTY:
+                    prop[2] = Q(canonical(pf.parse_marker(prop[2])).decode())
+        legacy.write_bytes(sexpr(tree))
+        with self.assertRaisesRegex(ValueError, 'legacy AGENT_EE_Probe'):
+            pf.validate_board(legacy.read_bytes(), probes)
+        migrated = self.root / 'migrated.kicad_pcb'
+        migration = plan(legacy, xml, manifest, self.root, self.root / 'migration-plan')
+        self.assertEqual(migration['execution'], 'ok', migration)
+        result = apply(migration, legacy, xml, manifest, self.root, migrated, self.root / 'migration-apply')
+        self.assertEqual(result['execution'], 'ok', result)
+        self.assertEqual(pf.validate_board(migrated.read_bytes(), probes), set(probes))
+        for fp in children(parse_quoted(migrated.read_bytes()), 'footprint'):
+            props = pf.properties(fp)
+            if pf.PROPERTY in props:
+                self.assertEqual(props[pf.PROPERTY], pf.marker(probes[props['Reference']]))
         # Changed geometry survives native parsing but cannot survive replanning.
         data = output.read_bytes().replace(b'(size 1.5 1.5)', b'(size 1.6 1.6)', 1)
         self.assertNotEqual(data, output.read_bytes())
@@ -435,6 +497,29 @@ class NativeProbeTests(unittest.TestCase):
         rejected = plan(output, xml, manifest, self.root, self.root / 'annotation-bad')
         self.assertEqual(rejected['execution'], 'failed', rejected)
         self.assertEqual(rejected['findings'][0]['code'], 'probe_feature_mismatch')
+
+    def test_legacy_schematic_and_inventory_require_migration(self):
+        from agent_ee.native_netlist import read_native_inventory
+        from agent_ee.schematic_emit import parse_quoted, Quoted as Q
+        from agent_ee.scaffold import sexpr
+        from agent_ee.symbol_library import children
+        project, xml = self.native()
+        probes = pf.declarations(self.parts, self.root)
+        tree = parse_quoted((project / 'probe.kicad_sch').read_bytes())
+        for sym in children(tree, 'symbol'):
+            for prop in children(sym, 'property'):
+                if prop[1] == pf.PROPERTY:
+                    prop[2] = Q(canonical(pf.parse_marker(prop[2])).decode())
+        with self.assertRaisesRegex(ValueError, r'TP[1-6]: legacy AGENT_EE_Probe'):
+            pf.validate_schematic(sexpr(tree), probes)
+        graph = read_native_inventory(xml)
+        graph['components']['TP1']['properties'][pf.PROPERTY] = canonical(probes['TP1']).decode()
+        with self.assertRaisesRegex(ValueError, 'TP1: legacy AGENT_EE_Probe'):
+            pf.native_component(probes['TP1'], graph['components']['TP1'], graph)
+        pf.native_component(probes['TP1'], graph['components']['TP1'], graph, allow_legacy=True)
+        graph['components']['TP1']['properties'][pf.PROPERTY] = canonical(dict(probes['TP1'], native_net='/WRONG')).decode()
+        with self.assertRaisesRegex(ValueError, 'declaration identity differs'):
+            pf.native_component(probes['TP1'], graph['components']['TP1'], graph, allow_legacy=True)
 
     def test_missing_feature_refused_by_name(self):
         from agent_ee.parts_subset import compare_inventory
@@ -604,3 +689,28 @@ class NativeProbeTests(unittest.TestCase):
                         pf.load_for_check(ctx)
                 finally:
                     source.write_bytes(original)
+
+        # Capture a new candidate; never alter the passing candidate or its evidence.
+        from agent_ee.schematic_emit import parse_quoted, Quoted as Q
+        from agent_ee.scaffold import sexpr
+        from agent_ee.symbol_library import children
+        board = project / 'probe.kicad_pcb'
+        original_board = board.read_bytes()
+        legacy_tree = parse_quoted(original_board)
+        for fp in children(legacy_tree, 'footprint'):
+            for prop in children(fp, 'property'):
+                if prop[1] == pf.PROPERTY:
+                    prop[2] = Q(canonical(pf.parse_marker(prop[2])).decode())
+        try:
+            board.write_bytes(sexpr(legacy_tree))
+            legacy_run = self.root / 'legacy-fab-run'; legacy_run.mkdir()
+            capture(self.root / 'scaffold/scope.json', legacy_run)
+            results = {r['id']: r for r in run_checks(legacy_run, time.monotonic() + 300)}
+        finally:
+            board.write_bytes(original_board)
+        self.assertEqual(results['parts']['outcome'], 'pass', results['parts'])
+        for cid in ('binding', 'fab', 'consistency'):
+            with self.subTest(legacy_admission=cid):
+                self.assertNotEqual(results[cid]['outcome'], 'pass', results[cid])
+        for cid in ('binding', 'fab'):
+            self.assertIn('legacy AGENT_EE_Probe', str(results[cid]))
