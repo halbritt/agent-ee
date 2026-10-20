@@ -1058,6 +1058,63 @@ class NativeFabPipelineTests(unittest.TestCase):
         self.assertEqual(result['details']['copper_features'], ['JP1'])
         self.assert_witness(result, accepted=False)
 
+    def test_stock_description_and_datasheet_pass_both_fab_gates(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        for rel in ('fab.kicad_pcb', 'fab.kicad_sch'):
+            path = self.source / rel
+            fields = ''.join(f'(property "{name}" "{value}" (at 0 0 0) '
+                             '(effects (font (size 1 1))))' for name, value in
+                             [('Description', 'Solder jumper, 2-pad, open'),
+                              ('Datasheet', 'https://example.invalid/owned-jumper')])
+            if rel.endswith('pcb'):
+                fields = fields.replace('(at 0 0 0)', '(at 0 0) (layer "F.Fab")')
+            path.write_text(path.read_text().replace('(property "Reference" "JP1"',
+                fields + '(property "Reference" "JP1"'))
+        result = self.run_case(copper_features=['JP1'])
+        self.assertEqual(self.results[2]['outcome'], 'pass', self.results[2])
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+
+    def test_nonstandard_fields_refused_and_consistency_replays_allowlist(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        board = self.source / 'fab.kicad_pcb'
+        schematic = self.source / 'fab.kicad_sch'
+        original_board, original_sch = board.read_text(), schematic.read_text()
+        producer = checks.CHECK_FUNCS['fab_export']
+
+        def bypass(ctx):
+            with mock.patch('agent_ee.fab_export.copper_feature_problems', return_value=[]), \
+                    mock.patch('agent_ee.fab_export.copper_schematic_problems', return_value=[]):
+                producer(ctx)
+
+        for source in ('board', 'hidden symbol', 'variant'):
+            with self.subTest(source=source):
+                field = '(property "Supplier Part Number" "BUY-ME" (at 0 0 0) (effects (font (size 1 1)) (hide yes)))'
+                board.write_text(original_board if source != 'board' else original_board.replace(
+                    '(property "Reference" "JP1"', field.replace('(at 0 0 0)', '(at 0 0) (layer "F.Fab")') +
+                    '(property "Reference" "JP1"'))
+                sch = original_sch
+                if source == 'hidden symbol':
+                    sch = sch.replace('(property "Reference" "JP1"', field + '(property "Reference" "JP1"')
+                elif source == 'variant':
+                    sch = sch.replace('(reference "JP1") (unit 1)',
+                        '(reference "JP1") (unit 1) (variant (name "ALT") '
+                        '(field (name "Supplier Part Number") (value "BUY-ME")))')
+                schematic.write_text(sch)
+                variant = 'ALT' if source == 'variant' else None
+                if variant:
+                    write_json(self.source / 'fab.kicad_pro', {'meta': {'version': 3},
+                               'schematic': {'variants': [{'name': variant}]}})
+                self.run_case(copper_features=['JP1'], bom_variant=variant)
+                self.assertEqual((self.results[2]['execution'], self.results[2]['outcome']),
+                                 ('unsupported', 'unknown'), self.results[2])
+                with mock.patch.dict(checks.CHECK_FUNCS, {'fab_export': bypass}):
+                    result = self.run_case(copper_features=['JP1'], bom_variant=variant)
+                self.assertEqual(self.results[2]['outcome'], 'pass', self.results[2])
+                self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+                self.assertIn('Supplier Part Number', result['summary'])
+
     def test_owned_custom_pad_solder_jumper_passes_both_fab_gates(self):
         from tests.test_fab_export import copper_fixture
         copper_fixture(self.source, custom=True)

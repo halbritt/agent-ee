@@ -335,15 +335,72 @@ class CopperFeatureTests(unittest.TestCase):
                 empty = board.replace(b'"BUY-ME"', b'"  "')
                 self.assertEqual(copper_feature_problems(empty, {'JP1'}), [])
 
-    def test_unrelated_property_tokens_remain_admitted(self):
+    def test_nonstandard_properties_are_refused_description_is_admitted(self):
         for name in ('Manufacturer', 'Description', 'Number of pads', 'Department', 'PN notes unrelated'):
-            # PN is a binding token only when it is the whole field name or paired
-            # with a manufacturer/distributor token.
             with self.subTest(name=name):
                 data = self.data.replace(b'(property "Reference" "JP1"',
                     f'(property "{name}" "copper jumper" (layer "F.Fab"))'.encode() +
                     b'(property "Reference" "JP1"')
-                self.assertEqual(copper_feature_problems(data, {'JP1'}), [])
+                problems = copper_feature_problems(data, {'JP1'})
+                self.assertEqual(bool(problems), name != 'Description')
+
+    def test_copper_field_allowlist_at_all_sources(self):
+        from agent_ee.fab_export import copper_schematic_problems, part_bindings
+        names = ('DigiKey', 'Mouser', 'Mouser No', 'Farnell', 'Newark PN', 'Arrow_PN',
+                 'TME', 'RS Stock No', 'Supplier Part Number', 'Vendor PN', 'Part No',
+                 'Part#', 'Order Code', 'SKU', 'mfr#', 'Manf#', 'JLCPCB_Assembly',
+                 'Manufacturer', 'Department', 'Unanticipated field')
+        sch = (self.source / 'fab.kicad_sch').read_text()
+        xml = self.source / 'native.xml'
+        for name in names + ('Datasheet', 'Description', 'ki_keywords'):
+            for value in ('BUY-ME', '', '  ', '~', ' ~ '):
+                allowed = name in {'Datasheet', 'Description', 'ki_keywords'} or value.strip() in {'', '~'}
+                with self.subTest(name=name, value=value):
+                    prop = f'(property "{name}" "{value}" (layer "F.Fab"))'
+                    board = self.data.replace(b'(property "Reference" "JP1"',
+                                              prop.encode() + b'(property "Reference" "JP1"')
+                    self.assertEqual(bool(copper_feature_problems(board, {'JP1'})), not allowed)
+                    hidden = f'(property "{name}" "{value}" (effects (hide yes)))'
+                    schematic = sch.replace('(property "Reference" "JP1"',
+                                            hidden + '(property "Reference" "JP1"').encode()
+                    self.assertEqual(bool(copper_schematic_problems(schematic, {'JP1'})), not allowed)
+                    variant = sch.replace('(reference "JP1") (unit 1)',
+                        '(reference "JP1") (unit 1) (variant (name "ALT") '
+                        f'(field (name "{name}") (value "{value}")))').encode()
+                    self.assertEqual(bool(copper_schematic_problems(variant, {'JP1'})), not allowed)
+                    # Keep every occurrence: a later empty duplicate cannot erase a refusal.
+                    xml.write_text(f'<export><components><comp ref="JP1"><fields>'
+                        f'<field name="{name}">{value}</field><field name="{name}"></field>'
+                        '</fields></comp></components></export>')
+                    components, problems = part_bindings(xml)
+                    self.assertEqual(problems, [])
+                    self.assertEqual(bool(copper_feature_problems(self.data, {'JP1'}, components)), not allowed)
+
+    def test_legacy_native_manufacturer_metadata_refuses_copper(self):
+        for value in ('X', '', '  ', '~'):
+            with self.subTest(value=value):
+                components = {'JP1': {'excluded': [], 'manufacturer': value}}
+                self.assertEqual(bool(copper_feature_problems(self.data, {'JP1'}, components)), value == 'X')
+
+    def test_malformed_schematic_and_native_fields_refuse_declaration(self):
+        from agent_ee.fab_export import copper_schematic_problems, part_bindings
+        sch = (self.source / 'fab.kicad_sch').read_text()
+        for clause in ('(property "SKU")', '(property "Description" (at 0 0))',
+                       '(property (name "SKU") "x")',
+                       '(variant (field (name "SKU") (value (at 0 0))))',
+                       '(variant (field (name "SKU") (name "Description") (value "x")))'):
+            with self.subTest(clause=clause):
+                data = sch.replace('(property "Reference" "JP1"',
+                                   clause + '(property "Reference" "JP1"').encode()
+                self.assertTrue(copper_schematic_problems(data, {'JP1'}))
+        xml = self.source / 'native.xml'
+        for field in ('<field>BUY-ME</field>', '<field name="Description"><value>x</value></field>',
+                      '<field name="Description" unexpected="x">text</field>'):
+            with self.subTest(field=field):
+                xml.write_text('<export><components><comp ref="JP1"><fields>' + field +
+                               '</fields></comp></components></export>')
+                components, _ = part_bindings(xml)
+                self.assertTrue(copper_feature_problems(self.data, {'JP1'}, components))
 
     def test_malformed_properties_are_typed_unqualified_content(self):
         for prop in ('(property "MPN" (at 0 0))', '(property "Description" (at 0 0))',

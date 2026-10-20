@@ -99,7 +99,8 @@ the `fab-package:inventory`, `fab-package:designator-parity`,
 The captured export check may declare [`copper_features`](fab-export.md#copper-features),
 for example `["JP1"]` for an owned solder jumper. The gate revalidates its
 surface copper/mask/paste pads, silk/fab graphics, both native exclusions,
-and absence of models and orderable footprint/native symbol fields. It reads
+and absence of models, and repeats the copper field allow-list across footprint,
+captured schematic/variant and retained native fields (including duplicates). It reads
 the sealed native netlist directly; a producer pass or its summary cannot
 establish this exception. Invalid declarations are `unsupported/unknown`.
 A qualified feature stays in the sealed board inventory but out of the

@@ -149,6 +149,15 @@ def orderable_field(name):
                     for suffix in ('pn', 'mpn', 'part', 'partnumber', 'number')))
 
 
+COPPER_FIELDS = {'Reference', 'Value', 'Footprint', 'Datasheet', 'Description'}
+
+
+def copper_field_allowed(name, value):
+    """Qualify declaration metadata without changing general part binding."""
+    return (isinstance(name, str) and isinstance(value, str) and
+            (name in COPPER_FIELDS or name.startswith('ki_') or value.strip() in {'', '~'}))
+
+
 def declared_copper_features(params):
     refs = params.get('copper_features', [])
     if (not isinstance(refs, list) or ('copper_features' in params and not refs) or
@@ -178,7 +187,10 @@ def copper_schematic_problems(data, refs):
                           if len(p) > 2 and p[1] == 'Reference' and isinstance(p[2], str))
         for ref in sorted(refs & references, key=natural_key):
             for node in nodes:
-                if node[0] == 'property' and len(node) > 2:
+                if node[0] == 'property':
+                    if len(node) < 3:
+                        problems.append(f'copper feature {ref}: unqualified schematic field')
+                        continue
                     pairs = [(node[1], node[2])]
                 elif node[0] == 'field':
                     names, values = _lists(node, 'name'), _lists(node, 'value')
@@ -191,8 +203,9 @@ def copper_schematic_problems(data, refs):
                 for name, value in pairs:
                     if not isinstance(name, str) or not isinstance(value, str):
                         problems.append(f'copper feature {ref}: unqualified schematic field')
-                    elif orderable_field(name) and value.strip():
-                        problems.append(f'copper feature {ref}: has orderable schematic/variant field {name}')
+                    elif not copper_field_allowed(name, value):
+                        kind = 'orderable' if orderable_field(name) else 'nonstandard'
+                        problems.append(f'copper feature {ref}: has {kind} schematic/variant field {name}')
     return sorted(set(problems))
 
 
@@ -271,16 +284,22 @@ def copper_feature_problems(data, refs, components=None):
                 if head == 'property':
                     if len(node) < 3 or not all(isinstance(value, str) for value in node[1:3]):
                         reasons.append('unqualified footprint content property')
-                    elif orderable_field(node[1]) and node[2].strip():
-                        reasons.append(f'has orderable footprint field {node[1]}')
+                    elif not copper_field_allowed(node[1], node[2]):
+                        kind = 'orderable' if orderable_field(node[1]) else 'nonstandard'
+                        reasons.append(f'has {kind} footprint field {node[1]}')
             elif head not in metadata:
                 reasons.append(f'unqualified footprint content {head}')
         if components is not None:
             comp = components.get(ref)
             if comp is None or 'exclude_from_board' in comp['excluded']:
                 reasons.append('needs a native on-board component')
+            elif 'copper_fields' in comp:
+                if any(not copper_field_allowed(name, value) for name, value in comp['copper_fields']):
+                    reasons.append('has an unqualified native field')
             elif comp.get('orderable') or any(comp.get(k) for k in ('lcsc', 'Partnumber', 'PartNumber')):
                 reasons.append('has an orderable native MPN/LCSC field')
+            elif comp.get('manufacturer', '').strip() not in {'', '~'}:
+                reasons.append('has an unqualified native field')
         problems.extend(f'copper feature {ref}: {reason}' for reason in sorted(set(reasons)))
     return problems
 
@@ -471,8 +490,9 @@ def part_bindings(xml_path, probes=None):
     Returns (components, unsupported). Each component has its schematic `dnp`
     flag, schematic BOM/board exclusions, value, footprint, the `LCSC`,
     `Manufacturer`, `Partnumber` and `PartNumber` symbol fields verbatim, and
-    any assembly-rule field (RULE_FIELDS) it carries. Which components are
-    assembled is decided by `assembly_exclusions` and `assembled_parts`.
+    any assembly-rule field (RULE_FIELDS) it carries. copper_fields retains
+    every native field occurrence for declaration qualification, including
+    duplicates and malformed-field markers. Which components are assembled is decided by `assembly_exclusions` and `assembled_parts`.
     """
     from .probe_features import PROPERTY, native_component
     root = ET.parse(xml_path).getroot()
@@ -505,6 +525,10 @@ def part_bindings(xml_path, probes=None):
                            'lcsc': fields.get('LCSC', ''), 'manufacturer': fields.get('Manufacturer', ''),
                            'Partnumber': fields.get('Partnumber', ''), 'PartNumber': fields.get('PartNumber', ''),
                            'fields': {name: fields[name] for name in sorted(RULE_FIELDS) if name in fields},
+                           'copper_fields': [(field.get('name'), field.text or '')
+                                             if not len(field) and set(field.attrib) == {'name'}
+                                             else (None, None)
+                                             for field in comp.findall('./fields/field')],
                            'orderable': sorted({field.get('name') for field in comp.findall('./fields/field')
                                                 if orderable_field(field.get('name')) and (field.text or '').strip()})}
         if ref in probes:
