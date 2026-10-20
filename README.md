@@ -103,10 +103,11 @@ evidence is unverified; owner review and any publication remain outstanding.
 
 The offline [generation benchmark](docs/generation-benchmark.md) pins task files,
 keeps evaluator rules outside the generator sandbox, and reports exact score
-bounds while coverage is unknown. An optional external pins digest can anchor a
-freeze; summaries recompute scores from retained sealed evidence and exclude
-recorded failed generation from passes. These local records do not authenticate
-a store writer; the feature page details the remaining forgery limits.
+bounds while coverage is unknown. A series freeze requires external task pins,
+retains executor evidence, and produces a manifest digest for independent custody.
+Authenticated summaries verify that digest and replay retained sealed evidence
+before scoring; recorded failed generation never passes. Unanchored summaries
+remain diagnostic local consistency checks.
 Unsafe writer outputs remain failed attempts with unknown checks.
 Its original native fixture qualifies the
 harness; importing the ten unlicensed upstream prompts remains blocked.

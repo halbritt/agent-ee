@@ -32,9 +32,12 @@ checks. Only `prompt.md` can be selected, and byte-identical copies of evaluator
 inputs or the reference are refused. Opt-in `--expect-pins` anchors task pins to
 an externally retained digest at execution. Summaries replay scoring from retained
 task, candidate and sealed check evidence, and count recorded failed generation
-as failed even when its check outputs pass. The local evidence seal and generation status do
-not authenticate a store writer, and aggregation has no external task metadata
-anchor; see the feature page's P1/P2/P3d limits. Board references support board-only
+as failed even when its check outputs pass. A series freeze requires external
+task pins and retained executor records bound into the candidate. Aggregate with
+`--manifest` and `--expect-pins` verifies the externally retained series digest,
+report and evidence seals before scoring; this refuses coordinated resealing,
+generation-claim rewrites and task re-stratification. Unanchored aggregation
+remains diagnostic. Board references support board-only
 task pinning. It registers no new check kind.
 
 The [schematic emitter](schematic-emitter.md#output) retains KiCad 10 private

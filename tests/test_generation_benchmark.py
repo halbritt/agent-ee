@@ -1,5 +1,7 @@
 """Frozen generation contracts, native grading, and sandbox isolation."""
 import re
+import contextlib
+import io
 import shutil
 import tempfile
 import unittest
@@ -8,6 +10,8 @@ from pathlib import Path
 from agent_ee.generation_benchmark import (aggregate, average_scores, evaluate, pinned_task, publish_report,
                                            main, run_task, score, split_tasks, tree_files)
 from agent_ee.storage import digest, read_json, write_json
+from agent_ee import generation_benchmark as benchmark
+from agent_ee.baseline import freeze_evidence
 from toolchain import require_toolchain
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures/generation-benchmark/original-series'
@@ -292,6 +296,170 @@ class NativeTests(unittest.TestCase):
 
     def native_output(self, data=None):
         (self.output / 'circuit.kicad_sch').write_bytes(data or (FIXTURE / 'reference.kicad_sch').read_bytes())
+
+    def generated(self, *, exit_code=0, defective=False, source=None):
+        generator = self.root / 'generator.py'
+        source = source if source is not None else (FIXTURE / 'reference.kicad_sch').read_text()
+        if defective:
+            source = source.replace('"1k"', '"2k"')
+        generator.write_text('import sys\nfrom pathlib import Path\n'
+                             'Path(sys.argv[2], "circuit.kicad_sch").write_text(' + repr(source) + ')\n'
+                             'raise SystemExit(' + str(exit_code) + ')\n')
+        path = run_task(FIXTURE, generator, self.root / 'trial', self.store, attempts=1)[0]
+        return path, self.root / 'trial/evaluation-1'
+
+    def anchor(self, path):
+        report = read_json(path)
+        trial = self.root / 'trial/evaluation-1'
+        manifest = {'schema': 'agent-ee.generation-series/1', 'evaluations': [{
+            'binding_id': path.parent.name, 'report_sha256': digest(path),
+            'task_pins': digest(FIXTURE / 'pins.json'),
+            'evidence_sha256': digest(trial / 'run/work/verification/evidence.json'),
+            'generation_files': report['binding'].get('generation_records', {})}]}
+        self.assertEqual(manifest, benchmark.freeze_series(
+            [path], {'original-series': digest(FIXTURE / 'pins.json')}))
+        target = self.root / 'external-series.json'
+        write_json(target, manifest)
+        return target, digest(target)
+
+    def republish(self, path, trial, report):
+        path.unlink()
+        forged = publish_report(self.store, report)
+        receipt = {'schema': 'agent-ee.generation-evaluation-record/1',
+                   'report': str(forged.resolve()), 'report_sha256': digest(forged)}
+        write_json(trial / 'evaluation.json', receipt)
+        records = forged.parent / 'trials'
+        records.mkdir(exist_ok=True)
+        write_json(records / 'forged.json', {'trial': str(trial.resolve()), **receipt})
+        return forged
+
+    def test_p1_resealed_defective_checks_refused_by_external_anchor(self):
+        path, trial = self.generated(defective=True)
+        report = read_json(path)
+        self.assertFalse(report['result']['overall_pass'])
+        manifest, anchor = self.anchor(path)
+        checks = []
+        for configured in pinned_task(FIXTURE)['scope']['checks']:
+            check_path = trial / 'run/checks' / (configured['id'] + '.json')
+            check = read_json(check_path)
+            check.update(execution='ok', outcome='pass')
+            write_json(check_path, check)
+            checks.append(check)
+        freeze_evidence(trial / 'run', checks)
+        report['evaluation']['checks'] = [{k: c[k] for k in ('id', 'kind', 'execution', 'outcome')}
+                                          for c in checks]
+        report['scoring'] = score(pinned_task(FIXTURE)['rules'], checks)
+        report['result'] = benchmark.combined_result('ok', report['scoring'])
+        forged = self.republish(path, trial, report)
+        # The diagnostic path still demonstrates the local reseal attack.
+        self.assertEqual([r['passed'] for r in aggregate([forged])['rows']], [1, 1])
+        with self.assertRaisesRegex(ValueError, 'external series'):
+            aggregate([forged], manifest=manifest, expect_pins=anchor)
+
+    def test_p2_caller_claim_cannot_override_retained_executor(self):
+        path, trial = self.generated(exit_code=23)
+        report = read_json(path)
+        self.assertFalse(report['result']['overall_pass'])
+        self.assertTrue(report['scoring']['overall_pass'])
+        report['binding']['generation_execution'] = 'ok'
+        report['generation']['execution'] = 'ok'
+        report['result'] = benchmark.combined_result('ok', report['scoring'])
+        forged = self.republish(path, trial, report)
+        with self.assertRaisesRegex(ValueError, 'executor'):
+            aggregate([forged])
+
+    def test_p3d_repin_and_restratify_refused_by_external_anchor(self):
+        path, trial = self.generated()
+        manifest, anchor = self.anchor(path)
+        task = read_json(trial / 'task/task.json')
+        task.update(domain='forged-domain', difficulty='forged-difficulty')
+        write_json(trial / 'task/task.json', task)
+        repin(trial / 'task')
+        report = read_json(path)
+        report.update(domain=task['domain'], difficulty=task['difficulty'])
+        report['binding']['task_files'] = tree_files(trial / 'task')
+        forged = self.republish(path, trial, report)
+        self.assertEqual({r['value'] for r in aggregate([forged])['rows']},
+                         {'forged-domain', 'forged-difficulty'})
+        with self.assertRaisesRegex(ValueError, 'external series'):
+            aggregate([forged], manifest=manifest, expect_pins=anchor)
+
+    def test_authenticated_freeze_cli_and_aggregate_require_exact_anchor_and_selection(self):
+        path, trial = self.generated()
+        manifest, anchor = self.anchor(path)
+        self.assertEqual([r['passed'] for r in aggregate([path], manifest=manifest,
+                                                        expect_pins=anchor)['rows']], [1, 1])
+        self.assertEqual(aggregate([path], manifest=manifest, expect_pins=anchor)['authentication'],
+                         {'series_sha256': anchor})
+        self.assertEqual(aggregate([path])['authentication'], 'diagnostic-unauthenticated')
+        records = read_json(path)['binding']['generation_records']
+        captured = read_json(trial / 'run/candidate.json')['files']
+        self.assertEqual({k: captured['.generation/' + k] for k in records}, records)
+        pins = self.root / 'external-task-pins.json'
+        write_json(pins, {'original-series': digest(FIXTURE / 'pins.json')})
+        cli_manifest = self.root / 'cli-series.json'
+        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+            main(['freeze', '--manifest', str(cli_manifest), '--expect-pins', str(pins), str(path)])
+        self.assertEqual(read_json(cli_manifest), read_json(manifest))
+        self.assertEqual(benchmark.strict_json(stdout.getvalue())['sha256'], digest(cli_manifest))
+        with self.assertRaises(FileExistsError), contextlib.redirect_stdout(io.StringIO()):
+            main(['freeze', '--manifest', str(cli_manifest), '--expect-pins', str(pins), str(path)])
+        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+            main(['aggregate', '--manifest', str(cli_manifest), '--expect-pins', anchor, str(path)])
+        self.assertEqual([r['passed'] for r in benchmark.strict_json(stdout.getvalue())['rows']], [1, 1])
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            main(['freeze', '--manifest', str(self.root / 'unused'), str(path)])
+        self.assertFalse((self.root / 'unused').exists())
+        for supplied in ('', '0' * 64, anchor.upper()):
+            with self.subTest(anchor=supplied), self.assertRaisesRegex(ValueError, 'external series'):
+                aggregate([path], manifest=manifest, expect_pins=supplied)
+        for kwargs in ({'manifest': manifest}, {'expect_pins': anchor}):
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(ValueError, 'both'):
+                aggregate([path], **kwargs)
+        for paths in ([], [path, path]):
+            with self.subTest(paths=paths), self.assertRaisesRegex(ValueError, 'selection'):
+                aggregate(paths, manifest=manifest, expect_pins=anchor)
+        original = manifest.read_bytes()
+        manifest.write_bytes(original + b' ')
+        with self.assertRaisesRegex(ValueError, 'manifest digest'):
+            aggregate([path], manifest=manifest, expect_pins=anchor)
+        manifest.write_bytes(original)
+        seal = trial / 'run/work/verification/evidence.json'
+        seal.write_bytes(seal.read_bytes() + b' ')
+        with self.assertRaisesRegex(ValueError, 'external series evidence'):
+            aggregate([path], manifest=manifest, expect_pins=anchor)
+
+    def test_freeze_requires_external_task_pins_and_retained_executor(self):
+        path, trial = self.generated()
+        for pins in ({}, [], {'original-series': '0' * 64},
+                     {'original-series': digest(FIXTURE / 'pins.json'), 'extra': '0' * 64}):
+            with self.subTest(pins=pins), self.assertRaisesRegex(ValueError, 'external task pins'):
+                benchmark.freeze_series([path], pins)
+        pins = {'original-series': digest(FIXTURE / 'pins.json')}
+        with self.assertRaisesRegex(ValueError, 'one selected attempt'):
+            benchmark.freeze_series([path, path], pins)
+        with self.assertRaisesRegex(ValueError, 'exactly'):
+            benchmark.freeze_series([], {})
+        self.native_output()
+        legacy = self.evaluate()
+        with self.assertRaisesRegex(ValueError, 'retained executor'):
+            benchmark.freeze_series([legacy], pins)
+        (trial / 'generation/execution.json').unlink()
+        with self.assertRaisesRegex(ValueError, 'executor'):
+            benchmark.freeze_series([path], pins)
+
+    def test_anchored_unknown_never_passes_and_executor_tamper_is_refused(self):
+        path, trial = self.generated(source='broken native schematic')
+        pins = {'original-series': digest(FIXTURE / 'pins.json')}
+        manifest = self.root / 'unknown-series.json'
+        write_json(manifest, benchmark.freeze_series([path], pins))
+        summary = aggregate([path], manifest=manifest, expect_pins=digest(manifest))
+        self.assertEqual([r['unknown'] for r in summary['rows']], [1, 1])
+        self.assertEqual([r['passed'] for r in summary['rows']], [0, 0])
+        self.assertTrue(all(r['score'] is None for r in summary['rows']))
+        (trial / 'generation/stdout.log').write_text('forged executor stream')
+        with self.assertRaisesRegex(ValueError, 'executor'):
+            aggregate([path])
 
     def test_native_success_is_deterministic_and_aggregates(self):
         self.native_output()
