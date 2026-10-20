@@ -1093,6 +1093,23 @@ def _no_links_between(base, path):
     return True
 
 
+def _project_with_sibling_links(root, project, siblings, candidate_root):
+    """The names of the links beside the real project directory in root, or None
+    unless root holds that directory and only the links the pinned
+    copy_project/make_snapshot place for ${KIPRJMOD}/../<dir> library paths: named
+    for a top-level input directory, reading literally <candidate root>/<name>.
+    The links are read, never followed."""
+    entries = {p.name: p for p in root.iterdir()}
+    found = entries.pop(project, None)
+    if found is None or found.is_symlink() or not found.is_dir():
+        return None
+    if not all(name in siblings and path.is_symlink() and
+               os.readlink(path) == str(PurePosixPath(candidate_root) / name)
+               for name, path in entries.items()):
+        return None
+    return set(entries)
+
+
 def bind_candidate(request, layout, run_dir, result, attempt, inputs):
     """Problems binding the eligible candidate to this attempt and these inputs, the
     candidate board's sha256, the undelivered editor-state files and the whole
@@ -1111,10 +1128,22 @@ def bind_candidate(request, layout, run_dir, result, attempt, inputs):
     if not _no_links_between(run_dir, board) or not board.is_file():
         problems.append('candidate board missing, or reached through a link')
         return problems, None, {}, {}
+    # Only top-level input directories: a file's path has a single part, so a
+    # link named for a top-level input file stays a contradiction.
+    siblings = ({PurePosixPath(rel).parts[0] for rel in inputs if len(PurePosixPath(rel).parts) > 1} -
+                {PurePosixPath(request['project']).parts[0], cand_dir.name})
+    links = []
     for label, root in (('candidate', run_dir / 'candidate'), ('reference', run_dir / 'reference')):
-        if root.is_symlink() or not root.is_dir() or [p.name for p in root.iterdir()] != [cand_dir.name]:
-            problems.append(f'{label}/ must hold exactly the project directory')
+        names = None if root.is_symlink() or not root.is_dir() else _project_with_sibling_links(
+            root, cand_dir.name, siblings, layout['candidate'])
+        if names is None:
+            problems.append(f'{label}/ must hold exactly the project directory and its sibling links')
             return problems, None, {}, {}
+        links.append(names)
+    # copy_project links beside the candidate each sibling the snapshot linked.
+    if links[0] != links[1]:
+        problems.append('candidate/ and reference/ sibling links differ')
+        return problems, None, {}, {}
     cand, ref = tree(cand_dir), tree(ref_dir)
     if links_of(cand) or links_of(ref):
         problems.append('candidate or reference tree contains links or special files')
