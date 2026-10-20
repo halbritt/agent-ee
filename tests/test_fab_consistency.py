@@ -1066,6 +1066,80 @@ class NativeFabPipelineTests(unittest.TestCase):
                          [('ok', 'pass'), ('ok', 'pass')], self.results)
         self.assertEqual(result['details']['copper_features'], ['JP1'])
 
+    def test_reviewer_dnp_and_missing_native_component_probes(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        board = self.source / 'fab.kicad_pcb'
+        schematic = self.source / 'fab.kicad_sch'
+        original_board, original_sch = board.read_text(), schematic.read_text()
+        schematic.write_text('\n'.join(
+            line.replace('(dnp no)', '(dnp yes)') if '(property "Reference" "JP1"' in line else line
+            for line in original_sch.splitlines()) + '\n')
+        board.write_text(original_board.replace('(attr smd exclude_from_bom exclude_from_pos_files)',
+            '(attr smd dnp exclude_from_bom exclude_from_pos_files)'))
+        self.run_case(copper_features=['JP1'])
+        self.assertEqual([(r['execution'], r['outcome']) for r in self.results[2:]],
+                         [('ok', 'pass'), ('ok', 'pass')], self.results)
+        board.write_text(original_board)
+        schematic.write_text(original_sch.replace('"JP1"', '"JP2"'))
+        self.run_case(copper_features=['JP1'])
+        export = self.results[2]
+        self.assertEqual((export['execution'], export['outcome']), ('unsupported', 'unknown'), export)
+        self.assertIn('needs a native on-board component', export['summary'])
+
+    def test_consistency_rejects_reviewer_geometry_probes_after_producer_bypass(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        board = self.source / 'fab.kicad_pcb'
+        original = board.read_text()
+        producer = checks.CHECK_FUNCS['fab_export']
+
+        def bypass_copper_qualification(ctx):
+            with mock.patch('agent_ee.fab_export.copper_feature_problems', return_value=[]):
+                producer(ctx)
+
+        attr = '(attr smd exclude_from_bom exclude_from_pos_files)'
+        for fault in ('zone', 'copper graphic', 'inner pad'):
+            with self.subTest(fault=fault):
+                text = original
+                if fault == 'zone':
+                    text = text.replace(attr, attr + '(zone (net 0) (layer "F.Cu"))')
+                elif fault == 'copper graphic':
+                    text = text.replace(attr, attr + '(fp_poly (pts (xy 0 0) (xy 1 0) (xy 0 1)) '
+                                        '(stroke (width 0) (type solid)) (fill solid) (layer "F.Cu"))')
+                else:
+                    at = text.index('(property "Reference" "JP1"')
+                    text = text[:at] + text[at:].replace('"F.Cu" "F.Mask" "F.Paste"', '"In1.Cu"', 1)
+                board.write_text(text)
+                with mock.patch.dict(checks.CHECK_FUNCS, {'fab_export': bypass_copper_qualification}):
+                    result = self.run_case(copper_features=['JP1'])
+                self.assertEqual(self.results[2]['outcome'], 'pass', self.results[2])
+                self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+
+    def test_mfr_part_number_is_refused_by_export_and_independent_consistency(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source)
+        schematic = self.source / 'fab.kicad_sch'
+        schematic.write_text(schematic.read_text().replace('(property "Reference" "JP1"',
+            '(property "Mfr Part Number" "BUY-ME" (at 0 0 0) (effects (font (size 1 1)))) '
+            '(property "Reference" "JP1"'))
+        self.run_case(copper_features=['JP1'])
+        export = self.results[2]
+        self.assertEqual((export['execution'], export['outcome']), ('unsupported', 'unknown'), export)
+        self.assertIn('Mfr Part Number', export['summary'])
+        producer = checks.CHECK_FUNCS['fab_export']
+
+        def bypass_schematic_qualification(ctx):
+            with mock.patch('agent_ee.fab_export.copper_schematic_problems', return_value=[]), \
+                    mock.patch('agent_ee.fab_export.copper_feature_problems', return_value=[]):
+                producer(ctx)
+
+        with mock.patch.dict(checks.CHECK_FUNCS, {'fab_export': bypass_schematic_qualification}):
+            result = self.run_case(copper_features=['JP1'])
+        self.assertEqual(self.results[2]['outcome'], 'pass', self.results[2])
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertIn('Mfr Part Number', result['summary'])
+
     def test_copper_jumper_undeclared_model_and_mpn_are_refused(self):
         from tests.test_fab_export import copper_fixture
         copper_fixture(self.source)

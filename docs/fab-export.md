@@ -49,11 +49,18 @@ must identify exactly one footprint and a native on-board schematic component.
 The footprint must carry both `exclude_from_bom` and
 `exclude_from_pos_files`, contain at least one surface copper pad, and have
 no model or orderable MPN/LCSC property on either the footprint or native
-symbol. Binding aliases include `Partnumber`, `PartNumber`, `MPN`,
-`Manufacturer Part Number` and LCSC/JLCPCB part fields, ignoring case and
-punctuation. Empty binding fields are allowed. Captured schematic properties
-and variant field clauses are checked too, including fields omitted from the
-default native netlist or hidden by `in_bom=no`.
+symbol. Binding detection ignores case and punctuation, retaining compact aliases
+such as `Partnumber`, `PartNumber`, `MPN` and `PN`. Manufacturer tokens
+(`manufacturer`, `mfr`, `mfg`) and distributor tokens (`lcsc`, `jlcpcb`,
+`digikey`, `mouser`) combined with part, PN, number or stock identity tokens
+are also bindings. Examples include `Mfr Part Number`, `MFR_PN`,
+`Manufacturer PN`, `Digikey_PN` and `Mouser Part Number`. `Manufacturer`
+alone and `JLCPCB_Assembly` remain metadata. Empty binding fields are allowed.
+Missing or non-string footprint property values are unqualified footprint
+content. Unreadable property names or references produce a typed board-read
+error. Export refusal summaries list each distinct problem once. Captured
+schematic properties and variant field clauses are checked too, including fields
+omitted from the default native netlist or hidden by `in_bom=no`.
 
 Qualified pad shapes are rect, roundrect, circle, oval and trapezoid SMD pads
 on copper, mask and paste layers. Custom SMD pads also qualify when their
