@@ -730,6 +730,19 @@ check selects `criterion: electrical-locality/1` and a captured `locality` JSON
 path containing the same document. The check is acceptance evidence; the
 standalone plan and writer output remain unsealed proposals.
 
+For coordinator-run packing (AGENTEE-328), the adapter reads the one captured
+locality file named by the scope's locality checks, verifies its immutable raw
+SHA-256, and derives `policy.electrical_locality` from those bytes. An existing
+inline document must equal the captured document; a mismatch refuses before the
+helper runs. The binding record retains `electrical_locality: {path, sha256}`;
+the effective helper policy carries the same pair as
+`electrical_locality_binding`. A supplied binding must match. Missing, changed,
+linked or mutable locality files refuse, as do several different locality paths
+or inline locality without a coordinator locality check. Repeated checks of the
+same file are allowed. The check judgment independently retains
+`locality: {path, sha256}`. Standalone `pack()` accepts inline declarations for
+diagnostics but cannot establish a coordinator capture binding.
+
 ```json
 {
   "schema": "agent-ee.electrical-locality/1",
@@ -760,13 +773,36 @@ with the identical pair structure: `from` selects its IC switch pad and `to`
 selects its inductor pad. Shared rail membership never assigns a capacitor to
 an IC. Multiple selected supply/return pins require separate obligations.
 
-The metric uses pcbnew `PAD.GetPosition()` in the board plane, including
-saved footprint transforms and side flips. This is the native electrical pad
-anchor; it does not calculate a copper-area centroid for offset or custom pads. It compares squared integer
-nanometres exactly, including equality; floating millimetres are reporting only.
-This measures pad centres, not copper edges, routed length, a 3D return path or
+An endpoint may add `uuid` with the canonical native pad UUID from the captured
+`placement-probe.json`. The UUID must occur exactly once across the board and
+belong to the declared reference, pad number and net. This selects one physical
+land of a multi-pad pin, including exposed-pad thermal lands with repeated pad
+numbers. A missing, duplicated or mismatched UUID remains unknown. Without a
+UUID, duplicate pad numbers still refuse; the checker never picks the first or
+nearest land. There is no implicit pad-set aggregation. Declare separate
+UUID-selected obligations when every land must meet a limit.
+
+AGENTEE-328 measures `pad-centre-to-centre` between native **copper-land
+centroids**, before drill subtraction, in the board plane. Symmetric stock
+circle, rectangle, oval and roundrect pads use pcbnew `PAD.ShapePos()`, which
+includes the copper offset from the electrical anchor. Straight trapezoids,
+straight chamfered rectangles and qualified custom pads use exact signed-area
+moments of the native copper polygons. Custom centroids require a rectangular
+anchor and filled, zero-width `gr_poly` or `gr_rect` primitives. Curved or stroked
+custom copper, rounded asymmetric chamfers, per-layer padstacks and missing
+centroid evidence remain unknown; there is no anchor fallback. Footprint
+rotations and native side flips move the copper with the pad. The native probe
+adds per-pad `copper_centroid_offset_nm`: two `[numerator, denominator]` pairs
+in board axes, relative to `position_nm`. Missing evidence has a
+`copper_centroid_reason`. Older captures need a fresh native probe before they
+can establish copper locality.
+
+Squared distances are exact rational nanometres, including equality. Integral
+`distance_squared_nm` stays an integer; a fractional value is encoded as
+`{numerator, denominator}`. Floating `distance_mm` is reporting only. This metric
+does not measure copper-edge separation, routed length, a 3D return path or
 loop inductance. Other metric names remain unknown. A missing/duplicated
-reference or pad, wrong native net, unavailable centre, absent limit or absent
+reference or pad, wrong native net, unavailable centroid, absent limit or absent
 citation remains unknown. Limits must be explicit nonnegative integer
 nanometres. The citation is the declaring engineer's source/locator text,
 retained verbatim in the immutable obligation document; this check does not
@@ -794,6 +830,9 @@ through-hole reservation or native DRC gates nor establishes routing acceptance.
 `tests.test_electrical_locality` exercises exact boundaries, missing evidence,
 coupled return/switch regressions, both placement orders, deterministic guidance,
 fixed conflicts, a saved native proposal and the registered captured check.
+`tests.test_locality_copper` adds native offset and custom copper on both sides
+at all quarter turns, exact fractional distances, distinct-UUID near/far
+selection, and coordinator policy/hash binding with refusal boundaries.
 
 ### Read-only pod diagnostic
 

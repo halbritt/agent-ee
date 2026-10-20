@@ -1,10 +1,11 @@
 """Declared pad-centre locality: grading and a distinct partial-placement constraint.
 
 Limits and citations are supplied by the engineer, never inferred from a net name.
-Distances are native board-plane pad centres, not routed length or loop inductance.
+Distances use native copper-land centroids, not anchors, routed length or loop inductance.
 """
 from fractions import Fraction
 import math
+from uuid import UUID
 
 SCHEMA = 'agent-ee.electrical-locality/1'
 CRITERION = 'electrical-locality/1'
@@ -32,9 +33,12 @@ def validate(document):
                     or not {'from', 'to'} <= pair.keys()):
                 raise ValueError('locality pair needs from/to, optionally max_distance_nm and citation')
             for endpoint in (pair['from'], pair['to']):
-                if (not isinstance(endpoint, dict) or set(endpoint) != {'reference', 'pad', 'net'}
+                if (not isinstance(endpoint, dict) or set(endpoint) - {'reference', 'pad', 'net', 'uuid'}
+                        or not {'reference', 'pad', 'net'} <= endpoint.keys()
                         or any(not isinstance(v, str) or not v.strip() for v in endpoint.values())):
-                    raise ValueError('locality endpoint needs explicit reference, pad and net')
+                    raise ValueError('locality endpoint needs explicit reference, pad and net; optional captured uuid')
+                if 'uuid' in endpoint and str(UUID(endpoint['uuid'])) != endpoint['uuid']:
+                    raise ValueError('locality uuid must use canonical captured spelling')
             if pair['from']['reference'] == pair['to']['reference']:
                 raise ValueError('locality endpoints must name distinct footprints')
             if 'max_distance_nm' in pair and (type(pair['max_distance_nm']) is not int or pair['max_distance_nm'] < 0):
@@ -59,16 +63,28 @@ def resolve(footprints, endpoint):
     fps = [f for f in footprints if f['ref'] == endpoint['reference']]
     if len(fps) != 1:
         raise ValueError('reference missing or duplicated')
-    pads = [p for p in fps[0]['pads'] if p['number'] == endpoint['pad']]
-    if len(pads) != 1:
-        raise ValueError('pad missing or duplicated')
+    if 'uuid' in endpoint:
+        pads = [p for f in footprints for p in f['pads'] if p.get('uuid') == endpoint['uuid']]
+        if len(pads) != 1 or not any(p is pads[0] for p in fps[0]['pads']):
+            raise ValueError('captured pad UUID missing, duplicated or belongs to another reference')
+        if pads[0]['number'] != endpoint['pad']:
+            raise ValueError('captured pad UUID number differs from declaration')
+    else:
+        pads = [p for p in fps[0]['pads'] if p['number'] == endpoint['pad']]
+        if len(pads) != 1:
+            raise ValueError('pad missing or duplicated')
     pad = pads[0]
     if pad['net'] != endpoint['net']:
         raise ValueError('native pad net differs from declaration')
     position = pad.get('position_nm')
     if not isinstance(position, list) or len(position) != 2 or any(type(v) is not int for v in position):
         raise ValueError('native pad centre unavailable')
-    return position
+    offset = pad.get('copper_centroid_offset_nm')
+    if (not isinstance(offset, list) or len(offset) != 2 or any(
+            not isinstance(v, list) or len(v) != 2 or any(type(n) is not int for n in v)
+            or v[1] <= 0 for v in offset)):
+        raise ValueError('native copper centroid unavailable: ' + pad.get('copper_centroid_reason', 'missing evidence'))
+    return [p + Fraction(*v) for p, v in zip(position, offset)]
 
 
 def grade(probe, document):
@@ -87,7 +103,10 @@ def grade(probe, document):
                     raise ValueError('locality endpoints must declare the same net')
                 a, b = (resolve(probe['footprints'], pair[k]) for k in ('from', 'to'))
                 squared = sum((x-y)**2 for x, y in zip(a, b))
-                record.update(distance_squared_nm=squared, distance_mm=math.sqrt(squared)/10**6)
+                record.update(distance_squared_nm=(int(squared) if squared.denominator == 1 else
+                              {'numerator': squared.numerator, 'denominator': squared.denominator}),
+                              distance_mm=math.sqrt(squared)/10**6,
+                              geometry='native copper-land centroid (before drill subtraction)')
                 measured.append(record)
                 if 'max_distance_nm' not in pair or 'citation' not in pair:
                     raise ValueError('declared numeric limit and citation required')
@@ -135,7 +154,7 @@ def targets(footprints, proposed, document):
                     continue
                 offset = resolve([proposed], own)
                 target = resolve(footprints, peer)
-                x, y = [target[i]-offset[i] for i in (0, 1)]
+                x, y = [round(target[i]-offset[i]) for i in (0, 1)]
                 d = pair['max_distance_nm']
                 points += [[x, y], [x-d, y], [x+d, y], [x, y-d], [x, y+d]]
     return points

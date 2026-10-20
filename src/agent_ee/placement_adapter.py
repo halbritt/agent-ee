@@ -331,6 +331,38 @@ def _policy(inputs, bound, manifest):
     return policy
 
 
+def bind_locality(policy, manifest, inputs, mutable_inputs):
+    """Bind pack guidance to the one immutable locality file graded in this scope."""
+    from .electrical_locality import CRITERION, validate
+    paths = {check['params']['locality'] for check in manifest['scope'].get('checks', [])
+             if check.get('kind') == 'placement' and check.get('params', {}).get('criterion') == CRITERION}
+    if not paths:
+        if 'electrical_locality' in policy or 'electrical_locality_binding' in policy:
+            raise ValueError('packing electrical locality requires a captured coordinator locality check')
+        return None
+    if len(paths) != 1:
+        raise ValueError('packing requires one shared captured locality file for all locality checks')
+    rel = _relative(next(iter(paths)), 'electrical locality')
+    if rel not in manifest['files'] or rel in mutable_inputs:
+        raise ValueError('electrical locality must be a captured immutable input')
+    path = Path(inputs) / rel
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('captured electrical locality missing or linked')
+    data = path.read_bytes()
+    sha256 = hashlib.sha256(data).hexdigest()
+    if sha256 != manifest['files'][rel]:
+        raise ValueError('captured electrical locality changed')
+    document = validate(json.loads(data))
+    if 'electrical_locality' in policy and validate(policy['electrical_locality']) != document:
+        raise ValueError('packing electrical locality differs from captured coordinator obligations')
+    source = {'path': rel, 'sha256': sha256}
+    if 'electrical_locality_binding' in policy and policy['electrical_locality_binding'] != source:
+        raise ValueError('packing electrical locality binding differs from captured coordinator input')
+    policy['electrical_locality'] = document
+    policy['electrical_locality_binding'] = source
+    return source
+
+
 def binding(declaration, manifest, inputs, mutable_inputs):
     """Coordinator binding of the declaration to one captured candidate's immutable inputs.
 
@@ -340,6 +372,7 @@ def binding(declaration, manifest, inputs, mutable_inputs):
     bound = bind_declaration(declaration, manifest, mutable_inputs)
     inputs = Path(inputs)
     policy = _policy(inputs, bound, manifest)
+    locality = bind_locality(policy, manifest, inputs, mutable_inputs) if bound['policy'] is not None else None
     envelopes = envelope_fixed(manifest, inputs, mutable_inputs)
     board = inputs / bound['board']
     if board.is_symlink() or not board.is_file() or digest(board) != manifest['files'][bound['board']]:
@@ -363,6 +396,8 @@ def binding(declaration, manifest, inputs, mutable_inputs):
               'policy': None if bound['policy'] is None else {
                   'path': bound['policy'], 'sha256': manifest['files'][bound['policy']]},
               'envelopes': envelopes, 'policy_fixed_refs': sorted(set(policy['fixed_refs']))}
+    if locality is not None:
+        record['electrical_locality'] = locality
     if 'targeted_plans' in bound:
         record['targeted_plans'] = {'path': bound['targeted_plans'],
                                     'sha256': manifest['files'][bound['targeted_plans']]}

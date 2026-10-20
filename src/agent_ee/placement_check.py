@@ -262,6 +262,9 @@ def check_placement(ctx):
               'drc': drc, **result, 'routing_feedback': _routing(ctx, facts),
               'advisory': None if advisory is None else {k: advisory[k] for k in (
                   'score', 'associations', 'advisories', 'policy')}}
+    if criterion == electrical_locality.CRITERION:
+        record['locality'] = {'path': ctx.params['locality'],
+                              'sha256': ctx.manifest['files'][ctx.params['locality']]}
     if validation is not None:
         record['envelope'] = {'path': ctx.params['envelope'], 'envelope_id': validation['envelope_id'],
                               'envelope_sha256': validation['envelope_sha256']}

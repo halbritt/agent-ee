@@ -490,3 +490,23 @@ must also fit its actual rating; without it the result is unknown. The pod's
 U1/U2/U4 acceptance at 85 degC cannot suppress a rating or thermal defect. See
 [assembly readiness](assembly-readiness.md#digikey-operating-temperature) for
 the immutable owner and thermal file formats.
+
+
+## Copper locality and captured policy binding (AGENTEE-328)
+
+Electrical locality measures copper-land centroids before drill subtraction.
+A pad anchor can be remote from its copper, so the native probe supplies an
+exact rational centroid displacement from the anchor. Symmetric stock shapes
+use native shape centres; qualified straight asymmetric copper uses area
+moments. Unsupported centroid geometry remains unknown. Packing transforms
+these displacements and the saved-board check measures the native board again.
+
+A repeated pin number can name several physical lands. Optional captured pad
+UUIDs select one land while retaining reference, number and net validation;
+unselected ambiguity still refuses. Separate obligations express all-land
+requirements without an implicit minimum-distance aggregation.
+
+The coordinator adapter derives packing obligations from the locality check's
+immutable captured file and records its raw hash. It refuses divergent inline
+obligations or bindings. The coordinator check records the same file identity
+independently. Standalone packing remains diagnostic proposal generation.

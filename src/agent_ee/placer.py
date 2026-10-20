@@ -68,6 +68,9 @@ def transform(fp, position, rotation):
             corners = [move([x, y]) for x in (box[0], box[2]) for y in (box[1], box[3])]
             pad['custom_geometry']['bbox_nm'] = [min(p[0] for p in corners), min(p[1] for p in corners),
                                                  max(p[0] for p in corners), max(p[1] for p in corners)]
+        if 'copper_centroid_offset_nm' in pad:
+            offset = rotate([Fraction(*v) for v in pad['copper_centroid_offset_nm']], turns)
+            pad['copper_centroid_offset_nm'] = [[v.numerator, v.denominator] for v in offset]
         pad['position_nm'] = move(pad['position_nm'])
         pad['rotation_deg'] = (pad['rotation_deg'] + rotation-fp['rotation_deg']) % 360
     placed.update(position_nm=list(position), rotation_deg=rotation)
