@@ -699,3 +699,103 @@ and unqualified `proven` evidence on a stock or custom pad also return
 `transform` calls raise `ValueError` for non-object evidence; callers must qualify
 `proven` dictionaries before transforming them, as `pack` does. The native
 regressions in `tests.test_placer_custom_pads` cover both refusal paths.
+
+## Pad-level electrical locality (AGENTEE-322)
+
+`policy.electrical_locality` opts the packer into pad-level constraints. It is
+an `agent-ee.electrical-locality/1` document. The separate coordinator `placement`
+check selects `criterion: electrical-locality/1` and a captured `locality` JSON
+path containing the same document. The check is acceptance evidence; the
+standalone plan and writer output remain unsealed proposals.
+
+```json
+{
+  "schema": "agent-ee.electrical-locality/1",
+  "obligations": [{
+    "id": "owned-example-C1",
+    "metric": "pad-centre-to-centre",
+    "supply": {
+      "from": {"reference": "U1", "pad": "8", "net": "VCC"},
+      "to": {"reference": "C1", "pad": "1", "net": "VCC"},
+      "max_distance_nm": 5000000,
+      "citation": "Owned example requirement E1: supply pad centres within 5 mm."
+    },
+    "return": {
+      "from": {"reference": "U1", "pad": "4", "net": "GND"},
+      "to": {"reference": "C1", "pad": "2", "net": "GND"},
+      "max_distance_nm": 5000000,
+      "citation": "Owned example requirement E2: return pad centres within 5 mm."
+    }
+  }]
+}
+```
+
+These example limits are authored fixture requirements, with no manufacturer or
+pod acceptance claim. Each obligation requires explicit supply and return pad
+identities on the same IC and capacitor, with distinct physical pads. Each pair
+must name the same net at both ends. A buck may additionally declare `switch`
+with the identical pair structure: `from` selects its IC switch pad and `to`
+selects its inductor pad. Shared rail membership never assigns a capacitor to
+an IC. Multiple selected supply/return pins require separate obligations.
+
+The metric uses pcbnew `PAD.GetPosition()` in the board plane, including
+saved footprint transforms and side flips. This is the native electrical pad
+anchor; it does not calculate a copper-area centroid for offset or custom pads. It compares squared integer
+nanometres exactly, including equality; floating millimetres are reporting only.
+This measures pad centres, not copper edges, routed length, a 3D return path or
+loop inductance. Other metric names remain unknown. A missing/duplicated
+reference or pad, wrong native net, unavailable centre, absent limit or absent
+citation remains unknown. Limits must be explicit nonnegative integer
+nanometres. The citation is the declaring engineer's source/locator text,
+retained verbatim in the immutable obligation document; this check does not
+verify a datasheet quotation or infer its applicability. Supply, return and
+switch are all measured; any proved violation remains a defect even when
+another pair is unknown. Missing limits never inherit an origin-group radius.
+
+The **placement constraint** is distinct from this **check**. For each rotation,
+the packer adds candidate origins from the selected native pad offsets, peer
+pad centres and declared radius extrema. It ranks candidates by the exact sum
+of squared distance/limit squared across all resolved supply, return and switch
+pairs, ahead of the existing net cost. Ground pairs participate even when the
+net is in `ground_nets`. Every resolved pair is a hard constraint, checked
+symmetrically whichever endpoint is placed second. An unplaced peer is deferred;
+all pairs must pass before the complete plan is returned and again after native
+save/reload. Fixed violations or finite search exhaustion publish no placements
+and remain unknown feasibility. Missing inputs refuse before search. Targeted
+plans also refuse a completed proposal violating these obligations; their
+existing origin-based objectives are unchanged.
+
+`groups` keeps its existing footprint-origin and courtyard meaning. A passing
+origin group is not electrical acceptance. Locality neither weakens courtyard,
+through-hole reservation or native DRC gates nor establishes routing acceptance.
+
+`tests.test_electrical_locality` exercises exact boundaries, missing evidence,
+coupled return/switch regressions, both placement orders, deterministic guidance,
+fixed conflicts, a saved native proposal and the registered captured check.
+
+### Read-only pod diagnostic
+
+Fresh native extraction of the three supplied lane candidates measured the
+following pad-centre distances (mm). These are diagnostic observations; the
+lane files provide origin limits but no cited numeric pad-level obligations.
+
+| Pair | Original locality lane | Storage/power lane | Main-buck lane |
+| --- | ---: | ---: | ---: |
+| U26.8 → C97.1 supply | 5.589331 | 2.510383 | 2.206836 |
+| U26.4 → C97.2 return | 3.641844 | 8.276450 | 7.531037 |
+| U26.8 → C98.1 supply | 6.791381 | 1.963173 | 7.417186 |
+| U26.4 → C98.2 return | 2.069118 | 8.578406 | 2.869190 |
+| U7.6 → C11.1 supply | 2.013982 | 1.982278 | 7.580872 |
+| U7.1 → C11.2 return | 8.369231 | 9.258668 | 2.093161 |
+| U5.8 → L1.1 switch | 12.285643 | 12.023220 | 6.859360 |
+| U7.8 → L2.1 switch | 31.485048 | 15.754277 | 5.315473 |
+
+Using those explicit identities with absent pad limits, each check is `unknown`.
+Each guided pack request returns, verbatim:
+`status=electrical_locality_unavailable`, `outcome=unknown`, `steps_used=0`,
+`placements=[]`, reason `pad locality needs unambiguous native pads, limits and citations`.
+No pod design was changed or copied into this repository. Cited supply, return
+and switch limits are required before a bounded guided pod run can proceed.
+The owned fixture does demonstrate a changed packed transform: an unguided
+0.500 mm supply / 4.924 mm return becomes 1.803 mm / 1.803 mm under its explicitly
+declared 4 mm limits. That fixture limit supplies no pod acceptance threshold.

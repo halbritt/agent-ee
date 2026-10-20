@@ -240,6 +240,9 @@ def _saved_judgment(output, plan):
     if 'groups' in policy:
         from .placement_groups import grade
         judgment['group_grading'] = grade(facts, policy['groups'])
+    if 'electrical_locality' in policy:
+        from .electrical_locality import grade
+        judgment['locality_grading'] = grade(facts, policy['electrical_locality'])
     return facts, judgment
 
 
@@ -285,6 +288,8 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
     if judgment.get('group_grading', {'status': 'pass'})['status'] != 'pass':
         raise ValueError('saved-board placement failed its declared placement groups')
+    if judgment.get('locality_grading', {}).get('status', 'pass') != 'pass':
+        raise ValueError('saved-board placement failed its declared electrical locality')
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),
             'status': 'placed', 'outcome': 'info', 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],

@@ -1738,3 +1738,16 @@ unqualified `proven` evidence return typed unknown packing coverage, even on
 stock pads. Native write-scope controls refuse unsupported source arcs,
 thermal connections and holes; reflection diagnostics show the actual
 `ValueError` before native console noise. See `tests.test_placer_custom_pads`.
+
+## Pad-level electrical locality
+
+`placement` supports `criterion: electrical-locality/1`, `drc_check` naming the
+earlier same-candidate native DRC, and `locality` naming a captured
+`agent-ee.electrical-locality/1` document. Its immutable input and capability
+predicate are respectively that path and `placement:electrical-locality/1`.
+See the [declaration, verdicts and separate packer constraint](placer.md#pad-level-electrical-locality-agentee-322).
+Supply and return are mandatory and switch/inductor pairs optional. The native
+pad-centre metric preserves proved defects alongside unknowns; missing limits
+or citations stay unknown. The engineer declares limits and citation locators;
+the check never supplies a manufacturer radius or verifies cited prose.
+Origin-group success supplies no electrical-locality acceptance.
