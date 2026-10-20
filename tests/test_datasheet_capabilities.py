@@ -194,6 +194,44 @@ class EnvelopeCapabilityTests(unittest.TestCase):
                       'project/pins.kicad_sch': 'a' * 64, 'project/pins.kicad_pcb': 'b' * 64})
         return compile_baseline(scope, files, inputs), files
 
+    def test_live_and_historical_acquisition_labels_in_capabilities_and_pin_map(self):
+        import shutil
+        from agent_ee.datasheet_capture import import_historical_pdf
+        scope, _ = self.prepare(quantity=1)
+        # Compare the same native control before and after the offline import.
+        inputs = self.root / 'prepared'
+        acq_path = inputs / 'acquisition/manifest.json'
+        live = read_json(acq_path)['parts'][0]
+        for historical in (False, True):
+            if historical:
+                note = inputs / 'sources.json'
+                write_json(note, [dict(file=live['path'], sha256=live['sha256'], url=live['url'],
+                                      captured_at_utc='2026-01-01T00:00:00Z')])
+                output = inputs / 'import'
+                import_historical_pdf(inputs / 'acquisition' / live['path'], inputs,
+                    dict(path='sources.json', sha256=digest(note), entry=0), 'U1', output)
+                shutil.rmtree(inputs / 'acquisition')
+                output.rename(inputs / 'acquisition')
+                doc = read_json(inputs / 'facts.json')
+                doc['acquisition']['sha256'] = digest(acq_path)
+                # The importer uses the content hash as its PDF filename.
+                pdf = read_json(acq_path)['parts'][0]
+                for fact in doc['facts']:
+                    fact['source']['path'] = 'acquisition/' + pdf['path']
+                write_json(inputs / 'facts.json', doc)
+            method, redirect = ('historical_import', 'unknown') if historical else ('live', 'observed')
+            baseline, _ = self.compile(scope)
+            with self.subTest(historical=historical):
+                for cid in ('facts', 'pins'):
+                    receipt = baseline['coverage']['checks'][cid]['acquisitions']['U1']
+                    self.assertEqual((receipt['acquisition_method'], receipt['redirect_provenance']), (method, redirect))
+                run, checks = self.fixture.review(scope, 'label-' + str(historical))
+                self.assertEqual(checks['facts']['outcome'], 'pass', checks)
+                self.assertEqual(checks['pins']['outcome'], 'pass', checks)
+                for receipt in (checks['pins']['details'], read_json(run / 'work/pins/pin-map.json')):
+                    self.assertEqual(receipt['acquisitions']['U1']['acquisition_method'], method)
+                    self.assertEqual(receipt['acquisitions']['U1']['redirect_provenance'], redirect)
+
     def test_complete_closure_in_each_descriptor_and_baseline(self):
         scope, closure = self.prepare()
         baseline, _ = self.compile(scope)

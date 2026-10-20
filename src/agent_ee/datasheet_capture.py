@@ -259,6 +259,8 @@ def historical_source(root, locator, pdf_sha256):
         fields += ('fetched_at',)
     exact_fields(entry, fields)
     from .candidate import safe_relative
+    if not isinstance(entry['file'], str):
+        raise ValueError('historical source file must be text')
     safe_relative(entry['file'])
     if _hash(entry['sha256']) != _hash(pdf_sha256):
         raise ValueError('historical source note does not bind PDF hash')

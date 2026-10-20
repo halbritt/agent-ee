@@ -50,7 +50,7 @@ def validate_document(document, *, context):
     return document
 
 
-def selected_source(root, ref, *, context):
+def _selected_source(root, ref, *, context):
     """Return the sole selected source; rejected hashes always take precedence."""
     from .parts_manifest import _read_blob
     validate_ref(ref)
@@ -66,32 +66,41 @@ def selected_source(root, ref, *, context):
     return selected, entry['rejected']
 
 
+def _receipt(root, selected):
+    record, _ = _acquisition(root, selected['provenance'])
+    if record['sha256'] != selected['sha256']:
+        raise ValueError('selected source hash differs from acquisition')
+    return {**selected, 'acquisition': record}
+
+
+def selected_source(root, ref, *, context):
+    selected, rejected = _selected_source(root, ref, context=context)
+    return _receipt(root, selected), rejected
+
+
 def check_binding(root, ref, artifact, provenance, *, context):
     """Refuse rejected bytes even under an acquisition alias or a different URL."""
-    selected, rejected = selected_source(root, ref, context=context)
+    selected, rejected = _selected_source(root, ref, context=context)
     conflicts = [s for s in rejected if s['sha256'] == artifact['sha256']]
     if conflicts:
         raise ValueError(f'{context}: rejected datasheet source(s) {conflicts}; selected={selected["id"]}')
     if artifact['sha256'] != selected['sha256'] or provenance != selected['provenance']:
         raise ValueError(f'{context}: bound datasheet differs from selected source {selected["id"]} '
                          f'({selected["sha256"]}); bound={artifact}, provenance={provenance}')
-    return selected
+    return _receipt(root, selected)
 
 
 def acquisition_source(root, ref, *, context):
-    selected, _ = selected_source(root, ref, context=context)
+    selected, _ = _selected_source(root, ref, context=context)
     provenance = selected['provenance']
     acquisition_id = re.fullmatch(r'parts\[id=(.+)\]', provenance['locator'])[1]
     return {k: provenance[k] for k in ('path', 'sha256')}, acquisition_id
 
 
-def datasheet(root, part):
+def _acquisition(root, provenance):
+    """Replay one source through the shared acquisition loader."""
     from .datasheet_facts import load_acquisition
     from .parts_manifest import _read_blob, read_captured
-    sheet = part['datasheet']
-    if sheet['status'] != 'captured':
-        raise ValueError('binding fill requires captured datasheet: ' + part['id'])
-    provenance = sheet['provenance']
     match = re.fullmatch(r'parts\[id=(.+)\]', provenance['locator'])
     if match is None:
         raise ValueError('datasheet provenance must select a captured acquisition id')
@@ -103,7 +112,16 @@ def datasheet(root, part):
     record = acquired.get(match[1])
     if record is None or record['missing']:
         raise ValueError('part datasheet acquisition missing')
-    artifact = {'path': (Path(blob['path']).parent / record['path']).as_posix(), 'sha256': record['sha256']}
+    return record, {p: hashlib.sha256(read_captured(root, p)).hexdigest() for p in paths}
+
+
+def datasheet(root, part):
+    sheet = part['datasheet']
+    if sheet['status'] != 'captured':
+        raise ValueError('binding fill requires captured datasheet: ' + part['id'])
+    record, paths = _acquisition(root, sheet['provenance'])
+    artifact = {'path': (Path(sheet['provenance']['path']).parent / record['path']).as_posix(),
+                'sha256': record['sha256']}
     if artifact != sheet['artifact']:
         raise ValueError('part datasheet artifact differs from acquisition')
-    return record, {p: hashlib.sha256(read_captured(root, p)).hexdigest() for p in paths}
+    return record, paths

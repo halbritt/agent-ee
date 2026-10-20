@@ -146,6 +146,22 @@ class HistoricalImportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.replay(manifest)
 
+    def test_cli_malformed_file_is_typed_refusal(self):
+        for value in (None, 7, True, [], {}):
+            self.entry['file'] = value
+            self.write_note()
+            result = subprocess.run([sys.executable, '-m', 'agent_ee.datasheet_capture',
+                '--import-historical', '--pdf', str(self.pdf), '--source-root', str(self.root),
+                '--source-note', 'sources.json', '--source-note-sha256', self.locator['sha256'],
+                '--entry', '0', '--id', 'U1', '--out', str(self.root / 'import')], capture_output=True)
+            with self.subTest(value=value):
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertNotIn(b'Traceback', result.stderr)
+                self.assertIn(b'file', result.stderr)
+                self.assertFalse((self.root / 'import').exists())
+                with self.assertRaises(ValueError):
+                    self.produce()
+
     def test_cli_import_is_offline(self):
         result = subprocess.run([sys.executable, '-m', 'agent_ee.datasheet_capture',
             '--import-historical', '--pdf', str(self.pdf), '--source-root', str(self.root),
@@ -153,6 +169,75 @@ class HistoricalImportTests(unittest.TestCase):
             '--entry', '0', '--id', 'U1', '--out', str(self.root / 'import')], capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIsNone(self.replay()[0]['U1']['fetched_at'])
+
+    def test_each_part_selection_and_fill_receipt_labels_acquisition(self):
+        from tests.test_binding_fill import BindingFillTests
+        from agent_ee.part_record import prepare_record, qualify_record
+        from agent_ee.datasheet_selection import datasheet, selected_source, check_binding
+        for historical in (False, True):
+            helper = BindingFillTests()
+            helper.setUp()
+            self.addCleanup(helper.doCleanups)
+            old = helper.record
+            part = helper.parts['parts'][0]
+            if historical:
+                manifest = import_historical_pdf(self.pdf, self.root, self.locator, 'U1', helper.root / 'historical')
+                blob = dict(path='historical/manifest.json', sha256=digest(helper.root / 'historical/manifest.json'))
+                capture_id = 'U1'
+            else:
+                blob, capture_id = old['datasheets'], old['datasheet_id']
+            record = prepare_record(helper.root, old['lcsc'], old['catalog'], blob, capture_id)
+            method, redirect = ('historical_import', 'unknown') if historical else ('live', 'observed')
+            with self.subTest(historical=historical):
+                self.assertEqual(record['acquisition']['acquisition_method'], method)
+                self.assertEqual(record['acquisition']['redirect_provenance'], redirect)
+                qualify_record(record, helper.root)
+                legacy = {k: v for k, v in record.items() if k != 'acquisition'}
+                self.assertEqual(qualify_record(legacy, helper.root), qualify_record(record, helper.root))
+                forged = copy.deepcopy(record)
+                forged['acquisition']['acquisition_method'] = 'invented'
+                with self.assertRaises(ValueError):
+                    qualify_record(forged, helper.root)
+                selection = part['selection']
+                write_json(helper.root / selection['part_record'], record)
+                selection['part_record_sha256'] = digest(helper.root / selection['part_record'])
+                provenance = {**blob, 'locator': 'parts[id=' + capture_id + ']'}
+                part['datasheet'].update(artifact=record['artifact'], provenance=provenance)
+                write_json(helper.root / 'source-selection.json', dict(schema='agent-ee.datasheet-source-selection/1',
+                    parts={'part': dict(selected=[dict(id='selected', sha256=record['artifact']['sha256'],
+                                                     provenance=provenance)], rejected=[])}))
+                ref = dict(path='source-selection.json', sha256=digest(helper.root / 'source-selection.json'), part_key='part')
+                part['datasheet']['source_selection'] = ref
+                receipts = [datasheet(helper.root, part)[0],
+                            selected_source(helper.root, ref, context='test')[0]['acquisition'],
+                            check_binding(helper.root, ref, record['artifact'], provenance, context='test')['acquisition'],
+                            helper.fill()[1]['components'][0]['acquisition']]
+                for receipt in receipts:
+                    self.assertEqual(receipt['acquisition_method'], method)
+                    self.assertEqual(receipt['redirect_provenance'], redirect)
+                    if historical:
+                        self.assertIsNone(receipt['final_url'])
+                        self.assertEqual(receipt['source_note'], manifest['parts'][0]['source_note'])
+
+    def test_external_part_receipt_labels_and_replays_import(self):
+        from tests.test_binding_fill import ExternalBindingTests
+        from agent_ee.part_record import prepare_external_record, qualify_external_record
+        helper = ExternalBindingTests()
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        import_historical_pdf(self.pdf, self.root, self.locator, 'U1', helper.root / 'historical')
+        blob = dict(path='historical/manifest.json', sha256=digest(helper.root / 'historical/manifest.json'))
+        record = prepare_external_record(helper.root, helper.record['identity_source'], blob,
+                                         'U1', helper.record['deviation_ref'])
+        self.assertEqual(record['acquisition']['acquisition_method'], 'historical_import')
+        self.assertEqual(record['acquisition']['redirect_provenance'], 'unknown')
+        dependencies = qualify_external_record(record, helper.root)
+        self.assertIn('historical/source-note.json', dependencies)
+        legacy = {k: v for k, v in record.items() if k != 'acquisition'}
+        self.assertEqual(qualify_external_record(legacy, helper.root), dependencies)
+        record['acquisition']['redirect_provenance'] = 'observed'
+        with self.assertRaises(ValueError):
+            qualify_external_record(record, helper.root)
 
     def test_part_record_replay_preserves_versioned_import_and_note_dependency(self):
         from tests.test_approved_parts import NamedPartTests

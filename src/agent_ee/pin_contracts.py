@@ -139,7 +139,12 @@ def capability(params, scope, files, inputs, check_id):
                 for obligation in pin['obligations']:
                     if obligation['kind'] != 'provides_voltage':
                         predicates.add('pin-contracts:' + obligation['kind'])
-    return dict(immutable_inputs=sorted(dependencies), predicates=sorted(predicates))
+    result = dict(immutable_inputs=sorted(dependencies), predicates=sorted(predicates))
+    source = next(s for s in scope['checks'] if s['id'] == params['facts_check'])
+    envelope = load_obligations(Path(inputs), source['params']['facts'])
+    if envelope is not None:
+        result['acquisitions'] = envelope['acquired']
+    return result
 
 
 def _fact_support(part, contract, pin, obligation, facts, verified):
@@ -394,12 +399,14 @@ def main():
     params = spec['params']
     root = Path('/candidate')
     document, contracts, facts, _ = load_inputs(params, scope, manifest['files'], root, args.id)
-    retained = read_json(args.facts)['facts']
+    facts_report = read_json(args.facts)
+    retained = facts_report['facts']
     ids = [r['id'] for r in retained]
     if len(ids) != len(set(ids)):
         raise ValueError('ambiguous retained fact IDs')
     verified = {r['id']: r['fact'] for r in retained if r['status'] == 'verified'}
     report = evaluate(document, contracts, facts, verified, read_native_inventory(args.netlist), params)
+    report['acquisitions'] = facts_report.get('acquisitions', {})
     report.update(candidate_id=manifest['candidate_id'], native_xml_sha256=digest(args.netlist),
                   facts_sha256=digest(args.facts))
     write_json(Path('/work/pin-contracts.json'), report)

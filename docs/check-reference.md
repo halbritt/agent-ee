@@ -1666,3 +1666,9 @@ native-qualified custom pads, reusing the footprint index's bounded syntax.
 Its save/reload gate preserves complete primitives, copper extents and pad/net
 identity. Unsupported geometry remains unknown; courtyard packing supplies no
 copper-clearance evidence. This adds no registered check or acceptance predicate.
+
+Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
+an `acquisitions` map with acquisition method and redirect provenance, including
+in capture-time facts/2 capability descriptors. This metadata preserves the
+existing check verdicts. See [consumer receipt provenance](datasheet-capture.md#consumer-receipt-provenance-agentee-311)
+for live `/1` and historical `/2` semantics and the offline preparation consumers.
