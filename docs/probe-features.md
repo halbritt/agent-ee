@@ -121,10 +121,8 @@ requires the versioned base64 alphabet, and rejects legacy JSON, colons and
 control characters. The native fixture also checks the saved footprint values
 and exercises all three admission consumers against a newly captured legacy board.
 
-The retained external regression is currently blocked at its legacy admission
-assertion: `tests.probe_kibot_regression.main` still expects legacy markers to
-pass validators. That expectation conflicts with AGENTEE-283; it remains
-unchanged pending disposition under the worker verdict-preservation rule. Its
-KiBot section reproduces legacy exit 22 and requires exit 0 and fabrication
-outputs for the encoded fixture once that assertion is resolved. Dependencies
-are read only; the scratch directory must not already exist.
+The retained external regression requires legacy board and schematic admission
+to reject the inline JSON with a migration finding, while encoded properties
+pass both validators. Its KiBot section reproduces legacy exit 22 and requires
+exit 0 and fabrication outputs for the encoded fixture. Dependencies are read
+only; the scratch directory must not already exist.

@@ -52,8 +52,15 @@ def main():
                         count += 1
             assert count == 6, (filename, count)
             path.write_bytes(sexpr(tree))
-        assert pf.validate_board((destination / 'probe.kicad_pcb').read_bytes(), probes) == set(probes)
-        assert pf.validate_schematic((destination / 'probe.kicad_sch').read_bytes(), probes) == set(probes)
+        for filename, validate in (('probe.kicad_pcb', pf.validate_board),
+                                   ('probe.kicad_sch', pf.validate_schematic)):
+            data = (destination / filename).read_bytes()
+            if label == 'legacy':
+                with test.assertRaisesRegex(ValueError,
+                        'legacy AGENT_EE_Probe property requires forward-annotation migration'):
+                    validate(data, probes)
+            else:
+                assert validate(data, probes) == set(probes)
         command = [str(args.kibot.resolve()), '-A', '-c', str(args.config.resolve()),
                    '-e', str(destination / 'probe.kicad_sch'),
                    '-b', str(destination / 'probe.kicad_pcb'),
