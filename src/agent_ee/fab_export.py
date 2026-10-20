@@ -1136,6 +1136,8 @@ def check_fab_export(ctx):
         immutable_inputs(params, ctx.manifest['files'], ctx.inputs, ctx.scope)
         probes = load_for_check(ctx) if 'probe_manifest' in params else {}
         copper_refs = declared_copper_features(params)
+        from .copper_features import fab_membership
+        details['copper_parts_manifests'] = fab_membership(ctx, params)
         facts = board_facts((ctx.inputs / board_rel).read_bytes(), probes, copper_refs)
         seen = set()
         for rel in prior.get('details', {}).get('schematic_files', [ctx.scope['schematic']]):

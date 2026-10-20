@@ -161,3 +161,7 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_pin_c
 python3 scripts/check_docs.py
 python3 scripts/check_origins.py
 ```
+
+Copper feature instances (`kind: "copper_feature"`) remain unsupported purchased-
+part electrical evidence. Their coverage rows state that reason without reading
+manufacturer or MPN fields (AGENTEE-315).

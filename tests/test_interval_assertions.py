@@ -222,6 +222,43 @@ class ArithmeticTests(unittest.TestCase):
         self.assertEqual((vout['operands']['r2']['part'], vout['operands']['r2']['lcsc']), ('R2', 'C900003'))
         self.assertEqual(vout['operands']['r2']['parts_manifest']['sha256'], digest(self.ws.root / parts))
 
+    def test_copper_entries_do_not_enter_catalog_mapping(self):
+        from tests.test_copper_features import fixture
+        # The copper record is authored by the shared original fixture.
+        copper_root = self.ws.root / 'copper'
+        copper_root.mkdir()
+        copper = fixture(self, copper_root)['parts'][0]
+        copper['id'] = 'jumper'
+        copper['instances'][0]['reference'] = 'JP1'
+        path = parts_manifest(self.ws, {'R1': 'C900001', 'R2': 'C900003'})
+        manifest = read_json(self.ws.root / path)
+        manifest['parts'].append(copper)
+        write_json(self.ws.root / path, manifest)
+        params = {**self.ws.params(), 'parts_manifest': path}
+        report = self.ws.evaluate(params=params)
+        self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
+        document = copy.deepcopy(self.ws.document)
+        document['parameters']['r1'].pop('lcsc')
+        document['parameters']['r1']['part'] = copper['id']
+        report = self.ws.evaluate(document, params)
+        self.assertEqual((report['execution'], report['outcome']), ('failed', 'unknown'))
+        self.assertIn('absent from the parts manifest', report['error'])
+        # Capability validation must reject the same attempt to buy a copper feature.
+        self.ws.write(document)
+        scope = scope_for(self.ws, params)
+        files = {p.relative_to(self.ws.root).as_posix(): digest(p)
+                 for p in self.ws.root.rglob('*') if p.is_file()}
+        descriptor = describe_check(scope['checks'][0], check_specs=scope['checks'],
+                                    files=files, scope=scope, inputs=self.ws.root)
+        self.assertEqual(descriptor['status'], 'unsupported', descriptor)
+        self.assertIn('absent from a captured parts manifest', descriptor['unsupported_reasons'][0]['message'])
+        manifest['catalog'] = None
+        manifest['selection'] = None
+        manifest['parts'] = [copper]
+        write_json(self.ws.root / path, manifest)
+        report = self.ws.evaluate(params=params)
+        self.assertEqual(report['error'], 'parts manifest has no catalog snapshot for interval assertions')
+
 
 class ExpressionTests(unittest.TestCase):
     def test_parse_and_correlated_enclosure(self):

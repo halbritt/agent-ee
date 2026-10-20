@@ -116,6 +116,8 @@ def _acquisition(root, provenance):
 
 
 def datasheet(root, part):
+    from .copper_features import require_purchased
+    require_purchased(part, 'datasheet binding')
     sheet = part['datasheet']
     if sheet['status'] != 'captured':
         raise ValueError('binding fill requires captured datasheet: ' + part['id'])

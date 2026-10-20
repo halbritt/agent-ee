@@ -13,6 +13,62 @@ def is_copper(part):
     return isinstance(part, dict) and part.get('kind') == KIND
 
 
+def require_purchased(part, consumer):
+    """Refuse copper at consumers that require a purchased identity."""
+    if is_copper(part):
+        raise ValueError(f'{consumer} does not support copper_feature: {part["id"]}')
+
+
+def fab_parts_manifests(params, scope, files, inputs):
+    """Cross-check parts declarations for the fab export's exact native netlist.
+
+    Standalone fab scopes need no parts manifest. When both contracts exist,
+    each complete parts_subset inventory must declare exactly the fab references.
+    """
+    from pathlib import Path
+    from .parts_manifest import load_manifest, _path
+    from .storage import digest
+    expected = declared_copper_features(params)
+    records = []
+    for spec in scope.get('checks', []):
+        source = spec.get('params') or {}
+        if spec.get('kind') != 'parts_subset' or source.get('netlist_check') != params['netlist_check']:
+            continue
+        path = _path(source['manifest'])
+        if path not in files or any(path == m or path.startswith(m.rstrip('/') + '/')
+                                    for m in scope.get('mutable_inputs', [])):
+            raise ValueError('fab parts manifest must be captured and immutable: ' + path)
+        document = load_manifest(inputs, path)
+        sha = digest(Path(inputs) / path)
+        if sha != files[path]:
+            raise ValueError('fab parts manifest changed: ' + path)
+        actual = {s['reference'] for p in document['parts'] if is_copper(p) for s in p['instances']}
+        if actual != expected:
+            raise ValueError(f'fab/parts copper declarations differ for {path}: '
+                             f'parts-only={sorted(actual - expected)}, fab-only={sorted(expected - actual)}')
+        if actual:
+            records.append(dict(check_id=spec['id'], path=path, sha256=sha, references=sorted(actual)))
+    return records
+
+
+def fab_membership(ctx, params):
+    """Bind matching declarations to sealed passing native membership evidence."""
+    from .datasheet_facts import prerequisite
+    from .storage import digest, read_json
+    records = fab_parts_manifests(params, ctx.scope, ctx.manifest['files'], ctx.inputs)
+    for record in records:
+        cid = record['check_id']
+        report = read_json(prerequisite(ctx, cid, 'parts_subset', 'parts-subset.json'))
+        result = read_json(ctx.run_dir / 'checks' / (cid + '.json'))
+        xml = prerequisite(ctx, params['netlist_check'], 'netlist', 'design.xml')
+        if (result.get('outcome') != 'pass' or report.get('execution') != 'ok' or
+                report.get('outcome') != 'pass' or report.get('coverage') != 'complete' or
+                report.get('manifest_sha256') != record['sha256'] or
+                report.get('native_xml_sha256') != digest(xml)):
+            raise ValueError('copper admission requires passing, source-bound parts_subset evidence')
+    return records
+
+
 def validate_part(part):
     from .parts_manifest import _blob
     exact_fields(part, ('kind', 'id', 'role', 'required', 'instances', 'lib_id', 'footprint', 'copper'))

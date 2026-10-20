@@ -551,6 +551,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             if 'probe_manifest' in params:
                 from .probe_features import membership_check
                 prerequisite(membership_check(params, scope), ('parts_subset',))
+            from .copper_features import fab_parts_manifests
+            for record in fab_parts_manifests(params, scope, files, inputs):
+                captured(record['path'], immutable=True)
+                prerequisite(record['check_id'], ('parts_subset',))
             prerequisite(params['netlist_check'], ('netlist',))
             captured(scope.get('board'))
             captured(scope.get('schematic'))
@@ -597,6 +601,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             if 'probe_manifest' in params:
                 from .probe_features import membership_check
                 prerequisite(membership_check(params, scope), ('parts_subset',))
+            from .copper_features import fab_parts_manifests
+            for record in fab_parts_manifests(params, scope, files, inputs):
+                captured(record['path'], immutable=True)
+                prerequisite(record['check_id'], ('parts_subset',))
             captured(scope.get('board'))
             captured(scope.get('schematic'))
             project = str(PurePosixPath(scope['board']).with_suffix('.kicad_pro'))
