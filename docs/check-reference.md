@@ -1713,6 +1713,18 @@ an explicit reason instead of reading manufacturer or MPN fields.
 The [AGENTEE-318 placer gate](placer.md#through-hole-reservations-and-native-publication-gate-agentee-318)
 compares native baseline and candidate DRC item identities before publication.
 New `shorting_items`, `clearance` or `pth_inside_courtyard` findings refuse the
-proposal; added silk findings are recorded separately. Native through-hole
+proposal; added silk findings are recorded separately and the artwork gate refuses unresolved overlap/copper conflicts. Native through-hole
 reservations constrain both packing and targeted plans without changing check
 registration, verdict schemas or coordinator acceptance authority.
+
+
+## Post-placement silk publication gate (AGENTEE-320)
+
+The [artwork pass](silk-artwork.md) uses native field bounds to search for
+position-only Reference/Value relocations after placement. Extra custom fields
+need a footprint declaration. Every other text property and all graphics remain
+unchanged. Fresh native DRC against the immutable baseline gates publication on
+added `silk_overlap` and `silk_over_copper`; unresolved conflicts retain typed
+`placement_silkscreen_conflict` diagnostics with the native items. Explicitly
+ignored conflict categories and missing tool coverage refuse publication. This
+producer gate does not alter registered DRC verdicts or waive baseline defects.

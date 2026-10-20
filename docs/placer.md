@@ -683,7 +683,9 @@ publication and retains the findings with the failed candidate. Ignoring any
 of those categories, a failed tool, missing output, incomplete severity
 coverage or changed evaluation settings also refuses publication. Existing
 courtyard and write-scope gates remain in force. Added `silk_*` findings are
-reported separately in `silkscreen_findings`; they are not shorts.
+reported separately in `silkscreen_findings`. The
+[post-placement artwork pass](silk-artwork.md) relocates permitted fields and
+refuses publication while added `silk_overlap` or `silk_over_copper` remain.
 
 `tests.test_placer_through_holes` supplies original native PTH/NPTH, slot,
 shape, rotation, opposite-side and settings fixtures, plus DRC regression,

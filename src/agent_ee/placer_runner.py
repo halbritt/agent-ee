@@ -16,10 +16,12 @@ from .placement import judge
 from .placement_probe import extract, custom_pad_geometry
 from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
+from .silk_artwork import SILK_CONFLICTS, relocate
 from .storage import digest, read_json, write_json
 
 
 DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard'))
+
 DRC_COURTYARDS = frozenset(('courtyards_overlap', 'malformed_courtyard', 'missing_courtyard'))
 
 
@@ -154,7 +156,7 @@ def _native_drc(board, scratch):
             set(report['included_severities']) != {'error', 'warning', 'exclusion'}):
         raise ValueError('native placement DRC did not evaluate all severities')
     if any(not isinstance(check, dict) or not isinstance(check.get('key'), str)
-           or check['key'] in DRC_COLLISIONS | {'courtyards_overlap', 'courtyard_overlap'}
+           or check['key'] in DRC_COLLISIONS | SILK_CONFLICTS | {'courtyards_overlap', 'courtyard_overlap'}
            for check in report['ignored_checks']):
         raise ValueError('native placement DRC evaluation unavailable or explicitly ignored')
     violations = report['violations']
@@ -207,9 +209,33 @@ def _proposal_drc(source, output):
     before = _native_drc(baseline, baseline_dir)
     after = _native_drc(output, scratch)
     comparison = _drc_comparison(before, after)
+    artwork_regressions = []
+    if any(v['type'] in SILK_CONFLICTS for v in comparison['silkscreen_findings']):
+        import pcbnew
+        # Retain the exact pre-relocation native observation as well as the gate.
+        shutil.copyfile(scratch / 'native-drc.json', scratch / 'pre-artwork-drc.json')
+        board = pcbnew.LoadBoard(str(output))
+        artwork = relocate(board, comparison['silkscreen_findings'])
+        pcbnew.SaveBoard(str(output), board)
+        pre_artwork = after
+        after = _native_drc(output, scratch)
+        artwork_regressions = [v for v in _drc_comparison(pre_artwork, after)['added_findings']
+                               if v['type'] not in SILK_CONFLICTS]
+        final = _drc_comparison(before, after)
+        artwork.update(schema='agent-ee.placement-silkscreen/1',
+                       added_before=comparison['added_by_type'], added_after=final['added_by_type'],
+                       regressions=artwork_regressions,
+                       findings=[dict(type='placement_silkscreen_conflict', native=v)
+                                 for v in final['silkscreen_findings'] if v['type'] in SILK_CONFLICTS])
+        write_json(scratch / 'placement-silkscreen.json', artwork)
+        comparison = final
     write_json(scratch / 'native-drc-comparison.json', comparison)
     if comparison['blocking_findings']:
         raise ValueError(f"saved-board placement introduced native DRC collisions: {comparison['added_by_type']}")
+    if any(v['type'] in SILK_CONFLICTS for v in comparison['silkscreen_findings']):
+        raise ValueError(f"saved-board placement has unresolved native silkscreen findings: {comparison['added_by_type']}")
+    if artwork_regressions:
+        raise ValueError('silkscreen relocation introduced other native DRC findings')
     return [v for v in after['violations'] if v['type'] in DRC_COURTYARDS], comparison
 
 
@@ -265,6 +291,7 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
                               proposal['position_nm'], proposal['rotation_deg'])
             expected_custom.update({p['uuid']: p['custom_geometry']['bbox_nm'] for p in moved['pads']})
     _apply_plan(board, plan, output)
+    overlaps, comparison = _proposal_drc(source, output)
     if _pad_inventory(pcbnew.LoadBoard(str(output))) != pads:
         raise ValueError('native saved board changed footprint pad geometry')
     saved, judgment = _saved_judgment(output, plan)
@@ -280,7 +307,6 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
     write_json(output.parent / 'placement-probe.json', saved)
     write_json(output.parent / 'placement-judgment.json', judgment)
     _netlist_binding(netlist_bytes, saved, _board_only(board))
-    overlaps, comparison = _proposal_drc(source, output)
     if judgment['verdict'] != 'pass' or overlaps:
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
     if judgment.get('group_grading', {'status': 'pass'})['status'] != 'pass':
@@ -298,7 +324,7 @@ def _retain_failure(root, name, scratch, error):
     names = ('candidate.kicad_pcb', 'placement-plan.json', 'placement-probe.json',
              'placement-judgment.json', 'placement-write-scope.json', 'native-drc.json', 'native-drc.stdout.txt',
              'native-drc.stderr.txt', 'native-drc-execution.json', 'native-drc-comparison.json',
-             'candidate.kicad_pro', 'candidate.kicad_dru')
+             'candidate.kicad_pro', 'candidate.kicad_dru', 'pre-artwork-drc.json', 'placement-silkscreen.json')
     for name in names:
         path = scratch / name
         if path.is_file():
