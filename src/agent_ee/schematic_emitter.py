@@ -898,11 +898,13 @@ def _table(kind, uris):
 
 
 def emit_schematic(intent, captured_libraries, layout, *, expected_resolved=None,
-                   symbol_table=None, footprint_table=None):
-    """Pure emission: returns a result record and, only on success, path→bytes.
+                   symbol_table=None, footprint_table=None, native_text_work=None):
+    """Emission: returns a result record and, only on success, path→bytes.
 
     ``expected_resolved`` (optional) must equal the fresh resolution exactly; it
     is never a source of geometry. Any refusal returns no files at all.
+    Without ``native_text_work`` this function is pure. An explicit new native
+    text workspace opts into sandboxed SVG measurement before publication.
     """
     result = dict(schema=RESULT_SCHEMA, execution='failed', outcome='unknown', findings=[],
                   implementation=dict(module=MODULE, sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()),
@@ -943,6 +945,12 @@ def emit_schematic(intent, captured_libraries, layout, *, expected_resolved=None
         else:
             units, global_nets = _plan(resolved, captured_libraries, raw['libraries'], transforms, cache, trees)
             files, root, paper = _emit(resolved, units, global_nets, namespace, project, presentation, groups)
+        if native_text_work is not None:
+            from .schematic_text import place_native_text
+            try:
+                files = place_native_text(files, native_text_work)
+            except OSError as exc:
+                raise EmissionError('presentation_text', 'native text workspace: ' + str(exc)) from exc
         if symbol_table is not None:
             files['sym-lib-table'] = _table('symbol', symbol_table)
         if footprint_table is not None:
@@ -991,6 +999,7 @@ def main(argv=None):
     parser.add_argument('--layout', required=True, type=Path)
     parser.add_argument('--captures', required=True, type=Path)
     parser.add_argument('--out', required=True, type=Path, help='new project directory')
+    parser.add_argument('--native-text-work', type=Path, help='new scratch directory for measured native text placement')
     parser.add_argument('--receipt', required=True, type=Path, help='new diagnostic receipt JSON file')
     args = parser.parse_args(argv)
     intent = args.intent.read_bytes()
@@ -999,7 +1008,7 @@ def main(argv=None):
         captures = read_captures(args.captures, paths)
     except (ValueError, TypeError, KeyError, OSError):
         captures = {}  # The resolver records the missing capture as failed coverage.
-    result, files = emit_schematic(intent, captures, args.layout.read_bytes())
+    result, files = emit_schematic(intent, captures, args.layout.read_bytes(), native_text_work=args.native_text_work)
     if files is not None:
         publish(files, args.out)
     with args.receipt.open('xb') as stream:

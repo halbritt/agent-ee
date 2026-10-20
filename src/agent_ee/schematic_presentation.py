@@ -344,7 +344,10 @@ def _block(group, clusters, loose, entries, aspect):
         wires += [((a[0] + ox, a[1] + oy), (b[0] + ox, b[1] + oy), key) for a, b, key in cluster.wires]
         junctions += [((p[0] + ox, p[1] + oy), key) for p, key in cluster.junctions]
     for index, unit in enumerate(loose):
-        parts.append((unit, offsets['loose', index]))
+        ox, oy = offsets['loose', index]
+        parts.append((unit, (ox, oy)))
+        wires += [((a[0] + ox, a[1] + oy), (b[0] + ox, b[1] + oy), key)
+                  for a, b, key in unit.get('label_leads', [])]
     title = _snap(len(group['title']) * TITLE_ADVANCE)
     return dict(group=group, parts=parts, wires=wires, junctions=junctions,
                 size=(max(_snap(right), title) + 2 * PAD, _snap(bottom) + 2 * PAD + TITLE_BAND))
@@ -476,8 +479,56 @@ def _title(comp):
 def _loose_box(unit, is_global):
     """A labelled part on its own: its shapes plus the label at every connected pin."""
     boxes = list(unit['shapes'])
-    boxes += [label_box(x, y, away, net['name'], is_global(net)) for _, net, x, y, away in unit['labels'] if net]
+    for pin, net, x, y, away in unit['labels']:
+        if net:
+            x, y, away = unit.get('moved_labels', {}).get(pin['number'], (x, y, away))
+            boxes.append(label_box(x, y, away, net['name'], is_global(net)))
+    boxes += [_box([a, b]) for a, b, _ in unit.get('label_leads', [])]
     return _union(boxes)
+
+
+def _readable_fields(item, is_global):
+    """Place anchor and detached Reference/Value clear of their own pin labels.
+
+    A one-pin marker uses a horizontal label, beside rather than along its
+    pin-name column. Keep its connection point and UUID unchanged. The same
+    reservations used by group packing enclose every new field position.
+    """
+    item = dict(item)
+    moved = {}
+    if len(item['pins']) == 1 and not item['comp']['power']:
+        for pin, net, x, y, away in item['labels']:
+            if net and away in (90, 270):
+                # The pin name can run beyond a short pin's connection point.
+                # Continue outward beyond that entire column before turning
+                # the label horizontal; never draw text across the pin number.
+                length = (len(pin['name']) + 3) * FONT
+                ux, uy = DIRS[away]
+                end = (x + ux * length, y + uy * length)
+                moved[pin['number']] = (*end, 0)
+                item['label_leads'] = [((x, y), end, ('marker', item['comp']['id'], item['unit'], pin['number']))]
+        item['moved_labels'] = moved
+    boxes = [label_box(*moved.get(pin['number'], (x, y, away)), net['name'], is_global(net))
+             for pin, net, x, y, away in item['labels'] if net]
+    # _geometry reserves explicit NC markers before the visible fields. Keep
+    # those reservations when replacing the field boxes.
+    markers = item['shapes'][1:1 + sum(net is None for _, net, *_ in item['labels'])]
+    field_boxes = item['shapes'][1 + len(markers):]
+    if any(_overlap(field, label) for field in field_boxes for label in boxes):
+        # Keep the body and pins fixed. Search a bounded grid of horizontal,
+        # centred field pairs; reserve both text rows before accepting either.
+        geo = _autoplace(item, item, False)
+        for step in range(MAX_STEPS + 1):
+            for dx, dy in ((step * GRID, 0), (-step * GRID, 0), (0, step * GRID), (0, -step * GRID)):
+                shapes = [_shift(b, dx, dy) for b in geo['shapes'][1:]]
+                if any(_overlap(b, obstacle) for b in shapes for obstacle in [item['shapes'][0], *markers, *boxes]):
+                    continue
+                item.update(fields={name: (x + dx, y + dy) for name, (x, y) in geo['fields'].items()},
+                            shapes=[item['shapes'][0], *markers, *shapes],
+                            body=_union([item['shapes'][0], *markers, *shapes]))
+                return item, moved
+        raise EmissionError('presentation_conflict', 'no clear field placement for ' + item['comp']['reference'])
+    return item, moved
 
 
 def arrange(units, resolved, global_nets, spec, namespace):
@@ -495,7 +546,8 @@ def arrange(units, resolved, global_nets, spec, namespace):
     prepared = []
     relabel = {}
     for group in groups:
-        anchors = [u for u in group['items'] if roles[u['comp']['id'], u['unit']] == 'anchor']
+        anchors = [_readable_fields(u, is_global)[0] for u in group['items']
+                   if roles[u['comp']['id'], u['unit']] == 'anchor']
         satellites = [u for u in group['items'] if roles[u['comp']['id'], u['unit']] == 'satellite']
         loose = [u for u in group['items'] if roles[u['comp']['id'], u['unit']] == 'marker']
 
@@ -570,6 +622,13 @@ def arrange(units, resolved, global_nets, spec, namespace):
         for key, mapping in relabel_local.items():
             relabel.setdefault(key, {}).update(mapping)
         loose += pending
+        repaired = []
+        for item in loose:
+            item, moved = _readable_fields(item, is_global)
+            repaired.append(item)
+            if moved:
+                relabel.setdefault((item['comp']['id'], item['unit']), {}).update(moved)
+        loose = repaired
         for cluster in clusters:
             if cluster.moved:
                 item = cluster.parts[0][0]
