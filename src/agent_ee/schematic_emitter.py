@@ -409,6 +409,19 @@ def _box(points):
             max(p[0] for p in points), max(p[1] for p in points)]
 
 
+def _global_power_net(comp, net, symbol, location):
+    """Shared exact naming rule for native projection and schematic emission."""
+    if comp['pins'][0]['electrical_type'] != 'power_in':
+        return False  # A flag (power_out) names no net.
+    if net['name'] != comp['value']:
+        raise EmissionError('power_net_mismatch',
+                            'power symbol value must equal its intent net name', location)
+    scope = children(symbol, 'power')
+    if len(scope) != 1 or scope[0][1:] not in ([], ['global'], ['local']):
+        raise EmissionError('unsupported_power_symbol', 'unqualified power symbol scope', location)
+    return scope[0][1:] != ['local']
+
+
 def _plan(resolved, captured, intent_libraries, transforms, cache, trees):
     """Validate every component, unit, pin and net before any output is built."""
     units, net_of, nc = [], {}, set()
@@ -460,18 +473,7 @@ def _plan(resolved, captured, intent_libraries, transforms, cache, trees):
                 raise EmissionError('unsupported_power_symbol', 'power symbol requires one connected pin', location)
             pin = comp['pins'][0]
             net = net_of[comp['id'], pin['number']]
-            if pin['electrical_type'] != 'power_in':
-                continue  # A flag (power_out) names no net.
-            # A power_in power symbol is a net driver named by its Value.
-            if net['name'] != comp['value']:
-                raise EmissionError('power_net_mismatch',
-                                    'power symbol value must equal its intent net name', location)
-            scope = children(symbols[comp['id']][0], 'power')
-            if len(scope) != 1 or scope[0][1:] not in ([], ['global'], ['local']):
-                raise EmissionError('unsupported_power_symbol', 'unqualified power symbol scope', location)
-            if scope[0][1:] != ['local']:
-                # Local labels beside a global power net draw a native ERC warning;
-                # every terminal of this net carries a global label instead.
+            if _global_power_net(comp, net, symbols[comp['id']][0], location):
                 global_nets.add(net['id'])
     for comp in resolved['components']:
         location = '/components/' + comp['id']

@@ -292,6 +292,8 @@ The per-reference table is retained in `work/CHECK_ID/parts-subset.json` and the
 coordinator seals the check and its prerequisite XML. The predicate establishes
 declared membership, not approval authenticity or component suitability.
 
+Explicit [binding-fill source migration](binding-fill.md#explicit-source-migration-agentee-309) regenerates qualified legacy probe markers with a binding-fill/2 migration artifact before schematic emission. Admission checks retain their strict canonical requirement. Binding fill also projects declared copper pins, native nets and non-BOM flags without purchased-part acquisition (AGENTEE-309).
+
 `parts_subset` also admits explicit [on-board copper declarations](approved-parts.md#declared-on-board-copper-features) with captured CAD, exact passive pins/nets and native non-BOM, non-DNP, on-board flags (AGENTEE-305). It shares the fab copper geometry and field rules; undeclared populated instances remain defects.
 
 ## Hierarchy validation
