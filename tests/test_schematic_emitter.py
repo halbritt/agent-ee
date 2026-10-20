@@ -331,6 +331,18 @@ class DeterminismTests(unittest.TestCase):
                 self.assertEqual(prop[2].encode('utf-8'), raw.encode('utf-8'))
                 self.assertIn(['hide', 'yes'], prop)
 
+    def test_legacy_datasheet_text_preserves_original_validation(self):
+        for raw in ('', 'owned-datasheet.pdf', '[]', 'x' * 256, 'é' * 256):
+            with self.subTest(value=raw):
+                intent = load('regulator.intent.json')
+                intent['components'][0]['part_binding'] = {'PARAM_Datasheet': raw}
+                result, files = emit(intent=intent)
+                self.assertEqual(result['execution'], 'ok', result['findings'])
+                symbol = next(s for s in children(parse_sexpr(files['regulator.kicad_sch']), 'symbol')
+                              if any(p[1:3] == ['Reference', 'J1'] for p in children(s, 'property')))
+                prop = next(p for p in children(symbol, 'property') if p[1] == 'PARAM_Datasheet')
+                self.assertEqual(prop[2].encode('utf-8'), raw.encode('utf-8'))
+
     def test_derived_metadata_overrides_without_mutating_capture(self):
         intent, captured = derived_inputs(middle='(in_pos_files no) (property "Owner" "middle")',
                                          leaf='(exclude_from_sim yes) (property "Owner" "leaf")')
@@ -415,7 +427,7 @@ class DeterminismTests(unittest.TestCase):
 class RefusalTests(unittest.TestCase):
     def test_invalid_structured_datasheet_bindings_are_refused(self):
         raw = datasheet_binding()
-        invalid = [None, 123, '', '{', '[]', raw + ' ',
+        invalid = [None, 123, '{', ' {', ' ' + raw, raw + ' ',
                    json.dumps(json.loads(raw)),
                    raw.replace('"schema":', '"extra":true,"schema":'),
                    raw.replace('"schema":', '"schema":"duplicate","schema":'),
@@ -437,6 +449,14 @@ class RefusalTests(unittest.TestCase):
                 result = self.assertRefused('malformed_part_binding', intent)
                 self.assertEqual(result['findings'][0]['location'],
                                  '/components/j_in/part_binding/PARAM_Datasheet')
+
+    def test_unsafe_or_overlong_legacy_datasheet_text_is_refused(self):
+        for raw in ('x' * 257, 'é' * 257, '${INJECT}', 'owned\\datasheet.pdf',
+                    'owned\ndatasheet.pdf', 'owned\x7fdatasheet.pdf'):
+            with self.subTest(value=raw):
+                intent = load('regulator.intent.json')
+                intent['components'][0]['part_binding'] = {'PARAM_Datasheet': raw}
+                self.assertRefused('malformed_part_binding', intent)
 
     def test_ordinary_fields_keep_256_character_limit(self):
         for field in ('Datasheet', 'Manufacturer', 'PARAM_voltage'):

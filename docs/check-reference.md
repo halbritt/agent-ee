@@ -41,9 +41,11 @@ The [schematic emitter](schematic-emitter.md#output) retains KiCad 10 private
 symbol metadata and accepts an explicit boolean component `in_bom` policy.
 These are producer features, with no check registration change.
 The emitter also accepts canonical structured `PARAM_Datasheet` bindings up to
-2048 bytes, using the existing binding parser; ordinary free-text fields remain
-limited to 256 characters. Native forced-save and export regressions cover the
-long URL allowance and byte preservation (AGENTEE-293).
+2048 bytes, using the existing binding parser; legacy `PARAM_Datasheet` text
+retains its zero-to-256-character validation. Object-like values (leading `{`
+after whitespace) must pass structured validation, with no free-text fallback.
+Ordinary free-text fields remain limited to 256 characters. Native forced-save
+and export regressions cover the long URL allowance and byte preservation (AGENTEE-293).
 Native netlist inventory observes BOM exclusion independently of board membership.
 Fab export
 still refuses non-DNP native exclusions; emission success does not establish

@@ -26,7 +26,11 @@ project directory exists. The receipt is always written to a new file. An
 existing output directory is refused. The emitter reads only the declared
 `.kicad_sym` captures and never searches installed libraries or tables.
 
-`part_binding.PARAM_Datasheet` accepts at most 2048 UTF-8 bytes of canonical
+`part_binding.PARAM_Datasheet` retains the original zero-to-256-character
+free-text validation, including empty strings and local filenames. Values that
+begin with `{` after leading whitespace must instead be canonical structured
+bindings; malformed object-like values never fall back to free text.
+The structured path accepts at most 2048 UTF-8 bytes of canonical
 `agent-ee.datasheet-binding/1` JSON (AGENTEE-293). This fixed bound gives captured
 manufacturer URLs room beyond the 256-character free-text limit, while bounding
 parsing and native property storage. The existing `part_binding.parse_param_value`

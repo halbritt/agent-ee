@@ -355,6 +355,8 @@ def _field_text(value, code, location):
 
 
 def _datasheet_binding_text(value, location):
+    if isinstance(value, str) and not value.lstrip().startswith('{'):
+        return _field_text(value, 'malformed_part_binding', location)
     if (not isinstance(value, str) or not DATASHEET_BINDING_TEXT.fullmatch(value)
             or '${' in value or '\\' in value):
         raise EmissionError('malformed_part_binding',
