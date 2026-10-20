@@ -3475,6 +3475,22 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-233 synthetic passive-rating tests: owned JLCPCB-shaped rows, authored one-page text PDFs and synthetic part numbers. No vendor PDF, real pod part data, third-party design or library content is copied."
+    },
+    {
+      "paths": [
+        "src/agent_ee/placement_plans.py",
+        "tests/test_placement_plans.py",
+        "tests/test_placement_plans_native.py"
+      ],
+      "kind": "owned-source",
+      "origins": ["AE"],
+      "reviewed": "Original AGENTEE-55 implementation and tests, reusing agent-ee's probe, judge, packing geometry and disposable writer. Konnect is a mechanism reference in the ticket only; no upstream code, designs, libraries or prose were retrieved or copied. Native fixtures are authored with the existing owned fixture generator."
+    },
+    {
+      "paths": ["docs/placement-plans.md"],
+      "kind": "owned-documentation",
+      "origins": ["AE"],
+      "reviewed": "Original AGENTEE-55 contract and qualification documentation; no external text or assets are reproduced."
     }
   ]
 }

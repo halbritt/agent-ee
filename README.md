@@ -577,7 +577,10 @@ declared connector edges and a pad-centre ratsnest proxy. The advisory
 [pre-route congestion report](docs/placement-congestion.md) ranks pad overlaps,
 courtyard issues and congested regions with suggested moves; it never passes a board. An
 [initial placer](docs/placer.md) proposes deterministic positions on an isolated
-copy and validates the saved result with native tools. On placement turns of a staged campaign, the
+copy and validates the saved result with native tools. Opt-in
+[targeted plans](docs/placement-plans.md) move caller-named decoupling capacitors
+only when the placement score strictly improves; net-cluster seeds and BGA
+escape suggestions remain plans for inspection. On placement turns of a staged campaign, the
 [placement campaign adapter](docs/placement-adapter.md) gives the writer the
 sealed placement findings, can run the placer as a receipted coordinator step,
 and refuses edits other than footprint translations, quarter turns and qualified

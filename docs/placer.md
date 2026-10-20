@@ -1,5 +1,9 @@
 # Disposable deterministic placer (AGENTEE-54)
 
+For caller-named capacitor rows with strict before/after score gating, see
+[targeted placement plans](placement-plans.md) (AGENTEE-55). That opt-in writer
+request also exposes net-cluster seeds and BGA escape plans for inspection.
+
 `placer.pack(facts, policy)` proposes a complete placement from the saved-board
 [placement probe](placement.md). The policy is captured input, using schema
 `agent-ee.packing-policy/1` and explicit `step_budget`, `gap_nm`, `fixed_refs`,
