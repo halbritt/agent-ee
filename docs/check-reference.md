@@ -1707,3 +1707,12 @@ refuse copper with typed errors. See [approved parts](approved-parts.md#declared
 
 Pin contracts retain copper instances as unsupported electrical evidence, with
 an explicit reason instead of reading manufacturer or MPN fields.
+
+## Placer through-hole publication gate
+
+The [AGENTEE-318 placer gate](placer.md#through-hole-reservations-and-native-publication-gate-agentee-318)
+compares native baseline and candidate DRC item identities before publication.
+New `shorting_items`, `clearance` or `pth_inside_courtyard` findings refuse the
+proposal; added silk findings are recorded separately. Native through-hole
+reservations constrain both packing and targeted plans without changing check
+registration, verdict schemas or coordinator acceptance authority.

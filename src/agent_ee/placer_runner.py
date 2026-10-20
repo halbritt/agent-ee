@@ -1,5 +1,6 @@
 """Single-writer disposable-board placement; intended for networkless sandbox use."""
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -16,6 +17,10 @@ from .placement_probe import extract, custom_pad_geometry
 from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
 from .storage import digest, read_json, write_json
+
+
+DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard'))
+DRC_COURTYARDS = frozenset(('courtyards_overlap', 'malformed_courtyard', 'missing_courtyard'))
 
 
 def _authorization(source, destination, authorization):
@@ -144,14 +149,68 @@ def _native_drc(board, scratch):
     if (not isinstance(report.get('violations'), list) or not isinstance(report.get('unconnected_items'), list)
             or not isinstance(report.get('ignored_checks'), list)):
         raise ValueError('native DRC report lacks counted evaluations')
-    if any(not isinstance(check, dict) or check.get('key') in ('courtyards_overlap', 'courtyard_overlap')
+    if (not isinstance(report.get('included_severities'), list) or
+            any(not isinstance(s, str) for s in report['included_severities']) or
+            set(report['included_severities']) != {'error', 'warning', 'exclusion'}):
+        raise ValueError('native placement DRC did not evaluate all severities')
+    if any(not isinstance(check, dict) or not isinstance(check.get('key'), str)
+           or check['key'] in DRC_COLLISIONS | {'courtyards_overlap', 'courtyard_overlap'}
            for check in report['ignored_checks']):
-        raise ValueError('native courtyard evaluation unavailable or explicitly ignored')
+        raise ValueError('native placement DRC evaluation unavailable or explicitly ignored')
     violations = report['violations']
     if any(not isinstance(v, dict) or not isinstance(v.get('type'), str) for v in violations):
         raise ValueError('native DRC contains malformed violations')
     # Excluded courtyard findings still prevent a placed result.
-    return [v for v in violations if v.get('type') in ('courtyards_overlap', 'malformed_courtyard', 'missing_courtyard')]
+    return report
+
+
+def _drc_comparison(before, after):
+    """Count native findings by category and item identities, independent of location."""
+    if (before['ignored_checks'] != after['ignored_checks'] or
+            before.get('included_severities') != after.get('included_severities')):
+        raise ValueError('native baseline/candidate DRC evaluation settings differ')
+
+    def key(finding):
+        items = finding.get('items')
+        if (not isinstance(items, list) or not items or
+                any(not isinstance(i, dict) or not isinstance(i.get('uuid'), str) or not i['uuid'] for i in items)):
+            raise ValueError('native DRC finding lacks item identities')
+        return finding['type'], tuple(sorted(i['uuid'] for i in items))
+
+    old = Counter(key(v) for v in before['violations'])
+    remaining = Counter(key(v) for v in after['violations']) - old
+    added = []
+    for finding in after['violations']:
+        identity = key(finding)
+        if remaining[identity]:
+            added.append(finding)
+            remaining[identity] -= 1
+    return {'added_findings': added,
+            'blocking_findings': [v for v in added if v['type'] in DRC_COLLISIONS],
+            'silkscreen_findings': [v for v in added if v['type'].startswith('silk_')],
+            'added_by_type': dict(Counter(v['type'] for v in added))}
+
+
+def _proposal_drc(source, output):
+    """Use the source project's unchanged rules on both saved boards."""
+    scratch = output.parent
+    baseline_dir = scratch / 'baseline'
+    baseline_dir.mkdir()
+    baseline = baseline_dir / output.name
+    shutil.copyfile(source, baseline)
+    for suffix in ('.kicad_pro', '.kicad_dru'):
+        settings = source.with_suffix(suffix)
+        if settings.is_file():
+            payload = settings.read_bytes()
+            baseline.with_suffix(suffix).write_bytes(payload)
+            output.with_suffix(suffix).write_bytes(payload)
+    before = _native_drc(baseline, baseline_dir)
+    after = _native_drc(output, scratch)
+    comparison = _drc_comparison(before, after)
+    write_json(scratch / 'native-drc-comparison.json', comparison)
+    if comparison['blocking_findings']:
+        raise ValueError(f"saved-board placement introduced native DRC collisions: {comparison['added_by_type']}")
+    return [v for v in after['violations'] if v['type'] in DRC_COURTYARDS], comparison
 
 
 def _apply_plan(board, plan, output):
@@ -188,7 +247,7 @@ def _board_only(board):
     return frozenset(fp.GetReference() for fp in board.GetFootprints() if fp.IsBoardOnly())
 
 
-def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts):
+def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source):
     import pcbnew
     pads = _pad_inventory(board)
     from .geometry_probe import box_nm
@@ -221,7 +280,7 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts):
     write_json(output.parent / 'placement-probe.json', saved)
     write_json(output.parent / 'placement-judgment.json', judgment)
     _netlist_binding(netlist_bytes, saved, _board_only(board))
-    overlaps = _native_drc(output, output.parent)
+    overlaps, comparison = _proposal_drc(source, output)
     if judgment['verdict'] != 'pass' or overlaps:
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
     if judgment.get('group_grading', {'status': 'pass'})['status'] != 'pass':
@@ -230,19 +289,23 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts):
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),
             'status': 'placed', 'outcome': 'info', 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],
             'plan': plan, 'judgment': judgment,
-            'native_courtyard_overlaps': overlaps, 'authority': 'disposable-unsealed-proposal'}
+            'native_courtyard_overlaps': overlaps, 'native_drc_comparison': comparison,
+            'authority': 'disposable-unsealed-proposal'}
 
 
 def _retain_failure(root, name, scratch, error):
     retained = Path(tempfile.mkdtemp(prefix=name + '-failure-', dir=root))
     names = ('candidate.kicad_pcb', 'placement-plan.json', 'placement-probe.json',
              'placement-judgment.json', 'placement-write-scope.json', 'native-drc.json', 'native-drc.stdout.txt',
-             'native-drc.stderr.txt', 'native-drc-execution.json')
+             'native-drc.stderr.txt', 'native-drc-execution.json', 'native-drc-comparison.json',
+             'candidate.kicad_pro', 'candidate.kicad_dru')
     for name in names:
         path = scratch / name
         if path.is_file():
-            target = 'failed-candidate.kicad_pcb' if name == 'candidate.kicad_pcb' else name
+            target = 'failed-' + name if name.startswith('candidate.kicad_') else name
             shutil.copyfile(path, retained / target)
+    if (scratch / 'baseline').is_dir():
+        shutil.copytree(scratch / 'baseline', retained / 'baseline')
     write_json(retained / 'failure.json', {'schema': 'agent-ee.placement-failure/1',
                'execution': 'failed', 'outcome': 'unknown', 'status': 'not_placed', 'error': str(error)})
     return retained
@@ -283,6 +346,9 @@ def place_candidate(source, netlist, destination, request):
     destination = Path(destination).absolute()
     root = _authorization(source, destination, request['authorization'])
     source_hash, netlist_bytes = digest(source), netlist.read_bytes()
+    project_inputs = {source.with_suffix(suffix): (source.with_suffix(suffix).read_bytes()
+                      if source.with_suffix(suffix).is_file() else None)
+                      for suffix in ('.kicad_pro', '.kicad_dru')}
     targeted = 'targeted' in request or 'targeted_plans' in request
     if targeted:
         import pcbnew
@@ -309,7 +375,7 @@ def place_candidate(source, netlist, destination, request):
             output = scratch / 'candidate.kicad_pcb'
             write_json(scratch / 'placement-plan.json', plan)
             try:
-                report = _evaluate_proposal(board, output, plan, netlist_bytes, facts)
+                report = _evaluate_proposal(board, output, plan, netlist_bytes, facts, source)
                 from .placement_adapter import write_scope
                 protected = ([p['uuid'] for p in plan['placements'] if p['fixed']]
                              if targeted else ())
@@ -320,6 +386,8 @@ def place_candidate(source, netlist, destination, request):
                 report['write_scope'] = scope
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:
                     raise ValueError('captured placement inputs changed during execution')
+                if any((p.read_bytes() if p.is_file() else None) != payload for p, payload in project_inputs.items()):
+                    raise ValueError('captured placement project rules changed during execution')
                 write_json(scratch / 'placement-result.json', report)
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 retained = _retain_failure(root, destination.name, scratch, exc)
