@@ -172,7 +172,10 @@ def _saved_judgment(output, plan):
             raise ValueError('native saved placement differs from planned transform')
     # Envelope-bound fixed-courtyard overhangs (AGENTEE-212) are judged as declared, nowhere else.
     policy = plan['policy']
-    judgment = judge(facts, overhangs=policy.get('fixed_overhangs'))
+    judgment = judge(facts, plan.get('judge_policy'), overhangs=policy.get('fixed_overhangs'))
+    if 'judge_policy' in plan:
+        if judgment['score'] <= plan['before']['score']:
+            raise ValueError('saved-board placement score did not strictly improve')
     if 'groups' in policy:
         from .placement_groups import grade
         judgment['group_grading'] = grade(facts, policy['groups'])
@@ -242,13 +245,23 @@ def place_candidate(source, netlist, destination, request):
     destination = Path(destination).absolute()
     root = _authorization(source, destination, request['authorization'])
     source_hash, netlist_bytes = digest(source), netlist.read_bytes()
+    if 'targeted' in request:
+        from .placement_plans import plan as targeted_plan
+        # Refuse before even creating a lease file. A successful plan is rebuilt
+        # under the writer lease below; caller-provided plans are never trusted.
+        preview = targeted_plan(extract(source), _effective_policy(request), request['targeted'])
+        if preview['status'] != 'planned':
+            return preview
     with writer_lock(destination):
         _authorization(source, destination, request['authorization'])
         facts = extract(source)
         board = _unrouted_board(source)
         _netlist_binding(netlist_bytes, facts, _board_only(board))
         policy = _effective_policy(request)
-        plan = pack(facts, policy)
+        if 'targeted' in request:
+            plan = targeted_plan(facts, policy, request['targeted'])
+        else:
+            plan = pack(facts, policy)
         refusal = plan['status'] == 'planned' and _padstack_refusal(board)
         if refusal:
             return _failure(facts, policy, 'unsupported_geometry', 'unknown', plan['steps_used'], refusal)
@@ -261,7 +274,9 @@ def place_candidate(source, netlist, destination, request):
             try:
                 report = _evaluate_proposal(board, output, plan, netlist_bytes)
                 from .placement_adapter import write_scope
-                scope = write_scope(source.read_bytes(), output.read_bytes())
+                protected = ([p['uuid'] for p in plan['placements'] if p['fixed']]
+                             if 'targeted' in request else ())
+                scope = write_scope(source.read_bytes(), output.read_bytes(), protected)
                 write_json(scratch / 'placement-write-scope.json', scope)
                 if scope['status'] != 'allowed':
                     raise ValueError(f"native saved placement exceeded write scope: {scope['violations']}")

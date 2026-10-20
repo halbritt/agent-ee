@@ -1005,6 +1005,11 @@ evaluators over saved native proposals at 90–112 footprints on both sides.
 It records runtime and byte/transform repeatability under `build/`; it adds no
 registered predicate and carries no campaign acceptance authority.
 
+The opt-in [targeted placement planner](placement-plans.md) (AGENTEE-55)
+reuses these geometry judgments and the existing advisory score in the
+disposable writer. It blocks ties, decreases and unproven geometry before
+writing, then rejudges actual saved bytes. It adds no check kind or acceptance
+authority; cluster seeds and BGA escape plans cannot apply themselves.
 
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.

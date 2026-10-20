@@ -3506,6 +3506,28 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-181 fixture generator and native qualification tests. Rectangular stand-in geometry and two-pad footprints are authored from dimensions here; the schematic reuses the existing owned CAP symbol. No vendor CAD, pod campaign files or third-party library bytes are copied."
+    },
+    {
+      "paths": [
+        "src/agent_ee/placement_plans.py",
+        "tests/test_placement_plans.py",
+        "tests/test_placement_plans_native.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-55 implementation and tests, reusing agent-ee's probe, judge, packing geometry and disposable writer. Konnect is a mechanism reference in the ticket only; no upstream code, designs, libraries or prose were retrieved or copied. Native fixtures are authored with the existing owned fixture generator."
+    },
+    {
+      "paths": [
+        "docs/placement-plans.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-55 contract and qualification documentation; no external text or assets are reproduced."
     }
   ]
 }
