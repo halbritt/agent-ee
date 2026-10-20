@@ -1407,6 +1407,81 @@ class AssemblyReadinessTests(unittest.TestCase):
             validate_params({**params, "deviations": "decisions/temperature.md",
                              "operating_temperature": {**spec, "exemptions": self.exemption()}})
 
+    def test_operating_temperature_exemption_requires_affirmative_unconditional_statement(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2")]))
+        params = self.temperature_case()
+        decision = self.root / "decisions/temperature.md"
+        decision.parent.mkdir()
+        cases = [
+            ("R2 is NOT exempt: it must carry DigiKey operating-temperature evidence.", 1, "R2", "unknown"),
+            ("R2 is exempt only if it is replaced by a 125C part.", 1, "R2 is exempt", "unknown"),
+            ("R2 10k 0603", 1, "R2", "unknown"),
+            ("R2 requires evidence. R3 is exempt.", 1, "R2", "unknown"),
+            ("R2 is exempt from clearance checks.", 1, "R2", "unknown"),
+            ("R2 is exempt from operating-temperature evidence.", 1, "R2", "pass"),
+            ("R2 is exempted from operating-temperature evidence.", 1, "R2", "pass"),
+            ("R2 is exempt\nonly if it is replaced by a 125C part.", 1, "R2 is exempt", "unknown"),
+            ("R2 is exempt\nfrom neither temperature evidence nor review.", 1, "R2", "unknown"),
+            ("# Only if replaced\nR2 is exempt.", 2, "R2", "unknown"),
+            ("# Not exempt\nR2 is exempt.", 2, "R2", "unknown"),
+            ("If replaced:\n\n- R2 is exempt.", 3, "R2", "unknown"),
+            ("- If replaced:\n  - R2 is exempt.", 2, "R2", "unknown"),
+            ("```\nR2 is exempt.\n```", 2, "R2", "unknown"),
+            ("R2 is not considered exempt.", 1, "R2", "unknown"),
+            ("R2 is exempt; that permission is revoked.", 1, "R2 is exempt", "unknown"),
+            ("R2 might be exempt.", 1, "R2", "unknown"),
+            ("R2 is exempt?", 1, "R2", "unknown"),
+            ("R2 is exempt. R2 must carry evidence.", 1, "R2 is exempt", "unknown"),
+            ("# Temperature exemptions\n- R2 is exempt from operating-temperature evidence.", 2, "R2", "pass"),
+        ]
+        for text, number, quote, expected in cases:
+            with self.subTest(text=text):
+                decision.write_text(text + "\n", encoding="utf-8")
+                citation = {"source": "decisions/temperature.md", "sha256": digest(decision),
+                            "line": number, "quote": quote}
+                configured = {**params, "operating_temperature": {**params["operating_temperature"],
+                                                                 "exemptions": {"R2": citation}}}
+                files = {p.relative_to(self.root).as_posix(): digest(p)
+                         for p in self.root.rglob("*") if p.is_file()}
+                report = evaluate_assembly_readiness(self.root, netlist, configured, captured_files=files)
+                self.assertEqual(report["outcome"], expected, report["findings"])
+                entry = report["operating_temperature"]["exempt"][0]
+                self.assertEqual(entry["status"], "exempt" if expected == "pass" else "unknown")
+                if expected == "unknown":
+                    self.assertIn("operating_temperature_exemption_invalid", [f["code"] for f in report["findings"]])
+                    hot = {**configured, "operating_temperature": {**configured["operating_temperature"],
+                                                                   "max_c": 125}}
+                    defect = self.evaluate(netlist, hot)
+                    self.assertEqual(defect["outcome"], "defect", defect["findings"])
+                    self.assertIn("operating_temperature_out_of_range", [f["code"] for f in defect["findings"]])
+
+    def test_operating_temperature_exemption_refuses_design_sources_and_longer_tokens(self):
+        from agent_ee.assembly_readiness import capability, validate_params
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2")]))
+        params = self.temperature_case()
+        citation = self.exemption()["R2"]
+        lines = (self.root / "temp.kicad_sch").read_text().splitlines()
+        index = next(i for i, line in enumerate(lines) if '"Reference" "R2"' in line)
+        schematic_citation = {"source": "temp.kicad_sch", "sha256": digest(self.root / "temp.kicad_sch"),
+                              "line": index + 1, "quote": '"Reference" "R2"'}
+        bad_citations = [schematic_citation]
+        bad_citations.extend({**citation, "source": "design" + suffix} for suffix in
+                             (".kicad_pcb", ".kicad_pro", ".kicad_dru", ".kicad_sym", ".KICAD_SCH"))
+        bad_citations.extend(self.exemption(line=line)["R2"] for line in
+                             ("R2-1 accepted", "R2-1 is exempt", "R1/R2 is exempt", "R2/R3 is exempt"))
+        files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
+        for bad in bad_citations:
+            with self.subTest(citation=bad):
+                configured = {**params, "operating_temperature": {**params["operating_temperature"],
+                                                                 "exemptions": {"R2": bad}}}
+                with self.assertRaises(ValueError):
+                    validate_params(configured)
+                with self.assertRaises(ValueError):
+                    capability(configured, files, self.root)
+                with self.assertRaises(AssemblyReadinessExecutionError) as cm:
+                    self.evaluate(netlist, configured)
+                self.assertEqual(cm.exception.execution, "unsupported")
+
     def test_digikey_package_must_bind_to_the_footprint(self):
         # AGENTEE-274: with a declared package map the DigiKey package must equal the footprint (ee29:R_0603).
         from tests.test_digikey_evidence import write_package_map

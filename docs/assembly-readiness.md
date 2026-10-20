@@ -343,14 +343,26 @@ exemption cites one line of a captured owner decision:
 
 ```json
 {"exemptions": {"R2": {"source": "decisions/temperature.md", "sha256": "<64 hex>",
-                       "line": 2, "quote": "R2 is a board-edge bleeder resistor"}}}
+                       "line": 2, "quote": "R2 is exempt from operating-temperature evidence."}}}
 ```
 
-The quote must name the exact reference as a whole token, so `R20` does not
-name `R2`. A reference can be judged or exempt, not both. The source is an
-immutable input. At evaluation it must be captured with the pinned hash and
-hold the quote on the cited line. Otherwise the exemption is unknown, never a
-pass.
+The quote must name the exact reference as a whole token, so `R20`, `R2-1`
+and `R1/R2` do not name `R2`. A reference can be judged or exempt, not both.
+The source is an immutable input; native KiCad files (`.kicad_*`) and the
+mutable deviations file are refused as sources. At evaluation it must be
+captured with the pinned hash and hold the quote on the cited line.
+
+AGENTEE-281 also checks the whole owner statement using the hand-fit policy's
+Markdown block and conditional-clause rules. The reference must occur exactly
+once in an affirmative, unconditional statement: for example, `R2 is exempt
+from operating-temperature evidence.` The existing wording `R2 is a board-edge
+bleeder resistor; its operating temperature is accepted by the owner without
+DigiKey evidence.` is also supported. Negations, questions, bare BOM lines,
+conditional headings or continuations, code blocks and ambiguous list lead-ins
+leave the exemption unknown (`operating_temperature_exemption_invalid`).
+Truncating the quote cannot omit those qualifiers from evaluation. Unsupported
+or ambiguous wording remains unknown; this is a bounded statement check, not
+general natural-language interpretation.
 
 `package_map` adds the [DigiKey package check](digikey-capture.md#check-evidence)
 against the netlist `Footprint`. A mismatch is a `digikey_package_mismatch`

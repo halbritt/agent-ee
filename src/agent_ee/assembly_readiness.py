@@ -939,6 +939,8 @@ def _validate_operating_temperature(raw):
         if ref in raw["parts"]:
             raise ValueError(f"operating_temperature reference {ref!r} is both judged and exempt")
         _validate_citation(citation, f"operating_temperature.exemptions.{ref}")
+        if PurePosixPath(citation["source"]).suffix.lower().startswith(".kicad_"):
+            raise ValueError("operating_temperature exemption source cannot be a writer-mutable KiCad design file")
         if not _reference_token(ref).search(citation["quote"]):
             raise ValueError(f"operating_temperature.exemptions.{ref}.quote does not name {ref!r}")
     return {**evidence, "min_c": bounds[0], "max_c": bounds[1],
@@ -947,7 +949,7 @@ def _validate_operating_temperature(raw):
 
 def _reference_token(ref):
     """The exact reference as a whole token, so R1 never matches R10."""
-    return re.compile(r"(?<![A-Za-z0-9_/])" + re.escape(ref) + r"(?![A-Za-z0-9_])")
+    return re.compile(r"(?<![A-Za-z0-9_/-])" + re.escape(ref) + r"(?![A-Za-z0-9_/-])")
 
 
 def _validate_citation(raw, label):
@@ -983,6 +985,7 @@ def _verify_exemption(inputs_root, ref, citation, captured_files):
         raise ValueError(f"{ref} exemption source {rel!r} is unreadable: {exc}") from exc
     if citation["line"] > len(lines) or citation["quote"] not in lines[citation["line"] - 1]:
         raise ValueError(f"{ref} exemption quote is absent from {rel!r} line {citation['line']}")
+    _require_unconditional(_policy_unit(lines, citation["line"] - 1, exemption=True), ref, exemption=True)
 
 
 def _operating_temperature(inputs_root, spec, populated, captured_files):
@@ -1234,6 +1237,13 @@ HAND_FIT_TERM = r"(?:hand[- ]?(?:fit|solder)|(?:fit|fitted|solder|soldered)\s+by
 HAND_FIT_RE = re.compile(r"(?<![A-Za-z0-9_])" + HAND_FIT_TERM, re.I)
 NEGATED_HAND_FIT_RE = re.compile(
     r"(?:(?<![A-Za-z0-9_])(?:not|never|no|nor|cannot)|n't)\s+(?:[A-Za-z]+\s+){0,2}" + HAND_FIT_TERM, re.I)
+EXEMPTION_TERM = (
+    r"is\s+(?:exempt(?:ed)?(?:\s+from\s+operating[- ]temperature(?:\s+evidence)?)?"
+    r"(?=\s*(?:[.;]|$))|[^.;:!?]+;\s*its\s+"
+    r"operating[- ]temperature\s+is\s+accepted\s+by\s+the\s+owner\s+without\s+DigiKey\s+evidence\b)")
+# Ambiguous denials are refused across the whole statement, including text omitted from the quote.
+NEGATED_EXEMPTION_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:not|never|no|nor|neither|cannot|denied|revoked|rejected)(?![A-Za-z0-9_])|n't|\?", re.I)
 PREDICATE_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:is|are|be|been|being|was|were|fitted|assembled|excluded|soldered)(?![A-Za-z0-9_])|"
     + HAND_FIT_RE.pattern, re.I)
@@ -1259,7 +1269,7 @@ def _unit_bounds(lines, index):
     return start, end, LIST_ITEM_RE.match(lines[start]) is not None
 
 
-def _policy_unit(lines, index):
+def _policy_unit(lines, index, *, exemption=False):
     """Whole owner statement holding the cited line; refuses when what governs it is ambiguous."""
     if sum(1 for line in lines[:index] if line.lstrip().startswith(("```", "~~~"))) % 2:
         raise ValueError("the cited line is inside a code block")
@@ -1281,6 +1291,8 @@ def _policy_unit(lines, index):
     heading = next((line for line in reversed(lines[:start]) if line.lstrip().startswith("#")), "")
     if CONDITIONAL_RE.search(heading):
         raise ValueError(f"the governing heading {heading.strip()!r} is conditional")
+    if exemption and NEGATED_EXEMPTION_RE.search(heading):
+        raise ValueError(f"the governing heading {heading.strip()!r} does not affirm an exemption")
     return " ".join(line.strip() for line in lines[start:end + 1])
 
 
@@ -1319,15 +1331,21 @@ def _confined_spans(unit):
     return spans
 
 
-def _require_unconditional(unit, mpn):
-    """The identity must be named once, by a non-negated hand-fit statement, outside every conditional clause."""
-    if not HAND_FIT_RE.search(unit) or NEGATED_HAND_FIT_RE.search(unit):
-        raise ValueError("the cited statement does not affirmatively declare a hand-fit")
+def _require_unconditional(unit, mpn, *, exemption=False):
+    """The identity must be named once in an affirmative statement, outside every conditional clause."""
+    affirmative = (re.compile(_reference_token(mpn).pattern + r"\s+" + EXEMPTION_TERM, re.I)
+                   if exemption else HAND_FIT_RE)
+    negated = NEGATED_EXEMPTION_RE if exemption else NEGATED_HAND_FIT_RE
+    if not affirmative.search(unit) or negated.search(unit):
+        declaration = "an operating-temperature exemption" if exemption else "a hand-fit"
+        raise ValueError(f"the cited statement does not affirmatively declare {declaration}")
     pattern = r"(?<![A-Za-z0-9_/-])" + re.escape(mpn) + r"(?![A-Za-z0-9_/-])"
     found = [m.start() for m in re.finditer(pattern, unit)]
     if len(found) != 1:
         raise ValueError(f"{mpn!r} is named {len(found)} times in the cited statement; expected exactly once")
     if any(a <= found[0] < b for a, b in _confined_spans(unit)):
+        if exemption:
+            raise ValueError(f"{mpn!r} is named only conditionally; an exemption must be unconditional")
         raise ValueError(f"{mpn!r} is named only conditionally; a conditional hand-fit must use the "
                          "stock-unavailable deviation class")
 

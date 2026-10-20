@@ -1478,7 +1478,11 @@ passes; one that does not is an `operating_temperature_out_of_range` defect.
 Junction/case-only, absent, unparsed or unbound values are unknown, as is an
 unpinned or uncaptured capture. The predicate is board-wide (AGENTEE-274): a
 populated component that is neither judged nor exempt by a captured, pinned
-owner citation makes it unknown (`operating_temperature_unlisted`). An optional
+owner citation makes it unknown (`operating_temperature_unlisted`). Exemptions
+require an affirmative, unconditional owner statement naming the exact reference
+(AGENTEE-281); negated, conditional or bare BOM text is unknown even when the
+quote omits the qualifier. Native KiCad files and mutable deviations are refused
+as citation sources. An optional
 `package_map` compares the DigiKey package with the footprint. A mismatch is a
 `digikey_package_mismatch` defect, and an unmapped name is unknown. DigiKey
 stock never counts as JLCPCB stock. See
