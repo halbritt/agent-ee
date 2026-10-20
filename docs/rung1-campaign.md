@@ -25,7 +25,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src /usr/bin/python3 -m agent_ee.rung1_camp
 ```
 
 `--out` must not exist. `--profile` defaults to `profiles/claude-baseline.json`.
-`--kicad-route` names a kicad-route checkout that has `vendor/krt` and
+`--kicad-route` names a kicad-route checkout that has the owned engine and
 `.venv-krt` installed. The step mounts it read-only, so a snapshot of the
 checkout at a fixed commit is better than a checkout that other sessions edit.
 `--max-seconds` is the campaign budget (default 3600). The exit status is 0

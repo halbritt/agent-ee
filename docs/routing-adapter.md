@@ -25,7 +25,7 @@ adoption, and repeats those checks in `verify-campaign`.
 ## Pinned compatibility
 
 The adapter supports kicad-route commit
-`a132899a26ed9d7bf95c9978f0c1c992ee066f63` only (AGENTEE-202).
+`5f1c072b86e0caee82c7656226c4d0e3ec580a58` only (AGENTEE-277).
 It requires `result.json` schema `kicad-route/route/1` and the exact top-level
 result and attempt keys written by this pin. Unknown or absent result schema
 versions are contradictions, even when the statuses and exit look successful.
@@ -504,8 +504,9 @@ The attempt is `not_run` (exit 64), and the router does not start, when:
 - an installed backend input is missing. The report names the exact path, for
   example `KICAD_ROUTE_STATE/.venv-krt/bin/python`;
 - a write probe succeeds. The script tries to create a file in the state
-  directory, in each backend component the pin reads (`.venv-krt`,
-  `vendor/krt`), and in the checkout when it is separate. Every probe must be
+  directory, in each backend component (`.venv-krt` for KRT,
+  `vendor/freerouting` for Freerouting), and in the checkout when it is separate.
+  Every probe must be
   refused by the OS. A probe file that was created is removed and reported.
 
 Tree identities of the tool code and the state components are recorded before
@@ -624,7 +625,7 @@ A report paired with another attempt's receipt is refused.
 
 `layout` overrides the production sandbox paths and pin. Only the fixture
 router's tests pass it. Without it, a report that claims any pin other than
-`a132899` is refused, so a fixture attempt never verifies as a kicad-route
+the supported pin is refused, so a fixture attempt never verifies as a kicad-route
 attempt.
 
 For every outcome, `verify` refuses a report when:
@@ -742,12 +743,14 @@ tests. Their prerequisite, `require_kicad_route()` in
 | Configuration | Without `AGENT_EE_REQUIRE_TOOLCHAIN` | With `AGENT_EE_REQUIRE_TOOLCHAIN=1` |
 | --- | --- | --- |
 | Variable unset | Class skipped: `AGENT_EE_KICAD_ROUTE_CHECKOUT is unset` | Failure |
-| Set; HEAD, pinned code or KRT state files fail `preflight` | Failure naming every problem | Failure |
+| Set; HEAD, pinned code or installed-engine manifest/state fail `preflight` | Failure naming every problem | Failure |
 | Set; KRT's venv cannot import `grid_router`, numpy, scipy or shapely | Failure with the import error | Failure |
 
 `NativePrerequisiteTest` exercises the first two rows in a child unittest
-process; the native class covers the broken-runtime row with a pinned copy of
-the code and an empty venv.
+process. The native class also checks that pinned code with an empty venv and
+no installed-engine manifest refuses during preflight, before runtime import
+or any routing attempt (AGENTEE-277). The import probe runs only after preflight
+qualifies the installed state.
 [`test_kicad_route_adapter.py`](../tests/test_kicad_route_adapter.py) covers
 exits 0 to 4, contradictions, timeout and cancellation with a coordinator-owned
 fixture router. Its retained-verification cases forge one claim at a time with
@@ -800,7 +803,7 @@ Independent integration review remains the coordinator's responsibility.
 
 ## Pin qualification record (AGENTEE-202, 2026-10-18)
 
-The current pin is `a132899a26ed9d7bf95c9978f0c1c992ee066f63`, the merge
+The AGENTEE-202 pin was `a132899a26ed9d7bf95c9978f0c1c992ee066f63`, the merge
 of KICADROUTE-61 at `398f6c4`. It replaces `e497916`; the old checkout no
 longer qualifies. `PINNED_CODE` includes the new `diff_pairs.py` and
 `kicad/pairs.py` modules, and changed CLI, contract and evidence blobs.
@@ -822,6 +825,38 @@ plan, all in a read-only sandbox. Policy fixtures additionally exercise missing
 fields, version downgrades, undeclared pair fields and plan mismatches after
 retained hashes have been refreshed.
 Independent pin review remains the coordinator's responsibility.
+
+## Owned routing engine (AGENTEE-277)
+
+The current pin `5f1c072b86e0caee82c7656226c4d0e3ec580a58` includes the routing engine under
+`src/kicad_route/router/`; `vendor/krt` is no longer an installed dependency.
+The engine retains MIT notices and `UPSTREAM.json`, tracing the owner's fork
+`0494a05e` and its tap-grid and forbidden-layer weld fixes
+([upstream #1291](https://github.com/drandyhaas/KiCadRoutingTools/issues/1291),
+[upstream #1292](https://github.com/drandyhaas/KiCadRoutingTools/issues/1292)).
+The historical backend name `krt` now selects that owned implementation.
+
+Installation requires Rust and builds the included locked crate. The
+[container build](container.md#pinned-routing-tool) pins Rust 1.99.1 in its build
+stage. No Rust compiler, external KRT checkout or acquisition step is needed at
+routing time. Host installers must set HOME and CODEX_HOME to scratch directories
+when invoking upstream install/update, to contain generated skill links.
+
+Both host preflight and the sandbox adapter use the qualified tool's existing
+state-manifest reader to verify the source digest and installed extension,
+requirements, package and KiCad hashes. Missing manifests or extension digests,
+source drift and modules outside `.venv-krt` refuse routing. Manifest verification
+sets Python's cache prefix to `/dev/null` with bytecode writes disabled, so an
+ignored `__pycache__` file cannot replace verified tool source. The source path is
+rebased in memory for the sandbox mount before checking its recorded requirements
+hash; the manifest on disk stays unchanged. The adapter records the manifest
+hash alongside its before/after code and environment identities. Synthetic
+policy fixtures explicitly use their own code maps without an engine and do not
+establish native routing qualification.
+
+The older pin notes above describe historical qualifications. New native results
+must be gathered against this pin; historical results do not transfer by editing
+hashes. A routed board remains a proposal requiring fresh agent-ee checks.
 
 ## Limits
 

@@ -107,7 +107,7 @@ if name == 'sleep':
     time.sleep(600)
 if name in ('mutate_state', 'write_state_attempt'):
     try:
-        (state / 'vendor/krt/written-by-router').write_text('x')
+        (state / '.venv-krt/written-by-router').write_text('x')
         outcome = 'written'
     except OSError as exc:
         outcome = type(exc).__name__ + ':' + str(exc.errno)
@@ -241,8 +241,9 @@ def make_checkout(root, scenario):
     os.chmod(root / 'bin/kicad-route', 0o755)
     (root / 'src/kicad_route').mkdir(parents=True)
     (root / 'src/kicad_route/__init__.py').write_text('')
-    (root / 'vendor/krt/py_router').mkdir(parents=True)
-    (root / 'vendor/krt/py_router/route.py').write_text('# fixture\n')
+    (root / 'vendor').mkdir()  # Empty state directory for separate-state/Freerouting fixtures.
+    (root / '.venv-krt/py_router').mkdir(parents=True)
+    (root / '.venv-krt/py_router/route.py').write_text('# fixture\n')
     (root / '.venv-krt/bin').mkdir(parents=True)
     (root / '.venv-krt/bin/python').symlink_to('/usr/bin/python3')
     (root / 'scenario.json').write_text(json.dumps(scenario if isinstance(scenario, dict) else {'name': scenario}))

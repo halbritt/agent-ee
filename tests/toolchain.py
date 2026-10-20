@@ -156,7 +156,7 @@ def require_kicad_route():
                              'import sys; sys.path.insert(0, "rust_router"); import grid_router, numpy; '
                              'from scipy.optimize import linear_sum_assignment; '
                              'from shapely.geometry import Polygon'],
-                            cwd=state / 'vendor/krt', capture_output=True, text=True, timeout=60)
+                            cwd=Path(check['checkout']) / 'src/kicad_route/router', capture_output=True, text=True, timeout=60)
     if result.returncode:
         raise AssertionError(f'AGENT_EE_KICAD_ROUTE_CHECKOUT={configured}: KRT runtime import failed: '
                              + result.stderr.strip()[-2000:])

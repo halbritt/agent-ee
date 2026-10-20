@@ -323,7 +323,7 @@ kicad-route is the routing stage (decision 3, AGENTEE-93). The
 [routing adapter](routing-adapter.md) runs one attempt as a coordinator step of
 the implementation (AGENTEE-95) in the networkless sandbox. The writer neither
 runs the router nor supplies its arguments. The adapter is pinned to
-kicad-route `a132899`. At that commit agent-ee relies on the following from
+kicad-route `5f1c072`. At that commit agent-ee relies on the following from
 `src/kicad_route/cli.py`, checked by the adapter rather than trusted:
 
 - **Exit codes** (`overall_exit`, `ledger.REFUSED_EXIT`): 0 complete and valid;
@@ -345,7 +345,7 @@ kicad-route `a132899`. At that commit agent-ee relies on the following from
   and keepouts unchanged; only in-scope new copper graded. This is why
   placement cannot live in kicad-route.
 - **State directory**: `KICAD_ROUTE_STATE` (the checkout by default) holds
-  `vendor/krt`, `vendor/freerouting`, `.venv-krt` and `vendor/skills`. agent-ee
+  `vendor/freerouting`, `.venv-krt` and generated `vendor/skills`; the routing engine ships in `src/kicad_route/router/`. agent-ee
   mounts the checkout and state read-only, points `--out` into the step's
   `/work`, and never runs `kicad-route update`. On the original placed RC,
   KRT attempts completed with every write probe into the state refused with
@@ -390,8 +390,8 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
   [summary](third-party-origins.md). The proposal is merged; owner confirmation remains pending.
   FOME-MC fixture, donor, vendor and other third-party files stay excluded
   until the owner decides each origin.
-- kicad-route: no `LICENSE` file and no licence field in `pyproject.toml` yet;
-  MIT is in progress in workstream B.
+- kicad-route: the current pin carries an MIT `LICENSE`; its owned routing
+  engine retains the MIT upstream and fork notices.
 - KRT (KiCadRoutingTools) is MIT. Freerouting (GPL-3.0) runs as a separate
   Java process. KiCad's `kicad-cli` and ngspice run as separate processes.
 - Decision 6: GPL tools are called as processes, never linked into agent-ee.

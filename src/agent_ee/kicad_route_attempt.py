@@ -32,46 +32,284 @@ import sys
 import time
 from pathlib import Path, PurePosixPath
 
-PIN = 'a132899a26ed9d7bf95c9978f0c1c992ee066f63'
-# Tracked code at PIN (git cat-file blob). __pycache__ is never read: the
-# router runs with a private pycache prefix and bytecode writes disabled.
-PINNED_CODE = {
-    'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9',
-    'src/kicad_route/__init__.py': '23611cbf0bfd79c20f1e18fa402bbe8c1bcd63b412fbf84e7eb3b5f3c0062af4',
-    'src/kicad_route/barrier.py': 'de34c57c391248c4fdb02fdd9f71d6736edbc15621350be1ff188bc8b217df6c',
-    'src/kicad_route/blocked.py': 'b2dc298ca38dd994479afdb6ced91d8196b0fd1626f2828c0996135ecb57c7f5',
-    'src/kicad_route/campaign.py': '5cfad4d863c03578aa02fb2221598e8dcab73b2ac673124f8ff9d440ab4d2aa6',
-    'src/kicad_route/canary.py': '38e56e7bd96f01025f9ca8a3c57d4f902f939723f55f50f214395561c3cbbf1c',
-    'src/kicad_route/cli.py': '97d7c5fbe96a3656ba11719ff665db45724969ae9b62d475cd8549ec7fa7356a',
-    'src/kicad_route/common.py': 'ea3aeb3411fc67a44c0f8c34fa69358c75418f63a1c329abc9a428607c88abe6',
-    'src/kicad_route/contract.py': '306516b16cc6a55ce62d1915f354c298297bc944f4ae5eccc24a0d49bb83b2b6',
-    'src/kicad_route/corpus.py': 'f63cedc1ec87b37b06c1a717f2eb02ec57af34a659b8f7e9e330eff5736bda14',
-    'src/kicad_route/decoupling.py': '29724e237cc94c0af783619991dc5659b4b582eb6cdb33fd0d59542a108232f6',
-    'src/kicad_route/determinism.py': '653d6c37b4e69d50cd701223e23c6feb2e8afd5b240b5bdd5a5f4c1146af5778',
-    'src/kicad_route/diff_pairs.py': 'f1d1070ed0acc459d28cbe7397ae7c22b196f5dbb869e751af24e93a3c1b1092',
-    'src/kicad_route/evidence.py': '6089c25ced84474a08b30c789f2c226455b4ed8d55d3589adbe9b65a464f4096',
-    'src/kicad_route/floor.py': '2f954a2d1142c4f68d7e2904781f4470c0976af925a0a91c31c8de26d4f31ae6',
-    'src/kicad_route/kicad/barrier.py': 'ffeab974f15db240d55c1d3e8a19450d885be7ab33b7f595fdf79c5f6e2409e4',
-    'src/kicad_route/kicad/decoupling.py': '498624e3f38485519865bb871a01e3f62fc3a41c9bde80d2966ae3c05f7e88b5',
-    'src/kicad_route/kicad/facts.py': 'cbc90a12bfbbfcb5f9ff4637396992faff128a35a9d13ff494184a5d6e57b316',
-    'src/kicad_route/kicad/locks.py': '5b15d4ddfbec9b7e32a841a16f9c1dd383b043c240a293251737e9cba218800a',
-    'src/kicad_route/kicad/pairs.py': '44763bfd3b25871cf9c5b5636d97f4534157920ac83ca755c3d57628638552f9',
-    'src/kicad_route/kicad/pour.py': 'a49f64c51854720e8ea680d81b94969dc8242da0c3ee93b72c8948a57b908c14',
-    'src/kicad_route/kicad/rename_nets.py': 'a51c1767c0ce1d0edf180700a026d695678228d56ece4bab688d9bfd3d23d2a8',
-    'src/kicad_route/kicad/specctra.py': '0cd5031726ab48c7b3c2bf1dd3978837574d7452d7a79dda154123acb1aeb9d1',
-    'src/kicad_route/kicad/spokes.py': 'c419ea1123a6de2588358aa58d0dfaabd4d5f55d50d559023ce48d2271f12bd9',
-    'src/kicad_route/ledger.py': '37f140a1b6ccbf6c6ffa6724ea8acdf97e404eabd5ddb8c8c264a19cc1e6f752',
-    'src/kicad_route/netnames.py': '731bcf61a909ef2720fd90b074f6cfb991a1c6ea6bea7fecf5ba3cb7fc47304f',
-    'src/kicad_route/pour.py': '630b957fddeab33d108d634fb0f229f3c1471f80953e971effad27ca33beb2e9',
-    'src/kicad_route/procgroup.py': 'd843c9b334874d0334c5ea0e9a58d83d22581648e915d40f13a6d8c8b595a3d5',
-    'src/kicad_route/provenance.py': 'cf82fd9940086584a8056787ae0ca4fd58ced78ed5737f85b4e5713501add49f',
-    'src/kicad_route/sandbox.py': 'dbdf52f09fa83f336d326bb0504624b94861d9195c1a7d817aa2f41fbe562b07',
-    'src/kicad_route/skills.py': '2768f342c5389fe7e760b743584f726aac6e723d795d019125548405fc896363',
-    'src/kicad_route/snapshot.py': '7c51203f4a439cc99a575e6bc5433f3ab78dda7735dcd03c940f6169fe7fb9a4',
-    'src/kicad_route/spokes.py': 'fc5b3f90c31cbcc9a9944628bfe6b9bc93dc31de21c893f8e476160f21033506',
-    'src/kicad_route/stall.py': '095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188',
-    'src/kicad_route/statemanifest.py': '55a0557ae0115967fbf6eb15c3bbc63c4c0d0fa9cac3de9c7d7c8725c1119a1a',
-}
+PIN = '5f1c072b86e0caee82c7656226c4d0e3ec580a58'
+# SHA-256 of every tracked bin/ and src/ blob at PIN, including the owned engine.
+PINNED_CODE = {'bin/kicad-route': '4d01520182f391ff1f92be7eb1e2415d3675a309a38ef449012d49e2d03e42e9',
+ 'src/kicad_route/__init__.py': '23611cbf0bfd79c20f1e18fa402bbe8c1bcd63b412fbf84e7eb3b5f3c0062af4',
+ 'src/kicad_route/barrier.py': 'de34c57c391248c4fdb02fdd9f71d6736edbc15621350be1ff188bc8b217df6c',
+ 'src/kicad_route/blocked.py': 'b2dc298ca38dd994479afdb6ced91d8196b0fd1626f2828c0996135ecb57c7f5',
+ 'src/kicad_route/campaign.py': '5cfad4d863c03578aa02fb2221598e8dcab73b2ac673124f8ff9d440ab4d2aa6',
+ 'src/kicad_route/canary.py': '38e56e7bd96f01025f9ca8a3c57d4f902f939723f55f50f214395561c3cbbf1c',
+ 'src/kicad_route/cli.py': '5cff5eb1b1e78b1c7ef6917f827cf598542886bf83a24f964dbb67c4929358ab',
+ 'src/kicad_route/common.py': 'a42c0258052acc83004e921c139881bd0aa0ac4daa26f268348b04ee8dd2f923',
+ 'src/kicad_route/contract.py': '306516b16cc6a55ce62d1915f354c298297bc944f4ae5eccc24a0d49bb83b2b6',
+ 'src/kicad_route/corpus.py': 'f63cedc1ec87b37b06c1a717f2eb02ec57af34a659b8f7e9e330eff5736bda14',
+ 'src/kicad_route/decoupling.py': '29724e237cc94c0af783619991dc5659b4b582eb6cdb33fd0d59542a108232f6',
+ 'src/kicad_route/determinism.py': '653d6c37b4e69d50cd701223e23c6feb2e8afd5b240b5bdd5a5f4c1146af5778',
+ 'src/kicad_route/diff_pairs.py': 'f1d1070ed0acc459d28cbe7397ae7c22b196f5dbb869e751af24e93a3c1b1092',
+ 'src/kicad_route/engine.py': '5e2ecaae2ad0b2b4119a2787283e4c319581d154b59d5617b74f205db9914bdb',
+ 'src/kicad_route/evidence.py': 'd2f1acb31df60b1874b565c341378b25962570b6c12689d6b029f7e348b96f8b',
+ 'src/kicad_route/floor.py': '2f954a2d1142c4f68d7e2904781f4470c0976af925a0a91c31c8de26d4f31ae6',
+ 'src/kicad_route/kicad/barrier.py': 'ffeab974f15db240d55c1d3e8a19450d885be7ab33b7f595fdf79c5f6e2409e4',
+ 'src/kicad_route/kicad/decoupling.py': '498624e3f38485519865bb871a01e3f62fc3a41c9bde80d2966ae3c05f7e88b5',
+ 'src/kicad_route/kicad/facts.py': 'cbc90a12bfbbfcb5f9ff4637396992faff128a35a9d13ff494184a5d6e57b316',
+ 'src/kicad_route/kicad/locks.py': '5b15d4ddfbec9b7e32a841a16f9c1dd383b043c240a293251737e9cba218800a',
+ 'src/kicad_route/kicad/pairs.py': '44763bfd3b25871cf9c5b5636d97f4534157920ac83ca755c3d57628638552f9',
+ 'src/kicad_route/kicad/planes.py': '8498b1566edda7d29631210435669737a22d990df7fbd3c487c92a6827f5f07d',
+ 'src/kicad_route/kicad/pour.py': 'a49f64c51854720e8ea680d81b94969dc8242da0c3ee93b72c8948a57b908c14',
+ 'src/kicad_route/kicad/rename_nets.py': 'a51c1767c0ce1d0edf180700a026d695678228d56ece4bab688d9bfd3d23d2a8',
+ 'src/kicad_route/kicad/specctra.py': '0cd5031726ab48c7b3c2bf1dd3978837574d7452d7a79dda154123acb1aeb9d1',
+ 'src/kicad_route/kicad/spokes.py': 'c419ea1123a6de2588358aa58d0dfaabd4d5f55d50d559023ce48d2271f12bd9',
+ 'src/kicad_route/ledger.py': '37f140a1b6ccbf6c6ffa6724ea8acdf97e404eabd5ddb8c8c264a19cc1e6f752',
+ 'src/kicad_route/netnames.py': '731bcf61a909ef2720fd90b074f6cfb991a1c6ea6bea7fecf5ba3cb7fc47304f',
+ 'src/kicad_route/plane_plan.py': 'fab213cc155347af3c36bda5694b7aa871058c6f8b77eaf52ebd2b209bfb2d80',
+ 'src/kicad_route/planes.py': '2adaab4efe91f380723efdf3af913e90dba90453b6db5792f5506b93956d3563',
+ 'src/kicad_route/pour.py': '630b957fddeab33d108d634fb0f229f3c1471f80953e971effad27ca33beb2e9',
+ 'src/kicad_route/procgroup.py': 'd843c9b334874d0334c5ea0e9a58d83d22581648e915d40f13a6d8c8b595a3d5',
+ 'src/kicad_route/provenance.py': 'cf82fd9940086584a8056787ae0ca4fd58ced78ed5737f85b4e5713501add49f',
+ 'src/kicad_route/router/.claude/skills/diagnose-routing-failures/SKILL.md': '0abb55757415b58f1c45aae2b0c9c09368541cb5611c2621e362ef15f5349b14',
+ 'src/kicad_route/router/.claude/skills/review-routed-board/SKILL.md': '29e7c0e3a11ead24f35e17abf1a1acbca30f8d33d00ba06aca41d4a92c4c0f20',
+ 'src/kicad_route/router/LICENSE': '6df0be9100e852f1749d2e88df423b0f71cab5bff7af35f749e10cf644911390',
+ 'src/kicad_route/router/UPSTREAM.json': 'ce4c0c19523c84c080bb7c6219ec5616910fad95888cc70d5ac10cb5fce36f08',
+ 'src/kicad_route/router/VERSION': 'e14c67c5f4dd36234ef4bc5ba5ef48d5d79e27bad4038c9bc8a64714566aa06a',
+ 'src/kicad_route/router/__init__.py': 'ade21c465d05d47c6c4362de7216e025520a4574f69141d0a70fa5798a0ab551',
+ 'src/kicad_route/router/build_router.py': 'f462c2c94e93effe0ffe82bb2394822277317f2847a416daf968fd966c465fdb',
+ 'src/kicad_route/router/krt_capabilities.py': '14cbaa11069bdf789d7999d0cbd44612195a34ee10ce3da2133c61451e953d86',
+ 'src/kicad_route/router/py_placer/_path.py': 'c93bbd159ada44096f7313267e85b68533b7e71674c290d9eca869c976fb4dde',
+ 'src/kicad_route/router/py_placer/place_route_loop.py': '3a1c54a1bb9d5f97e8291d9a66d22db73b3382ea756a63d0c8a621ad677a9810',
+ 'src/kicad_route/router/py_placer/placement/__init__.py': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+ 'src/kicad_route/router/py_placer/placement/arrays.py': '5a37d73a19a1854960742ec70b7f2887260ed6b8c32942667db01932a1330539',
+ 'src/kicad_route/router/py_placer/placement/board_grid.py': '9732d3d0c06bffe277b3a4899158579a221858dfa1266edb7368adac4fc0090c',
+ 'src/kicad_route/router/py_placer/placement/body.py': '5199c05c5bf89693d058cf92d899e0b55e597021e0dc44847e0169045e158c90',
+ 'src/kicad_route/router/py_placer/placement/cli_gates.py': 'fd9c9ab4f8f2007ec1b8593e52147c32a857c43ebfb33fa809f7013196fde5e5',
+ 'src/kicad_route/router/py_placer/placement/connector_geometry.py': '0db0e1de251cf74114fbbd0c288022279000b672671bdbaa143871790c950b66',
+ 'src/kicad_route/router/py_placer/placement/design_brief.py': 'd540cdaf8c1e7ac8f6f86ca9be3a36cb69d8dbd3aaf91826919d9db19f4b4a73',
+ 'src/kicad_route/router/py_placer/placement/diagnosis.py': 'bfcfa28608efb5cc2128685ba07555f0760fa87e4cedf69a8b79c47f1da603fe',
+ 'src/kicad_route/router/py_placer/placement/edge_facing.py': 'eaf2166416750cbd79521b393ef735a96ea8c5006541db202c841e448be7c529',
+ 'src/kicad_route/router/py_placer/placement/emc_roles.py': '727e7a583994897ce04d5f46f76af345e320c84e0568fc13046719c1577caa8f',
+ 'src/kicad_route/router/py_placer/placement/escape.py': '553af70095728cdbf477249460ba63ba8383ac90ac144c15a289ca7156d6abf8',
+ 'src/kicad_route/router/py_placer/placement/floorplan.py': '5e212aa6bf6117540fd3e9b11fa65c5616e95221794340c56a536c6835cff7f9',
+ 'src/kicad_route/router/py_placer/placement/groups.py': '8e588f887d62573485526368b4e963f69436893b68e88eec6c79687911348990',
+ 'src/kicad_route/router/py_placer/placement/legality.py': '154aaa36d5bc2fbcb9e8a0ec5ea043c01e6527e272d10588538de34a741981b7',
+ 'src/kicad_route/router/py_placer/placement/lock_advisor.py': '58803c7ed97037fac32fd7a703b32500403df30037b349cc1ae4bcb76bac09d3',
+ 'src/kicad_route/router/py_placer/placement/mating.py': '9f520de5f509deb719f61ae6768994ae989d369815c29ad597530e96a9c46ea5',
+ 'src/kicad_route/router/py_placer/placement/options.py': '389ef429555d5891eed31709517a59dada18396d16cd10647e68f4ff982518f9',
+ 'src/kicad_route/router/py_placer/placement/pair_order.py': '3636f936b7699e44f0348fee7398b3f6b609b7cd930aed5e1a4880945677409a',
+ 'src/kicad_route/router/py_placer/placement/parser.py': '1af5f80cf19e06ac711379bd722e3b2b4e605a23ba2a05b9f694b5bf1e920bdb',
+ 'src/kicad_route/router/py_placer/placement/part_class.py': '001f5cfc3b2c952d68395f80aaee6132b5e5c435f399ae1735834fefdbf1d52f',
+ 'src/kicad_route/router/py_placer/placement/pin_rows.py': '488bd8100321fe20b01c577861d80bb81ace3c18126ea21a86b3c82b5a94ef23',
+ 'src/kicad_route/router/py_placer/placement/placement_state.py': '26148d3b2cd6648223dd116c7db9d4ad910584260112a6efee9a389aa09dfb2c',
+ 'src/kicad_route/router/py_placer/placement/portfolio.py': 'b5878857ca58d0e6a85bc3e8a3c829e1dd25ac71a8e42cd94120066eb1363af2',
+ 'src/kicad_route/router/py_placer/placement/pose_ops.py': 'dda20791574817f61c6f77baf89f6f8331d55ef4d93f92b137a64229dc05a1c1',
+ 'src/kicad_route/router/py_placer/placement/provenance.py': '250f04eb2ab2cf665b013e2b7f23376d97670cd2da8610dc6d8eb5a2f5fed8c2',
+ 'src/kicad_route/router/py_placer/placement/quench.py': 'ede844c4d40ea9a9f05e183eb54a6bf94f4074c932b4c741a113f8fc07c55846',
+ 'src/kicad_route/router/py_placer/placement/reachability.py': '308daeca20825d7dec7c4d07accb7492be9a2ce47a0a21bfcd3b201801e77ba5',
+ 'src/kicad_route/router/py_placer/placement/reconcile.py': '796a72b1fbab3c15efd966eff6c70842a02c35de095b91a0f627c9c4a1b8ae1e',
+ 'src/kicad_route/router/py_placer/placement/reconstruct.py': '239736b1f1ee5ef45d6cf003fd2c1021335f35fb157bc093fec7af73807ccdd2',
+ 'src/kicad_route/router/py_placer/placement/relocate.py': '162a7950ac20aaf6ccfced800f47fda6307b39b0ce3ba23aefd46c2298868c40',
+ 'src/kicad_route/router/py_placer/placement/replicate.py': 'f87d5048ee02aa6fb0c83fc093ff7ad3bdb83bfa7d63a2c9564a740454690ff8',
+ 'src/kicad_route/router/py_placer/placement/roles.py': '3b1f4ade3c21000dbc996e8f4df291d6657ae05174903ab37a5adac458e13c67',
+ 'src/kicad_route/router/py_placer/placement/routability.py': 'cf54662d9b76ccd4d7a5ee1bc693c9f105627604ccdf07c51b5407117b2dd58d',
+ 'src/kicad_route/router/py_placer/placement/seeder.py': '4f0501d48e8297c74d693e7106fb80af68c7d57f2f1a5c09aeea3106fc7ce907',
+ 'src/kicad_route/router/py_placer/placement/utility.py': '980546b1022f421210ac7c9cc6630c3f4253eecb8670ec3916ab5944934313b6',
+ 'src/kicad_route/router/py_placer/placement/writer.py': 'b6d9637c03b18ee0f4419546b95c16f8d48583ddd959acf2e132ed9143507da0',
+ 'src/kicad_route/router/py_placer/placement_score.py': 'cee8dc53f8b101d30aa9293a7cf7c4863cb0c63304d8307c372f19e9788c3727',
+ 'src/kicad_route/router/py_placer/pose_score.py': 'f4abe0946fd34652223191bf60ae3ac9cfd0b4aad8025c696e7f386c5df22a83',
+ 'src/kicad_route/router/py_router/_placer_path.py': '6f7dc70624a51fbe1142ecf29965829105666bbdf8d0ba7e739267810a815c65',
+ 'src/kicad_route/router/py_router/add_gnd_vias.py': '2887466ca41aa8a0f087a0c099f72983ca25b5be8867e85d0538dbf214beecd6',
+ 'src/kicad_route/router/py_router/animate_route.py': '236b494d5ca5596933aa428371d88db8f4bba5f4ea7ea74cadf8347d16a2c8bf',
+ 'src/kicad_route/router/py_router/bga_fanout.py': 'e0bd1c7d1af04cbb33186063cbbac5f02649d25e1061ca94daf2b05991c4261c',
+ 'src/kicad_route/router/py_router/bga_fanout/__init__.py': 'fd66290a79f3940dabe7a3288481efcd09bdb79693ec1688bbe6ffa1932b4055',
+ 'src/kicad_route/router/py_router/bga_fanout/collision.py': '07825fd66148dc54676a1070461ebf1e40c0dfe1a2e735cd5788b216da1aa844',
+ 'src/kicad_route/router/py_router/bga_fanout/constants.py': 'e64e41a82aaeca04c2e261ead8d4ea1718e35c0312d9ddcafb3bed3e6dbdc27e',
+ 'src/kicad_route/router/py_router/bga_fanout/diff_pair.py': '204ed0b36870a72181a961d4ba23f616405b7b8f853e75118656030f092fb0c8',
+ 'src/kicad_route/router/py_router/bga_fanout/escape.py': 'be8cd7502e4763472f3fe28c82503dad31cd986c3ba2e7173c7f4e2783f126d1',
+ 'src/kicad_route/router/py_router/bga_fanout/flip_frame.py': '30bea853f5b8d1d23800c2f6842fa6da9e64b0f6e7bd6803c8159254cec0067e',
+ 'src/kicad_route/router/py_router/bga_fanout/geometry.py': '83aafff01408d1810eb925313089cd9134d332c3a78350b693d2840809e4b657',
+ 'src/kicad_route/router/py_router/bga_fanout/grid.py': '3d0ab716440615a06fab86aa39d5286019d8519bff76e7eaea2dd808b47af4f6',
+ 'src/kicad_route/router/py_router/bga_fanout/layer_assignment.py': '0bd0b19c70e005c4af50df1fb9ecd9c31e3f3d00687d8336227fdc2d03baebb5',
+ 'src/kicad_route/router/py_router/bga_fanout/layer_balance.py': '7cf7cd7199af811d88bdd8e0f4c5bfb42dd31b17f92926876f2deb696542a59d',
+ 'src/kicad_route/router/py_router/bga_fanout/reroute.py': '34147e95f561b9af5d773e1fd035694499520edcb1b8e1a2d4297a2c474e12fc',
+ 'src/kicad_route/router/py_router/bga_fanout/rotate_frame.py': '40d2e0982ab823b550049077795ec18eec7798da97b860e1d382f8d7cec724e0',
+ 'src/kicad_route/router/py_router/bga_fanout/tracks.py': '7f02d835c8e7769c4e24d10775f402d2e8a3a3659a2b2ebd62101582bcd4a0d3',
+ 'src/kicad_route/router/py_router/bga_fanout/types.py': '812f7cecd8899804b2dad7a97c9ae33e8ac010120faa64da3ffad8a408ed0338',
+ 'src/kicad_route/router/py_router/bga_fanout/underpad.py': 'a9d98952a04726aebfdb6a561610ec735ee34df33512aa412100c4dce984d540',
+ 'src/kicad_route/router/py_router/blocking_analysis.py': '83daa554a378cc337cd92cba8569659f1f00ff9ead65ee61ebac444c3aee3db5',
+ 'src/kicad_route/router/py_router/bresenham_utils.py': '0da8a0d9d58a36aa6d5137ba7109ba19ff9dc6fd2e269d154d00663399c9dfd7',
+ 'src/kicad_route/router/py_router/bus_corridor.py': '951f22a3e22b4304f05335e350ff4af8173202a887ffdd0aff49f98e2613333a',
+ 'src/kicad_route/router/py_router/bus_detection.py': 'ada6f88d665c00ee4e6935e12f84810e37a1710e6e35194ede205220ba2f069d',
+ 'src/kicad_route/router/py_router/check_connected.py': '66997ad37e026b871dbdb2d3515d372f7ead4b13ed748abf9773cb63853961c3',
+ 'src/kicad_route/router/py_router/check_drc.py': '9abefbb16151d51bdbbc3f2c86000705ee173b19f6f235aa1f58251dfea33477',
+ 'src/kicad_route/router/py_router/check_pads.py': '6627b37eca7a7afb234b4ae2fc047e65d452a6da0ea647c05696af6b052cd59c',
+ 'src/kicad_route/router/py_router/check_weird.py': 'c5540de9647f7294da3d386e4d3f67cb3127bb9b0d07c43edfb0e83e547fcea3',
+ 'src/kicad_route/router/py_router/chip_boundary.py': '76d3867bca3340a2f44d466df7169e6a13d159d603d386256102c784649294b9',
+ 'src/kicad_route/router/py_router/cleanup_pipeline.py': '7c9c10a8c90f365c32360f1ce080ef32231d46cb9ac18d99f33f3ad04da4d1f4',
+ 'src/kicad_route/router/py_router/clearance_ledger.py': 'caa7c20b4347bf79c89aae6e21a33c973ab15fd6f6e4aa4879bccecf4f4e4c1b',
+ 'src/kicad_route/router/py_router/cli_banner.py': 'dfbce4fba8eb386ff0de8148b139c9fce4b8b9a2a904fb3c905af05b5734111f',
+ 'src/kicad_route/router/py_router/cli_nets.py': '773d1250d9316628f9d719fe695f76816d7c00ed416232c766cf6672de6d535e',
+ 'src/kicad_route/router/py_router/cmd_timing.py': 'bcc6834cd496c0765f074539fdc98b63ad2cd97f067652ce5bb0c5d4bc8b92f7',
+ 'src/kicad_route/router/py_router/congestion_field.py': '9ba4c0588df393403664ceaa452be6447e9dabc5d1a9e9a8fa0860a73ed6e1ad',
+ 'src/kicad_route/router/py_router/connectivity.py': '5384ff5ccc607a5b0fa0cca62a093295a45e9ba32411e37a3e8f42fde4ec06d1',
+ 'src/kicad_route/router/py_router/console_encoding.py': '788397094cc7175cfe2b595b14f1d20c2ab677d3b9e3a824a030889dd45479a9',
+ 'src/kicad_route/router/py_router/copper_motion.py': '6ce75c48d9344e5af739c01773b0c3a5f523e568d9486aa47d2cf510d5fb6772',
+ 'src/kicad_route/router/py_router/copy_board.py': '79cf1319ca961f10caa4d540afb0f3460d94dd8532214e0307ee89d1712e7877',
+ 'src/kicad_route/router/py_router/design_rules.py': 'e3e9260afde28bd4d5e8ac42f489826c708be2b28a143ca254360c2e9b0031ff',
+ 'src/kicad_route/router/py_router/diff_pair_custody.py': 'f07e2cec713bfeda971b68fbbdba2a6630244f5e1e54bf01df3529257835b173',
+ 'src/kicad_route/router/py_router/diff_pair_loop.py': '636f07595a727b3e81ec882762094ea90b6bc86b80c5ebad4b017abac3494a4f',
+ 'src/kicad_route/router/py_router/diff_pair_multipoint.py': '5468ddcedf1fdc3355d7451adaba08f4e982ddde074facef0c54aba54ad7871d',
+ 'src/kicad_route/router/py_router/diff_pair_routing.py': 'aa355c8a1a10fbb672000a78dfa7974bb7ab95fc9c079eca716639586d6726a0',
+ 'src/kicad_route/router/py_router/diff_xnet.py': '204665ebc1494103a7e6960aa43bfd0eada9d17c70d31dc6cda8be63e5909f24',
+ 'src/kicad_route/router/py_router/dup_trap.py': 'f3a3cc3b91d7318b46a091d14586ce31469c3101ddcd61b325bbda90e63fa1ee',
+ 'src/kicad_route/router/py_router/env_knobs.py': '7b9c9fc08f0bad191aba5a5c1e8e7c058e2457c9c83b43c8b090a27b52fbc382',
+ 'src/kicad_route/router/py_router/fab_notes.py': '0683295464406c4a6ac992b48a78da47322bfcd1f830607c85b4b06f281cda14',
+ 'src/kicad_route/router/py_router/fab_tiers.py': '66e7156a4ee1507c575dd9b11c75c1d1c62b7cc1a518e8259965c888f0a8b39b',
+ 'src/kicad_route/router/py_router/film_passes.py': '857a08f1a1b72ad77e7aab9fa17bd9e9f7fd52b9755f47ace047bd9c54e36115',
+ 'src/kicad_route/router/py_router/fix_kicad_drc_settings.py': '34c67467b45297380b000e2be1cdb3b5ca857b0ef3d2c1a078295e79fffdb296',
+ 'src/kicad_route/router/py_router/frame_layout.py': 'b48541f17dc702bde45417cf1f807a738b47b6f66946d889ba55f6aa2fd11f87',
+ 'src/kicad_route/router/py_router/frame_spool.py': '41d4097012d9bd9b923a4fb7978203a56db476aa4a334cb0caa702a83e37bf60',
+ 'src/kicad_route/router/py_router/geometry_utils.py': 'ea599cc0b449b824dfc0ca692dcef9b1035aa56b060404cc29a57e0dbb9a852b',
+ 'src/kicad_route/router/py_router/global_plan.py': '56a9ad335c828aab0ffe4309b3f2763247b9a241ccbc9ab1e99affabdd2bb527',
+ 'src/kicad_route/router/py_router/group_routing.py': 'c5b2b08b0996a2704b1f9b91780838fc4c9b13d37291ada03de981fd67dfe491',
+ 'src/kicad_route/router/py_router/history_congestion.py': '1519450ca76dfad53467838a271d5c6fa8b099509f4413a6fbbe5cd7824f810e',
+ 'src/kicad_route/router/py_router/impedance.py': '1e3be5974d48207433d38b24baea0dbae755923de0eb8128ae1d92b36253368b',
+ 'src/kicad_route/router/py_router/improvement_gate.py': '9336728d5ad4df580207d1dee4af83b01c2dd1b0b59ca448fb824613671252d3',
+ 'src/kicad_route/router/py_router/keep_away.py': '83e28ea8b3904cfadc80b26e86b5866ae9d6bd800645fb8ac2231e312fbdf1e3',
+ 'src/kicad_route/router/py_router/kicad_dru.py': '0dc0a5ab50b9d0ca83b178071b1f56eb86cd6906160c4e90f0864ec6a9af4c96',
+ 'src/kicad_route/router/py_router/kicad_exact_fill.py': '12edfc03be0955dd95ccd20f6ddc5bcd435d72bbb13352151397f0ff558e7cef',
+ 'src/kicad_route/router/py_router/kicad_iso_render.py': 'cbbdb7ad575742ede223b5f1a2fd508210fe6486a076718170ff5a3f4417235c',
+ 'src/kicad_route/router/py_router/kicad_locate.py': '0fd5de7ea5024691f3e75947b1d70ea80048e77ee8c24cd78ebd3d46befb0f26',
+ 'src/kicad_route/router/py_router/kicad_oracle.py': '35c96fd9d9656b7a27ff0f04bb7758161bbc97f44a53e7a27802f03f47c64663',
+ 'src/kicad_route/router/py_router/kicad_parser.py': 'f85b1b8f2bc85f418dea0ba1aac6c35a7c89863026c3e91953214f7d15b83ade',
+ 'src/kicad_route/router/py_router/kicad_writer.py': 'ffce00f68e84b4a37f393a21c995036f9301f43778e0b78728106bb7644425c5',
+ 'src/kicad_route/router/py_router/layer_swap_fallback.py': '4fa52734ddd7879ff71a5b0f43819750e4b4fb56f2295b72bd40fee477715b5f',
+ 'src/kicad_route/router/py_router/layer_swap_optimization.py': 'fa1f6f93960a4d87f17d7acb348d55183bb60688ab6ba0700bb0f3c32df460bc',
+ 'src/kicad_route/router/py_router/ledger_score.py': 'ce31d6080f0eceb3dc134ba0010f620ad1799cb01f8db93726e99d7fc85a881d',
+ 'src/kicad_route/router/py_router/leg_rip.py': '24c3fc9b503f2c7e0c2c0ef43e0c6b489b40e825f2d0abd69546f9f104c6022c',
+ 'src/kicad_route/router/py_router/length_matching.py': '4ece75938d0bd922e6de5a324be98115198e13b1dbf8a3f3af685c77a8270a87',
+ 'src/kicad_route/router/py_router/list_nets.py': '0faa09212907b347e48ce721d3c874125758ddf40d4f7bf48761072d7512908f',
+ 'src/kicad_route/router/py_router/make_movie.py': '670c89f82703cbe8bc401e9e13693b102cbcf756d3a746274ddab4111031b98b',
+ 'src/kicad_route/router/py_router/memory_debug.py': '6c0e549c44847f57ccfbfeb36f71f2e7b04fade388e0c12d5256971835243d63',
+ 'src/kicad_route/router/py_router/movie_attempts.py': '7bb978d7576314766fa33fd4e3aa26082303f17ced3bd03fb08cd86c4e784e1f',
+ 'src/kicad_route/router/py_router/movie_benchmark.py': 'd23010db2d435df793a24238766184db6a620706f22f4027795b76bac65c91e2',
+ 'src/kicad_route/router/py_router/movie_camera.py': '2fafc2e7f1eda4f603b7109531e9771cb509437340d6c3dcc82686f973c73052',
+ 'src/kicad_route/router/py_router/movie_placement.py': '12c22f1668add5daa8a1df911f25e0463823430d5faae65f24f45beb58deacf2',
+ 'src/kicad_route/router/py_router/mps_layer_swap.py': 'e744f54c365b8260a79885bb8faf24965384e0719c637885bba48b645bf3b432',
+ 'src/kicad_route/router/py_router/net_cost.py': '5d4964c0e296fbab73182fed2b091d6005080062d5a663ebb85f90b9e2ad9c66',
+ 'src/kicad_route/router/py_router/net_ordering.py': 'bec77b33cf11177d8fc276ad0d47a531110b9854004e764d1dfa331464f40aa0',
+ 'src/kicad_route/router/py_router/net_queries.py': '6b47c762cfe67ca0b0f432a4b47f149d52f82a10c2f5d8a1781d26b652275cd9',
+ 'src/kicad_route/router/py_router/net_rescue.py': '38fca12fce416c441c80823809390be9a3a10bf591aae25525ef34544e9514be',
+ 'src/kicad_route/router/py_router/net_story.py': 'a54ca5aff45e80d8a27b8b15fa4f4576a2bda803a8ce2ab4b7613e94101674ac',
+ 'src/kicad_route/router/py_router/obstacle_cache.py': 'dea6d6315a9fdd69413fbaefabafb73b79979e5bac50826c44e80830f3b6c6d3',
+ 'src/kicad_route/router/py_router/obstacle_costs.py': '66afaf065eeafe21af70b361cc2f0cf64c9a6efb7da1b418b0379167093358ec',
+ 'src/kicad_route/router/py_router/obstacle_map.py': '4fa8ab6598268267cc286047f05be90bc2b355cd33d87a083b6db8f1e0ff4757',
+ 'src/kicad_route/router/py_router/output_writer.py': '617d58a2125558419a380557c8628ad8fba3cf8d0f31efe0872ed4f2fa4bdaaf',
+ 'src/kicad_route/router/py_router/pack_river.py': '34d54fb0f9ae956ab0507fa818cf604fdc8816a0b54508f23db9c742e7c31dc0',
+ 'src/kicad_route/router/py_router/paste_apertures.py': '0c7a864b934ae7ec812f0fb091d16385f442b8472fa34885b85f20219e7e6031',
+ 'src/kicad_route/router/py_router/pcb_io_utils.py': 'a128f2dc42e869dc46ac240d739e6523eb31a75ffec85798c396784ab7606892',
+ 'src/kicad_route/router/py_router/pcb_modification.py': '3c8da17cd58610d263a77a8703ff09df27974ff86d19e9162876089c00212a20',
+ 'src/kicad_route/router/py_router/phase3_routing.py': 'fa208fc1ffe6d446e8a5eccd54c56c1836ddf3345564093a253f749577e134e4',
+ 'src/kicad_route/router/py_router/place_motion.py': '9fa0574956f290e947a1c842f0d6ffe38a7e8ff42b881ecf7b94780e78d00f09',
+ 'src/kicad_route/router/py_router/plane_blocker_detection.py': 'c439b516ff466034902153e29a52969d16002891506ada7d6b61d5f7ca1931d1',
+ 'src/kicad_route/router/py_router/plane_component_oracle.py': '845aee20a9d3080b1047f48023bb93fb9cebfb072962bca64e6a0a2f208ebf96',
+ 'src/kicad_route/router/py_router/plane_corridor_ghosts.py': 'dd2e5cc64a7946af47cdf98b6da9a5ac530eff2a64619c4774c2c81ce208a2e1',
+ 'src/kicad_route/router/py_router/plane_fill_model.py': '001778d66ca3b4b01309c3bb979fcba6a989d07495dcad1c7662b74fee00777a',
+ 'src/kicad_route/router/py_router/plane_fragility.py': 'c5d4fe82872c8767abb07c2a439dbf76701b0b426402469e2b7e01d4b081cd60',
+ 'src/kicad_route/router/py_router/plane_io.py': '0155a404aaf856d9256282d1115a257b923eeff7ad87620b19efe95d942b9169',
+ 'src/kicad_route/router/py_router/plane_lattice.py': 'c96af256f7f1827cf7b5d2a1ec472eda1a841f61bfa817307cb762765015c353',
+ 'src/kicad_route/router/py_router/plane_obstacle_builder.py': 'cbc959ff99e9c666913037e7c40c456f166feba549220e166b9f0a64b67dbdd7',
+ 'src/kicad_route/router/py_router/plane_pad_tap.py': '53fd384f7def41f3461c41cfcb53e09f48c25f4ceee791e8f9443b0b88ddf04f',
+ 'src/kicad_route/router/py_router/plane_region_connector.py': 'ef9aab2d3fa40191fa7e0978348ccfeab8981d96e2c47744921f8aedc1c73b34',
+ 'src/kicad_route/router/py_router/plane_resistance.py': '13ac213ca844508852f397853234815a3b5d5675afcad593206933130322005a',
+ 'src/kicad_route/router/py_router/plane_split_raster.py': 'c0e938278fde7ef7b38c31cfc8ed3d4bef6ba0e377941692b3088a4fe4f2a59f',
+ 'src/kicad_route/router/py_router/plane_write_reconcile.py': '1c257a0b76f329e040c3cf99f6499e283fccaa2ba4526217fe164ca2a114c9e3',
+ 'src/kicad_route/router/py_router/plane_zone_geometry.py': '8c2ba668b5a2bc40755b8701075296f3b7635813a260bc52af37282e1edaa095',
+ 'src/kicad_route/router/py_router/polarity_swap.py': '586014b0c93f79222eaaf2a6f0554a4edb379e615441bb26cb6e78351776d4b0',
+ 'src/kicad_route/router/py_router/pour_guard.py': '60890ff3814d6c49b01f37ed24bbab3457f896b50471578e6e6b58bc2e5192f3',
+ 'src/kicad_route/router/py_router/pour_promise.py': '55d2db38af8da4acf7298da184fb08868623b62474bcd77f28ec52b220b978f9',
+ 'src/kicad_route/router/py_router/protected_nets.py': '8e1aaa2002befb452e75948fd19a2ed4d1a9440a6b659b3dfce8be3f58174fd9',
+ 'src/kicad_route/router/py_router/redo_record.py': 'f167110134b8b5e385a67863bd22a02256b2b85c67566a9100b9859c19a7b143',
+ 'src/kicad_route/router/py_router/render_chrome.py': '1182ac85522eac27cfb1c3eb833df5299f039722ab612a55bd705f0580823f7c',
+ 'src/kicad_route/router/py_router/render_panels.py': '44c6e4e391e111b67395f636495c951a33dccb28e14891f19aa9ced79d06b780',
+ 'src/kicad_route/router/py_router/render_plan.py': '8972d1277db570ac91e33022d4ee8488f8b0c066f964ea1ccd6c42ee6f0b0dff',
+ 'src/kicad_route/router/py_router/render_theme.py': 'cb661cb989717f1c0ce6d0f1afad2485763527014b7cfd2364e7661f70b9ddf3',
+ 'src/kicad_route/router/py_router/repair_planes.py': '5a5fdd7906ef5ad3acbbf6a0b72a08dd64fe3c4a4fee107e20a117d9432d0fbc',
+ 'src/kicad_route/router/py_router/reroute_loop.py': '7b5002ba9c5b412784372f3cd8c789bdec370180ba17c370506def89581bf2cd',
+ 'src/kicad_route/router/py_router/rip_defer.py': 'c965f8b2cdf65d10254735049b5eebafe72c4229d9d9efbedd10bd0dd06dfdb6',
+ 'src/kicad_route/router/py_router/rip_restore.py': '9a5a68cf13050035de319d8158807cea3104b79241ef15523a729edf42ae544b',
+ 'src/kicad_route/router/py_router/rip_up_reroute.py': 'e438891f67059b0376eae91c4bff82bb26f2dec9e702aee454927abc29cc5149',
+ 'src/kicad_route/router/py_router/route.py': 'a5b387a0cc562fbe2899efd25bac563a0abf1df02896d5b2bbe42044930cff1e',
+ 'src/kicad_route/router/py_router/route_diff.py': '3da7ecc9a60de4a7521d7dd5f598b80a5e768e669f80c46e9c582af9c8826ff8',
+ 'src/kicad_route/router/py_router/route_planes.py': '468d17b55a84161bc70ad8594dfc5142e2416addda501f8b8cd6aa6b25940cb3',
+ 'src/kicad_route/router/py_router/route_render.py': '5fca0a39fbca4d58e0a77f503867e0fb48bed766ede31b9664a5a0b6c9f7131f',
+ 'src/kicad_route/router/py_router/route_summary.py': '3c8575595d90ca286dc06e36df2905aea583a10e986d13633fd36b5e8d026410',
+ 'src/kicad_route/router/py_router/route_trace.py': '4511cbacf524a9b72739ed06e4d1b1ff28cf035fef5aa634939cfba3f0c73e3b',
+ 'src/kicad_route/router/py_router/routing_common.py': 'a698bbb0c09d6be2bb9e87e741e4cb23bb563e0fe9a7ebe6ed29356a00166311',
+ 'src/kicad_route/router/py_router/routing_config.py': '3165f32065b639825515b00a7df6716228faef7c72c94f6c14cd88bf3b322719',
+ 'src/kicad_route/router/py_router/routing_constants.py': '5bd4f2aa4d42b5b8f581111bd2ef534a5a1aa53af81b7757fbecfff529c2f718',
+ 'src/kicad_route/router/py_router/routing_context.py': '2285fa2acee5d0cd1893dd0d95f100b54abd35a7fc625849ab69b4d050911f0e',
+ 'src/kicad_route/router/py_router/routing_defaults.py': '814cb2693c8029539b9a37726fa84c8b93ed76edbd32da31ac6722a80e75ddf9',
+ 'src/kicad_route/router/py_router/routing_diagnostics.py': '82aef147c608c83d897b8713073893b722bb71d0880f8575ac1c3d94afc46b15',
+ 'src/kicad_route/router/py_router/routing_exceptions.py': '2f881ffd0ea1eb1bb19d49c300d1ddac5a2da87a20403f62cc6026c9a5f4c03a',
+ 'src/kicad_route/router/py_router/routing_state.py': '38b8ce2090aa5029bf63ef657b3ef62ce66f03a553f193f570b442dd60f44c01',
+ 'src/kicad_route/router/py_router/routing_utils.py': 'a7d25f7423f4fcddc5be3ebbfedc31f3c70ae895963c23740679489ebd75e536',
+ 'src/kicad_route/router/py_router/rust_alloc.py': '838d142cd07a85f8f78b49b8a237f783525c1a548f545195aaa3008331a7655e',
+ 'src/kicad_route/router/py_router/schematic_updater.py': '3dc6cccbadd5e61ee99b08c11557566cb030d6cadf9916352357df6bf52582d8',
+ 'src/kicad_route/router/py_router/single_ended_loop.py': '7e8dc8d72175fb067781434e6c2c673fcda6482b7a0465f1ed3fc7fedb7bc4c5',
+ 'src/kicad_route/router/py_router/single_ended_routing.py': 'a0f5cf37746f694a693e5fba39530eacd09a257385953443a195a570d889a9a5',
+ 'src/kicad_route/router/py_router/stage3d/__init__.py': '161f136b3da4952b101ecd563d9bd3037acfa100d74339683eb0e197bd888970',
+ 'src/kicad_route/router/py_router/stage3d/blender_scene.py': 'd99c8de1bbccb507d5f4088fcf9eb99df42034c1632efc76b4c78aa6bbf551a2',
+ 'src/kicad_route/router/py_router/stage3d/film.py': 'fe6e00044a30326121b7d5cfb7fe7035f108eb9409207ee8a5b46ca5eb6cff6c',
+ 'src/kicad_route/router/py_router/stage3d/package-lock.json': '77fbbd720f5d2ecf2ebd226bceb0a3c8a64972d5ea5dda0809c4c8c18a40f442',
+ 'src/kicad_route/router/py_router/stage3d/package.json': '3c5c157fa742ef026c0307249d773387a23e361c76b38d30d5ea36990dc91df9',
+ 'src/kicad_route/router/py_router/stage3d/page/index.html': '40ced37a7e8fa68946c9959c20c399872aa9cc658052233a8896e4cc23745875',
+ 'src/kicad_route/router/py_router/stage3d/page/stage3d.mjs': '5ffa585a3c80ee727e9043c070511fc1a4fcdaeec1285bb22d33a4b02d1b3c74',
+ 'src/kicad_route/router/py_router/stage3d/render.mjs': '81dffb15754ebe01a63fda9801783d16e5c56ec62b15b8599840e63bcfa36401',
+ 'src/kicad_route/router/py_router/stage3d/render3d.py': '098cac31929a6d27291047f8c444da9a4ecb672748899fa64de1d69fbd5d6d17',
+ 'src/kicad_route/router/py_router/stage3d/scene.py': 'a99eadf1f6eb827858ce5135f88e5e1ced8fb1e223ea952f28ceeb86a716ec31',
+ 'src/kicad_route/router/py_router/stage3d/timeline.py': '85a8fa201161bf3f2e606dc8cc70afc3936f6988d1d1b505acf5427f6100f590',
+ 'src/kicad_route/router/py_router/stage3d/vendor/three/LICENSE': '8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc',
+ 'src/kicad_route/router/py_router/stage3d/vendor/three/VERSION.txt': '1f4ccdfddd489858e33b31607735544ec7335960fc0f6d03b5cb0f7f61600519',
+ 'src/kicad_route/router/py_router/stage3d/vendor/three/build/three.core.js': '9edde002b066a9a05676a6127f67735b62baf399bdea529f2f7e31657da769e6',
+ 'src/kicad_route/router/py_router/stage3d/vendor/three/build/three.module.js': '9052042d676cb0fdc1ddfefe193053f34b7ac0513a616fdac4535d49987812ea',
+ 'src/kicad_route/router/py_router/stage3d/vendor/three/examples/jsm/loaders/GLTFLoader.js': '131c0f78c01d19368ae495caa65b3adaa10487810a36a05bb5901b769a35ac16',
+ 'src/kicad_route/router/py_router/stage3d/vendor/three/examples/jsm/utils/BufferGeometryUtils.js': '9fb63427ce6641fa14fd0baff9cc4d1b5f9c3d85fd084bf2e90e803c44ec1797',
+ 'src/kicad_route/router/py_router/stage3d/vendor/three/examples/jsm/utils/SkeletonUtils.js': 'b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f',
+ 'src/kicad_route/router/py_router/startup_checks.py': '2721cee806e90d48e9d1086a86876b615d2205c40b35420d6ee000fbfcb76bd3',
+ 'src/kicad_route/router/py_router/stub_layer_switching.py': '42b46236da915cbe1f3c3468c1fba09134cc02b87ee02af48f38c87579e7df5d',
+ 'src/kicad_route/router/py_router/swig_compat.py': '6c3d48c24a439231901b84d08467d8c59817a8993730a499cbcdfe071d46925f',
+ 'src/kicad_route/router/py_router/tap_relocation.py': 'c516170f8f4c6b7b5ebb880722032386baa4a2b852bd2d5cabb7ada225d990f1',
+ 'src/kicad_route/router/py_router/target_swap.py': '01bc14831d34493d1b7ea5903815a79ab6e8b55e62170b8fd52b8f3b48c6e00b',
+ 'src/kicad_route/router/py_router/terminal_colors.py': '824dbf2811eb5ab677a4440bbc44e8734445d628847fbf6b43e7da367761ae24',
+ 'src/kicad_route/router/py_router/tool_records.py': 'd459728ad947d6d078c3e0ec045425793f2832705e1a5e560942e2352ccda74c',
+ 'src/kicad_route/router/py_router/ui_thread.py': '434574ac58739a0370d469b1a387fc67b43e675b3b4d54dbb67485f4442b0070',
+ 'src/kicad_route/router/py_tools/_path.py': 'd58191abe45e6d016915dcbc7de0b357489237082370af35be654984a5e0ed46',
+ 'src/kicad_route/router/py_tools/board_brief.py': '22948dba3d97398885ed49545db59f452f488ac144a85ca7d990c6acc42053ff',
+ 'src/kicad_route/router/py_tools/board_context.py': 'c5160fac7c731659abe4c688a8ff5497a7511d192390d9ab0237b5908f4faa79',
+ 'src/kicad_route/router/py_tools/board_score.py': 'cba1191684ee564af0427f3479ef79d4289e0bbb8ecf6724b9f26f3e81c548e6',
+ 'src/kicad_route/router/py_tools/check_floorplan.py': '4b1751d6654a5b758961e828f1ec78b02fe13b11debd3c918e00147e976ed0b8',
+ 'src/kicad_route/router/py_tools/check_impedance.py': 'ea58a0fe25257c4a72c4a6171c7d8ae77614adc436e3ce1a709b736cb895e864',
+ 'src/kicad_route/router/py_tools/check_orphan_stubs.py': '21e7dab33cd719b96fcbb9190352bd5b95f20c459cb32573b9fe877a5d60ded3',
+ 'src/kicad_route/router/py_tools/check_reachability.py': '19a0e4f7ee73cbead1904593e58882cf7ab37afe6b179737629442f35c3ff3e2',
+ 'src/kicad_route/router/py_tools/render_placement.py': '24e6d63a04f8e5d2b3ad39db28504968c467d80c22bc0074c9e4583f1c4fd543',
+ 'src/kicad_route/router/requirements.txt': '139aba6f659752d19d8d7c467866bc78a6ced432b7d14b3e45bbfe24a7753e43',
+ 'src/kicad_route/router/rust_router/Cargo.lock': 'f14e7b0c06ae682e63f1b452862a72417cb69ee629f51ac49bac242a24d94203',
+ 'src/kicad_route/router/rust_router/Cargo.toml': 'b75f1a594d1933a7b539f123e356014f6af8c621864e01f6f0746d31330acf89',
+ 'src/kicad_route/router/rust_router/src/dubins.rs': '578db6b9034dcea6a90849323843e47792b3c0921427d2951d325bfdb6147730',
+ 'src/kicad_route/router/rust_router/src/lane_search.rs': '2e63ecb7c53943ce6188725600400be5dd9e0625fd5c36137948fb3f290c1ce9',
+ 'src/kicad_route/router/rust_router/src/lib.rs': '3bb11f80ee27862414a32b9774f19d087749994d8f4a163af73546452120e44e',
+ 'src/kicad_route/router/rust_router/src/obstacle_map.rs': 'f5abe681accc32a7870101c6b776058ece72f5b90deaca5180dba688db7ce471',
+ 'src/kicad_route/router/rust_router/src/pair_search.rs': 'f384c7331e677f6821176da6d36d3e51a00fd4bb9f06151e7520963b463c5204',
+ 'src/kicad_route/router/rust_router/src/pose_router.rs': 'a4df246ef8a886d1cd3df989734bfd4a15ddc72e551905b046fbbe056c240a4c',
+ 'src/kicad_route/router/rust_router/src/router.rs': 'd3cb9ac9cfa5d25180f29d92f4c55a9082393ac67c9c81d9968ab26177d0681d',
+ 'src/kicad_route/router/rust_router/src/types.rs': '70058395d6c08ccefbe7b26596025adb60724767565182d8eca2db42ebccbfe4',
+ 'src/kicad_route/router/tests/test_krt64_tap_grid.py': '65e10213bd0429937972ed976d67667ab3b63b79714fa0ee170c547adeaf0c1c',
+ 'src/kicad_route/router/tests/test_pour_launch_forbidden_layer_welds.py': 'be2c95e968234c53a85c07c1fea626a868dbb28211cf4b88d91335c00e728a2b',
+ 'src/kicad_route/sandbox.py': '5668f18e1b25d81d96f1568ee2e9fe8508a0abbaa63c28b8573dc3ebfa27edc6',
+ 'src/kicad_route/skills.py': 'b261fcb7596db3921c089af549a77d5803ba6c0e7590132026e9fdb85106cee8',
+ 'src/kicad_route/snapshot.py': '7c51203f4a439cc99a575e6bc5433f3ab78dda7735dcd03c940f6169fe7fb9a4',
+ 'src/kicad_route/spokes.py': 'fc5b3f90c31cbcc9a9944628bfe6b9bc93dc31de21c893f8e476160f21033506',
+ 'src/kicad_route/stall.py': '095445837a1621ca8eaa62fee2f87ec772d13fcb9111e75528743f24f095d188',
+ 'src/kicad_route/statemanifest.py': '1a9903902e7f0fb1771d2730f986076c692db9579bfcbc42a9c0b576e5777ae2'}
 RESULT_SCHEMA = 'kicad-route/route/1'
 
 REPORT_SCHEMA = 'agent-ee.kicad-route-attempt/1'
@@ -88,8 +326,8 @@ SANDBOX = {'work': '/work', 'candidate': '/candidate', 'checkout': '/opt/kicad-r
 PYTHON = '/usr/bin/python3'
 BACKENDS = ('krt', 'freerouting')
 # Installed backend inputs the pinned cli.py reads under KICAD_ROUTE_STATE.
-STATE_COMPONENTS = {'krt': ('.venv-krt', 'vendor/krt'), 'freerouting': ('vendor/freerouting',)}
-STATE_REQUIRED = {'krt': ('.venv-krt/bin/python', 'vendor/krt/py_router/route.py'),
+STATE_COMPONENTS = {'krt': ('.venv-krt',), 'freerouting': ('vendor/freerouting',)}
+STATE_REQUIRED = {'krt': ('.venv-krt/bin/python',),
                   'freerouting': ('vendor/freerouting',)}
 SAFE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z')
 STAMP = re.compile(r'\d{8}T\d{6}\.\d{6}Z\Z')
@@ -335,6 +573,63 @@ def verify_code(checkout, pinned=None):
         elif seen[rel] != pinned[rel]:
             problems.append(f'tool file differs from pin: {rel}')
     return problems
+
+
+def verify_state(checkout, state, backend='krt', pinned=None):
+    """Verify the owned engine using the qualified tool's state-manifest reader.
+
+    Called only after verify_code succeeds. Synthetic adapter-policy fixtures
+    supply their own code map without an engine; production PINNED_CODE always
+    includes it. No routing, installation or network is performed here.
+    """
+    pinned = PINNED_CODE if pinned is None else pinned
+    if backend != 'krt' or 'src/kicad_route/engine.py' not in pinned:
+        return []
+    script = r'''
+import json, sys
+from pathlib import Path
+checkout, state = map(Path, sys.argv[1:])
+sys.path.insert(0, str(checkout / 'src'))
+from kicad_route import engine, statemanifest
+m = statemanifest.read(state)
+if m is None:
+    raise ValueError('missing or unreadable state manifest')
+problems = statemanifest.schema_problems(m)
+k = m.get('krt') or {}
+if k.get('source_sha256') != engine.source_sha256():
+    problems.append('owned engine source digest differs')
+module = (k.get('extension_module') or {}).get('path')
+venv = state / '.venv-krt'
+installed = statemanifest.extension_module(venv)
+if (not module or installed is None or
+        not (state / module).resolve().is_relative_to(venv.resolve()) or
+        (state / module).resolve() != installed.resolve()):
+    problems.append('manifest must identify the installed .venv-krt grid_router extension')
+if not (k.get('extension_module') or {}).get('sha256'):
+    problems.append('missing installed engine digest')
+if (k.get('venv') or {}).get('path') != '.venv-krt':
+    problems.append('unexpected routing environment path')
+# The manifest was installed on the host. The immutable source is mounted at a
+# different absolute path inside the sandbox; verify its recorded hash there.
+if k:
+    k['requirements']['path'] = str(engine.ROOT / 'requirements.txt')
+problems += [f"state manifest drift: {d['item']}" for d in statemanifest.verify(m, state)]
+print(json.dumps(problems))
+'''
+    try:
+        # -B still reads caches. /dev/null cannot hold ignored bytecode.
+        result = subprocess.run([PYTHON, '-I', '-B', '-X', 'pycache_prefix=/dev/null',
+                                 '-c', script, str(checkout), str(state)],
+                                capture_output=True, text=True, timeout=60,
+                                env={'PATH': '/usr/bin:/bin', 'PYTHONDONTWRITEBYTECODE': '1'})
+        if result.returncode:
+            return ['installed engine verification failed: ' + result.stderr.strip()[-2000:]]
+        problems = json.loads(result.stdout)
+        if not isinstance(problems, list) or any(not isinstance(p, str) for p in problems):
+            return ['invalid installed engine verification output']
+        return problems
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        return [f'installed engine verification unavailable: {exc}']
 
 
 def _safe(value, label, suffix=None):
@@ -1230,8 +1525,11 @@ def _identities(request, layout):
         return tree_identity(root) if root.is_dir() and not root.is_symlink() else None
 
     checkout, state = Path(layout['checkout']), Path(layout['state'])
-    return {'code': {top: identity_of(checkout / top) for top in ('bin', 'src')},
-            'state': {comp: identity_of(state / comp) for comp in STATE_COMPONENTS[request['backend']]}}
+    identities = {'code': {top: identity_of(checkout / top) for top in ('bin', 'src')},
+                  'state': {comp: identity_of(state / comp) for comp in STATE_COMPONENTS[request['backend']]}}
+    manifest = state / 'manifest.json'
+    identities['state_manifest'] = digest(manifest) if manifest.is_file() else None
+    return identities
 
 
 class _Cancelled(Exception):
@@ -1356,7 +1654,10 @@ def attempt(request, layout, cancel=None):
                                                 for t in ('sym-lib-table', 'fp-lib-table')}}
     if commit != layout['pin']:
         problems.append(f'checkout HEAD {commit} is not the pinned {layout["pin"]}')
-    problems += verify_code(checkout, layout['code'])
+    code_problems = verify_code(checkout, layout['code'])
+    problems += code_problems
+    if not code_problems:
+        problems += verify_state(checkout, state, request['backend'], layout['code'])
     for rel in STATE_REQUIRED[request['backend']]:
         if not os.path.lexists(state / rel):
             problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')

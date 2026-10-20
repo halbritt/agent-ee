@@ -230,7 +230,7 @@ class RoutingCampaignTests(unittest.TestCase):
         def drift(run, label, *args, **kwargs):
             response = agent(run, label, *args, **kwargs)
             if label == 'implementation':
-                (Path(declaration['state']) / 'vendor/krt/py_router/route.py').write_text('changed state')
+                (Path(declaration['state']) / '.venv-krt/py_router/route.py').write_text('changed state')
             return response
 
         with patch('agent_ee.reviewers.dispatch', side_effect=drift):

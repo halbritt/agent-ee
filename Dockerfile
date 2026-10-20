@@ -76,14 +76,19 @@ RUN set -eu; \
         test -e "/usr/share/kicad/$f"; \
     done
 
-# Build stage for the pinned routing tool: pip and curl stay in this stage only.
-# docker/kicad-route/install.sh holds the source commits, the prebuilt router
-# hash and the hash-locked wheel list; any mismatch fails the build.
+# The exact Rust toolchain is acquired from a digest-pinned image, only in the
+# build stage. The final image receives the installed extension, never Cargo.
+FROM rust:1.99.1-slim-bookworm@sha256:a24e292b4af7bdee351a31d3a6379972a5652f0ea22a1b6d6883324ac4f5097c AS rust-toolchain
+
 FROM native AS kicad-route-build
+COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
+COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH RUSTUP_TOOLCHAIN=1.99.1
 ARG PYTHON3_PIP_VERSION=24.0+dfsg-1ubuntu1.3
 RUN set -eu; \
     apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 update; \
-    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "python3-pip=${PYTHON3_PIP_VERSION}" curl; \
+    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "python3-pip=${PYTHON3_PIP_VERSION}" build-essential python3-dev; \
     rm -rf /var/lib/apt/lists/*
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN /usr/local/share/agent-ee/kicad-route/install.sh install
@@ -111,7 +116,7 @@ RUN set -eu; \
     rm -rf /var/lib/apt/lists/*; \
     zstd --version | grep -q 'v1\.5\.5'
 
-# kicad-route a132899 with KRT v0.23.1 for the routing stage. The checkout is
+# kicad-route 5f1c072 with its owned routing engine for the routing stage. The checkout is
 # its own KICAD_ROUTE_STATE and belongs to the runtime user, as on a native host;
 # routing steps mount it read-only in the tool sandbox. The verification runs
 # without network, so KRT's startup checks cannot fetch or rebuild anything.
@@ -134,7 +139,7 @@ RUN set -eu; \
     useradd --create-home --uid 10001 --shell /bin/bash agentee
 
 LABEL org.opencontainers.image.title="agent-ee" \
-      org.opencontainers.image.description="agent-ee with KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0, Python 3.12 and kicad-route/KRT 0.23.1"
+      org.opencontainers.image.description="agent-ee with KiCad 10.0.7, ngspice 42, Bubblewrap 0.9.0, Python 3.12 and kicad-route owned engine 0.23.1"
 
 # Bubblewrap needs an unprivileged user namespace; run as a non-root user.
 USER agentee
