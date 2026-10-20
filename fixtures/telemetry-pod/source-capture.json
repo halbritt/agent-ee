@@ -65,6 +65,11 @@
       "path": "sources/jlcpcb-thickness.txt",
       "sha256": "fae784b6527c2b2e641fddb26a09b7d93d3ae126c130a84ba2351f9470cbb25e",
       "bytes": 179
+    },
+    "jlcpcb-vias.txt": {
+      "path": "sources/jlcpcb-vias.txt",
+      "sha256": "87fb4db7a73d54b561dc1695e6061cd1d9f9537b81566ffe51f81c541f3ee56c",
+      "bytes": 246
     }
   },
   "locators": {
@@ -75,12 +80,14 @@
     "size": "PCB capabilities / PCB Specifications / Maximum Dimensions / FR4(4-layer), thickness >=0.8 mm, ordinary 663 x 593 option",
     "layers": "Impedance / 4-Layer Impedance Control Stackup / 1.6mm / 1oz outer / 0.5oz inner / 2) JLC04161H-7628 Stackup; max_layers=4 specializes this profile, not vendor-wide maximum",
     "stackup": "Same stackup card; explicit thickness numbers preserved without adjustment",
-    "finished-thickness": "PCB Specifications / Thickness Tolerance (Thickness >= 1.0 mm); +/-10 percent, 1.6 mm example 1.44 to 1.76 mm"
+    "finished-thickness": "PCB Specifications / Thickness Tolerance (Thickness >= 1.0 mm); +/-10 percent, 1.6 mm example 1.44 to 1.76 mm",
+    "small-drill": "Same Min. Via hole size/diameter row as via / note 2 / preferred minimum via hole size 0.2 mm (AGENTEE-272)",
+    "small-via": "Same row / note 3 / 0.2 or 0.25 mm hole size with via diameter <0.45 mm costs more; 0.1 or 0.15 mm at any diameter costs more (AGENTEE-272)"
   },
   "interpretation_limits": [
     "min_clearance_mm records only the track-spacing floor. Pair-specific pad/hole/copper constraints require additional DFM rules; this profile is not complete JLCPCB DFM acceptance.",
     "Via annular-ring relation (pad >= drill + 0.1 mm) is not expressible in scalar profile limits. Diameter and drill minima alone do not establish annular ring.",
-    "No surcharge, assembly, impedance or stock acceptance is claimed.",
+    "Surcharge policy is recorded only as the two AGENTEE-272 via rules from the same 2026-10-18 capabilities capture. small-drill (preferred 0.2 mm drill) covers the 0.15 mm option at any diameter. small-via is drill <0.3 mm AND diameter <0.45 mm: the page names only the 0.2 and 0.25 mm drill options, so 0.3 mm is this profile's encoding of the next drill above them, as in the AGENTEE-75 preset; intermediate drills are not qualified by the page. Both rules classify extra charges and set the scaffold Default via routing default; neither defines a defect. No other surcharge, assembly, impedance or stock acceptance is claimed.",
     "Source verification proves occurrence in this recorded fixture; it does not authenticate a vendor response or interpret its applicability. Raw response hashes are provenance identities, not offline replay evidence."
   ],
   "capture_runtime": "Python 3.12.3",

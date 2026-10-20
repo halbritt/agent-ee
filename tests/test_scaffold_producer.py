@@ -469,6 +469,79 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
                             for r in derivation['netclasses'][1:]))
         self.assertEqual(derivation['router_targets'], [])
 
+    def joint_profile(self, drill, pad):
+        """The owned profile as /2 plus one sourced joint small-via surcharge rule."""
+        profile = self.profile()
+        text = self.source / 'fab/owned-capabilities.txt'
+        quote = f'small-via: drill < {drill} and diameter < {pad} ; preferred'
+        text.write_text(text.read_text() + quote + '\n')
+        for limit in profile['limits']:
+            limit['source']['sha256'] = digest(text)
+        source = dict(profile['limits'][0]['source'], quote=quote)
+        profile['schema'] = 'agent-ee.fab-profile/2'
+        profile['limits'].append(dict(id='small-via', requirement='fabrication', tier='preferred', all=[
+            dict(key='min_via_drill_mm', value=drill, unit='mm'), dict(key='min_via_pad_mm', value=pad, unit='mm')],
+            source=source))
+        self.write(profile)
+
+    def test_default_via_inside_a_joint_surcharge_band_takes_its_diameter_bound(self):
+        # AGENTEE-272: the preferred 0.6/0.3 mm via is strictly under both terms, so it is surcharged.
+        self.joint_profile(0.35, 0.7)
+        derivation = self.build()['derivation']
+        default, = read_json(self.root / 'produced/inputs/project/design.kicad_pro')['net_settings']['classes']
+        self.assertEqual((default['via_diameter'], default['via_drill']), (0.7, 0.3))
+        via = next(r for r in derivation['netclasses'] if r['setting'].endswith('.via_diameter'))
+        self.assertEqual((via['value'], via['key'], via['tier'], via['limit_id'], via['locator']),
+                         (0.7, 'min_via_pad_mm', 'preferred', 'small-via', '/limits/12'))
+        self.assertTrue(via['basis'].startswith('routing default only: the Default via drill is inside a joint'))
+        self.assertIn(('net_settings.classes.Default.via_diameter', 0.7, 'small-via'),
+                      [(t['setting'], t['value'], t['limit_id']) for t in derivation['router_targets']])
+        # The minimum tier remains the DRC floor.
+        rules = read_json(self.root / 'produced/inputs/project/design.kicad_pro')['board']['design_settings']['rules']
+        self.assertEqual((rules['min_via_diameter'], rules['min_through_hole_diameter']), (0.45, 0.25))
+
+    def test_default_via_at_a_joint_term_bound_is_outside_the_band(self):
+        # A via exactly at a bound does not meet that term (KiCad's native min), so nothing moves.
+        for drill, pad in ((0.3, 0.7), (0.35, 0.6)):
+            with self.subTest(drill=drill, pad=pad):
+                self.joint_profile(drill, pad)
+                derivation = self.build(f'band-{drill}-{pad}')['derivation']
+                default, = read_json(self.root / f'band-{drill}-{pad}/inputs/project/design.kicad_pro'
+                                     )['net_settings']['classes']
+                self.assertEqual((default['via_diameter'], default['via_drill']), (0.6, 0.3))
+                self.assertNotIn('small-via', [t['limit_id'] for t in derivation['router_targets']])
+
+    def test_unverified_joint_surcharge_rule_is_refused(self):
+        self.joint_profile(0.35, 0.7)
+        profile = read_json(self.source / 'fab/profile.json')
+        profile['limits'][-1]['source']['quote'] = 'small-via: drill < 0.35 and diameter < 0.8 ; preferred'
+        self.write(profile)
+        self.refused(r'limits not source-verified: small-via \(exact source quote absent')
+
+    def test_four_layer_pod_profile_scaffold_produces_standard_default_via(self):
+        # AGENTEE-272: the captured four-layer JLC profile, through the whole producer.
+        pod = ROOT / 'fixtures/telemetry-pod'
+        shutil.copytree(pod / 'sources', self.source / 'sources')
+        self.envelope = read_json(pod / 'envelope.json')
+        self.envelope['obligations'] = []
+        profile = read_json(pod / 'fab-profile.json')
+        # Scope/2 has no envelope declaration for the pod's R-envelope-* requirement id;
+        # every value, tier and source citation stays exactly as captured.
+        for limit in profile['limits']:
+            limit['requirement'] = 'fabrication'
+        self.write(profile)
+        derivation = self.build()['derivation']
+        self.assertEqual(derivation['envelope']['layer_count'], 4)
+        pro = read_json(self.root / 'produced/inputs/project/design.kicad_pro')
+        default, = pro['net_settings']['classes']
+        self.assertEqual((default['via_diameter'], default['via_drill']), (0.45, 0.2))
+        self.assertEqual(pro['board']['design_settings']['rules'], dict(
+            min_clearance=0.09, min_track_width=0.09, min_via_diameter=0.25, min_through_hole_diameter=0.15,
+            min_copper_edge_clearance=0.2, min_hole_to_hole=0.45))
+        cited = {r['setting'].rsplit('.', 1)[1]: (r['limit_id'], r['tier']) for r in derivation['netclasses']}
+        self.assertEqual((cited['via_diameter'], cited['via_drill']),
+                         (('small-via', 'preferred'), ('small-drill', 'preferred')))
+
     def test_envelope_without_profile_is_refused_by_name(self):
         self.keep_null = True
         self.envelope['fab_profile'] = None

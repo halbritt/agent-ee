@@ -27,14 +27,20 @@ class PodFabProfileTests(unittest.TestCase):
         compiled = compile_profile(self.profile, self.files, self.inputs)
         self.assertEqual(self.profile['schema'], 'agent-ee.fab-profile/2')
         self.assertEqual(compiled['name'], 'jlc04161h-7628')
-        self.assertEqual(len(compiled['constraints']), 8)
+        self.assertEqual(len(compiled['constraints']), 10)
         self.assertEqual({c['execution'] for c in compiled['constraints']}, {'ready'})
         expected = {'min_trace_mm': .09, 'min_clearance_mm': .09,
                     'min_via_drill_mm': .15, 'min_via_pad_mm': .25,
                     'min_edge_clearance_mm': .2, 'min_hole_to_hole_mm': .45,
                     'max_layers': 4, 'max_board_mm': [663, 593]}
-        self.assertEqual({c['expected']['key']: c['expected']['value']
-                          for c in compiled['constraints']}, expected)
+        self.assertEqual({c['expected']['key']: c['expected']['value'] for c in compiled['constraints']
+                          if c['expected']['tier'] == 'minimum'}, expected)
+        # AGENTEE-272: the same capture's surcharge notes are preferred-tier only.
+        preferred = {c['id']: c['expected'] for c in compiled['constraints'] if c['expected']['tier'] == 'preferred'}
+        self.assertEqual(preferred['small-drill']['value'], .2)
+        self.assertEqual(preferred['small-via']['all'], [
+            {'key': 'min_via_drill_mm', 'value': .3, 'unit': 'mm'},
+            {'key': 'min_via_pad_mm', 'value': .45, 'unit': 'mm'}])
         manifest = json.loads((POD / 'source-capture.json').read_text())
         for source in manifest['recorded_sources'].values():
             self.assertEqual(digest(POD / source['path']), source['sha256'])
@@ -119,12 +125,24 @@ class PodFabProfileTests(unittest.TestCase):
         compiled, requirement, rules, netclass, targets = produced_rules(
             {'fab_profile': 'fab-profile.json'}, self.files, self.inputs)
         self.assertEqual(requirement, 'R-envelope-telemetry-pod-fab-profile')
-        self.assertEqual(targets, [])  # the fab profile alone declares no preferred per-net targets (AGENTEE-184)
         self.assertEqual(len(rules), 6)
-        self.assertEqual(len(compiled['constraints']), 8)
-        self.assertEqual({n['setting'].rsplit('.', 1)[1]: n['value'] for n in netclass},
-                         {'clearance': .09, 'track_width': .09,
-                          'via_diameter': .25, 'via_drill': .15})
+        self.assertEqual(len(compiled['constraints']), 10)
+        # The minimum tier stays the DRC floor in the six project rules.
+        self.assertEqual({r['setting'].rsplit('.', 1)[1]: (r['value'], r['tier']) for r in rules}, {
+            'min_clearance': (.09, 'minimum'), 'min_track_width': (.09, 'minimum'),
+            'min_via_diameter': (.25, 'minimum'), 'min_through_hole_diameter': (.15, 'minimum'),
+            'min_copper_edge_clearance': (.2, 'minimum'), 'min_hole_to_hole': (.45, 'minimum')})
+        # AGENTEE-272: the four-layer Default via is the preferred 0.2 mm drill at the 0.45 mm
+        # small-via bound, not the 0.25/0.15 mm minimum whose annular ring is 0.05 mm.
+        self.assertEqual({n['setting'].rsplit('.', 1)[1]: (n['value'], n['tier'], n['limit_id']) for n in netclass},
+                         {'clearance': (.09, 'minimum', 'clearance'), 'track_width': (.09, 'minimum', 'trace'),
+                          'via_diameter': (.45, 'preferred', 'small-via'),
+                          'via_drill': (.2, 'preferred', 'small-drill')})
+        self.assertEqual([(t['setting'], t['value'], t['limit_id'], t['locator']) for t in targets], [
+            ('net_settings.classes.Default.via_drill', .2, 'small-drill', '/limits/4'),
+            ('net_settings.classes.Default.via_diameter', .45, 'small-via', '/limits/5')])
+        for item in netclass + targets:
+            self.assertEqual(self.profile['limits'][int(item['locator'].rsplit('/', 1)[1])]['id'], item['limit_id'])
 
     def test_four_layer_specialization_refuses_six_layers(self):
         compiled = compile_profile(self.profile, self.files, self.inputs)
