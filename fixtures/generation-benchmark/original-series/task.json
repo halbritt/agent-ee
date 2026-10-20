@@ -1,0 +1,123 @@
+{
+  "deliverables": [
+    "circuit.kicad_sch"
+  ],
+  "difficulty": "simple",
+  "domain": "passive",
+  "id": "original-series",
+  "prompt": "prompt.md",
+  "reference": "reference.kicad_sch",
+  "rules": [
+    {
+      "category": "conformance",
+      "check": "components",
+      "critical": true,
+      "deliverables": [
+        "circuit.kicad_sch"
+      ],
+      "id": "series",
+      "source_criteria": [
+        "SERIES-1"
+      ],
+      "weight": 1
+    },
+    {
+      "category": "native",
+      "check": "erc",
+      "critical": true,
+      "deliverables": [
+        "circuit.kicad_sch"
+      ],
+      "id": "erc",
+      "source_criteria": [
+        "ERC-1"
+      ],
+      "weight": 1
+    }
+  ],
+  "schema": "agent-ee.generation-task/1",
+  "scope": {
+    "baseline": {
+      "reference_architectures": [
+        "requirements.md"
+      ],
+      "requirements": [
+        {
+          "checks": [
+            "netlist",
+            "components"
+          ],
+          "id": "SERIES-1",
+          "intent": "acceptance",
+          "source": {
+            "locator": "SERIES-1",
+            "path": "requirements.md"
+          },
+          "statement": "Two series 1k resistors"
+        },
+        {
+          "checks": [
+            "erc"
+          ],
+          "id": "ERC-1",
+          "intent": "acceptance",
+          "source": {
+            "locator": "ERC-1",
+            "path": "requirements.md"
+          },
+          "statement": "No native ERC violations"
+        }
+      ],
+      "targets": [
+        "requirements.md"
+      ]
+    },
+    "checks": [
+      {
+        "id": "erc",
+        "kind": "erc",
+        "stage": "schematic"
+      },
+      {
+        "id": "netlist",
+        "kind": "netlist",
+        "stage": "verification"
+      },
+      {
+        "id": "components",
+        "kind": "topology_rules",
+        "params": {
+          "netlist_check": "netlist",
+          "rules": "rules.json"
+        },
+        "stage": "verification"
+      }
+    ],
+    "inputs": [],
+    "requirements": [
+      "requirements.md"
+    ],
+    "schema": "agent-ee.scope/3",
+    "schematic": "circuit.kicad_sch",
+    "stages": {
+      "finding_retry_limit": 2,
+      "order": [
+        "schematic",
+        "verification"
+      ],
+      "schema": "agent-ee.stages/1",
+      "subjects": {
+        "verification": {
+          "kind": "symbols",
+          "path": "circuit.kicad_sch",
+          "references": [
+            "J1",
+            "J2",
+            "R1",
+            "R2"
+          ]
+        }
+      }
+    }
+  }
+}

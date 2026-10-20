@@ -1,0 +1,13 @@
+{
+  "files": {
+    "evaluator/Owned.kicad_sym": "d0293cd524e53df1d4bbc262f6f5401a01e4d0ee0d5908c6179675abb17d0fe9",
+    "evaluator/requirements.md": "a04cbb0a8c4a9b6997dba8d364b153a413b55e885718896786bf1b556d316b58",
+    "evaluator/rules.json": "a97d15700f61abc0e366aabd48412aa73ffde6a1cb56ef52b6697a5a19cd5c5b",
+    "evaluator/stock/template/fp-lib-table": "c712cfa161419912eea8e73616d62224ee9ee44d321b4ab68962ff6fa11ad92a",
+    "evaluator/stock/template/sym-lib-table": "1df8754ff59c0cbf3e320eced5ab6725b6210e8e8500fe38a86fdcc52c49de7b",
+    "prompt.md": "f0bc3e3927d888b487351181d92f91a103a7ef10349170ddb5fb1aed237a4700",
+    "reference.kicad_sch": "c70a2e507d8dd85d9c4c804923fb50ed9aa90d1117ce42cd149032148fc71e3a",
+    "task.json": "e8bc6d3df9a2605ff29bbe9291ff5e90760695b1a04981a01914c71637d348a7"
+  },
+  "schema": "agent-ee.generation-pins/1"
+}

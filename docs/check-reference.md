@@ -24,6 +24,10 @@ reports `closed: false` and exits 1 when any licence evidence is unverified,
 including an absent outer-host Docker licence inside an identified image.
 This inventory audit adds no candidate check kind.
 
+The [generation benchmark](generation-benchmark.md) reuses these handlers on
+captured generated outputs, preserves failed execution separately from defects,
+and leaves unknown score coverage explicit. It registers no new check kind.
+
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
 arguments, exit status and console output remain in `work/CHECK_ID/`.

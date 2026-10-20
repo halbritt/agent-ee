@@ -97,6 +97,11 @@ verified dependency closure, deterministic control false-alarm bounds and native
 rerun comparisons. The closure audit exits 1 whenever tool or font licence
 evidence is unverified; owner review and any publication remain outstanding.
 
+The offline [generation benchmark](docs/generation-benchmark.md) pins task files,
+keeps evaluator rules outside the generator sandbox, and reports exact score
+bounds while coverage is unknown. Its original native fixture qualifies the
+harness; importing the ten unlicensed upstream prompts remains blocked.
+
 The [false-positive calibration](docs/fp-calibration.md) measures the reviewers
 themselves. It shows each profile reviewer pairs made from a design and its seeded
 variants, in both orders and repeatedly. Every variant's label is first proven by

@@ -30,6 +30,11 @@ or a router's self-report never establishes done.
 
 ## Benchmark ladder
 
+The offline [frozen generation benchmark](generation-benchmark.md) (AGENTEE-69)
+measures pinned tasks with evaluator-only checks and unknown-aware bounds.
+An original series-resistor task qualifies the harness; the requested ten
+unlicensed prompts still require owner permission before import.
+
 Each rung is one end-to-end run, from requirements to fab package, recorded as
 evidence (AGENTEE-96 to AGENTEE-99).
 
