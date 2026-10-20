@@ -67,7 +67,8 @@ board, netlist, manifest, board facts and each footprint file used, and lists:
 | `renames` | Board nets whose retained pad membership equals exactly one netlist net with a new name |
 | `new_nets`, `pads` | Nets to create, and the complete pad-to-net assignment with previous values |
 | `stale_nets` | Nets no longer in the netlist that tracks, vias or zones still use; they are kept, and DRC reports them |
-| `counts` | Counts for each list, plus `pad_changes` |
+| `probe_migrations` | Validated legacy probe property changes, with `reference`, `source` (`netlist` or `board`), exact `previous` value and `canonical` replacement |
+| `counts` | Operation counts, plus `pad_changes`; migrations are listed separately |
 
 Staged footprints are placed in reference order in one column that starts
 5.08 mm right of the board outline, with anchors on the 1.27 mm grid.
@@ -104,6 +105,31 @@ in place for DRC to report. For an in-place apply, the source bytes are first
 copied to `--backup-dir`, which must lie outside the board's directory so that
 the backup never enters a captured candidate's file inventory.
 
+## Legacy probe migration (AGENTEE-302)
+
+Planning accepts exact legacy inline JSON only after the existing probe checks
+validate native identity, pin, net, BOM flags, captured footprint hash and pad
+geometry. It converts that field to `probe_features.marker(record)` in planned
+adds and updates. The decoded record, including source hashes, geometry and net
+identity, is unchanged. Canonical fields pass through unchanged. Malformed,
+ambiguous or tampered properties remain refusals, including legacy properties
+on an existing board. Mixed legacy and canonical sources are supported.
+
+`probe_migrations` records each changed property from the XML or a retained board
+footprint; a successful apply receipt copies the recomputed list. Source XML
+stays unchanged; in-place apply retains original board bytes in the required
+backup. The child writes the planned canonical fields;
+saved-board field verification and final `probe_features.validate_board` require
+canonical output. Reapplying against an already canonical board is a byte no-op,
+even when the XML still declares a legacy property.
+
+This migration is a board-writing boundary, not source admission. Regenerate the
+schematic through binding fill and the current emitter from the same immutable
+parts declaration before native schematic parity or admission checks. A legacy
+schematic still fails admission, and native parity compares field text exactly;
+the board migration does not make that old schematic acceptable. Validate both
+canonical sides against the captured declarations and rerun parity and fab checks.
+
 ## Publication
 
 Destinations are checked before any work and written without following links:
@@ -136,7 +162,7 @@ member), `pad_pin_mismatch`, `duplicate_native_path`,
 `multiunit_binding_ambiguous`, `footprint_change_unsupported` (a bound footprint
 whose identity differs from the symbol's), `plan_rejected`, `stale_plan`,
 `stale_input`, `backup_location`, `output_exists`, `unsafe_path`,
-`native_child` and `verification`.
+`native_child`, `probe_feature_mismatch` and `verification`.
 
 ## Evidence
 

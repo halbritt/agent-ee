@@ -855,7 +855,7 @@ fome-mc. Those files are still outside the MIT grant. See their
 
 [Captured bare copper probe features](docs/probe-features.md) carry required pad, net and CAD identity through binding, board construction and fab export without a supplier or BOM/CPL row. Probe identity properties use a KiBot-safe
 encoding; admission checks refuse legacy properties, and
-[legacy boards require migration before KiBot export](docs/probe-features.md#migrating-legacy-inline-json-properties).
+[forward annotation migrates validated legacy properties before KiBot export](docs/probe-features.md#migrating-legacy-inline-json-properties).
 
 The [functional schematic presentation](docs/schematic-emitter.md#detached-text-and-native-measurement-agentee-301)
 places detached fields clear of net labels and gives vertical test points label

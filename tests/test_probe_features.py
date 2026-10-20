@@ -498,6 +498,188 @@ class NativeProbeTests(unittest.TestCase):
         self.assertEqual(rejected['execution'], 'failed', rejected)
         self.assertEqual(rejected['findings'][0]['code'], 'probe_feature_mismatch')
 
+    def test_forward_annotation_migrates_legacy_and_mixed_native_sources(self):
+        import xml.etree.ElementTree as ET
+        from agent_ee.forward_annotation import plan, apply
+        from agent_ee.symbol_library import children, parse_sexpr
+        from tests.test_schematic_emitter import run_native
+        project, xml = self.native()
+        probes = pf.declarations(self.parts, self.root)
+        manifest = read_json(self.root / 'cad.json')
+        empty = self.root / 'empty.kicad_pcb'
+        empty.write_bytes(self.empty_board)
+        source = xml.read_bytes()
+        for mode, legacy_refs in [('legacy', set(probes)), ('mixed', {'TP1', 'TP3', 'TP5'}),
+                                  ('canonical', set())]:
+            with self.subTest(mode=mode):
+                tree = ET.fromstring(source)
+                for comp in tree.findall('./components/comp'):
+                    ref = comp.get('ref')
+                    if ref in legacy_refs:
+                        value = canonical(probes[ref]).decode()
+                        comp.find('./fields/field[@name="AGENT_EE_Probe"]').text = value
+                        comp.find('./property[@name="AGENT_EE_Probe"]').set('value', value)
+                netlist = self.root / (mode + '.xml')
+                netlist.write_bytes(ET.tostring(tree))
+                original = netlist.read_bytes()
+                planned = plan(empty, netlist, manifest, self.root, self.root / (mode + '-plan'))
+                self.assertEqual(planned['execution'], 'ok', planned)
+                self.assertEqual({m['reference'] for m in planned['probe_migrations']}, legacy_refs)
+                self.assertEqual(len(planned['probe_migrations']), len(legacy_refs))
+                for row in planned['probe_migrations']:
+                    self.assertEqual(row['source'], 'netlist')
+                    self.assertEqual(pf.parse_marker(row['previous']), pf.parse_marker(row['canonical']))
+                for row in planned['add']:
+                    if row['reference'] in probes:
+                        self.assertEqual(row['fields'][pf.PROPERTY], pf.marker(probes[row['reference']]))
+                board = self.root / (mode + '.kicad_pcb')
+                result = apply(planned, empty, netlist, manifest, self.root, board,
+                               self.root / (mode + '-apply'))
+                self.assertEqual(result['execution'], 'ok', result)
+                self.assertEqual(result['probe_migrations'], planned['probe_migrations'])
+                self.assertEqual(pf.validate_board(board.read_bytes(), probes), set(probes))
+                for fp in children(parse_sexpr(board.read_bytes()), 'footprint'):
+                    props = pf.properties(fp)
+                    if pf.PROPERTY in props:
+                        self.assertEqual(props[pf.PROPERTY], pf.marker(probes[props['Reference']]))
+                # A retained legacy board must migrate as well, under either source encoding.
+                from agent_ee.schematic_emit import parse_quoted, Quoted as Q
+                from agent_ee.scaffold import sexpr
+                board_tree = parse_quoted(board.read_bytes())
+                for fp in children(board_tree, 'footprint'):
+                    props = pf.properties(fp)
+                    if props.get('Reference') in {'TP1', 'TP2'}:
+                        prop = next(p for p in children(fp, 'property') if p[1] == pf.PROPERTY)
+                        prop[2] = Q(canonical(probes[props['Reference']]).decode())
+                retained = self.root / (mode + '-retained.kicad_pcb')
+                retained.write_bytes(sexpr(board_tree))
+                migrate = plan(retained, netlist, manifest, self.root, self.root / (mode + '-retained-plan'))
+                self.assertEqual(migrate['execution'], 'ok', migrate)
+                self.assertEqual({m['reference'] for m in migrate['probe_migrations'] if m['source'] == 'board'},
+                                 {'TP1', 'TP2'})
+                repaired = self.root / (mode + '-repaired.kicad_pcb')
+                receipt = apply(migrate, retained, netlist, manifest, self.root, repaired,
+                                self.root / (mode + '-retained-apply'))
+                self.assertEqual(receipt['execution'], 'ok', receipt)
+                self.assertEqual(receipt['probe_migrations'], migrate['probe_migrations'])
+                self.assertEqual(pf.validate_board(repaired.read_bytes(), probes), set(probes))
+                # Invalid retained markers cannot be erased by an update.
+                for mutation, value in [('malformed', '{'),
+                                         ('tampered', canonical(dict(probes['TP1'], native_net='/WRONG')).decode())]:
+                    bad_tree = copy.deepcopy(board_tree)
+                    fp = next(fp for fp in children(bad_tree, 'footprint')
+                              if pf.properties(fp).get('Reference') == 'TP1')
+                    prop = next(p for p in children(fp, 'property') if p[1] == pf.PROPERTY)
+                    prop[2] = Q(value)
+                    bad = self.root / (mode + '-' + mutation + '.kicad_pcb')
+                    bad.write_bytes(sexpr(bad_tree))
+                    refused = plan(bad, netlist, manifest, self.root,
+                                   self.root / (mode + '-' + mutation + '-plan'))
+                    self.assertEqual(refused['execution'], 'failed', refused)
+                    self.assertEqual(refused['findings'][0]['code'], 'probe_feature_mismatch')
+                # Legacy source stays immutable, and canonical board reannotation is a byte no-op.
+                self.assertEqual(netlist.read_bytes(), original)
+                again = plan(board, netlist, manifest, self.root, self.root / (mode + '-again-plan'))
+                self.assertEqual(again['counts']['update'], 0, again)
+                output = self.root / (mode + '-again.kicad_pcb')
+                reapplied = apply(again, board, netlist, manifest, self.root, output,
+                                 self.root / (mode + '-again-apply'))
+                self.assertEqual(reapplied['execution'], 'ok', reapplied)
+                self.assertEqual(output.read_bytes(), board.read_bytes())
+                if mode == 'legacy':
+                    # Re-export the actual legacy schematic and require the same migration.
+                    schematic = project / 'probe.kicad_sch'
+                    canonical_schematic = schematic.read_bytes()
+                    sch_tree = parse_quoted(canonical_schematic)
+                    for sym in children(sch_tree, 'symbol'):
+                        for prop in children(sym, 'property'):
+                            if prop[1] == pf.PROPERTY:
+                                prop[2] = Q(canonical(pf.parse_marker(prop[2])).decode())
+                    schematic.write_bytes(sexpr(sch_tree))
+                    native_work = self.root / 'legacy-native-export'
+                    run_native(project, native_work, 'kicad-cli', 'sch', 'export', 'netlist',
+                               '--format', 'kicadxml', '-o', '/work/native.xml', '/candidate/probe.kicad_sch')
+                    native_plan = plan(empty, native_work / 'native.xml', manifest, self.root,
+                                       self.root / 'legacy-native-plan')
+                    self.assertEqual(native_plan['execution'], 'ok', native_plan)
+                    self.assertEqual(native_plan['probe_migrations'], planned['probe_migrations'])
+                    shutil.copyfile(board, project / 'probe.kicad_pcb')
+                    parity_work = self.root / 'legacy-source-parity'
+                    run_native(project, parity_work, 'kicad-cli', 'pcb', 'drc', '--format', 'json',
+                               '--schematic-parity', '-o', '/work/drc.json', '/candidate/probe.kicad_pcb')
+                    self.assertTrue(read_json(parity_work / 'drc.json')['schematic_parity'])
+                    schematic.write_bytes(canonical_schematic)
+                # Native parity uses the canonical emitted schematic; legacy schematic
+                # admission still refuses until the caller regenerates it.
+                shutil.copyfile(board, project / 'probe.kicad_pcb')
+                work = self.root / (mode + '-parity')
+                run_native(project, work, 'kicad-cli', 'pcb', 'drc', '--format', 'json',
+                           '--schematic-parity', '-o', '/work/drc.json', '/candidate/probe.kicad_pcb')
+                self.assertEqual(read_json(work / 'drc.json')['schematic_parity'], [])
+
+    def test_forward_annotation_refuses_invalid_legacy_sources(self):
+        import xml.etree.ElementTree as ET
+        from agent_ee.forward_annotation import plan, apply, build_plan
+        _, xml = self.native()
+        probes = pf.declarations(self.parts, self.root)
+        manifest = read_json(self.root / 'cad.json')
+        empty = self.root / 'empty.kicad_pcb'
+        empty.write_bytes(self.empty_board)
+        captured = {m['path']: (self.root / m['path']).read_bytes()
+                    for lib in manifest['libraries'] for m in lib['members']}
+        facts = dict(footprints=[], tracks=[], zones=[], edge_bbox_nm=[0, 0, 80000000, 50000000])
+        r = probes['TP1']
+        cases = {
+            'malformed': '{',
+            'duplicate_json_key': canonical(r).decode()[:-1] + ',"reference":"TP1"}',
+            'net': canonical(dict(r, native_net='/WRONG')).decode(),
+            'reference': canonical(dict(r, reference='TP99')).decode(),
+            'hash': canonical(dict(r, footprint_source=dict(r['footprint_source'], sha256='0' * 64))).decode(),
+            'geometry': canonical(dict(r, geometry=dict(r['geometry'], diameter_nm=1600000))).decode(),
+            'malformed_pin': canonical(dict(r, pin=[])).decode(),
+            'missing_field': canonical(r).decode(),
+            'missing_property': canonical(r).decode(),
+            'field_property_disagreement': canonical(r).decode(),
+            'duplicate_property': canonical(r).decode(),
+            'duplicate_field': canonical(r).decode(),
+            'flags': canonical(r).decode(),
+            'supplier': canonical(r).decode(),
+        }
+        for name, value in cases.items():
+            with self.subTest(mutation=name):
+                tree = ET.fromstring(xml.read_bytes())
+                comp = tree.find('./components/comp[@ref="TP1"]')
+                field = comp.find('./fields/field[@name="AGENT_EE_Probe"]')
+                field.text = value
+                comp.find('./property[@name="AGENT_EE_Probe"]').set('value', value)
+                if name == 'missing_field':
+                    comp.find('fields').remove(field)
+                elif name == 'missing_property':
+                    comp.remove(comp.find('./property[@name="AGENT_EE_Probe"]'))
+                elif name == 'field_property_disagreement':
+                    comp.find('./property[@name="AGENT_EE_Probe"]').set('value', canonical(dict(r, net='WRONG')).decode())
+                elif name == 'duplicate_property':
+                    comp.append(copy.deepcopy(comp.find('./property[@name="AGENT_EE_Probe"]')))
+                elif name == 'duplicate_field':
+                    comp.find('fields').append(copy.deepcopy(field))
+                elif name == 'flags':
+                    comp.remove(comp.find('./property[@name="exclude_from_bom"]'))
+                elif name == 'supplier':
+                    ET.SubElement(comp, 'property', name='LCSC', value='C123')
+                data = ET.tostring(tree)
+                netlist = self.root / (name + '.xml'); netlist.write_bytes(data)
+                # The pure plan entry point must refuse malformed markers, not crash.
+                pure = build_plan(data, digest(empty), facts, manifest, captured)
+                self.assertEqual(pure['execution'], 'failed', pure)
+                rejected = plan(empty, netlist, manifest, self.root, self.root / (name + '-plan'))
+                self.assertEqual(rejected['execution'], 'failed', rejected)
+                output = self.root / (name + '.kicad_pcb')
+                result = apply(rejected, empty, netlist, manifest, self.root, output,
+                               self.root / (name + '-apply'))
+                self.assertEqual(result['execution'], 'failed', result)
+                self.assertFalse(output.exists())
+                self.assertEqual(empty.read_bytes(), self.empty_board)
+
     def test_legacy_schematic_and_inventory_require_migration(self):
         from agent_ee.native_netlist import read_native_inventory
         from agent_ee.schematic_emit import parse_quoted, Quoted as Q
