@@ -105,7 +105,7 @@ def _fields(elements):
 
 
 def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
-    """Pure plan from native XML bytes, board facts and captured footprints."""
+    """Plan from captured bytes; supported custom geometry requires a native child."""
     plan = dict(schema=PLAN_SCHEMA, execution='failed', outcome='unknown', findings=[],
                 inputs=dict(board_sha256=board_sha256, xml_sha256=hashlib.sha256(xml_bytes).hexdigest(),
                             manifest_sha256=hashlib.sha256(_canonical(manifest)).hexdigest(),
@@ -243,7 +243,9 @@ def _plan(plan, inventory, fields, facts, library, names):
     for ref in sorted(set(components) - retained, key=_natural):
         comp = components[ref]
         fp = library[comp['footprint']]
-        extents = [(p['y_nm'] - p['size_nm'][1] // 2, p['y_nm'] + p['size_nm'][1] // 2) for p in fp['pads']]
+        extents = [(p['native_geometry']['bbox_nm'][1], p['native_geometry']['bbox_nm'][3])
+                   if p.get('geometry') == 'native_custom' else
+                   (p['y_nm'] - p['size_nm'][1] // 2, p['y_nm'] + p['size_nm'][1] // 2) for p in fp['pads']]
         low, high = min(e[0] for e in extents), max(e[1] for e in extents)
         anchor_y = _snap(y - low)
         library_name, name = comp['footprint'].split(':')

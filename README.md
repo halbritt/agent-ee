@@ -172,6 +172,11 @@ The [IMU axes criterion](docs/placement.md#imu-axes) checks that marking and the
 transform using captured axis facts. Hierarchical staged
 presence remains unavailable.
 
+The [footprint index](docs/footprint-libraries.md#native-custom-pads-agentee-300)
+qualifies bounded solid-connected custom SMD pads through sandboxed pcbnew loads,
+retaining native copper extents and electrical numbers for forward annotation.
+Unsupported custom-pad constructs remain unknown coverage (AGENTEE-300).
+
 The [schematic emitter](docs/schematic-emitter.md) preserves KiCad 10 private
 symbol metadata, supports explicit component BOM flags, and preserves canonical
 structured datasheet bindings up to 2048 bytes (AGENTEE-293). Declared

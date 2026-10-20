@@ -974,6 +974,13 @@ thermal-via pad whose plated copper lacks a native `pad_prop_heatsink` or
 the SMD footprint as through hole
 ([owner declarations](footprint-libraries.md#owner-declarations)).
 
+The shared index also qualifies explicitly solid-connected SMD custom pads
+with rectangular/circular anchors and bounded polygon, rectangle, circle or
+line primitives through a sandboxed pcbnew load (AGENTEE-300). It retains native
+copper bounds and pad identity; unsupported constructs or native failures are
+unknown. Numbering declarations alone never qualify geometry. See
+[native custom pads](footprint-libraries.md#native-custom-pads-agentee-300).
+
 Adding `netlist_check` binds each declaration to every native board component
 and its captured whole-device pin inventory. Missing declarations or ambiguous
 occurrence identities leave unknown coverage. DNP components still require
