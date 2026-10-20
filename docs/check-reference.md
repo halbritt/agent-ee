@@ -1764,3 +1764,18 @@ pad-centre metric preserves proved defects alongside unknowns; missing limits
 or citations stay unknown. The engineer declares limits and citation locators;
 the check never supplies a manufacturer radius or verifies cited prose.
 Origin-group success supplies no electrical-locality acceptance.
+
+## Post-placement silk publication gate (AGENTEE-320)
+
+The [artwork pass](silk-artwork.md) uses native field bounds to search for
+position-only Reference/Value relocations after placement. Extra custom fields
+need a footprint declaration. Every other text property and all graphics remain
+unchanged. Fresh native DRC against the immutable baseline gates publication on
+added `silk_overlap` and `silk_over_copper`; unresolved conflicts retain typed
+`placement_silkscreen_conflict` diagnostics with the native items. Explicitly
+ignored `silk_*` categories and missing tool coverage refuse publication. Other
+footprints' same-side courtyard interiors reserve space for assembled bodies.
+Side-flipped footprints' fields remain unchanged with typed conflicts. Source
+project/rule bytes are restored after the native save. Placement-added
+`silk_edge_clearance` remains reported with its existing grading. This
+producer gate does not alter registered DRC verdicts or waive baseline defects.
