@@ -62,7 +62,7 @@ check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
 ```json
 {"schema": "agent-ee.rf-geometry/1", "net": "/POD_GNSS_RF", "ground_net": "GND",
  "signal_layer": "F.Cu", "reference_layer": "In1.Cu",
- "source": {"path": "project/rf-calculation.json", "unit": "mil",
+ "source": {"path": "project/rf-calculation.json", "sha256": "<64 lowercase hex>", "unit": "mil",
             "width_pointer": "/geometry_mil/W1", "gap_pointer": "/geometry_mil/D1"},
  "cpw": {"width_tolerance_mm": 0.0127, "gap_tolerance_mm": 0.0254},
  "stitching": {"max_pitch_mm": 2.5, "band_mm": [0.5, 1.5]},
@@ -83,7 +83,9 @@ check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
 - `cpw` requires `width_tolerance_mm` and `gap_tolerance_mm`, each a positive
   number or `null`. Targets are given either as `width_mm` and `gap_mm`, or
   through `source`, never both. `source` uses JSON pointers (RFC 6901) into the
-  captured record. `unit` is `mm` (the default) or `mil`, converted by 0.0254.
+  captured record and requires its declared `sha256` (64 lowercase hex digits).
+  Missing or malformed hashes and captured bytes that hash differently refuse capture.
+  `unit` is `mm` (the default) or `mil`, converted by 0.0254.
   The AGENTEE-186 back-calculation's W1 = 13.166015625 mil and D1 = 8 mil
   resolve to 0.334416796875 mm and 0.2032 mm. Optional `sample_step_mm`
   (default 0.05) sets the edge-sample step. Optional `search_mm` (default 1.0)
@@ -99,7 +101,7 @@ check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
 - `electrical_length` is reported only. Each branch gets an electrical length
   in degrees from the effective permittivity and `frequency_hz`. No verdict is
   drawn from it. It needs exactly one of:
-  - `effective_permittivity`, a declared positive number;
+  - `effective_permittivity`, a declared finite number at least 1.0;
   - `effective_permittivity_source`, a binding to a captured solver record:
     `{"path": ..., "sha256": ..., "pointer": ...}`. `path` must be a captured
     input. `sha256` is the record's declared SHA-256 (64 lowercase hex digits);
