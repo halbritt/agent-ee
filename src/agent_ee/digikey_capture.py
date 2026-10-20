@@ -38,7 +38,9 @@ import urllib.request
 from .storage import canonical
 
 SCHEMA = 'agent-ee.digikey-capture/1'
-PARSER = 'agent-ee.digikey-product-v4/1'
+# /2 (AGENTEE-262): records carry ``package_source``; an omitted or null
+# top-level QuantityAvailable derives unknown (null) stock. /1 captures refuse.
+PARSER = 'agent-ee.digikey-product-v4/2'
 IDENTITY_SCHEMA = 'agent-ee.external-part-identity/1'
 MANIFEST = 'digikey-capture.json'
 DEFAULT_BASE_URL = 'https://api.digikey.com'
@@ -64,6 +66,12 @@ TOKEN_MARGIN = 30
 STATUSES = ('found', 'not_found', 'failed')
 # Exact DigiKey parameter names read into summary fields; everything else stays raw.
 PACKAGE_PARAMETER = 'Package / Case'
+SUPPLIER_PACKAGE_PARAMETER = 'Supplier Device Package'
+# A connector without a package parameter: these exact parameters, all required
+# and quoted verbatim, form its package text; any missing one leaves it unknown.
+CONNECTOR_PARAMETERS = ('Connector Type', 'Number of Positions', 'Pitch - Mating', 'Mounting Type')
+# Text order; 'Number of Rows' is quoted when present and is not required.
+CONNECTOR_ORDER = ('Connector Type', 'Number of Positions', 'Number of Rows', 'Pitch - Mating', 'Mounting Type')
 SEATED_HEIGHT_PARAMETER = 'Height - Seated (Max)'
 OPERATING_TEMPERATURE_PARAMETER = 'Operating Temperature'
 CAPTURE_KEYS = frozenset(('schema', 'as_of', 'completed_at', 'source', 'token_exchanges', 'requests', 'parts'))
@@ -72,8 +80,8 @@ SOURCE_KEYS = frozenset(('base_url', 'token_path', 'product_path', 'keyword_path
 TOKEN_KEYS = frozenset(('fetched_at', 'http_status', 'expires_in'))
 REQUEST_KEYS = frozenset(('key', 'kind', 'query', 'fetched_at', 'status', 'http_status', 'response', 'reason'))
 RESPONSE_KEYS = frozenset(('path', 'sha256', 'size_bytes'))
-PART_KEYS = ('query', 'mpn', 'manufacturer', 'digikey_part_number', 'package', 'primary_datasheet_url',
-             'quantity_available', 'unit_price', 'product_status', 'seated_height',
+PART_KEYS = ('query', 'mpn', 'manufacturer', 'digikey_part_number', 'package', 'package_source',
+             'primary_datasheet_url', 'quantity_available', 'unit_price', 'product_status', 'seated_height',
              'operating_temperature', 'parameters', 'last_seen')
 
 
@@ -201,15 +209,53 @@ def _numbers(product):
     return numbers
 
 
+def _package(parameters):
+    """``(package, package_source)`` from exact parameters only; ``(None, None)`` is unknown.
+
+    ``Package / Case`` first (a conflict there refuses, as before), then
+    ``Supplier Device Package``; a part with neither yields a package text only
+    when every one of ``CONNECTOR_PARAMETERS`` is present, quoting each
+    ``name: value`` verbatim. A conflicting fallback parameter leaves the
+    package unknown rather than refusing a response the /1 parser accepted
+    with a null package. Nothing is guessed.
+    """
+    value = _named(parameters, PACKAGE_PARAMETER)
+    if value is not None:
+        return value, {'rule': 'package_case', 'parameters': [PACKAGE_PARAMETER]}
+
+    def fallback(name):
+        try:
+            return _named(parameters, name), False
+        except ValueError:
+            return None, True
+    value, conflict = fallback(SUPPLIER_PACKAGE_PARAMETER)
+    if conflict:
+        return None, None
+    if value is not None:
+        return value, {'rule': 'supplier_device_package', 'parameters': [SUPPLIER_PACKAGE_PARAMETER]}
+    values = {}
+    for name in CONNECTOR_ORDER:
+        value, conflict = fallback(name)
+        if conflict or (value is None and name in CONNECTOR_PARAMETERS):
+            return None, None
+        if value is not None:
+            values[name] = value
+    used = list(values)
+    return '; '.join(f'{name}: {values[name]}' for name in used), {'rule': 'connector_parameters',
+                                                                 'parameters': used}
+
+
 def _derive(product, query):
     if not isinstance(product, dict):
         raise ValueError('Product must be an object')
     manufacturer = product.get('Manufacturer')
     if not isinstance(manufacturer, dict):
         raise ValueError('Manufacturer must be an object')
+    # DigiKey omits the top-level QuantityAvailable on zero-stock parts: that is
+    # unknown stock (null), never zero. A present value must still be valid.
     quantity = product.get('QuantityAvailable')
-    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 0:
-        raise ValueError('QuantityAvailable must be a non-negative integer')
+    if quantity is not None and (isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 0):
+        raise ValueError('QuantityAvailable must be a non-negative integer, or omitted/null for unknown')
     price = product.get('UnitPrice')
     if price is not None and (isinstance(price, bool) or not isinstance(price, (int, float)) or
                               not math.isfinite(price) or price < 0):
@@ -218,11 +264,13 @@ def _derive(product, query):
     if status is not None and not isinstance(status, dict):
         raise ValueError('ProductStatus must be an object or null')
     parameters = _parameters(product.get('Parameters'))
+    package, package_source = _package(parameters)
     return {'query': query,
             'mpn': _text(product.get('ManufacturerProductNumber'), 'ManufacturerProductNumber'),
             'manufacturer': _text(manufacturer.get('Name'), 'Manufacturer.Name'),
             'digikey_part_number': _variation(product.get('ProductVariations'), query),
-            'package': _named(parameters, PACKAGE_PARAMETER),
+            'package': package,
+            'package_source': package_source,
             'primary_datasheet_url': _datasheet_url(product.get('DatasheetUrl')),
             'quantity_available': quantity,
             'unit_price': None if price is None else float(price),
@@ -452,7 +500,9 @@ def project_external(root, path, key):
     part = doc['parts'][key]
     record = next(r for r in doc['requests'] if r['key'] == key)
     if part['package'] is None:
-        raise ValueError(f'{key}: DigiKey record has no {PACKAGE_PARAMETER!r}; an external identity needs a package')
+        raise ValueError(f'{key}: DigiKey record has no {PACKAGE_PARAMETER!r}, {SUPPLIER_PACKAGE_PARAMETER!r} or '
+                         f'complete connector parameters {list(CONNECTOR_PARAMETERS)}; package unknown, and an '
+                         'external identity needs a package')
     for field in ('mpn', 'manufacturer', 'package'):
         nonempty(part[field])
     response_path = (PurePosixPath(path).parent / record['response']['path']).as_posix()
@@ -466,10 +516,16 @@ def project_external(root, path, key):
     provenance = {'capture': {'path': path, 'sha256': dependencies[path]},
                   'response': {'path': response_path, 'sha256': record['response']['sha256']},
                   'key': key, 'field': 'DatasheetUrl', 'fetched_at': record['fetched_at']}
+    package_provenance = {'capture': {'path': path, 'sha256': dependencies[path]},
+                          'response': {'path': response_path, 'sha256': record['response']['sha256']},
+                          'key': key, 'locator': f'{locator}.Parameters', **part['package_source']}
     number = part['digikey_part_number'] or 'without a DigiKey part number'
+    quantity = ('unknown (QuantityAvailable not reported)' if part['quantity_available'] is None
+                else part['quantity_available'])
     purchase = (f'DigiKey {number} for {part["manufacturer"]} {part["mpn"]}; captured {record["fetched_at"]}: '
-                f'quantity_available={part["quantity_available"]}, unit_price={part["unit_price"]}')
+                f'quantity_available={quantity}, unit_price={part["unit_price"]}')
     return {'identity': identity,
+            'package_provenance': package_provenance,
             'datasheet_binding': {'id': key, 'datasheet_url': part['primary_datasheet_url']},
             'datasheet_provenance': provenance,
             'hand_fit_evidence': {'purchase_source': purchase,

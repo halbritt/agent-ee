@@ -17,7 +17,11 @@ module uses only the stdlib (`urllib`).
 **Live capture needs owner-provided DigiKey API credentials and the explicit
 `--allow-network` opt-in.** The repository holds no credentials. Its tests use
 only an owned loopback stub with synthetic v4 responses. The response mapping
-below is not yet qualified against a live DigiKey response.
+below is not yet qualified against a live DigiKey response. Two live shapes
+reported by an owner-run attempt (AGENTEE-262: a zero-stock part without a
+top-level `QuantityAvailable`, and a connector without `Package / Case`) are
+modelled by owned synthetic regression fixtures; a passing live run is still
+owner-gated.
 
 ```sh
 export DIGIKEY_CLIENT_ID=...       # owner's Product Information v4 app
@@ -94,7 +98,7 @@ responses/<key>.json      raw response bytes, exactly as received
 |---|---|
 | `schema` | `agent-ee.digikey-capture/1` |
 | `as_of` / `completed_at` | UTC timestamps taken before the first exchange and after the last. |
-| `source` | `base_url`, the three API paths, the `keyword_body` template, `locale`, `parser` (`agent-ee.digikey-product-v4/1`) and `min_interval_seconds`. |
+| `source` | `base_url`, the three API paths, the `keyword_body` template, `locale`, `parser` (`agent-ee.digikey-product-v4/2`; a `/1` capture, which lacks `package_source`, is refused) and `min_interval_seconds`. |
 | `token_exchanges` | One record per successful exchange: `fetched_at`, `http_status` and `expires_in`. No token is recorded. |
 | `requests` | One record per query: `key`, `kind`, `query`, `fetched_at` (UTC), `status` (`found`, `not_found` or `failed`), `http_status`, `response` (`path`, `sha256`, `size_bytes`, or `null`) and `reason` (only when `failed`). |
 | `parts` | The derived record for every `found` key, with `last_seen` equal to its `fetched_at`. |
@@ -124,17 +128,22 @@ Each derived record holds these fields:
 | `mpn` | `ManufacturerProductNumber` |
 | `manufacturer` | `Manufacturer.Name` |
 | `digikey_part_number` | The queried variation's number, else the variation with the lowest `MinimumOrderQuantity`, ties broken by number. `null` without variations. |
-| `package` | Parameter `Package / Case` (`null` if absent or `-`). |
+| `package` | The first rule that applies, from exact parameters only: `Package / Case`; else `Supplier Device Package`; else, for a connector, the verbatim `name: value` pairs of `Connector Type`, `Number of Positions`, `Number of Rows` (only if present), `Pitch - Mating` and `Mounting Type`, joined by `; `. The four connector parameters other than rows are all required. Otherwise `null` (unknown). Values `-` and empty count as absent. |
+| `package_source` | `{rule, parameters}` naming the rule (`package_case`, `supplier_device_package` or `connector_parameters`) and the exact parameter names quoted; `null` when `package` is `null`. |
 | `primary_datasheet_url` | `DatasheetUrl`. A protocol-relative `//` link becomes `https:`, and the URL must pass `datasheet_capture.validate_url`. Empty means `null`. |
-| `quantity_available` | `QuantityAvailable`, a non-negative integer. This is historical stock at `last_seen`. |
+| `quantity_available` | `QuantityAvailable`, a non-negative integer. This is historical stock at `last_seen`. DigiKey omits the key on some zero-stock parts; an omitted or `null` value is recorded as `null` (unknown stock), never as zero and never summed from `ProductVariations`. Any other non-integer, negative or boolean value is refused. |
 | `unit_price` | `UnitPrice`, a finite non-negative number or `null`. |
 | `product_status` | `ProductStatus.Status` |
 | `seated_height` | Parameter `Height - Seated (Max)` |
 | `operating_temperature` | Parameter `Operating Temperature` |
 | `parameters` | Every `{ParameterText, ValueText}` as `{parameter, value}`, in response order. |
 
-A named parameter with two different values is refused. The parser reads no
-other field and infers no value.
+A named parameter with two different values is refused. The exception is a
+package fallback parameter (`Supplier Device Package` or a connector
+parameter): a conflict there leaves `package` unknown instead, so a response
+that the `/1` parser accepted with a `null` package is not newly refused. A
+`Package / Case` conflict still refuses. The parser reads no other field and
+infers no value.
 
 ## Offline validation
 
@@ -166,7 +175,7 @@ The result has `requested`, `found`, `not_found`, `failed` and per-response
 
 `project_external(root, path, key)` is a deterministic, offline adapter. It
 writes nothing, and it refuses a capture that does not validate, a key with no
-found record, or a record without a package. It returns:
+found record, or a record whose `package` is unknown (`null`). It returns:
 
 - `identity`: an `agent-ee.external-part-identity/1` declaration (`mpn`,
   `manufacturer`, `package`, `evidence_refs`). The `evidence_refs` cite the
@@ -174,13 +183,18 @@ found record, or a record without a package. It returns:
   Write it as a file and pass it, with locator `/`, to
   `part_record.prepare_external_record`. `verify_external_identity` replays a
   declaration against the capture it cites and refuses any change.
+- `package_provenance`: the capture and response (pinned by SHA-256), the key,
+  the locator (`Product.Parameters` or the keyword row's `Parameters`) and the
+  record's `package_source` `rule` and `parameters`. A connector package from
+  `connector_parameters` is therefore traceable to the exact quoted parameters.
 - `datasheet_binding`: `{id: <key>, datasheet_url}`, a binding for
   [datasheet acquisition](datasheet-capture.md)
   (`capture_datasheets([binding], out)`). A `null` URL stays a missing
   acquisition. `datasheet_provenance` names the capture, response and field the
   URL came from.
 - `hand_fit_evidence`: a `purchase_source` text (DigiKey part number,
-  manufacturer, MPN, capture time, historical quantity and price) and
+  manufacturer, MPN, capture time, historical quantity and price; unknown stock
+  reads `quantity_available=unknown (QuantityAvailable not reported)`) and
   `evidence_refs` (`{path, locator}`) for an assembly deviation in
   `agent-ee.part-deviations/1`. The owner still declares `requirement_id`,
   `reason`, `assembly`, `stock_deviation` and any `policy`. The adapter decides
