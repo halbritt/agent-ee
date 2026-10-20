@@ -302,3 +302,5 @@ check, limit or acceptance rule. It was added after two campaign attempts on 202
 recorded incomplete because an otherwise valid adjudication cited `baseline.json` and a
 reviewer witness was malformed (AGENTEE-111, AGENTEE-115). The default `max_iterations` for
 this runner is 2: the empty candidate and one generated candidate.
+
+Receipted Python steps mount a [content-addressed source snapshot](stage-receipts.md#python-tool-source-snapshots), separate from host import caches. A refused fab step reports its violations and retained receipt path; mounted-file mutation still refuses adoption.

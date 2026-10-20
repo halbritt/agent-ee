@@ -73,6 +73,33 @@ Every recorded artifact entry must have a hash: a missing artifact, empty declar
 directory, link or special entry adds `missing_artifact:<path>`. An otherwise
 adoptable exit is then `refused`, adoption fails and the receipt is not applicable.
 
+## Python tool source snapshots
+
+The fab, `rung1_campaign` and `rung1_qualified` step builders capture Python source with
+`tool_source.snapshot` before declaring `/tool/agent-ee`. Host imports continue
+using the original source tree. Capture excludes directories named `__pycache__`;
+all other regular files, including standalone `.pyc` files, are copied. Links,
+special files, empty sources and source changes during capture refuse preparation.
+The receipt identity algorithm is unchanged: it hashes every mounted file and
+link target. Added `.py`, `.pyc` or other files in the mounted snapshot still
+cause `mount_changed` and `source_changed` and refuse adoption.
+
+Snapshots live under `AGENT_EE_TOOL_SOURCE_CACHE`, or
+`~/.cache/agent-ee/tool-source` by default, in a directory named for the ordinary
+receipt tree digest. Creation is locked and published by rename; reuse verifies
+the complete tree and refuses corruption rather than repairing it. Equal captured
+bytes use the same path within a cache root, including when the original source
+paths differ or host bytecode changes. The declaration still binds the absolute
+mount path: changing the cache root changes `spec_sha256`; changing source bytes
+changes both the snapshot path and `spec_sha256`. Keep the cache root stable for
+reproducible declarations. Snapshots remain available for subsequent declared
+steps; remove unused snapshots only after their campaigns finish.
+
+Fab refusal messages include receipt violations and the retained receipt path.
+The declared-fab test fixture also copies refused setup receipts to
+`build/refused-step-receipts/` before disposable fixture cleanup, with the path in
+the assertion message. These are local test diagnostics, not release evidence.
+
 ## Receipt fields and status
 
 Schema `agent-ee.stage-receipt/1`, `receipts/<k>-<step>/receipt.json`, retained with

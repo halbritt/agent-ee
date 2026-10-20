@@ -1267,7 +1267,9 @@ def stage_fab(stage, state, options):
     stage.receipt['details']['stage_receipt'] = stage.rel(receipt_dir / 'receipt.json')
     record_step_commands(stage, receipt_dir, receipt)
     if receipt['status'] != 'completed':
-        raise StageFailure(f"fab stage {receipt['status']} (exit {receipt['exit_code']}); see "
+        raise StageFailure(f"fab stage {receipt['status']} (exit {receipt['exit_code']}); "
+                           f"violations {receipt['violations']}; receipt kept at "
+                           + stage.rel(receipt_dir / 'receipt.json') + '; see '
                            + stage.rel(receipt_dir / 'run/console.log'))
     out = receipt_dir / 'run/out'
     manifest = json.loads((out / 'fab-manifest.json').read_text())

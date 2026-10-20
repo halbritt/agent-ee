@@ -878,3 +878,5 @@ leads beyond their pin-name text. A native SVG measurement helper reports
 label/text overlaps. Opt-in `--native-text-work` emission uses measured bounds
 and refuses unresolved overlaps before publication, without changing electrical
 check verdicts.
+
+Fab exports and the campaign/qualified rung-one driver steps mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Refused fab receipts retain their violations and diagnostic paths.
