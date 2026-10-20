@@ -28,6 +28,7 @@ from .parts_manifest import load_manifest, qualify_manifest, read_captured
 from .schematic_emit import Quoted as Q, format_sexpr
 from .silkscreen import prepare_footprint, overhang_orientation_mark
 from .storage import digest, identity, json_bytes
+from .tool_source import snapshot
 from .symbol_library import children, nanometres, parse_sexpr
 
 NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, 'https://github.com/halbritt/agent-ee/scaffold/1')
@@ -443,7 +444,7 @@ def content_step(source_root, envelope, parts, board, *, intent=None, layout=Non
         if value is not None:
             argv.extend(['--' + key, value])
     return dict(schema='agent-ee.stage-step/1', stage='scaffold', step='envelope-content', argv=argv,
-                mounts=[dict(source=str(Path(source_root).resolve() / 'src'), at='/tool/agent-ee')],
+                mounts=[dict(source=str(snapshot(Path(source_root).resolve() / 'src')), at='/tool/agent-ee')],
                 source='/tool/agent-ee', writes={board: 'design/' + board}, timeout_s=300,
                 **({'inputs': [captured_rule_areas]} if captured_rule_areas is not None else {}))
 

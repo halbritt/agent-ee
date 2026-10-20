@@ -9,7 +9,7 @@ import shutil
 import stat
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from .stage_receipts import file_tree, tree_identity
@@ -95,8 +95,30 @@ def _clean_captures(cache):
     return removed
 
 
+@contextmanager
+def hold_snapshots(mounts):
+    """Keep cached mounts alive through observation, execution and receipt publication.
+
+    Lock their actual cache roots, including declarations made with another cache
+    setting. The lock lives outside the hashed tree; retained replay needs no lock.
+    All roots are acquired in path order to avoid lock-order inversions.
+    """
+    roots = sorted({Path(m['source']).parent for m in mounts
+                    if re.fullmatch(r'[0-9a-f]{64}', Path(m['source']).name)})
+    with ExitStack() as held:
+        for root in roots:
+            try:
+                descriptor = os.open(root / '.lock', os.O_RDONLY | os.O_NOFOLLOW)
+            except FileNotFoundError:
+                # Digest-named external tools need not be our cache snapshots.
+                continue
+            lock = held.enter_context(os.fdopen(descriptor, 'r'))
+            fcntl.flock(lock.fileno(), fcntl.LOCK_SH)
+        yield
+
+
 def prune(*, older_than_days=30):
-    """Remove old snapshots only while their campaigns are quiescent (operator gate)."""
+    """Remove snapshots older than their last verified use, excluding running steps."""
     if not math.isfinite(older_than_days) or older_than_days < 0:
         raise ValueError('snapshot age must be finite and nonnegative')
     cutoff = time.time() - older_than_days * 86400
@@ -153,13 +175,14 @@ def snapshot(source):
             Path(current).chmod(0o700, follow_symlinks=False)
             for name in names:
                 (Path(current) / name).chmod(0o400, follow_symlinks=False)
+        os.utime(target, None, follow_symlinks=False)
     return target
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
-    pruning = commands.add_parser('prune', help='remove old snapshots after all dependent campaigns finish')
+    pruning = commands.add_parser('prune', help='remove snapshots by last verified use, waiting for running steps')
     pruning.add_argument('--older-than-days', type=float, default=30)
     args = parser.parse_args(argv)
     for path in prune(older_than_days=args.older_than_days):

@@ -899,4 +899,4 @@ label/text overlaps. Opt-in `--native-text-work` emission uses measured bounds
 and refuses unresolved overlaps before publication, without changing electrical
 check verdicts.
 
-Fab exports, campaign/qualified rung-one steps, pod scaffold/constraint steps, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Refused fab receipts retain their violations and diagnostic paths.
+Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Refused fab receipts retain their violations and diagnostic paths.

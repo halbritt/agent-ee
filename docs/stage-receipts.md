@@ -75,8 +75,9 @@ adoptable exit is then `refused`, adoption fails and the receipt is not applicab
 
 ## Python tool source snapshots
 
-The fab, `rung1_campaign`, `rung1_qualified`, pod scaffold and net-constraint,
-`add_planes` and `binding_fill` step builders capture Python source with
+The fab, `rung1_campaign`, `rung1_qualified`, `rung1_stages`, pod scaffold and
+net-constraint, envelope-content, schematic emission/annotation, `add_planes`
+and `binding_fill` step builders capture Python source with
 `tool_source.snapshot` before declaring `/tool/agent-ee`. Host imports continue
 using the original source tree. Capture excludes directories named `__pycache__`;
 all other regular files, including standalone `.pyc` files, are copied. Links,
@@ -108,19 +109,30 @@ otherwise adoptable execution. Adoption revalidates this recorded comparison;
 it does not depend on the live cache still existing. The original in-step
 `mount_changed` and `source_changed` checks remain unchanged.
 
-After **all campaigns using the cache have finished**, prune old snapshots with:
+Between campaigns, prune snapshots by last verified use with:
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.tool_source prune --older-than-days 30
 ```
 
-The command prints removed paths. Age is measured from the snapshot directory's
-modification time, not last use; it does not detect active campaigns. It removes
+The command prints removed paths. The snapshot directory's modification time
+records its last successful capture or verified reuse; corrupted reuse never
+refreshes it. No timestamp file is added to the hashed source tree. Prune removes
 only digest-named directories older than the threshold and abandoned `.capture-*`
-directories. Unrelated entries remain. Prune and capture hold the same cache lock;
-capture also cleans abandoned `.capture-*` directories, because no live publisher
-can hold one while another process owns that lock. Links at these entry paths
-refuse cleanup rather than following them. There is no automatic snapshot eviction.
+directories. Unrelated entries remain. Prune and capture take the exclusive cache
+lock. A running stage step holds shared locks on its mounted snapshot cache roots
+from before initial tool observation until after receipt publication, including
+version probes, failures and cancellation. Prune waits for those steps; capture
+also waits, so a long step can delay preparation of another step using that cache.
+Locks are released on exceptions and by the OS on process exit. Retained receipt
+validation and adoption do not need the live cache.
+
+There is no automatic eviction. A prepared declaration between executions is not
+an in-flight step: use pruning between campaigns to keep snapshots needed by
+future declared steps. Cache roots are locked in path order for steps with multiple
+roots. Capture cleans abandoned `.capture-*` directories under the same exclusive
+lock; no live publisher can hold one then. Links at cleanup paths refuse removal
+rather than being followed.
 
 Fab refusal messages include receipt violations and the retained receipt path.
 The declared-fab, generate, fab-package and rung-one test fixtures copy refused receipts to

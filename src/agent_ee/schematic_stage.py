@@ -13,6 +13,7 @@ from .executor import execute
 from .footprint_library import load_document, read_captures
 from .stage_receipts import _relative, validate_step
 from .storage import write_json
+from .tool_source import snapshot
 
 
 def configuration(source_root, *, board, schematic, intent='generation/connectivity-intent.json',
@@ -57,7 +58,7 @@ def configuration(source_root, *, board, schematic, intent='generation/connectiv
             'schema': 'agent-ee.stage-step/1', 'stage': 'schematic', 'step': name,
             'argv': ['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
                      '-m', 'agent_ee.schematic_stage', command, *args],
-            'mounts': [{'source': str(Path(source_root).absolute()), 'at': '/tool/agent-ee'}],
+            'mounts': [{'source': str(snapshot(source_root)), 'at': '/tool/agent-ee'}],
             'source': '/tool/agent-ee', 'version_argv': ['/usr/bin/kicad-cli', 'version'],
             'inputs': inputs,
             'writes': writes, 'artifacts': artifacts,

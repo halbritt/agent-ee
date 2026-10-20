@@ -556,6 +556,15 @@ def _status(spec, execution, violations):
 
 def run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=None):
     """Execute one declared step on a copy of design; never modifies design itself."""
+    from .tool_source import hold_snapshots
+    # Acquire before host validation/observation so pruning cannot interleave.
+    validated = validate_step(spec, host=False)
+    with hold_snapshots(validated['mounts']):
+        return _run_step(receipt_dir, design, validated, binding,
+                         deadline=deadline, cancellation=cancellation)
+
+
+def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=None):
     spec = validate_step(spec)
     if not isinstance(binding, dict):
         raise ValueError('stage receipt binding must be an object')

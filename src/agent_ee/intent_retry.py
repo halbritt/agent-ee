@@ -66,7 +66,8 @@ def pin_source(work, manifest, state, config, plan):
             _owned_spec(e['spec'], manifest, editable) is not None for e in plan):
         return
     from .stage_receipts import file_tree
-    files, other = file_tree(Path(__file__).resolve().parents[1])
+    from .tool_source import snapshot
+    files, other = file_tree(snapshot(Path(__file__).resolve().parents[1]))
     if other:
         raise ValueError('owned intent producer source contains non-files')
     record = {'schema': 'agent-ee.intent-producer-source/1', 'files': files}
