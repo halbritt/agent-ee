@@ -779,6 +779,9 @@ scripted agent responses and synthetic bench samples. A live subscription
 campaign demonstrated independent review and rejection of an invalid adjudicator
 citation; it did not complete an automatic repair. These are distinct levels of
 evidence, recorded in the [closed-loop verification report](docs/closed-loop.md).
+The [file digest contract](docs/result-reference.md) has mmap regressions that
+keep metadata observations fixed while hashing real changed bytes; kernel
+writeback timing cannot invalidate their stat-unchanged precondition.
 Project CI is defined to build the image and run the suite, documentation check
 and both RC fixtures there on pushes to `main`; those steps have been run locally
 in the image, not yet on a hosted runner.
