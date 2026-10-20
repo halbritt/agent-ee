@@ -1114,6 +1114,36 @@ class NativeFabPipelineTests(unittest.TestCase):
                                  ('unsupported', 'unknown'), self.results)
                 self.assertNotEqual(self.results[-1]['outcome'], 'pass')
 
+    def test_layer_sets_refused_by_export_and_independent_consistency(self):
+        from tests.test_fab_export import copper_fixture
+        copper_fixture(self.source, custom=True, graphics=True)
+        board = self.source / 'fab.kicad_pcb'
+        original = board.read_text()
+        attr = '(attr smd exclude_from_bom exclude_from_pos_files)'
+        producer = checks.CHECK_FUNCS['fab_export']
+
+        def bypass_copper_qualification(ctx):
+            with mock.patch('agent_ee.fab_export.copper_feature_problems', return_value=[]):
+                producer(ctx)
+
+        for layer in ('F.SilkS', 'F.Fab', 'F.CrtYd', 'F.Mask'):
+            for tokens in (f'(layer "{layer}") (layers "F.Cu")',
+                           f'(layers "F.Cu") (layer "{layer}")'):
+                with self.subTest(layer=layer, tokens=tokens):
+                    graphic = ('(fp_line (start -0.2 0) (end 0.2 0) '
+                               '(stroke (width 0.1) (type solid)) ' + tokens + ')')
+                    board.write_text(original.replace(attr, attr + graphic, 1))
+                    self.run_case(copper_features=['JP1'])
+                    self.assertEqual((self.results[2]['execution'], self.results[2]['outcome']),
+                                     ('unsupported', 'unknown'), self.results)
+                    self.assertNotEqual(self.results[-1]['outcome'], 'pass')
+                    # Exercise requalification even if a producer admitted the board.
+                    with mock.patch.dict(checks.CHECK_FUNCS, {'fab_export': bypass_copper_qualification}):
+                        result = self.run_case(copper_features=['JP1'])
+                    self.assertEqual(self.results[2]['outcome'], 'pass', self.results[2])
+                    self.assertEqual((result['execution'], result['outcome']),
+                                     ('unsupported', 'unknown'), result)
+
     def test_reviewer_dnp_and_missing_native_component_probes(self):
         from tests.test_fab_export import copper_fixture
         copper_fixture(self.source)

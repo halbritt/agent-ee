@@ -386,6 +386,8 @@ text names unconditionally.
 
 Declared copper features also admit courtyard graphics and bounded own-side mask
 openings over their pad/copper extent, with a 0.05 mm envelope margin.
+Graphics and properties with an extra `(layers ...)` token remain refused,
+even when `(layer ...)` names silk, fab, courtyard or mask.
 
 The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 `fab_export` staging tree against its manifest, the pinned kicad-cli, the captured

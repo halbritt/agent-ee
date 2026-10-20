@@ -319,6 +319,21 @@ class CopperFeatureTests(unittest.TestCase):
         self.assertTrue(copper_feature_problems(self.with_graphic(
             '(fp_rect (start 20 20) (end 21 21) (stroke (width 0)) (fill yes) (layer "F.Mask"))'), {'JP1'}))
 
+    def test_graphic_and_property_layer_sets_are_never_qualified(self):
+        for layer in ('F.SilkS', 'B.SilkS', 'F.Fab', 'B.Fab',
+                      'F.CrtYd', 'B.CrtYd', 'F.Mask'):
+            for tokens in (f'(layer "{layer}") (layers "F.Cu")',
+                           f'(layers "F.Cu") (layer "{layer}")'):
+                for shape in ('(fp_line (start -0.2 0) (end 0.2 0) '
+                              '(stroke (width 0.1) (type solid))',
+                              '(property "Owned" "value" (at 0 0)'):
+                    with self.subTest(layer=layer, tokens=tokens, shape=shape):
+                        data = self.with_graphic(shape + ' ' + tokens + ')')
+                        self.assertTrue(copper_feature_problems(data, {'JP1'}))
+                        self.assertTrue(board_facts(data, copper_features={'JP1'})['unsupported'])
+        self.assertTrue(copper_feature_problems(self.with_graphic(
+            '(property "Owned" "value" (layers "F.Cu"))'), {'JP1'}))
+
     def test_own_side_mask_shapes_filled_outlined_and_exact_margin(self):
         shapes = ('(fp_rect (start -0.2 -0.4) (end 0.2 0.4))',
                   '(fp_line (start -0.2 -0.4) (end 0.2 0.4))',

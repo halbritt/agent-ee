@@ -88,6 +88,11 @@ or distant mask openings, copper/paste/adhesive graphics, zones, models and
 embedded files remain refused.
 The feature remains in the native board inventory and Gerbers, and appears in
 neither BOM nor CPL. KiCad's native position export must also omit it.
+
+Graphics and properties carrying `(layers ...)` are refused even alongside
+an admitted `(layer ...)`, in either token order: KiCad can apply the extra
+layer set as copper. This applies to silk, fab, courtyard and mask graphics.
+
 `details.copper_features` lists the captured declaration. The manifest schema
 and `designators.excluded` assembly-rule records are unchanged.
 

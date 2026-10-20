@@ -397,8 +397,11 @@ def copper_feature_problems(data, refs, components=None):
                     reasons.append('pad is not qualified surface copper/mask/paste')
             elif head in graphics or head == 'property':
                 layers = _lists(node, 'layer')
-                if head in graphics or layers:
-                    layer = layers[0][1] if len(layers) == 1 and len(layers[0]) == 2 else None
+                if head in graphics or layers or _lists(node, 'layers'):
+                    # KiCad can apply (layers ...) after (layer ...), changing
+                    # an apparently decorative graphic into plotted copper.
+                    layer = (layers[0][1] if len(layers) == 1 and len(layers[0]) == 2
+                             and not _lists(node, 'layers') else None)
                     admitted = head != 'fp_curve' and layer in graphic_layers
                     if head in graphics and layer in {'F.CrtYd', 'B.CrtYd'}:
                         admitted = _copper_courtyard_graphic(node)
