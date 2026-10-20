@@ -510,5 +510,105 @@ class NativeScaffoldTest(Prepared):
         self.assertEqual(verify.returncode, 0, verify.stdout + verify.stderr)
 
 
+GIT_ENV = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid',
+           'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid'}
+STEP_TOOL = 'from pathlib import Path\nPath("/work/design/board.txt").write_text("stepped")\n'
+
+
+class ReadOnlyIdentityTest(unittest.TestCase):
+    """AGENTEE-269: identity probes of a tool checkout never write it.
+
+    A probe that refreshes .git/index during another step's observation window
+    changes the mount identity, and that receipt is refused as mount_changed."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-ro-identity-')
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.tool = self.root / 'tool'
+        self.tool.mkdir()
+        (self.tool / 'step.py').write_text(STEP_TOOL)
+        for argv in (['init', '-q'], ['add', 'step.py'], ['commit', '-q', '-m', 'tool'], ['tag', 'v1']):
+            subprocess.run(['git', '-C', str(self.tool), *argv], check=True, env=GIT_ENV, capture_output=True)
+        self.index = self.tool / '.git/index'
+        self.make_stale()
+
+    def make_stale(self):
+        # The index is older than the tracked file it caches: a refresh would write it back,
+        # as on first use of a checkout copied into a fresh container (new inodes and ctimes).
+        index = self.index.stat().st_mtime_ns
+        os.utime(self.index, ns=(index - 20 * 10**9, index - 20 * 10**9))
+        os.utime(self.tool / 'step.py', ns=(index - 10 * 10**9, index - 10 * 10**9))
+
+    def index_state(self):
+        return self.index.read_bytes(), self.index.stat().st_mtime_ns
+
+    def test_fixture_is_stale_so_a_writing_probe_rewrites_the_index(self):
+        before = self.index_state()
+        subprocess.run(['git', '-C', str(self.tool), 'status', '--porcelain'], check=True, capture_output=True)
+        self.assertNotEqual(self.index_state(), before)
+
+    def test_identity_probes_leave_index_and_mount_identity_unchanged(self):
+        from agent_ee import rung1_qualified as rq
+        from agent_ee.stage_receipts import tree_identity
+        before, tree = self.index_state(), tree_identity(self.tool)
+        commit = subprocess.run(['git', '-C', str(self.tool), 'rev-parse', 'HEAD'], env={**os.environ,
+                                'GIT_OPTIONAL_LOCKS': '0'}, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(self.index_state(), before)
+        identity = rc.route_identity(self.tool)
+        self.assertEqual((identity['describe'], identity['commit']), ('v1', commit))
+        self.assertEqual(rq.git_head(self.tool), {'commit': commit, 'tracked_changes': []})
+        self.assertEqual(rc.git_dir(self.tool), commit)
+        self.assertEqual(self.index_state(), before)
+        self.assertEqual(tree_identity(self.tool), tree)
+        self.assertFalse((self.tool / '.git/index.lock').exists())
+
+    def test_dirty_state_is_still_reported(self):
+        (self.tool / 'untracked.txt').write_text('not counted')
+        self.assertEqual(rc.route_identity(self.tool)['describe'], 'v1')
+        (self.tool / 'step.py').write_text(STEP_TOOL + '# edited\n')
+        before = self.index_state()
+        self.assertEqual(rc.route_identity(self.tool)['describe'], 'v1-dirty')
+        self.assertEqual([line.split()[-1] for line in rc.tracked_changes(self.tool)], ['step.py'])
+        self.assertEqual(self.index_state(), before)
+
+    def test_not_a_checkout_gives_no_identity(self):
+        plain = self.root / 'plain'
+        plain.mkdir()
+        identity = rc.route_identity(plain)
+        self.assertEqual((identity['describe'], identity['commit']), (None, None))
+
+    def receipt_with_probe(self, probe):
+        """A real sandboxed step over the checkout, with the probe run inside its observation window."""
+        from agent_ee import stage_receipts
+        require_toolchain()
+        design = self.root / 'design'
+        design.mkdir(exist_ok=True)
+        (design / 'board.txt').write_text('empty')
+        spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'routing', 'step': 'probe-window',
+                'argv': ['/usr/bin/python3', '/tool/step.py'], 'mounts': [{'source': str(self.tool), 'at': '/tool'}],
+                'writes': {'board.txt': 'design/board.txt'}, 'timeout_s': 60}
+        execute = stage_receipts.execute
+        def concurrent(*args, **kwargs):
+            probe()
+            return execute(*args, **kwargs)
+        with mock.patch.object(stage_receipts, 'execute', concurrent):
+            return stage_receipts.run_step(self.root / f'receipt-{probe.__name__}', design, spec, {'test': 1})
+
+    def test_receipt_over_the_checkout_stays_completed_with_the_read_only_probe(self):
+        def read_only():
+            rc.route_identity(self.tool)
+        receipt = self.receipt_with_probe(read_only)
+        self.assertEqual((receipt['status'], receipt['violations']), ('completed', []))
+
+    def test_receipt_check_still_refuses_a_probe_that_rewrites_the_mount(self):
+        # The pre-AGENTEE-269 probe: describe --dirty refreshes and writes .git/index.
+        def writing():
+            subprocess.run(['git', '-C', str(self.tool), 'describe', '--tags', '--always', '--dirty'],
+                           check=True, capture_output=True)
+        receipt = self.receipt_with_probe(writing)
+        self.assertEqual((receipt['status'], receipt['violations']), ('refused', ['mount_changed:/tool']))
+
+
 if __name__ == '__main__':
     unittest.main()

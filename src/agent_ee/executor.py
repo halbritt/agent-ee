@@ -1,5 +1,6 @@
 """Run tools with a read-only candidate and one writable scratch directory."""
 
+import contextlib
 import hashlib
 import os
 import secrets
@@ -8,7 +9,7 @@ import stat
 import subprocess
 import tempfile
 import time
-from threading import Event, Lock
+from threading import Event, Lock, current_thread, main_thread
 from pathlib import Path
 
 from .storage import forget_scope, json_bytes, publish
@@ -147,6 +148,25 @@ def execute(inputs, work, argv, *, timeout=120, stdin=None, network=False, extra
         forget_scope()
 
 
+@contextlib.contextmanager
+def held_interrupt():
+    """Hold an operator SIGINT while a sandbox is launched.
+
+    bwrap is running (and visible in /proc) before Popen returns its handle; a
+    KeyboardInterrupt raised in between loses the only handle that can kill and
+    reap it. The yielded list is non-empty when an interrupt was held; the caller
+    acts on it once the process handle exists."""
+    held = []
+    if current_thread() is not main_thread() or signal.getsignal(signal.SIGINT) is not signal.default_int_handler:
+        yield held
+        return
+    previous = signal.signal(signal.SIGINT, lambda signum, frame: held.append(signum))
+    try:
+        yield held
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
 def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro, cancellation):
     command = sandbox_argv(inputs, work, argv, network=network, extra_ro=extra_ro)
     record = {"argv": list(map(str, argv)), "sandbox_argv": command,
@@ -164,17 +184,19 @@ def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro
             if stdin is not None:
                 input_stream.write(stdin.encode())
             input_stream.seek(0)
-            with cancellation.launch_lock:
+            with held_interrupt() as interrupt, cancellation.launch_lock:
                 if cancellation.cancelled.is_set():
                     proc = None
                 else:
                     proc = subprocess.Popen(command, stdin=input_stream, stdout=subprocess.PIPE,
                                             stderr=subprocess.PIPE, start_new_session=True)
+        if proc is None and interrupt:
+            raise KeyboardInterrupt
         if proc is not None:
             try:
                 try:
                     while True:
-                        if cancellation.cancelled.is_set():
+                        if cancellation.cancelled.is_set() or interrupt:
                             raise KeyboardInterrupt
                         remaining = timeout - (time.monotonic() - start)
                         if remaining <= 0:

@@ -390,7 +390,7 @@ def archive_implementation(output):
     """Extract the committed HEAD tree under output; refuse uncommitted changes."""
     # Freeze the implementation as a separate reachable commit too. Git archive
     # is built only from HEAD, and the launcher runs exclusively that tree.
-    status = subprocess.run(['git','-C',str(REPOSITORY),'status','--porcelain'],capture_output=True,text=True,check=True).stdout
+    status = subprocess.run(['git','--no-optional-locks','-C',str(REPOSITORY),'status','--porcelain'],capture_output=True,text=True,check=True).stdout
     if status:
         raise ValueError('commit implementation before benchmark execution')
     implementation = subprocess.run(['git','-C',str(REPOSITORY),'rev-parse','HEAD'],capture_output=True,text=True,check=True).stdout.strip()
@@ -655,7 +655,7 @@ def native_rerun(first, output, repeats=2):
 def implementation():
     """This process's implementation commit, marked when the checkout has uncommitted changes."""
     head = subprocess.run(['git','-C',str(REPOSITORY),'rev-parse','HEAD'],capture_output=True,text=True)
-    status = subprocess.run(['git','-C',str(REPOSITORY),'status','--porcelain'],capture_output=True,text=True)
+    status = subprocess.run(['git','--no-optional-locks','-C',str(REPOSITORY),'status','--porcelain'],capture_output=True,text=True)
     if head.returncode or status.returncode:
         return None
     return head.stdout.strip()+('+uncommitted' if status.stdout.strip() else '')

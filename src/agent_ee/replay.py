@@ -14,7 +14,7 @@ from pathlib import Path
 from threading import BoundedSemaphore
 
 from .evidence_requests import fresh_directory, read_request, seal_operation, validate_request
-from .executor import Cancellation, sandbox_argv
+from .executor import Cancellation, held_interrupt, sandbox_argv
 from .storage import digest, read_json, write_json
 
 
@@ -67,12 +67,14 @@ def _execute(command, out, limits, cancellation):
         return len(data) > available
 
     try:
-        with cancellation.launch_lock:
+        with held_interrupt() as interrupt, cancellation.launch_lock:
             if cancellation.cancelled.is_set():
                 record['execution'] = 'interrupted'
             else:
                 proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, start_new_session=True)
+        if interrupt:
+            raise KeyboardInterrupt
         if proc is not None:
             with selectors.DefaultSelector() as selector:
                 for stream, name in ((proc.stdout, 'stdout'), (proc.stderr, 'stderr')):

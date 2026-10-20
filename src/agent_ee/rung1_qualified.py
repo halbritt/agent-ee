@@ -798,11 +798,8 @@ def build(spec, rundir, *, profile_path, kicad_route, max_seconds, max_iteration
 
 
 def git_head(path):
-    import subprocess
-    proc = subprocess.run(['git', '-C', str(path), 'rev-parse', 'HEAD'], capture_output=True, text=True, timeout=60)
-    status = subprocess.run(['git', '-C', str(path), 'status', '--porcelain', '--untracked-files=no'],
-                            capture_output=True, text=True, timeout=60)
-    return {'commit': proc.stdout.strip() or None, 'tracked_changes': status.stdout.strip().splitlines()}
+    return {'commit': rc.read_only_git(path, 'rev-parse', 'HEAD') or None,
+            'tracked_changes': rc.tracked_changes(path) or []}
 
 
 # ------------------------------------------------------------------ dry run: checks-only reviews and rehearsal

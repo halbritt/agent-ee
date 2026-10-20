@@ -157,7 +157,8 @@ stackup that the builder copies.
 ## Record and done gate
 
 The record lists the preparation receipts, the scaffold with its stage receipt and load checks,
-the scope and configuration hashes, and the kicad-route identity. For each
+the scope and configuration hashes, and the kicad-route identity (commit, `describe` with a
+`-dirty` suffix for tracked changes, read without writing the checkout). For each
 iteration, it lists the check outcomes with their stage reasons, the findings,
 and the convergence projection. For each implementation, it lists the writer
 execution, every step receipt (status, exit code, violations, tool identity,
