@@ -233,6 +233,17 @@ evidence returned by `part_evidence` is the source text with capture and
 response paths, hashes, a `parts.<key>.<field>` locator and `fetched_at`. It
 never includes stock or price. Absent or unparsed values are unknown.
 
+That binding is by MPN and manufacturer. An optional `package_map`
+(`{path, sha256}`, AGENTEE-274) adds a package check. It names a captured
+[`agent-ee.package-map/1`](package-consistency.md) table pinned by hash.
+`part_evidence` returns the record's `package` and `package_source`, and
+`package_verdict` looks up the DigiKey package text and the board footprint
+in the table. Both must be explicit entries, and they must have equal
+descriptors (family, pins, body). A different descriptor is a defect: the
+record describes another package. A record without a package, a missing
+footprint or a name outside the table is unknown. Without `package_map` no
+package comparison is made.
+
 ## Limits
 
 - The response mapping is written against owned synthetic v4 documents. It is

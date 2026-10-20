@@ -876,6 +876,8 @@ def validate_params(params):
     operating_temperature = params.get("operating_temperature")
     if operating_temperature is not None:
         operating_temperature = _validate_operating_temperature(operating_temperature)
+        if any(c["source"] == deviations for c in operating_temperature["exemptions"].values()):
+            raise ValueError("operating_temperature exemption source cannot be the mutable deviations file")
 
     return {
         "catalog": catalog,
@@ -912,9 +914,12 @@ def _validate_rating_provenance(raw):
 
 def _validate_operating_temperature(raw):
     """Declared ambient range in degC and the captured DigiKey records bound to references."""
-    from .digikey_record import EVIDENCE_KEYS, evidence_declaration
+    from .digikey_record import EVIDENCE_KEYS, PACKAGE_MAP_KEY, evidence_declaration
     from .hardware_interface import exact_keys
-    exact_keys(raw, "min_c max_c capture capture_sha256 parts")
+    if not isinstance(raw, dict):
+        raise ValueError("operating_temperature must be an object")
+    optional = [key for key in (PACKAGE_MAP_KEY, "exemptions") if key in raw]
+    exact_keys(raw, " ".join(["min_c max_c capture capture_sha256 parts", *optional]))
     bounds = []
     for key in ("min_c", "max_c"):
         value = raw[key]
@@ -923,18 +928,96 @@ def _validate_operating_temperature(raw):
         bounds.append(Decimal(str(value)))
     if bounds[0] > bounds[1]:
         raise ValueError("operating_temperature.min_c exceeds max_c")
-    evidence = evidence_declaration({key: raw[key] for key in EVIDENCE_KEYS}, "operating_temperature")
-    return {**evidence, "min_c": bounds[0], "max_c": bounds[1]}
+    evidence = evidence_declaration({key: raw[key] for key in (*EVIDENCE_KEYS, *optional) if key != "exemptions"},
+                                    "operating_temperature")
+    exemptions = raw.get("exemptions", {})
+    if not isinstance(exemptions, dict) or ("exemptions" in raw and not exemptions):
+        raise ValueError("operating_temperature.exemptions must map references to owner citations")
+    for ref, citation in exemptions.items():
+        if not isinstance(ref, str) or not ref.strip() or ref != ref.strip():
+            raise ValueError("operating_temperature.exemptions must map trimmed references")
+        if ref in raw["parts"]:
+            raise ValueError(f"operating_temperature reference {ref!r} is both judged and exempt")
+        _validate_citation(citation, f"operating_temperature.exemptions.{ref}")
+        if not _reference_token(ref).search(citation["quote"]):
+            raise ValueError(f"operating_temperature.exemptions.{ref}.quote does not name {ref!r}")
+    return {**evidence, "min_c": bounds[0], "max_c": bounds[1],
+            "exemptions": {ref: dict(c) for ref, c in exemptions.items()}}
+
+
+def _reference_token(ref):
+    """The exact reference as a whole token, so R1 never matches R10."""
+    return re.compile(r"(?<![A-Za-z0-9_/])" + re.escape(ref) + r"(?![A-Za-z0-9_])")
+
+
+def _validate_citation(raw, label):
+    """``{source, sha256, line, quote}`` citing one line of a captured owner decision."""
+    from .hardware_interface import exact_keys, text
+    exact_keys(raw, "source sha256 line quote")
+    source = raw["source"]
+    if not isinstance(source, str) or str(safe_relative(source)) != source:
+        raise ValueError(f"{label}.source must be a normalized captured path")
+    if not isinstance(raw["sha256"], str) or not SHA256_RE.fullmatch(raw["sha256"]):
+        raise ValueError(f"{label}.sha256 must be a 64-character lowercase hex digest")
+    if isinstance(raw["line"], bool) or not isinstance(raw["line"], int) or raw["line"] < 1:
+        raise ValueError(f"{label}.line must be a positive integer")
+    text(raw["quote"])
+    if "\n" in raw["quote"] or "\r" in raw["quote"]:
+        raise ValueError(f"{label}.quote must be text from one source line")
+
+
+def _verify_exemption(inputs_root, ref, citation, captured_files):
+    """The cited bytes are captured, pinned and hold the quote on the cited line; ValueError otherwise."""
+    try:
+        path, rel = _resolve_captured_file(inputs_root, citation["source"], f"{ref} exemption source")
+    except AssemblyReadinessExecutionError as exc:
+        raise ValueError(str(exc)) from exc
+    actual = digest(path)
+    if actual != citation["sha256"]:
+        raise ValueError(f"{ref} exemption source {rel!r} differs from its declared sha256")
+    if captured_files is not None and captured_files.get(rel) != actual:
+        raise ValueError(f"{ref} exemption source {rel!r} is not a captured input")
+    try:
+        lines = path.read_bytes().decode("utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"{ref} exemption source {rel!r} is unreadable: {exc}") from exc
+    if citation["line"] > len(lines) or citation["quote"] not in lines[citation["line"] - 1]:
+        raise ValueError(f"{ref} exemption quote is absent from {rel!r} line {citation['line']}")
 
 
 def _operating_temperature(inputs_root, spec, populated, captured_files):
     """Declared ambient against each bound part's DigiKey 'Operating Temperature'; never stock evidence."""
-    from .digikey_record import ambient_verdict, part_evidence, replay_evidence
-    findings, components = [], []
+    from .digikey_record import (PACKAGE_MAP_KEY, ambient_verdict, load_package_map, package_verdict,
+                                 part_evidence, replay_evidence)
+    findings, components, exempt = [], [], []
     report = {"min_c": str(spec["min_c"]), "max_c": str(spec["max_c"]), "capture": spec["capture"],
-              "capture_sha256": spec["capture_sha256"], "components": components, "error": None}
+              "capture_sha256": spec["capture_sha256"], "package_map": spec.get(PACKAGE_MAP_KEY),
+              "components": components, "exempt": exempt, "unlisted": [], "error": None}
+    by_ref = {}
+    for comp in populated:
+        by_ref.setdefault(comp["reference"], []).append(comp)
+    # AGENTEE-274: the board-wide predicate needs every populated part judged or explicitly exempt.
+    unlisted = sorted(set(by_ref) - set(spec["parts"]) - set(spec["exemptions"]), key=natural_key)
+    report["unlisted"] = unlisted
+    if unlisted:
+        findings.append({"severity": "unknown", "code": "operating_temperature_unlisted", "references": unlisted,
+                         "message": "populated part(s) without a DigiKey operating-temperature verdict or an "
+                                    "exemption: " + ", ".join(unlisted)})
+    for ref in sorted(spec["exemptions"], key=natural_key):
+        citation = spec["exemptions"][ref]
+        entry = {"reference": ref, "status": "exempt", "citation": citation, "reason": None}
+        exempt.append(entry)
+        try:
+            if len(by_ref.get(ref, [])) != 1:
+                raise ValueError(f"{ref} is not exactly one populated component")
+            _verify_exemption(inputs_root, ref, citation, captured_files)
+        except ValueError as exc:
+            entry["status"], entry["reason"] = "unknown", str(exc)
+            findings.append({"severity": "unknown", "code": "operating_temperature_exemption_invalid",
+                             "reference": ref, "message": f"{ref}: {exc}"})
     try:
         doc, dependencies = replay_evidence(inputs_root, spec, captured_files)
+        package_map = load_package_map(inputs_root, spec, captured_files)
     except (OSError, ValueError, KeyError) as exc:
         # An unreadable or unpinned capture is unknown temperature coverage, never a pass.
         report["error"] = str(exc)
@@ -942,9 +1025,6 @@ def _operating_temperature(inputs_root, spec, populated, captured_files):
                          "references": sorted(spec["parts"], key=natural_key),
                          "message": f"DigiKey operating-temperature capture is unavailable: {exc}"})
         return report, findings
-    by_ref = {}
-    for comp in populated:
-        by_ref.setdefault(comp["reference"], []).append(comp)
     for ref in sorted(spec["parts"], key=natural_key):
         entry = {"reference": ref, "key": spec["parts"][ref], "status": "unknown", "reason": None}
         components.append(entry)
@@ -961,6 +1041,18 @@ def _operating_temperature(inputs_root, spec, populated, captured_files):
             if manufacturer and manufacturer.casefold() != evidence["manufacturer"].casefold():
                 raise ValueError(f"{ref} manufacturer {manufacturer!r} is not DigiKey "
                                  f"{evidence['manufacturer']!r}")
+            if package_map is not None:
+                verdict, reason = package_verdict(evidence, props.get("Footprint", "").strip(), package_map)
+                entry["package"] = {"status": verdict, "reason": reason, "footprint": props.get("Footprint", ""),
+                                    "digikey_package": evidence["package"],
+                                    "package_source": evidence["package_source"]}
+                if verdict == "defect":
+                    # The record describes another package: a determinate binding defect, and no temperature evidence.
+                    findings.append({"severity": "defect", "code": "digikey_package_mismatch", "reference": ref,
+                                     "message": f"{ref}: {reason}"})
+                    raise ValueError(f"{ref}: DigiKey package does not bind to the footprint")
+                if verdict == "unknown":
+                    raise ValueError(reason)
             if evidence["value"] is None:
                 raise ValueError(f"DigiKey record {evidence['key']} lists no {evidence['parameter']!r}")
             entry["status"], entry["reason"] = ambient_verdict(evidence["value"], spec["min_c"], spec["max_c"])
@@ -1027,9 +1119,10 @@ def capability(params, files, inputs=None):
             immutable_inputs.append(cfg["rating_provenance"][key])
     if cfg["operating_temperature"] is not None:
         from .digikey_record import evidence_inputs
-        for rel in evidence_inputs(cfg["operating_temperature"], inputs):
+        cited = [c["source"] for c in cfg["operating_temperature"]["exemptions"].values()]
+        for rel in [*evidence_inputs(cfg["operating_temperature"], inputs), *cited]:
             if rel not in files:
-                raise ValueError(f"operating_temperature DigiKey file {rel!r} must be a captured input")
+                raise ValueError(f"operating_temperature evidence file {rel!r} must be a captured input")
             immutable_inputs.append(rel)
     if inputs is not None:
         catalog_path = Path(inputs) / catalog_rel

@@ -481,6 +481,10 @@ equal the DigiKey MPN exactly, and a saved `Manufacturer`, when present, must
 match case-insensitively. A missing part number, mismatched part, absent or
 unparsed parameter, or a not-found or failed request is unknown. A reference
 listed in both `height_facts` and `digikey_heights` is a refused declaration.
+With an optional `package_map` (AGENTEE-274) the DigiKey package must also map
+to the native footprint ID. A
+[package mismatch](digikey-capture.md#check-evidence) is a defect for that
+reference. An unmapped name or a record without a package is unknown.
 DigiKey stock and price are not carried into the verdict. Seated height is
 DigiKey's listed maximum above the seating plane, as the source states it;
 the engineer still owns its applicability to the installed orientation.

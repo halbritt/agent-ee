@@ -81,7 +81,8 @@ Live JLCPCB stock reaches it only through an owner-run
   an `agent-ee.catalog/1` manifest, or every retained `responses/*.json` file
   for a JLCPCB stock capture, plus `rating_provenance.receipt` and
   `rating_provenance.report` when declared, plus the DigiKey capture manifest
-  and every retained response it names when `operating_temperature` is set.
+  and every retained response it names when `operating_temperature` is set,
+  and its `package_map` table and exemption sources.
 
 ## Parameters (`params`)
 
@@ -101,7 +102,7 @@ Live JLCPCB stock reaches it only through an owner-run
 | `deviations` | `str \| None` | `None` | Captured mutable `agent-ee.part-deviations/1` file shared with `part_decisions`. |
 | `hand_fit_policy` | `object \| None` | `None` | Citation of a captured owner decision: `source`, `sha256`, `line`, `quote` and exact `identities`. See [owner hand-fit policy](#owner-hand-fit-policy). |
 | `rating_provenance` | `object \| None` | `None` | Receipted binding-fill provenance: `receipt` (captured stage receipt of the `binding-fill` step), `receipt_sha256` (coordinator pin) and `report` (captured `binding-fill.json`). See [receipt-bound rating provenance](#receipt-bound-rating-provenance). |
-| `operating_temperature` | `object \| None` | `None` | Declared ambient `min_c`/`max_c` (finite degC) and a captured DigiKey record per reference: `capture`, `capture_sha256` (pin) and `parts` (`{reference: key}`). See [DigiKey operating temperature](#digikey-operating-temperature). |
+| `operating_temperature` | `object \| None` | `None` | Declared ambient `min_c`/`max_c` (finite degC) and a captured DigiKey record per reference: `capture`, `capture_sha256` (pin) and `parts` (`{reference: key}`), plus optional `package_map` (`{path, sha256}`) and `exemptions` (`{reference: {source, sha256, line, quote}}`). See [DigiKey operating temperature](#digikey-operating-temperature). |
 
 `property` lookups for `Footprint`, `LCSC` and `Manufacturer` also accept the
 common aliases (`footprint`, `LCSC Part`, `jlcpcb_part`, `Mfr`, ...); other
@@ -285,13 +286,21 @@ reused sheet).
     `max_extended_parts`.
   - `operating_temperature_out_of_range`: the declared ambient range is not
     inside the bound part's DigiKey ambient operating range.
+  - `digikey_package_mismatch`: with `package_map` declared, the bound DigiKey
+    record's package maps to a different descriptor than the footprint.
 - **`unknown`** (never `pass`)
   - `operating_temperature_unavailable`: the declared DigiKey capture is
     unreadable, differs from `capture_sha256` or names uncaptured files.
   - `operating_temperature_unknown`: a declared reference is not exactly one
     populated component, its part number or manufacturer does not match the
-    record, the request was not found or failed, or the operating temperature
-    is absent, unparsed or junction/case only.
+    record, the request was not found or failed, the operating temperature
+    is absent, unparsed or junction/case only, or, with `package_map`, the
+    package comparison is unknown or a mismatch.
+  - `operating_temperature_unlisted`: populated components with neither a
+    `parts` entry nor an exemption; names the `references`.
+  - `operating_temperature_exemption_invalid`: an exempt reference is not
+    exactly one populated component, or its citation is not captured, differs
+    from its `sha256` or lacks the quote on the cited line.
   - `undeclared_rating_provenance`: a populated R or C carries a well-formed
     `AGENT_EE_Ratings` field but the scope declares no `rating_provenance` to
     resolve its `record_sha256`; names the `references`.
@@ -323,14 +332,39 @@ comma-separated ranges keep their `TA`, `TJ` or `TC` qualifiers. Only a single
 unqualified or `TA` range is compared, with inclusive endpoints. It passes when
 it contains `min_c..max_c` and is otherwise a defect. Junction or case limits
 depend on dissipation and stay unknown, as do absent, unparsed or ambiguous
-values. Only the listed references are judged. This does not establish derating,
-self-heating, storage limits or engineering acceptance.
+values. This does not establish derating, self-heating, storage limits or
+engineering acceptance.
+
+The predicate is board-wide (AGENTEE-274). Every populated component must be
+judged in `parts` or carry an exemption. Otherwise the check is unknown with
+`operating_temperature_unlisted`, even when every listed part passes. DNP,
+excluded-from-BOM, virtual and off-board components need no verdict. An
+exemption cites one line of a captured owner decision:
+
+```json
+{"exemptions": {"R2": {"source": "decisions/temperature.md", "sha256": "<64 hex>",
+                       "line": 2, "quote": "R2 is a board-edge bleeder resistor"}}}
+```
+
+The quote must name the exact reference as a whole token, so `R20` does not
+name `R2`. A reference can be judged or exempt, not both. The source is an
+immutable input. At evaluation it must be captured with the pinned hash and
+hold the quote on the cited line. Otherwise the exemption is unknown, never a
+pass.
+
+`package_map` adds the [DigiKey package check](digikey-capture.md#check-evidence)
+against the netlist `Footprint`. A mismatch is a `digikey_package_mismatch`
+defect, and the reference has no temperature verdict. An unmapped footprint or
+package, or a record without a package, is unknown. Each judged reference
+reports the comparison under `package`. Without `package_map`, binding is by
+MPN and manufacturer only.
 
 DigiKey `quantity_available` and price never enter this check's evidence. The
 stock predicates still read only the JLCPCB catalog, so a part out of JLCPCB
 stock remains `out_of_stock` whatever DigiKey lists. Each judged reference is
 reported under `operating_temperature.components` with its verdict, reason and
-capture/response provenance.
+capture/response provenance. `exempt` lists the exemptions and `unlisted` the
+populated references with no verdict.
 
 ## Receipt-bound rating provenance
 
