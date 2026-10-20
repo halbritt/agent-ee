@@ -1091,7 +1091,8 @@ it does not establish silkscreen or copper clearance. The
 inset and checks native placement DRC to cover J1's reference text too.
 The [placement adapter's property resave rule](placement-adapter.md#property-font-resave-default-agentee-147)
 admits KiCad's omitted 0.15 mm property-font thickness default during transform
-comparison; it does not grade placement or relax field value, layer or visibility checks.
+comparison, including qualified side flips (AGENTEE-313); it does not grade placement
+or relax field value, layer, visibility, size or justification checks.
 The [owned-zone write scope](placement-adapter.md#placement-write-scope)
 (AGENTEE-178) admits rigid owner movement and refuses independent zone edits.
 The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned

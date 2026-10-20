@@ -362,8 +362,9 @@ Limits:
 
 ### Property font resave default (AGENTEE-147)
 
-For translations and quarter turns, an omitted property-font thickness compares
-equal to exactly `(thickness 0.15)`, the default added by KiCad 10.0.7 on resave,
+For translations, quarter turns and qualified side flips (AGENTEE-313), an omitted
+property-font thickness compares equal to exactly `(thickness 0.15)`, the default
+added by KiCad 10.0.7 on resave,
 except on the built-in `Reference`, `Value`, `Datasheet` and `Description` fields.
 Those load an omitted thickness as zero, a resave never adds it, and they retain
 exact comparison (agent-452 review of AGENTEE-147).
@@ -377,13 +378,20 @@ The comparison uses the shared parsed tree and strips only that explicit default
 on both sides, along one unambiguous property `effects`/`font` path. It does not
 round-trip either board through pcbnew: that would introduce native save side
 effects and normalize unrelated board content. The source bytes, board digests,
-scope schemas and transform identities remain unchanged. Side-flip comparison
-keeps its existing exact effects contract.
+scope schemas and transform identities remain unchanged. Side flips use the same
+normalizer before comparing the exact reflected text; layer, position, angle and
+justification must still follow the qualified reflection.
 
-Property name, value, layer, visibility, UUID, local position, font size and all
-other children must still match. Changing a nondefault thickness or adding a
-duplicate font/effects or thickness node, new property or other child is refused. Defaults on
-`fp_text`, pads and graphics are outside this tolerance.
+Property name, value, visibility, UUID, font size and all other content must
+still match. Layer and local position must follow the declared transform exactly.
+Changing a nondefault thickness or adding a duplicate font/effects or thickness
+node, new property or other child is refused. Defaults on `fp_text`, pads and
+graphics are outside this tolerance.
+
+`NativeSideFlipTest.test_native_flip_save_materializes_custom_font_default_without_changing_scope`
+qualifies native flip/save of an original custom field. Mutation controls refuse
+changes to values, visibility, layers, positions, sizes and justification beyond
+the reflection.
 
 `PropertyDefaultsTest` exercises the default in both directions at every quarter
 turn and refuses edits to the protected fields above. The native
