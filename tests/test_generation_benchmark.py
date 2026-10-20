@@ -64,6 +64,27 @@ class TaskTests(unittest.TestCase):
             (self.task / 'task.json').write_bytes(before)
             repin(self.task)
 
+    def test_private_prompt_spellings_are_refused_before_generator_execution(self):
+        generator = self.root / 'leak.py'
+        generator.write_text('import shutil, sys\nfrom pathlib import Path\n'
+                             'shutil.copyfile(sys.argv[1], Path(sys.argv[2], "leak.txt"))\n')
+        for index, prompt in enumerate(('evaluator/rules.json', './evaluator/rules.json',
+                                        'task.json', 'pins.json', 'reference.kicad_sch',
+                                        './reference.kicad_sch')):
+            self.edit(lambda d: d.update(prompt=prompt))
+            scratch = self.root / f'leak-trial-{index}'
+            with self.subTest(prompt=prompt):
+                with self.assertRaises(ValueError):
+                    pinned_task(self.task)
+                with self.assertRaises(ValueError):
+                    run_task(self.task, generator, scratch, self.root / 'store', attempts=1)
+                self.assertFalse(scratch.exists(), 'generator must never receive private prompt bytes')
+
+    def test_reference_path_must_be_canonical(self):
+        self.edit(lambda d: d.update(reference='./reference.kicad_sch'))
+        with self.assertRaisesRegex(ValueError, 'non-canonical task reference'):
+            pinned_task(self.task)
+
     def test_links_and_special_output_entries_are_refused(self):
         (self.task / 'link').symlink_to(self.task / 'prompt.md')
         with self.assertRaisesRegex(ValueError, 'non-ordinary'):
@@ -144,6 +165,20 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result['lower'], {'numerator': 1, 'denominator': 2})
         self.assertEqual(result['upper'], {'numerator': 1, 'denominator': 1})
 
+    def test_aggregate_refuses_handwritten_and_unrecorded_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = {'schema': 'agent-ee.generation-evaluation/1', 'binding': {'inputs': 'fake'},
+                      'task': 'fake', 'domain': 'x', 'difficulty': 'y',
+                      'generation': {'execution': 'ok'},
+                      'scoring': score(pinned_task(FIXTURE)['rules'], [])}
+            forged = Path(tmp) / 'forged.json'
+            write_json(forged, report)
+            with self.assertRaisesRegex(ValueError, 'identity-bound'):
+                aggregate([forged])
+            stored = publish_report(tmp, report)
+            with self.assertRaisesRegex(ValueError, 'recorded evaluation trial'):
+                aggregate([stored])
+
     def test_saved_record_conflict_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as tmp:
             report = {'binding': {'inputs': 'same'}, 'scoring': {'score': None}}
@@ -190,6 +225,50 @@ class NativeTests(unittest.TestCase):
         self.assertEqual([r['score'] for r in summary['rows']], [{'numerator': 1, 'denominator': 1}] * 2)
         with self.assertRaisesRegex(ValueError, 'one selected attempt'):
             aggregate([first, second])
+
+    def test_aggregate_refuses_changed_or_missing_trial_binding(self):
+        path = self.evaluate()
+        receipt = self.root / 'eval-1/evaluation.json'
+        original = receipt.read_bytes()
+        receipt.unlink()
+        with self.assertRaisesRegex(ValueError, 'recorded evaluation trial'):
+            aggregate([path])
+        receipt.write_bytes(original)
+        self.assertEqual(len(aggregate([path])['rows']), 2)
+        report = read_json(path)
+        report['scoring']['overall_pass'] = True
+        write_json(path, report)
+        with self.assertRaisesRegex(ValueError, 'recorded evaluation trial'):
+            aggregate([path])
+
+    def test_unsafe_generator_outputs_are_recorded_and_not_copied_into_repairs(self):
+        bodies = {
+            'symlink': 'Path(sys.argv[2], "circuit.kicad_sch").symlink_to("/etc/hostname")',
+            'hardlink': 'Path(sys.argv[2], "a").write_text("x"); '
+                        'os.link(Path(sys.argv[2], "a"), Path(sys.argv[2], "circuit.kicad_sch"))',
+            'fifo': 'os.mkfifo(Path(sys.argv[2], "circuit.kicad_sch"))',
+        }
+        for name, body in bodies.items():
+            with self.subTest(kind=name):
+                generator = self.root / (name + '.py')
+                generator.write_text('import os, sys\nfrom pathlib import Path\n'
+                                     'assert not Path("/work/previous/circuit.kicad_sch").exists()\n' +
+                                     body + '\n')
+                scratch = self.root / ('trial-' + name)
+                paths = run_task(FIXTURE, generator, scratch, self.store, attempts=2)
+                self.assertEqual(len(paths), 2)
+                self.assertEqual(len(read_json(scratch / 'trial.json')['evaluations']), 2)
+                for index, path in enumerate(paths, 1):
+                    report = read_json(path)
+                    self.assertEqual(report['generation']['execution'], 'failed')
+                    self.assertEqual(report['generation']['output_error'], 'non_ordinary_output')
+                    self.assertEqual(report['evaluation']['checks'], [])
+                    self.assertIsNone(report['scoring']['overall_pass'])
+                    self.assertIsNone(report['scoring']['score'])
+                    self.assertTrue((scratch / f'evaluation-{index}/evaluation.json').is_file())
+                    execution = read_json(scratch / f'attempt-{index}/execution.json')
+                    self.assertEqual(execution['execution'], 'ok', execution)
+                self.assertEqual([r['generation_failed'] for r in aggregate([paths[-1]])['rows']], [1, 1])
 
     def test_empty_erc_clean_schematic_fails_component_conformance(self):
         # Preserve the owned embedded library; remove placed symbols and labels with the shared parser.
@@ -241,7 +320,7 @@ class NativeTests(unittest.TestCase):
         generator = self.root / 'generator.py'
         generator.write_text('''import json, socket, sys
 from pathlib import Path
-assert Path(sys.argv[1]).is_file()
+assert Path(sys.argv[1]).read_text() == PUBLIC_PROMPT
 assert sorted(p.name for p in Path('/candidate').iterdir()) == ['generator.py', 'prompt.md']
 assert not Path('/candidate/evaluator').exists()
 assert not Path('/evidence/baseline.json').exists()
@@ -253,7 +332,7 @@ except OSError:
 else:
     raise AssertionError('sandbox network was available')
 Path(sys.argv[2], 'result.json').write_text('{"overall_pass": true}')
-''')
+'''.replace('PUBLIC_PROMPT', repr((FIXTURE / 'prompt.md').read_text())))
         reports = run_task(FIXTURE, generator, self.root / 'trial', self.store)
         self.assertEqual(len(reports), 3)
         for i, path in enumerate(reports, 1):

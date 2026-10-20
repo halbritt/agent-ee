@@ -18,7 +18,11 @@ A task directory contains `task.json`, `pins.json`, a public prompt, a reference
 schematic used only for design grouping, and an `evaluator/` directory.
 `pins.json` (`agent-ee.generation-pins/1`) maps every other file to its SHA-256.
 Changed, missing or additional files refuse the run before generator execution.
-Links, multiply linked files and special files are refused.
+Links, multiply linked files and special files are refused. Prompt and reference
+paths must be canonical relative paths. The prompt cannot name `task.json`,
+`pins.json`, the reference, or any file under `evaluator/`, including alternate
+spellings such as `./evaluator/rules.json`. Pins are local task-author inputs,
+not an external authenticity anchor: repinning defines a different task binding.
 
 `task.json` (`agent-ee.generation-task/1`) declares:
 
@@ -70,7 +74,12 @@ outcome. A failed generator can still have usable outputs with known check
 results. Missing deliverables fail every rule requiring them; remaining rules
 stay unknown when no complete candidate can be captured. Malformed generated
 inputs that cannot be captured produce unknown scoring and a capture diagnostic.
-Unexpected harness exceptions propagate; they cannot become passes.
+Links, hardlinks, special files and non-directory output roots instead record
+`generation.execution=failed` with `output_error=non_ordinary_output`, no native
+checks, and unknown scores. Those unsafe outputs remain in their attempt
+directory but are never copied into repair inputs. Unsafe entries are not read
+or hashed; the report binds the rejection class. Unexpected harness exceptions
+propagate; they cannot become passes.
 
 ## Scores and immutable reports
 
@@ -92,7 +101,14 @@ captured dependencies. The benchmark does not provision an image.
 `report.json` contains only stable check projections and exact scores; native
 logs, durations and attempt paths stay in retained evidence. Identical outputs
 on an unchanged task and runtime produce byte-identical reports. An existing
-report with different bytes is an error and is never overwritten.
+report with different bytes is an error and is never overwritten. Each retained
+`evaluation-N/evaluation.json` binds its report path and digest. A separate
+`trials/` index beside the report locates these records without adding volatile
+paths to the deterministic report. Aggregation requires the identity directory
+and at least one retained evaluation record with the matching report digest.
+Handwritten reports, unrecorded reports and changed report bytes are refused.
+These local records detect accidental or isolated report edits; they do not
+authenticate an author who can rewrite both reports and retained trial records.
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.generation_benchmark run \
@@ -138,5 +154,7 @@ columns, so a check pass is not a claim that the generator completed successfull
 `tests.test_generation_benchmark` exercises pinned-file changes, criterion
 coverage refusal, exact unknown bounds, saved-record conflicts, split aliases
 and exclusions, real native conformance, empty ERC-clean output, malformed
-outputs, failed generation, and the networkless generator visibility boundary.
+outputs, unsafe output retention and repair isolation, failed generation,
+aggregate trial bindings, all six private-prompt bypass spellings, and the
+networkless generator visibility boundary with exact public-prompt bytes.
 Use `AGENT_EE_REQUIRE_TOOLCHAIN=1` to require those native tests without skips.

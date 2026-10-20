@@ -99,7 +99,9 @@ evidence is unverified; owner review and any publication remain outstanding.
 
 The offline [generation benchmark](docs/generation-benchmark.md) pins task files,
 keeps evaluator rules outside the generator sandbox, and reports exact score
-bounds while coverage is unknown. Its original native fixture qualifies the
+bounds while coverage is unknown. Summaries require a retained evaluation
+record; unsafe writer outputs remain failed attempts with unknown checks.
+Its original native fixture qualifies the
 harness; importing the ten unlicensed upstream prompts remains blocked.
 
 The [false-positive calibration](docs/fp-calibration.md) measures the reviewers

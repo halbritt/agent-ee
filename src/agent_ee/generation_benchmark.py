@@ -16,20 +16,32 @@ from .findings import safe_id
 from .storage import digest, fingerprint, identity, json_bytes, write_json
 
 
+class NonOrdinaryTree(ValueError):
+    """An input tree contains a link, special file, or non-directory root."""
+
+
 def tree_files(root):
     """Refuse links and special files before reading a task or writer output."""
     root = Path(root)
     if root.is_symlink() or not root.is_dir():
-        raise ValueError('expected ordinary directory')
+        raise NonOrdinaryTree('expected ordinary directory')
     files = {}
     for path in sorted(root.rglob('*')):
         mode = path.lstat().st_mode
         if stat.S_ISDIR(mode):
             continue
         if not stat.S_ISREG(mode) or path.stat().st_nlink != 1:
-            raise ValueError('non-ordinary file: ' + str(path))
+            raise NonOrdinaryTree('non-ordinary file: ' + str(path))
         files[path.relative_to(root).as_posix()] = digest(path, follow_symlinks=False)
     return files
+
+
+def output_files(root):
+    try:
+        return (tree_files(root) if root.exists() or root.is_symlink() else {}), None
+    except NonOrdinaryTree:
+        # Never follow unsafe writer output, including while preparing repair feedback.
+        return {}, 'non_ordinary_output'
 
 
 def pinned_task(root):
@@ -48,11 +60,13 @@ def pinned_task(root):
     safe_id(task['id'], 'task id')
     nonempty(task['domain'])
     nonempty(task['difficulty'])
-    if task['prompt'].startswith('evaluator/') or task['prompt'] == task['reference']:
-        raise ValueError('public prompt must be separate from evaluator inputs')
     for key in ('prompt', 'reference'):
-        if str(safe_relative(task[key])) not in files:
-            raise ValueError('missing task ' + key)
+        if str(safe_relative(task[key])) != task[key] or task[key] not in files:
+            raise ValueError('missing or non-canonical task ' + key)
+    # Only the prompt reaches the generator: never evaluator inputs, the reference or task metadata.
+    if (task['prompt'].startswith('evaluator/') or
+            task['prompt'] in (task['reference'], 'task.json', 'pins.json')):
+        raise ValueError('public prompt must be separate from evaluator inputs')
     deliverables = task['deliverables']
     if not isinstance(deliverables, list) or not deliverables or len(set(deliverables)) != len(deliverables):
         raise ValueError('expected unique deliverables')
@@ -177,14 +191,16 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
         raise ValueError('generation execution must be ok or failed')
     task_root, outputs, trial = Path(task_root), Path(outputs), Path(trial)
     task = pinned_task(task_root)
-    observed = tree_files(outputs) if outputs.exists() or outputs.is_symlink() else {}
-    missing = sorted(set(task['deliverables']) - set(observed))
+    observed, output_error = output_files(outputs)
+    if output_error:
+        generation_execution = 'failed'
+    missing = [] if output_error else sorted(set(task['deliverables']) - set(observed))
     selected = {k: observed[k] for k in task['deliverables'] if k in observed}
     environment = evaluator_identity()
     trial.mkdir(parents=True, exist_ok=False)
     checks = []
     capture_error = None
-    if not missing:
+    if not missing and output_error is None:
         inputs = trial / 'evaluation-inputs'
         shutil.copytree(task_root / 'evaluator', inputs)
         for rel in task['deliverables']:
@@ -207,20 +223,32 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
             checks = run_checks(run, time.monotonic() + timeout)
             freeze_evidence(run, checks)
             verify_evidence(run, checks, required=True)
-    current = tree_files(outputs) if outputs.exists() or outputs.is_symlink() else {}
-    if pinned_task(task_root)['files'] != task['files'] or current != observed:
+    current, current_error = output_files(outputs)
+    if (pinned_task(task_root)['files'] != task['files'] or
+            (current, current_error) != (observed, output_error)):
         raise ValueError('task or output changed during evaluation')
     if evaluator_identity() != environment:
         raise ValueError('evaluator runtime changed during evaluation')
     report = {'schema': 'agent-ee.generation-evaluation/1', 'task': task['id'],
               'domain': task['domain'], 'difficulty': task['difficulty'], 'fingerprint': task['fingerprint'],
               'binding': {'task_files': task['files'], 'outputs': selected, 'evaluator': environment,
-                          'generation_execution': generation_execution, 'timeout_s': timeout},
-              'generation': {'execution': generation_execution, 'missing_deliverables': missing},
+                          'generation_execution': generation_execution, 'timeout_s': timeout,
+                          'output_error': output_error},
+              'generation': {'execution': generation_execution, 'missing_deliverables': missing,
+                             'output_error': output_error},
               'evaluation': {'capture_error': capture_error,
                              'checks': [{k: c[k] for k in ('id', 'kind', 'execution', 'outcome')} for c in checks]},
               'scoring': score(task['rules'], checks, missing)}
-    return publish_report(store, report)
+    path = publish_report(store, report)
+    receipt = {'schema': 'agent-ee.generation-evaluation-record/1',
+               'report': str(path.resolve()), 'report_sha256': digest(path)}
+    write_json(trial / 'evaluation.json', receipt)
+    # Keep mutable location metadata outside the deterministic report bytes.
+    records = path.parent / 'trials'
+    records.mkdir(exist_ok=True)
+    write_json(records / (identity(str(trial.resolve())) + '.json'),
+               {'trial': str(trial.resolve()), **receipt})
+    return path
 
 
 def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120):
@@ -244,11 +272,11 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120):
         work.mkdir()
         (work / 'output').mkdir()
         if previous is not None:
-            if previous.exists():
+            prior = strict_json(reports[-1].read_bytes())
+            if previous.exists() and prior['generation']['output_error'] is None:
                 shutil.copytree(previous, work / 'previous')
             else:
                 (work / 'previous').mkdir()
-            prior = strict_json(reports[-1].read_bytes())
             write_json(work / 'feedback.json', {
                 'checks': prior['evaluation']['checks'],
                 'missing_deliverables': prior['generation']['missing_deliverables']})
@@ -306,10 +334,27 @@ def average_scores(scores):
             'lower': lower, 'upper': upper}
 
 
+def recorded_report(path):
+    path = Path(path).resolve()
+    report = strict_json(path.read_bytes())
+    if (report.get('schema') != 'agent-ee.generation-evaluation/1' or
+            'binding' not in report or path.name != 'report.json' or
+            path.parent.name != identity(report['binding'])):
+        raise ValueError('expected identity-bound generation evaluation report')
+    expected = {'schema': 'agent-ee.generation-evaluation-record/1',
+                'report': str(path), 'report_sha256': digest(path)}
+    for record in sorted((path.parent / 'trials').glob('*.json')):
+        receipt = strict_json(record.read_bytes())
+        trial = Path(receipt['trial'])
+        if ({k: v for k, v in receipt.items() if k != 'trial'} == expected and
+                (trial / 'evaluation.json').is_file() and
+                strict_json((trial / 'evaluation.json').read_bytes()) == expected):
+            return report
+    raise ValueError('report is not bound to a recorded evaluation trial')
+
+
 def aggregate(paths):
-    reports = [strict_json(Path(p).read_bytes()) for p in paths]
-    if any(r['schema'] != 'agent-ee.generation-evaluation/1' for r in reports):
-        raise ValueError('expected generation evaluation reports')
+    reports = [recorded_report(p) for p in paths]
     if len({r['task'] for r in reports}) != len(reports):
         raise ValueError('aggregate requires one selected attempt per task')
     rows = []

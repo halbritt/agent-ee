@@ -26,7 +26,10 @@ This inventory audit adds no candidate check kind.
 
 The [generation benchmark](generation-benchmark.md) reuses these handlers on
 captured generated outputs, preserves failed execution separately from defects,
-and leaves unknown score coverage explicit. It registers no new check kind.
+and leaves unknown score coverage explicit. Private prompt paths are refused
+before execution; unsafe generated output records failed generation and unknown
+checks. Summaries require reports bound to retained evaluation trials. It
+registers no new check kind.
 
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
