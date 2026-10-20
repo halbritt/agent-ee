@@ -1474,6 +1474,10 @@ properties carry versioned base64 rather than inline JSON so KiBot exports can
 read them. Exact legacy identities produce a non-pass migration finding in
 admission checks (including `fab_consistency`); only forward-annotation planning
 allows them, and apply requires current encoded properties (AGENTEE-283).
+Forward annotation migrates validated legacy source or retained-board fields to
+canonical encoding and records exact changes in its plan and successful receipt
+(AGENTEE-302). Final board validation requires canonical fields; admission checks
+still refuse a legacy schematic, which must be regenerated before native parity.
 See the [migration and external KiBot regression](probe-features.md#migrating-legacy-inline-json-properties).
 
 Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.
