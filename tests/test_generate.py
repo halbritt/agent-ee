@@ -11,7 +11,7 @@ from pathlib import Path
 import random
 import shutil
 import subprocess
-import tempfile
+from tests.receipt_diagnostics import ReceiptTemporaryDirectory
 import unittest
 from unittest import mock
 
@@ -60,7 +60,7 @@ def git_catalog(root, body):
 
 class ReceiptTest(unittest.TestCase):
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-generate-')
+        tmp = ReceiptTemporaryDirectory(prefix='agent-ee-generate-')
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
 
@@ -90,7 +90,7 @@ class ReceiptTest(unittest.TestCase):
 
 class OrderingTest(unittest.TestCase):
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-generate-')
+        tmp = ReceiptTemporaryDirectory(prefix='agent-ee-generate-')
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
 
@@ -227,7 +227,7 @@ class PartsTest(unittest.TestCase):
             g.select_part(rows_of(ROWS), 'Device:C', '100nF')
 
     def test_catalog_is_the_committed_blob_never_working_edits(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             body = HEADER + '\n'.join(ROWS) + '\n'
             checkout = git_catalog(Path(tmp), body)
             path, raw, source = g.capture_catalog(checkout)
@@ -238,13 +238,13 @@ class PartsTest(unittest.TestCase):
             path, raw, source = g.capture_catalog(checkout)
             self.assertEqual(raw.decode(), body)
             self.assertTrue(source['working_tree_differs'])
-        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(g.StageFailure):
+        with ReceiptTemporaryDirectory() as tmp, self.assertRaises(g.StageFailure):
             g.capture_catalog(tmp)  # not a git checkout: no provenance
 
     def test_not_assembled_rule_in_manifest(self):
         if not (g.STOCK / 'footprints/Resistor_SMD.pretty').is_dir():
             require_toolchain(native=True)
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             root = Path(tmp)
             checkout = git_catalog(root / 'fome', HEADER + '\n'.join(ROWS) + '\n')
             stage = g.Stage(root / 'run', 2, 'parts')
@@ -339,7 +339,7 @@ class PartsTest(unittest.TestCase):
         self.assertEqual(g.select_part(rows_c5_as_4, 'Device:C', '100n'),
                          g.select_part(rows_c5, 'Device:C', '100n'))
         if (g.STOCK / 'footprints/Resistor_SMD.pretty').is_dir():
-            with tempfile.TemporaryDirectory() as tmp:
+            with ReceiptTemporaryDirectory() as tmp:
                 stage = g.Stage(Path(tmp) / 'run', 2, 'parts')
                 stage.start()
                 state = {'params': g.parse_spec(SPEC.read_text())}
@@ -421,7 +421,7 @@ class CampaignStageTest(unittest.TestCase):
     """Stage 6 parsing against a scripted agent-ee; no inference."""
 
     def run_stage(self, verdict):
-        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-generate-')
+        tmp = ReceiptTemporaryDirectory(prefix='agent-ee-generate-')
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
         fake = root / 'fake_agent_ee.py'
@@ -472,7 +472,7 @@ class FabStageEndToEndTest(unittest.TestCase):
             from tests.test_fab_stage import candidate
         except ImportError:  # run as tests.test_generate from the repository root
             from tests.test_fab_stage import candidate
-        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-generate-fab-')
+        cls.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-generate-fab-')
         cls.root = Path(cls.tmp.name)
         cls.inputs = candidate(cls.root / 'inputs')
 
@@ -546,7 +546,7 @@ class IntegrationTest(unittest.TestCase):
         # Stage 5 runs `kicad-route` from PATH: the pinned checkout's launcher.
         route = require_kicad_route()
         path = os.pathsep.join([str(route / 'bin'), os.environ.get('PATH', '')])
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-') as tmp, \
+        with ReceiptTemporaryDirectory(prefix='agent-ee-rung1-') as tmp, \
                 mock.patch.dict(os.environ, {'PATH': path}), mock.patch.dict(g._TOOLS, clear=True):
             catalog = git_catalog(Path(tmp) / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
             run = Path(tmp) / 'run'

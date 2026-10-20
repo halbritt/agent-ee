@@ -1654,4 +1654,4 @@ method and unknown redirect provenance in its report and details. A verified
 citation proves text occurrence only; it supplies no redirect-provenance or
 release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
 
-The fab, `rung1_campaign` and `rung1_qualified` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file.
+The fab, `rung1_campaign`, `rung1_qualified`, pod scaffold/constraint, `add_planes` and `binding_fill` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file.

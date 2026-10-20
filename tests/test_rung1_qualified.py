@@ -8,7 +8,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-import tempfile
+from tests.receipt_diagnostics import ReceiptTemporaryDirectory
 import unittest
 import uuid
 
@@ -57,7 +57,7 @@ class IntentAndLayoutTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         require_stock()
-        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-qualified-')
+        cls.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-qualified-')
         root = Path(cls.tmp.name)
         catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
@@ -103,7 +103,7 @@ class IntentAndLayoutTest(unittest.TestCase):
         raw = q.qualified_intent(self.prep)
         result, files = emit_schematic(canonical(raw), q.intent_captures(raw), canonical(q.layout()))
         self.assertEqual(result['execution'], 'ok', result['findings'])
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-presence-') as tmp:
+        with ReceiptTemporaryDirectory(prefix='agent-ee-rung1-presence-') as tmp:
             project, work = Path(tmp) / 'project', Path(tmp) / 'work'
             project.mkdir()
             work.mkdir()
@@ -146,7 +146,7 @@ class IntentAndLayoutTest(unittest.TestCase):
         self.assertEqual(validate_declaration(q.placement_declaration())['helper'], 'agent-ee.placer/1')
 
     def test_prep_against_pinned_fome_mc_passes_stage_two_and_records_header_schema(self):
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-fome-pinned-') as tmp:
+        with ReceiptTemporaryDirectory(prefix='agent-ee-rung1-fome-pinned-') as tmp:
             # The pinned commit, not the store's moving HEAD (tests/toolchain.py FOME_MC_COMMIT).
             checkout = fome_mc_checkout(g.CATALOG_CHECKOUT, Path(tmp) / 'fome-mc')
             rundir = Path(tmp) / 'run'
@@ -228,7 +228,7 @@ class ScopeTest(unittest.TestCase):
     def setUpClass(cls):
         require_stock()
         require_toolchain(native=True)
-        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-qualified-scope-')
+        cls.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-qualified-scope-')
         root = Path(cls.tmp.name)
         cls.catalog = catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
@@ -276,7 +276,7 @@ class ScopeTest(unittest.TestCase):
                          sorted([f'project/{q.NAME}.kicad_sch', f'project/{q.NAME}.kicad_pcb']))
 
     def test_scaffold_without_a_cpl_capture_declares_no_cpl_rotation(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             scaffold = Path(tmp) / 'scaffold'
             shutil.copytree(self.scaffold, scaffold)
             shutil.rmtree(scaffold / 'generation' / 'cpl')
@@ -333,7 +333,7 @@ class ScopeTest(unittest.TestCase):
         from agent_ee.stage_receipts import import_pre_receipts, verify_pre_receipts
         link = rc.scaffold_pre_receipt(self.record)
         self.assertEqual(link['binding'], {'pre_receipt': 1})
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             root = Path(tmp) / 'campaign'
             links = import_pre_receipts(root, [link], self.rundir)
             run = root / 'runs' / '1'
@@ -386,7 +386,7 @@ class SchematicTurnTest(unittest.TestCase):
         require_stock()
         require_toolchain(native=True)
         from agent_ee.stage_receipts import file_tree
-        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-schematic-turn-')
+        cls.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-schematic-turn-')
         root = Path(cls.tmp.name)
         catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
@@ -557,7 +557,7 @@ class UnresolvedPinTest(unittest.TestCase):
     def setUpClass(cls):
         require_stock()
         require_toolchain(native=True)
-        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-unresolved-')
+        cls.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-unresolved-')
         root = Path(cls.tmp.name)
         catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'

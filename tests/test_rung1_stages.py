@@ -5,7 +5,7 @@ come from real checks-only reviews; the generation run uses a test-authored cata
 """
 import json
 from pathlib import Path
-import tempfile
+from tests.receipt_diagnostics import ReceiptTemporaryDirectory
 import unittest
 
 from agent_ee import rung1_stages as st
@@ -97,7 +97,7 @@ class DeclarationTest(unittest.TestCase):
 
 class GradeTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-grade-')
+        self.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-stages-grade-')
         self.run = Path(self.tmp.name)
         (self.run / 'checks').mkdir()
 
@@ -139,7 +139,7 @@ class StopRuleTest(unittest.TestCase):
 
     def setUp(self):
         require_toolchain()
-        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-stop-')
+        self.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-stages-stop-')
         self.rundir = Path(self.tmp.name) / 'run'
         self.rundir.mkdir()
         self.design = self.rundir / 'design'
@@ -230,7 +230,7 @@ class StopRuleTest(unittest.TestCase):
 class RequirementsStageTest(unittest.TestCase):
     def test_compiler_step_reproduces_the_committed_compiled_scope_and_parts_is_absent(self):
         require_toolchain()
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-req-') as tmp:
+        with ReceiptTemporaryDirectory(prefix='agent-ee-rung1-stages-req-') as tmp:
             rundir = Path(tmp) / 'run'
             record = st.run(rundir, requirement_record=st.REQUIREMENT_RECORD)
             self.assertEqual(statuses(record), ['completed', 'absent'] + ['not_reached'] * 5)
@@ -242,7 +242,7 @@ class RequirementsStageTest(unittest.TestCase):
             self.assertEqual(st.verify_record(rundir)['problems'], [])
 
     def test_existing_output_and_ambiguous_sources_are_refused(self):
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-refuse-') as tmp:
+        with ReceiptTemporaryDirectory(prefix='agent-ee-rung1-stages-refuse-') as tmp:
             with self.assertRaises(FileExistsError):
                 st.run(tmp, reference=REFERENCE)
             with self.assertRaisesRegex(ValueError, 'exactly one'):
@@ -257,7 +257,7 @@ class ReferenceBoardTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         require_toolchain(native=True)
-        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-ref-')
+        cls.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-stages-ref-')
         cls.rundir = Path(cls.tmp.name) / 'run'
         cls.record = st.run(cls.rundir, reference=REFERENCE)
 
@@ -289,7 +289,7 @@ class ReferenceBoardTest(unittest.TestCase):
         self.assertEqual(self.record['tools']['kicad-cli']['exit_code'], 0)
 
     def test_tampered_sealed_check_fails_verification(self):
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-ref-copy-') as tmp:
+        with ReceiptTemporaryDirectory(prefix='agent-ee-rung1-stages-ref-copy-') as tmp:
             import shutil
             copy = Path(tmp) / 'run'
             shutil.copytree(self.rundir, copy, symlinks=True)
@@ -303,7 +303,7 @@ class ReferenceBoardTest(unittest.TestCase):
             self.assertTrue(any(p.startswith('stage fab: review does not verify') for p in problems))
 
     def test_removing_the_verification_step_leaves_fab_not_reached(self):
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-ref-omit-') as tmp:
+        with ReceiptTemporaryDirectory(prefix='agent-ee-rung1-stages-ref-omit-') as tmp:
             record = st.run(Path(tmp) / 'run', reference=REFERENCE, omit=['verification'])
             self.assertEqual(statuses(record), ['not_reached'] * 5 + ['absent', 'not_reached'])
             self.assertFalse((Path(tmp) / 'run' / 'reviews').exists())
@@ -317,7 +317,7 @@ class GenerationTest(unittest.TestCase):
     def setUpClass(cls):
         require_toolchain(native=True)
         cls.kicad_route = require_kicad_route()
-        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-gen-')
+        cls.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-stages-gen-')
         root = Path(cls.tmp.name)
         cls.catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
@@ -442,7 +442,7 @@ class GenerationTest(unittest.TestCase):
             source.write_bytes(original)
 
     def test_removing_the_schematic_step_makes_every_later_stage_not_reached(self):
-        with tempfile.TemporaryDirectory(prefix='agent-ee-rung1-stages-gen-omit-') as tmp:
+        with ReceiptTemporaryDirectory(prefix='agent-ee-rung1-stages-gen-omit-') as tmp:
             record = st.run(Path(tmp) / 'run', spec=SPEC, kicad_route=self.kicad_route,
                             catalog_checkout=self.catalog, omit=['schematic'])
             self.assertEqual(statuses(record), ['not_reached', 'not_reached', 'absent'] + ['not_reached'] * 4)

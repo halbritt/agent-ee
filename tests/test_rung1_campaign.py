@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
+from tests.receipt_diagnostics import ReceiptTemporaryDirectory
 import unittest
 from unittest import mock
 
@@ -47,7 +47,7 @@ class Prepared(unittest.TestCase):
     def setUpClass(cls):
         require_stock()
         require_toolchain()
-        cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-campaign-')
+        cls.tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-campaign-')
         root = Path(cls.tmp.name)
         catalog = git_catalog(root / 'catalog', HEADER + '\n'.join(ROWS) + '\n')
         cls.rundir = root / 'run'
@@ -115,7 +115,7 @@ class ScaffoldTest(Prepared):
         self.assertIn(f'(uuid "{root}")'.encode(), files['project/rung1_rc.kicad_sch'])
 
     def test_unbuildable_envelope_is_refused_by_the_step_program(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             out = Path(tmp) / 'out'
             envelope = rc.envelope_record(self.prep['params'])
             envelope['layer_count'] = 3
@@ -183,7 +183,7 @@ class ScaffoldTest(Prepared):
 
     def test_scaffold_binding_is_exact_against_the_first_capture(self):
         base = {'scaffold': {'stage_receipt': self.record['stage_receipt']}}
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             run = Path(tmp)
             self.assertEqual(rc.first_capture_binding(base, run, receipt_root=self.rundir)['bound'], False)
             files = dict(self.record['files'], **{'stock/symbols/Device.kicad_sym': 'x'})
@@ -213,7 +213,7 @@ class ScaffoldTest(Prepared):
         self.assertEqual(summary['receipt'], 'scaffold-receipt/receipt.json')
         link = rc.scaffold_pre_receipt(self.record)
         self.assertEqual(link['binding'], {'pre_receipt': 1})
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             root = Path(tmp) / 'campaign'
             links = import_pre_receipts(root, [link], self.rundir)
             run = root / 'runs/1'
@@ -233,7 +233,7 @@ class ScaffoldTest(Prepared):
             self.assertIn('pre_receipt changed', binding['error'])
 
     def test_failed_scaffold_step_keeps_its_receipt_and_writes_no_project(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             template = Path(tmp) / 'template'
             shutil.copytree(rc.FIXTURE_PROJECT, template)
             (template / 'fp-lib-table').write_text('(fp_lib_table (lib (name "x") (uri "${KIPRJMOD}/x")))\n')
@@ -272,7 +272,7 @@ class ScaffoldTest(Prepared):
         self.assertNotIn('project/rung1_rc.kicad_pcb', summary['baseline_files'])
 
     def test_scope_without_a_cpl_capture_keeps_the_native_done_gate(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             scaffold = Path(tmp) / 'scaffold'
             shutil.copytree(self.scaffold, scaffold)
             shutil.rmtree(scaffold / 'generation' / 'cpl')
@@ -314,7 +314,7 @@ class ScaffoldTest(Prepared):
 
 class StepTest(unittest.TestCase):
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-rung1-steps-')
+        tmp = ReceiptTemporaryDirectory(prefix='agent-ee-rung1-steps-')
         self.addCleanup(tmp.cleanup)
         self.route = Path(tmp.name) / 'kicad-route'
         self.route.mkdir()
@@ -376,7 +376,7 @@ class RecordTest(unittest.TestCase):
         # A scope without a cpl_rotation check: the done gate seals the native CPL.
         stored = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/fab/fab/bom.csv': '1' * 64},
                   'rotation': {'status': 'not_declared'}}
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             bound = {'bound': True}
             done = lambda verdict, recomputed, artifacts=stored, scaffold=bound: rc.write_record(
                 tmp, {}, verdict=verdict, fab_artifacts=artifacts, recomputed=recomputed, scaffold=scaffold)['done']
@@ -393,7 +393,7 @@ class RecordTest(unittest.TestCase):
 
     def test_done_with_a_declared_cpl_requires_an_allowed_rotation_status(self):
         stored = {'artifacts_id': 'a', 'candidate_id': 'c', 'files': {'work/cpl/cpl/cpl.csv': '1' * 64}}
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             def record(rotation):
                 artifacts = {**stored, 'rotation': rotation} if rotation is not None else dict(stored)
                 return rc.write_record(tmp, {}, verdict='criteria_satisfied', fab_artifacts=artifacts,
@@ -439,7 +439,7 @@ class RecordTest(unittest.TestCase):
         self.assertIsNone(rc.recomputed_artifacts(good.replace('1' * 64, 'x' * 64), run))
 
     def test_fab_of_an_unaccepted_final_candidate_is_not_bound(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with ReceiptTemporaryDirectory() as tmp:
             root = Path(tmp) / 'campaign'
             (root / 'runs' / '1').mkdir(parents=True)
             (root / 'state.json').write_text(json.dumps({'state': 'incomplete', 'history': [], 'error': 'x'}))
@@ -522,7 +522,7 @@ class ReadOnlyIdentityTest(unittest.TestCase):
     changes the mount identity, and that receipt is refused as mount_changed."""
 
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-ro-identity-')
+        tmp = ReceiptTemporaryDirectory(prefix='agent-ee-ro-identity-')
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.tool = self.root / 'tool'

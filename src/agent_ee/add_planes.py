@@ -9,6 +9,7 @@ import uuid
 from . import benchmark, stage_receipts
 from .catalog import strict_json
 from .executor import execute
+from .tool_source import snapshot
 from .storage import digest, identity, read_json, write_json
 
 SCHEMA = 'agent-ee.plane-plan/1'
@@ -76,7 +77,7 @@ def step(source_root, *, board, plan):
     return stage_receipts.validate_step(dict(schema='agent-ee.stage-step/1', step='add-planes', stage='routing',
         argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P', '-m',
               'agent_ee.add_planes', '--board', board, '--plan', plan],
-        mounts=[dict(source=str(Path(source_root).absolute()), at='/tool/agent-ee')], source='/tool/agent-ee',
+        mounts=[dict(source=str(snapshot(source_root)), at='/tool/agent-ee')], source='/tool/agent-ee',
         version_argv=['/usr/bin/kicad-cli', 'version'], writes={board:'out/board.kicad_pcb'},
         artifacts=['out'], adoptable_exits=[0], timeout_s=600))
 

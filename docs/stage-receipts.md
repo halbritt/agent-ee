@@ -75,7 +75,8 @@ adoptable exit is then `refused`, adoption fails and the receipt is not applicab
 
 ## Python tool source snapshots
 
-The fab, `rung1_campaign` and `rung1_qualified` step builders capture Python source with
+The fab, `rung1_campaign`, `rung1_qualified`, pod scaffold and net-constraint,
+`add_planes` and `binding_fill` step builders capture Python source with
 `tool_source.snapshot` before declaring `/tool/agent-ee`. Host imports continue
 using the original source tree. Capture excludes directories named `__pycache__`;
 all other regular files, including standalone `.pyc` files, are copied. Links,
@@ -93,12 +94,39 @@ paths differ or host bytecode changes. The declaration still binds the absolute
 mount path: changing the cache root changes `spec_sha256`; changing source bytes
 changes both the snapshot path and `spec_sha256`. Keep the cache root stable for
 reproducible declarations. Snapshots remain available for subsequent declared
-steps; remove unused snapshots only after their campaigns finish.
+steps. An empty cache environment value uses the default; a relative value is
+refused. Cache and snapshot directories have mode 0700, files 0400 and the lock
+0600, regardless of umask. Verified older cache entries have these modes tightened.
+These permissions prevent accidental writes; the owning host user can still chmod
+or replace files, so byte verification remains necessary.
+
+For every mount whose directory name is a 64-character lowercase SHA256 digest,
+receipt construction and retained validation compare the initial mount observation
+with that name. If `source` names that mount, its recorded `source_tree.sha256`
+must agree too. Mismatch adds `snapshot_hash_mismatch:<mount>` and refuses an
+otherwise adoptable execution. Adoption revalidates this recorded comparison;
+it does not depend on the live cache still existing. The original in-step
+`mount_changed` and `source_changed` checks remain unchanged.
+
+After **all campaigns using the cache have finished**, prune old snapshots with:
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.tool_source prune --older-than-days 30
+```
+
+The command prints removed paths. Age is measured from the snapshot directory's
+modification time, not last use; it does not detect active campaigns. It removes
+only digest-named directories older than the threshold and abandoned `.capture-*`
+directories. Unrelated entries remain. Prune and capture hold the same cache lock;
+capture also cleans abandoned `.capture-*` directories, because no live publisher
+can hold one while another process owns that lock. Links at these entry paths
+refuse cleanup rather than following them. There is no automatic snapshot eviction.
 
 Fab refusal messages include receipt violations and the retained receipt path.
-The declared-fab test fixture also copies refused setup receipts to
+The declared-fab, generate, fab-package and rung-one test fixtures copy refused receipts to
 `build/refused-step-receipts/` before disposable fixture cleanup, with the path in
-the assertion message. These are local test diagnostics, not release evidence.
+the assertion or cleanup diagnostic. Cleanup retains them on fixture exceptions too.
+These are local test diagnostics, not release evidence.
 
 ## Receipt fields and status
 
