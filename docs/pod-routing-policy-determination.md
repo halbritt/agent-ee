@@ -286,7 +286,9 @@ derivation, not a grade.
    (AGENTEE-260): with `layer_policy_derivation` it measures and derives on every
    routing turn and records the result. It binds the record to the adopted routing
    input, and runs the router with exactly that bound. Step 3 stays an engineering
-   input: the `via_budget` record with its pilot counts and board hash. See
+   input: the `via_budget` record with its pilot counts and board hash, bound to the
+   retained [via-budget pilot](routing-adapter.md#via-budget-pilot-agentee-265) facts
+   (`agent-ee.via-budget/2`; stated counts alone leave the policy unknown). See
    [derived at the pre-routing boundary](routing-adapter.md#derived-at-the-pre-routing-boundary-agentee-260).
 
 ### Source-backed fields

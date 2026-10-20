@@ -30,25 +30,7 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def via(net, x, via_type='through'):
-    return {'net': net, 'position': [x, 1.0], 'diameter': 0.6, 'drill': 0.3, 'via_type': via_type}
-
-
-def scenario(counts, name='complete'):
-    """Each attempt keeps the input's /IN via, adds a /GND stitch, a blind via and V_i signal vias."""
-    return {'name': name, 'reference_vias': [via('/IN', 0.0)],
-            'vias_by_label': {f'campaign-pilot-{i}': [via('/IN', 0.0), via('/GND', 9.0), via('/OUT', 8.0, 'blind'),
-                                                      *(via('/OUT', float(k)) for k in range(1, n + 1))]
-                              for i, n in enumerate(counts, 1)}}
-
-
-def routing_input(source, root, board=None):
-    """The candidate tree the routing step receives: the scope inputs under design/."""
-    design = Path(root) / 'pilot-input'
-    shutil.copytree(source, design / 'design')
-    if board is not None:
-        shutil.copyfile(board, design / 'design/rc.kicad_pcb')
-    return design
+via, scenario, routing_input = layer_tests.via, layer_tests.scenario, layer_tests.routing_input
 
 
 @contextlib.contextmanager
@@ -95,7 +77,7 @@ class SignalViaRuleTests(unittest.TestCase):
 
     def test_v2_declaration_shape(self):
         board = '5' * 64
-        value = {**layer_tests.basis(board), 'schema': lineage.VIA_BUDGET_PILOT,
+        value = {**layer_tests.counts_only_basis(board), 'schema': lineage.VIA_BUDGET_PILOT,
                  'pilot': {'path': '/p/via-budget-basis.json', 'sha256': '6' * 64}}
         self.assertEqual(lineage.validate_via_budget(value), value)
         for change, message in [({'pilot': {'path': '/p/basis.json', 'sha256': '6' * 64}}, 'must name'),
@@ -238,13 +220,7 @@ class PilotTests(unittest.TestCase):
 
 
 class PilotLane(layer_tests.Lane):
-    """The AGENTEE-260 routing lane with a fixture router that states via facts."""
-
-    def __init__(self, boards, counts):
-        original = routing_fixture.RoutingCampaignTests.spec
-        with patch.object(routing_fixture.RoutingCampaignTests, 'spec',
-                          lambda fixture, *a, **k: original(fixture, scenario(counts))):
-            super().__init__(boards)
+    """The AGENTEE-260 routing lane (its fixture router states via facts) with a named campaign root."""
 
     def start(self, layer_policy_derivation, out, *, declaration=None):
         write_json(self.root / 'scope.json', self.fixture.scope)

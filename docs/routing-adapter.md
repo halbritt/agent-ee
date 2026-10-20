@@ -320,8 +320,9 @@ placed, planed, unrouted routing input, which exists only after a routing turn's
 {"schema": "agent-ee.layer-policy-derivation/1", "directory": "layer-policy",
  "policy": {"signal_layers": ["F.Cu", "B.Cu"],
             "reference": {"net": "/GND", "layers": ["In1.Cu"], "rf_nets": ["/POD_GNSS_RF"]}},
- "via_budget": {"schema": "agent-ee.via-budget/1", "via_budget": 5, "board_sha256": "<routing input sha256>",
-                "basis": {"method": "routed_demand", "pilot": "diagnostic_not_adoptable", "signal_vias": [3, 4, 4]}}}
+ "via_budget": {"schema": "agent-ee.via-budget/2", "via_budget": 5, "board_sha256": "<routing input sha256>",
+                "basis": {"method": "routed_demand", "pilot": "diagnostic_not_adoptable", "signal_vias": [3, 4, 4]},
+                "pilot": {"path": "/abs/PILOT/via-budget-basis.json", "sha256": "<basis sha256>"}}}
 ```
 
 Start refuses the opt-in when:
@@ -339,9 +340,13 @@ three diagnostic, non-adoptable pilot attempts on the routing input `board_sha25
 Start recomputes `N = V_max + max(1, ceil(0.1 V_max))` from the recorded
 `signal_vias`. It refuses a different `N`, and attempts that differ by more than
 the margin. The pilot attempts are not part of the campaign and are never adopted.
-A `/1` basis carries the counts as stated by the pod lane; the
-[coordinator via-budget pilot](#via-budget-pilot-agentee-265) produces an
-`agent-ee.via-budget/2` basis whose counts start re-derives from retained router facts.
+Only an `agent-ee.via-budget/2` basis can derive a bound. The
+[coordinator via-budget pilot](#via-budget-pilot-agentee-265) produces it, and start
+re-derives its counts from retained router facts. The legacy counts-only
+`agent-ee.via-budget/1` basis (the same fields without `pilot`) carries counts as
+stated by the pod lane. It still passes the shape and `N` checks above, but its
+counts cannot be re-derived, so every routing turn leaves the policy unknown
+(AGENTEE-265 tightening; it never derived a bound from evidence).
 
 On every routing turn, after the plane producer is adopted and before the router
 starts, the coordinator (never the writer):
@@ -361,6 +366,8 @@ The policy is `unknown` and the router does not run when:
 - the measurement fails or is missing;
 - the measured board is not the adopted routing input;
 - no `via_budget` is declared;
+- the `via_budget` is a counts-only `agent-ee.via-budget/1` basis, even for this
+  routing input;
 - the basis `board_sha256` is another board (stale);
 - `derive` refuses, for example for an unplaced board or an unknown probe.
 
@@ -400,8 +407,9 @@ the routing step with its `--layer-policy` removed against the frozen binding. T
 never compare it with a policy from the writer. The derived bound remains a
 geometric routing guard; it is not RF, impedance or return-path qualification.
 [`tests/test_layer_policy_lineage.py`](../tests/test_layer_policy_lineage.py) runs
-the real plane producer, receipt executor and native measurement with the
-kicad-route fixture router.
+the real plane producer, receipt executor, via-budget pilot and native measurement
+with the kicad-route fixture router. Its derived bounds come from `/2` pilot bases,
+and it shows that a `/1` basis of the routing input stays unknown.
 
 ### Via-budget pilot (AGENTEE-265)
 

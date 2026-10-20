@@ -5,14 +5,18 @@ from the placed, planed, unrouted routing input, which exists only after a routi
 turn's plane producer has been adopted. A campaign opts in with
 ``layer_policy_derivation``: the policy fields that are source-backed at configuration
 (``signal_layers``, optional ``layer_costs`` and ``reference``), a coordinator capture
-directory, and optionally the signal-via budget ``N`` with its recorded basis.
+directory, and optionally the signal-via budget ``N`` with its recorded basis. Only an
+``agent-ee.via-budget/2`` basis, bound to a coordinator pilot whose ``V_i`` re-derive from
+retained attempt facts (AGENTEE-265), can derive a bound; a counts-only
+``agent-ee.via-budget/1`` basis is still accepted as configuration but leaves the policy
+unknown.
 
 On every routing turn the coordinator, never the writer, runs ``pour_budget.measure`` on
 the adopted placed and planed board, derives the bound from ``N`` and writes one record
 before the router starts. The campaign state anchors the record; the routing step is the
 frozen campaign binding with only the derived policy added. A missing or failed
-measurement, a missing or stale ``N`` basis, or a refused derivation leaves the policy
-unknown and the router is not run. After the routed proposal is adopted, the record and
+measurement, a missing, counts-only or stale ``N`` basis, or a refused derivation leaves
+the policy unknown and the router is not run. After the routed proposal is adopted, the record and
 the measurement are copied into the next candidate and declared as
 ``layer_policy_provenance`` of the new derived scope; the sealed scope is never edited.
 
@@ -86,7 +90,9 @@ def validate_via_budget(value):
     """The recorded basis of N (AGENTEE-257 via-budget method); N is recomputed, never trusted.
 
     ``agent-ee.via-budget/2`` also links the coordinator pilot basis by hash (AGENTEE-265);
-    ``verify_pilot`` re-derives V_i from its retained attempt facts at campaign start."""
+    ``verify_pilot`` re-derives V_i from its retained attempt facts at campaign start. The
+    counts-only ``agent-ee.via-budget/1`` shape still validates, but ``decide`` leaves its
+    policy unknown: its counts are not re-derivable."""
     from .pour_budget import MAX_VIA_BUDGET
     keys = {'schema', 'via_budget', 'board_sha256', 'basis'}
     if (not isinstance(value, dict) or value.get('schema') not in (VIA_BUDGET, VIA_BUDGET_PILOT) or
@@ -211,6 +217,11 @@ def decide(report, board_sha256, config):
     budget = value.get('via_budget')
     if budget is None:
         return 'unknown', 'no via budget N with a recorded basis is declared', None, None
+    if budget['schema'] != VIA_BUDGET_PILOT:
+        # AGENTEE-265: stated counts are not evidence; only a pilot whose V_i re-derives counts.
+        return 'unknown', (f'the via budget basis is a counts-only {VIA_BUDGET} declaration; its V_i are not '
+                           f're-derivable from retained pilot attempt facts (declare {VIA_BUDGET_PILOT} from '
+                           'agent_ee.via_budget_pilot)'), None, None
     if budget['board_sha256'] != board_sha256:
         return 'unknown', ('the via budget basis was measured on another board '
                            f'({budget["board_sha256"]}), not this routing input'), None, None
