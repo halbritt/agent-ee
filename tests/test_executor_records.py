@@ -270,5 +270,36 @@ class WriteJsonTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ['busy', 'record.json'])
 
 
+class LaunchInterruptTests(unittest.TestCase):
+    """AGENTEE-269: an operator SIGINT that lands while the sandbox is being launched.
+
+    The sandbox is visible in /proc once bwrap has exec'd, before Popen returns its
+    handle; an interrupt raised there must still kill and reap the sandbox."""
+
+    @toolchain_test
+    def test_interrupt_inside_the_launch_still_reaps_the_sandbox(self):
+        import signal
+        import subprocess
+        from unittest import mock
+        root = Path(self.enterContext(tempfile.TemporaryDirectory(prefix='agent-ee-launch-interrupt-')))
+        (root / 'inputs').mkdir()
+        launched, real = [], subprocess.Popen
+
+        def interrupted_launch(*args, **kwargs):
+            proc = real(*args, **kwargs)
+            launched.append(proc)
+            self.addCleanup(lambda: proc.poll() is None and (proc.kill(), proc.wait()))
+            os.kill(os.getpid(), signal.SIGINT)
+            return proc
+        with mock.patch.object(subprocess, 'Popen', interrupted_launch), self.assertRaises(KeyboardInterrupt):
+            execute(root / 'inputs', root / 'work', ['/usr/bin/python3', '-c', 'import time; time.sleep(30)'],
+                    timeout=30)
+        self.assertEqual(len(launched), 1)
+        self.assertIsNotNone(launched[0].returncode, 'the launched sandbox was never reaped')
+        with self.assertRaises(ProcessLookupError):
+            os.kill(launched[0].pid, 0)
+        self.assertEqual(read_json(root / 'work/execution.json')['execution'], 'interrupted')
+
+
 if __name__ == '__main__':
     unittest.main()

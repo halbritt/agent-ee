@@ -170,7 +170,7 @@ class RouteLayerPolicyNativeTest(PlaneFixture, unittest.TestCase):
 
     def test_outer_allowlist_keeps_tracks_off_the_planes_and_grades_pass(self):
         receipt, summary, report, work = self.route(35, OUTER, 'outer')
-        self.assertEqual(receipt['status'], 'completed', report['semantics'])
+        self.assertEqual(receipt['status'], 'completed', (receipt['violations'], report['semantics']))
         self.assertEqual(summary['proposal'], 'eligible', report['semantics'])
         argv = report['process']['argv']
         self.assertIn('--backend-arg=--layers', argv)
@@ -237,7 +237,7 @@ class RouteLayerPolicyNativeTest(PlaneFixture, unittest.TestCase):
 
     def test_inner_copper_of_the_input_is_exempt_only_by_its_geometry(self):
         receipt, summary, report, work = self.route(35, OUTER, 'inner-track', 'inner_track')
-        self.assertEqual(receipt['status'], 'completed', report['semantics'])
+        self.assertEqual(receipt['status'], 'completed', (receipt['violations'], report['semantics']))
         self.assertEqual(summary['proposal'], 'eligible', report['semantics'])
         grade = summary['layer_policy']
         self.assertEqual(grade['status'], 'pass', grade)

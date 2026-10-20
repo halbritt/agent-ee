@@ -299,6 +299,36 @@ class RequestTests(unittest.TestCase):
             self.assertEqual(main(['evidence-replay', str(self.root / 'after-interrupt'),
                                    '--out', str(self.root / 'after-interrupt-replay')]), 0)
 
+    def test_interrupt_inside_the_sandbox_launch_still_reaps_it(self):
+        # AGENTEE-269: the live test above signals once bwrap is in /proc, which can precede Popen's return.
+        import os
+        import signal
+        import subprocess
+        from unittest import mock
+        from agent_ee.replay import replay
+        from toolchain import require_toolchain
+        require_toolchain()
+        self.script.write_text('import time\ntime.sleep(30)')
+        self.spec['resources']['wall_seconds'] = 40
+        self.request()
+        launched, real = [], subprocess.Popen
+
+        def interrupted_launch(argv, *args, **kwargs):
+            proc = real(argv, *args, **kwargs)
+            if argv[0] == 'bwrap' and '/bundle/launcher.py' in argv:  # not the request's host-side probes
+                launched.append(proc)
+                self.addCleanup(lambda: proc.poll() is None and (proc.kill(), proc.wait()))
+                os.kill(os.getpid(), signal.SIGINT)
+            return proc
+        with mock.patch.object(subprocess, 'Popen', interrupted_launch):
+            receipt = replay(self.root / 'request', self.root / 'launch-interrupted')
+        self.assertEqual(receipt['execution'], 'interrupted', receipt)
+        self.assertEqual(len(launched), 1)
+        self.assertIsNotNone(launched[0].returncode, 'the launched sandbox was never reaped')
+        with self.assertRaises(ProcessLookupError):
+            os.kill(launched[0].pid, 0)
+        verify_operation(self.root / 'launch-interrupted')
+
     def test_cpu_deadline_and_cli_exports(self):
         import contextlib
         import io

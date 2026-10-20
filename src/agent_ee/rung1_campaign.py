@@ -773,20 +773,38 @@ def build(spec, rundir, *, profile_path, kicad_route, catalog_checkout=None, max
     return base, scope_path, config_path
 
 
+def read_only_git(path, *args):
+    """Run a git query that never writes the checkout (AGENTEE-269).
+
+    The checkouts probed here are tool mounts whose bytes a concurrent stage
+    receipt hashes; `git status` or `describe --dirty` on stale stat data would
+    rewrite .git/index and turn that receipt into mount_changed."""
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
+    proc = subprocess.run(['git', '--no-optional-locks', '-C', str(path), *args],
+                          capture_output=True, text=True, timeout=60, env=env)
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def tracked_changes(path):
+    """Tracked working-tree changes, or None when git cannot tell; untracked files are not counted."""
+    status = read_only_git(path, 'status', '--porcelain', '--untracked-files=no')
+    return None if status is None else status.splitlines()
+
+
 def route_identity(path):
     path = Path(path)
-    def git(*args):
-        proc = subprocess.run(['git', '-C', str(path), *args], capture_output=True, text=True, timeout=60)
-        return proc.stdout.strip() if proc.returncode == 0 else None
-    return {'path': str(path), 'describe': git('describe', '--tags', '--always', '--dirty'),
-            'commit': git('rev-parse', 'HEAD'), 'origin': git('remote', 'get-url', 'origin'),
+    describe, changes = read_only_git(path, 'describe', '--tags', '--always'), tracked_changes(path)
+    # The `describe --dirty` form, without the index refresh that --dirty writes back.
+    if describe is not None:
+        describe = None if changes is None else describe + ('-dirty' if changes else '')
+    return {'path': str(path), 'describe': describe,
+            'commit': read_only_git(path, 'rev-parse', 'HEAD'), 'origin': read_only_git(path, 'remote', 'get-url', 'origin'),
             'krt_commit': git_dir(path / 'vendor' / 'krt'),
             'note': 'read-only snapshot mounted at /tool/kicad-route with KICAD_ROUTE_STATE=/tool/kicad-route'}
 
 
 def git_dir(path):
-    proc = subprocess.run(['git', '-C', str(path), 'rev-parse', 'HEAD'], capture_output=True, text=True, timeout=60)
-    return proc.stdout.strip() if proc.returncode == 0 else None
+    return read_only_git(path, 'rev-parse', 'HEAD') or None
 
 
 def rehearse(rundir, scope_path, config_path, review_run):

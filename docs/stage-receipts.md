@@ -97,6 +97,11 @@ writable `design/` copy and declared outputs) and `version/`.
   (the write source is behind a link or special entry), `executor_record_unsafe:<dir>/<file>` (an
   executor record in `run/` or `version/` is a link or special file), `executor_record_missing:<dir>`
   (the executor was entered but no trusted record exists), `tool_changed`, `mount_changed` and `source_changed`.
+  `mount_changed` means a mount's file bytes differed between the observations before and
+  after the step. Anything that probes a mounted tool checkout must therefore leave it
+  byte-identical: agent-ee's own git identity probes run with `--no-optional-locks` and
+  never use `git status` without it or `git describe --dirty`, which rewrite `.git/index`
+  when its stat data is stale, as on first use in a fresh container (AGENTEE-269).
 - `status`, recomputed from the recorded execution and violations:
 
 | Status | Meaning | Adoptable |
