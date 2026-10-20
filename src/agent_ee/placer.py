@@ -222,6 +222,8 @@ def _qualified(capture):
                                 and all(type(v) is int for v in custom['bbox_nm'])
                                 and custom['bbox_nm'][0] < custom['bbox_nm'][2]
                                 and custom['bbox_nm'][1] < custom['bbox_nm'][3])
+            if custom.get('status') == 'proven' and not qualified_custom:
+                raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: custom_geometry not qualified")
             if type(pad.get('shape')) is not int or (pad['shape'] not in PAD_SHAPES and not qualified_custom):
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: native pad shape "
                                  f"{pad.get('shape')!r} not qualified for packing")

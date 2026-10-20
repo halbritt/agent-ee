@@ -347,6 +347,100 @@ class CustomPadPlacementTest(unittest.TestCase):
                 self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'))
                 self.assertEqual(result['placements'], [])
 
+    def test_custom_pad_uuid_aliases_are_all_unsupported(self):
+        import copy
+        from agent_ee import placement_adapter as pa
+        from agent_ee.schematic_emit import parse_quoted
+        from agent_ee.scaffold import sexpr
+        for same_footprint in (False, True):
+            for spelling in ('upper', 'braces', 'nodash', 'mixed'):
+                with self.subTest(same_footprint=same_footprint, spelling=spelling):
+                    source = self.source()
+                    root = parse_quoted(source.read_bytes())
+                    prints = pa.footprints(root)
+                    fp = next(f for f in prints.values() if pa._reference(f) == 'C1')
+                    pad = pa.children(fp, 'pad')[0]
+                    uuid = pa.children(pad, 'uuid')[0][1]
+                    aliases = {'upper': uuid.upper(), 'braces': '{' + uuid + '}',
+                               'nodash': uuid.replace('-', ''),
+                               'mixed': '{' + uuid.upper().replace('-', '') + '}'}
+                    duplicate = copy.deepcopy(pad)
+                    duplicate[1] = '2'
+                    pa.children(pa.children(duplicate, 'primitives')[0], 'gr_line')[0][1][1] = '-1.9'
+                    pa.children(duplicate, 'uuid')[0][1] = aliases[spelling]
+                    target = fp if same_footprint else next(
+                        f for f in prints.values() if pa._reference(f) == 'U1')
+                    target.append(duplicate)
+                    if spelling == 'mixed':
+                        for alias in ('braces', 'nodash'):
+                            extra = copy.deepcopy(duplicate)
+                            pa.children(extra, 'uuid')[0][1] = aliases[alias]
+                            if alias == 'nodash':
+                                extra[3] = 'rect'
+                                extra.remove(pa.children(extra, 'primitives')[0])
+                                extra.remove(pa.children(extra, 'options')[0])
+                            target.append(extra)
+                    source.write_bytes(sexpr(root))
+                    facts = extract(source)
+                    shared = [p for f in facts['footprints'] for p in f['pads'] if p['uuid'] == uuid]
+                    self.assertEqual(len(shared), 4 if spelling == 'mixed' else 2)
+                    for p in shared:
+                        self.assertEqual(p['custom_geometry']['status'], 'unsupported', p)
+                        self.assertIn('duplicate pad UUID', p['custom_geometry']['reason'])
+                    result = pack(facts, request())
+                    self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'))
+                    self.assertEqual(result['placements'], [])
+
+    def test_unique_custom_pad_uuid_aliases_remain_unknown(self):
+        from agent_ee import placement_adapter as pa
+        from agent_ee.schematic_emit import parse_quoted
+        from agent_ee.scaffold import sexpr
+        for spelling in ('upper', 'braces', 'nodash', 'mixed'):
+            with self.subTest(spelling=spelling):
+                source = self.source()
+                root = parse_quoted(source.read_bytes())
+                fp = next(f for f in pa.footprints(root).values() if pa._reference(f) == 'C1')
+                uuid = pa.children(pa.children(fp, 'pad')[0], 'uuid')[0]
+                uuid[1] = {'upper': uuid[1].upper(), 'braces': '{' + uuid[1] + '}',
+                           'nodash': uuid[1].replace('-', ''),
+                           'mixed': '{' + uuid[1].upper().replace('-', '') + '}'}[spelling]
+                source.write_bytes(sexpr(root))
+                facts = extract(source)
+                pad = next(f for f in facts['footprints'] if f['ref'] == 'C1')['pads'][0]
+                self.assertEqual(pad['custom_geometry']['status'], 'unsupported')
+                result = pack(facts, request())
+                self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'))
+                self.assertEqual(result['placements'], [])
+
+    def test_stock_pad_without_custom_evidence_still_plans(self):
+        import copy
+        facts = extract(self.source())
+        for evidence in ({}, {'status': 'unknown'}, None):
+            with self.subTest(evidence=evidence):
+                altered = copy.deepcopy(facts)
+                pad = next(f for f in altered['footprints'] if f['ref'] == 'C1')['pads'][0]
+                pad['shape'] = 1
+                if evidence is None:
+                    pad.pop('custom_geometry')
+                else:
+                    pad['custom_geometry'] = evidence
+                self.assertEqual(pack(altered, request())['status'], 'planned')
+
+    def test_stock_pad_proven_custom_geometry_is_typed_unknown(self):
+        import copy
+        facts = extract(self.source())
+        for evidence in ({'status': 'proven'}, {'status': 'proven', 'bbox_nm': None},
+                         {'status': 'proven', 'bbox_nm': [1, 2]}):
+            with self.subTest(evidence=evidence):
+                altered = copy.deepcopy(facts)
+                pad = next(f for f in altered['footprints'] if f['ref'] == 'C1')['pads'][0]
+                pad['shape'] = 1
+                pad['custom_geometry'] = evidence
+                result = pack(altered, request())
+                self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'))
+                self.assertEqual(result['placements'], [])
+                self.assertIn('custom_geometry not qualified', result['reason'])
+
     def test_stock_pad_malformed_custom_geometry_is_typed_unknown(self):
         import copy
         facts = extract(self.source())

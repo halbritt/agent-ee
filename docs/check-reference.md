@@ -1688,8 +1688,10 @@ requires exact saved primitives, arc nodes and native merged-copper evidence;
 mutation or missing native output refuses admission. This changes transform
 admission only; check registration and placement grading remain unchanged.
 
-AGENTEE-317 marks every pad sharing a custom pad's saved UUID unsupported and
-returns typed unknown packing coverage for non-object `custom_geometry`, even
-on stock pads. Native write-scope controls refuse unsupported source arcs,
+AGENTEE-317 marks every pad sharing a custom pad's native UUID unsupported,
+including case, brace and dash aliases. Unique noncanonical UUID spellings
+retain their previous unknown coverage. Non-object `custom_geometry` and
+unqualified `proven` evidence return typed unknown packing coverage, even on
+stock pads. Native write-scope controls refuse unsupported source arcs,
 thermal connections and holes; reflection diagnostics show the actual
 `ValueError` before native console noise. See `tests.test_placer_custom_pads`.

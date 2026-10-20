@@ -655,8 +655,11 @@ The exact front-side courtyard-area proof records board area
 Admission of the candidate transform does not establish packing feasibility.
 
 AGENTEE-317 refuses ambiguous custom-pad evidence: every pad sharing a custom
-pad's saved UUID is marked unsupported, including collisions across footprints. A
-non-object `custom_geometry` on a stock or custom pad also returns
+pad's native UUID is marked unsupported, including case, brace and dash aliases
+and collisions across footprints. Unique pads with noncanonical saved UUID
+spellings retain their previous unknown coverage. Non-object `custom_geometry`
+and unqualified `proven` evidence on a stock or custom pad also return
 `unsupported_geometry`, `outcome=unknown`, with no placements. Direct
-`transform` calls raise `ValueError` for that malformed evidence. The native
+`transform` calls raise `ValueError` for non-object evidence; callers must qualify
+`proven` dictionaries before transforming them, as `pack` does. The native
 regressions in `tests.test_placer_custom_pads` cover both refusal paths.
