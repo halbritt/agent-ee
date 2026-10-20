@@ -20,7 +20,7 @@ from agent_ee.requirement_map import (PROVENANCE, compile_map, compile_map_file,
                                       write_map_outputs)
 from agent_ee.requirement_scope import Refused, main, sha256
 from agent_ee.storage import digest, json_bytes, read_json, write_json
-from toolchain import require_toolchain
+from tests.toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 POD = ROOT / 'fixtures/telemetry-pod'

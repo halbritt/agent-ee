@@ -13,7 +13,7 @@ it mandatory.
 ```
 
 - Params require `netlist_check`, the ID of an earlier `netlist` check. Optional
-  `bom_variant`, `assembly_exclusion` and `probe_manifest` use the same validation
+  `bom_variant`, `assembly_exclusion`, `copper_features` and `probe_manifest` use the same validation
   and evidence as `fab_export`; optional `model_libraries` maps stock variables to
   captured model receipts for `fab_consistency`. Unknown keys, layer and output
   overrides are refused. Model receipts and the probe declaration's source closure

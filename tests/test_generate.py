@@ -469,7 +469,7 @@ class FabStageEndToEndTest(unittest.TestCase):
     def setUpClass(cls):
         require_toolchain(native=True)
         try:
-            from test_fab_stage import candidate
+            from tests.test_fab_stage import candidate
         except ImportError:  # run as tests.test_generate from the repository root
             from tests.test_fab_stage import candidate
         cls.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-generate-fab-')

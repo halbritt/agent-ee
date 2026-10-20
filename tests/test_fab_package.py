@@ -242,6 +242,25 @@ class NativeRun(unittest.TestCase):
 class NativeFabPackageTests(NativeRun):
     """The real export, gate and seal; fault injection between the producer and the gate."""
 
+    def test_declared_custom_copper_jumper_composes_with_native_bom_variant(self):
+        from tests.test_fab_export import copper_fixture, variant_schematic
+        source = self.root / 'source'
+        shutil.copytree(FIXTURE, source)
+        copper_fixture(source, custom=True)
+        schematic = source / 'fab.kicad_sch'
+        schematic.write_text(variant_schematic(schematic.read_text()))
+        write_json(source / 'fab.kicad_pro', {'meta': {'version': 3},
+                   'schematic': {'variants': [{'name': 'ALT'}, {'name': 'LITE'}]}})
+        scope = generation_scope('agent-ee.scope/3')
+        scope['inputs'][0]['path'] = str(source)
+        scope['inputs'][0]['include'].append('fab.kicad_pro')
+        scope['checks'][-1]['params'].update(copper_features=['JP1'], bom_variant='ALT')
+        result = self.run_case(scope=scope)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertEqual(result['details']['consistency']['copper_features'], ['JP1'])
+        for key in ('bom', 'cpl', 'assembled', 'native_pos'):
+            self.assertNotIn('JP1', result['details']['designators'][key])
+
     def test_delegated_variant_exclusion_models_and_board_only_holes(self):
         from tests.test_fab_export import RULE, mark_board, mark_schematic, variant_schematic
         from tests.test_fab_consistency import stock_library, STOCK_RECEIPT

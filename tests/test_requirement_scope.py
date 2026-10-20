@@ -17,7 +17,7 @@ from agent_ee.candidate import capture
 from agent_ee.checks import run_checks
 from agent_ee.requirement_scope import COMPILER, Refused, compile_file, compile_record, main
 from agent_ee.storage import json_bytes, read_json, write_json
-from toolchain import require_toolchain
+from tests.toolchain import require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 RECORD = ROOT / 'fixtures/rung1/requirements.record.json'
