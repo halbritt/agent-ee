@@ -31,6 +31,24 @@ or a successful dry-run invocation does not mean that the pod is accepted.
 The current state of the actual pod inputs against this driver is recorded in
 [the pod composition record](pod-composition.md).
 
+## Operating-temperature acceptance migration (AGENTEE-310)
+
+The pod lane must replace operating-temperature `exemptions` for U1
+ESP32-S3-WROOM-1-N8, U2 LSM6DSO32TR and U4 MCP3208-BI/SL with
+[`reduced_acceptance`](assembly-readiness.md#digikey-operating-temperature).
+Keep every reference in the DigiKey `parts` binding and declare its accepted
+-40 to 85 degC range against the board's 105 degC requirement. Capture a
+hash-pinned `operating-temperature-acceptances.txt` with one canonical owner
+sentence per reference, for example
+`U1 is accepted for operating temperature -40 to 85 degC.` Repeat for U2 and U4.
+Capture real thermal validation separately in `operating-temperature-thermal.txt`
+and declare each reference in `thermal_evidence`. Until that evidence exists,
+a covering 85 degC rating is unknown, pending thermal validation; an inadequate
+rating or expected temperature exceeding it is a defect. Never manufacture a
+validation summary to clear this gate. The old exemption file cannot pass.
+Use already captured local DigiKey evidence; live DigiKey capture remains
+owner-gated. The driver does not infer or synthesize these declarations.
+
 ## Explicit plan
 
 A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.

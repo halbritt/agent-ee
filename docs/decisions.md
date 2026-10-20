@@ -469,3 +469,14 @@ depend on the original runtime, and do not independently authenticate generation
 execution or task metadata. The external freeze assumes trusted records at the
 time of freezing; it does not create an owner evidence store or repair already
 forged history. See [the freeze contract](generation-benchmark.md#authenticated-series-freeze).
+
+## Reduced operating-temperature acceptance (2026-10-20)
+
+The owner ruled: "Obviously, that needs to be corrected. It should be tested
+against its actual limit." AGENTEE-310 retires AGENTEE-281's exemption semantics.
+A reduced part retains the ordinary DigiKey identity/package binding and is
+judged against its owner-cited accepted range. Captured thermal validation
+must also fit its actual rating; without it the result is unknown. The pod's
+U1/U2/U4 acceptance at 85 degC cannot suppress a rating or thermal defect. See
+[assembly readiness](assembly-readiness.md#digikey-operating-temperature) for
+the immutable owner and thermal file formats.

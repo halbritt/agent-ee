@@ -1350,6 +1350,157 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.assertEqual([c["status"] for c in report["operating_temperature"]["components"]], ["pass", "pass"])
         self.assertEqual(report["operating_temperature"]["unlisted"], [])
 
+    def reduced_temperature_case(self, maximum=85, thermal=None):
+        params = self.temperature_case()
+        spec = params["operating_temperature"]
+        spec["max_c"] = 105
+        def citation(name, text):
+            path = self.root / "decisions" / name
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(text + "\n", encoding="ascii")
+            return {"source": path.relative_to(self.root).as_posix(), "sha256": digest(path),
+                    "line": 1, "quote": text}
+        spec["reduced_acceptance"] = {"R1": {
+            **citation("operating-temperature-acceptances.txt",
+                       f"R1 is accepted for operating temperature -40 to {maximum} degC."),
+            "min_c": -40, "max_c": maximum}}
+        if thermal is not None:
+            spec["thermal_evidence"] = {"R1": citation("operating-temperature-thermal.txt",
+                f"R1 expected operating temperature is -20 to {thermal} degC.")}
+        return params
+
+    def test_reduced_temperature_rating_below_accepted_limit(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1")]))
+        report = self.evaluate(netlist, self.reduced_temperature_case(maximum=90))
+        self.assertEqual(report["outcome"], "defect", report["findings"])
+
+    def test_reduced_temperature_rating_covers_limit_with_thermal(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1")]))
+        report = self.evaluate(netlist, self.reduced_temperature_case(thermal=85))
+        self.assertEqual(report["outcome"], "pass", report["findings"])
+        entry = report["operating_temperature"]["reduced_acceptance"][0]
+        self.assertEqual(entry["accepted_range"], {"min_c": "-40", "max_c": "85"})
+        self.assertEqual(entry["thermal"]["status"], "pass")
+        self.assertEqual(entry["rating"], "-40°C ~ 85°C (TA)")
+        self.assertIn("citation", entry)
+
+    def test_reduced_temperature_missing_thermal_is_unknown(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1")]))
+        report = self.evaluate(netlist, self.reduced_temperature_case())
+        self.assertEqual(report["outcome"], "unknown", report["findings"])
+        self.assertIn("pending thermal validation", str(report["findings"]))
+
+    def test_reduced_temperature_thermal_exceeds_rating(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1")]))
+        report = self.evaluate(netlist, self.reduced_temperature_case(thermal=86))
+        self.assertEqual(report["outcome"], "defect", report["findings"])
+        self.assertEqual(report["operating_temperature"]["components"][0]["thermal"]["status"], "defect")
+
+    def test_reduced_temperature_old_exemption_requires_migration(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2")]))
+        params = self.temperature_case()
+        params["operating_temperature"]["exemptions"] = self.exemption()
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report["outcome"], "unknown")
+        self.assertIn("migrate", str(report["findings"]))
+
+    def test_reduced_temperature_binding_mismatch(self):
+        from tests.test_digikey_evidence import write_package_map
+        for props, expected in (({"part_number": ("MPN", "OTHER")}, "unknown"), ({"manufacturer": "Other"}, "unknown"),
+                                ({"footprint": "ee29:R_0402"}, "defect")):
+            with self.subTest(props=props):
+                netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1", **props)]))
+                params = self.reduced_temperature_case(thermal=80)
+                params["operating_temperature"]["package_map"] = write_package_map(self.root, "maps/packages.json",
+                    {"ee29:R_0603": ("0603", ["resistor"]), "ee29:R_0402": ("0402", ["resistor"])},
+                    {"0603 (1608 Metric)": "0603"})
+                report = self.evaluate(netlist, params)
+                self.assertEqual(report["outcome"], expected, report["findings"])
+
+    def test_reduced_temperature_citations_are_captured_and_immutable(self):
+        from agent_ee.assembly_readiness import capability
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1")]))
+        params = self.reduced_temperature_case(thermal=80)
+        files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
+        immutable = capability(params, files, self.root)["immutable_inputs"]
+        for field in ("reduced_acceptance", "thermal_evidence"):
+            with self.subTest(field=field):
+                rel = params["operating_temperature"][field]["R1"]["source"]
+                self.assertIn(rel, immutable)
+                missing = {k: v for k, v in files.items() if k != rel}
+                with self.assertRaisesRegex(ValueError, "must be a captured input"):
+                    capability(params, missing, self.root)
+                report = evaluate_assembly_readiness(self.root, netlist, params, captured_files=missing)
+                self.assertEqual(report["outcome"], "unknown", report["findings"])
+                path = self.root / rel
+                original = path.read_bytes()
+                path.write_bytes(original + b"withdrawn\n")
+                report = evaluate_assembly_readiness(self.root, netlist, params, captured_files=files)
+                self.assertEqual(report["outcome"], "unknown", report["findings"])
+                self.assertIn("differs from its declared sha256", str(report["findings"]))
+                path.write_bytes(original)
+
+    def test_reduced_temperature_canonical_files_and_reference_binding(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1")]))
+        params = self.reduced_temperature_case(thermal=80)
+        for field in ("reduced_acceptance", "thermal_evidence"):
+            entry = params["operating_temperature"][field]["R1"]
+            path = self.root / entry["source"]
+            original = entry["quote"]
+            for text in (original + "\n\n", " " + original, original + "\r\n",
+                         original + "\n# withdrawn", original.replace("R1", "R10"),
+                         original.replace("degC", "degС"), original + "\n" + original,
+                         original.replace("-40", "-41") if field == "reduced_acceptance" else
+                         original.replace("-20 to 80", "90 to 80")):
+                with self.subTest(field=field, text=text):
+                    path.write_bytes(text.encode("utf-8"))
+                    entry["sha256"] = digest(path)
+                    report = self.evaluate(netlist, params)
+                    self.assertEqual(report["outcome"], "unknown", report["findings"])
+            path.write_text(original + "\n", encoding="ascii")
+            entry["sha256"] = digest(path)
+
+    def test_reduced_temperature_invalid_declarations(self):
+        from agent_ee.assembly_readiness import validate_params
+        params = self.reduced_temperature_case(thermal=80)
+        spec = params["operating_temperature"]
+        for field, change in (("reduced_acceptance", {"min_c": True}),
+                              ("reduced_acceptance", {"max_c": float("nan")}),
+                              ("reduced_acceptance", {"min_c": 90}),
+                              ("reduced_acceptance", {"extra": 1}),
+                              ("thermal_evidence", {"source": "top.kicad_sch"}),
+                              ("thermal_evidence", {"quote": "R10 thermal"})):
+            with self.subTest(field=field, change=change), self.assertRaises(ValueError):
+                validate_params({**params, "operating_temperature": {**spec,
+                    field: {"R1": {**spec[field]["R1"], **change}}}})
+        for field in ("reduced_acceptance", "thermal_evidence"):
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "mutable deviations"):
+                validate_params({**params, "deviations": spec[field]["R1"]["source"]})
+        with self.assertRaises(ValueError):
+            validate_params({**params, "operating_temperature": {**spec, "reduced_acceptance": {"R9":
+                spec["reduced_acceptance"]["R1"]}}})
+
+    def test_reduced_temperature_capture_and_run_checks(self):
+        params = self.reduced_temperature_case(thermal=80)
+        (self.root / "top.kicad_sch").write_text(schematic("top", [part("R1")]), encoding="utf-8")
+        scope = {"schema": "agent-ee.scope/1", "schematic": "top.kicad_sch",
+                 "inputs": [{"path": str(p), "at": p.relative_to(self.root).as_posix()}
+                            for p in self.root.rglob("*") if p.is_file()],
+                 "checks": [{"id": "asm", "kind": "assembly_readiness", "params": params}]}
+        write_json(self.root / "scope.json", scope)
+        run = self.root.parent / f"{self.root.name}-run"
+        run.mkdir()
+        self.addCleanup(shutil.rmtree, run, True)
+        capture(self.root / "scope.json", run)
+        result = run_checks(run, time.monotonic() + 120)[0]
+        self.assertEqual((result["execution"], result["outcome"]), ("ok", "pass"), result["summary"])
+        entry = result["details"]["operating_temperature"]["reduced_acceptance"][0]
+        self.assertEqual(entry["thermal"]["status"], "pass")
+        rel = params["operating_temperature"]["thermal_evidence"]["R1"]["source"]
+        (run / "inputs" / rel).write_bytes(b"R1 expected operating temperature is -20 to 200 degC.\n")
+        result = run_checks(run, time.monotonic() + 120)[0]
+        self.assertEqual(result["outcome"], "unknown", result["summary"])
+
     def exemption(self, ref="R2", line="R2 is exempt from operating-temperature verification.", number=1):
         decision = self.root / "decisions/operating-temperature-exemptions.txt"
         decision.parent.mkdir(exist_ok=True)
@@ -1364,16 +1515,16 @@ class AssemblyReadinessTests(unittest.TestCase):
         spec = params["operating_temperature"]
         exempt = {**params, "operating_temperature": {**spec, "exemptions": self.exemption()}}
         report = self.evaluate(netlist, exempt)
-        self.assertEqual(report["outcome"], "pass", report["findings"])
+        self.assertEqual(report["outcome"], "unknown", report["findings"])
         entry = report["operating_temperature"]["exempt"][0]
-        self.assertEqual((entry["reference"], entry["status"]), ("R2", "exempt"))
+        self.assertEqual((entry["reference"], entry["status"]), ("R2", "unknown"))
         self.assertEqual(entry["citation"]["sha256"],
                          digest(self.root / "decisions/operating-temperature-exemptions.txt"))
         files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
         self.assertIn("decisions/operating-temperature-exemptions.txt",
                       capability(exempt, files, self.root)["immutable_inputs"])
         self.assertEqual(evaluate_assembly_readiness(self.root, netlist, exempt, captured_files=files)["outcome"],
-                         "pass")
+                         "unknown")
         # An uncaptured, changed, misquoted or unpopulated exemption is unknown, never a pass.
         files.pop("decisions/operating-temperature-exemptions.txt")
         with self.assertRaisesRegex(ValueError, "must be a captured input"):
@@ -1419,10 +1570,10 @@ class AssemblyReadinessTests(unittest.TestCase):
             ("R2 10k 0603", 1, "R2", "unknown"),
             ("R2 requires evidence. R3 is exempt.", 1, "R2", "unknown"),
             ("R2 is exempt from clearance checks.", 1, "R2", "unknown"),
-            ("R2 is exempt from operating-temperature verification.", 1, "R2", "pass"),
+            ("R2 is exempt from operating-temperature verification.", 1, "R2", "unknown"),
             ("R2 is exempt from operating-temperature evidence.", 1, "R2", "unknown"),
-            ("R2 IS EXEMPT FROM OPERATING-TEMPERATURE VERIFICATION.", 1, "R2", "pass"),
-            ("r2 is exempt from operating-temperature verification.", 1, "r2", "pass"),
+            ("R2 IS EXEMPT FROM OPERATING-TEMPERATURE VERIFICATION.", 1, "R2", "unknown"),
+            ("r2 is exempt from operating-temperature verification.", 1, "r2", "unknown"),
             ("R2 is exempted from operating-temperature evidence.", 1, "R2", "unknown"),
             ("R2 is exempt\nonly if it is replaced by a 125C part.", 1, "R2 is exempt", "unknown"),
             ("R2 is exempt\nfrom neither temperature evidence nor review.", 1, "R2", "unknown"),
@@ -1485,7 +1636,7 @@ class AssemblyReadinessTests(unittest.TestCase):
         ])
         cases.extend((text, text.splitlines().index(next(line for line in text.splitlines() if "R2" in line)) + 1,
                       "R2", "unknown") for text in rejected)
-        cases.extend((text, 1, "R2", "pass") for text in (
+        cases.extend((text, 1, "R2", "unknown") for text in (
             "R2, R3 are exempt from operating-temperature verification.",
             "R2 and R3 are exempt from operating-temperature verification.",
             "R2, R3 and C4 are exempt from operating-temperature verification.",
@@ -1503,7 +1654,7 @@ class AssemblyReadinessTests(unittest.TestCase):
                 report = evaluate_assembly_readiness(self.root, netlist, configured, captured_files=files)
                 self.assertEqual(report["outcome"], expected, report["findings"])
                 entry = report["operating_temperature"]["exempt"][0]
-                self.assertEqual(entry["status"], "exempt" if expected == "pass" else "unknown")
+                self.assertEqual(entry["status"], "unknown")
                 if expected == "unknown":
                     self.assertIn("operating_temperature_exemption_invalid", [f["code"] for f in report["findings"]])
                     hot = {**configured, "operating_temperature": {**configured["operating_temperature"],
@@ -1534,7 +1685,7 @@ class AssemblyReadinessTests(unittest.TestCase):
         invalid.extend(canonical + sep + second for sep in
                        ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"))
         # A bad line invalidates both citations, even when it is unrelated or after the cited lines.
-        for content, expected in [(canonical + "\n" + second + ending, "pass") for ending in ("", "\n")] + [
+        for content, expected in [(canonical + "\n" + second + ending, "unknown") for ending in ("", "\n")] + [
                 (canonical + "\n" + second + "\n" + bad, "unknown") for bad in invalid] + [
                 ("", "unknown"), ("\n", "unknown")]:
             with self.subTest(content=content):
@@ -1549,7 +1700,7 @@ class AssemblyReadinessTests(unittest.TestCase):
                 report = evaluate_assembly_readiness(self.root, netlist, configured, captured_files=files)
                 self.assertEqual(report["outcome"], expected, report["findings"])
                 self.assertEqual([e["status"] for e in report["operating_temperature"]["exempt"]],
-                                 ["exempt" if expected == "pass" else "unknown"] * 2)
+                                 ["unknown"] * 2)
 
     def test_operating_temperature_exemption_refuses_other_document_sources(self):
         netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2")]))
