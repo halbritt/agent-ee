@@ -1,0 +1,77 @@
+"""Outer apt retry contract; subprocess doubles only replace waits and apt IO."""
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class AptRetryTests(unittest.TestCase):
+    def run_retry(self, failures, status=100):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, body in {
+                'sleep': 'echo "sleep $*" >> "$LOG"',
+                'rm': 'echo "rm $*" >> "$LOG"',
+                'apt-get': '''n=$(cat "$COUNT" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "$n" > "$COUNT"
+echo "apt $*" >> "$LOG"
+[ "$n" -gt "$FAILURES" ] || exit "$STATUS"
+''',
+            }.items():
+                path = root / name
+                path.write_text('#!/bin/sh\n' + body + '\n')
+                path.chmod(0o755)
+            env = dict(os.environ, PATH=str(root) + ':' + os.environ['PATH'],
+                       LOG=str(root / 'log'), COUNT=str(root / 'count'),
+                       FAILURES=str(failures), STATUS=str(status))
+            result = subprocess.run(['sh', str(ROOT / 'docker/apt-retry.sh'),
+                                     'apt-get', 'install', 'package=1.2'],
+                                    env=env, capture_output=True, text=True, timeout=10)
+            return result, (root / 'log').read_text().splitlines()
+
+    def test_success_needs_no_wait_or_cleanup(self):
+        result, log = self.run_retry(0)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(log, ['apt install package=1.2'])
+        self.assertIn('attempt 1/4', result.stderr)
+
+    def test_recovers_after_each_possible_failure_count(self):
+        for failures in (1, 2, 3):
+            with self.subTest(failures=failures):
+                result, log = self.run_retry(failures)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual([s for s in log if s.startswith('sleep ')],
+                                 ['sleep ' + s for s in ('60', '120', '240')[:failures]])
+                self.assertEqual(log.count('apt install package=1.2'), failures + 1)
+                self.assertEqual(sum(s.startswith('rm ') for s in log), failures)
+                self.assertNotIn('exhausted', result.stderr)
+
+    def test_exhaustion_preserves_exit_status_and_complete_indexes(self):
+        for status in (100, 42):
+            with self.subTest(status=status):
+                result, log = self.run_retry(99, status)
+                self.assertEqual(result.returncode, status)
+                self.assertEqual(log.count('apt install package=1.2'), 4)
+                self.assertEqual([s for s in log if s.startswith('sleep ')],
+                                 ['sleep 60', 'sleep 120', 'sleep 240'])
+                cleanups = [s for s in log if s.startswith('rm ')]
+                self.assertEqual(cleanups, ['rm -rf /var/lib/apt/lists/partial/* '
+                                          '/var/cache/apt/archives/partial/*'] * 3)
+                self.assertIn('exhausted 4 attempts', result.stderr)
+
+    def test_every_docker_apt_call_uses_shared_wrapper_and_strict_update(self):
+        dockerfile = (ROOT / 'Dockerfile').read_text()
+        calls = [s.strip() for s in dockerfile.splitlines() if 'Acquire::Retries=' in s]
+        self.assertEqual(len(calls), 8)
+        for call in calls:
+            self.assertTrue(call.startswith('apt-retry apt-get '), call)
+            self.assertIn('-o Acquire::Retries=5 -o Acquire::Retries::Delay=true '
+                          '-o Acquire::Retries::Delay::Maximum=8', call)
+            if 'update;' in call:
+                self.assertIn('-o APT::Update::Error-Mode=any update;', call)
+        self.assertIn('COPY --chmod=755 docker/apt-retry.sh /usr/local/bin/apt-retry', dockerfile)
+        self.assertEqual(dockerfile.count('apt-get '), len(calls) + 1)  # pin comment

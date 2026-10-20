@@ -42,13 +42,26 @@ an image whose tools report other versions or whose stock library paths used by
 the RC fixtures are missing. Unpinned dependencies (shared libraries, `git`) are
 fixed by the snapshot timestamp rather than individual version strings.
 
-All image-build `apt-get update` and `apt-get install` invocations use
-`Acquire::Retries=5`, with exponential retry delays enabled and each delay
-capped at eight seconds. This covers the TLS bootstrap, native toolchain,
-routing build stage and final zstd installation. Transient mirror failures
-(such as snapshot HTTP 500/502/503 responses) can recover within five retries
-per file; an exhausted package download still fails the build. Snapshot URLs,
-package version pins and signature verification remain unchanged.
+All eight image-build `apt-get update` and `apt-get install` invocations use
+[the shared outer retry wrapper](../docker/apt-retry.sh), including the TLS
+bootstrap, native toolchain, routing build stage and final zstd installation.
+Each command gets at most four attempts, with waits of 60, 120 and 240 seconds
+between failed attempts: **420 seconds (seven minutes) of total outer backoff
+per command**, plus at most four executions of that apt command. Across all
+eight calls the maximum added outer backoff is 3,360 seconds (56 minutes).
+This bounds the outer attempts and waits, not total build wall time: package
+counts, transfer times and apt's own per-file retries also contribute.
+Each attempt and wait is logged; a fourth failure returns that command's last
+nonzero exit status and fails the build. Before retrying, the wrapper clears
+partial index and package downloads while preserving complete indexes needed
+by install retries.
+
+The existing `Acquire::Retries=5` options remain, with exponential retry delays
+enabled and each delay capped at eight seconds. The outer loop also covers
+body-less HTTP 5xx responses that apt may not retry internally. Updates use
+`APT::Update::Error-Mode=any` so a failed index fetch cannot return success with
+stale or missing indexes. Snapshot URLs, package version pins and signature
+verification remain unchanged.
 
 `doctor` reports the installed PDF extractor binary and, when
 `AGENT_EE_KICAD_HAPPY` names an installation, the analyzer version and its
