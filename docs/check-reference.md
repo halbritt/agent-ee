@@ -636,6 +636,9 @@ the check `unsupported/unknown`.
 
 ## Intent and golden netlist parity
 
+The [design-size ceiling audit](design-size-limits.md) records current parser
+bounds and the unresolved AGENTEE-298 contract conflict for the expanded pod.
+
 The [`netlist_parity` check](netlist-parity.md) compares a captured golden XML
 netlist or captured connectivity intent with an earlier native `netlist` check.
 Required parameters are `source`, `netlist_check`, `predicate` (`topology`,
