@@ -265,8 +265,10 @@ a hardware-interface contract, preserving no-connects and unresolved pins.
 Concrete MCU rows require a declared direct conductor or a declared indirect
 path through named intermediate parts. Each conductor segment and part identity
 is then checked on the native netlist; transfer behavior is not claimed.
-The compiler records the requirement file's SHA-256 when its bytes are available;
-`--require-source-sha256` refuses missing source bytes for provenance gates.
+The CLI requires readable requirement source bytes and records their SHA-256;
+a missing source exits 2 with a typed error before writing a contract.
+Each local source path uses one digest on all invariants or none; a hashed
+requirement source becomes an immutable hardware-interface input.
 
 Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
 [captured owner-approved exact violation waivers](docs/violation-waivers.md), native netlist export
