@@ -5,6 +5,7 @@ user's processes, so digest() and digest_fd() hash the bytes on every call, insi
 digest_scope() too. Only fingerprint(), for runtime files nothing in the scope reads,
 reuses an observation, and only within one scope. Every mutation case below must yield
 the true digest."""
+import contextlib
 import errno
 import hashlib
 import mmap
@@ -51,6 +52,18 @@ class Counted(unittest.TestCase):
         path.write_bytes(data)
         return path
 
+    @contextlib.contextmanager
+    def frozen_status(self, path):
+        # AGENTEE-294: delayed mmap writeback can update mtime/ctime even after
+        # settle(). Control only the stat boundary; mapping and hashing stay real.
+        # Cover both path and descriptor lookups so a stat-trusting memo sees the
+        # same real stat_result throughout, independently of kernel writeback.
+        before = os.stat(path)
+        # Keep the observation older than a racy-timestamp memo guard, too.
+        self.settle()
+        with patch('os.stat', return_value=before), patch('os.fstat', return_value=before):
+            yield
+
     def settle(self):
         # Older than two seconds, the racy-timestamp window a status-validated memo would allow.
         time.sleep(2.2)
@@ -64,13 +77,13 @@ class CrossCallMutationTests(Counted):
         path = self.file('payload.bin', b'A' * 4096)
         with path.open('r+b') as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_WRITE) as mapped:
             mapped[0] = ord('B')
-            self.settle()
-            original = digest(path)
-            before = os.stat(path)
-            mapped[1] = ord('C')
-            after = os.stat(path)
-            returned = digest(path)
-            actual = sha(path.read_bytes())
+            with self.frozen_status(path):
+                original = digest(path)
+                before = os.stat(path)
+                mapped[1] = ord('C')
+                after = os.stat(path)
+                returned = digest(path)
+                actual = sha(path.read_bytes())
         self.assertEqual(storage._status(before), storage._status(after))
         self.assertNotEqual(original, actual)
         self.assertEqual(returned, actual)
@@ -173,8 +186,7 @@ class DigestInScopeTests(Counted):
         path = self.file('payload.bin', b'A' * 4096)
         with path.open('r+b') as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_WRITE) as mapped:
             mapped[0] = ord('B')
-            self.settle()
-            with digest_scope():
+            with self.frozen_status(path), digest_scope():
                 original = digest(path)
                 before = os.stat(path)
                 mapped[1] = ord('C')

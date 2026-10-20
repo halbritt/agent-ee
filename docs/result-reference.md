@@ -322,6 +322,13 @@ ctime. Root ownership is no exception on a host where this user has sudo. So
 inside a verification call too; no verification path (`cli.verify`, `cli.verify_records`,
 `campaign.verify_campaign_records`) enters a digest scope.
 
+The mmap regressions in `tests.test_digest_memo` use real file bytes and shared
+mappings with a controlled `os.stat`/`os.fstat` observation (AGENTEE-294). Both
+cross-call and within-scope tests retain one real stat result across the mutation,
+aged past the racy-timestamp window. Delayed kernel writeback cannot invalidate
+that precondition. Each returned digest must equal an independent hash of the
+changed bytes; the tests have no skip or retry for a wrong digest.
+
 Two narrower savings remain, neither of which lets a hash vouch for bytes read later:
 
 - One host observation per campaign verification. `verify_campaign_records` passes one

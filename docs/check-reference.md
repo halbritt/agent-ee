@@ -44,6 +44,10 @@ inventory observes BOM exclusion independently of board membership. Fab export
 still refuses non-DNP native exclusions; emission success does not establish
 BOM/CPL agreement for excluded copper features (AGENTEE-289).
 
+The [file digest contract](result-reference.md) requires fresh byte reads for
+verification. Its stat-unchanged mmap regressions control metadata observations
+while retaining real mappings and hash reads (AGENTEE-294); they add no check kind.
+
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
 arguments, exit status and console output remain in `work/CHECK_ID/`.
