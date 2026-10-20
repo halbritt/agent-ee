@@ -8,11 +8,14 @@ files only through kicad-cli 10.0.7 ERC, XML netlist export and upgrade.
 import hashlib
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # tests.<module> fixture imports
 
 from agent_ee.executor import execute
 from agent_ee.schematic_emitter import emit_schematic, main, publish, transformed_pin
@@ -640,7 +643,7 @@ def native_netlist(path):
 
 class NativeEmissionTests(unittest.TestCase):
     def test_pod_owned_symbols(self):
-        from tests.test_pod_symbols import EXPECTED, pod_emission_inputs
+        from test_pod_symbols import EXPECTED, pod_emission_inputs
         intent, captured, layout = pod_emission_inputs()
         for component in intent['components'][:2]:
             library, footprint = component['footprint'].split(':')
@@ -696,6 +699,12 @@ class NativeEmissionTests(unittest.TestCase):
                             if n[1] == 'OwnedGen:DERIVED')
             return ['\n'.join(_dump(p)) for p in children(embedded, 'property') if p[1] == 'private']
         native = (work / 'resave/copy/regulator.kicad_sch').read_bytes()
+        source = next(n for n in children(_scan(captured['lib/Owned_Gen.kicad_sym']), 'symbol')
+                      if n[1] == 'MID')
+        source_private = [p for p in children(source, 'property') if p[1] == 'private']
+        self.assertEqual([(p[2], p[3]) for p in source_private],
+                         [('OwnedRule_A', 'Keep "quoted" metadata'), ('OwnedRule_B', 'Second rule')])
+        self.assertEqual(metadata(files['regulator.kicad_sch']), ['\n'.join(_dump(p)) for p in source_private])
         self.assertEqual(len(metadata(native)), 2)
         self.assertEqual(metadata(native), metadata(files['regulator.kicad_sch']))
         run_native(project, work / 'resave', 'kicad-cli', 'sch', 'export', 'netlist',
