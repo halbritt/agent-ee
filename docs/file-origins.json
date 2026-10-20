@@ -3475,6 +3475,17 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-233 synthetic passive-rating tests: owned JLCPCB-shaped rows, authored one-page text PDFs and synthetic part numbers. No vendor PDF, real pod part data, third-party design or library content is copied."
+    },
+    {
+      "paths": [
+        "scripts/qualify_pod_placement.py",
+        "tests/test_placer_pod_scale.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-181 fixture generator and native qualification tests. Rectangular stand-in geometry and two-pad footprints are authored from dimensions here; the schematic reuses the existing owned CAP symbol. No vendor CAD, pod campaign files or third-party library bytes are copied."
     }
   ]
 }

@@ -991,6 +991,13 @@ unknown, never pass, and the table hash is recorded in the evidence. See
 
 ## Placement predicates
 
+The [pod-scale fixture qualification](placer.md#pod-scale-qualification-agentee-181)
+runs the existing four courtyard, containment, edge and footprint-keepout
+evaluators over saved native proposals at 90–112 footprints on both sides.
+It records runtime and byte/transform repeatability under `build/`; it adds no
+registered predicate and carries no campaign acceptance authority.
+
+
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,

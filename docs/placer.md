@@ -532,3 +532,63 @@ courtyard DRC, keeps the netlist's pad nets, and its pads match the library
 footprints. Unconnected copper is expected before routing; this is not a
 routed or schematic-parity result. Schematic parity of the stock RC board
 belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
+
+
+## Pod-scale qualification (AGENTEE-181)
+
+Run the original fixture qualification on the host, using a fresh destination:
+
+```sh
+PYTHONPATH=src python3 scripts/qualify_pod_placement.py --out build/pod-scale-placement-qualified
+```
+
+The record is `build/pod-scale-placement-qualified/qualification.json`. Each case retains
+its intent, footprint manifest, emitted schematic, actual sandboxed KiCad XML
+export, forward-annotation plan and apply evidence, placement request, both
+sandbox executions, saved boards, native DRC reports and per-criterion verdicts.
+The record gives elapsed seconds for each placer invocation (including sandbox
+startup, saved-board checks and native DRC), placed count, side counts, transforms,
+computed board hashes, input preservation and repeatability.
+
+| Outline | Footprints placed | Side assignment | Footprint keepout | Runtime, repeats 1 / 2 |
+| --- | --- | --- | --- | --- |
+| 80 × 50 mm | 90 / 90 | 45 front / 45 back | 48 × 21 mm, both sides | 28.228 / 32.811 s |
+| 85 × 55 mm | 112 / 112 | 56 front / 56 back | 48 × 21 mm, both sides | 64.245 / 58.715 s |
+| 90 × 65 mm | 112 / 112 | 56 front / 56 back | 48 × 21 mm, both sides | 54.088 / 51.630 s |
+
+The 2026-10-20 host run passed all four placement predicates in both attempts
+for every row. Saved bytes and transforms repeated identically; source inputs
+remained unchanged. Timings include concurrent host load and are observations,
+not performance limits. The oversized C1 returned `packing_infeasible`,
+`outcome=defect`, exit 1 with a diameter proof and no proposal.
+
+The 80 × 50 mm envelope is an assumed exploration point, not an owner-stated
+size requirement. The range includes the 90 × 65 mm double-sided pod scale
+reported by the coordinator. These fixtures use only authored rectangular
+mechanical stand-ins: a 25 × 10 mm connector, two 18 × 14 mm modules, eight
+7 × 5 mm parts, twenty 3.5 × 2.5 mm parts and remaining 2 × 1.5 mm parts.
+All use the repository's owned two-pin CAP symbol with synthetic VCC/GND nets.
+They qualify placement mechanics and scale; they do not establish that the actual
+pod's package mix, pin escape, electrical grouping or routing fits these outlines.
+No actual pod design or external library is copied.
+
+The packer receives a 0.25 mm courtyard gap, a 0.5 mm courtyard edge margin and
+a 200000-step budget. Every side is assigned explicitly before placement; the
+probe does not imply automatic side selection. The four existing check evaluators
+(`courtyard-overlap/1`, `outline-containment/1`, `edge-clearance/1`,
+`footprint-keepout/1`) grade the saved proposal and all-severity native DRC.
+These standalone records are unsealed fixture evidence, not campaign acceptance.
+Unconnected copper remains expected before routing.
+
+An oversized control replaces C1's courtyard with an authored 100 × 2 mm
+rectangle. Its diameter exceeds the 80 × 50 mm outline's diameter while its
+area stays below the board's: the existing infeasibility proof must name C1,
+return a typed failure and publish no proposal. This distinguishes the named
+part failure from the aggregate area proof. Missing XML is separately exercised
+as failed execution without a result or a passing verdict.
+
+`tests.test_placer_pod_scale` runs the whole matrix with real native tools and
+requires all parts placed, all four verdicts passing, identical transforms and
+saved bytes on repetition, unchanged inputs and the named oversized failure.
+There is no timing threshold and no change to packing constraints, verdicts,
+check registration, campaign policy or the evidence model.

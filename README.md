@@ -132,6 +132,11 @@ model or acquire measurements from instruments.
 
 ## What is implemented today
 
+An original [pod-scale placement qualification](docs/placer.md#pod-scale-qualification-agentee-181)
+exercises 90–112 mechanical stand-ins on both sides across 80 × 50 to
+90 × 65 mm outlines, with a 48 × 21 mm keepout and native placement evidence.
+It measures fixture capacity and determinism; actual pod geometry needs its own checks.
+
 Original [RC stage fixtures](docs/rc-stage-fixtures.md) exercise unplaced,
 placed-unrouted and seeded placement defects with native checks and a KRT
 input receipt. The [routing equivalence check](docs/routing-equivalence.md)
