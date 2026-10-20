@@ -81,6 +81,13 @@ coordinator receipts made before the campaign to its first capture. Start copies
 revalidates them as one ordered custody chain; `verify-campaign` refuses changed, missing,
 reordered or unbound imports.
 They do not replace fresh checks or the declared-stage done binding.
+
+Test refusal diagnostics (AGENTEE-326) use an absolute
+`AGENT_EE_REFUSED_RECEIPTS` override, the writable repository build directory,
+or private per-user temporary storage. Retention errors preserve the original
+refusal or fixture exception. See [receipt diagnostics](stage-receipts.md) and
+`tests.test_receipt_diagnostics`; no check verdict or receipt schema changes.
+
 The [pod driver](pod-driver.md) preflights its required placement helper, captured
 packing-policy schema and values, and antenna-facts declaration before creating
 output. These configuration refusals add no check kind or acceptance evidence.
