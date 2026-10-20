@@ -657,11 +657,29 @@ def declared_inventory(count, copper, edges):
 # owner confirmation, never a hard ceiling. A field without provenance keeps today's
 # enforcement and is reported as unknown provenance, never as owner-stated.
 PROVENANCE_CLASSES = ('owner_stated', 'derived', 'assumed')
-# Wording that says the owner did not fix the limit; it never compiles into a hard limit.
-WEAKENING = re.compile(r"\b(?:not tight|not fixed|not a hard|soft limit|(?<!no )room (?:in|for|to)|there'?s room|ideally|"
-                       r"preferably|if possible|flexible|or so)\b|"
-                       r"(?:\b(?:about|around|approximately|approx\.?|roughly|circa)|~)\s*\d", re.IGNORECASE)
-NUMBER = re.compile(r'(?<![\d.])\d+(?:\.\d+)?')
+# Wording that says the owner did not fix the limit, or fixed a minimum rather than a
+# maximum; it never compiles into a hard limit (AGENTEE-266, widened by AGENTEE-271).
+WEAKENING = re.compile(
+    r"\b(?:not (?:tight|fixed|final|firm|critical|strict|set in stone|a hard)|isn'?t (?:tight|fixed|final|critical)|"
+    r"soft limit|(?<!no )room (?:in|for|to)|there(?:'s| is| are) (?:plenty of |lots of |enough )?room|"
+    r"(?:plenty|lots|loads|enough|ample) of (?:room|space)|roomy|spacious|"
+    r"ideally|prefer(?:ably|red|ence)?|if possible|flexib\w*|negotiable|or so|"
+    r"targets?|targeted|targeting|aim(?:ing)? (?:for|at)|goal|preliminar\w*|tentative\w*|provisional\w*|"
+    r"placeholder|tbd|tbc|to be (?:confirmed|determined|decided|agreed)|draft|initial(?:ly)?|"
+    r"for now|currently|at the moment|subject to change|(?:can|could|may|might) change|"
+    r"estimat\w*|guess\w*|ballpark|rough(?:ly)?|approximate(?:ly)?|maybe|perhaps|probably|could|might|"
+    r"something like|more or less|give or take|nice to have|would like|up to you|your call|"
+    r"doesn'?t (?:matter|have to)|at least|minimum|or (?:larger|bigger|more|wider|taller))\b|"
+    r"\d\s*-?ish\b|(?:\b(?:about|around|approx\.?|circa)|[~\u2248])\s*\d", re.IGNORECASE)
+# A number states a limit only in its dimensional context: an outline as one W x H mm
+# (or W mm square) pair, a layer count next to "layer", a height in mm beside a height
+# word. A matching number elsewhere in the quote (a part count, another dimension) is stray.
+_N = r'(?<![\d.])(\d+(?:\.\d+)?)'
+OUTLINE_PAIR = re.compile(_N + r'\s*(?:mm\s*)?(?:x|\u00d7|by)\s*' + _N + r'\s*mm\b', re.IGNORECASE)
+OUTLINE_SQUARE = re.compile(_N + r'\s*mm\s+square\b', re.IGNORECASE)
+LAYERS = re.compile(r'(?<![\d.])(\d+)\s*-?\s*(?:copper\s+)?layers?\b', re.IGNORECASE)
+MILLIMETRES = re.compile(_N + r'\s*mm\b', re.IGNORECASE)
+HEIGHT_WORD = re.compile(r'\b(?:tall|height|high)\b', re.IGNORECASE)
 MAX_TEXT = 4096
 
 
@@ -683,6 +701,31 @@ def stated_numbers(envelope, vertices):
     if 'max_component_height_mm' in envelope:
         numbers['/max_component_height_mm'] = [Decimal(str(envelope['max_component_height_mm']))]
     return numbers
+
+
+def unstated(locator, text, numbers, unique=True):
+    """Why text does not state this field's numbers in their dimensional context, else None.
+
+    An owner quote must state exactly one candidate value (unique); a derivation states its
+    inputs as well as its result, so only the result's presence is required there."""
+    if locator not in numbers:
+        return None
+    wanted = numbers[locator]
+    if locator == '/outline':
+        pairs = {tuple(sorted(Decimal(n) for n in m)) for m in OUTLINE_PAIR.findall(text)}
+        pairs |= {(Decimal(n), Decimal(n)) for n in OUTLINE_SQUARE.findall(text)}
+        stated, label = pairs, f'{wanted[0]} x {wanted[1]} mm outline'
+        wanted = tuple(sorted(wanted))
+    elif locator == '/layer_count':
+        stated, label, wanted = {Decimal(n) for n in LAYERS.findall(text)}, f'{wanted[0]} layers', wanted[0]
+    else:
+        stated = {Decimal(n) for n in MILLIMETRES.findall(text)} if HEIGHT_WORD.search(text) else set()
+        label, wanted = f'a {wanted[0]} mm height', wanted[0]
+    if wanted not in stated:
+        return f'it does not state the {label}'
+    if unique and len(stated) > 1:
+        return f'it states several candidate values for the {label}, so the limit is ambiguous'
+    return None
 
 
 def prose(value, label):
@@ -711,7 +754,9 @@ def owner_quote(value, label, captured):
         return out
     files, inputs = captured
     if path not in files:
-        return out
+        # A capture inventory is present, so a quote it cannot verify is refused (AGENTEE-271).
+        raise ValueError(f'{label} source {path} is not in the captured inventory; an owner quote must cite '
+                         'a captured source')
     data = captured_bytes(files, inputs, path, f'{label} source')
     if hashlib.sha256(data).hexdigest() != sha256:
         raise ValueError(f'{label} source {path} is not the cited sha256')
@@ -759,10 +804,9 @@ def validate_provenance(envelope, vertices, captured):
             fields(item, label, ['class', 'quote', 'source'])
             entry.update(owner_quote({k: item[k] for k in ('quote', 'source')}, label, captured))
             reason = weakened([entry['quote']])
-            stated = {Decimal(n) for n in NUMBER.findall(entry['quote'])}
-            missing = [str(n) for n in numbers.get(locator, []) if n not in stated]
+            missing = unstated(locator, entry['quote'], numbers)
             if reason is None and missing:
-                reason = f"the quote does not state {', '.join(missing)}"
+                reason = f'the quote does not fix the limit: {missing}'
         elif kind == 'derived':
             fields(item, label, ['class', 'derivation'], ['from', 'facts'])
             entry['derivation'] = prose(item['derivation'], f'{label} derivation')
@@ -781,7 +825,12 @@ def validate_provenance(envelope, vertices, captured):
                                      'assumption is assumed')
                 if done[parent]['enforcement'] == 'soft':
                     reason = reason or f'it derives from soft {parent}'
-            reason = reason or weakened(f['quote'] for f in entry['facts'])
+            # The derivation and every fact are checked for weakening, and the derivation must
+            # state the derived field's own numbers in context (AGENTEE-271).
+            reason = reason or weakened([entry['derivation']] + [f['quote'] for f in entry['facts']])
+            missing = unstated(locator, entry['derivation'], numbers, unique=False)
+            if reason is None and missing:
+                reason = f'the derivation does not fix the limit: {missing}'
         else:
             fields(item, label, ['class', 'rationale'])
             entry['rationale'] = prose(item['rationale'], f'{label} rationale')

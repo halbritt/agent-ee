@@ -16,8 +16,9 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_ee.board_envelope import (derive, derive_requirements, obligation_coverage, require_obligations,
                                      source_inventory, validate)
-from agent_ee.placement_adapter import combined_provenance, envelope_provenance
+from agent_ee.placement_adapter import combined_provenance, envelope_fixed, envelope_provenance
 from agent_ee.placer import pack
+from agent_ee.storage import digest
 from test_placement import part, rectangle
 from test_placer_capacity import columns_case
 from test_placer_residuals import box
@@ -54,11 +55,25 @@ def stated(quote, locator='/outline'):
     return value
 
 
-def with_statement(quote):
+def with_statement(quote, locator='/outline', envelope=None):
     """(envelope bytes, captured inventory) with the quote as the whole owner statement."""
     root = Path(tempfile.mkdtemp(prefix='agent-ee-ee266-'))
     (root / 'owner-statement.md').write_text(quote)
-    return raw(stated(quote)), source_inventory(root)
+    value = stated(quote, locator)
+    if envelope is not None:
+        envelope(value)
+    return raw(value), source_inventory(root)
+
+
+def enforcement(quote, locator='/outline', envelope=None):
+    data, inventory = with_statement(quote, locator, envelope)
+    return by_locator(validate(data, captured=inventory))[locator]['enforcement']
+
+
+def square(value):
+    """The fixture outline made a 20 mm square."""
+    for edge in value['outline']['edges']:
+        edge['start'][1], edge['end'][1] = (116 if c == 108 else c for c in (edge['start'][1], edge['end'][1]))
 
 
 class ProvenanceRecordTests(unittest.TestCase):
@@ -117,6 +132,78 @@ class ProvenanceRecordTests(unittest.TestCase):
             envelope, inventory = with_statement(quote)
             self.assertEqual(by_locator(validate(envelope, captured=inventory))['/outline']['enforcement'], 'hard',
                              quote)
+
+    def test_wider_weakening_wording_never_compiles_into_a_hard_maximum(self):
+        # AGENTEE-271: the AGENTEE-266 review named target, preliminary and plenty of room.
+        for quote in ('Target board size 20 x 12 mm.', 'Preliminary outline: 20 x 12 mm.',
+                      'The cowl has plenty of room; the board is 20 x 12 mm.',
+                      'The board is at least 20 x 12 mm.', 'Tentatively 20 x 12 mm.', 'The board is 20ish x 12 mm.',
+                      'Board 20 x 12 mm for now.', 'Aim for 20 x 12 mm.', 'Board TBD, 20 x 12 mm placeholder.',
+                      'Roughly 20 x 12 mm.', 'The board is \u2248 20 x 12 mm.'):
+            self.assertEqual(enforcement(quote), 'soft', quote)
+        data, inventory = with_statement('Target board size 20 x 12 mm.')
+        self.assertIn("'Target'", by_locator(validate(data, captured=inventory))['/outline']['soft_reason'])
+        # The owner's own fixed limits stay hard.
+        for quote in ('The board is 20 x 12 mm.', 'The board is 20mm x 12mm.', 'The board is 12 mm by 20 mm.',
+                      'The board must fit 20 x 12 mm.'):
+            self.assertEqual(enforcement(quote), 'hard', quote)
+
+    def test_stray_matching_numbers_do_not_state_a_limit(self):
+        # Each quote holds the field's numbers, but not as that field's limit.
+        for locator, quote in (('/outline', 'The board carries 20 parts and sits 12 mm from the wall.'),
+                               ('/outline', 'The enclosure is 40 x 30 mm and the board is 20 x 12 mm.'),
+                               ('/outline', 'The board is 20 mm wide and 12 mm long.'),
+                               ('/layer_count', 'The board uses 4 copper layers and 2 connectors.'),
+                               ('/layer_count', 'Use 2 or 4 layers.'),
+                               ('/max_component_height_mm', 'J1 sits 12.5 mm from the corner.'),
+                               ('/max_component_height_mm', 'Parts 12.5 mm tall, the lid 20 mm high.')):
+            data, inventory = with_statement(quote, locator)
+            entry = by_locator(validate(data, captured=inventory))[locator]
+            self.assertEqual(entry['enforcement'], 'soft', quote)
+            self.assertIn('does not fix the limit', entry['soft_reason'])
+        for locator, quote in (('/layer_count', 'A 2-layer board.'), ('/layer_count', 'The board uses 2 copper layers.'),
+                               ('/max_component_height_mm', 'Parts may be up to 12.5 mm tall.')):
+            self.assertEqual(enforcement(quote, locator), 'hard', quote)
+
+    def test_square_outline_needs_both_dimensions_stated(self):
+        self.assertEqual(enforcement('The board is 20 mm wide.', envelope=square), 'soft')
+        self.assertEqual(enforcement('The board is 20 mm by 12 mm.', envelope=square), 'soft')
+        for quote in ('The board is 20 x 20 mm.', 'The board is a 20 mm square.'):
+            self.assertEqual(enforcement(quote, envelope=square), 'hard', quote)
+
+    def test_derived_limits_check_their_derivation_wording_and_numbers(self):
+        statement = 'The cowl cavity is 24 x 16 mm with 2 mm clearance each side.'
+        root = Path(tempfile.mkdtemp(prefix='agent-ee-ee271-'))
+        (root / 'owner-statement.md').write_text(statement)
+        fact = {'quote': statement, 'source': {'path': 'owner-statement.md',
+                                               'sha256': hashlib.sha256(statement.encode()).hexdigest()}}
+
+        def outline(derivation):
+            value = fixture()
+            value['constraint_provenance'] = {'/outline': {'class': 'derived', 'derivation': derivation,
+                                                           'facts': [fact]}}
+            return by_locator(validate(raw(value), captured=source_inventory(root)))['/outline']
+        # A derivation naming its inputs and its result is hard.
+        self.assertEqual(outline('24 x 16 mm cavity less 2 mm each side gives 20 x 12 mm.')['enforcement'], 'hard')
+        weak = outline('24 x 16 mm cavity less clearance gives roughly 20 x 12 mm.')
+        self.assertEqual(weak['enforcement'], 'soft')
+        self.assertIn("'roughly'", weak['soft_reason'])
+        bare = outline('The board fits the cavity with clearance.')
+        self.assertEqual(bare['enforcement'], 'soft')
+        self.assertIn('derivation does not fix the limit', bare['soft_reason'])
+        self.assertEqual(outline('24 x 16 mm cavity less 2 mm each side gives 22 x 14 mm.')['enforcement'], 'soft')
+
+    def test_owner_quote_outside_the_captured_inventory_is_refused(self):
+        root = Path(tempfile.mkdtemp(prefix='agent-ee-ee271-'))
+        (root / 'other.md').write_text('unrelated')
+        with self.assertRaisesRegex(ValueError, 'owner-statement.md is not in the captured inventory'):
+            validate((FIXTURE / 'envelope.json').read_bytes(), captured=source_inventory(root))
+        value = fixture()
+        value['constraint_provenance']['/stackup'] = {
+            'class': 'derived', 'derivation': 'x', 'facts': [{'quote': 'x', 'source': {
+                'path': 'absent.md', 'sha256': '0' * 64}}]}
+        with self.assertRaisesRegex(ValueError, 'fact 0 source absent.md is not in the captured inventory'):
+            validate(raw(value), captured=captured())
 
     def test_owner_quotes_must_match_their_captured_source(self):
         value = fixture()
@@ -268,6 +355,40 @@ class ProvenancePlacementTests(unittest.TestCase):
         other['outline'] = STATED
         self.assertEqual(combined_provenance([one, {'provenance': other}])['outline'], STATED)
 
+
+
+class ProvenanceEnvelopeFixedTests(unittest.TestCase):
+    """AGENTEE-271: the placement adapter validates envelope provenance against the capture."""
+
+    def setUp(self):
+        self.inputs = Path(tempfile.mkdtemp(prefix='agent-ee-ee271-'))
+        for name in ('envelope.json', 'owner-statement.md'):
+            (self.inputs / name).write_bytes((FIXTURE / name).read_bytes())
+        self.manifest = {'scope': {'checks': [{'id': 'edge-j1', 'kind': 'placement', 'params': {
+            'criterion': 'connector-edge/1', 'envelope': 'envelope.json', 'reference': 'J1', 'drc_check': 'drc'}}]},
+            'files': {name: digest(self.inputs / name) for name in ('envelope.json', 'owner-statement.md')}}
+
+    def test_captured_owner_quotes_are_verified_and_bound(self):
+        found = envelope_fixed(self.manifest, self.inputs, [])
+        self.assertEqual(found[0]['references'], ['J1'])
+        self.assertEqual(found[0]['provenance']['outline']['class'], 'assumed')
+        self.assertEqual(found[0]['provenance']['fixed']['J1']['enforcement'], 'soft')
+
+    def test_uncaptured_changed_or_mutable_owner_source_is_refused(self):
+        del self.manifest['files']['owner-statement.md']
+        with self.assertRaisesRegex(ValueError, 'not in the captured inventory'):
+            envelope_fixed(self.manifest, self.inputs, [])
+        self.manifest['files']['owner-statement.md'] = digest(self.inputs / 'owner-statement.md')
+        with self.assertRaisesRegex(ValueError, 'cites owner quotes in mutable inputs'):
+            envelope_fixed(self.manifest, self.inputs, ['owner-statement.md'])
+        # The statement changed after capture.
+        (self.inputs / 'owner-statement.md').write_text('The board uses 4 copper layers.')
+        with self.assertRaisesRegex(ValueError, 'hash changed: owner-statement.md'):
+            envelope_fixed(self.manifest, self.inputs, [])
+        # Captured, but it no longer says what the envelope quotes.
+        self.manifest['files']['owner-statement.md'] = digest(self.inputs / 'owner-statement.md')
+        with self.assertRaisesRegex(ValueError, 'not the cited sha256'):
+            envelope_fixed(self.manifest, self.inputs, [])
 
 if __name__ == '__main__':
     unittest.main()

@@ -121,32 +121,49 @@ has exact fields:
 
 | `class` | Fields | Enforcement |
 | --- | --- | --- |
-| `owner_stated` | `quote`; `source: {path, sha256}` | Hard, unless the quote weakens the limit or does not state the number (below) |
-| `derived` | `derivation` text; `from`, a list of other pointers, and/or `facts`, a list of `{quote, source}` owner facts; at least one citation | Hard, unless a cited field or fact is soft |
+| `owner_stated` | `quote`; `source: {path, sha256}` | Hard, unless the quote weakens the limit or does not state the number in context (below) |
+| `derived` | `derivation` text; `from`, a list of other pointers, and/or `facts`, a list of `{quote, source}` owner facts; at least one citation | Hard, unless a cited field is soft, the derivation or a fact weakens the limit, or the derivation does not state the derived number (below) |
 | `assumed` | `rationale` text | Always soft |
 
 The [owned fixture](../fixtures/board-envelope/provenance/envelope.json) has
 all three classes. It is stated against an owned synthetic
 [owner statement](../fixtures/board-envelope/provenance/owner-statement.md).
 
-- **Sources.** With a capture inventory (`--sources`, or baseline capture), a
-  cited source in the inventory must have the cited SHA-256. The quote must
-  appear in its UTF-8 text, comparing runs of whitespace as one space.
-  Otherwise the envelope is refused. A source outside the inventory stays
-  `verification: not_captured`. Baseline capture freezes verified sources as
-  inputs.
-- **Weakening.** An owner or derivation quote that weakens a limit is never
-  compiled into a hard limit. Weakening wording is "not tight", "not fixed",
-  "not a hard", "soft limit", "room in/for/to" (not "no room"), "there's room", "ideally",
-  "preferably", "if possible", "flexible", "or so", and "about", "around",
-  "approximately", "roughly", "circa" or "~" before a number.
-- **Stated numbers.** For `/outline` (the bounding box width and height in mm),
-  `/layer_count` and `/max_component_height_mm`, an owner-stated quote must
-  state every number. "20 mm by 12 mm or smaller" is a hard maximum. "Small,
-  20 mm wide or smaller" is soft, because 12 is not stated.
+- **Sources.** With a capture inventory (`--sources`, baseline capture, or
+  the placement adapter), a cited source must be in the inventory and have the
+  cited SHA-256. The quote must appear in its UTF-8 text, comparing runs of
+  whitespace as one space. Otherwise the envelope is refused (AGENTEE-271). Only
+  a validation with no inventory at all (the CLI without `--sources`) leaves a
+  quote `verification: not_captured`. Baseline capture freezes verified sources
+  as inputs.
+- **Weakening.** An owner quote, derivation text or derivation fact that
+  weakens a limit, or that sets a minimum rather than a maximum, is never
+  compiled into a hard limit. The wording list (`WEAKENING` in
+  `board_envelope.py`) includes "not tight", "not fixed", "soft limit",
+  "room in/for/to" (not "no room"), "there is room", "plenty of room/space",
+  "ideally", "preferably", "if possible", "flexible", "or so", "target",
+  "aim for", "goal", "preliminary", "tentative", "provisional", "placeholder",
+  "TBD", "draft", "initial", "for now", "currently", "subject to change",
+  "estimate", "guess", "rough(ly)", "approximate(ly)", "maybe", "probably",
+  "could", "might", "at least", "minimum", "or larger/bigger/more", "20ish",
+  and "about", "around", "approx", "circa", "~" or "≈" before a number.
+- **Stated numbers.** For `/outline`, `/layer_count` and
+  `/max_component_height_mm`, an owner-stated quote must state the field's
+  value in its dimensional context, and only one candidate value. The outline
+  (the bounding box width and height) is one `W x H mm` or `W mm by H mm` pair
+  in either order, or `W mm square` when the outline is square. A layer count is
+  `N layers`, `N copper layers` or `N-layer`. A height is `N mm` in a quote that
+  says tall, height or high. "20 mm by 12 mm or smaller" is a hard maximum.
+  "Small, 20 mm wide or smaller" is soft, because the pair is not stated. A
+  matching number elsewhere ("20 parts, 12 mm from the wall"), a second
+  outline ("the enclosure is 40 x 30 mm and the board 20 x 12 mm"), or one
+  side of a square outline ("20 mm wide") is soft.
 - **Derivations.** A derivation that cites an `assumed` field is refused,
   because a limit derived from an assumption is an assumption. Cycles, unknown
-  pointers and repeated citations are refused too.
+  pointers and repeated citations are refused too. A derivation of `/outline`,
+  `/layer_count` or `/max_component_height_mm` is soft unless its `derivation`
+  text states the derived value in the same form; it may also state its inputs
+  ("24 x 16 mm less 2 mm each side gives 20 x 12 mm").
 
 The validation record's `constraint_provenance` lists every constrained field
 with `class`, `enforcement` (`hard` or `soft`) and, for a soft field,

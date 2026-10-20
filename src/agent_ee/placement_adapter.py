@@ -200,7 +200,9 @@ def envelope_fixed(manifest, inputs, mutable_inputs):
     """Fixed references of every captured envelope that a placement check consumes.
 
     Read from the captured envelope bytes, never from an authored list, so an incomplete
-    fixed_footprints declaration cannot leave an envelope-fixed connector or hole movable."""
+    fixed_footprints declaration cannot leave an envelope-fixed connector or hole movable.
+    Validated against the capture inventory (AGENTEE-271), so every owner quote is verified
+    in an immutable captured source or the envelope is refused."""
     from .board_envelope import validate
     found = {}
     for spec in manifest['scope'].get('checks', []):
@@ -213,7 +215,10 @@ def envelope_fixed(manifest, inputs, mutable_inputs):
         path = Path(inputs) / rel
         if path.is_symlink() or not path.is_file() or digest(path) != manifest['files'][rel]:
             raise ValueError(f'captured placement envelope {rel!r} changed')
-        record = validate(path.read_bytes())
+        record = validate(path.read_bytes(), captured=(manifest['files'], inputs))
+        mutable = sorted(set(record['constraint_provenance']['source_paths']) & set(mutable_inputs))
+        if mutable:
+            raise ValueError(f'placement envelope {rel!r} cites owner quotes in mutable inputs: {mutable}')
         found[rel] = {'path': rel, 'sha256': manifest['files'][rel], 'envelope_id': record['envelope_id'],
                       'references': envelope_references(record)}
         overhangs = envelope_overhangs(record)
