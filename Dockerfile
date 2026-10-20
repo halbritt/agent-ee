@@ -35,8 +35,8 @@ RUN set -eu; \
     printf '%s\n' 'Types: deb' 'URIs: http://archive.ubuntu.com/ubuntu' 'Suites: noble' \
         'Components: main' 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
         > /etc/apt/sources.list.d/bootstrap.sources; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends "ca-certificates=${CA_CERTIFICATES_VERSION}"; \
+    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 update; \
+    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "ca-certificates=${CA_CERTIFICATES_VERSION}"; \
     rm /etc/apt/sources.list.d/bootstrap.sources; \
     printf '%s\n' \
         'Types: deb' "URIs: https://snapshot.ubuntu.com/ubuntu/${APT_SNAPSHOT}" \
@@ -47,8 +47,8 @@ RUN set -eu; \
         'Suites: noble' 'Components: main' \
         'Signed-By: /usr/share/keyrings/kicad-10.0-releases.asc' \
         > /etc/apt/sources.list.d/agent-ee-snapshot.sources; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
+    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 update; \
+    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends \
         "python3=${PYTHON3_VERSION}" \
         "kicad=${KICAD_VERSION}" \
         "kicad-symbols=${KICAD_VERSION}" \
@@ -82,8 +82,8 @@ RUN set -eu; \
 FROM native AS kicad-route-build
 ARG PYTHON3_PIP_VERSION=24.0+dfsg-1ubuntu1.3
 RUN set -eu; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends "python3-pip=${PYTHON3_PIP_VERSION}" curl; \
+    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 update; \
+    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "python3-pip=${PYTHON3_PIP_VERSION}" curl; \
     rm -rf /var/lib/apt/lists/*
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN /usr/local/share/agent-ee/kicad-route/install.sh install
@@ -105,8 +105,8 @@ RUN set -eu; \
 # frames from the zstd CLI, from the same snapshot as the image's libzstd1.
 ARG ZSTD_VERSION=1.5.5+dfsg2-2build1.1
 RUN set -eu; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends "zstd=${ZSTD_VERSION}"; \
+    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 update; \
+    apt-get -o Acquire::Retries=5 -o Acquire::Retries::Delay=true -o Acquire::Retries::Delay::Maximum=8 install -y --no-install-recommends "zstd=${ZSTD_VERSION}"; \
     apt-mark hold zstd; \
     rm -rf /var/lib/apt/lists/*; \
     zstd --version | grep -q 'v1\.5\.5'
