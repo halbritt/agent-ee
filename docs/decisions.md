@@ -469,3 +469,13 @@ depend on the original runtime, and do not independently authenticate generation
 execution or task metadata. The external freeze assumes trusted records at the
 time of freezing; it does not create an owner evidence store or repair already
 forged history. See [the freeze contract](generation-benchmark.md#authenticated-series-freeze).
+
+## Historical datasheet acquisition is separate from live capture (AGENTEE-306)
+
+Retained PDFs can have a hash-bound URL and capture time without any recorded
+redirect URL or fetch time. Allowing nulls on successful live records would erase
+that distinction. `datasheet-capture/2` therefore represents historical imports
+only, while `/1` keeps its existing live requirements. The shared acquisition
+loader verifies the pinned original source note and PDF for both fact checking
+and part-record consumers. A historical capture time is preserved separately
+from fetch time; missing fetch and redirect observations remain unknown.

@@ -71,13 +71,32 @@ def load_acquisition(inputs, locator, capture_bindings):
     if len(by_id) != len(capture_bindings):
         raise ValueError('duplicate acquisition binding')
     exact_fields(acquisition, ('schema', 'bindings_sha256', 'outcome', 'parts'))
-    if acquisition['schema'] != 'agent-ee.datasheet-capture/1' or acquisition['bindings_sha256'] != identity(capture_bindings):
+    historical = acquisition['schema'] == 'agent-ee.datasheet-capture/2'
+    if (acquisition['schema'] not in ('agent-ee.datasheet-capture/1', 'agent-ee.datasheet-capture/2') or
+            acquisition['bindings_sha256'] != identity(capture_bindings)):
         raise ValueError('acquisition binding identity mismatch')
     if not isinstance(acquisition['parts'], list) or len(acquisition['parts']) != len(by_id):
         raise ValueError('acquisition must cover every binding')
     acquired, directory = {}, Path(locator['path']).parent
     for record in acquisition['parts']:
-        exact_fields(record, ('id', 'url', 'final_url', 'fetched_at', 'sha256', 'path', 'missing', 'reason'))
+        fields = ('id', 'url', 'final_url', 'fetched_at', 'sha256', 'path', 'missing', 'reason')
+        if historical:
+            fields += ('acquisition_method', 'redirect_provenance', 'source_note', 'captured_at')
+        exact_fields(record, fields)
+        if historical:
+            from .datasheet_capture import historical_source
+            if (record['acquisition_method'] != 'historical_import' or
+                    record['redirect_provenance'] != 'unknown' or record['final_url'] is not None or
+                    record['missing'] is not False):
+                raise ValueError('historical import cannot claim live capture or known redirect')
+            note = record['source_note']
+            exact_fields(note, ('path', 'sha256', 'entry'))
+            note_rel = str(directory / str(safe_relative(note['path'])))
+            entry = historical_source(inputs, {**note, 'path': note_rel}, record['sha256'])
+            if (record['url'] != entry['url'] or record['captured_at'] != entry['captured_at_utc'] or
+                    record['fetched_at'] != entry.get('fetched_at')):
+                raise ValueError('historical import contradicts source note')
+            dependencies.add(note_rel)
         ref = record['id']
         if not isinstance(ref, str) or ref in acquired or ref not in by_id or record['url'] != by_id[ref]:
             raise ValueError('acquisition reference/URL mismatch')
@@ -93,8 +112,9 @@ def load_acquisition(inputs, locator, capture_bindings):
         else:
             from .datasheet_capture import validate_url
             validate_url(record['url'])
-            validate_url(record['final_url'])
-            nonempty(record['fetched_at'])
+            if not historical:
+                validate_url(record['final_url'])
+                nonempty(record['fetched_at'])
             if record['reason'] is not None:
                 raise ValueError('successful acquisition cannot have missing reason')
             pdf_rel = str(directory / str(safe_relative(record['path'])))
@@ -107,6 +127,8 @@ def load_acquisition(inputs, locator, capture_bindings):
             dependencies.add(pdf_rel)
         acquired[ref] = record
     expected_outcome = 'missing' if any(r['missing'] for r in acquired.values()) else 'captured'
+    if historical:
+        expected_outcome = 'imported'
     if acquisition['outcome'] != expected_outcome:
         raise ValueError('acquisition outcome contradicts records')
     return acquired, dependencies
@@ -386,14 +408,16 @@ def check_datasheet_facts(ctx):
     obligations = obligation_records(envelope, records) if envelope else []
     report = {'facts': records, 'extractor': tool}
     if envelope:
-        report.update(required_parts=obligations, qualification=envelope['qualification'])
+        report.update(required_parts=obligations, qualification=envelope['qualification'],
+                      acquisitions=envelope['acquired'])
     write_json(ctx.work / 'facts.json', report)
     ctx.evidence('facts.json')
     ctx.result['details'].update(facts=records, extractor=tool)
     ctx.result['limitations'].append('Citation verification proves text occurrence only; it does not '
         'establish part applicability, correct row, conditions, units or engineering interpretation.')
     if envelope:
-        ctx.result['details'].update(required_parts=obligations, qualification=envelope['qualification'])
+        ctx.result['details'].update(required_parts=obligations, qualification=envelope['qualification'],
+                                    acquisitions=envelope['acquired'])
     verified = all(r['status'] == 'verified' for r in records + obligations)
     ctx.result.update(execution='ok' if verified else 'unsupported',
                       outcome='pass' if verified else 'unknown',

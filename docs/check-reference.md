@@ -1611,3 +1611,12 @@ reserves the native IMU axes text box on its own side. These are recorded design
 geometry choices, not DRC waivers: all remaining silkscreen warnings and errors
 retain the ordinary DRC verdict. Regeneration and fresh captured checks are
 required for an older candidate.
+
+## Historical datasheet acquisition
+
+The existing `datasheet_facts` check accepts the offline historical
+[`datasheet-capture/2` import](datasheet-capture.md#offline-historical-import-agentee-306).
+It freezes the pinned source note along with the PDF and records the acquisition
+method and unknown redirect provenance in its report and details. A verified
+citation proves text occurrence only; it supplies no redirect-provenance or
+release-policy credit. Live `datasheet-capture/1` validation remains unchanged.

@@ -204,3 +204,9 @@ independently. These controls do not establish engineering approval.
 from `pin_map`. They bind physical-pin voltage and connection/presence obligations
 to the existing owned parts manifest. A rejected citation leaves its affected
 obligations unknown; the fact checker itself gains no electrical predicate.
+
+Historical `datasheet-capture/2` acquisitions are replayed with their pinned
+source-note dependency. Reports and check details include `acquisitions` keyed
+by part reference, preserving `acquisition_method: historical_import` and
+`redirect_provenance: unknown` even when text citations verify. This check does
+not certify redirect provenance. See [offline historical imports](datasheet-capture.md#offline-historical-import-agentee-306).
