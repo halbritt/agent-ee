@@ -381,6 +381,18 @@ def copper_feature_problems(data, refs, components=None):
             if len(prop) > 2 and prop[1] == 'Reference' and isinstance(prop[2], str):
                 by_ref.setdefault(prop[2], []).append(fp)
     problems = []
+    for ref in sorted(refs, key=natural_key):
+        fps = by_ref.get(ref, [])
+        if len(fps) != 1:
+            problems.append(f'copper feature {ref} needs exactly one board footprint')
+            continue
+        problems.extend(copper_footprint_problems(fps[0], ref, components))
+    return problems
+
+
+
+def copper_footprint_problems(fp, ref, components=None):
+    """Shared shape/field rules for captured library and saved board copper."""
     metadata = {'layer', 'at', 'uuid', 'tstamp', 'path', 'property', 'attr',
                 'descr', 'tags', 'sheetname', 'sheetfile', 'locked',
                 'duplicate_pad_numbers_are_jumpers', 'solder_mask_margin',
@@ -388,63 +400,55 @@ def copper_feature_problems(data, refs, components=None):
                 'zone_connect', 'thermal_width', 'thermal_gap', 'embedded_fonts'}
     graphics = {'fp_text', 'fp_text_box', 'fp_line', 'fp_rect', 'fp_circle', 'fp_arc', 'fp_poly', 'fp_curve'}
     graphic_layers = {'F.SilkS', 'B.SilkS', 'F.Fab', 'B.Fab'}
-    for ref in sorted(refs, key=natural_key):
-        reasons = []
-        fps = by_ref.get(ref, [])
-        if len(fps) != 1:
-            problems.append(f'copper feature {ref} needs exactly one board footprint')
+    reasons = []
+    attrs = {a for node in _lists(fp, 'attr') for a in node[1:] if isinstance(a, str)}
+    if not {'exclude_from_bom', 'exclude_from_pos_files'} <= attrs:
+        reasons.append('needs both native BOM and position exclusions')
+    pads = _lists(fp, 'pad')
+    if not pads:
+        reasons.append('has no copper pads')
+    for node in fp[2:]:
+        if not isinstance(node, list) or not node:
+            reasons.append('unqualified footprint content')
             continue
-        fp = fps[0]
-        attrs = {a for node in _lists(fp, 'attr') for a in node[1:] if isinstance(a, str)}
-        if not {'exclude_from_bom', 'exclude_from_pos_files'} <= attrs:
-            reasons.append('needs both native BOM and position exclusions')
-        pads = _lists(fp, 'pad')
-        if not pads:
-            reasons.append('has no copper pads')
-        for node in fp[2:]:
-            if not isinstance(node, list) or not node:
-                reasons.append('unqualified footprint content')
-                continue
-            head = node[0]
-            if head == 'pad':
-                if not copper_pad(node):
-                    reasons.append('pad is not qualified surface copper/mask/paste')
-            elif head in graphics or head == 'property':
-                layers = _lists(node, 'layer')
-                if head in graphics or layers or _lists(node, 'layers'):
-                    # KiCad can apply (layers ...) after (layer ...), changing
-                    # an apparently decorative graphic into plotted copper.
-                    layer = (layers[0][1] if len(layers) == 1 and len(layers[0]) == 2
-                             and not _lists(node, 'layers') else None)
-                    admitted = head != 'fp_curve' and layer in graphic_layers
-                    if head in graphics and layer in {'F.CrtYd', 'B.CrtYd'}:
-                        admitted = _copper_courtyard_graphic(node)
-                    elif head in graphics and layer in {'F.Mask', 'B.Mask'}:
-                        admitted = _copper_mask_inside(fp, node, layer)
-                    if not admitted:
-                        reasons.append('graphics are outside silk/fab layers')
-                if head == 'property':
-                    if len(node) < 3 or not all(isinstance(value, str) for value in node[1:3]):
-                        reasons.append('unqualified footprint content property')
-                    elif not copper_field_allowed(node[1], node[2]):
-                        kind = 'orderable' if orderable_field(node[1]) else 'nonstandard'
-                        reasons.append(f'has {kind} footprint field {node[1]}')
-            elif head not in metadata:
-                reasons.append(f'unqualified footprint content {head}')
-        if components is not None:
-            comp = components.get(ref)
-            if comp is None or 'exclude_from_board' in comp['excluded']:
-                reasons.append('needs a native on-board component')
-            elif 'copper_fields' in comp:
-                if any(not copper_field_allowed(name, value) for name, value in comp['copper_fields']):
-                    reasons.append('has an unqualified native field')
-            elif comp.get('orderable') or any(comp.get(k) for k in ('lcsc', 'Partnumber', 'PartNumber')):
-                reasons.append('has an orderable native MPN/LCSC field')
-            elif comp.get('manufacturer', '').strip() not in {'', '~'}:
+        head = node[0]
+        if head == 'pad':
+            if not copper_pad(node):
+                reasons.append('pad is not qualified surface copper/mask/paste')
+        elif head in graphics or head == 'property':
+            layers = _lists(node, 'layer')
+            if head in graphics or layers or _lists(node, 'layers'):
+                # KiCad can apply (layers ...) after (layer ...), changing
+                # an apparently decorative graphic into plotted copper.
+                layer = (layers[0][1] if len(layers) == 1 and len(layers[0]) == 2
+                         and not _lists(node, 'layers') else None)
+                admitted = head != 'fp_curve' and layer in graphic_layers
+                if head in graphics and layer in {'F.CrtYd', 'B.CrtYd'}:
+                    admitted = _copper_courtyard_graphic(node)
+                elif head in graphics and layer in {'F.Mask', 'B.Mask'}:
+                    admitted = _copper_mask_inside(fp, node, layer)
+                if not admitted:
+                    reasons.append('graphics are outside silk/fab layers')
+            if head == 'property':
+                if len(node) < 3 or not all(isinstance(value, str) for value in node[1:3]):
+                    reasons.append('unqualified footprint content property')
+                elif not copper_field_allowed(node[1], node[2]):
+                    kind = 'orderable' if orderable_field(node[1]) else 'nonstandard'
+                    reasons.append(f'has {kind} footprint field {node[1]}')
+        elif head not in metadata:
+            reasons.append(f'unqualified footprint content {head}')
+    if components is not None:
+        comp = components.get(ref)
+        if comp is None or 'exclude_from_board' in comp['excluded']:
+            reasons.append('needs a native on-board component')
+        elif 'copper_fields' in comp:
+            if any(not copper_field_allowed(name, value) for name, value in comp['copper_fields']):
                 reasons.append('has an unqualified native field')
-        problems.extend(f'copper feature {ref}: {reason}' for reason in sorted(set(reasons)))
-    return problems
-
+        elif comp.get('orderable') or any(comp.get(k) for k in ('lcsc', 'Partnumber', 'PartNumber')):
+            reasons.append('has an orderable native MPN/LCSC field')
+        elif comp.get('manufacturer', '').strip() not in {'', '~'}:
+            reasons.append('has an unqualified native field')
+    return [f"copper feature {ref}: {reason}" for reason in sorted(set(reasons))]
 
 def capability(params):
     validate_params(params)
