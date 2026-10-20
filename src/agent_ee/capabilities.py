@@ -589,6 +589,12 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
         elif kind == 'fab_package':
             from .fab_package import capability
             result['predicates'] = capability(params, scope, spec, prerequisite, captured)
+            from .probe_features import immutable_inputs
+            for path in immutable_inputs(params, files, inputs, scope):
+                captured(path, immutable=True)
+            if 'probe_manifest' in params:
+                from .probe_features import membership_check
+                prerequisite(membership_check(params, scope), ('parts_subset',))
             captured(scope.get('board'))
             captured(scope.get('schematic'))
             project = str(PurePosixPath(scope['board']).with_suffix('.kicad_pro'))

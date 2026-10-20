@@ -165,7 +165,10 @@ def compile_baseline(scope, files, inputs=None):
         if spec.get("kind") == "part_binding":
             from .part_binding import capability
             paths.update(capability(params, scope, files, inputs)["immutable_inputs"])
-        if spec.get("kind") == "fab_consistency":
+        if spec.get("kind") in ("fab_export", "fab_package"):
+            from .probe_features import immutable_inputs
+            paths.update(immutable_inputs(params, files, inputs, scope))
+        if spec.get("kind") in ("fab_consistency", "fab_package"):
             from .fab_consistency import model_libraries
             paths.update(str(safe_relative(p)) for p in model_libraries(params).values())
         if spec.get("kind") == "package_consistency":

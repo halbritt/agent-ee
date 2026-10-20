@@ -288,7 +288,8 @@ def board_facts(data, probes=None):
             unsupported.append(f'duplicate footprint reference {ref}')
         seen.add(ref)
         excluded = attrs & {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
-        if excluded and not dnp and ref not in probe_refs:
+        mechanical = excluded == {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
+        if excluded and not dnp and ref not in probe_refs and not mechanical:
             unsupported.append(f'populated footprint {ref} carries {sorted(excluded)}; '
                                'v1 refuses non-DNP exclusions')
     populated = sorted((f['ref'] for f in footprints if not f['dnp']), key=natural_key)
@@ -1033,7 +1034,9 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
     native_refs = sorted((r[0] for r in native), key=natural_key)
     cpl_refs = sorted((r[0] for r in cpl), key=natural_key)
     bom_refs = sorted((ref for row in rows for ref in row[0].split(',')), key=natural_key)
-    position_expected = [ref for ref in facts['board_non_dnp'] if ref not in probes]
+    position_expected = sorted((fp['ref'] for fp in facts['footprints']
+                                if not fp['dnp'] and 'exclude_from_pos_files' not in fp['attributes']),
+                               key=natural_key)
     assembled = [ref for ref in position_expected if ref not in excluded_refs]
     details['designators'] = {'board_non_dnp': facts['board_non_dnp'], 'excluded': excluded_refs,
                               'assembled': assembled, 'native_pos': native_refs, 'cpl': cpl_refs,
@@ -1050,7 +1053,7 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
                                     'binding: ' + ', '.join(f['reference'] for f in flagged))
     if native_refs != position_expected:
         raise _error('malformed', f'native position file designators {native_refs} differ from the board '
-                                  f'non-DNP footprints {facts["board_non_dnp"]}')
+                                  f'non-DNP footprints not excluded from position files {position_expected}')
     if bom_refs != assembled or cpl_refs != assembled:
         raise _error('malformed', f'BOM designators {bom_refs} or CPL designators {cpl_refs} differ from the '
                                   f'board assembled footprints {assembled} (non-DNP less excluded {excluded_refs})')

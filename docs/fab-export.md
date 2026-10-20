@@ -13,7 +13,9 @@ price queries, and it does not place an order.
 Parameters are `{"netlist_check": "<id>"}` plus an optional
 `"assembly_exclusion": "JLCPCB_Assembly=not_assembled"` (see
 [assembly exclusions](#assembly-exclusions)) and an optional
-`"bom_variant": "<name>"` (see [BOM variant](#bom-variant)). The named check must be an
+`"bom_variant": "<name>"` (see [BOM variant](#bom-variant)). Optional
+`probe_manifest` names captured immutable probe declarations and their source
+closure; admission requires a matching earlier passing `parts_subset` check. The named check must be an
 earlier `netlist` check in the same scope. Its result must be `execution=ok` for
 the same candidate, and its retained `design.xml` must match its
 `connectivity.json`. Otherwise the check is `not_run`. v1 refuses any other key,
@@ -22,6 +24,13 @@ empty or padded variant name, as `unsupported`. In scope/3 the check
 declares the predicate `fab-export:jlcpcb-package/1`, so it must be mapped to an
 acceptance requirement. The board stays mutable candidate input. A captured
 `.kicad_pro` next to the board becomes an immutable dependency.
+
+Board-only mechanical footprints carrying all three native attributes
+`board_only`, `exclude_from_bom` and `exclude_from_pos_files` remain in
+`board_non_dnp` and the native geometry inventory. They need no schematic part,
+BOM binding or placement row. Partial exclusion combinations on non-DNP
+footprints still fail closed; this exception does not admit arbitrary excluded
+schematic parts. Qualified probe features retain their separate source checks.
 
 ## Native steps
 

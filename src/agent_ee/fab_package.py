@@ -1,6 +1,6 @@
 """Generation done gate: one check that exports, gates and seals the fab package (AGENTEE-94).
 
-Check kind `fab_package` (params exactly `{netlist_check}`) must be the last
+Check kind `fab_package` (required `netlist_check` plus delegated export/model params) must be the last
 declared check except for bound `jlc_dfm` consumers. It runs the AGENTEE-23
 `fab_export` producer with the pinned `kicad-cli` in the executor sandbox into its own `work/<id>/fab/`, then the
 AGENTEE-73 `fab_consistency` gate on that staging tree (the same code paths as
@@ -128,11 +128,16 @@ def rotation_blocker(status, obligations=None, policy_sha256=None):
 
 
 def validate_params(params):
-    if not isinstance(params, dict) or set(params) != {'netlist_check'}:
-        raise ValueError('fab_package params must be exactly {"netlist_check"}')
-    if not isinstance(params['netlist_check'], str) or not params['netlist_check']:
-        raise ValueError('netlist_check must name the preceding netlist check')
+    fab_export.validate_params(export_params(params))
+    fab_consistency.model_libraries(params)
     return params
+
+
+def export_params(params):
+    """Keep the consistency gate's model receipts out of the export contract."""
+    if not isinstance(params, dict):
+        return params  # The export validator reports malformed parameter objects.
+    return {key: value for key, value in params.items() if key != 'model_libraries'}
 
 
 def require_last(specs, spec):
@@ -160,7 +165,9 @@ def capability(params, scope, spec, prerequisite, captured):
     rotation = declared_rotation(scope)
     if rotation is not None:
         prerequisite(rotation.get('id'), ('cpl_rotation',))
-    predicates = (fab_export.capability(params)['predicates'] + list(fab_consistency.PREDICATES)
+    for receipt in fab_consistency.model_libraries(params).values():
+        captured(receipt, immutable=True)
+    predicates = (fab_export.capability(export_params(params))['predicates'] + list(fab_consistency.PREDICATES)
                   + PREDICATES)
     return predicates
 
@@ -269,7 +276,9 @@ def check_fab_package(ctx):
     except ValueError as exc:
         raise CheckError('unsupported', str(exc)) from exc
     details = ctx.result['details']
-    fab_export.check_fab_export(ctx)
+    export_ctx = copy.copy(ctx)
+    export_ctx.params = export_params(ctx.params)
+    fab_export.check_fab_export(export_ctx)
     ctx.result['limitations'] = [text for text in ctx.result['limitations']
                                  if not text.startswith(EXPORT_SCOPE_NOTE)]
     export_summary = ctx.result['summary']
