@@ -55,6 +55,8 @@ def _events(root, state, config, declared, paths):
     history = state['history']
     events = {rel: [] for rel in paths}
     adapter = 'placement_adapter' in config
+    from .layer_policy_lineage import config_of, declared_form
+    derived = config_of(config) is not None
     for number in range(1, len(history)):
         name = str(number)
         work = Path(root) / 'implementations' / name
@@ -76,7 +78,8 @@ def _events(root, state, config, declared, paths):
             for rel in paths:
                 if receipt['inputs'].get(rel) != current.get(rel):
                     events[rel].append({**where, 'kind': writer if position == 0 else 'coordinator'})
-            spec = receipt['spec']
+            # A derived layer policy (AGENTEE-260) is a turn's only change to the declared routing step.
+            spec = declared_form(receipt['spec']) if derived else receipt['spec']
             produced = after_tree(receipt)
             for rel in paths:
                 if spec in declared and rel in spec['writes']:

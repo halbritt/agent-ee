@@ -1009,7 +1009,11 @@ def verify_campaign_receipts(root, state, steps=None, plans=None):
             if proposal.get('scope_path') == str(work / 'proposal.scope.json'):
                 from .rating_lineage import delivered_view
                 # The coordinator rating capture is verified against its lineage, not the delivered design.
-                captured = delivered_view(config, proposal['files'], read_json(work / 'stage-receipts.json')['delivered'])
+                delivered = read_json(work / 'stage-receipts.json')['delivered']
+                captured = delivered_view(config, proposal['files'], delivered)
+                from .layer_policy_lineage import delivered_view as layer_policy_view
+                # So is the coordinator capture of a pre-routing layer policy derivation (AGENTEE-260).
+                captured = layer_policy_view(config, captured, delivered)
         expected = steps if plans is None else plans[name]
         verify_implementation(work, anchor, number, source['candidate_id'], captured=captured, steps=expected,
                               complete=plans is not None and (work / 'proposal.scope.json').exists())

@@ -101,6 +101,12 @@ each derived candidate scope; see
 The sealed scope must not declare `rating_provenance` itself, and preparation
 refuses one that does.
 
+A plan may declare `layer_policy_derivation` (AGENTEE-260). The driver validates
+it against the scope and the routing adapter and copies it into `campaign.json`. A
+plan without it keeps the routing adapter's declaration. The
+pour area-loss bound is then derived by the coordinator on each routing turn; see
+[derived at the pre-routing boundary](routing-adapter.md#derived-at-the-pre-routing-boundary-agentee-260).
+
 All generic producers adopt exit 0 only. Their complete argv, mounts, outputs
 and timeouts are supplied by the owned producer modules, not guessed by the
 driver. On routing turns the dedicated `routing_adapter` follows `add-planes`.

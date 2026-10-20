@@ -27,7 +27,9 @@ Two tracker items carry work this page cannot do:
   sequencing. The numeric `pour_area_loss_pct` cannot exist when the campaign is
   configured: it is derived from the placed, planed, unrouted board, after
   placement and before routing. Campaign configuration can only declare the
-  method and the inputs.
+  method and the inputs. The campaign field `layer_policy_derivation` now does
+  this: the coordinator measures, derives and binds the bound on each routing turn
+  ([derived at the pre-routing boundary](routing-adapter.md#derived-at-the-pre-routing-boundary-agentee-260)).
 - **AGENTEE-261** owns the RF geometry checks this page leaves unenforced: the exact
   grounded-CPW gap and coplanar ground, the stitching-via pitch along the RF
   corridor, and branched RF net length. AGENTEE-258/259 (per-net signal layers
@@ -280,6 +282,12 @@ derivation, not a grade.
    `layer_costs` is omitted; see [layer costs](#layer-costs). Adopting a policy in
    the pod campaign remains the pod lane's step; see
    [routing-adapter.md](routing-adapter.md#declared-layer-policy-agentee-231).
+   In a campaign, steps 2, 4 and 5 are the coordinator's
+   (AGENTEE-260): with `layer_policy_derivation` it measures and derives on every
+   routing turn and records the result. It binds the record to the adopted routing
+   input, and runs the router with exactly that bound. Step 3 stays an engineering
+   input: the `via_budget` record with its pilot counts and board hash. See
+   [derived at the pre-routing boundary](routing-adapter.md#derived-at-the-pre-routing-boundary-agentee-260).
 
 ### Source-backed fields
 

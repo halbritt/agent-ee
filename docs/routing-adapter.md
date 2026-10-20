@@ -307,6 +307,99 @@ measurement boards, a plane void 45 µm beyond the clearance cut for an RF pad
 (inside the 0.05 mm ring the first version excused) is interrupted
 (0.011217 mm² under the launch), and a clean launch leaves nothing uncovered.
 
+### Derived at the pre-routing boundary (AGENTEE-260)
+
+A numeric `pour_area_loss_pct` cannot be stated when a campaign is configured: the
+[AGENTEE-257 recipe](pod-routing-policy-determination.md#recipe) derives it from the
+placed, planed, unrouted routing input, which exists only after a routing turn's
+`add-planes` receipt is adopted. A campaign therefore opts in with the
+`agent-ee.campaign/1` field `layer_policy_derivation` instead of a literal
+`routing_adapter.layer_policy`:
+
+```json
+{"schema": "agent-ee.layer-policy-derivation/1", "directory": "layer-policy",
+ "policy": {"signal_layers": ["F.Cu", "B.Cu"],
+            "reference": {"net": "/GND", "layers": ["In1.Cu"], "rf_nets": ["/POD_GNSS_RF"]}},
+ "via_budget": {"schema": "agent-ee.via-budget/1", "via_budget": 5, "board_sha256": "<routing input sha256>",
+                "basis": {"method": "routed_demand", "pilot": "diagnostic_not_adoptable", "signal_vias": [3, 4, 4]}}}
+```
+
+Start refuses the opt-in when:
+
+- `policy` states `pour_area_loss_pct`;
+- the routing adapter declaration also has a `layer_policy`. A fixed limit never
+  stands in for the derived bound;
+- the sealed scope declares `layer_policy_provenance`;
+- a captured input lies under `directory`, or `directory` equals `rating_provenance`;
+- `via_budget` is present but malformed.
+
+`via_budget` is optional; without it the policy stays unknown. Its basis is the
+[via-budget method](pod-routing-policy-determination.md#via-budget-n): at least
+three diagnostic, non-adoptable pilot attempts on the routing input `board_sha256`.
+Start recomputes `N = V_max + max(1, ceil(0.1 V_max))` from the recorded
+`signal_vias`. It refuses a different `N`, and attempts that differ by more than
+the margin. The pilot attempts are not part of the campaign and are never adopted.
+
+On every routing turn, after the plane producer is adopted and before the router
+starts, the coordinator (never the writer):
+
+1. runs `pour_budget.measure` on the delivered design into
+   `implementations/N/layer-policy/measure/`;
+2. derives the bound with `pour_budget.derive` and the frozen `N`;
+3. writes `implementations/N/layer-policy/record.json`
+   (`agent-ee.layer-policy-record/1`) and anchors its sha256 in campaign state as
+   `layer_policy_records[N]`. The record holds the routing input hash, the
+   measurement hash, `N` with its basis, the derivation and the composed
+   `layer_policy`;
+4. runs the frozen routing binding with only `--layer-policy` added.
+
+The policy is `unknown` and the router does not run when:
+
+- the measurement fails or is missing;
+- the measured board is not the adopted routing input;
+- no `via_budget` is declared;
+- the basis `board_sha256` is another board (stale);
+- `derive` refuses, for example for an unplaced board or an unknown probe.
+
+The record is retained and verifies. The campaign stops `incomplete` with
+`layer policy unknown at the pre-routing boundary`. This is never a pass.
+
+The basis names one routing input. A later routing turn on another input is
+therefore unknown, for example the plane producer's output over a partially routed
+proposal. One budget is never spent again on top of an earlier route. That turn
+needs a new pilot and a new campaign configuration.
+
+After the routed proposal is adopted, the record and the measurement are copied into
+`<directory>/record.json` and `<directory>/pour-budget.json` of the next candidate.
+The new `proposal.scope.json` declares them as top-level `layer_policy_provenance`
+(`record`, `record_sha256`, `measurement`, `measurement_sha256`). The sealed scope
+and earlier proposals are never edited. Later candidates inherit the declaration
+and bytes until another routing turn derives one. This is the
+[rating-provenance lineage](stage-receipts.md#coordinator-rating-provenance) pattern.
+
+`verify-campaign` re-derives every record from its retained measurement and the
+frozen configuration. It refuses:
+
+- a record whose bytes differ from its anchor;
+- a measurement whose bytes differ from the record;
+- a record whose routing input is not the adopted output of the producers before
+  the router (stale);
+- a derivation or policy that differs from the recomputation;
+- an `N` other than the configured one;
+- a routing receipt whose input board or exact command is not the derived one;
+- a routing receipt without a derived record;
+- a later bound that exceeds an earlier bound on the same routing input. A failed
+  attempt's limit is never relaxed after the fact;
+- a candidate declaration that is not owed by its lineage.
+
+Stage done, the receipt-chain replay and the RF reviewer's routing context compare
+the routing step with its `--layer-policy` removed against the frozen binding. They
+never compare it with a policy from the writer. The derived bound remains a
+geometric routing guard; it is not RF, impedance or return-path qualification.
+[`tests/test_layer_policy_lineage.py`](../tests/test_layer_policy_lineage.py) runs
+the real plane producer, receipt executor and native measurement with the
+kicad-route fixture router.
+
 ## Router targets from the scaffold producer
 
 The [scaffold producer](scaffold.md#default-class-clearance) writes only fab
