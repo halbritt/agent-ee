@@ -49,6 +49,8 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
         with:
           driver: docker-container
+          version: v0.37.1
+          driver-opts: image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
 
       - name: Cache the pinned toolchain stages
         id: toolchain
@@ -63,7 +65,7 @@ jobs:
           # Stable scope; BuildKit keys each layer by its instructions, ARGs and
           # COPY inputs. max also retains the routing build stage's apt layer.
           cache-from: type=gha,version=2,scope=agent-ee-native-amd64-v1
-          cache-to: type=gha,version=2,scope=agent-ee-native-amd64-v1,mode=max
+          cache-to: type=gha,version=2,scope=agent-ee-native-amd64-v1,mode=max,ignore-error=true
 
       - name: Build the image from the checkout
         id: build

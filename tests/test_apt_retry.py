@@ -29,6 +29,13 @@ class AptRetryTests(unittest.TestCase):
 
     def test_hosted_build_persists_intermediate_layers_and_loads_local_image(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        self.assert_hosted_cache_workflow(workflow)
+
+    def assert_hosted_cache_workflow(self, workflow):
+        setup = workflow.split('- name: Set up Buildx for the hosted layer cache', 1)[1]
+        setup = setup.split('\n      - name:', 1)[0]
+        self.assertRegex(setup, r'(?m)^          version: v[0-9]+\.[0-9]+\.[0-9]+$')
+        self.assertRegex(setup, r'(?m)^          driver-opts: image=moby/buildkit@sha256:[0-9a-f]{64}$')
         build = workflow.split('- name: Build the image from the checkout', 1)[1]
         build = build.split('\n      - name:', 1)[0]
         self.assertIn('uses: docker/setup-buildx-action@', workflow)
@@ -43,14 +50,42 @@ class AptRetryTests(unittest.TestCase):
         self.assertIn("DOCKER_BUILD_RECORD_UPLOAD: 'false'", toolchain)
         scope = 'type=gha,version=2,scope=agent-ee-native-amd64-v1'
         self.assertIn('cache-from: ' + scope + '\n', build)
-        self.assertIn('cache-to: ' + scope + ',mode=max\n', toolchain)
+        self.assertIn('cache-to: ' + scope + ',mode=max,ignore-error=true\n', toolchain)
         self.assertNotIn('cache-to:', build)
         dockerfile = (ROOT / 'Dockerfile').read_text()
         cached, source = dockerfile.split('FROM toolchain\n', 1)
         self.assertNotIn('COPY .', cached)
         self.assertIn('COPY . /opt/agent-ee', source)
+        self.assertNotIn('continue-on-error', toolchain)
         for bypass in ('no-cache:', 'build-args:', 'continue-on-error', 'ignore-error=true'):
             self.assertNotIn(bypass, build)
+
+    def test_hosted_cache_contract_rejects_mutated_safeguards(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        export = 'cache-to: type=gha,version=2,scope=agent-ee-native-amd64-v1,mode=max,ignore-error=true'
+        version = next(line for line in workflow.splitlines() if 'version: v' in line)
+        image = next(line for line in workflow.splitlines() if 'image=moby/buildkit@' in line)
+        mutations = {
+            'missing export tolerance': workflow.replace(',ignore-error=true', ''),
+            'disabled export tolerance': workflow.replace('ignore-error=true', 'ignore-error=false'),
+            'tolerance on import': workflow.replace(export, export.removesuffix(',ignore-error=true')).replace(
+                'cache-from: type=gha,version=2,scope=agent-ee-native-amd64-v1',
+                'cache-from: type=gha,version=2,scope=agent-ee-native-amd64-v1,ignore-error=true'),
+            'missing buildx pin': workflow.replace(version + '\n', ''),
+            'floating buildx': workflow.replace(version, '          version: latest'),
+            'missing daemon pin': workflow.replace(image + '\n', ''),
+            'floating daemon': workflow.replace(image, '          driver-opts: image=moby/buildkit:buildx-stable-1'),
+            'truncated daemon digest': workflow.replace(image, image[:-1]),
+        }
+        for step in ('toolchain', 'build'):
+            mutations[step + ' continue-on-error'] = workflow.replace(
+                '        id: ' + step + '\n',
+                '        id: ' + step + '\n        continue-on-error: true\n')
+        for name, mutated in mutations.items():
+            with self.subTest(mutation=name):
+                self.assertNotEqual(mutated, workflow)
+                with self.assertRaises(AssertionError):
+                    self.assert_hosted_cache_workflow(mutated)
 
     def run_retry(self, failures, status=100):
         with tempfile.TemporaryDirectory() as directory:
