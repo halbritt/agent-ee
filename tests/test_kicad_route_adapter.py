@@ -181,6 +181,58 @@ class AdapterPolicyTest(unittest.TestCase):
                 self.assert_no_proposal(case, 'contradiction', attempt.EXIT_CONTRADICTION)
                 self.assertEqual(case.report['semantics']['coverage'], 'unknown')
 
+    def sibling_case(self, siblings):
+        """An input root with library directories beside the project, as the pod's."""
+        case = self.case({'name': 'complete', 'siblings': siblings})
+        for name in ('libraries', 'symbols'):
+            (case.candidate / name).mkdir()
+            (case.candidate / name / 'lib.kicad_sym').write_text(f'(kicad_symbol_lib {name})\n')
+        return case.run()
+
+    def test_router_sibling_library_links_are_accepted_and_never_delivered(self):
+        # kicad-route at the pin links each ${KIPRJMOD}/../<dir> beside both
+        # project copies, reading the resolved input path (AGENTEE-273).
+        links = [[where, name, 'link', '{root}/' + name] for where in ('candidate', 'reference')
+                 for name in ('libraries', 'requirements', 'symbols')]
+        for siblings in (links, links[:1] + links[3:4], []):
+            with self.subTest(links=len(siblings)):
+                case = self.sibling_case(siblings)
+                self.assertEqual(case.exit, 0, case.report['semantics'])
+                self.assertEqual(case.report['semantics']['proposal'], 'eligible')
+                delivered = case.work / 'routing/candidate'
+                self.assertEqual(sorted(p.relative_to(delivered).as_posix() for p in delivered.rglob('*')),
+                                 ['project', 'project/rc.kicad_pcb'])
+                self.assertFalse(any(rel.startswith(('libraries', 'symbols', 'requirements'))
+                                     for rel in case.report['candidate_files']))
+                self.assertEqual(case.verify()['proposal'], 'eligible')
+
+    def test_any_other_entry_beside_the_project_is_a_contradiction(self):
+        good = ['reference', 'libraries', 'link', '{root}/libraries']
+        refusals = {
+            'link not named for an input entry': ['candidate', 'elsewhere', 'link', '{root}/elsewhere'],
+            'link named for the project': ['reference', 'rc', 'link', '{root}/rc'],
+            'name and target differ': ['candidate', 'libraries', 'link', '{root}/symbols'],
+            'tampered target outside the input root': ['candidate', 'libraries', 'link', '/candidate/libraries'],
+            'target into the library': ['candidate', 'libraries', 'link', '{root}/libraries/lib.kicad_sym'],
+            'target with a trailing slash': ['candidate', 'libraries', 'link', '{root}/libraries/'],
+            'target through ..': ['candidate', 'libraries', 'link', '{root}/project/../libraries'],
+            'relative target': ['reference', 'symbols', 'link', 'symbols'],
+            'relative target to the input': ['candidate', 'libraries', 'link', '../../../../../../candidate/libraries'],
+            'absolute target elsewhere': ['candidate', 'libraries', 'link', '/etc'],
+            'real directory with a sibling name': ['candidate', 'libraries', 'dir', ''],
+            'real file with a sibling name': ['reference', 'symbols', 'file', ''],
+            'unrelated real file': ['candidate', 'notes.txt', 'file', ''],
+            'link in place of the reference project': ['reference', 'project', 'project_link', ''],
+            'link in place of the candidate project': ['candidate', 'project', 'project_link', ''],
+        }
+        for label, entry in refusals.items():
+            with self.subTest(label):
+                case = self.sibling_case([good, entry])
+                self.assert_no_proposal(case, 'contradiction', attempt.EXIT_CONTRADICTION)
+                self.assertTrue(any('must hold exactly the project directory' in r or 'through a link' in r
+                                    for r in case.report['semantics']['reasons']), case.report['semantics'])
+                self.assertEqual(case.report['candidate_files'], {})
+
     def test_state_change_during_an_attempt_is_a_contradiction(self):
         case = self.case('mutate_state').run()
         self.assert_no_proposal(case, 'contradiction', attempt.EXIT_CONTRADICTION)

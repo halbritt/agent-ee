@@ -123,6 +123,21 @@ if process_ok:
         f.write(f'\n# {marker}\n')
     # As kicad-cli pcb drc --save-board does at the pin.
     (cand / (Path(board).stem + '.kicad_prl')).write_text('{"board": {}}\n')
+    # As copy_project/make_snapshot at the pin: a link beside the project for each
+    # ${KIPRJMOD}/../<dir> library directory, reading the resolved input path
+    # (/candidate/<dir> in the sandbox; the fixture's --dir parent here).
+    for where, entry, kind, target in scenario.get('siblings', []):
+        path = run / where / entry
+        target = target.format(root=src.parent)
+        if kind == 'link':
+            path.symlink_to(target)
+        elif kind == 'dir':
+            path.mkdir()
+        elif kind == 'file':
+            path.write_text('stand-in\n')
+        elif kind == 'project_link':  # the project directory itself replaced by a link
+            os.rename(path, run / f'moved-{where}')
+            path.symlink_to(run / f'moved-{where}')
     checks = [{'check': 'footprints', 'status': 'PASS'}]
     if area_bound is not None and not scenario.get('no_pour'):
         # The pin's pour_integrity record and delta, graded against the declared bound.

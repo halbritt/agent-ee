@@ -550,7 +550,16 @@ For 0 and 2 the candidate must also bind to the attempt and its inputs:
 
 - `run_dir` and both candidate paths resolve to the discovered attempt;
 - the board is reached without links;
-- the candidate and reference trees contain only regular files;
+- `candidate/` and `reference/` each hold the real project directory and
+  nothing else except the links the pin places beside it so that
+  `${KIPRJMOD}/../<dir>` library paths resolve: each named for a top-level
+  input entry other than the project, with the literal target
+  `/candidate/<same name>` (the input root in the sandbox). Any other entry,
+  a link whose name or target differs (relative, elsewhere, with a trailing
+  slash or `..`), a real file or directory with a sibling name, or a link in
+  place of the project directory is a contradiction. The links are read,
+  never followed; only the project directory is hashed and delivered;
+- the candidate and reference project trees contain only regular files;
 - every reference snapshot file equals the captured input byte for byte, and
   `snapshot.json` and the input fingerprint agree with them;
 - the candidate changes no project file other than the board, and the router
