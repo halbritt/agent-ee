@@ -224,8 +224,9 @@ component IDs, and a component belongs to at most one group. Implementation:
   connected pins on two different nets and a reference prefix `R`, `C`, `L`,
   `D`, `FB`, `F` or `Y`, without an explicit transform. A *marker* is a power
   symbol, flag or other single-pin part, such as a test point, or a two-pin part
-  with such a prefix that cannot be a satellite. A marker is never re-oriented
-  or wired. Every other unit is an *anchor*. A net is a *rail* when it has at least six terminals,
+  with such a prefix that cannot be a satellite. A marker is never re-oriented. A non-power single-pin marker on
+  a vertical pin gets an outward label lead and a horizontal label (AGENTEE-301),
+  beyond the pin-name column. Every other unit is an *anchor*. A net is a *rail* when it has at least six terminals,
   carries a power symbol or flag, or is a global power net.
 - **Groups.** Listed groups come first, in layout order, and then one group per
   remaining anchor, titled with its reference and value. Unlisted satellites
@@ -319,10 +320,74 @@ horizontal `SENSOR_REF_2V5` label. Total frame area drops from 1323 to 1148 cm²
 Native ERC gives the same 221 warnings as before, all of them library-table
 warnings from the sandbox. The exported netlist is identical (116 native nets,
 including the 54 no-connect singletons), and AGENTEE-41 topology and components
-parity pass. Remaining visual limits: loose parts and markers keep `rows` label
-placement, a pin wired to a perpendicular comb in the primary sweep keeps its
+parity pass. After AGENTEE-301, detached fields and marker labels use the placement
+rules below. Remaining visual limits: a pin wired to a perpendicular comb in the primary sweep keeps its
 label at the pin (U4 pin 7), and group membership comes from structure or the
 layout, not from datasheet roles.
+
+### Detached text and native measurement (AGENTEE-301)
+
+Functional placement checks an anchor or detached part's visible Reference and
+Value reservations against its own labels. A colliding pair is placed
+horizontally beside the body, searching at most 24 grid steps in each cardinal
+direction. Both fields and explicit NC reservations participate in packing.
+A non-power single-pin part with a vertical connection gets a straight outward
+lead and a horizontal label beyond its pin-name column. The label keeps its UUID
+and name; the endpoint remains connected by the new wire. Symbol orientation,
+physical pins, instance identities, bindings and field visibility are retained.
+The `rows` presentation keeps its existing byte contract.
+
+`agent_ee.schematic_text` measures the actual ink in a native SVG export, including
+stroke width. It associates visible fields and labels with native source
+identities, and checks every label against every non-label text box on the
+sheet, including pin names, pin numbers and group titles:
+
+```sh
+kicad-cli sch export svg --exclude-drawing-sheet -o build/svg/ build/emitted/design.kicad_sch
+PYTHONPATH=src python3 -m agent_ee.schematic_text \
+  build/emitted/design.kicad_sch build/svg/design.svg > build/text-overlaps.json
+```
+
+Exit 0 means no measured label/text overlap; 1 means overlaps; 2 means the SVG
+cannot establish coverage. Missing or ambiguous visible text, unsupported stroke
+paths and transformed stroke groups are errors. Empty native groups and exact
+repeated drawing passes are handled explicitly. The supported geometry is native
+KiCad stroke text with absolute M/L paths in millimetres; substitute system fonts
+and other SVG producers are not qualified. Native multi-unit reference suffixes
+and hidden library effects are included in matching. The diagnostic does not
+check label/label or field/field overlap and grants no electrical acceptance.
+
+The default pure planner uses conservative text reservations. To require native
+bounds before publishing a flat emission, pass a new scratch directory:
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.schematic_emitter intent.json \
+  --layout layout.json --captures captured-inputs \
+  --native-text-work build/native-text \
+  --out build/emitted --receipt build/emitted-receipt.json
+```
+
+`emit_schematic(..., native_text_work=path)` provides the same option in Python.
+Each draft is immutable and SVG export runs through the existing networkless
+executor sandbox. Colliding Reference/Value fields move using their measured
+ink bounds, with at most 24 grid steps per cardinal direction. Candidates avoid
+all other measured text, symbol bodies and wires, stay inside their group frame
+and page, and preserve font, angle, visibility and identity. A second export
+must establish zero remaining overlaps. Failed exports, incomplete measurement,
+unplaceable fields and remaining pin-name overlaps refuse the emission with
+`presentation_text`; no project is published. The workspace retains both native
+execution receipts and `text-placement.json`. Ordinary emission remains pure
+when this option is absent. The native option also supports flat `rows` drafts,
+while multi-sheet output is refused. Library tables may still be published
+with the final files; measurement uses embedded symbols and exports only SVG. The bounded owned regression covers four rotations,
+two mirrored orientations and short-pin test points using original symbol text.
+The expanded pod captured at fome-mc `e4f710f` measured 17 label/text overlaps
+before this repair and zero afterward across the whole sheet, including U31.
+The regenerated baseline was byte-identical to the captured schematic. Native
+XML graph and metadata compare equal, the native BOM is byte-identical, and ERC
+issues compare equal after removing position metadata. These are presentation
+observations, not electrical or manufacturing qualification. Real pod CAD and
+render bytes remain in worker scratch, outside this repository.
 
 ## Hierarchy
 

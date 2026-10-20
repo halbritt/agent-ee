@@ -320,6 +320,14 @@ netlist and ERC on the real pod. Its internal
 connectivity guard is diagnostic; native ERC, exact netlist parity and rendered
 review remain required on the captured output. It adds no check kind or
 acceptance credit, and preserves symbol and pin UUIDs across presentation modes.
+AGENTEE-301 also separates detached Reference/Value fields from their labels and
+extends vertical test-point labels beyond pin-name text. The emitter
+[`--native-text-work` option](schematic-emitter.md#detached-text-and-native-measurement-agentee-301)
+measures SVG before publication and refuses
+unresolved overlaps. The separate measurement command reports label/text
+overlaps across a whole native SVG; it is a diagnostic with
+explicit unsupported/missing-text errors, not a registered check or electrical
+verdict.
 
 ## ERC
 
