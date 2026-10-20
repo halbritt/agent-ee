@@ -31,7 +31,7 @@ route.
 
 `--out` must not exist. `--profile` defaults to `profiles/claude-baseline.json`.
 `--kicad-route` must name a kicad-route checkout at the routing adapter's pin
-(`a132899`) with `vendor/krt` and `.venv-krt` installed; the default is
+(`5f1c072`) with the owned engine and `.venv-krt` installed; the default is
 `$AGENT_EE_KICAD_ROUTE_CHECKOUT`, else the standard image path `/opt/kicad-route`
 (see [Routing pin](#routing-pin)). The test module gates on the same variable through
 `tests/toolchain.py`'s `require_kicad_route()`: unset is a skip, or a failure under
@@ -218,10 +218,10 @@ campaign budget stays at 3600 s, as the integrator set it.
 ### Routing pin
 
 Current `routing_adapter.preflight` accepts only
-`a132899a26ed9d7bf95c9978f0c1c992ee066f63`, with exact `bin/` and `src/`
+`5f1c072b86e0caee82c7656226c4d0e3ec580a58`, with exact `bin/` and `src/`
 blob hashes and installed KRT state. Set `AGENT_EE_KICAD_ROUTE_CHECKOUT` to
 that detached checkout; the standard image provides `/opt/kicad-route`.
-[AGENTEE-202 qualification](routing-adapter.md#pin-qualification-record-agentee-202-2026-10-18)
+[Owned-engine compatibility](routing-adapter.md#owned-routing-engine-agentee-277)
 records the migration. Historical rung-1 evidence used
 `08179cdc97d08864da127f14d53ac46cf5a27851` at
 `~/git/agent-ee/build/kicad-route-pin-08179cd`; its captured identities remain

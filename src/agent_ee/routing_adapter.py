@@ -34,7 +34,7 @@ ARTIFACTS = ('routing/adapter-report.json', 'routing/kicad-route.stdout', 'routi
 
 
 def preflight(checkout, state=None, backend='krt'):
-    """Host-side identity of the external tool, without running git or the tool.
+    """Host-side identity without running git, routing or installation.
 
     Running `git status` could rewrite the checkout's index, so HEAD is read
     from the git files and code is compared with the pinned blob hashes."""
@@ -47,7 +47,10 @@ def preflight(checkout, state=None, backend='krt'):
         commit, problems = None, [f'cannot read the checkout HEAD: {exc}']
     if commit != attempt.PIN:
         problems.append(f'checkout HEAD {commit} is not the pinned {attempt.PIN}; no automatic update')
-    problems += attempt.verify_code(checkout)
+    code_problems = attempt.verify_code(checkout)
+    problems += code_problems
+    if not code_problems:
+        problems += attempt.verify_state(checkout, state, backend)
     for rel in attempt.STATE_REQUIRED[backend]:
         if not os.path.lexists(state / rel):
             problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')

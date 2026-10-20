@@ -936,7 +936,7 @@ def main(argv=None):
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--profile', type=Path, default=REPO_ROOT / 'profiles' / 'claude-baseline.json')
     parser.add_argument('--kicad-route', type=Path, default=DEFAULT_KICAD_ROUTE,
-                        help='kicad-route checkout or snapshot holding vendor/krt and .venv-krt')
+                        help='kicad-route checkout or snapshot holding the owned engine and .venv-krt')
     parser.add_argument('--cpl-inputs', type=Path, help='explicit CPL policy and supplier capture tree')
     parser.add_argument('--dry-run', action='store_true',
                         help='scaffold, scope and config validation, checks-only review of the empty candidate '

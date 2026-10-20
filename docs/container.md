@@ -33,7 +33,7 @@ hosted run exposed an AppArmor user-namespace requirement, handled below.
 | PDF text extraction | `poppler-utils=24.02.0-1ubuntu9.10` | Exact apt version for page-cited datasheet checks |
 | kicad-happy 2.3.1 | Commit `06840467ad0f5d76af45f64449b1f5ecb10f052f` | Installed at `/opt/kicad-happy`, outside the package; build validates commit and plugin metadata |
 | zstd CLI (tests only) | `zstd=1.5.5+dfsg2-2build1.1` | Exact apt version, the image's `libzstd1` version; reference frames for the fab-consistency decoder test |
-| kicad-route with KRT 0.23.1 | kicad-route `a132899a26ed9d7bf95c9978f0c1c992ee066f63`, KRT tag `v0.23.1` = `295f9ee197517e8323726853361eb137cc08ba9e` | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
+| kicad-route with KRT 0.23.1 | kicad-route `5f1c072b86e0caee82c7656226c4d0e3ec580a58`, owned engine (fork lineage `0494a05e`) | Installed at `/opt/kicad-route` by [docker/kicad-route/install.sh](../docker/kicad-route/install.sh); see [Pinned routing tool](#pinned-routing-tool) |
 | TLS bootstrap | `ca-certificates=20240203` | Installed from the immutable noble release pocket before the snapshot sources are enabled |
 
 Pinned packages are also held with `apt-mark hold`. Every pin fails closed: an
@@ -57,28 +57,32 @@ hash-locked [wheel list](../docker/kicad-route/krt-requirements.txt):
 
 | Input | Pin | Enforcement |
 | --- | --- | --- |
-| kicad-route | Commit `a132899…` from `github.com/halbritt/kicad-route` | Depth-1 fetch of that commit, detached checkout, `HEAD` compared. The routing adapter's preflight again checks `HEAD` and every tracked `bin/`/`src/` blob hash |
-| KRT | Tag `v0.23.1`, commit `295f9ee…` from `github.com/drandyhaas/KiCadRoutingTools` | Tag fetched and peeled; must equal the commit. The tag stays so kicad-route's `git describe` reports `v0.23.1` in `result.json` |
-| KRT `requirements.txt` | SHA-256 `139aba6f…` | It lists only version floors, so it is never installed. A changed file fails the build until the wheel lock is reviewed |
-| Python packages | numpy 2.5.4, scipy 1.18.1, shapely 2.2.0, pillow 13.0.0 | CPython 3.12 manylinux x86-64 wheels, `pip download --require-hashes --only-binary=:all: --no-deps`, then installed offline from those files into `/opt/kicad-route/.venv-krt`, a venv of the image's `/usr/bin/python3`. The venv must hold exactly these four distributions |
-| Rust router | Release asset `grid_router-linux-x86_64.so`, SHA-256 `d42aa6c6…` | Downloaded directly and hash-checked. KRT's `build_router.py` is never called: it asks GitHub for the newest release and can fall back to a cargo build |
-| Build-only installers | `python3-pip=24.0+dfsg-1ubuntu1.3` and `curl` from the same apt snapshot | Present only in the build stage |
+| kicad-route | Commit `5f1c072b86e0caee82c7656226c4d0e3ec580a58` from `github.com/halbritt/kicad-route` | Exact commit fetch and detached checkout; HEAD and clean source checked offline. The adapter also checks every `bin/` and `src/` blob |
+| Owned routing engine | `src/kicad_route/router/`, including `rust_router/Cargo.lock` and `UPSTREAM.json` | Ships inside the pin; no external KRT acquisition or prebuilt routing module |
+| Python packages | numpy 2.5.4, scipy 1.18.1, shapely 2.2.0, pillow 13.0.0 | Existing CPython 3.12 manylinux x86-64 wheel lock, installed with `--require-hashes --only-binary=:all: --no-deps`; exact four distributions verified |
+| Rust toolchain | `rust:1.99.1-slim-bookworm` at the digest in Dockerfile | Digest-pinned image copied into the build stage; exact `rustc` and `cargo` version banners required |
+| Native extension | Included Rust source | Owned `build_router.py` invokes `cargo build --release --locked`; the built module SHA-256, engine source digest and toolchain versions are recorded |
+| Build-only tools | pip, C compiler, Python headers, Rust | Stay in the build stage; the final image receives the checkout, venv and receipts |
 
-Only linux/amd64 is qualified. On another architecture the build stops with an
-unsupported-architecture error instead of using the x86-64 router.
-kicad-route's own `update` command, which resolves the latest releases, never
-runs. No Rust toolchain or Freerouting is installed; the Freerouting backend is
-not available in the image.
+Only linux/amd64 is qualified. Other architectures fail closed. The image does
+not install Freerouting. Builds require registry access for the locked Cargo
+crates and wheel files; routing and final verification run offline.
 
-The final image verifies the copy with `install.sh verify` in a build step
-without network: both commits, clean worktrees, the router hash, the exact venv
-contents, that every native library in the venv and router resolves with `ldd`,
-the imports KRT needs and KRT's own `py_router/startup_checks.py`. The build
-writes a provenance record to `/opt/kicad-route.install.json`: source URLs and
-commits, the requirements and wheel-lock hashes, the router URL and hash, the
-interpreter, every wheel file with its version, licence metadata and SHA-256,
-and the architecture. It records inputs; it does not claim that KRT routes a
-board byte-identically on every run.
+The engine descends from the owner's MIT fork at `0494a05e`, carrying the tap-grid
+and forbidden-layer weld fixes tracked in
+[upstream #1291](https://github.com/drandyhaas/KiCadRoutingTools/issues/1291) and
+[upstream #1292](https://github.com/drandyhaas/KiCadRoutingTools/issues/1292).
+`UPSTREAM.json` retains the exact lineage and MIT notices. kicad-route now owns
+this source; `--backend krt` remains the command spelling.
+
+The final build runs `install.sh verify` without network. It checks the source
+commit and clean tree, existing kicad-route state-manifest schema and drift,
+source digest, installed extension digest, exact Python distributions, shared
+library resolution, imports and the owned startup checks. The receipt at
+`/opt/kicad-route.install.json` records `source: owned source build`, `rustc`,
+`cargo`, the engine identity and extension SHA-256, and wheel provenance. There
+is no runtime build or repair fallback. These records identify software inputs;
+they do not establish physical board qualification.
 
 `AGENT_EE_KICAD_ROUTE_CHECKOUT=/opt/kicad-route` is set in the image, and the
 checkout is its own `KICAD_ROUTE_STATE`. The tree is owned by the runtime user

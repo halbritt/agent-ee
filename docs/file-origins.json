@@ -3528,6 +3528,16 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-55 contract and qualification documentation; no external text or assets are reproduced."
+    },
+    {
+      "paths": [
+        "tests/test_owned_router_pin.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-277 owned-engine pin and manifest-drift boundary tests. Uses existing local routing installation read-only and disposable copies; imports no third-party designs or library files."
     }
   ]
 }

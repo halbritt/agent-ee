@@ -1,4 +1,4 @@
-"""Actual kicad-route (pinned a132899) and KRT on the original placed RC, read-only.
+"""Actual kicad-route (pinned 5f1c072) and KRT on the original placed RC, read-only.
 
 AGENT_EE_KICAD_ROUTE_CHECKOUT names a clean kicad-route checkout at the pin with
 its installed KRT state; the standard image sets it to /opt/kicad-route. Unset,
@@ -197,7 +197,7 @@ class NativeKicadRouteTest(unittest.TestCase):
         return placed
 
     def state(self):
-        return {rel: attempt.tree(self.checkout / rel) for rel in ('bin', 'src', '.venv-krt', 'vendor/krt')}
+        return {rel: attempt.tree(self.checkout / rel) for rel in ('bin', 'src', '.venv-krt')}
 
     def spec(self):
         return routing_adapter.step(project='project', board='rc_filter.kicad_pcb', schematic='rc_filter.kicad_sch',

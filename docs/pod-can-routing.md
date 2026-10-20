@@ -3,7 +3,7 @@
 The owned [probe](../fixtures/telemetry-pod/can-pair/probe.py) composes the
 existing net-constraints emitter, dedicated routing adapter and routing_rules
 check. It routes CAN+/CAN- through a captured CAN netclass using the reviewed
-kicad-route pin a132899 and `diff_pairs: "auto"`. It does not generate or qualify
+kicad-route pin 5f1c072 and `diff_pairs: "auto"`. It does not generate or qualify
 an actual pod.
 
 ```sh

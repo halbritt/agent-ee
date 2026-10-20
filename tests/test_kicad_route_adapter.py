@@ -1014,7 +1014,7 @@ class SandboxedAdapterTest(unittest.TestCase):
         self.assertEqual(record['exit_code'], 0, report['semantics'])
         probes = report['state_write_probe']
         self.assertEqual([p['directory'] for p in probes],
-                         ['/opt/kicad-route', '/opt/kicad-route/.venv-krt', '/opt/kicad-route/vendor/krt'])
+                         ['/opt/kicad-route', '/opt/kicad-route/.venv-krt'])
         self.assertTrue(all(p['refused'] and p['errno'] == 'EROFS' for p in probes), probes)
         # The router's own write attempt into its state is refused by the OS too.
         write = json.loads((work / 'routing/attempt/validate/state-write.json').read_text())

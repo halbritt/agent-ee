@@ -1,7 +1,4 @@
-# KRT's own requirements.txt (sha256 139aba6f659752d19d8d7c467866bc78a6ced432b7d14b3e45bbfe24a7753e43
-# at KRT 295f9ee) lists only floors. This lock fixes the versions the qualified
-# installation used, as CPython 3.12 manylinux x86-64 wheels from PyPI. Installed
-# with --require-hashes --no-deps --only-binary=:all: by install.sh.
+# Owned engine numerical dependencies; hash-locked CPython 3.12 amd64 wheels.
 numpy==2.5.4 \
     --hash=sha256:fbde6962867ee75b48b0ee29b2b9372ec5d617799dbaf38e82dc0596f2f7738a
 scipy==1.18.1 \
