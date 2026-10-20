@@ -660,9 +660,18 @@ On a board with PTH or NPTH pads, the native probe records
 `packing_pad_geometry` for every footprint. pcbnew's
 `TransformShapeToPolygon` reports copper on each enabled layer the pad spans;
 `TransformHoleToPolygon` reports the drill, including slots. Both use outward
-bounds with a 1 µm error. Through-hole copper and drills grow by the maximum native board copper and
-hole minimum; copper also includes the applicable pad clearance. This is
-conservative; it can refuse a placement that a net-specific rule would admit.
+bounds with a 1 µm error. Through-hole copper and drills grow by the maximum
+native board copper and hole minimum; copper also includes the applicable pad clearance. Peer copper
+adds any excess of its native effective clearance over that minimum, including
+a larger peer netclass, local clearance or single-item custom rule
+(AGENTEE-325). This can refuse a
+placement that a same-net rule would admit. KiCad 10 SWIG exposes per-pad
+`GetOwnClearance`, but no pairwise custom-rule evaluator: `.kicad_dru` rules
+that depend on both `A` and `B` are enforced by the native publication gate, not resolved
+by these reservations. No custom-rule parser or substitute evaluator is used.
+Each drill contour carries its `pad_uuid` and `reservation_kind: drill`;
+qualification requires exactly one drill entry for every drilled pad, including
+multiple drilled pads in one footprint. Legacy incomplete captures must be reprobed.
 Unsupported contours or padstacks yield unknown coverage.
 
 The packer checks these reservations against peer courtyards on both sides
@@ -677,12 +686,25 @@ candidate using byte-identical copies of the source `.kicad_pro` and
 `.kicad_dru`, when present. With no project file both runs use native defaults.
 The full reports and executions are retained in `baseline/` and the proposal
 root. `native-drc-comparison.json` compares category plus sorted native item
-UUIDs as a multiset; moving an existing finding is not a new item pair.
+UUIDs as a multiset. For collision and mask findings, it also compares saved
+native pad and footprint-graphic geometry and footprint transforms
+(AGENTEE-325). A cross-footprint violation involving a moved footprint is new,
+even when both items collided in the baseline. A rigid intra-footprint finding
+with unchanged local geometry remains a baseline finding. Missing native item
+geometry refuses comparison. A native item KIID shared across different
+footprints also refuses comparison, including case aliases normalized by KiCad;
+it cannot establish an intra-footprint baseline. Other categories retain UUID-based reporting.
 Any added `shorting_items`, `clearance` or `pth_inside_courtyard` refuses
-publication and retains the findings with the failed candidate. Ignoring any
-of those categories, a failed tool, missing output, incomplete severity
-coverage or changed evaluation settings also refuses publication. Existing
-courtyard and write-scope gates remain in force. Added `silk_*` findings are
+publication and retains the findings with the failed candidate. An introduced
+`solder_mask_bridge` between different footprints also blocks publication;
+baseline and intra-footprint mask bridges remain non-blocking and reported.
+Ignoring any of these four categories, a failed tool, missing output,
+incomplete severity coverage or changed evaluation settings also refuses publication. Existing
+courtyard and write-scope gates remain in force. Rule-level `(severity ignore)`
+in `.kicad_dru` never appears in native `ignored_checks`, so the gate refuses
+any such token, including case, whitespace and quoted variants. This conservative
+refusal also applies to ignores scoped to unrelated categories; it does not
+evaluate custom-rule conditions. Added `silk_*` findings are
 reported separately in `silkscreen_findings`; they are not shorts.
 
 `tests.test_placer_through_holes` supplies original native PTH/NPTH, slot,
@@ -799,3 +821,12 @@ and switch limits are required before a bounded guided pod run can proceed.
 The owned fixture does demonstrate a changed packed transform: an unguided
 0.500 mm supply / 4.924 mm return becomes 1.803 mm / 1.803 mm under its explicitly
 declared 4 mm limits. That fixture limit supplies no pod acceptance threshold.
+
+`tests.test_placer_gate_hardening` covers moved baseline collisions, rigid
+intra-footprint preservation, peer netclass reservations, per-pad hole
+completeness, native inter-footprint mask bridges and ignored mask checks,
+including shared cross-footprint KIIDs and rule-level ignores. Rigid intra-footprint
+fixtures cover both shared and distinct pad KIIDs.
+Netted original fixtures exercise a 4 mm peer netclass and a 4 mm single-item
+custom rule. A 4 mm custom rule conditional on both pad nets proves the native
+gate refuses a gap that satisfies the board minimum.

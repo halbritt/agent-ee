@@ -199,7 +199,10 @@ def _qualified(capture):
     missing = sorted(fp['ref'] for fp in capture['footprints'] if fp['side'] not in fp['courtyards'])
     if missing:
         raise ValueError(f"mounting-side courtyard missing: {', '.join(missing)}")
-    has_holes = any(isinstance(p, dict) and p.get('attribute') in ('PTH', 'NPTH')
+    def drilled(p):
+        return p.get('attribute') in ('PTH', 'NPTH') or any(p.get('drill_size_nm', []))
+
+    has_holes = any(isinstance(p, dict) and drilled(p)
                     for f in capture['footprints'] for p in f['pads'])
     for fp in capture['footprints']:
         geometry = fp.get('packing_pad_geometry')
@@ -216,8 +219,11 @@ def _qualified(capture):
                                                          for l in entry['layers'])):
                         raise ValueError(f"{fp['ref']}: native packing copper layers missing")
                     entry['polygons'] = qualified_polygons({'status': 'proven', 'polygons': entry.get('polygons')})
-            if (any(p.get('attribute') in ('PTH', 'NPTH') for p in fp['pads']) and not geometry['holes']):
-                raise ValueError(f"{fp['ref']}: native packing drill reservations empty")
+            required = {p['uuid'] for p in fp['pads'] if drilled(p)}
+            drills = [entry.get('pad_uuid') for entry in geometry['holes']
+                      if entry.get('reservation_kind') == 'drill']
+            if len(drills) != len(set(drills)) or set(drills) != required:
+                raise ValueError(f"{fp['ref']}: native packing per-pad drill reservations incomplete")
         elif has_holes:
             raise ValueError(f"{fp['ref']}: native packing drill reservations missing")
         if fp['rotation_deg'] % 90:

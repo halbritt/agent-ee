@@ -4,6 +4,7 @@ from collections import Counter
 import hashlib
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -13,13 +14,14 @@ import xml.etree.ElementTree as ET
 from .board_net_names import from_xml
 from .locking import writer_lock
 from .placement import judge
-from .placement_probe import extract, custom_pad_geometry
+from .placement_probe import extract, custom_pad_geometry, primitive
 from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
 from .storage import digest, read_json, write_json
 
 
 DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard'))
+DRC_MASK = 'solder_mask_bridge'
 DRC_COURTYARDS = frozenset(('courtyards_overlap', 'malformed_courtyard', 'missing_courtyard'))
 
 
@@ -154,7 +156,7 @@ def _native_drc(board, scratch):
             set(report['included_severities']) != {'error', 'warning', 'exclusion'}):
         raise ValueError('native placement DRC did not evaluate all severities')
     if any(not isinstance(check, dict) or not isinstance(check.get('key'), str)
-           or check['key'] in DRC_COLLISIONS | {'courtyards_overlap', 'courtyard_overlap'}
+           or check['key'] in DRC_COLLISIONS | {DRC_MASK} | {'courtyards_overlap', 'courtyard_overlap'}
            for check in report['ignored_checks']):
         raise ValueError('native placement DRC evaluation unavailable or explicitly ignored')
     violations = report['violations']
@@ -164,29 +166,69 @@ def _native_drc(board, scratch):
     return report
 
 
-def _drc_comparison(before, after):
-    """Count native findings by category and item identities, independent of location."""
+def _drc_item_states(path):
+    """Bind collision identities to native saved geometry and footprint transforms."""
+    import pcbnew
+    board = pcbnew.LoadBoard(str(path))
+    inventory = _pad_inventory(board)
+    states = {}
+    for fp in board.GetFootprints():
+        owner = fp.m_Uuid.AsString()
+        pose = (int(fp.GetPosition().x), int(fp.GetPosition().y),
+                fp.GetOrientationDegrees(), int(fp.GetLayer()))
+        fp.SetOrientationDegrees(0)
+        fp.SetPosition(pcbnew.VECTOR2I(0, 0))
+        graphics = sorted(({'layer': int(item.GetLayer()), 'width_nm': int(item.GetWidth()),
+                            'shape': primitive(item)} for item in fp.GraphicalItems()
+                           if item.GetClass() == 'PCB_SHAPE'), key=lambda item: item['shape']['uuid'])
+        geometry = json.dumps({'pads': inventory[owner], 'graphics': graphics}, sort_keys=True)
+        for item in [fp, *fp.Pads(), *fp.GraphicalItems(), *fp.GetFields()]:
+            uuid = item.m_Uuid.AsString()
+            if uuid in states and states[uuid][0] != owner:
+                # A KIID shared across footprints would merge their states.
+                raise ValueError('native collision item identities ambiguous')
+            states[uuid] = (owner, geometry, pose)
+    return states
+
+
+def _drc_comparison(before, after, before_states=None, after_states=None):
+    """Preserve rigid intra-footprint findings; moved cross-footprint collisions are new.
+
+    Native geometry is supplied by the publication path, never by the caller's
+    placement plan. Non-collision reporting retains its existing identity rule.
+    """
     if (before['ignored_checks'] != after['ignored_checks'] or
             before.get('included_severities') != after.get('included_severities')):
         raise ValueError('native baseline/candidate DRC evaluation settings differ')
 
-    def key(finding):
+    def key(finding, states):
         items = finding.get('items')
         if (not isinstance(items, list) or not items or
                 any(not isinstance(i, dict) or not isinstance(i.get('uuid'), str) or not i['uuid'] for i in items)):
             raise ValueError('native DRC finding lacks item identities')
-        return finding['type'], tuple(sorted(i['uuid'] for i in items))
+        identities = tuple(sorted(i['uuid'] for i in items))
+        if states is None or finding['type'] not in DRC_COLLISIONS | {'solder_mask_bridge'}:
+            return finding['type'], identities
+        try:
+            geometry = [states[uuid] for uuid in identities]
+        except KeyError as exc:
+            raise ValueError('native collision item geometry unavailable') from exc
+        # Local pad geometry proves a rigid intra-footprint violation unchanged.
+        intra = len({state[0] for state in geometry}) == 1
+        return finding['type'], identities, tuple(state[:2] if intra else state for state in geometry)
 
-    old = Counter(key(v) for v in before['violations'])
-    remaining = Counter(key(v) for v in after['violations']) - old
+    old = Counter(key(v, before_states) for v in before['violations'])
+    remaining = Counter(key(v, after_states) for v in after['violations']) - old
     added = []
     for finding in after['violations']:
-        identity = key(finding)
+        identity = key(finding, after_states)
         if remaining[identity]:
             added.append(finding)
             remaining[identity] -= 1
     return {'added_findings': added,
-            'blocking_findings': [v for v in added if v['type'] in DRC_COLLISIONS],
+            'blocking_findings': [v for v in added if v['type'] in DRC_COLLISIONS or
+                                  (v['type'] == DRC_MASK and (after_states is None or
+                                   len({after_states[i['uuid']][0] for i in v['items']}) > 1))],
             'silkscreen_findings': [v for v in added if v['type'].startswith('silk_')],
             'added_by_type': dict(Counter(v['type'] for v in added))}
 
@@ -202,11 +244,14 @@ def _proposal_drc(source, output):
         settings = source.with_suffix(suffix)
         if settings.is_file():
             payload = settings.read_bytes()
+            # Rule-level ignores never reach the report's ignored_checks.
+            if suffix == '.kicad_dru' and re.search(rb'\(\s*severity\s+"?ignore\b', payload, re.I):
+                raise ValueError('native placement DRC evaluation explicitly ignored by a custom rule')
             baseline.with_suffix(suffix).write_bytes(payload)
             output.with_suffix(suffix).write_bytes(payload)
     before = _native_drc(baseline, baseline_dir)
     after = _native_drc(output, scratch)
-    comparison = _drc_comparison(before, after)
+    comparison = _drc_comparison(before, after, _drc_item_states(baseline), _drc_item_states(output))
     write_json(scratch / 'native-drc-comparison.json', comparison)
     if comparison['blocking_findings']:
         raise ValueError(f"saved-board placement introduced native DRC collisions: {comparison['added_by_type']}")
