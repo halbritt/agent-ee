@@ -44,7 +44,11 @@ other shapes and sides require an explicit future contract.
 
 `binding_fill` checks component allocation and intent connectivity, then writes
 only `AGENT_EE_Probe` for feature bindings. The reserved property records exact
-CAD hashes, symbol body, pin, geometry, reference and nets. Ordinary parts keep
+CAD hashes, symbol body, pin, geometry, reference and nets. New writers encode the
+canonical UTF-8 JSON record as standard padded base64 after `agent-ee-probe-v1-`.
+The property contains no colons, so KiBot does not parse the JSON as a footprint
+library name (AGENTEE-279). This is a transport encoding, not a new record schema
+or an independent source of approval. Ordinary parts keep
 their supplier, datasheet and parameter rules. The emitter admits the bounded
 structured property and preserves the captured symbol's native flags.
 
@@ -78,3 +82,33 @@ pipeline contract fixtures; they establish no telemetry-pod design acceptance,
 pogo-fixture suitability, finish, spacing, physical programming or bench result.
 
 Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.
+
+## Migrating legacy inline JSON properties
+
+Readers still accept the exact canonical inline `agent-ee.bare-copper-probe/1`
+JSON emitted before AGENTEE-279. Its source qualification and native identity
+checks are unchanged, but KiBot 1.9.1 cannot export a board carrying it. Regenerate
+binding fill, the schematic and the board with the current writer, using the same
+immutable captured parts manifest and CAD closure. For an existing placed board,
+forward annotation can propagate the newly emitted schematic properties; validate
+both sides against `probe_features.declarations` and rerun native parity and fab
+checks before using the export. Never derive source approval from an old marker
+alone. No third-party pilot board is migrated by this change.
+
+Missing or mismatched declarations cannot qualify probes. Existing verdicts are
+preserved: unsupported source prerequisites remain unknown; determinate invalid
+bindings and required-absent membership remain defects. Neither encoding can
+turn these into a pass.
+
+The external KiBot regression uses only the original owned six-pad fixture:
+
+```sh
+PYTHONPATH=src python3 -m tests.probe_kibot_regression \
+  --scratch /path/to/new/scratch-directory \
+  --kibot /path/to/fome-mc/toolchain/.venv/bin/kibot \
+  --config /path/to/fome-mc/toolchain/kibot/export.kibot.yaml
+```
+
+It runs the native probe pipeline, reproduces legacy exit 22, then requires exit 0
+and fabrication outputs for the same fixture with encoded properties. Dependencies
+are read only; the scratch directory must not already exist.

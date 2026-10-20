@@ -87,6 +87,29 @@ class ProbeContractTests(unittest.TestCase):
     def filled(self):
         return fill(self.root, self.intent, self.parts, self.refs, self.deviations, captures='.')[0]
 
+    def test_marker_encoding_roundtrip_and_legacy_identity(self):
+        from agent_ee.storage import canonical
+        record = pf.declarations(self.parts, self.root)['TP1']
+        for value in (pf.marker(record), canonical(record).decode()):
+            self.assertEqual(pf.parse_marker(value), record)
+            self.assertTrue(pf.matches_marker(value, record))
+            self.assertFalse(pf.matches_marker(value, dict(record, reference='TP99')))
+        self.assertNotIn(':', pf.marker(record))
+        self.assertLess(len(pf.marker(record)), 4096)
+        for value in (None, '', 'agent-ee-probe-v2-AAAA'):
+            self.assertFalse(pf.matches_marker(value, record))
+
+    def test_encoded_marker_rejects_malformed_payload_and_schema(self):
+        import base64
+        from agent_ee.storage import canonical
+        record = pf.declarations(self.parts, self.root)['TP1']
+        invalid = ['!', 'AAAA', '/w==', 'e30=',
+                   base64.b64encode(canonical(dict(record, schema='unknown'))).decode(),
+                   base64.b64encode(canonical(dict(record, extra=True))).decode()]
+        for payload in invalid:
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                pf.parse_marker(pf.MARKER_PREFIX + payload)
+
     def test_explicit_mixed_declaration_and_fill_without_supplier_claims(self):
         filled = self.filled()
         probes = pf.declarations(self.parts, self.root)
@@ -355,7 +378,14 @@ class NativeProbeTests(unittest.TestCase):
             pad = children(fp, 'pad')[0]
             pad[2] = 'thru_hole'
             pad.append(['drill', '.3'])
+        def marker_property(fp):
+            return next(p for p in children(fp, 'property') if p[1] == pf.PROPERTY)
+        def tampered_marker(fp):
+            prop = marker_property(fp)
+            prop[2] = Q(pf.marker(dict(pf.parse_marker(prop[2]), native_net='/WRONG')))
         edits = {
+            'missing_marker': lambda fp: fp.remove(marker_property(fp)),
+            'tampered_marker': tampered_marker,
             'extra_copper': copper,
             'extra_pad': lambda fp: fp.append(copy.deepcopy(children(fp, 'pad')[0])),
             'drill': drilled,
