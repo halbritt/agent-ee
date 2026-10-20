@@ -401,8 +401,9 @@ and its retained report to a candidate offline. Error findings are defects;
 warnings remain advisory, and missing or mismatched reports remain unknown.
 
 The [fab package done gate](docs/fab-package.md) (`fab_package`, followed only by
-bound DFM checks) runs that export and gate in one check and seals the package's file hashes. A
-scope with a `generation` marker is refused at capture without it, and a
+bound DFM checks) runs that export and gate in one check and seals the package's file hashes.
+It accepts the export's variant, assembly exclusion and probe options, plus the
+consistency gate's captured model libraries. A scope with a `generation` marker is refused at capture without it, and a
 satisfied generation campaign's `state.json` lists the hashes, which
 `verify-campaign` recomputes.
 

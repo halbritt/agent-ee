@@ -501,6 +501,55 @@ class NativeProbeTests(unittest.TestCase):
             self.assertIn(ref, copper)
             self.assertIn(ref, mask)
             self.assertNotIn(ref, paste)
+        # The terminal producer must admit the same sealed probe sources as standalone export.
+        from agent_ee.baseline import load_baseline, freeze_evidence, verify_evidence
+        package_scope = copy.deepcopy(scope)
+        package_scope['schema'] = 'agent-ee.scope/3'
+        package_scope['checks'].pop()
+        package_scope['checks'][-1]['kind'] = 'fab_package'
+        req = package_scope['baseline']['requirements'][0]
+        req['checks'].remove('consistency')
+        req['intent'] = 'acceptance'
+        write_json(self.root / 'scaffold/package.scope.json', package_scope)
+        package_run = self.root / 'package-run'; package_run.mkdir()
+        capture(self.root / 'scaffold/package.scope.json', package_run)
+        package_results = run_checks(package_run, time.monotonic() + 300)
+        package = package_results[-1]
+        self.assertEqual((package['execution'], package['outcome']), ('ok', 'pass'), package)
+        self.assertEqual(read_json(package_run / 'work/fab/fab/manifest.json')['probe_features'], probes)
+        baseline = load_baseline(package_run)
+        closure = pf.immutable_inputs(package_scope['checks'][-1]['params'],
+                                     read_json(package_run / 'candidate.json')['files'],
+                                     package_run / 'inputs', package_scope)
+        self.assertTrue(set(closure) <= set(baseline['files']))
+        self.assertTrue(set(closure) <= set(baseline['coverage']['checks']['fab']['immutable_inputs']))
+        self.assertIn({'check_id': 'parts', 'kind': 'parts_subset'},
+                      baseline['coverage']['checks']['fab']['prerequisites'])
+        from agent_ee.baseline import compile_baseline
+        legacy = copy.deepcopy(package_scope)
+        legacy['schema'] = 'agent-ee.scope/2'
+        for legacy_req in legacy['baseline']['requirements']:
+            legacy_req.pop('intent', None)
+        legacy_baseline = compile_baseline(legacy, read_json(package_run / 'candidate.json')['files'],
+                                           package_run / 'inputs')
+        self.assertTrue(set(closure) <= set(legacy_baseline['files']))
+        from agent_ee.capabilities import describe_check
+        files = read_json(package_run / 'candidate.json')['files']
+        def describe(changed):
+            return describe_check(changed['checks'][-1], check_specs=changed['checks'],
+                                  files=files, scope=changed, inputs=package_run / 'inputs')
+        for missing in ('parts', 'parts-mismatch'):
+            changed = copy.deepcopy(package_scope)
+            if missing == 'parts':
+                changed['checks'] = [c for c in changed['checks'] if c['id'] != 'parts']
+            else:
+                next(c for c in changed['checks'] if c['id'] == 'parts')['params']['manifest'] = 'other.json'
+            self.assertEqual(describe(changed)['status'], 'unsupported')
+        changed = copy.deepcopy(package_scope)
+        changed['mutable_inputs'].append('parts.json')
+        self.assertEqual(describe(changed)['status'], 'unsupported')
+        freeze_evidence(package_run, package_results)
+        verify_evidence(package_run, package_results, required=True)
         # KiCad's independent parity check sees all six required physical features.
         from tests.test_schematic_emitter import run_native
         work = self.root / 'parity'

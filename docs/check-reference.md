@@ -1359,7 +1359,10 @@ validation verifies their commit/path/blob and SHA-256 offline; unavailable Git
 objects keep the block unverified. These citations supply no board-check credit.
 
 [`fab_package`](fab-package.md) is the generation done gate (AGENTEE-94). Params
-are exactly `{netlist_check}`; only bound [`jlc_dfm`](jlc-dfm.md) checks may follow
+require `{netlist_check}` with optional `bom_variant`, `assembly_exclusion`,
+`probe_manifest` (delegated to export) and `model_libraries` (delegated to the
+consistency gate). Model receipts and probe sources are immutable; probes require
+an earlier matching `parts_subset` check. Only bound [`jlc_dfm`](jlc-dfm.md) checks may follow
 it. An earlier `geometry` check is required. It runs the same export and consistency code on its
 own staging tree and, on `pass`, records `details.artifacts`
 (`agent-ee.fab-artifacts/1`: gerbers.zip, every drill file, bom.csv, cpl.csv and

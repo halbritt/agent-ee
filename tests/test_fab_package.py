@@ -11,6 +11,7 @@ import copy
 import csv
 import io
 import json
+import shutil
 import tempfile
 import time
 import unittest
@@ -177,6 +178,28 @@ class GenerationMarkerTests(unittest.TestCase):
             with self.subTest(case=name):
                 self.assertEqual(describe(specs)['status'], 'unsupported')
 
+    def test_model_receipt_must_be_captured_and_immutable(self):
+        scope = generation_scope('agent-ee.scope/3')
+        receipt = 'models/.agent-ee-models.json'
+        scope['checks'][-1]['params']['model_libraries'] = {'KICAD10_3DMODEL_DIR': receipt}
+        files = captured_files(scope)
+        def describe():
+            return describe_check(scope['checks'][-1], check_specs=scope['checks'], files=files, scope=scope)
+        self.assertEqual(describe()['status'], 'unsupported')
+        files[receipt] = digest(FIXTURE / 'requirements.md')
+        described = describe()
+        self.assertEqual(described['status'], 'supported', described)
+        self.assertIn(receipt, described['immutable_inputs'])
+        scope['checks'][-1]['params']['model_libraries'] = {'KICAD10_3DMODEL_DIR': 'models/other.json'}
+        self.assertEqual(describe()['status'], 'unsupported')
+
+    def test_delegated_params_keep_their_original_validation(self):
+        for extra in ({'layers': []}, {'assembly_exclusion': 'Value=x'}, {'bom_variant': ''},
+                      {'model_libraries': {}}, {'model_libraries': {'KIPRJMOD': 'x'}},
+                      {'model_libraries': {'KICAD10_3DMODEL_DIR': '../.agent-ee-models.json'}}):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                fab_package.validate_params({'netlist_check': 'netlist', **extra})
+
 
 class NativeRun(unittest.TestCase):
     """Shared harness: the real export, gate and seal of one captured scope per case."""
@@ -218,6 +241,56 @@ class NativeRun(unittest.TestCase):
 
 class NativeFabPackageTests(NativeRun):
     """The real export, gate and seal; fault injection between the producer and the gate."""
+
+    def test_delegated_variant_exclusion_models_and_board_only_holes(self):
+        from tests.test_fab_export import RULE, mark_board, mark_schematic, variant_schematic
+        from tests.test_fab_consistency import stock_library, STOCK_RECEIPT
+        source = self.root / 'source'
+        shutil.copytree(FIXTURE, source)
+        sch = source / 'fab.kicad_sch'
+        sch.write_text(mark_schematic(variant_schematic(sch.read_text()), 'J1', unbind=True))
+        write_json(source / 'fab.kicad_pro', {'meta': {'version': 3},
+                   'schematic': {'variants': [{'name': 'ALT'}, {'name': 'LITE'}]}})
+        board = source / 'fab.kicad_pcb'
+        text = mark_board(board.read_text(), 'J1')
+        text = text.replace('(attr smd)', '(attr smd) (model "${KICAD10_3DMODEL_DIR}/Synth.3dshapes/owned.step")', 1)
+        # Original mechanical fixture: no schematic part, copper or supplier claim.
+        holes = ''.join(f'''(footprint "Owned:Mount" (layer "F.Cu") (at {105+i*3} 105)
+            (property "Reference" "H{i}" (at 0 0) (layer "F.Fab"))
+            (attr board_only exclude_from_bom exclude_from_pos_files)
+            (pad "" np_thru_hole circle (at 0 0) (size 2 2) (drill 2) (layers "*.Cu" "*.Mask")))'''
+            for i in range(1, 5))
+        board.write_text(text.rstrip()[:-1] + holes + ')')
+        for rel, data in stock_library(['Synth.3dshapes/owned.step']).items():
+            (source / rel).parent.mkdir(parents=True, exist_ok=True)
+            (source / rel).write_bytes(data)
+        scope = generation_scope('agent-ee.scope/3')
+        scope['inputs'][0].update(path=str(source), include=[p.relative_to(source).as_posix()
+                                                            for p in source.rglob('*') if p.is_file()])
+        params = scope['checks'][-1]['params']
+        params.update(bom_variant='ALT', assembly_exclusion=RULE,
+                      model_libraries={'KICAD10_3DMODEL_DIR': 'design/' + STOCK_RECEIPT})
+        result = self.run_case(scope=scope)
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertEqual(result['details']['designators']['excluded'], ['J1'])
+        self.assertTrue(result['details']['designators']['agree'])
+        self.assertFalse(set(result['details']['designators']['cpl']) & {'J1', 'H1', 'H2', 'H3', 'H4'})
+        self.assertTrue({'H1', 'H2', 'H3', 'H4'} <= set(result['details']['designators']['board_non_dnp']))
+        self.assertEqual(result['details']['consistency']['designators']['parity_violations'], [])
+        self.assertEqual(result['details']['consistency']['models']['records'][0]['status'], 'resolved')
+        baseline = load_baseline(self.run_dir)
+        self.assertIn('design/' + STOCK_RECEIPT, baseline['files'])
+        self.assertIn('design/' + STOCK_RECEIPT, baseline['coverage']['checks']['fab']['immutable_inputs'])
+        self.assertEqual(result['details']['bom_variant']['name'], 'ALT')
+        params['bom_variant'] = 'LITE'
+        refused = self.run_case(scope=scope)
+        self.assertEqual((refused['execution'], refused['outcome']), ('unsupported', 'unknown'), refused)
+        self.assertIn('changes the populated set', refused['summary'])
+        params['bom_variant'] = 'ALT'
+        params.pop('assembly_exclusion')
+        refused = self.run_case(scope=scope)
+        self.assertEqual((refused['execution'], refused['outcome']), ('unsupported', 'unknown'), refused)
+        self.assertIn('no matching assembly_exclusion', refused['summary'])
 
     def test_passing_package_seals_and_records_its_artifacts(self):
         result = self.run_case()

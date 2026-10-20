@@ -12,8 +12,13 @@ it mandatory.
 {"id": "fab", "kind": "fab_package", "params": {"netlist_check": "netlist"}}
 ```
 
-- Params are exactly `{netlist_check}`, the ID of an earlier `netlist` check.
-  Layer and output overrides are refused, as in `fab_export/1`.
+- Params require `netlist_check`, the ID of an earlier `netlist` check. Optional
+  `bom_variant`, `assembly_exclusion` and `probe_manifest` use the same validation
+  and evidence as `fab_export`; optional `model_libraries` maps stock variables to
+  captured model receipts for `fab_consistency`. Unknown keys, layer and output
+  overrides are refused. Model receipts and the probe declaration's source closure
+  are immutable baseline inputs. Probe admission requires an earlier matching,
+  passing `parts_subset` check bound to the same manifest and native netlist.
 - It is last except for following [`jlc_dfm`](jlc-dfm.md) checks naming this
   package. Any other following check is `unsupported/unknown`, and scope/3
   coverage refuses the package.

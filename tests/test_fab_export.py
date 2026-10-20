@@ -540,6 +540,20 @@ class NativeFabExportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify_evidence(run, results, required=True)
 
+    def test_board_only_holes_require_both_native_exclusions(self):
+        path = self.source / 'fab.kicad_pcb'
+        original = path.read_text()
+        for attrs in ('board_only', 'board_only exclude_from_bom', 'board_only exclude_from_pos_files',
+                      'exclude_from_bom exclude_from_pos_files'):
+            with self.subTest(attrs=attrs):
+                hole = f'''(footprint "Owned:Mount" (layer "F.Cu") (at 110 110)
+                    (property "Reference" "H1" (at 0 0) (layer "F.Fab")) (attr {attrs})
+                    (pad "" np_thru_hole circle (at 0 0) (size 2 2) (drill 2) (layers "*.Cu" "*.Mask")))'''
+                path.write_text(original.rstrip()[:-1] + hole + ')')
+                run, result = self.run_case()
+                self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+                self.assertIn('v1 refuses non-DNP exclusions', result['summary'])
+
     def test_four_layer_package_adds_inner_copper(self):
         run, result = self.run_case('fab4.kicad_pcb')
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
