@@ -1350,12 +1350,12 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.assertEqual([c["status"] for c in report["operating_temperature"]["components"]], ["pass", "pass"])
         self.assertEqual(report["operating_temperature"]["unlisted"], [])
 
-    def exemption(self, ref="R2", line="R2 is exempt from operating-temperature verification.", number=2):
-        decision = self.root / "decisions/temperature.md"
+    def exemption(self, ref="R2", line="R2 is exempt from operating-temperature verification.", number=1):
+        decision = self.root / "decisions/operating-temperature-exemptions.txt"
         decision.parent.mkdir(exist_ok=True)
-        decision.write_text("# Temperature exemptions\n" + line + "\n", encoding="utf-8")
-        return {ref: {"source": "decisions/temperature.md", "sha256": digest(decision), "line": number,
-                      "quote": line.split(";")[0]}}
+        decision.write_text(line + "\n", encoding="utf-8")
+        return {ref: {"source": "decisions/operating-temperature-exemptions.txt", "sha256": digest(decision),
+                      "line": number, "quote": line.split(";")[0]}}
 
     def test_operating_temperature_provenance_bound_exemption(self):
         from agent_ee.assembly_readiness import capability, validate_params
@@ -1367,20 +1367,22 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.assertEqual(report["outcome"], "pass", report["findings"])
         entry = report["operating_temperature"]["exempt"][0]
         self.assertEqual((entry["reference"], entry["status"]), ("R2", "exempt"))
-        self.assertEqual(entry["citation"]["sha256"], digest(self.root / "decisions/temperature.md"))
+        self.assertEqual(entry["citation"]["sha256"],
+                         digest(self.root / "decisions/operating-temperature-exemptions.txt"))
         files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
-        self.assertIn("decisions/temperature.md", capability(exempt, files, self.root)["immutable_inputs"])
+        self.assertIn("decisions/operating-temperature-exemptions.txt",
+                      capability(exempt, files, self.root)["immutable_inputs"])
         self.assertEqual(evaluate_assembly_readiness(self.root, netlist, exempt, captured_files=files)["outcome"],
                          "pass")
         # An uncaptured, changed, misquoted or unpopulated exemption is unknown, never a pass.
-        files.pop("decisions/temperature.md")
+        files.pop("decisions/operating-temperature-exemptions.txt")
         with self.assertRaisesRegex(ValueError, "must be a captured input"):
             capability(exempt, files, self.root)
         report = evaluate_assembly_readiness(self.root, netlist, exempt, captured_files=files)
         self.assertEqual(report["outcome"], "unknown")
         self.assertIn("not a captured input", report["operating_temperature"]["exempt"][0]["reason"])
         cases = {"differs from its declared sha256": {"sha256": "0" * 64},
-                 "quote is absent": {"line": 1}, "line 9": {"line": 9}}
+                 "quote is absent": {"line": 2}, "line 9": {"line": 9}}
         for reason, change in cases.items():
             with self.subTest(reason=reason):
                 citation = {**exempt["operating_temperature"]["exemptions"]["R2"], **change}
@@ -1403,13 +1405,13 @@ class AssemblyReadinessTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 validate_params({**params, "operating_temperature": {**spec, "exemptions": bad}})
         with self.assertRaisesRegex(ValueError, "mutable deviations"):
-            validate_params({**params, "deviations": "decisions/temperature.md",
+            validate_params({**params, "deviations": "decisions/operating-temperature-exemptions.txt",
                              "operating_temperature": {**spec, "exemptions": self.exemption()}})
 
     def test_operating_temperature_exemption_requires_affirmative_unconditional_statement(self):
         netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2")]))
         params = self.temperature_case()
-        decision = self.root / "decisions/temperature.md"
+        decision = self.root / "decisions/operating-temperature-exemptions.txt"
         decision.parent.mkdir()
         cases = [
             ("R2 is NOT exempt: it must carry DigiKey operating-temperature evidence.", 1, "R2", "unknown"),
@@ -1434,7 +1436,7 @@ class AssemblyReadinessTests(unittest.TestCase):
             ("R2 might be exempt.", 1, "R2", "unknown"),
             ("R2 is exempt?", 1, "R2", "unknown"),
             ("R2 is exempt. R2 must carry evidence.", 1, "R2 is exempt", "unknown"),
-            ("# Temperature exemptions\n- R2 is exempt from operating-temperature verification.", 2, "R2", "pass"),
+            ("# Temperature exemptions\n- R2 is exempt from operating-temperature verification.", 2, "R2", "unknown"),
             ("# Temperature exemptions\n- R2 is exempt from operating-temperature evidence.", 2, "R2", "unknown"),
         ]
         # Probe E's nine former bypasses, plus G-b retractions and quoted claims,
@@ -1468,6 +1470,18 @@ class AssemblyReadinessTests(unittest.TestCase):
             f"# Only if replaced\n{canonical}", f"# Not exempt\n{canonical}",
             f"If replaced:\n\n- {canonical}", f"- Pending:\n  - {canonical}",
             f"```\n{canonical}\n```", f"{canonical}\nonly if replaced.",
+            f"1. {canonical}",
+            f"# Not exempt\n## Resistors\n{canonical}",
+            f"# Rejected exemptions\n## Resistors\n{canonical}",
+            f"Not exempt\n==========\n\n{canonical}",
+            f"Rejected exemptions\n-------------------\n\n{canonical}",
+            f"Example of the canonical form:\n\n    {canonical}",
+            f"~~~\n```\n\n{canonical}\n\n~~~",
+            f"<!--\n\n{canonical}\n\n-->",
+            f"- {canonical}\n  - Withdrawn by the owner on 2026-10-01.",
+            f"The following was rejected:\n\n{canonical}",
+            f"It is false that\u2028\u2028{canonical}",
+            f"# Withdrawn exemptions\n{canonical}",
         ])
         cases.extend((text, text.splitlines().index(next(line for line in text.splitlines() if "R2" in line)) + 1,
                       "R2", "unknown") for text in rejected)
@@ -1476,12 +1490,11 @@ class AssemblyReadinessTests(unittest.TestCase):
             "R2 and R3 are exempt from operating-temperature verification.",
             "R2, R3 and C4 are exempt from operating-temperature verification.",
             "R2, R3, and C4 are exempt from operating-temperature verification.",
-            "1. R2 is exempt from operating-temperature verification.",
         ))
         for text, number, quote, expected in cases:
             with self.subTest(text=text):
                 decision.write_text(text + "\n", encoding="utf-8")
-                citation = {"source": "decisions/temperature.md", "sha256": digest(decision),
+                citation = {"source": "decisions/operating-temperature-exemptions.txt", "sha256": digest(decision),
                             "line": number, "quote": quote}
                 configured = {**params, "operating_temperature": {**params["operating_temperature"],
                                                                  "exemptions": {"R2": citation}}}
@@ -1498,6 +1511,65 @@ class AssemblyReadinessTests(unittest.TestCase):
                     defect = self.evaluate(netlist, hot)
                     self.assertEqual(defect["outcome"], "defect", defect["findings"])
                     self.assertIn("operating_temperature_out_of_range", [f["code"] for f in defect["findings"]])
+
+    def test_operating_temperature_exemption_dedicated_file_is_atomic_ascii(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2"), part("R3")]))
+        params = self.temperature_case()
+        canonical = "R2 is exempt from operating-temperature verification."
+        second = "R3 is exempt from operating-temperature verification."
+        decision = self.root / "decisions/operating-temperature-exemptions.txt"
+        decision.parent.mkdir()
+        invalid = ["\n", canonical + "\n\n", "\n" + canonical,
+                   "# Exemptions\n" + canonical, " " + canonical, canonical + " ",
+                   canonical + "\r\n", canonical + "\n# Withdrawn",
+                   canonical + "\n\nThat exemption is withdrawn.",
+                   "- " + canonical, "1. " + canonical,
+                   canonical.replace("verification", "verıfication"),
+                   canonical.replace("R2", "Р2"),
+                   canonical.replace("is exempt", "iſ exempt"),
+                   canonical.replace("R2", "R２"),
+                   canonical.replace("operating", "operatİng"),
+                   "ſ2 is exempt from operating-temperature verification.",
+                   "K2 is exempt from operating-temperature verification."]
+        invalid.extend(canonical + sep + second for sep in
+                       ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"))
+        # A bad line invalidates both citations, even when it is unrelated or after the cited lines.
+        for content, expected in [(canonical + "\n" + second + ending, "pass") for ending in ("", "\n")] + [
+                (canonical + "\n" + second + "\n" + bad, "unknown") for bad in invalid] + [
+                ("", "unknown"), ("\n", "unknown")]:
+            with self.subTest(content=content):
+                decision.write_bytes(content.encode("utf-8"))
+                citations = {ref: {"source": decision.relative_to(self.root).as_posix(),
+                                   "sha256": digest(decision), "line": number, "quote": ref}
+                             for ref, number in (("R2", 1), ("R3", 2))}
+                configured = {**params, "operating_temperature": {**params["operating_temperature"],
+                                                                 "exemptions": citations}}
+                files = {p.relative_to(self.root).as_posix(): digest(p)
+                         for p in self.root.rglob("*") if p.is_file()}
+                report = evaluate_assembly_readiness(self.root, netlist, configured, captured_files=files)
+                self.assertEqual(report["outcome"], expected, report["findings"])
+                self.assertEqual([e["status"] for e in report["operating_temperature"]["exempt"]],
+                                 ["exempt" if expected == "pass" else "unknown"] * 2)
+
+    def test_operating_temperature_exemption_refuses_other_document_sources(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2")]))
+        params = self.temperature_case()
+        canonical = "R2 is exempt from operating-temperature verification."
+        for name, content, number in (
+                ("REQUIREMENTS.md", canonical, 1),
+                ("decisions/temperature.md", "# Temperature exemptions\n" + canonical, 2),
+                ("docs/temperature.txt", canonical, 1),
+                ("docs/operating-temperature-exemptions.txt.md", canonical, 1)):
+            with self.subTest(source=name):
+                decision = self.root / name
+                decision.parent.mkdir(exist_ok=True)
+                decision.write_text(content + "\n", encoding="ascii")
+                citation = {"source": name, "sha256": digest(decision), "line": number, "quote": "R2"}
+                configured = {**params, "operating_temperature": {**params["operating_temperature"],
+                                                                 "exemptions": {"R2": citation}}}
+                report = self.evaluate(netlist, configured)
+                self.assertEqual(report["outcome"], "unknown", report["findings"])
+                self.assertIn("dedicated", report["operating_temperature"]["exempt"][0]["reason"])
 
     def test_operating_temperature_exemption_refuses_design_sources_and_longer_tokens(self):
         from agent_ee.assembly_readiness import capability, validate_params

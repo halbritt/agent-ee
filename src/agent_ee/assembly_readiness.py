@@ -951,7 +951,7 @@ def _validate_operating_temperature(raw):
 
 def _reference_token(ref):
     """The reference as a case-insensitive whole token, so R1 never matches R10."""
-    return re.compile(r"(?<![A-Za-z0-9_/-])" + re.escape(ref) + r"(?![A-Za-z0-9_/-])", re.I)
+    return re.compile(r"(?<![A-Za-z0-9_/-])" + re.escape(ref) + r"(?![A-Za-z0-9_/-])", re.I | re.ASCII)
 
 
 def _validate_citation(raw, label):
@@ -971,7 +971,7 @@ def _validate_citation(raw, label):
 
 
 def _verify_exemption(inputs_root, ref, citation, captured_files):
-    """The cited bytes are captured, pinned and hold the quote on the cited line; ValueError otherwise."""
+    """Verify the pinned dedicated file in full, then bind the reference to its cited line."""
     try:
         path, rel = _resolve_captured_file(inputs_root, citation["source"], f"{ref} exemption source")
     except AssemblyReadinessExecutionError as exc:
@@ -982,12 +982,18 @@ def _verify_exemption(inputs_root, ref, citation, captured_files):
     if captured_files is not None and captured_files.get(rel) != actual:
         raise ValueError(f"{ref} exemption source {rel!r} is not a captured input")
     try:
-        lines = path.read_bytes().decode("utf-8").splitlines()
+        content = path.read_bytes().decode("ascii")
     except (OSError, UnicodeDecodeError) as exc:
         raise ValueError(f"{ref} exemption source {rel!r} is unreadable: {exc}") from exc
+    if path.name != "operating-temperature-exemptions.txt":
+        raise ValueError(f"{ref} exemption source must be a dedicated operating-temperature-exemptions.txt file")
+    # Only LF separates statements; stripping more than one newline could hide blank lines.
+    lines = content.removesuffix("\n").split("\n")
+    statements = [_canonical_exemption_refs(line) for line in lines]
     if citation["line"] > len(lines) or citation["quote"] not in lines[citation["line"] - 1]:
         raise ValueError(f"{ref} exemption quote is absent from {rel!r} line {citation['line']}")
-    _require_unconditional(_policy_unit(lines, citation["line"] - 1, exemption=True), ref, exemption=True)
+    if ref.casefold() not in statements[citation["line"] - 1]:
+        raise ValueError(f"the canonical exemption does not name {ref!r}")
 
 
 def _operating_temperature(inputs_root, spec, populated, captured_files):
@@ -1243,10 +1249,7 @@ EXEMPTION_REF = r"[A-Z]+[0-9]+"
 EXEMPTION_SENTENCE_RE = re.compile(
     r"(?P<refs>" + EXEMPTION_REF + r"(?:, " + EXEMPTION_REF + r")*"
     r"(?:(?:,)? and " + EXEMPTION_REF + r")?) (?P<verb>is|are) "
-    r"exempt from operating-temperature verification\.", re.I)
-# Ambiguous denials are refused across the whole statement, including text omitted from the quote.
-NEGATED_EXEMPTION_RE = re.compile(
-    r"(?<![A-Za-z0-9_])(?:not|never|no|nor|neither|cannot|denied|revoked|rejected)(?![A-Za-z0-9_])|n't|\?", re.I)
+    r"exempt from operating-temperature verification\.", re.I | re.ASCII)
 PREDICATE_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:is|are|be|been|being|was|were|fitted|assembled|excluded|soldered)(?![A-Za-z0-9_])|"
     + HAND_FIT_RE.pattern, re.I)
@@ -1272,7 +1275,7 @@ def _unit_bounds(lines, index):
     return start, end, LIST_ITEM_RE.match(lines[start]) is not None
 
 
-def _policy_unit(lines, index, *, exemption=False):
+def _policy_unit(lines, index):
     """Whole owner statement holding the cited line; refuses when what governs it is ambiguous."""
     if sum(1 for line in lines[:index] if line.lstrip().startswith(("```", "~~~"))) % 2:
         raise ValueError("the cited line is inside a code block")
@@ -1294,8 +1297,6 @@ def _policy_unit(lines, index, *, exemption=False):
     heading = next((line for line in reversed(lines[:start]) if line.lstrip().startswith("#")), "")
     if CONDITIONAL_RE.search(heading):
         raise ValueError(f"the governing heading {heading.strip()!r} is conditional")
-    if exemption and NEGATED_EXEMPTION_RE.search(heading):
-        raise ValueError(f"the governing heading {heading.strip()!r} does not affirm an exemption")
     return " ".join(line.strip() for line in lines[start:end + 1])
 
 
@@ -1334,19 +1335,21 @@ def _confined_spans(unit):
     return spans
 
 
-def _require_unconditional(unit, mpn, *, exemption=False):
+def _canonical_exemption_refs(sentence):
+    """Validate one exact ASCII owner sentence and return its reference identities."""
+    match = EXEMPTION_SENTENCE_RE.fullmatch(sentence)
+    if match is None:
+        raise ValueError("every line must be a complete canonical operating-temperature exemption")
+    refs = re.findall(EXEMPTION_REF, match["refs"], re.I | re.ASCII)
+    identities = {ref.casefold() for ref in refs}
+    if (len(identities) != len(refs)
+            or match["verb"].lower() != ("is" if len(refs) == 1 else "are")):
+        raise ValueError("the canonical exemption must name each reference once and use is/are consistently")
+    return identities
+
+
+def _require_unconditional(unit, mpn):
     """The identity must be named once in an affirmative statement, outside every conditional clause."""
-    if exemption:
-        sentence = LIST_ITEM_RE.sub("", unit, count=1)
-        match = EXEMPTION_SENTENCE_RE.fullmatch(sentence)
-        if match is None:
-            raise ValueError("the cited statement must be a complete canonical operating-temperature exemption")
-        refs = re.findall(EXEMPTION_REF, match["refs"], re.I)
-        if (len({ref.casefold() for ref in refs}) != len(refs)
-                or mpn.casefold() not in {ref.casefold() for ref in refs}
-                or match["verb"].lower() != ("is" if len(refs) == 1 else "are")):
-            raise ValueError("the canonical exemption must name each reference once and use is/are consistently")
-        return
     if not HAND_FIT_RE.search(unit) or NEGATED_HAND_FIT_RE.search(unit):
         raise ValueError("the cited statement does not affirmatively declare a hand-fit")
     pattern = r"(?<![A-Za-z0-9_/-])" + re.escape(mpn) + r"(?![A-Za-z0-9_/-])"
