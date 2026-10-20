@@ -617,6 +617,124 @@ class NativeProbeTests(unittest.TestCase):
                            '--schematic-parity', '-o', '/work/drc.json', '/candidate/probe.kicad_pcb')
                 self.assertEqual(read_json(work / 'drc.json')['schematic_parity'], [])
 
+    def test_forward_annotation_refuses_mixed_encodings_within_one_component(self):
+        import xml.etree.ElementTree as ET
+        from agent_ee.forward_annotation import plan, apply, build_plan
+        _, xml = self.native()
+        probes = pf.declarations(self.parts, self.root)
+        manifest = read_json(self.root / 'cad.json')
+        empty = self.root / 'empty.kicad_pcb'
+        empty.write_bytes(self.empty_board)
+        captured = {m['path']: (self.root / m['path']).read_bytes()
+                    for lib in manifest['libraries'] for m in lib['members']}
+        facts = dict(footprints=[], tracks=[], zones=[], edge_bbox_nm=[0, 0, 80000000, 50000000])
+        legacy, encoded = canonical(probes['TP1']).decode(), pf.marker(probes['TP1'])
+        for name, field_value, property_value in [('legacy-field', legacy, encoded),
+                                                   ('canonical-field', encoded, legacy)]:
+            with self.subTest(encoding=name):
+                tree = ET.fromstring(xml.read_bytes())
+                comp = tree.find('./components/comp[@ref="TP1"]')
+                comp.find('./fields/field[@name="AGENT_EE_Probe"]').text = field_value
+                comp.find('./property[@name="AGENT_EE_Probe"]').set('value', property_value)
+                data = ET.tostring(tree)
+                pure = build_plan(data, digest(empty), facts, manifest, captured)
+                netlist = self.root / (name + '.xml')
+                netlist.write_bytes(data)
+                planned = plan(empty, netlist, manifest, self.root, self.root / (name + '-plan'))
+                for rejected in (pure, planned):
+                    self.assertEqual((rejected['execution'], rejected['outcome']), ('failed', 'unknown'))
+                    self.assertEqual(rejected['findings'], [dict(code='probe_feature_mismatch',
+                        location='/components/TP1', message='probe field/property encodings differ')])
+                    self.assertEqual(rejected['probe_migrations'], [])
+                output = self.root / (name + '.kicad_pcb')
+                receipt = apply(planned, empty, netlist, manifest, self.root, output,
+                                self.root / (name + '-apply'))
+                self.assertEqual(receipt['execution'], 'failed', receipt)
+                self.assertFalse(output.exists())
+                self.assertEqual(empty.read_bytes(), self.empty_board)
+                self.assertEqual(netlist.read_bytes(), data)
+
+    def test_forward_annotated_edited_declaration_marker_refused_by_admission(self):
+        import xml.etree.ElementTree as ET
+        from agent_ee.forward_annotation import plan, apply
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        project, xml = self.native()
+        probes = pf.declarations(self.parts, self.root)
+        manifest = read_json(self.root / 'cad.json')
+        empty = self.root / 'empty.kicad_pcb'
+        empty.write_bytes(self.empty_board)
+        scope_path = self.root / 'scaffold/scope.json'
+        scope = read_json(scope_path)
+        scope['checks'] += [{'id': 'binding', 'kind': 'part_binding', 'params': {
+            'probe_manifest': 'parts.json', 'netlist_check': 'netlist', 'require_datasheet': True}},
+            {'id': 'fab', 'kind': 'fab_export', 'params': {
+                'netlist_check': 'netlist', 'probe_manifest': 'parts.json'}}]
+        scope['baseline']['requirements'][0]['checks'] += ['binding', 'fab']
+        write_json(scope_path, scope)
+        original_parts = (self.candidate / 'parts.json').read_bytes()
+        original_schematic = (project / 'probe.kicad_sch').read_bytes()
+        for name, record in [('symbol-body', dict(probes['TP1'], symbol_body_sha256='0' * 64)),
+                             ('part-id', dict(probes['TP1'], part_id='edited-declaration'))]:
+            with self.subTest(edited=name):
+                tree = ET.fromstring(xml.read_bytes())
+                comp = tree.find('./components/comp[@ref="TP1"]')
+                value = pf.marker(record)
+                comp.find('./fields/field[@name="AGENT_EE_Probe"]').text = value
+                comp.find('./property[@name="AGENT_EE_Probe"]').set('value', value)
+                edited_xml = self.root / (name + '.xml')
+                edited_xml.write_bytes(ET.tostring(tree))
+                planned = plan(empty, edited_xml, manifest, self.root, self.root / (name + '-plan'))
+                self.assertEqual(planned['execution'], 'ok', planned)
+                board = self.root / (name + '.kicad_pcb')
+                receipt = apply(planned, empty, edited_xml, manifest, self.root, board,
+                                self.root / (name + '-apply'))
+                self.assertEqual(receipt['execution'], 'ok', receipt)
+                shutil.copyfile(board, project / 'probe.kicad_pcb')
+                run = self.root / (name + '-admission')
+                run.mkdir()
+                capture(scope_path, run)
+                results = {r['id']: r for r in run_checks(run, time.monotonic() + 300)}
+                # The native producer and membership retain the immutable, original schematic.
+                self.assertEqual(results['netlist']['outcome'], 'info', results['netlist'])
+                self.assertEqual(results['parts']['outcome'], 'pass', results['parts'])
+                self.assertEqual(results['binding']['outcome'], 'defect', results['binding'])
+                invalid = results['binding']['details']['invalid_bindings']
+                self.assertTrue(any(row['reference'] == 'TP1' and row['source'] == 'probe'
+                    and row['property'] == pf.PROPERTY and 'declaration/footprint identity differs' in row['reason']
+                    for row in invalid), invalid)
+                self.assertEqual((results['fab']['execution'], results['fab']['outcome']),
+                                 ('malformed', 'unknown'), results['fab'])
+                self.assertIn('TP1: probe declaration/footprint identity differs', str(results['fab']))
+                self.assertFalse((run / 'work/fab/fab/manifest.json').exists())
+                self.assertEqual((self.candidate / 'parts.json').read_bytes(), original_parts)
+                self.assertEqual((project / 'probe.kicad_sch').read_bytes(), original_schematic)
+                # Editing the schematic marker as well cannot satisfy membership.
+                from agent_ee.schematic_emit import parse_quoted, Quoted as Q
+                from agent_ee.scaffold import sexpr
+                from agent_ee.symbol_library import children
+                schematic = parse_quoted(original_schematic)
+                sym = next(s for s in children(schematic, 'symbol')
+                           if pf.properties(s).get('Reference') == 'TP1')
+                prop = next(p for p in children(sym, 'property') if p[1] == pf.PROPERTY)
+                prop[2] = Q(value)
+                try:
+                    (project / 'probe.kicad_sch').write_bytes(sexpr(schematic))
+                    changed_run = self.root / (name + '-changed-schematic')
+                    changed_run.mkdir()
+                    capture(scope_path, changed_run)
+                    changed = {r['id']: r for r in run_checks(changed_run, time.monotonic() + 300)}
+                finally:
+                    (project / 'probe.kicad_sch').write_bytes(original_schematic)
+                self.assertEqual(changed['netlist']['outcome'], 'info', changed['netlist'])
+                membership = read_json(changed_run / 'work/parts/parts-subset.json')
+                self.assertEqual((membership['execution'], membership['outcome']), ('malformed', 'unknown'))
+                self.assertEqual(membership['findings'], [dict(code='unavailable_captured_evidence',
+                    message='TP1: probe declaration identity differs')])
+                for cid in ('parts', 'binding', 'fab'):
+                    self.assertNotEqual(changed[cid]['outcome'], 'pass', changed[cid])
+                self.assertFalse((changed_run / 'work/fab/fab/manifest.json').exists())
+
     def test_forward_annotation_refuses_invalid_legacy_sources(self):
         import xml.etree.ElementTree as ET
         from agent_ee.forward_annotation import plan, apply, build_plan

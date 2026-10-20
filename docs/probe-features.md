@@ -95,7 +95,10 @@ identity, flags, source bytes and geometry checks. AGENTEE-302 converts validate
 legacy fields from the native XML and retained board to the KiBot-safe encoding
 in planned adds and updates, preserving the entire decoded record. The plan and
 successful receipt record each change in `probe_migrations`; canonical markers
-pass through unchanged. Malformed, tampered and ambiguous legacy identities stay
+pass through unchanged. Each native XML component's marker field and property
+must be text-identical: legacy/canonical disagreement is a
+`probe_feature_mismatch`, even if both decode to the same record (AGENTEE-308).
+Different components may still use different encodings. Malformed, tampered and ambiguous legacy identities stay
 refused. Saved-board field verification and final validation require canonical
 output. See [forward annotation](forward-annotation.md#legacy-probe-migration-agentee-302).
 
@@ -107,6 +110,17 @@ against `probe_features.declarations` and rerun native parity and fab checks
 before using the export. Never derive source approval from an old marker alone.
 The owned fixtures qualify this migration; the private real-pod replay is
 integration evidence, not hardware or fabrication acceptance.
+
+Forward annotation validates markers against native component identity and
+captured footprint geometry; it has no immutable parts-manifest input. Its
+successful output still requires admission. The native integration regression
+edits `symbol_body_sha256` and `part_id` before planning and apply, captures each
+saved board with the original declaration, and requires a probe binding defect
+from `part_binding` and a typed `malformed`/`unknown` refusal from `fab_export`
+with no published fab manifest. `parts_subset` still passes for the unchanged
+schematic; it does not inspect the saved board. Editing the schematic marker
+as well fails membership with `unavailable_captured_evidence`, and neither
+admission consumer passes.
 
 Missing or mismatched declarations cannot qualify probes. Existing verdicts are
 preserved: unsupported source prerequisites remain unknown; determinate invalid

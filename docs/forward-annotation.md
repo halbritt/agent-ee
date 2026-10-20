@@ -113,7 +113,23 @@ geometry. It converts that field to `probe_features.marker(record)` in planned
 adds and updates. The decoded record, including source hashes, geometry and net
 identity, is unchanged. Canonical fields pass through unchanged. Malformed,
 ambiguous or tampered properties remain refusals, including legacy properties
-on an existing board. Mixed legacy and canonical sources are supported.
+on an existing board. Different components may use legacy or canonical markers.
+Within one XML component, the `AGENT_EE_Probe` field and property must have
+identical text; even equivalent legacy/canonical encodings are refused with
+`probe_feature_mismatch` (AGENTEE-308). Neither location takes precedence.
+
+Forward annotation has no parts-manifest input and does not confer immutable
+source approval. Its marker checks bind native identity and captured footprint
+geometry. Admission separately rederives the marker from the immutable parts
+declaration. The native integration test
+`test_forward_annotated_edited_declaration_marker_refused_by_admission` applies
+XML with an edited `symbol_body_sha256` or `part_id`, then captures the board
+with the original schematic and declaration. Membership passes for that
+unchanged schematic; `part_binding` reports a probe binding defect and
+`fab_export` refuses with `malformed`/`unknown` before publishing a fab manifest.
+When the schematic marker is edited too, a fresh native export fails
+`parts_subset` with `unavailable_captured_evidence`; both admission consumers
+remain non-pass.
 
 `probe_migrations` records each changed property from the XML or a retained board
 footprint; a successful apply receipt copies the recomputed list. Source XML

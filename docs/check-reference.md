@@ -1511,6 +1511,14 @@ Forward annotation migrates validated legacy source or retained-board fields to
 canonical encoding and records exact changes in its plan and successful receipt
 (AGENTEE-302). Final board validation requires canonical fields; admission checks
 still refuse a legacy schematic, which must be regenerated before native parity.
+Within one native XML component, marker field/property text must agree exactly;
+mixed legacy/canonical encodings produce `probe_feature_mismatch` (AGENTEE-308).
+Forward annotation alone does not establish immutable source approval. A native
+integration regression applies edited declaration-bound markers, then requires
+`part_binding` to report a probe binding defect and `fab_export` to refuse as
+`malformed`/`unknown`, without a fab manifest. `parts_subset` checks the schematic
+and native inventory, so an unchanged schematic still passes that check. An
+edited schematic marker fails membership with `unavailable_captured_evidence`.
 See the [migration and external KiBot regression](probe-features.md#migrating-legacy-inline-json-properties).
 
 Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.

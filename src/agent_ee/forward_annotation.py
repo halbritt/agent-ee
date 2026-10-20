@@ -122,6 +122,9 @@ def build_plan(xml_bytes, board_sha256, facts, manifest, captured_footprints):
                 raise AnnotationError('probe_feature_mismatch', 'probe field/property identity differs',
                                       '/components/' + ref)
             if PROPERTY in fields:
+                if fields[PROPERTY] != inventory['components'][ref]['properties'][PROPERTY]:
+                    raise AnnotationError('probe_feature_mismatch', 'probe field/property encodings differ',
+                                          '/components/' + ref)
                 try:
                     record = parse_marker(fields[PROPERTY])
                     if record['reference'] != ref:
