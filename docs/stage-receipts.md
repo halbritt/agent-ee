@@ -86,6 +86,16 @@ The receipt identity algorithm is unchanged: it hashes every mounted file and
 link target. Added `.py`, `.pyc` or other files in the mounted snapshot still
 cause `mount_changed` and `source_changed` and refuse adoption.
 
+Host validation refuses a mount whose resolved source is the running package's
+`src` tree or an ancestor containing it
+(AGENTEE-327). Symlink and parent-directory aliases receive the same
+`LivePackageSourceError` (`ValueError`) with violation `live_package_source:<at>`.
+`run_step` validates before tool observation or launch and creates no receipt for
+an invalid declaration. This applies to every mount, regardless of its sandbox
+name or the optional `source` field. Use a snapshot for package tools.
+`validate_step(host=False)` remains structural validation for retained receipt
+replay; it does not inspect today's host source paths.
+
 Snapshots live under `AGENT_EE_TOOL_SOURCE_CACHE`, or
 `~/.cache/agent-ee/tool-source` by default, in a directory named for the ordinary
 receipt tree digest. Creation is locked and published by rename; reuse verifies

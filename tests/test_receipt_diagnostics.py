@@ -42,6 +42,22 @@ class ReceiptDiagnosticsTests(unittest.TestCase):
         self.assertEqual((path.parent / 'stderr.log').read_text(), 'tool diagnostics')
         return path
 
+    def test_missing_violations_retains_receipt_and_preserves_original_exception(self):
+        receipt = {key: value for key, value in self.receipt.items() if key != 'violations'}
+        (self.source / 'receipt.json').write_text(json.dumps(receipt))
+        with self.assertRaisesRegex(AssertionError, 'violations.*missing.*receipt kept at'):
+            diagnostics.retain_refusal(self.source, receipt)
+        output = io.StringIO()
+        fixture = diagnostics.ReceiptTemporaryDirectory(dir=self.root)
+        shutil.copytree(self.source, Path(fixture.name) / 'run')
+        with contextlib.redirect_stderr(output):
+            with self.assertRaisesRegex(RuntimeError, 'original failure'):
+                with fixture:
+                    raise RuntimeError('original failure')
+        self.assertFalse(Path(fixture.name).exists())
+        self.assertIn('receipt kept at', output.getvalue())
+        self.assertEqual(len(list(diagnostics.RETENTION_ROOT.glob('*/receipt.json'))), 2)
+
     def test_writable_repository_is_default(self):
         self.assertEqual(self.retained().parent.parent, diagnostics.RETENTION_ROOT)
 
