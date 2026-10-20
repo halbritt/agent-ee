@@ -1694,7 +1694,11 @@ AGENTEE-327 host validation refuses mounts equal to or containing the package
 `live_package_source:<at>` before execution. Retained receipt replay stays
 host-independent. `tests.test_stage_receipts.StepDeclarationTests` covers refusal
 and snapshot admission; `tests.test_tool_source` validates all registered step
-builders against this runtime guard.
+builders against this runtime guard. AGENTEE-329 also refuses bind aliases of
+`src` and its ancestors by device/inode, binds the validated resolved path, and
+rechecks that identity before execution. Descendant admission and the remaining
+concurrent namespace limit are recorded in
+[stage receipts](stage-receipts.md#python-tool-source-snapshots).
 
 Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
 an `acquisitions` map with acquisition method and redirect provenance, including

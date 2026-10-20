@@ -136,6 +136,75 @@ class StepDeclarationTests(unittest.TestCase):
                 spec = self.spec(mounts=[{'source': str(source), 'at': '/tool'}])
                 self.assertEqual(validate_step(spec)['mounts'], spec['mounts'])
 
+    @toolchain_test
+    def test_symlink_swap_binds_the_validated_source(self):
+        benign = Path(self.tool)
+        (benign / 'BENIGN').write_text('original')
+        alias = Path(self.tmp.name) / 'alias'
+        alias.symlink_to(benign, target_is_directory=True)
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
+                         mounts=[{'source': str(alias), 'at': '/tool'}],
+                         source=None, version_argv=None, writes={}, artifacts=['listing'])
+        real_observe = stage_receipts.observe_tool
+        def swapping(value):
+            if alias.is_symlink() and alias.resolve() == benign:
+                alias.unlink()
+                alias.symlink_to(Path(stage_receipts.__file__).resolve().parents[1],
+                                 target_is_directory=True)
+            return real_observe(value)
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        with patch.object(stage_receipts, 'observe_tool', swapping):
+            receipt = run_step(receipt_dir, design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertEqual((receipt_dir / 'run/listing').read_text().split(), ['BENIGN'])
+        self.assertEqual(receipt['spec']['mounts'], spec['mounts'])
+        self.assertEqual(validate_receipt(receipt_dir), receipt)
+
+    @toolchain_test
+    def test_replaced_resolved_source_refused_before_launch(self):
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        real_observe = stage_receipts.observe_tool
+        def replacing(value):
+            observed = real_observe(value)
+            original = Path(self.tool)
+            original.rename(original.with_name('old-tool'))
+            original.mkdir()
+            return observed
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        with patch.object(stage_receipts, 'observe_tool', replacing), \
+                patch.object(stage_receipts, 'execute') as execute:
+            with self.assertRaisesRegex(ValueError, 'mount_source_changed:/tool'):
+                run_step(receipt_dir, design, self.spec(), {})
+        execute.assert_not_called()
+        self.assertFalse(receipt_dir.exists())
+
+    @toolchain_test
+    def test_bind_alias_live_source_refused(self):
+        import subprocess
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        alias = Path(self.tmp.name) / 'bind-alias'
+        alias.mkdir()
+        code = """import os, sys
+from agent_ee.stage_receipts import validate_step, LivePackageSourceError
+assert os.path.samefile(sys.argv[1], sys.argv[2])
+spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': 'alias',
+        'argv': ['/usr/bin/true'], 'writes': {'a': 'design/a'},
+        'mounts': [{'source': sys.argv[1], 'at': '/tool'}]}
+try:
+    validate_step(spec)
+except LivePackageSourceError as exc:
+    assert exc.violation == 'live_package_source:/tool'
+else:
+    raise AssertionError('live bind alias admitted')
+"""
+        result = subprocess.run(['bwrap', '--bind', '/', '/', '--ro-bind', str(live), str(alias),
+                                 '--', '/usr/bin/python3', '-B', '-c', code, str(alias), str(live)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_normalizes_defaults(self):
         spec = validate_step({k: v for k, v in self.spec().items() if k != 'timeout_s'})
         self.assertEqual(spec['adoptable_exits'], [0])

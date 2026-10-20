@@ -83,6 +83,42 @@ class LivePackageSourceError(ValueError):
         super().__init__(self.violation)
 
 
+def _mount_identity(path):
+    observed = path.stat()
+    return observed.st_dev, observed.st_ino
+
+
+def _validated_mount_source(source, at):
+    resolved = Path(source).resolve(strict=True)
+    package_source = Path(__file__).resolve(strict=True).parents[1]
+    # A bind of src or a containing directory has the same identity even when
+    # its spelling is outside the checkout. resolve() alone cannot detect it.
+    live_ancestors = {package_source, *package_source.parents}
+    if (resolved in live_ancestors or
+            _mount_identity(resolved) in {_mount_identity(p) for p in live_ancestors}):
+        raise LivePackageSourceError(at)
+    return str(resolved)
+
+
+def _resolved_mounts(spec):
+    mounts = [{'source': _validated_mount_source(m['source'], m['at']), 'at': m['at']}
+              for m in spec['mounts']]
+    identities = [_mount_identity(Path(m['source'])) for m in mounts]
+    return {**spec, 'mounts': mounts}, identities
+
+
+def _recheck_mounts(spec, identities):
+    for mount, expected in zip(spec['mounts'], identities):
+        source = Path(mount['source'])
+        try:
+            if (str(source.resolve(strict=True)) != mount['source'] or
+                    _mount_identity(source) != expected):
+                raise ValueError('mount_source_changed:' + mount['at'])
+            _validated_mount_source(mount['source'], mount['at'])
+        except OSError as exc:
+            raise ValueError('mount_source_changed:' + mount['at']) from exc
+
+
 def validate_step(spec, *, host=True):
     """Return the normalized step declaration; host=True also checks mount sources."""
     if not isinstance(spec, dict) or spec.get('schema') != STEP_SCHEMA:
@@ -113,10 +149,7 @@ def validate_step(spec, *, host=True):
         if host:
             if not Path(source).exists():
                 raise ValueError(f'mount source does not exist: {source}')
-            resolved = Path(source).resolve(strict=True)
-            package_source = Path(__file__).resolve(strict=True).parents[1]
-            if resolved == package_source or resolved in package_source.parents:
-                raise LivePackageSourceError(at)
+            _validated_mount_source(source, at)
         normalized_mounts.append({'source': source, 'at': at})
 
     def tool_path(value, label):
@@ -578,7 +611,8 @@ def run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=
 
 
 def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=None):
-    spec = validate_step(spec)
+    spec = validate_step(spec, host=False)
+    runtime_spec, mount_identities = _resolved_mounts(spec)
     if not isinstance(binding, dict):
         raise ValueError('stage receipt binding must be an object')
     timeout = spec['timeout_s']
@@ -599,17 +633,19 @@ def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation
         shutil.copytree(design, receipt_dir / 'inputs')
         inputs = _strict_tree(receipt_dir / 'inputs')
         shutil.copytree(receipt_dir / 'inputs', run / 'design')
-        tool = observe_tool(spec)
+        tool = observe_tool(runtime_spec)
+        _recheck_mounts(runtime_spec, mount_identities)
     except BaseException:
         # Nothing was executed or observed; a partial copy is not evidence.
         shutil.rmtree(receipt_dir, ignore_errors=True)
         raise
-    mounts = [(m['source'], m['at']) for m in spec['mounts']]
+    mounts = [(m['source'], m['at']) for m in runtime_spec['mounts']]
     try:
         if spec['version_argv'] is not None:
             version_record = execute(receipt_dir / 'inputs', receipt_dir / 'version', spec['version_argv'],
                                      timeout=max(.001, min(VERSION_TIMEOUT_S, timeout)), network=False,
                                      extra_ro=mounts, cancellation=cancellation)
+        _recheck_mounts(runtime_spec, mount_identities)
         # An exhausted budget is recorded as the step's own observed timeout.
         execution = execute(receipt_dir / 'inputs', run, spec['argv'],
                             timeout=max(.001, timeout - (time.monotonic() - start)), network=False,
@@ -625,7 +661,7 @@ def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation
         # The executor could not keep its records, for example because the tool left /work
         # unwritable. No record on disk is trusted; the receipt is kept and the error re-raised.
         failure = exc
-    tool_after = observe_tool(spec)
+    tool_after = observe_tool(runtime_spec)
     outputs = _outputs(spec, run)
     violations = _violations(spec, inputs, receipt_dir, tool, tool_after,
                              {'run': execution, 'version': version_record})

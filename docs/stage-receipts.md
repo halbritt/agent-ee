@@ -96,6 +96,21 @@ name or the optional `source` field. Use a snapshot for package tools.
 `validate_step(host=False)` remains structural validation for retained receipt
 replay; it does not inspect today's host source paths.
 
+AGENTEE-329 also refuses device/inode aliases of `src` and its ancestors,
+including bind mounts whose resolved spelling is outside the checkout. Execution
+uses the resolved path validated for that run, while the retained specification
+keeps its original declaration. Observation and both execution calls use that
+resolved path. Its device/inode is checked after initial observation and before
+the main step; replacement or disappearance raises `mount_source_changed:<at>`.
+A failure before initial observation finishes removes the partial receipt and
+launches no tool. Retained replay remains independent of host paths.
+
+Descendant mounts (including `src/agent_ee`) remain a known admission gap pending
+a coordinator ruling on the existing admission regression. This also limits
+identity detection for aliases of descendants; the package root and ancestor
+bind aliases are refused. The path check does not pin an open mount descriptor:
+a concurrent namespace change after the last check remains outside this guarantee.
+
 Snapshots live under `AGENT_EE_TOOL_SOURCE_CACHE`, or
 `~/.cache/agent-ee/tool-source` by default, in a directory named for the ordinary
 receipt tree digest. Creation is locked and published by rename; reuse verifies
