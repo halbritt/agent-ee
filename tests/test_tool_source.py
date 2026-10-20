@@ -1,6 +1,9 @@
 """Snapshot identity, host bytecode isolation and real receipt mutation boundaries."""
 
 import os
+import json
+import stat
+import time
 import py_compile
 import shutil
 import tempfile
@@ -38,6 +41,176 @@ class SnapshotTests(unittest.TestCase):
         other = self.root / 'same-bytes'
         shutil.copytree(self.source, other)
         self.assertEqual(snapshot(other), mounted)
+
+    def test_snapshot_permissions_ignore_umask(self):
+        (self.source / 'nested').mkdir()
+        (self.source / 'nested' / 'data.txt').write_text('data')
+        for mask in (0o000, 0o022, 0o077, 0o777):
+            with self.subTest(umask=mask):
+                cache = self.root / f'cache-{mask}' / 'nested'
+                previous = os.umask(mask)
+                try:
+                    with mock.patch.dict(os.environ, AGENT_EE_TOOL_SOURCE_CACHE=str(cache)):
+                        captured = snapshot(self.source)
+                finally:
+                    os.umask(previous)
+                for directory in (cache.parent, cache, captured, captured / 'nested'):
+                    self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700)
+                self.assertEqual(stat.S_IMODE((captured / 'tool.py').stat().st_mode), 0o400)
+                self.assertEqual(stat.S_IMODE((cache / '.lock').stat().st_mode), 0o600)
+                self.assertEqual(stage_receipts.tree_identity(captured)['sha256'], captured.name)
+
+    def test_cache_env_empty_uses_default_relative_refuses(self):
+        with mock.patch('agent_ee.tool_source.Path.home', return_value=self.root), \
+                mock.patch.dict(os.environ, AGENT_EE_TOOL_SOURCE_CACHE=''):
+            captured = snapshot(self.source)
+        self.assertEqual(captured.parent, self.root / '.cache/agent-ee/tool-source')
+        with mock.patch.dict(os.environ, AGENT_EE_TOOL_SOURCE_CACHE='relative-cache'):
+            with self.assertRaisesRegex(ValueError, 'absolute'):
+                snapshot(self.source)
+        self.assertFalse((Path.cwd() / 'relative-cache').exists())
+
+    def test_cache_file_refuses_without_changing_its_permissions(self):
+        cache_file = self.root / 'cache-file'
+        cache_file.write_text('keep bytes and permissions')
+        cache_file.chmod(0o600)
+        with mock.patch.dict(os.environ, AGENT_EE_TOOL_SOURCE_CACHE=str(cache_file)):
+            with self.assertRaises((ValueError, OSError)):
+                snapshot(self.source)
+        self.assertEqual(cache_file.read_text(), 'keep bytes and permissions')
+        self.assertEqual(stat.S_IMODE(cache_file.stat().st_mode), 0o600)
+
+    def test_prune_removes_old_snapshots_and_abandoned_captures_only(self):
+        from agent_ee.tool_source import prune
+        old = snapshot(self.source)
+        stamp = time.time() - 3 * 86400
+        os.utime(old, (stamp, stamp))
+        (self.source / 'tool.py').write_text('new source')
+        current = snapshot(self.source)
+        cache = current.parent
+        crashed = cache / '.capture-crashed'
+        crashed.mkdir()
+        (crashed / 'partial').write_text('unfinished')
+        unrelated = cache / 'keep-me'
+        unrelated.write_text('not a snapshot')
+        removed = prune(older_than_days=1)
+        self.assertIn(old, removed)
+        self.assertIn(crashed, removed)
+        self.assertFalse(old.exists())
+        self.assertFalse(crashed.exists())
+        self.assertTrue(current.exists())
+        self.assertTrue(unrelated.exists())
+        with self.assertRaisesRegex(ValueError, 'finite|nonnegative'):
+            prune(older_than_days=-1)
+        with self.assertRaisesRegex(ValueError, 'finite|nonnegative'):
+            prune(older_than_days=float('nan'))
+
+    def test_capture_cleans_crashed_temporary_directory_under_lock(self):
+        cache = self.root / 'cache'
+        crashed = cache / '.capture-crashed' / 'src'
+        crashed.mkdir(parents=True)
+        (crashed / 'partial.py').write_text('partial')
+        crashed.chmod(0)
+        crashed.parent.chmod(0)
+        snapshot(self.source)
+        self.assertEqual(list(cache.glob('.capture-*')), [])
+
+    def test_pre_run_tampering_refuses_and_retained_name_mismatch_cannot_adopt(self):
+        require_toolchain()
+        mounted = snapshot(self.source)
+        spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'fab', 'step': 'pre-run-tamper',
+                'argv': ['/usr/bin/python3', '-B', '/tool/tool.py'],
+                'mounts': [{'source': str(mounted), 'at': '/tool'}], 'source': '/tool',
+                'writes': {}, 'artifacts': ['result.txt']}
+        design = self.root / 'design'
+        design.mkdir()
+        (mounted / 'planted.txt').write_text('tamper before run')
+        receipt_dir = self.root / 'receipt'
+        receipt = stage_receipts.run_step(receipt_dir, design, spec, {})
+        self.assertEqual(receipt['exit_code'], 0)
+        self.assertEqual(receipt['status'], 'refused')
+        self.assertIn('snapshot_hash_mismatch:/tool', receipt['violations'])
+        self.assertEqual(stage_receipts.validate_receipt(receipt_dir), receipt)
+        with self.assertRaises(ValueError):
+            stage_receipts.adopt(receipt_dir, receipt, design)
+        # A legacy/forged completed receipt must fail retained validation too.
+        forged = {**receipt, 'status': 'completed', 'violations': []}
+        forged['identity'] = identity({k: v for k, v in forged.items() if k != 'identity'})
+        from agent_ee.storage import write_json
+        write_json(receipt_dir / 'receipt.json', forged)
+        with self.assertRaisesRegex(ValueError, 'violations mismatch'):
+            stage_receipts.adopt(receipt_dir, forged, design)
+
+    def test_remaining_live_mount_builders_use_snapshots(self):
+        from agent_ee import pod_driver, add_planes, binding_fill
+        with mock.patch.object(pod_driver, 'SOURCE', self.source):
+            specs = [pod_driver._scaffold_step(self.root, ['board.kicad_pcb']),
+                     pod_driver._constraint_step(self.root, {'board': 'project/pod.kicad_pcb'})]
+        specs += [add_planes.step(self.source, board='b.kicad_pcb', plan='planes.json'),
+                  binding_fill.configuration(self.source, intent='intent.json', manifest='parts.json',
+                      part_refs='refs.json', deviations='deviations.json', captures='.', dependencies=[])]
+        expected = str(snapshot(self.source))
+        for spec in specs:
+            self.assertEqual(next(m['source'] for m in spec['mounts']
+                                  if m['at'] == '/tool/agent-ee'), expected, spec['step'])
+
+    def test_fixture_cleanup_retains_refused_receipts_on_exception(self):
+        from tests.receipt_diagnostics import ReceiptTemporaryDirectory
+        retained = self.root / 'retained'
+        with mock.patch('tests.receipt_diagnostics.RETENTION_ROOT', retained):
+            with self.assertRaisesRegex(RuntimeError, 'fixture failed'):
+                with ReceiptTemporaryDirectory(dir=self.root) as tmp:
+                    receipt = Path(tmp) / 'run' / 'receipt.json'
+                    receipt.parent.mkdir()
+                    receipt.write_text(json.dumps({'schema': stage_receipts.RECEIPT_SCHEMA,
+                                                  'status': 'refused', 'violations': ['source_changed']}))
+                    (receipt.parent / 'stderr.log').write_text('diagnostic')
+                    raise RuntimeError('fixture failed')
+        receipts = list(retained.glob('*/receipt.json'))
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(json.loads(receipts[0].read_text())['violations'], ['source_changed'])
+        self.assertEqual((receipts[0].parent / 'stderr.log').read_text(), 'diagnostic')
+
+    def test_prune_cli_and_unsafe_capture_link(self):
+        import subprocess
+        from agent_ee.tool_source import prune
+        captured = snapshot(self.source)
+        proc = subprocess.run([os.sys.executable, '-m', 'agent_ee.tool_source', 'prune',
+                               '--older-than-days', '0'], capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn(str(captured), proc.stdout)
+        self.assertFalse(captured.exists())
+        outside = self.root / 'outside'
+        outside.mkdir()
+        (outside / 'keep').write_text('keep')
+        (captured.parent / '.capture-link').symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'unsafe abandoned'):
+            snapshot(self.source)
+        with self.assertRaisesRegex(ValueError, 'unsafe abandoned'):
+            prune(older_than_days=0)
+        self.assertEqual((outside / 'keep').read_text(), 'keep')
+
+    def test_adoption_checks_recorded_source_hash_without_live_cache(self):
+        require_toolchain()
+        from agent_ee.storage import write_json
+        mounted = snapshot(self.source)
+        design = self.root / 'design'
+        design.mkdir()
+        spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'fab', 'step': 'recorded-snapshot',
+                'argv': ['/usr/bin/python3', '-B', '/tool/tool.py'],
+                'mounts': [{'source': str(mounted), 'at': '/tool'}], 'source': '/tool',
+                'writes': {}, 'artifacts': ['result.txt']}
+        receipt_dir = self.root / 'receipt'
+        receipt = stage_receipts.run_step(receipt_dir, design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+        shutil.rmtree(mounted)
+        stage_receipts.adopt(receipt_dir, receipt, design)
+        for observation in (receipt['tool'], receipt['tool_after']):
+            observation['source_tree']['sha256'] = '0' * 64
+        receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
+        write_json(receipt_dir / 'receipt.json', receipt)
+        with self.assertRaisesRegex(ValueError, 'violations mismatch'):
+            stage_receipts.adopt(receipt_dir, receipt, design)
 
     def test_concurrent_publish_reuses_the_same_verified_tree(self):
         from concurrent.futures import ThreadPoolExecutor
@@ -131,6 +304,23 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(receipt['violations'], ['mount_changed:/tool/agent-ee', 'source_changed'])
         self.assertTrue((receipt_dir / 'receipt.json').is_file())
 
+    def test_source_replaced_by_link_during_copy_never_chmods_link_target(self):
+        victim = self.root / 'outside.txt'
+        victim.write_text('outside bytes')
+        victim.chmod(0o600)
+        copy = shutil.copyfile
+        def replace_with_link(source, destination, **kwargs):
+            source = Path(source)
+            source.unlink()
+            source.symlink_to(victim)
+            return copy(source, destination, **kwargs)
+        with mock.patch('agent_ee.tool_source.shutil.copyfile', side_effect=replace_with_link):
+            with self.assertRaisesRegex(ValueError, 'changed during snapshot'):
+                snapshot(self.source)
+        self.assertEqual(stat.S_IMODE(victim.stat().st_mode), 0o600)
+        self.assertEqual(victim.read_text(), 'outside bytes')
+        self.assertEqual([p for p in (self.root / 'cache').iterdir() if p.name != '.lock'], [])
+
     def test_changed_source_during_copy_refuses_without_publishing(self):
         copy = shutil.copyfile
         def changing_copy(*args, **kwargs):
@@ -174,6 +364,7 @@ class SnapshotTests(unittest.TestCase):
                         if case == 'host-pyc':
                             py_compile.compile(str(self.source / 'tool.py'), doraise=True)
                         elif case == 'edit.py':
+                            (mounted / 'tool.py').chmod(0o600)
                             (mounted / 'tool.py').write_bytes(original + b'\n# edit\n')
                         else:
                             planted.write_bytes(b'planted')
@@ -197,6 +388,7 @@ class SnapshotTests(unittest.TestCase):
                     self.assertEqual(receipt['violations'], ['mount_changed:/tool', 'source_changed'])
                     with self.assertRaises(ValueError):
                         stage_receipts.adopt(receipt_dir, receipt, design)
+                (mounted / 'tool.py').chmod(0o600)
                 (mounted / 'tool.py').write_bytes(original)
                 if planted.exists():
                     planted.unlink()

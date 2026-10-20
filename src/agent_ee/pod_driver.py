@@ -15,6 +15,7 @@ from . import candidate, scaffold, stage_receipts, stages
 from .baseline import compile_baseline
 from .cli import validate_scope
 from .profiles import validate_profile
+from .tool_source import snapshot
 from .storage import digest, identity, read_json, write_json
 
 SCHEMA = 'agent-ee.pod-plan/1'
@@ -242,7 +243,7 @@ def _scaffold_step(plan_dir, outputs):
     return dict(schema='agent-ee.stage-step/1', stage='scaffold', step='write-scaffold',
         argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
               '-m', 'agent_ee.pod_driver', '_scaffold', '/tool/plan/scaffold.json'],
-        mounts=[dict(source=str(SOURCE), at='/tool/agent-ee'),
+        mounts=[dict(source=str(snapshot(SOURCE)), at='/tool/agent-ee'),
                 dict(source=str(plan_dir), at='/tool/plan')], source='/tool/agent-ee',
         version_argv=['/usr/bin/python3', '--version'],
         writes={p: 'scaffold/inputs/' + p for p in outputs},
@@ -320,7 +321,7 @@ def _constraint_step(plan_dir, scope):
     return dict(schema='agent-ee.stage-step/1', stage='scaffold', step='apply-net-constraints',
         argv=['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
               '-m', 'agent_ee.pod_driver', '_constraints', '/tool/plan/constraints.json'],
-        mounts=[dict(source=str(SOURCE), at='/tool/agent-ee'), dict(source=str(plan_dir), at='/tool/plan')],
+        mounts=[dict(source=str(snapshot(SOURCE)), at='/tool/agent-ee'), dict(source=str(plan_dir), at='/tool/plan')],
         source='/tool/agent-ee', version_argv=['/usr/bin/python3', '--version'],
         writes={p: 'constraints/' + p for p in outputs}, adoptable_exits=[0], timeout_s=120)
 

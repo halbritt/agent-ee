@@ -527,6 +527,15 @@ def _violations(spec, inputs, receipt_dir, tool, tool_after, executions):
     if tool['source_tree'] != tool_after['source_tree'] or (
             tool['source_tree'] is not None and tool['source_tree']['sha256'] is None):
         violations.append('source_changed')
+    for mount, observed in zip(spec['mounts'], tool['mounts']):
+        expected = Path(mount['source']).name
+        # A content-addressed mount declares its digest in its directory name.
+        # Use the retained observation on replay, never the later live cache.
+        if re.fullmatch(r'[0-9a-f]{64}', expected):
+            source = tool['source_tree']
+            if (observed['sha256'] != expected or
+                    (spec['source'] == mount['at'] and source['sha256'] != expected)):
+                violations.append('snapshot_hash_mismatch:' + mount['at'])
     return violations
 
 

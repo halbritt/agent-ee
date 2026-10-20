@@ -12,7 +12,7 @@ import csv
 import io
 import json
 import shutil
-import tempfile
+from tests.receipt_diagnostics import ReceiptTemporaryDirectory
 import time
 import unittest
 from pathlib import Path
@@ -146,7 +146,7 @@ class GenerationMarkerTests(unittest.TestCase):
             self.compile(scope)
 
     def test_capture_refuses_a_generation_scope_without_the_done_gate(self):
-        with tempfile.TemporaryDirectory(prefix='agent-ee-fab-package-capture-') as tmp:
+        with ReceiptTemporaryDirectory(prefix='agent-ee-fab-package-capture-') as tmp:
             root = Path(tmp)
             scope = generation_scope()
             scope['checks'].pop()
@@ -206,7 +206,7 @@ class NativeRun(unittest.TestCase):
 
     def setUp(self):
         require_toolchain(native=True)
-        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-fab-package-')
+        tmp = ReceiptTemporaryDirectory(prefix='agent-ee-fab-package-')
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.runs = 0
@@ -536,7 +536,7 @@ class GenerationCampaignFixture(unittest.TestCase):
 
     def setUp(self):
         require_toolchain(native=True)
-        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-fab-package-campaign-')
+        tmp = ReceiptTemporaryDirectory(prefix='agent-ee-fab-package-campaign-')
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         definition = {'harness': 'codex', 'model': 'test', 'effort': 'high', 'timeout_s': 10}

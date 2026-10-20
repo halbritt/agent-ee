@@ -10,6 +10,7 @@ from .connectivity_ir import _read_json, resolve_intent
 from .part_decisions import validate_deviation
 from .parts_manifest import (load_manifest, qualify_manifest, read_captured, _read_blob,
                              _path)
+from .tool_source import snapshot
 from .storage import canonical, identity, write_json
 from .probe_features import is_probe, declarations, marker, parse_marker, matches_marker, PROPERTY
 from . import copper_features
@@ -321,7 +322,7 @@ def configuration(source_root, *, intent, manifest, part_refs, deviations, captu
                  *(['--ratings', ratings] if ratings is not None else []),
                  *(['--source-migration'] if source_migration else []),
                  *(['--migration-only'] if migration_only else [])],
-        'mounts': [{'source': str(Path(source_root).absolute()), 'at': '/tool/agent-ee'}],
+        'mounts': [{'source': str(snapshot(source_root)), 'at': '/tool/agent-ee'}],
         'source': '/tool/agent-ee', 'version_argv': ['/usr/bin/python3', '--version'],
         'inputs': sorted({manifest, part_refs, deviations, *extra, *dependencies} | ({intent} - {output})),
         'writes': {output: 'out/intent.json'}, 'artifacts': ['out/binding-fill.json'],
