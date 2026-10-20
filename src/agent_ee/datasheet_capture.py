@@ -239,6 +239,90 @@ def capture_datasheets(parts, out, *, timeout=30, max_bytes=MAX_BYTES):
                 out.rmdir()
 
 
+def historical_source(root, locator, pdf_sha256):
+    """Read a pinned historical source-list entry; never infer redirect or time."""
+    from .catalog import exact_fields, nonempty
+    from .datasheet_parts import captured_path, _hash
+    from .storage import digest, read_json
+    exact_fields(locator, ('path', 'sha256', 'entry'))
+    note = captured_path(root, locator['path'])
+    if digest(note) != _hash(locator['sha256']):
+        raise ValueError('historical source note hash mismatch')
+    entries = read_json(note)
+    index = locator['entry']
+    if (not isinstance(entries, list) or type(index) is not int or
+            not 0 <= index < len(entries)):
+        raise ValueError('historical source note requires a valid entry index')
+    entry = entries[index]
+    fields = ('file', 'sha256', 'url', 'captured_at_utc')
+    if isinstance(entry, dict) and 'fetched_at' in entry:
+        fields += ('fetched_at',)
+    exact_fields(entry, fields)
+    from .candidate import safe_relative
+    safe_relative(entry['file'])
+    if _hash(entry['sha256']) != _hash(pdf_sha256):
+        raise ValueError('historical source note does not bind PDF hash')
+    validate_url(entry['url'])
+    for field in ('captured_at_utc', 'fetched_at'):
+        value = entry.get(field)
+        if value is None and field == 'fetched_at':
+            continue
+        nonempty(value)
+        stamp = datetime.fromisoformat(value)
+        if stamp.tzinfo is None or stamp.utcoffset() is None:
+            raise ValueError('historical source timestamps require timezone')
+    return entry
+
+
+def import_historical_pdf(pdf, source_root, source_note, part_id, out):
+    """Import retained bytes with a pinned note into a new offline acquisition."""
+    from .storage import digest, write_json
+    pdf = Path(pdf)
+    if pdf.stat().st_size > MAX_BYTES:
+        raise ValueError('PDF byte limit exceeded')
+    raw = pdf.read_bytes()
+    if not raw.startswith(b'%PDF-') or not raw.rstrip().endswith(b'%%EOF'):
+        raise ValueError('historical import is not a complete PDF envelope')
+    sha = hashlib.sha256(raw).hexdigest()
+    entry = historical_source(source_root, source_note, sha)
+    bindings = _parts([{'id': part_id, 'datasheet_url': entry['url']}])
+    out = Path(out).absolute()
+    if not out.name or out.name in ('.', '..') or out.parent.resolve() != out.parent:
+        raise ValueError('output requires a real contained parent')
+    out.mkdir()
+    reservation = out.stat().st_ino
+    stage, published = None, False
+    try:
+        stage = Path(tempfile.mkdtemp(prefix='.datasheet-import-', dir=out.parent))
+        # Retain the exact pinned note, not a reconstructed account of the fetch.
+        from .datasheet_parts import captured_path
+        note_raw = captured_path(source_root, source_note['path']).read_bytes()
+        if hashlib.sha256(note_raw).hexdigest() != source_note['sha256']:
+            raise ValueError('historical source note changed during import')
+        (stage / 'source-note.json').write_bytes(note_raw)
+        (stage / (sha + '.pdf')).write_bytes(raw)
+        record = dict(id=part_id, url=entry['url'], final_url=None,
+            fetched_at=entry.get('fetched_at'), captured_at=entry['captured_at_utc'],
+            sha256=sha, path=sha + '.pdf', missing=False, reason=None,
+            acquisition_method='historical_import', redirect_provenance='unknown',
+            source_note=dict(path='source-note.json', sha256=digest(stage / 'source-note.json'),
+                             entry=source_note['entry']))
+        manifest = dict(schema='agent-ee.datasheet-capture/2', bindings_sha256=identity(bindings),
+                        outcome='imported', parts=[record])
+        write_json(stage / 'manifest.json', manifest)
+        if out.is_symlink() or out.stat().st_ino != reservation:
+            raise RuntimeError('output reservation changed')
+        stage.replace(out)
+        published = True
+        return manifest
+    finally:
+        if not published:
+            if stage is not None:
+                shutil.rmtree(stage)
+            if not out.is_symlink() and out.exists() and out.stat().st_ino == reservation:
+                out.rmdir()
+
+
 def prepare_datasheets(bindings, required_facts, out, *, timeout=30, max_bytes=MAX_BYTES):
     """Prepare source inputs only. Missing acquisitions remain explicit obligations.
 
@@ -292,6 +376,24 @@ def prepare_datasheets(bindings, required_facts, out, *, timeout=30, max_bytes=M
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == '--import-historical':
+        parser = argparse.ArgumentParser(description='Offline historical PDF import')
+        parser.add_argument('--import-historical', action='store_true')
+        parser.add_argument('--pdf', required=True)
+        parser.add_argument('--source-root', required=True)
+        parser.add_argument('--source-note', required=True, help='relative source-list JSON path')
+        parser.add_argument('--source-note-sha256', required=True)
+        parser.add_argument('--entry', type=int, required=True)
+        parser.add_argument('--id', required=True)
+        parser.add_argument('--out', required=True)
+        args = parser.parse_args(argv)
+        try:
+            import_historical_pdf(args.pdf, args.source_root,
+                dict(path=args.source_note, sha256=args.source_note_sha256, entry=args.entry),
+                args.id, args.out)
+            return 0
+        except (OSError, ValueError) as exc:
+            parser.exit(2, str(exc) + '\n')
     if argv and argv[0] == '--fetch':
         _, url, seconds, max_bytes = argv
         seconds, max_bytes = float(seconds), int(max_bytes)

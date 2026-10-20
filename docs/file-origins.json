@@ -3549,6 +3549,16 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-277 owned-engine pin and manifest-drift boundary tests. Uses existing local routing installation read-only and disposable copies; imports no third-party designs or library files."
+    },
+    {
+      "paths": [
+        "tests/test_datasheet_historical.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-306 offline-import regression tests with authored PDF envelope bytes, synthetic source-note records and original text_pdf fixture generation. No retained vendor PDF or third-party note is copied into this source."
     }
   ]
 }
