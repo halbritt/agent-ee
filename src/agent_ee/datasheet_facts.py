@@ -125,7 +125,9 @@ def load_acquisition(inputs, locator, capture_bindings):
             if not raw.startswith(b'%PDF-') or not raw.rstrip().endswith(b'%%EOF'):
                 raise ValueError('successful acquisition is not a PDF envelope')
             dependencies.add(pdf_rel)
-        acquired[ref] = record
+        acquired[ref] = (record if historical else
+                         {**record, 'acquisition_method': 'live',
+                          'redirect_provenance': 'observed' if record['final_url'] is not None else 'unknown'})
     expected_outcome = 'missing' if any(r['missing'] for r in acquired.values()) else 'captured'
     if historical:
         expected_outcome = 'imported'
@@ -448,7 +450,9 @@ def check_pin_map(ctx):
     try:
         facts_path = prerequisite(ctx, ctx.params.get('facts_check'), 'datasheet_facts', 'facts.json')
         xml_path = prerequisite(ctx, ctx.params.get('netlist_check'), 'netlist', 'design.xml')
-        records = read_json(facts_path)['facts']
+        facts_report = read_json(facts_path)
+        acquisitions = facts_report.get('acquisitions', {})
+        records = facts_report['facts']
         verified = {r['id']: r['fact'] for r in records if r['status'] == 'verified'}
         symbols = ctx.params['symbols']
         if not isinstance(symbols, list) or not symbols:
@@ -498,7 +502,7 @@ def check_pin_map(ctx):
                     'matches': native_name == fact['value']})
     except (KeyError, TypeError, ValueError, OSError, ET.ParseError) as exc:
         raise CheckError('malformed', str(exc)) from exc
-    write_json(ctx.work / 'pin-map.json', {'comparisons': comparisons})
+    write_json(ctx.work / 'pin-map.json', {'comparisons': comparisons, 'acquisitions': acquisitions})
     ctx.evidence('pin-map.json')
     mismatches = [c for c in comparisons if not c['matches']]
     if mismatches:
@@ -507,7 +511,7 @@ def check_pin_map(ctx):
         ctx.result['evidence'].extend(
             {'path': f'work/{ctx.cid}/pin-map.json', 'locator': m['locator']}
             for m in mismatches)
-    ctx.result['details'].update(comparisons=comparisons, mismatches=mismatches)
+    ctx.result['details'].update(comparisons=comparisons, mismatches=mismatches, acquisitions=acquisitions)
     ctx.result['limitations'].append('Engineer-supplied applicability; only listed native pin names '
         'compared. Citation verification does not prove row/conditions selection or physical wiring.')
     ctx.result.update(execution='ok', outcome='defect' if mismatches else 'pass',

@@ -189,7 +189,8 @@ def fill(root, intent, manifest, refs, deviations, *, captures, ratings=None):
         comp['part_binding'] = fields
         records.append({'component': comp['id'], 'reference': comp['reference'], 'part_ref': part['id'],
                         **({} if instances is None else {'instances': instances}),
-                        'fields': fields, 'assembly_deviation': matches[0][0] if matches else None})
+                        'fields': fields, 'acquisition': sheet,
+                        'assembly_deviation': matches[0][0] if matches else None})
     if rating_report is not None:
         unused = sorted(f['id'] for f in facts if f['part_number'] not in rated_mpns)
         if unused:

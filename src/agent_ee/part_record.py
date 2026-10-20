@@ -51,7 +51,7 @@ def _sources(root, catalog, datasheets, datasheet_id, lcsc):
     observation = dict(lcsc=lcsc, mpn=row['mpn'], manufacturer=row['mfr'], package=row['package'],
                        category=row['category'], library_tier=row['library_tier'], stock=row['stock'],
                        fetched_at=request['fetched_at'], response_sha256=request['response']['sha256'],
-                       datasheet_url=sheet['url'])
+                       datasheet_url=sheet['url'], acquisition=sheet)
     for key in FIELDS:
         if key != 'stock':
             nonempty(observation[key])
@@ -82,7 +82,7 @@ def prepare_record(root, lcsc, catalog, datasheets, datasheet_id, *, source_sele
 def qualify_record(document, root):
     """Replay identity and return the complete immutable capture dependency map."""
     fields = ('schema', *FIELDS, 'catalog', 'datasheets', 'datasheet_id', 'artifact')
-    exact_fields(document, (*fields, 'source_selection') if 'source_selection' in document else fields)
+    exact_fields(document, (*fields, *[k for k in ('source_selection', 'acquisition') if k in document]))
     if type(document['stock']) is not int or document['stock'] < 0:
         raise ValueError('part-record stock must be a historical nonnegative integer')
     if document['schema'] != SCHEMA:
@@ -98,6 +98,8 @@ def qualify_record(document, root):
                       {**document['datasheets'], 'locator': 'parts[id=' + document['datasheet_id'] + ']'},
                       context=document['lcsc'])
         dependencies[ref['path']] = ref['sha256']
+    if 'acquisition' in document and document['acquisition'] != observation['acquisition']:
+        raise ValueError('part record acquisition differs from captured identity')
     return dict(sorted(dependencies.items()))
 
 
@@ -123,7 +125,10 @@ def datasheet_url_crosscheck(document, root, identity_url=None):
     claims = {'jlc_response': response_datasheet_url(raw, document['lcsc']), 'identity_index': identity_url}
     present = [url for url in claims.values() if url is not None]
     verdict = 'unknown' if not present else 'agree' if all(u == document['datasheet_url'] for u in present) else 'differ'
-    return {'lcsc': document['lcsc'], 'acquisition_url': document['datasheet_url'], **claims,
+    observation, _, _ = _sources(root, document['catalog'], document['datasheets'],
+                                  document['datasheet_id'], document['lcsc'])
+    return {'lcsc': document['lcsc'], 'acquisition_url': document['datasheet_url'],
+            'acquisition': observation['acquisition'], **claims,
             'response_sha256': request['response']['sha256'], 'verdict': verdict}
 
 
@@ -181,7 +186,7 @@ def _external_sources(root, identity_source, datasheets, datasheet_id, deviation
     for path in paths:
         dependencies[path] = hashlib.sha256(read_captured(root, path)).hexdigest()
     observed = {k: declaration[k] for k in ('mpn', 'manufacturer', 'package')}
-    observed.update(lcsc='NO_LCSC', stock=None, datasheet_url=sheet['url'])
+    observed.update(lcsc='NO_LCSC', stock=None, datasheet_url=sheet['url'], acquisition=sheet)
     artifact = dict(path=(Path(datasheets['path']).parent / sheet['path']).as_posix(), sha256=sheet['sha256'])
     return observed, artifact, dict(sorted(dependencies.items()))
 
@@ -195,12 +200,14 @@ def prepare_external_record(root, identity_source, datasheets, datasheet_id, dev
 
 def qualify_external_record(document, root):
     exact_fields(document, ('schema', 'mpn', 'manufacturer', 'package', 'lcsc', 'stock', 'datasheet_url',
-                            'identity_source', 'datasheets', 'datasheet_id', 'artifact', 'deviation_ref'))
+                            'identity_source', 'datasheets', 'datasheet_id', 'artifact', 'deviation_ref',
+                            *(['acquisition'] if 'acquisition' in document else [])))
     if document['schema'] != 'agent-ee.external-part-record/1':
         raise ValueError('unsupported external part record')
     observed, artifact, dependencies = _external_sources(root, document['identity_source'], document['datasheets'],
                                                         document['datasheet_id'], document['deviation_ref'])
-    if any(document[k] != v for k, v in observed.items()) or document['artifact'] != artifact:
+    if (any(document[k] != v for k, v in observed.items() if k != 'acquisition' or k in document)
+            or document['artifact'] != artifact):
         raise ValueError('external part record differs from captured identity/deviation')
     return dependencies
 

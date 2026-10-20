@@ -1634,3 +1634,9 @@ It freezes the pinned source note along with the PDF and records the acquisition
 method and unknown redirect provenance in its report and details. A verified
 citation proves text occurrence only; it supplies no redirect-provenance or
 release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
+
+Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
+an `acquisitions` map with acquisition method and redirect provenance, including
+in capture-time facts/2 capability descriptors. This metadata preserves the
+existing check verdicts. See [consumer receipt provenance](datasheet-capture.md#consumer-receipt-provenance-agentee-311)
+for live `/1` and historical `/2` semantics and the offline preparation consumers.

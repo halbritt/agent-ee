@@ -196,3 +196,33 @@ verify imported PDF text; they do not verify redirect history. Any policy
 requiring redirect provenance must treat `unknown` as unknown coverage, never
 as a pass. Release acceptance remains the owner policy question AGENTEE-271.
 The original-fixture regressions are in `tests/test_datasheet_historical.py`.
+
+### Consumer receipt provenance (AGENTEE-311)
+
+The shared acquisition loader preserves historical-import records and adds
+`acquisition_method: "live"` to replayed `/1` records. Live records report
+`redirect_provenance: "observed"` when a final URL was retained, otherwise
+`"unknown"`. These fields describe acquisition only; they add no acceptance
+predicate or verdict authority. The on-disk `/1` manifest format stays unchanged.
+
+Facts, pin-map and pin-contract reports and check details carry an `acquisitions`
+map keyed by acquisition part ID. Capture-time capability descriptors for these
+checks retain that map when a facts/2 obligation envelope is present. Facts/1
+has no acquisition manifest to replay and its consumers carry an empty map.
+
+New named and external part records carry the replayed record under `acquisition`;
+qualification compares it against the pinned manifest. Older records without
+this optional field remain readable. Datasheet source-selection return receipts
+carry `acquisition`, and binding-fill component receipts carry it alongside the
+projected fields. The structured native `PARAM_Datasheet` binding keeps its
+existing schema; provenance belongs to the receipt. Historical receipts preserve
+`historical_import`, unknown redirects, null final URL, recorded timestamps and
+the pinned source-note reference. Source-note paths remain relative to the
+acquisition manifest directory.
+
+A cascade is a live-resolution receipt: replay requires a
+`agent-ee.datasheet-capture/1` acquisition, even when a historical `/2` import of
+the same PDF and URL has been fully repinned into the cascade and selection.
+Historical imports remain usable through the ordinary offline consumer paths.
+Malformed source-note `file` values raise `ValueError` before path handling;
+the import CLI reports exit 2 without publishing output or printing a traceback.

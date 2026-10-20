@@ -149,6 +149,41 @@ class CascadeFixture:
 
 
 class CascadeTests(CascadeFixture, unittest.TestCase):
+    def test_v2_import_substituted_for_live_cascade_acquisition(self):
+        from agent_ee.datasheet_capture import import_historical_pdf
+        dk = self.digikey_capture({'AE-CAN-1': (200, details(product('AE-CAN-1', datasheet=self.pdf.url + '/dk.pdf')))})
+        report = self.resolve(self.request(self.part('C38695', digikey={'capture': dk, 'key': 'AE-CAN-1'})))
+        validate_cascade(self.root, 'cascade/cascade.json')
+        base = self.root / 'cascade'
+        live = read_json(base / 'datasheets/manifest.json')
+        rec = live['parts'][0]
+        # Build a /2 import of the same bytes with a note binding the same URL, then republish.
+        work = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        pdf = work / 'r.pdf'
+        pdf.write_bytes((base / 'datasheets' / rec['path']).read_bytes())
+        write_json(work / 'sources.json', [dict(file='r.pdf', sha256=rec['sha256'], url=rec['url'],
+                                                captured_at_utc='2025-01-01T00:00:00+00:00')])
+        tmp = work / 'out'
+        import_historical_pdf(pdf, work, dict(path='sources.json', sha256=digest(work / 'sources.json'), entry=0),
+                              rec['id'], tmp)
+        for f in (base / 'datasheets').iterdir():
+            f.unlink()
+        for f in tmp.iterdir():
+            (base / 'datasheets' / f.name).write_bytes(f.read_bytes())
+        acq = dict(path='cascade/datasheets/manifest.json', sha256=digest(base / 'datasheets/manifest.json'))
+        sel = read_json(base / 'source-selection.json')
+        for part in sel['parts'].values():
+            for group in ('selected', 'failed'):
+                for item in part[group]:
+                    item['provenance'].update(sha256=acq['sha256'])
+        write_json(base / 'source-selection.json', sel)
+        rep = read_json(base / 'cascade.json')
+        rep['acquisition'] = acq
+        rep['selection']['sha256'] = digest(base / 'source-selection.json')
+        write_json(base / 'cascade.json', rep)
+        with self.assertRaisesRegex(ValueError, 'live.*capture/1'):
+            validate_cascade(self.root, 'cascade/cascade.json')
+
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.make_fixture()

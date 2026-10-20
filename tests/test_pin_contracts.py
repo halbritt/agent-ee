@@ -390,6 +390,59 @@ class NativePinContractsTests(unittest.TestCase):
         schematic = GEN._sheet_file(GEN.uid('root'), body).replace('(lib_symbols ', '(lib_symbols ' + extra)
         (self.root / 'binding.kicad_sch').write_text(schematic)
 
+    def test_acquired_pdf_labels_survive_native_contract_receipt(self):
+        from tests.test_datasheet_integration import CanonicalAdapterTests
+        from tests.test_datasheet_capture import DatasheetCaptureTests
+        from agent_ee.datasheet_capture import capture_datasheets, import_historical_pdf
+        from agent_ee.datasheet_parts import bindings_from_selection
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        server = DatasheetCaptureTests()
+        server.setUp()
+        self.addCleanup(server.doCleanups)
+        server.pdf = (self.root / 'owned.pdf').read_bytes()
+        url = server.url + '/pdf'
+        helper = CanonicalAdapterTests()
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        snap, sha, req, selection = helper.selected(url=url, quantity=1)
+        bindings = bindings_from_selection(snap, sha, req, selection, {'resistors': ['R1']})
+        self.assertEqual(bindings['parts'][0]['part_number'], self.document['parts'][0]['mpn'])
+        write_json(self.root / 'bindings.json', bindings)
+        for historical in (False, True):
+            directory = 'historical' if historical else 'live'
+            if historical:
+                write_json(self.root / 'sources.json', [dict(file='owned.pdf', sha256=digest(self.root / 'owned.pdf'),
+                    url=url, captured_at_utc='2026-01-01T00:00:00Z')])
+                manifest = import_historical_pdf(self.root / 'owned.pdf', self.root,
+                    dict(path='sources.json', sha256=digest(self.root / 'sources.json'), entry=0),
+                    'R1', self.root / directory)
+            else:
+                manifest = capture_datasheets([dict(id='R1', datasheet_url=url)], self.root / directory)
+            pdf = manifest['parts'][0]
+            self.document['parts'][0]['datasheet']['artifact'] = dict(
+                path=directory + '/' + pdf['path'], sha256=pdf['sha256'])
+            scope = self.prepare()
+            facts = copy.deepcopy(self.facts)
+            for fact in facts:
+                fact['source']['path'] = directory + '/' + pdf['path']
+            write_json(self.root / 'facts.json', dict(schema='agent-ee.datasheet-facts/2',
+                bindings=dict(path='bindings.json', sha256=digest(self.root / 'bindings.json')),
+                acquisition=dict(path=directory + '/manifest.json', sha256=digest(self.root / directory / 'manifest.json')),
+                required_parts=[dict(reference='R1', selection_id=bindings['parts'][0]['selection_id'],
+                    part_number=bindings['parts'][0]['part_number'], required_facts=[f['id'] for f in facts])], facts=facts))
+            write_json(self.root / 'scope.json', scope)
+            run = self.root / ('run-label-' + directory)
+            run.mkdir()
+            capture(self.root / 'scope.json', run)
+            checks = {c['id']: c for c in run_checks(run, time.monotonic() + 120)}
+            method, redirect = ('historical_import', 'unknown') if historical else ('live', 'observed')
+            with self.subTest(historical=historical):
+                self.assertEqual((checks['pins']['execution'], checks['pins']['outcome']), ('ok', 'pass'), checks)
+                for receipt in (checks['pins']['details'], read_json(run / 'work/pins/pin-contracts.json')):
+                    self.assertEqual(receipt['acquisitions']['R1']['acquisition_method'], method)
+                    self.assertEqual(receipt['acquisitions']['R1']['redirect_provenance'], redirect)
+
     def test_native_named_wrong_ldo_variant_and_missing_boot_capacitor(self):
         self.prepare_named_replay()
         run, check = self.run_case()

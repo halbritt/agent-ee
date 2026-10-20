@@ -444,6 +444,8 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             for path in descriptor['immutable_inputs']:
                 captured(path, immutable=True)
             result['predicates'] = descriptor['predicates']
+            if 'acquisitions' in descriptor:
+                result['acquisitions'] = descriptor['acquisitions']
         elif kind == 'schematic_lint':
             from .schematic_lint import capability
             descriptor = capability(params, scope, files, inputs, spec['id'])
@@ -643,6 +645,7 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
             facts = load_facts(inputs, source_params['facts'])
             obligations = load_obligations(inputs, source_params['facts'])
             if obligations is not None:
+                result['acquisitions'] = obligations['acquired']
                 for path in obligations['dependencies']:
                     captured(path, immutable=True)
             for fact in facts:

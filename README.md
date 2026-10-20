@@ -149,7 +149,9 @@ model or acquire measurements from instruments.
 
 [Historical datasheet imports](docs/datasheet-capture.md#offline-historical-import-agentee-306)
 retain hash-bound source notes and PDF bytes offline, explicitly preserving unknown
-redirect history and unrecorded fetch times (AGENTEE-306).
+redirect history and unrecorded fetch times (AGENTEE-306). Consumer receipts
+retain the acquisition method; live cascade replay refuses historical acquisitions
+(AGENTEE-311).
 
 An original [pod-scale placement qualification](docs/placer.md#pod-scale-qualification-agentee-181)
 exercises 90–112 mechanical stand-ins on both sides across 80 × 50 to

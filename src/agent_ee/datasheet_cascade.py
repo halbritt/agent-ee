@@ -491,6 +491,8 @@ def validate_cascade(root, path):
         if report['acquisition']['path'] != f'{base}/{ACQUISITION}':
             raise ValueError('cascade acquisition must be in its published directory')
         manifest = strict_json(_read_blob(root, report['acquisition']))
+        if not isinstance(manifest, dict) or manifest.get('schema') != 'agent-ee.datasheet-capture/1':
+            raise ValueError('live cascade requires agent-ee.datasheet-capture/1')
         bindings = sorted([{'id': r['id'], 'datasheet_url': r['url']} for r in manifest['parts']],
                           key=lambda b: b['id'])
         acquired, paths = load_acquisition(root, report['acquisition'], bindings)
