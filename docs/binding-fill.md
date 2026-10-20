@@ -21,8 +21,10 @@ The input remains strict `agent-ee.connectivity-intent/1`. An immutable
 ```
 
 Keys are exact intent component IDs, not reference prefixes, values or inferred
-supplier codes. The map must cover every non-power component exactly once and
-contain no other entries. Power status comes from resolved captured symbols.
+supplier codes. For full binding projection, the map must cover every non-power
+component exactly once and contain no other entries. Explicit migration-only
+operations use the feature-only coverage described below. Power status comes
+from resolved captured symbols.
 Unknown symbols, mismatched symbol-capture hashes, CAD identities or root-sheet
 instance allocations refuse. Pin-accounting errors remain the emitter's
 responsibility, so the existing writer repair loop can receive its diagnostics.
@@ -56,6 +58,56 @@ empty `Datasheet` conflicts with a captured nonempty URL. This matters for flat
 composition, which preserves empty native source properties: source metadata
 must be reconciled explicitly, never dropped to make filling succeed. Existing
 native identity/population flags are not writable through bindings.
+
+## Explicit source migration (AGENTEE-309)
+
+Pass `source_migration=True` to `fill` and `configuration`, or
+`--source-migration` to the sandbox CLI, to regenerate exact legacy inline
+probe bindings. The existing probe decoder and exact canonical legacy comparison
+must both agree with the qualified immutable manifest. Malformed, tampered,
+noncanonical and ambiguous identities refuse. Full projection still refuses other
+conflicting bindings. Without the flag, legacy bindings keep refusing exactly as before.
+
+For an already bound source whose purchased records are deliberately incomplete,
+combine `source_migration=True, migration_only=True` (CLI:
+`--source-migration --migration-only`). This narrowly scoped operation requires a
+sidecar covering **exactly the declared probes and copper features**. It preserves
+every other component verbatim, including unqualified purchased components and
+existing rating metadata. It does not rebind or qualify those components. The
+artifact names `operation: "source-migration-only"` and lists each preserved
+component's ID, reference and canonical `identity_sha256`. The immutable manifest
+and CAD closure still qualify before any output; feature CAD, allocation, pins,
+nets and bindings still validate. `migration_only` without explicit migration,
+missing/extra feature references and rating derivation in this mode refuse.
+Run `parts_subset` and the ordinary acceptance checks on fresh native output:
+preserved components retain all their outstanding membership and identity gaps.
+
+Explicit mode emits `agent-ee.binding-fill/2` in the ordinary receipted
+`out/binding-fill.json` artifact. Its `probe_migrations` records each changed
+reference, `old_encoding_sha256`, `new_encoding_sha256` (SHA-256 of the exact
+UTF-8 property strings), and `decoded_identity_sha256` (canonical decoded record).
+Unchanged canonical markers produce no migration entry. Input/output identities
+and dependencies retain their existing meanings. Ordinary mode keeps `/1`.
+The standard stage receipt and adoption schema remain unchanged; rating
+provenance accepts `/2` only for a receipted explicit migration command.
+
+The existing emitter consumes the canonical bound intent; emission and forward
+annotation then regenerate schematic and board. No source property is normalized
+by the caller and no admission check accepts a legacy marker as canonical.
+
+Declared `parts/1` copper features also pass through binding fill. Their captured
+CAD, reference allocation, exact passive pins and native nets must agree. Native
+root-sheet net names use the emitter's captured power-symbol scope: global rails
+have no sheet prefix and local labels retain `/`. Copper features use root-sheet
+allocations, remain populated and on-board, and emit `in_bom=false`. Qualified
+copper metadata is preserved without supplier selection, datasheet acquisition
+or rating derivation. Supplier identity fields refuse under the shared copper
+qualification rules. No purchased-part exemption is inferred from a reference.
+
+Full binding projection still requires complete non-power `part_ref` coverage.
+A diagnostic manifest that omits a component cannot establish complete binding
+projection; missing identity records and conflicting unrelated bindings must be
+resolved explicitly.
 
 ## Derived fields
 

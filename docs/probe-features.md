@@ -89,8 +89,8 @@ Admission checks refuse the exact canonical inline `agent-ee.bare-copper-probe/1
 JSON emitted before AGENTEE-279 with a `legacy AGENT_EE_Probe` migration finding
 (AGENTEE-283). A legacy marker in the schematic cannot qualify membership
 through `parts_subset`; a legacy board cannot pass `part_binding`, `fab_export`
-or `fab_consistency`. KiBot 1.9.1 cannot export a board carrying it. Only
-forward-annotation planning allows the legacy identity, with the same native
+or `fab_consistency`. KiBot 1.9.1 cannot export a board carrying it. Explicit source
+migration and forward-annotation planning allow the legacy identity, with the same native
 identity, flags, source bytes and geometry checks. AGENTEE-302 converts validated
 legacy fields from the native XML and retained board to the KiBot-safe encoding
 in planned adds and updates, preserving the entire decoded record. The plan and
@@ -102,10 +102,13 @@ Different components may still use different encodings. Malformed, tampered and 
 refused. Saved-board field verification and final validation require canonical
 output. See [forward annotation](forward-annotation.md#legacy-probe-migration-agentee-302).
 
-Source XML is not rewritten. Regenerate binding fill and the schematic with the
-current writer from the same immutable captured parts manifest and CAD closure
-before native schematic parity and admission checks: native parity compares the
-field text, and a legacy schematic still fails admission. Validate both sides
+Source XML is not rewritten. Regenerate binding fill with explicit
+`source_migration=True` (`--source-migration` in the CLI), then emit the schematic
+with the current writer from the same immutable captured parts manifest and CAD
+closure before native schematic parity and admission checks. The binding-fill/2 artifact
+records old/new encoding hashes and the unchanged decoded identity hash for every
+migrated reference ([source migration](binding-fill.md#explicit-source-migration-agentee-309)).
+Native parity compares the field text, and a legacy schematic still fails admission. Validate both sides
 against `probe_features.declarations` and rerun native parity and fab checks
 before using the export. Never derive source approval from an old marker alone.
 The owned fixtures qualify this migration; the private real-pod replay is

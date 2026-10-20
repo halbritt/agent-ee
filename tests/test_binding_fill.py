@@ -257,6 +257,74 @@ class ExternalBindingTests(BindingFillTests):
                                     self.record['datasheet_id'], pin)
 
 
+class CopperBindingFillTests(unittest.TestCase):
+    def setUp(self):
+        from tests.test_copper_features import fixture
+        from agent_ee.storage import read_json
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.parts = fixture(self, self.root)
+        self.intent = {'schema': 'agent-ee.connectivity-intent/1',
+            'libraries': read_json(self.root / 'assignments.json')['libraries'],
+            'components': [{'id': 'jumper', 'reference': 'R1', 'lib_id': 'Owned:R',
+                'footprint': 'Owned:R2', 'value': 'Copper', 'units': [1]}],
+            'nets': [{'id': n, 'name': n, 'terminals': [{'component': 'jumper', 'pin': {'number': p}}]}
+                     for p, n in [('1', 'VIN'), ('2', 'VOUT')]], 'no_connects': []}
+        self.parts['parts'][0]['instances'] = [dict(sheet='/', reference=r,
+            nets={'1': '/VIN', '2': '/VOUT'}) for r in ('R1', 'R2')]
+        self.intent['components'].append(dict(self.intent['components'][0], id='other', reference='R2'))
+        for net in self.intent['nets']:
+            net['terminals'].append(dict(net['terminals'][0], component='other'))
+        self.refs = {'schema': 'agent-ee.part-refs/1', 'components': {
+            c['id']: {'part_ref': 'resistor'} for c in self.intent['components']}}
+        self.deviations = {'schema': 'agent-ee.part-deviations/1', 'deviations': []}
+
+    def fill(self):
+        from agent_ee.binding_fill import fill
+        return fill(self.root, self.intent, self.parts, self.refs, self.deviations, captures='.')
+
+    def test_copper_preserves_cad_nets_and_emits_non_bom_without_supplier(self):
+        from agent_ee.schematic_emitter import emit_schematic
+        from agent_ee.copper_features import declarations, validate_schematic
+        output, report = self.fill()
+        self.assertFalse(output['components'][0]['in_bom'])
+        self.assertNotIn('part_binding', output['components'][0])
+        self.assertEqual(output['nets'], self.intent['nets'])
+        self.assertEqual(output['libraries'], self.intent['libraries'])
+        self.assertEqual(report['components'][0]['fields'], {})
+        libraries = {lib['path']: (self.root / lib['path']).read_bytes() for lib in output['libraries']}
+        result, files = emit_schematic(output, libraries, {'schema': 'agent-ee.schematic-layout/1',
+            'namespace': '81ae10f4-1c43-4370-88c2-32c41b90fd70', 'project': 'copper', 'transforms': {}})
+        self.assertEqual(result['execution'], 'ok', result)
+        self.assertEqual(validate_schematic(files['copper.kicad_sch'], declarations(self.parts, self.root)), {'R1', 'R2'})
+
+    def test_copper_global_rail_uses_the_emitter_power_symbol_scope(self):
+        self.intent['components'].append({'id': 'ground', 'reference': '#PWR01', 'lib_id': 'Owned:GND',
+            'value': 'GND', 'footprint': '', 'units': [1]})
+        self.intent['nets'][0]['name'] = 'GND'
+        self.intent['nets'][0]['terminals'].append({'component': 'ground', 'pin': {'number': '1'}})
+        for instance in self.parts['parts'][0]['instances']:
+            instance['nets']['1'] = 'GND'
+        output, _ = self.fill()
+        self.assertEqual(output['nets'], self.intent['nets'])
+        for instance in self.parts['parts'][0]['instances']:
+            instance['nets']['1'] = '/GND'
+        with self.assertRaisesRegex(ValueError, 'copper intent net differs'):
+            self.fill()
+
+    def test_copper_refuses_net_supplier_flag_and_cad_conflicts(self):
+        original = copy.deepcopy(self.intent)
+        mutations = [lambda i: i['nets'][0].update(name='wrong'),
+            lambda i: i['components'][0].update(part_binding={'LCSC': 'C1'}),
+            lambda i: i['components'][0].update(part_binding={'Manufacturer': 'Supplier'}),
+            lambda i: i['components'][0].update(in_bom=True),
+            lambda i: i['components'][0].update(footprint='Owned:Wrong')]
+        for mutate in mutations:
+            self.intent = copy.deepcopy(original)
+            mutate(self.intent)
+            with self.subTest(intent=self.intent), self.assertRaises(ValueError):
+                self.fill()
+
+
 class BindingScaleBoundaryTests(unittest.TestCase):
     def test_component_boundary_and_pre_resolution_refusal(self):
         from agent_ee.netlist_parity import terminal_inventory, _resolve_captured_intent, Unsupported

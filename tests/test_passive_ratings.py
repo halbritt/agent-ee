@@ -518,6 +518,7 @@ class NativeRatingPropagationTests(unittest.TestCase):
 
 class ReceiptBoundRatingProvenanceTests(unittest.TestCase):
     """AGENTEE-242: the checker resolves record_sha256 against the receipted binding-fill report."""
+    source_migration = False
 
     def setUp(self):
         from toolchain import require_toolchain
@@ -535,7 +536,8 @@ class ReceiptBoundRatingProvenanceTests(unittest.TestCase):
             write_json(root / name, value)
         spec = binding_fill.configuration(Path(__file__).resolve().parents[1] / 'src', intent='intent.json',
             manifest='parts.json', part_refs='refs.json', deviations='deviations.json', captures='.',
-            dependencies=sorted(qualify_manifest(helper.parts, root)['dependencies']), ratings='ratings.json')
+            dependencies=sorted(qualify_manifest(helper.parts, root)['dependencies']), ratings='ratings.json',
+            source_migration=self.source_migration)
         step = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'bind'
         receipt = run_step(step, root, spec, {'implementation': 1, 'source_candidate_id': 'rated', 'receipt_index': 1})
         self.assertEqual(receipt['status'], 'completed', (step / 'run/console.log').read_text())
@@ -807,3 +809,8 @@ class ReusedChildSheetRatingProvenanceTests(unittest.TestCase):
         # Another part's identity cannot borrow an instance record.
         other = evaluate({**bound, 'Partnumber': 'OTHER-MPN'})
         self.assertIn(('invalid_rating_provenance', 'R101', '/A/'), defects(other))
+
+
+class SourceMigrationRatingProvenanceTests(ReceiptBoundRatingProvenanceTests):
+    """Run the same receipt authentication boundaries against binding-fill/2."""
+    source_migration = True

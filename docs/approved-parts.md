@@ -336,7 +336,9 @@ cannot suppress a required copper declaration. Existing purchased-part and probe
 rules are unchanged.
 
 This admission path covers manifest qualification and native parts membership.
-It does not add copper generation to binding fill or the Rung-1 RC producer.
+AGENTEE-309 adds [binding-fill projection](binding-fill.md#explicit-source-migration-agentee-309)
+of these declarations, preserving captured CAD, pins and native nets. The Rung-1
+RC producer still refuses copper features.
 Fab steps still require their explicit `copper_features` reference list and fresh
 board qualification; parts membership alone does not establish fab acceptance.
 Owned native tests exercise sandboxed export, coordinator evidence and public

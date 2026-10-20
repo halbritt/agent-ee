@@ -281,8 +281,11 @@ def load_provenance(root, declaration):
     if not isinstance(receipt['artifacts'], dict) or receipt['artifacts'].get('out/binding-fill.json') != digest(report_path):
         raise ValueError('binding-fill report is not the receipted artifact')
     report = strict_json(report_path.read_bytes())
-    if not isinstance(report, dict) or report.get('schema') != 'agent-ee.binding-fill/1':
-        raise ValueError('expected agent-ee.binding-fill/1 report')
+    if not isinstance(report, dict) or report.get('schema') not in ('agent-ee.binding-fill/1', 'agent-ee.binding-fill/2'):
+        raise ValueError('expected agent-ee.binding-fill/1 or /2 report')
+    if report['schema'] == 'agent-ee.binding-fill/2' and (
+            '--source-migration' not in spec['argv'] or not isinstance(report.get('probe_migrations'), list)):
+        raise ValueError('binding-fill/2 requires explicit source migration evidence')
     ratings = report.get('ratings')
     if not isinstance(ratings, dict) or not isinstance(ratings.get('derived'), dict):
         raise ValueError('binding-fill report carries no ratings provenance')

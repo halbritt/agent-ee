@@ -152,6 +152,97 @@ class ProbeContractTests(unittest.TestCase):
             else:
                 self.assertEqual(comp['part_binding']['LCSC'], 'C38695')
 
+    def test_explicit_source_migration_receipt_and_emission(self):
+        from agent_ee.schematic_emitter import emit_schematic
+        probes = pf.declarations(self.parts, self.root)
+        original = copy.deepcopy(self.intent)
+        for comp in self.intent['components']:
+            if comp['reference'] in probes:
+                comp['part_binding'] = {pf.PROPERTY: canonical(probes[comp['reference']]).decode()}
+        legacy = copy.deepcopy(self.intent)
+        with self.assertRaisesRegex(ValueError, 'writer binding mismatch'):
+            self.filled()
+        output, report = fill(self.root, self.intent, self.parts, self.refs, self.deviations,
+                              captures='.', source_migration=True)
+        self.assertEqual(self.intent, legacy)
+        self.assertEqual(report['schema'], 'agent-ee.binding-fill/2')
+        self.assertEqual(len(report['probe_migrations']), 6)
+        import hashlib
+        for row in report['probe_migrations']:
+            record = probes[row['reference']]
+            self.assertEqual(row, dict(reference=record['reference'],
+                old_encoding_sha256=hashlib.sha256(canonical(record)).hexdigest(),
+                new_encoding_sha256=hashlib.sha256(pf.marker(record).encode()).hexdigest(),
+                decoded_identity_sha256=identity(record)))
+        again, receipt = fill(self.root, output, self.parts, self.refs, self.deviations,
+                              captures='.', source_migration=True)
+        self.assertEqual(again, output)
+        self.assertEqual(receipt['probe_migrations'], [])
+        libraries = {lib['path']: (self.root / lib['path']).read_bytes() for lib in output['libraries']}
+        result, files = emit_schematic(output, libraries, {'schema': 'agent-ee.schematic-layout/1',
+            'namespace': '81ae10f4-1c43-4370-88c2-32c41b90fd70', 'project': 'probe', 'transforms': {}})
+        self.assertEqual(result['execution'], 'ok', result)
+        self.assertEqual(pf.validate_schematic(files['probe.kicad_sch'], probes), set(probes))
+        self.assertEqual(output['nets'], original['nets'])
+        self.assertEqual(output['libraries'], original['libraries'])
+
+    def test_migration_only_preserves_unqualified_components_and_reports_scope(self):
+        probes = pf.declarations(self.parts, self.root)
+        for comp in self.intent['components']:
+            if comp['reference'] in probes:
+                comp['part_binding'] = {pf.PROPERTY: canonical(probes[comp['reference']]).decode()}
+            else:
+                comp['part_binding'] = {'Qualification': 'Preserve source metadata verbatim'}
+        refs = copy.deepcopy(self.refs)
+        refs['components'] = {c['id']: refs['components'][c['id']] for c in self.intent['components']
+                              if c['reference'] in probes}
+        output, report = fill(self.root, self.intent, self.parts, refs, self.deviations,
+                              captures='.', source_migration=True, migration_only=True)
+        self.assertEqual(report['operation'], 'source-migration-only')
+        self.assertEqual(len(report['preserved_components']), 3)
+        self.assertEqual(len(report['probe_migrations']), 6)
+        for before, after in zip(self.intent['components'], output['components']):
+            if before['reference'] not in probes:
+                self.assertEqual(after, before)
+                self.assertIn(dict(component=before['id'], reference=before['reference'],
+                                   identity_sha256=identity(before)), report['preserved_components'])
+        with self.assertRaisesRegex(ValueError, 'ratings cannot be derived'):
+            fill(self.root, self.intent, self.parts, refs, self.deviations,
+                 captures='.', ratings={}, source_migration=True, migration_only=True)
+        with self.assertRaisesRegex(ValueError, 'requires explicit'):
+            fill(self.root, self.intent, self.parts, refs, self.deviations, captures='.', migration_only=True)
+        with self.assertRaisesRegex(ValueError, 'exactly declared source features'):
+            fill(self.root, self.intent, self.parts, self.refs, self.deviations,
+                 captures='.', source_migration=True, migration_only=True)
+        purchased = next(c for c in self.intent['components'] if c['reference'] not in probes)
+        purchased['part_binding'] = {pf.PROPERTY: '{malformed'}
+        with self.assertRaisesRegex(ValueError, 'no immutable source declaration'):
+            fill(self.root, self.intent, self.parts, refs, self.deviations,
+                 captures='.', source_migration=True, migration_only=True)
+        del purchased['part_binding']
+        refs['components'].pop(next(iter(refs['components'])))
+        with self.assertRaisesRegex(ValueError, 'exactly declared source features'):
+            fill(self.root, self.intent, self.parts, refs, self.deviations,
+                 captures='.', source_migration=True, migration_only=True)
+
+    def test_source_migration_refuses_tampered_malformed_and_ambiguous(self):
+        record = pf.declarations(self.parts, self.root)['TP1']
+        comp = next(c for c in self.intent['components'] if c['reference'] == 'TP1')
+        invalid = ['{', canonical(dict(record, net='wrong')).decode(),
+                   canonical(record).decode() + ' ',
+                   canonical(record).decode()[:-1] + ', "net": "wrong"}',
+                   pf.marker(dict(record, reference='TP2'))]
+        for value in invalid:
+            comp['part_binding'] = {pf.PROPERTY: value}
+            for mode in (False, True):
+                with self.subTest(value=value, mode=mode), self.assertRaises(ValueError):
+                    fill(self.root, self.intent, self.parts, self.refs, self.deviations,
+                         captures='.', source_migration=mode)
+        comp['part_binding'] = {pf.PROPERTY: canonical(record).decode(), 'LCSC': 'C1'}
+        with self.assertRaisesRegex(ValueError, 'writer binding mismatch'):
+            fill(self.root, self.intent, self.parts, self.refs, self.deviations,
+                 captures='.', source_migration=True)
+
     def test_saved_pad_net_is_the_board_form_of_the_declared_native_net(self):
         """AGENTEE-220: KiCad saves a literal slash as {slash}; sheet separators stay literal."""
         import xml.etree.ElementTree as ET
@@ -356,6 +447,69 @@ class NativeProbeTests(unittest.TestCase):
         report = evaluate(self.root, 'parts.json', xml, ['probe.kicad_sch'])
         self.assertEqual((report['execution'], report['outcome']), ('ok', 'pass'), report)
         return project, xml
+
+    def test_receipted_source_migration_reaches_native_membership(self):
+        self._receipted_source_migration()
+
+    def test_receipted_migration_only_preserves_bindings_and_reaches_native_membership(self):
+        self._receipted_source_migration(migration_only=True)
+
+    def _receipted_source_migration(self, migration_only=False):
+        from agent_ee.binding_fill import configuration
+        from agent_ee.stage_receipts import run_step, validate_receipt, adopt
+        probes = pf.declarations(self.parts, self.root)
+        if migration_only:
+            self.intent = self.filled()
+            self.refs['components'] = {c['id']: self.refs['components'][c['id']]
+                for c in self.intent['components'] if c['reference'] in probes}
+        for comp in self.intent['components']:
+            if comp['reference'] in probes:
+                comp['part_binding'] = {pf.PROPERTY: canonical(probes[comp['reference']]).decode()}
+        for name, value in [('intent.json', self.intent), ('refs.json', self.refs),
+                            ('deviations.json', self.deviations)]:
+            write_json(self.root / name, value)
+        spec = configuration(ROOT / 'src', intent='intent.json', manifest='parts.json',
+            part_refs='refs.json', deviations='deviations.json', captures='.',
+            dependencies=qualify_manifest(self.parts, self.root)['dependencies'],
+            source_migration=True, migration_only=migration_only)
+        path = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'migration'
+        receipt = run_step(path, self.root, spec,
+            {'implementation': 1, 'source_candidate_id': 'owned-legacy', 'receipt_index': 1})
+        self.assertEqual(receipt['status'], 'completed', (path / 'run/console.log').read_text())
+        self.assertEqual(validate_receipt(path), receipt)
+        report = read_json(path / 'run/out/binding-fill.json')
+        self.assertEqual(report['schema'], 'agent-ee.binding-fill/2')
+        self.assertEqual(len(report['probe_migrations']), 6)
+        adopt(path, receipt, self.root)
+        self.intent = read_json(self.root / 'intent.json')
+        if migration_only:
+            self.refs = {'schema': 'agent-ee.part-refs/1', 'components': {c['id']: {
+                'part_ref': 'uart-pogo' if c['reference'] in probes else 'resistor'}
+                for c in self.intent['components']}}
+        self.native()  # Fresh native netlist and parts_subset must both pass.
+
+    def test_receipted_malformed_source_migration_publishes_no_intent(self):
+        from agent_ee.binding_fill import configuration
+        from agent_ee.stage_receipts import run_step, validate_receipt, adopt
+        comp = next(c for c in self.intent['components'] if c['reference'] == 'TP1')
+        comp['part_binding'] = {pf.PROPERTY: '{malformed'}
+        for name, value in [('intent.json', self.intent), ('refs.json', self.refs),
+                            ('deviations.json', self.deviations)]:
+            write_json(self.root / name, value)
+        before = digest(self.root / 'intent.json')
+        spec = configuration(ROOT / 'src', intent='intent.json', manifest='parts.json',
+            part_refs='refs.json', deviations='deviations.json', captures='.',
+            dependencies=qualify_manifest(self.parts, self.root)['dependencies'], source_migration=True)
+        path = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'refused-migration'
+        receipt = run_step(path, self.root, spec,
+            {'implementation': 1, 'source_candidate_id': 'invalid-legacy', 'receipt_index': 1})
+        self.assertEqual(validate_receipt(path), receipt)
+        self.assertEqual(receipt['exit_code'], 1)
+        self.assertIsNone(receipt['outputs']['intent.json'])
+        self.assertEqual(read_json(path / 'run/out/binding-fill.json')['schema'], 'agent-ee.binding-fill/2')
+        with self.assertRaisesRegex(ValueError, 'no output adopted'):
+            adopt(path, receipt, self.root)
+        self.assertEqual(digest(self.root / 'intent.json'), before)
 
     def test_native_six_features_schematic_board_and_fab(self):
         project, xml = self.native()
