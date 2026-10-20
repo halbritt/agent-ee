@@ -342,15 +342,41 @@ excluded-from-BOM, virtual and off-board components need no verdict. An
 exemption cites one line of a captured owner decision:
 
 ```json
-{"exemptions": {"R2": {"source": "decisions/temperature.md", "sha256": "<64 hex>",
-                       "line": 2, "quote": "R2 is a board-edge bleeder resistor"}}}
+{"exemptions": {"R2": {"source": "decisions/operating-temperature-exemptions.txt", "sha256": "<64 hex>",
+                       "line": 1, "quote": "R2 is exempt from operating-temperature verification."}}}
 ```
 
-The quote must name the exact reference as a whole token, so `R20` does not
-name `R2`. A reference can be judged or exempt, not both. The source is an
-immutable input. At evaluation it must be captured with the pinned hash and
-hold the quote on the cited line. Otherwise the exemption is unknown, never a
-pass.
+The quote must name the exact reference as a whole token, so `R20`, `R2-1`
+and `R1/R2` do not name `R2`. A reference can be judged or exempt, not both.
+The source is an immutable input; native KiCad files (`.kicad_*`), legacy
+design files (`.sch`, `.net`, `.pro`), project library tables (`sym-lib-table`,
+`fp-lib-table`) and the mutable deviations file are refused as sources
+(case-insensitive file names and suffixes). At evaluation it must be
+captured with the pinned hash and hold the quote on the cited line.
+
+AGENTEE-281 requires a dedicated owner exemption file named
+`operating-temperature-exemptions.txt` (in any captured directory). After removing
+at most one final LF newline, its entire content must be one or more lines, each
+exactly a canonical ASCII sentence, case-insensitively:
+
+```text
+R2 is exempt from operating-temperature verification.
+R3 and C4 are exempt from operating-temperature verification.
+```
+
+For multiple references use `are`. Comma-only lists, `and` lists and an Oxford
+comma are accepted; references have ASCII letter prefixes followed by digits,
+each listed exactly once per sentence. No indentation, extra spaces, blank
+lines, headings, list markers, comments, quotes, code, line wrapping or other
+text is allowed. Only LF separates lines; CRLF, Unicode characters and Unicode
+line/paragraph separators are refused. If **any** line is invalid, **every**
+exemption cited from the file is unknown (`operating_temperature_exemption_invalid`),
+even if the cited line itself is canonical. Empty files are invalid.
+Exemptions cited from any other file, including `REQUIREMENTS.md`, Markdown
+documents or design files, are refused or unknown. The citation still binds the
+captured hash, exact line and quote; a quote cannot bypass whole-file validation.
+Owners withdraw an exemption by deleting its line and pinning the new file hash,
+never by annotating it. This format does not interpret Markdown or owner prose.
 
 `package_map` adds the [DigiKey package check](digikey-capture.md#check-evidence)
 against the netlist `Footprint`. A mismatch is a `digikey_package_mismatch`
