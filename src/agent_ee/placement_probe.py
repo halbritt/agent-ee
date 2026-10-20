@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 from . import courtyard_curves as curves
-from .geometry_probe import pad_attribute
+from .geometry_probe import pad_attribute, box_nm
 from .placement import area2, cross, intersection_area, qualified_polygons
 
 
@@ -178,12 +178,57 @@ def rule_area(zone, owner):
     return {**record, 'outline': {'status': 'proven', 'polygons': [points]}}
 
 
+def custom_pad_geometry(pad):
+    """Native anchor and complete pad-local merged copper contours."""
+    import pcbnew
+    layer = pcbnew.PADSTACK.ALL_LAYERS
+    def contours(poly):
+        return [[[int(poly.COutline(i).CPoint(j).x), int(poly.COutline(i).CPoint(j).y)]
+                 for j in range(poly.COutline(i).PointCount())] for i in range(poly.OutlineCount())]
+    merged = pcbnew.SHAPE_POLY_SET()
+    pad.MergePrimitivesAsPolygon(layer, merged)
+    if not merged.OutlineCount() or merged.HasHoles():
+        raise ValueError('custom pad merged copper missing or has unsupported holes')
+    return {'anchor': int(pad.GetAnchorPadShape(layer)),
+            'merged_polygons_nm': contours(merged)}
+
+
+def _custom_pad_nodes(data):
+    """Use the shared bounded reader and AGENTEE-300 qualifier on board pads."""
+    from .symbol_library import parse_sexpr, children, field
+    nodes = {}
+    for fp in children(parse_sexpr(data), 'footprint'):
+        for pad in children(fp, 'pad'):
+            if len(pad) > 3 and pad[3] == 'custom':
+                nodes[field(pad, 'uuid', 1)[0]] = pad
+    return nodes
+
+
+def _qualify_custom_pad(pad, node):
+    from .footprint_library import canonical_custom_pad
+    from .symbol_library import children
+    node = canonical_custom_pad(node)
+    geometry = custom_pad_geometry(pad)
+    from decimal import Decimal, InvalidOperation
+    def normalized(value):
+        if isinstance(value, list):
+            return [normalized(v) for v in value]
+        try:
+            return str(Decimal(value).normalize())
+        except InvalidOperation:
+            return value
+    geometry['primitives'] = normalized(children(node, 'primitives')[0][1:])
+    return {'status': 'proven', **geometry, 'bbox_nm': box_nm(pad.GetBoundingBox())}
+
+
 def extract(board_path):
     import pcbnew
     path = Path(board_path)
     before = path.read_bytes()
     board = pcbnew.LoadBoard(str(path))
     outline_shapes = [s for s in board.GetDrawings() if s.GetLayer() == pcbnew.Edge_Cuts]
+    custom_nodes = _custom_pad_nodes(before) if any(
+        p.GetShape() == pcbnew.PAD_SHAPE_CUSTOM for f in board.GetFootprints() for p in f.Pads()) else {}
     footprints = []
     markings = [marking(item) for item in board.GetDrawings()]
     areas = [rule_area(z, 'board') for z in board.Zones() if z.GetIsRuleArea()]
@@ -204,6 +249,11 @@ def extract(board_path):
                          'size_nm': vector_nm(pad.GetSize(pcbnew.PADSTACK.ALL_LAYERS)),
                          'rotation_deg': pad.GetOrientationDegrees(), 'attribute': pad_attribute(pad),
                          'layers': sorted(pcbnew.LayerName(layer) for layer in pad.GetLayerSet().Seq())})
+            if pad.GetShape() == pcbnew.PAD_SHAPE_CUSTOM:
+                try:
+                    pads[-1]['custom_geometry'] = _qualify_custom_pad(pad, custom_nodes[pad.m_Uuid.AsString()])
+                except (ValueError, KeyError) as exc:
+                    pads[-1]['custom_geometry'] = {'status': 'unsupported', 'reason': str(exc)}
         footprints.append({'ref': fp.GetReference(), 'uuid': fp.m_Uuid.AsString(), 'value': fp.GetValue(),
                            'fpid': fp.GetFPIDAsString(),
                            'side': {pcbnew.B_Cu: 'B', pcbnew.F_Cu: 'F'}.get(fp.GetLayer(), 'unsupported'),

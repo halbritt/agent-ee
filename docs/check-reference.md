@@ -1611,3 +1611,11 @@ reserves the native IMU axes text box on its own side. These are recorded design
 geometry choices, not DRC waivers: all remaining silkscreen warnings and errors
 retain the ordinary DRC verdict. Regeneration and fresh captured checks are
 required for an older candidate.
+
+## Custom-pad placement preservation
+
+The [disposable placer](placer.md#native-custom-pads-agentee-307) admits only
+native-qualified custom pads, reusing the footprint index's bounded syntax.
+Its save/reload gate preserves complete primitives, copper extents and pad/net
+identity. Unsupported geometry remains unknown; courtyard packing supplies no
+copper-clearance evidence. This adds no registered check or acceptance predicate.

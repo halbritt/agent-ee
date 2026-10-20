@@ -445,7 +445,7 @@ native `PAD_SHAPE` values, read from the KiCad 10.0.7 pcbnew bindings, are:
 | 4 | roundrect | `R_0805_2012Metric`, `C_0805_2012Metric` |
 | 5 | chamfered rect | |
 
-TRAPEZOID (3), CUSTOM (6), any other value, a non-integer shape, a pad angle
+TRAPEZOID (3), unqualified CUSTOM (6), any other value, a non-integer shape, a pad angle
 that is not a quarter turn, and a capture with pads whose recorded
 `pcbnew_version` is not major version 10 give `unsupported_geometry`,
 `outcome=unknown`. The enum is read only for the probe version it came from.
@@ -524,7 +524,7 @@ left behind.
 
 The pad-shape tests build owned boards with every accepted shape at quarter
 turns, including plated circle and oval pads with drills, and check that the
-saved pads match the source. Trapezoid, custom, 45-degree and per-layer
+saved pads match the source. Trapezoid, unqualified custom, 45-degree and per-layer
 padstack pads, a missing courtyard and a 45-degree footprint refuse as typed
 unknown with no destination. A locked footprint stays unchanged. Rewriting
 pads to rectangles inside the writer fails and is not published. The stock RC
@@ -596,3 +596,49 @@ requires all parts placed, all four verdicts passing, identical transforms and
 saved bytes on repetition, unchanged inputs and the named oversized failure.
 There is no timing threshold and no change to packing constraints, verdicts,
 check registration, campaign policy or the evidence model.
+
+## Native custom pads (AGENTEE-307)
+
+CUSTOM (6) is admitted per pad when a fresh native placement probe supplies
+`custom_geometry.status=proven`. The probe reuses the bounded S-expression
+reader and [AGENTEE-300 qualifier](footprint-libraries.md#native-custom-pads-agentee-300):
+explicit solid-connected SMD pads on one front/back copper layer, outline
+clearance, circle/rectangle anchors and bounded `gr_poly`, `gr_rect`, `gr_circle`
+or `gr_line` primitives. Unsupported syntax stays `unsupported_geometry`,
+`outcome=unknown`; an old probe with only the shape number is insufficient.
+Native merged copper must be nonempty and have no holes. Multi-island geometry
+is retained in full. No copper-clearance claim follows from this admission.
+
+The probe retains the full qualified primitive list, native anchor, native
+pad-local merged polygons and native copper bounding box, including the anchor.
+The search rotates that full extent along with the pad. A complete plan lists
+`qualified_custom_pads` by reference, UUID and electrical number; `pad_shapes`
+continues to list the unconditional stock shape domain. The native writer
+compares primitives, merged geometry, pad identities, nets, layers and the
+transformed copper extent after save/reload. A dropped redundant primitive is
+refused even when its removal leaves the merged extent unchanged. Rectangle
+corner ordering is canonicalized because KiCad normalizes corners after a flip;
+all other primitive tokens and their order stay exact in the write-scope gate.
+
+Owned fixtures exercise all four primitive kinds together, every source/target
+quarter turn, both mounting sides, both native flip directions and flip-back
+identity. The packing search keeps the supplied side assignments. These tests
+qualify native custom-pad preservation on both sides; the campaign write-scope
+checker still refuses a writer-requested custom-pad side flip.
+
+On the real expanded pod at fome-mc `845284fbbf907197a7476d23ce59490afb5e26f1`, a fresh extraction of the imported
+board admits both pads of JP1–JP5. Scratch native write/save/reload probes preserve
+all ten pads through every quarter turn, both native flip directions and exact
+flip-back; these probes supply geometry evidence only. With the lane's unchanged diagnostic policy,
+the next result is `packing_infeasible`, `outcome=defect`, `steps_used=0`,
+`placements=[]`, reason **`F courtyard area exceeds board area`**. The exact
+courtyard-area proof records board area `[5850000000000000, 1]` and required
+front courtyard area `[7898547501909592, 1]` nm². All 331 footprints are staged
+on the front; this says nothing about fit with intended double-sided assignments.
+The external board and its probe are read-only inputs, not repository fixtures.
+
+Focused native regression:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_custom_pads tests.test_placer_native -v
+```

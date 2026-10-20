@@ -297,6 +297,27 @@ def _custom_pad(pad):
                 raise LibraryError('degenerate custom-pad primitive')
 
 
+def canonical_custom_pad(pad):
+    """Qualify AGENTEE-300 syntax and normalize native rectangle corner ordering.
+
+    Board electrical fields are retained but do not participate in library
+    geometry qualification. Other pad fields and primitive ordering stay exact.
+    """
+    import copy
+    from decimal import Decimal
+    from .symbol_library import children
+    syntax = pad[:4] + [n for n in pad[4:] if n[0] not in ('net', 'pinfunction', 'pintype')]
+    _custom_pad(syntax)
+    result = copy.deepcopy(pad)
+    for primitive in children(result, 'primitives')[0][1:]:
+        if primitive[0] == 'gr_rect':
+            start = children(primitive, 'start')[0]
+            end = children(primitive, 'end')[0]
+            for axis in (1, 2):
+                start[axis], end[axis] = sorted((start[axis], end[axis]), key=Decimal)
+    return result
+
+
 def _native_custom_geometry(data, footprint):
     """Load exact captured bytes through the ordinary networkless executor."""
     import tempfile
