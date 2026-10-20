@@ -37,6 +37,10 @@ Electrical graph checks support [bounded design inventories](docs/design-size-li
 of up to 1,024 components, 2,048 nets and 8,192 physical terminals. Exact-search,
 byte and geometric work guards still apply.
 
+[Operating-temperature acceptance](docs/assembly-readiness.md#digikey-operating-temperature)
+checks reduced-limit parts against their own captured ratings and requires
+captured thermal validation before they can pass (AGENTEE-310).
+
 The [telemetry-pod evidence index](docs/evidence-index.md) maps sealed checks to
 the pod's nine criteria while retaining bench and operator obligations.
 

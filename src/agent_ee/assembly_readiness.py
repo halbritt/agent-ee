@@ -876,7 +876,8 @@ def validate_params(params):
     operating_temperature = params.get("operating_temperature")
     if operating_temperature is not None:
         operating_temperature = _validate_operating_temperature(operating_temperature)
-        if any(c["source"] == deviations for c in operating_temperature["exemptions"].values()):
+        if any(c["source"] == deviations for key in ("exemptions", "reduced_acceptance", "thermal_evidence")
+               for c in operating_temperature[key].values()):
             raise ValueError("operating_temperature exemption source cannot be the mutable deviations file")
 
     return {
@@ -918,7 +919,7 @@ def _validate_operating_temperature(raw):
     from .hardware_interface import exact_keys
     if not isinstance(raw, dict):
         raise ValueError("operating_temperature must be an object")
-    optional = [key for key in (PACKAGE_MAP_KEY, "exemptions") if key in raw]
+    optional = [key for key in (PACKAGE_MAP_KEY, "exemptions", "reduced_acceptance", "thermal_evidence") if key in raw]
     exact_keys(raw, " ".join(["min_c max_c capture capture_sha256 parts", *optional]))
     bounds = []
     for key in ("min_c", "max_c"):
@@ -928,7 +929,7 @@ def _validate_operating_temperature(raw):
         bounds.append(Decimal(str(value)))
     if bounds[0] > bounds[1]:
         raise ValueError("operating_temperature.min_c exceeds max_c")
-    evidence = evidence_declaration({key: raw[key] for key in (*EVIDENCE_KEYS, *optional) if key != "exemptions"},
+    evidence = evidence_declaration({key: raw[key] for key in (*EVIDENCE_KEYS, PACKAGE_MAP_KEY) if key in raw},
                                     "operating_temperature")
     exemptions = raw.get("exemptions", {})
     if not isinstance(exemptions, dict) or ("exemptions" in raw and not exemptions):
@@ -945,7 +946,39 @@ def _validate_operating_temperature(raw):
             raise ValueError("operating_temperature exemption source cannot be a writer-mutable KiCad design file")
         if not _reference_token(ref).search(citation["quote"]):
             raise ValueError(f"operating_temperature.exemptions.{ref}.quote does not name {ref!r}")
-    return {**evidence, "min_c": bounds[0], "max_c": bounds[1],
+    declarations = {}
+    for field in ("reduced_acceptance", "thermal_evidence"):
+        entries = raw.get(field, {})
+        if not isinstance(entries, dict) or (field in raw and not entries):
+            raise ValueError(f"operating_temperature.{field} must map references to citations")
+        declarations[field] = {}
+        for ref, entry in entries.items():
+            if ref not in evidence["parts"] or ref in exemptions:
+                raise ValueError(f"{field} reference {ref!r} must have a DigiKey parts binding")
+            if not isinstance(entry, dict):
+                raise ValueError(f"{field}.{ref} must be an object")
+            citation = {k: v for k, v in entry.items() if field != "reduced_acceptance" or k not in {"min_c", "max_c"}}
+            _validate_citation(citation, f"{field}.{ref}")
+            source = PurePosixPath(citation["source"])
+            if (source.suffix.lower().startswith(".kicad_") or source.suffix.lower() in {".sch", ".net", ".pro"}
+                    or source.name.lower() in {"sym-lib-table", "fp-lib-table"}):
+                raise ValueError(f"{field} source cannot be a writer-mutable KiCad design file")
+            if not _reference_token(ref).search(citation["quote"]):
+                raise ValueError(f"{field} quote does not name {ref!r}")
+            declarations[field][ref] = dict(entry)
+            if field == "reduced_acceptance":
+                limits = []
+                for key in ("min_c", "max_c"):
+                    value = entry.get(key)
+                    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                        raise ValueError(f"reduced_acceptance.{ref}.{key} must be finite degC")
+                    limits.append(Decimal(str(value)))
+                if limits[0] > limits[1]:
+                    raise ValueError("reduced acceptance min_c exceeds max_c")
+                declarations[field][ref].update(zip(("min_c", "max_c"), limits))
+    if set(declarations["thermal_evidence"]) - set(declarations["reduced_acceptance"]):
+        raise ValueError("thermal_evidence requires reduced_acceptance for the reference")
+    return {**evidence, "min_c": bounds[0], "max_c": bounds[1], **declarations,
             "exemptions": {ref: dict(c) for ref, c in exemptions.items()}}
 
 
@@ -996,18 +1029,55 @@ def _verify_exemption(inputs_root, ref, citation, captured_files):
         raise ValueError(f"the canonical exemption does not name {ref!r}")
 
 
+def _verify_temperature_citation(inputs_root, ref, citation, captured_files, *, thermal=False):
+    """Bind a reference and range to an immutable, canonical ASCII evidence file."""
+    name = "operating-temperature-thermal.txt" if thermal else "operating-temperature-acceptances.txt"
+    try:
+        path, rel = _resolve_captured_file(inputs_root, citation["source"], f"{ref} temperature evidence")
+    except AssemblyReadinessExecutionError as exc:
+        raise ValueError(str(exc)) from exc
+    actual = digest(path)
+    if actual != citation["sha256"]:
+        raise ValueError(f"{rel!r} differs from its declared sha256")
+    if captured_files is not None and captured_files.get(rel) != actual:
+        raise ValueError(f"{rel!r} is not a captured input")
+    if path.name != name:
+        raise ValueError(f"temperature evidence requires dedicated {name}")
+    try:
+        lines = path.read_bytes().decode("ascii").removesuffix("\n").split("\n")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"unreadable temperature evidence: {exc}") from exc
+    number = r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?"
+    phrase = "expected operating temperature is" if thermal else "is accepted for operating temperature"
+    pattern = re.compile(r"([A-Za-z]+[0-9]+) " + phrase + rf" ({number}) to ({number}) degC\.", re.I | re.ASCII)
+    statements = {}
+    for index, line in enumerate(lines, 1):
+        match = pattern.fullmatch(line)
+        if match is None:
+            raise ValueError("every line must be a complete canonical ASCII temperature statement")
+        identity, low, high = match.groups()
+        if identity.casefold() in statements or Decimal(low) > Decimal(high):
+            raise ValueError("temperature statements must name each reference once with ordered limits")
+        statements[identity.casefold()] = (index, Decimal(low), Decimal(high))
+    if (citation["line"] > len(lines) or citation["quote"] != lines[citation["line"] - 1]
+            or ref.casefold() not in statements or statements[ref.casefold()][0] != citation["line"]):
+        raise ValueError("temperature citation must quote the exact reference's complete line")
+    _, low, high = statements[ref.casefold()]
+    return low, high
+
+
 def _operating_temperature(inputs_root, spec, populated, captured_files):
     """Declared ambient against each bound part's DigiKey 'Operating Temperature'; never stock evidence."""
     from .digikey_record import (PACKAGE_MAP_KEY, ambient_verdict, load_package_map, package_verdict,
                                  part_evidence, replay_evidence)
-    findings, components, exempt = [], [], []
+    findings, components, exempt, reduced = [], [], [], []
     report = {"min_c": str(spec["min_c"]), "max_c": str(spec["max_c"]), "capture": spec["capture"],
               "capture_sha256": spec["capture_sha256"], "package_map": spec.get(PACKAGE_MAP_KEY),
-              "components": components, "exempt": exempt, "unlisted": [], "error": None}
+              "components": components, "exempt": exempt, "reduced_acceptance": reduced, "unlisted": [], "error": None}
     by_ref = {}
     for comp in populated:
         by_ref.setdefault(comp["reference"], []).append(comp)
-    # AGENTEE-274: the board-wide predicate needs every populated part judged or explicitly exempt.
+    # Every populated part needs a verdict; legacy exemptions always yield unknown.
     unlisted = sorted(set(by_ref) - set(spec["parts"]) - set(spec["exemptions"]), key=natural_key)
     report["unlisted"] = unlisted
     if unlisted:
@@ -1016,12 +1086,14 @@ def _operating_temperature(inputs_root, spec, populated, captured_files):
                                     "exemption: " + ", ".join(unlisted)})
     for ref in sorted(spec["exemptions"], key=natural_key):
         citation = spec["exemptions"][ref]
-        entry = {"reference": ref, "status": "exempt", "citation": citation, "reason": None}
+        entry = {"reference": ref, "status": "unknown", "citation": citation, "reason": None}
         exempt.append(entry)
         try:
             if len(by_ref.get(ref, [])) != 1:
                 raise ValueError(f"{ref} is not exactly one populated component")
             _verify_exemption(inputs_root, ref, citation, captured_files)
+            raise ValueError("operating-temperature exemptions are retired; migrate to reduced_acceptance with "
+                             "a DigiKey parts binding and captured thermal_evidence")
         except ValueError as exc:
             entry["status"], entry["reason"] = "unknown", str(exc)
             findings.append({"severity": "unknown", "code": "operating_temperature_exemption_invalid",
@@ -1039,6 +1111,12 @@ def _operating_temperature(inputs_root, spec, populated, captured_files):
     for ref in sorted(spec["parts"], key=natural_key):
         entry = {"reference": ref, "key": spec["parts"][ref], "status": "unknown", "reason": None}
         components.append(entry)
+        acceptance = spec["reduced_acceptance"].get(ref)
+        if acceptance is not None:
+            entry.update({"citation": {k: v for k, v in acceptance.items() if k not in {"min_c", "max_c"}},
+                          "accepted_range": {k: str(acceptance[k]) for k in ("min_c", "max_c")},
+                          "rating": None, "thermal": {"status": "unknown", "reason": "pending thermal validation"}})
+            reduced.append(entry)
         try:
             if len(by_ref.get(ref, [])) != 1:
                 raise ValueError(f"{ref} is not exactly one populated component")
@@ -1066,7 +1144,26 @@ def _operating_temperature(inputs_root, spec, populated, captured_files):
                     raise ValueError(reason)
             if evidence["value"] is None:
                 raise ValueError(f"DigiKey record {evidence['key']} lists no {evidence['parameter']!r}")
-            entry["status"], entry["reason"] = ambient_verdict(evidence["value"], spec["min_c"], spec["max_c"])
+            minimum, maximum = spec["min_c"], spec["max_c"]
+            if acceptance is not None:
+                entry["rating"] = evidence["value"]
+                minimum, maximum = _verify_temperature_citation(inputs_root, ref, acceptance, captured_files)
+                if (minimum, maximum) != (acceptance["min_c"], acceptance["max_c"]):
+                    raise ValueError("owner citation range differs from declared reduced acceptance")
+            entry["status"], entry["reason"] = ambient_verdict(evidence["value"], minimum, maximum)
+            if acceptance is not None:
+                thermal = spec["thermal_evidence"].get(ref)
+                if thermal is not None:
+                    entry["thermal"]["citation"] = thermal
+                    try:
+                        low, high = _verify_temperature_citation(inputs_root, ref, thermal, captured_files, thermal=True)
+                        verdict, reason = ambient_verdict(evidence["value"], low, high)
+                        entry["thermal"].update(status=verdict, reason=reason, min_c=str(low), max_c=str(high))
+                    except ValueError as exc:
+                        entry["thermal"]["reason"] = f"pending thermal validation: {exc}"
+                # A determinate rating defect cannot be hidden by missing or invalid thermal evidence.
+                if entry["status"] != "defect" and entry["thermal"]["status"] != "pass":
+                    entry["status"], entry["reason"] = entry["thermal"]["status"], entry["thermal"]["reason"]
         except ValueError as exc:
             entry["reason"] = str(exc)
         if entry["status"] != "pass":
@@ -1130,7 +1227,8 @@ def capability(params, files, inputs=None):
             immutable_inputs.append(cfg["rating_provenance"][key])
     if cfg["operating_temperature"] is not None:
         from .digikey_record import evidence_inputs
-        cited = [c["source"] for c in cfg["operating_temperature"]["exemptions"].values()]
+        cited = [c["source"] for key in ("exemptions", "reduced_acceptance", "thermal_evidence")
+                 for c in cfg["operating_temperature"][key].values()]
         for rel in [*evidence_inputs(cfg["operating_temperature"], inputs), *cited]:
             if rel not in files:
                 raise ValueError(f"operating_temperature evidence file {rel!r} must be a captured input")

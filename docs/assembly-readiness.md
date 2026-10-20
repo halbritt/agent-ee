@@ -295,12 +295,12 @@ reused sheet).
     populated component, its part number or manufacturer does not match the
     record, the request was not found or failed, the operating temperature
     is absent, unparsed or junction/case only, or, with `package_map`, the
-    package comparison is unknown or a mismatch.
+    package comparison is unknown or a mismatch. Also covers invalid reduced
+    acceptance citations and pending thermal validation.
   - `operating_temperature_unlisted`: populated components with neither a
-    `parts` entry nor an exemption; names the `references`.
-  - `operating_temperature_exemption_invalid`: an exempt reference is not
-    exactly one populated component, or its citation is not captured, differs
-    from its `sha256` or lacks the quote on the cited line.
+    `parts` entry nor a refused legacy exemption declaration; names the `references`.
+  - `operating_temperature_exemption_invalid`: a legacy exemption is refused;
+    migrate it to reduced acceptance and thermal evidence.
   - `undeclared_rating_provenance`: a populated R or C carries a well-formed
     `AGENT_EE_Ratings` field but the scope declares no `rating_provenance` to
     resolve its `record_sha256`; names the `references`.
@@ -336,47 +336,78 @@ values. This does not establish derating, self-heating, storage limits or
 engineering acceptance.
 
 The predicate is board-wide (AGENTEE-274). Every populated component must be
-judged in `parts` or carry an exemption. Otherwise the check is unknown with
+judged in `parts`. Otherwise the check is unknown with
 `operating_temperature_unlisted`, even when every listed part passes. DNP,
-excluded-from-BOM, virtual and off-board components need no verdict. An
-exemption cites one line of a captured owner decision:
+excluded-from-BOM, virtual and off-board components need no verdict.
+
+AGENTEE-310 retires the AGENTEE-281 exemption semantics under the owner's
+2026-10-20 ruling: a part accepted below the board-wide requirement is tested
+against its actual rating. The legacy `exemptions` declaration remains readable
+only to return unknown (`operating_temperature_exemption_invalid`) with a
+migration message. No exemption can pass or bypass a rating check.
+
+A reduced acceptance is an optional per-reference entry. The reference must
+also occur in `parts`, with the same MPN, manufacturer and optional package
+binding as every other judged part. Its numeric `min_c`/`max_c` must form an
+ordered finite range. The accepted range may extend colder than the board
+requirement while reducing its maximum temperature. For example, alongside a
+board range of -20 to 105 degC:
 
 ```json
-{"exemptions": {"R2": {"source": "decisions/operating-temperature-exemptions.txt", "sha256": "<64 hex>",
-                       "line": 1, "quote": "R2 is exempt from operating-temperature verification."}}}
+{
+  "reduced_acceptance": {
+    "U1": {
+      "min_c": -40, "max_c": 85,
+      "source": "decisions/operating-temperature-acceptances.txt",
+      "sha256": "<64 hex>", "line": 1,
+      "quote": "U1 is accepted for operating temperature -40 to 85 degC."
+    }
+  },
+  "thermal_evidence": {
+    "U1": {
+      "source": "validation/operating-temperature-thermal.txt",
+      "sha256": "<64 hex>", "line": 1,
+      "quote": "U1 expected operating temperature is -20 to 80 degC."
+    }
+  }
+}
 ```
 
-The quote must name the exact reference as a whole token, so `R20`, `R2-1`
-and `R1/R2` do not name `R2`. A reference can be judged or exempt, not both.
-The source is an immutable input; native KiCad files (`.kicad_*`), legacy
-design files (`.sch`, `.net`, `.pro`), project library tables (`sym-lib-table`,
-`fp-lib-table`) and the mutable deviations file are refused as sources
-(case-insensitive file names and suffixes). At evaluation it must be
-captured with the pinned hash and hold the quote on the cited line.
-
-AGENTEE-281 requires a dedicated owner exemption file named
-`operating-temperature-exemptions.txt` (in any captured directory). After removing
-at most one final LF newline, its entire content must be one or more lines, each
-exactly a canonical ASCII sentence, case-insensitively:
+The dedicated owner file must be named `operating-temperature-acceptances.txt`.
+Each line states one reference and its accepted range:
 
 ```text
-R2 is exempt from operating-temperature verification.
-R3 and C4 are exempt from operating-temperature verification.
+U1 is accepted for operating temperature -40 to 85 degC.
+U2 is accepted for operating temperature -40 to 85 degC.
+U4 is accepted for operating temperature -40 to 85 degC.
 ```
 
-For multiple references use `are`. Comma-only lists, `and` lists and an Oxford
-comma are accepted; references have ASCII letter prefixes followed by digits,
-each listed exactly once per sentence. No indentation, extra spaces, blank
-lines, headings, list markers, comments, quotes, code, line wrapping or other
-text is allowed. Only LF separates lines; CRLF, Unicode characters and Unicode
-line/paragraph separators are refused. If **any** line is invalid, **every**
-exemption cited from the file is unknown (`operating_temperature_exemption_invalid`),
-even if the cited line itself is canonical. Empty files are invalid.
-Exemptions cited from any other file, including `REQUIREMENTS.md`, Markdown
-documents or design files, are refused or unknown. The citation still binds the
-captured hash, exact line and quote; a quote cannot bypass whole-file validation.
-Owners withdraw an exemption by deleting its line and pinning the new file hash,
-never by annotating it. This format does not interpret Markdown or owner prose.
+The captured DigiKey ambient rating must cover this accepted range; otherwise
+it is an `operating_temperature_out_of_range` defect, including when thermal
+evidence is missing. A covering rating alone cannot pass. Each reduced part
+also needs declared `thermal_evidence` from a captured validation summary named
+`operating-temperature-thermal.txt`. Each line has the exact form shown in the
+JSON example and binds the expected temperature range to one reference. A
+location-based validation must explicitly name every reference it supports in
+separate lines. These summaries must come from actual thermal validation; the
+check does not perform enclosure measurements or establish the truth of the
+captured expectation. The entire expected range must fit inside the same bound
+DigiKey ambient rating. Exceeding it is a defect. Missing, unpinned, uncaptured,
+malformed or misbound thermal evidence stays unknown, pending thermal validation.
+
+Both files use canonical ASCII sentences, case-insensitively. Each reference
+has an ASCII letter prefix and digits and occurs once per file. Numeric bounds
+are finite decimal numbers, with an optional minus sign; no exponent or plus
+sign. Every range is ordered. After removing at most one final LF newline,
+every line must match the appropriate form. No headings, blank lines, CRLF,
+indentation, list markers, annotations, Unicode or wrapped lines are allowed.
+One invalid line invalidates all citations from that file. Citations pin the
+captured hash and quote the **complete** exact line, with a one-based line
+number; the owner's line must equal the declared accepted range. Native KiCad
+files, legacy design files, library tables and mutable deviations are refused
+as citation sources. Both owner and thermal files become immutable inputs to
+the existing capability/baseline machinery. Withdraw acceptance by deleting its
+line and repinning the captured file, never by adding annotations.
 
 `package_map` adds the [DigiKey package check](digikey-capture.md#check-evidence)
 against the netlist `Footprint`. A mismatch is a `digikey_package_mismatch`
@@ -389,8 +420,10 @@ DigiKey `quantity_available` and price never enter this check's evidence. The
 stock predicates still read only the JLCPCB catalog, so a part out of JLCPCB
 stock remains `out_of_stock` whatever DigiKey lists. Each judged reference is
 reported under `operating_temperature.components` with its verdict, reason and
-capture/response provenance. `exempt` lists the exemptions and `unlisted` the
-populated references with no verdict.
+capture/response provenance. `reduced_acceptance` lists reduced parts with owner citation, accepted range,
+raw bound rating and thermal status/citation. The same entries appear in
+`components`. `exempt` contains only refused legacy declarations, all unknown;
+`unlisted` names populated references with no declaration.
 
 ## Receipt-bound rating provenance
 

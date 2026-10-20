@@ -1584,21 +1584,25 @@ predicate. A single unqualified or `TA` DigiKey range that contains the ambient
 passes; one that does not is an `operating_temperature_out_of_range` defect.
 Junction/case-only, absent, unparsed or unbound values are unknown, as is an
 unpinned or uncaptured capture. The predicate is board-wide (AGENTEE-274): a
-populated component that is neither judged nor exempt by a captured, pinned
-owner citation makes it unknown (`operating_temperature_unlisted`). Exemptions
-require a dedicated captured, hash-pinned owner file named
-`operating-temperature-exemptions.txt`. After removing at most one final LF,
-**every** line must be exactly a canonical ASCII sentence such as
-`R2 is exempt from operating-temperature verification.` (case-insensitive), or
-`R2, R3 and C4 are exempt from operating-temperature verification.` (AGENTEE-281).
-No headings, blank lines, indentation, list markers, code, comments, quotes,
-line wrapping or other text is allowed. Non-ASCII bytes, Unicode separators and
-CRLF are refused. One invalid line makes all exemptions from that source unknown.
-Exemptions from other files, including `REQUIREMENTS.md`, Markdown documents and
-design files, are refused or unknown. Owners withdraw an exemption by deleting
-its line and pinning the new hash, never by annotating it. Native KiCad files,
-legacy design files, library tables and mutable deviations remain refused as
-citation sources. An optional
+populated component without a `parts` binding makes it unknown
+(`operating_temperature_unlisted`). Under the owner ruling of 2026-10-20,
+AGENTEE-310 replaces exemptions with `reduced_acceptance`: a per-reference
+accepted `min_c`/`max_c` range and owner citation in a dedicated captured
+`operating-temperature-acceptances.txt`. Each ASCII line has the exact form
+`U1 is accepted for operating temperature -40 to 85 degC.` The same DigiKey
+binding and ambient predicate judge this range. A rating below the accepted
+limit is a defect, never an exemption. A covering rating also requires captured,
+hash-pinned `thermal_evidence` naming that reference in
+`operating-temperature-thermal.txt`, with a line such as
+`U1 expected operating temperature is -20 to 80 degC.` The expected range must
+fit the rating; exceeding it is a defect, missing validation is unknown.
+Both whole files must contain only canonical ASCII lines with LF separators,
+ordered decimal ranges and one reference per line, unique across the file.
+Citations quote the exact complete line. One invalid line makes all citations
+from that file unknown. Legacy `exemptions`, including the old canonical
+`is exempt from operating-temperature verification.` form, return unknown
+with a migration message. Native KiCad files, legacy design files, library
+tables and mutable deviations remain refused as citation sources. An optional
 `package_map` compares the DigiKey package with the footprint. A mismatch is a
 `digikey_package_mismatch` defect, and an unmapped name is unknown. DigiKey
 stock never counts as JLCPCB stock. See
