@@ -169,6 +169,116 @@ class CustomPadPlacementTest(unittest.TestCase):
                     restored = next(f for f in extract(output)['footprints'] if f['ref'] == 'C1')
                     self.assertEqual(restored['pads'], initial['pads'])
 
+    def flipped_with_arc(self, rotation=0, back=False, direction=None):
+        import pcbnew as k
+        source = self.source(rotation=rotation, back=back)
+        board = k.LoadBoard(str(source))
+        fp = next(f for f in board.GetFootprints() if f.GetReference() == 'C1')
+        arc = k.PCB_SHAPE(fp)
+        arc.SetShape(k.SHAPE_T_ARC)
+        arc.SetLayer(k.B_SilkS if back else k.F_SilkS)
+        arc.SetWidth(120000)
+        arc.SetArcGeometry(k.VECTOR2I(200000, -1000000), k.VECTOR2I(800000, -600000),
+                           k.VECTOR2I(1200000, 300000))
+        fp.Add(arc)
+        k.SaveBoard(str(source), board)
+        before = source.read_bytes()
+        board = k.LoadBoard(str(source))
+        fp = next(f for f in board.GetFootprints() if f.GetReference() == 'C1')
+        fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM if direction is None else direction)
+        fp.SetPosition(k.VECTOR2I(12000000, 13000000))
+        fp.SetOrientationDegrees(fp.GetOrientationDegrees() + 90)
+        output = self.root / 'scope-flipped.kicad_pcb'
+        k.SaveBoard(str(output), board)
+        return before, output.read_bytes()
+
+    def test_writer_scope_custom_flip_arcs_all_turns_sides_and_directions(self):
+        import pcbnew as k
+        from agent_ee.placement_adapter import write_scope
+        for rotation in (0, 90, 180, 270):
+            for back in (False, True):
+                for direction in (k.FLIP_DIRECTION_TOP_BOTTOM, k.FLIP_DIRECTION_LEFT_RIGHT):
+                    with self.subTest(rotation=rotation, back=back, direction=direction):
+                        before, after = self.flipped_with_arc(rotation, back, direction)
+                        report = write_scope(before, after)
+                        self.assertEqual(report['status'], 'allowed', report)
+                        self.assertTrue(report['transforms'][0]['flipped'])
+                        saved = self.root / 'scope-flipped.kicad_pcb'
+                        board = k.LoadBoard(str(saved))
+                        fp = next(f for f in board.GetFootprints() if f.GetReference() == 'C1')
+                        fp.Flip(fp.GetPosition(), direction)
+                        k.SaveBoard(str(saved), board)
+                        reverse = write_scope(after, saved.read_bytes())
+                        self.assertEqual(reverse['status'], 'allowed', reverse)
+
+    def test_writer_scope_refuses_every_custom_flip_mutation(self):
+        import copy
+        from agent_ee import placement_adapter as pa
+        from agent_ee.scaffold import sexpr
+        before, after = self.flipped_with_arc()
+        from agent_ee.schematic_emit import parse_quoted
+        root = parse_quoted(after)
+        control = pa.write_scope(before, sexpr(root))
+        self.assertEqual(control['status'], 'allowed', control)
+        for mutation in ('arc-radius', 'arc-angle', 'arc-width', 'arc-layer', 'arc-drop', 'arc-add',
+                         'primitive-drop', 'primitive-add', 'primitive-move', 'primitive-width',
+                         'pad-number', 'pad-net', 'pad-shape', 'pad-anchor', 'pad-layer'):
+            altered = copy.deepcopy(root)
+            fp = next(f for f in pa.footprints(altered).values() if pa._reference(f) == 'C1')
+            arc = pa.children(fp, 'fp_arc')[0]
+            pad = pa.children(fp, 'pad')[0]
+            primitives = pa.children(pad, 'primitives')[0]
+            if mutation in ('arc-radius', 'arc-angle'):
+                point = pa.children(arc, 'mid' if mutation == 'arc-radius' else 'end')[0]
+                point[1] = str(float(point[1]) + 0.01)
+            elif mutation == 'arc-width':
+                pa.children(pa.children(arc, 'stroke')[0], 'width')[0][1] = '0.13'
+            elif mutation == 'arc-layer':
+                pa.children(arc, 'layer')[0][1] = 'B.Fab'
+            elif mutation == 'arc-drop':
+                fp.remove(arc)
+            elif mutation == 'arc-add':
+                extra = copy.deepcopy(arc)
+                pa.children(extra, 'uuid')[0][1] = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+                fp.append(extra)
+            elif mutation == 'primitive-drop':
+                primitives.pop()
+            elif mutation == 'primitive-add':
+                primitives.append(copy.deepcopy(primitives[-1]))
+            elif mutation == 'primitive-move':
+                line = pa.children(primitives, 'gr_line')[0]
+                pa.children(line, 'start')[0][1] = '-1.9'
+            elif mutation == 'primitive-width':
+                pa.children(pa.children(primitives, 'gr_line')[0], 'width')[0][1] = '0.5'
+            elif mutation == 'pad-number':
+                pad[1] = '99'
+            elif mutation == 'pad-net':
+                pa.children(pad, 'net')[0][1] = 'CHANGED'
+            elif mutation == 'pad-shape':
+                pad[3] = 'rect'
+            elif mutation == 'pad-anchor':
+                pa.children(pa.children(pad, 'options')[0], 'anchor')[0][1] = 'circle'
+            else:
+                pa.children(pad, 'layers')[0][1] = 'F.Cu'
+            with self.subTest(mutation=mutation):
+                report = pa.write_scope(before, sexpr(altered))
+                self.assertEqual(report['status'], 'refused', report)
+                self.assertTrue(report['violations'])
+
+    def test_writer_scope_native_failure_and_missing_output_refuse(self):
+        from agent_ee import placement_adapter as pa
+        before, after = self.flipped_with_arc()
+        for record in ({'execution': 'failed'}, {'execution': 'ok'}):
+            with self.subTest(record=record):
+                def failed(inputs, work, argv, **kwargs):
+                    work.mkdir()
+                    (work / 'console.log').write_text('deliberate test failure')
+                    return record
+                with patch('agent_ee.executor.execute', failed):
+                    report = pa.write_scope(before, after)
+                self.assertEqual(report['status'], 'refused', report)
+                self.assertTrue(any('probe' in v for v in report['violations']))
+
     def test_unsupported_arc_and_thermal_connection_stay_unknown(self):
         for n, primitive in enumerate(('(gr_arc (start 0 0) (mid 1 1) (end 2 0) (width 0.2))',
                                        PRIMITIVES['rect'])):

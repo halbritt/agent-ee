@@ -623,8 +623,10 @@ all other primitive tokens and their order stay exact in the write-scope gate.
 Owned fixtures exercise all four primitive kinds together, every source/target
 quarter turn, both mounting sides, both native flip directions and flip-back
 identity. The packing search keeps the supplied side assignments. These tests
-qualify native custom-pad preservation on both sides; the campaign write-scope
-checker still refuses a writer-requested custom-pad side flip.
+qualify native custom-pad preservation on both sides. The campaign write-scope
+checker also admits writer-requested flips of native-qualified custom-pad
+footprints, including their footprint arcs, through an exact sandboxed native
+reflection comparison (see [write-scope qualification](placement-adapter.md#custom-pad-side-flips-agentee-307)).
 
 On the real expanded pod at fome-mc `845284fbbf907197a7476d23ce59490afb5e26f1`, a fresh extraction of the imported
 board admits both pads of JP1–JP5. Scratch native write/save/reload probes preserve
@@ -642,3 +644,12 @@ Focused native regression:
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_custom_pads tests.test_placer_native -v
 ```
+
+The expanded pod side seed at fome-mc `f9305366a810c884b9c8f5e9c0ac9e5b324d2e17` now passes write scope with zero
+refusals (previously 16 footprint arcs and eight custom pads on JP2–JP5).
+With that seed's explicit side assignments and the retained diagnostic packing
+policy, the next result remains `packing_infeasible`, `outcome=defect`,
+`steps_used=0`, `placements=[]`, reason **`F courtyard area exceeds board area`**.
+The exact front-side courtyard-area proof records board area
+`[5850000000000000, 1]` and required area `[6549088000000000, 1]` nm².
+Admission of the candidate transform does not establish packing feasibility.

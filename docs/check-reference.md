@@ -1667,6 +1667,12 @@ release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
 
 The fab, `rung1_campaign` and `rung1_qualified` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file.
 
+Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
+an `acquisitions` map with acquisition method and redirect provenance, including
+in capture-time facts/2 capability descriptors. This metadata preserves the
+existing check verdicts. See [consumer receipt provenance](datasheet-capture.md#consumer-receipt-provenance-agentee-311)
+for live `/1` and historical `/2` semantics and the offline preparation consumers.
+
 ## Custom-pad placement preservation
 
 The [disposable placer](placer.md#native-custom-pads-agentee-307) admits only
@@ -1675,8 +1681,9 @@ Its save/reload gate preserves complete primitives, copper extents and pad/net
 identity. Unsupported geometry remains unknown; courtyard packing supplies no
 copper-clearance evidence. This adds no registered check or acceptance predicate.
 
-Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
-an `acquisitions` map with acquisition method and redirect provenance, including
-in capture-time facts/2 capability descriptors. This metadata preserves the
-existing check verdicts. See [consumer receipt provenance](datasheet-capture.md#consumer-receipt-provenance-agentee-311)
-for live `/1` and historical `/2` semantics and the offline preparation consumers.
+AGENTEE-307 also qualifies writer-requested side flips of custom-pad footprints
+and their footprint arcs through a sandboxed native reflection and save/reload.
+[The placement write scope](placement-adapter.md#custom-pad-side-flips-agentee-307)
+requires exact saved primitives, arc nodes and native merged-copper evidence;
+mutation or missing native output refuses admission. This changes transform
+admission only; check registration and placement grading remain unchanged.

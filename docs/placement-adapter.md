@@ -422,10 +422,10 @@ quarter turn, followed by a move, a further quarter turn and a flip back:
 
 A flip of a footprint outside this qualified family is refused as unsupported:
 
-- `fp_arc`: pcbnew re-derives arcs on a flip, swapping their endpoints and
-  recomputing the midpoint;
-- custom (`primitives`/`options`), chamfered, trapezoid (`rect_delta`) or
-  offset-drill pads;
+- `fp_arc` outside the [native-qualified custom-pad family](#custom-pad-side-flips-agentee-307):
+  pcbnew re-derives arcs on a flip, swapping endpoints and recomputing the midpoint;
+- custom (`primitives`/`options`) pads outside that native-qualified family,
+  chamfered, trapezoid (`rect_delta`) or offset-drill pads;
 - text with `top` or `bottom` justification;
 - any other keyed child kind.
 
@@ -630,3 +630,32 @@ These obligations remain open:
   not through a full campaign.
 - Writer-selected helper invocation is not supported. The declaration selects the
   helper.
+
+## Custom-pad side flips (AGENTEE-307)
+
+For a footprint containing custom pads, a writer-requested side flip additionally
+requires a fresh networkless native comparison. The existing executor loads the
+captured source and proposed boards, qualifies every source custom pad through
+the shared AGENTEE-300 syntax and native merged-copper probe, then reflects the
+source footprint with pcbnew and applies only the proposed position and angle.
+After save/reload, every native pad record must equal the reference: identity,
+number, net, shape, layers, anchor, primitives, merged contours and copper extent.
+Custom pads and footprint arcs must also equal the reference's complete saved
+S-expression nodes, including UUIDs, stroke, layer and primitive order. This
+handles KiCad's arc endpoint/midpoint rewriting without a geometric tolerance.
+
+The ordinary scope checks still enforce quarter turns, protected footprints,
+unchanged fields, complete child inventories, and all other board contents.
+A missing tool, crash or missing reflection output refuses the proposal. Arcs
+on footprints without custom pads remain outside the qualified flip family;
+unsupported custom primitives and thermal pads remain refused. No general
+arc or pad guard is removed, and no check verdict or registration changes.
+
+`tests.test_placer_custom_pads` covers all quarter turns, both mounting sides,
+both flip directions and native flip-back saves. Mutation controls refuse arc
+radius, angle, width and layer changes, added/dropped arcs, moved/added/dropped
+primitives, changed primitive width, and pad number, net, shape, anchor or layer
+changes. Executor failure and missing-output controls retain refusal.
+The private expanded-pod seed at fome-mc `f9305366a810c884b9c8f5e9c0ac9e5b324d2e17` yields zero scope refusals;
+its next [packing result](placer.md#native-custom-pads-agentee-307) remains an
+area infeasibility defect. External design bytes are not repository fixtures.

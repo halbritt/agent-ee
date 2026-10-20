@@ -65,8 +65,9 @@ MAX_TOKEN = 128
 # The exact transform family a placement iteration may apply; anything else is refused.
 TRANSFORM_FAMILY = 'agent-ee.placement-transforms/3'
 TRANSFORMS = ('translations, quarter-turn rotations (0, 90, 180 or 270 degrees) and front/back side '
-              'flips as pcbnew saves them (footprints without arcs, custom, chamfered, trapezoid or '
-              'offset-drill pads, or vertically justified text); owned straight zone polygons follow '
+              'flips as pcbnew saves them (native-qualified custom-pad footprints including arcs, or '
+              'stock footprints without arcs; chamfered, trapezoid and offset-drill pads and '
+              'vertically justified text remain unsupported); owned straight zone polygons follow '
               'the owner rigidly, with every other zone setting preserved')
 HALF_TURN = 180 * 10 ** MAX_PLACES
 # Side flips, qualified against KiCad 10.0.7 FOOTPRINT::Flip in both directions from every
@@ -737,7 +738,7 @@ def _zone_follows(before, after, b_at, a_at, flipped, layer_flips):
     return polygons > 0
 
 
-def _footprint(key, before, after, protected, violations, fields=False, zone_layer_flips=None):
+def _footprint(key, before, after, protected, violations, fields=False, zone_layer_flips=None, native_flips=None):
     label = f'footprint {key} ({_reference(before) or "no reference"})'
     count = len(violations)
     if [t for t in before[1:] if isinstance(t, str)] != [t for t in after[1:] if isinstance(t, str)]:
@@ -781,6 +782,8 @@ def _footprint(key, before, after, protected, violations, fields=False, zone_lay
         violations.append(f'{label}: {"removed" if item in keyed[0] else "added"} {item[0]} {item[1]}')
     for item in sorted(keyed[0].keys() & keyed[1].keys()):
         b_child, a_child = keyed[0][item], keyed[1][item]
+        if flipped and (native_flips or {}).get(item) == a_child:
+            continue
         if fields and _field_follows(b_child, a_child):
             continue
         try:
@@ -805,6 +808,71 @@ def _footprint(key, before, after, protected, violations, fields=False, zone_lay
             'flipped': flipped, 'side': 'back' if sides[1] == [['layer', 'B.Cu']] else 'front',
             'from': [str(b_at[0]), str(b_at[1]), _degrees(b_at[2])],
             'to': [str(a_at[0]), str(a_at[1]), _degrees(a_at[2])]}
+
+
+def native_custom_flip_probe():
+    """Sandbox entry: derive the native reflection from captured source, never writer geometry."""
+    import pcbnew as k
+    from .placement_probe import extract
+    from .symbol_library import nanometres
+    source, target = Path('/candidate/before.kicad_pcb'), Path('/candidate/after.kicad_pcb')
+    selected = read_json('/candidate/selected.json')
+    before = {f['uuid']: f for f in extract(source)['footprints']}
+    after = {f['uuid']: f for f in extract(target)['footprints']}
+    targets = footprints(_board(target.read_bytes()))
+    board = k.LoadBoard(str(source))
+    for fp in board.GetFootprints():
+        key = fp.m_Uuid.AsString()
+        if key not in selected:
+            continue
+        pads = [p for p in before[key]['pads'] if p['shape'] == int(k.PAD_SHAPE_CUSTOM)]
+        if not pads or any(p['custom_geometry']['status'] != 'proven' for p in pads):
+            raise ValueError('source custom pads are not native qualified')
+        at = children(targets[key], 'at')[0]
+        theta = _at(targets[key])
+        if theta is None:
+            raise ValueError('malformed target footprint transform')
+        fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
+        fp.SetOrientationDegrees(float(_degrees(theta[2])))
+        fp.SetPosition(k.VECTOR2I(nanometres(at[1]), nanometres(at[2])))
+    expected = Path('/work/expected.kicad_pcb')
+    k.SaveBoard(str(expected), board)
+    facts = {f['uuid']: f for f in extract(expected)['footprints']}
+    nodes = footprints(_board(expected.read_bytes()))
+    admitted = {}
+    for key in selected:
+        # The complete native pad records include identity, net, layers, anchor,
+        # primitives, merged copper contours and board-space copper extent.
+        if facts[key]['pads'] != after[key]['pads']:
+            raise ValueError(f'{key}: reflected native pad geometry differs')
+        admitted[key] = [n for n in nodes[key][1:] if isinstance(n, list) and n and
+                         (n[0] == 'fp_arc' or (n[0] == 'pad' and len(n) > 3 and n[3] == 'custom'))]
+    write_json('/work/admitted.json', admitted)
+
+
+def _native_custom_flips(before, after, selected):
+    """Use the existing networkless executor; missing native evidence refuses admission."""
+    from .executor import execute
+    with tempfile.TemporaryDirectory(prefix='agent-ee-custom-flip-') as tmp:
+        root = Path(tmp)
+        inputs = root / 'inputs'
+        inputs.mkdir()
+        (inputs / 'before.kicad_pcb').write_bytes(before)
+        (inputs / 'after.kicad_pcb').write_bytes(after)
+        write_json(inputs / 'selected.json', selected)
+        work = root / 'work'
+        record = execute(inputs, work, ['/usr/bin/python3', '-B', '-c',
+            'from agent_ee.placement_adapter import native_custom_flip_probe; native_custom_flip_probe()'],
+            timeout=60)
+        if record['execution'] != 'ok':
+            raise ValueError('reflection probe failed: ' + (work / 'console.log').read_text(errors='replace')[-2000:])
+        try:
+            admitted = read_json(work / 'admitted.json')
+        except (OSError, ValueError) as exc:
+            raise ValueError('reflection probe output missing or invalid') from exc
+        if not isinstance(admitted, dict) or set(admitted) != set(selected):
+            raise ValueError('reflection probe output does not cover selected footprints')
+        return {key: {(n[0], _uuid(n)): n for n in nodes} for key, nodes in admitted.items()}
 
 
 def write_scope(before, after, protected=(), groups=None):
@@ -858,10 +926,19 @@ def write_scope(before, after, protected=(), groups=None):
                        for key in protected if key not in prints[0]]
         violations += [f'footprint {key} removed' for key in sorted(prints[0].keys() - prints[1].keys())]
         violations += [f'footprint {key} added' for key in sorted(prints[1].keys() - prints[0].keys())]
+        native_flips = {}
+        custom_flips = [key for key in prints[0].keys() & prints[1].keys()
+                        if children(prints[0][key], 'layer') != children(prints[1][key], 'layer')
+                        and any(len(p) > 3 and p[3] == 'custom' for p in children(prints[0][key], 'pad'))]
+        if custom_flips:
+            try:
+                native_flips = _native_custom_flips(before, after, custom_flips)
+            except (ValueError, OSError) as exc:
+                violations.append(f'native custom-pad side flip: {exc}')
         zone_layer_flips = _zone_layer_flips(roots[0])
         for key in sorted(prints[0].keys() & prints[1].keys()):
             moved = _footprint(key, prints[0][key], prints[1][key], protected, violations, key in members,
-                               zone_layer_flips)
+                               zone_layer_flips, native_flips.get(key))
             if moved:
                 report['transforms'].append(moved)
     if groups is not None:
