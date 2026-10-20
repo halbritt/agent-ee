@@ -232,6 +232,7 @@ prune(older_than_days=0)
     def test_fixture_cleanup_retains_refused_receipts_on_exception(self):
         from tests.receipt_diagnostics import ReceiptTemporaryDirectory
         retained = self.root / 'retained'
+        os.environ.pop('AGENT_EE_REFUSED_RECEIPTS', None)
         with mock.patch('tests.receipt_diagnostics.RETENTION_ROOT', retained):
             with self.assertRaisesRegex(RuntimeError, 'fixture failed'):
                 with ReceiptTemporaryDirectory(dir=self.root) as tmp:
@@ -483,6 +484,8 @@ prune(older_than_days=0)
             for mount in mounts:
                 self.assertEqual(mount['source'], expected, builder)
                 self.assertNotEqual(Path(mount['source']), self.source, builder)
+            for spec in specs:
+                stage_receipts.validate_step(spec)
 
     def test_real_receipts_isolate_host_writes_but_refuse_mounted_mutations(self):
         require_toolchain()

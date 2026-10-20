@@ -45,7 +45,7 @@ def _copy_receipt(receipt_dir):
 
 
 def _refusal_message(receipt_dir, receipt):
-    message = f"step refused; violations {receipt['violations']}"
+    message = f"step refused; violations {receipt.get('violations', '<missing>')}"
     try:
         target = _copy_receipt(receipt_dir)
     except (OSError, ValueError) as exc:

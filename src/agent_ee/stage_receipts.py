@@ -75,6 +75,14 @@ def _argv(value, label):
     return list(value)
 
 
+class LivePackageSourceError(ValueError):
+    """A declared mount exposes the running package's mutable source."""
+
+    def __init__(self, at):
+        self.violation = 'live_package_source:' + at
+        super().__init__(self.violation)
+
+
 def validate_step(spec, *, host=True):
     """Return the normalized step declaration; host=True also checks mount sources."""
     if not isinstance(spec, dict) or spec.get('schema') != STEP_SCHEMA:
@@ -102,8 +110,13 @@ def validate_step(spec, *, host=True):
         source = mount['source']
         if not isinstance(source, str) or not Path(source).is_absolute():
             raise ValueError('mount source must be an absolute host path')
-        if host and not Path(source).exists():
-            raise ValueError(f'mount source does not exist: {source}')
+        if host:
+            if not Path(source).exists():
+                raise ValueError(f'mount source does not exist: {source}')
+            resolved = Path(source).resolve(strict=True)
+            package_source = Path(__file__).resolve(strict=True).parents[1]
+            if resolved == package_source or resolved in package_source.parents:
+                raise LivePackageSourceError(at)
         normalized_mounts.append({'source': source, 'at': at})
 
     def tool_path(value, label):

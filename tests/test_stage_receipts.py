@@ -98,6 +98,44 @@ class StepDeclarationTests(unittest.TestCase):
         value['mounts'] = [{'source': self.tool, 'at': '/tool'}] if 'mounts' not in overrides else overrides['mounts']
         return value
 
+    def test_live_package_mounts_refused_before_execution(self):
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        alias = Path(self.tmp.name) / 'source-alias'
+        alias.symlink_to(live, target_is_directory=True)
+        parent_alias = Path(self.tmp.name) / 'parent-alias'
+        parent_alias.symlink_to(live.parent, target_is_directory=True)
+        sources = [live, live.parent, live.parent.parent,
+                   alias, parent_alias, parent_alias / 'src', live / '../src']
+        for index, source in enumerate(sources):
+            with self.subTest(source=source):
+                spec = self.spec(mounts=[{'source': str(source), 'at': '/tool'}],
+                                 source=None, version_argv=None)
+                with self.assertRaisesRegex(ValueError, 'live_package_source:/tool') as failure:
+                    validate_step(spec)
+                self.assertEqual(failure.exception.violation, 'live_package_source:/tool')
+                receipt_dir = Path(self.tmp.name) / f'refused-{index}'
+                with patch.object(stage_receipts, 'execute') as execute, \
+                        patch.object(stage_receipts, 'observe_tool') as observe:
+                    with self.assertRaisesRegex(ValueError, 'live_package_source:/tool'):
+                        run_step(receipt_dir, Path(self.tmp.name) / 'absent-design', spec, {})
+                execute.assert_not_called()
+                observe.assert_not_called()
+                self.assertFalse(receipt_dir.exists())
+                # Historical validation is independent of the live mount source.
+                self.assertEqual(validate_step(spec, host=False)['mounts'], spec['mounts'])
+
+    def test_source_snapshot_and_unrelated_mount_remain_valid(self):
+        from agent_ee.tool_source import snapshot
+        cache = Path(self.tmp.name) / 'cache'
+        with patch.dict(os.environ, AGENT_EE_TOOL_SOURCE_CACHE=str(cache)):
+            captured = snapshot(Path(stage_receipts.__file__).resolve().parents[1])
+        for source in (captured, Path(self.tool), Path('/usr'),
+                       Path(stage_receipts.__file__).resolve().parent,
+                       Path(stage_receipts.__file__).resolve()):
+            with self.subTest(source=source):
+                spec = self.spec(mounts=[{'source': str(source), 'at': '/tool'}])
+                self.assertEqual(validate_step(spec)['mounts'], spec['mounts'])
+
     def test_normalizes_defaults(self):
         spec = validate_step({k: v for k, v in self.spec().items() if k != 'timeout_s'})
         self.assertEqual(spec['adoptable_exits'], [0])
