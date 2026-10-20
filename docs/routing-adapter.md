@@ -743,12 +743,14 @@ tests. Their prerequisite, `require_kicad_route()` in
 | Configuration | Without `AGENT_EE_REQUIRE_TOOLCHAIN` | With `AGENT_EE_REQUIRE_TOOLCHAIN=1` |
 | --- | --- | --- |
 | Variable unset | Class skipped: `AGENT_EE_KICAD_ROUTE_CHECKOUT is unset` | Failure |
-| Set; HEAD, pinned code or KRT state files fail `preflight` | Failure naming every problem | Failure |
+| Set; HEAD, pinned code or installed-engine manifest/state fail `preflight` | Failure naming every problem | Failure |
 | Set; KRT's venv cannot import `grid_router`, numpy, scipy or shapely | Failure with the import error | Failure |
 
 `NativePrerequisiteTest` exercises the first two rows in a child unittest
-process; the native class covers the broken-runtime row with a pinned copy of
-the code and an empty venv.
+process. The native class also checks that pinned code with an empty venv and
+no installed-engine manifest refuses during preflight, before runtime import
+or any routing attempt (AGENTEE-277). The import probe runs only after preflight
+qualifies the installed state.
 [`test_kicad_route_adapter.py`](../tests/test_kicad_route_adapter.py) covers
 exits 0 to 4, contradictions, timeout and cancellation with a coordinator-owned
 fixture router. Its retained-verification cases forge one claim at a time with

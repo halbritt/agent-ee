@@ -444,7 +444,7 @@ class NativeKicadRouteTest(unittest.TestCase):
         self.assertIn('annular_width', codes)
 
     def test_a_pinned_checkout_with_a_broken_krt_runtime_fails_the_prerequisite(self):
-        """Pinned code and present state files are not enough: KRT must import."""
+        """An empty venv without an installed-engine manifest refuses at preflight."""
         broken = self.root / 'broken-route'
         for top in ('bin', 'src'):
             shutil.copytree(self.checkout / top, broken / top, ignore=shutil.ignore_patterns('__pycache__'))
@@ -453,9 +453,14 @@ class NativeKicadRouteTest(unittest.TestCase):
         subprocess.run(['/usr/bin/python3', '-m', 'venv', '--without-pip', str(broken / '.venv-krt')], check=True)
         (broken / 'vendor/krt/py_router').mkdir(parents=True)
         (broken / 'vendor/krt/py_router/route.py').write_text('')
-        self.assertEqual(routing_adapter.preflight(broken)['problems'], [])
+        problems = routing_adapter.preflight(broken)['problems']
+        self.assertTrue(any('installed engine verification failed' in problem and
+                            'missing or unreadable state manifest' in problem
+                            for problem in problems), problems)
         with unittest.mock.patch.dict(os.environ, {'AGENT_EE_KICAD_ROUTE_CHECKOUT': str(broken)}):
-            with self.assertRaisesRegex(AssertionError, "(?s)KRT runtime import failed.*No module named 'grid_router'"):
+            with self.assertRaisesRegex(AssertionError,
+                                        '(?s)does not qualify:.*installed engine verification failed.*'
+                                        'missing or unreadable state manifest'):
                 require_kicad_route()
 
     def test_krt_attempt_as_a_coordinator_stage_receipt(self):
