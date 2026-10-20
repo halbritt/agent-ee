@@ -31,7 +31,7 @@ from .symbol_library import LibraryError, nanometres
 
 
 # Native pcbnew PAD_SHAPE values, read from the KiCad 10.0.7 bindings.
-# TRAPEZOID (3) and CUSTOM (6) stay unqualified until their effect is reviewed.
+# TRAPEZOID (3) is unqualified; CUSTOM (6) requires per-pad native evidence.
 PAD_SHAPES = {0: 'circle', 1: 'rect', 2: 'oval', 4: 'roundrect', 5: 'chamfered_rect'}
 PAD_SHAPE_PCBNEW_MAJOR = '10'
 
@@ -57,6 +57,11 @@ def transform(fp, position, rotation):
     for keepout in placed.get('packing_keepouts', []):
         keepout['polygons'] = [[move(p) for p in poly] for poly in keepout['polygons']]
     for pad in placed['pads']:
+        if pad.get('custom_geometry', {}).get('status') == 'proven':
+            box = pad['custom_geometry']['bbox_nm']
+            corners = [move([x, y]) for x in (box[0], box[2]) for y in (box[1], box[3])]
+            pad['custom_geometry']['bbox_nm'] = [min(p[0] for p in corners), min(p[1] for p in corners),
+                                                 max(p[0] for p in corners), max(p[1] for p in corners)]
         pad['position_nm'] = move(pad['position_nm'])
         pad['rotation_deg'] = (pad['rotation_deg'] + rotation-fp['rotation_deg']) % 360
     placed.update(position_nm=list(position), rotation_deg=rotation)
@@ -203,7 +208,16 @@ def _qualified(capture):
                 raise ValueError('pad record must be an object')
             # Pad outlines never enter the search or the judge; they still must be
             # a reviewed native shape so that the plan states what it covers.
-            if type(pad.get('shape')) is not int or pad['shape'] not in PAD_SHAPES:
+            custom = pad.get('custom_geometry', {})
+            qualified_custom = (pad.get('shape') == 6 and isinstance(custom, dict)
+                                and custom.get('status') == 'proven'
+                                and isinstance(custom.get('primitives'), list) and custom['primitives']
+                                and isinstance(custom.get('merged_polygons_nm'), list) and custom['merged_polygons_nm']
+                                and isinstance(custom.get('bbox_nm'), list) and len(custom['bbox_nm']) == 4
+                                and all(type(v) is int for v in custom['bbox_nm'])
+                                and custom['bbox_nm'][0] < custom['bbox_nm'][2]
+                                and custom['bbox_nm'][1] < custom['bbox_nm'][3])
+            if type(pad.get('shape')) is not int or (pad['shape'] not in PAD_SHAPES and not qualified_custom):
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: native pad shape "
                                  f"{pad.get('shape')!r} not qualified for packing")
             if type(pad.get('rotation_deg')) not in (int, float) or pad['rotation_deg'] % 90:
@@ -1174,6 +1188,10 @@ def pack(capture, policy):
     if grading is not None and grading['status'] != 'pass':
         return stopped('judge_rejected', 'declared placement groups not satisfied by the complete proposal')
     extra = {} if grading is None else {'group_grading': grading}
+    custom_pads = [{'reference': f['ref'], 'uuid': p['uuid'], 'number': p['number']}
+                   for f in capture['footprints'] for p in f['pads'] if p['shape'] == 6]
+    if custom_pads:
+        extra['qualified_custom_pads'] = custom_pads
     return {**extra, 'search': search.record(backjumps), 'capacity': capacity, 'schema': 'agent-ee.packing-plan/1',
             'board_sha256': capture['board_sha256'], 'status': 'planned', 'outcome': 'info', 'authority': 'standalone-unsealed-plan',
             'steps_used': steps, 'step_budget': policy['step_budget'],

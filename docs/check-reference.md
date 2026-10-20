@@ -1655,3 +1655,11 @@ citation proves text occurrence only; it supplies no redirect-provenance or
 release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
 
 The fab, `rung1_campaign` and `rung1_qualified` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file.
+
+## Custom-pad placement preservation
+
+The [disposable placer](placer.md#native-custom-pads-agentee-307) admits only
+native-qualified custom pads, reusing the footprint index's bounded syntax.
+Its save/reload gate preserves complete primitives, copper extents and pad/net
+identity. Unsupported geometry remains unknown; courtyard packing supplies no
+copper-clearance evidence. This adds no registered check or acceptance predicate.

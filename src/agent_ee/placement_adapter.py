@@ -546,6 +546,12 @@ def _child_follows(before, after, rotation):
     if b_at is None or a_at is None or rotation not in QUARTER_TURNS:
         return False
     before, after = _property_font_defaults(before), _property_font_defaults(after)
+    if before[:1] == after[:1] == ['pad'] and len(before) > 3 and before[3] == 'custom' and before != after:
+        from .footprint_library import canonical_custom_pad
+        try:
+            before, after = canonical_custom_pad(before), canonical_custom_pad(after)
+        except LibraryError:
+            pass  # Unsupported pads keep the exact pre-existing token comparison.
     rest = [[c for c in node if not (isinstance(c, list) and c and c[0] == 'at')] for node in (before, after)]
     return (rest[0] == rest[1] and b_at[:2] == a_at[:2] and b_at[3] == a_at[3] and
             _turn(a_at[2] - b_at[2] - rotation) == 0)

@@ -12,8 +12,8 @@ import xml.etree.ElementTree as ET
 from .board_net_names import from_xml
 from .locking import writer_lock
 from .placement import judge
-from .placement_probe import extract
-from .placer import _failure, pack
+from .placement_probe import extract, custom_pad_geometry
+from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
 from .storage import digest, read_json, write_json
 
@@ -114,7 +114,8 @@ def _pad_inventory(board):
              xy(pad.GetOffset(every)), xy(pad.GetDrillSize()), int(pad.GetDrillShape()),
              pad.GetRoundRectRadiusRatio(every), pad.GetChamferRectRatio(every),
              int(pad.GetChamferPositions(every)), pad.GetLayerSet().FmtHex(),
-             xy(pad.GetFPRelativePosition()), round(pad.GetFPRelativeOrientation().AsDegrees(), 6) % 360]
+             xy(pad.GetFPRelativePosition()), round(pad.GetFPRelativeOrientation().AsDegrees(), 6) % 360,
+             custom_pad_geometry(pad) if pad.GetShape(every) == pcbnew.PAD_SHAPE_CUSTOM else None]
             for pad in fp.Pads()])} for fp in board.GetFootprints()}
 
 
@@ -187,13 +188,36 @@ def _board_only(board):
     return frozenset(fp.GetReference() for fp in board.GetFootprints() if fp.IsBoardOnly())
 
 
-def _evaluate_proposal(board, output, plan, netlist_bytes):
+def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts):
     import pcbnew
     pads = _pad_inventory(board)
+    from .geometry_probe import box_nm
+    expected_custom = {}
+    placements = {p['uuid']: p for p in plan['placements']}
+    for fp in board.GetFootprints():
+        custom = [{'uuid': p.m_Uuid.AsString(), 'position_nm': [p.GetPosition().x, p.GetPosition().y],
+                   'rotation_deg': p.GetOrientationDegrees(),
+                   'custom_geometry': {'status': 'proven', 'bbox_nm': box_nm(p.GetBoundingBox())}}
+                  for p in fp.Pads() if p.GetShape() == pcbnew.PAD_SHAPE_CUSTOM]
+        if custom:
+            proposal = placements[fp.m_Uuid.AsString()]
+            moved = transform({'position_nm': [fp.GetPosition().x, fp.GetPosition().y],
+                               'rotation_deg': fp.GetOrientationDegrees(), 'courtyards': {}, 'pads': custom},
+                              proposal['position_nm'], proposal['rotation_deg'])
+            expected_custom.update({p['uuid']: p['custom_geometry']['bbox_nm'] for p in moved['pads']})
     _apply_plan(board, plan, output)
     if _pad_inventory(pcbnew.LoadBoard(str(output))) != pads:
         raise ValueError('native saved board changed footprint pad geometry')
     saved, judgment = _saved_judgment(output, plan)
+    initial_custom = {p['uuid']: p['custom_geometry']['primitives'] for f in initial_facts['footprints']
+                      for p in f['pads'] if p.get('custom_geometry', {}).get('status') == 'proven'}
+    for fp in saved['footprints']:
+        for pad in fp['pads']:
+            if pad['uuid'] in expected_custom:
+                geometry = pad.get('custom_geometry', {})
+                if geometry.get('status') != 'proven' or (geometry.get('bbox_nm') != expected_custom[pad['uuid']]
+                        or geometry.get('primitives') != initial_custom[pad['uuid']]):
+                    raise ValueError('native saved custom-pad copper extent differs from planned transform')
     write_json(output.parent / 'placement-probe.json', saved)
     write_json(output.parent / 'placement-judgment.json', judgment)
     _netlist_binding(netlist_bytes, saved, _board_only(board))
@@ -285,7 +309,7 @@ def place_candidate(source, netlist, destination, request):
             output = scratch / 'candidate.kicad_pcb'
             write_json(scratch / 'placement-plan.json', plan)
             try:
-                report = _evaluate_proposal(board, output, plan, netlist_bytes)
+                report = _evaluate_proposal(board, output, plan, netlist_bytes, facts)
                 from .placement_adapter import write_scope
                 protected = ([p['uuid'] for p in plan['placements'] if p['fixed']]
                              if targeted else ())
