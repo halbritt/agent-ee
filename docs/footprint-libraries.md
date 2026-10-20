@@ -69,11 +69,14 @@ anchor size. Forward annotation uses the native copper extent for staging.
 A failed child, missing report or mismatched inventory leaves unknown coverage.
 No declaration or CLI option is required for this supported subset.
 
-The native probe currently accepts multiple copper outlines. A detached primitive
-or an unfilled contour separated from its anchor can therefore index as one
-electrical pad. AGENTEE-304's multi-island refusal remains pending reconciliation
-of the existing unfilled-primitive test contract; magnitude refusal alone does
-not establish copper connectivity.
+The native merged polygon, including primitives and anchor on the pad's copper
+layer, must have exactly one outline (AGENTEE-304). Detached primitives and
+unfilled contours separated from the anchor refuse with a `library_coverage`
+finding, failed execution and unknown coverage; no footprint record qualifies.
+The probe uses pcbnew `Unfracture` to recover hole contours from its merged
+representation. Holes within that single outline are allowed as reported by
+pcbnew, without Python connectivity approximations. Unfilled contours that touch
+or overlap the anchor can qualify. Missing or invalid native outline evidence also refuses.
 
 The existing `custom_pads` declaration still enables numbering only and records
 `geometry: "declared_custom"`; it never supplies native geometry evidence or

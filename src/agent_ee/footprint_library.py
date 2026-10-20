@@ -350,6 +350,10 @@ def _native_custom_geometry(data, footprint):
                 anchor = field(children(pad['native'], 'options')[0], 'anchor', 1)[0]
                 if found['anchor'] != anchor:
                     raise FootprintError('native custom-pad anchor differs from captured footprint')
+                outlines = found['outline_count']
+                if type(outlines) is not int or outlines != 1:
+                    raise FootprintError(f'native custom pad {pad["number"]!r} has {outlines!r} outlines; '
+                                         'exactly one merged copper outline required')
                 bbox = found['bbox_nm']
                 if (len(bbox) != 4 or any(type(v) is not int for v in bbox)
                         or bbox[0] >= bbox[2] or bbox[1] >= bbox[3]):

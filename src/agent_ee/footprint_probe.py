@@ -25,6 +25,14 @@ def extract(name):
                          bbox_nm=box_nm(pad.GetBoundingBox()))
         if record['shape'] == 'custom':
             record['anchor'] = shapes[pad.GetAnchorPadShape(pcbnew.PADSTACK.ALL_LAYERS)]
+            copper = list(pad.GetLayerSet().CuStack())
+            # Other layer sets can appear beside qualified pads under numbering-only declarations.
+            if len(copper) == 1:
+                merged = pcbnew.SHAPE_POLY_SET()
+                pad.MergePrimitivesAsPolygon(copper[0], merged)
+                # Recover pcbnew hole contours from its fractured merged representation.
+                merged.Unfracture()
+                record['outline_count'] = merged.OutlineCount()
         pads.append(record)
     return dict(pcbnew_version=pcbnew.Version(), pads=pads)
 
