@@ -264,7 +264,7 @@ class HierarchyTests(unittest.TestCase):
         raw['hierarchy'] += [dict(id=str(i), parent='root', local_id=str(i), file=f'{i}.kicad_sch') for i in range(255)]
         self.assertEqual(self.resolve(raw)['execution'], 'unsupported')
         raw = hierarchy_intent()
-        raw['components'] = [dict(raw['components'][0], id=str(i), reference=f'R{i}') for i in range(129)]
+        raw['components'] = [dict(raw['components'][0], id=str(i), reference=f'R{i}') for i in range(1025)]
         self.assertEqual(self.resolve(raw)['execution'], 'unsupported')
         raw = hierarchy_intent()
         parent = 'child'

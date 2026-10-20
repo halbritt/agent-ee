@@ -15,9 +15,9 @@ from .connectivity_ir import INTENT_SCHEMA, canonical_resolved, resolve_intent, 
 from .symbol_library import (children, field, nanometres, parse_library,
                              parse_sexpr, resolve_symbol)
 
+from .design_limits import MAX_COMPONENTS as MAX_SYMBOLS, MAX_TERMINALS as MAX_PINS, MAX_NETS
+
 ALGORITHM = 'agent-ee.schematic-decompile/1'
-MAX_SYMBOLS = 128
-MAX_PINS = 2048
 MAX_WIRES = 2048
 MAX_WORK = 2_000_000
 MAX_POINTS = 8192
@@ -315,6 +315,7 @@ def _nets(root, terminals):
         groups[graph.find(point_key(point))]['terminals'].append(terminal)
     for name, point in sorted(labels):
         groups[graph.find(point_key(point))]['labels'].append(dict(name=name, position_nm=list(point)))
+    _require(len(groups) <= MAX_NETS, '/graph', 'net count limit')
     nets, reports = [], []
     for group in groups.values():
         physical = group['terminals']

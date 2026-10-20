@@ -260,8 +260,8 @@ class ExternalBindingTests(BindingFillTests):
 class BindingScaleBoundaryTests(unittest.TestCase):
     def test_component_boundary_and_pre_resolution_refusal(self):
         from agent_ee.netlist_parity import terminal_inventory, _resolve_captured_intent, Unsupported
-        components = {str(i): {'pins': ['1']} for i in range(256)}
-        self.assertEqual(len(terminal_inventory(components, {})['components']), 256)
+        components = {str(i): {'pins': ['1']} for i in range(1024)}
+        self.assertEqual(len(terminal_inventory(components, {})['components']), 1024)
         components['overflow'] = {'pins': ['1']}
         with self.assertRaisesRegex(Unsupported, 'component inventory limit'):
             terminal_inventory(components, {})
@@ -281,9 +281,9 @@ class BindingScaleBoundaryTests(unittest.TestCase):
         from test_native_binding import GEN, LIBRARY
         document = {'schema': 'agent-ee.connectivity-intent/1', 'libraries': [LIBRARY],
             'components': [{'id': str(i), 'reference': f'R{i+1}', 'lib_id': 'Owned:R',
-                            'value': '10k', 'footprint': 'Owned:R2', 'units': [1]} for i in range(257)],
+                            'value': '10k', 'footprint': 'Owned:R2', 'units': [1]} for i in range(1025)],
             'nets': [], 'no_connects': [{'component': str(i), 'pin': {'number': p}}
-                                       for i in range(257) for p in ('1', '2')]}
+                                       for i in range(1025) for p in ('1', '2')]}
         record = resolve_intent(document, {'Owned.kicad_sym': GEN.library()})
         self.assertEqual(record['outcome'], 'pass', record['findings'])
         with self.assertRaisesRegex(Unsupported, 'component inventory limit'):

@@ -4,11 +4,10 @@ import hashlib
 from pathlib import PurePosixPath
 
 from . import connectivity_ir as ir
+from .design_limits import MAX_COMPONENTS, MAX_NETS, MAX_TERMINALS
 
 INTENT_SCHEMA = 'agent-ee.connectivity-intent/2'
 RESOLVED_SCHEMA = 'agent-ee.resolved-connectivity/2'
-MAX_COMPONENTS = 128
-MAX_TERMINALS = 8192
 DIRECTIONS = {'input', 'output', 'bidirectional', 'tri_state', 'passive'}
 RESERVED_LABEL = '__agent_ee_'
 
@@ -103,7 +102,9 @@ def validate_intent(raw):
             flat[kind].append({k: v for k, v in item.items() if k != 'sheet'})
     ir._validate_flat_intent(flat)
     if len(raw['components']) > MAX_COMPONENTS:
-        raise Unsupported('component inventory exceeds 128')
+        raise Unsupported(f'component inventory exceeds {MAX_COMPONENTS}')
+    if len(raw['nets']) > MAX_NETS:
+        raise Unsupported(f'net inventory exceeds {MAX_NETS}')
     sheets = _tree(raw['hierarchy'])
     paths = {s['file'] for s in raw['hierarchy']} | {lib['path'] for lib in raw['libraries']}
     if any(str(parent) in paths for path in paths for parent in PurePosixPath(path).parents):

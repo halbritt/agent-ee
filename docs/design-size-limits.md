@@ -1,71 +1,65 @@
-# Design-size ceiling audit (AGENTEE-298)
+# Supported design-size ceilings (AGENTEE-298)
 
-Status: blocked by an existing executable contract. This audit records current
-behavior and a withdrawn experiment; it does not expand supported design sizes.
+Electrical graph readers share finite limits from `agent_ee.design_limits`:
+**1,024 components, 2,048 nets and 8,192 physical terminals**. These cover the
+expanded telemetry pod (327 physical components, 369 nets, 1,128 terminals)
+with more than threefold component headroom and the roadmap's approximately
+492-footprint FOME-MC rung with more than twofold component headroom. They are
+capacity bounds, not a promise of a passing check or tractable exact search.
 
-The expanded telemetry pod's native XML contains 327 physical components, 369
-nets and 1,128 selected physical pins. The forward-annotation plan fails at the
-native inventory stage with execution `failed`, outcome `unknown`, finding code
-`native_netlist`, and message `component inventory limit exceeded`. This is an
-inventory refusal, before placement feasibility can be evaluated.
+## Inventory boundaries and consumers
 
-## Current inventory bounds and consumers
+| Owner | Enforced inventory limits | Consumers |
+| --- | --- | --- |
+| `netlist_parity.terminal_inventory` | Shared component, net and terminal limits | `resolved_inventory`, native XML reader, parity normalization and comparison inputs |
+| `netlist_parity._resolve_captured_intent` | Shared component and net limits, before library reads | Parity intent and resolved-source checks |
+| `_connectivity_hierarchy.validate_intent` | Shared component and local net-segment limits, before library resolution | `connectivity_ir.resolve_intent` schema/2; resolved receipt validation reconstructs this boundary |
+| `_connectivity_hierarchy.resolve` / `validate_resolved` | Shared terminal limit during and after symbol resolution | Hierarchical emitter, binding, roundtrip and parity consumers |
+| `schematic_decompile` | `MAX_SYMBOLS` = shared component limit (also bounds library declarations); `MAX_PINS` = shared terminal limit; shared extracted net limit | `schematic_roundtrip`; `fp_calibration` imports only the pin-position helper |
+| `native_netlist.read_native_inventory` | Shared graph limits via `terminal_inventory` | `forward_annotation`, binding, parts, net and package checks |
 
-The audit used `rg` over every `MAX_*`/`*LIMIT*` declaration and reference in
-`src/agent_ee`, then inspected the inventory paths and their direct consumers.
-No production constants changed in this audit.
+Flat schema/1 intent resolution and structural receipt validation retain their
+existing bounded grammar and do not impose the downstream electrical graph
+policy. Their output is evaluated against the same shared ceilings by
+`resolved_inventory`, before it can be used for parity. A passing resolution
+receipt alone is not a passing parity result. This preserves the explicit
+`BindingScaleBoundaryTests.test_resolved_record_overflow_stays_unsupported`
+contract: a structurally valid over-capacity flat receipt is still unsupported
+at graph conversion. Hierarchy counts local segments before port equivalence;
+this also bounds the work needed to build the physical nets.
 
-| Owner and constant | Current | Proposed, not installed | Reason |
-| --- | ---: | ---: | --- |
-| `netlist_parity.MAX_COMPONENTS` | 256 | 1,024 | More than three times the real pod's physical component count; covers the roadmap's approximately 492-footprint FOME-MC rung with headroom. |
-| `_connectivity_hierarchy.MAX_COMPONENTS` | 128 | 1,024 | Same ceiling before scoped elaboration. |
-| `schematic_decompile.MAX_SYMBOLS` | 128 | 1,024 | Same component ceiling; currently also bounds library declarations. |
-| `netlist_parity.MAX_TERMINALS` | 8,192 | 8,192 | Keep the finite physical-pin budget. |
-| `_connectivity_hierarchy.MAX_TERMINALS` | 8,192 | 8,192 | Keep resolution, post-resolution and receipt validation bounded. |
-| `schematic_decompile.MAX_PINS` | 2,048 | 8,192 | Align extracted pins with the shared electrical inventory. |
-| Physical net count | No separate constant | 2,048 | Bound graph width; native nonempty nets are already indirectly bounded by the terminal inventory. |
-| `schematic_decompile.MAX_WIRES` | 2,048 | 2,048 | Independent geometric segment guard. |
-| `schematic_decompile.MAX_POINTS` | 8,192 | 8,192 | Independent coordinate-node guard. |
-| `schematic_decompile.MAX_WORK` | 2,000,000 | 2,000,000 | Preserve the coordinate-count times segment-count work guard. |
-| `netlist_parity.MAX_SEARCH` | 100,000 | 100,000 | Preserve exact-search exhaustion as unsupported/unknown. |
-| `netlist_parity.MAX_BYTES` | 8,000,000 | 8,000,000 | Preserve native XML and parity JSON read guard. |
-| `netlist_parity.MAX_LIBRARY_BYTES` | 32 MiB | 32 MiB | Preserve aggregate captured-library reads. |
-| `schematic_decompile.MAX_LIBRARY_BYTES` | 32 MiB | 32 MiB | Preserve aggregate captured-library reads. |
-| `symbol_library.BYTE_LIMIT` / `NODE_LIMIT` / `DEPTH_LIMIT` | 32 MiB / 2,000,000 / 128 | Unchanged | Shared S-expression parser guards, not component counts. |
+`forward_annotation._inventory` uses the shared native reader; it has no separate
+component ceiling. `native_netlist.read_components` and `read_native_instances`
+remain identity/BOM projections with their existing byte/structure bounds;
+they do not perform electrical graph qualification.
 
-`netlist_parity.terminal_inventory` enforces both graph component and terminal
-ceilings. `resolved_inventory` reaches it after validating a passing resolved
-receipt. `_resolve_captured_intent` separately refuses component overflow before
-opening any captured libraries. Native XML flows through
-`native_netlist.read_native_inventory` into that same graph boundary.
-`forward_annotation._inventory` uses this reader and wraps its refusal in the
-existing `native_netlist` finding code. There is no independent annotation
-component-count constant to change.
+Direct parity importers are `baseline`, `capabilities`, `checks`, `native_netlist`,
+`native_binding`, `netlist_extra`, `package_consistency`, `rung1_qualified`,
+`schematic_lint` and `schematic_roundtrip`. Hierarchy is dispatched through
+`connectivity_ir`. Test consumers also include binding fill, block composition,
+symbol capture, datasheet integration, emitters, schematic presentation and
+staging. No registration, schema or dependency changes are needed.
 
-`native_netlist.read_components` and `read_native_instances` deliberately expose
-component/identity projections without the electrical parity graph policy. They
-retain XML byte, 100,000-node and depth-32 guards. Applying parity bounds to those
-projections would change an existing separate contract.
+## Independent resource guards
 
-Hierarchy component bounds are checked in `validate_intent`. Its terminal bound
-is passed into `connectivity_ir._resolve_flat_intent`, checked on the resolved
-output, and rechecked by `validate_resolved`. Flat intent resolution currently
-has no component-count ceiling: JSON is bounded to 8 MiB and declaration arrays
-to 10,000 entries. Resolved-to-parity conversion applies the graph ceiling later.
-The hierarchy also bounds declaration arrays to 10,000, sheet occurrences to 256,
-depth to 16 edges, identifiers to 256 UTF-8 bytes and scoped projection to 8 MiB.
-These independent guards must remain finite.
+| Guard | Limit, unchanged |
+| --- | ---: |
+| Parity and native XML source reads | 8,000,000 bytes |
+| Aggregate captured symbol libraries (parity/decompiler) | 32 MiB |
+| Exact graph search | 100,000 candidate visits |
+| Shared S-expression parser | 32 MiB; 2,000,000 nodes; depth 128 |
+| Native XML structure | 100,000 nodes; depth 32 |
+| Flat intent JSON / declaration arrays | 8 MiB / 10,000 entries |
+| Hierarchy occurrences / depth / identifier bytes / scoped projection | 256 / 16 edges / 256 UTF-8 bytes / 8 MiB |
+| Decompiled source / wires / coordinate nodes / coordinate-segment work | 8 MiB / 2,048 / 8,192 / 2,000,000 |
 
-Decompilation enforces symbol/library, physical-pin, segment, coordinate-node and
-work bounds in `_components`, `_nets` and the CLI manifest-read boundary. Its
-consumers are `schematic_roundtrip`, and `fp_calibration` (which imports only the
-pin-position helper). Exact parity policy is registered through `capabilities`,
-`baseline` and `checks`. Other direct parity importers are `native_netlist`,
-`schematic_roundtrip`, `rung1_qualified`, `netlist_extra`, `package_consistency`,
-`native_binding`, `schematic_lint` and `rf_review` (the latter consumers also use
-the existing typed exception). Downstream native inventory consumers include
-forward annotation, binding and parts checks; changing the shared graph boundary
-therefore needs regression validation beyond the parity module.
+Over-limit inventory remains typed `Unsupported`, or a sealed
+`unsupported/unknown` resolver/decompiler report. The annotation plan preserves
+its `failed/unknown` wrapper and `native_netlist` finding on native inventory
+refusal. Search exhaustion and unresolved automorphisms remain unknown. Exact
+assignment traversal uses an explicit depth-first stack so a uniquely matched
+1,024-component design does not depend on Python's recursion limit; enumeration
+order and per-candidate search accounting remain unchanged.
 
 Other design-related count/resource constants found by the repository-wide scan
 remain distinct policies, not aliases of the component ceiling:
@@ -94,63 +88,53 @@ Other `MAX_*` values bound numeric precision, field/token length, query length,
 timeouts, result counts or retry/presentation budgets. They do not count design
 components, nets or physical pins and need no ceiling expansion.
 
-## Contract conflict requiring resolution
+## Capacity ruling and executable qualification
 
-Three pre-existing tests pass on the assigned integration stack and failed when
-the proposed higher ceilings are installed:
+Coordinator agent-449 ruled that increasing a supported capacity causes the
+same checks to evaluate the newly supported inputs; it never gives an automatic
+pass. Exactly four pre-existing tests move their overflow fixtures to the new
+ceilings, preserving all refusal, pre-read and pre-resolution assertions:
 
-- `tests.test_binding_fill.BindingScaleBoundaryTests.test_resolved_record_overflow_stays_unsupported`:
-  a valid 257-component flat resolved receipt must be refused by
-  `resolved_inventory`. Raising its component ceiling admits that input.
-- `tests.test_netlist_parity.FailureBoundaryTests.test_input_bounds_fail_unknown_before_unbounded_reads_or_resolution`:
-  an old-ceiling component-overflow fixture must refuse before library reads;
-  with the higher ceiling it reaches other validation instead.
-- `tests.test_connectivity_hierarchy.HierarchyTests.test_repeated_file_and_resource_limits_are_unsupported`:
-  the 129-component fixture must be unsupported. Once below the new limit it
-  reaches invalid terminal references and becomes malformed.
+- `tests.test_binding_fill.BindingScaleBoundaryTests.test_resolved_record_overflow_stays_unsupported`
+- `tests.test_binding_fill.BindingScaleBoundaryTests.test_component_boundary_and_pre_resolution_refusal`
+- `tests.test_netlist_parity.FailureBoundaryTests.test_input_bounds_fail_unknown_before_unbounded_reads_or_resolution`
+- `tests.test_connectivity_hierarchy.HierarchyTests.test_repeated_file_and_resource_limits_are_unsupported`
 
-A fourth existing test,
-`tests.test_binding_fill.BindingScaleBoundaryTests.test_component_boundary_and_pre_resolution_refusal`,
-also explicitly accepts 256 components and refuses 257, including before library
-resolution. Its source independently confirms the same incompatible ceiling;
-it was not run against the withdrawn experiment.
+`tests.test_design_limits` exercises exactly-at and one-above component, net and
+terminal boundaries through flat resolved graph conversion, hierarchical
+resolution, native XML parsing and full schematic decompilation. It also checks
+pre-library net refusal, exact assignment order/budget, and a combined-ceiling
+1,024-component / 2,048-net / 8,192-terminal topology comparison. Fixtures are
+original and generated without truncation, splitting or limit monkeypatches.
 
-The assignment explicitly requires stopping when an existing expected verdict
-would change, prohibits rewriting the test, and permits only named stricter
-verdict rulings. No such ruling was supplied. No existing test was edited. The
-experimental production changes were withdrawn; the coordinator must resolve
-this conflict before implementation can be qualified.
+## Real pod and measurements
 
-## Withdrawn experiment and measurements
+The native netlist from the ticket's pinned fome-mc source is read without design
+edits. It reaches the annotation plan's next independent refusal verbatim:
 
-A local, uncommitted experiment used one shared constants module, aligned the
-three readers, added a net guard, and replaced parity's recursive assignment
-traversal with an iterative depth-first traversal. This last change is necessary
-at 1,024 components: a unique exact mapping must not crash at Python's recursion
-limit. Candidate order and the 100,000-step search budget must stay unchanged.
-The experiment was withdrawn after the contract failures; these measurements do
-not establish supported behavior on this branch.
+```text
+execution: failed
+outcome: unknown
+code: footprint_library_coverage
+message: unsupported native pad type/geometry
+```
 
-An original generated inventory reached all three proposed limits simultaneously:
-1,024 components, 2,048 nets and 8,192 pins. Python `tracemalloc` measured peak
-allocations including fixture construction. `time.perf_counter` measured elapsed
-wall time. Measurements are single runs on this host, with tracing enabled.
+That footprint coverage issue belongs to AGENTEE-300. Passing the native inventory
+stage makes no claim about complete placement or plan success.
 
-| Probe | Seconds | Peak traced Python bytes | Observed result |
-| --- | ---: | ---: | --- |
-| Combined ceiling inventory construction | 0.0381 | 2,912,676 | Accepted; 1,025 components separately refused. |
-| 2,048 nets / 4,096 pins | 0.0878 | 1,546,250 | Accepted; 2,049 nets separately refused. |
-| 8,192 pins | 0.2741 | 1,667,066 | Accepted; 8,193 pins separately refused. |
-| Combined ceiling construction and exact topology comparison | 4.7628 | 8,920,251 | `ok/pass`, 1,024 search steps. |
-| Decompile 1,024 colocated original terminal symbols | 0.4930 | Not measured separately | `ok/pass`; 1,025 symbols refused as `unsupported/unknown`. |
+Runtime and memory measurements use `time.perf_counter`, `tracemalloc` and
+`resource.getrusage` on generated ceiling fixtures; the worker result records
+exact commands. A single traced host run measured:
 
-Maximum process RSS for that probe process was 44,616 KiB. This measures one
-unambiguous topology and one compact decompilation fixture, not worst-case
-search, library diversity or geometric work. Byte, terminal and search guards
-were not raised. Decompiler pin/net boundary regression tests and exhaustive
-consumer validation were not completed after the stop condition.
+| Probe | Wall seconds | Peak traced Python bytes | Process max RSS (KiB) | Result |
+| --- | ---: | ---: | ---: | --- |
+| flat resolution + exact topology at combined ceiling | 19.308 | 31,551,152 | 87,020 | ok/pass, 1,024 search visits |
+| decompile at terminal ceiling | 15.498 | 36,485,509 | 99,272 | ok/pass |
 
-On the same experiment the real pod passed the native netlist stage and reached
-`failed/unknown`, code `footprint_library_coverage`, message
-`unsupported native pad type/geometry`. That independent refusal was preserved;
-no footprints, metadata or source design files were changed to bypass it.
+These include fixture construction and run with tracing enabled while focused
+consumer validation also used the host. RSS is the process high-water mark, not
+an isolated allocation delta. The first probe resolves and validates both graph
+inputs, then compares all three inventory ceilings together. The decompile probe
+uses 1,024 components with eight pins each and eight coordinate nets.
+These probes cover an unambiguous topology and compact geometry, not worst-case symmetry, diverse libraries or dense wire work.
+The independent finite work guards remain necessary.
