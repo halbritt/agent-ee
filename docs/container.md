@@ -88,6 +88,22 @@ do not enter the remote cache. The workflow does not push an image or upload a
 build record.
 The reusable action's build is unchanged.
 
+The Buildx input is pinned to `v0.37.1` (also reported by the host's
+`docker buildx version` during this update). The `docker-container` daemon uses
+`image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea`.
+This is the OCI image index digest returned on **2026-10-20** by
+`docker buildx imagetools inspect moby/buildkit:buildx-stable-1` from Docker Hub
+(`docker.io/moby/buildkit`); the workflow uses the digest directly, so later tag
+movement does not change the daemon. Update both pins deliberately.
+
+Only `cache-to` has `ignore-error=true`: a cache export service or quota failure
+may leave the cache cold but does not fail a successful toolchain build.
+Import misses still run the strict apt path below. Neither the toolchain cache
+step nor the final image build may use `continue-on-error`; compilation, apt
+and verification failures must still fail the job. The workflow contract in
+[test_apt_retry.py](../tests/test_apt_retry.py) rejects mutations that remove
+export tolerance, float either builder pin or suppress either step's failures.
+
 The scope names the cache object, not the package identity. BuildKit's layer
 keys include the Dockerfile instructions, consumed build arguments and copied
 inputs. Changing `APT_SNAPSHOT`, a package pin, the Ubuntu digest, the signing
