@@ -85,9 +85,14 @@ Probe admission also requires an earlier, passing `parts_subset` check using the
 
 ## Migrating legacy inline JSON properties
 
-Readers still accept the exact canonical inline `agent-ee.bare-copper-probe/1`
-JSON emitted before AGENTEE-279. Its source qualification and native identity
-checks are unchanged, but KiBot 1.9.1 cannot export a board carrying it. Regenerate
+Admission checks refuse the exact canonical inline `agent-ee.bare-copper-probe/1`
+JSON emitted before AGENTEE-279 with a `legacy AGENT_EE_Probe` migration finding
+(AGENTEE-283). A legacy marker in the schematic cannot qualify membership
+through `parts_subset`; a legacy board cannot pass `part_binding`, `fab_export`
+or `fab_consistency`. KiBot 1.9.1 cannot export a board carrying it. Only
+forward-annotation planning allows the legacy identity, with the same native
+identity, flags, source bytes and geometry checks. Apply requires the saved
+output to carry the current encoding. Regenerate
 binding fill, the schematic and the board with the current writer, using the same
 immutable captured parts manifest and CAD closure. For an existing placed board,
 forward annotation can propagate the newly emitted schematic properties; validate
@@ -109,6 +114,17 @@ PYTHONPATH=src python3 -m tests.probe_kibot_regression \
   --config /path/to/fome-mc/toolchain/kibot/export.kibot.yaml
 ```
 
-It runs the native probe pipeline, reproduces legacy exit 22, then requires exit 0
-and fabrication outputs for the same fixture with encoded properties. Dependencies
+The collected pure-Python
+`test_emitted_probe_properties_are_kibot_safe_without_native_tools` exercises
+binding fill and schematic emission of the custom fields copied to footprints,
+requires the versioned base64 alphabet, and rejects legacy JSON, colons and
+control characters. The native fixture also checks the saved footprint values
+and exercises all three admission consumers against a newly captured legacy board.
+
+The retained external regression is currently blocked at its legacy admission
+assertion: `tests.probe_kibot_regression.main` still expects legacy markers to
+pass validators. That expectation conflicts with AGENTEE-283; it remains
+unchanged pending disposition under the worker verdict-preservation rule. Its
+KiBot section reproduces legacy exit 22 and requires exit 0 and fabrication
+outputs for the encoded fixture once that assertion is resolved. Dependencies
 are read only; the scratch directory must not already exist.
