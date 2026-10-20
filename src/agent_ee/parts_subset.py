@@ -8,9 +8,10 @@ from .parts_manifest import (IDENTITY_FIELDS, LIMIT, PREDICATE, dependency_closu
                              load_manifest, qualify_manifest, read_captured)
 from .storage import digest, identity, write_json
 from .probe_features import is_probe, native_component
+from .copper_features import is_copper
 
 
-def compare_inventory(document, graph, virtual, missing_provenance=(), probes=None):
+def compare_inventory(document, graph, virtual, missing_provenance=(), probes=None, copper=None):
     """Compare a validated manifest with the shared strict native inventory.
 
     Callers must qualify captured dependencies first. ``virtual`` must come from
@@ -57,6 +58,17 @@ def compare_inventory(document, graph, virtual, missing_provenance=(), probes=No
             row['findings'].append(dict(code='unexpected_populated_instance'))
         else:
             report['evaluated'] += 1
+            if is_copper(part):
+                from .copper_features import native_component as check_copper
+                try:
+                    if copper is None or ref not in copper:
+                        raise ValueError(ref + ': captured copper qualification required')
+                    check_copper(copper[ref], comp, graph)
+                except ValueError as exc:
+                    row['findings'].append(dict(code='copper_feature_mismatch', message=str(exc)))
+                if row['findings']:
+                    row['status'] = 'defect'
+                continue
             if is_probe(part):
                 try:
                     if probes is None or ref not in probes:
@@ -119,7 +131,17 @@ def evaluate(root, manifest_path, native_xml, schematic_paths):
             seen.update(validate_schematic(data, probes))
         if seen != set(probes):
             raise ValueError('missing probe feature(s): ' + ', '.join(sorted(set(probes) - seen)))
-        compared = compare_inventory(document, graph, virtual, qualified['missing_provenance'], probes)
+        from . import copper_features
+        copper = copper_features.declarations(document, root)
+        copper_seen = set()
+        for data in sheets.values():
+            seen_here = copper_features.validate_schematic(data, copper)
+            if copper_seen & seen_here:
+                raise ValueError('duplicate copper feature across sheets')
+            copper_seen.update(seen_here)
+        if copper_seen != set(copper):
+            raise ValueError('missing copper feature(s): ' + ', '.join(sorted(set(copper) - copper_seen)))
+        compared = compare_inventory(document, graph, virtual, qualified['missing_provenance'], probes, copper)
         report.update(compared, qualification=qualified)
     except (OSError, ValueError, KeyError, TypeError, ParseError) as exc:
         report['findings'].append(dict(code='unavailable_captured_evidence', message=str(exc)))
