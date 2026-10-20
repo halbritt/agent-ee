@@ -95,6 +95,25 @@ class PlacementPlansTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 select(board(), request(), bad)
 
+    def test_selection_requires_equal_judge_policies_even_for_blocked_candidates(self):
+        from agent_ee.placement_plans import select
+        lenient = scoring()
+        del lenient['capacitors']['C2']
+        alternatives = [row(capacitor_refs=['C1'], judge_policy=lenient),
+                        row(capacitor_refs=['C1'], offset_nm=[10*MM, 0], judge_policy=lenient)]
+        for alternative in alternatives:
+            specs = [row(step_nm=[7*MM, 0]), alternative]
+            original = copy.deepcopy(specs)
+            with self.subTest(alternative=alternative), self.assertRaisesRegex(
+                    ValueError, 'one shared judge_policy'):
+                select(board(), request(), specs)
+            self.assertEqual(specs, original)
+        # Equality is by value, independent of object identity and mapping order.
+        spec = row(judge_policy=dict(reversed(list(scoring().items()))))
+        result = select(board(), request(), [row(), spec])
+        self.assertEqual(result['selection']['selected_index'], 0)
+        self.assertEqual([p['after']['score'] for p in result['selection']['plans']], [100, 100])
+
     def test_row_improves_score_and_is_byte_identical_without_mutation(self):
         facts, policy, spec = board(), request(), row()
         original = copy.deepcopy((facts, policy, spec))
@@ -172,7 +191,7 @@ class PlacementPlansTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no shared non-ground'):
             plan(facts, request(), row())
 
-    def test_cluster_union_transitive_ground_exclusion_and_seed_only(self):
+    def test_cluster_union_transitive_ground_exclusion(self):
         facts = board()
         # U1 -- A -- C1 -- B -- C2; H1 only shares ground.
         facts['footprints'][0]['pads'][0]['net'] = 'A'
@@ -189,7 +208,7 @@ class PlacementPlansTest(unittest.TestCase):
                 'origin_nm': [2*MM, 2*MM], 'spacing_nm': [3*MM, 3*MM], 'judge_policy': scoring()}
         result = plan(facts, request(), spec)
         self.assertEqual(result['clusters'], [['C1', 'C2', 'U1'], ['H1']])
-        self.assertTrue(result['seed_only'])
+        self.assertNotIn('seed_only', result)
         self.assertEqual(result['status'], 'blocked')
         self.assertEqual(result, plan(facts, request(), spec))
 

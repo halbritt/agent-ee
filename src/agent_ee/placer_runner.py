@@ -261,9 +261,11 @@ def place_candidate(source, netlist, destination, request):
     source_hash, netlist_bytes = digest(source), netlist.read_bytes()
     targeted = 'targeted' in request or 'targeted_plans' in request
     if targeted:
+        import pcbnew
         # Refuse before even creating a lease file. A successful plan is rebuilt
         # under the writer lease below; caller-provided plans are never trusted.
-        preview = _plan(extract(source), request)
+        policy = reserve_imu_markings(pcbnew.LoadBoard(str(source)), _effective_policy(request))
+        preview = _plan(extract(source), request, policy)
         if preview['status'] != 'planned':
             return preview
     with writer_lock(destination):
