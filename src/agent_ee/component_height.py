@@ -1,4 +1,4 @@
-"""Installed component height from verified datasheet facts or native STEP bounds."""
+"""Installed component height from verified datasheet facts, captured DigiKey seated height or native STEP bounds."""
 from decimal import Decimal, InvalidOperation
 import os
 from pathlib import PurePosixPath
@@ -9,9 +9,10 @@ from .storage import read_json, write_json
 
 def parameters(params):
     required = {'criterion', 'envelope'}
-    optional = {'facts_check', 'height_facts', 'model_libraries'}
+    optional = {'facts_check', 'height_facts', 'model_libraries', 'digikey_heights'}
     if required - params.keys() or params.keys() - required - optional:
-        raise ValueError('component-height/1 needs envelope and optional facts_check, height_facts, model_libraries')
+        raise ValueError('component-height/1 needs envelope and optional facts_check, height_facts, '
+                         'digikey_heights, model_libraries')
     mapping = params.get('height_facts', {})
     if (not isinstance(mapping, dict) or any(not isinstance(k, str) or not k.strip() or
             not isinstance(v, str) or not v.strip() for k, v in mapping.items())):
@@ -22,8 +23,15 @@ def parameters(params):
         from .checks import SAFE_ID
         if not isinstance(params['facts_check'], str) or not SAFE_ID.fullmatch(params['facts_check']):
             raise ValueError('facts_check must be a safe check id')
+    digikey = []
+    if 'digikey_heights' in params:
+        from .digikey_record import evidence_declaration
+        declared = evidence_declaration(params['digikey_heights'], 'digikey_heights')
+        if set(declared['parts']) & set(mapping):
+            raise ValueError('a reference takes its height from height_facts or digikey_heights, not both')
+        digikey = [declared['capture']]
     from .fab_consistency import model_libraries
-    return list(model_libraries(params).values())
+    return [*model_libraries(params).values(), *digikey]
 
 
 def height_number(value):
@@ -43,6 +51,35 @@ def fact_height(fact, footprint, part_number):
             or fact.get('measurement') != 'installed_maximum_above_board'):
         raise ValueError('height fact unverified or inapplicable to installed native part/footprint')
     return height_number(fact['value'])
+
+
+def saved_binding(bindings, ref, fp):
+    binding = bindings[ref]
+    if (binding['duplicate_disagreements'] or binding['uuid'] != fp['uuid'] or
+            binding['lib_id'] != fp['fpid'] or binding['value'] != fp['value'].strip()):
+        raise ValueError('saved part binding ambiguous or differs from native footprint')
+    return binding
+
+
+def digikey_height(evidence, binding, maximum):
+    """Decisive height bound from a DigiKey 'Height - Seated (Max)' bound to the saved part; ValueError is unknown."""
+    if not binding['partnumber'] or binding['partnumber'] != evidence['mpn']:
+        raise ValueError(f'DigiKey record {evidence["key"]} MPN {evidence["mpn"]!r} differs from saved part number '
+                         f'{binding["partnumber"]!r}')
+    if binding['manufacturer'] and binding['manufacturer'].casefold() != evidence['manufacturer'].casefold():
+        raise ValueError(f'DigiKey record {evidence["key"]} manufacturer {evidence["manufacturer"]!r} differs from '
+                         f'saved {binding["manufacturer"]!r}')
+    if evidence['value'] is None:
+        raise ValueError(f'DigiKey record {evidence["key"]} lists no {evidence["parameter"]!r}')
+    from .digikey_record import seated_height_bounds
+    # Printed figures are rounded: the upper bound must fit, or the lower bound must exceed.
+    low, high = seated_height_bounds(evidence['value'])
+    if high <= maximum:
+        return high
+    if low > maximum:
+        return low
+    raise ValueError(f'DigiKey seated height {evidence["value"]!r} ({low}..{high} mm after rounding) '
+                     f'straddles {maximum} mm')
 
 
 def model_requests(ctx, footprints):
@@ -95,16 +132,28 @@ def evaluate(ctx, envelope, native):
         raise CheckError('unsupported', 'envelope has no max_component_height_mm')
     maximum = height_number(envelope['max_component_height_mm'])
     mappings = ctx.params.get('height_facts', {})
+    digikey = ctx.params.get('digikey_heights', {'parts': {}})
     facts, bindings = [], {}
     if mappings:
-        from .part_binding import parse_board_bindings
         path = prerequisite(ctx, ctx.params['facts_check'], 'datasheet_facts', 'facts.json', allow_unsupported=True)
         facts = read_json(path)['facts']
+    if mappings or digikey['parts']:
+        from .part_binding import parse_board_bindings
         bindings = parse_board_bindings(_captured(ctx, ctx.scope['board']), defer_param_errors=True)
+    capture, capture_error = None, None
+    if digikey['parts']:
+        from .digikey_record import replay_evidence
+        try:
+            capture = replay_evidence(ctx.inputs, digikey, ctx.manifest['files'])
+        except (OSError, ValueError, KeyError) as exc:
+            # An unreadable or unpinned capture is unknown height, never a pass.
+            capture_error = f'DigiKey capture unavailable: {exc}'
     refs = [fp['ref'] for fp in native['footprints']]
     unknown = [f'{ref}: height fact selects missing footprint' for ref in sorted(set(mappings) - set(refs))]
+    unknown += [f'{ref}: DigiKey height selects missing footprint'
+                for ref in sorted(set(digikey['parts']) - set(refs))]
     measured, defects = [], []
-    model_refs = set(refs) - set(mappings)
+    model_refs = set(refs) - set(mappings) - set(digikey['parts'])
     requests, missing = model_requests(ctx, model_refs)
     models = {}
     if requests:
@@ -140,13 +189,20 @@ def evaluate(ctx, envelope, native):
                 matches = [r['fact'] for r in facts if r.get('status') == 'verified' and r['id'] == mappings[ref]]
                 if len(matches) != 1:
                     raise ValueError('no unique verified height fact')
-                binding = bindings[ref]
-                if (binding['duplicate_disagreements'] or binding['uuid'] != fp['uuid'] or
-                        binding['lib_id'] != fp['fpid'] or binding['value'] != fp['value'].strip()):
-                    raise ValueError('saved part binding ambiguous or differs from native footprint')
+                binding = saved_binding(bindings, ref, fp)
                 part_number = binding['partnumber'] or binding['value']
                 height = fact_height(matches[0], fp, part_number)
                 item.update(source='datasheet_fact', fact=matches[0], part_number=part_number)
+            elif ref in digikey['parts']:
+                if capture is None:
+                    raise ValueError(capture_error)
+                from .digikey_record import part_evidence
+                doc, dependencies = capture
+                evidence = part_evidence(doc, digikey, dependencies, digikey['parts'][ref], 'seated_height')
+                item.update(source='digikey_seated_height', digikey=evidence)
+                binding = saved_binding(bindings, ref, fp)
+                height = digikey_height(evidence, binding, maximum)
+                item.update(part_number=binding['partnumber'])
             else:
                 model = models.get(ref)
                 if model is None or model['status'] != 'measured':
