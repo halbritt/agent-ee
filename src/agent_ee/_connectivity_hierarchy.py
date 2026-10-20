@@ -306,7 +306,7 @@ def validate_resolved(record):
     ids = {}
     for comp in record['components']:
         ir._object(comp, ('id', 'reference', 'lib_id', 'value', 'footprint', 'units', 'pins', 'sources',
-                          'power', 'field_sources', 'sheet', 'local_id'), ('part_binding',))
+                          'power', 'field_sources', 'sheet', 'local_id'), ('part_binding', 'in_bom'))
         for key in ('id', 'sheet', 'local_id'):
             ir._text(comp[key])
         if comp['id'] != scoped(comp['sheet'], comp['local_id']):

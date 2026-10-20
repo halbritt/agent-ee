@@ -21,6 +21,20 @@ def hierarchy_intent():
 
 
 class HierarchyTests(unittest.TestCase):
+    def test_scoped_component_bom_policy_survives_resolution(self):
+        from agent_ee.connectivity_ir import _seal
+        raw = hierarchy_intent()
+        raw['components'][0]['in_bom'] = False
+        result = resolve_intent(raw, {'Owned.kicad_sym': LIB})
+        validate_resolved(result)
+        comp = next(c for c in result['components'] if c['reference'] == raw['components'][0]['reference'])
+        self.assertIs(comp['in_bom'], False)
+        invalid = copy.deepcopy(result)
+        invalid['components'][0]['in_bom'] = 'no'
+        invalid.pop('canonical_sha256')
+        with self.assertRaisesRegex(ValueError, 'in_bom must be a boolean'):
+            validate_resolved(_seal(invalid))
+
     def resolve(self, raw=None):
         return resolve_intent(hierarchy_intent() if raw is None else raw, {'Owned.kicad_sym': LIB})
 

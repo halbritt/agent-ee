@@ -79,7 +79,7 @@ def _validate_flat_intent(value):
         if len(lib['sha256']) != 64 or any(c not in '0123456789abcdef' for c in lib['sha256']):
             raise ValueError('invalid library sha256')
     for comp in value['components']:
-        _object(comp, ('id', 'reference', 'lib_id', 'value', 'footprint', 'units'), ('part_binding',))
+        _object(comp, ('id', 'reference', 'lib_id', 'value', 'footprint', 'units'), ('part_binding', 'in_bom'))
         for key in ('id', 'reference', 'lib_id', 'value', 'footprint'):
             _text(comp[key], empty=key in ('value', 'footprint'))
         if comp['lib_id'].count(':') != 1 or not all(comp['lib_id'].split(':')):
@@ -87,6 +87,8 @@ def _validate_flat_intent(value):
         _list(comp['units'])
         if not comp['units'] or any(type(x) is not int or x < 1 for x in comp['units']) or len(set(comp['units'])) != len(comp['units']):
             raise ValueError('units require unique positive integers')
+        if 'in_bom' in comp and type(comp['in_bom']) is not bool:
+            raise ValueError('in_bom must be a boolean')
         if 'part_binding' in comp and not isinstance(comp['part_binding'], dict):
             raise ValueError('opaque part_binding must be an object')
     for net in value['nets']:
@@ -290,7 +292,7 @@ def _validate_flat_resolved(record):
     ids, refs, inventory = set(), set(), set()
     for comp in record['components']:
         _object(comp, ('id', 'reference', 'lib_id', 'value', 'footprint', 'units',
-                       'pins', 'sources', 'power', 'field_sources'), ('part_binding',))
+                       'pins', 'sources', 'power', 'field_sources'), ('part_binding', 'in_bom'))
         for key in ('id', 'reference', 'lib_id', 'value', 'footprint'):
             _text(comp[key], empty=key in ('value', 'footprint'))
         _list(comp['pins'])
@@ -304,6 +306,8 @@ def _validate_flat_resolved(record):
             raise ValueError('invalid intent field locators')
         if comp['lib_id'].count(':') != 1 or not all(comp['lib_id'].split(':')):
             raise ValueError('invalid library symbol id')
+        if 'in_bom' in comp and type(comp['in_bom']) is not bool:
+            raise ValueError('in_bom must be a boolean')
         if 'part_binding' in comp and not isinstance(comp['part_binding'], dict):
             raise ValueError('invalid opaque binding')
         for source in comp['sources']:

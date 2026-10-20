@@ -249,7 +249,10 @@ def _validated_record(record):
             detail.append(text)
         raise EmitError('resolved connectivity is not complete and passing: ' + ' | '.join(detail))
     try:
-        return validate_resolved(record)
+        validated = validate_resolved(record)
+        if any('in_bom' in comp for comp in validated['components']):
+            raise EmitError('component in_bom policy requires agent_ee.schematic_emitter')
+        return validated
     except (ValueError, TypeError, KeyError) as exc:
         raise EmitError(f'resolved connectivity rejected: {exc}') from exc
 

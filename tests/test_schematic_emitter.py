@@ -8,11 +8,14 @@ files only through kicad-cli 10.0.7 ERC, XML netlist export and upgrade.
 import hashlib
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # tests.<module> fixture imports
 
 from agent_ee.executor import execute
 from agent_ee.schematic_emitter import emit_schematic, main, publish, transformed_pin
@@ -115,6 +118,15 @@ def sheet_items(data):
               for n in children(root, 'label')]
     markers = [(float(children(n, 'at')[0][1]), float(children(n, 'at')[0][2])) for n in children(root, 'no_connect')]
     return root, symbols, labels, markers
+
+
+def private_inputs(middle='', leaf=''):
+    """Original metadata on an owned symbol; no stock symbol text copied."""
+    metadata = ('(property private "OwnedRule_A" "Keep \\"quoted\\" metadata" '
+                '(at 0 0 0) (show_name no) (do_not_autoplace no) (effects (font (size 1.27 1.27)))) '
+                '(property private "OwnedRule_B" "Second rule" '
+                '(at 0 0 0) (show_name no) (do_not_autoplace no) (effects (font (size 1.27 1.27)))) ')
+    return derived_inputs(middle=metadata + middle, leaf=leaf)
 
 
 class TransformTests(unittest.TestCase):
@@ -248,6 +260,38 @@ class DeterminismTests(unittest.TestCase):
         self.assertEqual(result['execution'], 'ok', result['findings'])
         self.assertEqual(parse.call_count, 1)
 
+    def test_private_properties_keep_names_flags_and_inherited_overrides(self):
+        override = ('(property private "OwnedRule_A" "Child rule" '
+                    '(at 0 0 0) (effects (font (size 1.27 1.27))))')
+        intent, captured = private_inputs(leaf=override)
+        before = dict(captured)
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        self.assertEqual(captured, before)
+        tree = parse_sexpr(files['regulator.kicad_sch'])
+        embedded = next(n for n in children(children(tree, 'lib_symbols')[0], 'symbol')
+                        if n[1] == 'OwnedGen:DERIVED')
+        private = [p for p in children(embedded, 'property') if p[1] == 'private']
+        self.assertEqual([(p[2], p[3]) for p in private],
+                         [('OwnedRule_A', 'Child rule'), ('OwnedRule_B', 'Second rule')])
+        for node in children(tree, 'symbol'):
+            self.assertFalse(any(p[1] in ('private', 'OwnedRule_A', 'OwnedRule_B')
+                                 for p in children(node, 'property')))
+
+    def test_component_bom_policy_overrides_library_without_removing_board_part(self):
+        for included in (False, True):
+            with self.subTest(in_bom=included):
+                intent = load('regulator.intent.json')
+                intent['components'][0]['in_bom'] = included
+                result, files = emit(intent=intent)
+                self.assertEqual(result['execution'], 'ok', result['findings'])
+                tree = parse_sexpr(files['regulator.kicad_sch'])
+                node = next(n for n in children(tree, 'symbol') if any(
+                    p[1:3] == ['Reference', 'J1'] for p in children(n, 'property')))
+                self.assertEqual(children(node, 'in_bom'), [['in_bom', 'yes' if included else 'no']])
+                self.assertEqual(children(node, 'on_board'), [['on_board', 'yes']])
+                self.assertEqual(children(node, 'dnp'), [['dnp', 'no']])
+
     def test_part_binding_fields_are_hidden_and_override_library_defaults(self):
         intent = load('regulator.intent.json')
         binding = {'LCSC': 'C900001', 'Manufacturer': 'Owned fixture', 'Partnumber': 'Original-1',
@@ -346,6 +390,69 @@ class DeterminismTests(unittest.TestCase):
 
 
 class RefusalTests(unittest.TestCase):
+    def test_private_modifier_requires_bare_token_and_name_value_strings(self):
+        for prop in ('(property "private" "N" "V" (at 0 0 0))',
+                     '(property private "N" (at 0 0 0))',
+                     '(property private N "V")',
+                     '(property private "N" V)'):
+            with self.subTest(prop=prop):
+                intent, captured = derived_inputs(middle=prop)
+                result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+                self.assertEqual(result['execution'], 'failed', result)
+                self.assertEqual(result['findings'][0]['code'], 'unsupported_symbol_node', result)
+                self.assertIsNone(files)
+
+    def test_mandatory_properties_cannot_be_private_in_library_or_child(self):
+        for name in ('Reference', 'Value', 'Footprint', 'Datasheet', 'Description'):
+            for level in ('library', 'child'):
+                with self.subTest(name=name, level=level):
+                    prop = f'(property private "{name}" "hidden" (at 0 0 0))'
+                    if level == 'child':
+                        intent, captured = derived_inputs(leaf=prop)
+                    else:
+                        intent = load('regulator.intent.json')
+                        captured = captures(intent)
+                        path = 'lib/Owned_Gen.kicad_sym'
+                        original = f'(property "{name}"'.encode()
+                        self.assertIn(original, captured[path])
+                        captured[path] = captured[path].replace(original, f'(property private "{name}"'.encode())
+                        intent['libraries'][0]['sha256'] = hashlib.sha256(captured[path]).hexdigest()
+                    result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+                    self.assertEqual(result['execution'], 'failed', result)
+                    self.assertEqual(result['findings'][0]['code'], 'unsupported_symbol_node', result)
+                    self.assertIsNone(files)
+
+    def test_private_duplicate_names_and_malformed_properties_refuse(self):
+        for extra in ('(property private "OwnedRule_A" "duplicate")',
+                      '(property "OwnedRule_A" "public duplicate")',
+                      '(property private "OwnedRule_C" "value" extra)',
+                      '(property private (name "OwnedRule_C") "value")'):
+            with self.subTest(extra=extra):
+                intent, captured = private_inputs(middle=extra)
+                result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+                self.assertEqual(result['execution'], 'failed', result)
+                self.assertIsNone(files)
+
+    def test_public_property_named_private_is_not_a_flag(self):
+        intent, captured = derived_inputs(middle='(property "private" "public value" (at 0 0 0))')
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'))
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        self.assertIn(b'(property "private" "public value"', files['regulator.kicad_sch'])
+
+    def test_bom_policy_requires_boolean_and_cannot_include_power(self):
+        for value in ('no', 0, None, {}, []):
+            with self.subTest(value=value):
+                intent = load('regulator.intent.json')
+                intent['components'][0]['in_bom'] = value
+                result, files = emit(intent=intent)
+                self.assertNotEqual(result['execution'], 'ok', result)
+                self.assertIsNone(files)
+        intent = load('regulator.intent.json')
+        next(c for c in intent['components'] if c['lib_id'] == 'OwnedPower:GND')['in_bom'] = True
+        result, files = emit(intent=intent)
+        self.assertEqual(result['findings'][0]['code'], 'assembly_policy')
+        self.assertIsNone(files)
+
     def test_opaque_binding_cannot_override_identity_flags_or_emit_nontext_values(self):
         for binding in ({'Footprint': 'Other:Part'}, {'Reference': 'J9'}, {'dnp': 'yes'},
                         {'in_bom': 'no'}, {'LCSC': None}, {'LCSC': 123}, {'ki_description': 'hidden'}):
@@ -567,6 +674,28 @@ def native_netlist(path):
 
 
 class NativeEmissionTests(unittest.TestCase):
+    def test_native_refuses_malformed_private_property_shapes(self):
+        from agent_ee.schematic_emitter import _scan, _dump
+        intent, captured = derived_inputs()
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'), **tables())
+        self.assertEqual(result['execution'], 'ok', result)
+        for index, prop in enumerate(('(property "private" "N" "V" (at 0 0 0))',
+                                      '(property private "N" (at 0 0 0))')):
+            with self.subTest(prop=prop):
+                tree = _scan(files['regulator.kicad_sch'])
+                embedded = next(s for s in children(children(tree, 'lib_symbols')[0], 'symbol')
+                                if s[1] == 'OwnedGen:DERIVED')
+                embedded.append(_scan(prop.encode()))
+                malformed = {**files, 'regulator.kicad_sch': ('\n'.join(_dump(tree)) + '\n').encode()}
+                project = native_project({**captured, **malformed}, Path(self.tmp) / f'malformed-{index}')
+                work = Path(self.tmp) / f'malformed-{index}/work'
+                record = execute(project, work, ['kicad-cli', 'sch', 'export', 'netlist',
+                    '--format', 'kicadxml', '-o', '/work/design.xml', '/candidate/regulator.kicad_sch'], timeout=300)
+                self.assertEqual(record['execution'], 'failed', record)
+                self.assertEqual(record['exit_code'], 3, record)
+                self.assertIn('Failed to load schematic', (work / 'console.log').read_text())
+                self.assertFalse((work / 'design.xml').exists())
+
     def test_pod_owned_symbols(self):
         from test_pod_symbols import EXPECTED, pod_emission_inputs
         intent, captured, layout = pod_emission_inputs()
@@ -604,6 +733,48 @@ class NativeEmissionTests(unittest.TestCase):
                                   ('(name "' + name.replace(' ', '_') + '"').encode())
         resaved_files['pod_owned_symbols.kicad_sch'] = sheet
         self.assertNativeResave(project, work, 'pod_owned_symbols', resaved_files)
+
+    def test_private_metadata_native_export_and_roundtrip(self):
+        intent, captured = private_inputs()
+        result, files = emit_schematic(intent, captured, load('regulator.layout.json'), **tables())
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        project = native_project({**captured, **files}, Path(self.tmp) / 'private')
+        work = Path(self.tmp) / 'private/work'
+        run_native(project, work / 'netlist', 'kicad-cli', 'sch', 'export', 'netlist',
+                   '--format', 'kicadxml', '-o', '/work/design.xml', '/candidate/regulator.kicad_sch')
+        self.assertEqual(native_netlist(work / 'netlist/design.xml')[1], load('regulator.expected.json')['nets'])
+        from agent_ee.schematic_emitter import _scan, _dump
+        shutil.copytree(project, work / 'resave/copy')
+        run_native(project, work / 'resave', 'kicad-cli', 'sch', 'upgrade', '--force',
+                   '/work/copy/regulator.kicad_sch')
+        def metadata(raw):
+            tree = _scan(raw)
+            embedded = next(n for n in children(children(tree, 'lib_symbols')[0], 'symbol')
+                            if n[1] == 'OwnedGen:DERIVED')
+            return ['\n'.join(_dump(p)) for p in children(embedded, 'property') if p[1] == 'private']
+        native = (work / 'resave/copy/regulator.kicad_sch').read_bytes()
+        source = next(n for n in children(_scan(captured['lib/Owned_Gen.kicad_sym']), 'symbol')
+                      if n[1] == 'MID')
+        source_private = [p for p in children(source, 'property') if p[1] == 'private']
+        self.assertEqual([(p[2], p[3]) for p in source_private],
+                         [('OwnedRule_A', 'Keep "quoted" metadata'), ('OwnedRule_B', 'Second rule')])
+        self.assertEqual(metadata(files['regulator.kicad_sch']), ['\n'.join(_dump(p)) for p in source_private])
+        self.assertEqual(len(metadata(native)), 2)
+        self.assertEqual(metadata(native), metadata(files['regulator.kicad_sch']))
+        run_native(project, work / 'resave', 'kicad-cli', 'sch', 'export', 'netlist',
+                   '--format', 'kicadxml', '-o', '/work/roundtrip.xml', '/work/copy/regulator.kicad_sch')
+        self.assertEqual(native_netlist(work / 'resave/roundtrip.xml')[1], load('regulator.expected.json')['nets'])
+
+    def test_bom_excluded_component_remains_native_board_inventory(self):
+        from agent_ee.native_netlist import read_native_inventory
+        intent = load('regulator.intent.json')
+        intent['components'][0]['in_bom'] = False
+        result, files = emit(intent=intent, **tables())
+        self.assertEqual(result['execution'], 'ok', result['findings'])
+        project, work, erc, _ = self.native_run('regulator', files, 'bom-policy')
+        comp = read_native_inventory(work / 'netlist/design.xml')['components']['J1']
+        self.assertEqual((comp['in_bom'], comp['on_board'], comp['populated']), (False, True, True))
+        self.assertNativeResave(project, work, 'regulator', files)
 
     def test_bindings_survive_real_native_export_and_forced_resave(self):
         intent = load('regulator.intent.json')
