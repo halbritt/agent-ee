@@ -107,6 +107,15 @@ A qualified feature stays in the sealed board inventory but out of the
 assembled set. Its presence in either CSV is a parity defect. Existing
 undeclared exclusions retain their verdicts.
 
+Graphics and properties carrying a `(layers ...)` node are refused, including
+when a separate `(layer ...)` names an admitted decorative or mask layer.
+KiCad can interpret the extra token as plotted copper in either fab gate.
+
+Qualification also admits courtyard graphics and bounded own-side mask openings
+under the [exporter's shape rule](fab-export.md#copper-features). Both gates use
+the same pad/copper envelope and 0.05 mm margin; courtyard size is excluded from
+that envelope.
+
 The assembled board set holds every footprint without `dnp`,
 `exclude_from_bom` or `exclude_from_pos_files`. Defects take priority over
 coverage gaps. Remaining gaps are listed in `details.coverage_gaps` and the

@@ -1295,6 +1295,15 @@ populated set is `unsupported` by name ([BOM variant](fab-export.md#bom-variant)
 native files are `failed/unknown`; pre-existing staging or native output
 directories are refused before reuse.
 
+Graphics and properties carrying a `(layers ...)` node are refused, including
+when a separate `(layer ...)` names an admitted decorative or mask layer.
+KiCad can interpret the extra token as plotted copper in either fab gate.
+
+Declared copper features may include courtyard shapes and bounded own-side mask
+openings within their pad/copper extent plus a 0.05 mm margin. The
+[shape qualification](fab-export.md#copper-features) lists the supported geometry
+and fail-closed limits; courtyard size never enlarges this mask envelope.
+
 [`fab_consistency`](fab-consistency.md) consumes that sealed export, its netlist
 and an earlier geometry probe. It checks plot/layer and PTH/NPTH inventory,
 BOM/CPL/assembled-board reference parity (re-deriving rule exclusions from the

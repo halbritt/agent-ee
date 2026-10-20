@@ -52,6 +52,7 @@ import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timezone
+from fractions import Fraction
 from pathlib import Path
 
 from .storage import digest, read_json, write_json
@@ -231,6 +232,137 @@ def copper_pad(node):
         not _lists(p, 'layer') and not _lists(p, 'layers') for p in primitives[0][1:])
 
 
+# Qualification envelope, in footprint-local millimetres. This is deliberately
+# independent of the board/footprint solder-mask expansion settings.
+COPPER_MASK_MARGIN = Fraction(1, 20)
+
+
+def _copper_numbers(node, key, lengths):
+    values = _lists(node, key)
+    if len(values) != 1 or len(values[0]) - 1 not in lengths:
+        raise ValueError(f'unproved {key}')
+    raw = values[0][1:]
+    if any(not isinstance(v, str) or not NUMBER_RE.fullmatch(v) for v in raw):
+        raise ValueError(f'unproved {key} numbers')
+    return tuple(Fraction(v) for v in raw)
+
+
+def _copper_graphic_box(node):
+    """Exact envelope for the bounded subset of mask/custom-pad graphics.
+
+    Arcs, Beziers and text need a native contour proof, so cannot enlarge the
+    copper envelope or qualify a new mask opening through this predicate.
+    """
+    allowed = {'start', 'end', 'center', 'pts', 'stroke', 'width', 'fill', 'layer', 'uuid', 'tstamp', 'locked'}
+    if any(not isinstance(n, list) or not n or n[0] not in allowed for n in node[1:]):
+        raise ValueError('unproved graphic content')
+    fills = _lists(node, 'fill')
+    if fills and (len(fills) != 1 or fills[0] not in
+                  (['fill', 'yes'], ['fill', 'no'], ['fill', 'solid'], ['fill', 'none'])):
+        raise ValueError('unproved graphic fill')
+    kind = node[0].removeprefix('fp_').removeprefix('gr_')
+    if kind in {'line', 'rect'}:
+        points = [_copper_numbers(node, k, {2}) for k in ('start', 'end')]
+    elif kind == 'poly':
+        pts = _lists(node, 'pts')
+        if len(pts) != 1 or len(pts[0]) < 4 or any(
+                not isinstance(p, list) or not p or p[0] != 'xy' for p in pts[0][1:]):
+            raise ValueError('unproved polygon')
+        points = [_copper_numbers(['point', p], 'xy', {2}) for p in pts[0][1:]]
+    elif kind == 'circle':
+        x, y = _copper_numbers(node, 'center', {2})
+        ex, ey = _copper_numbers(node, 'end', {2})
+        # Axis radius is exact; do not round a square root into admission.
+        if ex != x and ey != y:
+            raise ValueError('unproved circle radius')
+        r = abs(ex - x) + abs(ey - y)
+        if not r:
+            raise ValueError('zero circle radius')
+        points = [(x-r, y-r), (x+r, y+r)]
+    else:
+        raise ValueError('unproved graphic shape')
+    strokes = _lists(node, 'stroke')
+    if strokes:
+        if len(strokes) != 1 or _lists(node, 'width'):
+            raise ValueError('ambiguous graphic width')
+        width, = _copper_numbers(strokes[0], 'width', {1})
+    else:
+        width, = _copper_numbers(node, 'width', {1})
+    if width < 0 or (width == 0 and (not fills or fills[0][1] not in {'yes', 'solid'})):
+        raise ValueError('unproved graphic area')
+    return (min(p[0] for p in points)-width/2, min(p[1] for p in points)-width/2,
+            max(p[0] for p in points)+width/2, max(p[1] for p in points)+width/2)
+
+
+def _copper_mask_inside(fp, graphic, layer):
+    """Own-side pad/copper bounding extent plus 0.05 mm; no courtyard extent."""
+    try:
+        sides = _lists(fp, 'layer')
+        if len(sides) != 1 or sides[0] not in (['layer', 'F.Cu'], ['layer', 'B.Cu']):
+            return False
+        side = sides[0][1]
+        if layer != side.replace('.Cu', '.Mask'):
+            return False
+        fp_at = _copper_numbers(fp, 'at', {2, 3})
+        fp_angle = fp_at[2] if len(fp_at) == 3 else 0
+        boxes = []
+        for pad in _lists(fp, 'pad'):
+            if not copper_pad(pad):
+                return False
+            layers = _lists(pad, 'layers')[0][1:]
+            if side not in layers and '*.Cu' not in layers:
+                continue
+            at = _copper_numbers(pad, 'at', {2, 3})
+            angle = ((at[2] if len(at) == 3 else 0) - fp_angle) % 360
+            if angle % 90 or _lists(pad, 'rect_delta'):
+                return False
+            w, h = _copper_numbers(pad, 'size', {2})
+            if w <= 0 or h <= 0 or (pad[3] == 'circle' and w != h):
+                return False
+            local = [(-w/2, -h/2, w/2, h/2)]
+            if pad[3] == 'custom':
+                options = _lists(pad, 'options')
+                anchors = _lists(options[0], 'anchor') if len(options) == 1 else []
+                if len(anchors) != 1 or anchors[0] not in (['anchor', 'rect'], ['anchor', 'circle']):
+                    return False
+                if anchors[0] == ['anchor', 'circle'] and w != h:
+                    return False
+                local.extend(_copper_graphic_box(p) for p in _lists(pad, 'primitives')[0][1:])
+            turns = {0: lambda x, y: (x, y), 90: lambda x, y: (y, -x),
+                     180: lambda x, y: (-x, -y), 270: lambda x, y: (-y, x)}
+            for x0, y0, x1, y1 in local:
+                corners = [(x0, y0), (x0, y1), (x1, y0), (x1, y1)]
+                points = [turns[angle](x, y) for x, y in corners]
+                boxes.append((min(x for x,y in points)+at[0], min(y for x,y in points)+at[1],
+                              max(x for x,y in points)+at[0], max(y for x,y in points)+at[1]))
+        if not boxes:
+            return False
+        x0, y0, x1, y1 = _copper_graphic_box(graphic)
+        margin = COPPER_MASK_MARGIN
+        return (x0 >= min(b[0] for b in boxes)-margin and y0 >= min(b[1] for b in boxes)-margin
+                and x1 <= max(b[2] for b in boxes)+margin and y1 <= max(b[3] for b in boxes)+margin)
+    except ValueError:
+        return False
+
+
+def _copper_courtyard_graphic(node):
+    # Keep malformed, coordinate-free objects refused. Courtyard geometry never
+    # supplies the copper extent used to bound mask openings.
+    keys = {'fp_line': ('start', 'end'), 'fp_rect': ('start', 'end'),
+            'fp_circle': ('center', 'end'), 'fp_arc': ('start', 'mid', 'end'),
+            'fp_text': ('at',), 'fp_text_box': ('start', 'end')}
+    try:
+        if node[0] in {'fp_poly', 'fp_curve'}:
+            pts = _lists(node, 'pts')
+            return (len(pts) == 1 and (len(pts[0]) == 5 if node[0] == 'fp_curve' else len(pts[0]) >= 4) and all(
+                isinstance(p, list) and p and p[0] == 'xy' and
+                _copper_numbers(['point', p], 'xy', {2}) is not None for p in pts[0][1:]))
+        return all(_copper_numbers(node, key, {2, 3} if key == 'at' else {2}) is not None
+                   for key in keys[node[0]])
+    except (ValueError, KeyError):
+        return False
+
+
 def copper_feature_problems(data, refs, components=None):
     """Qualify only explicitly declared copper; never infer a component exemption.
 
@@ -254,7 +386,7 @@ def copper_feature_problems(data, refs, components=None):
                 'duplicate_pad_numbers_are_jumpers', 'solder_mask_margin',
                 'solder_paste_margin', 'solder_paste_ratio', 'clearance',
                 'zone_connect', 'thermal_width', 'thermal_gap', 'embedded_fonts'}
-    graphics = {'fp_text', 'fp_text_box', 'fp_line', 'fp_rect', 'fp_circle', 'fp_arc', 'fp_poly'}
+    graphics = {'fp_text', 'fp_text_box', 'fp_line', 'fp_rect', 'fp_circle', 'fp_arc', 'fp_poly', 'fp_curve'}
     graphic_layers = {'F.SilkS', 'B.SilkS', 'F.Fab', 'B.Fab'}
     for ref in sorted(refs, key=natural_key):
         reasons = []
@@ -279,8 +411,17 @@ def copper_feature_problems(data, refs, components=None):
                     reasons.append('pad is not qualified surface copper/mask/paste')
             elif head in graphics or head == 'property':
                 layers = _lists(node, 'layer')
-                if head in graphics or layers:
-                    if len(layers) != 1 or len(layers[0]) != 2 or layers[0][1] not in graphic_layers:
+                if head in graphics or layers or _lists(node, 'layers'):
+                    # KiCad can apply (layers ...) after (layer ...), changing
+                    # an apparently decorative graphic into plotted copper.
+                    layer = (layers[0][1] if len(layers) == 1 and len(layers[0]) == 2
+                             and not _lists(node, 'layers') else None)
+                    admitted = head != 'fp_curve' and layer in graphic_layers
+                    if head in graphics and layer in {'F.CrtYd', 'B.CrtYd'}:
+                        admitted = _copper_courtyard_graphic(node)
+                    elif head in graphics and layer in {'F.Mask', 'B.Mask'}:
+                        admitted = _copper_mask_inside(fp, node, layer)
+                    if not admitted:
                         reasons.append('graphics are outside silk/fab layers')
                 if head == 'property':
                     if len(node) < 3 or not all(isinstance(value, str) for value in node[1:3]):
