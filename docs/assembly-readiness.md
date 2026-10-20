@@ -348,8 +348,10 @@ exemption cites one line of a captured owner decision:
 
 The quote must name the exact reference as a whole token, so `R20`, `R2-1`
 and `R1/R2` do not name `R2`. A reference can be judged or exempt, not both.
-The source is an immutable input; native KiCad files (`.kicad_*`) and the
-mutable deviations file are refused as sources. At evaluation it must be
+The source is an immutable input; native KiCad files (`.kicad_*`), legacy
+design files (`.sch`, `.net`, `.pro`), project library tables (`sym-lib-table`,
+`fp-lib-table`) and the mutable deviations file are refused as sources
+(case-insensitive file names and suffixes). At evaluation it must be
 captured with the pinned hash and hold the quote on the cited line.
 
 AGENTEE-281 also checks the whole owner statement using the hand-fit policy's

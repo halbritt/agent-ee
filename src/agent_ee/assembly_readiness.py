@@ -939,7 +939,9 @@ def _validate_operating_temperature(raw):
         if ref in raw["parts"]:
             raise ValueError(f"operating_temperature reference {ref!r} is both judged and exempt")
         _validate_citation(citation, f"operating_temperature.exemptions.{ref}")
-        if PurePosixPath(citation["source"]).suffix.lower().startswith(".kicad_"):
+        source = PurePosixPath(citation["source"])
+        if (source.suffix.lower().startswith(".kicad_") or source.suffix.lower() in {".sch", ".net", ".pro"}
+                or source.name.lower() in {"sym-lib-table", "fp-lib-table"}):
             raise ValueError("operating_temperature exemption source cannot be a writer-mutable KiCad design file")
         if not _reference_token(ref).search(citation["quote"]):
             raise ValueError(f"operating_temperature.exemptions.{ref}.quote does not name {ref!r}")

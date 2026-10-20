@@ -1466,7 +1466,11 @@ class AssemblyReadinessTests(unittest.TestCase):
                               "line": index + 1, "quote": '"Reference" "R2"'}
         bad_citations = [schematic_citation]
         bad_citations.extend({**citation, "source": "design" + suffix} for suffix in
-                             (".kicad_pcb", ".kicad_pro", ".kicad_dru", ".kicad_sym", ".KICAD_SCH"))
+                             (".kicad_pcb", ".kicad_pro", ".kicad_dru", ".kicad_sym", ".KICAD_SCH",
+                              ".sch", ".net", ".pro", ".SCH", ".NET", ".PRO"))
+        bad_citations.extend({**citation, "source": source} for source in
+                             ("sym-lib-table", "fp-lib-table", "project/sym-lib-table",
+                              "project/fp-lib-table", "project/SYM-LIB-TABLE", "project/FP-LIB-TABLE"))
         bad_citations.extend(self.exemption(line=line)["R2"] for line in
                              ("R2-1 accepted", "R2-1 is exempt", "R1/R2 is exempt", "R2/R3 is exempt"))
         files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
