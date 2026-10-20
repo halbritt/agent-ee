@@ -60,7 +60,7 @@ def mark_board(text, ref, value='not_assembled'):
     return text[:at] + field + text[at:]
 
 
-def copper_fixture(source, *, custom=False):
+def copper_fixture(source, *, custom=False, graphics=False):
     """Turn the owned two-pad DNP capacitor into an open solder jumper JP1."""
     schematic = source / 'fab.kicad_sch'
     lines = schematic.read_text().splitlines()
@@ -83,6 +83,17 @@ def copper_fixture(source, *, custom=False):
         block = block.replace('smd rect', 'smd custom').replace('(size 0.9 0.95)',
             '(size 0.9 0.95) (options (clearance outline) (anchor rect)) '
             '(primitives (gr_rect (start -0.45 -0.475) (end 0.45 0.475) (width 0) (fill yes)))')
+    if graphics:
+        # Original geometry: a mask bridge over the gap and a rectangular
+        # courtyard, independent of any stock footprint bytes.
+        additions = ['(fp_rect (start -0.2 -0.5) (end 0.2 0.5) '
+                     '(stroke (width 0) (type default)) (fill yes) (layer "F.Mask"))']
+        corners = [(-1.6, -0.8), (1.6, -0.8), (1.6, 0.8), (-1.6, 0.8)]
+        for (x, y), (ex, ey) in zip(corners, corners[1:] + corners[:1]):
+            additions.append(f'(fp_line (start {x} {y}) (end {ex} {ey}) '
+                             '(stroke (width 0.05) (type solid)) (layer "F.CrtYd"))')
+        block = block.replace('(attr smd exclude_from_bom exclude_from_pos_files)',
+                              '(attr smd exclude_from_bom exclude_from_pos_files)' + ''.join(additions))
     board.write_text(text[:start] + block + text[end:])
 
 
@@ -285,6 +296,104 @@ class CopperFeatureTests(unittest.TestCase):
         self.assertTrue(board_facts(self.data)['unsupported'])
         self.assertEqual(board_facts(self.data, copper_features={'JP1'})['unsupported'], [])
         self.assertTrue(copper_feature_problems(self.data, {'JP2'}))
+
+    def with_graphic(self, graphic):
+        attr = b'(attr smd exclude_from_bom exclude_from_pos_files)'
+        return self.data.replace(attr, attr + graphic.encode())
+
+    def test_courtyard_graphics_admitted_without_contributing_mask_extent(self):
+        shapes = ('(fp_line (start -2 -2) (end 2 2))',
+                  '(fp_rect (start -2 -2) (end 2 2))',
+                  '(fp_circle (center 0 0) (end 2 0))',
+                  '(fp_arc (start -2 0) (mid 0 -2) (end 2 0))',
+                  '(fp_poly (pts (xy 0 0) (xy 2 0) (xy 2 2)))',
+                  '(fp_curve (pts (xy 0 0) (xy 1 0) (xy 1 1) (xy 2 2)))',
+                  '(fp_text user "Owned" (at 0 0))',
+                  '(fp_text_box "Owned" (start -2 -2) (end 2 2))')
+        for side in ('F', 'B'):
+            for shape in shapes:
+                with self.subTest(side=side, shape=shape):
+                    graphic = shape[:-1] + f' (layer "{side}.CrtYd"))'
+                    self.assertEqual(copper_feature_problems(self.with_graphic(graphic), {'JP1'}), [])
+        self.data = self.with_graphic('(fp_rect (start -100 -100) (end 100 100) (layer "F.CrtYd"))')
+        self.assertTrue(copper_feature_problems(self.with_graphic(
+            '(fp_rect (start 20 20) (end 21 21) (stroke (width 0)) (fill yes) (layer "F.Mask"))'), {'JP1'}))
+
+    def test_own_side_mask_shapes_filled_outlined_and_exact_margin(self):
+        shapes = ('(fp_rect (start -0.2 -0.4) (end 0.2 0.4))',
+                  '(fp_line (start -0.2 -0.4) (end 0.2 0.4))',
+                  '(fp_circle (center 0 0) (end 0.4 0))',
+                  '(fp_poly (pts (xy -0.2 0) (xy 0.2 0) (xy 0 0.4)))')
+        for fill in ('yes', 'no'):
+            for shape in shapes:
+                graphic = shape[:-1] + f' (stroke (width 0.05)) (fill {fill}) (layer "F.Mask"))'
+                with self.subTest(graphic=graphic):
+                    self.assertEqual(copper_feature_problems(self.with_graphic(graphic), {'JP1'}), [])
+        template = '(fp_rect (start -0.2 -0.4) (end %s 0.4) (stroke (width %s)) (fill yes) (layer "F.Mask"))'
+        for edge, width, admitted in [('1.3', '0', True), ('1.30000000000000000001', '0', False),
+                                      ('1.275', '0.05', True), ('1.275', '0.05000000000000000001', False)]:
+            with self.subTest(edge=edge, width=width):
+                self.assertEqual(not copper_feature_problems(self.with_graphic(template % (edge, width)), {'JP1'}), admitted)
+        # A flipped footprint uses the back mask; other board objects stay unchanged.
+        start = self.data.index(b'(property "Reference" "JP1"')
+        begin = self.data.rfind(b'(footprint', 0, start)
+        self.data = self.data[:begin] + self.data[begin:].replace(b'"F.Cu"', b'"B.Cu"', 1)
+        graphic = template % ('0.2', '0')
+        self.assertTrue(copper_feature_problems(self.with_graphic(graphic), {'JP1'}))
+        start = self.data.index(b'(property "Reference" "JP1"')
+        self.data = self.data[:start] + self.data[start:].replace(b'"F.Cu" "F.Mask" "F.Paste"', b'"B.Cu" "B.Mask"')
+        self.assertEqual(copper_feature_problems(self.with_graphic(graphic.replace('F.Mask', 'B.Mask')), {'JP1'}), [])
+
+    def test_custom_extent_rotation_and_unproved_geometry(self):
+        copper_fixture(self.source, custom=True)
+        self.data = (self.source / 'fab.kicad_pcb').read_bytes()
+        # The copper primitive, rather than the smaller anchor, proves the extent.
+        self.data = self.data.replace(b'(size 0.9 0.95)', b'(size 0.2 0.2)')
+        mask = '(fp_rect (start -0.2 -0.5) (end 0.2 0.5) (stroke (width 0)) (fill yes) (layer "F.Mask"))'
+        self.assertEqual(copper_feature_problems(self.with_graphic(mask), {'JP1'}), [])
+        for old, new in [(b'(anchor rect)', b'(anchor circle)'),
+                         (b'(anchor rect)', b''),
+                         (b'gr_rect', b'gr_curve'),
+                         (b'(at -0.8 0)', b'(at -0.8 0 30)')]:
+            with self.subTest(new=new):
+                data = self.with_graphic(mask).replace(old, new)
+                # A square circle anchor is still bounded by the custom primitive.
+                if new == b'(anchor circle)':
+                    self.assertEqual(copper_feature_problems(data, {'JP1'}), [])
+                else:
+                    self.assertTrue(copper_feature_problems(data, {'JP1'}))
+        rotated = self.with_graphic(mask).replace(b'(at 130 110)', b'(at 130 110 37)')
+        rotated = rotated.replace(b'(at -0.8 0)', b'(at -0.8 0 37)').replace(b'(at 0.8 0)', b'(at 0.8 0 37)')
+        self.assertEqual(copper_feature_problems(rotated, {'JP1'}), [])
+        # Newly recognized curves must not broaden the old silk/fab class.
+        for layer in ('F.Fab', 'F.SilkS', 'F.Mask', 'F.Cu'):
+            curve = f'(fp_curve (pts (xy 0 0) (xy 1 0) (xy 1 1) (xy 2 2)) (layer "{layer}"))'
+            self.assertTrue(copper_feature_problems(self.with_graphic(curve), {'JP1'}))
+
+    def test_mask_fail_closed_and_required_negative_controls(self):
+        template = '(fp_rect (start %s) (end %s) (stroke (width %s)) (fill yes) (layer "%s"))'
+        controls = [template % ('20 20', '21 21', '0', 'F.Mask'),
+                    template % ('0 0', '0.2 0.2', '0', 'B.Mask'),
+                    template % ('0 0', '0.2 0.2', '0', 'F.Cu'),
+                    template % ('0 0', '0.2 0.2', '0', 'F.Paste'),
+                    template % ('0 0', '0.2 0.2', '0', 'F.Adhes'),
+                    template % ('nan 0', '0.2 0.2', '0', 'F.Mask'),
+                    template % ('0 0', '0.2 0.2', '-1', 'F.Mask'),
+                    '(fp_rect (layer "F.Mask"))', '(zone (net 0))', '(model "owned.step")',
+                    (template % ('0 0', '0.2 0.2', '0', 'F.Mask')).replace('(fill yes)', '(fill no)'),
+                    (template % ('0 0', '0.2 0.2', '0', 'F.Mask')).replace('(fill yes)', '(offset 50 50)'),
+                    '(fp_arc (start 0 0) (mid 0.1 0.1) (end 0.2 0) (stroke (width 0)) (layer "F.Mask"))']
+        for graphic in controls:
+            with self.subTest(graphic=graphic):
+                self.assertTrue(copper_feature_problems(self.with_graphic(graphic), {'JP1'}))
+        graphic = template % ('0 0', '0.2 0.2', '0', 'F.Mask')
+        for before, after in [(b'smd rect', b'smd rect (drill 0.5)'),
+                              (b'smd rect', b'smd circle'),
+                              (b'(size 0.9 0.95)', b'(size NaN 0.95)'),
+                              (b'(at -0.8 0)', b'(at -0.8 0 45)'),
+                              (b'(size 0.9 0.95)', b'(size 0.9 0.95) (rect_delta 3 3)')]:
+            with self.subTest(after=after):
+                self.assertTrue(copper_feature_problems(self.with_graphic(graphic).replace(before, after), {'JP1'}))
 
     def test_declaration_is_validated(self):
         for refs in (None, 'JP1', [], ['JP1', 'JP1'], ['JP1 ', 'JP2'], [1]):

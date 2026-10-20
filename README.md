@@ -383,6 +383,10 @@ them as declared deviations, and grades stock for the remaining BOM. Stock
 exceptions and the [owner hand-fit policy](docs/assembly-readiness.md#owner-hand-fit-policy)
 are distinct classes. The policy class admits only parts that the cited owner
 text names unconditionally.
+
+Declared copper features also admit courtyard graphics and bounded own-side mask
+openings over their pad/copper extent, with a 0.05 mm envelope margin.
+
 The [fab-package consistency gate](docs/fab-consistency.md) checks a sealed
 `fab_export` staging tree against its manifest, the pinned kicad-cli, the captured
 board, the sealed netlist and the sealed geometry. It checks native CPL anchor

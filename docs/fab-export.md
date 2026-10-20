@@ -66,8 +66,26 @@ Qualified pad shapes are rect, roundrect, circle, oval and trapezoid SMD pads
 on copper, mask and paste layers. Custom SMD pads also qualify when their
 line, arc, circle, rectangle, polygon or curve primitives inherit these layers
 without overrides. Drilled pads and padstacks are refused.
-Footprint graphics and displayed properties are restricted to silk/fab layers;
-other physical content, including zones, models and embedded files, is refused.
+Displayed properties remain restricted to silk/fab layers. Footprint graphics
+also admit courtyard shapes on either F.CrtYd or B.CrtYd; coordinate-free or
+malformed courtyard objects remain refused. Courtyards never enlarge copper
+extent. Own-side F.Mask/B.Mask lines, rectangles, polygons and circles with an
+axis-aligned radius qualify, filled or outlined, only when their entire envelope
+(including half the stroke width) fits inside the footprint-local bounding box of
+its own-side pad copper plus **0.05 mm** on each edge. This box includes gaps
+between pads, allowing a solder bridge opening. It is not a contour-distance
+or mask-manufacturability check. Board/footprint mask expansion settings do not
+increase this admission margin.
+
+This exact rational envelope includes nominal pad size and custom line, rectangle,
+polygon and axis-radius circle primitives. Pad rotations relative to the footprint
+must be multiples of 90 degrees for mask qualification. Custom pads need an
+explicit rect anchor, or a circle anchor with equal size axes. Mask text, arcs, curves,
+non-axis circle radii, trapezoid deltas and otherwise unproved geometry are
+refused by this bounded route. These restrictions apply when proving a new mask
+graphic; pad-only declarations retain their previous qualification. Opposite-side
+or distant mask openings, copper/paste/adhesive graphics, zones, models and
+embedded files remain refused.
 The feature remains in the native board inventory and Gerbers, and appears in
 neither BOM nor CPL. KiCad's native position export must also omit it.
 `details.copper_features` lists the captured declaration. The manifest schema
