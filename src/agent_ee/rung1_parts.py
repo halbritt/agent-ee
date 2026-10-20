@@ -48,6 +48,9 @@ def fields_for_rung(document, qualified, params):
     from .probe_features import is_probe
     if any(is_probe(p) for p in document['parts']):
         raise ValueError('rung-1 RC producer does not support bare_copper_probe features')
+    from .copper_features import require_purchased
+    for part in document['parts']:
+        require_purchased(part, 'rung-1 RC producer')
     selections = {p['id']: p for p in qualified['selection']['parts']}
     fields, records = {}, {}
     for part in document['parts']:

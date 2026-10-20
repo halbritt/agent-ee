@@ -88,6 +88,8 @@ def acquisition_source(root, ref, *, context):
 def datasheet(root, part):
     from .datasheet_facts import load_acquisition
     from .parts_manifest import _read_blob, read_captured
+    from .copper_features import require_purchased
+    require_purchased(part, 'datasheet binding')
     sheet = part['datasheet']
     if sheet['status'] != 'captured':
         raise ValueError('binding fill requires captured datasheet: ' + part['id'])

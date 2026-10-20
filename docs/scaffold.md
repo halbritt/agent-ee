@@ -631,3 +631,9 @@ with native DRC and repeated-byte identity. These are mechanics evidence, not
 physical assembly approval of the actual pod parts. Ordinary warnings for
 1206/1210 passives, ICs, SOT-323 and test points remain DRC findings; the dense
 reference policy is deliberately unchanged.
+
+## Copper feature generation boundary
+
+Fixed-footprint content generation refuses a selected `copper_feature` with a
+typed `ValueError` before emitting board content. Copper has no purchased MPN;
+this scaffold stage does not synthesize its value, flags or binding fields.

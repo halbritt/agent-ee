@@ -1653,3 +1653,15 @@ It freezes the pinned source note along with the PDF and records the acquisition
 method and unknown redirect provenance in its report and details. A verified
 citation proves text occurrence only; it supplies no redirect-provenance or
 release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
+
+## Copper feature consumers (AGENTEE-315)
+
+AGENTEE-315 cross-checks `fab_export` and `fab_package` copper declarations
+against every parts manifest using the same native netlist. Exact copper
+reference equality and earlier passing, source-bound `parts_subset` evidence
+are required when both contracts declare copper. Interval catalog mappings
+exclude copper; fixed-footprint scaffolding and purchased-identity helpers
+refuse copper with typed errors. See [approved parts](approved-parts.md#declared-on-board-copper-features).
+
+Pin contracts retain copper instances as unsupported electrical evidence, with
+an explicit reason instead of reading manufacturer or MPN fields.

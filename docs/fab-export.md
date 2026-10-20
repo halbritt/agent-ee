@@ -461,3 +461,14 @@ Historical scopes without a counted fab producer keep their earlier behavior.
 With `probe_manifest`, [bare copper probe features](probe-features.md) qualify against an immutable captured parts/1 declaration and the preceding native netlist. Saved board geometry, native flags and required presence are checked before BOM/CPL exclusion. `board_non_dnp` still includes probes; the native position inventory excludes these exact feature references. Copper and mask Gerbers retain their pads, and the fab manifest adds qualified `probe_features` records. Undeclared markers and ordinary non-DNP exclusions remain refused.
 
 Probe admission also requires an earlier, passing `parts_subset` check using the same manifest and native netlist. Capabilities enforce that ordering; runtime consumers verify its sealed report and exact source hashes.
+
+## Copper membership agreement
+
+When a scope also declares parts membership (`parts_subset`) against the same
+`netlist_check`, the parts manifest's copper references must equal this check's
+explicit `copper_features` set. This applies to `fab_package` through the shared
+export path. Copper manifests must be captured and immutable; their earlier
+membership checks must pass with complete coverage and evidence bound to this
+candidate, the exact manifest and the native XML. A missing or extra declaration,
+a forward prerequisite, or failed or stale membership evidence refuses export.
+Standalone fab scopes continue to qualify their explicit declarations directly.

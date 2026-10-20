@@ -71,6 +71,114 @@ class CopperTests(unittest.TestCase):
         mutate(document, graph)
         return compare_inventory(document, graph, [], copper={'R1': record})
 
+    def test_consumers_refuse_purchased_identity_for_copper(self):
+        from agent_ee.datasheet_selection import datasheet
+        from agent_ee.passive_ratings import derive
+        from agent_ee.rung1_parts import fields_for_rung
+        part = self.document['parts'][0]
+        params = dict(header=dict(assembly='assembled', ref='J1'),
+                      resistor=dict(ref='R1'), capacitor=dict(ref='C1'))
+        for consume in (lambda: datasheet(self.root, part),
+                        lambda: derive(self.root, part, 'R'),
+                        lambda: fields_for_rung(self.document, qualify_manifest(self.document, self.root), params)):
+            with self.subTest(consumer=consume), self.assertRaisesRegex(ValueError, 'copper_feature'):
+                consume()
+
+    def test_scaffold_fixed_copper_refuses_before_generation(self):
+        from agent_ee.scaffold import write_envelope_content
+        from agent_ee.storage import read_json
+        envelope = read_json(Path(__file__).resolve().parents[1] / 'fixtures/board-envelope/rc.envelope.json')
+        envelope['fixed_footprints'] = [dict(reference='R1', side='front', edge='left', position_mm=10, inset_mm=2,
+            rotation_deg=0, insertion='from_top', tolerance_mm=0)]
+        write_json(self.root / 'envelope.json', envelope)
+        write_json(self.root / 'parts.json', self.document)
+        from agent_ee.scaffold import board
+        from agent_ee.board_envelope import validate
+        pcb = board(validate((self.root / 'envelope.json').read_bytes()), 'owned-copper-scaffold')
+        (self.root / 'design.kicad_pcb').write_bytes(pcb)
+        write_json(self.root / 'intent.json', dict(schema='agent-ee.connectivity-intent/1',
+            libraries=[dict(name='Owned', path='Owned.kicad_sym', sha256=digest(self.root / 'Owned.kicad_sym'))],
+            components=[dict(id='resistor', reference='R1', lib_id='Owned:R', footprint='Owned:R2',
+                             value='copper jumper', units=[1])], nets=[],
+            no_connects=[dict(component='resistor', pin=dict(number=p)) for p in ('1', '2')]))
+        write_json(self.root / 'layout.json', dict(schema='agent-ee.schematic-layout/1',
+            namespace='6506234f-1932-45c7-a667-380bc1f26ea8', project='design', transforms={}))
+        with self.assertRaisesRegex(ValueError, 'fixed-footprint scaffold.*copper_feature'):
+            write_envelope_content(self.root, 'envelope.json', 'parts.json', 'design.kicad_pcb',
+                                   intent_rel='intent.json', layout_rel='layout.json')
+        self.assertEqual((self.root / 'design.kicad_pcb').read_bytes(), pcb)
+
+    def test_fab_parts_declarations_must_agree_in_both_directions(self):
+        write_json(self.root / 'parts.json', self.document)
+        files = {'parts.json': digest(self.root / 'parts.json')}
+        scope = dict(checks=[dict(id='parts', kind='parts_subset',
+            params=dict(manifest='parts.json', netlist_check='netlist'))], mutable_inputs=[])
+        params = dict(netlist_check='netlist', copper_features=['R1'])
+        rows = cf.fab_parts_manifests(params, scope, files, self.root)
+        self.assertEqual(rows[0]['references'], ['R1'])
+        for refs in ([], ['JP2'], ['R1', 'JP2']):
+            changed = dict(netlist_check='netlist')
+            if refs:
+                changed['copper_features'] = refs
+            with self.subTest(refs=refs), self.assertRaisesRegex(ValueError, 'fab/parts copper declarations differ'):
+                cf.fab_parts_manifests(changed, scope, files, self.root)
+        other = copy.deepcopy(scope)
+        other['checks'][0]['params']['netlist_check'] = 'different-netlist'
+        self.assertEqual(cf.fab_parts_manifests(params, other, files, self.root), [])
+        purchased_root = self.root / 'purchased'
+        purchased_root.mkdir()
+        purchased = captured_fixture(self, purchased_root)
+        write_json(purchased_root / 'parts.json', purchased)
+        purchased_files = {'parts.json': digest(purchased_root / 'parts.json')}
+        self.assertEqual(cf.fab_parts_manifests(dict(netlist_check='netlist'), scope,
+                                              purchased_files, purchased_root), [])
+        with self.assertRaisesRegex(ValueError, 'fab/parts copper declarations differ'):
+            cf.fab_parts_manifests(params, scope, purchased_files, purchased_root)
+        scope['mutable_inputs'] = ['parts.json']
+        with self.assertRaisesRegex(ValueError, 'captured and immutable'):
+            cf.fab_parts_manifests(params, scope, files, self.root)
+        scope['mutable_inputs'] = []
+        (self.root / 'parts.json').write_bytes((self.root / 'parts.json').read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            cf.fab_parts_manifests(params, scope, files, self.root)
+
+    def test_fab_capabilities_bind_copper_membership_for_export_and_package(self):
+        from agent_ee.capabilities import describe_check
+        write_json(self.root / 'parts.json', self.document)
+        for rel in ('design.kicad_pcb', 'design.kicad_sch'):
+            (self.root / rel).write_text('original fixture capability input')
+        files = {p.relative_to(self.root).as_posix(): digest(p)
+                 for p in self.root.rglob('*') if p.is_file()}
+        for kind in ('fab_export', 'fab_package'):
+            netlist = dict(id='netlist', kind='netlist')
+            parts = dict(id='parts', kind='parts_subset', params=dict(manifest='parts.json', netlist_check='netlist'))
+            fab = dict(id='fab', kind=kind, params=dict(netlist_check='netlist', copper_features=['R1']))
+            scope = dict(checks=[netlist, parts, dict(id='geometry', kind='geometry'), fab],
+                         board='design.kicad_pcb', schematic='design.kicad_sch', mutable_inputs=[])
+            def describe():
+                return describe_check(fab, check_specs=scope['checks'], files=files, scope=scope, inputs=self.root)
+            descriptor = describe()
+            self.assertEqual(descriptor['status'], 'supported', descriptor)
+            self.assertIn(dict(check_id='parts', kind='parts_subset'), descriptor['prerequisites'])
+            self.assertIn('parts.json', descriptor['immutable_inputs'])
+            fab['params'].pop('copper_features')
+            descriptor = describe()
+            self.assertEqual(descriptor['status'], 'unsupported', descriptor)
+            self.assertIn('fab/parts copper declarations differ', descriptor['unsupported_reasons'][0]['message'])
+            fab['params']['copper_features'] = ['R1']
+            scope['checks'].remove(parts)
+            scope['checks'].append(parts)
+            descriptor = describe()
+            self.assertEqual(descriptor['status'], 'unsupported', descriptor)
+
+    def test_pin_contracts_copper_identity_is_explicitly_unsupported(self):
+        from agent_ee.pin_contracts import _bindings
+        _, graph = comparison_fixture()
+        rows, coverage = _bindings(self.document, {}, graph, {}, {})
+        self.assertEqual(rows, [])
+        self.assertEqual(coverage[0]['status'], 'unsupported')
+        self.assertEqual(coverage[0]['reason'], 'copper feature is not purchased-part electrical evidence')
+
     def test_native_membership_and_refusals(self):
         self.assertEqual(self.compare()['outcome'], 'pass')
         for key, value in [('in_bom', True), ('on_board', False), ('populated', False),
@@ -131,6 +239,53 @@ class CopperTests(unittest.TestCase):
         run, result = helper.run_case(document=self.document)
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
         verify(run)
+        import time
+        from agent_ee.checks import Ctx, CheckError
+        manifest = read_json(run / 'candidate.json')
+        params = dict(netlist_check='netlist', copper_features=['R1'])
+        spec = dict(id='fab', kind='fab_export', params=params)
+        ctx = Ctx(run, manifest, spec, time.monotonic() + 120)
+        rows = cf.fab_membership(ctx, params)
+        self.assertEqual(rows[0]['references'], ['R1'])
+        self.assertIn('work/parts/parts-subset.json', ctx.result['evidence'])
+        self.assertIn('work/netlist/design.xml', ctx.result['evidence'])
+        membership = run / 'checks/parts.json'
+        original = membership.read_bytes()
+        changed_result = read_json(membership)
+        changed_result['outcome'] = 'defect'
+        write_json(membership, changed_result)
+        with self.assertRaisesRegex(ValueError, 'passing, source-bound'):
+            cf.fab_membership(ctx, params)
+        membership.write_bytes(original)
+        report_path = run / 'work/parts/parts-subset.json'
+        original_report = report_path.read_bytes()
+        changed_report = read_json(report_path)
+        changed_report['native_xml_sha256'] = '0' * 64
+        write_json(report_path, changed_report)
+        with self.assertRaisesRegex(ValueError, 'passing, source-bound'):
+            cf.fab_membership(ctx, params)
+        report_path.write_bytes(original_report)
+        membership.unlink()
+        with self.assertRaises(CheckError):
+            cf.fab_membership(ctx, params)
+        membership.write_bytes(original)
+        from agent_ee.cli import run_review
+        scope = read_json(self.root / 'scope.json')
+        scope['schema'] = 'agent-ee.scope/2'
+        for requirement in scope['baseline']['requirements']:
+            requirement.pop('intent', None)
+        scope['checks'].append(dict(id='fab', kind='fab_export',
+            params=dict(netlist_check='netlist', copper_features=['JP2'])))
+        scope['baseline']['requirements'][0]['checks'].append('fab')
+        scope_path = self.root / 'scope-fab-mismatch.json'
+        write_json(scope_path, scope)
+        mismatch_run = self.root / 'run-fab-mismatch'
+        run_review(scope_path, mismatch_run, 120, checks_only=True)
+        self.assertTrue((mismatch_run / 'checks/fab.json').exists(), read_json(mismatch_run / 'result.json').get('error'))
+        refused = read_json(mismatch_run / 'checks/fab.json')
+        self.assertEqual((refused['execution'], refused['outcome']), ('malformed', 'unknown'))
+        self.assertIn('fab/parts copper declarations differ', refused['summary'])
+        self.assertFalse((mismatch_run / 'work/fab/fab').exists())
         # Change only embedded CAD, preserving the native selected identity.
         helper.schematic = lambda variant: base.replace('(property "Value" "R"', '(property "Value" "Changed source value"', 1)
         _, changed = helper.run_case(document=self.document)

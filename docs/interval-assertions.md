@@ -168,3 +168,11 @@ Run the focused tests with:
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_interval_assertions -v
 ```
+
+## Copper operands
+
+Copper features (`kind: "copper_feature"`) and bare copper probes are excluded
+from catalog part IDs and LCSC mappings. Referencing either as a catalog operand
+is refused. A parts manifest with `catalog: null` is refused with
+`parts manifest has no catalog snapshot for interval assertions`; named-part
+manifests do not implicitly acquire a catalog pin.

@@ -343,3 +343,22 @@ Owned native tests exercise sandboxed export, coordinator evidence and public
 verification. A pinned pod replay can qualify JP1–JP5 while still refusing the
 complete candidate for another undeclared feature; that is incomplete candidate
 coverage, not a passing full-pod result.
+
+AGENTEE-315: interval assertions exclude copper features from catalog part IDs
+and LCSC lookup tables, just as they exclude probes. A copper ID cannot supply
+a catalog operand. A manifest without a catalog snapshot receives an explicit
+refusal. Fixed-footprint scaffold generation, the Rung-1 RC producer, datasheet
+binding and passive rating derivation refuse `copper_feature` with `ValueError`
+before accessing purchased identity fields; these paths do not generate copper.
+
+When a `fab_export` or `fab_package` scope also declares `parts_subset` for the
+same native netlist, every such manifest must name exactly the fab
+`copper_features` references. Missing and extra declarations in either direction
+are refused. Matching copper requires an earlier parts check with passing,
+complete, candidate-bound evidence for the exact manifest and native XML bytes.
+The manifest remains immutable and both prerequisite artifacts are retained in
+the fab evidence. Standalone fab scopes retain their existing explicit copper
+qualification contract.
+
+Pin contracts retain copper instances as unsupported electrical evidence, with
+an explicit reason instead of reading manufacturer or MPN fields.

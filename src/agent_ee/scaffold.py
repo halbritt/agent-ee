@@ -233,6 +233,11 @@ def write_envelope_content(inputs, envelope_rel, parts_rel, board_rel, *, intent
     raw = read_captured(inputs, envelope_rel)
     record = board_envelope.validate(raw)
     document = load_manifest(inputs, parts_rel)
+    from .copper_features import require_purchased
+    fixed_refs = {item['reference'] for item in record['fixed_footprints']}
+    for part in document['parts']:
+        if any(s['reference'] in fixed_refs for s in part['instances']):
+            require_purchased(part, 'fixed-footprint scaffold')
     qualification = qualify_manifest(document, inputs)
     retention = None
     if captured_rule_areas_rel is not None:

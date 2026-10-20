@@ -200,7 +200,9 @@ exclusion through both fab gates, with manufacturer/distributor binding detectio
 and typed refusal of malformed property values (AGENTEE-289, AGENTEE-290).
 The [parts manifest](docs/approved-parts.md#declared-on-board-copper-features)
 also admits source-bound copper jumper declarations with exact native pins, nets
-and population flags (AGENTEE-305).
+and population flags (AGENTEE-305). Fab checks compare those declarations with
+their explicit copper reference list; catalog interval checks exclude copper,
+and unsupported purchased-part consumers return typed refusals (AGENTEE-315).
 
 An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it

@@ -189,6 +189,8 @@ def _fact_sources(root, part, kind, facts, verified):
 
 def derive(root, part, kind, *, catalog=True, facts=(), verified=None):
     """Return {'fields', 'record'} or {'missing': reason}; contradictions raise with exact source ids."""
+    from .copper_features import require_purchased
+    require_purchased(part, 'passive ratings')
     if kind not in CATALOG_ATTRIBUTES:
         raise ValueError('passive rating kind must be R or C')
     sources, reasons = [], []

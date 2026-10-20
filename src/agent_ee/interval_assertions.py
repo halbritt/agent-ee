@@ -25,6 +25,8 @@ import sqlite3
 from .candidate import safe_relative
 from .catalog import UNITS, decimal_number, exact_fields, load_catalog, nonempty, quantity, strict_json
 from .storage import write_json
+from .copper_features import is_copper
+from .probe_features import is_probe
 
 SCHEMA = 'agent-ee.interval-assertions/1'
 RESULT_SCHEMA = 'agent-ee.interval-assertion-result/1'
@@ -403,10 +405,12 @@ def capability(params, scope, files, inputs, cid):
     if 'parts_manifest' in params:
         from .parts_manifest import load_manifest
         manifest = load_manifest(inputs, params['parts_manifest'])
+        if manifest['catalog'] is None:
+            raise ValueError('parts manifest has no catalog snapshot for interval assertions')
         if (manifest['catalog']['snapshot'] != params['snapshot']
                 or manifest['catalog']['manifest_sha256'] != params['manifest_sha256']):
             raise ValueError('parts manifest pins a different catalog snapshot')
-        parts = {part['id'] for part in manifest['parts'] if part.get('kind') != 'bare_copper_probe'}
+        parts = {part['id'] for part in manifest['parts'] if not is_probe(part) and not is_copper(part)}
     for name, parameter in compiled['parameters'].items():
         if parameter['source'] == 'catalog' and 'snapshot' not in params:
             raise ValueError(f'parameter {name} needs a pinned catalog snapshot')
@@ -583,6 +587,8 @@ def evaluate_inputs(root, params):
         if 'parts_manifest' in params:
             from .parts_manifest import load_manifest, read_captured
             manifest = load_manifest(root, params['parts_manifest'])
+            if manifest['catalog'] is None:
+                raise ValueError('parts manifest has no catalog snapshot for interval assertions')
             if (manifest['catalog']['snapshot'] != params['snapshot']
                     or manifest['catalog']['manifest_sha256'] != params['manifest_sha256']
                     or manifest['catalog']['database_sha256'] != catalog['database_sha256']):
@@ -590,7 +596,7 @@ def evaluate_inputs(root, params):
             parts_input = {'path': params['parts_manifest'],
                            'sha256': hashlib.sha256(read_captured(root, params['parts_manifest'])).hexdigest()}
             parts = {'input': parts_input, 'lcsc': {part['id']: part['lcsc'] for part in manifest['parts']
-                                                 if part.get('kind') != 'bare_copper_probe'}}
+                                                 if not is_probe(part) and not is_copper(part)}}
             report['inputs']['parts_manifest'] = parts_input
         for name, parameter in compiled['parameters'].items():
             if parameter['source'] == 'catalog' and rows is None:
