@@ -53,7 +53,16 @@ polygons, rectangles and circles may have zero width; unfilled primitives need
 positive width. Each pad is bounded to 128 primitives and each polygon to
 1024 vertices. Primitive coordinates are limited to +/-1000 mm and widths to
 1000 mm; the complete local copper extent, including circle radius and stroke
-expansion, must also fit within +/-1000 mm (AGENTEE-304). Larger geometry
+expansion, must also fit within +/-1000 mm (AGENTEE-304). In addition, the
+rotation-invariant copper reach from the footprint origin must be at most
+1000 mm: the ceiling of the pad translation magnitude plus each primitive's
+radial reach plus half its width. Rectangle reach includes all four corners;
+line and polygon reach includes every vertex; circle reach is its centre
+magnitude plus radius. Magnitudes use integer square-root ceilings and the
+width comparison preserves half-nanometre expansion. This conservative bound
+applies at every rotation, including zero. Excess reach refuses with
+`library_coverage`: "custom-pad copper reach exceeds 1000 mm from footprint origin".
+Larger geometry
 refuses before native loading because KiCad can silently drop or saturate
 overflowing primitives. Unsupported options, arcs, padstacks, thermal connections and
 inherited zone-connect behavior refuse coverage. Polygon contours must be simple.

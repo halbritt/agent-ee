@@ -197,10 +197,58 @@ class CustomPadIndexTests(unittest.TestCase):
                 self.assertIn('1000 mm', result['findings'][0]['message'])
                 execute.assert_not_called()
 
+    def test_rotation_invariant_reach_refuses_before_native_loading(self):
+        square = '(gr_rect (start -1000 -1000) (end 1000 1000) (width 0) (fill yes))'
+        rect = '(gr_rect (start -1 -1) (end 500 1) (width 0) (fill yes))'
+        cases = [
+            (square, '0 0 10'),
+            (square, '0 0 45'),
+            (square.replace('1000', '760'), '0 0 45'),
+            (rect, '1500 0'),
+            (rect, '-1500 0'),
+            # The farthest rectangle corner is neither start nor end.
+            ('(gr_rect (start 600 0) (end 0 900) (width 0) (fill yes))', '0 0'),
+            ('(gr_poly (pts (xy 0 0) (xy 800 800) (xy 0 1)) (width 0) (fill yes))', '0 0'),
+            ('(gr_line (start 0 0) (end 800 800) (width 0.2))', '0 0'),
+            ('(gr_circle (center 700 700) (end 720 700) (width 0) (fill yes))', '0 0'),
+            # Integer ceiling must not round a diagonal or half-nm stroke down.
+            ('(gr_line (start 0 0) (end 999.999999 0.000001) (width 0.000001))', '0 0'),
+            ('(gr_line (start 0 0) (end 999 0) (width 0.000001))', '1 0'),
+            ('(gr_circle (center 0 0) (end 999 0) (width 0) (fill yes))', '1 0.000001'),
+        ]
+        for primitive, at in cases:
+            with self.subTest(primitive=primitive, at=at), patch('agent_ee.executor.execute') as execute:
+                result = indexed(custom(primitive, at=at))
+                self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                 ('failed', 'unknown', 'missing'))
+                self.assertEqual(result['footprints'], [])
+                self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+                self.assertIn('custom-pad copper reach exceeds 1000 mm from footprint origin',
+                              result['findings'][0]['message'])
+                execute.assert_not_called()
+
+    def test_bounded_rotated_translated_reach_keeps_exact_native_extents(self):
+        cases = [
+            ('(gr_rect (start -700 -700) (end 700 700) (width 0) (fill yes))', '0 0 45',
+             [-989949494, -989949494, 989949494, 989949494]),
+            ('(gr_rect (start -500 -500) (end 500 500) (width 0) (fill yes))', '0 0 45',
+             [-707106781, -707106781, 707106781, 707106781]),
+            ('(gr_rect (start -999 -1) (end 999 1) (width 0) (fill yes))', '0 0 33.3',
+             [-835520577, -549309603, 835520577, 549309603]),
+            ('(gr_rect (start -1 -1) (end 600 1) (width 0) (fill yes))', '300 0 45',
+             [298585786, -424971175, 724971175, 1414214]),
+        ]
+        for primitive, at, bbox in cases:
+            with self.subTest(primitive=primitive, at=at):
+                result = indexed(custom(primitive, at=at))
+                self.assertEqual(result['coverage'], 'complete', result['findings'])
+                pad = next(p for p in result['footprints'][0]['pads'] if p['number'] == '1')
+                self.assertEqual(pad['native_geometry']['bbox_nm'], bbox)
+
     def test_primitive_magnitude_boundary_is_inclusive(self):
         cases = [
-            ('(gr_rect (start -1000 -1) (end 1000 1) (width 0) (fill yes))',
-             [-1000000000, -1000000, 1000000000, 1000000]),
+            ('(gr_line (start -500 0) (end 500 0) (width 1000))',
+             [-1000000000, -500000000, 1000000000, 500000000]),
             ('(gr_line (start -1 0) (end 1 0) (width 1000))',
              [-501000000, -500000000, 501000000, 500000000]),
             ('(gr_circle (center 0 0) (end 1000 0) (width 0) (fill yes))',

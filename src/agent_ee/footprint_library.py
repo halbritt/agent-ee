@@ -238,9 +238,15 @@ def _custom_pad(pad):
     from .symbol_library import children, field, nanometres, LibraryError
     from .board_envelope import simple_polygon
     from math import isqrt
-    # Stay below KiCad's signed 32-bit nanometre geometry range, including
-    # circle radii and stroke expansion, before the native loader can drop copper.
+    # Native geometry can silently drop copper at large coordinates. Bound
+    # both local extents and rotation-invariant reach before native loading.
     limit_nm = 1_000_000_000
+
+    def ceil_hypot(point):
+        squared = sum(v * v for v in point)
+        root = isqrt(squared)
+        return root + (root * root < squared)
+
     allowed = {'at', 'size', 'layers', 'uuid', 'options', 'primitives',
                'zone_connect', 'thermal_bridge_angle'}
     nodes = pad[4:]
@@ -262,6 +268,10 @@ def _custom_pad(pad):
         raise LibraryError('unsupported custom-pad clearance/anchor')
     if children(pad, 'thermal_bridge_angle'):
         nanometres(field(pad, 'thermal_bridge_angle', 1)[0])
+    at = children(pad, 'at')
+    if len(at) != 1 or len(at[0]) not in (3, 4):
+        raise LibraryError('pad requires x/y/optional rotation')
+    origin_reach = ceil_hypot(tuple(map(nanometres, at[0][1:3])))
     primitives = children(pad, 'primitives')
     if len(primitives) != 1 or not 1 <= len(primitives[0][1:]) <= 128:
         raise LibraryError('custom pad requires 1..128 supported primitives')
@@ -305,14 +315,18 @@ def _custom_pad(pad):
         if any(abs(v) > limit_nm for point in points for v in point):
             raise LibraryError('custom-pad primitive coordinate exceeds +/-1000 mm')
         if kind == 'gr_circle':
-            squared = sum((a - b) ** 2 for a, b in zip(start, end))
-            radius = isqrt(squared)
-            radius += radius * radius < squared
+            radius = ceil_hypot(tuple(a - b for a, b in zip(start, end)))
             extent = max(abs(v) + radius for v in start)
+            reach = ceil_hypot(start) + radius
         else:
             extent = max(abs(v) for point in points for v in point)
+            corners = [(x, y) for x in (start[0], end[0]) for y in (start[1], end[1])] if kind == 'gr_rect' else points
+            reach = max(map(ceil_hypot, corners))
         if 2 * extent + width > 2 * limit_nm:
             raise LibraryError('custom-pad primitive copper extent exceeds +/-1000 mm')
+        # Double the comparison to preserve half-nanometre stroke expansion.
+        if 2 * (origin_reach + reach) + width > 2 * limit_nm:
+            raise LibraryError('custom-pad copper reach exceeds 1000 mm from footprint origin')
 
 
 def _native_custom_geometry(data, footprint):

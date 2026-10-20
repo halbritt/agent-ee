@@ -181,7 +181,9 @@ The [footprint index](docs/footprint-libraries.md#native-custom-pads-agentee-300
 qualifies bounded solid-connected custom SMD pads through sandboxed pcbnew loads,
 retaining native copper extents and electrical numbers for forward annotation.
 Primitive coordinates and local copper extents are limited to +/-1000 mm;
-widths are limited to 1000 mm. The native merged pad must have exactly one
+widths are limited to 1000 mm. Rotation-invariant copper reach, including pad
+translation and half the stroke width, must stay within 1000 mm of the footprint
+origin. The native merged pad must have exactly one
 copper outline, including its anchor (AGENTEE-304). Unsupported custom-pad constructs
 remain unknown coverage (AGENTEE-300).
 
