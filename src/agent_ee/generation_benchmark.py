@@ -11,7 +11,7 @@ from .baseline import compile_baseline, freeze_evidence, verify_evidence
 from .candidate import capture, safe_relative, verify_snapshot
 from .catalog import exact_fields, nonempty, strict_json
 from .design_diff import read_side, summarize
-from .executor import SANDBOX_PATH, execute
+from .executor import RECORDS, SANDBOX_PATH, execute
 from .findings import safe_id
 from .storage import digest, fingerprint, identity, json_bytes, write_json
 
@@ -76,13 +76,15 @@ def pinned_task(root, *, expect_pins=None):
         raise ValueError('expected unique deliverables')
     for path in deliverables:
         safe_relative(path)
-        if path in ('candidate.json', 'baseline.json', 'scope.json') or path.startswith(('checks/', 'work/')):
+        if path in ('candidate.json', 'baseline.json', 'scope.json', '.generation') or path.startswith(('checks/', 'work/', '.generation/')):
             raise ValueError('reserved deliverable path')
     scope = task['scope']
     if scope['schema'] not in ('agent-ee.scope/2', 'agent-ee.scope/3') or scope['inputs']:
         raise ValueError('benchmark scope must use scope/2 or scope/3 and empty inputs')
     # All immutable inputs live under evaluator/. The writer supplies only declared files.
     evaluator = {k.removeprefix('evaluator/'): v for k, v in files.items() if k.startswith('evaluator/')}
+    if any(p == '.generation' or p.startswith('.generation/') for p in evaluator):
+        raise ValueError('reserved generation evidence path')
     if set(evaluator) & set(deliverables):
         raise ValueError('deliverable overlaps evaluator input')
     for key in ('schematic', 'board'):
@@ -190,7 +192,7 @@ def publish_report(store, report):
 
 
 def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', timeout=120,
-             expect_pins=None):
+             expect_pins=None, execution_work=None):
     """Evaluate one retained output; generator result.json claims are never read."""
     from .checks import run_checks
     if type(timeout) is not int or timeout < 1:
@@ -206,6 +208,19 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
     selected = {k: observed[k] for k in task['deliverables'] if k in observed}
     environment = evaluator_identity()
     trial.mkdir(parents=True, exist_ok=False)
+    generation_records = None
+    if execution_work is not None:
+        generation = trial / 'generation'
+        generation.mkdir()
+        for name in RECORDS:
+            source = Path(execution_work) / name
+            if source.is_symlink() or not source.is_file() or source.stat().st_nlink != 1:
+                raise ValueError('non-ordinary executor record')
+            shutil.copyfile(source, generation / name)
+        generation_records = tree_files(generation)
+        generation_execution = executor_outcome(generation)
+        if output_error:
+            generation_execution = 'failed'
     shutil.copytree(task_root, trial / 'task')
     if pinned_task(trial / 'task')['files'] != task['files']:
         raise ValueError('task changed during capture')
@@ -214,6 +229,8 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
     if not missing and output_error is None:
         inputs = trial / 'evaluation-inputs'
         shutil.copytree(task_root / 'evaluator', inputs)
+        if generation_records is not None:
+            shutil.copytree(trial / 'generation', inputs / '.generation')
         for rel in task['deliverables']:
             dest = inputs / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -250,6 +267,8 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
               'evaluation': {'capture_error': capture_error,
                              'checks': [{k: c[k] for k in ('id', 'kind', 'execution', 'outcome')} for c in checks]},
               'scoring': score(task['rules'], checks, missing)}
+    if generation_records is not None:
+        report['binding']['generation_records'] = generation_records
     report['result'] = combined_result(generation_execution, report['scoring'])
     path = publish_report(store, report)
     receipt = {'schema': 'agent-ee.generation-evaluation-record/1',
@@ -261,6 +280,24 @@ def evaluate(task_root, outputs, trial, store, *, generation_execution='ok', tim
     write_json(records / (identity(str(trial.resolve())) + '.json'),
                {'trial': str(trial.resolve()), **receipt})
     return path
+
+
+def executor_outcome(root):
+    """Derive generation status from retained executor bytes, never a report claim."""
+    root = Path(root)
+    record = strict_json((root / 'execution.json').read_bytes())
+    for stream in ('stdout', 'stderr', 'console'):
+        if record[stream + '_sha256'] != digest(root / (stream + '.log')):
+            raise ValueError('executor log digest mismatch')
+    if (root / 'console.log').read_bytes() != ((root / 'stdout.log').read_bytes() +
+                                               (root / 'stderr.log').read_bytes()):
+        raise ValueError('executor console differs from streams')
+    status = record['execution']
+    if status not in ('ok', 'failed', 'timeout', 'unavailable', 'not_run', 'interrupted'):
+        raise ValueError('invalid executor execution')
+    if status == 'ok' and (type(record['exit_code']) is not int or record['exit_code'] != 0):
+        raise ValueError('executor success requires zero exit code')
+    return 'ok' if status == 'ok' else 'failed'
 
 
 def combined_result(generation_execution, scoring):
@@ -301,7 +338,7 @@ def run_task(task_root, generator, scratch, store, *, attempts=3, timeout=120, e
                                         '/candidate/prompt.md', '/work/output'], timeout=timeout)
         path = evaluate(task_root, work / 'output', scratch / f'evaluation-{index + 1}', store,
                         generation_execution='ok' if record['execution'] == 'ok' else 'failed', timeout=timeout,
-                        expect_pins=task['files']['pins.json'])
+                        expect_pins=task['files']['pins.json'], execution_work=work)
         reports.append(path)
         # Repair feedback reveals only check status, never evaluator rules or criterion text.
         report = strict_json(path.read_bytes())
@@ -352,24 +389,90 @@ def average_scores(scores):
             'lower': lower, 'upper': upper}
 
 
-def recorded_report(path):
+def recorded_evaluation(path, *, expected=None):
     path = Path(path).resolve()
     report = strict_json(path.read_bytes())
     if (report.get('schema') != 'agent-ee.generation-evaluation/1' or
             'binding' not in report or path.name != 'report.json' or
             path.parent.name != identity(report['binding'])):
         raise ValueError('expected identity-bound generation evaluation report')
-    expected = {'schema': 'agent-ee.generation-evaluation-record/1',
+    expected_receipt = {'schema': 'agent-ee.generation-evaluation-record/1',
                 'report': str(path), 'report_sha256': digest(path)}
     for record in sorted((path.parent / 'trials').glob('*.json')):
         receipt = strict_json(record.read_bytes())
         trial = Path(receipt['trial'])
-        if ({k: v for k, v in receipt.items() if k != 'trial'} == expected and
+        if ({k: v for k, v in receipt.items() if k != 'trial'} == expected_receipt and
                 (trial / 'evaluation.json').is_file() and
-                strict_json((trial / 'evaluation.json').read_bytes()) == expected):
+                strict_json((trial / 'evaluation.json').read_bytes()) == expected_receipt):
+            if expected is not None and series_entry(path, report, trial) != expected:
+                raise ValueError('external series evidence digest mismatch')
             replay_report(trial, report)
-            return report
+            return report, trial
     raise ValueError('report is not bound to a recorded evaluation trial')
+
+
+def recorded_report(path):
+    return recorded_evaluation(path)[0]
+
+
+def series_entry(path, report, trial):
+    seal = trial / 'run/work/verification/evidence.json'
+    return {'binding_id': Path(path).parent.name, 'report_sha256': digest(path),
+            'task_pins': report['binding']['task_files']['pins.json'],
+            'evidence_sha256': digest(seal) if seal.exists() else None,
+            'generation_files': tree_files(trial / 'generation')
+            if 'generation_records' in report['binding'] else {}}
+
+
+def freeze_series(paths, task_pins):
+    """Freeze trusted evaluations; the returned manifest and digest need external custody."""
+    if not isinstance(task_pins, dict):
+        raise ValueError('external task pins must be a task ID map')
+    entries, tasks = [], set()
+    for path in paths:
+        report, trial = recorded_evaluation(path)
+        task = report['task']
+        if task in tasks:
+            raise ValueError('freeze requires one selected attempt per task')
+        tasks.add(task)
+        if task_pins.get(task) != report['binding']['task_files']['pins.json']:
+            raise ValueError('external task pins required at freeze boundary')
+        if 'generation_records' not in report['binding']:
+            raise ValueError('freeze requires retained executor records')
+        entries.append(series_entry(path, report, trial))
+    if not tasks or tasks != set(task_pins):
+        raise ValueError('external task pins must cover exactly the frozen tasks')
+    return {'schema': 'agent-ee.generation-series/1',
+            'evaluations': sorted(entries, key=lambda e: e['binding_id'])}
+
+
+def expected_series(paths, manifest, expect_pins):
+    if (manifest is None) != (expect_pins is None):
+        raise ValueError('external series requires both manifest and expect-pins')
+    if manifest is None:
+        return None
+    manifest = Path(manifest)
+    if manifest.is_symlink() or digest(manifest) != expect_pins:
+        raise ValueError('external series manifest digest mismatch')
+    series = strict_json(manifest.read_bytes())
+    exact_fields(series, ('schema', 'evaluations'))
+    if series['schema'] != 'agent-ee.generation-series/1':
+        raise ValueError('unknown external series schema')
+    entries = series['evaluations']
+    if not isinstance(entries, list) or not entries:
+        raise ValueError('empty external series')
+    expected = {}
+    for entry in entries:
+        exact_fields(entry, ('binding_id', 'report_sha256', 'task_pins', 'evidence_sha256', 'generation_files'))
+        if entry['binding_id'] in expected or not entry['generation_files']:
+            raise ValueError('duplicate or unauthenticated external series entry')
+        expected[entry['binding_id']] = entry
+    if sorted(Path(p).parent.name for p in paths) != sorted(expected):
+        raise ValueError('external series selection mismatch')
+    for path in paths:
+        if digest(path) != expected[Path(path).parent.name]['report_sha256']:
+            raise ValueError('external series report digest mismatch')
+    return expected
 
 
 def replay_report(trial, report):
@@ -387,6 +490,14 @@ def replay_report(trial, report):
         raise ValueError('invalid generation outcome')
     if output_error is not None and (execution != 'failed' or selected):
         raise ValueError('unsafe outputs cannot provide evidence')
+    generation_records = binding.get('generation_records')
+    if generation_records is not None:
+        if (set(generation_records) != set(RECORDS) or
+                tree_files(trial / 'generation') != generation_records):
+            raise ValueError('executor records differ from binding')
+        observed_execution = executor_outcome(trial / 'generation')
+        if execution != ('failed' if output_error else observed_execution):
+            raise ValueError('generation claim contradicts retained executor')
     missing = [] if output_error else sorted(set(task['deliverables']) - set(selected))
     checks = []
     capture_error = None
@@ -395,6 +506,8 @@ def replay_report(trial, report):
         expected_inputs = {k.removeprefix('evaluator/'): v for k, v in task['files'].items()
                            if k.startswith('evaluator/')}
         expected_inputs.update(selected)
+        if generation_records is not None:
+            expected_inputs.update({'.generation/' + k: v for k, v in generation_records.items()})
         if inputs != expected_inputs:
             raise ValueError('retained evaluation inputs differ from binding')
         run = trial / 'run'
@@ -425,8 +538,11 @@ def replay_report(trial, report):
         raise ValueError('report contradicts retained evidence')
 
 
-def aggregate(paths):
-    reports = [recorded_report(p) for p in paths]
+def aggregate(paths, *, manifest=None, expect_pins=None):
+    paths = list(paths)
+    expected = expected_series(paths, manifest, expect_pins)
+    reports = [recorded_evaluation(p, expected=expected[Path(p).parent.name] if expected else None)[0]
+               for p in paths]
     if len({r['task'] for r in reports}) != len(reports):
         raise ValueError('aggregate requires one selected attempt per task')
     rows = []
@@ -458,7 +574,13 @@ def main(argv=None):
     split.add_argument('--exclusions', required=True)
     split.add_argument('--seed', default='0')
     split.add_argument('tasks', nargs='+')
+    freeze = sub.add_parser('freeze')
+    freeze.add_argument('--manifest', required=True)
+    freeze.add_argument('--expect-pins', required=True, help='JSON map of task IDs to externally retained pins digests')
+    freeze.add_argument('reports', nargs='+')
     summary = sub.add_parser('aggregate')
+    summary.add_argument('--manifest', help='externally retained frozen series manifest')
+    summary.add_argument('--expect-pins', help='externally retained SHA-256 of the series manifest')
     summary.add_argument('reports', nargs='+')
     args = parser.parse_args(argv)
     if args.command == 'run':
@@ -467,8 +589,14 @@ def main(argv=None):
                                          expect_pins=args.expect_pins)]
     elif args.command == 'split':
         result = split_tasks(args.tasks, strict_json(Path(args.exclusions).read_bytes()), seed=args.seed)
+    elif args.command == 'freeze':
+        manifest = freeze_series(args.reports, strict_json(Path(args.expect_pins).read_bytes()))
+        path = Path(args.manifest)
+        with path.open('xb') as stream:
+            stream.write(json_bytes(manifest))
+        result = {'manifest': str(path), 'sha256': digest(path)}
     else:
-        result = aggregate(args.reports)
+        result = aggregate(args.reports, manifest=args.manifest, expect_pins=args.expect_pins)
     print(json_bytes(result).decode(), end='')
 
 

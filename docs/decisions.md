@@ -449,3 +449,23 @@ The pod taps the switched 12 V relay output in the harness (the circuit that als
 
 **Rung 3.** > Pod replaces the wideband controller as rung 3
 AGENTEE-98 is reworded to the telemetry pod and parents the pod epic AGENTEE-157; the standalone wideband controller becomes a later board if still wanted. The generator roadmap's ladder reads: RC filter, one fome-mc sheet, telemetry pod, fome-mc.
+
+## Generation benchmark external series anchor (AGENTEE-285)
+
+The AGENTEE-278 review reproduced coordinated check resealing, caller generation
+claim rewrites and retained task metadata re-stratification. Local hashes cannot
+authenticate the writer of those hashes. The benchmark therefore freezes a
+series manifest binding report, task pins, evidence seal and executor-record
+digests; its digest must remain outside the trial-store writer's control.
+Retained executor records and logs also enter the captured candidate so sealed
+check evidence identifies the generation execution it evaluated.
+
+External task pins are mandatory at `freeze`; an authenticated aggregate needs
+both the manifest and its independently retained digest. Existing unanchored
+aggregation keeps diagnostic verdicts. This bounds the behavior change to the
+new authenticated workflow and contradictory executor claims. Unknown remains
+unknown. Native reruns were rejected here because they repeat evaluation cost,
+depend on the original runtime, and do not independently authenticate generation
+execution or task metadata. The external freeze assumes trusted records at the
+time of freezing; it does not create an owner evidence store or repair already
+forged history. See [the freeze contract](generation-benchmark.md#authenticated-series-freeze).

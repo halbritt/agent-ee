@@ -34,9 +34,10 @@ The offline [frozen generation benchmark](generation-benchmark.md) (AGENTEE-69)
 measures pinned tasks with evaluator-only checks and unknown-aware bounds.
 AGENTEE-278 adds an optional external pins digest, sealed-evidence score replay,
 an exact public prompt name with private-input copy refusal, board fingerprints
-and a combined generation result. Local seals and generation status remain
-unauthenticated, and aggregation has no external task metadata anchor; see the
-feature page's threat model.
+and a combined generation result. AGENTEE-285 adds a series freeze requiring
+external task pins and retained executor evidence. Aggregate can authenticate
+reports, seals and task metadata against an independently retained series digest;
+unanchored summaries remain diagnostic. See the feature page's custody boundary.
 An original series-resistor task qualifies the harness; the requested ten
 unlicensed prompts still require owner permission before import.
 
