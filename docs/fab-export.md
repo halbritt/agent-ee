@@ -51,7 +51,9 @@ The footprint must carry both `exclude_from_bom` and
 no model. Copper declarations use a field allow-list on footprint properties,
 captured schematic properties (including hidden fields), variant fields and
 retained native fields: `Reference`, `Value`, `Footprint`, `Datasheet`,
-`Description` and KiCad internal `ki_*` fields. Datasheet and Description may
+`Description` and the exact KiCad internal names `ki_keywords`,
+`ki_description`, `ki_fp_filters` and `ki_locked`. Other `ki_*` names receive
+no exemption. Datasheet and Description may
 contain any text, including stock solder-jumper descriptions. Every other field
 must be empty, whitespace-only or `~` (surrounding whitespace is ignored).
 Nonempty manufacturer, distributor, supplier, assembly-policy and arbitrary

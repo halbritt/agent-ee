@@ -349,12 +349,16 @@ class CopperFeatureTests(unittest.TestCase):
         names = ('DigiKey', 'Mouser', 'Mouser No', 'Farnell', 'Newark PN', 'Arrow_PN',
                  'TME', 'RS Stock No', 'Supplier Part Number', 'Vendor PN', 'Part No',
                  'Part#', 'Order Code', 'SKU', 'mfr#', 'Manf#', 'JLCPCB_Assembly',
-                 'Manufacturer', 'Department', 'Unanticipated field')
+                 'Manufacturer', 'Department', 'Unanticipated field',
+                 'ki_LCSC', 'ki_MPN', 'ki_anything', 'ki_keywords_extra',
+                 'Ki_keywords', 'ki_Keywords', 'ki_keywords ')
         sch = (self.source / 'fab.kicad_sch').read_text()
         xml = self.source / 'native.xml'
-        for name in names + ('Datasheet', 'Description', 'ki_keywords'):
+        internal_fields = ('ki_keywords', 'ki_description', 'ki_fp_filters', 'ki_locked')
+        for name in names + ('Datasheet', 'Description') + internal_fields:
             for value in ('BUY-ME', '', '  ', '~', ' ~ '):
-                allowed = name in {'Datasheet', 'Description', 'ki_keywords'} or value.strip() in {'', '~'}
+                allowed = (name in ('Datasheet', 'Description') + internal_fields or
+                           value.strip() in {'', '~'})
                 with self.subTest(name=name, value=value):
                     prop = f'(property "{name}" "{value}" (layer "F.Fab"))'
                     board = self.data.replace(b'(property "Reference" "JP1"',

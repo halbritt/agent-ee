@@ -149,13 +149,14 @@ def orderable_field(name):
                     for suffix in ('pn', 'mpn', 'part', 'partnumber', 'number')))
 
 
-COPPER_FIELDS = {'Reference', 'Value', 'Footprint', 'Datasheet', 'Description'}
+COPPER_FIELDS = {'Reference', 'Value', 'Footprint', 'Datasheet', 'Description',
+                 'ki_keywords', 'ki_description', 'ki_fp_filters', 'ki_locked'}
 
 
 def copper_field_allowed(name, value):
     """Qualify declaration metadata without changing general part binding."""
     return (isinstance(name, str) and isinstance(value, str) and
-            (name in COPPER_FIELDS or name.startswith('ki_') or value.strip() in {'', '~'}))
+            (name in COPPER_FIELDS or value.strip() in {'', '~'}))
 
 
 def declared_copper_features(params):
@@ -492,7 +493,8 @@ def part_bindings(xml_path, probes=None):
     `Manufacturer`, `Partnumber` and `PartNumber` symbol fields verbatim, and
     any assembly-rule field (RULE_FIELDS) it carries. copper_fields retains
     every native field occurrence for declaration qualification, including
-    duplicates and malformed-field markers. Which components are assembled is decided by `assembly_exclusions` and `assembled_parts`.
+    duplicates and malformed-field markers. Which components are assembled is
+    decided by `assembly_exclusions` and `assembled_parts`.
     """
     from .probe_features import PROPERTY, native_component
     root = ET.parse(xml_path).getroot()
