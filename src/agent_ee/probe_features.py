@@ -1,4 +1,7 @@
 """Captured, required bare copper probes; no purchased identity or inferred exemption."""
+import base64
+import binascii
+
 from .board_net_names import encode_net
 from .catalog import exact_fields, nonempty, strict_json
 from .storage import canonical, identity
@@ -6,6 +9,7 @@ from .symbol_library import children, field, parse_library, parse_sexpr, resolve
 
 KIND = 'bare_copper_probe'
 PROPERTY = 'AGENT_EE_Probe'
+MARKER_PREFIX = 'agent-ee-probe-v1-'
 PROBE_FIELDS = frozenset(('Reference', 'Value', 'Footprint', 'Datasheet', 'Description',
                          PROPERTY, 'Sheetname', 'Sheetfile', 'exclude_from_bom'))
 
@@ -156,16 +160,31 @@ def declarations(document, root):
 
 
 def marker(record):
-    return canonical(record).decode()
+    # KiBot treats colons in footprint properties as library separators.
+    return MARKER_PREFIX + base64.b64encode(canonical(record)).decode('ascii')
 
 
 def parse_marker(text):
+    if text.startswith(MARKER_PREFIX):
+        try:
+            payload = base64.b64decode(text[len(MARKER_PREFIX):], validate=True)
+            decoded = payload.decode('utf-8')
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError('invalid encoded probe identity') from exc
+        if MARKER_PREFIX + base64.b64encode(payload).decode('ascii') != text:
+            raise ValueError('noncanonical encoded probe identity')
+        text = decoded
     value = strict_json(text)
     exact_fields(value, ('schema', 'part_id', 'lib_id', 'footprint', 'pin', 'symbol',
         'footprint_source', 'symbol_body_sha256', 'geometry', 'sheet', 'reference', 'net', 'native_net'))
     if value['schema'] != 'agent-ee.bare-copper-probe/1':
         raise ValueError('unsupported probe identity')
     return value
+
+
+def matches_marker(text, record):
+    # Preserve exact legacy JSON identity checks while new writers use base64.
+    return text in (marker(record), canonical(record).decode())
 
 
 def native_component(record, comp, graph):
@@ -175,7 +194,7 @@ def native_component(record, comp, graph):
             not comp['on_board'] or comp['in_bom']):
         raise ValueError(ref + ': probe native identity/flags differ')
     no_supplier(comp['properties'])
-    if comp['properties'].get(PROPERTY) != marker(record):
+    if not matches_marker(comp['properties'].get(PROPERTY), record):
         raise ValueError(ref + ': probe declaration identity differs')
     pin = record['pin']['number']
     if set(comp['pins']) != {pin} or any(comp['pin_metadata'][pin][k] != record['pin'][k] for k in ('name', 'electrical_type')):
@@ -200,7 +219,7 @@ def validate_schematic(data, records):
         if ref not in records:
             raise ValueError(str(ref) + ': probe has no immutable source declaration')
         r = records[ref]
-        if props.get(PROPERTY) != marker(r) or field(sym, 'lib_id', 1) != [r['lib_id']]:
+        if not matches_marker(props.get(PROPERTY), r) or field(sym, 'lib_id', 1) != [r['lib_id']]:
             raise ValueError(ref + ': probe declaration identity differs')
         if (field(sym, 'in_bom', 1) != ['no'] or field(sym, 'on_board', 1) != ['yes'] or
                 _one(sym, 'dnp', ['no']) != ['no'] or props.get('Footprint') != r['footprint']):
@@ -227,7 +246,7 @@ def validate_board(data, records, *, require_all=True):
         if ref not in records:
             raise ValueError(str(ref) + ': probe has no immutable source declaration')
         r = records[ref]
-        if props.get(PROPERTY) != marker(r) or fp[1] != r['footprint']:
+        if not matches_marker(props.get(PROPERTY), r) or fp[1] != r['footprint']:
             raise ValueError(ref + ': probe declaration/footprint identity differs')
         if footprint_signature(fp, r['pin']['number']) != r['geometry']:
             raise ValueError(ref + ': probe saved pad geometry changed')
