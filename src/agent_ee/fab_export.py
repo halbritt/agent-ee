@@ -133,9 +133,20 @@ def validate_params(params):
 
 # Binding aliases are checked on both native symbols and footprint properties.
 def orderable_field(name):
-    return re.sub(r'[^a-z0-9]', '', (name or '').lower()) in {
-        'lcsc', 'lcscpart', 'lcscpartnumber', 'mpn', 'partnumber', 'manufacturerpartnumber',
-        'jlcpcbpart', 'jlcpcbpartnumber'}
+    name = name or ''
+    compact = re.sub(r'[^a-z0-9]', '', name.lower())
+    if compact in {'lcsc', 'mpn', 'pn', 'partnumber'}:
+        return True
+    # Keep compact legacy spellings, while allowing separators and extra tokens
+    # in manufacturer/distributor binding fields. Assembly policy is not a binding.
+    sources = {'manufacturer', 'mfr', 'mfg', 'lcsc', 'jlcpcb', 'digikey', 'mouser'}
+    bindings = {'pn', 'part', 'number', 'mpn', 'stock', 'sku', 'code'}
+    tokens = set(re.findall(r'[a-z0-9]+',
+                 re.sub(r'([a-z0-9])([A-Z])', r'\1 \2', name).lower()
+                 .replace('digi-key', 'digikey')))
+    return bool((tokens & sources and tokens & bindings) or
+                any(compact == source + suffix for source in sources
+                    for suffix in ('pn', 'mpn', 'part', 'partnumber', 'number')))
 
 
 def declared_copper_features(params):
@@ -221,7 +232,7 @@ def copper_feature_problems(data, refs, components=None):
     by_ref = {}
     for fp in _lists(root, 'footprint'):
         for prop in _lists(fp, 'property'):
-            if len(prop) > 2 and prop[1] == 'Reference':
+            if len(prop) > 2 and prop[1] == 'Reference' and isinstance(prop[2], str):
                 by_ref.setdefault(prop[2], []).append(fp)
     problems = []
     metadata = {'layer', 'at', 'uuid', 'tstamp', 'path', 'property', 'attr',
@@ -257,8 +268,11 @@ def copper_feature_problems(data, refs, components=None):
                 if head in graphics or layers:
                     if len(layers) != 1 or len(layers[0]) != 2 or layers[0][1] not in graphic_layers:
                         reasons.append('graphics are outside silk/fab layers')
-                if head == 'property' and len(node) > 2 and orderable_field(node[1]) and node[2].strip():
-                    reasons.append(f'has orderable footprint field {node[1]}')
+                if head == 'property':
+                    if len(node) < 3 or not all(isinstance(value, str) for value in node[1:3]):
+                        reasons.append('unqualified footprint content property')
+                    elif orderable_field(node[1]) and node[2].strip():
+                        reasons.append(f'has orderable footprint field {node[1]}')
             elif head not in metadata:
                 reasons.append(f'unqualified footprint content {head}')
         if components is not None:
@@ -405,7 +419,12 @@ def board_facts(data, probes=None, copper_features=()):
         unsupported.append('board declares assembly variants; v1 exports only an unvaried board')
     footprints, seen = [], set()
     for fp in _lists(root, 'footprint'):
-        refs = [p[2] for p in _lists(fp, 'property') if len(p) > 2 and p[1] == 'Reference']
+        properties = _lists(fp, 'property')
+        if any(len(p) > 1 and (not isinstance(p[1], str) or
+               (p[1] == 'Reference' and (len(p) < 3 or not isinstance(p[2], str))))
+               for p in properties):
+            raise ValueError(f'footprint {fp[1:2]} has unqualified footprint content property')
+        refs = [p[2] for p in properties if len(p) > 2 and p[1] == 'Reference']
         layer = _lists(fp, 'layer')
         attrs = set(a for attr in _lists(fp, 'attr') for a in attr[1:] if isinstance(a, str))
         if len(refs) != 1 or len(layer) != 1 or len(layer[0]) != 2:
@@ -991,6 +1010,7 @@ def check_fab_export(ctx):
     details['schematic_dnp'] = sorted((r for r, c in components.items() if c['dnp']), key=natural_key)
     details['dnp_disagreements'] = disagreements
     if unsupported:
+        unsupported = list(dict.fromkeys(unsupported))
         details['unsupported'] = unsupported
         raise _error('unsupported', 'fab export refused: ' + '; '.join(unsupported))
 

@@ -305,6 +305,66 @@ class CopperFeatureTests(unittest.TestCase):
                 self.assertEqual(problems, [])
                 self.assertTrue(copper_feature_problems(self.data, {'JP1'}, components))
 
+    def test_token_orderable_fields_are_refused_at_every_binding_source(self):
+        from agent_ee.fab_export import copper_schematic_problems, part_bindings
+        aliases = ('Mfr Part Number', 'MFR_PN', 'Manufacturer PN', 'Digikey_PN',
+                   'Mouser Part Number', 'PN', 'mfg-number', 'MfgPartNumber',
+                   'Digi-Key PN', 'MFR stock part', 'LCSC Stock Code')
+        sch = (self.source / 'fab.kicad_sch').read_text()
+        for alias in aliases:
+            with self.subTest(alias=alias):
+                addition = f'(property "{alias}" "BUY-ME" (layer "F.Fab"))'
+                board = self.data.replace(b'(property "Reference" "JP1"',
+                                          addition.encode() + b'(property "Reference" "JP1"')
+                self.assertIn(f'copper feature JP1: has orderable footprint field {alias}',
+                              copper_feature_problems(board, {'JP1'}))
+                schematic = sch.replace('(property "Reference" "JP1"',
+                    addition + '(property "Reference" "JP1"').encode()
+                self.assertTrue(copper_schematic_problems(schematic, {'JP1'}))
+                variant = sch.replace('(reference "JP1") (unit 1)',
+                    '(reference "JP1") (unit 1) (variant (name "ALT") '
+                    f'(field (name "{alias}") (value "BUY-ME")))').encode()
+                self.assertTrue(copper_schematic_problems(variant, {'JP1'}))
+                xml = self.source / 'native.xml'
+                xml.write_text('<export><components><comp ref="JP1"><fields>'
+                               f'<field name="{alias}">BUY-ME</field>'
+                               '</fields></comp></components></export>')
+                components, problems = part_bindings(xml)
+                self.assertEqual(problems, [])
+                self.assertTrue(copper_feature_problems(self.data, {'JP1'}, components))
+                empty = board.replace(b'"BUY-ME"', b'"  "')
+                self.assertEqual(copper_feature_problems(empty, {'JP1'}), [])
+
+    def test_unrelated_property_tokens_remain_admitted(self):
+        for name in ('Manufacturer', 'Description', 'Number of pads', 'Department', 'PN notes unrelated'):
+            # PN is a binding token only when it is the whole field name or paired
+            # with a manufacturer/distributor token.
+            with self.subTest(name=name):
+                data = self.data.replace(b'(property "Reference" "JP1"',
+                    f'(property "{name}" "copper jumper" (layer "F.Fab"))'.encode() +
+                    b'(property "Reference" "JP1"')
+                self.assertEqual(copper_feature_problems(data, {'JP1'}), [])
+
+    def test_malformed_properties_are_typed_unqualified_content(self):
+        for prop in ('(property "MPN" (at 0 0))', '(property "Description" (at 0 0))',
+                     '(property "MPN")'):
+            with self.subTest(prop=prop):
+                data = self.data.replace(b'(property "Reference" "JP1"',
+                    prop.encode() + b'(property "Reference" "JP1"')
+                expected = 'copper feature JP1: unqualified footprint content property'
+                self.assertIn(expected, copper_feature_problems(data, {'JP1'}))
+                self.assertIn(expected, board_facts(data, copper_features={'JP1'})['unsupported'])
+
+    def test_malformed_property_identity_is_typed_unreadable_content(self):
+        for old, new in ((b'(property "Reference" "JP1"', b'(property "Reference" (at 0 0)'),
+                         (b'(property "Reference" "JP1"',
+                          b'(property (name "MPN") "BUY-ME") (property "Reference" "JP1"')):
+            with self.subTest(new=new):
+                data = self.data.replace(old, new)
+                self.assertTrue(copper_feature_problems(data, {'JP1'}))
+                with self.assertRaisesRegex(ValueError, 'unqualified footprint content property'):
+                    board_facts(data, copper_features={'JP1'})
+
     def test_schematic_variant_mpn_cannot_hide_behind_native_bom_exclusion(self):
         from agent_ee.fab_export import copper_schematic_problems
         text = (self.source / 'fab.kicad_sch').read_text()
@@ -316,6 +376,31 @@ class CopperFeatureTests(unittest.TestCase):
                     f'(field (name "{name}") (value "BUY-ME")))').encode()
                 self.assertTrue(copper_schematic_problems(data, {'JP1'}))
                 self.assertEqual(copper_schematic_problems(data, set()), [])
+
+    def test_reviewer_physical_content_probes(self):
+        attr = b'(attr smd exclude_from_bom exclude_from_pos_files)'
+        for addition in (b'(model)', b'(group)', b'(dimension)', b'(jumper_pad_groups)',
+                         b'(private_layers)', b'(net_tie_pad_groups)', b'(embedded_files)', b'bare',
+                         b'(fp_poly (layer "F.Cu"))', b'(fp_line (layer "User.1"))',
+                         b'(fp_line (layer "F.CrtYd"))', b'(fp_text user "x" (layer "F.Fab") (layer "B.Fab"))',
+                         b'(property "Label" "x" (layer "F.Cu"))'):
+            with self.subTest(addition=addition):
+                self.assertTrue(copper_feature_problems(self.data.replace(attr, attr + addition), {'JP1'}))
+        for old, new in ((b'smd rect', b'np_thru_hole rect'), (b'smd rect', b'connect rect'),
+                         (b'smd rect', b'smd rect (drill 1)'),
+                         (b'"F.Cu" "F.Mask" "F.Paste"', b'"In1.Cu"'),
+                         (b'"F.Cu" "F.Mask" "F.Paste"', b'"F.Cu" "F.SilkS"'),
+                         (b'"F.Cu" "F.Mask" "F.Paste"', b'"F.Mask"')):
+            with self.subTest(new=new):
+                start = self.data.index(b'(property "Reference" "JP1"')
+                self.assertIn(old, self.data[start:])
+                data = self.data[:start] + self.data[start:].replace(old, new, 1)
+                self.assertTrue(copper_feature_problems(data, {'JP1'}))
+        for layers in (b'"*.Cu" "F.Mask"', b'"B.Cu" "B.Mask"'):
+            start = self.data.index(b'(property "Reference" "JP1"')
+            data = self.data[:start] + self.data[start:].replace(
+                b'"F.Cu" "F.Mask" "F.Paste"', layers)
+            self.assertEqual(copper_feature_problems(data, {'JP1'}), [])
 
     def test_custom_copper_primitives_refuse_unknowns_and_layer_overrides(self):
         from agent_ee.fab_export import copper_pad
@@ -661,6 +746,26 @@ class NativeFabExportTests(unittest.TestCase):
         self.assertIn('JP1', result['details']['board']['board_non_dnp'])
         for key in ('native_pos', 'bom', 'cpl', 'assembled'):
             self.assertNotIn('JP1', result['details']['designators'][key])
+
+    def test_non_string_copper_property_is_a_typed_export_refusal(self):
+        copper_fixture(self.source)
+        self.scope['checks'][1]['params']['copper_features'] = ['JP1']
+        board = self.source / 'fab.kicad_pcb'
+        board.write_text(board.read_text().replace('(property "Reference" "JP1"',
+            '(property "MPN" (at 0 0)) (property "Reference" "JP1"'))
+        _, result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        problem = 'copper feature JP1: unqualified footprint content property'
+        self.assertEqual(result['summary'].count(problem), 1, result)
+        self.assertEqual(result['details']['unsupported'].count(problem), 1, result)
+
+    def test_copper_refusals_are_not_duplicated_in_summary(self):
+        copper_fixture(self.source)
+        self.scope['checks'][1]['params']['copper_features'] = ['JP1', 'JP9']
+        _, result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        problem = 'copper feature JP9 needs exactly one board footprint'
+        self.assertEqual(result['summary'].count(problem), 1, result)
 
     def test_board_only_holes_require_both_native_exclusions(self):
         path = self.source / 'fab.kicad_pcb'

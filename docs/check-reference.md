@@ -40,9 +40,10 @@ task pinning. It registers no new check kind.
 The [schematic emitter](schematic-emitter.md#output) retains KiCad 10 private
 symbol metadata and accepts an explicit boolean component `in_bom` policy.
 These are producer features, with no check registration change. Native netlist
-inventory observes BOM exclusion independently of board membership. Fab export
-still refuses non-DNP native exclusions; emission success does not establish
-BOM/CPL agreement for excluded copper features (AGENTEE-289).
+inventory observes BOM exclusion independently of board membership. Declared
+[copper features](fab-export.md#copper-features) have a qualified fab exclusion
+policy (AGENTEE-289, AGENTEE-290); other non-DNP native exclusions remain refused.
+Emission success alone does not establish BOM/CPL agreement.
 
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
@@ -1268,7 +1269,10 @@ them in `designators.excluded`. Optional `copper_features: ["JP1"]` admits
 explicitly declared surface copper features only after both native exclusions,
 qualified pad/graphic layers, no model and no footprint/native MPN/LCSC binding
 are verified. They must be absent from BOM/CPL; consistency independently
-replays admission ([copper features](fab-export.md#copper-features)).
+replays admission ([copper features](fab-export.md#copper-features)). Binding
+fields include manufacturer/distributor token combinations such as `MFR_PN`,
+`Mfr Part Number` and `Digikey_PN`, plus `PN`; non-string footprint property
+values are unqualified content. Repeated export refusal findings appear once.
 A marked part without the rule, or with
 disagreeing sources, is `unsupported`. An optional declared `bom_variant`
 (the generator's `--bom-variant`) is validated against the captured
