@@ -1011,6 +1011,13 @@ Over-limit geometry refuses before native loading with `library_coverage`,
 failed execution and unknown coverage. Supported syntax and ordinary index
 record fields are unchanged. See [pad magnitude bounds](footprint-libraries.md#pad-magnitude-bounds-agentee-314).
 
+Declared custom-pad primitives share the native subset's coordinate, width,
+extent and rotation-invariant reach bounds. Declared custom shapes also require
+exactly one merged native copper outline on every copper layer (AGENTEE-324),
+while retaining numbering-only records without `native_geometry`. Non-atom pad
+positions, rotations, custom polygon vertices, drill dimensions and drill offsets
+yield footprint-scoped `library_coverage`; valid members continue indexing.
+
 The shared index also qualifies explicitly solid-connected SMD custom pads
 with rectangular/circular anchors and bounded polygon, rectangle, circle or
 line primitives through a sandboxed pcbnew load (AGENTEE-300). Primitive

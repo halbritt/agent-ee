@@ -198,8 +198,9 @@ Primitive coordinates and local copper extents are limited to +/-1000 mm;
 widths are limited to 1000 mm. Rotation-invariant copper reach, including pad
 translation and half the stroke width, must stay within 1000 mm of the footprint
 origin. The native merged pad must have exactly one
-copper outline, including its anchor (AGENTEE-304). Unsupported custom-pad constructs
-remain unknown coverage (AGENTEE-300).
+copper outline, including its anchor (AGENTEE-304). Declared custom-pad primitives share these bounds and require one merged outline
+on each copper layer while retaining numbering-only records (AGENTEE-324).
+Unsupported custom-pad constructs remain unknown coverage (AGENTEE-300).
 The [placer](docs/placer.md#native-custom-pads-agentee-307) also qualifies this
 subset for rigid placement, preserving its complete primitives and native copper
 extents through save/reload. The [placement write scope](docs/placement-adapter.md#custom-pad-side-flips-agentee-307)

@@ -58,7 +58,9 @@ Circular and oval drills use half their larger dimension. Drill offsets add
 their magnitude to the copper reach, but offset drill syntax remains outside
 the qualified drill grammar. Undeclared trapezoids remain unsupported. This
 change does not extend shape qualification or add native geometry fields to
-ordinary-pad records.
+ordinary-pad records. Non-atom pad positions, rotations, custom polygon vertices,
+drill dimensions and drill offsets produce footprint-scoped `library_coverage` refusals; other valid
+manifest members are still indexed (AGENTEE-324).
 
 Integer square-root ceilings and doubled comparisons retain odd-nanometre
 half extents. Excess copper or drill reach produces `library_coverage`, failed
@@ -111,8 +113,18 @@ pcbnew, without Python connectivity approximations. Unfilled contours that touch
 or overlap the anchor can qualify. Missing or invalid native outline evidence also refuses.
 
 The existing `custom_pads` declaration still enables numbering only and records
-`geometry: "declared_custom"`; it never supplies native geometry evidence or
-relaxes geometry qualification. Existing records for ordinary pads are unchanged.
+`geometry: "declared_custom"`; it never supplies native geometry evidence.
+Declarations cannot bypass these bounds (AGENTEE-324): declared primitives use
+the same coordinate, width, local extent and rotation-invariant reach checks,
+and declared custom shapes require exactly one merged native copper outline on
+every copper layer. Numbering-only declarations retain their broader layer and
+zone-connect grammar; they gain no native geometry fields. Missing native
+outline evidence, a failed native load or disconnected copper refuses coverage.
+Declaration-only native identity comparisons account for full-turn rotation
+normalization while retaining the original angles in indexed records. Repeated
+declared pad identities can share numbering evidence only when every native
+instance meets the outline rule. Native-qualified pads retain their unique
+identity requirement. Existing records for ordinary pads are unchanged.
 Native copper bounds do not establish a correct land pattern or thermal behavior.
 
 `tests.test_custom_pad_index` uses original fixtures for the supported primitives

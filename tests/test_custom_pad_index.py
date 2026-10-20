@@ -282,6 +282,89 @@ class CustomPadIndexTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'unknown')
         self.assertIn('ambiguous', result['findings'][0]['message'])
 
+    def test_declared_custom_primitive_bounds_refuse_before_native_load(self):
+        declared = owner_declarations([('Owned:OwnedCustom', dict(custom_pads=['1']))])
+        cases = [
+            ('(gr_rect (start 1500 0) (end 1501 1) (width 0) (fill yes))', '0 0'),
+            ('(gr_rect (start -760 -760) (end 760 760) (width 0) (fill yes))', '0 0 45'),
+            ('(gr_line (start 0 0) (end 999 0) (width 0.000001))', '1 0'),
+            ('(gr_circle (center 500 0) (end -1 0) (width 0) (fill yes))', '0 0'),
+            (PRIMITIVES['line'].replace('0.4', '1000.000001'), '0 0'),
+            ('(gr_poly (pts (xy 0 0) (xy 800 800) (xy 0 1)) (width 0) (fill yes))', '0 0'),
+        ]
+        for primitive, at in cases:
+            with self.subTest(primitive=primitive), patch('agent_ee.executor.execute') as execute:
+                result = indexed(custom(primitive, at=at), declarations=declared)
+                self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                 ('failed', 'unknown', 'missing'))
+                self.assertEqual(result['footprints'], [])
+                self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+                self.assertIn('1000 mm', result['findings'][0]['message'])
+                execute.assert_not_called()
+
+    def test_declared_custom_one_outline_on_each_copper_layer(self):
+        declared = owner_declarations([('Owned:OwnedCustom', dict(custom_pads=['1']))])
+        for layers in ('"F.Cu" "F.Mask"', '"B.Cu" "B.Mask"', '"*.Cu" "*.Mask"'):
+            for primitive in (PRIMITIVES['rect'],
+                              '(gr_rect (start 10 10) (end 11 11) (width 0) (fill yes))'):
+                with self.subTest(layers=layers, primitive=primitive):
+                    text = custom(primitive).replace('"F.Cu" "F.Paste" "F.Mask"', layers)
+                    result = indexed(text, declarations=declared)
+                    if '10 10' in primitive:
+                        self.assert_multi_outline_refusal(result)
+                    else:
+                        self.assertEqual(result['coverage'], 'complete', result['findings'])
+                        pad = next(p for p in result['footprints'][0]['pads'] if p['number'] == '1')
+                        self.assertEqual(pad['geometry'], 'declared_custom')
+                        self.assertNotIn('native_geometry', pad)
+
+    def test_declared_custom_missing_outline_evidence_refuses(self):
+        from agent_ee.executor import execute as real_execute
+        declared = owner_declarations([('Owned:OwnedCustom', dict(custom_pads=['1']))])
+        cases = [(False, counts) for counts in (None, [], [True], ['1'], [1.0], [0], [1, 2])]
+        cases.extend([(True, [1]), (True, [1] * 31)])
+        for multilayer, counts in cases:
+            with self.subTest(multilayer=multilayer, counts=counts):
+                def altered(inputs, work, argv, **kwargs):
+                    execution = real_execute(inputs, work, argv, **kwargs)
+                    self.assertEqual(execution['execution'], 'ok')
+                    path = Path(work) / 'footprint.json'
+                    report = json.loads(path.read_text())
+                    for pad in report['pads']:
+                        if pad['shape'] == 'custom':
+                            if counts is None:
+                                pad.pop('layer_outline_counts')
+                            else:
+                                pad['layer_outline_counts'] = counts
+                    path.write_text(json.dumps(report))
+                    return execution
+                with patch('agent_ee.executor.execute', side_effect=altered):
+                    text = custom().replace('F.Cu', '*.Cu') if multilayer else custom()
+                    result = indexed(text, declarations=declared)
+                self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                 ('failed', 'unknown', 'missing'))
+                self.assertEqual(result['footprints'], [])
+                self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+
+    def test_declared_custom_normalized_angles_and_duplicates_preserve_numbering(self):
+        declared = owner_declarations([('Owned:OwnedCustom', dict(custom_pads=['1']))])
+        for angle in (360, -360, 450, 720, -450):
+            with self.subTest(angle=angle):
+                result = indexed(custom(at=f'0 0 {angle}'), declarations=declared)
+                self.assertEqual(result['coverage'], 'complete', result['findings'])
+                pad = next(p for p in result['footprints'][0]['pads'] if p['number'] == '1')
+                self.assertEqual(pad['orientation_microdegrees'], angle * 1000000)
+                self.assertEqual(pad['geometry'], 'declared_custom')
+                self.assertNotIn('native_geometry', pad)
+                self.assertEqual(indexed(custom(at=f'0 0 {angle}'))['coverage'], 'missing')
+        source = custom()
+        pad = source[source.index('(pad "1"'):source.index('(pad "2"')]
+        for duplicate in (pad, pad.replace('"F.Cu" "F.Paste" "F.Mask"', '"*.Cu" "*.Mask"')):
+            with self.subTest(duplicate=duplicate):
+                result = indexed(source.replace('(pad "2"', duplicate + '(pad "2"'), declarations=declared)
+                self.assertEqual(result['coverage'], 'complete', result['findings'])
+                self.assertEqual(len(result['footprints'][0]['pads']), 3)
+
     def test_numbering_declaration_does_not_claim_native_geometry(self):
         declared = owner_declarations([('Owned:OwnedCustom', dict(custom_pads=['1']))])
         result = indexed(custom(), declarations=declared)
