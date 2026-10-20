@@ -289,7 +289,10 @@ remaining joint vias are the rule's `offender_ids` in its `extra_charge` record.
 is an explicitly selected `jlcpcb_standard_2026-10-19` profile. It records a
 **via-only subset** for ordinary FR-4 two-layer and multilayer fabrication,
 excluding the special process for boards at most 1 mm thick. It is independent
-of the telemetry-pod profile and changes no captured pod criteria or hashes.
+of the telemetry-pod profile and changes no captured pod criteria or hashes. The
+pod profile records the same two surcharge rules from its own 2026-10-18 capture
+(AGENTEE-272), and the [scaffold](scaffold.md#default-via-and-joint-surcharge-rules)
+derives a Default via outside the joint band from them.
 
 | Limit | Value | Role |
 | --- | --- | --- |

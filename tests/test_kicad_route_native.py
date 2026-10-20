@@ -81,6 +81,47 @@ for reference, x in (('J1', 45), ('J2', 55)):
 k.SaveBoard(sys.argv[1], b)
 '''
 
+# Original four-layer fixture: three nets, each from a front SMD pad to a back SMD pad,
+# so every connection needs a through via.
+VIA_BOARD = r'''
+import sys, pcbnew as k
+b = k.BOARD()
+b.SetCopperLayerCount(4)
+point = lambda x, y: k.VECTOR2I(k.FromMM(x), k.FromMM(y))
+for start, end in [((40, 40), (70, 40)), ((70, 40), (70, 60)),
+                   ((70, 60), (40, 60)), ((40, 60), (40, 40))]:
+    edge = k.PCB_SHAPE(b)
+    edge.SetShape(k.SHAPE_T_SEGMENT)
+    edge.SetLayer(k.Edge_Cuts)
+    edge.SetStart(point(*start))
+    edge.SetEnd(point(*end))
+    edge.SetWidth(k.FromMM(.05))
+    b.Add(edge)
+nets = []
+for name in ('A', 'B', 'C'):
+    net = k.NETINFO_ITEM(b, name)
+    b.Add(net)
+    nets.append(net)
+for reference, x, layer in (('J1', 47, k.F_Cu), ('J2', 63, k.B_Cu)):
+    fp = k.FOOTPRINT(b)
+    b.Add(fp)
+    fp.SetReference(reference)
+    fp.SetPosition(point(x, 50))
+    for number, net in enumerate(nets, 1):
+        pad = k.PAD(fp)
+        fp.Add(pad)
+        pad.SetNumber(str(number))
+        pad.SetNet(net)
+        pad.SetAttribute(k.PAD_ATTRIB_SMD)
+        pad.SetShape(k.PAD_SHAPE_RECT)
+        layers = k.LSET()
+        layers.AddLayer(layer)
+        pad.SetLayerSet(layers)
+        pad.SetSize(point(.6, .6))
+        pad.SetPosition(point(x, 47 + (number - 1) * 3))
+k.SaveBoard(sys.argv[1], b)
+'''
+
 
 class NativeKicadRouteTest(unittest.TestCase):
     @classmethod
@@ -289,6 +330,67 @@ class NativeKicadRouteTest(unittest.TestCase):
         self.assertTrue(pair['routed'], pair)
         self.assertEqual(pair['backend_status'], 'COUPLED')
         self.assertEqual(pair['gap_violations'], 0)
+
+    def via_drc(self, candidate, label):
+        """Native DRC violation types and the distinct (diameter, drill) via sizes, in mm."""
+        import pcbnew as k
+        drc = execute(candidate, self.root / (label + '-drc'), ['kicad-cli', 'pcb', 'drc', '--format', 'json',
+                      '--severity-all', '--units', 'mm', '-o', '/work/drc.json',
+                      '/candidate/project/rc_filter.kicad_pcb'], timeout=120)
+        self.assertEqual(drc['execution'], 'ok', drc)
+        report = json.loads((self.root / (label + '-drc/drc.json')).read_text())
+        board = k.LoadBoard(str(candidate / 'project/rc_filter.kicad_pcb'))
+        vias = sorted({(round(k.ToMM(v.GetWidth(k.F_Cu)), 4), round(k.ToMM(v.GetDrillValue()), 4))
+                       for v in board.GetTracks() if v.GetClass() == 'PCB_VIA'})
+        return vias, sorted(v['type'] for v in report['violations'])
+
+    def test_scaffold_four_layer_default_via_routes_without_annular_errors(self):
+        """AGENTEE-272: the produced pod Default via is 0.45/0.20 mm, not the 0.25/0.15 minimum."""
+        import pcbnew as k
+        from agent_ee.board_envelope import source_inventory
+        from agent_ee.scaffold import produced_project, produced_rules
+        files, inputs = source_inventory(ROOT / 'fixtures/telemetry-pod')
+        _, _, rules, netclass, _ = produced_rules({'fab_profile': 'fab-profile.json'}, files, inputs)
+        # The pod template carries fome-mc's severities: annular_width and hole_clearance are errors.
+        project = produced_project(ROOT, 'fixtures/fome-mc/rules/pod.kicad_pro', rules, netclass)
+        default = project['net_settings']['classes'][0]
+        self.assertEqual((default['via_diameter'], default['via_drill']), (0.45, 0.2))
+        # The minimum tier stays the DRC floor.
+        design = project['board']['design_settings']['rules']
+        self.assertEqual((design['min_via_diameter'], design['min_through_hole_diameter']), (0.25, 0.15))
+        placed = self.placed_rc()
+        made = execute(placed, self.root / 'make-vias',
+                       ['/usr/bin/python3', '-I', '-B', '-c', VIA_BOARD, '/work/vias.kicad_pcb'], timeout=300)
+        self.assertEqual(made['exit_code'], 0, (self.root / 'make-vias/console.log').read_text())
+        shutil.copyfile(self.root / 'make-vias/vias.kicad_pcb', placed / 'project/rc_filter.kicad_pcb')
+        (placed / 'project/rc_filter.kicad_pro').write_text(json.dumps(project, indent=2) + '\n')
+        spec = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
+                                    schematic='rc_filter.kicad_sch', name='rc_filter', label='default-via',
+                                    checkout=self.checkout, budget=120)
+        work = self.root / 'default-via'
+        observed = execute(placed, work, spec['argv'], timeout=spec['timeout_s'],
+                           extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
+        summary = routing_adapter.verify(work, attempt.files_of(attempt.tree(placed)))
+        self.assertEqual(observed['exit_code'], 0, summary)
+        self.assertEqual(summary['classification'], 'complete', summary)
+        routed = self.root / 'routed'
+        shutil.copytree(placed, routed)
+        shutil.copyfile(work / 'routing/candidate/project/rc_filter.kicad_pcb', routed / 'project/rc_filter.kicad_pcb')
+        vias, codes = self.via_drc(routed, 'routed')
+        self.assertEqual(vias, [(0.45, 0.2)])
+        self.assertNotIn('annular_width', codes)
+        self.assertNotIn('hole_clearance', codes)
+        # Control: the same routed vias at the former minimum-tier Default fail KiCad's
+        # annular-ring rule, so the absence above is a graded result, not a blind DRC.
+        board = k.LoadBoard(str(routed / 'project/rc_filter.kicad_pcb'))
+        for via in board.GetTracks():
+            if via.GetClass() == 'PCB_VIA':
+                via.SetWidth(k.FromMM(0.25))
+                via.SetDrill(k.FromMM(0.15))
+        k.SaveBoard(str(routed / 'project/rc_filter.kicad_pcb'), board)
+        vias, codes = self.via_drc(routed, 'minimum-via')
+        self.assertEqual(vias, [(0.25, 0.15)])
+        self.assertIn('annular_width', codes)
 
     def test_a_pinned_checkout_with_a_broken_krt_runtime_fails_the_prerequisite(self):
         """Pinned code and present state files are not enough: KRT must import."""

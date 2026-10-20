@@ -1,7 +1,7 @@
 # Telemetry pod fabrication inputs (AGENTEE-160)
 
 The [JLCPCB profile](../fixtures/telemetry-pod/fab-profile.json) records eight
-source-cited limits for JLC04161H-7628: four layers, nominal 1.6 mm, 1 oz outer
+source-cited minimum limits and two preferred via surcharge rules for JLC04161H-7628: four layers, nominal 1.6 mm, 1 oz outer
 and 0.5 oz inner copper. Its machine name is `jlc04161h-7628` because profile
 identifiers accept lowercase letters. It uses `agent-ee.fab-profile/2` and the
 existing compiler. Its additional source-bound finished-thickness tolerance is
@@ -22,6 +22,21 @@ The fab-check descriptor also refuses an unverified tolerance citation.
 | Maximum dimensions | 663 × 593 mm | Ordinary four-layer FR-4 option, thickness at least 0.8 mm, fixed saved axes |
 | Maximum layers | 4 | Specializes this profile to the named four-layer stackup |
 | Finished thickness tolerance | ±10% | Nominal thickness at least 1.0 mm; 1.6 mm example permits 1.44–1.76 mm |
+
+| Preferred (AGENTEE-272) | Captured value | Role |
+| --- | --- | --- |
+| `small-drill` | Drill 0.2 mm | Note 2, preferred minimum via hole. Classifies the published 0.15 mm option as an extra charge |
+| `small-via` | Drill <0.3 mm AND diameter <0.45 mm | Note 3, 0.2 or 0.25 mm hole with diameter below 0.45 mm costs more. Extra charge only |
+
+Both come from the same 2026-10-18 capabilities capture (the raw `jlc-capabilities.html`
+identity already in the manifest), recorded in
+[sources/jlcpcb-vias.txt](../fixtures/telemetry-pod/sources/jlcpcb-vias.txt).
+The page names only the 0.2 and 0.25 mm drill options. The 0.3 mm drill bound is
+this profile's encoding of the next drill above them, as in the
+[AGENTEE-75 preset](fab-profile.md#dated-jlcpcb-standard-via-preset), and
+intermediate drills are not qualified. Like every preferred limit, they never
+define a defect; the minima above remain the DRC floors. The scaffold derives
+the Default via from them (see below).
 
 These are the published values observed on 2026-10-18, not a live quote or a
 complete DFM approval. The profile does not express the via annular-ring
@@ -52,14 +67,23 @@ new date and reviewed values; checks never access the network.
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src python3 -m unittest tests.test_pod_fab_profile -v
 ```
 
-The tests compile all eight native/geometry limits and the tolerance, change
+The tests compile all ten limits and the tolerance, change
 one byte of each source, refuse
 missing/wrong citations, exercise the four-layer specialization and feed the
 profile through `scaffold.produced_rules`. All six project minima and the four
-Default netclass fields are present. There are no preferred limits, so Default
-clearance is the 0.09 mm minimum with or without AGENTEE-153. That item's
-separate change controls preferred-clearance policy; this fixture changes no
-scaffold behavior.
+Default netclass fields are present. The project rules and the Default
+clearance (0.09 mm) and track width (0.09 mm) use the minimum tier. Since
+AGENTEE-272 the Default via is 0.45/0.20 mm: the preferred 0.2 mm drill sits
+inside the `small-via` band, so the diameter takes its 0.45 mm bound
+([scaffold](scaffold.md#default-via-and-joint-surcharge-rules)). That matches the
+router's standard tier, so the pod lane no longer overrides Default by hand.
+The former 0.25/0.15 mm Default had a 0.05 mm annular ring, below KiCad's
+0.1 mm default. It caused the pilot's `annular_width` DRC errors.
+
+Adding the two rules changed the profile's bytes. `envelope.json` and
+`envelope-inputs.json` reference the new SHA-256. The RF capture records in
+`rf-source-capture.json` keep the hash of the profile bytes they were captured
+against, before AGENTEE-272. The stackup they used is unchanged.
 
 ## Nominal thickness and unbound mechanics
 

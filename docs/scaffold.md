@@ -298,7 +298,7 @@ Derived from the inputs:
 | Requirements | The plan's native requirement maps `erc` and `drc`. `parts-membership` maps `netlist` and `parts` at the manifest's `declaration_source`. The profile's single limit requirement maps `fab` at `PROFILE /limits` |
 | Stages | `schematic` (erc, netlist, parts), `placement` (drc), `routing` (fab). Symbol and footprint subjects are the manifest's required selectors; the routing subject is one saved track, because the `fab_profile` check's native rule-loading witness needs a track |
 | Project rules | `board.design_settings.rules` `min_clearance`, `min_track_width`, `min_via_diameter`, `min_through_hole_diameter`, `min_copper_edge_clearance` and `min_hole_to_hole` from the profile's minimum limits, through `fab_profile.compile_profile` |
-| Default net class | `clearance` from the minimum limit, because KiCad DRC enforces it as a hard floor. `track_width`, `via_diameter` and `via_drill` from the preferred limit when present, otherwise the minimum: they are routing defaults, and DRC grades the board minimum rules instead. See [Default class clearance](#default-class-clearance) |
+| Default net class | `clearance` from the minimum limit, because KiCad DRC enforces it as a hard floor. `track_width`, `via_diameter` and `via_drill` from the preferred limit when present, otherwise the minimum: they are routing defaults, and DRC grades the board minimum rules instead. A Default via inside a joint small-via surcharge band takes that rule's diameter bound. See [Default class clearance](#default-class-clearance) and [Default via and joint surcharge rules](#default-via-and-joint-surcharge-rules) |
 | Board | Outline, layer count and stackup from the envelope, as in stage one |
 
 ### Per-net classes
@@ -379,6 +379,34 @@ tracks 0.175 mm apart pass DRC. That gap is between the 0.15 mm minimum and the
 0.2 mm preferred clearance. A 0.45/0.25 mm via on the same board, smaller than
 the preferred Default via, also passes. The same board fails when the class
 clearance is set to the preferred value, and a 0.1 mm gap still fails.
+
+### Default via and joint surcharge rules
+
+AGENTEE-272: a `fab-profile/2` [conjunctive rule](fab-profile.md#conjunctive-surcharge-rules-fab-profile2)
+charges extra for a via only when its drill and diameter are both strictly under
+the rule's bounds. After the scalar tiers are applied, the producer tests the
+Default `via_drill` and `via_diameter` against each source-verified joint rule.
+A Default via inside the band gets `via_diameter` raised to the rule's
+`min_via_pad_mm` bound. A via exactly at a bound is outside the band, as in
+KiCad's native `min`. The drill is kept, and the class record cites the joint
+rule (`tier` `preferred`, its `limit_id` and locator) with a `basis` naming the band.
+`derivation.router_targets` gains the same entry. The six project rules are
+unchanged: the minimum tier remains the DRC floor. An unverified joint rule
+refuses production like any other unverified limit.
+
+The [telemetry-pod profile](telemetry-pod-fab-profile.md) records JLC's
+preferred 0.2 mm drill and the 0.2/0.25 mm drill, diameter <0.45 mm surcharge.
+Its four-layer scaffold therefore gets a 0.45/0.20 mm Default via, the same size
+the pinned router uses at `--fab-tier standard`. Previously it got the
+0.25/0.15 mm minimum, whose 0.05 mm annular ring is below KiCad's 0.1 mm
+default. The board minimum rules stay 0.25/0.15 mm.
+`ProducerTests.test_four_layer_pod_profile_scaffold_produces_standard_default_via`
+runs the whole producer on that profile. In
+`NativeKicadRouteTest.test_scaffold_four_layer_default_via_routes_without_annular_errors`,
+the pinned KRT routes an original four-layer board under the produced project
+and the pod (fome-mc severity) template. It places only 0.45/0.20 mm vias, and
+native DRC reports neither `annular_width` nor `hole_clearance`. The same routed
+vias resized to 0.25/0.15 mm do fail `annular_width`.
 
 The template supplies every other project setting. It must be a complete
 `kicad-10.0.7-net-settings-5` project, such as the owned

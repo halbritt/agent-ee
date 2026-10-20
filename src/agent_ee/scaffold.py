@@ -48,6 +48,8 @@ DECISION = 'owner decision 2026-10-18: Default clearance = fab minimum; router t
 ENFORCED_BASIS = 'KiCad DRC enforces the Default class value as a hard floor; ' + DECISION
 ROUTING_BASIS = ('routing default only: KiCad DRC enforces the board minimum rule, not the Default class value; '
                  + DECISION)
+JOINT_BASIS = ('routing default only: the Default via drill is inside a joint small-via surcharge band, so the '
+               'diameter takes that rule\'s bound; ' + DECISION)
 # The pinned kicad-route adapter fixes default_clearance_mm and clearance_margin_mm to null.
 UNCONSUMED_TARGET = ('not applied: a preferred Default clearance would become a DRC floor above the fab minimum, '
                      'and the pinned kicad-route adapter passes no clearance target')
@@ -573,7 +575,9 @@ def produced_rules(plan, files, inputs):
     if unverified:
         # The derived fab_profile check would stay unknown for these forever.
         raise ValueError('fab profile is incomplete: limits not source-verified: ' + '; '.join(unverified))
-    ready = {(c['expected']['key'], c['expected']['tier']): c for c in compiled['constraints']}
+    ready = {(c['expected']['key'], c['expected']['tier']): c for c in compiled['constraints']
+             if 'key' in c['expected']}
+    joint = [c for c in compiled['constraints'] if 'all' in c['expected']]
     missing = [key for key in RULE_KEYS if (key, 'minimum') not in ready]
     if missing:
         raise ValueError('fab profile is incomplete: no minimum-tier limit for ' + ', '.join(missing))
@@ -582,8 +586,8 @@ def produced_rules(plan, files, inputs):
         raise ValueError('fab profile limits must name exactly one requirement, got ' + ', '.join(requirements))
     locators = {limit['id']: f'/limits/{index}' for index, limit in enumerate(profile['limits'])}
 
-    def cite(constraint, setting, value, **extra):
-        return dict(setting=setting, value=value, key=constraint['expected']['key'],
+    def cite(constraint, setting, value, key=None, **extra):
+        return dict(setting=setting, value=value, key=key or constraint['expected']['key'],
                     tier=constraint['expected']['tier'], limit_id=constraint['id'],
                     locator=locators[constraint['id']], **extra)
 
@@ -609,6 +613,17 @@ def produced_rules(plan, files, inputs):
             targets.append(cite(preferred, field if applied else None, preferred['expected']['value'],
                                 consumer='Default class routing default' if applied else UNCONSUMED_TARGET))
     values = {item['setting'].rsplit('.', 1)[1]: item['value'] for item in netclass}
+    for rule in joint:
+        # A Default via strictly under every term bound is surcharged; KiCad's native min
+        # leaves a via at the bound outside the band, so raise the diameter to its bound.
+        bounds = {t['key']: t['value'] for t in rule['expected']['all']}
+        if all(values[NETCLASS_FIELDS[key]] < bound for key, bound in bounds.items()):
+            field = 'net_settings.classes.Default.via_diameter'
+            index = next(i for i, item in enumerate(netclass) if item['setting'] == field)
+            bound = bounds['min_via_pad_mm']
+            netclass[index] = cite(rule, field, bound, key='min_via_pad_mm', basis=JOINT_BASIS)
+            targets.append(cite(rule, field, bound, key='min_via_pad_mm', consumer='Default class routing default'))
+            values['via_diameter'] = bound
     minimum_values = {key: ready[key, 'minimum']['expected']['value'] for key in NETCLASS_FIELDS}
     if minimum_values['min_via_pad_mm'] <= minimum_values['min_via_drill_mm']:
         raise ValueError('fab profile minimum via pad must exceed via drill, independently of preferred values')
