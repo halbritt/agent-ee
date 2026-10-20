@@ -43,6 +43,42 @@ excluded from electrical parity. Numbered copper pads are never silently ignored
 Repeated thermal pads sharing a number remain distinct records without inventing
 extra symbol pins. Custom padstacks and unqualified forms refuse coverage.
 
+## Native custom pads (AGENTEE-300)
+
+The index natively qualifies SMD custom pads with an explicit solid zone
+connection (`zone_connect 2`), one explicit front/back copper layer,
+`clearance outline`, a rectangular or circular
+anchor, and `gr_poly`, `gr_rect`, `gr_circle` or `gr_line` primitives. Filled
+polygons, rectangles and circles may have zero width; unfilled primitives need
+positive width. Each pad is bounded to 128 primitives and each polygon to
+1024 vertices. Unsupported options, arcs, padstacks, thermal connections and
+inherited zone-connect behavior refuse coverage. Polygon contours must be simple.
+
+After the shared parser checks this subset, the ordinary networkless executor
+loads the exact captured footprint bytes with pcbnew in a separate process.
+Native pad numbers, types, shapes, anchors, sizes and rotations must match the
+captured inventory exactly. Ambiguous custom-pad identities refuse coverage.
+Custom pad records retain `geometry: "native_custom"` and `native_geometry`
+with `pcbnew_version`, native `number`, `anchor` and the full copper `bbox_nm`
+`[left, top, right, bottom]` in footprint coordinates. `size_nm` remains the
+anchor size. Forward annotation uses the native copper extent for staging.
+A failed child, missing report or mismatched inventory leaves unknown coverage.
+No declaration or CLI option is required for this supported subset.
+
+The existing `custom_pads` declaration still enables numbering only and records
+`geometry: "declared_custom"`; it never supplies native geometry evidence or
+relaxes geometry qualification. Existing records for ordinary pads are unchanged.
+Native copper bounds do not establish a correct land pattern or thermal behavior.
+
+`tests.test_custom_pad_index` uses original fixtures for the supported primitives
+and refusal boundaries. Its read-only pinned fome-mc capture probe compares the
+39 previous footprint records byte-for-byte and checks electrical numbering for
+all 327 native components, including JP1–JP5. Stock footprint bytes are loaded
+only at test time from the external Git object store and are not distributed.
+`tests.test_forward_annotation` also exercises native custom-pad indexing and
+annotation through both CLI commands, then independently measures the saved
+board's copper extent.
+
 ## Owner declarations
 
 An optional `declarations` check parameter names a captured
@@ -85,8 +121,8 @@ a pin's requirement. A symbol pin whose only pads are declared mechanical is
 reported as `missing_pads`. Reports retain `declarations_sha256`, the
 footprint's `footprint_declaration`, the `mechanical_pads` it actually applied,
 and the `pinless` record. Undeclared MP pads remain extra-pad defects. Undeclared
-pinless symbols, thermal vias, attr-less footprints and custom pads remain
-unknown.
+pinless symbols, thermal vias, attr-less footprints and custom pads outside
+the native subset remain unknown.
 
 Empty fields and absent exact selections are defects only with complete library
 coverage. Missing/extra numbers identify each affected reference and footprint.

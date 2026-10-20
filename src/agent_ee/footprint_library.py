@@ -233,6 +233,116 @@ def _rule_area(zone):
     )
 
 
+def _custom_pad(pad):
+    """Qualify only bounded solid-connected custom-pad syntax before native loading."""
+    from .symbol_library import children, field, nanometres, LibraryError
+    from .board_envelope import simple_polygon
+    allowed = {'at', 'size', 'layers', 'uuid', 'options', 'primitives',
+               'zone_connect', 'thermal_bridge_angle'}
+    nodes = pad[4:]
+    if any(not isinstance(n, list) or not n or n[0] not in allowed for n in nodes):
+        raise LibraryError('unsupported custom-pad option')
+    if len({n[0] for n in nodes}) != len(nodes):
+        raise LibraryError('duplicate custom-pad option')
+    if pad[2] != 'smd' or field(pad, 'zone_connect', 1) != ['2']:
+        raise LibraryError('custom pads require explicit solid zone connection; thermal spokes unsupported')
+    layers = children(pad, 'layers')
+    copper = [layer for layer in layers[0][1:] if isinstance(layer, str) and layer.endswith('.Cu')] if len(layers) == 1 else []
+    if copper not in (['F.Cu'], ['B.Cu']):
+        raise LibraryError('custom pads require one explicit front/back copper layer')
+    options = children(pad, 'options')
+    if (len(options) != 1 or len(options[0]) != 3
+            or sorted(n[0] for n in options[0][1:] if isinstance(n, list) and n) != ['anchor', 'clearance']):
+        raise LibraryError('unsupported custom-pad options')
+    if field(options[0], 'clearance', 1) != ['outline'] or field(options[0], 'anchor', 1)[0] not in ('rect', 'circle'):
+        raise LibraryError('unsupported custom-pad clearance/anchor')
+    if children(pad, 'thermal_bridge_angle'):
+        nanometres(field(pad, 'thermal_bridge_angle', 1)[0])
+    primitives = children(pad, 'primitives')
+    if len(primitives) != 1 or not 1 <= len(primitives[0][1:]) <= 128:
+        raise LibraryError('custom pad requires 1..128 supported primitives')
+    for primitive in primitives[0][1:]:
+        if not isinstance(primitive, list) or not primitive:
+            raise LibraryError('invalid custom-pad primitive')
+        kind = primitive[0]
+        keys = {'gr_poly': {'pts', 'width', 'fill'},
+                'gr_rect': {'start', 'end', 'width', 'fill'},
+                'gr_circle': {'center', 'end', 'width', 'fill'},
+                'gr_line': {'start', 'end', 'width'}}.get(kind)
+        fields = primitive[1:]
+        if (keys is None or any(not isinstance(n, list) or not n for n in fields)
+                or len(fields) != len(keys) or {n[0] for n in fields} != keys):
+            raise LibraryError('unsupported custom-pad primitive/options')
+        width = nanometres(field(primitive, 'width', 1)[0])
+        fill = field(primitive, 'fill', 1)[0] if kind != 'gr_line' else 'no'
+        if fill not in ('yes', 'no') or width < 0 or (fill == 'no' and width == 0):
+            raise LibraryError('unsupported custom-pad primitive fill/width')
+        if kind == 'gr_poly':
+            pts = children(primitive, 'pts')[0][1:]
+            if not 3 <= len(pts) <= 1024:
+                raise LibraryError('custom polygon requires 3..1024 vertices')
+            points = []
+            for point in pts:
+                if not isinstance(point, list) or len(point) != 3 or point[0] != 'xy':
+                    raise LibraryError('unsupported custom polygon vertex')
+                points.append(tuple(map(nanometres, point[1:])))
+            try:
+                simple_polygon(points, 'custom pad')
+            except ValueError as exc:
+                raise LibraryError(str(exc)) from exc
+        else:
+            start = tuple(map(nanometres, field(primitive, 'center' if kind == 'gr_circle' else 'start', 2)))
+            end = tuple(map(nanometres, field(primitive, 'end', 2)))
+            if start == end or (kind == 'gr_rect' and (start[0] == end[0] or start[1] == end[1])):
+                raise LibraryError('degenerate custom-pad primitive')
+
+
+def _native_custom_geometry(data, footprint):
+    """Load exact captured bytes through the ordinary networkless executor."""
+    import tempfile
+    from pathlib import Path
+    from collections import Counter
+    from .executor import execute
+    from .symbol_library import children, field
+    def identity(pad):
+        return (pad['number'], pad['type'], pad['shape'], pad['x_nm'], pad['y_nm'],
+                pad['orientation_microdegrees'], tuple(pad['size_nm']))
+    try:
+        with tempfile.TemporaryDirectory(prefix='agent-ee-custom-pad-') as tmp:
+            root = Path(tmp)
+            inputs = root / 'inputs'
+            inputs.mkdir()
+            (inputs / (footprint['name'] + '.kicad_mod')).write_bytes(data)
+            execution = execute(inputs, root / 'work', ['/usr/bin/python3', '-B', '-m',
+                'agent_ee.footprint_probe', footprint['name']], timeout=60)
+            if execution['execution'] != 'ok':
+                console = (root / 'work' / 'console.log').read_text(errors='replace')[-2000:]
+                raise FootprintError('native custom-pad load failed: ' + console)
+            report = json.loads((root / 'work' / 'footprint.json').read_bytes())
+            native = report['pads']
+            if Counter(map(identity, native)) != Counter(map(identity, footprint['pads'])):
+                raise FootprintError('native pad identity differs from captured footprint')
+            for pad in footprint['pads']:
+                if pad.get('geometry') != 'native_custom':
+                    continue
+                matches = [p for p in native if identity(p) == identity(pad)]
+                if len(matches) != 1:
+                    raise FootprintError('ambiguous native custom-pad identity')
+                found = matches[0]
+                anchor = field(children(pad['native'], 'options')[0], 'anchor', 1)[0]
+                if found['anchor'] != anchor:
+                    raise FootprintError('native custom-pad anchor differs from captured footprint')
+                bbox = found['bbox_nm']
+                if (len(bbox) != 4 or any(type(v) is not int for v in bbox)
+                        or bbox[0] >= bbox[2] or bbox[1] >= bbox[3]):
+                    raise FootprintError('native custom-pad copper extent missing/empty')
+                pad['number'] = found['number']
+                pad['native_geometry'] = dict(pcbnew_version=report['pcbnew_version'],
+                                              number=found['number'], anchor=found['anchor'], bbox_nm=bbox)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise FootprintError('native custom-pad evidence unavailable: ' + str(exc)) from exc
+
+
 def _footprint(data, library, source, declared=None):
     # Shared reader owned by AGENTEE-39; no competing S-expression parser.
     try:
@@ -267,6 +377,9 @@ def _footprint(data, library, source, declared=None):
             # Declared custom geometry is accepted for numbering only, never qualified.
             geometry = 'declared_custom' if number in custom and (
                 shape in DECLARED_SHAPES or any(children(pad, x) for x in ('primitives', 'options'))) else None
+            if shape == 'custom' and geometry is None:
+                _custom_pad(pad)
+                geometry = 'native_custom'
             if kind not in ('smd', 'thru_hole', 'np_thru_hole') or (
                     shape not in ('rect', 'circle', 'oval', 'roundrect') and geometry is None):
                 raise LibraryError('unsupported native pad type/geometry')
@@ -337,6 +450,9 @@ def _footprint(data, library, source, declared=None):
             result['rule_areas'] = rule_areas
         if entry is not None:
             result['declaration'] = entry
+        if any(p.get('geometry') == 'native_custom' for p in pads):
+            _native_custom_geometry(data, result)
+            result['electrical_numbers'] = sorted({p['number'] for p in pads if p['role'] == 'electrical'})
         return result
     except (LibraryError, TypeError) as exc:
         raise FootprintError(str(exc)) from exc
@@ -346,7 +462,8 @@ def index_footprints(manifest, captured_files, declarations=None):
     """Validate every declared member before any selected-name absence claim.
 
     Optional ``declarations`` are captured owner pad/assembly declarations
-    (``validate_declarations``); without them the index is unchanged.
+    (``validate_declarations``); these never qualify geometry. Explicitly solid
+    custom SMD pads in the supported subset require a sandboxed native load.
     """
     result = dict(schema='agent-ee.footprint-index/1', execution='ok', outcome='info',
                   coverage='complete', footprints=[], findings=[], manifest_sha256=None)

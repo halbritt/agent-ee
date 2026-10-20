@@ -43,6 +43,10 @@ new file. `--work` must name a new directory.
   ([footprint libraries](footprint-libraries.md)). Every component's footprint
   field must name an exact manifest member whose electrical pads equal the
   symbol's pins. There is no library search and no package selection.
+  [Supported custom SMD pads](footprint-libraries.md#native-custom-pads-agentee-300)
+  require a sandboxed pcbnew footprint load during indexing, without a declaration
+  or extra CLI option. Their full native copper bounds determine staging height;
+  anchor size alone does not bound custom copper.
 
 A footprint binds to a component only through its native path: the
 component's sheet path plus any one of its unit UUIDs. References are never

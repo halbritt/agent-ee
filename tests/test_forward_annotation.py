@@ -145,6 +145,51 @@ class ForwardAnnotationTests(unittest.TestCase):
             edit(intent)
         return intent
 
+    def test_native_custom_pad_library_indexes_and_annotates_through_cli(self):
+        from tests.test_custom_pad_index import custom
+        def add(intent):
+            intent['components'].append(dict(id='c_custom', reference='C2', lib_id='OwnedGen:CAP', value='100n',
+                                             footprint='OwnedFP:CAP_2PAD', units=[1]))
+            for net, pin in (('vout', '1'), ('gnd', '2')):
+                next(n for n in intent['nets'] if n['id'] == net)['terminals'].append(
+                    {'component': 'c_custom', 'pin': {'number': pin}})
+        project, xml = self.project(self.intent(add), 'custom')
+        board = project / 'regulator.kicad_pcb'
+        footprint = project / 'lib/OwnedFP.pretty/CAP_2PAD.kicad_mod'
+        footprint.write_text(custom().replace('"OwnedCustom"', '"CAP_2PAD"', 1))
+        manifest = copy.deepcopy(self.manifest)
+        for lib in manifest['libraries']:
+            for member in lib['members']:
+                if member['path'] == 'lib/OwnedFP.pretty/CAP_2PAD.kicad_mod':
+                    member['sha256'] = sha(footprint)
+        manifest_path = self.tmp / 'custom-manifest.json'
+        manifest_path.write_text(json.dumps(manifest))
+        record = self.tmp / 'custom-plan.json'
+        common = [str(board), '--netlist', str(xml), '--manifest', str(manifest_path),
+                  '--captures', str(project)]
+        self.assertEqual(fa.main(['plan', *common, '--work', str(self.tmp / 'custom-plan'),
+                                  '--record', str(record)]), 0)
+        planned = json.loads(record.read_text())
+        self.assertEqual([p['reference'] for p in planned['add']], ['C2'])
+        self.assertEqual({p['pad'] for p in planned['pads'] if p['reference'] == 'C2'}, {'1', '2'})
+        output = self.tmp / 'custom-output.kicad_pcb'
+        self.assertEqual(fa.main(['apply', *common, '--plan', str(record), '--out', str(output),
+                                 '--work', str(self.tmp / 'custom-apply'),
+                                 '--record', str(self.tmp / 'custom-result.json')]), 0)
+        facts = fa.board_facts(output, self.tmp / 'custom-facts')
+        added = next(f for f in facts['footprints'] if f['reference'] == 'C2')
+        self.assertEqual({p['number'] for p in added['pads']}, {'1', '2'})
+        self.assertTrue(all(p['net'] for p in added['pads']))
+        # Independently extract saved-board geometry, including actual custom copper.
+        probe = self.tmp / 'custom-probe'
+        run_native(output.parent, probe, '/usr/bin/python3', '-B', '-m', 'agent_ee.geometry_probe',
+                   '/candidate/custom-output.kicad_pcb', '-o', '/work/geometry.json')
+        geometry = json.loads((probe / 'geometry.json').read_text())
+        pad = next(p for f in geometry['footprints'] if f['ref'] == 'C2'
+                   for p in f['pads'] if p['pad'] == '1')
+        self.assertEqual(pad['bbox_nm'][2] - pad['bbox_nm'][0], 3000000)
+        self.assertEqual(pad['bbox_nm'][3] - pad['bbox_nm'][1], 2000000)
+
     def test_fixture_board_is_clean_against_emitted_schematic(self):
         project, _ = self.project(self.intent(), 'baseline')
         report = self.drc(project, 'baseline')
