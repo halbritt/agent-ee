@@ -904,6 +904,8 @@ def validate_pre_receipt(base, link):
     receipt = validate_receipt(path.parent, binding=link['binding'])
     if identity(receipt['binding']) != identity(link['binding']):
         raise ValueError('foreign stage receipt binding')
+    if 'via_budget_pilot' in receipt['binding']:
+        raise ValueError('a diagnostic via-budget pilot attempt is never adoptable')
     if receipt['status'] not in ADOPTABLE:
         raise ValueError('pre_receipt is not adoptable: ' + receipt['status'])
     return receipt

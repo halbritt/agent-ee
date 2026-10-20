@@ -125,7 +125,6 @@ def validate_declaration(value):
 
 
 def campaign_spec(declaration, manifest, mutable):
-    from .stage_receipts import validate_step
     value = validate_declaration(declaration)
     scope = manifest['scope']
     stages = scope.get('stages')
@@ -135,6 +134,12 @@ def campaign_spec(declaration, manifest, mutable):
     schematic = f'{value["project"]}/{value["schematic"]}'
     if board != scope['board'] or schematic != scope['schematic'] or board not in mutable:
         raise ValueError('routing adapter must select the scope board/schematic and a mutable board')
+    return declaration_spec(value)
+
+
+def declaration_spec(value):
+    """The step a validated declaration runs, without the campaign scope checks."""
+    from .stage_receipts import validate_step
     request = attempt.parse_request(_request_argv({
         **{k: value[k] for k in ('project', 'board', 'schematic', 'name', 'label', 'backend')},
         'budget_s': value['budget'], 'timeout_s': value['timeout'],
@@ -198,8 +203,11 @@ def validate_campaign_step(spec, *, host=True):
     return spec
 
 
-def verify_campaign_receipt(receipt_dir, *, expected=None, binding=None):
-    """Verify coordinator execution and routing semantics before adoption and on replay."""
+def verify_campaign_receipt(receipt_dir, *, expected=None, binding=None, location=None):
+    """Verify coordinator execution and routing semantics before adoption and on replay.
+
+    location is the directory the receipt was executed in, when it was copied afterwards
+    (an imported via-budget pilot); the sandbox command still names that directory."""
     from .executor import sandbox_argv
     from .stage_receipts import ADOPTABLE, file_tree, validate_receipt
 
@@ -214,7 +222,8 @@ def verify_campaign_receipt(receipt_dir, *, expected=None, binding=None):
             raise ValueError('routing receipt differs from the frozen campaign tool binding')
     execution = receipt['execution']
     if execution is not None:
-        expected = sandbox_argv(receipt_dir / 'inputs', receipt_dir / 'run', spec['argv'], network=False,
+        origin = Path(location) if location is not None else receipt_dir
+        expected = sandbox_argv(origin / 'inputs', origin / 'run', spec['argv'], network=False,
                                 extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
         if execution['sandbox_argv'] != expected:
             raise ValueError('campaign routing sandbox differs from the declared read-only mounts')

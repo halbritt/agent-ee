@@ -339,6 +339,9 @@ three diagnostic, non-adoptable pilot attempts on the routing input `board_sha25
 Start recomputes `N = V_max + max(1, ceil(0.1 V_max))` from the recorded
 `signal_vias`. It refuses a different `N`, and attempts that differ by more than
 the margin. The pilot attempts are not part of the campaign and are never adopted.
+A `/1` basis carries the counts as stated by the pod lane; the
+[coordinator via-budget pilot](#via-budget-pilot-agentee-265) produces an
+`agent-ee.via-budget/2` basis whose counts start re-derives from retained router facts.
 
 On every routing turn, after the plane producer is adopted and before the router
 starts, the coordinator (never the writer):
@@ -399,6 +402,75 @@ geometric routing guard; it is not RF, impedance or return-path qualification.
 [`tests/test_layer_policy_lineage.py`](../tests/test_layer_policy_lineage.py) runs
 the real plane producer, receipt executor and native measurement with the
 kicad-route fixture router.
+
+### Via-budget pilot (AGENTEE-265)
+
+`python3 -m agent_ee.via_budget_pilot run --design DIR --declaration ROUTING.json
+--policy POLICY.json --out PILOT [--attempts K]` is the coordinator's pilot step for
+the [via-budget method](pod-routing-policy-determination.md#via-budget-n). `DIR` is
+the planed, unrouted routing input as the routing step receives it (the candidate tree
+after the adopted `add-planes` output). `ROUTING.json` is the campaign's
+`agent-ee.routing-adapter/1` declaration without a `layer_policy`. `POLICY.json` is the
+`layer_policy_derivation` `policy`.
+
+The pilot runs `K` attempts (3 to 20, default 3). Each one is an ordinary coordinator
+stage step: the pinned adapter in the networkless sandbox on a copy of `DIR`. Attempt
+`i` is the campaign routing declaration with only two changes. Its label is
+`<label>-pilot-<i>`. Its layer policy keeps `signal_layers` and `layer_costs`, drops
+`reference`, and uses the permissive `pour_area_loss_pct` 100. The receipt binding is
+`{"via_budget_pilot": i, "adoptable": false}`. No receipt is adopted and the routing
+input is never written. A pilot receipt is also refused as a `pre_receipt`. The
+pilot is diagnostic. It has the status `not_accepted` and plays no part in final
+routing.
+
+For each attempt the coordinator verifies the receipt and the adapter's classification
+from the retained bytes (`verify_campaign_receipt`). It takes
+`validate/candidate-facts.json` and `facts/reference-facts.json` at the hashes the
+adapter report retained, and counts `V_i` with the AGENTEE-257 `signal_vias` rule:
+through-vias of nets other than `/GND` that no via of the same net, position, diameter
+and drill in the reference facts accounts for. It writes
+`PILOT/via-budget-basis.json` (`agent-ee.via-budget-pilot/1`). The basis holds every
+attempt's receipt hash, classification, routing input hash, tool identity, facts paths
+and hashes, and `V_i`. It also holds `N = V_max + max(1, ceil(0.1 V_max))`. `N` is
+unknown (status `unknown`, exit 1) when:
+
+- an attempt is not `complete`;
+- the receipt or facts do not verify;
+- the facts have no via list;
+- an attempt routed another input;
+- the attempts differ by more than the margin.
+
+On `derived` the command prints the campaign `via_budget`:
+
+```json
+{"schema": "agent-ee.via-budget/2", "via_budget": 5, "board_sha256": "<routing input sha256>",
+ "basis": {"method": "routed_demand", "pilot": "diagnostic_not_adoptable", "signal_vias": [3, 4, 4]},
+ "pilot": {"path": "/abs/PILOT/via-budget-basis.json", "sha256": "<basis sha256>"}}
+```
+
+`verify --basis PATH` re-derives a basis from its retained attempts. A relative
+`pilot.path` resolves against the campaign configuration's directory.
+
+Campaign start re-derives the basis from the retained receipts and facts. It refuses
+the campaign before it creates the campaign root when:
+
+- the basis bytes differ from `pilot.sha256`;
+- a facts file, adapter report or receipt was edited;
+- the re-derived basis differs from the file, including a rewritten basis whose new
+  hash is declared;
+- the re-derived `V_i`, `N` or routing input differs from the stated `via_budget`;
+- the pilot forked another routing declaration;
+- its policy is not the pilot form of the campaign `policy`;
+- its attempts ran another router identity than the campaign binds.
+
+It then copies the basis and attempts into `<campaign>/via-budget-pilot/` and points the
+frozen `config.json` at that copy. `verify-campaign` re-derives the copy against the
+campaign routing binding's tool identity. A retained pilot without a `/2` declaration
+is refused. The sandbox command each receipt recorded still names the directory where
+the attempt ran (`location`), and the copy is verified against it.
+[`tests/test_via_budget_pilot.py`](../tests/test_via_budget_pilot.py) runs the pilot
+on the kicad-route fixture router with stated via facts, then a full derived-policy
+campaign on the original probe board.
 
 ## Router targets from the scaffold producer
 
