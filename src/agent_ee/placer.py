@@ -23,7 +23,7 @@ from decimal import Decimal
 from fractions import Fraction
 import math
 
-from . import placement_groups
+from . import electrical_locality, placement_groups
 from .placement import (area2, convex, courtyard_bounds, cross, edges, intersection_area, judge, overhang_bands,
                         qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
@@ -121,6 +121,8 @@ def _validate_policy(policy, refs):
     if not isinstance(overhangs, list) or any(not isinstance(o, dict) or o.get('reference') not in refs
                                               for o in overhangs):
         raise ValueError('fixed_overhangs must declare known references')
+    if 'electrical_locality' in policy:
+        electrical_locality.validate(policy['electrical_locality'])
     if 'groups' in policy:
         placement_groups.validate(policy['groups'], refs)
     if 'constraint_provenance' in policy:
@@ -979,6 +981,7 @@ class _Search:
     failed part names the parts a backjump may move.
     """
     def __init__(self, capture, placed, exact, obstacles, outline, margin_nm, policy, members):
+        self.policy = policy
         self.fps = {fp['ref']: fp for fp in capture['footprints']}
         self.fixed = {fp['ref'] for fp in placed}
         self.exact, self.obstacles, self.outline, self.margin_nm = exact, obstacles, outline, margin_nm
@@ -1060,11 +1063,16 @@ class _Search:
             return set()
         if any(placement_groups.distance2(proposed['position_nm'], point) > d*d for _, point, d in ties):
             return set()
+        if 'electrical_locality' in self.policy:
+            hit, _ = electrical_locality.constraint(self.placed, proposed, self.policy['electrical_locality'])
+            if hit:
+                return hit - self.fixed - {proposed['ref']}
         return None
 
     def scan(self, fp, conflicts):
         """Admissible candidates in rank order; rejections add their blockers to ``conflicts``."""
         group = self.members.get(fp['ref'])
+        locality = self.policy.get('electrical_locality')
         anchors = [(side, box) for side, box, _ in self.reserved] + [(o['side'], o['box']) for o in self.exact]
         # A concave fixed courtyard's box can lie far from its edges; its slabs carry them.
         anchors += self.solid
@@ -1075,18 +1083,22 @@ class _Search:
         window = _window(self.outline, self.margin_nm, group, ties)
         ranked = []
         for rotation in (0, 90, 180, 270):
-            xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm, targets, window)
             at_origin = transform(fp, [0, 0], rotation)
+            local_targets = electrical_locality.targets(self.placed, at_origin, locality) if locality else []
+            xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm,
+                                     targets + local_targets, window)
             rectangles = {side: [r for poly in c['polygons'] for r in _slabs(poly)]
                           for side, c in at_origin['courtyards'].items()
                           if all(_slabs(poly) is not None for poly in c['polygons'])}
             doomed = set()
             for x, y in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid,
                                     self.gap, conflicts, doomed):
-                ranked.append((_wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
+                local_cost = electrical_locality.constraint(
+                    self.placed, transform(fp, [x, y], rotation), locality)[1] if locality else 0
+                ranked.append((local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
                                x, y, rotation, (x, y) in doomed))
         ranked.sort()
-        for _, x, y, rotation, doomed in ranked:
+        for _, _, x, y, rotation, doomed in ranked:
             if self.steps == self.budget:
                 raise _BudgetExhausted
             self.steps += 1
@@ -1125,6 +1137,13 @@ def pack(capture, policy):
     validate_capture(capture)
     _validate_policy(policy, {f['ref'] for f in capture['footprints']})
     margin_nm = _edge_margin_nm(policy)
+    locality = policy.get('electrical_locality')
+    if locality:
+        initial = electrical_locality.grade(capture, locality)
+        if initial['unknown']:
+            return {**_failure(capture, policy, 'electrical_locality_unavailable', 'unknown', 0,
+                               'pad locality needs unambiguous native pads, limits and citations', margin_nm),
+                    'locality_grading': initial}
     groups = placement_groups.validate(policy['groups']) if 'groups' in policy else []
     members = placement_groups.membership(groups)
     try:
@@ -1151,6 +1170,11 @@ def pack(capture, policy):
         fixed, placed, exact = _initial_reservations(capture, policy, outline, obstacles, bands, members)
     except ValueError as exc:
         return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc), margin_nm)
+    if locality:
+        fixed_grade = electrical_locality.grade({'footprints': placed}, locality)
+        if fixed_grade['defects']:
+            return {**_failure(capture, policy, 'fixed_conflict', 'unknown', 0,
+                               'fixed pads violate electrical locality', margin_nm), 'locality_grading': fixed_grade}
     priorities = {ref: i for i, ref in enumerate(policy['priority_refs'])}
     # Parts bound to a declared anchor point come first, tightest distance first: each
     # has only a small disc of positions. Then a movable group anchor is placed before
@@ -1247,6 +1271,10 @@ def pack(capture, policy):
     if grading is not None and grading['status'] != 'pass':
         return stopped('judge_rejected', 'declared placement groups not satisfied by the complete proposal')
     extra = {} if grading is None else {'group_grading': grading}
+    if locality:
+        extra['locality_grading'] = electrical_locality.grade(proposed_capture, locality)
+        if extra['locality_grading']['status'] != 'pass':
+            return {**stopped('judge_rejected', 'complete proposal failed pad locality'), **extra}
     custom_pads = [{'reference': f['ref'], 'uuid': p['uuid'], 'number': p['number']}
                    for f in capture['footprints'] for p in f['pads'] if p['shape'] == 6]
     if custom_pads:

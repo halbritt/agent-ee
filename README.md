@@ -95,6 +95,9 @@ The [architecture diagrams](docs/architecture.md) show the information and write
 boundaries. The [placer](docs/placer.md#through-hole-reservations-and-native-publication-gate-agentee-318)
 reserves native through-hole copper and drills across both sides and refuses
 proposals that introduce native DRC shorts, clearance or PTH courtyard findings.
+Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
+guides packing and separately checks supply, return and switch/inductor pad
+distances against cited limits; origin-group distance supplies no electrical acceptance.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

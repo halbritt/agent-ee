@@ -193,6 +193,11 @@ def plan(capture, policy, spec):
         reasons.append('placement score must strictly improve')
     if policy.get('groups') and grade(proposed, policy['groups'])['status'] != 'pass':
         reasons.append('declared placement groups not satisfied')
+    if 'electrical_locality' in policy:
+        from .electrical_locality import grade as locality_grade
+        record['locality_grading'] = locality_grade(proposed, policy['electrical_locality'])
+        if record['locality_grading']['status'] != 'pass':
+            reasons.append('declared electrical locality not satisfied')
     if spec['mode'] == 'bga_fanout':
         reasons.append('plan only: no autonomous whole-board or copper apply')
     record['placements'] = [{'ref': r, 'uuid': fp['uuid'], 'position_nm': fp['position_nm'],

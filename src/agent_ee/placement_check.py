@@ -9,7 +9,7 @@ read-only saved-board probe.
 import json
 from pathlib import PurePosixPath
 
-from . import placement_groups
+from . import electrical_locality, placement_groups
 from . import placement_predicates as predicates
 from .placement import judge, validate_capture
 from .storage import digest, read_json, write_json
@@ -19,9 +19,9 @@ EXTRA = {'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'en
          'ratsnest-mst/1': {'max_manhattan_mm', 'max_euclidean_mm'},
          'imu-axes/1': {'envelope', 'imu_ref', 'graphic_id', 'marker_ref', 'forward_axis', 'side',
                         'max_distance_mm', 'marker_rotation_deg', 'facts_check', 'axis_fact'},
-         'outline-containment/1': {'envelope'}, 'placement-groups/1': {'groups'}}
+         'outline-containment/1': {'envelope'}, 'placement-groups/1': {'groups'}, 'electrical-locality/1': {'locality'}}
 REQUIRED = {'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'envelope'},
-            'placement-groups/1': {'groups'}}
+            'placement-groups/1': {'groups'}, 'electrical-locality/1': {'locality'}}
 MAXIMA = {'max_manhattan_mm': 'manhattan', 'max_euclidean_mm': 'euclidean'}
 
 
@@ -56,6 +56,8 @@ def parameters(params):
     paths = []
     if 'envelope' in params:
         paths.append(_path(params['envelope'], 'envelope'))
+    if 'locality' in params:
+        paths.append(_path(params['locality'], 'electrical locality'))
     if 'groups' in params:
         paths.append(_path(params['groups'], 'placement groups'))
     if 'policy' in params and not isinstance(params['policy'], dict):
@@ -200,6 +202,8 @@ def evaluate(criterion, facts, report, params, declarations=None):
         return predicates.courtyard_overlap(facts, report)
     if criterion == 'outline-containment/1':
         return predicates.outline_containment(facts, declarations)
+    if criterion == 'electrical-locality/1':
+        return electrical_locality.grade(facts, declarations)
     if criterion == 'placement-groups/1':
         return placement_groups.grade(facts, declarations)
     if criterion == 'edge-clearance/1':
@@ -232,6 +236,11 @@ def check_placement(ctx):
         declarations, validation = _envelope_declarations(ctx, criterion)
     elif criterion == 'placement-groups/1':
         declarations = _groups(ctx)
+    elif criterion == 'electrical-locality/1':
+        try:
+            declarations = electrical_locality.validate(json.loads(_captured(ctx, ctx.params['locality'])))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise CheckError('malformed', f'electrical locality refused: {exc}') from exc
     board = ctx.candidate_path(ctx.scope['board'])
     ctx.execute(['/usr/bin/python3', '-B', '-m', 'agent_ee.placement_probe', board,
                  '--out', '/work/placement-probe.json'], timeout=600)
