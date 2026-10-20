@@ -52,6 +52,62 @@ class NativePlansTest(unittest.TestCase):
                 'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
                 'source_sha256': hashlib.sha256(self.saved).hexdigest(), 'writable_root': str(self.scratch)}}
 
+    def test_missing_keys_refuse_without_any_write(self):
+        for key in self.config['targeted']:
+            if key == 'mode':
+                continue
+            config = copy.deepcopy(self.config)
+            del config['targeted'][key]
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                place_candidate(self.source, self.netlist, self.scratch / 'missing', config)
+            self.assertEqual(list(self.scratch.iterdir()), [])
+            self.assertEqual(self.source.read_bytes(), self.saved)
+
+    def test_conflicting_request_paths_refuse_without_any_write(self):
+        self.config['targeted_plans'] = [self.config['targeted']]
+        with self.assertRaisesRegex(ValueError, 'cannot be combined'):
+            place_candidate(self.source, self.netlist, self.scratch / 'conflict', self.config)
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_cluster_seed_applies_through_saved_board_and_native_drc(self):
+        self.config['targeted'] = {'mode': 'net_cluster_seed', 'refs': ['C1'],
+            'origin_nm': [6_000_000, 3_000_000], 'spacing_nm': [3_000_000, 3_000_000],
+            'judge_policy': self.config['targeted']['judge_policy']}
+        result = place_candidate(self.source, self.netlist, self.scratch / 'cluster', self.config)
+        self.assertEqual((result['status'], result['plan']['mode']), ('placed', 'net_cluster_seed'), result)
+        self.assertEqual(result['judgment']['score'], 100)
+        self.assertEqual(result['native_courtyard_overlaps'], [])
+        self.assertEqual(result['write_scope']['status'], 'allowed')
+        self.assertEqual(self.source.read_bytes(), self.saved)
+
+    def test_selection_without_targeted_key_and_no_fallback_on_blocked(self):
+        good = self.config.pop('targeted')
+        self.config['targeted_plans'] = [{**good, 'offset_nm': [12_000_000, 0]}, good]
+        result = place_candidate(self.source, self.netlist, self.scratch / 'selected', self.config)
+        self.assertEqual(result['status'], 'placed', result)
+        self.assertEqual(result['plan']['selection']['selected_index'], 1)
+        self.config['targeted_plans'] = self.config['targeted_plans'][:1]
+        remaining = sorted(p.name for p in self.scratch.iterdir())
+        result = place_candidate(self.source, self.netlist, self.scratch / 'blocked', self.config)
+        self.assertEqual(result['status'], 'blocked', result)
+        self.assertEqual(sorted(p.name for p in self.scratch.iterdir()), remaining)
+
+    def test_fixed_overhang_preview_and_saved_native_judge_agree(self):
+        import pcbnew as k
+        native = k.LoadBoard(str(self.source))
+        next(fp for fp in native.GetFootprints() if fp.GetReference() == 'U1').SetPosition(k.VECTOR2I(0, 3_000_000))
+        k.SaveBoard(str(self.source), native)
+        self.config['authorization']['source_sha256'] = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        self.config['policy']['fixed_overhangs'] = [{'reference': 'U1',
+            'edges': [{'name': 'left', 'start_nm': [0, 0], 'end_nm': [0, 20_000_000],
+                       'outward': 'x-', 'max_nm': 1_000_000}],
+            'source': {'envelope_id': 'original', 'envelope_sha256': 'a'*64, 'pointer': '/fixed_footprints/0'}}]
+        result = place_candidate(self.source, self.netlist, self.scratch / 'overhang', self.config)
+        self.assertEqual(result['status'], 'placed', result)
+        self.assertEqual(result['plan']['after']['declared_overhangs'], result['judgment']['declared_overhangs'])
+        self.assertEqual(result['plan']['after']['verdict'], result['judgment']['verdict'])
+        self.assertEqual(result['judgment']['score'], 100)
+
     def test_saved_row_improves_and_locked_coordinates_identical(self):
         before = extract(self.source)
         plans = []

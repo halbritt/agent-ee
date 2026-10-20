@@ -1009,7 +1009,9 @@ The opt-in [targeted placement planner](placement-plans.md) (AGENTEE-55)
 reuses these geometry judgments and the existing advisory score in the
 disposable writer. It blocks ties, decreases and unproven geometry before
 writing, then rejudges actual saved bytes. It adds no check kind or acceptance
-authority; cluster seeds and BGA escape plans cannot apply themselves.
+authority. Cluster seeds use the same apply gates as capacitor rows; BGA
+escape plans remain plan-only. AGENTEE-280 adds typed missing-key refusal,
+preview/saved overhang parity and campaign selection among captured requests.
 
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.

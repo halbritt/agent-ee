@@ -25,6 +25,11 @@ The campaign configuration key `placement_adapter` holds an
   edits the board. This is a writer-only placement mode, not a skipped helper.
 - `policy` must be a captured `agent-ee.packing-policy/1` file outside
   `mutable_inputs`. It is required with a helper and refused without one.
+- `targeted_plans` optionally names an immutable captured JSON list of
+  [targeted placement requests](placement-plans.md#campaign-selection). It requires
+  a helper. The helper selects the highest-scoring eligible row or cluster seed;
+  every candidate retains its judgment and no eligible candidate means no write.
+  The coordinator binds the list’s path and digest and replay re-derives the request.
 - `fixed_footprints` lists native footprint UUIDs that must not move. The list
   may be incomplete: envelope-fixed parts are protected anyway (see below).
 - `sublayout` is optional. It names a captured

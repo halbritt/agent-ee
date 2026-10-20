@@ -116,8 +116,8 @@ def validate_declaration(value):
     """Return the normalized campaign declaration; no placement default is implied."""
     keys = {'schema', 'helper', 'policy', 'fixed_footprints', 'timeout_s'}
     if (not isinstance(value, dict) or value.get('schema') != ADAPTER_SCHEMA or not keys <= set(value) or
-            set(value) - keys - {'sublayout'}):
-        raise ValueError(f'expected {ADAPTER_SCHEMA} with exactly {sorted(keys)} and optionally sublayout')
+            set(value) - keys - {'sublayout', 'targeted_plans'}):
+        raise ValueError(f'expected {ADAPTER_SCHEMA} with exactly {sorted(keys)} and optionally sublayout or targeted_plans')
     helper, policy = value['helper'], value['policy']
     if helper is not None and helper not in HELPERS:
         raise ValueError(f'placement helper must be null or one of {HELPERS}')
@@ -139,6 +139,10 @@ def validate_declaration(value):
         raise ValueError('placement timeout_s must be an integer from 1 to 86400')
     normalized = {'schema': ADAPTER_SCHEMA, 'helper': helper, 'policy': policy,
                   'fixed_footprints': sorted(fixed), 'timeout_s': timeout}
+    if 'targeted_plans' in value:
+        if helper is None:
+            raise ValueError('targeted_plans requires a placement helper')
+        normalized['targeted_plans'] = _relative(value['targeted_plans'], 'targeted plans')
     if 'sublayout' in value:
         if helper is not None:
             # The pinned placer refuses any board that holds tracks, vias or zones, so once a group
@@ -168,6 +172,9 @@ def bind_declaration(declaration, manifest, mutable_inputs):
             raise ValueError('placement helper requires the captured schematic for native netlist export')
         if declaration['policy'] not in files or declaration['policy'] in mutable_inputs:
             raise ValueError('placement policy must be a captured immutable input')
+    plans = declaration.get('targeted_plans')
+    if plans is not None and (plans not in files or plans in mutable_inputs):
+        raise ValueError('targeted plans must be a captured immutable input')
     sub = declaration.get('sublayout')
     if sub is not None:
         if sub['request'] not in files or sub['request'] in mutable_inputs:
@@ -307,12 +314,19 @@ def _policy(inputs, bound, manifest):
     if (not isinstance(policy, dict) or not isinstance(policy.get('fixed_refs'), list) or
             any(not isinstance(r, str) for r in policy['fixed_refs'])):
         raise ValueError('placement policy must be an agent-ee.packing-policy/1 object with fixed_refs')
+    if 'targeted_plans' in policy:
+        raise ValueError('targeted_plans must come from the captured declaration')
     scope_margin = _scope_edge_margin_mm(inputs, manifest)
     if scope_margin is not None:
         current = policy.get('min_courtyard_edge_mm')
         if current is None or (not isinstance(current, bool) and isinstance(current, (int, float))
                                and scope_margin > current):
             policy['min_courtyard_edge_mm'] = scope_margin
+    if 'targeted_plans' in bound:
+        plans = Path(inputs) / bound['targeted_plans']
+        if plans.is_symlink() or not plans.is_file() or digest(plans) != manifest['files'][bound['targeted_plans']]:
+            raise ValueError('captured targeted plans changed')
+        policy['targeted_plans'] = read_json(plans)
     return policy
 
 
@@ -348,6 +362,9 @@ def binding(declaration, manifest, inputs, mutable_inputs):
               'policy': None if bound['policy'] is None else {
                   'path': bound['policy'], 'sha256': manifest['files'][bound['policy']]},
               'envelopes': envelopes, 'policy_fixed_refs': sorted(set(policy['fixed_refs']))}
+    if 'targeted_plans' in bound:
+        record['targeted_plans'] = {'path': bound['targeted_plans'],
+                                    'sha256': manifest['files'][bound['targeted_plans']]}
     if bound.get('sublayout') is not None:
         record['sublayout'] = sublayout_binding(bound['sublayout'], manifest, inputs, mutable_inputs)
     return record, bound, policy, protected, protected_refs
@@ -1050,7 +1067,8 @@ def helper_request(board, policy, protected_refs):
     if not isinstance(policy, dict) or not isinstance(policy.get('fixed_refs'), list):
         raise ValueError('placement policy must be an agent-ee.packing-policy/1 object')
     policy['fixed_refs'] += [r for r in protected_refs if r not in policy['fixed_refs']]
-    return {'policy': policy, 'authorization': {
+    targeted = {'targeted_plans': policy.pop('targeted_plans')} if 'targeted_plans' in policy else {}
+    return {**targeted, 'policy': policy, 'authorization': {
         'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
         'source_sha256': hashlib.sha256(board).hexdigest(), 'writable_root': ROOT}}
 

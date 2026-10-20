@@ -1,4 +1,4 @@
-# Judge-gated placement plans (AGENTEE-55)
+# Judge-gated placement plans (AGENTEE-55, AGENTEE-280)
 
 `placement_plans.plan(facts, packing_policy, spec)` builds an offline,
 deterministic plan from the existing saved-board [probe](placement.md).
@@ -21,7 +21,7 @@ the advisory score is not an acceptance check or proof of electrical quality.
 | `mode` | Required parameters | Behavior |
 | --- | --- | --- |
 | `decoupling_row` | `anchor_ref`, `capacitor_refs`, `offset_nm`, `step_nm`, `judge_policy` | Place caller-named capacitors in reference order, relative to the declared IC centre. Each must share a non-ground net with that IC and be explicitly declared in the judge policy. No capacitor is inferred from ground connectivity or its name. |
-| `net_cluster_seed` | `refs`, `origin_nm`, `spacing_nm`, `judge_policy` | Union the explicit references transitively through shared non-ground nets; sort by reference and put each cluster on a near-square grid. Spacing has two positive integer nanometre components. Return a seed only; autonomous whole-board apply is refused. |
+| `net_cluster_seed` | `refs`, `origin_nm`, `spacing_nm`, `judge_policy` | Union the explicit references transitively through shared non-ground nets; sort by reference and put each cluster on a near-square grid. Spacing has two positive integer nanometre components. Apply the seed through the disposable placement writer when every geometry and score gate passes. |
 | `bga_fanout` | `bga_ref`, `escape_offset_nm`, `judge_policy` | Detect uniform square pitch from a complete axis-aligned grid of uniquely numbered circular SMD pads. Suggest outward diagonal escape locations by less than half the pitch. Return a plan only; this does not create vias, tracks or a routed board. |
 
 Coordinates and offsets have two integer nanometre components. The BGA mode
@@ -37,9 +37,12 @@ and the judge's score strictly increases. Untargeted footprints are obstacles.
 Locked footprints and `fixed_refs` retain their exact transforms. A request to
 move either is blocked. Any unproven outline or courtyard remains missing
 coverage; an existing determinate failure stays in the retained judge record.
-Ties and score decreases are blocked even when geometry passes. Cluster and
-BGA modes always remain `blocked` for apply with an explicit plan-only reason;
-their seed/escape details remain available for inspection.
+Ties and score decreases are blocked even when geometry passes. Cluster seeds
+use the same gates as capacitor rows. BGA mode remains `blocked` with an
+explicit plan-only reason; escape details remain available for inspection.
+Missing required request keys raise `ValueError` before any writer lease or
+staging write. Both preview judgments use the packing policy’s envelope-bound
+`fixed_overhangs`, exactly as the saved-board judge does.
 
 The existing [disposable writer](placer.md) accepts an optional `targeted`
 object alongside its packing `policy` and write `authorization`:
@@ -76,26 +79,54 @@ successful result is atomically published as a new disposable candidate.
 The captured source is unchanged; failure diagnostics are retained as unknown
 execution, never published as placed.
 
-This helper is available through the writer's request interface. It adds no
-check registration and is not automatically selected by the campaign's greedy
-helper declaration. Campaign adoption still needs ordinary capture, receipts
-and fresh independent reviews; the helper cannot seal its own result.
+## Campaign selection
+
+An optional `targeted_plans` in the placement adapter declaration names an
+immutable captured JSON file containing 1–64 targeted request objects from the
+mode table. The coordinator binds its path and digest and forwards its contents
+as the helper request's `targeted_plans`; the writer does not choose the mode.
+For example, the file can contain a capacitor row and a cluster seed with their
+explicit judge policies, references and coordinates. The helper evaluates each
+request and chooses the eligible plan with the highest after score. Ties keep
+file order. It retains all evaluated plans under `selection.plans` and records
+`selection.selected_index`. Malformed requests abort selection. If none passes,
+the result stays blocked with no greedy fallback. An unknown candidate remains
+unknown in its retained judgment, even when another candidate is eligible.
+
+Direct writer requests can also supply `targeted_plans`; combining it with
+`targeted` is refused. The selected plan is regenerated under the writer lease
+and rejudged from saved bytes. A campaign without `targeted_plans` retains its
+greedy helper behavior. Captured requests must declare component roles, scoring
+policies and target coordinates.
+
+Campaign adoption still needs ordinary capture, receipts and fresh independent
+reviews; the helper cannot seal its own result. No check registration is added.
 
 ## Executable qualification
 
-`tests.test_placement_plans` covers strict score increase, tie and decrease,
+`tests.test_placement_plans` covers typed missing-key refusal, overhang parity,
+cluster eligibility, deterministic selection with retained blocked candidates,
+and strict score increase, tie and decrease,
 full-courtyard and concave containment, unknown coverage with a preserved
 determinate defect, held/locked/untargeted obstacles, explicit capacitor roles,
 non-ground binding, transitive clusters, ground exclusion and BGA pitch limits.
 `tests.test_placement_plans_native` uses original generated KiCad boards to
 prove saved-coordinate preservation, repeat byte-identical plans, no writes
 on blocked plans, refusal of an open non-rectangular outline, native BGA pad
-inventory and successful networkless Bubblewrap execution with native DRC.
+inventory, applied cluster seeds, saved overhang parity, and successful
+networkless Bubblewrap execution with native DRC.
+`tests.test_placement_campaign.HelperCampaignTest.test_campaign_selects_cluster_seed_and_replays_captured_plans`
+runs campaign selection, fresh captured placement checks, a pinned networkless
+KRT attempt on the applied seed, replay and tamper refusal.
 
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest \
   tests.test_placement_plans tests.test_placement_plans_native -v
 ```
+
+The campaign regression additionally requires a qualified router checkout in
+`AGENT_EE_KICAD_ROUTE_CHECKOUT`; its native routing inputs and tool state are
+mounted read-only.
 
 The extra `tests` path supports the repository's existing top-level test-helper
 imports. These tests establish the declared geometry and score contract; they

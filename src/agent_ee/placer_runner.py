@@ -234,6 +234,19 @@ def _effective_policy(request):
     return {**policy, 'min_courtyard_edge_mm': margin}
 
 
+def _plan(facts, request):
+    policy = _effective_policy(request)
+    if 'targeted' in request and 'targeted_plans' in request:
+        raise ValueError('targeted and targeted_plans cannot be combined')
+    if 'targeted' in request:
+        from .placement_plans import plan
+        return plan(facts, policy, request['targeted'])
+    if 'targeted_plans' in request:
+        from .placement_plans import select
+        return select(facts, policy, request['targeted_plans'])
+    return pack(facts, policy)
+
+
 def place_candidate(source, netlist, destination, request):
     """Publish only a fully saved/judged proposal in a fresh authorized directory.
 
@@ -245,11 +258,11 @@ def place_candidate(source, netlist, destination, request):
     destination = Path(destination).absolute()
     root = _authorization(source, destination, request['authorization'])
     source_hash, netlist_bytes = digest(source), netlist.read_bytes()
-    if 'targeted' in request:
-        from .placement_plans import plan as targeted_plan
+    targeted = 'targeted' in request or 'targeted_plans' in request
+    if targeted:
         # Refuse before even creating a lease file. A successful plan is rebuilt
         # under the writer lease below; caller-provided plans are never trusted.
-        preview = targeted_plan(extract(source), _effective_policy(request), request['targeted'])
+        preview = _plan(extract(source), request)
         if preview['status'] != 'planned':
             return preview
     with writer_lock(destination):
@@ -258,10 +271,7 @@ def place_candidate(source, netlist, destination, request):
         board = _unrouted_board(source)
         _netlist_binding(netlist_bytes, facts, _board_only(board))
         policy = _effective_policy(request)
-        if 'targeted' in request:
-            plan = targeted_plan(facts, policy, request['targeted'])
-        else:
-            plan = pack(facts, policy)
+        plan = _plan(facts, request)
         refusal = plan['status'] == 'planned' and _padstack_refusal(board)
         if refusal:
             return _failure(facts, policy, 'unsupported_geometry', 'unknown', plan['steps_used'], refusal)
@@ -275,7 +285,7 @@ def place_candidate(source, netlist, destination, request):
                 report = _evaluate_proposal(board, output, plan, netlist_bytes)
                 from .placement_adapter import write_scope
                 protected = ([p['uuid'] for p in plan['placements'] if p['fixed']]
-                             if 'targeted' in request else ())
+                             if targeted else ())
                 scope = write_scope(source.read_bytes(), output.read_bytes(), protected)
                 write_json(scratch / 'placement-write-scope.json', scope)
                 if scope['status'] != 'allowed':

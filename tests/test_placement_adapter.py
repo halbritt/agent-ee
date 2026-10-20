@@ -394,6 +394,35 @@ class DeclarationAndContextTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'mutable design input'):
             pa.bind_declaration(self.declaration(), manifest, [SCHEMATIC])
 
+    def test_targeted_plans_are_captured_immutable_and_forwarded_for_selection(self):
+        plans_path = 'project/plans.json'
+        declaration = self.declaration(targeted_plans=plans_path)
+        manifest = {'scope': {'board': BOARD, 'schematic': SCHEMATIC},
+                    'files': {BOARD: 'a', SCHEMATIC: 'b', POLICY: 'c', plans_path: 'd'}}
+        bound = pa.bind_declaration(declaration, manifest, [BOARD])
+        self.assertEqual(bound['targeted_plans'], plans_path)
+        with self.assertRaisesRegex(ValueError, 'captured immutable'):
+            pa.bind_declaration(declaration, manifest, [BOARD, plans_path])
+        with self.assertRaisesRegex(ValueError, 'captured immutable'):
+            pa.bind_declaration(declaration, {**manifest, 'files': {BOARD: 'a', SCHEMATIC: 'b', POLICY: 'c'}}, [BOARD])
+        with self.assertRaisesRegex(ValueError, 'requires a placement helper'):
+            pa.validate_declaration(self.declaration(helper=None, policy=None, targeted_plans=plans_path))
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = Path(tmp)
+            (inputs / 'project').mkdir()
+            write_json(inputs / POLICY, {'fixed_refs': []})
+            plans = [{'mode': 'net_cluster_seed'}]
+            write_json(inputs / plans_path, plans)
+            manifest['files'].update({rel: digest(inputs / rel) for rel in (POLICY, plans_path)})
+            policy = pa._policy(inputs, bound, manifest)
+            request = pa.helper_request(b'board', policy, [])
+            self.assertEqual(request['targeted_plans'], plans)
+            self.assertNotIn('targeted', request)
+            self.assertNotIn('targeted_plans', request['policy'])
+            write_json(inputs / plans_path, [])
+            with self.assertRaisesRegex(ValueError, 'captured targeted plans changed'):
+                pa._policy(inputs, bound, manifest)
+
     def test_dispatch_only_for_staged_earliest_failing_placement(self):
         staged = {'scope': {'stages': {'schema': 'agent-ee.stages/1'}}}
         state = lambda stage: {'history': [{'earliest_failing_stage': stage}]}

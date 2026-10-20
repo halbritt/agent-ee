@@ -1,8 +1,8 @@
 """Original, offline targeted planners; reuse the captured probe and placement judge.
 
-Cluster grids are seeds and BGA escapes are geometric suggestions only. Neither
-authorizes whole-board placement or copper writes. A decoupling row can enter
-the existing disposable writer only after a strict score improvement.
+Cluster grids and decoupling rows can enter the existing disposable writer only
+after a strict score improvement. BGA escapes remain geometric suggestions and
+never authorize copper writes.
 """
 import copy
 import math
@@ -124,10 +124,18 @@ def plan(capture, policy, spec):
     _validate_policy(policy, set(parts))
     if not isinstance(spec, dict) or spec.get('mode') not in ('decoupling_row', 'net_cluster_seed', 'bga_fanout'):
         raise ValueError('expected decoupling_row, net_cluster_seed or bga_fanout mode')
+    required = {
+        'decoupling_row': ('anchor_ref', 'capacitor_refs', 'offset_nm', 'step_nm'),
+        'net_cluster_seed': ('refs', 'origin_nm', 'spacing_nm'),
+        'bga_fanout': ('bga_ref', 'escape_offset_nm'),
+    }
+    missing = sorted(set(('judge_policy',) + required[spec['mode']]) - spec.keys())
+    if missing:
+        raise ValueError('targeted request missing required keys: ' + ', '.join(missing))
     scoring = copy.deepcopy(spec['judge_policy'])
     if not isinstance(scoring, dict):
         raise ValueError('explicit placement judge policy required')
-    before = judge(capture, scoring)
+    before = judge(capture, scoring, overhangs=policy.get('fixed_overhangs'))
     record = {'schema': 'agent-ee.packing-plan/1', 'mode': spec['mode'],
               'board_sha256': capture['board_sha256'], 'policy': copy.deepcopy(policy),
               'request': copy.deepcopy(spec), 'judge_policy': copy.deepcopy(scoring),
@@ -172,7 +180,7 @@ def plan(capture, policy, spec):
         if not inside(escape['position_nm'], outline):
             reasons.append(f"{escape['ref']} pad {escape['pad']}: escape target outside outline")
     proposed['footprints'] = list(parts.values())
-    after = judge(proposed, scoring)
+    after = judge(proposed, scoring, overhangs=policy.get('fixed_overhangs'))
     after['basis'] = 'transformed-proposal-not-native'
     record['after'] = after
     record['judgment'] = after
@@ -184,7 +192,7 @@ def plan(capture, policy, spec):
         reasons.append('placement score must strictly improve')
     if policy.get('groups') and grade(proposed, policy['groups'])['status'] != 'pass':
         reasons.append('declared placement groups not satisfied')
-    if spec['mode'] != 'decoupling_row':
+    if spec['mode'] == 'bga_fanout':
         reasons.append('plan only: no autonomous whole-board or copper apply')
     record['placements'] = [{'ref': r, 'uuid': fp['uuid'], 'position_nm': fp['position_nm'],
                              'rotation_deg': fp['rotation_deg'], 'fixed': r in fixed or r not in targets}
@@ -192,3 +200,19 @@ def plan(capture, policy, spec):
     if not reasons:
         record.update(status='planned', outcome='info')
     return record
+
+
+def select(capture, policy, specs):
+    """Choose the best eligible captured request; retain every candidate's judgment.
+
+    Equal scores keep declaration order. No eligible plan means no write, with no
+    greedy fallback. Malformed requests abort selection rather than disappearing.
+    """
+    if not isinstance(specs, list) or not specs or len(specs) > 64:
+        raise ValueError('targeted_plans needs 1..64 targeted requests')
+    plans = [plan(capture, policy, spec) for spec in specs]
+    eligible = [i for i, candidate in enumerate(plans) if candidate['status'] == 'planned']
+    selected = max(eligible, key=lambda i: plans[i]['after']['score']) if eligible else 0
+    result = copy.deepcopy(plans[selected])
+    result['selection'] = {'selected_index': selected if eligible else None, 'plans': plans}
+    return result
