@@ -4,7 +4,13 @@ File status cannot prove unchanged bytes, and with sudo no file is immutable to 
 user's processes, so digest() and digest_fd() hash the bytes on every call, inside a
 digest_scope() too. Only fingerprint(), for runtime files nothing in the scope reads,
 reuses an observation, and only within one scope. Every mutation case below must yield
-the true digest."""
+the true digest.
+
+The mmap cases construct an unchanged-status scenario by freezing os.stat,
+os.fstat and os.lstat to one real observation. They do not assert that the kernel
+leaves metadata unchanged: delayed writeback can update it. File bytes, mappings
+and hash reads remain real, and digest correctness is asserted unconditionally.
+"""
 import contextlib
 import errno
 import hashlib
@@ -61,7 +67,8 @@ class Counted(unittest.TestCase):
         before = os.stat(path)
         # Keep the observation older than a racy-timestamp memo guard, too.
         self.settle()
-        with patch('os.stat', return_value=before), patch('os.fstat', return_value=before):
+        with patch('os.stat', return_value=before), patch('os.fstat', return_value=before), \
+                patch('os.lstat', return_value=before):
             yield
 
     def settle(self):
