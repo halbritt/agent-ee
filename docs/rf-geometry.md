@@ -71,7 +71,8 @@ check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
                         {"name": "bias", "terminal": "L3.2", "max_length_mm": 3.5}]},
  "electrical_length": {"effective_permittivity": 3.1, "frequency_hz": 1575420000,
                        "basis": "declared ErEff, reported only"},
- "guard": {"source": {"path": "project/guard-basis.json", "pointer": "/guard_mm"},
+ "guard": {"source": {"path": "project/guard-basis.json", "sha256": "<64 lowercase hex>",
+                      "pointer": "/guard_mm"},
            "basis": "free text naming the engineering basis"},
  "basis": "free text"}
 ```
@@ -102,8 +103,12 @@ check keeps `rf-request.json`, `rf-native.json` and the candidate-bound
   - `effective_permittivity_source`, a binding to a captured solver record:
     `{"path": ..., "sha256": ..., "pointer": ...}`. `path` must be a captured
     input. `sha256` is the record's declared SHA-256 (64 lowercase hex digits);
-    if the captured bytes hash differently, capture refuses. `pointer` is an RFC
-    6901 JSON pointer. A non-numeric or non-positive value refuses. A pointer
+    if the captured bytes hash differently, capture refuses. The record must
+    report a valid solver result: `impedance_calc_status` must be the integer 0
+    and `impedance_calc_result.dResultValid` the integer 1. A record that lacks
+    either flag, or carries another value, refuses. `pointer` is an RFC
+    6901 JSON pointer. A non-numeric value, or one below 1.0 (no effective
+    permittivity is below vacuum), refuses. A pointer
     that does not resolve, or resolves to `null`, makes the value unknown:
     `resolved.electrical_length` then has `effective_permittivity: null`,
     `status: "unknown"` and a reason, and every branch reports
@@ -196,15 +201,19 @@ Each violating interval is located along the path.
 ```
 
 ```json
-{"guard": {"source": {"path": "project/guard-basis.json", "pointer": "/guard_mm", "unit": "mm"},
+{"guard": {"source": {"path": "project/guard-basis.json", "sha256": "<64 lowercase hex>",
+                      "pointer": "/guard_mm", "unit": "mm"},
            "basis": "..."}}
 ```
 
 `guard` needs a nonempty `basis` and exactly one of `width_mm` or `source`.
 There is no default width. `width_mm` is a positive number or `null`. `source`
 reads the width by JSON pointer from a captured record (`unit` `mm`, the default,
-or `mil`). The record is an immutable input bound by SHA-256, like the CPW
-source. The basis is recorded, not verified: it says where the width comes from.
+or `mil`). The record is an immutable input bound by its declared `sha256` (64
+lowercase hex digits), exactly like `effective_permittivity_source`: a record
+whose captured bytes hash differently refuses capture. A width that rounds to
+0 nm (below 0.0000005 mm) refuses: the corridor would be only the bare track
+footprint. The basis is recorded, not verified: it says where the width comes from.
 The 1.19 mm per side in the
 [pod determination](pod-routing-policy-determination.md#return-corridor-guard-width-and-stitching)
 is an unsourced heuristic. This check does not assume it. A `null` width gives
@@ -242,9 +251,10 @@ The coordinator grades in this order:
    evaluable: `unknown`.
 5. Uncovered area above 0.000001 mm² (the reference-continuity tolerance) is a
    `defect`. Its `reasons` are taken from `foreign_antipad` (an item of another
-   net or of no net), `rf_via_antipad`, `rule_area` and `void` (unattributed
-   area above the tolerance). The items are listed under `foreign`, `rf_vias`
-   and `rule_areas`.
+   net or of no net), `rf_via_antipad`, `rf_net_copper` (an RF-net track, zone
+   or graphic on the reference layer), `rule_area` and `void` (unattributed
+   area above the tolerance). The items are listed under `foreign`, `rf_vias`,
+   `rf_copper` and `rule_areas`.
 6. RF tracks off the signal layer are not graded against this reference. They
    are listed under `ungraded_tracks` and make an otherwise clean result
    `unknown`.

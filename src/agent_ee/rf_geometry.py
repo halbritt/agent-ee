@@ -19,13 +19,16 @@ ground net, the signal and reference layers and any of three sections:
 - `guard`: the ground net's copper on the reference layer covers every RF track on
   the signal layer grown by a declared guard width per side, with no antipad or
   void inside. The width comes from the declaration with a recorded engineering
-  basis (inline or by JSON pointer into a captured record), never a default; a
-  `null` width is unknown. This is a geometric guard result, not RF evidence.
+  basis (inline or by JSON pointer into a captured record bound by SHA-256),
+  never a default; a `null` width is unknown and one that rounds to 0 nm refuses.
+  This is a geometric guard result, not RF evidence.
 
 An optional `electrical_length` section is reported only. Its effective
 permittivity is either a declared number or read by JSON pointer from a captured
-solver record bound by SHA-256: a hash mismatch refuses, and a value absent at the
-pointer leaves every branch's electrical length unknown (null).
+solver record bound by SHA-256: a hash mismatch, a record that does not report a
+valid result (impedance_calc_status 0, dResultValid 1) or a value below 1.0 refuses,
+and a value absent at the pointer leaves every branch's electrical length unknown
+(null).
 
 The sandboxed pcbnew probe (`python3 -m agent_ee.rf_geometry`) emits judgment-free
 native facts: the RF net's tracks, pads and vias, ground vias and united copper
@@ -67,7 +70,7 @@ PERMITTIVITY_SOURCE_KEYS = {'path', 'sha256', 'pointer'}
 SHA256 = re.compile(r'[0-9a-f]{64}')
 GUARD_KEYS = {'basis'}
 GUARD_OPTIONAL = {'width_mm', 'source'}
-GUARD_SOURCE_KEYS = {'path', 'pointer'}
+GUARD_SOURCE_KEYS = {'path', 'sha256', 'pointer'}
 GUARD_SCOPE = ('geometric guard result: ground-net copper on the declared reference layer under every RF track '
                'on the signal layer grown by the declared guard width per side; the width is a declared '
                'engineering choice, and this is not RF qualification or a return-current measurement')
@@ -260,22 +263,42 @@ def parse_declaration(raw, load_source=None):
     return doc, resolved
 
 
-def _bound_permittivity(binding, load_source):
-    """Effective permittivity read by JSON pointer from a captured record bound by SHA-256.
-
-    A hash mismatch refuses; a pointer that does not resolve, or resolves to null, is unknown."""
-    _keys(binding, PERMITTIVITY_SOURCE_KEYS, set(), 'effective_permittivity_source')
+def _bound_record(binding, load_source, label):
+    """The captured record a binding names, refused unless it hashes to the declared SHA-256."""
     if not isinstance(binding['sha256'], str) or not SHA256.fullmatch(binding['sha256']):
-        raise ValueError('effective_permittivity_source sha256 must be 64 lowercase hex digits')
-    path = binding['pointer']
-    if not isinstance(path, str) or not path.startswith('/'):
-        raise ValueError('effective_permittivity_source pointer must start with /')
+        raise ValueError(f'{label} sha256 must be 64 lowercase hex digits')
+    if not isinstance(binding['pointer'], str) or not binding['pointer'].startswith('/'):
+        raise ValueError(f'{label} pointer must start with /')
     if load_source is None:
-        raise ValueError('effective_permittivity_source requires captured inputs')
+        raise ValueError(f'{label} requires captured inputs')
     captured = load_source(binding['path'])
     if captured['sha256'] != binding['sha256']:
-        raise ValueError(f"effective_permittivity_source {binding['path']} has sha256 {captured['sha256']}, "
+        raise ValueError(f"{label} {binding['path']} has sha256 {captured['sha256']}, "
                          f"not the declared {binding['sha256']}")
+    return captured
+
+
+def _solver_valid(document):
+    """The captured solver record reports a valid result: impedance_calc_status 0 and dResultValid 1."""
+    try:
+        status = pointer(document, '/impedance_calc_status')
+        valid = pointer(document, '/impedance_calc_result/dResultValid')
+    except ValueError as exc:
+        raise ValueError('effective_permittivity_source record lacks impedance_calc_status or dResultValid') from exc
+    if type(status) is not int or status != 0 or type(valid) is not int or valid != 1:
+        raise ValueError(f'effective_permittivity_source record is not a valid solver result: '
+                         f'impedance_calc_status {status!r}, dResultValid {valid!r}')
+
+
+def _bound_permittivity(binding, load_source):
+    """Effective permittivity read by JSON pointer from a captured solver record bound by SHA-256.
+
+    A hash mismatch, missing or invalid solver status flags, or a value below 1.0 refuses; a pointer that does
+    not resolve, or resolves to null, is unknown."""
+    _keys(binding, PERMITTIVITY_SOURCE_KEYS, set(), 'effective_permittivity_source')
+    captured = _bound_record(binding, load_source, 'effective_permittivity_source')
+    _solver_valid(captured['document'])
+    path = binding['pointer']
     source = {'path': binding['path'], 'sha256': captured['sha256'], 'pointer': path}
     try:
         value = pointer(captured['document'], path)
@@ -284,30 +307,34 @@ def _bound_permittivity(binding, load_source):
     if value is None:
         return {'effective_permittivity': None, 'source': source, 'status': 'unknown',
                 'reason': 'effective permittivity is absent from the captured record at the pointer'}
-    return {'effective_permittivity': _number(value, 'source effective_permittivity'), 'source': source}
+    if _number(value, 'source effective_permittivity') < 1.0:
+        raise ValueError(f'source effective_permittivity {value} is below 1.0')
+    return {'effective_permittivity': value, 'source': source}
 
 
 def _guard(guard, load_source):
-    """The declared guard width and its recorded basis; there is no default width."""
+    """The declared guard width and its recorded basis; there is no default width.
+
+    A width that rounds to 0 nm would grade only the bare track footprint, so it refuses."""
     _keys(guard, GUARD_KEYS, GUARD_OPTIONAL, 'guard')
     if len(GUARD_OPTIONAL & set(guard)) != 1:
         raise ValueError('guard requires exactly one of width_mm or source')
     result = {'basis': _text(guard['basis'], 'guard basis')}
     if 'width_mm' in guard:
         result['width_mm'] = _number(guard['width_mm'], 'guard width_mm', nullable=True)
-        return result
-    source = guard['source']
-    _keys(source, GUARD_SOURCE_KEYS, SOURCE_OPTIONAL, 'guard source')
-    unit = source.get('unit', 'mm')
-    if unit not in SOURCE_UNITS:
-        raise ValueError(f'guard source unit must be one of {sorted(SOURCE_UNITS)}')
-    if load_source is None:
-        raise ValueError('guard source requires captured inputs')
-    captured = load_source(source['path'])
-    width = _number(pointer(captured['document'], source['pointer']), 'guard source width')
-    result.update(width_mm=width * SOURCE_UNITS[unit],
-                  source={'path': source['path'], 'sha256': captured['sha256'], 'pointer': source['pointer'],
-                          'unit': unit})
+    else:
+        source = guard['source']
+        _keys(source, GUARD_SOURCE_KEYS, SOURCE_OPTIONAL, 'guard source')
+        unit = source.get('unit', 'mm')
+        if unit not in SOURCE_UNITS:
+            raise ValueError(f'guard source unit must be one of {sorted(SOURCE_UNITS)}')
+        captured = _bound_record(source, load_source, 'guard source')
+        width = _number(pointer(captured['document'], source['pointer']), 'guard source width')
+        result.update(width_mm=width * SOURCE_UNITS[unit],
+                      source={'path': source['path'], 'sha256': captured['sha256'], 'pointer': source['pointer'],
+                              'unit': unit})
+    if result['width_mm'] is not None and round(result['width_mm'] * NM) < 1:
+        raise ValueError(f"guard width {result['width_mm']} mm rounds to 0 nm")
     return result
 
 
@@ -1396,16 +1423,17 @@ def evaluate_guard(resolved, native):
                 for a in selected]
     foreign = listed(a for a in found if a['kind'] != 'rule_area' and a['net'] != net)
     rf_vias = listed(a for a in found if a['kind'] == 'via' and a['net'] == net)
+    rf_copper = listed(a for a in found if a['kind'] in ('track', 'zone', 'graphic') and a['net'] == net)
     rule_areas = listed(a for a in found if a['kind'] == 'rule_area')
     off_signal = sorted(t['uuid'] for t in native['tracks'] if t['layer'] != resolved['signal_layer'])
     record.update(guard_nm=facts['guard_nm'], corridor_tracks=len(facts['corridor_tracks']),
                   corridor_mm2=round(polyset_area(facts['corridor_nm']) / 1e12, 6),
                   uncovered_mm2=round(uncovered / 1e12, 6), unattributed_mm2=round(unattributed / 1e12, 6),
-                  tolerance_mm2=CONTINUITY_TOLERANCE_MM2, foreign=foreign, rf_vias=rf_vias, rule_areas=rule_areas,
-                  ungraded_tracks=off_signal)
+                  tolerance_mm2=CONTINUITY_TOLERANCE_MM2, foreign=foreign, rf_vias=rf_vias, rf_copper=rf_copper,
+                  rule_areas=rule_areas, ungraded_tracks=off_signal)
     if uncovered > tolerance:
         reasons = [reason for reason, present in (('foreign_antipad', foreign), ('rf_via_antipad', rf_vias),
-                                                  ('rule_area', rule_areas),
+                                                  ('rf_net_copper', rf_copper), ('rule_area', rule_areas),
                                                   ('void', unattributed > tolerance)) if present]
         return {**record, 'status': 'defect', 'reasons': reasons or ['void'],
                 'statement': f"{gnd} copper on {resolved['reference_layer']} does not cover the RF tracks on "

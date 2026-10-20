@@ -47,12 +47,13 @@ def via_sites(paths, keepout=0.6, step=VIA_STEP, offset=VIA_OFFSET):
 def make_board(path, *, width=0.335, gap=0.2032, ground_signal=True, reference=True, reference_slot=False,
                fill=True, drop_vias=(), d3_stub=None, dangling=False, undeclared_pad=False, foreign=False,
                unrouted_l3=False, vias=True, b_cu_hop=False, arc_bend=False, foreign_via=None,
-               tht_launch=False, reference_keepout=None):
+               tht_launch=False, reference_keepout=None, reference_rf_track=None):
     """arc_bend replaces the 45 degree bend with a quarter arc (centre (13, 10), radius 2).
 
     foreign_via places a /OTHER through via at the given centre; tht_launch makes J2.1 a plated
     through-hole pad (its In1.Cu clearance is the RF net's own launch cut); reference_keepout adds an
-    In1.Cu rule area forbidding zone fill over the given rectangle (x0, y0, x1, y1)."""
+    In1.Cu rule area forbidding zone fill over the given rectangle (x0, y0, x1, y1); reference_rf_track adds an
+    RF-net track on In1.Cu along the given points."""
     import pcbnew as k
     board = k.BOARD()
     board.SetCopperLayerCount(4)
@@ -150,6 +151,8 @@ def make_board(path, *, width=0.335, gap=0.2032, ground_signal=True, reference=T
         track([(4.5, 8.0 + offset + 0.05), (6.5, 8.0 + offset + 0.05)], net='/OTHER', w=0.1)
     if foreign_via is not None:
         via(foreign_via, '/OTHER')
+    if reference_rf_track is not None:
+        track(reference_rf_track, layer=k.In1_Cu, w=0.2)
     if vias:
         paths = [TRUNK, *stubs.values()] + ([[(24.0, 10.0), (24.0, 7.5)]] if dangling else [])
         for index, site in enumerate(via_sites(paths)):
