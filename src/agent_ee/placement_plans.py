@@ -80,7 +80,7 @@ def _clusters(parts, spec, scoring):
             targets[ref] = [origin[0] + (column+i % width)*spacing[0],
                             origin[1] + (i//width)*spacing[1]]
         column += width+1
-    return targets, {'clusters': list(groups.values()), 'seed_only': True}
+    return targets, {'clusters': list(groups.values())}
 
 
 def _fanout(parts, spec):
@@ -205,12 +205,15 @@ def plan(capture, policy, spec):
 def select(capture, policy, specs):
     """Choose the best eligible captured request; retain every candidate's judgment.
 
+    All requests must use one equal judge policy so scores are comparable.
     Equal scores keep declaration order. No eligible plan means no write, with no
     greedy fallback. Malformed requests abort selection rather than disappearing.
     """
     if not isinstance(specs, list) or not specs or len(specs) > 64:
         raise ValueError('targeted_plans needs 1..64 targeted requests')
     plans = [plan(capture, policy, spec) for spec in specs]
+    if any(candidate['judge_policy'] != plans[0]['judge_policy'] for candidate in plans[1:]):
+        raise ValueError('targeted_plans requires one shared judge_policy')
     eligible = [i for i, candidate in enumerate(plans) if candidate['status'] == 'planned']
     selected = max(eligible, key=lambda i: plans[i]['after']['score']) if eligible else 0
     result = copy.deepcopy(plans[selected])

@@ -604,7 +604,9 @@ copy and validates the saved result with native tools. Opt-in
 [targeted plans](docs/placement-plans.md) place caller-named decoupling capacitors
 or apply net-cluster seeds only when the placement score strictly improves; BGA
 escape suggestions remain plans for inspection. Campaigns can select among
-captured targeted requests and retain every candidate’s judgment. On placement
+captured targeted requests with one shared judge policy and retain every
+candidate’s judgment. Both targeted request forms reserve IMU axis markings
+before a writer lease and again under the lease. On placement
 turns of a staged campaign, the [placement campaign adapter](docs/placement-adapter.md) gives the writer the
 sealed placement findings, can run the placer as a receipted coordinator step,
 and refuses edits other than footprint translations, quarter turns and qualified

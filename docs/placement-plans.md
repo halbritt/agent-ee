@@ -1,4 +1,4 @@
-# Judge-gated placement plans (AGENTEE-55, AGENTEE-280)
+# Judge-gated placement plans (AGENTEE-55, AGENTEE-280, AGENTEE-287)
 
 `placement_plans.plan(facts, packing_policy, spec)` builds an offline,
 deterministic plan from the existing saved-board [probe](placement.md).
@@ -38,8 +38,9 @@ Locked footprints and `fixed_refs` retain their exact transforms. A request to
 move either is blocked. Any unproven outline or courtyard remains missing
 coverage; an existing determinate failure stays in the retained judge record.
 Ties and score decreases are blocked even when geometry passes. Cluster seeds
-use the same gates as capacitor rows. BGA mode remains `blocked` with an
-explicit plan-only reason; escape details remain available for inspection.
+use the same gates as capacitor rows. Cluster records retain `clusters`; the stale
+`seed_only` flag is removed because an eligible seed can be applied. BGA mode
+remains `blocked` with an explicit plan-only reason; escape details remain available for inspection.
 Missing required request keys raise `ValueError` before any writer lease or
 staging write. Both preview judgments use the packing policy’s envelope-bound
 `fixed_overhangs`, exactly as the saved-board judge does.
@@ -71,7 +72,10 @@ Use the same `python3 -m agent_ee.placer_runner` invocation and captured inputs
 as for greedy packing. The default greedy path is unchanged. Targeted plans
 are regenerated from the source under the writer lease; caller-supplied plan
 bytes cannot authorize a write. A blocked preview returns before creating
-even a lease file. Successful plans are saved to a fresh staging copy, checked
+even a lease file. Both the pre-lease preview and the leased plan reserve visible
+`IMU_AXES` silkscreen labels through the same effective packing policy, retaining
+the label UUID and reservation geometry. A target on the marking is blocked.
+Successful plans are saved to a fresh staging copy, checked
 against actual saved transforms and pad inventory, re-scored with the same
 judge policy, checked by native courtyard DRC, and compared by the existing
 write-scope validator with every fixed or untargeted UUID protected. Only a
@@ -86,7 +90,11 @@ immutable captured JSON file containing 1–64 targeted request objects from the
 mode table. The coordinator binds its path and digest and forwards its contents
 as the helper request's `targeted_plans`; the writer does not choose the mode.
 For example, the file can contain a capacitor row and a cluster seed with their
-explicit judge policies, references and coordinates. The helper evaluates each
+explicit references and coordinates. Every request must carry an equal
+`judge_policy` object (value equality, independent of mapping order); differing
+policies raise `ValueError` before any lease or candidate write, including when
+one candidate would be blocked. This keeps scores comparable and prevents a
+lenient policy from winning selection. The helper evaluates each
 request and chooses the eligible plan with the highest after score. Ties keep
 file order. It retains all evaluated plans under `selection.plans` and records
 `selection.selected_index`. Malformed requests abort selection. If none passes,
@@ -105,15 +113,17 @@ reviews; the helper cannot seal its own result. No check registration is added.
 ## Executable qualification
 
 `tests.test_placement_plans` covers typed missing-key refusal, overhang parity,
-cluster eligibility, deterministic selection with retained blocked candidates,
-and strict score increase, tie and decrease,
+cluster eligibility, shared-policy refusal, deterministic selection with retained
+blocked candidates, strict score increase, tie and decrease,
 full-courtyard and concave containment, unknown coverage with a preserved
 determinate defect, held/locked/untargeted obstacles, explicit capacitor roles,
 non-ground binding, transitive clusters, ground exclusion and BGA pitch limits.
 `tests.test_placement_plans_native` uses original generated KiCad boards to
 prove saved-coordinate preservation, repeat byte-identical plans, no writes
 on blocked plans, refusal of an open non-rectangular outline, native BGA pad
-inventory, applied cluster seeds, saved overhang parity, and successful
+inventory, applied cluster seeds without `seed_only`, saved overhang parity,
+IMU reservations in both targeted request forms with no lease or candidate write,
+unmarked controls, mixed-policy refusal, and successful
 networkless Bubblewrap execution with native DRC.
 `tests.test_placement_campaign.HelperCampaignTest.test_campaign_selects_cluster_seed_and_replays_captured_plans`
 runs campaign selection, fresh captured placement checks, a pinned networkless

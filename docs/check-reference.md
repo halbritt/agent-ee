@@ -1022,6 +1022,10 @@ writing, then rejudges actual saved bytes. It adds no check kind or acceptance
 authority. Cluster seeds use the same apply gates as capacitor rows; BGA
 escape plans remain plan-only. AGENTEE-280 adds typed missing-key refusal,
 preview/saved overhang parity and campaign selection among captured requests.
+AGENTEE-287 requires equal judge policies throughout a selection, removes the
+stale cluster `seed_only` flag, and reserves `IMU_AXES` markings in both the
+pre-lease preview and leased targeted plan. Native regressions cover both
+`targeted` and `targeted_plans` refusal on a reserved label and unmarked controls.
 
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.

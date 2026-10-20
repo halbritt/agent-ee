@@ -78,7 +78,75 @@ class NativePlansTest(unittest.TestCase):
         self.assertEqual(result['judgment']['score'], 100)
         self.assertEqual(result['native_courtyard_overlaps'], [])
         self.assertEqual(result['write_scope']['status'], 'allowed')
+        self.assertNotIn('seed_only', result['plan'])
         self.assertEqual(self.source.read_bytes(), self.saved)
+
+    def test_mixed_judge_policies_refuse_before_lease_or_candidate_write(self):
+        first = self.config.pop('targeted')
+        second = copy.deepcopy(first)
+        second['judge_policy']['capacitors']['C1']['deduction'] = 1
+        self.config['targeted_plans'] = [first, second]
+        with self.assertRaisesRegex(ValueError, 'one shared judge_policy'):
+            place_candidate(self.source, self.netlist, self.scratch / 'mixed', self.config)
+        self.assertEqual(list(self.scratch.iterdir()), [])
+        self.assertEqual(self.source.read_bytes(), self.saved)
+
+    def _mark_imu_axes(self, position):
+        import pcbnew as k
+        native = k.LoadBoard(str(self.source))
+        marking = k.PCB_TEXT(native)
+        marking.SetText('IMU_AXES')
+        marking.SetLayer(k.F_SilkS)
+        marking.SetPosition(k.VECTOR2I(*position))
+        marking.SetTextSize(k.VECTOR2I(800000, 800000))
+        native.Add(marking)
+        self.assertTrue(k.SaveBoard(str(self.source), native))
+        marked = self.source.read_bytes()
+        self.config['authorization']['source_sha256'] = hashlib.sha256(marked).hexdigest()
+        return marked
+
+    def test_imu_axes_blocks_targeted_modes_before_lease_or_candidate_write(self):
+        target = next(p for p in plan(extract(self.source), self.config['policy'],
+                                     self.config['targeted'])['placements'] if p['ref'] == 'C1')
+        marked = self._mark_imu_axes(target['position_nm'])
+        for mode in ('targeted', 'targeted_plans'):
+            config = copy.deepcopy(self.config)
+            if mode == 'targeted_plans':
+                config[mode] = [config.pop('targeted')]
+            with self.subTest(mode=mode):
+                result = place_candidate(self.source, self.netlist, self.scratch / mode, config)
+                self.assertEqual(result['status'], 'blocked', result)
+                self.assertTrue(any('target conflicts with obstacle' in r for r in result['reasons']))
+                self.assertTrue(any(o.get('source', '').startswith('IMU_AXES/')
+                                    for o in result['policy']['obstacles']))
+                self.assertEqual(list(self.scratch.iterdir()), [])
+                self.assertEqual(self.source.read_bytes(), marked)
+
+    def test_clear_imu_targeted_modes_retain_reservation_in_saved_plan(self):
+        marked = self._mark_imu_axes([15_000_000, 15_000_000])
+        for mode in ('targeted', 'targeted_plans'):
+            config = copy.deepcopy(self.config)
+            if mode == 'targeted_plans':
+                config[mode] = [config.pop('targeted')]
+            with self.subTest(mode=mode):
+                result = place_candidate(self.source, self.netlist, self.scratch / mode, config)
+                self.assertEqual(result['status'], 'placed', result)
+                reservations = [o for o in result['plan']['policy']['obstacles']
+                                if o.get('source', '').startswith('IMU_AXES/')]
+                self.assertEqual(len(reservations), 1)
+                self.assertEqual(self.source.read_bytes(), marked)
+
+    def test_unmarked_targeted_modes_still_place(self):
+        for mode in ('targeted', 'targeted_plans'):
+            config = copy.deepcopy(self.config)
+            if mode == 'targeted_plans':
+                config[mode] = [config.pop('targeted')]
+            with self.subTest(mode=mode):
+                result = place_candidate(self.source, self.netlist, self.scratch / mode, config)
+                self.assertEqual(result['status'], 'placed', result)
+                self.assertEqual(result['judgment']['score'], 100)
+                self.assertEqual(result['native_courtyard_overlaps'], [])
+                self.assertEqual(self.source.read_bytes(), self.saved)
 
     def test_selection_without_targeted_key_and_no_fallback_on_blocked(self):
         good = self.config.pop('targeted')
