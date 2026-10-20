@@ -283,7 +283,7 @@ takes exactly `manifest`, `netlist_check` and `requirement_id`. Its requirement
 must point to the manifest's captured declaration source. The full dependency
 closure is immutable in scope/2 and scope/3.
 
-Every populated native instance must match its declared symbol, footprint and
+Every populated purchased instance must match its declared symbol, footprint and
 supplier identity, and every required sheet/reference selector must be present.
 A mismatch or absent required selector is a defect; footprint findings retain
 the reference and both footprint values. Missing or failed native evidence,
@@ -291,6 +291,8 @@ missing identity data and required unavailable provenance leave coverage unknown
 The per-reference table is retained in `work/CHECK_ID/parts-subset.json` and the
 coordinator seals the check and its prerequisite XML. The predicate establishes
 declared membership, not approval authenticity or component suitability.
+
+`parts_subset` also admits explicit [on-board copper declarations](approved-parts.md#declared-on-board-copper-features) with captured CAD, exact passive pins/nets and native non-BOM, non-DNP, on-board flags (AGENTEE-305). It shares the fab copper geometry and field rules; undeclared populated instances remain defects.
 
 ## Hierarchy validation
 

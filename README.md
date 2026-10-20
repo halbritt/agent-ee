@@ -188,6 +188,9 @@ structured datasheet bindings up to 2048 bytes (AGENTEE-293). Declared
 [copper features](docs/fab-export.md#copper-features) qualify for fab BOM/CPL
 exclusion through both fab gates, with manufacturer/distributor binding detection
 and typed refusal of malformed property values (AGENTEE-289, AGENTEE-290).
+The [parts manifest](docs/approved-parts.md#declared-on-board-copper-features)
+also admits source-bound copper jumper declarations with exact native pins, nets
+and population flags (AGENTEE-305).
 
 An optional [staged campaign](docs/staged-campaign.md) keeps later checks behind
 earlier gates. Missing expected design content requires a native observation; it

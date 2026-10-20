@@ -286,3 +286,60 @@ replays its acquisition and immutable dependencies. Purchase identity and CAD
 remain independent of the acquisition alias. Legacy declarations without this
 field establish custody only; source selection does not establish electrical
 ratings or exact ordering-code correspondence.
+
+## Declared on-board copper features
+
+AGENTEE-305 adds `kind: "copper_feature"` beside `bare_copper_probe` in
+`agent-ee.parts/1`. A copper feature is required, has 2–64 distinct passive
+pins and has no catalog allocation, supplier identity, stock or datasheet record.
+Its exact fields are `kind`, `id`, `role`, `required`, `instances`, `lib_id`,
+`footprint` and `copper`:
+
+```json
+{
+  "kind": "copper_feature",
+  "id": "termination-jumper",
+  "role": "on-board solder bridge",
+  "required": true,
+  "lib_id": "Owned:Jumper",
+  "footprint": "Owned:Jumper2",
+  "instances": [
+    {"sheet": "/", "reference": "JP1", "nets": {"1": "CAN_L", "2": "TERM"}}
+  ],
+  "copper": {
+    "symbol": {"path": "Owned.kicad_sym", "sha256": "<captured SHA-256>"},
+    "footprint": {"path": "Owned.pretty/Jumper2.kicad_mod", "sha256": "<captured SHA-256>"},
+    "pins": [
+      {"number": "1", "name": "A", "electrical_type": "passive"},
+      {"number": "2", "name": "B", "electrical_type": "passive"}
+    ],
+    "native_flags": {"in_bom": false, "dnp": false, "exclude_from_board": false}
+  }
+}
+```
+
+Replace the illustrative hash placeholders with actual captured digests. Source
+blobs must match the manifest's captured CAD assignments and immutable closure.
+Qualification checks exact symbol pins, pad count and pad numbers, then reuses
+[fab copper rules](fab-export.md#copper-features) for surface geometry, graphics
+and fields. Library format headers are omitted from the geometry view; an absent
+library placement is evaluated at its native origin. Source bytes remain intact.
+Custom-pad or assembly declarations still use the existing captured CAD
+`declarations` contract. Inherited and power symbols are unsupported for this kind.
+
+`parts_subset` compares native sheet/reference, library and footprint identities,
+pin metadata, every declared native net and all three native population flags.
+It also binds the embedded symbol body to the captured source. Missing or changed
+source evidence refuses coverage; an observed membership mismatch is a defect.
+An excluded BOM flag alone never admits an undeclared populated instance. DNP
+cannot suppress a required copper declaration. Existing purchased-part and probe
+rules are unchanged.
+
+This admission path covers manifest qualification and native parts membership.
+It does not add copper generation to binding fill or the Rung-1 RC producer.
+Fab steps still require their explicit `copper_features` reference list and fresh
+board qualification; parts membership alone does not establish fab acceptance.
+Owned native tests exercise sandboxed export, coordinator evidence and public
+verification. A pinned pod replay can qualify JP1–JP5 while still refusing the
+complete candidate for another undeclared feature; that is incomplete candidate
+coverage, not a passing full-pod result.
