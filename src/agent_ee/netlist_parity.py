@@ -5,8 +5,7 @@ from pathlib import Path
 
 from .hardware_interface import text, unique_object
 
-MAX_COMPONENTS = 256
-MAX_TERMINALS = 8192
+from .design_limits import MAX_COMPONENTS, MAX_NETS, MAX_TERMINALS
 MAX_BYTES = 8_000_000
 MAX_SEARCH = 100_000
 MAX_LIBRARY_BYTES = 32 * 1024 * 1024
@@ -34,6 +33,8 @@ def terminal_inventory(components, nets):
         raise ValueError('empty component inventory')
     if len(components) > MAX_COMPONENTS:
         raise Unsupported('component inventory limit exceeded')
+    if len(nets) > MAX_NETS:
+        raise Unsupported('net inventory limit exceeded')
     return {'components': components, 'nets': nets, 'memberships': memberships}
 
 
@@ -153,23 +154,33 @@ def _assignments(candidates, budget):
     order = sorted(candidates, key=lambda cid: (len(candidates[cid]), cid))
     mapping, used = {}, set()
 
-    def visit(index):
-        if index == len(order):
-            yield dict(mapping)
-            return
+    # Explicit depth-first frames preserve candidate order and budget accounting
+    # without consuming a Python call frame for every physical component.
+    frames = [iter(candidates[order[0]])] if order else []
+    if not order:
+        yield {}
+        return
+    while frames:
+        index = len(frames) - 1
         cid = order[index]
-        for native in candidates[cid]:
-            if budget['steps'] >= budget['limit']:
-                raise Unsupported('exact graph search limit exhausted')
-            budget['steps'] += 1
-            if native in used:
-                continue
-            mapping[cid] = native
-            used.add(native)
-            yield from visit(index + 1)
-            used.remove(native)
-            del mapping[cid]
-    yield from visit(0)
+        if cid in mapping:
+            used.remove(mapping.pop(cid))
+        try:
+            native = next(frames[-1])
+        except StopIteration:
+            frames.pop()
+            continue
+        if budget['steps'] >= budget['limit']:
+            raise Unsupported('exact graph search limit exhausted')
+        budget['steps'] += 1
+        if native in used:
+            continue
+        mapping[cid] = native
+        used.add(native)
+        if len(frames) == len(order):
+            yield dict(mapping)
+        else:
+            frames.append(iter(candidates[order[index + 1]]))
 
 
 def _diagnostics(expected, actual, mapping):
@@ -465,6 +476,8 @@ def _resolve_captured_intent(inputs, rel):
     record = read_json_source(Path(inputs) / rel)
     if len(record['components']) > MAX_COMPONENTS:
         raise Unsupported('component inventory limit exceeded before resolution')
+    if len(record.get('nets', ())) > MAX_NETS:
+        raise Unsupported('net inventory limit exceeded before resolution')
     captures, remaining = {}, MAX_LIBRARY_BYTES
     for library in record['libraries']:
         with (Path(inputs) / library['path']).open('rb') as stream:

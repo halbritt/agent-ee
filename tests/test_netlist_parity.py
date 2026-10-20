@@ -927,7 +927,7 @@ class FailureBoundaryTests(unittest.TestCase):
             (root / 'Owned.kicad_sym').write_bytes(b'x' * 100)
             with patch('agent_ee.netlist_parity.MAX_LIBRARY_BYTES', 64), self.assertRaisesRegex(Unsupported, 'library byte'):
                 _source_inventory(root, {'source': {'kind': 'intent', 'path': 'intent.json'}})
-            raw['components'] *= 129
+            raw['components'] *= 513
             (root / 'intent.json').write_text(json.dumps(raw))
             with self.assertRaisesRegex(Unsupported, 'component inventory'):
                 _source_inventory(root, {'source': {'kind': 'intent', 'path': 'intent.json'}})

@@ -33,6 +33,10 @@ The purpose is to make agent-assisted electronics work inspectable and repeatabl
 The engineer still defines the requirements, supplies applicable models, and owns
 physical validation.
 
+Electrical graph checks support [bounded design inventories](docs/design-size-limits.md)
+of up to 1,024 components, 2,048 nets and 8,192 physical terminals. Exact-search,
+byte and geometric work guards still apply.
+
 The [telemetry-pod evidence index](docs/evidence-index.md) maps sealed checks to
 the pod's nine criteria while retaining bench and operator obligations.
 

@@ -148,8 +148,8 @@ Components add `sheet`; `(sheet,id)` identifies an occurrence-local component.
 Annotated `reference` remains globally unique. Nets add `sheet`; `(sheet,id)`
 identifies a local segment. Terminal selectors name components only in that
 segment's sheet. Explicit no-connects add `sheet`. Direct cross-sheet terminal
-references are refused. Physical components are limited to 128 and their
-resolved pin inventory to 8192, matching the bounded parity comparison limits.
+references are refused. Physical components are limited to 1,024, local net segments to 2,048 and their
+resolved pin inventory to 8,192, using the [shared graph ceilings](design-size-limits.md).
 A resolver pass does not guarantee that graph matching will finish its search.
 
 A port has exactly `child`, `id`, `name`, `direction`, `parent_net`, `child_net`.

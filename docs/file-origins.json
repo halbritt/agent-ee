@@ -2278,6 +2278,16 @@
     },
     {
       "paths": [
+        "tests/test_design_limits.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-298 capacity-boundary tests. The minimal symbol library, schematic and KiCad XML netlist export strings are generated synthetically here; no upstream design, library or vendor document bytes are embedded."
+    },
+    {
+      "paths": [
         "tests/test_part_binding.py"
       ],
       "kind": "owned-source",

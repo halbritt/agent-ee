@@ -77,8 +77,10 @@ schematic lattice, nonfinite/sub-nanometre coordinates, or coordinates beyond
 ±10 m are refused. A one-nanometre gap therefore cannot silently close through
 native rounding. The shared reader also bounds bytes, AST nodes and depth;
 extraction caps source bytes at 8 MiB, aggregate captured libraries at 32 MiB,
-components at 128, physical pins and wire segments at 2048 each, coordinate
-nodes at 8192 and coordinate/segment work at two million.
+components and library declarations at 1,024, physical pins at 8,192 and
+extracted nets at 2,048, using the [shared graph ceilings](design-size-limits.md).
+Wire segments stay capped at 2,048, coordinate nodes at 8,192 and
+coordinate/segment work at two million.
 
 Local/hierarchical labels, child sheets, buses/entries/aliases, multiunit symbols,
 no-connect markers or pin types, power symbols, hidden pins, alternate pin

@@ -636,6 +636,10 @@ the check `unsupported/unknown`.
 
 ## Intent and golden netlist parity
 
+The [shared design-size ceilings](design-size-limits.md) bound electrical graph
+inputs to 1,024 components, 2,048 nets and 8,192 terminals. Above-limit inputs
+remain unknown; supported inputs undergo the same checks.
+
 The [`netlist_parity` check](netlist-parity.md) compares a captured golden XML
 netlist or captured connectivity intent with an earlier native `netlist` check.
 Required parameters are `source`, `netlist_check`, `predicate` (`topology`,
