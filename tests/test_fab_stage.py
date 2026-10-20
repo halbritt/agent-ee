@@ -448,6 +448,8 @@ class DeclaredFabStepTests(unittest.TestCase):
         cls.spec = fab_stage.step(q.PACKAGE_ROOT, cls.scope['board'], cls.scope['schematic'])
         cls.receipt_dir = cls.root / 'receipt'
         cls.receipt = run_step(cls.receipt_dir, cls.inputs, cls.spec, {'test': 'declared-fab'})
+        from tests.receipt_diagnostics import retain_refusal
+        retain_refusal(cls.receipt_dir, cls.receipt)
         cls.context = {'spec': cls.receipt['spec'], 'receipt': {
             'path': str(cls.receipt_dir / 'receipt.json'),
             'sha256': digest(cls.receipt_dir / 'receipt.json'), 'binding': cls.receipt['binding']}}
@@ -498,6 +500,8 @@ class DeclaredFabStepTests(unittest.TestCase):
     def context_for(self, spec, label):
         folder = self.root / label
         receipt = run_step(folder, self.inputs, spec, {'test': label})
+        from tests.receipt_diagnostics import retain_refusal
+        retain_refusal(folder, receipt)
         self.assertEqual(receipt['status'], 'completed', receipt)
         return {'spec': receipt['spec'], 'receipt': {'path': str(folder / 'receipt.json'),
                 'sha256': digest(folder / 'receipt.json'), 'binding': receipt['binding']}}

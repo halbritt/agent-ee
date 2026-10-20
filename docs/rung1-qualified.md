@@ -378,3 +378,5 @@ remain.
 - **3D models.** Stock footprints use `${KICAD10_3DMODEL_DIR}` model paths,
   which `fab_consistency` reports as unknown until library roots map to
   captured inputs.
+
+Receipted Python steps mount a [content-addressed source snapshot](stage-receipts.md#python-tool-source-snapshots), separate from host import caches. A refused fab step reports its violations and retained receipt path; mounted-file mutation still refuses adoption.

@@ -214,11 +214,12 @@ def scaffold_step(source_root, steps_dir, template_dir, *, envelope=BOARD_ENVELO
 
     In place: every input is read at its candidate path, so the receipt's after-tree is the
     first capture (AGENTEE-139 pre_receipt)."""
+    from .tool_source import snapshot
     return {'schema': 'agent-ee.stage-step/1', 'stage': 'scaffold', 'step': 'write-scaffold',
             'argv': ['/usr/bin/python3', '-B', '-P', f'{MOUNT_STEPS}/scaffold.py', f'/candidate/{envelope}',
                      root[0], f'/candidate/{root[1]}', '--template', MOUNT_TEMPLATE, '--out', '/work/out'],
             'mounts': [{'source': str(Path(steps_dir)), 'at': MOUNT_STEPS},
-                       {'source': str(Path(source_root)), 'at': MOUNT_SOURCE},
+                       {'source': str(snapshot(source_root)), 'at': MOUNT_SOURCE},
                        {'source': str(Path(template_dir)), 'at': MOUNT_TEMPLATE}],
             'source': MOUNT_SOURCE, 'version_argv': ['/usr/bin/python3', '--version'],
             'writes': {path: 'out/' + path for path in SCAFFOLD_PATHS}, 'adoptable_exits': [0], 'timeout_s': 120}
@@ -460,7 +461,8 @@ def validate_scope_file(scope_path):
 def step_specs(source_root, steps_dir, kicad_route):
     """agent-ee.stage-step/1 declarations; mounts are read-only and outside reserved sandbox paths."""
     from .fab_stage import step as fab_step
-    source = {'source': str(Path(source_root)), 'at': MOUNT_SOURCE}
+    from .tool_source import snapshot
+    source = {'source': str(snapshot(source_root)), 'at': MOUNT_SOURCE}
     steps = {'source': str(Path(steps_dir)), 'at': MOUNT_STEPS}
     route = {'source': str(Path(kicad_route)), 'at': MOUNT_ROUTE}
     board, sch = f'project/{NAME}.kicad_pcb', f'project/{NAME}.kicad_sch'

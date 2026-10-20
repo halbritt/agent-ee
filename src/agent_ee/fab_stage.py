@@ -61,7 +61,8 @@ def before_fab_check(ctx):
             raise ValueError('fab step receipt changed')
         receipt = validate_receipt(path.parent, binding=link['binding'])
         if receipt['spec'] != context['spec'] or receipt['status'] not in ADOPTABLE:
-            raise ValueError('fab step receipt is not adoptable or differs from the declaration')
+            raise ValueError(f"fab step receipt is not adoptable or differs from the declaration; "
+                             f"violations {receipt['violations']}; receipt kept at {path}")
         if after_tree(receipt) != ctx.manifest['files']:
             raise ValueError('fab step output is not applicable to this captured candidate')
         if not receipt['artifacts'] or any(sha is None for sha in receipt['artifacts'].values()):
@@ -231,6 +232,8 @@ def step(source_root, board, schematic, bom_variant=None):
     A `bom_variant` (generator `--bom-variant`) becomes part of the step argv, so
     the receipt's spec digest binds it, and reaches only fab_export's BOM export.
     """
+    from .tool_source import snapshot
+    source_root = snapshot(source_root)
     return {'schema': 'agent-ee.stage-step/1', 'stage': 'fab', 'step': 'export-fab',
             'argv': ['/usr/bin/env', 'PYTHONPATH=/tool/agent-ee', '/usr/bin/python3', '-B', '-P',
                      '-m', 'agent_ee.fab_stage',

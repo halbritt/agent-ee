@@ -254,3 +254,5 @@ can leave the board bytes unchanged while adding the required package evidence.
 The gate's sealed artifacts, rotation status and declared-stage done binding
 are all still required. See [declared fab steps](fab-export.md#declared-fab-steps)
 for receipt applicability, comparison rules and the pending-step scheduling path.
+
+Receipted Python steps mount a [content-addressed source snapshot](stage-receipts.md#python-tool-source-snapshots), separate from host import caches. A refused fab step reports its violations and retained receipt path; mounted-file mutation still refuses adoption.

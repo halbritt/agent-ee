@@ -600,7 +600,8 @@ def validate_scope_file(scope_path, inputs_dir):
 
 def schematic_step_specs(*, source_root=PACKAGE_ROOT, steps_dir=STEPS_DIR):
     """The schematic turn: the owned emitter on the captured IR, then forward annotation."""
-    source = {'source': str(Path(source_root)), 'at': MOUNT_SOURCE}
+    from .tool_source import snapshot
+    source = {'source': str(snapshot(source_root)), 'at': MOUNT_SOURCE}
     steps = {'source': str(Path(steps_dir)), 'at': MOUNT_STEPS}
     board, sch = f'project/{NAME}.kicad_pcb', f'project/{NAME}.kicad_sch'
     return [
@@ -828,7 +829,7 @@ def run_steps(base, design, specs, start):
         summary = rc.receipt_summary(receipt_dir)
         receipts.append(summary)
         if receipt['status'] not in ('completed', 'partial'):
-            summary['stopped'] = f"status {receipt['status']} (exit {receipt['exit_code']}); not adopted"
+            summary['stopped'] = f"status {receipt['status']} (exit {receipt['exit_code']}); violations {receipt['violations']}; not adopted"
             summary['stderr_tail'] = tail(receipt_dir / 'run' / 'stderr.log')
             summary['console_tail'] = tail(receipt_dir / 'run' / 'console.log')
             return receipts, False
