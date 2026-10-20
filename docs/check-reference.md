@@ -1640,6 +1640,13 @@ Its save/reload gate preserves complete primitives, copper extents and pad/net
 identity. Unsupported geometry remains unknown; courtyard packing supplies no
 copper-clearance evidence. This adds no registered check or acceptance predicate.
 
+AGENTEE-307 also qualifies writer-requested side flips of custom-pad footprints
+and their footprint arcs through a sandboxed native reflection and save/reload.
+[The placement write scope](placement-adapter.md#custom-pad-side-flips-agentee-307)
+requires exact saved primitives, arc nodes and native merged-copper evidence;
+mutation or missing native output refuses admission. This changes transform
+admission only; check registration and placement grading remain unchanged.
+
 ## Historical datasheet acquisition
 
 The existing `datasheet_facts` check accepts the offline historical

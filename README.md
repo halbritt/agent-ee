@@ -187,7 +187,8 @@ retaining native copper extents and electrical numbers for forward annotation.
 Unsupported custom-pad constructs remain unknown coverage (AGENTEE-300).
 The [placer](docs/placer.md#native-custom-pads-agentee-307) also qualifies this
 subset for rigid placement, preserving its complete primitives and native copper
-extents through save/reload (AGENTEE-307).
+extents through save/reload. The [placement write scope](docs/placement-adapter.md#custom-pad-side-flips-agentee-307)
+also qualifies exact native side flips of these footprints and their arcs (AGENTEE-307).
 
 The [schematic emitter](docs/schematic-emitter.md) preserves KiCad 10 private
 symbol metadata, supports explicit component BOM flags, and preserves canonical
