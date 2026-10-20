@@ -199,12 +199,18 @@ def custom_pad_geometry(pad):
 def _custom_pad_nodes(data):
     """Use the shared bounded reader and AGENTEE-300 qualifier on board pads."""
     from .symbol_library import parse_sexpr, children, field
-    nodes = {}
+    nodes, custom_keys = {}, set()
     for fp in children(parse_sexpr(data), 'footprint'):
         for pad in children(fp, 'pad'):
             if len(pad) > 3 and pad[3] == 'custom':
-                nodes[field(pad, 'uuid', 1)[0]] = pad
-    return nodes
+                custom_keys.add(field(pad, 'uuid', 1)[0])
+            elif not children(pad, 'uuid'):
+                # Legacy stock pads may receive their UUID only on native load.
+                continue
+            key = field(pad, 'uuid', 1)[0]
+            # Count all pads: a custom pad can also collide with a stock pad.
+            nodes[key] = None if key in nodes else pad
+    return {key: nodes[key] for key in custom_keys}
 
 
 def _qualify_custom_pad(pad, node):
@@ -252,9 +258,13 @@ def extract(board_path):
                          'size_nm': vector_nm(pad.GetSize(pcbnew.PADSTACK.ALL_LAYERS)),
                          'rotation_deg': pad.GetOrientationDegrees(), 'attribute': pad_attribute(pad),
                          'layers': sorted(pcbnew.LayerName(layer) for layer in pad.GetLayerSet().Seq())})
-            if pad.GetShape() == pcbnew.PAD_SHAPE_CUSTOM:
+            if pad.m_Uuid.AsString() in custom_nodes and custom_nodes[pad.m_Uuid.AsString()] is None:
+                pads[-1]['custom_geometry'] = {'status': 'unsupported',
+                                               'reason': 'duplicate pad UUID: ' + pad.m_Uuid.AsString()}
+            elif pad.GetShape() == pcbnew.PAD_SHAPE_CUSTOM:
                 try:
-                    pads[-1]['custom_geometry'] = _qualify_custom_pad(pad, custom_nodes[pad.m_Uuid.AsString()])
+                    node = custom_nodes[pad.m_Uuid.AsString()]
+                    pads[-1]['custom_geometry'] = _qualify_custom_pad(pad, node)
                 except (ValueError, KeyError) as exc:
                     pads[-1]['custom_geometry'] = {'status': 'unsupported', 'reason': str(exc)}
         footprints.append({'ref': fp.GetReference(), 'uuid': fp.m_Uuid.AsString(), 'value': fp.GetValue(),

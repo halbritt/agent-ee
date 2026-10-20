@@ -659,3 +659,10 @@ changes. Executor failure and missing-output controls retain refusal.
 The private expanded-pod seed at fome-mc `f9305366a810c884b9c8f5e9c0ac9e5b324d2e17` yields zero scope refusals;
 its next [packing result](placer.md#native-custom-pads-agentee-307) remains an
 area infeasibility defect. External design bytes are not repository fixtures.
+
+AGENTEE-317 adds native writer-scope refusal controls for source custom pads
+with unsupported arcs, thermal connections or holes. Reflection failures lead
+with the probe's `ValueError` when present, so native debug and SWIG shutdown
+messages do not obscure the refusal. The complete console remains in the probe's
+temporary executor work directory while that probe runs; its bounded diagnostic
+is included in the returned scope violation.

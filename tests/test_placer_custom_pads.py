@@ -311,6 +311,97 @@ class CustomPadPlacementTest(unittest.TestCase):
             self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'))
             self.assertEqual(result['placements'], [])
 
+    def test_duplicate_custom_pad_uuids_are_all_unsupported(self):
+        import copy
+        from agent_ee import placement_adapter as pa
+        from agent_ee.schematic_emit import parse_quoted
+        from agent_ee.scaffold import sexpr
+        for same_footprint, stock, count in ((True, False, 2), (False, False, 2),
+                                             (True, False, 3), (False, True, 2)):
+            with self.subTest(same_footprint=same_footprint, stock=stock, count=count):
+                source = self.source()
+                root = parse_quoted(source.read_bytes())
+                prints = pa.footprints(root)
+                fp = next(f for f in prints.values() if pa._reference(f) == 'C1')
+                pad = pa.children(fp, 'pad')[0]
+                duplicate = copy.deepcopy(pad)
+                duplicate[1] = '2'
+                pa.children(pa.children(duplicate, 'primitives')[0], 'gr_line')[0][1][1] = '-1.9'
+                if stock:
+                    duplicate[3] = 'rect'
+                    duplicate.remove(pa.children(duplicate, 'primitives')[0])
+                    duplicate.remove(pa.children(duplicate, 'options')[0])
+                target = fp if same_footprint else next(f for f in prints.values() if pa._reference(f) == 'U1')
+                target.append(duplicate)
+                if count == 3:
+                    target.append(copy.deepcopy(duplicate))
+                source.write_bytes(sexpr(root))
+                facts = extract(source)
+                shared = [p for f in facts['footprints'] for p in f['pads']
+                          if p['uuid'] == pa.children(pad, 'uuid')[0][1]]
+                self.assertEqual(len(shared), count)
+                for p in shared:
+                    self.assertEqual(p['custom_geometry']['status'], 'unsupported', p)
+                    self.assertIn('duplicate pad UUID', p['custom_geometry']['reason'])
+                result = pack(facts, request())
+                self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'))
+                self.assertEqual(result['placements'], [])
+
+    def test_stock_pad_malformed_custom_geometry_is_typed_unknown(self):
+        import copy
+        facts = extract(self.source())
+        for evidence in (None, [], 'invalid', 42, False):
+            with self.subTest(evidence=evidence):
+                altered = copy.deepcopy(facts)
+                fp = next(f for f in altered['footprints'] if f['ref'] == 'C1')
+                fp['pads'][0]['shape'] = 1
+                fp['pads'][0]['custom_geometry'] = evidence
+                result = pack(altered, request())
+                self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'))
+                self.assertEqual(result['placements'], [])
+                with self.assertRaisesRegex(ValueError, 'custom_geometry must be an object'):
+                    transform(fp, [12000000, 13000000], 90)
+        self.assertEqual(pack(facts, request())['status'], 'planned')
+
+    def test_not_native_qualified_sources_refuse(self):
+        import pcbnew as k
+        from agent_ee.placement_adapter import write_scope
+        for kind in ('arc', 'thermal', 'hole'):
+            with self.subTest(kind=kind):
+                primitive = {'arc': '(gr_arc (start 0 0) (mid 1 1) (end 2 0) (width 0.2))',
+                             'thermal': PRIMITIVES['rect'],
+                             'hole': '(gr_circle (center 0 0) (end 1.5 0) (width 0.3) (fill no))'}[kind]
+                source = self.source(primitive)
+                if kind == 'thermal':
+                    source.write_text(source.read_text().replace('(zone_connect 2)', '(zone_connect 1)'))
+                before = source.read_bytes()
+                board = k.LoadBoard(str(source))
+                fp = next(f for f in board.GetFootprints() if f.GetReference() == 'C1')
+                fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
+                output = self.root / 'unsupported-flip.kicad_pcb'
+                k.SaveBoard(str(output), board)
+                report = write_scope(before, output.read_bytes())
+                self.assertEqual(report['status'], 'refused', report)
+                self.assertTrue(any(v.startswith('native custom-pad side flip: reflection probe failed: '
+                                                'ValueError: source custom pads are not native qualified')
+                                    for v in report['violations']), report)
+                self.assertFalse(any('swig/python' in v for v in report['violations']), report)
+
+    def test_reflection_value_error_precedes_shutdown_noise(self):
+        from agent_ee.placement_adapter import write_scope
+        before, after = self.flipped_with_arc()
+        def failed(inputs, work, argv, **kwargs):
+            work.mkdir()
+            (work / 'console.log').write_text('Traceback (most recent call last):\n'
+                'ValueError: source custom pads are not native qualified\n' +
+                'swig/python detected a memory leak\n' * 200)
+            return {'execution': 'failed'}
+        with patch('agent_ee.executor.execute', failed):
+            report = write_scope(before, after)
+        self.assertEqual(report['status'], 'refused', report)
+        self.assertEqual(report['violations'][0], 'native custom-pad side flip: reflection probe failed: '
+                         'ValueError: source custom pads are not native qualified')
+
     def test_changed_dropped_moved_primitive_and_anchor_refuse_publication(self):
         import pcbnew as k
         import agent_ee.placer_runner as runner

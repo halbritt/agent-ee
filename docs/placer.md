@@ -653,3 +653,10 @@ policy, the next result remains `packing_infeasible`, `outcome=defect`,
 The exact front-side courtyard-area proof records board area
 `[5850000000000000, 1]` and required area `[6549088000000000, 1]` nm².
 Admission of the candidate transform does not establish packing feasibility.
+
+AGENTEE-317 refuses ambiguous custom-pad evidence: every pad sharing a custom
+pad's saved UUID is marked unsupported, including collisions across footprints. A
+non-object `custom_geometry` on a stock or custom pad also returns
+`unsupported_geometry`, `outcome=unknown`, with no placements. Direct
+`transform` calls raise `ValueError` for that malformed evidence. The native
+regressions in `tests.test_placer_custom_pads` cover both refusal paths.
