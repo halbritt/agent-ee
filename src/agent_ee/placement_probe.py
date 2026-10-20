@@ -247,14 +247,22 @@ def _packing_pad_geometry(board, fp):
             if not pad.IsOnLayer(layer):
                 continue
             poly = pcbnew.SHAPE_POLY_SET()
-            margin = max(clearance, pad.GetOwnClearance(layer)) if drilled else 0
+            own_clearance = pad.GetOwnClearance(layer)
+            # The drill reservation already contributes the board minimum. Peer
+            # copper supplies only its excess, so their Minkowski margins cover
+            # the peer's larger native netclass/local clearance without doubling
+            # the board minimum. SWIG exposes no pairwise custom-rule evaluator;
+            # the unchanged-rule native publication gate remains mandatory.
+            margin = max(clearance, own_clearance) if drilled else max(0, own_clearance - clearance)
             pad.TransformShapeToPolygon(poly, layer, margin, 1000, pcbnew.ERROR_OUTSIDE)
             contours = polygons(poly)
             if contours:
-                entry = {'layers': [pcbnew.LayerName(layer)], 'polygons': contours}
+                entry = {'pad_uuid': pad.m_Uuid.AsString(), 'reservation_kind': 'copper',
+                         'layers': [pcbnew.LayerName(layer)], 'polygons': contours}
                 copper.append(entry)
                 if drilled:
-                    holes.append({'layers': entry['layers'][:],
+                    holes.append({'pad_uuid': pad.m_Uuid.AsString(), 'reservation_kind': 'copper',
+                                  'layers': entry['layers'][:],
                                   'polygons': [[p[:] for p in c] for c in contours]})
         if drilled:
             poly = pcbnew.SHAPE_POLY_SET()
@@ -263,7 +271,8 @@ def _packing_pad_geometry(board, fp):
             contours = polygons(poly)
             if not contours:
                 raise ValueError('native packing drill contour empty')
-            holes.append({'layers': [pcbnew.LayerName(l) for l in board.GetEnabledLayers().CuStack()],
+            holes.append({'pad_uuid': pad.m_Uuid.AsString(), 'reservation_kind': 'drill',
+                          'layers': [pcbnew.LayerName(l) for l in board.GetEnabledLayers().CuStack()],
                           'polygons': contours})
     return {'copper': copper, 'holes': holes, 'clearance_nm': clearance,
             'error_nm': 1000, 'bound': 'outside'}
@@ -297,6 +306,7 @@ def extract(board_path):
             pads.append({'uuid': pad.m_Uuid.AsString(), 'number': pad.GetNumber(), 'net': pad.GetNetname(),
                          'position_nm': vector_nm(pad.GetPosition()), 'shape': int(pad.GetShape()),
                          'size_nm': vector_nm(pad.GetSize(pcbnew.PADSTACK.ALL_LAYERS)),
+                         'drill_size_nm': vector_nm(pad.GetDrillSize()),
                          'rotation_deg': pad.GetOrientationDegrees(), 'attribute': pad_attribute(pad),
                          'layers': sorted(pcbnew.LayerName(layer) for layer in pad.GetLayerSet().Seq())})
             if pad.GetShape() == pcbnew.PAD_SHAPE_CUSTOM:

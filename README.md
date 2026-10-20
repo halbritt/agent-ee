@@ -94,7 +94,9 @@ requirements, checks and models.
 The [architecture diagrams](docs/architecture.md) show the information and write
 boundaries. The [placer](docs/placer.md#through-hole-reservations-and-native-publication-gate-agentee-318)
 reserves native through-hole copper and drills across both sides and refuses
-proposals that introduce native DRC shorts, clearance or PTH courtyard findings.
+proposals that introduce native DRC shorts, clearance, PTH courtyard findings
+or inter-footprint solder-mask bridges. Collision comparisons include saved
+geometry and footprint transforms (AGENTEE-325).
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
