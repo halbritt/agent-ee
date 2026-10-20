@@ -275,7 +275,8 @@ def _pad_body_reach(pad, position, size):
             # KiCad's drill offset translates copper relative to the drill centre.
             # This does not admit offset syntax to the qualified drill grammar.
             from .symbol_library import LibraryError
-            if len(offset) != 1 or offset[0][0] != 'offset' or len(offset[0]) != 3:
+            if (len(offset) != 1 or not offset[0] or offset[0][0] != 'offset' or len(offset[0]) != 3
+                    or any(not isinstance(v, str) for v in offset[0][1:])):
                 raise LibraryError('unsupported drill offset')
             offset_reach = _ceil_hypot(tuple(map(nanometres, offset[0][1:])))
         _pad_reach(origin, max(sizes), 'pad drill')
@@ -285,11 +286,8 @@ def _pad_body_reach(pad, position, size):
 def _custom_pad(pad):
     """Qualify bounded custom-pad syntax before native loading."""
     from .symbol_library import children, field, nanometres, LibraryError
-    from .board_envelope import simple_polygon
     # Native geometry can silently drop copper at large coordinates. Bound
     # both local extents and rotation-invariant reach before native loading.
-    limit_nm = 1_000_000_000
-
     allowed = {'at', 'size', 'layers', 'uuid', 'options', 'primitives',
                'zone_connect', 'thermal_bridge_angle'}
     nodes = pad[4:]
@@ -312,11 +310,20 @@ def _custom_pad(pad):
     if children(pad, 'thermal_bridge_angle'):
         nanometres(field(pad, 'thermal_bridge_angle', 1)[0])
     at = children(pad, 'at')
-    if len(at) != 1 or len(at[0]) not in (3, 4):
+    if (len(at) != 1 or len(at[0]) not in (3, 4)
+            or any(not isinstance(v, str) for v in at[0][1:])):
         raise LibraryError('pad requires x/y/optional rotation')
     position = tuple(map(nanometres, at[0][1:3]))
     _pad_body_reach(pad, position, list(map(nanometres, field(pad, 'size', 2))))
     origin_reach = _ceil_hypot(position)
+    _custom_primitives(pad, origin_reach)
+
+
+def _custom_primitives(pad, origin_reach):
+    """Apply the same primitive safety bounds to native and declared pads."""
+    from .symbol_library import children, field, nanometres, LibraryError
+    from .board_envelope import simple_polygon
+    limit_nm = 1_000_000_000
     primitives = children(pad, 'primitives')
     if len(primitives) != 1 or not 1 <= len(primitives[0][1:]) <= 128:
         raise LibraryError('custom pad requires 1..128 supported primitives')
@@ -344,7 +351,8 @@ def _custom_pad(pad):
                 raise LibraryError('custom polygon requires 3..1024 vertices')
             points = []
             for point in pts:
-                if not isinstance(point, list) or len(point) != 3 or point[0] != 'xy':
+                if (not isinstance(point, list) or len(point) != 3 or point[0] != 'xy'
+                        or any(not isinstance(v, str) for v in point[1:])):
                     raise LibraryError('unsupported custom polygon vertex')
                 points.append(tuple(map(nanometres, point[1:])))
             try:
@@ -394,16 +402,28 @@ def canonical_custom_pad(pad):
     return result
 
 
+def _copper_layer_count(layers):
+    return 32 if '*.Cu' in layers else sum(layer.endswith('.Cu') for layer in layers)
+
+
 def _native_custom_geometry(data, footprint):
-    """Load exact captured bytes through the ordinary networkless executor."""
+    """Check custom outlines; retain geometry only for natively qualified pads."""
     import tempfile
     from pathlib import Path
     from collections import Counter
     from .executor import execute
     from .symbol_library import children, field
+    numbering_only = not any(p.get('geometry') == 'native_custom' for p in footprint['pads'])
+
     def identity(pad):
+        angle = pad['orientation_microdegrees']
+        if numbering_only:
+            angle %= 360_000_000
+        layers = None
+        if pad['shape'] == 'custom':
+            layers = _copper_layer_count(pad['layers']) if 'layers' in pad else len(pad['layer_outline_counts'])
         return (pad['number'], pad['type'], pad['shape'], pad['x_nm'], pad['y_nm'],
-                pad['orientation_microdegrees'], tuple(pad['size_nm']))
+                angle, tuple(pad['size_nm']), layers)
     try:
         with tempfile.TemporaryDirectory(prefix='agent-ee-custom-pad-') as tmp:
             root = Path(tmp)
@@ -420,16 +440,29 @@ def _native_custom_geometry(data, footprint):
             if Counter(map(identity, native)) != Counter(map(identity, footprint['pads'])):
                 raise FootprintError('native pad identity differs from captured footprint')
             for pad in footprint['pads']:
-                if pad.get('geometry') != 'native_custom':
+                if pad['shape'] != 'custom':
                     continue
                 matches = [p for p in native if identity(p) == identity(pad)]
+                if pad['geometry'] == 'declared_custom':
+                    # Numbering-only duplicates need no unique geometry binding;
+                    # the inventory counter binds their multiplicity and layers.
+                    for found in matches:
+                        outlines = found['layer_outline_counts']
+                        if (not isinstance(outlines, list) or not outlines
+                                or len(outlines) != _copper_layer_count(pad['layers'])):
+                            raise FootprintError('native custom-pad outline evidence missing/incomplete')
+                        for count in outlines:
+                            if type(count) is not int or count != 1:
+                                raise FootprintError(f'native custom pad {pad["number"]!r} has {count!r} outlines; '
+                                                     'exactly one merged copper outline required')
+                    continue
                 if len(matches) != 1:
                     raise FootprintError('ambiguous native custom-pad identity')
                 found = matches[0]
+                outlines = found['outline_count']
                 anchor = field(children(pad['native'], 'options')[0], 'anchor', 1)[0]
                 if found['anchor'] != anchor:
                     raise FootprintError('native custom-pad anchor differs from captured footprint')
-                outlines = found['outline_count']
                 if type(outlines) is not int or outlines != 1:
                     raise FootprintError(f'native custom pad {pad["number"]!r} has {outlines!r} outlines; '
                                          'exactly one merged copper outline required')
@@ -495,7 +528,8 @@ def _footprint(data, library, source, declared=None):
                 raise LibraryError('unsupported/duplicate pad layer')
             copper = any(x.endswith('.Cu') for x in layers)
             at = children(pad, 'at')
-            if len(at) != 1 or len(at[0]) not in (3, 4):
+            if (len(at) != 1 or len(at[0]) not in (3, 4)
+                    or any(not isinstance(v, str) for v in at[0][1:])):
                 raise LibraryError('pad requires x/y/optional rotation')
             x, y = map(nanometres, at[0][1:3])
             angle = nanometres(at[0][3]) if len(at[0]) == 4 else 0
@@ -503,6 +537,8 @@ def _footprint(data, library, source, declared=None):
             if any(v <= 0 for v in size):
                 raise LibraryError('nonpositive pad size')
             _pad_body_reach(pad, (x, y), size)
+            if geometry == 'declared_custom' and children(pad, 'primitives'):
+                _custom_primitives(pad, _ceil_hypot((x, y)))
             drill = children(pad, 'drill')
             if kind in ('thru_hole', 'np_thru_hole'):
                 if len(drill) != 1 or len(drill[0]) not in (2, 4):
@@ -514,6 +550,8 @@ def _footprint(data, library, source, declared=None):
                         raise LibraryError('oval drill requires two dimensions')
                 elif len(values) != 1:
                     raise LibraryError('unsupported drill form')
+                if any(not isinstance(v, str) for v in values):
+                    raise LibraryError('drill dimensions require atoms')
                 if any(nanometres(v) <= 0 for v in values):
                     raise LibraryError('nonpositive drill')
             elif drill:
@@ -552,7 +590,7 @@ def _footprint(data, library, source, declared=None):
             result['rule_areas'] = rule_areas
         if entry is not None:
             result['declaration'] = entry
-        if any(p.get('geometry') == 'native_custom' for p in pads):
+        if any(p['shape'] == 'custom' for p in pads):
             _native_custom_geometry(data, result)
             result['electrical_numbers'] = sorted({p['number'] for p in pads if p['role'] == 'electrical'})
         return result
@@ -565,7 +603,8 @@ def index_footprints(manifest, captured_files, declarations=None):
 
     Optional ``declarations`` are captured owner pad/assembly declarations
     (``validate_declarations``); these never qualify geometry. Explicitly solid
-    custom SMD pads in the supported subset require a sandboxed native load.
+    custom SMD pads in the supported subset and declared custom shapes require
+    a sandboxed native load.
     """
     result = dict(schema='agent-ee.footprint-index/1', execution='ok', outcome='info',
                   coverage='complete', footprints=[], findings=[], manifest_sha256=None)

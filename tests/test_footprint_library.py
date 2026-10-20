@@ -706,5 +706,29 @@ class PadReachTests(unittest.TestCase):
                     self.assertEqual(native['pads'][0]['bbox_nm'], bbox)
 
 
+class NonAtomPadCoordinateTests(unittest.TestCase):
+    def test_non_atom_coordinates_refuse_only_the_affected_footprint(self):
+        for pad in (smd('1', '(x)'), smd('1', 0).replace('(at 0 0)', '(at 0 0 (x))'),
+                    tht('1', 0, drill='(x)'), tht('1', 0, drill='1 (offset (x) 0)'),
+                    tht('1', 0, drill='1 (offset 0 (y))'), tht('1', 0, drill='1 ()'),
+                    smd('1', 0, shape='custom', extra='(zone_connect 2) '
+                        '(options (clearance outline) (anchor rect)) '
+                        '(primitives (gr_poly (pts (xy (x) 0) (xy 1 0) (xy 0 1)) '
+                        '(width 0) (fill yes))) ')):
+            with self.subTest(pad=pad):
+                manifest, files = capture(fixture('Bad', [pad]), 'Bad')
+                good_manifest, good_files = capture(fixture('Good', [smd('1', 0)]), 'Good')
+                manifest['libraries'][0]['members'].extend(good_manifest['libraries'][0]['members'])
+                files.update(good_files)
+                for declared in (None, owner_declarations([('Owned:Bad', dict(custom_pads=['1']))])):
+                    result = index_footprints(manifest, files, declarations=declared)
+                    self.assertEqual((result['execution'], result['outcome'], result['coverage']),
+                                     ('failed', 'unknown', 'missing'))
+                    self.assertEqual([f['name'] for f in result['footprints']], ['Good'])
+                    self.assertEqual(len(result['findings']), 1)
+                    self.assertEqual(result['findings'][0]['code'], 'library_coverage')
+                    self.assertEqual(result['findings'][0]['path'], 'owned.pretty/Bad.kicad_mod')
+
+
 if __name__ == '__main__':
     unittest.main()
