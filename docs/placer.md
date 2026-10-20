@@ -84,7 +84,7 @@ return `unsupported_geometry`, `outcome=unknown`, with no placements.
 The native writer rechecks the complete saved board with the placement adapter's
 write scope and retains `placement-write-scope.json`; the result includes that
 proof as `write_scope`. An out-of-scope save retains diagnostics and publishes
-no destination. Native DRC runs as before, with its full raw report retained;
+no destination. Native DRC retains full baseline and candidate reports;
 this does not change DRC severity or the registered `footprint-keepout/1`
 predicate's current unknown boundary for owned areas. Native tests include a
 positive peer-in-keepout DRC control and fixed/moving-owner placement runs in
@@ -653,3 +653,39 @@ policy, the next result remains `packing_infeasible`, `outcome=defect`,
 The exact front-side courtyard-area proof records board area
 `[5850000000000000, 1]` and required area `[6549088000000000, 1]` nm².
 Admission of the candidate transform does not establish packing feasibility.
+
+### Through-hole reservations and native publication gate (AGENTEE-318)
+
+On a board with PTH or NPTH pads, the native probe records
+`packing_pad_geometry` for every footprint. pcbnew's
+`TransformShapeToPolygon` reports copper on each enabled layer the pad spans;
+`TransformHoleToPolygon` reports the drill, including slots. Both use outward
+bounds with a 1 µm error. Through-hole copper and drills grow by the maximum native board copper and
+hole minimum; copper also includes the applicable pad clearance. This is
+conservative; it can refuse a placement that a net-specific rule would admit.
+Unsupported contours or padstacks yield unknown coverage.
+
+The packer checks these reservations against peer courtyards on both sides
+and peer copper, including copper outside a courtyard. The check is symmetric:
+it applies when the drilled footprint moves and when a peer moves toward it.
+Fixed conflicts name both footprints. Targeted plans use the same predicate.
+These reservations never create or modify a courtyard, and do not participate
+in courtyard area proofs. An exhausted search remains unknown.
+
+Before publication, the writer runs native DRC on the baseline and saved
+candidate using byte-identical copies of the source `.kicad_pro` and
+`.kicad_dru`, when present. With no project file both runs use native defaults.
+The full reports and executions are retained in `baseline/` and the proposal
+root. `native-drc-comparison.json` compares category plus sorted native item
+UUIDs as a multiset; moving an existing finding is not a new item pair.
+Any added `shorting_items`, `clearance` or `pth_inside_courtyard` refuses
+publication and retains the findings with the failed candidate. Ignoring any
+of those categories, a failed tool, missing output, incomplete severity
+coverage or changed evaluation settings also refuses publication. Existing
+courtyard and write-scope gates remain in force. Added `silk_*` findings are
+reported separately in `silkscreen_findings`; they are not shorts.
+
+`tests.test_placer_through_holes` supplies original native PTH/NPTH, slot,
+shape, rotation, opposite-side and settings fixtures, plus DRC regression,
+identity/multiplicity, ignored-category and silk-separation controls. This
+proposal gate does not replace captured coordinator checks or authorize adoption.

@@ -56,6 +56,9 @@ def transform(fp, position, rotation):
                 courtyard[key] = [[move(p) for p in poly] for poly in courtyard[key]]
     for keepout in placed.get('packing_keepouts', []):
         keepout['polygons'] = [[move(p) for p in poly] for poly in keepout['polygons']]
+    for kind in ('copper', 'holes'):
+        for entry in placed.get('packing_pad_geometry', {}).get(kind, []):
+            entry['polygons'] = [[move(p) for p in poly] for poly in entry['polygons']]
     for pad in placed['pads']:
         if pad.get('custom_geometry', {}).get('status') == 'proven':
             box = pad['custom_geometry']['bbox_nm']
@@ -65,6 +68,7 @@ def transform(fp, position, rotation):
         pad['position_nm'] = move(pad['position_nm'])
         pad['rotation_deg'] = (pad['rotation_deg'] + rotation-fp['rotation_deg']) % 360
     placed.update(position_nm=list(position), rotation_deg=rotation)
+    _cache_pad_reservations(placed)
     return placed
 
 
@@ -190,7 +194,27 @@ def _qualified(capture):
     missing = sorted(fp['ref'] for fp in capture['footprints'] if fp['side'] not in fp['courtyards'])
     if missing:
         raise ValueError(f"mounting-side courtyard missing: {', '.join(missing)}")
+    has_holes = any(isinstance(p, dict) and p.get('attribute') in ('PTH', 'NPTH')
+                    for f in capture['footprints'] for p in f['pads'])
     for fp in capture['footprints']:
+        geometry = fp.get('packing_pad_geometry')
+        if geometry is not None:
+            if not isinstance(geometry, dict) or geometry.get('status') != 'proven':
+                reason = geometry.get('reason', '') if isinstance(geometry, dict) else ''
+                raise ValueError(f"{fp['ref']}: native packing pad geometry unqualified {reason}")
+            for kind in ('copper', 'holes'):
+                if not isinstance(geometry.get(kind), list):
+                    raise ValueError(f"{fp['ref']}: native packing {kind} inventory missing")
+                for entry in geometry[kind]:
+                    if (not isinstance(entry, dict) or not isinstance(entry.get('layers'), list)
+                            or not entry['layers'] or any(not isinstance(l, str) or not l.endswith('.Cu')
+                                                         for l in entry['layers'])):
+                        raise ValueError(f"{fp['ref']}: native packing copper layers missing")
+                    entry['polygons'] = qualified_polygons({'status': 'proven', 'polygons': entry.get('polygons')})
+            if (any(p.get('attribute') in ('PTH', 'NPTH') for p in fp['pads']) and not geometry['holes']):
+                raise ValueError(f"{fp['ref']}: native packing drill reservations empty")
+        elif has_holes:
+            raise ValueError(f"{fp['ref']}: native packing drill reservations missing")
         if fp['rotation_deg'] % 90:
             raise ValueError('initial footprint rotations must be quarter turns')
         for side, courtyard in sorted(fp['courtyards'].items()):
@@ -206,8 +230,7 @@ def _qualified(capture):
         for pad in fp['pads']:
             if not isinstance(pad, dict):
                 raise ValueError('pad record must be an object')
-            # Pad outlines never enter the search or the judge; they still must be
-            # a reviewed native shape so that the plan states what it covers.
+            # Only qualified native shapes enter the packing geometry inventory.
             custom = pad.get('custom_geometry', {})
             qualified_custom = (pad.get('shape') == 6 and isinstance(custom, dict)
                                 and custom.get('status') == 'proven'
@@ -222,6 +245,7 @@ def _qualified(capture):
                                  f"{pad.get('shape')!r} not qualified for packing")
             if type(pad.get('rotation_deg')) not in (int, float) or pad['rotation_deg'] % 90:
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: pad rotation must be a quarter turn")
+        _cache_pad_reservations(fp)
     return outline[0]
 
 
@@ -308,6 +332,35 @@ def _exact(side, polygons):
     entry = {'side': side, 'polygons': polygons}
     entry['box'] = boxes({'courtyards': {side: entry}})[side]
     return entry
+
+
+def _cache_pad_reservations(fp):
+    """Ephemeral box prefilters; the native polygons remain the collision authority."""
+    geometry = fp.get('packing_pad_geometry')
+    if geometry is None:
+        return
+
+    def inventory(polygons):
+        return [(boxes({'courtyards': {'F': {'polygons': [p]}}})['F'], p) for p in polygons]
+
+    fp['_packing_holes'] = inventory(p for e in geometry['holes'] for p in e['polygons'])
+    fp['_packing_targets'] = inventory([p for c in fp['courtyards'].values() for p in c['polygons']] +
+                                       [p for e in geometry['copper'] for p in e['polygons']])
+
+
+def _hole_conflict(candidate, peer):
+    """Symmetric PTH/NPTH exclusion, including copper outside courtyards."""
+    for owner, other in ((candidate, peer), (peer, candidate)):
+        holes = owner.get('_packing_holes', [])
+        if not holes:
+            continue
+        for (x0, y0, x1, y1), polygon in holes:
+            for (a0, b0, a1, b1), target in other['_packing_targets']:
+                if x1 <= a0 or a1 <= x0 or y1 <= b0 or b1 <= y0:
+                    continue
+                if intersection_area(polygon, target) > 0:
+                    return True
+    return False
 
 
 def _fits(candidate, outline, margin_nm=0, band=()):
@@ -896,6 +949,9 @@ def _initial_reservations(capture, policy, outline, obstacles, bands, groups):
         if (not _fits(fp, outline, 0, bands.get(fp['ref'], ())) or _near(fp, exact, policy['gap_nm'])
                 or _keepout_blocked(fp, placed[:i], obstacles)):
             raise ValueError(f"fixed placement {fp['ref']} conflicts with outline, obstacle, keepout or reserved gap")
+        for peer in placed[:i]:
+            if _hole_conflict(fp, peer):
+                raise ValueError(f"fixed placement {fp['ref']} conflicts with {peer['ref']} native through-hole reservation")
         exact.extend(_exact(side, c['polygons']) for side, c in sorted(fp['courtyards'].items()))
     positions = {fp['ref']: fp['position_nm'] for fp in placed}
     for fp in placed:
@@ -989,6 +1045,9 @@ class _Search:
                                          y1+self.gap <= b0 or b1+self.gap <= y0)}
         if hit:
             return hit
+        hole_hits = {fp['ref'] for fp in self.placed if _hole_conflict(proposed, fp)}
+        if hole_hits:
+            return hole_hits - self.fixed
         if (not _fits(proposed, self.outline, self.margin_nm) or _near(proposed, self.exact, self.gap) or
                 _in_keepouts(proposed, self.obstacles)):
             return set()

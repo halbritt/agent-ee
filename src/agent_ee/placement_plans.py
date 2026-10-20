@@ -10,7 +10,7 @@ import math
 from .board_envelope import inside
 from .placement import judge, validate_capture
 from .placement_groups import grade
-from .placer import (_edge_margin_nm, _exact, _fits, _keepout_blocked, _keepouts,
+from .placer import (_edge_margin_nm, _exact, _fits, _hole_conflict, _keepout_blocked, _keepouts,
                      _near, _qualified, _validate_policy, pad_shape_qualification, transform)
 
 
@@ -174,7 +174,8 @@ def plan(capture, policy, spec):
             peers = [p for r, p in parts.items() if r != ref]
             exact = [_exact(side, c['polygons']) for p in peers for side, c in p['courtyards'].items()]
             exact += [_exact(o['side'], o['polygons']) for o in obstacles]
-            if _near(fp, exact, policy['gap_nm']) or _keepout_blocked(fp, peers, obstacles):
+            if (_near(fp, exact, policy['gap_nm']) or _keepout_blocked(fp, peers, obstacles)
+                    or any(_hole_conflict(fp, peer) for peer in peers)):
                 reasons.append(f'{ref}: target conflicts with obstacle or gap')
     for escape in record.get('escape_targets', []):
         if not inside(escape['position_nm'], outline):

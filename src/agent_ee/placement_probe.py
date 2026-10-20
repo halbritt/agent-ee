@@ -224,11 +224,58 @@ def _qualify_custom_pad(pad, node):
     return {'status': 'proven', **geometry, 'bbox_nm': box_nm(pad.GetBoundingBox())}
 
 
+def _packing_pad_geometry(board, fp):
+    """Native outward bounds; drill/copper reservations are not courtyards."""
+    import pcbnew
+    settings = board.GetDesignSettings()
+    clearance = max(settings.m_MinClearance, settings.m_HoleClearance, settings.m_HoleToHoleMin)
+    copper, holes = [], []
+
+    def polygons(poly):
+        if poly.HasHoles():
+            raise ValueError('packing pad contour contains unsupported holes')
+        contours = [[[int(poly.COutline(i).CPoint(j).x), int(poly.COutline(i).CPoint(j).y)]
+                 for j in range(poly.COutline(i).PointCount())] for i in range(poly.OutlineCount())]
+        return [[list(point) for point in outline] for outline in
+                qualified_polygons({'status': 'proven', 'polygons': contours})] if contours else []
+
+    for pad in fp.Pads():
+        drilled = pad.HasHole() or pad.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH)
+        if pad.Padstack().Mode() != pcbnew.PADSTACK.MODE_NORMAL:
+            raise ValueError('per-layer packing padstack not qualified')
+        for layer in board.GetEnabledLayers().CuStack():
+            if not pad.IsOnLayer(layer):
+                continue
+            poly = pcbnew.SHAPE_POLY_SET()
+            margin = max(clearance, pad.GetOwnClearance(layer)) if drilled else 0
+            pad.TransformShapeToPolygon(poly, layer, margin, 1000, pcbnew.ERROR_OUTSIDE)
+            contours = polygons(poly)
+            if contours:
+                entry = {'layers': [pcbnew.LayerName(layer)], 'polygons': contours}
+                copper.append(entry)
+                if drilled:
+                    holes.append({'layers': entry['layers'][:],
+                                  'polygons': [[p[:] for p in c] for c in contours]})
+        if drilled:
+            poly = pcbnew.SHAPE_POLY_SET()
+            if not pad.TransformHoleToPolygon(poly, clearance, 1000, pcbnew.ERROR_OUTSIDE):
+                raise ValueError('native packing drill contour unavailable')
+            contours = polygons(poly)
+            if not contours:
+                raise ValueError('native packing drill contour empty')
+            holes.append({'layers': [pcbnew.LayerName(l) for l in board.GetEnabledLayers().CuStack()],
+                          'polygons': contours})
+    return {'copper': copper, 'holes': holes, 'clearance_nm': clearance,
+            'error_nm': 1000, 'bound': 'outside'}
+
+
 def extract(board_path):
     import pcbnew
     path = Path(board_path)
     before = path.read_bytes()
     board = pcbnew.LoadBoard(str(path))
+    has_holes = any(p.HasHole() or p.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH)
+                    for f in board.GetFootprints() for p in f.Pads())
     outline_shapes = [s for s in board.GetDrawings() if s.GetLayer() == pcbnew.Edge_Cuts]
     custom_nodes = _custom_pad_nodes(before) if any(
         p.GetShape() == pcbnew.PAD_SHAPE_CUSTOM for f in board.GetFootprints() for p in f.Pads()) else {}
@@ -263,6 +310,11 @@ def extract(board_path):
                            'locked': bool(fp.IsLocked()), 'position_nm': vector_nm(fp.GetPosition()),
                            'rotation_deg': fp.GetOrientationDegrees(), 'courtyards': courtyards,
                            'pads': sorted(pads, key=lambda p: (p['number'], p['uuid']))})
+        if has_holes:
+            try:
+                footprints[-1]['packing_pad_geometry'] = {'status': 'proven', **_packing_pad_geometry(board, fp)}
+            except ValueError as exc:
+                footprints[-1]['packing_pad_geometry'] = {'status': 'unsupported', 'reason': str(exc)}
     if path.read_bytes() != before:
         raise ValueError('saved board changed during extraction')
     outline = prove_contours([primitive(s) for s in outline_shapes], 'outline_missing', 'outline_unproven')
