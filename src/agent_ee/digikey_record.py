@@ -512,6 +512,9 @@ def verify_external_identity(root, identity):
 # ------------------------------------------------------------- check evidence (AGENTEE-254)
 
 EVIDENCE_KEYS = frozenset(('capture', 'capture_sha256', 'parts'))
+# Optional (AGENTEE-274): a pinned agent-ee.package-map/1 table relating the
+# DigiKey package text to the board footprint, beyond the MPN/manufacturer binding.
+PACKAGE_MAP_KEY = 'package_map'
 INCH_MM = Decimal('25.4')
 HEIGHT_RE = re.compile(r'(?:([0-9]+(?:\.[0-9]+)?)" \()?([0-9]+(?:\.[0-9]+)?)mm(?(1)\))')
 TEMPERATURE_RE = re.compile(r'(-?[0-9]+(?:\.[0-9]+)?)°C ~ (-?[0-9]+(?:\.[0-9]+)?)°C(?: \((TA|TJ|TC)\))?')
@@ -523,8 +526,15 @@ AMBIENT_QUALIFIERS = (None, 'TA')
 def evidence_declaration(raw, label):
     """Validate ``{capture, capture_sha256, parts: {reference: key}}`` naming one captured manifest."""
     from .candidate import safe_relative
-    if not isinstance(raw, dict) or set(raw) != EVIDENCE_KEYS:
-        raise ValueError(f'{label} requires exactly {sorted(EVIDENCE_KEYS)}')
+    if not isinstance(raw, dict) or set(raw) - {PACKAGE_MAP_KEY} != EVIDENCE_KEYS:
+        raise ValueError(f'{label} requires exactly {sorted(EVIDENCE_KEYS)} and optional {PACKAGE_MAP_KEY!r}')
+    if PACKAGE_MAP_KEY in raw:
+        package_map = raw[PACKAGE_MAP_KEY]
+        if (not isinstance(package_map, dict) or set(package_map) != {'path', 'sha256'} or
+                not isinstance(package_map['path'], str) or
+                str(safe_relative(package_map['path'])) != package_map['path'] or
+                not isinstance(package_map['sha256'], str) or not SHA256_RE.fullmatch(package_map['sha256'])):
+            raise ValueError(f'{label}.{PACKAGE_MAP_KEY} must be {{path, sha256}} naming one captured package map')
     capture = raw['capture']
     if (not isinstance(capture, str) or str(safe_relative(capture)) != capture or
             PurePosixPath(capture).name != MANIFEST):
@@ -546,6 +556,8 @@ def evidence_inputs(raw, inputs=None):
     any response that was not captured.
     """
     paths = [raw['capture']]
+    if PACKAGE_MAP_KEY in raw:
+        paths.append(raw[PACKAGE_MAP_KEY]['path'])
     if inputs is None:
         return paths
     from .catalog import strict_json
@@ -579,6 +591,54 @@ def replay_evidence(root, raw, files=None):
     return doc, dependencies
 
 
+def load_package_map(root, raw, files=None):
+    """The declared package map table, or ``None`` when none is declared; ValueError when unusable.
+
+    The table must be the captured bytes pinned by ``package_map.sha256``.
+    """
+    if PACKAGE_MAP_KEY not in raw:
+        return None
+    from .package_consistency import validate_table
+    from .catalog import strict_json
+    from .parts_manifest import read_captured
+    declared = raw[PACKAGE_MAP_KEY]
+    data = read_captured(root, declared['path'])
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != declared['sha256']:
+        raise ValueError(f'{declared["path"]} differs from the declared package_map sha256')
+    if files is not None and files.get(declared['path']) != actual:
+        raise ValueError(f'package map {declared["path"]} is not a captured input')
+    try:
+        return validate_table(strict_json(data.decode('utf-8')))
+    except (UnicodeDecodeError, KeyError, TypeError) as exc:
+        raise ValueError(f'package map {declared["path"]} is malformed: {exc}') from exc
+
+
+def package_verdict(evidence, footprint, table):
+    """``('pass'|'defect'|'unknown', reason)`` comparing a DigiKey package with the board footprint.
+
+    Both names must be explicit entries of the declared package map; the
+    descriptors (family, pins, body) must be equal. A record without a
+    package, an absent footprint or an unmapped name is unknown, never pass.
+    """
+    from .package_consistency import _difference
+    package = evidence['package']
+    if package is None:
+        return 'unknown', f'DigiKey record {evidence["key"]} has no package; package/footprint consistency unknown'
+    if not footprint:
+        return 'unknown', 'no assigned footprint; package/footprint consistency unknown'
+    mapped_footprint = table['footprints'].get(footprint)
+    mapped_package = table['packages'].get(package)
+    if mapped_footprint is None or mapped_package is None:
+        missing = f'footprint {footprint!r}' if mapped_footprint is None else f'DigiKey package {package!r}'
+        return 'unknown', f'{missing} is outside the package map; package/footprint consistency unknown'
+    if mapped_footprint['package'] != mapped_package['package']:
+        _, reason = _difference(mapped_footprint['package'], mapped_package['package'])
+        return 'defect', (f'DigiKey record {evidence["key"]} package {package!r} '
+                          f'({evidence["package_source"]["rule"]}) is not footprint {footprint!r}: {reason}')
+    return 'pass', None
+
+
 def part_evidence(doc, raw, dependencies, key, field):
     """One found part's source text for ``field`` with its capture/response provenance.
 
@@ -597,6 +657,7 @@ def part_evidence(doc, raw, dependencies, key, field):
     part = doc['parts'][key]
     response = (PurePosixPath(raw['capture']).parent / record['response']['path']).as_posix()
     return {'key': key, 'mpn': part['mpn'], 'manufacturer': part['manufacturer'],
+            'package': part['package'], 'package_source': part['package_source'],
             'parameter': parameter, 'value': part[field],
             'provenance': {'capture': {'path': raw['capture'], 'sha256': dependencies[raw['capture']]},
                            'response': {'path': response, 'sha256': record['response']['sha256']},

@@ -29,7 +29,8 @@ def parameters(params):
         declared = evidence_declaration(params['digikey_heights'], 'digikey_heights')
         if set(declared['parts']) & set(mapping):
             raise ValueError('a reference takes its height from height_facts or digikey_heights, not both')
-        digikey = [declared['capture']]
+        from .digikey_record import PACKAGE_MAP_KEY
+        digikey = [declared['capture'], *([declared[PACKAGE_MAP_KEY]['path']] if PACKAGE_MAP_KEY in declared else [])]
     from .fab_consistency import model_libraries
     return [*model_libraries(params).values(), *digikey]
 
@@ -63,12 +64,7 @@ def saved_binding(bindings, ref, fp):
 
 def digikey_height(evidence, binding, maximum):
     """Decisive height bound from a DigiKey 'Height - Seated (Max)' bound to the saved part; ValueError is unknown."""
-    if not binding['partnumber'] or binding['partnumber'] != evidence['mpn']:
-        raise ValueError(f'DigiKey record {evidence["key"]} MPN {evidence["mpn"]!r} differs from saved part number '
-                         f'{binding["partnumber"]!r}')
-    if binding['manufacturer'] and binding['manufacturer'].casefold() != evidence['manufacturer'].casefold():
-        raise ValueError(f'DigiKey record {evidence["key"]} manufacturer {evidence["manufacturer"]!r} differs from '
-                         f'saved {binding["manufacturer"]!r}')
+    digikey_mpn(evidence, binding)
     if evidence['value'] is None:
         raise ValueError(f'DigiKey record {evidence["key"]} lists no {evidence["parameter"]!r}')
     from .digikey_record import seated_height_bounds
@@ -80,6 +76,16 @@ def digikey_height(evidence, binding, maximum):
         return low
     raise ValueError(f'DigiKey seated height {evidence["value"]!r} ({low}..{high} mm after rounding) '
                      f'straddles {maximum} mm')
+
+
+def digikey_mpn(evidence, binding):
+    """The DigiKey record must name the saved part number and, when saved, manufacturer; ValueError otherwise."""
+    if not binding['partnumber'] or binding['partnumber'] != evidence['mpn']:
+        raise ValueError(f'DigiKey record {evidence["key"]} MPN {evidence["mpn"]!r} differs from saved part number '
+                         f'{binding["partnumber"]!r}')
+    if binding['manufacturer'] and binding['manufacturer'].casefold() != evidence['manufacturer'].casefold():
+        raise ValueError(f'DigiKey record {evidence["key"]} manufacturer {evidence["manufacturer"]!r} differs from '
+                         f'saved {binding["manufacturer"]!r}')
 
 
 def model_requests(ctx, footprints):
@@ -140,12 +146,14 @@ def evaluate(ctx, envelope, native):
     if mappings or digikey['parts']:
         from .part_binding import parse_board_bindings
         bindings = parse_board_bindings(_captured(ctx, ctx.scope['board']), defer_param_errors=True)
-    capture, capture_error = None, None
+    capture, capture_error, package_map = None, None, None
     if digikey['parts']:
-        from .digikey_record import replay_evidence
+        from .digikey_record import load_package_map, replay_evidence
         try:
             capture = replay_evidence(ctx.inputs, digikey, ctx.manifest['files'])
+            package_map = load_package_map(ctx.inputs, digikey, ctx.manifest['files'])
         except (OSError, ValueError, KeyError) as exc:
+            capture = None
             # An unreadable or unpinned capture is unknown height, never a pass.
             capture_error = f'DigiKey capture unavailable: {exc}'
     refs = [fp['ref'] for fp in native['footprints']]
@@ -201,6 +209,21 @@ def evaluate(ctx, envelope, native):
                 evidence = part_evidence(doc, digikey, dependencies, digikey['parts'][ref], 'seated_height')
                 item.update(source='digikey_seated_height', digikey=evidence)
                 binding = saved_binding(bindings, ref, fp)
+                if package_map is not None:
+                    from .digikey_record import package_verdict
+                    digikey_mpn(evidence, binding)
+                    verdict, reason = package_verdict(evidence, fp['fpid'], package_map)
+                    item['package'] = {'status': verdict, 'reason': reason, 'footprint': fp['fpid'],
+                                       'digikey_package': evidence['package'],
+                                       'package_source': evidence['package_source']}
+                    if verdict == 'defect':
+                        # A record for another package is a determinate binding defect, never a height.
+                        item.update(status='defect', reason=reason)
+                        defects.append(f'{ref}: {reason}')
+                        measured.append(item)
+                        continue
+                    if verdict == 'unknown':
+                        raise ValueError(reason)
                 height = digikey_height(evidence, binding, maximum)
                 item.update(part_number=binding['partnumber'])
             else:

@@ -1256,10 +1256,11 @@ class AssemblyReadinessTests(unittest.TestCase):
 
     # ------------------------------------------------------------------ AGENTEE-254 operating temperature
     def temperature_case(self, temperature='-40°C ~ 85°C (TA)', *, mpn='PN-GENERIC', items=None,
-                         manufacturer='Example Mfr'):
+                         manufacturer='Example Mfr', package='0603 (1608 Metric)'):
         from tests.test_digikey_capture import product
         from tests.test_digikey_evidence import parameters, write_capture
-        found = product(mpn, manufacturer=manufacturer, quantity=5000, parameters=parameters(temperature=temperature))
+        found = product(mpn, manufacturer=manufacturer, quantity=5000,
+                        parameters=parameters(temperature=temperature, package=package))
         path = write_capture(self.root / 'dk', items if items is not None else {mpn: found})
         cat = self.catalog([{"lcsc": "C25804", "stock": 1000, "is_basic": True, "last_seen": "2026-10-15"}])
         return {"catalog": cat, "operating_temperature": {
@@ -1267,7 +1268,8 @@ class AssemblyReadinessTests(unittest.TestCase):
             "parts": {"R1": mpn}}}
 
     def test_digikey_operating_temperature_pass_and_defect(self):
-        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2")]))
+        # R2 is DNP: since AGENTEE-274 a populated unlisted part makes the predicate unknown (tested below).
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2", dnp=True)]))
         params = self.temperature_case()
         report = self.evaluate(netlist, params)
         self.assertEqual(report["outcome"], "pass", report["findings"])
@@ -1323,6 +1325,122 @@ class AssemblyReadinessTests(unittest.TestCase):
         report = evaluate_assembly_readiness(self.root, netlist, params, captured_files=files)
         self.assertEqual(report["outcome"], "unknown")
         self.assertIn("not captured inputs", report["operating_temperature"]["error"])
+
+    def test_operating_temperature_unlisted_populated_part_is_unknown(self):
+        # AGENTEE-274: judging only the listed references can never pass the board-wide predicate.
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2"), part("R3", dnp=True)]))
+        params = self.temperature_case()
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report["outcome"], "unknown", report["findings"])
+        self.assertEqual([(f["code"], f["references"]) for f in report["findings"]],
+                         [("operating_temperature_unlisted", ["R2"])])
+        self.assertEqual(report["operating_temperature"]["unlisted"], ["R2"])
+        self.assertEqual(report["operating_temperature"]["components"][0]["status"], "pass")
+        # A listed part out of range stays a defect alongside the unlisted unknown.
+        hot = {**params, "operating_temperature": {**params["operating_temperature"], "max_c": 90}}
+        report = self.evaluate(netlist, hot)
+        self.assertEqual(report["outcome"], "defect")
+        self.assertEqual(sorted(f["code"] for f in report["findings"]),
+                         ["operating_temperature_out_of_range", "operating_temperature_unlisted"])
+        # Every populated part judged: the predicate can pass; the DNP R3 needs no verdict.
+        full = {**params, "operating_temperature": {**params["operating_temperature"],
+                                                    "parts": {"R1": "PN-GENERIC", "R2": "PN-GENERIC"}}}
+        report = self.evaluate(netlist, full)
+        self.assertEqual(report["outcome"], "pass", report["findings"])
+        self.assertEqual([c["status"] for c in report["operating_temperature"]["components"]], ["pass", "pass"])
+        self.assertEqual(report["operating_temperature"]["unlisted"], [])
+
+    def exemption(self, ref="R2", line="R2 is a board-edge bleeder resistor; its operating temperature is accepted "
+                                       "by the owner without DigiKey evidence.", number=2):
+        decision = self.root / "decisions/temperature.md"
+        decision.parent.mkdir(exist_ok=True)
+        decision.write_text("# Temperature exemptions\n" + line + "\n", encoding="utf-8")
+        return {ref: {"source": "decisions/temperature.md", "sha256": digest(decision), "line": number,
+                      "quote": line.split(";")[0]}}
+
+    def test_operating_temperature_provenance_bound_exemption(self):
+        from agent_ee.assembly_readiness import capability, validate_params
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2")]))
+        params = self.temperature_case()
+        spec = params["operating_temperature"]
+        exempt = {**params, "operating_temperature": {**spec, "exemptions": self.exemption()}}
+        report = self.evaluate(netlist, exempt)
+        self.assertEqual(report["outcome"], "pass", report["findings"])
+        entry = report["operating_temperature"]["exempt"][0]
+        self.assertEqual((entry["reference"], entry["status"]), ("R2", "exempt"))
+        self.assertEqual(entry["citation"]["sha256"], digest(self.root / "decisions/temperature.md"))
+        files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
+        self.assertIn("decisions/temperature.md", capability(exempt, files, self.root)["immutable_inputs"])
+        self.assertEqual(evaluate_assembly_readiness(self.root, netlist, exempt, captured_files=files)["outcome"],
+                         "pass")
+        # An uncaptured, changed, misquoted or unpopulated exemption is unknown, never a pass.
+        files.pop("decisions/temperature.md")
+        with self.assertRaisesRegex(ValueError, "must be a captured input"):
+            capability(exempt, files, self.root)
+        report = evaluate_assembly_readiness(self.root, netlist, exempt, captured_files=files)
+        self.assertEqual(report["outcome"], "unknown")
+        self.assertIn("not a captured input", report["operating_temperature"]["exempt"][0]["reason"])
+        cases = {"differs from its declared sha256": {"sha256": "0" * 64},
+                 "quote is absent": {"line": 1}, "line 9": {"line": 9}}
+        for reason, change in cases.items():
+            with self.subTest(reason=reason):
+                citation = {**exempt["operating_temperature"]["exemptions"]["R2"], **change}
+                bad = {**params, "operating_temperature": {**spec, "exemptions": {"R2": citation}}}
+                report = self.evaluate(netlist, bad)
+                self.assertEqual(report["outcome"], "unknown")
+                finding = next(f for f in report["findings"] if f["code"] == "operating_temperature_exemption_invalid")
+                self.assertIn(reason, finding["message"])
+        for ref in ("R9",):
+            unpopulated = {**params, "operating_temperature": {**spec, "exemptions": self.exemption(
+                ref, line=f"{ref} is accepted by the owner")}}
+            report = self.evaluate(netlist, unpopulated)
+            self.assertEqual(report["outcome"], "unknown")
+            self.assertEqual(sorted(f["code"] for f in report["findings"]),
+                             ["operating_temperature_exemption_invalid", "operating_temperature_unlisted"])
+        # Declarations: the quote must name the exact reference, and a part is judged or exempt, not both.
+        for bad in (self.exemption(line="R20 is accepted by the owner"), self.exemption(ref="R1"),
+                    {"R2": {**self.exemption()["R2"], "extra": 1}}, {"R2": {**self.exemption()["R2"], "line": 0}},
+                    {"R2": {**self.exemption()["R2"], "source": "../x.md"}}, {}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                validate_params({**params, "operating_temperature": {**spec, "exemptions": bad}})
+        with self.assertRaisesRegex(ValueError, "mutable deviations"):
+            validate_params({**params, "deviations": "decisions/temperature.md",
+                             "operating_temperature": {**spec, "exemptions": self.exemption()}})
+
+    def test_digikey_package_must_bind_to_the_footprint(self):
+        # AGENTEE-274: with a declared package map the DigiKey package must equal the footprint (ee29:R_0603).
+        from tests.test_digikey_evidence import write_package_map
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1")]))
+
+        def run(package="0603 (1608 Metric)", footprints=None, packages=None, pin=None):
+            shutil.rmtree(self.root / "dk", ignore_errors=True)
+            params = self.temperature_case(package=package)
+            package_map = write_package_map(self.root, "maps/packages.json",
+                                            footprints or {"ee29:R_0603": ("0603", ["resistor"])},
+                                            packages or {"0603 (1608 Metric)": "0603", "0402 (1005 Metric)": "0402"})
+            if pin:
+                package_map["sha256"] = pin
+            params["operating_temperature"]["package_map"] = package_map
+            return self.evaluate(netlist, params)
+
+        report = run()
+        self.assertEqual(report["outcome"], "pass", report["findings"])
+        entry = report["operating_temperature"]["components"][0]
+        self.assertEqual(entry["package"]["status"], "pass")
+        self.assertEqual(entry["package"]["package_source"]["rule"], "package_case")
+        report = run("0402 (1005 Metric)")
+        self.assertEqual(report["outcome"], "defect")
+        self.assertEqual([f["code"] for f in report["findings"] if f["severity"] == "defect"],
+                         ["digikey_package_mismatch"])
+        self.assertEqual(report["operating_temperature"]["components"][0]["status"], "unknown")
+        for reason, kwargs in {"has no package": dict(package=None),
+                               "footprint 'ee29:R_0603' is outside": dict(footprints={"ee29:R_0402": ("0402", ["resistor"])}),
+                               "DigiKey package '0805 (2012 Metric)' is outside": dict(package="0805 (2012 Metric)"),
+                               "package_map sha256": dict(pin="0" * 64)}.items():
+            with self.subTest(reason=reason):
+                report = run(**kwargs)
+                self.assertEqual(report["outcome"], "unknown", report["findings"])
+                self.assertIn(reason, " ".join(f["message"] for f in report["findings"]))
 
     def test_digikey_stock_never_counts_as_jlc_stock(self):
         netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1")]))

@@ -1126,7 +1126,9 @@ facts are unknown; a part above the inclusive maximum is a defect. It retains
 per-reference verdicts without exemptions for DNP or hand-fitted parts. An
 optional `digikey_heights` declaration (AGENTEE-254) grades a reference from a
 captured DigiKey `Height - Seated (Max)` bound to its saved MPN. A rounded value
-straddling the maximum, or one that is absent, unparsed or unbound, is unknown. See
+straddling the maximum, or one that is absent, unparsed or unbound, is unknown.
+An optional `package_map` (AGENTEE-274) makes a DigiKey package that differs
+from the footprint a defect, and an unmapped one unknown. See
 [component height](board-envelope.md#component-height) for parameter contracts,
 source applicability, model transform qualification and AGENTEE-209.
 
@@ -1474,7 +1476,12 @@ records bound to references. It adds the `assembly:operating-temperature`
 predicate. A single unqualified or `TA` DigiKey range that contains the ambient
 passes; one that does not is an `operating_temperature_out_of_range` defect.
 Junction/case-only, absent, unparsed or unbound values are unknown, as is an
-unpinned or uncaptured capture. DigiKey stock never counts as JLCPCB stock. See
+unpinned or uncaptured capture. The predicate is board-wide (AGENTEE-274): a
+populated component that is neither judged nor exempt by a captured, pinned
+owner citation makes it unknown (`operating_temperature_unlisted`). An optional
+`package_map` compares the DigiKey package with the footprint. A mismatch is a
+`digikey_package_mismatch` defect, and an unmapped name is unknown. DigiKey
+stock never counts as JLCPCB stock. See
 [DigiKey operating temperature](assembly-readiness.md#digikey-operating-temperature).
 
 ## Saved native net-class assignment

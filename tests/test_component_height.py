@@ -349,6 +349,37 @@ k.SaveBoard(sys.argv[1],b)
         (self.source / 'dk/responses/OWNED-CAP.json').write_bytes(b'{"Product": null}')
         self.assertEqual(self.run_height()['outcome'], 'unknown')
 
+    def test_digikey_height_package_must_bind_to_the_footprint(self):
+        # AGENTEE-274: with a declared package map the DigiKey package must equal the native footprint.
+        from tests.test_digikey_evidence import write_package_map
+        cases = (({'Owned:Capacitor': ('0603', ['capacitor'])}, {'0603 (1608 Metric)': '0603'}, 'pass', None),
+                 ({'Owned:Capacitor': ('0402', ['capacitor'])}, {'0603 (1608 Metric)': '0603'}, 'defect',
+                  'body differ'),
+                 ({'Owned:Other': ('0603', ['capacitor'])}, {'0603 (1608 Metric)': '0603'}, 'unknown',
+                  "footprint 'Owned:Capacitor' is outside the package map"),
+                 ({'Owned:Capacitor': ('0603', ['capacitor'])}, {'0402 (1005 Metric)': '0402'}, 'unknown',
+                  "DigiKey package '0603 (1608 Metric)' is outside the package map"))
+        for footprints, packages, outcome, reason in cases:
+            with self.subTest(outcome=outcome, reason=reason):
+                shutil.rmtree(self.source / 'dk', ignore_errors=True)
+                self.digikey()
+                self.params['digikey_heights']['package_map'] = write_package_map(
+                    self.source, 'maps/packages.json', footprints, packages)
+                result = self.run_height()
+                self.assertEqual(result['outcome'], outcome, result['summary'])
+                item = result['details']['measured'][0]
+                self.assertEqual(item['package']['status'], outcome)
+                self.assertEqual(item['package']['package_source']['rule'], 'package_case')
+                if reason:
+                    self.assertIn(reason, item['reason'])
+                self.assertEqual('height_mm' in item, outcome == 'pass')
+        self.assertIn('maps/packages.json', self.descriptor['immutable_inputs'])
+        # A changed pin on the map is an unavailable capture: unknown, never pass.
+        self.params['digikey_heights']['package_map']['sha256'] = '0' * 64
+        result = self.run_height()
+        self.assertEqual(result['outcome'], 'unknown')
+        self.assertIn('package_map sha256', result['details']['measured'][0]['reason'])
+
     def test_digikey_height_declaration(self):
         self.digikey()
         for params in ({**self.params, 'digikey_heights': {**self.params['digikey_heights'], 'parts': {}}},

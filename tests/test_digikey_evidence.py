@@ -12,8 +12,8 @@ import tempfile
 import unittest
 
 from agent_ee import digikey_record as record
-from agent_ee.digikey_record import (ambient_verdict, evidence_declaration, evidence_inputs, part_evidence,
-                                     replay_evidence, seated_height_bounds)
+from agent_ee.digikey_record import (ambient_verdict, evidence_declaration, evidence_inputs, load_package_map,
+                                     package_verdict, part_evidence, replay_evidence, seated_height_bounds)
 from agent_ee.storage import digest, write_json
 from tests.test_digikey_capture import details, keyword, product
 
@@ -55,6 +55,26 @@ def write_capture(directory, items):
            'requests': requests, 'parts': parts}
     write_json(directory / record.MANIFEST, doc)
     return directory / record.MANIFEST
+
+
+CHIP = {'0402': {'family': 'chip', 'pins': 2, 'body': '0402'}, '0603': {'family': 'chip', 'pins': 2, 'body': '0603'}}
+
+
+def write_package_map(root, rel, footprints, packages):
+    """Write an owned ``agent-ee.package-map/1`` table at ``root/rel``; return its ``{path, sha256}`` declaration.
+
+    ``footprints`` maps a footprint ID to ``(chip code, classes)``; ``packages`` maps DigiKey text to a chip code.
+    """
+    table = {'schema': 'agent-ee.package-map/1', 'version': 'owned-ee274',
+             'derivation': {'source': 'owned synthetic test table'},
+             'rules': {'chip-imperial': 'Imperial chip code from an explicit entry'},
+             'footprints': {fp: {'rule': 'chip-imperial', 'classes': classes, 'package': CHIP[code]}
+                            for fp, (code, classes) in footprints.items()},
+             'packages': {name: {'rule': 'chip-imperial', 'package': CHIP[code]} for name, code in packages.items()}}
+    path = Path(root) / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(path, table)
+    return {'path': rel, 'sha256': digest(path)}
 
 
 class DigiKeyEvidenceTests(unittest.TestCase):
@@ -131,6 +151,48 @@ class DigiKeyEvidenceTests(unittest.TestCase):
                     {**self.declared, 'parts': {'C1': 'bad key'}}, []):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 evidence_declaration(bad, 'digikey')
+
+    def test_package_footprint_consistency_is_pass_defect_or_unknown(self):
+        # AGENTEE-274: beyond MPN/manufacturer, the DigiKey package must equal the footprint through the pinned map.
+        package_map = write_package_map(self.root, 'maps/packages.json',
+                                        {'Owned:C_0603': ('0603', ['capacitor']), 'Owned:C_0402': ('0402', ['capacitor'])},
+                                        {'0603 (1608 Metric)': '0603'})
+        declared = {**self.declared, 'package_map': package_map}
+        self.assertEqual(evidence_declaration(declared, 'digikey'), declared)
+        self.assertIn('maps/packages.json', evidence_inputs(declared, self.root))
+        self.assertIn('maps/packages.json', evidence_inputs(declared))
+        self.assertIsNone(load_package_map(self.root, self.declared, self.files()))
+        table = load_package_map(self.root, declared, self.files())
+        doc, dependencies = replay_evidence(self.root, declared, self.files())
+        evidence = part_evidence(doc, declared, dependencies, 'OWNED-CAP', 'operating_temperature')
+        self.assertEqual((evidence['package'], evidence['package_source']['rule']), ('0603 (1608 Metric)', 'package_case'))
+        self.assertEqual(package_verdict(evidence, 'Owned:C_0603', table), ('pass', None))
+        verdict, reason = package_verdict(evidence, 'Owned:C_0402', table)
+        self.assertEqual(verdict, 'defect')
+        self.assertIn('body differ', reason)
+        for footprint, record_package, text in (('Owned:R_0603', '0603 (1608 Metric)', 'outside the package map'),
+                                                ('Owned:C_0603', '0805 (2012 Metric)', 'outside the package map'),
+                                                ('', '0603 (1608 Metric)', 'no assigned footprint'),
+                                                ('Owned:C_0603', None, 'has no package')):
+            with self.subTest(footprint=footprint, package=record_package):
+                verdict, reason = package_verdict({**evidence, 'package': record_package}, footprint, table)
+                self.assertEqual(verdict, 'unknown')
+                self.assertIn(text, reason)
+        # The map is pinned and must be a captured input; malformed tables refuse.
+        with self.assertRaisesRegex(ValueError, 'package_map sha256'):
+            load_package_map(self.root, {**declared, 'package_map': {**package_map, 'sha256': '0' * 64}})
+        files = self.files()
+        files.pop('maps/packages.json')
+        with self.assertRaisesRegex(ValueError, 'not a captured input'):
+            load_package_map(self.root, declared, files)
+        (self.root / 'maps/bad.json').write_text('{"schema": "agent-ee.package-map/1"}')
+        with self.assertRaises(ValueError):
+            load_package_map(self.root, {**declared, 'package_map': {'path': 'maps/bad.json',
+                                                                     'sha256': digest(self.root / 'maps/bad.json')}})
+        for bad in ({'path': '../packages.json', 'sha256': package_map['sha256']}, {'path': 'maps/packages.json'},
+                    {**package_map, 'sha256': 'A' * 64}, {**package_map, 'extra': 1}, 'maps/packages.json'):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                evidence_declaration({**self.declared, 'package_map': bad}, 'digikey')
 
     def test_offline_record_module_has_no_network_or_process_imports(self):
         tree = ast.parse(Path(record.__file__).read_text(encoding='utf-8'))
