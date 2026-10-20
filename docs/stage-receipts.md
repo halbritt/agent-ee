@@ -136,9 +136,18 @@ rather than being followed.
 
 Fab refusal messages include receipt violations and the retained receipt path.
 The declared-fab, generate, fab-package and rung-one test fixtures copy refused receipts to
-`build/refused-step-receipts/` before disposable fixture cleanup, with the path in
-the assertion or cleanup diagnostic. Cleanup retains them on fixture exceptions too.
-These are local test diagnostics, not release evidence.
+the absolute `AGENT_EE_REFUSED_RECEIPTS` directory when set, otherwise
+`build/refused-step-receipts/` when writable. A read-only checkout falls back to
+an atomically created per-user `agent-ee-refused-<uid>-*` directory under the
+system temporary directory, with mode 0700. The assertion or cleanup diagnostic
+reports the chosen receipt path. Cleanup retains receipts on fixture exceptions
+and finalization too. If copying fails, the diagnostic reports the retention
+error and original path without replacing the refusal assertion or an active
+fixture exception. A relative or empty override reports a configuration error;
+an unusable explicit override is reported rather than silently redirected.
+These are local test diagnostics, not release evidence; remove them after diagnosis.
+`tests.test_receipt_diagnostics` covers destination selection and retention failure
+boundaries; `tests.test_tool_source` validates copied native refusal receipts.
 
 ## Receipt fields and status
 
