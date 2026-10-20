@@ -33,6 +33,68 @@ def board():
 
 
 class PlacementPlansTest(unittest.TestCase):
+    def test_missing_required_keys_are_typed_before_geometry_or_writes(self):
+        specs = [row(), {'mode': 'net_cluster_seed', 'refs': ['C1'],
+                        'origin_nm': [5*MM, 2*MM], 'spacing_nm': [3*MM, 3*MM],
+                        'judge_policy': scoring()},
+                 {'mode': 'bga_fanout', 'bga_ref': 'U1', 'escape_offset_nm': 200000,
+                  'judge_policy': scoring()}]
+        for spec in specs:
+            for key in set(spec) - {'mode'}:
+                with self.subTest(mode=spec['mode'], key=key):
+                    incomplete = {k: v for k, v in spec.items() if k != key}
+                    with self.assertRaisesRegex(ValueError, 'missing required keys: ' + key):
+                        plan(board(), request(), incomplete)
+
+    def test_fixed_overhang_before_and_after_match_saved_judge_policy(self):
+        from agent_ee.placement import judge
+        from agent_ee.placer import transform
+        facts = board()
+        facts['footprints'][-1] = transform(facts['footprints'][-1], [19*MM, 12*MM], 0)
+        overhangs = [{'reference': 'H1', 'edges': [{'name': 'right',
+                     'start_nm': [20*MM, 0], 'end_nm': [20*MM, 20*MM],
+                     'outward': 'x+', 'max_nm': MM}],
+                     'source': {'envelope_id': 'original', 'envelope_sha256': 'a'*64,
+                                'pointer': '/fixed_footprints/0'}}]
+        result = plan(facts, request(fixed_overhangs=overhangs), row())
+        self.assertEqual(result['status'], 'planned', result)
+        self.assertEqual(result['before'], judge(facts, scoring(), overhangs=overhangs))
+        self.assertEqual(result['after']['overhangs'], overhangs)
+        self.assertEqual(result['after']['verdict'], 'pass')
+        undeclared = plan(facts, request(), row())
+        self.assertEqual(undeclared['after']['verdict'], 'hard_fail')
+        self.assertEqual(undeclared['status'], 'blocked')
+
+    def test_cluster_seed_is_eligible_only_with_strict_score_improvement(self):
+        spec = {'mode': 'net_cluster_seed', 'refs': ['C1', 'C2'],
+                'origin_nm': [5*MM, 2*MM], 'spacing_nm': [3*MM, 3*MM],
+                'judge_policy': scoring()}
+        result = plan(board(), request(), spec)
+        self.assertEqual((result['status'], result['before']['score'], result['after']['score']),
+                         ('planned', 70, 100), result)
+        for origin in ([12*MM, 2*MM], [2*MM, 2*MM]):
+            blocked = plan(board(), request(), {**spec, 'origin_nm': origin})
+            self.assertEqual(blocked['status'], 'blocked', blocked)
+
+    def test_selection_keeps_blocked_unknown_and_tie_candidates(self):
+        from agent_ee.placement_plans import select
+        specs = [row(step_nm=[7*MM, 0]), row(offset_nm=[10*MM, 0]), row(), row()]
+        original = copy.deepcopy(specs)
+        result = select(board(), request(), specs)
+        self.assertEqual(result['selection']['selected_index'], 2)
+        self.assertEqual(result['selection']['plans'][0]['status'], 'planned')
+        self.assertEqual(result['selection']['plans'][0]['after']['score'], 85)
+        self.assertEqual(result['selection']['plans'][1]['status'], 'blocked')
+        self.assertEqual(specs, original)
+        facts = board()
+        facts['outline']['status'] = 'unproven'
+        blocked = select(facts, request(), specs)
+        self.assertEqual(blocked['status'], 'blocked')
+        self.assertIsNone(blocked['selection']['selected_index'])
+        for bad in ([], {}, [row()]*65, [row(), {'mode': 'decoupling_row'}]):
+            with self.assertRaises(ValueError):
+                select(board(), request(), bad)
+
     def test_row_improves_score_and_is_byte_identical_without_mutation(self):
         facts, policy, spec = board(), request(), row()
         original = copy.deepcopy((facts, policy, spec))

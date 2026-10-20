@@ -282,7 +282,9 @@ writer proposes positions, rotations and sides in its disposable copy. It may
 run pinned helpers as processes: forward annotation onto a staging grid
 (AGENTEE-52), the greedy packer (AGENTEE-54) and plan-then-apply placers
 ([AGENTEE-55](placement-plans.md), opt-in caller-named capacitor rows;
-cluster seeds and BGA escapes are plan-only). In a placement iteration only footprint transforms may change;
+cluster seeds can apply through the same score gate, BGA escapes are plan-only;
+AGENTEE-280 adds campaign selection among captured requests). In a placement
+iteration only footprint transforms may change;
 outline, zones, rules, copper and envelope-fixed connectors are refused, as
 inventory changes are today (AGENTEE-91). Envelope mounting holes are protected
 the same way, and the packer treats fixed courtyards as exact obstacles

@@ -350,6 +350,50 @@ class PlacementCampaignFixture(unittest.TestCase):
 
 
 class HelperCampaignTest(PlacementCampaignFixture):
+    def test_campaign_selects_cluster_seed_and_replays_captured_plans(self):
+        # Start C1 outside the outline; the declared cluster restores its original legal position.
+        from agent_ee.placement_probe import extract
+        facts = extract(self.source / BOARD)
+        parts = {fp['ref']: fp for fp in facts['footprints']}
+        edit_board(self.source / BOARD, move={'C1': (120, 100)})
+        scoring = {'schema': 'agent-ee.placement-policy/1', 'ground_nets': ['GND'],
+                   'ic_refs': ['J1'], 'connector_refs': [], 'max_shared_refs': 8,
+                   'capacitors': {'C1': {'capacitance_nf': 100, 'max_distance_mm': 12, 'deduction': 15}}}
+        # The original C1 position is the explicit target, not an inferred component role.
+        specs = [{'mode': 'net_cluster_seed', 'refs': ['C1'],
+                  'origin_nm': parts['C1']['position_nm'], 'spacing_nm': [3_000_000, 3_000_000],
+                  'judge_policy': scoring}]
+        plans_path = 'project/targeted-plans.json'
+        specs.insert(0, {'mode': 'decoupling_row', 'anchor_ref': 'J1',
+                         'capacitor_refs': ['C1'], 'offset_nm': [20_000_000, 0],
+                         'step_nm': [3_000_000, 0], 'judge_policy': scoring})
+        write_json(self.source / plans_path, specs)
+        status, state = self.campaign({**self.declaration(), 'targeted_plans': plans_path})
+        self.assertGreater(len(state['history']), 1, state)
+        self.assertEqual(state['history'][1]['earliest_failing_stage'], 'routing', state)
+        result = read_json(self.out / 'implementations/1/receipts/1-agent-ee-placer/run/placement/placement-result.json')
+        self.assertEqual((result['status'], result['plan']['mode']), ('placed', 'net_cluster_seed'))
+        self.assertEqual(result['plan']['selection']['selected_index'], 1)
+        self.assertEqual(verify_campaign(self.out)['state'], state['state'])
+        # The cluster output is a real input to the pinned router, not just a plan.
+        from agent_ee import routing_adapter, stage_receipts
+        from toolchain import require_kicad_route
+        route = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
+            schematic='rc_filter.kicad_sch', name='rc_filter', label='cluster-seed',
+            checkout=require_kicad_route(), budget=120)
+        receipt_dir = self.root / 'cluster-route'
+        receipt = stage_receipts.run_step(receipt_dir, self.out / 'runs/2/inputs', route,
+                                         {'implementation': 1, 'receipt_index': 1})
+        self.assertIn(receipt['exit_code'], (0, 2), receipt)
+        self.assertEqual(receipt['violations'], [])
+        self.assertEqual(receipt['inputs'][BOARD], read_json(self.out / 'runs/2/candidate.json')['files'][BOARD])
+        self.assertIn(routing_adapter.verify(receipt_dir / 'run', receipt=receipt)['proposal'],
+                      ('eligible', 'eligible_partial'))
+        captured = self.out / 'runs/1/inputs' / plans_path
+        captured.write_text('[]')
+        with self.assertRaises(ValueError):
+            verify_campaign(self.out)
+
     def test_pinned_helper_repairs_placement_then_routing_turn_runs_no_helper(self):
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
         status, state = self.campaign(self.declaration())

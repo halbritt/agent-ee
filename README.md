@@ -599,10 +599,11 @@ declared connector edges and a pad-centre ratsnest proxy. The advisory
 courtyard issues and congested regions with suggested moves; it never passes a board. An
 [initial placer](docs/placer.md) proposes deterministic positions on an isolated
 copy and validates the saved result with native tools. Opt-in
-[targeted plans](docs/placement-plans.md) move caller-named decoupling capacitors
-only when the placement score strictly improves; net-cluster seeds and BGA
-escape suggestions remain plans for inspection. On placement turns of a staged campaign, the
-[placement campaign adapter](docs/placement-adapter.md) gives the writer the
+[targeted plans](docs/placement-plans.md) place caller-named decoupling capacitors
+or apply net-cluster seeds only when the placement score strictly improves; BGA
+escape suggestions remain plans for inspection. Campaigns can select among
+captured targeted requests and retain every candidate’s judgment. On placement
+turns of a staged campaign, the [placement campaign adapter](docs/placement-adapter.md) gives the writer the
 sealed placement findings, can run the placer as a receipted coordinator step,
 and refuses edits other than footprint translations, quarter turns and qualified
 side flips, including rigid movement of footprint-owned zone polygons. The placer
