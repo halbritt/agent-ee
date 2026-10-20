@@ -201,12 +201,37 @@ found record, or a record whose `package` is unknown (`null`). It returns:
   none of them. [Assembly readiness](assembly-readiness.md) then reports the
   deviation as usual.
 - `ratings`: `seated_height` and `operating_temperature`, as source text with
-  their capture provenance. Nothing here judges suitability.
+  their capture provenance. The projection itself judges nothing; see
+  [check evidence](#check-evidence).
 - `dependencies`: every read capture path and its SHA-256.
 
 `project --out DIR` writes `external-identity.json`, `datasheet-bindings.json`
 (input for `python -m agent_ee.datasheet_capture`) and `projection.json` into a
 new directory.
+
+## Check evidence
+
+The offline half (parser, validator, `load_capture`, projection) lives in
+`agent_ee.digikey_record` and has no request, credential or child-process code.
+The producer re-exports it. Checks import only `digikey_record`, so no check
+reaches the producer (AGENTEE-254).
+
+Two checks consume a capture through one declaration,
+`{capture, capture_sha256, parts: {reference: key}}`:
+
+- [component height](board-envelope.md#component-height) `digikey_heights`
+  reads `seated_height`;
+- [assembly readiness](assembly-readiness.md#digikey-operating-temperature)
+  `operating_temperature` reads `operating_temperature` against a declared
+  ambient range.
+
+Both replay the capture with `replay_evidence`, which refuses a manifest whose
+hash differs from `capture_sha256` or any read file that is not a captured
+input with the same hash. Failed requests do not refuse the whole capture, but a
+reference bound to a failed, not-found or unrequested key is unknown. The
+evidence returned by `part_evidence` is the source text with capture and
+response paths, hashes, a `parts.<key>.<field>` locator and `fetched_at`. It
+never includes stock or price. Absent or unparsed values are unknown.
 
 ## Limits
 

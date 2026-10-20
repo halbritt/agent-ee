@@ -1254,6 +1254,120 @@ class AssemblyReadinessTests(unittest.TestCase):
         with self.assertRaisesRegex(AssemblyReadinessExecutionError, 'unknown keys'):
             load_catalog_snapshot(self.root, legacy)
 
+    # ------------------------------------------------------------------ AGENTEE-254 operating temperature
+    def temperature_case(self, temperature='-40°C ~ 85°C (TA)', *, mpn='PN-GENERIC', items=None,
+                         manufacturer='Example Mfr'):
+        from tests.test_digikey_capture import product
+        from tests.test_digikey_evidence import parameters, write_capture
+        found = product(mpn, manufacturer=manufacturer, quantity=5000, parameters=parameters(temperature=temperature))
+        path = write_capture(self.root / 'dk', items if items is not None else {mpn: found})
+        cat = self.catalog([{"lcsc": "C25804", "stock": 1000, "is_basic": True, "last_seen": "2026-10-15"}])
+        return {"catalog": cat, "operating_temperature": {
+            "min_c": -20, "max_c": 70, "capture": "dk/digikey-capture.json", "capture_sha256": digest(path),
+            "parts": {"R1": mpn}}}
+
+    def test_digikey_operating_temperature_pass_and_defect(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2")]))
+        params = self.temperature_case()
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report["outcome"], "pass", report["findings"])
+        entry = report["operating_temperature"]["components"][0]
+        self.assertEqual((entry["reference"], entry["status"]), ("R1", "pass"))
+        self.assertEqual(entry["digikey"]["provenance"]["response"]["sha256"],
+                         digest(self.root / "dk/responses/PN-GENERIC.json"))
+        self.assertNotIn("quantity_available", entry["digikey"])
+        for low, high in ((-41, 70), (-20, 86), (-20, 85.5)):
+            with self.subTest(low=low, high=high):
+                hot = {**params, "operating_temperature": {**params["operating_temperature"],
+                                                           "min_c": low, "max_c": high}}
+                report = self.evaluate(netlist, hot)
+                self.assertEqual(report["outcome"], "defect")
+                self.assertEqual([f["code"] for f in report["findings"] if f["severity"] == "defect"],
+                                 ["operating_temperature_out_of_range"])
+        # Inclusive endpoints pass.
+        edge = {**params, "operating_temperature": {**params["operating_temperature"], "min_c": -40, "max_c": 85}}
+        self.assertEqual(self.evaluate(netlist, edge)["outcome"], "pass")
+
+    def test_digikey_operating_temperature_unbound_absent_or_unparseable_is_unknown(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1"), part("R2", dnp=True)]))
+        cases = {"junction or case": dict(temperature='-40°C ~ 125°C (TJ)'),
+                 "unparsed": dict(temperature='-40°C to 85°C'), "lists no": dict(temperature=None),
+                 "is not DigiKey MPN": dict(mpn='PN-GENERIC-T'),
+                 "manufacturer": dict(manufacturer='Other Maker'),
+                 "not_found": dict(items={'PN-GENERIC': 'not_found'}),
+                 "failed": dict(items={'PN-GENERIC': 'failed'})}
+        for reason, kwargs in cases.items():
+            with self.subTest(reason=reason):
+                shutil.rmtree(self.root / "dk", ignore_errors=True)
+                report = self.evaluate(netlist, self.temperature_case(**kwargs))
+                self.assertEqual(report["outcome"], "unknown", report["findings"])
+                finding = next(f for f in report["findings"] if f["code"] == "operating_temperature_unknown")
+                self.assertEqual(finding["reference"], "R1")
+                self.assertIn(reason, finding["message"])
+        params = self.temperature_case()
+        for ref in ("R2", "R9"):
+            with self.subTest(ref=ref):
+                unpopulated = {**params, "operating_temperature": {**params["operating_temperature"],
+                                                                   "parts": {ref: "PN-GENERIC"}}}
+                report = self.evaluate(netlist, unpopulated)
+                self.assertEqual(report["outcome"], "unknown")
+                self.assertIn("not exactly one populated", report["operating_temperature"]["components"][0]["reason"])
+        pinned = {**params, "operating_temperature": {**params["operating_temperature"], "capture_sha256": "0" * 64}}
+        report = self.evaluate(netlist, pinned)
+        self.assertEqual(report["outcome"], "unknown")
+        self.assertEqual([f["code"] for f in report["findings"] if f["severity"] == "unknown"],
+                         ["operating_temperature_unavailable"])
+        # A response missing from the candidate's captured files is never replayed.
+        files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
+        files.pop("dk/responses/PN-GENERIC.json")
+        report = evaluate_assembly_readiness(self.root, netlist, params, captured_files=files)
+        self.assertEqual(report["outcome"], "unknown")
+        self.assertIn("not captured inputs", report["operating_temperature"]["error"])
+
+    def test_digikey_stock_never_counts_as_jlc_stock(self):
+        netlist = self.export("temp.kicad_sch", schematic("temp", [part("R1")]))
+        params = self.temperature_case()
+        self.catalog([{"lcsc": "C25804", "stock": 0, "is_basic": True, "last_seen": "2026-10-15"}])
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report["operating_temperature"]["components"][0]["status"], "pass")
+        self.assertEqual(report["outcome"], "defect")
+        self.assertEqual([f["code"] for f in report["findings"] if f["severity"] == "defect"], ["out_of_stock"])
+
+    def test_operating_temperature_params_capability_and_run_checks(self):
+        from agent_ee.assembly_readiness import capability, validate_params
+        params = self.temperature_case()
+        spec = params["operating_temperature"]
+        for bad in ({**spec, "min_c": True}, {**spec, "max_c": float("nan")}, {**spec, "min_c": 80},
+                    {k: v for k, v in spec.items() if k != "parts"}, {**spec, "extra": 1},
+                    {**spec, "capture": "dk/other.json"}, {**spec, "parts": {}}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                validate_params({**params, "operating_temperature": bad})
+        files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
+        described = capability(params, files, self.root)
+        self.assertIn("assembly:operating-temperature", described["predicates"])
+        self.assertIn("dk/responses/PN-GENERIC.json", described["immutable_inputs"])
+        self.assertNotIn("assembly:operating-temperature", capability({"catalog": params["catalog"]}, files)["predicates"])
+        files.pop("dk/responses/PN-GENERIC.json")
+        with self.assertRaisesRegex(ValueError, "must be a captured input"):
+            capability(params, files, self.root)
+
+        (self.root / "top.kicad_sch").write_text(schematic("top", [part("R1")]), encoding="utf-8")
+        scope = {"schema": "agent-ee.scope/1", "schematic": "top.kicad_sch",
+                 "inputs": [{"path": str(p), "at": p.relative_to(self.root).as_posix()}
+                            for p in self.root.rglob("*") if p.is_file()],
+                 "checks": [{"id": "asm", "kind": "assembly_readiness", "params": params}]}
+        write_json(self.root / "scope.json", scope)
+        run = self.root.parent / f"{self.root.name}-run"
+        run.mkdir()
+        self.addCleanup(shutil.rmtree, run, True)
+        capture(self.root / "scope.json", run)
+        result = run_checks(run, time.monotonic() + 120)[0]
+        self.assertEqual((result["execution"], result["outcome"]), ("ok", "pass"), result["summary"])
+        self.assertEqual(result["details"]["operating_temperature"]["components"][0]["status"], "pass")
+        (run / "inputs/dk/responses/PN-GENERIC.json").write_bytes(b"{}")
+        result = run_checks(run, time.monotonic() + 120)[0]
+        self.assertEqual(result["outcome"], "unknown", result["summary"])
+
     def test_lcsc_stocknumber_rejected(self):
         doc = self.jlc_capture(self.root, {"C25804": (200, search(row("C25804", 500)))}, ["C25804"])
         # Even a response shaped like JLCPCB cannot promote LCSC figures.

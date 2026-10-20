@@ -1103,7 +1103,10 @@ and supplies `envelope:component-height/1`. It grades every native footprint fro
 an explicitly selected verified datasheet height fact or captured resolved STEP
 bounds read by native KiCad. Missing sources, unsupported models and unusable
 facts are unknown; a part above the inclusive maximum is a defect. It retains
-per-reference verdicts without exemptions for DNP or hand-fitted parts. See
+per-reference verdicts without exemptions for DNP or hand-fitted parts. An
+optional `digikey_heights` declaration (AGENTEE-254) grades a reference from a
+captured DigiKey `Height - Seated (Max)` bound to its saved MPN. A rounded value
+straddling the maximum, or one that is absent, unparsed or unbound, is unknown. See
 [component height](board-envelope.md#component-height) for parameter contracts,
 source applicability, model transform qualification and AGENTEE-209.
 
@@ -1442,6 +1445,17 @@ hierarchical path (`/A/R101`, AGENTEE-252); an unrepresented instance stays
 [receipt-bound rating provenance](assembly-readiness.md#receipt-bound-rating-provenance).
 Campaigns derive the declaration from the adopted receipt through the
 [coordinator rating binding](stage-receipts.md#coordinator-rating-provenance) (AGENTEE-256).
+
+## DigiKey operating temperature
+
+`assembly_readiness` takes an optional `operating_temperature` parameter
+(AGENTEE-254) with a declared ambient `min_c`/`max_c` and captured DigiKey
+records bound to references. It adds the `assembly:operating-temperature`
+predicate. A single unqualified or `TA` DigiKey range that contains the ambient
+passes; one that does not is an `operating_temperature_out_of_range` defect.
+Junction/case-only, absent, unparsed or unbound values are unknown, as is an
+unpinned or uncaptured capture. DigiKey stock never counts as JLCPCB stock. See
+[DigiKey operating temperature](assembly-readiness.md#digikey-operating-temperature).
 
 ## Saved native net-class assignment
 
