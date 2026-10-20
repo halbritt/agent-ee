@@ -553,12 +553,15 @@ For 0 and 2 the candidate must also bind to the attempt and its inputs:
 - `candidate/` and `reference/` each hold the real project directory and
   nothing else except the links the pin places beside it so that
   `${KIPRJMOD}/../<dir>` library paths resolve: each named for a top-level
-  input entry other than the project, with the literal target
-  `/candidate/<same name>` (the input root in the sandbox). Any other entry,
-  a link whose name or target differs (relative, elsewhere, with a trailing
-  slash or `..`), a real file or directory with a sibling name, or a link in
-  place of the project directory is a contradiction. The links are read,
-  never followed; only the project directory is hashed and delivered;
+  input directory other than the project (never a top-level input file),
+  with the literal target `/candidate/<same name>` (the input root in the
+  sandbox), and the two link sets equal, as `copy_project` links beside the
+  candidate every sibling the snapshot linked. Any other entry, a link whose
+  name or target differs (relative, elsewhere, with a trailing slash or
+  `..`), a link named for a top-level input file, a real file or directory
+  with a sibling name, a link in place of the project directory, or link
+  sets that differ is a contradiction. The links are read, never followed;
+  only the project directory is hashed and delivered;
 - the candidate and reference project trees contain only regular files;
 - every reference snapshot file equals the captured input byte for byte, and
   `snapshot.json` and the input fingerprint agree with them;

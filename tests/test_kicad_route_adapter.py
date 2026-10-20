@@ -182,11 +182,13 @@ class AdapterPolicyTest(unittest.TestCase):
                 self.assertEqual(case.report['semantics']['coverage'], 'unknown')
 
     def sibling_case(self, siblings):
-        """An input root with library directories beside the project, as the pod's."""
+        """An input root with library directories and a top-level file beside the
+        project, as the pod's."""
         case = self.case({'name': 'complete', 'siblings': siblings})
         for name in ('libraries', 'symbols'):
             (case.candidate / name).mkdir()
-            (case.candidate / name / 'lib.kicad_sym').write_text(f'(kicad_symbol_lib {name})\n')
+            (case.candidate / name / 'lib.kicad_sym').write_text(f'stand-in {name}\n')
+        (case.candidate / 'spec.md').write_text('top-level input file\n')
         return case.run()
 
     def test_router_sibling_library_links_are_accepted_and_never_delivered(self):
@@ -207,10 +209,12 @@ class AdapterPolicyTest(unittest.TestCase):
                 self.assertEqual(case.verify()['proposal'], 'eligible')
 
     def test_any_other_entry_beside_the_project_is_a_contradiction(self):
-        good = ['reference', 'libraries', 'link', '{root}/libraries']
+        good = [[where, 'libraries', 'link', '{root}/libraries'] for where in ('candidate', 'reference')]
         refusals = {
             'link not named for an input entry': ['candidate', 'elsewhere', 'link', '{root}/elsewhere'],
             'link named for the project': ['reference', 'rc', 'link', '{root}/rc'],
+            'link to a top-level input file': ['candidate', 'spec.md', 'link', '{root}/spec.md'],
+            'reference link to a top-level input file': ['reference', 'spec.md', 'link', '{root}/spec.md'],
             'name and target differ': ['candidate', 'libraries', 'link', '{root}/symbols'],
             'tampered target outside the input root': ['candidate', 'libraries', 'link', '/candidate/libraries'],
             'target into the library': ['candidate', 'libraries', 'link', '{root}/libraries/lib.kicad_sym'],
@@ -227,10 +231,26 @@ class AdapterPolicyTest(unittest.TestCase):
         }
         for label, entry in refusals.items():
             with self.subTest(label):
-                case = self.sibling_case([good, entry])
+                case = self.sibling_case([g for g in good if g[:2] != entry[:2]] + [entry])
                 self.assert_no_proposal(case, 'contradiction', attempt.EXIT_CONTRADICTION)
                 self.assertTrue(any('must hold exactly the project directory' in r or 'through a link' in r
                                     for r in case.report['semantics']['reasons']), case.report['semantics'])
+                self.assertEqual(case.report['candidate_files'], {})
+
+    def test_differing_candidate_and_reference_links_are_a_contradiction(self):
+        # copy_project at the pin links beside the candidate every sibling the
+        # snapshot linked beside the reference, so the two link sets are equal.
+        link = lambda where, name: [where, name, 'link', '{root}/' + name]
+        for label, siblings in {
+                'candidate only': [link('candidate', 'libraries')],
+                'reference only': [link('reference', 'symbols')],
+                'one more beside the candidate': [link('candidate', 'libraries'), link('reference', 'libraries'),
+                                                  link('candidate', 'symbols')],
+                'disjoint': [link('candidate', 'libraries'), link('reference', 'symbols')]}.items():
+            with self.subTest(label):
+                case = self.sibling_case(siblings)
+                self.assert_no_proposal(case, 'contradiction', attempt.EXIT_CONTRADICTION)
+                self.assertIn('candidate/ and reference/ sibling links differ', case.report['semantics']['reasons'])
                 self.assertEqual(case.report['candidate_files'], {})
 
     def test_state_change_during_an_attempt_is_a_contradiction(self):
