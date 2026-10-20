@@ -381,7 +381,8 @@ proof. The `capacity` record (`basis: diagnostic-only`, method
 six-decimal `ratio_display` rounded down) is attached to the plan, to search and
 budget failures and to judge rejections. It never passes or fails a plan. Results
 that stop before the reservations (unsupported geometry, fixed conflicts, the
-earlier proofs) do not carry it.
+earlier proofs) do not carry it; the earlier proofs still name their
+[binding constraints](#constraint-provenance-agentee-266).
 
 A row that is exceeded becomes a `packing_infeasible` / `defect` result
 (`board_capacity_gap` for the free-area row, `board_capacity_fragmented` for a
@@ -399,6 +400,29 @@ infeasible one may not either. Owned fixtures are in
 `tests/test_placer_capacity.py`. On a 20 × 12 mm board with a 12 × 9 mm fixed
 block, six 3.2 mm squares are placed. Seven are proved infeasible by the
 fragmentation row, although they need only about 81 % of the free area.
+
+### Constraint provenance (AGENTEE-266)
+
+`placement_adapter.binding` reads the outline and fixed-reference
+[envelope provenance](board-envelope.md#constraint-provenance) from the captured
+placement envelopes. It writes them into the policy as `constraint_provenance:
+{outline, fixed: {reference: entry}}`. A packing policy file that declares it
+is refused by the adapter and the pod driver. If any consumed envelope lacks
+provenance, nothing is written. With several envelopes, any hard statement of a
+limit wins over a soft one.
+
+Each `capacity.sides.<side>` names its `binding_constraints`: the outline, the
+fixed parts and obstacles in `blocked_by`, and the edge margin and gap. Each
+has its `class` and `enforcement`. The margin and gap come from the policy or a
+fab profile, so their provenance is `unknown`. Without declared provenance the
+outline is `unknown` too.
+
+Every `packing_infeasible` proof also carries `binding_constraints`. When one
+of them is soft (an assumed or owner-weakened limit), the proof stays in the
+record, but the outcome is `unknown` instead of `defect`. The result then has
+`owner_confirmation` (the soft constraints), and the reason names them. A proof
+bound only by hard or undeclared limits keeps `defect`. Owned tests are in
+`tests/test_constraint_provenance.py`.
 
 ### Pad shapes (AGENTEE-109)
 

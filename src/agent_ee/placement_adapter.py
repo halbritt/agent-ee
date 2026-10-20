@@ -219,7 +219,45 @@ def envelope_fixed(manifest, inputs, mutable_inputs):
         overhangs = envelope_overhangs(record)
         if overhangs:
             found[rel]['overhangs'] = overhangs
+        provenance = envelope_provenance(record)
+        if provenance:
+            found[rel]['provenance'] = provenance
     return [found[rel] for rel in sorted(found)]
+
+
+def envelope_provenance(record):
+    """Outline and fixed-reference provenance of an envelope that declares any (AGENTEE-266).
+
+    None when every placement-bound field lacks provenance: the placer then reports
+    unknown provenance and enforces as before."""
+    entries = {e['locator']: {k: e[k] for k in ('class', 'enforcement', 'soft_reason') if k in e}
+               for e in record['constraint_provenance']['constraints']}
+    fixed = {f['reference']: entries[f'/fixed_footprints/{i}'] for i, f in enumerate(record['fixed_footprints'])}
+    fixed.update({h['id']: entries[f'/mounting_holes/{i}'] for i, h in enumerate(record['mounting_holes'])})
+    value = {'outline': entries['/outline'], 'fixed': fixed}
+    if all(e['class'] == 'unknown' for e in [value['outline'], *fixed.values()]):
+        return None
+    return value
+
+
+def combined_provenance(envelopes):
+    """One placement provenance from every consumed envelope; a limit is soft only if all agree."""
+    declared = [e['provenance'] for e in envelopes if 'provenance' in e]
+    if not declared:
+        return None
+    if len(declared) != len(envelopes):
+        return None  # Another envelope states the same board without provenance: unknown, enforced as before.
+    def merge(items):
+        hard = [i for i in items if i['enforcement'] == 'hard']
+        if not hard:
+            return items[0]
+        return hard[0] if len({i['class'] for i in hard}) == 1 else {'class': 'unknown', 'enforcement': 'hard'}
+    fixed = {}
+    for value in declared:
+        for ref, entry in value['fixed'].items():
+            fixed.setdefault(ref, []).append(entry)
+    return {'outline': merge([v['outline'] for v in declared]),
+            'fixed': {ref: merge(items) for ref, items in sorted(fixed.items())}}
 
 
 def _scope_edge_margin_mm(inputs, manifest):
@@ -288,6 +326,11 @@ def binding(declaration, manifest, inputs, mutable_inputs):
         raise ValueError('captured placement board changed')
     if 'fixed_overhangs' in policy:
         raise ValueError('fixed_overhangs come only from a captured envelope, never from the packing policy')
+    if 'constraint_provenance' in policy:
+        raise ValueError('constraint_provenance comes only from a captured envelope, never from the packing policy')
+    provenance = combined_provenance(envelopes)
+    if provenance:
+        policy['constraint_provenance'] = provenance
     overhangs = sorted((o for e in envelopes for o in e.get('overhangs', [])), key=lambda o: o['reference'])
     if len({o['reference'] for o in overhangs}) != len(overhangs):
         raise ValueError('several envelopes declare a courtyard overhang for the same reference')

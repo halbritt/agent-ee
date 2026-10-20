@@ -166,6 +166,8 @@ def validate_configuration(plan, scope, files, inputs):
                 raise ValueError('expected an agent-ee.packing-policy/1 object')
             if 'fixed_overhangs' in policy:
                 raise ValueError('fixed_overhangs come only from a captured envelope, never from the packing policy')
+            if 'constraint_provenance' in policy:
+                raise ValueError('constraint_provenance comes only from a captured envelope, never from the packing policy')
             # The scaffold is still empty. Resolve references against the declared placement
             # subjects here; the adapter binds them to native footprints on each candidate.
             _validate_policy(policy, set(declaration['subjects'].get('placement', {}).get('references', [])))

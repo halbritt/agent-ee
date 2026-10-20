@@ -207,6 +207,11 @@ connectors receive separate reference-selected witnesses. Capture succeeds for a
 fully bound scope, including id-selected holes and keepouts. Antenna polygons
 are derived from verified datasheet facts and compared to the module-owned rule
 area after its native transform. Unbound generator mechanics remain refusals.
+Each constraint may carry [provenance](docs/board-envelope.md#constraint-provenance):
+owner-stated (quoted from a hashed source), derived, or assumed. Assumed or
+owner-weakened limits are soft. They are reported for owner confirmation and
+never fail placement as a defect. Constraints without provenance stay enforced
+and are reported as unknown provenance.
 Declared [keep-apart rules](docs/placement.md#keep-tall-and-heavy-parts-apart)
 grade courtyard separation; [component height](docs/board-envelope.md#component-height)
 grades sourced installed heights against an envelope limit. Missing height

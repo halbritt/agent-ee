@@ -1,0 +1,132 @@
+{
+  "schema": "agent-ee.envelope/1",
+  "id": "rc-filter",
+  "outline": {
+    "edges": [
+      {
+        "name": "top",
+        "start": [
+          96,
+          96
+        ],
+        "end": [
+          116,
+          96
+        ]
+      },
+      {
+        "name": "right",
+        "start": [
+          116,
+          96
+        ],
+        "end": [
+          116,
+          108
+        ]
+      },
+      {
+        "name": "bottom",
+        "start": [
+          116,
+          108
+        ],
+        "end": [
+          96,
+          108
+        ]
+      },
+      {
+        "name": "left",
+        "start": [
+          96,
+          108
+        ],
+        "end": [
+          96,
+          96
+        ]
+      }
+    ]
+  },
+  "layer_count": 2,
+  "stackup": {
+    "thickness_mm": 1.6,
+    "layers": [
+      {
+        "name": "F.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.035,
+        "copper_weight_oz": 1
+      },
+      {
+        "name": "core",
+        "kind": "dielectric",
+        "thickness_mm": 1.53
+      },
+      {
+        "name": "B.Cu",
+        "kind": "copper",
+        "thickness_mm": 0.035,
+        "copper_weight_oz": 1
+      }
+    ]
+  },
+  "fab_profile": null,
+  "mounting_holes": [],
+  "keepouts": [],
+  "fixed_footprints": [
+    {
+      "reference": "J1",
+      "side": "front",
+      "edge": "left",
+      "position_mm": 8,
+      "inset_mm": 4,
+      "rotation_deg": 0,
+      "insertion": "from_top",
+      "tolerance_mm": 0
+    }
+  ],
+  "max_component_height_mm": 12.5,
+  "constraint_provenance": {
+    "/outline": {
+      "class": "assumed",
+      "rationale": "Agent-proposed 20 mm x 12 mm rectangle. The owner gave no size and said it is not tight."
+    },
+    "/layer_count": {
+      "class": "owner_stated",
+      "quote": "The board uses 2 copper layers.",
+      "source": {
+        "path": "owner-statement.md",
+        "sha256": "92e610f35b790d9678c0a8e85a26d587e34905a2cda13907b1e199efdab622f6"
+      }
+    },
+    "/stackup": {
+      "class": "derived",
+      "derivation": "Two copper layers are the two outer foils of one core; the 1.6 mm total follows from that one-core build.",
+      "from": [
+        "/layer_count"
+      ]
+    },
+    "/fab_profile": {
+      "class": "assumed",
+      "rationale": "No fabricator selected yet."
+    },
+    "/max_component_height_mm": {
+      "class": "owner_stated",
+      "quote": "Parts may be up to 12.5 mm tall.",
+      "source": {
+        "path": "owner-statement.md",
+        "sha256": "92e610f35b790d9678c0a8e85a26d587e34905a2cda13907b1e199efdab622f6"
+      }
+    },
+    "/fixed_footprints/0": {
+      "class": "owner_stated",
+      "quote": "The connector J1 goes on the left edge, ideally near the middle.",
+      "source": {
+        "path": "owner-statement.md",
+        "sha256": "92e610f35b790d9678c0a8e85a26d587e34905a2cda13907b1e199efdab622f6"
+      }
+    }
+  }
+}

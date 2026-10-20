@@ -114,6 +114,60 @@ def _validate_policy(policy, refs):
         raise ValueError('fixed_overhangs must declare known references')
     if 'groups' in policy:
         placement_groups.validate(policy['groups'], refs)
+    if 'constraint_provenance' in policy:
+        _validate_provenance(policy['constraint_provenance'])
+
+
+PROVENANCE_CLASSES = ('owner_stated', 'derived', 'assumed', 'unknown')
+UNDECLARED = {'class': 'unknown', 'enforcement': 'hard',
+              'reason': 'no envelope provenance supplied; enforced as before, never treated as owner-stated'}
+
+
+def _validate_provenance(value):
+    """Envelope constraint provenance (AGENTEE-266), bound by the placement adapter from captured envelopes."""
+    if not isinstance(value, dict) or set(value) - {'outline', 'fixed'} or not isinstance(value.get('fixed', {}), dict):
+        raise ValueError('constraint_provenance declares only outline and fixed')
+    entries = ([value['outline']] if 'outline' in value else []) + list(value.get('fixed', {}).values())
+    for entry in entries:
+        if (not isinstance(entry, dict) or entry.get('class') not in PROVENANCE_CLASSES
+                or entry.get('enforcement') not in ('hard', 'soft')
+                or (entry['enforcement'] == 'soft') != isinstance(entry.get('soft_reason'), str)
+                or (entry['class'] == 'assumed' and entry['enforcement'] != 'soft')
+                or (entry['class'] == 'unknown' and entry['enforcement'] != 'hard')):
+            raise ValueError('constraint_provenance entries need a class, a hard/soft enforcement and a soft reason')
+
+
+def _binding_constraints(policy, margin_nm, blocked_by=()):
+    """The limits a capacity row or proof binds, each with its provenance class (AGENTEE-266).
+
+    Fixed parts and obstacles bind only where they block; the edge margin and gap come
+    from the packing policy or a fab profile, not an envelope, so their provenance is unknown."""
+    declared = policy.get('constraint_provenance', {})
+    fixed = declared.get('fixed', {})
+    out = [{'constraint': 'outline', **declared.get('outline', UNDECLARED)}]
+    # References have no spaces; obstacles, rule areas and keepouts are named with one.
+    out += [{'constraint': name, **UNDECLARED} if ' ' in name else
+            {'constraint': f'fixed {name}', **fixed.get(name, UNDECLARED)} for name in blocked_by]
+    if margin_nm:
+        out.append({'constraint': 'min_courtyard_edge_mm', **UNDECLARED})
+    if policy['gap_nm']:
+        out.append({'constraint': 'gap_nm', **UNDECLARED})
+    return out
+
+
+def _soft_proof(failure, binding):
+    """A proof against a soft (assumed or owner-weakened) limit is not a design defect.
+
+    It stays a proof about that limit, reported as unknown with the limits the owner
+    must confirm; a proof bound only by hard or undeclared limits keeps its verdict."""
+    soft = [b for b in binding if b['enforcement'] == 'soft']
+    if not soft:
+        return {**failure, 'binding_constraints': binding}
+    return {**failure, 'outcome': 'unknown', 'binding_constraints': binding,
+            'owner_confirmation': [b['constraint'] for b in soft],
+            'reason': failure['reason'] + '; binds soft limit(s) ' + ', '.join(
+                f"{b['constraint']} ({b['class']}: {b['soft_reason']})" for b in soft)
+                      + ', so it is not a design defect until the owner confirms them'}
 
 
 def _qualified(capture):
@@ -790,11 +844,15 @@ def _board_capacity(capture, outline, fixed, policy, margin_nm):
 
 
 def _capacity_diagnostic(sides, policy, margin_nm):
-    """The capacity rows as a diagnostic: never a pass or fail."""
+    """The capacity rows as a diagnostic: never a pass or fail.
+
+    Each side names its binding constraints with their provenance class, so an
+    assumed outline is visible instead of silently blocking (AGENTEE-266)."""
     return {'basis': 'diagnostic-only', 'method': 'gapped-free-area/1', 'gap_nm': policy['gap_nm'],
             'min_courtyard_edge_nm': margin_nm,
             'sides': {side: {'blocked_by': s['blocked_by'], 'free_area': s['rows'][0][1],
-                             'fragmentation': [row for _, row in s['rows'][1:]]}
+                             'fragmentation': [row for _, row in s['rows'][1:]],
+                             'binding_constraints': _binding_constraints(policy, margin_nm, s['blocked_by'])}
                       for side, s in sides.items()}}
 
 
@@ -1010,12 +1068,12 @@ def pack(capture, policy):
     if proof:
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['side']} courtyard area exceeds board area", margin_nm)
-        return {**failure, 'proof': proof}
+        return _soft_proof({**failure, 'proof': proof}, _binding_constraints({**policy, 'gap_nm': 0}, 0))
     proof = _part_impossibility(capture, outline, bands)
     if proof:
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['ref']} courtyard {proof['kind'].replace('_', ' ')} exceeds the board's", margin_nm)
-        return {**failure, 'proof': proof}
+        return _soft_proof({**failure, 'proof': proof}, _binding_constraints({**policy, 'gap_nm': 0}, 0))
     try:
         fixed, placed, exact = _initial_reservations(capture, policy, outline, obstacles, bands, members)
     except ValueError as exc:
@@ -1042,7 +1100,8 @@ def pack(capture, policy):
     if proof:
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"group {proof['group']} region cannot hold its {proof['side']} courtyards", margin_nm)
-        return {**failure, 'proof': proof}
+        binding = _binding_constraints({**policy, 'gap_nm': proof.get('gap_nm', 0)}, 0, proof['blocked_by'])
+        return _soft_proof({**failure, 'proof': proof}, binding)
     sides = _board_capacity(capture, outline, fixed, policy, margin_nm)
     capacity = _capacity_diagnostic(sides, policy, margin_nm)
     # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
@@ -1051,7 +1110,8 @@ def pack(capture, policy):
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['side']} courtyards grown by half the gap exceed the board's free area"
                            + (f" usable by {proof['square_nm']} nm squares" if proof['square_nm'] else ''), margin_nm)
-        return {**failure, 'proof': proof, 'capacity': capacity}
+        return _soft_proof({**failure, 'proof': proof, 'capacity': capacity},
+                           _binding_constraints(policy, margin_nm, proof['blocked_by']))
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members)
     units = [(fp['ref'],) for fp in queue]
     stack, seen, backjumps, failures, peak = [], {tuple(units)}, 0, {}, 0

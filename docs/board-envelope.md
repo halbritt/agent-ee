@@ -51,6 +51,7 @@ separates facts read from the saved board from owned assumptions.
 | `keepouts` | `{id, polygon, layers, forbid}`: a simple polygon contained in the closed outline; alternatively replace `polygon` with `antenna: {reference, facts_check}` for the legacy ESP32-S3-WROOM-1 derivation, now explicitly unresolved. Stackup copper layer names and a unique subset of `footprints`, `tracks`, `vias`, `pads`, `copper_pours` |
 | `fixed_footprints` | `{reference, side, edge, position_mm, inset_mm, rotation_deg, insertion, tolerance_mm}` plus optional `courtyard_overhangs`: a nonempty list of `{edge, max_mm}`, one per distinct axis-aligned outline edge, with positive `max_mm`. It is the only way a fixed courtyard may leave the outline: by at most `max_mm` across that edge, and into the corner between two adjacent declared edges ([AGENTEE-212](placer.md#real-pod-residuals-agentee-212)). The derived fixed-footprint obligation states it, and `outline-containment/1` with `envelope` grades it |
 | `max_component_height_mm` | Optional in both versions; positive numeric installed height limit, exact to 1 nm. Derives its own acceptance obligation and binds only `board_envelope` `component-height/1` |
+| `constraint_provenance` | Optional in both versions; who fixed each constraint, keyed by the field pointer its obligation cites. See [constraint provenance](#constraint-provenance) |
 
 Version 2 changes `stackup` to `{nominal_thickness_mm,
 physical_thickness_mm, layers}` and requires `source` on each layer, in the
@@ -103,6 +104,70 @@ or strings used as numbers, values finer than 1 nm, and non-UTF-8 bytes.
 Records over 1 MiB, polygons over 1024 vertices and lists over 1024 entries are
 refused before the exact quadratic polygon checks. A refusal never produces a
 partial validation record.
+
+## Constraint provenance
+
+An owner must be able to tell the limits they stated from the defaults an agent
+proposed (AGENTEE-266). In the telemetry pod, an 80 mm x 50 mm outline the
+owner never specified was compiled into a hard ceiling. Its source text also
+said "or smaller" and "the envelope is not tight". Placement was blocked at
+95.6 % single-sided capacity for days.
+
+`constraint_provenance` maps a field pointer to one entry. The pointers are
+`/outline`, `/layer_count`, `/stackup`, `/fab_profile`,
+`/max_component_height_mm` (when present), and `/mounting_holes/<i>`,
+`/keepouts/<i>`, `/fixed_footprints/<i>` and `/obligations/<i>`. Each class
+has exact fields:
+
+| `class` | Fields | Enforcement |
+| --- | --- | --- |
+| `owner_stated` | `quote`; `source: {path, sha256}` | Hard, unless the quote weakens the limit or does not state the number (below) |
+| `derived` | `derivation` text; `from`, a list of other pointers, and/or `facts`, a list of `{quote, source}` owner facts; at least one citation | Hard, unless a cited field or fact is soft |
+| `assumed` | `rationale` text | Always soft |
+
+The [owned fixture](../fixtures/board-envelope/provenance/envelope.json) has
+all three classes. It is stated against an owned synthetic
+[owner statement](../fixtures/board-envelope/provenance/owner-statement.md).
+
+- **Sources.** With a capture inventory (`--sources`, or baseline capture), a
+  cited source in the inventory must have the cited SHA-256. The quote must
+  appear in its UTF-8 text, comparing runs of whitespace as one space.
+  Otherwise the envelope is refused. A source outside the inventory stays
+  `verification: not_captured`. Baseline capture freezes verified sources as
+  inputs.
+- **Weakening.** An owner or derivation quote that weakens a limit is never
+  compiled into a hard limit. Weakening wording is "not tight", "not fixed",
+  "not a hard", "soft limit", "room in/for/to" (not "no room"), "there's room", "ideally",
+  "preferably", "if possible", "flexible", "or so", and "about", "around",
+  "approximately", "roughly", "circa" or "~" before a number.
+- **Stated numbers.** For `/outline` (the bounding box width and height in mm),
+  `/layer_count` and `/max_component_height_mm`, an owner-stated quote must
+  state every number. "20 mm by 12 mm or smaller" is a hard maximum. "Small,
+  20 mm wide or smaller" is soft, because 12 is not stated.
+- **Derivations.** A derivation that cites an `assumed` field is refused,
+  because a limit derived from an assumption is an assumption. Cycles, unknown
+  pointers and repeated citations are refused too.
+
+The validation record's `constraint_provenance` lists every constrained field
+with `class`, `enforcement` (`hard` or `soft`) and, for a soft field,
+`soft_reason`. It also has `owner_confirmation` (the soft pointers),
+`source_paths` (verified sources) and `status`. Status is `declared` when every
+field has provenance, else `unknown`.
+
+A field without provenance has class `unknown` and is enforced exactly as
+before. It is never treated as owner-stated. Records without
+`constraint_provenance` therefore keep every verdict. Provenance never changes
+`structural` or `outcome`.
+
+A soft field's obligation is `informational`, not acceptance. Its statement
+starts with `ASSUMED, not a hard limit until the owner confirms it`, or with
+`SOFT owner statement` or `SOFT derivation`, followed by the reason. The text
+reaches `requirements.md` and the dialog requirements, so the owner sees it as
+an assumption to confirm. `envelope-requirements.json` carries `provenance` by
+obligation ID. Obligation coverage reports a soft obligation as `soft` and
+requires no check for it. A baseline that maps it as acceptance is refused.
+Placement reads the outline and fixed-reference provenance from the captured
+envelope ([placer](placer.md#constraint-provenance-agentee-266)).
 
 ## Fabricator profile
 
