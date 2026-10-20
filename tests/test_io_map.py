@@ -1,6 +1,8 @@
 """CSV compilation and native pinout evidence, including fail-closed gaps."""
+import contextlib
 import copy
 import csv
+import hashlib
 import io
 import tempfile
 import time
@@ -54,6 +56,91 @@ PROBE_ROWS = [('J1-1', 'CAN_H', '/CAN+', 'R1', '1', 'Harness CAN high', 'direct'
 
 
 class IoMapTests(unittest.TestCase):
+    def test_source_digest_binds_exact_bytes_without_mutating_caller(self):
+        raw = csv_bytes(PROBE_ROWS)
+        source_bytes = b'Owner requirements\r\n\xff\n'
+        contract = compile_(raw, source_bytes=source_bytes, require_source_sha256=True,
+                            bindings=probe_bindings())
+        self.assertEqual(SOURCE, dict(path='requirements.md', locator='Structural interface'))
+        self.assertTrue(all(i['source']['sha256'] == hashlib.sha256(source_bytes).hexdigest()
+                            for i in contract['invariants']))
+        self.assertEqual(validate_contract(contract, source_bytes={'requirements.md': source_bytes},
+                                           require_source_sha256=True), contract)
+        with self.assertRaisesRegex(ValueError, 'sha256 mismatch'):
+            validate_contract(contract, source_bytes={'requirements.md': source_bytes.replace(b'\r\n', b'\n')})
+        with self.assertRaisesRegex(ValueError, 'missing requirement source bytes'):
+            validate_contract(contract, source_bytes={})
+        with self.assertRaisesRegex(ValueError, 'source bytes are required'):
+            compile_(raw, require_source_sha256=True)
+        with self.assertRaisesRegex(ValueError, 'sha256 is required'):
+            validate_contract(compile_(raw), require_source_sha256=True)
+
+    def test_malformed_and_conflicting_source_digests_refused(self):
+        raw = csv_bytes(PROBE_ROWS)
+        for value in ('bad', 'A' * 64, '0' * 63, '0' * 65, None, 42):
+            contract = compile_(raw)
+            contract['invariants'][0]['source']['sha256'] = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'invalid requirement source sha256'):
+                validate_contract(contract)
+        with self.assertRaisesRegex(ValueError, 'sha256 mismatch'):
+            compile_io_map(raw, csv_path='io-map.csv', requirement='interface',
+                           source={**SOURCE, 'sha256': '0' * 64}, source_bytes=b'requirements')
+
+    def test_captured_requirement_digest_is_verified_with_legacy_baseline(self):
+        raw, source_bytes = csv_bytes(PROBE_ROWS), b'requirements\n'
+        contract = compile_(raw, source_bytes=source_bytes)
+        scope = dict(baseline=dict(requirements=[dict(id='interface', source=SOURCE, checks=['interface'])]))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_json(root / 'contract.json', contract)
+            (root / 'io-map.csv').write_bytes(raw)
+            (root / 'requirements.md').write_bytes(source_bytes)
+            params = dict(contract='contract.json', netlist_check='netlist')
+            files = {'contract.json', 'io-map.csv', 'requirements.md'}
+            self.assertEqual(capability(params, scope, files, root, 'interface')['contract'], contract)
+            changed = copy.deepcopy(contract)
+            changed['invariants'][0]['source']['locator'] = 'invented'
+            write_json(root / 'contract.json', changed)
+            with self.assertRaisesRegex(ValueError, 'exact captured requirement source'):
+                capability(params, scope, files, root, 'interface')
+            write_json(root / 'contract.json', contract)
+            (root / 'requirements.md').write_bytes(source_bytes + b'changed')
+            with self.assertRaisesRegex(ValueError, 'sha256 mismatch'):
+                capability(params, scope, files, root, 'interface')
+
+    def test_cli_source_digest_and_deterministic_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / 'requirements.md'
+            source.write_bytes(b'requirements\r\n')
+            args = [str(POD / 'io-map.csv'), '--csv-path', 'io-map.csv', '--requirement', 'POD-AC-1',
+                    '--source', 'requirements.md', '--source-file', str(source), '--locator', 'item 1',
+                    '--require-source-sha256']
+            for n in (1, 2):
+                self.assertEqual(main([*args, '--out', str(root / f'{n}.json')]), 0)
+            self.assertEqual((root / '1.json').read_bytes(), (root / '2.json').read_bytes())
+            contract = read_json(root / '1.json')
+            self.assertTrue(all(i['source']['sha256'] == hashlib.sha256(source.read_bytes()).hexdigest()
+                                for i in contract['invariants']))
+            offset = args.index('--source-file')
+            default_args = args[:offset] + args[offset + 2:]
+            with contextlib.chdir(root):
+                self.assertEqual(main([*default_args, '--out', 'default.json']), 0)
+            self.assertEqual((root / '1.json').read_bytes(), (root / 'default.json').read_bytes())
+            with contextlib.chdir(root), self.assertRaises(SystemExit) as refused:
+                main([*default_args, '--source-file', '', '--out', 'empty-path.json'])
+            self.assertEqual(refused.exception.code, 2)
+            self.assertFalse((root / 'empty-path.json').exists())
+            source.unlink()
+            with self.assertRaises(SystemExit) as refused:
+                main([*args, '--out', str(root / 'absent.json')])
+            self.assertEqual(refused.exception.code, 2)
+            self.assertFalse((root / 'absent.json').exists())
+            with contextlib.chdir(root), self.assertRaises(SystemExit) as refused:
+                main([*default_args, '--out', 'absent-default.json'])
+            self.assertEqual(refused.exception.code, 2)
+            self.assertFalse((root / 'absent-default.json').exists())
+
     def test_compile_pod_iomap(self):
         raw = (POD / 'io-map.csv').read_bytes()
         contract = compile_io_map(raw, csv_path='io-map.csv', requirement='POD-AC-1',

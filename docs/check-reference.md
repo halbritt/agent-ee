@@ -882,6 +882,10 @@ contracts from pinout CSVs. `hardware_interface` binds their CSV hashes as
 immutable inputs, checks `no_connect` predicates against native connectivity,
 and keeps explicit unresolved terminals and predicates unknown. External
 destination text supplies traceability only.
+Invariant `source.sha256` optionally binds exact captured requirement bytes;
+malformed or mismatched hashes are refused. The compiler's
+`--require-source-sha256` option requires source bytes, while digest-free legacy
+contracts retain their existing validation. See [source options](io-map.md#requirements-source-provenance).
 Concrete MCU rows require an explicit `MCU_Path=direct` declaration or the IDs
 of declared [indirect paths](io-map.md#indirect-mcu-paths). Undeclared path names
 are refused with their CSV row; TBD MCU rows keep an unresolved predicate without

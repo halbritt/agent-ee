@@ -52,6 +52,15 @@ predicate kinds are refused.
   the existing sealed witness binds a whole check. Use separate check instances
   and contracts for independently witnessed requirements.
 
+Local invariant sources may also carry `sha256`, exactly 64 lowercase hexadecimal
+characters over the source file bytes. Legacy sources without it remain valid.
+The [compiler and validation options](io-map.md#requirements-source-provenance) can require it;
+when source bytes are supplied, validation refuses missing bytes or a mismatch.
+The hardware-interface capability verifies declared digests against captured
+requirement files while retaining exact baseline `path` and `locator` matching.
+This optional field keeps schema `agent-ee.interface/1`; it adds provenance
+without changing predicate semantics or the scope baseline schema.
+
 The supported kinds and additional fields are:
 
 | Kind | Fields | Predicate |

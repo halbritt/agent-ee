@@ -61,7 +61,8 @@ def read_paths(paths):
     return paths['paths']
 
 
-def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_record=None, paths=None):
+def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_record=None, paths=None,
+                   source_bytes=None, require_source_sha256=False):
     """Bindings borrow components/terminals from a validated interface/1 contract.
 
     Connector terminal IDs equal Connector_Pin; MCU IDs are MCU_Ref:MCU_Pin.
@@ -69,6 +70,14 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
     MCU pins require MCU_Path=direct or ';'-separated IDs of declared indirect
     paths, one per ';'-separated MCU_Pin; anything else is refused.
     """
+    source = copy.deepcopy(source)
+    if source_bytes is not None:
+        sha = hashlib.sha256(source_bytes).hexdigest()
+        if 'sha256' in source and source['sha256'] != sha:
+            raise ValueError('requirement source sha256 mismatch')
+        source['sha256'] = sha
+    elif require_source_sha256:
+        raise ValueError('requirement source bytes are required to compute sha256')
     rows = read_rows(raw)
     bindings = validate_contract(copy.deepcopy(bindings)) if bindings is not None else {'components': {}, 'terminals': {}}
     paths = read_paths(copy.deepcopy(paths)) if paths is not None else None
@@ -191,7 +200,8 @@ def compile_io_map(raw, *, csv_path, requirement, source, bindings=None, spec_re
         if not expected or expected != set(coverage):
             raise ValueError(f'interface traceability mismatch: missing={sorted(expected - coverage.keys())}; '
                              f'unknown={sorted(coverage.keys() - expected)}')
-    return validate_contract(contract)
+    return validate_contract(contract, require_source_sha256=require_source_sha256,
+                             source_bytes={source['path']: source_bytes} if source_bytes is not None else None)
 
 
 def main(argv=None):
@@ -200,6 +210,9 @@ def main(argv=None):
     parser.add_argument('--csv-path', required=True, help='captured CSV path relative to scope source')
     parser.add_argument('--requirement', required=True)
     parser.add_argument('--source', required=True, help='captured requirement source path')
+    parser.add_argument('--source-file', help='file supplying exact source bytes (defaults to --source in cwd)')
+    parser.add_argument('--require-source-sha256', action='store_true',
+                        help='refuse compilation if requirement source bytes are unavailable')
     parser.add_argument('--locator', required=True)
     parser.add_argument('--bindings', help='interface/1 contract supplying explicit terminal bindings')
     parser.add_argument('--spec-record', help='require complete POD-IF-* row traceability')
@@ -209,9 +222,16 @@ def main(argv=None):
     def load(path):
         return json.loads(Path(path).read_text(encoding='utf-8'), object_pairs_hook=unique_object) if path else None
     try:
+        try:
+            source_bytes = Path(args.source_file if args.source_file is not None else args.source).read_bytes()
+        except FileNotFoundError:
+            if args.source_file is not None or args.require_source_sha256:
+                raise
+            source_bytes = None
         contract = compile_io_map(Path(args.csv).read_bytes(), csv_path=args.csv_path,
             requirement=text(args.requirement), source=dict(path=args.source, locator=args.locator),
-            bindings=load(args.bindings), spec_record=load(args.spec_record), paths=load(args.paths))
+            bindings=load(args.bindings), spec_record=load(args.spec_record), paths=load(args.paths),
+            source_bytes=source_bytes, require_source_sha256=args.require_source_sha256)
         write_json(args.out, contract)
     except (OSError, ValueError, UnicodeError) as exc:
         parser.exit(2, f'io-map: {exc}\n')

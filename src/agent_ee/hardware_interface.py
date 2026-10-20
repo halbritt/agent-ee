@@ -1,4 +1,5 @@
 """Captured owner declarations over direct native schematic conductors."""
+import hashlib
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -62,7 +63,8 @@ def validate_path(invariant, components, terminals):
             raise ValueError('indirect_path endpoint cannot be an intermediate device')
 
 
-def validate_contract(contract):
+def validate_contract(contract, *, source_bytes=None, require_source_sha256=False):
+    """Validate declarations; optional path-to-bytes inputs verify local source hashes."""
     exact_keys(contract, 'schema components terminals allowed_edits invariants')
     if contract['schema'] != 'agent-ee.interface/1':
         raise ValueError('unsupported interface schema')
@@ -145,9 +147,19 @@ def validate_contract(contract):
             from .reference_blocks import _source
             _source(source, ())
         else:
-            exact_keys(source, 'path locator')
+            exact_keys(source, 'path locator' + (' sha256' if isinstance(source, dict) and 'sha256' in source else ''))
             safe_relative(source['path'])
             text(source['locator'])
+            if require_source_sha256 and 'sha256' not in source:
+                raise ValueError('requirement source sha256 is required')
+            if 'sha256' in source:
+                if not isinstance(source['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', source['sha256']):
+                    raise ValueError('invalid requirement source sha256')
+                if source_bytes is not None:
+                    if source['path'] not in source_bytes:
+                        raise ValueError('missing requirement source bytes')
+                    if hashlib.sha256(source_bytes[source['path']]).hexdigest() != source['sha256']:
+                        raise ValueError('requirement source sha256 mismatch')
         if kind == 'unresolved':
             text(invariant['reason'])
         elif kind in ('component', 'value'):
@@ -208,10 +220,15 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
         raise ValueError('interface requirement mappings must match declared invariant requirements')
     for invariant in contract['invariants']:
         req = requirements.get(invariant['requirement'])
-        external = invariant['source'].get('kind') == 'pinned-external'
-        if (not req or invariant['source'] != req['source'] or check_id not in req['checks'] or
+        source = invariant['source']
+        external = source.get('kind') == 'pinned-external'
+        authority = source if external else {k: v for k, v in source.items() if k != 'sha256'}
+        if (not req or authority != req['source'] or check_id not in req['checks'] or
                 (external and not block_sources) or (not external and invariant['source']['path'] not in files)):
             raise ValueError('interface invariant requires exact captured requirement source and check mapping')
+    sources = {i['source']['path'] for i in contract['invariants']
+               if i['source'].get('kind') != 'pinned-external' and 'sha256' in i['source']}
+    validate_contract(contract, source_bytes={p: (Path(inputs) / p).read_bytes() for p in sources})
     immutable = {rel}
     for invariant in contract['invariants']:
         citation = invariant.get('io_map')

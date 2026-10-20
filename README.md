@@ -240,6 +240,8 @@ a hardware-interface contract, preserving no-connects and unresolved pins.
 Concrete MCU rows require a declared direct conductor or a declared indirect
 path through named intermediate parts. Each conductor segment and part identity
 is then checked on the native netlist; transfer behavior is not claimed.
+The compiler records the requirement file's SHA-256 when its bytes are available;
+`--require-source-sha256` refuses missing source bytes for provenance gates.
 
 Built-in checks cover KiCad ERC, DRC and schematic parity, with optional
 [captured owner-approved exact violation waivers](docs/violation-waivers.md), native netlist export
