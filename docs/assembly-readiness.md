@@ -343,7 +343,7 @@ exemption cites one line of a captured owner decision:
 
 ```json
 {"exemptions": {"R2": {"source": "decisions/temperature.md", "sha256": "<64 hex>",
-                       "line": 2, "quote": "R2 is exempt from operating-temperature evidence."}}}
+                       "line": 2, "quote": "R2 is exempt from operating-temperature verification."}}}
 ```
 
 The quote must name the exact reference as a whole token, so `R20`, `R2-1`
@@ -354,17 +354,20 @@ design files (`.sch`, `.net`, `.pro`), project library tables (`sym-lib-table`,
 (case-insensitive file names and suffixes). At evaluation it must be
 captured with the pinned hash and hold the quote on the cited line.
 
-AGENTEE-281 also checks the whole owner statement using the hand-fit policy's
-Markdown block and conditional-clause rules. The reference must occur exactly
-once in an affirmative, unconditional statement: for example, `R2 is exempt
-from operating-temperature evidence.` The existing wording `R2 is a board-edge
-bleeder resistor; its operating temperature is accepted by the owner without
-DigiKey evidence.` is also supported. Negations, questions, bare BOM lines,
-conditional headings or continuations, code blocks and ambiguous list lead-ins
-leave the exemption unknown (`operating_temperature_exemption_invalid`).
-Truncating the quote cannot omit those qualifiers from evaluation. Unsupported
-or ambiguous wording remains unknown; this is a bounded statement check, not
-general natural-language interpretation.
+AGENTEE-281 checks the whole owner statement using the hand-fit policy's
+Markdown block boundaries. Only a complete canonical sentence is accepted
+(case-insensitive): `R2 is exempt from operating-temperature verification.`
+For multiple references use `are`, for example
+`R2, R3 and C4 are exempt from operating-temperature verification.` Comma-only
+lists and an Oxford comma are also accepted. References are letter prefixes
+followed by digits, each listed exactly once. A Markdown list item containing
+exactly that sentence is allowed. Other wording, including `is exempted`,
+`operating-temperature evidence`, explanatory owner acceptance prose, quoted
+claims, proposals and retractions, is unknown
+(`operating_temperature_exemption_invalid`). Conditional headings or
+continuations, code blocks and ambiguous list lead-ins also remain unknown.
+Truncating the quote cannot omit those qualifiers from evaluation. This is a
+bounded statement check, not general natural-language interpretation.
 
 `package_map` adds the [DigiKey package check](digikey-capture.md#check-evidence)
 against the netlist `Footprint`. A mismatch is a `digikey_package_mismatch`

@@ -950,8 +950,8 @@ def _validate_operating_temperature(raw):
 
 
 def _reference_token(ref):
-    """The exact reference as a whole token, so R1 never matches R10."""
-    return re.compile(r"(?<![A-Za-z0-9_/-])" + re.escape(ref) + r"(?![A-Za-z0-9_/-])")
+    """The reference as a case-insensitive whole token, so R1 never matches R10."""
+    return re.compile(r"(?<![A-Za-z0-9_/-])" + re.escape(ref) + r"(?![A-Za-z0-9_/-])", re.I)
 
 
 def _validate_citation(raw, label):
@@ -1239,10 +1239,11 @@ HAND_FIT_TERM = r"(?:hand[- ]?(?:fit|solder)|(?:fit|fitted|solder|soldered)\s+by
 HAND_FIT_RE = re.compile(r"(?<![A-Za-z0-9_])" + HAND_FIT_TERM, re.I)
 NEGATED_HAND_FIT_RE = re.compile(
     r"(?:(?<![A-Za-z0-9_])(?:not|never|no|nor|cannot)|n't)\s+(?:[A-Za-z]+\s+){0,2}" + HAND_FIT_TERM, re.I)
-EXEMPTION_TERM = (
-    r"is\s+(?:exempt(?:ed)?(?:\s+from\s+operating[- ]temperature(?:\s+evidence)?)?"
-    r"(?=\s*(?:[.;]|$))|[^.;:!?]+;\s*its\s+"
-    r"operating[- ]temperature\s+is\s+accepted\s+by\s+the\s+owner\s+without\s+DigiKey\s+evidence\b)")
+EXEMPTION_REF = r"[A-Z]+[0-9]+"
+EXEMPTION_SENTENCE_RE = re.compile(
+    r"(?P<refs>" + EXEMPTION_REF + r"(?:, " + EXEMPTION_REF + r")*"
+    r"(?:(?:,)? and " + EXEMPTION_REF + r")?) (?P<verb>is|are) "
+    r"exempt from operating-temperature verification\.", re.I)
 # Ambiguous denials are refused across the whole statement, including text omitted from the quote.
 NEGATED_EXEMPTION_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:not|never|no|nor|neither|cannot|denied|revoked|rejected)(?![A-Za-z0-9_])|n't|\?", re.I)
@@ -1335,19 +1336,24 @@ def _confined_spans(unit):
 
 def _require_unconditional(unit, mpn, *, exemption=False):
     """The identity must be named once in an affirmative statement, outside every conditional clause."""
-    affirmative = (re.compile(_reference_token(mpn).pattern + r"\s+" + EXEMPTION_TERM, re.I)
-                   if exemption else HAND_FIT_RE)
-    negated = NEGATED_EXEMPTION_RE if exemption else NEGATED_HAND_FIT_RE
-    if not affirmative.search(unit) or negated.search(unit):
-        declaration = "an operating-temperature exemption" if exemption else "a hand-fit"
-        raise ValueError(f"the cited statement does not affirmatively declare {declaration}")
+    if exemption:
+        sentence = LIST_ITEM_RE.sub("", unit, count=1)
+        match = EXEMPTION_SENTENCE_RE.fullmatch(sentence)
+        if match is None:
+            raise ValueError("the cited statement must be a complete canonical operating-temperature exemption")
+        refs = re.findall(EXEMPTION_REF, match["refs"], re.I)
+        if (len({ref.casefold() for ref in refs}) != len(refs)
+                or mpn.casefold() not in {ref.casefold() for ref in refs}
+                or match["verb"].lower() != ("is" if len(refs) == 1 else "are")):
+            raise ValueError("the canonical exemption must name each reference once and use is/are consistently")
+        return
+    if not HAND_FIT_RE.search(unit) or NEGATED_HAND_FIT_RE.search(unit):
+        raise ValueError("the cited statement does not affirmatively declare a hand-fit")
     pattern = r"(?<![A-Za-z0-9_/-])" + re.escape(mpn) + r"(?![A-Za-z0-9_/-])"
     found = [m.start() for m in re.finditer(pattern, unit)]
     if len(found) != 1:
         raise ValueError(f"{mpn!r} is named {len(found)} times in the cited statement; expected exactly once")
     if any(a <= found[0] < b for a, b in _confined_spans(unit)):
-        if exemption:
-            raise ValueError(f"{mpn!r} is named only conditionally; an exemption must be unconditional")
         raise ValueError(f"{mpn!r} is named only conditionally; a conditional hand-fit must use the "
                          "stock-unavailable deviation class")
 

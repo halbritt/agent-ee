@@ -1350,8 +1350,7 @@ class AssemblyReadinessTests(unittest.TestCase):
         self.assertEqual([c["status"] for c in report["operating_temperature"]["components"]], ["pass", "pass"])
         self.assertEqual(report["operating_temperature"]["unlisted"], [])
 
-    def exemption(self, ref="R2", line="R2 is a board-edge bleeder resistor; its operating temperature is accepted "
-                                       "by the owner without DigiKey evidence.", number=2):
+    def exemption(self, ref="R2", line="R2 is exempt from operating-temperature verification.", number=2):
         decision = self.root / "decisions/temperature.md"
         decision.parent.mkdir(exist_ok=True)
         decision.write_text("# Temperature exemptions\n" + line + "\n", encoding="utf-8")
@@ -1418,8 +1417,11 @@ class AssemblyReadinessTests(unittest.TestCase):
             ("R2 10k 0603", 1, "R2", "unknown"),
             ("R2 requires evidence. R3 is exempt.", 1, "R2", "unknown"),
             ("R2 is exempt from clearance checks.", 1, "R2", "unknown"),
-            ("R2 is exempt from operating-temperature evidence.", 1, "R2", "pass"),
-            ("R2 is exempted from operating-temperature evidence.", 1, "R2", "pass"),
+            ("R2 is exempt from operating-temperature verification.", 1, "R2", "pass"),
+            ("R2 is exempt from operating-temperature evidence.", 1, "R2", "unknown"),
+            ("R2 IS EXEMPT FROM OPERATING-TEMPERATURE VERIFICATION.", 1, "R2", "pass"),
+            ("r2 is exempt from operating-temperature verification.", 1, "r2", "pass"),
+            ("R2 is exempted from operating-temperature evidence.", 1, "R2", "unknown"),
             ("R2 is exempt\nonly if it is replaced by a 125C part.", 1, "R2 is exempt", "unknown"),
             ("R2 is exempt\nfrom neither temperature evidence nor review.", 1, "R2", "unknown"),
             ("# Only if replaced\nR2 is exempt.", 2, "R2", "unknown"),
@@ -1432,8 +1434,50 @@ class AssemblyReadinessTests(unittest.TestCase):
             ("R2 might be exempt.", 1, "R2", "unknown"),
             ("R2 is exempt?", 1, "R2", "unknown"),
             ("R2 is exempt. R2 must carry evidence.", 1, "R2 is exempt", "unknown"),
-            ("# Temperature exemptions\n- R2 is exempt from operating-temperature evidence.", 2, "R2", "pass"),
+            ("# Temperature exemptions\n- R2 is exempt from operating-temperature verification.", 2, "R2", "pass"),
+            ("# Temperature exemptions\n- R2 is exempt from operating-temperature evidence.", 2, "R2", "unknown"),
         ]
+        # Probe E's nine former bypasses, plus G-b retractions and quoted claims,
+        # are asserted unknown, rather than merely printed by a reviewer probe.
+        rejected = [
+            "R2 is a board-edge bleeder resistor; its operating temperature is accepted "
+            "by the owner without DigiKey evidence.",
+            "Every part but R2 is exempt.", "Every part other than R2 is exempt.",
+            "Everything besides R2 is exempt.", "It is false that R2 is exempt.",
+            "Nobody agreed R2 is exempt.", "Proposal: R2 is exempt.",
+            'The vendor wrote "R2 is exempt." We disagree.',
+            'Claim to review: "R2 is exempt."', "Formerly R2 is exempt; now withdrawn.",
+            "'R2 is exempt.'", "'R2 is exempt from operating-temperature verification.'",
+            "R2 is exempt.", "- R2 is exempted.",
+        ]
+        canonical = "R2 is exempt from operating-temperature verification."
+        for word in ("withdrawn", "superseded", "rescinded", "retracted"):
+            rejected.extend([f"R2 is exempt; {word}.", f"{canonical} {word}."])
+        rejected.extend([
+            f"Every part but {canonical}", f"Every part other than {canonical}",
+            f"Everything besides {canonical}", f"It is false that {canonical}",
+            f"Nobody agreed {canonical}", f"Proposal: {canonical}",
+            f'The vendor wrote "{canonical}" We disagree.', f'Claim to review: "{canonical}"',
+            f"Formerly {canonical} Now withdrawn.",
+            canonical[:-1], canonical + " R2 must carry evidence.",
+            "R2 are exempt from operating-temperature verification.",
+            "R2, R3 is exempt from operating-temperature verification.",
+            "R2 and R2 are exempt from operating-temperature verification.",
+            "R2-1 is exempt from operating-temperature verification.",
+            "R1/R2 is exempt from operating-temperature verification.",
+            f"# Only if replaced\n{canonical}", f"# Not exempt\n{canonical}",
+            f"If replaced:\n\n- {canonical}", f"- Pending:\n  - {canonical}",
+            f"```\n{canonical}\n```", f"{canonical}\nonly if replaced.",
+        ])
+        cases.extend((text, text.splitlines().index(next(line for line in text.splitlines() if "R2" in line)) + 1,
+                      "R2", "unknown") for text in rejected)
+        cases.extend((text, 1, "R2", "pass") for text in (
+            "R2, R3 are exempt from operating-temperature verification.",
+            "R2 and R3 are exempt from operating-temperature verification.",
+            "R2, R3 and C4 are exempt from operating-temperature verification.",
+            "R2, R3, and C4 are exempt from operating-temperature verification.",
+            "1. R2 is exempt from operating-temperature verification.",
+        ))
         for text, number, quote, expected in cases:
             with self.subTest(text=text):
                 decision.write_text(text + "\n", encoding="utf-8")

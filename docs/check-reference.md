@@ -1479,9 +1479,13 @@ Junction/case-only, absent, unparsed or unbound values are unknown, as is an
 unpinned or uncaptured capture. The predicate is board-wide (AGENTEE-274): a
 populated component that is neither judged nor exempt by a captured, pinned
 owner citation makes it unknown (`operating_temperature_unlisted`). Exemptions
-require an affirmative, unconditional owner statement naming the exact reference
-(AGENTEE-281); negated, conditional or bare BOM text is unknown even when the
-quote omits the qualifier. Native KiCad files (`.kicad_*`), legacy design files
+require the complete canonical owner sentence `R2 is exempt from
+operating-temperature verification.` (case-insensitive), or a reference list
+such as `R2, R3 and C4 are exempt from operating-temperature verification.`
+A Markdown list item containing exactly that sentence is allowed (AGENTEE-281).
+Other wording, including negated, conditional, quoted or retracted text and bare
+BOM text, is unknown even when the quote omits the qualifier. Native KiCad files
+(`.kicad_*`), legacy design files
 (`.sch`, `.net`, `.pro`), library tables (`sym-lib-table`, `fp-lib-table`) and
 mutable deviations are refused as citation sources. An optional
 `package_map` compares the DigiKey package with the footprint. A mismatch is a
