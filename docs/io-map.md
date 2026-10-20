@@ -23,6 +23,36 @@ and refuses unknown IDs. This is traceability; a reference to a radio requiremen
 does not prove BLE functionality. The pinned CSV leaves native references and
 MCU pins undecided, so its compiled fixture produces unknown coverage.
 
+## Requirements source provenance
+
+The compiler records optional `source.sha256`, lowercase hexadecimal SHA-256 of
+the exact requirement file bytes, on every invariant. The CLI reads `--source`
+relative to its working directory; `--source-file FILE` supplies those bytes from
+another location without changing the captured path. Use
+`--require-source-sha256` to refuse a missing source file. An explicit
+`--source-file` that cannot be read also fails. For legacy invocations only, a
+missing default source file leaves the digest absent. Other read failures fail.
+Existing digest-free contracts remain valid under `agent-ee.interface/1`.
+
+For example, run from a captured project root:
+
+```sh
+PYTHONPATH=/path/to/agent-ee/src python3 -m agent_ee.io_map telemetry-pod/io-map.csv \
+  --csv-path telemetry-pod/io-map.csv --requirement POD-AC-1-pinout \
+  --source telemetry-pod/REQUIREMENTS.md --locator 'Acceptance criteria / item 1' \
+  --require-source-sha256 --out pod.interface.json
+```
+
+The Python API accepts `source_bytes=raw_bytes` and
+`require_source_sha256=True`; strict compilation requires bytes to compute the
+digest. An already declared digest must match those bytes.
+`validate_contract(contract, source_bytes={captured_path: raw_bytes},
+require_source_sha256=True)` requires local source digests and verifies them.
+When bytes are omitted, validation checks digest syntax only; when supplied,
+every hashed local source must have an entry. File bytes are never decoded or
+newline-normalized for hashing. These options do not change pinned-external
+citations, which retain their separate source contract.
+
 ## CSV and bindings
 
 Required headers are `Connector_Pin, Signal_Name, Net, MCU_Ref, MCU_Pin,
@@ -113,6 +143,9 @@ Configure the ordinary `hardware_interface` check with `contract` and an earlier
 `netlist_check`. Each CSV path must be captured and match its citation's hash.
 The capability includes the CSV in immutable inputs, so candidate repairs cannot
 change it. Changing its bytes requires recompilation and a new baseline.
+If an invariant carries `source.sha256`, capability validation also compares it
+with the captured requirement bytes. Its `path` and `locator` must still match
+the baseline source exactly; the scope baseline source shape is unchanged.
 
 `no_connect` is satisfied only for a known disconnected native terminal. A
 conductor is a violation; ambiguous generated singleton names stay unknown under
