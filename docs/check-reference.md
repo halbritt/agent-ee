@@ -1687,3 +1687,12 @@ and their footprint arcs through a sandboxed native reflection and save/reload.
 requires exact saved primitives, arc nodes and native merged-copper evidence;
 mutation or missing native output refuses admission. This changes transform
 admission only; check registration and placement grading remain unchanged.
+
+## Placer through-hole publication gate
+
+The [AGENTEE-318 placer gate](placer.md#through-hole-reservations-and-native-publication-gate-agentee-318)
+compares native baseline and candidate DRC item identities before publication.
+New `shorting_items`, `clearance` or `pth_inside_courtyard` findings refuse the
+proposal; added silk findings are recorded separately. Native through-hole
+reservations constrain both packing and targeted plans without changing check
+registration, verdict schemas or coordinator acceptance authority.

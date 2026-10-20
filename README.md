@@ -92,7 +92,11 @@ requirements, checks and models.
    cannot be edited to make the repair pass.
 
 The [architecture diagrams](docs/architecture.md) show the information and write
-boundaries. Native tools and agents run in Bubblewrap sandboxes; supported writers
+boundaries. The [placer](docs/placer.md#through-hole-reservations-and-native-publication-gate-agentee-318)
+reserves native through-hole copper and drills across both sides and refuses
+proposals that introduce native DRC shorts, clearance or PTH courtyard findings.
+
+Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
 
 The [synthetic benchmark utilities](docs/seeded-benchmark.md) preregister five
