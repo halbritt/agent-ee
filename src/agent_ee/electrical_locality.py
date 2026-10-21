@@ -202,6 +202,7 @@ class PlacementIndex:
     that footprint. Candidate evaluators contain only incident, placed pairs.
     """
     def __init__(self, document):
+        validate(document)
         self.pairs = {}
         self.endpoints = {}
         self.positions = {}

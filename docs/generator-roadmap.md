@@ -314,8 +314,12 @@ and pad centres. Placement checks reuse the preceding native DRC report;
 they do not run a second DRC. The [placement reference](placement.md#native-qualification)
 maps the ticket's acceptance criteria to executable tests.
 The disposable producer also runs a [silk artwork pass](silk-artwork.md) after
-placement, preserving graphics and required markings while native DRC gates
-added silk overlap/copper findings. Its local reports do not replace the
+placement, preserving graphics and required markings while recording remaining
+added silk overlap/copper findings as open defects in published proposals
+(AGENTEE-333). Adopted helper receipt evidence follows successor candidates;
+downstream fab/verification gates and package release refuse open carry.
+Placement feasibility does not establish fab legibility.
+Its local reports do not replace the
 coordinator checks.
 
 The fab profile's `min_edge_clearance_mm` is a copper-to-edge limit. It does

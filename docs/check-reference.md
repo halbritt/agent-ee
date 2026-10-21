@@ -1779,32 +1779,47 @@ that IC. Optional switch starts at the IC and ends at the same inductor.
 Return endpoints use the declared return net, distinct from supply. AGENTEE-341
 requires both switch endpoint nets to differ from return and both supply endpoint
 nets. Distinct-source obligations require disjoint supply/return endpoint net
-sets even without a kind. Inconsistent bindings refuse validation. Untyped
+sets even without a kind. Inconsistent bindings refuse validation, including
+direct `PlacementIndex` construction, which re-validates its document before
+indexing (AGENTEE-341). Untyped
 same-source obligations retain their existing verdicts; disjoint untyped nets
 alone do not establish component roles or detect swapped supply/return roles.
 Both legs remain jointly graded and constrained; missing bounds stay unknown. See
 [buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
 for the schema, retained owned evidence and committed pod packet locator.
 
-## Post-placement silk publication gate (AGENTEE-320)
-
-The [artwork pass](silk-artwork.md) uses native field bounds to search for
-position-only Reference/Value relocations after placement. Extra custom fields
-need a footprint declaration. Every other text property and all graphics remain
-unchanged. Fresh native DRC against the immutable baseline gates publication on
-added `silk_overlap` and `silk_over_copper`; unresolved conflicts retain typed
-`placement_silkscreen_conflict` diagnostics with the native items. Explicitly
-ignored `silk_*` categories and missing tool coverage refuse publication. Other
-footprints' same-side courtyard interiors reserve space for assembled bodies.
-Side-flipped footprints' fields remain unchanged with typed conflicts. Source
-project/rule bytes are restored after the native save. Placement-added
-`silk_edge_clearance` remains reported with its existing grading. This
-producer gate does not alter registered DRC verdicts or waive baseline defects.
-
 Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
+Multi-member components use [joint cluster search](placer.md#joint-locality-clusters-agentee-335)
+after per-part search fails, with tightest-limit-first peers and only the remaining
+step/time budget. Joint refusals retain the legacy typed failure and cluster
+diagnostics in `search.joint_cluster_attempt`; only regraded completions replace it.
 The per-rotation cap of 256 distinct locality origins refuses with
 `packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
 `locality target budget exhausted`; it never truncates targets. Runner heartbeats
 go to stderr, preserving the single JSON summary on `board_build` stdout.
 Heartbeat and partial search results are diagnostics with no acceptance authority;
 the full independent locality check still grades every declared role.
+
+## Post-placement silk publication gate (AGENTEE-320)
+
+The [artwork pass](silk-artwork.md) uses native field bounds to search for
+position-only Reference/Value relocations after placement. Extra custom fields
+need a footprint declaration. Every other text property and all graphics remain
+unchanged. Fresh native DRC against the immutable baseline records added
+`silk_overlap` and `silk_over_copper`. Silk-only proposals publish with typed
+`placement_silkscreen_conflict` open defects, each with `verdict: defect` and
+`status: open`, in both `native_drc_comparison.open_defects` and the placement
+receipt `open_defects`. Their receipt outcome/verdict is `defect`. This separates
+placement feasibility from fab legibility. The coordinator captures validated
+helper receipts and artwork under `placement-evidence`, with ordered
+`placement_provenance` links in successor scopes (AGENTEE-333). Verification/fab
+stages and fab export, package, consistency, CPL and JLC DFM checks refuse open
+carry with typed field/graphic identities and source receipts. The evidence seal
+reconstructs these refusals; release artifact extraction also refuses open carry.
+Uncarried baseline findings retain their existing verdicts. Explicitly
+ignored `silk_*` categories and missing tool coverage refuse publication. Other
+footprints' same-side courtyard interiors reserve space for assembled bodies.
+Side-flipped footprints' fields remain unchanged with typed conflicts. Source
+project/rule bytes are restored after the native save. Placement-added
+`silk_edge_clearance` remains reported with its existing grading. This
+producer gate does not alter registered DRC verdicts or waive baseline defects.

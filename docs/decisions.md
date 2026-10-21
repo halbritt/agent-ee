@@ -510,3 +510,19 @@ The coordinator adapter derives packing obligations from the locality check's
 immutable captured file and records its raw hash. It refuses divergent inline
 obligations or bindings. The coordinator check records the same file identity
 independently. Standalone packing remains diagnostic proposal generation.
+
+## Locality cluster search preserves legacy plans (AGENTEE-335)
+
+The coordinator's legacy-first ruling preserves every plan found by per-part
+search, including its placements and counted steps. Joint cluster search runs
+only after a legacy failure, with remaining candidate steps and the original
+absolute opt-in search deadline. Only an independently regraded completion can
+replace that failure. Otherwise the legacy typed failure remains authoritative
+and the joint attempt is diagnostic.
+
+The joint finite candidate set is not a superset of the per-part set, so it
+cannot justify discarding a legacy completion or claiming physical infeasibility.
+Cluster guards count steps; there is no default wall-clock cluster guard.
+Real-pod fail-fast is no longer this item's criterion; block-level placement is
+the pod path. See [joint locality clusters](placer.md#joint-locality-clusters-agentee-335)
+for the budget and diagnostic contract.

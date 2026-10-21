@@ -99,8 +99,10 @@ or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
 The [artwork pass](docs/silk-artwork.md) relocates permitted silk fields and
-refuses proposals with added native silk overlap or copper conflicts, preserving
-graphics and required markings.
+publishes silk-only conflicts as open defects in the placement receipt, preserving
+graphics and required markings. This establishes placement feasibility only;
+downstream fab, verification and release gates refuse carried open defects,
+naming their native fields/graphics and source receipts (AGENTEE-333).
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against cited limits. Captured pad UUIDs select
@@ -108,10 +110,14 @@ multi-pad pins. Explicit `buck-output-loop` declarations bind the supply source
 and switch target to the inductor, the return source and switch source to the
 IC, and return pads to a declared net distinct from supply. Switch nets must
 differ from supply and return. Distinct-source supply/return net sets must be
-disjoint even without a kind. Coordinator packing
+disjoint even without a kind. Direct placement-index construction re-validates
+these declarations. Coordinator packing
 binds to the check's immutable locality file. Origin-group distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)
 caches selected pads and retains typed partial diagnostics on its optional search deadline.
+[Joint locality clusters](docs/placer.md#joint-locality-clusters-agentee-335)
+preserve per-part plans, then try capacitors and switch peers together with the
+remaining budget. Joint refusals retain named cluster diagnostics.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
