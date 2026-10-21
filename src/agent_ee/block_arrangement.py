@@ -1065,9 +1065,12 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
                         return failure('arrangement_refused', f'block {bid} stacks parts in the shadow of {fp["ref"]}',
                                        problems=[{'kind': 'block_internal_stacking', 'block': bid,
                                                   'reference': fp['ref'], 'inside': inside}])
+    # Seed fixed pairs closer than an unsourced gap are carried input facts (AGENTEE-376).
+    if placer._carries_seed_pairs(effective):
+        record['carried_fixed_pairs'] = []
     try:
         _, placed, exact = placer._initial_reservations(work, {**effective, 'obstacles': obstacles}, outline,
-                                                        keepouts, bands, {})
+                                                        keepouts, bands, {}, record.get('carried_fixed_pairs'))
     except ValueError as exc:
         return failure('fixed_conflict', str(exc))
     placed = [fp for fp in placed if fp['ref'] not in members]
@@ -1142,7 +1145,8 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     residual_policy['fixed_refs'] = sorted(set(effective['fixed_refs']) | members, key=blocks._natural)
     record['residual'] = {'references': sorted(movable, key=blocks._natural), 'policy_sha256': digest(residual_policy),
                           'obstacles': residual_policy['obstacles'][len(effective['obstacles']):]}
-    plan = placer.pack(residual_capture, residual_policy, heartbeat=heartbeat)
+    # Block members are re-posed, so only parts unchanged from the capture stay seed facts.
+    plan = placer.pack(residual_capture, residual_policy, heartbeat=heartbeat, seed=capture)
     if plan['status'] != 'planned':
         return {**plan, 'block_arrangement': record}
     plan['placements'] = [{**p, 'fixed': p['ref'] in fixed} for p in plan['placements']]
