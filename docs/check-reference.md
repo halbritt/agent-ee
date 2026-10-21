@@ -1903,6 +1903,14 @@ project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
 
+Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
+or `A;B`) never receive the exemption, even when KiCad writes the net name as a
+quoted string. Such edits reopen closure and require a fresh receipt. This is a
+conservative liveness bound of the writer grammar (AGENTEE-360).
+Nested-list children of a segment or arc refuse comparison with `ValueError`;
+the coordinator retains the carried defect instead of letting an untyped error
+escape.
+
 ## Design-rule provenance (AGENTEE-331)
 
 The [scaffold constraint-source import](scaffold.md#declared-design-rule-sources-agentee-331)
@@ -1973,13 +1981,6 @@ unknown and its failed execution is retained. A defect already proved by native
 DRC retains its defect verdict; an otherwise passing DRC cannot pass without
 containment coverage. Supplemental structural witnesses retain their class and citation in the
 classified evidence cited by the collected coordinator finding.
-Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
-or `A;B`) never receive the exemption, even when KiCad writes the net name as a
-quoted string. Such edits reopen closure and require a fresh receipt. This is a
-conservative liveness bound of the writer grammar (AGENTEE-360).
-Nested-list children of a segment or arc refuse comparison with `ValueError`;
-the coordinator retains the carried defect instead of letting an untyped error
-escape.
 
 ## Post-routing silk repair (AGENTEE-350)
 

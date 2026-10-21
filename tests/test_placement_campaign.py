@@ -531,13 +531,13 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'repeated_design'), state)
         self.staged_scaffold((self.out / 'runs/1/inputs' / BOARD).read_bytes())
         self.assertEqual([h['earliest_failing_stage'] for h in state['history']], ['placement', 'routing', 'routing'])
-        self.assertEqual(state['history'][0]['stage_failures']['placement'], ['outline'])
+        self.assertEqual(state['history'][0]['stage_failures']['placement'], ['drc-placement', 'outline'])
         judgment = read_json(self.out / 'runs/1/work/outline/placement-judgment.json')
         self.assertEqual(sorted((d['kind'], d['ref']) for d in judgment['defects']),
                          [('outside_outline', 'C1'), ('outside_outline', 'J1'), ('outside_outline', 'R1')])
         # The writer turn received the first run's sealed outline finding and its retained probe.
         context = prompt_context(self.prompts[1])
-        self.assertEqual([f['local_id'] for f in context['placement']['findings']], ['outline'])
+        self.assertEqual([f['local_id'] for f in context['placement']['findings']], ['drc-placement', 'outline'])
         outline, = [c for c in context['placement']['checks'] if c['id'] == 'outline']
         first = read_json(self.out / 'runs/1/candidate.json')
         self.assertEqual(outline['probe']['board_sha256'], first['files'][BOARD])
@@ -563,7 +563,7 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         self.assertFalse(any('edge' in limit.get('key', '') for limit in profile['limits']))
         status, state = self.campaign(self.declaration(fixed=[]))
         self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'repeated_design'), state)
-        self.assertEqual([h['stage_failures']['placement'] for h in state['history']], [['outline'], [], []])
+        self.assertEqual([h['stage_failures']['placement'] for h in state['history']], [['drc-placement', 'outline'], [], []])
         self.assertEqual(read_json(self.out / 'implementations/1/placement-adapter.json')['status'], 'proposed')
         self.assertEqual(self.outcomes(2)['drc-placement'], 'pass')
         drc = read_json(self.out / 'runs/2/work/drc-placement/drc.json')
