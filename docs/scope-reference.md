@@ -33,6 +33,7 @@ specific to the original workstation; adapt them before using it elsewhere.
 | `limitations` | List of strings, default `[]` | Explicit omitted conditions or analyses retained in the report |
 | `packet_inputs` | List; default root schematic and board | Captured input-relative source text selected for reviewers |
 | `packet_artifacts` | List, default `[]` | Required generated evidence paths, relative to the run |
+| `block_provenance` | Optional captured input-relative path | [Block provenance](blocks.md#review-input-block-provenance-agentee-355) of an arranged placement, bound to `board` and carried whole in the packet |
 | `packet_max_bytes` | Integer, default 240000 | Total artifact-text budget, allowed range 1024–1000000 |
 | `review_profile` | Explicit profile object; alternatively pass `--profile FILE` | Harness/model/effort/timeout for every reviewer and adjudicator |
 

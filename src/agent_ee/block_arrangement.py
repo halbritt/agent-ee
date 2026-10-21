@@ -34,6 +34,9 @@ STRATEGY = 'ranked-first-fit-conflict-backjump/1'
 # Blocked-rectangle cache entries kept across backjumps (search memory, not a design limit).
 OWNED_CACHE = 4096
 TERMS = ('pad-locality', 'inter-block-wire', 'thermal-spread')
+PROVENANCE_ARTIFACT = 'agent-ee.block-provenance/1'
+PROVENANCE_AUTHORITY = ('review input only: each placed block keeps its candidate provenance class and enforcement; '
+                        'an advisory block confers no acceptance and is reviewed as a proposal')
 DEFAULT_OBJECTIVE = {'terms': list(TERMS), 'provenance': {
     'enforcement': 'advisory', 'reason': 'default lexicographic order; no sourced objective weights'}}
 POLICY_KEYS = frozenset(('schema', 'step_budget', 'search_timeout_s', 'priority_blocks', 'objective', 'thermal',
@@ -247,8 +250,8 @@ def admit_entry(entry, capture, inventory, derivation, policy):
         mapping, deferred = {r['reference']: r['reference'] for r in document['members']}, document['deferred']
     poses = {mapping[r['reference']]: r['pose'] for r in document['members']}
     return {'block': block['id'], 'anchor': mapping[document['frame']['anchor']], 'poses': poses,
-            'mapping': mapping, 'binding': binding['roles'], 'candidate_sha256': digest(document),
-            'provenance': document['provenance'], 'deferred': deferred}, []
+            'mapping': mapping, 'mapped': 'mapping' in entry, 'binding': binding['roles'],
+            'candidate_sha256': digest(document), 'provenance': document['provenance'], 'deferred': deferred}, []
 
 
 def _opposite(side):
@@ -326,6 +329,10 @@ def _shift(fp, dx, dy):
     for key in ('_packing_holes', '_packing_targets'):
         if key in fp:
             out[key] = boxed(fp[key])
+        # placer._hole_conflict reads the union boxes too (AGENTEE-353); a stale or missing one is wrong.
+        if key + '_box' in fp:
+            box = fp[key + '_box']
+            out[key + '_box'] = None if box is None else (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
     return out
 
 
@@ -1000,7 +1007,11 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
                          'candidate_sha256': admitted[b]['candidate_sha256'], 'anchor': admitted[b]['anchor'],
                          'references': sorted(admitted[b]['poses'], key=blocks._natural),
                          'boundary': admitted[b]['binding'],
-                         'deferred': admitted[b]['deferred']} for b in block_ids]
+                         'deferred': admitted[b]['deferred'],
+                         # A library or reused layout keeps its source-to-board reference mapping.
+                         **({'mapping': dict(sorted(admitted[b]['mapping'].items(),
+                                                    key=lambda item: blocks._natural(item[0])))}
+                            if admitted[b]['mapped'] else {})} for b in block_ids]
     locality = effective.get('electrical_locality')
     if locality and electrical_locality.grade(capture, locality)['unknown']:
         return failure('electrical_locality_unavailable', 'pad locality needs unambiguous native pads, limits and citations')
@@ -1141,6 +1152,103 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     return plan
 
 
+def provenance_artifact(plan, board_sha256=None, rules=None, plan_sha256=None):
+    """The review input of a complete arranged plan: every placed block's identity, class and enforcement.
+
+    ``board_sha256`` names the board the reviewers see (the runner's saved board;
+    default the plan's source board) and ``rules`` the block rules graded on it
+    (default the plan's). The artifact confers no authority: a search-derived block
+    stays advisory and is judged by the reviewers as a proposal.
+    """
+    record = plan.get('block_arrangement') or {}
+    if plan.get('status') != 'planned' or 'arranged' not in record:
+        raise ValueError('a block provenance artifact needs a complete arranged plan')
+    poses = {a['block']: a for a in record['arranged']}
+    rows = []
+    for block in record['blocks']:
+        provenance, pose = block['provenance'], poses[block['block']]
+        rows.append({'block': block['block'], 'references': block['references'], 'anchor': block['anchor'],
+                     'candidate_sha256': block['candidate_sha256'], 'class': provenance['class'],
+                     'enforcement': provenance['enforcement'], 'citation': provenance['citation'],
+                     **{k: provenance[k] for k in ('method', 'source') if k in provenance},
+                     'reuse': 'mapped' if 'mapping' in block else 'own-board',
+                     **({'mapping': block['mapping']} if 'mapping' in block else {}),
+                     'position_nm': pose['position_nm'], 'rotation_deg': pose['rotation_deg']})
+    document = {'schema': PROVENANCE_ARTIFACT, 'authority': PROVENANCE_AUTHORITY,
+                'source_sha256': plan['board_sha256'], 'board_sha256': board_sha256 or plan['board_sha256'],
+                'derivation_sha256': record['derivation_sha256'], 'policy_sha256': record['policy_sha256'],
+                **({'plan_sha256': plan_sha256} if plan_sha256 else {}), 'blocks': rows,
+                'rules': [{k: r[k] for k in ('rule', 'id', 'enforcement', 'status') if k in r}
+                          for r in (record['rules'] if rules is None else rules)]}
+    return validate_provenance(document)
+
+
+def _sha256(value, label):
+    if not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value):
+        raise ValueError(f'{label} must be a lowercase SHA-256')
+
+
+def validate_provenance(document):
+    """Refuse a block provenance artifact whose classes, enforcement or identities are inconsistent."""
+    blocks._keys(document, {'schema', 'authority', 'source_sha256', 'board_sha256', 'derivation_sha256',
+                            'policy_sha256', 'blocks', 'rules'}, {'plan_sha256'}, label='block provenance')
+    if document['schema'] != PROVENANCE_ARTIFACT or document['authority'] != PROVENANCE_AUTHORITY:
+        raise ValueError(f'block provenance must be {PROVENANCE_ARTIFACT} with its fixed authority statement')
+    for key in ('source_sha256', 'board_sha256', 'derivation_sha256', 'policy_sha256', 'plan_sha256'):
+        if key in document:
+            _sha256(document[key], key)
+    if not isinstance(document['blocks'], list) or not document['blocks']:
+        raise ValueError('block provenance names no placed block')
+    seen, references = set(), set()
+    for row in document['blocks']:
+        blocks._keys(row, {'block', 'references', 'anchor', 'candidate_sha256', 'class', 'enforcement', 'citation',
+                           'reuse', 'position_nm', 'rotation_deg'}, {'method', 'source', 'mapping'},
+                     label='block provenance row')
+        label = f"block provenance row {row['block']!r}"
+        if not isinstance(row['block'], str) or row['block'] in seen:
+            raise ValueError(f'{label}: block ids must be distinct strings')
+        seen.add(row['block'])
+        if (not isinstance(row['references'], list) or not row['references']
+                or row['anchor'] not in row['references'] or references & set(row['references'])):
+            raise ValueError(f'{label}: references must be nonempty, disjoint and contain the anchor')
+        references |= set(row['references'])
+        _sha256(row['candidate_sha256'], label + ' candidate_sha256')
+        # Fail closed: an unknown class, or a class whose enforcement was relabelled, refuses.
+        if row['class'] not in blocks.PROVENANCE or row['enforcement'] != blocks.PROVENANCE[row['class']]:
+            raise ValueError(f"{label}: class {row['class']!r} does not carry enforcement {row['enforcement']!r}")
+        if not isinstance(row['citation'], str) or not row['citation'].strip():
+            raise ValueError(f'{label}: citation must be nonempty text')
+        if row['reuse'] not in ('own-board', 'mapped') or (row['reuse'] == 'mapped') != ('mapping' in row):
+            raise ValueError(f'{label}: a mapped block, and only one, carries its mapping')
+        if 'mapping' in row and (not isinstance(row['mapping'], dict)
+                                 or sorted(row['mapping'].values()) != sorted(row['references'])):
+            raise ValueError(f'{label}: the mapping must cover exactly the placed references')
+    for rule in document['rules']:
+        blocks._keys(rule, {'rule', 'enforcement', 'status'}, {'id'}, label='block provenance rule')
+        if rule['enforcement'] not in ('hard', 'advisory') or rule['status'] not in ('pass', 'defect'):
+            raise ValueError(f"block provenance rule {rule['rule']!r} has an unknown enforcement or status")
+    return document
+
+
+def review_input(run_dir, manifest):
+    """The scope's declared block provenance, read from the sealed capture and bound to its board.
+
+    A missing, uncaptured, malformed or other-board artifact raises, so the packet is not
+    built and the review stays incomplete; it is never silently dropped.
+    """
+    scope = manifest['scope']
+    rel, board = scope['block_provenance'], scope['board']
+    if not isinstance(rel, str) or rel not in manifest['files']:
+        raise ValueError(f'block_provenance {rel!r} is not a captured input')
+    path = Path(run_dir) / 'inputs' / rel
+    if hashlib.sha256(path.read_bytes()).hexdigest() != manifest['files'][rel]:
+        raise ValueError('captured block provenance changed; evidence is stale')
+    document = validate_provenance(strict_json(path.read_bytes()))
+    if document['board_sha256'] != manifest['files'].get(board):
+        raise ValueError(f'block provenance describes board {document["board_sha256"]}, not the captured {board}')
+    return {'path': 'inputs/' + rel, 'sha256': manifest['files'][rel], 'record': document}
+
+
 def load_entries(paths):
     return [{'candidate': strict_json(Path(p).read_bytes())} for p in paths]
 
@@ -1175,6 +1283,7 @@ def main(argv=None):
     parser.add_argument('--arrangement', required=True, type=Path, help=f'{POLICY} JSON')
     parser.add_argument('--candidate', required=True, type=Path, action='append', help='admitted block candidate')
     parser.add_argument('--out', required=True, type=Path, help='new output JSON file')
+    parser.add_argument('--provenance', type=Path, help=f'new {PROVENANCE_ARTIFACT} file, written when planned')
     args = parser.parse_args(argv)
     try:
         capture, inventory, derivation = blocks._load(args)
@@ -1182,6 +1291,8 @@ def main(argv=None):
                          strict_json(args.arrangement.read_bytes()), load_entries(args.candidate),
                          heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True))
         blocks._write(args.out, result)
+        if args.provenance is not None and result['status'] == 'planned':
+            blocks._write(args.provenance, provenance_artifact(result))
     except (OSError, ValueError) as exc:
         print(json.dumps({'status': 'refused', 'reason': str(exc)}))
         return 1

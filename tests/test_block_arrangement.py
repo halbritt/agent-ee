@@ -533,6 +533,30 @@ class MemberAxesTests(unittest.TestCase):
                     self.assertTrue(placer._hole_conflict(moved, holed), (x, y))
         self.assertGreater(blocked, 0)
 
+    def test_shift_keeps_the_placer_reservation_caches(self):
+        """A shifted macro or member carries the union boxes placer._hole_conflict reads (pod KeyError)."""
+        import math
+        octagon = [[round(400000 * math.cos(math.pi * k / 4)), round(400000 * math.sin(math.pi * k / 4))]
+                   for k in range(8)]
+        holed = part('P1', 0, 0, side='F')
+        holed['packing_pad_geometry'] = {'status': 'proven', 'copper': [], 'holes': [{'polygons': [octagon]}]}
+        plain = part('C1', 0, 0, shape=rectangle(0, 0, 2, 1))
+        plain['packing_pad_geometry'] = {'status': 'proven', 'copper': [], 'holes': []}
+        peer = placer.transform(part('C2', 0, 0, shape=rectangle(0, 0, 2, 1)), [5 * MM, 5 * MM], 0)
+        peer['packing_pad_geometry'] = {'status': 'proven', 'copper': [], 'holes': []}
+        peer = placer.transform(peer, peer['position_nm'], 0)
+        macro = arrangement._macro('M', [placer.transform(holed, [0, 0], 0), placer.transform(plain, [MM, 0], 0)])
+        for fp in (macro, placer.transform(holed, [0, 0], 90), placer.transform(plain, [0, 0], 0)):
+            for dx, dy in ((0, 0), (5 * MM, 5 * MM), (4 * MM, 4500000), (-3 * MM, 7 * MM)):
+                shifted = arrangement._shift(fp, dx, dy)
+                moved = placer.transform(fp, [fp['position_nm'][0] + dx, fp['position_nm'][1] + dy],
+                                         fp['rotation_deg'])
+                for key in ('_packing_holes', '_packing_targets'):
+                    self.assertEqual([b for b, _ in shifted[key]], [b for b, _ in moved[key]])
+                    self.assertEqual(shifted[key + '_box'], moved[key + '_box'])
+                self.assertEqual(placer._hole_conflict(shifted, peer), placer._hole_conflict(moved, peer))
+                self.assertEqual(placer._hole_conflict(peer, shifted), placer._hole_conflict(peer, moved))
+
     def test_ranking_cache_is_transparent(self):
         fixture = ArrangementTests('test_deterministic_and_input_preserving')
         fixture.setUp()
@@ -684,7 +708,22 @@ class NativeArrangementTests(unittest.TestCase):
             record = result['plan']['block_arrangement']
             self.assertEqual(record['order'], ['Power', 'Sensor'])
             self.assertEqual({d['status'] for d in record['deferred_grading']}, {'pass'})
-            saved = {f['ref']: f for f in extract(scratch / 'arranged/candidate.kicad_pcb')['footprints']}
+            # The published review input names every placed block, bound to the saved board (AGENTEE-355).
+            published = scratch / 'arranged/block-provenance.json'
+            self.assertEqual(hashlib.sha256(published.read_bytes()).hexdigest(), result['block_provenance_sha256'])
+            artifact = arrangement.validate_provenance(json.loads(published.read_text()))
+            self.assertEqual(artifact['board_sha256'],
+                             hashlib.sha256((scratch / 'arranged/candidate.kicad_pcb').read_bytes()).hexdigest())
+            self.assertEqual(artifact['board_sha256'], result['board_sha256'])
+            self.assertEqual(artifact['source_sha256'], request['authorization']['source_sha256'])
+            self.assertEqual(artifact['plan_sha256'],
+                             hashlib.sha256((scratch / 'arranged/placement-plan.json').read_bytes()).hexdigest())
+            self.assertEqual([(r['block'], r['candidate_sha256'], r['class'], r['enforcement'], r['reuse'])
+                              for r in artifact['blocks']],
+                             [(e['candidate']['block_id'], blocks.digest(e['candidate']), 'search-derived',
+                               'advisory', 'own-board') for e in candidates])
+            self.assertEqual(artifact['rules'], [])
+            saved ={f['ref']: f for f in extract(scratch / 'arranged/candidate.kicad_pcb')['footprints']}
             # The saved board keeps every block rigid: member offsets from the anchor are the frame's.
             for entry in candidates:
                 cand = entry['candidate']

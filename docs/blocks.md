@@ -542,6 +542,54 @@ hash. Combining `blocks` with `targeted` or `targeted_plans` is refused.
 `block_arrangement.request_section(allocation, arrangement, candidates)` builds
 the section from files.
 
+### Review input: block provenance (AGENTEE-355)
+
+Every placed arranged plan also publishes `block-provenance.json`
+(`agent-ee.block-provenance/1`) beside `placement-result.json`. It is built by
+`block_arrangement.provenance_artifact` and lists every placed block:
+
+| Field | Meaning |
+| --- | --- |
+| `block`, `references`, `anchor`, `candidate_sha256` | Identity of the block and its admitted candidate |
+| `class`, `enforcement`, `citation`, optional `method`, `source` | The candidate's provenance record, unchanged |
+| `reuse` | `own-board`, or `mapped` for a library or reused layout; a mapped row carries its source-to-board `mapping` |
+| `position_nm`, `rotation_deg` | The arranged anchor pose |
+
+The top level binds the artifact: `source_sha256` (seed board), `board_sha256`
+(the saved candidate board), `plan_sha256` (`placement-plan.json`),
+`derivation_sha256`, `policy_sha256`, and `rules` (each block rule's
+enforcement and status on the saved board). `authority` is a fixed statement: the
+artifact is review input only, and an advisory block confers no acceptance.
+`placement-result.json` records the file's hash as `block_provenance_sha256`.
+The placement plan records the search's wall `elapsed_s`, so `plan_sha256`, and
+with it the artifact's bytes, differ between otherwise identical runs; every
+other field is deterministic.
+The `arrange` CLI writes the same artifact for a planned result with
+`--provenance FILE`; its `board_sha256` is the plan's source board.
+
+`validate_provenance` fails closed. It refuses a class that is unknown or whose
+enforcement is not its class's (`search-derived` must be `advisory`), a mapped
+row without its mapping or an own-board row with one, a mapping that does not
+cover exactly the placed references, shared references, an empty block list,
+an edited authority statement and any unknown key.
+
+**Reaching the reviewers.** The coordinator captures the saved board and
+`block-provenance.json` as candidate inputs and names the artifact in the scope:
+
+```json
+{"board": "pod/candidate.kicad_pcb", "block_provenance": "pod/block-provenance.json"}
+```
+
+The captured bytes are part of candidate identity. `reviewers.build_packet`
+reads them through `block_arrangement.review_input`, which checks the captured
+digest, validates the artifact and requires its `board_sha256` to be the
+captured `board`. The packet then carries `block_provenance: {path, sha256,
+record}` outside the text budget, so no row is clipped. Every initial reviewer
+receives the same packet; no reviewer sees another's judgment. A declared
+artifact that is not captured, was changed, is malformed or describes another
+board raises, so no packet is built and the review stays incomplete. Without the
+declaration the packet has no `block_provenance`.
+
 ### Real-pod diagnostic (stage B)
 
 This is a read-only scratch diagnostic; nothing was adopted or written to fome-mc.
@@ -596,121 +644,97 @@ first two; see [the microSD diagnostic](#real-pod-diagnostic-on-the-microsd-sour
 ### Real-pod diagnostic on the microSD source (AGENTEE-355)
 
 A read-only scratch diagnostic; nothing was adopted or written to fome-mc. Inputs
-at fome-mc `8c42f2e`, each checked with `sha256sum -c` against the fome-mc
+at fome-mc `3d7ff5f`, each checked with `sha256sum -c` against the fome-mc
 SHA256SUMS files:
 
-- `placement-seed-microsd/base-seed.kicad_pcb` (uncompressed `05da3eb6…`, 309
-  footprints: 162 F, 147 B);
+- `placement-seed-microsd/base-seed.kicad_pcb.gz` (uncompressed `05da3eb6…`,
+  309 footprints: 162 F, 147 B);
 - `storage-microsd/native.xml` (`7791d443…`);
-- `blocks/allocation.json` (`c4f45f65…`, 20 blocks);
-- `electrical-locality/pad-obligations/electrical-locality.json` (12 obligations).
+- `blocks/allocation.json` (`1fb4ecde…`): 20 blocks, 293 members, 16 residual.
 
-The packing policy is iteration 3's (0.25 mm gap, 0.5 mm edge margin), with these
-changes:
+The pod lane's allocation makes C18 and R33 residual for electrical reasons: C18
+is on `PRE_6V3`, U5's output node, and R33 is a strap whose only non-plane net
+goes to the fixed U1. The stage-A limitation that strands a part reached only
+through plane nets is AGENTEE-359.
 
-- fixed refs are the allocation's fixed residual (H1–H4, J1, J2, U1, U2);
-- only the five IMU-isolation obstacles are kept;
-- groups and overhangs that name removed parts are dropped.
+The packing policy is iteration 3's (0.25 mm gap, 0.5 mm edge margin) with the
+fixed refs H1–H4, J1, J2, U1 and U2, only the five IMU-isolation obstacles, no
+groups or overhangs that name removed parts, and the 12 pad obligations. Every
+locality bound in those obligations is unsourced, so it is advisory
+(AGENTEE-337): it ranks and is reported, and never prunes. The arrangement
+policy cites iteration 2's inductor shadows (L1, L2, +0.5 mm) and its
+no-cluster-over-a-fixed-part rule (pre-6v3, buck-3v3, wheel-input) as hard.
+Thermal spread (U5, U7; 15 mm) is advisory. The objective is `["pad-locality"]`
+(advisory), which ranks by obligation cost and then by position.
 
-The arrangement policy cites iteration 2's inductor shadows (L1, L2, +0.5 mm) and
-its no-cluster-over-a-fixed-part rule (pre-6v3, buck-3v3, wheel-input) as hard.
-Thermal spread (U5, U7; 15 mm) is advisory.
-
-**Allocation.** As given, the allocation does not derive. `supervision` lists
-C73, C74, R58, R59 and U17, and `diagnostic` lists C113 and R140–R143. The
-microSD source removed all ten parts. With them dropped (scratch variant v1),
-`derive` gives 20 blocks, 295 members and 14 residual. Stage A then gives
-`synthetic_plane_reached` for buck-3v3 (C18) and mcu (R33), as in AGENTEE-340, so
-arrangement cannot start. Variant v2 also moves C18 and R33 to the residual set:
-20 blocks, 293 members and 16 residual.
-
-**Stage A (v2).** All 20 blocks pack, and compaction changes the outline boxes:
-
-| | F box total | B box total | Wall time |
-| --- | --- | --- | --- |
-| First run | 3590 mm² | 2893 mm² | 6.6 s |
-| Compacted | 2575 mm² | 1701 mm² | 220 s on 10 processes (980 s CPU) |
-
-The slowest block is diagnostic at 216 s. Examples: wheel-input 53.0 × 13.6 →
-19.2 × 19.2 mm, diagnostic 32.3 × 33.9 → 21.1 × 21.0 mm, thermistor 28.1 × 16.9
-→ 14.8 × 15.3 mm. Storage (J3 and its passives) does not shrink. The compacted
-blocks fill 68–100 % of their boxes with gap-grown member courtyards.
-
-**Stage B (v2).** Each row is `block_arrangement.arrange` with `search_timeout_s`
-1800 s unless noted. Blocks are counted at the search peak.
-
-| Stage A | Stage B code | Order, objective | Outcome | Wall (arrangement) | Steps, backjumps |
-| --- | --- | --- | --- | --- | --- |
-| First run | 340 | default, default | `arrangement_budget_exhausted`, 6/20, unplaced diagnostic | 1825 s | 16386, 525; 9466 drilled-pad rejections |
-| Compacted | 340 | default, default | 13/20, unplaced gnss (stopped at 731 s) | – | 6261, 1842 |
-| Compacted | 355 | default, default | `arrangement_budget_exhausted`, 13/20, unplaced gnss | 1815 s | 3001, 2777 |
-| Compacted | 355 | largest box first, default | `arrangement_budget_exhausted`, 18/20, unplaced sensor-power-tire | 1815 s | 3595, 2084 |
-| Compacted | 355 | default, `["pad-locality"]` | `planned` | 116 s (15 s) | 131, 0; 18 drilled-pad rejections |
-| Compacted | 355 | largest first, `["pad-locality"]` | `planned` | 116 s (9 s) | 91, 0; 32 drilled-pad rejections |
-| Compacted | 340 + winding fix | default, `["pad-locality"]` | `planned` | 142 s (34 s) | 1502, 0; 1363 drilled-pad rejections |
-| Compacted | 340 + winding fix | largest first, `["pad-locality"]` | `planned` | 116 s (23 s) | 148, 0; 95 drilled-pad rejections |
-| First run | 355 | default, `["pad-locality"]` | `arrangement_budget_exhausted`, 16/20, unplaced power-entry | 1828 s | 17073, 16253 |
-| First run | 355 | largest first, `["pad-locality"]` | `arrangement_budget_exhausted`, 14/20, unplaced supervision | 1827 s | 7221, 1636 |
-
-With `["pad-locality"]` alone, positions rank by obligation cost and then by
-position, so the arrangement fills from the left. The default puts
-`inter-block-wire` second, which spreads blocks around their placed peers and
-fragments the front side. Two repeated runs of the default order with
-`["pad-locality"]` gave identical plans.
-
-In this ablation, completion comes from compaction together with the
-position-first objective. Without compaction, neither search completes in 30
-minutes under any of these orders. The AGENTEE-340 search also completes on the
-compacted candidates once its grading crash is fixed. The 355 search changes
-reduce work, not reach:
-
-- arrangement steps fall from 1502 to 131;
-- drilled-pad rejections fall from 1363 to 18;
-- with the default objective, backjumps run about four times faster (profiled:
-  160 in 300 s for the 340 search, 504 in 240 s for the 355 search).
+**Stage A.** All 20 blocks pack with compaction: 2607 mm² of F and 1701 mm² of
+B outline boxes, in 80 s wall on 10 processes (298 s CPU; slowest block
+diagnostic, 79 s).
 
 **Complete pod through the writer.** `placer_runner.place_candidate` with a
-`blocks` request: the same derivation, candidates and policy, and the
-iteration-3 `candidate.kicad_pro` beside the seed. Both position-first
-configurations are `placed`:
+`blocks` request and the iteration-3 `candidate.kicad_pro` beside the seed. Both
+orders are `placed`:
 
 | Order | Wall time | Steps (arrangement + residual) | Saved board SHA-256 |
 | --- | --- | --- | --- |
-| Largest first | 119 s | 91 + 46 | `9d690702…2951` |
-| Default | 125 s | 131 + 105 | `85593c40…0d69` |
+| Default | 41.4 s | 164 + 1671 | `38b2e6b7…58d1` |
+| Largest first | 41.0 s | 86 + 119 | `ced19a8d…25ea` |
 
-Both runs have the same grades:
+A repeated default run took 37.9 s and saved a byte-identical board. Both boards
+have:
 
-- judgment `pass`, with no native courtyard overlaps;
-- groups `pass`;
-- locality `pass`: 26 pairs measured, largest ratio 0.945 (`u7-input-hf-C10`
-  supply);
-- hard `no_stacking` and `no_block_over_fixed` `pass` on the saved board; thermal
-  spread (advisory) `pass`;
-- no blocking DRC findings. Only silk is added against the seed (the D-PCB-8 silk
-  policy was not applied).
+- judgment `pass`, no native courtyard overlaps, no blocking DRC findings;
+- groups `pass`; hard `no_stacking` and `no_block_over_fixed` `pass`, advisory
+  thermal spread `pass`;
+- locality `info`: 26 pairs measured, 0 defects, 0 unknown, 26 advisories. Six
+  pairs exceed their unsourced bound: U5/C3 and U7/C10 supply (1.09×), return
+  (1.24×) and switch (1.56× and 1.62×). Before AGENTEE-337 these bounds pruned
+  stage A and every pair was within its bound;
+- a `block-provenance.json` naming all 20 blocks as `search-derived`,
+  `advisory`, `own-board`, bound to the saved board.
 
-Native DRC with the cited `design-rules/board-setup.kicad_pro`:
+The default board adds no finding to the runner's own DRC comparison; the
+largest-first board adds eight silk findings, so its `outcome` is `defect` (the
+D-PCB-8 silk policy was not applied).
 
-| Item | Seed | Each saved board |
-| --- | --- | --- |
-| Courtyard | 5 | 0 |
-| Hole (`npth_inside_courtyard`) | 1 | 0 |
-| Copper-edge | 0 | 0 |
-| Clearance | 18 | 18 |
-| Drill | 44 | 44 |
-| Library | 199 | 199 |
+Native DRC with the cited `design-rules/board-setup.kicad_pro` (`7c7933bf…`):
 
-The 18 clearance items are the same pad pairs inside U2 (LGA-14) and U16, U18
-and U19 (DSE0006A) in the seed. They are land-pattern spacing, not placement.
+| Item | Seed | Default board | Largest-first board |
+| --- | --- | --- | --- |
+| Courtyard | 5 | 0 | 0 |
+| Hole (`npth_inside_courtyard`) | 1 | 0 | 0 |
+| Copper-edge | 0 | 0 | 0 |
+| Clearance | 18 | 18 | 18 |
+| Drill | 44 | 44 | 44 |
+| Library | 199 | 199 | 199 |
+| Silk overlap / over copper / edge | 0 / 0 / 3 | 6 / 0 / 1 | 7 / 7 / 0 |
 
-For comparison, agent-499's hand-anchored iterations 2 and 3 placed the eMMC
-source in 1429 s and 866 s, with clearance, courtyard, hole and copper-edge at 0
-on the cited project. The 2026-10-21 microSD source has no hand iteration at
-`8c42f2e`.
+The 18 clearance items are identical to the seed's: pad pairs inside U2
+(LGA-14) and U16, U18 and U19 (DSE0006A). They are land-pattern spacing, not
+placement.
 
-The stage-B plan here is search-derived and advisory, like every block in it.
-No pod acceptance is claimed. Routing, the silk policy and review remain the pod
+For comparison, agent-499's hand-anchored iterations 2 and 3 placed the older
+eMMC source in 1429 s and 866 s. No hand placement of this microSD source
+exists to compare against directly.
+
+The first run of this diagnostic on the composed tree (main `6e7c2ea`) crashed
+with `KeyError: '_packing_holes_box'`: `_shift` moved the drilled-pad inventories
+but not the union boxes that `placer._hole_conflict` reads (AGENTEE-353). Main
+crashes the same way. `_shift` now moves the boxes too
+(`MemberAxesTests.test_shift_keeps_the_placer_reservation_caches`).
+
+An earlier run at fome-mc `8c42f2e` used scratch allocations, because that
+allocation still named ten parts the microSD source removed. With C18 and R33 in
+their blocks, stage A returned `synthetic_plane_reached` for buck-3v3 and mcu.
+With both residual (the same 20 blocks as `3d7ff5f`), the 30-minute ablation
+showed:
+
+- only compaction together with the position-first objective completed the pod;
+- the 355 stage-B changes reduced work, not reach: arrangement steps fell from
+  1502 to 131 and drilled-pad rejections from 1363 to 18.
+
+The stage-B plan is search-derived and advisory, like every block in it. No pod
+acceptance is claimed. Routing, the silk policy and review remain the pod
 lane's.
 
 ## Real-pod diagnostic (stage A)
@@ -756,7 +780,7 @@ These limits remain the pod lane's advisory bounds. No pod acceptance is claimed
 ## Validation
 
 ```sh
-AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_blocks tests.test_block_arrangement -v
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_blocks tests.test_block_arrangement tests.test_block_provenance -v
 ```
 
 `tests.test_blocks` uses authored hierarchical XML, boards, pads and limits.
@@ -795,6 +819,8 @@ covers:
   recorded net that differs from the board net;
 - a mapped library candidate, with undeclared, wrong and correct boundary nets,
   and graded on the target board's deferred obligations, not the source's;
+- the native runner publishes `block-provenance.json` bound to the saved board,
+  its plan and each admitted candidate's class and enforcement;
 - an effective policy that only appends obstacles is accepted. One that drops,
   replaces or reorders a captured obstacle, or changes any other key, refuses
   with `EffectivePolicyError`;
@@ -812,3 +838,14 @@ covers:
 - the CLI;
 - a native pcbnew board through `placer_runner`, with save, reload, judge,
   locality grade, native DRC and a rigidity check on the saved board.
+
+`tests.test_block_provenance` covers the review input. A library entry
+(`project-cluster/1`, search-derived, advisory) is materialized and mapped onto a
+second power stage beside two own-board blocks. The artifact names all three
+blocks with their candidate hashes, classes, enforcement, method and mapping; each
+fail-closed refusal is exercised; the CLI writes it only for a planned result.
+The artifact is then captured with a scope, `build_packet` carries it, and the
+prompt that each profile reviewer receives (the transport is replaced in the test,
+so no model is called) contains every row and no peer's review. A packet is not
+built for an artifact bound to another board, an undeclared or uncaptured path, a
+changed capture or a relabelled enforcement.

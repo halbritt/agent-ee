@@ -156,7 +156,9 @@ well as block outlines, and the blocked regions are cached per placed block, so
 a backjump recomputes only what moved. Block rules (keep-outs, opposite-side
 shadows, no block over a fixed part, thermal spread) are hard only with a
 citation. Boundary roles are bound to their board nets. The complete plan goes
-through the writer's native gate.
+through the writer's native gate. The writer publishes each placed block's
+provenance class and enforcement as review input, which a scope's
+`block_provenance` carries to every initial reviewer.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

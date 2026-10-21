@@ -557,7 +557,9 @@ snapshot and available plan, saved probe/judgment and raw native DRC diagnostics
 The requested destination remains absent. The source
 and netlist hashes are rechecked before publication. Generated
 `placement-result.json`, `placement-probe.json`, native DRC JSON and native DRC
-console/execution records describe the disposable proposal. Transformed pure
+console/execution records describe the disposable proposal. A `blocks` request
+also publishes `block-provenance.json`, the reviewers' record of each placed
+block's provenance ([blocks.md](blocks.md#review-input-block-provenance-agentee-355)). Transformed pure
 plan judgments are marked `transformed-proposal-not-native`; the final judgment
 binds to the actual saved candidate hash. Standalone outputs remain unsealed.
 
