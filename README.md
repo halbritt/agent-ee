@@ -750,7 +750,9 @@ parts without courtyards are refused by name
 result past the fixed reservations records the board's capacity at the packing
 gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound
 is a proved infeasibility only when the policy opts in
-([AGENTEE-249](docs/placer.md#board-capacity-agentee-249)). A declared captured
+([AGENTEE-249](docs/placer.md#board-capacity-agentee-249)). Proofs depending on
+[unsourced margins or gaps](docs/placer.md#unsourced-policy-limits-agentee-358)
+report unknown and name those advisory limits. A declared captured
 sub-layout also admits exactly the copper of whole reused groups. KiCad's
 unchanged custom-property font default is tolerated on resave. Fresh checks grade
 every proposal. These checks do not establish routing quality or a

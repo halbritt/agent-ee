@@ -395,6 +395,48 @@ A proof bound by a soft limit or an unsourced nonzero gap has `outcome=unknown`;
 a hard sourced gap or a proof independent of the gap retains `outcome=defect`. Edge margin and the width of a region are not used, so a
 region too narrow but large enough by area is still only a search failure.
 
+### Unsourced policy limits (AGENTEE-358)
+
+A nonzero `min_courtyard_edge_mm` without a qualified source is advisory.
+Search still reserves that margin, as it reserves an unsourced packing gap;
+search exhaustion remains unknown. A board-capacity proof depending on the
+margin reports `packing_infeasible`, `outcome: unknown`, empty placements and
+`owner_confirmation` naming `min_courtyard_edge_mm`. Its binding entry is
+`class: unknown`, `enforcement: soft`, with an explicit advisory reason.
+The diagnostic retains the requested margin and gap.
+
+The low-level geometry API accepts `constraint_provenance.min_courtyard_edge_mm`
+with the same source fields as `gap_nm`: `class` (`fixture_author` or
+`manufacturer`), `enforcement: hard`, nonempty `citation` and integer `value_nm`
+equal to the policy margin converted exactly to nanometres. Original authored
+fixtures declare their margin requirements explicitly. As with gap sources,
+the caller must qualify the source; citation authentication and owner-stated
+gap admission belong to AGENTEE-348. Coordinator adapters still refuse
+caller-supplied provenance.
+
+Before reporting a capacity proof, the placer retries without unsourced limits:
+first both margin and gap, then each individually if needed. A proof that
+survives omits the removed limits from its binding constraints and retains its
+existing verdict under the remaining constraints. Region proofs do not use the
+edge margin. Their zero-gap retry can find a later structural region defect
+after an earlier gap-dependent region proof. The regression test fails when
+that retry is removed (AGENTEE-338 review mutant M3).
+
+The policy/capacity audit found these numeric constraints:
+
+| Constraint | Class and authority | Capacity/defect effect |
+| --- | --- | --- |
+| `min_courtyard_edge_mm` | Unknown/soft without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board proofs are unknown. |
+| `gap_nm` (including pod 0.25 mm) | Unknown/advisory without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board and region proofs are unknown (AGENTEE-338). |
+| Native rule areas and footprint keepouts | Captured geometry, unknown provenance; no numeric padding is added | Structural polygon exclusion; no invented keepout-padding limit exists. |
+| `groups[].max_distance_nm` | Explicit caller declaration, provenance unknown; no default radius | Search predicate and saved-board group grade; unused by all capacity proofs. An unplaceable group is search exhaustion/unknown. The independent group criterion retains its existing verdicts. |
+| Group region polygons, outline, fixed geometry and declared obstacles | Captured/declared geometry; envelope outline/fixed classes retained, otherwise unknown legacy geometry | Structural capacity bounds remain as before; this change adds no geometry provenance mechanism. |
+| Step budget, search timeout and geometry work guards | Computational bounds, no engineering authority | Exhaustion/refusal is unknown, never a capacity defect. |
+
+The placer has no other numeric edge-margin, reserved-gap, keepout-padding or
+group-radius default that can establish a capacity defect. Electrical locality
+uses its existing per-pair sourced/advisory contract, separately from capacity.
+
 ### Board capacity (AGENTEE-249)
 
 After the fixed reservations and region proofs, the engine bounds board-wide
@@ -480,7 +522,8 @@ limit wins over a soft one.
 Each `capacity.sides.<side>` names its `binding_constraints`: the outline, the
 fixed parts and obstacles in `blocked_by`, and the edge margin and gap. Each
 has its `class` and `enforcement`. The margin and gap come from the policy or a
-fab profile; without a qualified gap source their provenance is `unknown`. Without declared provenance the
+fab profile; without a qualified source their provenance is `unknown`. The unsourced margin
+is soft under AGENTEE-358. Without declared provenance the
 outline is `unknown` too.
 
 Every `packing_infeasible` proof also carries `binding_constraints`. When one
@@ -488,7 +531,9 @@ of them is soft (an assumed or owner-weakened limit), the proof stays in the
 record, but the outcome is `unknown` instead of `defect`. The result then has
 `owner_confirmation` (the soft constraints), and the reason names them. A proof
 bound only by hard or undeclared limits keeps `defect`, except that an unsourced
-gap is advisory under AGENTEE-338. A zero-gap proof does not bind that gap. Owned tests are in
+gap is advisory under AGENTEE-338 and an unsourced margin is soft under
+AGENTEE-358. A zero-gap proof does not bind that gap; a zero-margin proof does
+not bind the margin. Owned tests are in
 `tests/test_constraint_provenance.py`.
 
 ### Pad shapes (AGENTEE-109)

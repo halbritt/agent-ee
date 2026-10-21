@@ -229,6 +229,19 @@ class RegionCapacityTest(unittest.TestCase):
         self.assertEqual(report['owner_confirmation'], ['gap_nm'])
         self.assertIn('unsourced packing gap', report['reason'])
 
+    def test_zero_gap_retry_finds_later_structural_region_defect(self):
+        # The first region fails only with the advisory gap. A later region's
+        # area is already too small at zero gap; stopping at the first loses it.
+        source, groups = self.squares(5, 4)
+        source['footprints'].append(part('X', 12, 12, shape=rectangle(12, 12, 3, 3)))
+        groups.append({'id': 'structural', 'references': ['X'],
+                       'region': {'polygons': [box(10, 0, 12, 2)]}})
+        report = pack(source, request(fixed_refs=[], gap_nm=500000, groups=groups))
+        self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
+        self.assertEqual((report['proof']['kind'], report['proof']['group']), ('region_capacity', 'structural'))
+        self.assertNotIn('owner_confirmation', report)
+        self.assertNotIn('gap_nm', [b['constraint'] for b in report['binding_constraints']])
+
     def test_gap_bound_proves_what_area_alone_cannot(self):
         # Four 5 mm squares tile the 10 mm region only with no gap; a 0.5 mm gap grows
         # each to at least 30.1875 mm2 against at most ~110.4 mm2 of grown region.
