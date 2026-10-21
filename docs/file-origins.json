@@ -415,6 +415,16 @@
   "rules": [
     {
       "paths": [
+        "tests/test_placement_defects.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-344 carried-silk regressions. The hash-comment attack embeds authored minimal copper arcs and silk text and derives the hidden R9 footprint from the existing owned test_placement_adapter.TEXT fixture. No upstream design or library bytes are copied."
+    },
+    {
+      "paths": [
         "tests/test_citation_locators.py"
       ],
       "kind": "owned-source",
@@ -2311,6 +2321,16 @@
     },
     {
       "paths": [
+        "tests/test_routed_artwork.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-350 regression code. Minimal board/graphic S-expressions and geometry are authored here to test identity, translation and damage boundaries. Existing native fixtures are imported or referenced, not embedded as copied design text in these files."
+    },
+    {
+      "paths": [
         "tests/test_placement_adapter.py"
       ],
       "kind": "owned-source",
@@ -3584,6 +3604,16 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-306 offline-import regression tests with authored PDF envelope bytes, synthetic source-note records and original text_pdf fixture generation. No retained vendor PDF or third-party note is copied into this source."
+    },
+    {
+      "paths": [
+        "tests/test_block_provenance.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-355 provenance consumer tests. Minimal KiCad board and schematic text literals authored here stand in for captured review inputs; no third-party design or text was copied."
     }
   ]
 }

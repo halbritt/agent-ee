@@ -390,7 +390,7 @@
   "label": "search-derived (advisory): project cluster U5 from telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json@7a8baa137bb5"
  },
  "receipt": {
-  "candidate_sha256": "d41fe6e9065ae87c2ea28bf5cd16c7802a057e8d7d47a78d63127a08d21e9234",
+  "candidate_sha256": "4a4c7dfc8928f3c6f638f04a694d821e1ab70cfb76d0d7111a6c1b93a9647745",
   "import": "project-cluster/1",
   "importer": "agent_ee.block_library/1",
   "inputs": {

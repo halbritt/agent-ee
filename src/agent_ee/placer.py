@@ -201,9 +201,11 @@ def _validate_policy(policy, refs):
         placement_groups.validate(policy['groups'], refs)
     if 'constraint_provenance' in policy:
         _validate_provenance(policy['constraint_provenance'])
-        gap = policy['constraint_provenance'].get('gap_nm')
-        if gap is not None and gap['value_nm'] != policy['gap_nm']:
-            raise ValueError('constraint_provenance gap_nm value differs from policy')
+        for name, actual in (('gap_nm', policy['gap_nm']),
+                             ('min_courtyard_edge_mm', _edge_margin_nm(policy))):
+            source = policy['constraint_provenance'].get(name)
+            if source is not None and source['value_nm'] != actual:
+                raise ValueError(f'constraint_provenance {name} value differs from policy')
 
 
 PROVENANCE_CLASSES = ('owner_stated', 'derived', 'assumed', 'unknown')
@@ -213,15 +215,17 @@ UNDECLARED = {'class': 'unknown', 'enforcement': 'hard',
 
 def _validate_provenance(value):
     """Envelope limits (AGENTEE-266) and caller-qualified gap sources (AGENTEE-338)."""
-    if not isinstance(value, dict) or set(value) - {'outline', 'fixed', 'gap_nm'} or not isinstance(value.get('fixed', {}), dict):
-        raise ValueError('constraint_provenance declares only outline, fixed and gap_nm')
-    if 'gap_nm' in value:
-        gap = value['gap_nm']
+    if not isinstance(value, dict) or set(value) - {'outline', 'fixed', 'gap_nm', 'min_courtyard_edge_mm'} or not isinstance(value.get('fixed', {}), dict):
+        raise ValueError('constraint_provenance declares only outline, fixed, gap_nm and min_courtyard_edge_mm')
+    for name in ('gap_nm', 'min_courtyard_edge_mm'):
+        if name not in value:
+            continue
+        gap = value[name]
         if (not isinstance(gap, dict) or set(gap) != {'class', 'enforcement', 'value_nm', 'citation'}
                 or gap.get('class') not in ('fixture_author', 'manufacturer')
                 or gap.get('enforcement') != 'hard' or type(gap.get('value_nm')) is not int
                 or gap['value_nm'] < 0 or not isinstance(gap.get('citation'), str) or not gap['citation'].strip()):
-            raise ValueError('constraint_provenance gap_nm needs a sourced hard value and citation')
+            raise ValueError(f'constraint_provenance {name} needs a sourced hard value and citation')
     entries = ([value['outline']] if 'outline' in value else []) + list(value.get('fixed', {}).values())
     for entry in entries:
         if (not isinstance(entry, dict) or entry.get('class') not in PROVENANCE_CLASSES
@@ -244,7 +248,9 @@ def _binding_constraints(policy, margin_nm, blocked_by=()):
     out += [{'constraint': name, **UNDECLARED} if ' ' in name else
             {'constraint': f'fixed {name}', **fixed.get(name, UNDECLARED)} for name in blocked_by]
     if margin_nm:
-        out.append({'constraint': 'min_courtyard_edge_mm', **UNDECLARED})
+        out.append({'constraint': 'min_courtyard_edge_mm', **declared.get('min_courtyard_edge_mm', {
+            'class': 'unknown', 'enforcement': 'soft',
+            'soft_reason': 'unsourced courtyard edge margin is advisory'})})
     if policy['gap_nm']:
         out.append({'constraint': 'gap_nm', **declared.get('gap_nm', UNDECLARED)})
     return out
@@ -1188,15 +1194,15 @@ def _locality_clusters(index, queue, fixed, document):
             if ref in refs:
                 continue
             refs.add(ref)
-            pending.extend(peer['reference'] for _, peer, _ in index.pairs[ref]
+            pending.extend(peer['reference'] for _, peer, *_ in index.pairs[ref]
                            if peer['reference'] not in refs)
         remaining -= refs
         movable = refs - fixed
         if len(refs) < 3 or not movable:
             continue
-        hub = min(refs, key=lambda ref: (-len({peer['reference'] for _, peer, _ in index.pairs[ref]}),
+        hub = min(refs, key=lambda ref: (-len({peer['reference'] for _, peer, *_ in index.pairs[ref]}),
                                         order.get(ref, -1), ref))
-        tightness = lambda ref: min(limit for _, _, limit in index.pairs[ref])
+        tightness = lambda ref: min(limit for _, _, limit, *_ in index.pairs[ref])
         unit = tuple(sorted(movable, key=lambda ref: (ref != hub, tightness(ref), order[ref], ref)))
         clusters.append({'references': list(unit), 'all_references': [hub] + sorted(refs - {hub}),
                          'strategy': 'joint-tightest-first/1',
@@ -1370,10 +1376,12 @@ class _Search:
             if self.cluster_active is not None and evaluator is not None:
                 # Intersections of axis projections of the exact pad discs are
                 # necessary only; the full coupled predicates still judge every point.
-                for offset, target, limit, _ in evaluator.pairs:
+                for offset, target, limit, _, hard in evaluator.pairs:
+                    if not hard:
+                        continue  # AGENTEE-337: advisory bounds never prune candidates
                     xs = [x for x in xs if abs(x + offset[0] - target[0]) <= limit]
                     ys = [y for y in ys if abs(y + offset[1] - target[1]) <= limit]
-                conflicts.update(ref for _, _, _, involved in evaluator.pairs
+                conflicts.update(ref for _, _, _, involved, hard in evaluator.pairs if hard
                                  for ref in involved if ref not in self.fixed and ref != fp['ref'])
             rectangles = {side: [r for poly in c['polygons'] for r in _slabs(poly)]
                           for side, c in at_origin['courtyards'].items()
@@ -1496,6 +1504,10 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     locality = policy.get('electrical_locality')
     if locality:
         initial = electrical_locality.grade(capture, locality)
+        if any(d['kind'] == 'locality_infeasible' for d in initial['defects']):
+            return {**_failure(capture, policy, 'locality_infeasible', 'defect', 0,
+                               'declared bound below computed manufacturing floor', margin_nm),
+                    'locality_grading': initial}
         if initial['unknown']:
             return {**_failure(capture, policy, 'electrical_locality_unavailable', 'unknown', 0,
                                'pad locality needs unambiguous native pads, limits and citations', margin_nm),
@@ -1563,18 +1575,30 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
     proof = _capacity_impossibility(sides, policy) if policy.get('capacity_proof') else None
     if proof:
-        proof_policy = policy
-        if policy['gap_nm'] and 'gap_nm' not in policy.get('constraint_provenance', {}):
-            zero_policy = {**policy, 'gap_nm': 0}
-            zero_proof = _capacity_impossibility(_board_capacity(capture, outline, fixed, zero_policy, margin_nm),
-                                                zero_policy)
-            if zero_proof:
-                proof, proof_policy = zero_proof, zero_policy
+        proof_policy, proof_margin = policy, margin_nm
+        declared = policy.get('constraint_provenance', {})
+        unsourced_gap = policy['gap_nm'] and 'gap_nm' not in declared
+        unsourced_margin = margin_nm and 'min_courtyard_edge_mm' not in declared
+        # First remove all advisory limits, then each alone. A proof independent
+        # of one limit must not ask for that limit's confirmation.
+        retries = []
+        if unsourced_gap and unsourced_margin:
+            retries.append(({**policy, 'gap_nm': 0}, 0))
+        if unsourced_gap:
+            retries.append(({**policy, 'gap_nm': 0}, margin_nm))
+        if unsourced_margin:
+            retries.append((policy, 0))
+        for retry_policy, retry_margin in retries:
+            retry_proof = _capacity_impossibility(
+                _board_capacity(capture, outline, fixed, retry_policy, retry_margin), retry_policy)
+            if retry_proof:
+                proof, proof_policy, proof_margin = retry_proof, retry_policy, retry_margin
+                break
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['side']} courtyards grown by half the gap exceed the board's free area"
                            + (f" usable by {proof['square_nm']} nm squares" if proof['square_nm'] else ''), margin_nm)
         return _soft_proof({**failure, 'proof': proof, 'capacity': capacity},
-                           _binding_constraints(proof_policy, margin_nm, proof['blocked_by']))
+                           _binding_constraints(proof_policy, proof_margin, proof['blocked_by']))
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
     if runtime is not None:
         runtime['search'] = search
@@ -1672,7 +1696,7 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     extra = {} if grading is None else {'group_grading': grading}
     if locality:
         extra['locality_grading'] = electrical_locality.grade(proposed_capture, locality)
-        if extra['locality_grading']['status'] != 'pass':
+        if extra['locality_grading']['status'] not in ('pass', 'info'):
             return {**stopped('judge_rejected', 'complete proposal failed pad locality'), **extra}
     custom_pads = [{'reference': f['ref'], 'uuid': p['uuid'], 'number': p['number']}
                    for f in capture['footprints'] for p in f['pads'] if p['shape'] == 6]

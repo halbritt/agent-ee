@@ -125,7 +125,7 @@
   "label": "search-derived (advisory): project cluster U26 from telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json@7a8baa137bb5"
  },
  "receipt": {
-  "candidate_sha256": "b865c3223237b1c09677f9447a0e2ec05edd4a3e0a220a1e003eb42bcded184b",
+  "candidate_sha256": "897a6dfc625a348d76924f74c02cd11ae7628b31ba01783f8a2d4689d70d8b7d",
   "import": "project-cluster/1",
   "importer": "agent_ee.block_library/1",
   "inputs": {

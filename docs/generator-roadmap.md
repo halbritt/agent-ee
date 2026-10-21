@@ -305,7 +305,7 @@ captured sub-board onto the voted nets inside the group region (AGENTEE-129).
 | Keepouts and edge clearance | Native footprint-keepout DRC plus probe cross-check; exact courtyard-to-outline distance against explicit `min_courtyard_edge_mm` | Proved violation is a defect; unqualified geometry is unknown |
 | Connector on edge | Envelope declarations (AGENTEE-85) with the AGENTEE-64 predicate: edge, tolerance, insertion direction | Defect; outline not provably closed is unknown |
 | Connector facing, test-point access and coverage | [`dfa_dft`](dfa-dft.md) (AGENTEE-64): declared insertion direction against the nearest saved edge; declared test points against same-side courtyards; declared probe points on every rail and acceptance-measured net, with `bringup_plan.json` | Defect; undeclared values, unproven courtyards and corners are unknown |
-| [Pad electrical locality](placer.md#pad-level-electrical-locality-agentee-322) | Declared supply, return and optional switch/inductor pad identities, including output loops from inductor supply pads and IC PGND pads; captured UUID selectors and cited limits; native copper-land centroids | `electrical-locality/1`: defect/unknown/pass; a distinct packer constraint guides candidates and gates saved proposals, bound to the captured locality hash (AGENTEE-322/328/330) |
+| [Pad electrical locality](placer.md#pad-level-electrical-locality-agentee-322) | Declared supply, return and optional switch/inductor pad identities, including output loops from inductor supply pads and IC PGND pads; captured UUID selectors and cited limits; native copper-land centroids | `electrical-locality/1`: sourced defect/unknown/pass, unsourced advisory info (AGENTEE-337); a distinct packer constraint guides candidates and gates saved proposals, bound to the captured locality hash (AGENTEE-322/328/330) |
 | Routability | A captured kicad-route `result.json`: `routing.blocked_by` and `kicad-route blocked` | Information only; never a pass |
 
 Unconnected items are expected before routing and are not graded by
@@ -322,7 +322,13 @@ board lineage stamp makes a re-scoped copy refuse release without that evidence.
 Imported closure evidence must match native DRC on the captured board
 (AGENTEE-351). Package release also requires a sealed clean native DRC witness
 when stamped ancestry is absent; stripped stamps cannot silently drop this
-release obligation. Individual checks keep their existing verdicts.
+release obligation. Individual checks keep their existing verdicts. AGENTEE-344
+extends carry refusal to fab-family kinds in every stage and to campaign acceptance.
+Closed markings retain receipt-backed closure across proven masked-track edits.
+The [post-routing artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
+repairs silk through a scope-proven receipt and enables identity-bound closure
+after routing. Final saved-board containment witnesses are sealed in producer
+reports and reused on replay; footprint-owned cutouts cannot close carry.
 Placement feasibility does not establish fab legibility.
 Its local reports do not replace the
 coordinator checks.

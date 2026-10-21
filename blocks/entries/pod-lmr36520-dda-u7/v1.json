@@ -419,7 +419,7 @@
   "label": "search-derived (advisory): project cluster U7 from telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json@7a8baa137bb5"
  },
  "receipt": {
-  "candidate_sha256": "366a95e66f7a9a582ce7def10d23531c02b346e1804a6b0198f3a301fb4fa202",
+  "candidate_sha256": "c8efc2d1db7bd7fdb4cc579af111bfd221179ab4a263f16cdc524b454538d562",
   "import": "project-cluster/1",
   "importer": "agent_ee.block_library/1",
   "inputs": {

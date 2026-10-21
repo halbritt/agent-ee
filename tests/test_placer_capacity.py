@@ -28,12 +28,19 @@ from test_placer_search import board
 MM2 = MM * MM
 
 
+def authored_margin(policy):
+    return {**policy, 'constraint_provenance': {**policy.get('constraint_provenance', {}),
+        'min_courtyard_edge_mm': {'class': 'fixture_author', 'enforcement': 'hard',
+            'value_nm': placer._edge_margin_nm(policy),
+            'citation': 'tests/test_placer_capacity.py: authored fixture courtyard edge margin'}}}
+
+
 def columns_case(count, **changes):
     parts = [part('U1', 4, 3, shape=box(4, 1.5, 16, 10.5))]
     parts += [part(f'C{i + 1}', 0, 0, shape=box(0, 0, 3.2, 3.2)) for i in range(count)]
     policy = request(gap_nm=250_000, min_courtyard_edge_mm=0.5, step_budget=20000, **changes)
     if policy.get('capacity_proof'):
-        policy = authored_gap(policy, 'tests/test_placer_capacity.py:columns_case; authored 0.25 mm gap')
+        policy = authored_gap(authored_margin(policy), 'tests/test_placer_capacity.py:columns_case; authored 0.25 mm gap')
     return board(parts, rectangle(0, 0, 20, 12)), policy
 
 
@@ -121,7 +128,7 @@ class CapacityDiagnosticTest(unittest.TestCase):
 
     def test_unsourced_gap_cannot_establish_a_fragmentation_defect(self):
         source, policy = columns_case(7, capacity_proof=True)
-        del policy['constraint_provenance']
+        del policy['constraint_provenance']['gap_nm']
         report = pack(source, policy)
         self.assertEqual((report['status'], report['outcome'], report['placements']),
                          ('packing_infeasible', 'unknown', []))
@@ -150,7 +157,7 @@ class CapacityDiagnosticTest(unittest.TestCase):
         source, policy = columns_case(7, capacity_proof=True)
         gap = {**policy['constraint_provenance']['gap_nm'], 'class': 'manufacturer',
                'citation': 'synthetic caller-qualified manufacturer requirement: gap 0.25 mm'}
-        report = pack(source, {**policy, 'constraint_provenance': {'gap_nm': gap}})
+        report = pack(source, {**policy, 'constraint_provenance': {**policy['constraint_provenance'], 'gap_nm': gap}})
         self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
         self.assertIn({'constraint': 'gap_nm', **gap}, report['binding_constraints'])
         self.assertNotIn('owner_confirmation', report)
@@ -159,10 +166,78 @@ class CapacityDiagnosticTest(unittest.TestCase):
         # Area alone fits, but the authored edge margin leaves a strip too narrow for a square.
         source = capture([part('C1', 5, 5)], rectangle(0, 0, 4, 20))
         policy = request(fixed_refs=[], gap_nm=250000, min_courtyard_edge_mm=1.5, capacity_proof=True)
-        report = pack(source, policy)
+        report = pack(source, authored_margin(policy))
         self.assertEqual((report['status'], report['outcome'], report['proof']['gap_nm']),
                          ('packing_infeasible', 'defect', 0))
         self.assertNotIn('gap_nm', [b['constraint'] for b in report['binding_constraints']])
+
+    def test_unsourced_edge_margin_cannot_establish_a_capacity_defect(self):
+        source = capture([part('C1', 5, 5)], rectangle(0, 0, 4, 20))
+        policy = request(fixed_refs=[], gap_nm=0, min_courtyard_edge_mm=1.5, capacity_proof=True)
+        report = pack(source, policy)
+        self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'unknown'))
+        self.assertEqual(report['owner_confirmation'], ['min_courtyard_edge_mm'])
+        self.assertIn('min_courtyard_edge_mm', report['reason'])
+        self.assertEqual(report['binding_constraints'][-1]['class'], 'unknown')
+        self.assertEqual(report['binding_constraints'][-1]['enforcement'], 'soft')
+        self.assertEqual(pack(source, {**policy, 'min_courtyard_edge_mm': 0})['status'], 'planned')
+
+    def test_unsourced_margin_and_gap_are_both_named(self):
+        source, policy = columns_case(7, capacity_proof=True)
+        policy.pop('constraint_provenance')
+        report = pack(source, policy)
+        self.assertEqual(report['outcome'], 'unknown')
+        self.assertEqual(report['owner_confirmation'], ['min_courtyard_edge_mm', 'gap_nm'])
+
+    def test_structural_capacity_defect_survives_both_advisory_limits(self):
+        source, policy = columns_case(10, capacity_proof=True)
+        policy.pop('constraint_provenance')
+        original = copy.deepcopy(policy)
+        report = pack(source, policy)
+        self.assertEqual((report['status'], report['outcome'], report['proof']['gap_nm']),
+                         ('packing_infeasible', 'defect', 0))
+        self.assertEqual(report['proof']['kind'], 'board_capacity_fragmented')
+        self.assertNotIn('owner_confirmation', report)
+        self.assertTrue({'gap_nm', 'min_courtyard_edge_mm'}.isdisjoint(
+            b['constraint'] for b in report['binding_constraints']))
+        self.assertEqual((report['capacity']['gap_nm'], report['capacity']['min_courtyard_edge_nm']),
+                         (250000, 500000))
+        self.assertEqual(policy, original)
+
+    def test_zero_gap_retry_names_only_the_remaining_unsourced_margin(self):
+        source, policy = columns_case(8, capacity_proof=True)
+        policy.pop('constraint_provenance')
+        report = pack(source, policy)
+        self.assertEqual((report['outcome'], report['proof']['gap_nm']), ('unknown', 0))
+        self.assertEqual(report['owner_confirmation'], ['min_courtyard_edge_mm'])
+        self.assertNotIn('gap_nm', [b['constraint'] for b in report['binding_constraints']])
+
+    def test_margin_independent_capacity_defect_retries_without_unsourced_margin(self):
+        source = board([part(f'C{i}', 0, 0) for i in range(16)], rectangle(0, 0, 10, 10))
+        policy = authored_gap(request(fixed_refs=[], gap_nm=1000000,
+                                      min_courtyard_edge_mm=0.01, capacity_proof=True),
+                              'original fixture: 1 mm gap')
+        report = pack(source, policy)
+        self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
+        self.assertNotIn('min_courtyard_edge_mm', [b['constraint'] for b in report['binding_constraints']])
+        self.assertEqual(report['capacity']['min_courtyard_edge_nm'], 10000)
+
+    def test_edge_margin_source_is_value_bound_and_validated(self):
+        source = capture([part('C1', 5, 5)], rectangle(0, 0, 4, 20))
+        policy = request(fixed_refs=[], gap_nm=0, min_courtyard_edge_mm=1.5, capacity_proof=True)
+        source_entry = {'class': 'fixture_author', 'enforcement': 'hard', 'value_nm': 1500000,
+                        'citation': 'original test fixture: authored 1.5 mm courtyard edge margin'}
+        for cls in ('fixture_author', 'manufacturer'):
+            entry = {**source_entry, 'class': cls}
+            report = pack(source, {**policy, 'constraint_provenance': {'min_courtyard_edge_mm': entry}})
+            self.assertEqual(report['outcome'], 'defect')
+            self.assertIn({'constraint': 'min_courtyard_edge_mm', **entry}, report['binding_constraints'])
+        for field, value in (('value_nm', 1), ('value_nm', True), ('value_nm', -1),
+                             ('citation', ''), ('citation', ' '), ('class', 'owner_stated'),
+                             ('enforcement', 'soft'), ('extra', 'x')):
+            with self.subTest(field=field, value=value), self.assertRaisesRegex(ValueError, 'constraint_provenance'):
+                pack(source, {**policy, 'constraint_provenance': {
+                    'min_courtyard_edge_mm': {**source_entry, field: value}}})
 
     def test_without_the_opt_in_the_same_input_stays_unknown_with_the_diagnostic(self):
         source, policy = columns_case(7)
@@ -180,6 +255,7 @@ class CapacityDiagnosticTest(unittest.TestCase):
         policy = authored_gap(request(fixed_refs=[], gap_nm=1_000_000, min_courtyard_edge_mm=0.5,
                                       capacity_proof=True),
                               'tests/test_placer_capacity.py:test_squares_grown_by_half_the_gap_exceed_the_free_area')
+        policy = authored_margin(policy)
         report = pack(board(parts, rectangle(0, 0, 10, 10)), policy)
         self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
         self.assertEqual(report['proof']['kind'], 'board_capacity_gap')
@@ -197,7 +273,7 @@ class CapacityDiagnosticTest(unittest.TestCase):
                  request(gap_nm=1_500_000))
         for source, policy in (tight, notch):
             self.assertEqual(pack(source, policy)['status'], 'packing_search_exhausted')
-            proved = pack(source, authored_gap(dict(policy, capacity_proof=True),
+            proved = pack(source, authored_gap(authored_margin(dict(policy, capacity_proof=True)),
                 'tests/test_placer_capacity.py:test_existing_unknowns_become_proofs_only_with_the_opt_in'))
             self.assertEqual((proved['status'], proved['outcome'], proved['proof']['kind']),
                              ('packing_infeasible', 'defect', 'board_capacity_fragmented'))

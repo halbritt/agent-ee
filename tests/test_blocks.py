@@ -87,11 +87,20 @@ def board(parts=PARTS):
     return b
 
 
+FIXTURE_DECISION = 'Original fixture author: EE339 parameters define numerical locality requirements.'
+FIXTURE_SOURCES = {'fixture-decisions/EE339.txt': FIXTURE_DECISION}
+
+
 def obligations(limit=6 * MM):
     def pair(a, b, net, cite='Owned fixture requirement EE339: authored test limit.'):
         return {'from': dict(zip(('reference', 'pad', 'net'), a + (net,))),
-                'to': dict(zip(('reference', 'pad', 'net'), b + (net,))), 'max_distance_nm': limit, 'citation': cite}
-    return {'schema': electrical_locality.SCHEMA, 'obligations': [
+                'to': dict(zip(('reference', 'pad', 'net'), b + (net,))), 'max_distance_nm': limit, 'citation': cite,
+                'provenance': {'class': 'owner', 'basis': 'Explicit original fixture requirement',
+                    'decision_reference': {'path': 'fixture-decisions/EE339.txt',
+                        'sha256': hashlib.sha256(FIXTURE_DECISION.encode()).hexdigest(),
+                        'locator': 'EE339 test parameter contract', 'quote': FIXTURE_DECISION,
+                        'owner': 'Original fixture author'}}}
+    return {'schema': electrical_locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': [
         {'id': 'input-C1', 'metric': 'pad-centre-to-centre', 'supply': pair(('U1', '1'), ('C1', '1'), 'VIN'),
          'return': pair(('U1', '2'), ('C1', '2'), 'GND')},
         {'id': 'output-C3', 'metric': 'pad-centre-to-centre', 'kind': 'buck-output-loop', 'ic': 'U1',
@@ -315,6 +324,76 @@ class PackingTests(Fixture, unittest.TestCase):
         self.assertEqual(result['outcome'], 'unknown')
         self.assertNotEqual(result['status'], 'packed')
 
+    def test_advisory_only_packs_roundtrips_and_admits(self):
+        doc = obligations(limit=100000)
+        doc.pop('source_records')
+        del doc['obligations'][0]['supply']['citation']
+        pol = policy(electrical_locality=doc)
+        derived = self.derive()
+        result = self.pack(electrical_locality=doc)
+        self.assertEqual(result['status'], 'packed', result)
+        cand = json.loads(json.dumps(result['candidate']))
+        blocks.validate_candidate(cand)
+        grade = cand['grade']['electrical_locality']
+        self.assertEqual(grade['status'], 'info')
+        self.assertEqual(len(grade['advisories']), 5)
+        self.assertTrue(all(r['exceeded'] for r in grade['advisories']))
+        self.assertTrue(all('below_floor' in r for r in grade['advisories']))
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, derived, pol),
+                         {'status': 'admitted', 'problems': []})
+        for change in (lambda g: g.update(status='pass'),
+                       lambda g: g['advisories'].pop(),
+                       lambda g: g['advisories'][0].update(exceeded=False)):
+            forged = copy.deepcopy(cand)
+            change(forged['grade']['electrical_locality'])
+            with self.assertRaisesRegex(ValueError, 'every advisory'):
+                blocks.validate_candidate(forged)
+
+    def test_advisory_below_manufacturing_floor_is_retained(self):
+        # Original, non-overlapping lands at 0.5 mm pitch establish a positive
+        # necessary copper floor while the authored courtyards stay unchanged.
+        for fp in self.board['footprints']:
+            for i, pad in enumerate(fp['pads']):
+                pad['position_nm'] = [fp['position_nm'][0] + i * 500000, fp['position_nm'][1]]
+        doc = obligations(limit=1)
+        doc.pop('source_records')
+        pol = policy(electrical_locality=doc)
+        result = self.pack(electrical_locality=doc)
+        self.assertEqual(result['status'], 'packed', result)
+        cand = json.loads(json.dumps(result['candidate']))
+        self.assertTrue(any(r['below_floor'] for r in cand['grade']['electrical_locality']['advisories']))
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, self.derive(), pol),
+                         {'status': 'admitted', 'problems': []})
+        row = next(r for r in cand['grade']['electrical_locality']['advisories'] if r['below_floor'])
+        row['below_floor'] = False
+        with self.assertRaisesRegex(ValueError, 'every advisory'):
+            blocks.validate_candidate(cand)
+
+    def test_mixed_hard_advisory_roundtrip_and_admission(self):
+        doc = obligations()
+        soft = doc['obligations'][0]['supply']
+        soft.pop('provenance')
+        soft['max_distance_nm'] = 1
+        pol = policy(electrical_locality=doc)
+        result = self.pack(electrical_locality=doc)
+        self.assertEqual(result['status'], 'packed', result)
+        cand = json.loads(json.dumps(result['candidate']))
+        internal = cand['block_policy']['electrical_locality']
+        self.assertEqual(internal['source_records'], doc['source_records'])
+        self.assertEqual(internal['obligations'], doc['obligations'][:2])
+        grade = cand['grade']['electrical_locality']
+        self.assertEqual(grade['status'], 'info')
+        self.assertEqual(len(grade['advisories']), 1)
+        self.assertTrue(grade['advisories'][0]['exceeded'])
+        for row in grade['measured']:
+            if row['constraint_provenance']['enforcement'] == 'hard':
+                self.assertLessEqual(blocks._squared(row, 'distance'), row['max_distance_nm'] ** 2)
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, self.derive(), pol),
+                         {'status': 'admitted', 'problems': []})
+        # The same impossible bound still refuses when it has the authored source.
+        doc['obligations'][0]['supply'] = obligations(limit=1)['obligations'][0]['supply']
+        self.assertNotEqual(self.pack(electrical_locality=doc)['status'], 'packed')
+
     def test_groups_are_internal_or_deferred(self):
         groups = [{'id': 'near', 'references': ['C1'], 'anchor': {'reference': 'U1'}, 'max_distance_nm': 4 * MM},
                   {'id': 'board', 'references': ['C3'], 'anchor': {'point_nm': [10 * MM, 10 * MM]}, 'max_distance_nm': 5 * MM},
@@ -372,6 +451,87 @@ class PackingTests(Fixture, unittest.TestCase):
         self.assertEqual((result['status'], result['outcome']), ('synthetic_plane_reached', 'unknown'))
         self.assertIn('C9', result['reason'])
         self.assertNotIn('candidate', result)
+
+
+# A buck anchor driving a seven-resistor chain: the first run strings it out (AGENTEE-355).
+CHAIN = (('U1', '/s1/', 'BUCK', 'Owned:QFN4', 'owned-buck', {'1': 'N1', '2': 'GND', '3': 'M1', '4': 'FB'}),) + tuple(
+    (f'R{i}', '/s1/', 'R', 'Owned:R0603', '10k', {'1': f'N{i}', '2': f'N{i + 1}'}) for i in range(1, 8)) + (
+    ('J1', '/', 'CONN', 'Owned:HDR2', 'owned-conn', {'1': 'N8', '2': 'GND'}),)
+
+
+class CompactionTests(Fixture, unittest.TestCase):
+    """Stage-A compactness objective (AGENTEE-355)."""
+
+    def chain(self, compact=True, **changes):
+        self.board = board(CHAIN)
+        raw = native_xml(CHAIN)
+        self.inv = self.inventory(raw)[0]
+        self.derived = self.derive(raw=raw)
+        self.chain_policy = policy(electrical_locality=None, **changes)
+        return blocks.pack_block(self.board, self.inv, self.derived, 'Power', self.chain_policy, compact=compact)
+
+    def test_compaction_shrinks_the_outline_deterministically(self):
+        loose = self.chain(compact=False)['candidate']
+        tight = self.chain()['candidate']
+        area = blocks._box_area
+        self.assertNotIn('compaction', loose['search'])
+        record = blocks.validate_candidate(tight)['search']['compaction']
+        self.assertEqual(record['objective'], blocks.COMPACTION)
+        self.assertEqual(record['first_box_area_nm2'], area(loose['outline']))
+        self.assertEqual(record['box_area_nm2'], area(tight['outline']))
+        self.assertLess(area(tight['outline']), area(loose['outline']))
+        self.assertEqual(area(loose['outline']), 81375 * 10 ** 9)
+        self.assertEqual(area(tight['outline']), 56250 * 10 ** 9)
+        # The bisection both packs and fails, and every trial stays within the step cap.
+        self.assertTrue({t['status'] for t in record['trials']} >= {'packed', 'packing_search_exhausted'})
+        self.assertTrue(all(t['steps_used'] <= record['step_cap'] <= 20000 for t in record['trials']))
+        self.assertEqual({t['family'] for t in record['trials']}, set(blocks.COMPACT_FAMILIES))
+        self.assertEqual(record['steps_total'], loose['search']['steps_used'] + sum(
+            t['steps_used'] for t in record['trials']))
+        # The same isolated policy, witness and admission: nothing is loosened.
+        self.assertEqual(tight['block_policy'], loose['block_policy'])
+        self.assertEqual(tight['witness']['status'], 'pass')
+        self.assertEqual(blocks.admit(tight, self.board, self.inv, self.derived, self.chain_policy)['status'],
+                         'admitted')
+        self.assertEqual(self.chain(), {'status': 'packed', 'outcome': 'info', 'candidate': tight})
+
+    def test_compaction_keeps_every_internal_obligation(self):
+        derived = self.derive()
+        loose = blocks.pack_block(self.board, self.inventory()[0], derived, 'Power', policy(), compact=False)
+        tight = blocks.pack_block(self.board, self.inventory()[0], derived, 'Power', policy())
+        self.assertEqual(tight['candidate']['block_policy'], loose['candidate']['block_policy'])
+        self.assertEqual(tight['candidate']['grade']['electrical_locality']['status'], 'pass')
+        self.assertLessEqual(blocks._box_area(tight['candidate']['outline']),
+                             blocks._box_area(loose['candidate']['outline']))
+        # A tight internal group bounds every trial too: a candidate that packs still passes it.
+        group = [{'id': 'near', 'references': ['R7'], 'anchor': {'reference': 'U1'}, 'max_distance_nm': 6 * MM}]
+        grouped = self.chain(groups=group)['candidate']
+        self.assertEqual(grouped['grade']['groups']['status'], 'pass')
+        self.assertEqual(grouped['block_policy']['groups'], group)
+
+    def test_compaction_record_is_validated(self):
+        cand = self.chain()['candidate']
+        cases = (
+            (lambda r: r.update(objective='other/1'), 'compaction objective'),
+            (lambda r: r.update(first_box_area_nm2=r['box_area_nm2'] - 1), "at most the first run's"),
+            (lambda r: r['trials'][0].update(family='spiral'), 'trial family'),
+            (lambda r: r['trials'][0].update(steps_used=r['step_cap'] + 1), 'within the step cap'),
+            (lambda r: r['trials'][0].pop('box_area_nm2'), 'exactly when it packed'),
+            (lambda r: r['trials'].extend([r['trials'][0]] * 12), 'at most 12'),
+            (lambda r: r.update(extra=1), 'unknown extra'),
+            (lambda r: r.update(steps_total=-1), 'nonnegative'),
+        )
+        for mutate, message in cases:
+            doc = copy.deepcopy(cand)
+            mutate(doc['search']['compaction'])
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                blocks.validate_candidate(doc)
+        # Admission binds the recorded area to the board's own outline.
+        doc = copy.deepcopy(cand)
+        doc['search']['compaction']['box_area_nm2'] -= 1
+        blocks.validate_candidate(doc)
+        self.assertEqual(blocks.admit(doc, self.board, self.inv, self.derived, self.chain_policy)['problems'],
+                         [{'kind': 'stale_evidence', 'evidence': 'compaction'}])
 
 
 class CandidateSchemaTests(Fixture, unittest.TestCase):
@@ -665,6 +825,11 @@ class CliTests(Fixture, unittest.TestCase):
         self.assertIn('"status": "qualifying"', done.stderr)
         cand = json.loads((self.dir / 'power.json').read_text())
         blocks.validate_candidate(cand)
+        self.assertIn('compaction', cand['search'])
+        done = self.run_cli('pack', *common, '--policy', self.dir / 'policy.json', '--block', 'Power', '--no-compact',
+                            '--out', self.dir / 'loose.json')
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn('compaction', json.loads((self.dir / 'loose.json').read_text())['search'])
         done = self.run_cli('match', *common, '--candidate', self.dir / 'power.json', '--out', self.dir / 'match.json')
         self.assertEqual(done.returncode, 0, done.stderr)
         done = self.run_cli('admit', *common, '--policy', self.dir / 'policy.json', '--candidate', self.dir / 'power.json',

@@ -425,11 +425,13 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
     if judgment.get('group_grading', {'status': 'pass'})['status'] != 'pass':
         raise ValueError('saved-board placement failed its declared placement groups')
-    if judgment.get('locality_grading', {}).get('status', 'pass') != 'pass':
+    if judgment.get('locality_grading', {}).get('status', 'pass') not in ('pass', 'info'):
         raise ValueError('saved-board placement failed its declared electrical locality')
     if any(r['enforcement'] == 'hard' and r['status'] != 'pass' for r in judgment.get('block_rules', [])):
         raise ValueError('saved-board placement failed a hard block arrangement rule')
+    from .silk_artwork import containment_witness
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
+            'containment': containment_witness(output),
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),
             'status': 'placed', 'outcome': 'defect' if comparison['open_defects'] else 'info',
             'verdict': 'defect' if comparison['open_defects'] else 'info',
@@ -541,6 +543,14 @@ def place_candidate(source, netlist, destination, request):
                 if scope['status'] != 'allowed':
                     raise ValueError(f"native saved placement exceeded write scope: {scope['violations']}")
                 report['write_scope'] = scope
+                if 'block_arrangement' in plan:
+                    # Review input naming every placed block's identity, class and enforcement,
+                    # bound to the saved board and graded on it (AGENTEE-355).
+                    from .block_arrangement import provenance_artifact
+                    write_json(scratch / 'block-provenance.json', provenance_artifact(
+                        plan, report['board_sha256'], report['judgment']['block_rules'],
+                        plan_sha256=digest(scratch / 'placement-plan.json')))
+                    report['block_provenance_sha256'] = digest(scratch / 'block-provenance.json')
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:
                     raise ValueError('captured placement inputs changed during execution')
                 if any((p.read_bytes() if p.is_file() else None) != payload for p, payload in project_inputs.items()):
