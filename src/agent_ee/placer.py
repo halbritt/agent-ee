@@ -630,16 +630,18 @@ def _wire_bounds(signal, peers, xs, ys):
     """Lower bounds on _wire_cost split by axis, one value per candidate axis value.
 
     ``signal`` holds the at-origin signal pads of one rotation. A pad's nearest
-    same-net peer is at least its distance to the peers' x range plus its
-    distance to their y range, so the sum over pads bounds the cost from below
-    and separates into a function of x and a function of y (AGENTEE-332).
+    same-net peer is at least as far as the nearest peer x coordinate plus the
+    nearest peer y coordinate (each a minimum over all peers), so the sum over
+    pads bounds the cost from below and separates into a function of x and a
+    function of y, found by bisection in the sorted peer coordinates (AGENTEE-332).
     """
-    ranges = [(ox, oy, [a for a, _ in peers[net]], [b for _, b in peers[net]])
-              for net, ox, oy in signal if net in peers]
-    along_x = [(ox, min(ax), max(ax)) for ox, _, ax, _ in ranges]
-    along_y = [(oy, min(by), max(by)) for _, oy, _, by in ranges]
+    along_x = [(ox, sorted({a for a, _ in peers[net]})) for net, ox, _ in signal if net in peers]
+    along_y = [(oy, sorted({b for _, b in peers[net]})) for net, _, oy in signal if net in peers]
+    def nearest(value, coordinates):
+        i = bisect.bisect_left(coordinates, value)
+        return min(abs(value-c) for c in coordinates[max(0, i-1):i+1])
     def bound(values, spans):
-        return {v: sum(max(lo-(o+v), (o+v)-hi, 0) for o, lo, hi in spans) for v in values}
+        return {v: sum(nearest(o+v, coordinates) for o, coordinates in spans) for v in values}
     return bound(xs, along_x), bound(ys, along_y)
 
 

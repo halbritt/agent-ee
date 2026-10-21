@@ -1011,9 +1011,10 @@ Each change below keeps every answer; none relaxes a predicate or changes a rank
 - Hole/copper reservations carry union boxes, so `_hole_conflict` skips a pair
   of parts whose inventories cannot meet, and keepout tests run only against
   placed parts that own a keepout (an empty keepout list never blocks).
-- Candidates enter the ranking with a lower bound on their wire cost (each
-  signal pad's distance to its net's peer x range plus y range, which separates
-  by axis and is evaluated once per axis value). `_ranked` resolves the exact
+- Candidates enter the ranking with a lower bound on their wire cost (for each
+  signal pad, the distance to the nearest peer x coordinate plus the distance
+  to the nearest peer y coordinate on its net, which separates by axis and is
+  evaluated once per axis value by bisection). `_ranked` resolves the exact
   wire cost only when an entry may be next: a popped exact key precedes every
   remaining entry, whose exact key is at least its own bound, and candidate
   x, y and rotation make keys unique. The sequence equals sorting every exact
