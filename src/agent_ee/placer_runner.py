@@ -624,6 +624,8 @@ def place_candidate(source, netlist, destination, request):
     return without creating a destination. Existing coordinator baseline, source
     allowlist and evidence-sealing checks remain the caller's responsibility.
     """
+    from .candidate_visuals import produce, skip_requested
+    skip_visuals = skip_requested(request.get('skip_visuals', False))
     source, netlist = Path(source).resolve(), Path(netlist).resolve()
     destination = Path(destination).absolute()
     root = _authorization(source, destination, request['authorization'])
@@ -675,6 +677,9 @@ def place_candidate(source, netlist, destination, request):
                         plan_sha256=digest(scratch / 'placement-plan.json'),
                         reserved_area=report['reserved_area']))
                     report['block_provenance_sha256'] = digest(scratch / 'block-provenance.json')
+                report['visuals'] = produce(output, scratch / 'visuals', skip=skip_visuals)
+                for image in report['visuals']['images']:
+                    image['path'] = 'visuals/' + image['path']
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:
                     raise ValueError('captured placement inputs changed during execution')
                 if any((p.read_bytes() if p.is_file() else None) != payload for p, payload in project_inputs.items()):
@@ -696,8 +701,11 @@ def main(argv=None):
     parser.add_argument('--request', required=True)
     parser.add_argument('--destination', required=True)
     parser.add_argument('--result', required=True)
+    parser.add_argument('--skip-visuals', action='store_true')
     args = parser.parse_args(argv)
     request = read_json(args.request)
+    if args.skip_visuals:
+        request['skip_visuals'] = True
     root = Path(request['authorization']['writable_root'])
     result_path = Path(args.result).absolute()
     if result_path.parent != root or result_path.exists() or result_path.is_symlink():

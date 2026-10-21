@@ -127,8 +127,9 @@ def _unchanged(source, board, board_hash, project, project_hash):
 
 
 def render_board(source: Path, out: Path, *, width=4096, height=3072, quality="high",
-                 jobs=3, timeout=1200, models=None, fetch_models=False, progress=None) -> Path:
-    """Render top, bottom and isometric PNGs; preserve partial results on failure.
+                 jobs=3, timeout=1200, models=None, fetch_models=False, progress=None,
+                 views=("top", "bottom", "isometric")) -> Path:
+    """Render selected PNG views (all three by default); retain partial failures.
 
     Returns the completed manifest. Native failures raise RenderError; Ctrl-C
     terminates and waits for every child, saves an interrupted manifest, and
@@ -144,6 +145,10 @@ def render_board(source: Path, out: Path, *, width=4096, height=3072, quality="h
         raise ValueError("render width/height and timeout must be positive; jobs must be 1, 2 or 3")
     if quality not in ("basic", "high"):
         raise ValueError("render quality must be basic or high")
+    if (not isinstance(views, (tuple, list)) or not views or
+            any(not isinstance(view, str) or view not in _VIEWS for view in views) or len(set(views)) != len(views)):
+        raise ValueError("render views must be distinct top, bottom or isometric names")
+    views = tuple(views)
     board, candidate_id, relative = _source_board(source)
     if source.is_dir() and out.resolve().is_relative_to(source):
         raise ValueError("render output must be outside the retained run directory")
@@ -160,7 +165,7 @@ def render_board(source: Path, out: Path, *, width=4096, height=3072, quality="h
     project = board.with_suffix(".kicad_pro")
     project_hash = digest(project) if project.is_file() else None
     records = {view: {"view": view, "status": "pending", "path": f"{board.stem}-3d-{view}.png",
-                      "stdout": f"{view}.stdout.log", "stderr": f"{view}.stderr.log"} for view in _VIEWS}
+                      "stdout": f"{view}.stdout.log", "stderr": f"{view}.stderr.log"} for view in views}
     manifest = {"schema": "agent-ee.render3d/1", "status": "running", "started_at": _now(),
                 "board": {"name": board.name, "path": str(board), "sha256": board_hash},
                 "project": {"path": str(project), "sha256": project_hash} if project_hash else None,
@@ -311,7 +316,7 @@ def render_board(source: Path, out: Path, *, width=4096, height=3072, quality="h
                 progress(f"Rendering {quality} quality in {jobs} isolated native process(es); this can take several minutes")
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=jobs, thread_name_prefix="render3d")
             try:
-                for view in _VIEWS:
+                for view in views:
                     if progress:
                         progress(f"Queued {view} render ({width}×{height}, {quality})")
                     future = executor.submit(render_view, view, snapshot, cli, env, work_root)
@@ -363,7 +368,7 @@ def render_board(source: Path, out: Path, *, width=4096, height=3072, quality="h
                 manifest["errors"].append(f"{view}: {record['error']}")
         manifest["status"] = ("interrupted" if interrupted else "timeout" if any(
             r["status"] == "timeout" for r in records.values()) else "failed")
-        if len(manifest["images"]) == 3 and not manifest["errors"] and manifest["source_unchanged"]:
+        if len(manifest["images"]) == len(views) and not manifest["errors"] and manifest["source_unchanged"]:
             manifest["status"] = "completed"
         manifest.update(finished_at=_now(), duration_seconds=round(time.monotonic() - started, 3))
         write_json(manifest_path, manifest)

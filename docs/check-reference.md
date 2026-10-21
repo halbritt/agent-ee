@@ -2205,3 +2205,13 @@ sourced geometry remains unknown. Uncited declarations are reported advisories
 and never gate. The saved-board placement judge retains transformed lane
 measurements and the shared fixed-overhang edge-sweep geometry for review.
 This adds no check kind or independent acceptance authority.
+
+## Candidate inspection images (AGENTEE-382)
+
+[Candidate imaging](pcb-renders.md#candidate-inspection-images-agentee-382) runs
+after saved placement and during coordinator capture. It is not a registered
+acceptance check. Review packets carry board-bound top/bottom PNG and copper,
+silk and courtyard SVG paths and hashes, including every enabled inner layer.
+Skipped or failed imaging remains explicit missing coverage and leaves every
+existing check verdict unchanged. No image can establish geometric fit or waive
+a native defect.

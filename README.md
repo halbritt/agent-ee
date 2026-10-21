@@ -71,6 +71,7 @@ requirements, checks and models.
    cannot stand in for missing acceptance coverage.
 2. **Capture one design candidate.** Inputs are copied and hashed. Every check
    and review refers to those exact bytes, including selected uncommitted files.
+   Coordinator reviews and placed proposals include [hashed inspection images](docs/pcb-renders.md#candidate-inspection-images-agentee-382) for visual review.
 3. **Produce tool evidence.** KiCad, ngspice and configured measurement tools
    generate retained reports, traces and metrics. A failed tool invocation is
    recorded as missing coverage, never as a passing design.

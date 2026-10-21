@@ -80,3 +80,48 @@ image to communicate assembly or connector details.
 For interactive inspection, use [the browser viewer](pcb-viewer.md). These PNGs
 are visual artifacts; rendering does not run or approve ERC, DRC or electrical
 review.
+
+## Candidate inspection images (AGENTEE-382)
+
+Every successful `placer_runner.place_candidate` proposal now includes `visuals/`
+beside `placement-result.json`. The coordinator review lifecycle independently
+renders the admitted, captured board into `work/candidate.visuals/`. The placement result
+and candidate manifest retain a `visuals` record with source-board SHA-256,
+KiCad version and executable SHA-256, image paths and SHA-256 hashes, model
+coverage, elapsed time and an explicit reproducibility limitation. Paths are
+relative to the proposal directory or captured run, respectively. Generic
+`candidate.capture` remains a pure input capture; the coordinator attaches images
+through `candidate_visuals.capture_visuals` after validating the scope and inputs.
+
+The networkless executor produces high-quality, opaque 1600 × 900 top and bottom
+PNGs, front and back SVG composites (copper, silk, courtyard and board outline),
+and one SVG for every enabled inner copper layer plus the outline. A four-layer
+board therefore has six images. Two PNG renders run concurrently with separate
+KiCad configuration directories. The 180-second executor guard bounds imaging
+work; it is a resource guard, not an engineering acceptance limit. Small-board
+performance does not qualify pod-scale performance.
+
+`reviewers.build_packet` includes `candidate_visuals` outside the text excerpt
+budget, verifies each image hash and board binding, and exposes the images
+through `/evidence/work/candidate.visuals/`. The reserved directory name contains
+a dot, which declared check IDs cannot contain, so check tools cannot overwrite
+coordinator images through their writable work directory. Both initial reviewers receive the
+same coordinator-produced images. A modified, missing or linked image refuses
+packet assembly. Images remain inspection aids; native geometry, DRC and sealed
+coordinator findings retain their authority. Missing models are reported rather
+than replaced with invented component bodies.
+
+For fixture runs, set `skip_visuals: true` in a placement request or review
+scope, pass `--skip-visuals` to `agent_ee.placer_runner`, or explicitly set
+`AGENT_EE_SKIP_VISUALS=1` for a test process. The environment flag accepts only
+`0` or `1`; JSON flags accept only booleans. Skips retain `status: skipped` and
+a reason. Native failures, timeouts and missing manifests retain
+`status: unavailable` with executor diagnostics; they never become visual
+success and never change a placement/check verdict. Old retained captures report
+that images are unavailable rather than implicitly generating new evidence.
+
+Native image bytes are hashed, but byte determinism is not certified. The result
+records this as `reproducibility.status: not_verified` with a reason: native ray
+tracing has no bound seed in this invocation and SVG metadata can vary. Rendering
+is offline; project-local models can be used, but no stock models are downloaded.
+An image with unresolved model coverage is incomplete visual coverage.

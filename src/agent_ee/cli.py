@@ -479,6 +479,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         for rel in [m["scope"]["schematic"], m["scope"]["board"], *m["scope"].get("requirements", [])]:
             if rel not in m["files"]:
                 raise ValueError(f"declared native/requirement input was not captured: {rel}")
+        from .candidate_visuals import capture_visuals
+        m = capture_visuals(run)
         result.update(candidate_id=m["candidate_id"], name=m["scope"]["name"], scope=m["scope"]["scope"],
                       limitations=m["scope"].get("limitations", []),
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],

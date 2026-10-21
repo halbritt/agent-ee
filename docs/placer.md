@@ -1577,3 +1577,13 @@ vector and clearance envelope to a socket, connector or antenna. Sourced
 declarations constrain movable parts and rigid block members to outline edges;
 uncited declarations remain reported advisories. The saved-board polygon judge
 replays the rule and retains its lane and overhang measurements.
+
+## Candidate inspection images (AGENTEE-382)
+
+Successful saved proposals include [candidate inspection images](pcb-renders.md#candidate-inspection-images-agentee-382)
+in `visuals/` beside `placement-result.json`. The result carries their paths and
+hashes. This is visual review input and preserves the existing placement verdict,
+including carried silk defects. Requests can explicitly set `skip_visuals: true`
+for fixtures; rendering failures retain unavailable coverage and native logs.
+The writer rechecks the original board, netlist and project/rule bytes after
+imaging, immediately before publication.
