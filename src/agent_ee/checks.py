@@ -416,10 +416,9 @@ def check_drc(ctx):
             "a later full DRC with connectivity remains required")
         # Silk conflicts that are exactly an open carried placement defect advance to
         # routing as carried; later gates refuse the carry until it closes.
-        from .placement_defects import projection_record
-        carried = set(projection_record(ctx, unwaived))
-        failing = any(not i['raw_locator'].startswith('/unconnected_items/') and
-                      i['raw_locator'] not in carried for i in unwaived)
+        from .placement_defects import blocking, projection_record
+        carried = projection_record(ctx, unwaived)
+        failing = blocking(unwaived, carried)
     else:
         carried = set()
         failing = unwaived

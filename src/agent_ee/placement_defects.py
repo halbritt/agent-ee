@@ -444,7 +444,7 @@ def placement_projection(spec):
     params = spec.get('params')
     return (spec.get('kind') == 'drc' and isinstance(params, dict) and
             params.get('projection') == 'placement-stage/1' and
-            spec.get('stage') not in ('verification', 'fab', 'release'))
+            spec.get('stage') in (None, 'placement'))
 
 
 def _carried_identity(violation):
@@ -462,6 +462,12 @@ def carried_silk(defects, unwaived):
     carried.discard(None)
     return sorted(i['raw_locator'] for i in unwaived if i['raw_locator'].startswith('/violations/') and
                   _carried_identity(i) in carried)
+
+
+def blocking(unwaived, carried):
+    """Graded projection findings that block: every unwaived violation or parity issue not carried."""
+    return [i['raw_locator'] for i in unwaived
+            if not i['raw_locator'].startswith('/unconnected_items/') and i['raw_locator'] not in carried]
 
 
 def projection_record(ctx, unwaived):
@@ -545,21 +551,29 @@ def verify_gate(run, check, manifest):
 
 
 def verify_projection(run, check, manifest):
-    """Reconstruct carried grading: only exact open-defect silk identities may be carried."""
+    """Reconstruct the projection verdict from raw DRC, captured waivers and receipt-backed carry."""
     defects = open_defects(manifest, Path(run) / 'inputs')
     details = check.get('details', {})
-    if not defects:
-        if 'open_defects' in details or 'carried_findings' in details:
-            raise ValueError('carried placement grading without open defects')
-        return
+    if not defects and ('open_defects' in details or 'carried_findings' in details):
+        raise ValueError('carried placement grading without open defects')
     if check['execution'] != 'ok' or details.get('reason') in ('stage_blocked', 'stage_not_reached'):
         return
-    witness = read_json(Path(run) / 'work' / check['id'] / 'placement-defects.json')
+    from .violation_waivers import replay_unwaived
+    spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
     report = read_json(Path(run) / 'work' / check['id'] / 'drc.json')
-    located = [dict(v, raw_locator=f'/violations/{i}') for i, v in enumerate(report['violations'])]
-    carried = details.get('carried_findings')
-    if (details.get('open_defects') != defects or not isinstance(carried, list) or
-            not set(carried) <= set(carried_silk(defects, located)) or
+    if not isinstance(report, dict) or any(
+            not isinstance(report.get(k), list) or any(not isinstance(v, dict) for v in report[k])
+            for k in ('violations', 'unconnected_items', 'schematic_parity')):
+        raise ValueError('placement projection native report is malformed')
+    unwaived = replay_unwaived(spec, manifest['scope'], manifest, Path(run) / 'inputs', report)
+    carried = carried_silk(defects, unwaived) if defects else []
+    if check['outcome'] != ('defect' if blocking(unwaived, carried) else 'pass'):
+        raise ValueError('placement projection verdict differs from its unwaived native findings '
+                         'and receipt-backed carry')
+    if not defects:
+        return
+    witness = read_json(Path(run) / 'work' / check['id'] / 'placement-defects.json')
+    if (details.get('open_defects') != defects or details.get('carried_findings') != carried or
             witness != dict(gate_record(check['id'], manifest['candidate_id'], defects),
                             carried_findings=carried)):
         raise ValueError('placement projection carried grading differs from open carry')

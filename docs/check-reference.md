@@ -1928,7 +1928,8 @@ escape.
 
 The DRC `placement-stage/1` projection is the one DRC exempt from the
 carried-defect refusal. Exemption requires a placement-stage or unstaged
-declaration; verification, fab and release declarations still refuse. Under the
+declaration; schematic, routing, verification, fab and release declarations
+still refuse. Under the
 AGENTEE-333 ruling it runs and grades instead. Each unwaived native
 `silk_overlap` or `silk_over_copper` violation whose type and complete item-UUID
 set equal an open carried `placement_silkscreen_conflict` is graded as carried.
@@ -1948,10 +1949,14 @@ These findings keep their grading and still block:
 - uncarried or partially matching silk conflicts.
 
 Unconnected items stay ungraded. Missing or tampered carry evidence makes the
-projection `malformed`/`unknown`, never a pass. The evidence seal reconstructs
-open carry and the witness. It refuses a projection result whose carried
-locators are not exact open-defect silk conflicts in its own `drc.json`. It also
-refuses a result that omits the carry. There is no registration or capability change.
+projection `malformed`/`unknown`, never a pass. At freeze and at replay the
+evidence seal reconstructs the verdict. It reclassifies the check's own
+`drc.json` against the captured immutable waiver input and derives the
+receipt-backed carry. Any unwaived violation or parity finding outside that
+carry must yield `defect`. A retained outcome that differs is refused. The
+retained `carried_findings` must equal the reconstructed carry exactly, so a
+subset or an empty list cannot hide a carried finding. Open carry and the
+witness are reconstructed too. A result that omits the carry is refused. There is no registration or capability change.
 `test_placement_projection_carries_silk_to_routing_and_full_drc_refuses` runs
 native placement and routing. In that run the projection passes with the carried
 silk, and the earliest failing stage becomes routing. There the full DRC and

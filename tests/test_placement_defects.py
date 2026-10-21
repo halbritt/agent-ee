@@ -419,6 +419,134 @@ class NativePlacementCarryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'carried grading differs'):
             placement_defects.verify_gate(run, dropped, manifest)
 
+    def test_projection_seal_reconstructs_the_verdict_over_parity_and_subset_forgeries(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        run, manifest = self.projection_run('projection-verdict')
+        projection, full = run_checks(run, time.monotonic() + 120)
+        report = read_json(run / 'work/drc-placement/drc.json')
+        self.assertTrue(report['schematic_parity'], 'fixture lost its unwaived parity findings')
+        self.assertTrue(projection['details']['carried_findings'])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'))
+        freeze_evidence(run, [projection, full])
+        witness = read_json(run / 'work/drc-placement/placement-defects.json')
+        forged_pass = copy.deepcopy(projection)
+        forged_pass['outcome'] = 'pass'
+        empty = copy.deepcopy(projection)
+        empty['details']['carried_findings'] = []
+        for name, forged, carried in (('pass over parity', forged_pass, witness['carried_findings']),
+                                      ('empty subset', empty, []),
+                                      ('empty subset plus pass', dict(empty, outcome='pass'), [])):
+            with self.subTest(forgery=name):
+                write_json(run / 'checks/drc-placement.json', forged)
+                write_json(run / 'work/drc-placement/placement-defects.json', dict(witness, carried_findings=carried))
+                with self.assertRaisesRegex(ValueError, 'differs'):
+                    freeze_evidence(run, [forged, full])
+                with self.assertRaisesRegex(ValueError, 'differs'):
+                    verify_evidence(run, [forged, full], required=True)
+        write_json(run / 'checks/drc-placement.json', projection)
+        write_json(run / 'work/drc-placement/placement-defects.json', witness)
+        verify_evidence(run, [projection, full], required=True)
+
+    def uncarried_silk_design(self, name):
+        """Parity-clean candidate whose added silk segment crosses C1 under a UUID no receipt carries."""
+        import subprocess
+        import xml.etree.ElementTree as ET
+        import pcbnew as k
+        source, _ = self.projection_run(name + '-source')
+        root = self.helper.root / name
+        design = root / 'design'
+        shutil.copytree(source / 'inputs', design)
+        scope = copy.deepcopy(read_json(source / 'candidate.json')['scope'])
+        path = design / scope['board']
+        netlist = root / 'netlist.xml'
+        subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml', '-o', str(netlist),
+                        str(design / scope['schematic'])], check=True, capture_output=True)
+        symbols = {c.get('ref'): (c.findtext('value'), c.findtext('footprint'))
+                   for c in ET.parse(netlist).getroot().findall('components/comp')}
+        board = k.LoadBoard(str(path))
+        for fp in board.GetFootprints():
+            value, footprint = symbols[fp.GetReference()]
+            fp.SetValue(value)
+            fp.SetFPID(k.LIB_ID(*footprint.split(':')))
+        graphic = k.PCB_SHAPE(board)
+        graphic.SetShape(k.SHAPE_T_SEGMENT)
+        graphic.SetLayer(k.F_SilkS)
+        graphic.SetStart(k.VECTOR2I(2200000, 10600000))
+        graphic.SetEnd(k.VECTOR2I(5800000, 10600000))
+        graphic.SetWidth(150000)
+        board.Add(graphic)
+        uncarried = graphic.m_Uuid.AsString()
+        k.SaveBoard(str(path), board, True)
+        # Owned stand-in footprints have no library; only that comparison is ignored, never silk.
+        write_json(path.with_suffix('.kicad_pro'), {'board': {'design_settings': {'rule_severities': {
+            'lib_footprint_issues': 'ignore', 'lib_footprint_mismatch': 'ignore'}}}})
+        scope['inputs'] = [{'path': str(design / i['at']), 'at': i['at']} for i in scope['inputs']]
+        return root, scope, uncarried
+
+    @staticmethod
+    def capture_design(root, scope, name, waive=None):
+        from agent_ee.candidate import capture
+        scope = copy.deepcopy(scope)
+        if waive is not None:
+            waivers = root / (name + '-waivers.json')
+            write_json(waivers, waive)
+            scope['inputs'].append({'path': str(waivers), 'at': 'waivers/drc.json'})
+            scope['checks'][0]['params']['waivers'] = 'waivers/drc.json'
+        write_json(root / (name + '.scope.json'), scope)
+        run = root / name
+        run.mkdir()
+        return run, capture(root / (name + '.scope.json'), run)
+
+    def test_projection_seal_refuses_a_pass_over_native_uncarried_silk(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        from agent_ee.storage import identity
+        from agent_ee.violation_waivers import SCHEMA, violation_key
+        root, scope, uncarried = self.uncarried_silk_design('projection-uncarried')
+        run, manifest = self.capture_design(root, scope, 'run')
+        projection, full = run_checks(run, time.monotonic() + 120)
+        report = read_json(run / 'work/drc-placement/drc.json')
+        self.assertEqual(report['schematic_parity'], [])
+        self.assertFalse(any(c['key'].startswith('silk_') for c in report['ignored_checks']))
+        extra = [(i, v) for i, v in enumerate(report['violations'])
+                 if uncarried in [item['uuid'] for item in v['items']]]
+        self.assertTrue(extra, 'native DRC did not report the added uncarried silk')
+        carried = projection['details']['carried_findings']
+        self.assertTrue(carried)
+        self.assertTrue(all(f'/violations/{i}' not in carried for i, _ in extra))
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'))
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        forged = dict(projection, outcome='pass')
+        write_json(run / 'checks/drc-placement.json', forged)
+        with self.assertRaisesRegex(ValueError, 'verdict differs'):
+            freeze_evidence(run, [forged, full])
+        with self.assertRaisesRegex(ValueError, 'verdict differs'):
+            verify_evidence(run, [forged, full], required=True)
+
+        # An owner waiver for exactly the uncarried finding is a legitimate pass, and seals.
+        entries = sorted((dict(violation_key('drc', manifest['scope']['board'], 'violations', report, v),
+                               reason='owned probe segment', owner='fixture-owner') for _, v in extra),
+                         key=lambda e: (e['type'], e['items']))
+        record = {'schema': SCHEMA, 'waivers': entries, 'approval': {
+            'owner': 'fixture-owner', 'disposition': 'approved', 'waivers_sha256': identity(entries),
+            'reference': 'test fixture'}}
+        run, _ = self.capture_design(root, scope, 'waived', waive=record)
+        projection, full = run_checks(run, time.monotonic() + 120)
+        self.assertEqual(len(projection['details']['waived']), len(extra))
+        self.assertTrue(projection['details']['carried_findings'])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'pass'))
+        self.assertEqual(full['details']['reason'], 'open_placement_defects')
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        # Without the captured waiver the same retained pass is a forgery.
+        changed = run / 'inputs/waivers/drc.json'
+        changed.chmod(0o644)
+        write_json(changed, dict(record, waivers=[]))
+        with self.assertRaisesRegex(ValueError, 'waiver'):
+            verify_evidence(run, [projection, full], required=True)
+
     def test_placement_projection_does_not_carry_unmatched_or_non_silk_findings(self):
         located = [{'raw_locator': '/violations/0', 'type': 'silk_overlap',
                     'items': [{'uuid': 'a'}, {'uuid': 'b'}]},
@@ -447,7 +575,8 @@ class NativePlacementCarryTests(unittest.TestCase):
         self.assertFalse(placement_defects.gated({'kind': 'drc', 'params': projection}))
         for spec in ({'kind': 'drc', 'stage': 'placement'}, {'kind': 'drc', 'stage': 'placement', 'params': {}},
                      {'kind': 'drc', 'stage': 'placement', 'params': {'projection': 'other'}},
-                     *({'kind': 'drc', 'stage': s, 'params': projection} for s in ('verification', 'fab', 'release')),
+                     *({'kind': 'drc', 'stage': s, 'params': projection}
+                       for s in ('schematic', 'routing', 'verification', 'fab', 'release')),
                      {'kind': 'fab_export', 'stage': 'placement', 'params': projection}):
             with self.subTest(spec=spec):
                 self.assertTrue(placement_defects.gated(spec))
