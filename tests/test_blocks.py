@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from agent_ee import blocks, electrical_locality, placer
+from agent_ee import blocks, electrical_locality, placement_groups, placer
 from agent_ee.native_netlist import read_native_inventory, read_sheet_names
 from test_placement import MM, capture, part, rectangle
 
@@ -405,6 +405,31 @@ class PackingTests(Fixture, unittest.TestCase):
         self.assertEqual([g['id'] for g in cand['block_policy']['groups']], ['near'])
         self.assertEqual(cand['deferred']['groups'], ['board', 'cross'])
         self.assertEqual(cand['grade']['groups']['status'], 'pass')
+
+    def test_stored_group_grade_must_pass_never_info(self):
+        # AGENTEE-361 H1: an exceeded unsourced group grades info; stripping or falsifying its
+        # advisories must not make the stored candidate usable. Legacy pass without advisories is.
+        groups = [{'id': 'near', 'references': ['C1'], 'anchor': {'reference': 'U1'}, 'max_distance_nm': 4 * MM}]
+        result = self.pack(groups=groups)
+        self.assertEqual(result['status'], 'packed', result.get('reason'))
+        legacy = copy.deepcopy(result['candidate'])
+        del legacy['grade']['groups']['advisories']
+        blocks.validate_candidate(legacy)
+        cand = result['candidate']
+        cand['block_policy']['groups'][0]['max_distance_nm'] = 1
+        framed = [blocks._framed(row) for row in cand['members']]
+        cand['grade']['groups'] = placement_groups.grade({'footprints': framed}, cand['block_policy']['groups'])
+        self.assertEqual(cand['grade']['groups']['status'], 'info')
+        self.assertEqual([a['exceeded'] for a in cand['grade']['groups']['advisories']], [True])
+        for name, forge in (('intact', lambda g: None),
+                            ('missing', lambda g: g.pop('advisories')),
+                            ('empty', lambda g: g.update(advisories=[])),
+                            ('falsified', lambda g: g['advisories'][0].update(exceeded=False))):
+            with self.subTest(advisories=name):
+                forged = copy.deepcopy(cand)
+                forge(forged['grade']['groups'])
+                with self.assertRaisesRegex(ValueError, 'block grade groups must pass'):
+                    blocks.validate_candidate(forged)
 
     def test_members_follow_a_placed_same_net_neighbour(self):
         # C3 reaches the anchor only through L1. Queued before L1 it would see no

@@ -205,7 +205,9 @@ refuse, and a `/1` document is refused. Only `status: packed` is usable.
 - `grade.electrical_locality` and `grade.groups` are `null` exactly when the
   block policy has no internal obligations or groups. Otherwise they have no
   defects or unknowns, declare the block policy and measure every internal pair
-  or group member once. Groups must pass. Locality may be `pass` or `info`, with
+  or group member once. Groups must be `pass` with no exceeded advisory: a
+  satisfied unsourced group limit grades `pass`, so a stored group grade of
+  `info` is refused whatever its advisories say. Locality may be `pass` or `info`, with
   every hard squared distance within its limit and every advisory reported;
 - the witness is `exact-courtyard-separation/1` at the block policy gap, with
   status `pass`, no pair below the gap, no drilled-pad conflict, and exact
