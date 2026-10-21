@@ -159,6 +159,18 @@ against the live source inventory, refusing hard links into live `src` as
 `live_package_source:<at>`, including links to qualified helpers embedded in a
 directory. The held descriptor is re-inventoried before each launch and after
 the run, so a persistent link planted after the initial inventory is also refused.
+When any directory mount is held, the coordinator also records the status-change
+time (`st_ctime_ns`) of every live non-directory `src` entry before launch and compares it
+before the main command and after the run (AGENTEE-357). Linking or unlinking a
+name for a live file always updates that time, and an unprivileged process
+cannot restore it, so a link planted during the run and removed before the
+post-run inventory also refuses as `live_package_source:<at>`, naming the
+directory mounts. Any other status change of an existing live file during such
+a run (an in-place write, chmod or rename in the checkout) refuses the same way.
+Directories cannot gain hard links and are not compared, so bytecode written
+into `__pycache__` does not refuse. Live entries created or replaced during the
+run are not compared, and steps with only file mounts skip this comparison
+because no planted name can reach the sandbox.
 A byte-for-byte independent copy is allowed. An ancestor rename cannot redirect this inventory;
 file bind mounts and directory binds are both refused. This conservative rule also refuses benign
 submounts: registered builders need plain tool trees, never nested mount
@@ -173,10 +185,44 @@ including entry deletion during the post-run walk; no completed receipt is writt
 Absolute symlinks and relative symlinks that escape above a mount root are recorded
 as `link:` targets in tree identity, without digesting their host targets. If the
 executable resolves through such a link, its digest is unknown and the receipt
-is unadoptable; an escaped source subtree records link identity only. Relative
-links that stay inside the mount retain their ordinary executable digest. This
+is unadoptable. Standalone `observe_tool` records an escaped declared `source`
+as link identity only. `run_step` refuses it as `source_link_escape:<source>` before launch, between
+launches and after the run (AGENTEE-357). Both of its identity observations run
+in a strict mode in which the very resolution that would record the link-only
+identity raises the refusal instead, so a source that escapes only while an
+observation runs, and is restored before every recheck, is still refused. The
+receipt directory is removed in either window, nothing is adopted, and no new
+receipt can carry a link-only source identity. Removal walks the receipt tree
+iteratively, holding one directory at a time: each directory is first acquired
+with `O_PATH | O_DIRECTORY | O_NOFOLLOW`, then owner rwx is set on that held
+object through its `/proc/self/fd` magic link, and only then is it reopened for
+reading. A tool that leaves `/work` or a nested directory unwritable or
+unsearchable, or a read-only design subdirectory, cannot keep the directory
+alive; a host writer that swaps a name for a link after acquisition cannot
+redirect the chmod to a host directory; and tool-created nesting deeper than the
+interpreter's recursion limit is removed. Returning to a parent goes through
+`..` of the held child and must reach the parent object held before. If
+removal still fails (including a swapped name or moved directory), the refusal
+becomes typed `cleanup_failed:<receipt dir>`, chained to the cleanup failure,
+with the original refusal object kept as `refusal`; a refused run never leaves
+an unlabelled directory. Relative links that stay inside the mount retain
+their ordinary executable digest. The executable and a nested source root are
+resolved one component at a time with `O_PATH | O_NOFOLLOW` opens relative to
+the held mount descriptor; a link is expanded only from the object just opened,
+and the bytes hashed are read from that resolved object. A component swapped
+for an absolute link after resolution therefore cannot make the coordinator
+digest a host file. The walk inside a mount or source tree identity still
+lists and digests by path below the held descriptor. Three bounds remain
+(AGENTEE-357 review residuals; behavior unchanged): historical receipts that
+already carry an escaped link-only source identity still validate and adopt
+under replay, because replay never re-resolves the source; the status-change
+comparison treats a baseline entry absent from the later live inventory as
+unchanged and cannot see a link planted and removed without a visible timestamp
+change (same tick); and the walks of mount
+and source tree identities below the held root descriptor still resolve entries
+by pathname, keeping the documented component-swap bound for those walks. This
 observation does not emulate cross-mount sandbox symlink resolution. Transient
-in-place edits between observations remain outside the guard. This
+in-place edits of tool bytes between observations remain outside the guard. This
 guard requires Linux `/proc/self/mountinfo`, `/proc/self/fdinfo`, `O_PATH`, and bwrap support for
 `--ro-bind-fd`; unavailable facilities fail closed.
 
