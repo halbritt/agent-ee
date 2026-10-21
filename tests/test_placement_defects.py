@@ -691,6 +691,9 @@ class NativePlacementCarryTests(unittest.TestCase):
             manifest, run / 'inputs', lambda: placement_defects._recorded(run, 'drc-placement', manifest)), [])
         report = read_json(run / 'work/drc-placement/drc.json')
         self.assertFalse(any(v['type'].startswith('silk_') for v in report['violations']), report)
+        # With the carry closed, the projection grades its native violations and parity as usual.
+        self.assertEqual(projection['outcome'],
+                         'defect' if report['violations'] or report['schematic_parity'] else 'pass', report)
         freeze_evidence(run, [projection, full])
         verify_evidence(run, [projection, full], required=True)
         # Replay is tool-free and binds the retained native witness.
