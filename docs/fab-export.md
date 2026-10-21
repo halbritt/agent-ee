@@ -371,6 +371,23 @@ a through-hole header with an unplated peg, a DNP capacitor, an LCSC group of
 three, and `µ`/`Ω` values. The LCSC-style numbers and manufacturer strings are
 placeholders. Nothing is copied from FOME-MC, a donor or a supplier library.
 
+Both owned generators (this one and
+[fixtures/cpl-rotation](../fixtures/cpl-rotation/generate.py)) are
+deterministic. Schematic and supplier UUIDs are UUIDv5 values from a fixed
+namespace. Before each board is built, pcbnew's KIID generator is seeded with
+a fixed per-board value, so repeat runs on the pinned KiCad 10 produce the
+same bytes. [tests/test_fixture_generators.py](../tests/test_fixture_generators.py)
+(AGENTEE-367) runs each generator twice in the native sandbox and requires:
+
+- the two runs to be byte-identical;
+- the schematics and supplier records to equal the committed files byte for byte;
+- the boards to equal the committed boards once KIID nodes are removed and
+  top-level items are unordered.
+
+The committed boards were saved before seeding, and KiCad orders board items by
+KIID, so their KIIDs and item order are the only bytes regeneration does not
+reproduce. They are pinned inputs and stay as committed.
+
 [tests/test_fab_export.py](../tests/test_fab_export.py) covers the following:
 
 - the 2-layer and 4-layer packages, sealed;

@@ -97,8 +97,14 @@ def schematic():
     return '\n'.join(out) + '\n)\n'
 
 
+def seed_kiids(p, label):
+    """Seed pcbnew's KIID generator so every saved board is byte-reproducible."""
+    p.KIID.SeedGenerator(uuid.uuid5(NAMESPACE, 'board/' + label).int % 2 ** 32)
+
+
 def make_board(path):
     import pcbnew as p
+    seed_kiids(p, ROOT)
     board = p.BOARD()
     board.SetCopperLayerCount(2)
 

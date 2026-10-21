@@ -146,8 +146,14 @@ def pod_copper(p, board, nets, vec):
     p.ZONE_FILLER(board).Fill(board.Zones())
 
 
+def seed_kiids(p, label):
+    """Seed pcbnew's KIID generator so every saved board is byte-reproducible."""
+    p.KIID.SeedGenerator(uuid.uuid5(NAMESPACE, 'board/' + label).int % 2 ** 32)
+
+
 def make_board(path, copper_layers, pod=False):
     import pcbnew as p
+    seed_kiids(p, f'{copper_layers}{"-pod" if pod else ""}')
     board = p.BOARD()
     board.SetCopperLayerCount(copper_layers)
     nets = {}
