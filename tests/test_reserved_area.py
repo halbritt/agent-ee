@@ -365,6 +365,80 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stale'):
             build_packet(run, [], 'ee384')
 
+    def test_malformed_or_hard_reserve_record_is_refused_before_reviewers(self):
+        import copy, hashlib
+        from agent_ee.block_arrangement import provenance_artifact
+        from agent_ee.reviewers import build_packet
+        board_text = '(kicad_pcb (version 20260206) (generator "owned"))\n'
+        facts = capture([])
+        facts['board_sha256'] = hashlib.sha256(board_text.encode()).hexdigest()
+        valid = reserve.report(facts, request(), {})
+        self.assertEqual(valid['status'], 'measured')
+        variants = {}
+        r = copy.deepcopy(valid); r.pop('status'); variants['missing status'] = (r, 'status')
+        r = copy.deepcopy(valid); r['status'] = 'pass'; variants['unknown status word'] = (r, 'status')
+        r = copy.deepcopy(valid); r['sides'] = {}; variants['measured without sides'] = (r, 'both sides')
+        r = copy.deepcopy(valid)
+        for s in r['sides'].values():
+            s['status'] = 'unknown'; s['reason'] = 'review unavailable'
+            s.pop('union_area_mm2'); s.pop('side_fraction')
+        variants['all unknown sides but top status measured'] = (r, 'both sides')
+        r = copy.deepcopy(valid); r['sides']['F']['union_area_mm2'] = [1, 0]
+        variants['zero denominator'] = (r, 'positive denominator')
+        r = copy.deepcopy(valid); r['sides']['B']['side_fraction'] = [-1, 2]
+        variants['negative area'] = (r, 'non-negative')
+        r = copy.deepcopy(valid); r['board_area_mm2'] = [1.5, 2]
+        variants['inexact ratio'] = (r, 'exact')
+        r = copy.deepcopy(valid); r['authority'] = 'hard gating requirement'
+        variants['hard authority'] = (r, 'authority')
+        r = copy.deepcopy(valid); r.pop('board_sha256'); variants['no board identity'] = (r, 'board_sha256')
+        r = copy.deepcopy(valid); r['board_sha256'] = None; variants['null board identity'] = (r, 'board_sha256')
+        for label, (record, reason) in variants.items():
+            with self.subTest(label):
+                run, _, _ = self.generic_scope(record, board_text)
+                with self.assertRaisesRegex(ValueError, reason):
+                    build_packet(run, [], 'ee384')
+                with self.assertRaisesRegex(ValueError, reason):
+                    reserve.validate(record)
+        # The block-provenance ingress uses the same validator.
+        artifact = self.bound()
+        with self.assertRaisesRegex(ValueError, 'authority'):
+            provenance_artifact(self.plan, artifact['board_sha256'],
+                plan_sha256=hashlib.sha256(self.plan_bytes).hexdigest(),
+                reserved_area={**valid, 'board_sha256': artifact['board_sha256'], 'authority': 'hard'})
+        # Typed unknowns stay carriable as unknown; a measured owner under an unknown side is fine.
+        unknown = reserve.unmeasured(facts['board_sha256'], 'offline_unsaved_plan', 'no saved board')
+        run, _, _ = self.generic_scope(unknown, board_text)
+        self.assertEqual(build_packet(run, [], 'ee384')['reserved_area']['record']['status'], 'unknown')
+        r = copy.deepcopy(valid); r['sides']['F']['owners'] = [{'owner': 'X', 'status': 'unknown', 'reason': 'r'}]
+        with self.assertRaisesRegex(ValueError, 'owner is unknown'):
+            reserve.validate(r)
+        r['sides']['F'].update(status='unknown', reason='unmeasured owners'); r['status'] = 'unknown'
+        self.assertIs(reserve.validate(r), r)
+
+    def test_uncaptured_scope_board_never_binds_a_reserve(self):
+        import json
+        from agent_ee.candidate import capture as capture_candidate
+        from agent_ee.cli import validate_scope
+        from agent_ee.reviewers import build_packet
+        for record in ({'schema': reserve.SCHEMA, 'status': 'measured', 'sides': {}, 'findings': []},
+                       reserve.unmeasured(None, 'offline_unsaved_plan', 'no saved board')):
+            with self.subTest(board_sha256=record.get('board_sha256', 'absent')):
+                run, _, _ = self.generic_scope(record)
+                root = run.parent
+                scope = json.loads((root / 'scope.json').read_text())
+                scope['board'] = 'project/uncaptured.kicad_pcb'
+                validate_scope(scope)
+                (root / 'scope.json').write_text(json.dumps(scope))
+                second = root / 'missing-board-run'
+                second.mkdir()
+                manifest = capture_candidate(root / 'scope.json', second)
+                self.assertNotIn(scope['board'], manifest['files'])
+                with self.assertRaisesRegex(ValueError, 'not a captured input'):
+                    reserve.review_input(second, manifest)
+                with self.assertRaisesRegex(ValueError, 'not a captured input'):
+                    build_packet(second, [], 'ee384')
+
     def test_offline_cli_reserve_is_a_typed_unknown_and_names_the_runner_section(self):
         import json
         from agent_ee import block_arrangement as arrangement, blocks

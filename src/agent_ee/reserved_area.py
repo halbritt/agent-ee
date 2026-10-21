@@ -8,12 +8,14 @@ SCHEMA = 'agent-ee.reserved-area/1'
 # Computational coverage guards, not physical limits or acceptance thresholds.
 MAX_EDGE_PAIRS = 2_000_000
 ADVISORY_FRACTION = Fraction(1, 20)
+AUTHORITY = 'advisory; does not change packing, score or verdict'
+STATUSES = ('measured', 'unknown')
 
 
 def unmeasured(board_sha256, limitation, reason):
     """A typed record for a producer that has no saved board to measure; never zero."""
     return {'schema': SCHEMA, 'board_sha256': board_sha256,
-            'authority': 'advisory; does not change packing, score or verdict',
+            'authority': AUTHORITY,
             'status': 'unknown', 'limitation': limitation, 'reason': reason, 'sides': {}, 'findings': []}
 
 
@@ -120,7 +122,7 @@ def report(facts, policy, fabrication):
     Known per-owner areas may overlap and must not be summed to infer a side total.
     """
     result = {'schema': SCHEMA, 'board_sha256': facts['board_sha256'],
-              'authority': 'advisory; does not change packing, score or verdict',
+              'authority': AUTHORITY,
               'threshold': {'fraction': _ratio(ADVISORY_FRACTION), 'enforcement': 'advisory',
                             'provenance': 'AGENTEE-380 suggestion; unsourced'},
               'sides': {}, 'findings': []}
@@ -410,13 +412,75 @@ def alternatives(facts, policy, fabrication, costs, plan, native_validator=None)
     return costs
 
 
+def _valid_ratio(value, label):
+    if (not isinstance(value, list) or len(value) != 2
+            or any(isinstance(v, bool) or not isinstance(v, int) for v in value)
+            or value[1] <= 0 or value[0] < 0):
+        raise ValueError(f'{label} must be an exact non-negative ratio [numerator, positive denominator]')
+
+
+def _valid_status(holder, label):
+    if not isinstance(holder, dict) or holder.get('status') not in STATUSES:
+        raise ValueError(f'{label} status must be one of {", ".join(STATUSES)}')
+    return holder['status']
+
+
+def validate(record):
+    """Refuse a reserve record that is malformed, not advisory, or measured without every measurement.
+
+    Typed unknowns pass as unknown. ``measured`` needs both board sides measured with
+    exact ratios, and a side is measured only when each of its owners is; an unknown
+    side or owner can never sit under a measured total. Shared by every packet ingress.
+    """
+    if not isinstance(record, dict) or record.get('schema') != SCHEMA:
+        raise ValueError(f'reserved area must be a {SCHEMA} record')
+    if record.get('authority') != AUTHORITY:
+        raise ValueError(f'reserved area authority must be exactly {AUTHORITY!r}')
+    digest = record.get('board_sha256')
+    if not isinstance(digest, str) or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
+        raise ValueError('reserved area board_sha256 must be a lowercase SHA-256')
+    status = _valid_status(record, 'reserved area')
+    threshold = record.get('threshold', {'enforcement': 'advisory'})
+    if not isinstance(threshold, dict) or threshold.get('enforcement') != 'advisory':
+        raise ValueError('reserved area threshold must be advisory')
+    if 'fraction' in threshold:
+        _valid_ratio(threshold['fraction'], 'reserved area threshold')
+    findings, sides = record.get('findings'), record.get('sides')
+    if not isinstance(findings, list) or any(
+            not isinstance(f, dict) or f.get('enforcement') != 'advisory' for f in findings):
+        raise ValueError('reserved area findings must be a list of advisory findings')
+    if not isinstance(sides, dict) or not set(sides) <= {'F', 'B'}:
+        raise ValueError('reserved area sides must map board sides F/B')
+    for side, measured in sides.items():
+        label = f'reserved area side {side}'
+        side_status = _valid_status(measured, label)
+        owners = measured.get('owners')
+        if not isinstance(owners, list):
+            raise ValueError(f'{label} owners must be a list')
+        for row in owners:
+            if _valid_status(row, f'{label} owner') == 'measured':
+                _valid_ratio(row.get('area_mm2'), f'{label} owner area_mm2')
+                _valid_ratio(row.get('side_fraction'), f'{label} owner side_fraction')
+            elif side_status == 'measured':
+                raise ValueError(f'{label} is measured but an owner is unknown')
+        if side_status == 'measured':
+            _valid_ratio(measured.get('union_area_mm2'), f'{label} union_area_mm2')
+            _valid_ratio(measured.get('side_fraction'), f'{label} side_fraction')
+    if status == 'measured':
+        if set(sides) != {'F', 'B'} or any(s['status'] != 'measured' for s in sides.values()):
+            raise ValueError('reserved area is measured only when both sides are measured')
+        _valid_ratio(record.get('board_area_mm2'), 'reserved area board_area_mm2')
+    return record
+
+
 def review_input(run_dir, manifest):
     """The scope's saved-board reserve record, read from the sealed capture and bound to its board.
 
     ``scope.reserved_area`` names a captured ``agent-ee.reserved-area/1`` document, or a
     ``placement-judgment.json``/``placement-result.json`` carrying one. A missing,
     uncaptured, changed, malformed or other-board record raises, so the packet is not
-    built and the review stays incomplete; it is never silently dropped.
+    built and the review stays incomplete; it is never silently dropped. The scope board
+    must itself be captured: two absent identities never bind.
     """
     import hashlib
     from pathlib import Path
@@ -425,6 +489,8 @@ def review_input(run_dir, manifest):
     rel, board = scope['reserved_area'], scope['board']
     if not isinstance(rel, str) or rel not in manifest['files']:
         raise ValueError(f'reserved_area {rel!r} is not a captured input')
+    if not isinstance(board, str) or board not in manifest['files']:
+        raise ValueError(f'scope board {board!r} is not a captured input; the reserve binds to no board')
     raw = (Path(run_dir) / 'inputs' / rel).read_bytes()
     if hashlib.sha256(raw).hexdigest() != manifest['files'][rel]:
         raise ValueError('captured reserved_area changed; evidence is stale')
@@ -433,6 +499,7 @@ def review_input(run_dir, manifest):
         document.get('reserved_area') if isinstance(document, dict) else None)
     if not isinstance(record, dict) or record.get('schema') != SCHEMA:
         raise ValueError(f'reserved_area {rel!r} carries no {SCHEMA} record')
-    if record.get('board_sha256') != manifest['files'].get(board):
+    validate(record)
+    if record['board_sha256'] != manifest['files'][board]:
         raise ValueError(f"reserved area describes board {record.get('board_sha256')}, not the captured {board}")
     return {'path': 'inputs/' + rel, 'sha256': manifest['files'][rel], 'record': record}

@@ -2200,7 +2200,12 @@ fixed part stays in place on the proposal. Rigid blocks are moved only whole,
 with member relative poses kept, and validated natively the same way
 (AGENTEE-384). A scope's optional `reserved_area` key carries the saved-board
 record to reviewers without block provenance; the offline arrangement CLI
-records a typed unknown instead of a measurement.
+records a typed unknown instead of a measurement. Both packet ingress paths
+validate the record first: the exact advisory authority, a known status, exact
+non-negative ratios, and `measured` only when both sides and all their owners
+are measured. The scope `board` must be captured and the record's
+`board_sha256` must equal its digest; a malformed or unbound record refuses the
+packet.
 
 ## Access direction in placement containment (AGENTEE-379)
 

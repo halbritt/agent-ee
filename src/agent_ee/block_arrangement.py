@@ -1297,9 +1297,8 @@ def validate_provenance(document):
     if not isinstance(document['blocks'], list) or not document['blocks']:
         raise ValueError('block provenance names no placed block')
     if 'reserved_area' in document:
-        reserve = document['reserved_area']
-        if (not isinstance(reserve, dict) or reserve.get('schema') != 'agent-ee.reserved-area/1'
-                or reserve.get('board_sha256') != document['board_sha256']):
+        from .reserved_area import validate as validate_reserve
+        if validate_reserve(document['reserved_area'])['board_sha256'] != document['board_sha256']:
             raise ValueError('reserved area must name the provenance saved board')
     seen, references = set(), set()
     for row in document['blocks']:
