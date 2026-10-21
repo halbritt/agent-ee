@@ -318,6 +318,9 @@ macros. The plan records each block's provenance class and citation.
   match. The mapped references must be exactly one derived block, with the same
   anchor. Their frame poses are then re-graded with the target board's own
   footprints and isolated policy (locality, groups and the courtyard witness).
+  The block's deferred obligations and groups are the target board's, from its
+  own isolated record (`blocks._isolate`). The source candidate's `deferred`
+  record names the source board's obligations and is never graded on the target.
 - **Boundary nets.** Matching compares net roles, but not which outside net a
   boundary role lands on (the 339 review gap). Arrangement binds every role to
   the board net its pins land on. A boundary role must reach a footprint outside
@@ -331,6 +334,12 @@ macros. The plan records each block's provenance class and citation.
 `policy` is the captured packing policy that the candidates were packed and are
 admitted against. `effective_policy` may only add board obstacles, for example
 the writer's `IMU_AXES` reservations. Arrangement enforces those obstacles.
+It refuses any other difference with `EffectivePolicyError`, a `ValueError`
+subclass whose `problems` name each key that differs. Every key except
+`obstacles` must be equal, and the captured obstacles must stay unchanged and in
+order as the prefix of the effective list. So the effective policy cannot drop or
+relax a captured constraint, such as an obstacle, the gap, fixed parts, groups,
+locality or the edge margin. Nothing is published.
 A group that ties a block member to a residual movable anchor refuses
 (`group_anchor_residual`): the member is fixed before that anchor is placed.
 
@@ -596,7 +605,11 @@ covers:
   provenance and determinism;
 - admission refusals: missing, duplicate and wrong-policy candidates, and a
   recorded net that differs from the board net;
-- a mapped library candidate, with undeclared, wrong and correct boundary nets;
+- a mapped library candidate, with undeclared, wrong and correct boundary nets,
+  and graded on the target board's deferred obligations, not the source's;
+- an effective policy that only appends obstacles is accepted. One that drops,
+  replaces or reorders a captured obstacle, or changes any other key, refuses
+  with `EffectivePolicyError`;
 - hard and advisory keep-outs, thermal limits and objective order, shadows,
   no block over a fixed part, internal stacking and stranded groups;
 - typed search and budget exhaustion, including the backjump bound, and policy

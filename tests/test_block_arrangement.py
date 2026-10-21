@@ -9,7 +9,7 @@ import sys
 import unittest
 
 from agent_ee import block_arrangement as arrangement, blocks, placer
-from test_blocks import Fixture, PARTS, ROOT, SHEETS, board, native_xml, policy
+from test_blocks import Fixture, PARTS, ROOT, SHEETS, board, native_xml, obligations, policy
 from test_placement import MM, rectangle
 
 CITE = 'Owned fixture rule EE340: authored test requirement.'
@@ -152,6 +152,43 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         # A mapping onto members that are not one derived block refuses.
         bad = run({**library, 'mapping': {**mapping, 'C3': 'R9'}, 'boundary_nets': {}})
         self.assertEqual(bad['status'], 'arrangement_refused')
+
+    def test_library_candidate_grades_the_target_deferred_obligations(self):
+        """Sol review H2: mapped reuse grades the target board's deferred record, not the source's."""
+        extra = (('U11', '/s4/', 'BUCK', 'Owned:QFN4', 'owned-buck', {'1': 'VIN', '2': 'GND', '3': 'SW2', '4': 'V2'}),
+                 ('C11', '/s4/', 'C', 'Owned:C0805', '4.7uF', {'1': 'VIN', '2': 'GND'}),
+                 ('L11', '/s4/', 'L', 'Owned:L1210', '10uH', {'1': 'SW2', '2': 'V2'}),
+                 ('C13', '/s4/', 'C', 'Owned:C0805', '22uF', {'1': 'V2', '2': 'GND'}),
+                 ('R9', '/', 'R', 'Owned:R0603', '1k', {'1': 'V2', '2': 'GND'}))
+        parts = PARTS + extra
+        target = board(parts)
+        target['outline']['polygons'] = [rectangle(0, 0, 60, 40)]
+        inv, names, sha = self.inventory(native_xml(parts, sheets={**SHEETS, '/s4/': '/Power2/'}))
+        derivation = blocks.derive(inv, names, target, inventory_sha256=sha)
+        # The target defers its own obligation for the reused block (U11 to the residual R9).
+        locality = obligations()
+        pair = locality['obligations'][2]['supply']
+        locality['obligations'].append({'id': 'load-R9', 'metric': 'pad-centre-to-centre', 'supply': {
+            'from': {'reference': 'U11', 'pad': '4', 'net': 'V2'}, 'to': {'reference': 'R9', 'pad': '1', 'net': 'V2'},
+            'max_distance_nm': pair['max_distance_nm'], 'citation': pair['citation']}, 'return': {
+            'from': {'reference': 'U11', 'pad': '2', 'net': 'GND'}, 'to': {'reference': 'R9', 'pad': '2', 'net': 'GND'},
+            'max_distance_nm': pair['max_distance_nm'], 'citation': pair['citation']}})
+        pol = policy(electrical_locality=locality)
+        own = [{'candidate': blocks.pack_block(target, inv, derivation, b, pol)['candidate']}
+               for b in ('Power', 'Sensor')]
+        source = self.entries[0]['candidate']
+        self.assertEqual(source['deferred']['obligations'], ['cross-C2'])
+        library = {'candidate': source, 'mapping': {'U1': 'U11', 'C1': 'C11', 'L1': 'L11', 'C3': 'C13'},
+                   'boundary_nets': {'n1': 'VIN', 'n2': 'GND', 'n4': 'V2'}}
+        plan = self.arrange(entries=own + [library], capture=target, pol=pol, derivation=derivation, inv=inv)
+        self.assertEqual(plan['status'], 'planned', plan.get('reason'))
+        block = next(b for b in derivation['blocks'] if b['id'] == 'Power2')
+        expected = blocks._isolate(target, pol, block)[2]
+        self.assertEqual(expected['obligations'], ['load-R9'])
+        record = {b['block']: b for b in plan['block_arrangement']['blocks']}
+        self.assertEqual(record['Power2']['deferred'], expected)
+        self.assertEqual(sorted((d['id'], d['status']) for d in plan['block_arrangement']['deferred_grading']
+                                if d['block'] == 'Power2'), [('load-R9', 'pass')])
 
     def test_hard_keepout_moves_blocks_and_advisory_is_reported_only(self):
         plain = self.arrange()
@@ -305,6 +342,38 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         for rules, message in cases:
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 self.arrange(rules)
+
+    def test_effective_policy_only_adds_board_obstacles(self):
+        """Sol review H1: the effective policy may add board obstacles, never drop or relax one."""
+        corner = {'side': 'F', 'polygons': [rectangle(0, 0, 1, 1)], 'source': 'captured corner'}
+        captured = policy(obstacles=[corner])
+        entries = [{'candidate': blocks.pack_block(self.board, self.inv, self.derivation, b['id'],
+                                                    captured)['candidate']} for b in self.derivation['blocks']]
+        added = {'side': 'B', 'polygons': [rectangle(0, 0, 1, 1)], 'source': 'runner reservation'}
+        plan = self.arrange(entries=entries, pol=captured,
+                            effective_policy={**captured, 'obstacles': [corner, added]})
+        self.assertEqual(plan['status'], 'planned', plan.get('reason'))
+        self.assertEqual(plan['policy']['obstacles'], [corner, added])
+        self.assertEqual(self.arrange(entries=entries, pol=captured, effective_policy=copy.deepcopy(captured))['status'],
+                         'planned')
+        moved = dict(corner, polygons=[rectangle(2, 2, 1, 1)])
+        cases = (
+            ('dropped obstacle', {**captured, 'obstacles': []}, 'obstacles'),
+            ('replaced obstacle', {**captured, 'obstacles': [moved]}, 'obstacles'),
+            ('reordered obstacles', {**captured, 'obstacles': [added, corner]}, 'obstacles'),
+            ('smaller gap', {**captured, 'gap_nm': 100000}, 'gap_nm'),
+            ('locality removed', {k: v for k, v in captured.items() if k != 'electrical_locality'},
+             'electrical_locality'),
+            ('locality relaxed', {**captured, 'electrical_locality': obligations(20 * MM)},
+             'electrical_locality'),
+            ('fixed parts changed', {**captured, 'fixed_refs': []}, 'fixed_refs'),
+            ('edge margin added', {**captured, 'min_courtyard_edge_mm': 0.5}, 'min_courtyard_edge_mm'),
+        )
+        for label, effective, key in cases:
+            with self.subTest(label), self.assertRaises(arrangement.EffectivePolicyError) as raised:
+                self.arrange(entries=entries, pol=captured, effective_policy=effective)
+            self.assertIsInstance(raised.exception, ValueError)
+            self.assertIn(key, [p['key'] for p in raised.exception.problems])
 
     def test_priority_blocks_order(self):
         plan = self.arrange(plan_policy(priority_blocks=['Sensor']))
@@ -472,7 +541,6 @@ class NativeArrangementTests(unittest.TestCase):
         from agent_ee.native_netlist import read_native_inventory, read_sheet_names
         from agent_ee.placement_probe import extract
         from agent_ee.placer_runner import place_candidate
-        from test_blocks import obligations
         with tempfile.TemporaryDirectory(prefix='agent-ee-arrangement-native-') as tmp:
             root = Path(tmp)
             source, netlist, scratch = root / 'seed.kicad_pcb', root / 'design.xml', root / 'scratch'
