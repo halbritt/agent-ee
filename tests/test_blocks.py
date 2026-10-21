@@ -793,6 +793,95 @@ class CandidateSchemaTests(Fixture, unittest.TestCase):
         self.assertEqual(kinds(self.cand, capture=changed), ['identity'])
 
 
+def captured_at(fp, turns, position=None):
+    """fp as pcbnew captures it at a quarter-turn: each contour starts at another vertex
+    and odd turns run the other way (AGENTEE-370), on top of the rigid rotation."""
+    placed = placer.transform(fp, position or fp['position_nm'], (fp['rotation_deg'] + 90 * turns) % 360)
+    placed = {k: v for k, v in placed.items() if not k.startswith('_')}
+    def relabel(ring):
+        ring = [list(p) for p in ring]
+        shifted = ring[turns % len(ring):] + ring[:turns % len(ring)]
+        return shifted[::-1] if turns % 2 else shifted
+    for courtyard in placed['courtyards'].values():
+        courtyard['polygons'] = [relabel(r) for r in courtyard['polygons']][::-1 if turns % 2 else 1]
+    for pad in placed['pads']:
+        custom = pad.get('custom_geometry')
+        if custom:
+            pad['custom_geometry'] = {**custom, 'merged_polygons_nm': [relabel(r) for r in custom['merged_polygons_nm']]}
+    return placed
+
+
+def asymmetric(side='F'):
+    """An owned part whose courtyard is an L of two rings and whose pad 1 is custom copper."""
+    fp = footprint('U1', 10, 10, 'Owned:L-part', {'1': 'A', '2': 'B'}, side=side)
+    fp['courtyards'] = {side: {'status': 'proven', 'polygons': [
+        [[9 * MM, 9 * MM], [13 * MM, 9 * MM], [13 * MM, 10 * MM], [10 * MM, 10 * MM], [10 * MM, 12 * MM],
+         [9 * MM, 12 * MM]],
+        [[14 * MM, 9 * MM], [15 * MM, 9 * MM], [15 * MM, 11 * MM], [14 * MM, 11 * MM]]]}}
+    x, y = fp['pads'][0]['position_nm']
+    fp['pads'][0].update(shape=4, custom_geometry={
+        'status': 'proven', 'anchor': 1, 'primitives': [], 'bbox_nm': [x - 200000, y - 200000, x + 300000, y + 200000],
+        'merged_polygons_nm': [[[-200000, -200000], [300000, -200000], [300000, 0], [0, 0], [0, 200000],
+                                [-200000, 200000]]]})
+    return fp
+
+
+def captured_board(capture, ref, turns):
+    turned = copy.deepcopy(capture)
+    turned['footprints'] = [captured_at(fp, turns) if fp['ref'] == ref else fp for fp in turned['footprints']]
+    return turned
+
+
+class CanonicalIdentityTests(unittest.TestCase):
+    """AGENTEE-370: land-pattern and courtyard identity do not depend on the captured pose."""
+
+    def identity(self, fp):
+        return blocks.pad_geometry_sha256(fp), blocks.courtyard_sha256(fp)
+
+    def test_ring_relabelings_share_one_canonical_ring(self):
+        ring = [[0, 0], [4, 0], [4, 1], [1, 1], [1, 3], [0, 3]]
+        relabeled = [run[i:] + run[:i] for run in (ring, ring[::-1]) for i in range(len(ring))]
+        self.assertEqual({json.dumps(blocks.canonical_ring(r)) for r in relabeled}, {json.dumps(ring)})
+        # A zero-area ring keeps its vertex set and takes the smaller direction.
+        flat = [[2, 0], [0, 0], [1, 0]]
+        self.assertEqual(blocks.canonical_ring(flat), [[0, 0], [1, 0], [2, 0]])
+        self.assertEqual(blocks.canonical_ring(flat[::-1]), [[0, 0], [1, 0], [2, 0]])
+
+    def test_every_quarter_turn_and_side_share_the_identity(self):
+        for side in ('F', 'B'):
+            base = asymmetric(side)
+            want = self.identity(base)
+            for turns in range(4):
+                for position in (None, [31 * MM, 7 * MM]):
+                    with self.subTest(side=side, turns=turns, position=position):
+                        self.assertEqual(self.identity(captured_at(base, turns, position)), want)
+                        # Turned again from that pose: the identity is that of the shape, not the path.
+                        self.assertEqual(self.identity(captured_at(captured_at(base, turns), 3)), want)
+
+    def test_a_different_shape_keeps_a_different_identity(self):
+        base = asymmetric()
+        pads, courtyard = self.identity(base)
+        moved = copy.deepcopy(base)
+        moved['courtyards']['F']['polygons'][0][3] = [10 * MM + 1, 10 * MM]
+        larger = copy.deepcopy(base)
+        larger['courtyards']['F']['polygons'][1][1:3] = [[15 * MM + 1, 9 * MM], [15 * MM + 1, 11 * MM]]
+        # The mirror image of the L is a relabeling of no ring of the original.
+        mirrored = copy.deepcopy(base)
+        mirrored['courtyards']['F']['polygons'][0] = [[2 * base['position_nm'][0] - x, y]
+                                                      for x, y in base['courtyards']['F']['polygons'][0]]
+        for name, fp in (('moved vertex', moved), ('larger', larger), ('mirrored', mirrored)):
+            for turns in range(4):
+                with self.subTest(name=name, turns=turns):
+                    self.assertEqual(self.identity(captured_at(fp, turns))[0], pads)
+                    self.assertNotEqual(self.identity(captured_at(fp, turns))[1], courtyard)
+        copper = copy.deepcopy(base)
+        copper['pads'][0]['custom_geometry']['merged_polygons_nm'][0][2] = [300000, 1]
+        self.assertNotEqual(self.identity(copper)[0], pads)
+        self.assertEqual(self.identity(copper)[1], courtyard)
+        side = asymmetric('B')
+        self.assertNotEqual(self.identity(side), (pads, courtyard))
+
+
 class MatchingTests(Fixture, unittest.TestCase):
     def setUp(self):
         super().setUp()
@@ -819,6 +908,33 @@ class MatchingTests(Fixture, unittest.TestCase):
         self.assertEqual(blocks.match(self.cand, self.board, self.inv), {'status': 'match', 'mismatches': []})
         target, inventory = self.second_instance()
         self.assertEqual(blocks.match(self.cand, target, inventory, self.MAPPING)['status'], 'match')
+
+    def test_rotated_capture_matches_at_every_quarter_turn(self):
+        """AGENTEE-370: pcbnew starts and winds each contour differently per pose; identity holds."""
+        target, inventory = self.second_instance()
+        for turns in range(4):
+            turned = copy.deepcopy(target)
+            turned['footprints'] = [captured_at(fp, turns) if fp['ref'] in self.MAPPING.values() else fp
+                                    for fp in turned['footprints']]
+            with self.subTest(turns=turns):
+                self.assertEqual(blocks.match(self.cand, turned, inventory, self.MAPPING),
+                                 {'status': 'match', 'mismatches': []})
+        grown = copy.deepcopy(target)
+        fp = next(f for f in grown['footprints'] if f['ref'] == 'C13')
+        fp['courtyards']['F']['polygons'][0][1][0] += 1
+        fp['courtyards']['F']['polygons'][0][2][0] += 1
+        result = blocks.match(self.cand, captured_board(grown, 'C13', 1), inventory, self.MAPPING)
+        self.assertEqual(self.kinds(result), ['courtyard'])
+
+    def test_candidate_with_a_pose_dependent_courtyard_record_refuses(self):
+        """A pre-AGENTEE-370 candidate kept captured vertex order; it is refused, never re-hashed."""
+        doc = copy.deepcopy(self.cand)
+        row = next(m for m in doc['members'] if m['reference'] == 'C1')
+        ring = row['courtyard']['F']['polygons'][0]
+        row['courtyard']['F']['polygons'][0] = ring[1:] + ring[:1]
+        row['courtyard_sha256'] = blocks.digest({'side': row['side'], 'courtyards': row['courtyard']})
+        with self.assertRaisesRegex(ValueError, 'C1: identity_version: courtyard record is not in canonical ring'):
+            blocks.validate_candidate(doc)
 
     def test_mismatches_refuse(self):
         def variant(index, **changes):

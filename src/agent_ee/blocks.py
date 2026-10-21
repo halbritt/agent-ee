@@ -199,14 +199,62 @@ def derive(inventory, sheet_names, capture, *, inventory_sha256, allocation_raw=
             'residual': [{'reference': r, 'reason': residual[r]} for r in sorted(residual, key=_natural)]}
 
 
+def canonical_ring(ring):
+    """One closed vertex ring, independent of where it starts and which way it runs.
+
+    A captured contour of the same shape starts at a different vertex, and may run
+    the other way, at every board rotation (AGENTEE-370). The canonical ring runs
+    with a nonnegative shoelace sum in board coordinates and starts at its
+    lexicographically smallest rotation; a zero-area ring takes the smaller of both
+    directions. Only the vertex order changes, never a vertex.
+    """
+    points = [list(p) for p in ring]
+    if not points:
+        return points
+    n = len(points)
+    twice = sum(points[i][0] * points[(i + 1) % n][1] - points[(i + 1) % n][0] * points[i][1] for i in range(n))
+    runs = [points[::-1]] if twice < 0 else [points] + ([points[::-1]] if twice == 0 else [])
+    return min(run[i:] + run[:i] for run in runs for i in range(n))
+
+
+def _rings(polygons):
+    """A polygon list as a set of canonical rings: neither order is geometry."""
+    return sorted(canonical_ring(ring) for ring in polygons)
+
+
+def _local_pad(pad):
+    pad = {k: v for k, v in pad.items() if k not in INSTANCE_PAD_KEYS}
+    custom = pad.get('custom_geometry')
+    if isinstance(custom, dict) and isinstance(custom.get('merged_polygons_nm'), list):
+        pad['custom_geometry'] = {**custom, 'merged_polygons_nm': _rings(custom['merged_polygons_nm'])}
+    return pad
+
+
 def _local(fp):
-    """Footprint-local geometry at the origin, rotation 0, on its captured side."""
+    """Footprint-local geometry at the origin, rotation 0, on its captured side, pose-independent.
+
+    Pads are sorted and every courtyard and custom-pad contour is a set of
+    canonical rings, so the same land pattern and courtyard hash alike at every
+    quarter-turn (AGENTEE-370).
+    """
     local = placer.transform(fp, [0, 0], 0)
-    pads = sorted((canonical(_number({k: v for k, v in p.items() if k not in INSTANCE_PAD_KEYS}))
-                   for p in local['pads']))
-    courtyards = {side: {k: c[k] for k in ('status', 'polygons', 'inner_polygons', 'approximation') if k in c}
+    pads = sorted(canonical(_number(_local_pad(p))) for p in local['pads'])
+    courtyards = {side: {k: (_rings(c[k]) if k in ('polygons', 'inner_polygons') else c[k])
+                         for k in ('status', 'polygons', 'inner_polygons', 'approximation') if k in c}
                   for side, c in sorted(local['courtyards'].items())}
     return {'side': fp['side'], 'pads': [json.loads(p) for p in pads]}, {'side': fp['side'], 'courtyards': courtyards}
+
+
+def frame_member(fp, position, rotation):
+    """placer.transform of a footprint whose courtyards carry their canonical local rings.
+
+    The framed courtyards are exactly what ``_framed`` rebuilds from a member's
+    stored record, so an outline does not depend on the captured vertex order.
+    """
+    local = placer.transform(fp, [0, 0], 0)
+    local['courtyards'] = {side: {**local['courtyards'][side], **record}
+                           for side, record in _local(fp)[1]['courtyards'].items()}
+    return placer.transform(local, position, rotation)
 
 
 def pad_geometry_sha256(fp):
@@ -649,15 +697,14 @@ def candidate(capture, inventory, derivation, block, anchor, poses, policy, sub,
     roles = net_roles(capture, inventory, [anchor] + [r for r in members if r != anchor])
     for ref in members:
         position, rotation = _frame_pose(poses[ref], origin, turns)
-        fp = placer.transform(board[ref], position, rotation)
-        framed.append(fp)
+        pads, courtyard = _local(board[ref])
+        framed.append(frame_member(board[ref], position, rotation))
         component = inventory['components'][ref]
         rows.append({'reference': ref, 'fpid': board[ref]['fpid'], 'side': board[ref]['side'],
                      'value': {'text': component['value'], 'rule': 'exact'},
                      'pose': {'position_nm': position, 'rotation_deg': rotation},
-                     'pad_geometry_sha256': pad_geometry_sha256(board[ref]),
-                     'courtyard_sha256': courtyard_sha256(board[ref]),
-                     'courtyard': _local(board[ref])[1]['courtyards'], 'pins': roles[ref]})
+                     'pad_geometry_sha256': digest(pads), 'courtyard_sha256': digest(courtyard),
+                     'courtyard': courtyard['courtyards'], 'pins': roles[ref]})
     outline, grade, witness = _evidence(capture, framed, sub)
     status = ('refused' if witness['status'] != 'pass' or any(g and not _grade_usable(k, g) for k, g in grade.items())
               else 'packed')
@@ -721,6 +768,9 @@ def _framed(row):
         raise ValueError(f"{row['reference']}: courtyard record needs its mounting side")
     for record in row['courtyard'].values():
         courtyard_bounds(record)
+        if any(key in record and record[key] != _rings(record[key]) for key in ('polygons', 'inner_polygons')):
+            raise ValueError(f"{row['reference']}: identity_version: courtyard record is not in canonical ring order; "
+                             'a candidate from before AGENTEE-370 hashed a pose-dependent identity, pack it again')
     local = {'ref': row['reference'], 'side': row['side'], 'position_nm': [0, 0], 'rotation_deg': 0,
              'courtyards': copy.deepcopy(row['courtyard']), 'pads': []}
     return placer.transform(local, row['pose']['position_nm'], row['pose']['rotation_deg'])
@@ -1053,7 +1103,7 @@ def admit(document, capture, inventory, derivation, policy):
         problems.append({'kind': 'identity', 'mismatches': identity['mismatches']})
     if problems:
         return {'status': 'refused', 'problems': problems}
-    framed = [placer.transform(board[r], rows[r]['pose']['position_nm'], rows[r]['pose']['rotation_deg'])
+    framed = [frame_member(board[r], rows[r]['pose']['position_nm'], rows[r]['pose']['rotation_deg'])
               for r in sorted(rows, key=_natural)]
     outline, grade, witness = _evidence(capture, framed, sub)
     for name, value in (('outline', outline), ('grade', grade), ('witness', witness)):

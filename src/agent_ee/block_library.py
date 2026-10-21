@@ -1,6 +1,6 @@
 """Known-good block library (AGENTEE-342): versioned entries with provenance receipts.
 
-The ``blocks/`` catalogue holds immutable, versioned ``agent-ee.block-library-entry/1``
+The ``blocks/`` catalogue holds immutable, versioned ``agent-ee.block-library-entry/2``
 files. An entry stores only numeric layout records and source identities: member
 footprint identities, anchor-relative quarter-turn poses, land-pattern and courtyard
 hashes, net-role partitions and, for a board region, the block's framed copper. No
@@ -14,7 +14,10 @@ cluster. Every entry is ``search-derived`` and advisory. The hard classes
 (manufacturer reference layout, manufacturer EVM, qualified owner board) are disabled
 (coordinator ruling 2026-10-21): agents run as the same user and can author any record,
 file, catalogue root or argument, so no caller-supplied input can confer one until a
-verified owner authority mechanism exists (AGENTEE-348). Every path refuses a hard
+verified owner authority mechanism exists (AGENTEE-348). An ``agent-ee.block-library-entry/1``
+entry hashed its courtyards in captured vertex order, so its identities depend on the
+source pose (AGENTEE-370); it still validates in a catalogue but is a retired identity:
+materialize, reproduce and add_entry refuse it with ``identity_version``. Every path refuses a hard
 class with ``authority_unavailable``; a datasheet figure imports as advisory. The
 ``agent-ee.block-authority/1`` binding (``verify_authority``) is kept for that
 mechanism and binds the complete numeric payload. See docs/block-library.md.
@@ -33,7 +36,9 @@ from .native_netlist import read_native_inventory, read_sheet_names
 from .placement import judge
 from .symbol_library import LibraryError, children, nanometres, parse_sexpr
 
-ENTRY = 'agent-ee.block-library-entry/1'
+ENTRY = 'agent-ee.block-library-entry/2'
+# Pose-dependent courtyard identities (AGENTEE-370): readable in a catalogue, never used.
+RETIRED_ENTRY = 'agent-ee.block-library-entry/1'
 CATALOGUE = 'agent-ee.block-catalogue/1'
 FIGURE = 'agent-ee.reference-layout-figure/1'
 AUTHORITY_RECORD = 'agent-ee.block-authority/1'
@@ -132,8 +137,8 @@ def validate_entry(entry):
 
 
 def _validate_entry(entry):
-    if not isinstance(entry, dict) or entry.get('schema') != ENTRY:
-        raise ValueError(f'expected {ENTRY}')
+    if not isinstance(entry, dict) or entry.get('schema') not in (ENTRY, RETIRED_ENTRY):
+        raise ValueError(f'expected {RETIRED_ENTRY} (retired) or {ENTRY}')
     _keys(entry, ENTRY_KEYS, label='library entry')
     _id(entry['id'])
     _version(entry['version'])
@@ -209,6 +214,15 @@ def _validate_entry(entry):
                 raise ValueError(f'net role {role[0]} must have one boundary flag')
     _copper(entry['copper'], set(roles), kind)
     return entry
+
+
+def _retired(entry):
+    """The identity_version problem of a retired entry, or None."""
+    if entry['schema'] != RETIRED_ENTRY:
+        return None
+    return {'kind': 'identity_version', 'expected': ENTRY, 'actual': RETIRED_ENTRY,
+            'reason': 'courtyard identities were hashed in captured vertex order and depend on the source pose '
+                      '(AGENTEE-370); import the entry again as a new version'}
 
 
 def _source_record(value, label):
@@ -633,6 +647,9 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
               'provenance': entry['provenance']['class'], 'enforcement': entry['provenance']['enforcement'],
               'label': entry['provenance']['label'], 'problems': []}
     problems = result['problems']
+    if _retired(entry):
+        problems.append(_retired(entry))
+        return result
     for ref, target in sorted(mapping.items()):
         if target not in board or target not in inventory['components']:
             problems.append({'reference': ref, 'target': target, 'kind': 'target_missing'})
@@ -748,6 +765,8 @@ def reproduce(entry, source_raw, capture, inventory, sheet_names, inventory_sha2
     """
     _no_authority(authority_raw=authority_raw)
     validate_entry(entry)
+    if _retired(entry):
+        return {'status': 'refused', 'problems': [_retired(entry)]}
     receipt, source = entry['receipt'], entry['receipt']['source']
     source_policy = _import_policy(policy, {r['reference'] for r in entry['layout']['members']})
     actual = {'board_sha256': capture['board_sha256'], 'inventory_sha256': inventory_sha256,
@@ -1023,6 +1042,8 @@ def validate_library(root):
 def add_entry(root, entry):
     """Append a new version; an existing id/version is immutable and never rewritten."""
     validate_entry(entry)
+    if _retired(entry):
+        raise ValueError(f"identity_version: {_retired(entry)['reason']}")
     entries = validate_library(root)
     latest = max((e['version'] for e in entries if e['id'] == entry['id']), default=0)
     if entry['version'] != latest + 1:

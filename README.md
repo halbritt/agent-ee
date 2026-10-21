@@ -120,8 +120,8 @@ Bench-feedback acceptance also refuses open carry.
 The [post-routing artwork producer](docs/silk-artwork.md#post-routing-artwork-producer-agentee-350)
 repairs routed-board silk through a receipted translation-only step, proves that
 all non-silk geometry is unchanged, and enables identity-bound carry closure.
-Closure consumes sealed native containment evidence, including footprint-owned
-board cutouts, without rerunning the tool during campaign replay.
+Closure consumes sealed native containment evidence, including board-owned and footprint-owned
+straight slots and cutouts (AGENTEE-362), without rerunning the tool during campaign replay.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against sourced limits.
@@ -155,7 +155,8 @@ Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
-refuses any mismatch.
+refuses any mismatch. Land-pattern and courtyard hashes use canonical contour rings,
+so they do not depend on the captured board rotation (AGENTEE-370).
 The [block library](docs/block-library.md) keeps versioned known-good blocks in
 `blocks/` with provenance receipts. Its entries come from KiCad board regions,
 scale-verified datasheet figures and project clusters. A lookup returns each block

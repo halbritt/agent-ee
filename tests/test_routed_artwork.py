@@ -85,6 +85,41 @@ class RoutedArtworkTest(unittest.TestCase):
                 finally:
                     self.root = prior
 
+    def test_native_producer_closes_carry_with_internal_slots(self):
+        import pcbnew as k
+        from agent_ee import placement_defects as pd
+        from agent_ee.placer_runner import _native_drc
+        for footprint_owned in (False, True):
+            with self.subTest(footprint_owned=footprint_owned), tempfile.TemporaryDirectory(dir=self.root) as d:
+                prior, self.root = self.root, Path(d)
+                try:
+                    source = self.board()
+                    board = k.LoadBoard(str(source))
+                    owner = next(iter(board.GetFootprints())) if footprint_owned else board
+                    slot = k.PCB_SHAPE(owner)
+                    slot.SetShape(k.SHAPE_T_RECT)
+                    slot.SetLayer(k.Edge_Cuts)
+                    slot.SetStart(k.VECTOR2I(1000000, 12000000))
+                    slot.SetEnd(k.VECTOR2I(2000000, 17000000))
+                    slot.SetWidth(50000)
+                    owner.Add(slot)
+                    k.SaveBoard(str(source), board, True)
+                    baseline = self.root / 'baseline'
+                    baseline.mkdir()
+                    native = _native_drc(source, baseline)
+                    defects = [dict(type='placement_silkscreen_conflict', status='open',
+                                    verdict='defect', native=v) for v in native['violations']
+                               if v['type'] in ('silk_overlap', 'silk_over_copper')]
+                    self.assertTrue(defects)
+                    original = pd._identities(source)
+                    report = art.produce(source, self.root / 'run')
+                    self.assertFalse(report['open_defects'])
+                    current = pd._identities(self.root / 'run' / art.BOARD, report['containment'])
+                    for defect in defects:
+                        self.assertTrue(pd._closes(defect, original, current, set(), set(), True))
+                finally:
+                    self.root = prior
+
     def test_visible_value_fields_are_relocated_on_routed_board(self):
         import pcbnew as k
         source = self.board()
