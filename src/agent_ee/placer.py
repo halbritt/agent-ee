@@ -265,6 +265,9 @@ def _qualified(capture):
     has_holes = any(isinstance(p, dict) and drilled(p)
                     for f in capture['footprints'] for p in f['pads'])
     for fp in capture['footprints']:
+        # Reservation caches are derived here from qualified inventories only, never taken from input.
+        for key in [key for key in fp if key.startswith('_packing_')]:
+            del fp[key]
         geometry = fp.get('packing_pad_geometry')
         if geometry is not None:
             if not isinstance(geometry, dict) or geometry.get('status') != 'proven':
@@ -321,6 +324,11 @@ def _qualified(capture):
             if type(pad.get('rotation_deg')) not in (int, float) or pad['rotation_deg'] % 90:
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: pad rotation must be a quarter turn")
         _cache_pad_reservations(fp)
+    # A hole excludes every peer's courtyard and copper: a peer without a native
+    # target inventory leaves the exclusion unproven, which is unknown, not clear.
+    geometries = [fp.get('packing_pad_geometry') for fp in capture['footprints']]
+    if any(g is not None and g['holes'] for g in geometries) and any(g is None for g in geometries):
+        raise ValueError('native packing target reservations missing')
     return outline[0]
 
 
@@ -450,7 +458,8 @@ def _hole_conflict(candidate, peer):
         holes = owner.get('_packing_holes', [])
         if not holes:
             continue
-        (x0, y0, x1, y1), targets = owner['_packing_holes_box'], other.get('_packing_targets_box')
+        # Qualification proves every peer's target inventory; a missing one fails loudly here.
+        (x0, y0, x1, y1), targets = owner['_packing_holes_box'], other['_packing_targets_box']
         if targets is None or x1 <= targets[0] or targets[2] <= x0 or y1 <= targets[1] or targets[3] <= y0:
             continue
         for (x0, y0, x1, y1), polygon in holes:
@@ -1358,6 +1367,7 @@ class _Search:
                     continue
                 ranked.append((local_cost, bound_x[x] + bound_y[y], x, y, rotation, (x, y) in doomed))
         def exact(key):
+            self.checkpoint()  # Each exact cost is checked as promptly as when generation computed it.
             local_cost, _, x, y, rotation, doomed = key
             return (local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
                     x, y, rotation, doomed)

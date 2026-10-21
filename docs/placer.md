@@ -1094,7 +1094,7 @@ The real pod remains diagnostic. Fail-fast completion of that run is outside
 AGENTEE-335 after the legacy-first ruling; block-level placement (AGENTEE-339/340)
 is its path. No refusal publishes a board or establishes physical impossibility.
 
-### Qualification and candidate cost (AGENTEE-332)
+## Qualification and candidate cost (AGENTEE-332, AGENTEE-353)
 
 The real pod's guided search spent most of its wall time outside locality:
 courtyard qualification self-intersection tests over 1,900 native pad copper
@@ -1135,11 +1135,21 @@ Each change below keeps every answer; none relaxes a predicate or changes a rank
   wire cost only when an entry may be next: a popped exact key precedes every
   remaining entry, whose exact key is at least its own bound, and candidate
   x, y and rotation make keys unique. The sequence equals sorting every exact
-  key, so steps, tie breaks and the chosen candidate are unchanged.
+  key, so steps, tie breaks and the chosen candidate are unchanged. Every exact
+  resolution first calls the search checkpoint, so the deadline and heartbeat
+  are checked before each exact wire cost, as when generation computed them.
+- Hole exclusion skips a peer whose target union box misses the hole union box.
+  Qualification therefore requires a native target inventory on every
+  footprint whenever any footprint declares a nonempty hole inventory, and
+  refuses otherwise as `unsupported_geometry` / `unknown` ("native packing
+  target reservations missing"), drilled pads or not. The reservation caches
+  are rebuilt from qualified inventories; input-supplied `_packing_*` keys are
+  discarded, never trusted.
 
 `tests.test_placer_geometry_cost` also holds a pod-scale qualification benchmark
 (331 footprints, 1,986 native-style 96-gons) bounded by pair-test counts, with a
-safety ceiling; `AGENT_EE_SKIP_BENCHMARKS=1` skips it. It holds the proof: seeded differentials of the
+safety ceiling; `AGENT_EE_SKIP_BENCHMARKS=1` skips it only outside strict runs
+(`AGENT_EE_REQUIRE_TOOLCHAIN=1` always runs it). It holds the proof: seeded differentials of the
 transform, translation, sweep and margin prefilter against the previous
 formulations, the lazy order against full sorting, and 40 seeded owned boards
 whose plan digests (status, steps, search record and placements) are pinned

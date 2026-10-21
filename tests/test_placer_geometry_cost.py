@@ -390,13 +390,39 @@ class OverlapTests(unittest.TestCase):
         self.assertGreater(convex_pairs, 1000)
 
 
+def benchmarks_skipped(environ=os.environ):
+    """AGENT_EE_SKIP_BENCHMARKS=1 applies only outside strict runs: AGENT_EE_REQUIRE_TOOLCHAIN=1 runs every benchmark."""
+    return environ.get('AGENT_EE_SKIP_BENCHMARKS') == '1' and environ.get('AGENT_EE_REQUIRE_TOOLCHAIN') != '1'
+
+
+class BenchmarkSkipPolicyTests(unittest.TestCase):
+    def test_strict_runs_never_skip_the_benchmark(self):
+        self.assertFalse(benchmarks_skipped({}))
+        self.assertTrue(benchmarks_skipped({'AGENT_EE_SKIP_BENCHMARKS': '1'}))
+        self.assertFalse(benchmarks_skipped({'AGENT_EE_REQUIRE_TOOLCHAIN': '1'}))
+        self.assertFalse(benchmarks_skipped({'AGENT_EE_SKIP_BENCHMARKS': '1', 'AGENT_EE_REQUIRE_TOOLCHAIN': '1'}))
+
+    def test_both_flags_leave_the_benchmark_unskipped_at_import(self):
+        import subprocess
+        import sys
+        probe = ('import test_placer_geometry_cost as t\n'
+                 'm = t.PodScaleQualificationBenchmark.test_331_footprints_with_1986_native_96_gons_qualify_with_bounded_pair_tests\n'
+                 'print(getattr(m, "__unittest_skip__", False), getattr(t.PodScaleQualificationBenchmark, "__unittest_skip__", False))')
+        here = os.path.dirname(os.path.abspath(__file__))
+        env = {**os.environ, 'AGENT_EE_SKIP_BENCHMARKS': '1', 'AGENT_EE_REQUIRE_TOOLCHAIN': '1',
+               'PYTHONPATH': os.pathsep.join([os.path.join(here, '..', 'src'), here])}
+        result = subprocess.run([sys.executable, '-c', probe], env=env, capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.split(), ['False', 'False'])
+
+
 class PodScaleQualificationBenchmark(unittest.TestCase):
     """Deterministic work bounds for qualification at pod scale, with a safety ceiling.
 
-    AGENT_EE_SKIP_BENCHMARKS=1 skips it where CI time is short; the bounds are
-    counts, so a pass does not depend on the host's speed.
+    AGENT_EE_SKIP_BENCHMARKS=1 skips it where CI time is short, except under
+    AGENT_EE_REQUIRE_TOOLCHAIN=1; the bounds are counts, so a pass does not
+    depend on the host's speed.
     """
-    @unittest.skipIf(os.environ.get('AGENT_EE_SKIP_BENCHMARKS') == '1', 'AGENT_EE_SKIP_BENCHMARKS=1')
+    @unittest.skipIf(benchmarks_skipped(), 'AGENT_EE_SKIP_BENCHMARKS=1 outside a strict run')
     def test_331_footprints_with_1986_native_96_gons_qualify_with_bounded_pair_tests(self):
         import math
         import time
@@ -430,3 +456,98 @@ class PodScaleQualificationBenchmark(unittest.TestCase):
         # the sweep tests only pairs whose edge boxes overlap: none for a regular polygon.
         self.assertLess(pair_tests.call_count, polygons * vertices, pair_tests.call_count)
         self.assertLess(elapsed, 90.0, 'pod-scale qualification safety ceiling')
+
+
+def clocked_board(seed):
+    """Seven netted footprints, six fixed: every scan of the movable one ranks many candidates."""
+    from test_placement import part
+    rng = random.Random(seed)
+    parts = []
+    for i, (x, y) in enumerate([(2, 2), (2, 8), (8, 2), (8, 8), (12, 4), (4, 12), (0, 0)]):
+        fp = part('P' + str(i), x, y, shape=rectangle(x, y, 1, 1))
+        fp['pads'] = [{'uuid': 'pad' + str(i), 'number': '1', 'net': 'N',
+                       'position_nm': [x*MM + rng.randrange(0, MM), y*MM + rng.randrange(0, MM)],
+                       'size_nm': [100000, 100000], 'shape': 1, 'attribute': 'smd', 'layers': ['F.Cu'],
+                       'rotation_deg': 0}]
+        parts.append(fp)
+    board = capture(parts)
+    board['pcbnew_version'] = '10.0.7'
+    return board
+
+
+class LazyRankingCheckpointTests(unittest.TestCase):
+    """Lazy exact ranking checks the deadline and heartbeat before every exact wire cost.
+
+    A controlled clock charges one virtual second per exact wire-cost call and
+    nothing for other work; the bounds, geometry and keys stay real. The base
+    packer, which computed every exact key in the checked generation loop,
+    stops after two calls at a two-second limit and beats at most every five.
+    """
+    def run_clocked(self, policy, heartbeat=None):
+        from unittest.mock import patch
+        from agent_ee import placer
+        ticks, original = [0], placer._wire_cost
+        def costly(*args):
+            ticks[0] += 1
+            return original(*args)
+        events = []
+        def beat(record):
+            if record['status'] == 'packing':
+                events.append(ticks[0])
+        with patch.object(placer.time, 'monotonic', lambda: ticks[0]), patch.object(placer, '_wire_cost', costly):
+            result = pack(clocked_board(353), policy, heartbeat=beat if heartbeat else None)
+        return result, ticks[0], [0] + events + [ticks[0]]
+
+    def test_deadline_expiring_during_lazy_resolution_stops_after_two_exact_costs(self):
+        result, calls, _ = self.run_clocked(request(fixed_refs=['P' + str(i) for i in range(6)],
+                                                    search_timeout_s=2, step_budget=300))
+        self.assertEqual(result['status'], 'packing_budget_exhausted')
+        self.assertEqual(result['steps_used'], 0)
+        self.assertEqual(calls, 2)
+
+    def test_heartbeat_gap_stays_at_five_seconds_while_resolving(self):
+        result, _, events = self.run_clocked(request(fixed_refs=['P' + str(i) for i in range(6)],
+                                                     search_timeout_s=1000, step_budget=300), heartbeat=True)
+        self.assertEqual(result['status'], 'planned')
+        self.assertLessEqual(max(b - a for a, b in zip(events, events[1:])), 5)
+
+
+class IncompleteTargetInventoryTests(unittest.TestCase):
+    """A proven hole inventory needs every peer's target inventory (AGENTEE-353 H3).
+
+    U1 declares a hole reservation covering C1's courtyard but carries no drilled
+    pad, and C1 has no native packing geometry. Missing exclusion evidence is
+    typed unknown before search, never a plan.
+    """
+    def board(self):
+        from test_placement import part
+        board = capture([part('U1', 1, 1), part('C1', 8, 8)])
+        board['footprints'][0]['packing_pad_geometry'] = {
+            'status': 'proven', 'copper': [], 'holes': [{'layers': ['F.Cu'], 'polygons': [rectangle(8, 8, 2, 2)]}]}
+        return board
+
+    def assert_refused(self, board):
+        result = pack(board, request(fixed_refs=['U1', 'C1'], gap_nm=0))
+        self.assertEqual((result['status'], result['outcome'], result['placements']),
+                         ('unsupported_geometry', 'unknown', []), result)
+        self.assertIn('target reservations missing', result['reason'])
+
+    def test_missing_target_inventory_refuses_before_search(self):
+        self.assert_refused(self.board())
+
+    def test_explicit_null_target_inventory_refuses(self):
+        board = self.board()
+        board['footprints'][1]['packing_pad_geometry'] = None
+        self.assert_refused(board)
+
+    def test_input_supplied_private_caches_are_not_evidence(self):
+        board = self.board()
+        board['footprints'][1].update({'_packing_targets': [], '_packing_targets_box': [0, 0, 1, 1]})
+        self.assert_refused(board)
+
+    def test_complete_inventories_still_exclude_the_hole(self):
+        board = self.board()
+        board['footprints'][1]['packing_pad_geometry'] = {'status': 'proven', 'copper': [], 'holes': []}
+        result = pack(board, request(fixed_refs=['U1', 'C1'], gap_nm=0))
+        self.assertNotEqual(result['status'], 'planned', result)
+        self.assertEqual(result['placements'], [], result)
