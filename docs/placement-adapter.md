@@ -367,20 +367,36 @@ Limits:
 
 pcbnew rewrites number spellings on save: a hand-edited courtyard endpoint
 `29.0` comes back as `29`, and `0.50` as `0.5`. The write-scope comparison
-therefore reads the numeric arguments of geometry and size children (`start`,
-`end`, `mid`, `center`, `xy`, `xyz`, `at`, `size`, `width`, `thickness`,
-`drill`, `offset`, `radius`, `angle`, the pad ratio, margin, clearance and
-thermal settings, and `min_thickness`) as exact decimals, with no Decimal
-context: `29.0`, `29` and `2.9E+1` are equal; `29.001` and
-`1.000…0001` are not. This applies to keyed footprint children, unkeyed ones
-such as the 3D model, side-flipped graphics, zone settings and board items.
-Only plain numeric tokens qualify (the same grammar as angles); `0.05x` or an
-overlong token stays an exact token.
+therefore reads the numeric arguments at the supported numeric grammar positions
+of footprint children as exact decimals, with no Decimal context: `29.0`, `29`
+and `2.9E+1` are equal; `29.001` and `1.000…0001` are not. A position is a tag
+under its known parent path from the footprint (`FOOTPRINT_NUMBERS`), never a
+tag name alone:
 
-Every other token stays exact. The shared parser drops quoting, so a pad number,
-field value, net name or setting such as `pad_to_mask_clearance` keeps exact
-text comparison: `"1"` and `"1.0"` are different pad numbers. The source bytes,
-board digests, scope schemas and transform identities are unchanged.
+- graphics (`fp_line`, `fp_rect`, `fp_circle`, `fp_arc`, `fp_poly`): `start`,
+  `mid`, `end`, `center`, legacy `width` and `angle`, `stroke/width`, `pts/xy`;
+- `property` and `fp_text`: `at`, `effects/font/size`, `effects/font/thickness`;
+- `pad`: `at`, `size`, `rect_delta`, `drill` (and `drill/offset`), the ratio,
+  margin, clearance and thermal settings, `die_length`;
+- `model`: `offset/xyz`, `scale/xyz`, `rotate/xyz`;
+- an owned `zone`: `hatch`, `min_thickness`, `connect_pads/clearance`,
+  `fill/thermal_gap`, `fill/thermal_bridge_width`, `fill/island_area_min`;
+- the footprint's own margin, clearance and thermal settings.
+
+This applies to keyed footprint children, unkeyed ones such as the 3D model,
+side-flipped graphics, texts and pads, and owned-zone settings. Only plain
+numeric tokens qualify (the same grammar as angles); `0.05x` or an overlong
+token stays an exact token.
+
+Every other token stays exact text. Everything outside footprints keeps exact
+comparison: board `setup` (including its `stackup`, so `(thickness 0.035)`
+respelled `0.0350` refuses), design rules and board graphics. An unknown child
+keeps its whole subtree exact even where it holds a known tag, for example
+`(width 1)` inside an unrecognised footprint, pad or setup child, or a `size`
+directly under `effects` rather than under `font`. The shared parser drops
+quoting, so a pad number, field value or net name keeps exact text comparison:
+`"1"` and `"1.0"` are different pad numbers. The source bytes, board digests,
+scope schemas and transform identities are unchanged.
 
 A refused keyed child under a translation names its first differing token and
 both spellings, for example `fp_line a4 changed beyond the footprint transform

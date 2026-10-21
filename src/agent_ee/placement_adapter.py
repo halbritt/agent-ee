@@ -80,15 +80,31 @@ SIDE_NEUTRAL_LAYERS = ('*.Cu', '*.Mask')
 FLIP_GRAPHICS = ('fp_line', 'fp_rect', 'fp_circle', 'fp_poly')
 FLIP_TEXTS = ('property', 'fp_text')
 POINT_TAGS = ('start', 'end', 'center', 'xy')
-# Children whose every plain numeric argument is a number in KiCad's board grammar. pcbnew's
-# resave rewrites those spellings (29.0 -> 29, 0.50 -> 0.5), so they compare as exact decimals.
-# Everything else (names, values, net names, pad numbers, board setup) stays an exact token: the parser
-# drops quoting, and a quoted "1.0" pad number or value differs from "1".
-NUMERIC_TAGS = frozenset((*POINT_TAGS, 'mid', 'at', 'size', 'width', 'thickness', 'drill', 'offset', 'xyz',
-                          'radius', 'angle', 'roundrect_rratio', 'chamfer_ratio', 'solder_mask_margin',
-                          'solder_paste_margin', 'solder_paste_margin_ratio', 'clearance', 'thermal_width',
-                          'thermal_gap', 'thermal_bridge_width', 'thermal_bridge_angle', 'die_length',
-                          'min_thickness'))
+# Numeric grammar positions of footprint children. pcbnew's resave rewrites number spellings there
+# (29.0 -> 29, 0.50 -> 0.5), so their plain numeric arguments compare as exact decimals. A position is
+# its tag under a known parent path from the footprint, never a tag name alone: each rule is
+# (arguments are numbers, {child tag: rule}). Every other token stays exact: names, values, net names
+# and pad numbers (the parser drops quoting, and a quoted "1.0" pad number differs from "1"), unknown
+# children and their whole subtrees, and everything outside footprints (board setup, stackup, rules).
+_NUMBER = (True, {})
+_GRAPHIC = (False, {**dict.fromkeys(('start', 'mid', 'end', 'center', 'width', 'angle'), _NUMBER),
+                    'stroke': (False, {'width': _NUMBER}), 'pts': (False, {'xy': _NUMBER})})
+_TEXT = (False, {'at': _NUMBER, 'effects': (False, {'font': (False, dict.fromkeys(('size', 'thickness'), _NUMBER))})})
+_MARGINS = dict.fromkeys(('solder_mask_margin', 'solder_paste_margin', 'solder_paste_margin_ratio', 'clearance',
+                          'thermal_width', 'thermal_gap'), _NUMBER)
+_XYZ = (False, {'xyz': _NUMBER})
+FOOTPRINT_NUMBERS = {
+    **_MARGINS, **dict.fromkeys(FLIP_GRAPHICS + ('fp_arc',), _GRAPHIC), **dict.fromkeys(FLIP_TEXTS, _TEXT),
+    'pad': (False, {**_MARGINS, **dict.fromkeys(('at', 'size', 'rect_delta', 'roundrect_rratio', 'chamfer_ratio',
+                                                  'thermal_bridge_width', 'thermal_bridge_angle', 'die_length'),
+                                                 _NUMBER),
+                    'drill': (True, {'offset': _NUMBER})}),
+    'model': (False, dict.fromkeys(('offset', 'scale', 'rotate'), _XYZ)),
+    'zone': (False, {'hatch': _NUMBER, 'min_thickness': _NUMBER, 'connect_pads': (False, {'clearance': _NUMBER}),
+                     'fill': (False, dict.fromkeys(('thermal_gap', 'thermal_bridge_width', 'island_area_min'),
+                                                   _NUMBER))}),
+}
+FOOTPRINT_RULE = (False, FOOTPRINT_NUMBERS)
 FLIP_PAD_SHAPES = ('rect', 'roundrect', 'circle', 'oval')
 # pcbnew re-derives arcs on a flip (endpoints swapped, midpoint recomputed), and these pad
 # features are not stored as a plain mirror; a flip of a footprint using them is refused.
@@ -573,32 +589,37 @@ def _numeric_text(token):
     return str(Decimal((sign, tuple(map(int, coefficient)), exponent)))
 
 
-def _numeric_form(node, numeric=False):
-    """Comparison-only form: numeric arguments of NUMERIC_TAGS children take one exact spelling."""
-    if isinstance(node, str):
-        return _numeric_text(node) if numeric else node
-    if not node:
+def _rule(node, rule):
+    """The numeric grammar rule of child node under a parent's rule; None for unknown or exact positions."""
+    return rule[1].get(node[0]) if rule and isinstance(node, list) and node and isinstance(node[0], str) else None
+
+
+def _numeric_form(node, rule):
+    """Comparison-only form of node at grammar position rule (see FOOTPRINT_NUMBERS): numeric arguments
+    take one exact spelling; unknown positions keep their whole subtree exact."""
+    if rule is None or isinstance(node, str) or not node:
         return node
-    inner = isinstance(node[0], str) and node[0] in NUMERIC_TAGS
-    return [node[0] if isinstance(node[0], str) else _numeric_form(node[0]),
-            *(_numeric_form(c, inner) for c in node[1:])]
+    return [node[0], *(c if isinstance(c, str) and not rule[0] else
+                       _numeric_text(c) if isinstance(c, str) else
+                       _numeric_form(c, _rule(c, rule)) for c in node[1:])]
 
 
-def _same_tokens(before, after):
-    """Exact token equality, except that numeric arguments compare as exact decimals."""
-    return before == after or _numeric_form(before) == _numeric_form(after)
+def _same_tokens(before, after, rule=FOOTPRINT_RULE):
+    """Exact token equality, except that numeric arguments of a node under the parent rule compare as
+    exact decimals (by default, a footprint child)."""
+    return before == after or _numeric_form(before, _rule(before, rule)) == _numeric_form(after, _rule(after, rule))
 
 
-def _first_difference(before, after, path='', numeric=False):
+def _first_difference(before, after, path='', rule=None):
     """(path, before spelling, after spelling) of the first differing token, for refusals."""
     if isinstance(before, str) or isinstance(after, str):
-        same = before == after or (numeric and isinstance(before, str) and isinstance(after, str) and
-                                   _numeric_text(before) == _numeric_text(after))
+        same = before == after or (rule is not None and rule[0] and isinstance(before, str) and
+                                   isinstance(after, str) and _numeric_text(before) == _numeric_text(after))
         return None if same else (path, _canonical(before), _canonical(after))
     tag = before[0] if before and isinstance(before[0], str) else ''
-    inner = tag in NUMERIC_TAGS
     for index, (b, a) in enumerate(zip(before[1:], after[1:]), 1):
         step = b[0] if isinstance(b, list) and b and isinstance(b[0], str) else str(index)
+        inner = _rule(b, rule) if isinstance(b, list) else rule
         found = _first_difference(b, a, f'{path}/{step}' if path else step, inner)
         if found:
             return found
@@ -613,8 +634,10 @@ def _label(node):
     return f'{tag} {key}' if key else str(tag)
 
 
-def _sequence_violations(before, after, where):
-    removed, added = [_canonical(_numeric_form(n)) for n in before], [_canonical(_numeric_form(n)) for n in after]
+def _sequence_violations(before, after, where, rule=None):
+    """Multiset and order comparison of unkeyed items; numeric spellings compare as exact decimals only
+    for items at known positions under rule (footprint children), never at board level."""
+    removed, added = ([_canonical(_numeric_form(n, _rule(n, rule))) for n in nodes] for nodes in (before, after))
     if removed == added:
         return []
     for item in list(removed):
@@ -623,7 +646,7 @@ def _sequence_violations(before, after, where):
             added.remove(item)
     if not removed and not added:
         return [f'{where}: item order changed']
-    labels = {_canonical(_numeric_form(n)): _label(n) for n in (*before, *after)}
+    labels = {_canonical(_numeric_form(n, _rule(n, rule))): _label(n) for n in (*before, *after)}
     return ([f'{where}: removed or changed {labels[i]}' for i in removed] +
             [f'{where}: added or changed {labels[i]}' for i in added])
 
@@ -651,7 +674,7 @@ def _property_font_defaults(node):
 def _child_follows(before, after, rotation):
     """Whether a keyed child is unchanged, or a rotated child whose `at` angle advanced exactly
     by the footprint's quarter turn, allowing only the property font thickness default and
-    numeric spellings (NUMERIC_TAGS).
+    numeric spellings (FOOTPRINT_NUMBERS).
     A malformed or inexact child angle never follows a turn."""
     if before[0] not in ROTATED_CHILDREN or not children(before, 'at'):
         return _same_tokens(before, after)
@@ -718,8 +741,9 @@ def _uses(node, tags):
     return isinstance(node, list) and bool(node) and (node[0] in tags or any(_uses(c, tags) for c in node[1:]))
 
 
-def _mirrored(before, after):
-    """Whether after is before with every layer swapped and every point mirrored in y, exactly."""
+def _mirrored(before, after, rule=None):
+    """Whether after is before with every layer swapped and every point mirrored in y, exactly.
+    rule is before's numeric grammar position (FOOTPRINT_NUMBERS); other numbers stay exact tokens."""
     if isinstance(before, str) or isinstance(after, str):
         return before == after
     if len(before) != len(after) or not before or before[0] != after[0] or before[0] == 'at':
@@ -731,10 +755,8 @@ def _mirrored(before, after):
         return all(isinstance(b, str) and _flip_layer(b) == a for b, a in zip(before[1:], after[1:]))
     if tag in POINT_TAGS:
         return len(before) == 3 and _same_number(before[1], after[1]) and _opposite_number(before[2], after[2])
-    if tag in NUMERIC_TAGS:
-        return all(_numeric_text(b) == _numeric_text(a) if isinstance(b, str) and isinstance(a, str)
-                   else _mirrored(b, a) for b, a in zip(before[1:], after[1:]))
-    return all(_mirrored(b, a) for b, a in zip(before[1:], after[1:]))
+    return all(_numeric_text(b) == _numeric_text(a) if rule and rule[0] and isinstance(b, str) and isinstance(a, str)
+               else _mirrored(b, a, _rule(b, rule)) for b, a in zip(before[1:], after[1:]))
 
 
 def _mirrored_at(before, after):
@@ -761,12 +783,12 @@ def _flip_text(before, after, turn):
     rest = [[c for c in node if not (isinstance(c, list) and c and c[0] in ('at', 'effects'))]
             for node in (before, after)]
     effects = [children(node, 'effects') for node in (before, after)]
-    if angles is None or not _mirrored(*rest) or len(effects[0]) != 1 or len(effects[1]) != 1:
+    if angles is None or not _mirrored(*rest, _rule(before, FOOTPRINT_RULE)) or len(effects[0]) != 1 or len(effects[1]) != 1:
         return False
     plain = [[c for c in e[0][1:] if not (isinstance(c, list) and c and c[0] == 'justify')] for e in effects]
     old, new = _justify(effects[0][0]), _justify(effects[1][0])
     # Vertical justification under a flip is not qualified.
-    if not _same_tokens(*plain) or old is None or new is None or old & {'top', 'bottom'}:
+    if not _same_tokens(*(['effects', *p] for p in plain), _TEXT) or old is None or new is None or old & {'top', 'bottom'}:
         return False
     mirrored = old ^ {'mirror'}
     expected = _turn(HALF_TURN - angles[0] + turn)
@@ -781,7 +803,7 @@ def _flip_pad(before, after, theta, theta_after):
     angles = _mirrored_at(before, after)
     rest = [[c for c in node if not (isinstance(c, list) and c and c[0] == 'at')] for node in (before, after)]
     # The saved pad angle is footprint plus local angle; a flip negates the local angle.
-    return (angles is not None and _mirrored(*rest) and
+    return (angles is not None and _mirrored(*rest, _rule(before, FOOTPRINT_RULE)) and
             _turn(angles[1] - theta_after + angles[0] - theta) == 0)
 
 
@@ -798,7 +820,7 @@ def _flip_follows(before, after, theta, theta_after):
     if _flip_unsupported(before, after):
         return False
     if before[0] in FLIP_GRAPHICS:
-        return _mirrored(before, after)
+        return _mirrored(before, after, _rule(before, FOOTPRINT_RULE))
     if before[0] in FLIP_TEXTS:
         return _flip_text(before, after, _turn(theta_after + theta))
     if before[0] == 'pad':
@@ -868,7 +890,7 @@ def _zone_follows(before, after, b_at, a_at, flipped, layer_flips):
                     any(not isinstance(t, str) for t in a[1:]) or
                     sorted(flip_layer(t) for t in b[1:]) != sorted(a[1:])):
                 return False
-        elif not _same_tokens(b, a):
+        elif not _same_tokens(b, a, FOOTPRINT_NUMBERS['zone']):
             return False
     return polygons > 0
 
@@ -903,7 +925,7 @@ def _footprint(key, before, after, protected, violations, fields=False, zone_lay
     skip = ('at', 'layer') if flipped else ('at',)
     unkeyed = [[c for c in node[1:] if isinstance(c, list) and c and c[0] not in skip and _uuid(c) is None]
                for node in (before, after)]
-    violations += _sequence_violations(*unkeyed, label)
+    violations += _sequence_violations(*unkeyed, label, FOOTPRINT_RULE)
     keyed = []
     for node in (before, after):
         items = {}
@@ -950,7 +972,7 @@ def _footprint(key, before, after, protected, violations, fields=False, zone_lay
             violations.append(f'{label}: {item[0]} {item[1]} is not supported under a side flip')
         else:
             # Name the first differing token, except under a turn or flip where it may be a transformed one.
-            found = _first_difference(b_child, a_child, b_child[0])
+            found = _first_difference(b_child, a_child, b_child[0], _rule(b_child, FOOTPRINT_RULE))
             hint = (f' (first differing token {found[0]}: {found[1]} -> {found[2]})'
                     if found and not flipped and not rotation else '')
             violations.append(f'{label}: {item[0]} {item[1]} changed beyond the footprint transform{hint}')

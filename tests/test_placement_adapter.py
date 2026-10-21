@@ -290,15 +290,15 @@ class WriteScopeTest(unittest.TestCase):
         saved = mutate(('(start 1 -1) (end 1 1)', '(start 1 -1) (end 29 1)'), ('(at 10 10)', '(at 20 3)'),
                        ('(size 0.5 0.5) (layers "F.Cu") (net "/OUT")', '(size 0.50 5E-1) (layers "F.Cu") (net "/OUT")'),
                        ('(start -1 -1) (end 1 -1) (stroke (width 0.05)', '(start -1.000 -1) (end 1 -0001) (stroke (width 0.050)'),
-                       ('(offset (xyz 0 0 0))', '(offset (xyz -0.0 0.00 0))'),
-                       ('(end 30 0) (stroke (width 0.05)', '(end 30.0 0) (stroke (width 0.05)'))
+                       ('(offset (xyz 0 0 0))', '(offset (xyz -0.0 0.00 0))'))
         report = pa.write_scope(source, saved, [FP_J])
         self.assertEqual(report['status'], 'allowed', report['violations'])
         self.assertEqual([t['to'] for t in report['transforms']], [['20', '3', '0']])
         self.assertEqual(pa.write_scope(saved, source, [FP_J])['status'], 'allowed')
         turned = rotated(90).replace(b'(at 0 1.5 90)', b'(at 0 1.50 90.0)').replace(b'(size 1 1)', b'(size 1.0 1)', 1)
         self.assertEqual(pa.write_scope(TEXT.encode(), turned)['status'], 'allowed')
-        self.assertEqual(pa.write_scope(TEXT.encode(), flipped().replace(b'(width 0.05)', b'(width 0.050)'))['status'],
+        self.assertEqual(pa.write_scope(TEXT.encode(), flipped().replace(b'(width 0.05) (type solid)',
+                                                                      b'(width 0.050) (type solid)'))['status'],
                          'allowed')
         zone = ('  (zone (net 0) (net_name "") (layer "F.Cu") (uuid "z9") (hatch edge 0.5) (min_thickness {t}) '
                 '(polygon (pts (xy {x} 9) (xy {x2} 9) (xy {x2} 11))))\n  (path "/r1")')
@@ -308,6 +308,43 @@ class WriteScopeTest(unittest.TestCase):
             with self.subTest(zone=spelling):
                 self.assertEqual(pa.write_scope(owned('0.25', 9, '(at 10 10)'), owned(spelling, 19, '(at 20 10)'))['status'],
                                  status)
+
+    def test_numeric_spellings_outside_footprint_grammar_positions_stay_exact(self):
+        # AGENTEE-372 (Sol HOLD H1): the position is the tag under its parent path, never the tag name
+        # alone. Board setup, stackup, board items and every unknown context keep exact text.
+        stackup = '(setup (pad_to_mask_clearance 0) (stackup (layer "F.Cu" (type "copper") (thickness 0.035))))'
+        unknown = '(setup (pad_to_mask_clearance 0) (unknown_setting (width 1)))'
+        cases = {
+            'setup stackup thickness': ((('(setup (pad_to_mask_clearance 0))', stackup),),
+                                        ('(thickness 0.035)', '(thickness 0.0350)'), 'board: removed or changed setup'),
+            'unknown setup child': ((('(setup (pad_to_mask_clearance 0))', unknown),),
+                                    ('(width 1)', '(width 1.0)'), 'board: removed or changed setup'),
+            'board graphic': ((), ('(end 30 0) (stroke', '(end 30.0 0) (stroke'), 'board: removed or changed gr_line e1'),
+            'unknown footprint child': ((('(attr smd)', '(attr smd) (unknown_item (width 1))'),),
+                                        ('(unknown_item (width 1))', '(unknown_item (width 1.0))'), 'unknown_item'),
+            'unknown pad child': ((('(net "/IN") (uuid "a6")', '(net "/IN") (unknown_item (size 1 1)) (uuid "a6")'),),
+                                  ('(unknown_item (size 1 1))', '(unknown_item (size 1.0 1))'), 'pad a6'),
+            'known tag at unknown position': ((('(type solid)) (layer "F.CrtYd") (uuid "a3")',
+                                                '(type solid) (thickness 1)) (layer "F.CrtYd") (uuid "a3")'),),
+                                              ('(thickness 1)', '(thickness 1.0)'), 'fp_line a3'),
+            'effects size outside font': ((('(effects (font (size 1 1))))\n  (property "Value"',
+                                            '(effects (font (size 1 1)) (size 1 1)))\n  (property "Value"'),),
+                                          ('(font (size 1 1)) (size 1 1)', '(font (size 1 1)) (size 1.0 1)'), 'property a1'),
+        }
+        for name, (setup, (old, new), fragment) in cases.items():
+            with self.subTest(name):
+                before = mutate(*setup)
+                after = before.replace(old.encode(), new.encode())
+                self.assertEqual(after.count(new.encode()), 1)
+                report = pa.write_scope(before, after)
+                self.assertEqual(report['status'], 'refused', report)
+                self.assertTrue(any(fragment in v for v in report['violations']), report['violations'])
+                # The same respelling at a known footprint position stays admitted alongside.
+                respelled = after.replace(b'(start 1 -1) (end 1 1)', b'(start 1 -1) (end 1.0 1)')
+                self.assertEqual(pa.write_scope(before, respelled)['violations'], report['violations'])
+        # The original ticket case still passes: a footprint courtyard endpoint 29.0 saved as 29.
+        self.assertEqual(pa.write_scope(mutate(('(start 1 -1) (end 1 1)', '(start 1 -1) (end 29.0 1)')),
+                                        mutate(('(start 1 -1) (end 1 1)', '(start 1 -1) (end 29 1)')))['status'], 'allowed')
 
     def test_real_numeric_changes_and_non_numeric_spellings_still_refuse_and_name_the_token(self):
         source = mutate(('(start 1 -1) (end 1 1)', '(start 1 -1) (end 29.0 1)'))
@@ -786,6 +823,32 @@ class NativeWriteScopeTest(unittest.TestCase):
         path = self.root / f'{name}.kicad_pcb'
         k.SaveBoard(str(path), board)
         return path.read_bytes()
+
+    def test_native_resave_of_numeric_spellings_is_admitted_only_at_footprint_positions(self):
+        # AGENTEE-372: pcbnew loads both respellings; setup/stackup stays exact text (Sol HOLD H1),
+        # while a hand-edited footprint courtyard number that pcbnew resaves is no change.
+        import pcbnew as k
+        text = self.before.decode()
+        self.assertEqual(text.count('(setup'), 1)
+        stackup = text.replace('(setup', '(setup (stackup (layer "F.Cu" (type "copper") (thickness 0.035)))', 1)
+        paths = {}
+        for name, body in (('stackup', stackup), ('respelled', stackup.replace('(thickness 0.035)', '(thickness 0.0350)'))):
+            paths[name] = self.root / f'{name}.kicad_pcb'
+            paths[name].write_text(body)
+            self.assertEqual(k.LoadBoard(str(paths[name])).GetCopperLayerCount(), 2)
+        report = pa.write_scope(paths['stackup'].read_bytes(), paths['respelled'].read_bytes())
+        self.assertEqual(report['status'], 'refused', report)
+        self.assertEqual(report['violations'], ['board: removed or changed setup', 'board: added or changed setup'])
+        crtyd = '(end 2 2)'
+        self.assertIn(crtyd, text)
+        hand = self.root / 'hand.kicad_pcb'
+        hand.write_text(text.replace(crtyd, '(end 2.0 2.00)', 1))
+        resaved = self.edited('resaved', lambda k, board, fps: None, hand)
+        self.assertNotIn(b'(end 2.0 2.00)', resaved)
+        report = pa.write_scope(hand.read_bytes(), resaved, [self.fixed])
+        self.assertEqual((report['status'], report['transforms']), ('allowed', []), report['violations'])
+        self.assertEqual(pa.write_scope(hand.read_bytes(), resaved.replace(b'(end 2 2)', b'(end 2.001 2)', 1),
+                                        [self.fixed])['status'], 'refused')
 
     def test_actual_pcbnew_quarter_turns_and_moves_are_exact_transforms(self):
         for turn in (90, 180, 270):
