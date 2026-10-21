@@ -1911,7 +1911,21 @@ in a track span prevent exemption. Other track spans remain in
 the raw-byte comparison, including mid-token quotes and multiline strings;
 vias, zones and unknown track attributes still require fresh receipt evidence.
 The evidence seal reconstructs these refusals; release artifact extraction also refuses open carry.
-Uncarried baseline findings retain their existing verdicts. Explicitly
+Uncarried baseline findings retain their existing verdicts. A board published
+with open carry has a [title block lineage stamp](silk-artwork.md#board-lineage-stamp-agentee-351)
+(AGENTEE-351). The same gates refuse it as unknown when the candidate has no
+`placement-evidence` binding every stamp digest, for example after a re-scope
+outside the campaign. Captured evidence closes carry only when its claimed
+`silk_*` findings equal native DRC recomputed on the captured board in the
+sandbox. A mismatch, or a verification that cannot run, is unknown. The seal and
+release extraction recheck the witness `work/<check>/placement-lineage.json`.
+At release artifact extraction, every board requires a sealed native DRC
+witness showing no `silk_*` conflicts and no open carry. Until AGENTEE-348
+authenticates imported lineage and stamps, neither waives this witness; open
+carry still refuses first with its own typed message. `fab_package`, sealed release verification and campaign completion refuse
+missing or unverifiable evidence as unknown. Standalone checks retain their
+verdicts; there is no scheduler verdict rewrite. See the
+[release contract](silk-artwork.md#board-lineage-stamp-agentee-351). Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.
 Side-flipped footprints' fields remain unchanged with typed conflicts. Source
