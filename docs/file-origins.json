@@ -3646,6 +3646,38 @@
         "AE"
       ],
       "reviewed": "Owner-supplied research PDF for agent-ee, imported unchanged on owner instruction on 2026-10-21. PDF metadata identifies ChatGPT Deep Research as the author. Classification follows the owner's statement, not a technical content review. The research index records recommendations as pending source verification."
+    },
+    {
+      "paths": [
+        "docs/research/2026-10-21-gpu-pcb/experiments/placement_score.cpp",
+        "docs/research/2026-10-21-gpu-pcb/experiments/route_patterns.cpp"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Research-only CPU/CUDA kernel experiments written for agent-ee under the owner's 2026-10-21 GPU research request (docs/research/2026-10-21-gpu-pcb/PROMPT.md). They are not production code and not imported by src/."
+    },
+    {
+      "paths": [
+        "docs/research/2026-10-21-gpu-pcb/experiments/candidate.kicad_pcb.gz"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN",
+        "T16"
+      ],
+      "note": "Saved fome-mc telemetry-pod expansion iteration-7 placement candidate, used as the GPU research workload input (hashes in the research README). It is retained as research input, not as a design source."
+    },
+    {
+      "paths": [
+        "docs/research/2026-10-21-gpu-pcb/results/environment.txt"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "Captured host/toolchain environment report from the peecee-wsl GPU research run. The only rights notice is the g++ --version banner (FSF copyright line), a tool banner recorded as an identity fact, not copied source."
     }
   ]
 }
