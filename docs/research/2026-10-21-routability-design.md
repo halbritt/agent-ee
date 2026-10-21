@@ -2,6 +2,8 @@
 
 2026-10-21. Proposed implementation for agent-ee and kicad-route. This run inspected source, research and retained results, and performed bounded diagnostics. It changed no production algorithms. **Proposed** marks new paths, interfaces and fields. Measurements below are observations; improvement targets are provisional unless an existing release contract is cited.
 
+Later execution update, 2026-10-21: KICADROUTE-90 has released the campaign eligibility part of M1; KICADROUTE-91's identity/policy/native-terminal gates remain unfinished. K at `3ae2c036d1f5ba8d0b717adc0db7a5f42c53fe5b`, `reports/routability-m1-20261021/{README.md,historical-audit.json}`, reconciles the ten alleged lost nets as a capped-report extraction error, as qualified in §2.5 below. Source tables and original PR instructions otherwise describe the investigated revisions. The [GPU experiment report](2026-10-21-gpu-pcb/README.md) adds measured CPU/GPU comparisons and implementation gates without delaying correctness work.
+
 ## 1. Executive recommendation
 
 Make the **owned kicad-route backend the destination for routing, repair and escape functionality**, as directed by the owner during this investigation. Freerouting is a temporary comparison backend. New capabilities must not depend on a Freerouting upgrade, a KRT upstream branch or an external routing service. KiCad remains the native connectivity, zone-fill and DRC authority.
@@ -21,7 +23,7 @@ Implement the following dependency order:
 
 S1 (semantic intent compiler) can proceed alongside M2 and M3 after M1; S2 adds the agent producer after S1. M2 and M3 can proceed in parallel after M1. M7's owned-only installation mode can also proceed independently after M1's identity contract. Full retirement follows M4 and the capability corpus. No change to required widths, clearances, via/drill rules, expected connectivity, fixed poses or electrical constraints is an algorithm improvement under this plan.
 
-Three findings change the research's proposed roadmap. The owned router already has history and selective rip-up, and both ran in the plateau. The historical 203/235 result routes signals on all four copper layers and loses ten input-complete nets, so it is not a policy-conforming success. Finally, a 0.26 mm courtyard gap does not imply a 0.26 mm copper gap: an actual failed eFuse pin has a measured 0.755 mm gap to the nearby ground pad. Add evidence and fix existing mechanisms before adding another solver.
+Three findings change the research's proposed roadmap. The owned router already has history and selective rip-up, and both ran in the plateau. The historical 203/235 result routes signals on all four copper layers and introduces a dangling via, so it is not a policy-conforming success. Its reported loss of ten input-complete nets was later traced to capped-report extraction; it is not a demonstrated copper regression. Finally, a 0.26 mm courtyard gap does not imply a 0.26 mm copper gap: an actual failed eFuse pin has a measured 0.755 mm gap to the nearby ground pad. Add evidence and fix existing mechanisms before adding another solver.
 
 ## 2. Current architecture and baseline
 
@@ -110,6 +112,8 @@ Let `R = F/telemetry-pod/expansion/routing-diagnostic/iteration-7/`. Committed r
 r0 project SHA `7c7933bf09fad1617887d95dce24ae2b994737bf4cc46c20662e447561515b74`; rules SHA `ff62208301c38bca2c963a0682e0a2ee843d8a546bace3719340cfcca1b08d0d`. Its 4,497.724 mm new track is F.Cu 1,970.922 / B.Cu 1,640.772 / In1.Cu 481.680 / In2.Cu 404.350 mm, with 412 vias. Excluding GND/+3V3 still leaves 425.579 mm on In1 and 393.615 on In2. `work/krt.log:15` gives all layers cost 1; command has no `--layers`. These are not two-signal-layer results.
 
 Raw r0 DRC has 18 library-footprint issues, 5 footprint mismatches and 1 dangling via. Wrapper input-complete count 155 and ten lost nets need reconciliation against the same refilled input. Historical prose calls some false/precarious; this plan does not dismiss them. Copper can preserve old tracks while breaking filled-zone contact. A failing preservation check remains a failure until a grader defect is demonstrated.
+
+Subsequent native audit, K `3ae2c03`, `reports/routability-m1-20261021/historical-audit.json`: on the exact saved/refilled input SHA `67782a5d...`, native pad-UUID components show 182 incomplete nets and 53 complete nets. All ten wrapper-reported lost nets were already incomplete; neither historical result loses any of the 53 complete nets. KiCad 10.0.7's 499-item unconnected-report cap caused the wrapper's absence-based completion inference to overstate origin completion. Treat the old `net_completion` FAIL above as an observed grader output, not established net loss; fix that extractor separately. The audit also identifies six footprint-owned keepouts (U1/J3), despite zero board-owned rule areas. These findings do not qualify all-layer routing, remove the new dangling via or supply missing policy/schematic identity.
 
 `baseline_unconnected_total=499`, engine regrade of 182 owned nets/150 successful, and 235 multi-pad nets are different quantities. Freerouting backend counts also differ from KiCad. Independent example: K `reports/fixture/freerouting_round_trip.json` is native COMPLETE/PASS with zero opens while Freerouting reports one incomplete connection. Reuse native metrics; do not add another extractor based on engine summaries.
 
@@ -682,7 +686,7 @@ Rollback selects the previous immutable source/configuration and captured board,
 | Broad imported corpus | Licensing/conversion/rule verification cost exceeds initial information gain. | Target plus local fixtures pass and a demonstrated generalization gap needs a specific external geometry class. |
 | Full upstream retirement / merger immediately | Required owned capability and compatibility gates are not yet established. | M7/M8 gates; no requirement to keep the repos separate once those pass. |
 
-Remaining concrete gaps: an origin-bound native reconciliation of the ten lost nets; a current-policy matched baseline; complete pairwise custom-rule resolution for new placement access capture; cost of coherent native/Python trial cloning and repeated grade; and an executable physical checker for any required Kelvin/current-loop assertion. None prevents implementing M1/M2 or the pure semantic compiler. They prevent claiming completion gains or electrical compliance in advance.
+Remaining concrete gaps: correction of completion extraction after the native reconciliation above; a current-policy matched baseline; complete pairwise custom-rule resolution for new placement access capture; cost of coherent native/Python trial cloning and repeated grade; and an executable physical checker for any required Kelvin/current-loop assertion. None prevents continuing M1/M2 or the pure semantic compiler. They prevent claiming completion gains or electrical compliance in advance.
 
 ### 7.1 Verification performed for this plan
 
@@ -718,7 +722,9 @@ The retrieval's remaining obligations are retained here rather than represented 
 | `universal-preserve-behavior-by-default` | proc-establish-preservation-boundaries | Material to adopting a broader structural change. M7/M8 remain conditional; exact preservation, cost and checkpoint gates must pass before migration/retirement. No present acceptance claim. |
 | `universal-separate-semantic-structural-change` | checkpoint verification | Material to adopting a broader structural change. M7/M8 remain conditional; exact preservation, cost and checkpoint gates must pass before migration/retirement. No present acceptance claim. |
 
-### Exact first implementation task
+### Original first implementation task — released as KICADROUTE-90
+
+Execution update: implementation `683b270ca1a5d19c7422098a29893d55230d0af4` has landed, with integration evidence at K `3ae2c03`, `reports/routability-m1-20261021/`. Do not repeat this change. Continue M1's KICADROUTE-91 identity/policy/native-terminal qualification before dependent optimization. The original acceptance contract follows for reference; the independent GPU lane's first task is G0 in its linked report.
 
 In K `src/kicad_route/campaign.py`, make native/preservation eligibility precede completion in `rank_key` and `Campaign.best`, retaining invalid attempts only as diagnostics. First extend `tests/test_campaign.py` with a complete candidate containing a new clearance violation and a valid incomplete candidate; the current implementation must demonstrate the wrong ordering. Then implement the fix and cover no eligible candidate, missing grade, failed refill, introduced short and lost original net.
 

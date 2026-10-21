@@ -8,6 +8,7 @@ input for design decisions and Plane items; they are not specifications.
 | Prompt | Results | Status |
 | --- | --- | --- |
 | `2026-10-21-routability-brief-prompt.md`: routability-driven placement, channel reservation, negotiated-congestion routing, escape routing, benchmarks | [Research reports and PDF exports](2026-10-21-routability-brief/README.md) | received 2026-10-21; [source-verified design and implementation plan](2026-10-21-routability-design.md), including two later owner briefs |
+| [GPU placement/routing request](2026-10-21-gpu-pcb/PROMPT.md) | [GPU experiments and implementation gates](2026-10-21-gpu-pcb/README.md) | measured on peecee-wsl RTX 3090 Ti; exact score, pattern and dense-field CPU/GPU comparisons; implementation report for agent-508 |
 
 Motivation and measurements: fome-mc `telemetry-pod/expansion/routing-diagnostic/README.md`
 (historical reports of 203–205 of 235 nets; the integrated plan qualifies board identity, native connection counts, policy and preservation failures) and the Plane

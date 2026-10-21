@@ -1,0 +1,112 @@
+{
+  "schema": "agent-ee/gpu-research-manifest/1",
+  "date": "2026-10-21",
+  "owner_agent": "agent-510",
+  "recipient": "agent-508",
+  "agent_ee_oracle_revision": "53e4d10f6c9a8a94867fd6e329bc466e85d9ea97",
+  "kicad_route_python_revision": "557ae5758c06b050508dd8016f5c7b6abc2a83f8",
+  "native_binary": {
+    "path": "/home/halbritt/git/kicad-route/.router-generations/84b30dc286f44df6b465ae8d40aa1363/venv/lib/python3.12/site-packages/grid_router.so",
+    "sha256": "a68e93acff252282e8836b0ac33e1347684f66db7af5633c90afd326fa9d60a6",
+    "source_revision_verified": false,
+    "generation": "84b30dc286f44df6b465ae8d40aa1363",
+    "manifest_path": "/home/halbritt/git/kicad-route/.router-generations/84b30dc286f44df6b465ae8d40aa1363/manifest.json",
+    "manifest_sha256": "3355b7804406d53da72eed84809f92d6c7b3bc09f762f9b84d471c26f5dab639",
+    "binary_matches_manifest": true,
+    "manifest_reported_source_commit": "f42b8796de2006bae147e65340da99462b5fd9be",
+    "manifest_reported_source_sha256": "89a2efbf53057a0694b3cef365ec3acdc01b61f5f57d86bfbe8a62dc8f11db6d"
+  },
+  "generation_build_claims": {
+    "generation": ".router-generations/84b30dc286f44df6b465ae8d40aa1363",
+    "commit": "f42b8796de2006bae147e65340da99462b5fd9be",
+    "source_sha256": "89a2efbf53057a0694b3cef365ec3acdc01b61f5f57d86bfbe8a62dc8f11db6d",
+    "extension_module": {
+      "path": ".router-generations/84b30dc286f44df6b465ae8d40aa1363/venv/lib/python3.12/site-packages/grid_router.so",
+      "sha256": "a68e93acff252282e8836b0ac33e1347684f66db7af5633c90afd326fa9d60a6"
+    }
+  },
+  "qualification": "Original native-input.json and raw pattern metadata name the current Python revision, not the installed compiled revision. The installed extension is recorded separately here. Rust subtree diff f42b879..557ae575 is empty. No fresh build attestation.",
+  "replay_check": "Cleaned exporter regenerated all four native NPZ arrays exactly; byte hashes can differ from ZIP container metadata. Placement source oracle is frozen in placement_reference.py.",
+  "leases": [
+    {
+      "job": "agent510 GPU setup",
+      "lease": "6b6626b8-a403-48a8-9fa4-3d2163eff2e4",
+      "result": "First CuPy probe missing headers; fixed via isolated ctk install; Ollama qwen3.6:27b unloaded"
+    },
+    {
+      "job": "agent510-gpu-placement-v1",
+      "lease": "95070664-8c12-4313-ad0f-0cf6ce78b4cf",
+      "result": "placement-result.json"
+    },
+    {
+      "job": "agent510-gpu-pattern-v1",
+      "lease": "92d8f10a-fbac-461b-9e58-3df3a60ee413",
+      "result": "patterns-pad-only-result.json"
+    },
+    {
+      "job": "agent510-gpu-prefix-v1",
+      "lease": "3bf1c057-3d49-44dc-a462-21a77de73644",
+      "result": "prefix-result.json and same-host Python eager/lazy results"
+    },
+    {
+      "job": "agent510-gpu-native-pattern-v2",
+      "lease": "ca0f728e-035e-4a5d-ac00-8fd2a30c9f57",
+      "result": "patterns-native-result.json"
+    }
+  ],
+  "fleet": {
+    "revision": "2de20079385e9792910c4c8a26da8913db11107b",
+    "node": "peecee",
+    "slot": 1,
+    "capability": "marker",
+    "transport": "ssh peecee-wsl",
+    "gpu_uuid": "GPU-84a77c24-b6c4-b437-6319-debcdddd0e8e",
+    "limitation": "Slot lease is not physical GPU UUID exclusivity; no other lease observed during the runs."
+  },
+  "historical_evidence": [
+    "/home/halbritt/git/fome-mc/telemetry-pod/expansion/placement-candidate/iteration-7/evidence/packer-execution.json",
+    "/home/halbritt/git/fome-mc/telemetry-pod/expansion/placement-candidate/iteration-7/evidence/placement-plan.json",
+    "/home/halbritt/.cache/agent499-microsd/iter8d/route/runs/candidate/iter8d-long-r1-rest/20261021T142807.469103Z/work/krt.log"
+  ],
+  "no_board_outputs": true,
+  "no_native_drc_gain_claimed": true,
+  "script_scope": "Research kernels; pattern shared C++/CUDA implementation checked against independent Python costs and sampled Dijkstra. Final route_patterns.py adds CUDA fixture checks absent from earlier pad-only run; same scorer.",
+  "files_sha256": {
+    "PROMPT.md": "46d29538e7ae9b29ef97b4e07da0b52dd50037247fb62e665076e1f8ee6645b1",
+    "README.md": "eef0bd8b1eb38e794d0e44d852fa1798713470f84a459181481cd82d2a619807",
+    "REPRODUCE.md": "c2fb633c3c9bb753088567b56f3733c6575d8834bb68ce88346dab2216de5df9",
+    "experiments/candidate.kicad_pcb.gz": "44a0a48cc60118e8aba8a4d85b1505aa9ef3924206d3029004f71184906388fa",
+    "experiments/export_inputs.py": "b42391b6f746c94f8208cb2a0c9cfe95bb5423204bc53900854a81a3f28af69c",
+    "experiments/field_prefix.py": "5ef67e38e73b9a10536f5313788d1f4ffbf67d53d8fdde4d7c91d6fad133087c",
+    "experiments/native-input.json": "1be4ccec3e605cef00fe589e7f848468cb04a435e12520a82f005c39dabebd63",
+    "experiments/native-input.npz": "d45442c51ccff87a10f2f730b418669319d4fdf8dc1e98fa96ef9867f2e9f59e",
+    "experiments/placement-input.json": "cf713bb402eb1c8d70b9f702ebfabf7b749b4a7642f5f8d530d59b2855f3b421",
+    "experiments/placement_lazy.py": "4dabf0f2a96639fbcc99d59a4b444f641d13f2f92e34e2506fdff9d420b2dd73",
+    "experiments/placement_reference.py": "c39ed8742bb9ed7781bc352dc967dcd54e094f5667f1f59cbe9f5d07c38ead64",
+    "experiments/placement_score.cpp": "89f2501b0f9bfadb507ac71b76e9ed071975bc9c500013cc1c2a94faf8be3274",
+    "experiments/placement_score.py": "633d284a9428e9a99cdb72c2dc64a32e6970170985433cbb1eaf57643b7071b4",
+    "experiments/route-input.json": "6c5b9ce996a935dc5929dec6e2609fa464cf32f681e9775442776cd38d54b6d2",
+    "experiments/route-input.npz": "f123838141f463f36bceb62fc64c1001b891bdf29dd777851b98b55722787bf0",
+    "experiments/route_patterns.cpp": "752c5db8cf31491f1b493566ec74e963cb7acd4e02b319273d96f62893c54a11",
+    "experiments/route_patterns.py": "8754aa1cd5466c90f1dc403fffdf3d5dda6cf605c9ae8f1a609c3d3811f24b6c",
+    "results/environment.txt": "0407438feadd13f4a6996a9720a8c683118e27a956e4927eaf1be819d96883b0",
+    "results/late-native-audit.json": "b4a899242a6b5a34fa3e12dd163acb786dd3e0f7925a26b97d5d34a9fd2ae4a7",
+    "results/patterns-native-result.json": "f2a968d427240936839596d4dbfb07c3c41d14143150a4feda56a7ba392a4ed4",
+    "results/patterns-pad-only-result.json": "da339b6c04f972b911546f4394bb741e66ff1020dbdf09a03a4fd888c6e99ef4",
+    "results/placement-lazy-result.json": "b5b366874760f96327d9e4b5174ec8b8f3f27208dcc725d95a9a260d7ee4ee4a",
+    "results/placement-python-result.json": "ea85a35e138a6cb53a96470917c448628d76f0da5a1bf28e0deb68bbabd64416",
+    "results/placement-result.json": "fbdcbfa98626c5036319f7345fcc9bd622b7ba7434f5f9fc08de030106f13869",
+    "results/prefix-result.json": "3e65be082a9603f1b8ae540cf458a63bff563bd6ace412907f94f504a549555d",
+    "sources/ABCDPlace-TCAD2020.pdf": "f8f6072266cd9e037331efb6ef537bc460e3c7471fdb43f556134f49f5f70fb1",
+    "sources/DREAMPlace-DAC2019.pdf": "31f16782e715d8aeb84ddf0d2cbf9476ef2f7b3cdbcc19a8b3f2b229c2315567",
+    "sources/FastGR-IJCAI2023.pdf": "ecb7ba9dfdf3b7843337f4ed6878da76be86339617347cbcd999967f9a5152d6",
+    "sources/GAMER-TCAD2023.pdf": "e6dd7b07c90ac421b0f696bd187e617d5ac3f0d1f69166e58f5944704696e0a3",
+    "sources/InstantGR-ICCAD2024.pdf": "7a3bcfd88c294e6bbf4d52d1260c0e491f2161852b26cdd0051a07da6385413c",
+    "verify.py": "bbc244c7a64a33f35d824ba84f891122d62f2c6796c4166e9845b1a99ae25f66"
+  },
+  "late_source_update": {
+    "kicad_route_revision": "3ae2c036d1f5ba8d0b717adc0db7a5f42c53fe5b",
+    "audit_copy": "results/late-native-audit.json",
+    "scope": "Read existing audit; no native diagnostic rerun. Corrected earlier plan capped-DRC inference. Frozen benchmark identities remain unchanged."
+  }
+}

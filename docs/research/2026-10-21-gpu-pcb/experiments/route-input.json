@@ -1,0 +1,244 @@
+{
+  "schema": "agent510.pad-raster-graph/1",
+  "source": "/home/halbritt/git/fome-mc/telemetry-pod/expansion/placement-candidate/iteration-7/candidate.kicad_pcb.gz",
+  "source_sha256": "44a0a48cc60118e8aba8a4d85b1505aa9ef3924206d3029004f71184906388fa",
+  "uncompressed_sha256": "35f242c804038b7ec48740e6f894339e1c152fea95e6a15ddfe77b402030cba9",
+  "kicad_route_revision": "557ae5758c06b050508dd8016f5c7b6abc2a83f8",
+  "graph": "single F.Cu 2D 4-neighbor, no vias; blocked uint8[y,x], cost int32[y,x]=1",
+  "grid_step_mm": 0.1,
+  "grid_origin_mm": [
+    0,
+    0
+  ],
+  "shape_yx": [
+    651,
+    901
+  ],
+  "track_width_mm": 0.1,
+  "clearance_mm": 0.1,
+  "root": {
+    "ref": "U23",
+    "pad": "1",
+    "net": "/PRE_6V3",
+    "net_id": 14,
+    "xy": [
+      185,
+      220
+    ]
+  },
+  "root_net_excluded": true,
+  "terminals": [
+    {
+      "ref": "C98",
+      "pad": "1",
+      "xy": [
+        186,
+        441
+      ],
+      "free": true
+    },
+    {
+      "ref": "C18",
+      "pad": "1",
+      "xy": [
+        337,
+        219
+      ],
+      "free": true
+    },
+    {
+      "ref": "U6",
+      "pad": "8",
+      "xy": [
+        481,
+        387
+      ],
+      "free": true
+    },
+    {
+      "ref": "C7",
+      "pad": "1",
+      "xy": [
+        380,
+        146
+      ],
+      "free": true
+    },
+    {
+      "ref": "U25",
+      "pad": "1",
+      "xy": [
+        525,
+        294
+      ],
+      "free": true
+    },
+    {
+      "ref": "U11",
+      "pad": "2",
+      "xy": [
+        550,
+        391
+      ],
+      "free": true
+    },
+    {
+      "ref": "C97",
+      "pad": "1",
+      "xy": [
+        191,
+        406
+      ],
+      "free": true
+    },
+    {
+      "ref": "R77",
+      "pad": "1",
+      "xy": [
+        112,
+        213
+      ],
+      "free": true
+    },
+    {
+      "ref": "L1",
+      "pad": "2",
+      "xy": [
+        320,
+        39
+      ],
+      "free": true
+    },
+    {
+      "ref": "C86",
+      "pad": "1",
+      "xy": [
+        189,
+        201
+      ],
+      "free": true
+    },
+    {
+      "ref": "C92",
+      "pad": "1",
+      "xy": [
+        544,
+        298
+      ],
+      "free": true
+    },
+    {
+      "ref": "C16",
+      "pad": "1",
+      "xy": [
+        424,
+        367
+      ],
+      "free": true
+    },
+    {
+      "ref": "U12",
+      "pad": "8",
+      "xy": [
+        425,
+        387
+      ],
+      "free": true
+    },
+    {
+      "ref": "C89",
+      "pad": "1",
+      "xy": [
+        92,
+        216
+      ],
+      "free": true
+    },
+    {
+      "ref": "R81",
+      "pad": "1",
+      "xy": [
+        547,
+        317
+      ],
+      "free": true
+    },
+    {
+      "ref": "C20",
+      "pad": "1",
+      "xy": [
+        441,
+        367
+      ],
+      "free": true
+    },
+    {
+      "ref": "R2",
+      "pad": "1",
+      "xy": [
+        337,
+        202
+      ],
+      "free": true
+    },
+    {
+      "ref": "U26",
+      "pad": "8",
+      "xy": [
+        173,
+        416
+      ],
+      "free": true
+    },
+    {
+      "ref": "U24",
+      "pad": "1",
+      "xy": [
+        88,
+        235
+      ],
+      "free": true
+    },
+    {
+      "ref": "R73",
+      "pad": "1",
+      "xy": [
+        208,
+        199
+      ],
+      "free": true
+    },
+    {
+      "ref": "C6",
+      "pad": "1",
+      "xy": [
+        380,
+        95
+      ],
+      "free": true
+    },
+    {
+      "ref": "U23",
+      "pad": "1",
+      "xy": [
+        185,
+        220
+      ],
+      "free": true
+    }
+  ],
+  "actual_same_net_queries": 21,
+  "synthetic_probe_queries": 32,
+  "endpoint_free": true,
+  "foreign_pad_count": 1038,
+  "blocked_cell_count": 135181,
+  "builder": "owned obstacle_map._add_pad_obstacle into ndarray collector; all foreign pads with actual shape + configured clearance",
+  "limitations": [
+    "Native GridObstacleMap binary unavailable (GridObstacleMap=None); this is derived pad raster, not owned complete map",
+    "No tracks/vias/zones/drill-hole/rule-area/board-cutout/BGA/history/proximity/native per-net preparation",
+    "Artificial rectangle fence x0..90mm y0..65mm; not native outline raster",
+    "Fixed .1mm clearance/width experiment values; not resolved actual project class/custom rules",
+    "Synthetic probes are real pad centers under root mask, not same-net route obligations; actual query count can be below32",
+    "No physical routeability or native DRC acceptance implied"
+  ]
+}

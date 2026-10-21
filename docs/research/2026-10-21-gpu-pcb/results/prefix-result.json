@@ -1,0 +1,71 @@
+{
+  "schema": "agent510.grid-prefix/1",
+  "input_sha256": "d45442c51ccff87a10f2f730b418669319d4fdf8dc1e98fa96ef9867f2e9f59e",
+  "shape": [
+    651,
+    901
+  ],
+  "gpu": "NVIDIA GeForce RTX 3090 Ti",
+  "output_bytes": 18769632,
+  "cold_first_build_ms": 376.9741490104934,
+  "all_elements_equal": true,
+  "samples": [
+    {
+      "cpu_ms": 10.188724001636729,
+      "h2d_ms": 0.4071400035172701,
+      "resident_ms": 0.60201199084986,
+      "d2h_ms": 1.7021600069710985,
+      "total_ms": 2.7113120013382286
+    },
+    {
+      "h2d_ms": 0.3546980005921796,
+      "resident_ms": 0.5370349972508848,
+      "d2h_ms": 1.6634140047244728,
+      "total_ms": 2.555147002567537,
+      "cpu_ms": 5.610387001070194
+    },
+    {
+      "cpu_ms": 6.965419990592636,
+      "h2d_ms": 0.3936950088245794,
+      "resident_ms": 0.6125799991423264,
+      "d2h_ms": 2.0875999907730147,
+      "total_ms": 3.0938749987399206
+    },
+    {
+      "h2d_ms": 0.5992189981043339,
+      "resident_ms": 0.604888002271764,
+      "d2h_ms": 1.993867990677245,
+      "total_ms": 3.197974991053343,
+      "cpu_ms": 6.191351989400573
+    },
+    {
+      "cpu_ms": 7.0186520024435595,
+      "h2d_ms": 0.4850200057262555,
+      "resident_ms": 0.6070279923733324,
+      "d2h_ms": 1.8492009985493496,
+      "total_ms": 2.9412489966489375
+    },
+    {
+      "h2d_ms": 0.3511770046316087,
+      "resident_ms": 0.5224930064287037,
+      "d2h_ms": 1.766360001056455,
+      "total_ms": 2.6400300121167675,
+      "cpu_ms": 6.275520994677208
+    },
+    {
+      "cpu_ms": 6.830181009718217,
+      "h2d_ms": 0.4066700057592243,
+      "resident_ms": 0.5971140053588897,
+      "d2h_ms": 1.9276909879408777,
+      "total_ms": 2.9314749990589917
+    }
+  ],
+  "medians_ms": {
+    "cpu_ms": 6.830181009718217,
+    "h2d_ms": 0.4066700057592243,
+    "resident_ms": 0.60201199084986,
+    "d2h_ms": 1.8492009985493496,
+    "total_ms": 2.9314749990589917
+  },
+  "limitations": "Four full-grid prefix arrays rebuilt. Existing engine uses sparse incremental cache updates; no claim this replaces them faster. NumPy compiled cumsum is CPU baseline. Timings include output allocation from warm allocators."
+}
