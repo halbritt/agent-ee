@@ -22,6 +22,13 @@ reads these sources only:
 - The captured stock-model receipt for each declared `model_libraries` variable,
   and the captured library files that it lists.
 
+Board-only mechanical admission is replayed from the captured board and sealed
+netlist: all three native exclusion attributes, no netlist path/component and
+no assigned pad net. A present `designators.mechanical` list must equal the
+recomputed sorted references; missing legacy lists do not bypass admission.
+Netlisted test pads with footprint exclusions use the existing declared
+`JLCPCB_Assembly=not_assembled` rule and exclusion replay.
+
 The manifest is a claim to verify, never an authority:
 
 - Tool identity. `tool.path` must be the kicad-cli that the executor sandbox

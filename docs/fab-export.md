@@ -30,9 +30,26 @@ acceptance requirement. The board stays mutable candidate input. A captured
 Board-only mechanical footprints carrying all three native attributes
 `board_only`, `exclude_from_bom` and `exclude_from_pos_files` remain in
 `board_non_dnp` and the native geometry inventory. They need no schematic part,
-BOM binding or placement row. Partial exclusion combinations on non-DNP
+BOM binding or placement row. Their sorted references appear in the optional
+`designators.mechanical` manifest set (emitted when nonempty), and their holes
+remain in the native drill output. Mechanical items must have no netlist path,
+no matching native netlist component and no assigned pad net. Netted or
+unqualified pad-net declarations are refused even when the exclusions are
+present. `fab_consistency` independently re-derives admission and verifies a
+present mechanical set; legacy manifests without this field retain admission
+replay. Original 3.2 mm hole fixtures exercise this path without copying stock
+library files. Partial exclusion combinations on non-DNP
 footprints still fail closed; this exception does not admit arbitrary excluded
 schematic parts. Qualified probe features retain their separate source checks.
+
+Netlisted UART test pads may carry footprint BOM/position exclusions when both
+native symbol and footprint carry `JLCPCB_Assembly=not_assembled` and the export
+check declares the matching `assembly_exclusion` rule. They need no supplier
+binding, are omitted from BOM/CPL and appear in `designators.excluded`. Missing
+rules or disagreeing markers remain refused. This does not admit native
+schematic exclusion flags; the symbol remains netlisted and in the schematic
+BOM. The original single-pad `TestPoint_Pad_D1.5mm` fixture verifies native
+connectivity and a passing consistency gate.
 
 ## Copper features
 
@@ -405,6 +422,11 @@ commit the output.
 [tests/test_fab_export.py](../tests/test_fab_export.py) covers the following:
 
 - the 2-layer and 4-layer packages, sealed;
+- `test_board_only_holes`: four original 3.2 mm holes retained in NPTH drills,
+  absent from BOM/CPL, listed in the mechanical set, with consistency passing;
+- `test_board_only_with_net_refused` and netlist-path refusal;
+- `test_testpad_not_assembled`: an original 1.5 mm netlisted pad excluded and
+  listed under the declared rule, consistency passing, no-rule refusal;
 - byte-identical repeat runs whose raw native Gerber timestamps differ;
 - mismatched BOM/board references refused before completion;
 - schematic/board DNP disagreement in both directions: the package follows the

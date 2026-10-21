@@ -1388,7 +1388,13 @@ disagreement is recorded in `details.dnp_disagreements` and does not block the
 package. An optional declared `assembly_exclusion` rule
 (`JLCPCB_Assembly=not_assembled`) leaves populated parts that carry the marker
 in both the netlist and the board out of the BOM and CPL. The manifest lists
-them in `designators.excluded`. Optional `copper_features: ["JP1"]` admits
+them in `designators.excluded`, including netlisted test pads whose footprints
+carry native BOM/position exclusions. Native schematic exclusions remain
+refused. Board-only mechanical items require all three attributes (`board_only`,
+`exclude_from_bom`, `exclude_from_pos_files`), no netlist path or component and
+no assigned pad net. Their drills remain exported and their sorted references
+appear in `designators.mechanical` when nonempty. Consistency replays mechanical
+admission and checks any declared mechanical set. Optional `copper_features: ["JP1"]` admits
 explicitly declared surface copper features only after both native exclusions,
 qualified pad/graphic layers, no model and the copper field allow-list are
 verified. Only `Reference`, `Value`, `Footprint`, `Datasheet`, `Description` and

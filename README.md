@@ -528,7 +528,10 @@ The [fab exporter](docs/fab-export.md) produces Gerbers, drills, BOM, CPL and a
 board-bound manifest offline. It requires identical assembled designators
 across the board and CSVs before completing the package. A declared
 `JLCPCB_Assembly=not_assembled` rule leaves marked populated parts out of the
-BOM and CPL and lists them in the manifest. Explicitly declared
+BOM and CPL and lists them in the manifest, including netlisted UART test pads
+with footprint exclusions. Declared board-only mounting holes need no supplier
+binding, retain their drills and appear in the manifest's mechanical set;
+netted mechanical pads are refused. Explicitly declared
 [copper features](docs/fab-export.md#copper-features), such as solder jumpers,
 need both native exclusions, no model and fields qualified by the copper
 allow-list, which admits only exact standard and KiCad internal field names
