@@ -971,3 +971,35 @@ class ClosureEscapeTests(unittest.TestCase):
                           for c in ('\r', '\v', '\f', '\xa0', '\x85'))):
             with self.subTest(invalid=repr(invalid)):
                 self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + invalid + ')')), 1)
+
+    def test_single_line_mid_token_quote_hides_gr_text(self):
+        evil = '(gr_text EVIL (at 20 20 0) (layer F.SilkS) (uuid g) (effects (font (size 1 1) (thickness 0.15))))'
+        for prefix in ('abc', 'h1', '0'):
+            hidden = ('(arc (start 10 10) (mid 11 10.5) (end 12 10) (width 0.2) (layer "F.Cu") (net 0) (uuid '
+                      + prefix + '"x ))' + evil + '(arc (start 30 30) (mid 31 30.5) (end 32 30) (width 0.2) '
+                      '(layer F.Cu) (net 0) (uuid y"))')
+            with self.subTest(prefix=prefix):
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
+
+    def test_nested_list_track_child_refuses_comparison_and_keeps_carry(self):
+        from tests.test_placement_adapter import TEXT
+        for kind in ('segment', 'arc'):
+            track = ('(' + kind + ' (layer "F.Cu") ((x)) (start 1 2) '
+                     '(end 3 4) (width 0.2) (net 0) (uuid "t"))')
+            edit = lambda text: text.rstrip()[:-1] + track + ')'
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                before, after = (Path(temporary) / n for n in ('before', 'after'))
+                before.write_text(TEXT)
+                after.write_text(edit(TEXT))
+                with self.assertRaisesRegex(ValueError, 'nested-list track child'):
+                    placement_defects.same_artwork(before, after)
+                defects = self.run_closure(edit)
+                self.assertEqual(len(defects), 1)
+                self.assertEqual(defects[0]['verdict'], 'defect')
+
+    def test_net_name_comment_characters_reopen_closure(self):
+        for name, count in (('CS_N', 0), ('CS#', 1), ('A;B', 1)):
+            track = ('(segment (start 1 2) (end 3 4) (width 0.2) '
+                     '(layer "F.Cu") (net "' + name + '") (uuid "t"))')
+            with self.subTest(name=name):
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + track + ')')), count)

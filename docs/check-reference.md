@@ -1124,7 +1124,13 @@ is another writer request mode (`blocks`). It adds no check kind. The saved
 board is judged, graded for groups and pad locality, and DRC-gated as every
 placer plan is. In addition, the hard block rules are re-graded from the saved
 bytes (`judgment.block_rules`). A failed hard rule refuses publication;
-advisory rows are reported only.
+advisory rows are reported only. AGENTEE-355 changes only the search
+([compaction](blocks.md#compaction-agentee-355), member-aligned origins and the
+ranking cache); it adds no check kind and changes no gate. The writer also
+publishes `block-provenance.json`; a scope's `block_provenance` binds it to the
+captured board and carries it to every initial reviewer
+([review input](blocks.md#review-input-block-provenance-agentee-355)). It is
+review input, not a check result, and an advisory block confers no acceptance.
 
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
@@ -1912,6 +1918,14 @@ project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
 
+Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
+or `A;B`) never receive the exemption, even when KiCad writes the net name as a
+quoted string. Such edits reopen closure and require a fresh receipt. This is a
+conservative liveness bound of the writer grammar (AGENTEE-360).
+Nested-list children of a segment or arc refuse comparison with `ValueError`;
+the coordinator retains the carried defect instead of letting an untyped error
+escape.
+
 ## Post-routing silk repair (AGENTEE-350)
 
 The [routed artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
@@ -1923,8 +1937,9 @@ reuse the placement evidence envelope. Identity-bound closure can then remove
 carried defects only when each marking is visible, unchanged in style and
 silk layer, and wholly inside the qualified outline. Off-board and straddling
 marks remain open even if native DRC is silent. Footprint-owned Edge.Cuts
-participate in outline qualification; slots and cutouts cannot establish
-containment. Both producers seal a board-bound native containment witness in
+participate in outline qualification. Straight slots and cutouts qualify as holes
+inside one outer contour (AGENTEE-362); markings must lie wholly outside them.
+Touching, crossing, nested or unsupported contours establish no containment. Both producers seal a board-bound native containment witness in
 the placement report. Closure and campaign replay read it without rerunning
 pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
 unavailable evidence keep their refusal. Cached-text translations and boards

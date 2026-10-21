@@ -131,6 +131,40 @@ members are copied into an isolated capture.
   arrangement. Their ids and counts are recorded in `deferred`. A block
   member in `fixed_refs` or `fixed_overhangs` refuses.
 
+### Compaction (AGENTEE-355)
+
+The first run's poses follow the placer's wire cost, so a block can come out
+sparse or strung out (on the pod, wheel-input was 53 × 14 mm). `pack_block`
+therefore re-packs a packed block on shrinking rectangular outlines and keeps
+the candidate with the least total outline box area (summed over both sides).
+Two families are bisected in turn, each for at most six trials:
+
+- `anchor-square`: a square centred on the anchor, by half-side. The lower bound
+  is the anchor's own courtyard reach; the upper bound is the best candidate's.
+- `box-scale`: the best box so far, scaled about its centre in per mille. The
+  lower bound keeps the anchor's courtyard inside.
+
+A trial runs the unchanged placer with the same isolated block policy, so every
+internal obligation, group, gap and rule area applies unchanged. A trial counts
+as packed only when its candidate passes the same re-grade and courtyard witness
+as the first run. A packed trial lowers the upper bound to its own extent; any
+other result raises the lower bound. Bisection stops when the bounds are within
+the larger of the gap and 0.1 mm. Ties keep the earlier candidate, so the result
+is deterministic. Each trial may use at most the larger of 10 000 steps and ten
+times the first run's steps, and never more than the block budget. This cap is
+search effort, not a design limit.
+
+Compaction runs only after the first run has packed without reaching the
+synthetic plane, so `synthetic_plane_reached` and every refusal are unchanged.
+The candidate's `search` gains `compaction`:
+`{objective: "outline-bisection-min-box-area/1", first_box_area_nm2, box_area_nm2,
+step_cap, trials: [{family, parameter, status, steps_used, box_area_nm2?}], steps_total}`.
+`validate_candidate` checks that record's structure: the area is at most the first
+run's, and every trial is within the cap. `admit` binds the area to the board's
+own outline (`stale_evidence` with evidence `compaction`). The
+candidate's `steps_used` is the selected run's. `pack --no-compact` (and
+`compact=False`) keeps the first run.
+
 A member pad number that carries several nets refuses, because its pin role
 would be ambiguous. The placer's own refusals propagate unchanged, with `status`, `outcome`, `reason`
 and the full `plan`. For example, obligations without limits or citations give
@@ -156,7 +190,7 @@ refuse, and a `/1` document is refused. Only `status: packed` is usable.
 | `witness` | `exact-courtyard-separation/1`: `gap_nm`, `pairs_checked`, per-side `minimum` exact squared distance `[numerator, denominator]`, `below_gap`, `drilled_pad_conflicts`, `status` |
 | `placer_judgment` | Verdict and basis of the placer's full-polygon judge |
 | `deferred` | Boundary groups and obligations by id; counts of obstacles and board rule areas |
-| `search` | `strategy`, `backjumps`, `steps_used`, `step_budget` |
+| `search` | `strategy`, `backjumps`, `steps_used`, `step_budget`; optional `compaction` ([AGENTEE-355](#compaction-agentee-355)) |
 | `block_policy` | The exact isolated packing policy |
 | `sources` | `board_sha256`, `inventory_sha256`, `allocation_sha256` (`null` without an allocation file), `derivation_sha256`, `policy_sha256` |
 
@@ -200,7 +234,7 @@ returns `{"status": "admitted" | "refused", "problems": [...]}`. Problem kinds:
 | `block_policy_mismatch` | The isolated policy recomputed from the board policy equals `block_policy` |
 | `deferred_mismatch` | The recomputed deferred record equals `deferred`, so a boundary obligation or group cannot be dropped |
 | `identity` | `match` with the identity mapping succeeds, which binds each `pad_geometry_sha256` to the board |
-| `stale_evidence` | The board's own footprints at the frame poses reproduce `outline`, `grade` and `witness` exactly, including drilled-pad reservations |
+| `stale_evidence` | The board's own footprints at the frame poses reproduce `outline`, `grade` and `witness` exactly, including drilled-pad reservations; a `compaction` record's area equals that outline's box area |
 | `evidence_failed` | Locality is `pass` or advisory `info`; groups and witness pass |
 
 Identity matching and grading stay separate. `match` compares identity only,
@@ -409,7 +443,15 @@ hard-shadowed part. The rest follow. Within each group, the next block is the
 one that shares the most non-ground nets with the fixed parts and the blocks
 already ordered (ties: larger courtyard area, then id). For each block,
 candidate origins align to the outline, placed boxes, exact obstacles, group
-points and obligation targets, in four quarter turns. The objective terms rank
+points and obligation targets, in four quarter turns.
+
+Member-aligned axes (AGENTEE-355) add two sets of origins. In x, a frontier
+member box touches a placed box or obstacle at the gap: a frontier box has no
+other member box of its side wholly to its left (or right) within its y span.
+In y, at each x, the ends of the blocked runs are added: the origins where some
+member box touches a reserved box, shadow, obstacle or drilled pad in y. Both
+stay within the outline window. The macro-aligned origins remain, so the
+candidate set only grows. The objective terms rank
 the candidates lexicographically, in the declared order, then by position and
 rotation; there are no weights:
 
@@ -426,7 +468,20 @@ position is dropped while ranking and its blocking blocks are recorded. A
 position where a rectilinear member courtyard overlaps a fixed courtyard,
 obstacle or footprint-forbidding rule area is dropped the same way. The
 first admissible candidate is taken. Every candidate given to the exact
-predicates costs one step. A block with no admissible candidate backjumps to
+predicates costs one step.
+
+The prefilter is a sweep over blocked rectangles: for each pair of a member box
+and a reserved box, the open set of origins where the two come within the gap.
+A placed block's drilled-pad reservation (an inscribed square) blocks any
+member courtyard that would overlap it on either side. Its owner is recorded as
+a blocker. Only parts with pad geometry count, as in `placer._hole_conflict`.
+On the pod with the default objective, drilled-pad rejections at the exact
+predicate fell from 4341 (340 search, 300 s) to 48 (240 s). The rectangles are cached as the incremental
+ranking cache: a block's rotated geometry and its rectangles against fixed parts
+are computed once, and its rectangles against each placed block are kept per
+(block, rotation, placed block, pose). After a backjump, only the blocks that
+moved are recomputed. The cache is bounded (`OWNED_CACHE` entries, least
+recently used first) and changes no result. A block with no admissible candidate backjumps to
 the latest placed block among the recorded blockers, which then tries its next
 candidate (conflict-directed backjumping). Results:
 
@@ -487,6 +542,75 @@ hash. Combining `blocks` with `targeted` or `targeted_plans` is refused.
 `block_arrangement.request_section(allocation, arrangement, candidates)` builds
 the section from files.
 
+### Review input: block provenance (AGENTEE-355)
+
+Every placed arranged plan also publishes `block-provenance.json`
+(`agent-ee.block-provenance/1`) beside `placement-result.json`. It is built by
+`block_arrangement.provenance_artifact` and lists every placed block:
+
+| Field | Meaning |
+| --- | --- |
+| `block`, `references`, `anchor`, `candidate_sha256` | Identity of the block and its admitted candidate |
+| `class`, `enforcement`, `citation`, optional `method`, `source` | The candidate's provenance record, unchanged |
+| `reuse` | `own-board`, or `mapped` for a library or reused layout; a mapped row carries its source-to-board `mapping` |
+| `position_nm`, `rotation_deg` | The arranged anchor pose |
+
+The top level binds the artifact: `source_sha256` (seed board), `board_sha256`
+(the saved candidate board), the required `plan_sha256` (SHA-256 of the
+written `placement-plan.json` bytes),
+`derivation_sha256`, `policy_sha256`, and `rules` (each block rule's
+enforcement and status on the saved board). `authority` is a fixed statement: the
+artifact is review input only, and an advisory block confers no acceptance.
+`placement-result.json` records the file's hash as `block_provenance_sha256`.
+The placement plan records the search's wall `elapsed_s`, so `plan_sha256`, and
+with it the artifact's bytes, differ between otherwise identical runs; every
+other field is deterministic.
+The `arrange` CLI writes the same artifact for a planned result with
+`--provenance FILE`; its `board_sha256` is the plan's source board and its
+`plan_sha256` the hash of the `--out` file.
+
+The producer refuses an incomplete roster: the plan's provenance records
+(`block_arrangement.blocks`) and arranged poses (`block_arrangement.arranged`)
+must name the same nonempty, distinct block ids, and the records' references
+must be exactly the placed members (placements neither fixed nor residual).
+
+`validate_provenance` fails closed. It refuses a class that is unknown or whose
+enforcement is not its class's (`search-derived` must be `advisory`), a mapped
+row without its mapping or an own-board row with one, a mapping that does not
+cover exactly the placed references, shared references, a blank block id, a
+pose that is not an integer `[x, y]` with a rotation of 0, 90, 180 or 270, an
+empty block list, a missing `plan_sha256`, an edited authority statement and
+any unknown key. A consistent hard pair (`qualified-owner-board`/`hard`) is a
+valid row; whether a block actually carries it is decided against its plan by
+`check_roster`.
+
+**Reaching the reviewers.** The coordinator captures the saved board,
+`block-provenance.json` and the complete `placement-plan.json` from the same
+placement as candidate inputs, and names the artifact and its plan in the scope
+(the two keys are declared together):
+
+```json
+{"board": "pod/candidate.kicad_pcb", "block_provenance": "pod/block-provenance.json",
+ "block_plan": "pod/placement-plan.json"}
+```
+
+The captured bytes are part of candidate identity. `reviewers.build_packet`
+reads them through `block_arrangement.review_input`, which checks both captured
+digests, validates the artifact, and requires its `board_sha256` to be the
+captured `board` and its `plan_sha256` to be the captured plan's bytes. It then
+runs `check_roster`: the plan must pass the producer's completeness checks, the
+artifact's `source_sha256`, `derivation_sha256` and `policy_sha256` must be the
+plan's, every row (block, references, anchor, candidate hash, class,
+enforcement, citation, method, source, reuse, mapping and pose) must equal the
+row derived from the plan, no block may be added or omitted, and each rule keeps
+the plan's enforcement. The packet then carries `block_provenance: {path,
+sha256, record, plan: {path, sha256}}` outside the text budget, so no row is
+clipped. Every initial reviewer receives the same packet; no reviewer sees
+another's judgment. A declared artifact or plan that is not captured, was
+changed, is malformed, omits or relabels a block, or describes another board or
+plan raises, so no packet is built and the review stays incomplete. Without the
+declaration the packet has no `block_provenance`.
+
 ### Real-pod diagnostic (stage B)
 
 This is a read-only scratch diagnostic; nothing was adopted or written to fome-mc.
@@ -535,7 +659,104 @@ box, so interleaving two sparse blocks is found only by chance. Conflict-directe
 backjumping recovers from local dead ends, but each backjump re-ranks the next
 block, which takes seconds per block on the pod. Compact intra-block packing (a
 stage-A objective), member-aligned candidate axes, or a cited library layout
-for the regulator blocks (AGENTEE-342) are the next levers.
+for the regulator blocks (AGENTEE-342) are the next levers. AGENTEE-355 added the
+first two; see [the microSD diagnostic](#real-pod-diagnostic-on-the-microsd-source-agentee-355).
+
+### Real-pod diagnostic on the microSD source (AGENTEE-355)
+
+A read-only scratch diagnostic; nothing was adopted or written to fome-mc. Inputs
+at fome-mc `3d7ff5f`, each checked with `sha256sum -c` against the fome-mc
+SHA256SUMS files:
+
+- `placement-seed-microsd/base-seed.kicad_pcb.gz` (uncompressed `05da3eb6…`,
+  309 footprints: 162 F, 147 B);
+- `storage-microsd/native.xml` (`7791d443…`);
+- `blocks/allocation.json` (`1fb4ecde…`): 20 blocks, 293 members, 16 residual.
+
+The pod lane's allocation makes C18 and R33 residual for electrical reasons: C18
+is on `PRE_6V3`, U5's output node, and R33 is a strap whose only non-plane net
+goes to the fixed U1. The stage-A limitation that strands a part reached only
+through plane nets is AGENTEE-359.
+
+The packing policy is iteration 3's (0.25 mm gap, 0.5 mm edge margin) with the
+fixed refs H1–H4, J1, J2, U1 and U2, only the five IMU-isolation obstacles, no
+groups or overhangs that name removed parts, and the 12 pad obligations. Every
+locality bound in those obligations is unsourced, so it is advisory
+(AGENTEE-337): it ranks and is reported, and never prunes. The arrangement
+policy cites iteration 2's inductor shadows (L1, L2, +0.5 mm) and its
+no-cluster-over-a-fixed-part rule (pre-6v3, buck-3v3, wheel-input) as hard.
+Thermal spread (U5, U7; 15 mm) is advisory. The objective is `["pad-locality"]`
+(advisory), which ranks by obligation cost and then by position.
+
+**Stage A.** All 20 blocks pack with compaction: 2607 mm² of F and 1701 mm² of
+B outline boxes, in 80 s wall on 10 processes (298 s CPU; slowest block
+diagnostic, 79 s).
+
+**Complete pod through the writer.** `placer_runner.place_candidate` with a
+`blocks` request and the iteration-3 `candidate.kicad_pro` beside the seed. Both
+orders are `placed`:
+
+| Order | Wall time | Steps (arrangement + residual) | Saved board SHA-256 |
+| --- | --- | --- | --- |
+| Default | 41.4 s | 164 + 1671 | `38b2e6b7…58d1` |
+| Largest first | 41.0 s | 86 + 119 | `ced19a8d…25ea` |
+
+A repeated default run took 37.9 s and saved a byte-identical board. Both boards
+have:
+
+- judgment `pass`, no native courtyard overlaps, no blocking DRC findings;
+- groups `pass`; hard `no_stacking` and `no_block_over_fixed` `pass`, advisory
+  thermal spread `pass`;
+- locality `info`: 26 pairs measured, 0 defects, 0 unknown, 26 advisories. Six
+  pairs exceed their unsourced bound: U5/C3 and U7/C10 supply (1.09×), return
+  (1.24×) and switch (1.56× and 1.62×). Before AGENTEE-337 these bounds pruned
+  stage A and every pair was within its bound;
+- a `block-provenance.json` naming all 20 blocks as `search-derived`,
+  `advisory`, `own-board`, bound to the saved board.
+
+The default board adds no finding to the runner's own DRC comparison; the
+largest-first board adds eight silk findings, so its `outcome` is `defect` (the
+D-PCB-8 silk policy was not applied).
+
+Native DRC with the cited `design-rules/board-setup.kicad_pro` (`7c7933bf…`):
+
+| Item | Seed | Default board | Largest-first board |
+| --- | --- | --- | --- |
+| Courtyard | 5 | 0 | 0 |
+| Hole (`npth_inside_courtyard`) | 1 | 0 | 0 |
+| Copper-edge | 0 | 0 | 0 |
+| Clearance | 18 | 18 | 18 |
+| Drill | 44 | 44 | 44 |
+| Library | 199 | 199 | 199 |
+| Silk overlap / over copper / edge | 0 / 0 / 3 | 6 / 0 / 1 | 7 / 7 / 0 |
+
+The 18 clearance items are identical to the seed's: pad pairs inside U2
+(LGA-14) and U16, U18 and U19 (DSE0006A). They are land-pattern spacing, not
+placement.
+
+For comparison, agent-499's hand-anchored iterations 2 and 3 placed the older
+eMMC source in 1429 s and 866 s. No hand placement of this microSD source
+exists to compare against directly.
+
+The first run of this diagnostic on the composed tree (main `6e7c2ea`) crashed
+with `KeyError: '_packing_holes_box'`: `_shift` moved the drilled-pad inventories
+but not the union boxes that `placer._hole_conflict` reads (AGENTEE-353). Main
+crashes the same way. `_shift` now moves the boxes too
+(`MemberAxesTests.test_shift_keeps_the_placer_reservation_caches`).
+
+An earlier run at fome-mc `8c42f2e` used scratch allocations, because that
+allocation still named ten parts the microSD source removed. With C18 and R33 in
+their blocks, stage A returned `synthetic_plane_reached` for buck-3v3 and mcu.
+With both residual (the same 20 blocks as `3d7ff5f`), the 30-minute ablation
+showed:
+
+- only compaction together with the position-first objective completed the pod;
+- the 355 stage-B changes reduced work, not reach: arrangement steps fell from
+  1502 to 131 and drilled-pad rejections from 1363 to 18.
+
+The stage-B plan is search-derived and advisory, like every block in it. No pod
+acceptance is claimed. Routing, the silk policy and review remain the pod
+lane's.
 
 ## Real-pod diagnostic (stage A)
 
@@ -580,7 +801,7 @@ These limits remain the pod lane's advisory bounds. No pod acceptance is claimed
 ## Validation
 
 ```sh
-AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_blocks tests.test_block_arrangement -v
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_blocks tests.test_block_arrangement tests.test_block_provenance -v
 ```
 
 `tests.test_blocks` uses authored hierarchical XML, boards, pads and limits.
@@ -601,7 +822,11 @@ It covers:
   a changed land pattern;
 - matching of a second instance, with each mismatch kind and the inclusive
   tolerance boundaries;
-- the CLI.
+- compaction (AGENTEE-355): an authored resistor chain shrinks from 81.375 to
+  56.25 mm² with the same block policy, witness and admission, deterministically;
+  an internal group still passes; each malformed compaction record refuses, and
+  admission refuses a recorded area that differs from the board outline's;
+- the CLI, with and without `--no-compact`.
 
 A native test derives the two blocks of the [block-first](block-first.md)
 fixture from its actual sandboxed `kicad-cli` XML export.
@@ -615,6 +840,8 @@ covers:
   recorded net that differs from the board net;
 - a mapped library candidate, with undeclared, wrong and correct boundary nets,
   and graded on the target board's deferred obligations, not the source's;
+- the native runner publishes `block-provenance.json` bound to the saved board,
+  its plan and each admitted candidate's class and enforcement;
 - an effective policy that only appends obstacles is accepted. One that drops,
   replaces or reorders a captured obstacle, or changes any other key, refuses
   with `EffectivePolicyError`;
@@ -624,6 +851,22 @@ covers:
   validation;
 - a seeded differential of the multi-box sweep against `placer._unreserved`, and
   the inscribed drilled-pad squares;
+- member-aligned origins (AGENTEE-355): the contact origins of a seeded scan are
+  free of every blocked rectangle, lie on a run end inside the window, and add to
+  the plain scan without removing anything; frontier members; a placed drilled
+  pad blocks only positions that `placer._hole_conflict` rejects; and the ranking
+  cache changes no result (cache size 0 gives identical plans and failures);
 - the CLI;
 - a native pcbnew board through `placer_runner`, with save, reload, judge,
   locality grade, native DRC and a rigidity check on the saved board.
+
+`tests.test_block_provenance` covers the review input. A library entry
+(`project-cluster/1`, search-derived, advisory) is materialized and mapped onto a
+second power stage beside two own-board blocks. The artifact names all three
+blocks with their candidate hashes, classes, enforcement, method and mapping; each
+fail-closed refusal is exercised; the CLI writes it only for a planned result.
+The artifact is then captured with a scope, `build_packet` carries it, and the
+prompt that each profile reviewer receives (the transport is replaced in the test,
+so no model is called) contains every row and no peer's review. A packet is not
+built for an artifact bound to another board, an undeclared or uncaptured path, a
+changed capture or a relabelled enforcement.
