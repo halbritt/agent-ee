@@ -526,3 +526,15 @@ Cluster guards count steps; there is no default wall-clock cluster guard.
 Real-pod fail-fast is no longer this item's criterion; block-level placement is
 the pod path. See [joint locality clusters](placer.md#joint-locality-clusters-agentee-335)
 for the budget and diagnostic contract.
+
+## Unsourced packing gaps (2026-10-21, AGENTEE-338)
+
+The coordinator's AGENTEE-338 ruling applies the owner's requirement that limits
+be validated against a specification. The pod's 0.25 mm packing gap came from
+agent-491's policy, without a captured assembly requirement. It remains an
+advisory search reservation. A capacity proof that depends on that unsourced gap
+reports unknown and names the gap for confirmation. A zero-gap structural proof
+keeps its defect verdict. Original fixtures retain explicit fixture-author gap
+requirements; qualified captured manufacturer requirements remain hard. The
+[placer reference](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
+describes the source entry and its caller-qualification boundary.
