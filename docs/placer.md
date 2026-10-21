@@ -1463,3 +1463,5 @@ in `visuals/` beside `placement-result.json`. The result carries their paths and
 hashes. This is visual review input and preserves the existing placement verdict,
 including carried silk defects. Requests can explicitly set `skip_visuals: true`
 for fixtures; rendering failures retain unavailable coverage and native logs.
+The writer rechecks the original board, netlist and project/rule bytes after
+imaging, immediately before publication.

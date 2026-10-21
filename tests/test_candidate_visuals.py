@@ -63,6 +63,29 @@ class CandidateVisualTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'image changed'):
             build_packet(run, [], 'tampered')
 
+    def test_declared_check_cannot_overwrite_coordinator_visual_manifest(self):
+        import time
+        from agent_ee.checks import Ctx
+        from agent_ee.cli import validate_scope
+        scope = {'schema': 'agent-ee.scope/1', 'name': 'visual-isolation', 'scope': 'inspection',
+                 'inputs': [{'path': str(self.source), 'at': 'project'}],
+                 'board': 'project/rc_filter.kicad_pcb', 'schematic': 'project/rc_filter.kicad_sch',
+                 'checks': [{'id': 'candidate-visuals', 'kind': 'drc'}], 'skip_visuals': True}
+        validate_scope(scope)
+        scope_path = self.root / 'scope.json'
+        scope_path.write_text(json.dumps(scope))
+        run = self.root / 'run'
+        run.mkdir()
+        manifest = capture(scope_path, run)
+        visual_manifest = next((run / 'work').glob('*/manifest.json'))
+        captured = visual_manifest.read_bytes()
+        ctx = Ctx(run, manifest, scope['checks'][0], time.monotonic() + 30)
+        ctx.execute(['/usr/bin/python3', '-c',
+                     "from pathlib import Path; Path('/work/manifest.json').write_text('check output')"],
+                    timeout=10)
+        self.assertEqual(visual_manifest.read_bytes(), captured)
+        self.assertEqual((ctx.work / 'manifest.json').read_text(), 'check output')
+
     def test_explicit_skip_has_no_native_launch_and_type_is_strict(self):
         with patch('agent_ee.candidate_visuals.execute', side_effect=AssertionError('must not launch')):
             report = produce(self.board, self.root / 'skipped', skip=True)
@@ -96,12 +119,32 @@ class CandidateVisualTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'different board'):
             packet_visuals(self.root, manifest)
 
-    def test_native_placement_default_retains_images_beside_result(self):
+    def _placement_fixture(self):
         from test_placer_native import NativePlacerTest
-        from agent_ee.placer_runner import place_candidate
         fixture = NativePlacerTest()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
+        return fixture
+
+    def test_source_drift_during_imaging_refuses_placement_publication(self):
+        from agent_ee.placer_runner import place_candidate
+        fixture = self._placement_fixture()
+        destination = fixture.scratch / 'source-drift'
+        original = fixture.source.read_bytes()
+
+        def observe_and_change_source(board, out, **kwargs):
+            report = produce(board, out, skip=True)
+            fixture.source.write_bytes(original + b'\n')
+            return report
+
+        with patch('agent_ee.candidate_visuals.produce', side_effect=observe_and_change_source):
+            with self.assertRaisesRegex(ValueError, 'captured placement inputs changed'):
+                place_candidate(fixture.source, fixture.netlist, destination, fixture.config)
+        self.assertFalse(destination.exists())
+
+    def test_native_placement_default_retains_images_beside_result(self):
+        from agent_ee.placer_runner import place_candidate
+        fixture = self._placement_fixture()
         destination = fixture.scratch / 'visual-default'
         result = place_candidate(fixture.source, fixture.netlist, destination, fixture.config)
         self.assertEqual(result['status'], 'placed')
@@ -114,11 +157,8 @@ class CandidateVisualTests(unittest.TestCase):
         self.assertEqual(json.loads((destination / 'placement-result.json').read_text()), result)
 
     def test_native_placement_skip_preserves_result_verdict(self):
-        from test_placer_native import NativePlacerTest
         from agent_ee.placer_runner import place_candidate
-        fixture = NativePlacerTest()
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
+        fixture = self._placement_fixture()
         config = {**fixture.config, 'skip_visuals': True}
         destination = fixture.scratch / 'visual-skip'
         result = place_candidate(fixture.source, fixture.netlist, destination, config)

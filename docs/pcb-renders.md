@@ -85,7 +85,7 @@ review.
 
 Every successful `placer_runner.place_candidate` proposal now includes `visuals/`
 beside `placement-result.json`. Coordinator `candidate.capture` independently
-renders the captured board into `work/candidate-visuals/`. The placement result
+renders the captured board into `work/candidate.visuals/`. The placement result
 and candidate manifest retain a `visuals` record with source-board SHA-256,
 KiCad version and executable SHA-256, image paths and SHA-256 hashes, model
 coverage, elapsed time and an explicit reproducibility limitation. Paths are
@@ -101,7 +101,9 @@ performance does not qualify pod-scale performance.
 
 `reviewers.build_packet` includes `candidate_visuals` outside the text excerpt
 budget, verifies each image hash and board binding, and exposes the images
-through `/evidence/work/candidate-visuals/`. Both initial reviewers receive the
+through `/evidence/work/candidate.visuals/`. The reserved directory name contains
+a dot, which declared check IDs cannot contain, so check tools cannot overwrite
+coordinator images through their writable work directory. Both initial reviewers receive the
 same coordinator-produced images. A modified, missing or linked image refuses
 packet assembly. Images remain inspection aids; native geometry, DRC and sealed
 coordinator findings retain their authority. Missing models are reported rather

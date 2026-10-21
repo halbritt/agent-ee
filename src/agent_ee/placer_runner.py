@@ -591,13 +591,13 @@ def place_candidate(source, netlist, destination, request):
                         plan, report['board_sha256'], report['judgment']['block_rules'],
                         plan_sha256=digest(scratch / 'placement-plan.json')))
                     report['block_provenance_sha256'] = digest(scratch / 'block-provenance.json')
+                report['visuals'] = produce(output, scratch / 'visuals', skip=skip_visuals)
+                for image in report['visuals']['images']:
+                    image['path'] = 'visuals/' + image['path']
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:
                     raise ValueError('captured placement inputs changed during execution')
                 if any((p.read_bytes() if p.is_file() else None) != payload for p, payload in project_inputs.items()):
                     raise ValueError('captured placement project rules changed during execution')
-                report['visuals'] = produce(output, scratch / 'visuals', skip=skip_visuals)
-                for image in report['visuals']['images']:
-                    image['path'] = 'visuals/' + image['path']
                 write_json(scratch / 'placement-result.json', report)
             except (ValueError, OSError, subprocess.SubprocessError) as exc:
                 retained = _retain_failure(root, destination.name, scratch, exc)
