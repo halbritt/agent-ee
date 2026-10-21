@@ -1794,15 +1794,34 @@ predicate are respectively that path and `placement:electrical-locality/1`.
 See the [declaration, verdicts and separate packer constraint](placer.md#pad-level-electrical-locality-agentee-322).
 Supply and return are mandatory and switch/inductor pairs optional. The native
 copper-land centroid metric preserves proved defects alongside unknowns;
-missing limits or citations stay unknown. Optional captured pad `uuid` selectors
+missing limits stay unknown; hard enforcement also requires a citation. Optional captured pad `uuid` selectors
 must also match the declared reference, number and net; unselected duplicate
 pad numbers refuse. Native copper offsets participate in the distance, and
 unqualified centroid geometry stays unknown. Coordinator packing derives its
 obligations from the same immutable locality file, recording its raw hash in
 `electrical_locality_binding`; the check judgment records `locality: {path,
 sha256}` (AGENTEE-328). The engineer declares limits and citation locators;
-the check never supplies a manufacturer radius or verifies cited prose.
+the check never infers an electrical maximum from manufacturer spacing or prose.
 Origin-group success supplies no electrical-locality acceptance.
+AGENTEE-337 adds [numeric provenance and manufacturing floors](placer.md#locality-provenance-agentee-337):
+legacy or unsourced bounds report defect-level `unsourced` advisories with `info`
+when no hard defect/unknown exists; these never block publication. Datasheet
+numeric/scale derivations and owner decision references retain hard constraints.
+Captured JLCPCB different-net PCB clearance computes a necessary copper floor and
+refuses hard sourced or explicit manufacturer bounds below it as `locality_infeasible`.
+Assembly package spacing produces advisory estimates only, because native lands
+do not establish physical body/lead extents. The exact
+whole-footprint manufacturing minimum remains unqualified; unknown package
+combinations never inherit an invented value.
+
+AGENTEE-337 locality info summaries report total and exceeded advisory counts.
+Joint-cluster bounds prune only with hard provenance. Missing advisory citations
+and geometry-unknown manufacturer floors stay advisory; absent numeric maxima
+and captured manufacturer-record integrity failures retain unknown coverage.
+A sourced bound below the necessary copper floor is `locality_infeasible`.
+Block candidates preserve source records and accept truthful advisory `info`
+through production, validation and independent admission regrading; hard defects
+and unknown coverage still refuse. See [blocks](blocks.md).
 
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.

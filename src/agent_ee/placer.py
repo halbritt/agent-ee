@@ -1188,15 +1188,15 @@ def _locality_clusters(index, queue, fixed, document):
             if ref in refs:
                 continue
             refs.add(ref)
-            pending.extend(peer['reference'] for _, peer, _ in index.pairs[ref]
+            pending.extend(peer['reference'] for _, peer, *_ in index.pairs[ref]
                            if peer['reference'] not in refs)
         remaining -= refs
         movable = refs - fixed
         if len(refs) < 3 or not movable:
             continue
-        hub = min(refs, key=lambda ref: (-len({peer['reference'] for _, peer, _ in index.pairs[ref]}),
+        hub = min(refs, key=lambda ref: (-len({peer['reference'] for _, peer, *_ in index.pairs[ref]}),
                                         order.get(ref, -1), ref))
-        tightness = lambda ref: min(limit for _, _, limit in index.pairs[ref])
+        tightness = lambda ref: min(limit for _, _, limit, *_ in index.pairs[ref])
         unit = tuple(sorted(movable, key=lambda ref: (ref != hub, tightness(ref), order[ref], ref)))
         clusters.append({'references': list(unit), 'all_references': [hub] + sorted(refs - {hub}),
                          'strategy': 'joint-tightest-first/1',
@@ -1370,10 +1370,12 @@ class _Search:
             if self.cluster_active is not None and evaluator is not None:
                 # Intersections of axis projections of the exact pad discs are
                 # necessary only; the full coupled predicates still judge every point.
-                for offset, target, limit, _ in evaluator.pairs:
+                for offset, target, limit, _, hard in evaluator.pairs:
+                    if not hard:
+                        continue  # AGENTEE-337: advisory bounds never prune candidates
                     xs = [x for x in xs if abs(x + offset[0] - target[0]) <= limit]
                     ys = [y for y in ys if abs(y + offset[1] - target[1]) <= limit]
-                conflicts.update(ref for _, _, _, involved in evaluator.pairs
+                conflicts.update(ref for _, _, _, involved, hard in evaluator.pairs if hard
                                  for ref in involved if ref not in self.fixed and ref != fp['ref'])
             rectangles = {side: [r for poly in c['polygons'] for r in _slabs(poly)]
                           for side, c in at_origin['courtyards'].items()
@@ -1496,6 +1498,10 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     locality = policy.get('electrical_locality')
     if locality:
         initial = electrical_locality.grade(capture, locality)
+        if any(d['kind'] == 'locality_infeasible' for d in initial['defects']):
+            return {**_failure(capture, policy, 'locality_infeasible', 'defect', 0,
+                               'declared bound below computed manufacturing floor', margin_nm),
+                    'locality_grading': initial}
         if initial['unknown']:
             return {**_failure(capture, policy, 'electrical_locality_unavailable', 'unknown', 0,
                                'pad locality needs unambiguous native pads, limits and citations', margin_nm),
@@ -1672,7 +1678,7 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     extra = {} if grading is None else {'group_grading': grading}
     if locality:
         extra['locality_grading'] = electrical_locality.grade(proposed_capture, locality)
-        if extra['locality_grading']['status'] != 'pass':
+        if extra['locality_grading']['status'] not in ('pass', 'info'):
             return {**stopped('judge_rejected', 'complete proposal failed pad locality'), **extra}
     custom_pads = [{'reference': f['ref'], 'uuid': p['uuid'], 'number': p['number']}
                    for f in capture['footprints'] for p in f['pads'] if p['shape'] == 6]

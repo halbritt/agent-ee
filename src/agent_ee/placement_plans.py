@@ -196,7 +196,7 @@ def plan(capture, policy, spec):
     if 'electrical_locality' in policy:
         from .electrical_locality import grade as locality_grade
         record['locality_grading'] = locality_grade(proposed, policy['electrical_locality'])
-        if record['locality_grading']['status'] != 'pass':
+        if record['locality_grading']['status'] not in ('pass', 'info'):
             reasons.append('declared electrical locality not satisfied')
     if spec['mode'] == 'bga_fanout':
         reasons.append('plan only: no autonomous whole-board or copper apply')

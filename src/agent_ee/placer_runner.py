@@ -390,7 +390,7 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
     if judgment.get('group_grading', {'status': 'pass'})['status'] != 'pass':
         raise ValueError('saved-board placement failed its declared placement groups')
-    if judgment.get('locality_grading', {}).get('status', 'pass') != 'pass':
+    if judgment.get('locality_grading', {}).get('status', 'pass') not in ('pass', 'info'):
         raise ValueError('saved-board placement failed its declared electrical locality')
     if any(r['enforcement'] == 'hard' and r['status'] != 'pass' for r in judgment.get('block_rules', [])):
         raise ValueError('saved-board placement failed a hard block arrangement rule')

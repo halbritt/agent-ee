@@ -170,9 +170,11 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         pair = locality['obligations'][2]['supply']
         locality['obligations'].append({'id': 'load-R9', 'metric': 'pad-centre-to-centre', 'supply': {
             'from': {'reference': 'U11', 'pad': '4', 'net': 'V2'}, 'to': {'reference': 'R9', 'pad': '1', 'net': 'V2'},
-            'max_distance_nm': pair['max_distance_nm'], 'citation': pair['citation']}, 'return': {
+            'max_distance_nm': pair['max_distance_nm'], 'citation': pair['citation'],
+            'provenance': copy.deepcopy(pair['provenance'])}, 'return': {
             'from': {'reference': 'U11', 'pad': '2', 'net': 'GND'}, 'to': {'reference': 'R9', 'pad': '2', 'net': 'GND'},
-            'max_distance_nm': pair['max_distance_nm'], 'citation': pair['citation']}})
+            'max_distance_nm': pair['max_distance_nm'], 'citation': pair['citation'],
+            'provenance': copy.deepcopy(pair['provenance'])}})
         pol = policy(electrical_locality=locality)
         own = [{'candidate': blocks.pack_block(target, inv, derivation, b, pol)['candidate']}
                for b in ('Power', 'Sensor')]

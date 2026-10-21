@@ -18,7 +18,7 @@ import sys
 from fractions import Fraction
 from pathlib import Path
 
-from . import electrical_locality, placement_groups, placer
+from . import electrical_locality, locality_provenance, placement_groups, placer
 from .catalog import strict_json
 from .footprint_library import canonical, digest
 from .native_netlist import read_native_inventory, read_sheet_names
@@ -287,7 +287,8 @@ def _locality(document, members):
             internal.append(copy.deepcopy(obligation))
         elif refs & members:
             deferred.append(obligation['id'])
-    return ({'schema': electrical_locality.SCHEMA, 'obligations': internal} if internal else None), deferred
+    selected = {**copy.deepcopy(document), 'obligations': internal} if internal else None
+    return selected, deferred
 
 
 def _isolate(capture, policy, block):
@@ -469,7 +470,7 @@ def candidate(capture, inventory, derivation, block, anchor, poses, policy, sub,
                      'courtyard_sha256': courtyard_sha256(board[ref]),
                      'courtyard': _local(board[ref])[1]['courtyards'], 'pins': roles[ref]})
     outline, grade, witness = _evidence(capture, framed, sub)
-    status = ('refused' if witness['status'] != 'pass' or any(g and g['status'] != 'pass' for g in grade.values())
+    status = ('refused' if witness['status'] != 'pass' or any(g and not _grade_usable(k, g) for k, g in grade.items())
               else 'packed')
     return {'schema': CANDIDATE, 'block_id': block['id'], 'status': status,
             'provenance': {'class': 'search-derived', 'enforcement': PROVENANCE['search-derived'],
@@ -582,6 +583,10 @@ def _block_policy(sub, refs, anchor):
             raise ValueError('block policy obligations must be nonempty and lie wholly inside the block')
 
 
+def _grade_usable(kind, record):
+    return record.get('status') in (('pass', 'info') if kind == 'electrical_locality' else ('pass',))
+
+
 def _grade(grade, sub, refs):
     _keys(grade, {'electrical_locality', 'groups'}, label='block grade')
     for key in ('electrical_locality', 'groups'):
@@ -590,7 +595,7 @@ def _grade(grade, sub, refs):
                 raise ValueError(f'block grade {key} must be null without internal {key}')
             continue
         record = grade[key]
-        if (not isinstance(record, dict) or record.get('status') != 'pass' or record.get('defects') != []
+        if (not isinstance(record, dict) or not _grade_usable(key, record) or record.get('defects') != []
                 or record.get('unknown') != [] or not isinstance(record.get('measured'), list)):
             raise ValueError(f'block grade {key} must pass with no defects or unknowns')
     if 'electrical_locality' in sub:
@@ -598,16 +603,30 @@ def _grade(grade, sub, refs):
         if record.get('declaration') != document:
             raise ValueError('locality grade must declare the block policy obligations')
         pairs = {(o['id'], role): o[role] for o in document['obligations'] for role in electrical_locality.roles(o)}
-        seen = set()
+        seen, advisories = set(), []
         for row in record['measured']:
             key = (row.get('obligation'), row.get('role')) if isinstance(row, dict) else None
             if key not in pairs or key in seen:
                 raise ValueError(f'locality grade measures an unknown or repeated pair {key}')
             seen.add(key)
-            if _squared(row, 'locality distance') > pairs[key]['max_distance_nm'] ** 2:
+            pair = pairs[key]
+            authority = locality_provenance.classify(pair, document.get('source_records'))
+            if row.get('constraint_provenance') != authority:
+                raise ValueError(f'locality pair {key} has stale provenance')
+            exceeded = _squared(row, 'locality distance') > pair['max_distance_nm'] ** 2
+            if authority['enforcement'] == 'hard' and exceeded:
                 raise ValueError(f'locality pair {key} exceeds its limit')
+            floor = row.get('manufacturing_floor', {})
+            below = floor.get('status') == 'known' and pair['max_distance_nm'] < floor['floor_nm']
+            if authority['enforcement'] in ('hard', 'feasibility') and below:
+                raise ValueError(f'locality pair {key} is infeasible')
+            if authority['enforcement'] != 'hard':
+                advisories.append({'kind': 'unsourced', 'severity': 'defect', **row,
+                                   'exceeded': exceeded, 'below_floor': below})
         if seen != set(pairs):
             raise ValueError('locality grade must measure every internal pair')
+        if record.get('advisories') != advisories or record['status'] != ('info' if advisories else 'pass'):
+            raise ValueError('locality grade must report every advisory and its truthful status')
     if 'groups' in sub:
         record = grade['groups']
         if record.get('groups') != sub['groups']:
@@ -639,7 +658,7 @@ def _witness_record(witness, sub, refs, sides):
 def validate_candidate(document):
     """The usable-candidate contract for stage B and the block library; raises ValueError.
 
-    Every documented field is required and typed, every stored status must pass, and
+    Every documented field is required and typed, every stored grade must be usable, and
     the outline and courtyard witness are recomputed from the members' own hashed
     courtyard records at their poses. Board-dependent evidence (lands, locality,
     drilled pads, deferred obligations) is bound by ``admit``.
@@ -786,7 +805,7 @@ def admit(document, capture, inventory, derivation, policy):
     for name, value in (('outline', outline), ('grade', grade), ('witness', witness)):
         if _plain(value) != document[name]:
             problems.append({'kind': 'stale_evidence', 'evidence': name})
-    failed = [k for k, g in grade.items() if g and g['status'] != 'pass'] + (
+    failed = [k for k, g in grade.items() if g and not _grade_usable(k, g)] + (
         ['witness'] if witness['status'] != 'pass' else [])
     if failed:
         problems.append({'kind': 'evidence_failed', 'evidence': failed})

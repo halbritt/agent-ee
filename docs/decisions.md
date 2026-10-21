@@ -538,3 +538,14 @@ keeps its defect verdict. Original fixtures retain explicit fixture-author gap
 requirements; qualified captured manufacturer requirements remain hard. The
 [placer reference](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
 describes the source entry and its caller-qualification boundary.
+
+## Locality numeric authority (AGENTEE-337, owner 2026-10-21)
+
+Numeric locality maxima require a component numeric/scale derivation or an
+explicit owner-recorded decision reference. Agent-selected D-PL-1-style limits
+and prose-only datasheet citations are advisory, including legacy declarations.
+They may rank placements but cannot reject a proposal by distance. Manufacturing
+spacing is a minimum and cannot establish an electrical maximum. Captured JLCPCB
+PCB-clearance facts and native geometry can prove a manufacturer bound
+infeasible below a necessary copper floor; assembly pad envelopes are advisory; the exact whole-footprint minimum remains an implementation gap.
+See [locality provenance](placer.md#locality-provenance-agentee-337).
