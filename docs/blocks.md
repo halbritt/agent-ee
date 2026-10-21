@@ -721,8 +721,9 @@ SHA256SUMS files:
 
 The pod lane's allocation makes C18 and R33 residual for electrical reasons: C18
 is on `PRE_6V3`, U5's output node, and R33 is a strap whose only non-plane net
-goes to the fixed U1. The stage-A limitation that strands a part reached only
-through plane nets is AGENTEE-359.
+goes to the fixed U1. The stage-A limitation that stranded a part reached only
+through plane nets is fixed by [recovery](#recovery-agentee-359) (AGENTEE-359);
+see [the rerun with C18 and R33 kept](#c18-and-r33-kept-in-their-blocks-agentee-359).
 
 The packing policy is iteration 3's (0.25 mm gap, 0.5 mm edge margin) with the
 fixed refs H1–H4, J1, J2, U1 and U2, only the five IMU-isolation obstacles, no
@@ -803,6 +804,37 @@ showed:
 The stage-B plan is search-derived and advisory, like every block in it. No pod
 acceptance is claimed. Routing, the silk policy and review remain the pod
 lane's.
+
+#### C18 and R33 kept in their blocks (AGENTEE-359)
+
+A read-only rerun with recovery, on the same inputs and policies, checked with
+`sha256sum -c`. On the published `3d7ff5f` allocation no first plan reaches the
+synthetic plane, so recovery never runs. All 20 stage-A candidates and both
+saved boards are byte-identical to the AGENTEE-355 run above. C18 and R33 are
+placed as residual parts.
+
+The previous allocation, fome-mc `f2b5dd9`, keeps C18 in buck-3v3 and R33 in
+mcu (20 blocks, 295 members, 14 residual). That is the allocation the
+AGENTEE-355 review found stranded. Now all 20 blocks pack. Each stranded member
+is recovered in one trial: C18 within 36.9 mm of U7 in 17 steps, R33 within
+22.1 mm of C45 in 14 steps. Both blocks are then compacted (buck-3v3 to 487 mm²
+F, mcu to 99 mm² F). The locality grade is `info`, the witness passes and the
+candidate is admitted. Two independent runs gave identical candidates. Both
+orders complete through `placer_runner.place_candidate`. The host was heavily
+loaded, so wall times are pessimistic:
+
+| Order | Wall time | Steps (arrangement + residual) |
+| --- | --- | --- |
+| Default | 173 s | 1406 + 6 |
+| Largest first | 140 s | 103 + 30 |
+
+Both boards have judgment `pass`, groups `pass`, hard `no_stacking` and
+`no_block_over_fixed` `pass`, and no blocking DRC finding or native courtyard
+overlap. Locality is `info` with 26 pairs and the same six advisory exceedances.
+With the cited rules, courtyard, hole and copper-edge DRC are 0, and the 18
+clearance items are the seed's. The only additions are silk (default: 16
+overlap, 15 over copper; largest first: 7 and 5), so both runner outcomes are
+`defect` until the silk policy (D-PCB-8) is applied.
 
 ## Real-pod diagnostic (stage A)
 
