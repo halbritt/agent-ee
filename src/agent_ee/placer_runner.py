@@ -649,7 +649,9 @@ def place_candidate(source, netlist, destination, request):
         _netlist_binding(netlist_bytes, facts, _board_only(board))
         policy = reserve_imu_markings(board, _effective_policy(request))
         plan = _plan(facts, request, policy, netlist)
-        refusal = plan['status'] == 'planned' and _padstack_refusal(board)
+        # A per-layer padstack also leaves its copper extent unproven (AGENTEE-366):
+        # the padstack refusal names the cause either way.
+        refusal = plan['status'] in ('planned', 'unsupported_geometry') and _padstack_refusal(board)
         if refusal:
             return _failure(facts, policy, 'unsupported_geometry', 'unknown', plan['steps_used'], refusal)
         if plan['status'] != 'planned':

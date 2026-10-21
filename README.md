@@ -102,6 +102,9 @@ proposals that introduce native DRC shorts, clearance, PTH courtyard findings
 or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
+Candidates are gated on [copper extent](docs/placer.md#copper-extent-gate-agentee-366)
+as well as courtyard, so pad copper past a courtyard cannot be planned off the
+board or into a same-side footprint keep-out.
 
 Saved proposals report [advisory reserve costs](docs/placer.md#advisory-reserve-cost-agentee-380)
 per side and owner, including keepouts and courtyard excess over fabrication

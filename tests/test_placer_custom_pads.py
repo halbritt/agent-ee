@@ -428,6 +428,8 @@ class CustomPadPlacementTest(unittest.TestCase):
                 self.assertEqual(result['placements'], [])
 
     def test_stock_pad_without_custom_evidence_still_plans(self):
+        # Coordinator ruling (AGENTEE-366d): the native record keeps its
+        # copper_centroid_reason, so the relabelled land has no proven extent.
         import copy
         facts = extract(self.source())
         for evidence in ({}, {'status': 'unknown'}, None):
@@ -439,6 +441,27 @@ class CustomPadPlacementTest(unittest.TestCase):
                     pad.pop('custom_geometry')
                 else:
                     pad['custom_geometry'] = evidence
+                self.assertIn('copper_centroid_reason', pad)
+                result = pack(altered, request())
+                self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'))
+                self.assertEqual(result['placements'], [])
+                self.assertIn('copper extent unproven', result['reason'])
+
+    def test_legacy_stock_pad_without_custom_evidence_still_plans(self):
+        import copy
+        facts = extract(self.source())
+        for evidence in ({}, {'status': 'unknown'}, None):
+            with self.subTest(evidence=evidence):
+                altered = copy.deepcopy(facts)
+                pad = next(f for f in altered['footprints'] if f['ref'] == 'C1')['pads'][0]
+                pad['shape'] = 1
+                if evidence is None:
+                    pad.pop('custom_geometry')
+                else:
+                    pad['custom_geometry'] = evidence
+                pad.pop('copper_centroid_reason')
+                for key in ('copper_centroid_offset_nm', 'copper_land_offset_nm'):
+                    self.assertNotIn(key, pad)
                 self.assertEqual(pack(altered, request())['status'], 'planned')
 
     def test_stock_pad_proven_custom_geometry_is_typed_unknown(self):

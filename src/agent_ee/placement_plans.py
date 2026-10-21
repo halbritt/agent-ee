@@ -10,8 +10,9 @@ import math
 from .board_envelope import inside
 from .placement import judge, validate_capture
 from .placement_groups import grade
-from .placer import (_edge_margin_nm, _exact, _fits, _hole_conflict, _keepout_blocked, _keepouts,
-                     _near, _qualified, _validate_policy, pad_shape_qualification, transform)
+from .placer import (_cache_copper_extent, _copper_escapes, _edge_margin_nm, _exact, _fits, _hole_conflict,
+                     _keepout_blocked, _keepouts, _near, _qualified, _validate_policy, pad_shape_qualification,
+                     transform)
 
 
 def _point(value, label, positive=False):
@@ -147,7 +148,8 @@ def plan(capture, policy, spec):
     proposed = copy.deepcopy(capture)
     try:
         outline = _qualified(proposed)
-        obstacles = _keepouts(proposed) + policy['obstacles']
+        keepouts = _keepouts(proposed)
+        obstacles = keepouts + policy['obstacles']
     except ValueError as exc:
         record['reasons'].append('missing coverage: ' + str(exc))
         return record
@@ -166,6 +168,7 @@ def plan(capture, policy, spec):
             reasons.append(f'{ref}: held or locked footprint cannot move')
         else:
             parts[ref] = transform(parts[ref], position, parts[ref]['rotation_deg'])
+            _cache_copper_extent(parts[ref])
     # Untargeted footprints are obstacles too, never silently moved to make room.
     for ref, fp in sorted(parts.items()):
         if ref in targets:
@@ -177,6 +180,11 @@ def plan(capture, policy, spec):
             if (_near(fp, exact, policy['gap_nm']) or _keepout_blocked(fp, peers, obstacles)
                     or any(_hole_conflict(fp, peer) for peer in peers)):
                 reasons.append(f'{ref}: target conflicts with obstacle or gap')
+            escaped = _copper_escapes(fp, outline, keepouts, peers)
+            if escaped is not None and escaped[0] == 'setback_unknown':
+                reasons.append(f'missing coverage: {ref}: copper setback unknown (no board max_error_nm)')
+            elif escaped is not None:
+                reasons.append(f'{ref}: target copper outside outline or in keep-out')
     for escape in record.get('escape_targets', []):
         if not inside(escape['position_nm'], outline):
             reasons.append(f"{escape['ref']} pad {escape['pad']}: escape target outside outline")
