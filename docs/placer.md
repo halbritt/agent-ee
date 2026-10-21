@@ -429,7 +429,7 @@ The policy/capacity audit found these numeric constraints:
 | `min_courtyard_edge_mm` | Unknown/soft without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board proofs are unknown. |
 | `gap_nm` (including pod 0.25 mm) | Unknown/advisory without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board and region proofs are unknown (AGENTEE-338). |
 | Native rule areas and footprint keepouts | Captured board geometry, board/hard; no numeric padding is added | Structural polygon exclusion. |
-| `groups[].max_distance_nm` | Unknown/soft unless its group declares a sourced hard value | Search predicate; saved-board violations without a source are unknown. Unused by capacity proofs. |
+| `groups[].max_distance_nm` | Unknown/soft unless its group declares a sourced hard value | Search predicate; saved-board violations without a source are advisory `info` (AGENTEE-361). Unused by capacity proofs. |
 | Group region polygons and policy obstacles | Unknown/soft without a source; sourced geometry is hard | Advisory-dependent proofs are unknown and name the geometry in binding constraints (AGENTEE-361). |
 | Outline and fixed geometry | Envelope classes retained, otherwise unknown legacy hard geometry | Existing structural capacity verdicts remain. |
 | Step budget, search timeout and geometry work guards | Computational bounds, no engineering authority | Exhaustion/refusal is unknown, never a capacity defect. |
