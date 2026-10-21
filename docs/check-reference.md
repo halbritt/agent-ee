@@ -1700,7 +1700,16 @@ the mount source). It binds opened, identity-checked descriptors using bwrap
 `--ro-bind-fd` and verifies the actual mounted identities inside the sandbox
 before executing either command, covering bwrap versions that canonicalize fd
 sources to pathnames. Directory
-sources containing submounts are conservatively refused, including same-device
+sources containing hard links into live `src` refuse with `live_package_source:<at>`
+(AGENTEE-349), including persistent links planted after inventory, by re-inventorying
+the held descriptor before launches and after execution. Before/after identity of
+declared mounts reads through held descriptors; post-run source replacement or
+observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and
+upward-escaping mount symlinks retain link identity without reading host targets;
+an executable through such a link has an unknown digest and is unadoptable. Only
+fd-form receipts carry the mount-guard observation; historical path-form replay
+retains its lower assurance. Directory sources containing submounts are
+conservatively refused, including same-device
 bind mounts. The three qualified canonical routing helper files and the
 mount-namespace authority limit are recorded in
 [stage receipts](stage-receipts.md#python-tool-source-snapshots).
