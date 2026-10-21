@@ -318,7 +318,8 @@ placement, preserving graphics and required markings while recording remaining
 added silk overlap/copper findings as open defects in published proposals
 (AGENTEE-333). Adopted helper receipt evidence follows successor candidates;
 downstream fab/verification gates and package release refuse open carry. A
-board lineage stamp makes a re-scoped copy refuse release without that evidence
+board lineage stamp makes a re-scoped copy refuse release without that evidence.
+Imported closure evidence must match native DRC on the captured board
 (AGENTEE-351).
 Placement feasibility does not establish fab legibility.
 Its local reports do not replace the

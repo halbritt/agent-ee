@@ -140,25 +140,69 @@ comment. Dropping or rewriting a digest, or editing any other title block field,
 is a violation. Campaign verification also refuses a successor candidate whose
 board drops or rewrites its predecessor's stamp, whichever step wrote it.
 
-The stamp is persistent and cannot be discarded by re-scoping. A gated check or
-release artifact extraction on a stamped board refuses as unknown, with execution
-`malformed`, in two cases. One is a candidate with no captured placement evidence:
-an out-of-campaign `review`/`run` scope, or a new campaign started from the
-delivered design. The other is captured evidence that binds no stamp digest. The
-evidence seal refuses a gated `ok` result on a stamped board without lineage. To
-release a re-scoped design, include the delivered `placement-evidence` directory
-as an input at `placement-evidence`. Its `index.json` then supplies the ordered
-links, and open carry gates the release exactly as it does in the campaign.
-This happens even after carry closes, because the stamp stays on the board.
-Unstamped boards, including boards with carry published before this contract,
-keep their existing verdicts. The stamp is a lineage record in the design file,
-not an owner evidence store. An actor outside agent-ee who removes it from the
-title block is not detected; a campaign writer that removes it is.
+A gated check (verification, fab and release stages, and the fab export,
+package, consistency, CPL and JLC DFM kinds) on a stamped board refuses as
+unknown, with execution `malformed`, when the candidate captured no
+`placement-evidence` or that evidence binds no stamp digest.
+
+Captured evidence closes carry only when native DRC reproduces it. Imported
+bundles have self-recomputed hashes and receipt identities, so self-consistency
+proves nothing. When a bundle on the captured board's hash would close a carried
+defect, the gated check first recomputes native DRC on the captured board bytes
+in the tool sandbox (`kicad-cli pcb drc --severity-all`). The run is kept under
+`work/<check>/placement-lineage/`, and the witness
+`work/<check>/placement-lineage.json` binds the board hash, the argv, the report
+digest and the report's `silk_*` findings. The check refuses as unknown when
+those findings differ from the bundle's claimed `silk_*` findings, or when the
+verification cannot run or cannot be trusted. That covers a missing or changed
+board, a tool failure, a `.kicad_dru` rule that sets `severity ignore`, and a
+report that ignores a `silk_*` check; an exhausted deadline is `interrupted`.
+An honest closure that native DRC reproduces still closes carry. Open carry with
+no closure keeps its determinate `defect` verdict and needs no native run, so an
+expired budget still reports the known carried defects. The evidence seal and
+release artifact extraction re-verify closures from the check's sealed witness.
+They recheck its board hash, argv, execution record and report digest, and
+recompute the findings from the report. A closure with a missing or changed
+witness is refused.
+
+To release a re-scoped design, include the delivered `placement-evidence`
+directory as an input at `placement-evidence`. Its `index.json` then supplies
+the ordered links, and open carry gates the release exactly as it does in the
+campaign. This happens even after carry closes, because the stamp stays on the
+board. The stamp is a lineage record in the design file, not an owner evidence
+store. Owner-authenticated imported evidence awaits AGENTEE-348.
+
+The stamp is read only with the shared S-expression parser, so an escaped marker
+is still the stamp. Marker text outside title block comment 9 is user text.
+KiCad 10.0.7 keeps board-level properties in the project's text variables:
+`pcbnew.SaveBoard` drops a `(property ...)` node from the saved `.kicad_pcb`.
+The board file therefore has no dedicated non-user field. The stamp stays in
+comment 9, and a placement result with open defects refuses publication when
+comment 9 holds other text.
+
+Three limits remain. An unlineaged board without the stamp keeps its existing
+verdicts. That includes a board whose stamp was stripped outside agent-ee and a
+board with carry published before this contract. Refusing such boards unless
+native DRC shows no silk conflicts changes existing `pass` expectations for the
+fab fixtures, which have native silk conflicts. That change awaits a coordinator
+ruling that names the affected tests.
+
+Stamp digests name the defects' native item UUID sets, not board bytes, so
+replayed evidence on an unrelated board is accepted as open carry rather than
+refused as foreign. That outcome is conservative: replay cannot close
+carry, because closure requires the bundle's board hash to equal the captured
+board and native DRC to agree. Side-flip diagnostics have no native DRC finding.
+Native recomputation therefore checks only the `silk_*` part of a claimed
+closure. A side-flip closure still relies on the bundle board's field positions
+and on its artwork record.
 
 `tests.test_placement_defects` exercises actual native helper publication,
 adoption, coordinator capture, successor binding and downstream refusal, plus
 missing/stale/tampered carry, side-flip closure boundaries and verdict isolation.
 The existing BOM-variant fab regression retains its original pass expectation.
 Its stamp tests cover native stamping on the DRC-checked bytes, the write-scope
-extension/drop boundary, and re-scoped release with and without lineage. They
-also cover an unbound stamp and a campaign successor that drops the stamp.
+extension/drop boundary, escaped and misplaced marker text, and re-scoped release
+with and without lineage. They also cover an unbound stamp and a campaign
+successor that drops the stamp. Further tests cover forged and honest imported
+closures at the check, seal and artifact boundaries, a missing or changed
+witness, and verification that is out of time or ignored by a custom rule.

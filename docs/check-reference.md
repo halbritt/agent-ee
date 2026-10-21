@@ -1836,7 +1836,12 @@ Uncarried baseline findings retain their existing verdicts. A board published
 with open carry has a [title block lineage stamp](silk-artwork.md#board-lineage-stamp-agentee-351)
 (AGENTEE-351). The same gates refuse it as unknown when the candidate has no
 `placement-evidence` binding every stamp digest, for example after a re-scope
-outside the campaign. Explicitly
+outside the campaign. Captured evidence closes carry only when its claimed
+`silk_*` findings equal native DRC recomputed on the captured board in the
+sandbox. A mismatch, or a verification that cannot run, is unknown. The seal and
+release extraction recheck the witness `work/<check>/placement-lineage.json`.
+An unstamped board without lineage keeps its verdict for now; see the
+[remaining limits](silk-artwork.md#board-lineage-stamp-agentee-351). Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.
 Side-flipped footprints' fields remain unchanged with typed conflicts. Source

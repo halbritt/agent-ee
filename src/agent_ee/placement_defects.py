@@ -9,6 +9,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import re
 
 from .candidate import safe_relative
 from .storage import digest, identity, json_bytes, read_json, write_json
@@ -25,8 +26,15 @@ GATED_KINDS = frozenset({'fab_export', 'fab_package', 'cpl_rotation', 'fab_consi
 # Board lineage stamp (AGENTEE-351): title block comment 9 names each carry digest of the
 # placement results that published open defects on this board's ancestry. It travels with
 # the board bytes, so a re-scoped copy cannot release without its placement evidence.
+# KiCad 10 keeps board-level properties in the project, not the saved board, so the
+# title block is the only persistent board field; an occupied comment 9 refuses.
 STAMP = 'agent-ee.placement-lineage/1'
 STAMP_COMMENT = '9'
+# Gated admission recomputes native DRC on the captured board before any closure
+# (AGENTEE-351 H2): imported evidence cannot close carry by self-consistency.
+VERIFICATION = 'placement-lineage'
+WITNESS = 'placement-lineage.json'
+WITNESS_SCHEMA = 'agent-ee.placement-lineage-verification/1'
 
 
 def carry_digest(defects):
@@ -60,15 +68,22 @@ def unstamped(nodes):
 
 
 def stamp(data):
-    """Lineage stamp digests of saved board bytes; None when the board carries no stamp."""
-    if STAMP.encode() not in data:
-        return None
+    """Lineage stamp digests of saved board bytes; None when the board carries no stamp.
+
+    Always parsed with the shared parser, so an escaped marker cannot evade a byte search.
+    Only title block comment 9 is the stamp; the marker text anywhere else is user text.
+    """
     from .symbol_library import parse_sexpr
-    root = parse_sexpr(data)
-    found = unstamped(root[1:])[1] if root and root[0] == 'kicad_pcb' else None
-    if found is None:
-        raise ValueError('placement lineage stamp outside the board title block')
-    return found
+    try:
+        root = parse_sexpr(data)
+    except ValueError:
+        root = None
+    if root is None or root[0] != 'kicad_pcb':
+        # No title block can be read, so any marker, escaped or not, refuses.
+        if STAMP.encode() in data.replace(b'\\', b''):
+            raise ValueError('placement lineage stamp in a board the shared parser cannot read')
+        return None
+    return unstamped(root[1:])[1]
 
 
 def stamp_violations(before, after):
@@ -270,8 +285,92 @@ def _items(defect):
     return {defect['uuid']}
 
 
-def open_defects(manifest, inputs):
-    """Reconstruct open carry; only later receipted current artwork can close it."""
+def silk_findings(report):
+    """Every native silkscreen finding of a complete DRC report, by type and item identities."""
+    if (not isinstance(report, dict) or not isinstance(report.get('violations'), list) or
+            not isinstance(report.get('ignored_checks'), list) or
+            not isinstance(report.get('included_severities'), list) or
+            set(report['included_severities']) != {'error', 'warning', 'exclusion'}):
+        raise ValueError('native DRC report did not evaluate every severity')
+    if any(not isinstance(c, dict) or not isinstance(c.get('key'), str) or c['key'].startswith('silk_')
+           for c in report['ignored_checks']):
+        raise ValueError('native silkscreen DRC evaluation unavailable or explicitly ignored')
+    found = []
+    for finding in report['violations']:
+        if not isinstance(finding, dict) or not isinstance(finding.get('type'), str):
+            raise ValueError('native DRC contains malformed violations')
+        if finding['type'].startswith('silk_'):
+            items = finding.get('items')
+            if (not isinstance(items, list) or not items or
+                    any(not isinstance(i, dict) or not isinstance(i.get('uuid'), str) or not i['uuid'] for i in items)):
+                raise ValueError('native silkscreen finding lacks item identities')
+            found.append([finding['type'], sorted(i['uuid'] for i in items)])
+    return sorted(found)
+
+
+def _board(manifest):
+    board = manifest.get('scope', {}).get('board')
+    return str(safe_relative(board)) if isinstance(board, str) and board in manifest.get('files', {}) else None
+
+
+def _argv(board):
+    return ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
+            '--output', '/work/native-drc.json', f'/candidate/{board}']
+
+
+def _recompute(ctx):
+    """Native DRC on the captured board bytes, run in the tool sandbox; the witness binds it."""
+    from . import executor
+    from .checks import CheckError
+    board = _board(ctx.manifest)
+    path = ctx.inputs / board
+    if path.is_symlink() or not path.is_file() or digest(path) != ctx.manifest['files'][board]:
+        raise ValueError('captured board missing or changed; placement lineage cannot be verified')
+    rules = path.with_suffix('.kicad_dru')
+    if rules.is_file() and re.search(rb'\(\s*severity\s+"?ignore\b', rules.read_bytes(), re.I):
+        raise ValueError('a custom DRC rule ignores findings; placement lineage cannot be verified natively')
+    if ctx.remaining() <= 1:
+        raise CheckError('interrupted', 'deadline exhausted before placement lineage verification could run')
+    work = ctx.work / VERIFICATION
+    rec = executor.execute(ctx.inputs, work, _argv(board), timeout=min(900, ctx.remaining()))
+    ctx.evidence(*(f'{VERIFICATION}/{name}' for name in ('execution.json', 'console.log', 'native-drc.json')))
+    if rec['execution'] != 'ok' or rec['exit_code'] != 0:
+        raise CheckError('interrupted' if rec['execution'] == 'timeout' else 'malformed',
+                         f"placement lineage verification: native DRC {rec['execution']} (exit {rec['exit_code']})")
+    findings = silk_findings(read_json(work / 'native-drc.json'))
+    write_json(ctx.work / WITNESS, {'schema': WITNESS_SCHEMA, 'board': board,
+                                    'board_sha256': ctx.manifest['files'][board], 'argv': _argv(board),
+                                    'native_drc_sha256': digest(work / 'native-drc.json'),
+                                    'silk_findings': findings})
+    ctx.evidence(WITNESS)
+    return findings
+
+
+def _recorded(run, cid, manifest):
+    """Silk findings of a check's sealed native verification, rechecked from its report."""
+    board = _board(manifest)
+    work = Path(run) / 'work' / str(safe_relative(cid))
+    report = work / VERIFICATION / 'native-drc.json'
+    try:
+        witness, execution = read_json(work / WITNESS), read_json(work / VERIFICATION / 'execution.json')
+    except (OSError, ValueError) as exc:
+        raise ValueError('gate admitted without native placement lineage verification') from exc
+    if (board is None or witness.get('schema') != WITNESS_SCHEMA or witness.get('board') != board or
+            witness.get('board_sha256') != manifest['files'][board] or witness.get('argv') != _argv(board) or
+            execution.get('argv') != _argv(board) or execution.get('execution') != 'ok' or
+            execution.get('exit_code') != 0 or report.is_symlink() or
+            witness.get('native_drc_sha256') != digest(report) or
+            silk_findings(read_json(report)) != witness.get('silk_findings')):
+        raise ValueError('native placement lineage verification witness missing or changed')
+    return witness['silk_findings']
+
+
+def open_defects(manifest, inputs, native=None):
+    """Reconstruct open carry; only later receipted current artwork can close it.
+
+    `native` returns silk findings natively recomputed on the captured board. Closure
+    evidence must agree with it; without it, a would-be closure is unverifiable.
+    """
     index = f'{DIRECTORY}/index.json'
     stamped = _board_stamp(manifest, inputs)
     if not lineage(manifest):
@@ -295,8 +394,16 @@ def open_defects(manifest, inputs):
         conflicts = {i['uuid'] for v in drc['violations'] if v['type'].startswith('silk_') for i in v['items']}
         diagnostics = {d['uuid'] for d in report['open_defects'] if 'uuid' in d}
         current = report['board_sha256'] == manifest['files'].get(manifest['scope']['board'])
-        active = [(d, source, original) for d, source, original in active
-                  if not _closes(d, original, identities, conflicts | diagnostics, moved, current)]
+        remaining = [(d, source, original) for d, source, original in active
+                     if not _closes(d, original, identities, conflicts | diagnostics, moved, current)]
+        if len(remaining) != len(active):
+            # Imported evidence never closes carry by self-consistency: native DRC on the
+            # captured board must reproduce the claimed silkscreen result.
+            if native is None:
+                raise ValueError('placement carry closure is unverifiable without native DRC on the captured board')
+            if native() != silk_findings(drc):
+                raise ValueError('placement closure evidence differs from native DRC on the captured board')
+        active = remaining
         for defect in report['open_defects']:
             _items(defect)
             active.append((defect, link, identities))
@@ -332,8 +439,14 @@ def before_check(ctx):
     if not gated(ctx.spec):
         return True
     from .checks import CheckError
+    cache = []
+
+    def native():
+        if not cache:
+            cache.append(_recompute(ctx))
+        return cache[0]
     try:
-        defects = open_defects(ctx.manifest, ctx.inputs)
+        defects = open_defects(ctx.manifest, ctx.inputs, native)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise CheckError('malformed', f'carried placement evidence refused: {exc}') from exc
     if not defects:
@@ -370,14 +483,15 @@ def lineage(manifest):
 def verify_gate(run, check, manifest):
     """Reconstruct refusals from captured artifacts before sealing or releasing evidence."""
     if not lineage(manifest):
-        if (check.get('execution') == 'ok' and _board_stamp(manifest, Path(run) / 'inputs') and
-                gated(next(c for c in manifest['scope']['checks'] if c['id'] == check['id']))):
+        if (check.get('execution') == 'ok' and
+                gated(next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])) and
+                _board_stamp(manifest, Path(run) / 'inputs')):
             raise ValueError('stamped board passed a downstream gate without its placement lineage')
         return
     spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
     if not gated(spec):
         return
-    defects = open_defects(manifest, Path(run) / 'inputs')
+    defects = open_defects(manifest, Path(run) / 'inputs', lambda: _recorded(run, check['id'], manifest))
     if not defects:
         if check.get('details', {}).get('reason') == 'open_placement_defects':
             raise ValueError('carried placement refusal without open defects')
@@ -389,3 +503,8 @@ def verify_gate(run, check, manifest):
     path = Path(run) / 'work' / check['id'] / 'placement-defects.json'
     if read_json(path) != expected:
         raise ValueError('carried placement gate witness changed')
+
+
+def release_defects(run, check, manifest):
+    """Open carry for a release artifact; a closure needs the check's native witness."""
+    return open_defects(manifest, Path(run) / 'inputs', lambda: _recorded(run, check.get('id'), manifest))

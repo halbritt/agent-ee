@@ -105,7 +105,8 @@ downstream fab, verification and release gates refuse carried open defects,
 naming their native fields/graphics and source receipts (AGENTEE-333). Such a
 board carries a [lineage stamp](docs/silk-artwork.md#board-lineage-stamp-agentee-351),
 so a re-scoped copy refuses release as unknown unless it brings its
-`placement-evidence` (AGENTEE-351).
+`placement-evidence`. Imported evidence closes carry only when native DRC on the
+captured board reproduces it (AGENTEE-351).
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against cited limits. Captured pad UUIDs select
