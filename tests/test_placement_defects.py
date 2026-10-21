@@ -50,6 +50,38 @@ class PlacementDefectContractTests(unittest.TestCase):
                     self.assertTrue(placement_defects.gated({'kind': kind, 'stage': stage}))
 
 
+    def test_projection_grading_composes_silk_carry_with_numeric_provenance(self):
+        """Ruling 346c (1): overlap silk follows receipt-backed carry; numeric silk limits follow 331."""
+        from agent_ee.checks import grade_drc
+        sourced = {'rules': {}, 'settings': [{
+            'setting': 'board.design_settings.rules.min_silk_clearance', 'value': 0.2, 'class': 'owner',
+            'citation': {'path': 'constraints.json', 'basis': 'original test'}}]}
+        edge = {'raw_locator': '/violations/2', 'type': 'silk_edge_clearance', 'items': [{'uuid': 'e'}],
+                'description': 'Silkscreen clipped by board edge (board setup constraints silk '
+                               'clearance 0.2000 mm; actual 0.1000 mm)'}
+        unwaived = [{'raw_locator': '/violations/0', 'type': 'silk_overlap', 'items': [{'uuid': 'a'}]},
+                    {'raw_locator': '/violations/1', 'type': 'silk_over_copper', 'items': [{'uuid': 'b'}]},
+                    edge, {'raw_locator': '/unconnected_items/0', 'type': 'unconnected_items'}]
+        outside = {'type': 'copper_outside_outline', 'items': [{'uuid': 'c'}]}
+
+        def failing(projection, carried, structural=(), sources=None, items=unwaived):
+            return [i.get('raw_locator') or i['type']
+                    for i in grade_drc(items, sources, projection, carried, list(structural))[2]]
+        projection = 'placement-stage/1'
+        # Uncarried overlap silk blocks in the projection even under a default limit.
+        self.assertEqual(failing(projection, []), ['/violations/0', '/violations/1'])
+        self.assertEqual(failing(projection, ['/violations/0', '/violations/1']), [])
+        # Default numeric silk-edge limit is advisory; a sourced one is hard (carry never names it).
+        self.assertEqual(failing(projection, ['/violations/0', '/violations/1'], sources=sourced),
+                         ['/violations/2'])
+        # Structural containment blocks whatever silk is carried.
+        self.assertEqual(failing(projection, ['/violations/0', '/violations/1'], [outside]),
+                         ['copper_outside_outline'])
+        # Unavailable containment is not a defect proved by native DRC.
+        self.assertEqual(grade_drc(unwaived[2:], None, projection, [], None)[2], [])
+        # The full DRC keeps its released 331 grading: unconnected items block, default silk is advisory.
+        self.assertEqual(failing(None, []), ['/unconnected_items/0'])
+
     def test_initial_campaign_cannot_supply_coordinator_carry(self):
         placement_defects.validate_campaign({'inputs': []})
         for scope in ({'inputs': [{'at': placement_defects.DIRECTORY}]},
@@ -546,6 +578,57 @@ class NativePlacementCarryTests(unittest.TestCase):
         write_json(changed, dict(record, waivers=[]))
         with self.assertRaisesRegex(ValueError, 'waiver'):
             verify_evidence(run, [projection, full], required=True)
+
+    def test_projection_seal_replays_structural_containment_under_carried_silk(self):
+        """Ruling 346c (2): a retained pass never seals over 331 structural containment."""
+        import pcbnew as k
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        root, scope, uncarried = self.uncarried_silk_design('projection-structural')
+        path = root / 'design' / scope['board']
+        board = k.LoadBoard(str(path))
+        board.Remove(next(d for d in board.GetDrawings() if d.m_Uuid.AsString() == uncarried))
+        k.SaveBoard(str(path), board, True)
+        run, _ = self.capture_design(root, scope, 'carried-only')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        self.assertEqual(read_json(run / 'work/drc-placement/containment/copper-containment.json'), [])
+        self.assertTrue(projection['details']['carried_findings'])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'pass'), projection['summary'])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+
+        # Owned B.Cu segment wholly outside the outline; native DRC still reports only carried silk.
+        board = k.LoadBoard(str(path))
+        segment = k.PCB_SHAPE(board)
+        segment.SetShape(k.SHAPE_T_SEGMENT)
+        segment.SetLayer(k.B_Cu)
+        segment.SetStart(k.VECTOR2I(80000000, 80000000))
+        segment.SetEnd(k.VECTOR2I(82000000, 80000000))
+        segment.SetWidth(200000)
+        board.Add(segment)
+        k.SaveBoard(str(path), board, True)
+        run, _ = self.capture_design(root, scope, 'structural')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        report = read_json(run / 'work/drc-placement/drc.json')
+        containment = read_json(run / 'work/drc-placement/containment/copper-containment.json')
+        self.assertEqual([(f['type'], f['layers']) for f in containment], [('copper_outside_outline', ['B.Cu'])])
+        self.assertEqual(sorted(projection['details']['carried_findings']),
+                         sorted(f'/violations/{i}' for i in range(len(report['violations']))))
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'))
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        forged = dict(projection, outcome='pass')
+        unavailable = copy.deepcopy(forged)
+        unavailable['details']['containment'] = dict(execution='unavailable', outcome='unknown', reason='forged')
+        for name, check in (('pass', forged), ('pass with containment unavailable', unavailable)):
+            with self.subTest(forgery=name):
+                write_json(run / 'checks/drc-placement.json', check)
+                with self.assertRaisesRegex(ValueError, 'verdict differs'):
+                    freeze_evidence(run, [check, full])
+                with self.assertRaisesRegex(ValueError, 'verdict differs'):
+                    verify_evidence(run, [check, full], required=True)
+        write_json(run / 'checks/drc-placement.json', projection)
+        verify_evidence(run, [projection, full], required=True)
 
     def test_placement_projection_does_not_carry_unmatched_or_non_silk_findings(self):
         located = [{'raw_locator': '/violations/0', 'type': 'silk_overlap',

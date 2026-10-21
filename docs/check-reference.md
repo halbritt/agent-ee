@@ -2029,15 +2029,29 @@ These findings keep their grading and still block:
 
 - collision, clearance, courtyard and mask violations;
 - schematic parity;
-- `silk_edge_clearance`;
-- uncarried or partially matching silk conflicts.
+- uncarried or partially matching silk conflicts;
+- [structural copper containment](#design-rule-provenance-agentee-331) findings
+  such as `copper_outside_outline`, whatever silk is carried.
+
+Composition with AGENTEE-331 provenance (coordinator ruling 346c) is one policy,
+`checks.grade_drc`, shared by the check and its seal replay. In the projection,
+overlap-type silk conflicts are graded only by receipt-backed carry: an
+unsourced default `min_silk_clearance` never turns an uncarried overlap into an
+advisory pass. Numeric silk limits such as `silk_edge_clearance` are never
+carried. They follow 331 provenance: advisory under an unsourced or default
+limit, hard under a sourced one. The full `drc` keeps its released 331 grading.
+Carried silk and numeric advisories are not a native defect, so when the
+containment child is unavailable such a projection is `malformed`, never a pass.
 
 Unconnected items stay ungraded. Missing or tampered carry evidence makes the
 projection `malformed`/`unknown`, never a pass. At freeze and at replay the
 evidence seal reconstructs the verdict. It reclassifies the check's own
 `drc.json` against the captured immutable waiver input and derives the
-receipt-backed carry. Any unwaived violation or parity finding outside that
-carry must yield `defect`. A retained outcome that differs is refused. The
+receipt-backed carry, recomputes the numeric provenance from the captured
+board inputs and reads the retained `containment/copper-containment.json` and
+its execution record. Any graded finding outside that carry, including a
+structural containment finding, must yield `defect`. A retained pass that
+records containment as unavailable is refused. A retained outcome that differs is refused. The
 retained `carried_findings` must equal the reconstructed carry exactly, so a
 subset or an empty list cannot hide a carried finding. Open carry and the
 witness are reconstructed too. A result that omits the carry is refused. There is no registration or capability change.
