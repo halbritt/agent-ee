@@ -1770,3 +1770,10 @@ obligations from the same immutable locality file, recording its raw hash in
 sha256}` (AGENTEE-328). The engineer declares limits and citation locators;
 the check never supplies a manufacturer radius or verifies cited prose.
 Origin-group success supplies no electrical-locality acceptance.
+
+AGENTEE-330 permits different `supply.from` and `return.from` references for
+buck output loops, retaining the same capacitor destination and exact pad/net/
+UUID validation. Optional `switch.from` names the return-source IC. Both roles
+remain jointly graded and constrained; missing loop bounds stay unknown. See
+[buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
+for declaration semantics, owned regressions and read-only pod measurements.

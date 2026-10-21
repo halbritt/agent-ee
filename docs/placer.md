@@ -767,10 +767,15 @@ diagnostics but cannot establish a coordinator capture binding.
 
 These example limits are authored fixture requirements, with no manufacturer or
 pod acceptance claim. Each obligation requires explicit supply and return pad
-identities on the same IC and capacitor, with distinct physical pads. Each pair
+identities ending at the same capacitor, with distinct physical pads on each
+shared footprint. The supply source may differ from the return source
+(AGENTEE-330): a buck output loop declares inductor pad 2 → capacitor positive
+as `supply` and IC PGND → capacitor negative as `return`. Pad numbers may be equal
+on different source references; reference, pad number, net and any captured UUID
+still identify each endpoint exactly. Each pair
 must name the same net at both ends. A buck may additionally declare `switch`
-with the identical pair structure: `from` selects its IC switch pad and `to`
-selects its inductor pad. Shared rail membership never assigns a capacitor to
+with the identical pair structure: `from` selects the return-source IC switch
+pad and `to` selects its inductor pad. Shared rail membership never assigns a capacitor to
 an IC. Multiple selected supply/return pins require separate obligations.
 
 An endpoint may add `uuid` with the canonical native pad UUID from the captured
@@ -869,3 +874,49 @@ fixtures cover both shared and distinct pad KIIDs.
 Netted original fixtures exercise a 4 mm peer netclass and a 4 mm single-item
 custom rule. A 4 mm custom rule conditional on both pad nets proves the native
 gate refuses a gap that satisfies the board minimum.
+
+
+### Buck output-capacitor loops (AGENTEE-330)
+
+Use the existing `supply` and `return` roles together; no new role or schema is
+needed. For example, an owned fixture may replace the example supply source with
+`{"reference": "L1", "pad": "2", "net": "VCC"}` while keeping the return
+source at U1 PGND. Optional `switch.from` stays at that IC, rather than moving to
+the inductor. The same captured UUID selector works on all endpoints. Check,
+constraint cost, candidate targets and saved-proposal grading use all declared
+pairs, including when the three footprints are placed in different orders.
+A loop obligation specifies paired distance bounds, not a summed perimeter,
+routed path or inductance measurement.
+
+The read-only D-PL-1 pod diagnostic at fome-mc
+`00a6b0316b871171bda5654a8436162aaa83a914` now supports seven
+output-loop declarations on its frozen board. Fresh native copper-centroid
+measurements are below, verbatim in mm. Supply is L1/L2/L4 pad 2 to capacitor
+pad 1; return is U5/U7/U15 PGND pad 1 to capacitor pad 2. Every endpoint was
+selected by its captured UUID, reference, pad and net.
+
+| IC / capacitor | Supply mm | Return mm | Declared supply / return bound mm |
+| --- | ---: | ---: | --- |
+| U5 / C6 | 5.561025085359713 | 13.77350082586123 | absent / absent |
+| U5 / C7 | 18.029556289604024 | 13.43448268449515 | absent / absent |
+| U7 / C13 | 8.82704508881653 | 13.746538655239725 | absent / absent |
+| U7 / C14 | 9.91641190148937 | 10.520495473122926 | absent / absent |
+| U7 / C15 | 13.284491898450614 | 13.96913830556488 | absent / absent |
+| U15 / C68 | 3.303240832879129 | 6.5517650293642244 | absent / 5.0 |
+| U15 / C69 | 5.525273748874349 | 6.894833210455493 | absent / 7.0 |
+
+The locators are LMR36520 §8.5.1 item 8 and TPS6216x-Q1 §11.1 items 4–5.
+D-PL-1 supplies only the two unchanged U15 return bounds for these endpoints;
+its VOS-to-capacitor bounds do not transfer to inductor-to-capacitor pairs.
+All 14 pairs resolve and measure. Twelve remain unknown for missing bounds;
+C68 return is a proved defect and C69 return passes. The combined verdict is
+`defect`, preserving that determinate violation alongside unknown coverage.
+The declarations, native probe and raw measurements remain in worker scratch;
+no pod design was adopted or published. Missing bounds must be declared by the
+engineer before guided placement can run.
+
+`OutputLoopTests` covers distinct sources, equal pad numbers on different
+footprints, coupled failures in both endpoint orders, all six packing orders,
+UUID-selected repeated PGND pads, net failures, absent limits/citations and
+defect precedence. The native captured-check regression uses an original RC
+three-reference topology with UUID-selected endpoints.
