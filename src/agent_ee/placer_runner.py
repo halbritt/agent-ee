@@ -211,12 +211,23 @@ def _drc_item_states(path):
     return states
 
 
-def _drc_comparison(before, after, before_states=None, after_states=None, sources=None):
+class CollisionMeasurementRefusal(ValueError):
+    """Stateless comparison cannot decide an unmeasured hard collision; native geometry required."""
+
+
+def _drc_comparison(before, after, before_states=None, after_states=None, sources=None,
+                    unchanged_copper=None):
     """Preserve rigid intra-footprint findings; moved cross-footprint collisions are new.
 
     Native geometry is supplied by the publication path, never by the caller's
     placement plan. Numeric findings bind to absolute saved geometry, including single-item findings.
+    Without saved geometry an unmeasured hard collision on baseline items refuses,
+    unless ``unchanged_copper`` is the caller's write-scope proof for the compared boards.
     """
+    if unchanged_copper is not None and (
+            unchanged_copper.get('status') != 'allowed' or
+            any(not isinstance(unchanged_copper.get(f), str) for f in ('before_sha256', 'after_sha256'))):
+        raise ValueError('unchanged-copper proof is not an allowed write scope')
     if (before['ignored_checks'] != after['ignored_checks'] or
             before.get('included_severities') != after.get('included_severities')):
         raise ValueError('native baseline/candidate DRC evaluation settings differ')
@@ -256,6 +267,21 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
     for report in (before, after):
         for finding in report['violations']:
             classify_finding(finding, sources)
+    if (before_states is None or after_states is None) and unchanged_copper is None:
+        # A missing measurement leaves only the item pair: neither a worsened hard
+        # collision nor a lost hard measurement on baseline items can be decided.
+        hard = {}
+        for finding in before['violations']:
+            if finding['type'] in DRC_COLLISIONS:
+                pair = key(finding, before_states)[:2]
+                hard[pair] = hard.get(pair, False) or finding['constraint_provenance']['enforcement'] == 'hard'
+        for finding in after['violations']:
+            if finding['type'] not in DRC_COLLISIONS or measured_actual(finding):
+                continue
+            pair = key(finding, after_states)[:2]
+            if pair in hard and (hard[pair] or finding['constraint_provenance']['enforcement'] == 'hard'):
+                raise CollisionMeasurementRefusal(
+                    'stateless collision comparison lacks a measured actual; native saved geometry required')
     old = Counter(key(v, before_states) for v in before['violations'])
     remaining = Counter(key(v, after_states) for v in after['violations']) - old
     added = []

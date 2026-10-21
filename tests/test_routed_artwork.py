@@ -141,6 +141,29 @@ class RoutedArtworkTest(unittest.TestCase):
         self.assertTrue(moved)
         self.assertEqual({m['field'] for m in moved}, {'Value'})
 
+    def test_unchanged_copper_proof_alone_keeps_an_unmeasured_short_as_baseline(self):
+        import pcbnew as k
+        from agent_ee.placer_runner import CollisionMeasurementRefusal, _drc_comparison
+        source = self.board()
+        board = k.LoadBoard(str(source))
+        # Overlapping 2 mm pads on distinct nets: a pre-existing, unmeasured native short.
+        for fp in board.GetFootprints():
+            net = k.NETINFO_ITEM(board, fp.GetReference()); board.Add(net)
+            for pad in fp.Pads():
+                pad.SetNet(net)
+            if fp.GetReference() == 'C1':
+                fp.SetPosition(k.VECTOR2I(4500000, 3000000))
+        k.SaveBoard(str(source), board, True)
+        report = art.produce(source, self.root / 'run')
+        comparison = report['native_drc_comparison']
+        self.assertTrue(report['write_scope']['moved_identities'])
+        self.assertIn('shorting_items', [v['type'] for v in comparison['candidate_findings']], comparison)
+        self.assertEqual(comparison['blocking_findings'], [])
+        output = self.root / 'run' / art.BOARD
+        reports = [read_json(output.parent / 'baseline' / 'native-drc.json'), read_json(output.parent / 'native-drc.json')]
+        with self.assertRaisesRegex(CollisionMeasurementRefusal, 'native saved geometry required'):
+            _drc_comparison(*reports)
+
     def test_board_and_footprint_graphics_translate_without_reshaping(self):
         for footprint in (False, True):
             with self.subTest(footprint=footprint), tempfile.TemporaryDirectory(dir=self.root) as d:

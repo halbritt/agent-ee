@@ -146,6 +146,36 @@ class ProvenanceLimitsTest(unittest.TestCase):
                 self.assertEqual(delta['added_by_type'], {'clearance': 1})
                 self.assertEqual(len(delta['blocking_findings']), 1, delta)
 
+    def test_stateless_unmeasured_hard_collision_on_baseline_items_refuses(self):
+        from agent_ee.placer_runner import CollisionMeasurementRefusal
+        sources = {'settings': [source('board.design_settings.rules.min_clearance', .09, 'manufacturer')], 'rules': {}}
+
+        def report(*findings):
+            return {'ignored_checks': [], 'violations': [dict(type=kind, description=text,
+                    items=[{'uuid': 'a'}, {'uuid': 'b'}]) for kind, text in findings]}
+        short = ('shorting_items', 'Items shorting two nets (nets U1 and C1)')
+        measured = ('clearance', 'Clearance violation (board setup constraints clearance 0.0900 mm; actual 0.0500 mm)')
+        unmeasured = ('clearance', 'Clearance violation (board setup constraints clearance 0.0900 mm)')
+        for label, before, after in (('short on baseline short', report(short), report(short)),
+                                     ('measured then unmeasured', report(measured), report(unmeasured)),
+                                     ('unmeasured on hard baseline', report(short, measured), report(short, measured))):
+            with self.subTest(label):
+                with self.assertRaisesRegex(CollisionMeasurementRefusal, 'native saved geometry required'):
+                    _drc_comparison(before, copy.deepcopy(after), sources=sources)
+        # An unmeasured hard collision without a baseline counterpart is determinately new.
+        delta = _drc_comparison(report(), report(short), sources=sources)
+        self.assertEqual([v['type'] for v in delta['blocking_findings']], ['shorting_items'])
+        # An unmeasured advisory collision never blocks and keeps pair identity.
+        self.assertEqual(_drc_comparison(report(unmeasured), report(unmeasured))['added_findings'], [])
+        # Saved geometry or the write-scope proof of unchanged copper decides it.
+        states = {'a': ('U1', 'pad', (0, 0, 0, 0)), 'b': ('C1', 'pad', (100, 0, 0, 0))}
+        self.assertEqual(_drc_comparison(report(short), report(short), states, states)['added_findings'], [])
+        proof = {'status': 'allowed', 'before_sha256': 'x', 'after_sha256': 'y', 'moved_identities': []}
+        self.assertEqual(_drc_comparison(report(short), report(short), unchanged_copper=proof)['added_findings'], [])
+        for bad in ({}, {**proof, 'status': 'refused'}, {**proof, 'after_sha256': None}):
+            with self.subTest(proof=bad), self.assertRaisesRegex(ValueError, 'unchanged-copper proof'):
+                _drc_comparison(report(short), report(short), unchanged_copper=bad)
+
     def test_owner_rule_cannot_be_reclassified_by_document(self):
         with tempfile.TemporaryDirectory() as temporary:
             board = Path(temporary) / 'b.kicad_pcb'
@@ -196,6 +226,38 @@ class NativeLimitsTest(unittest.TestCase):
     def setUpClass(cls):
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)
+
+    def test_increasing_native_short_overlap_refuses_stateless_and_blocks_with_states(self):
+        import pcbnew as k
+        from tests.test_placement_native import NativePlacementTest
+        from agent_ee.design_rule_provenance import measured_actual
+        from agent_ee.placer_runner import CollisionMeasurementRefusal, _drc_item_states, _native_drc
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            maker = NativePlacementTest(); maker.root = root
+            board = k.LoadBoard(str(maker.board()))
+            for fp in board.GetFootprints():
+                net = k.NETINFO_ITEM(board, fp.GetReference()); board.Add(net)
+                for pad in fp.Pads():
+                    pad.SetNet(net)
+            peer = next(f for f in board.GetFootprints() if f.GetReference() == 'C1')
+            reports, states = [], []
+            # 0.5 mm pads at U1 (3, 3): C1 overlap grows from 0.1 to 0.3 mm on the same UUIDs.
+            for name, x in (('before', 3.4), ('after', 3.2)):
+                peer.SetPosition(k.VECTOR2I(k.FromMM(x), k.FromMM(3)))
+                path = root/(name + '.kicad_pcb'); k.SaveBoard(str(path), board)
+                (root/name).mkdir()
+                reports.append(_native_drc(path, root/name)); states.append(_drc_item_states(path))
+            shorts = [[v for v in r['violations'] if v['type'] == 'shorting_items'] for r in reports]
+            self.assertEqual([len(s) for s in shorts], [1, 1], reports)
+            self.assertEqual(*[sorted(i['uuid'] for i in s[0]['items']) for s in shorts])
+            self.assertFalse(any(measured_actual(s[0]) for s in shorts), shorts)
+            with self.assertRaisesRegex(CollisionMeasurementRefusal, 'native saved geometry required'):
+                _drc_comparison(*copy.deepcopy(reports))
+            delta = _drc_comparison(*copy.deepcopy(reports), *states)
+            self.assertIn('shorting_items', [v['type'] for v in delta['blocking_findings']], delta)
+            same = _drc_comparison(copy.deepcopy(reports[1]), copy.deepcopy(reports[1]), states[1], states[1])
+            self.assertEqual(same['blocking_findings'], [])
 
     def test_masked_minimum_refuses_real_native_gap(self):
         import pcbnew as k

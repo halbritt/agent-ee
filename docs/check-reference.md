@@ -1984,7 +1984,14 @@ finding; identical pre-existing findings retain their baseline treatment. Non-co
 numeric findings include absolute geometry in their baseline identity. Collision
 comparisons without saved geometry retain item-pair identity across wording changes
 but bind it to the printed measured value: a worsened (or otherwise changed) actual
-on the same items is a new finding, never baseline. Native publication still compares
+on the same items is a new finding, never baseline. An unmeasured collision
+(a native short, co-located holes, or a clearance without a printed actual) on
+items that also collide in the baseline, where either finding is hard, refuses with `CollisionMeasurementRefusal`
+(unknown) instead of matching by item pair: only native saved geometry, or the
+routed-artwork producer's silk-only write-scope proof bound to the digests of
+both DRC'd boards (copper unchanged), can decide it. Unmeasured collisions
+without a baseline counterpart remain new; advisory-only pairs keep item-pair
+identity. Native publication still compares
 the saved item geometry. Copper
 outside the board material always refuses placement/plane publication, including
 pre-existing witnesses.

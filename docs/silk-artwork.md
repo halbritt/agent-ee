@@ -231,7 +231,10 @@ can refuse legitimate boards: the shared parser decodes escapes, so decoded
 token equality cannot establish the saved spelling KiCad renders. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
 new non-silk native findings refuse the producer; remaining silk conflicts stay
-open. Uncarried baseline findings retain their existing check verdicts.
+open. The native DRC comparison has no saved geometry states; the scope proof,
+whose digests must equal both DRC'd boards, is its witness that copper is
+unchanged, so unmeasured pre-existing collisions keep baseline treatment
+(AGENTEE-369). Without that proof such a comparison refuses. Uncarried baseline findings retain their existing check verdicts.
 
 The receipt uses the existing placement evidence envelope and adds
 `producer: agent-ee-routed-artwork`, the scope proof and the original routed
