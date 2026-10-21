@@ -41,8 +41,9 @@ project settings. It compares category and native item UUID multisets against
 the baseline using the existing placement DRC comparison. Collision and mask
 comparisons include saved geometry and footprint poses (AGENTEE-325), both
 against the baseline and when checking the artwork pass for regressions. A moved
-cross-footprint collision remains introduced after field relocation. Only a proposal with
-no added `silk_overlap` or `silk_over_copper` may publish. Baseline findings
+cross-footprint collision remains introduced after field relocation. A proposal
+with only remaining `silk_overlap` or `silk_over_copper` conflicts may publish
+with open defects (AGENTEE-333). Baseline findings
 retain their ordinary grading, as do other check categories; no severity,
 exclusion or project rule is changed. Relocation also refuses any newly
 introduced native finding outside those two conflict categories, while retaining
@@ -54,12 +55,13 @@ missing native outputs refuse publication.
 `placement-silkscreen.json` records moved fields, search diagnostics, before/after
 added counts and remaining `placement_silkscreen_conflict` findings. Native
 conflicts carry the complete native finding; unsupported side-flip diagnostics
-carry the field UUID, reference and reason. They refuse publication even if a
-second field can move clear of the flipped field. An unresolved graphic conflict is reported this way
-and prevents publication. It requires a different footprint placement or human
-resolution. Search exhaustion reports the bounded search limitation and does not
-prove physical infeasibility. Failed candidates and these diagnostics remain in
-the writer's failure directory. Fresh saved-board probes and write-scope proofs
+carry the field UUID, reference and reason. They remain open defects even if a
+second field can move clear of the flipped field. An unresolved graphic conflict
+is also carried. It requires a different footprint placement or human resolution.
+Search exhaustion reports the bounded search limitation and does not
+prove physical infeasibility. Failed candidates retain diagnostics in the writer's
+failure directory; published proposals retain theirs in the proposal directory.
+Fresh saved-board probes and write-scope proofs
 refer to the final board bytes. Coordinator checks remain authoritative for
 adoption.
 
@@ -72,9 +74,33 @@ have no remaining silk conflicts.
 
 With the courtyard reservation, a native probe of the archived main-buck pod
 reduces 45 added `silk_over_copper` and 27 added `silk_overlap` findings to
-10 and 2 respectively. It refuses publication with 12 typed conflicts and
+10 and 2 respectively. Its proposal gate accepts with 12 typed open defects and
 retains one placement-added `silk_edge_clearance` finding. The pth-fixed pod
-reduces 38 copper and 25 overlap findings to 9 and 7, refusing publication
-with 16 typed conflicts. These bounded searches can leave resolvable conflicts. Placement-added `silk_edge_clearance`
+reduces 38 copper and 25 overlap findings to 9 and 7, accepting the proposal gate
+with 16 typed open defects. These bounded searches can leave resolvable conflicts. Placement-added `silk_edge_clearance`
 remains reported in the DRC comparison and retains its existing grading. The
 artwork pass refuses any additional edge-clearance regression it introduces.
+
+## Placement feasibility and fab legibility (AGENTEE-333, partial)
+
+Publication preserves unresolved findings in `native_drc_comparison.open_defects`
+and the top-level placement receipt `open_defects`. Each record has
+`type: placement_silkscreen_conflict`, `status: open`, `verdict: defect` and the
+complete native finding, or the unsupported side-flip field diagnostic. A receipt
+with any open defects has `outcome: defect` and `verdict: defect`. A receipt
+without these defects retains informational outcome; it proves no fab acceptance.
+Collision, clearance, PTH courtyard, inter-footprint mask, courtyard, write-scope
+and artwork regression refusals remain unchanged. No baseline defect is waived.
+
+The required downstream fab/verification/release refusal for carried defects is
+**not implemented**. A blanket native-silk fab guard would also reject existing
+uncarried baseline silk defects. The existing
+`tests.test_fab_export.NativeBomVariantTests.test_registered_variant_reaches_only_the_bom_export_and_is_sealed`
+expects pass on such a board; the trial guard returned defect on 13 conflicts.
+The verdict-preservation rule requires stopping rather than changing that test.
+A subsequent change must bind the carried placement receipt through the existing
+sealed receipt/candidate lifecycle and distinguish carried open defects from
+uncarried baseline findings. Unsupported side-flip diagnostics must also remain
+accounted for when another field's relocation clears the native collision.
+Until that guard is implemented and tested, AGENTEE-333 is incomplete and this
+publication change must not be treated as release-ready.

@@ -297,11 +297,13 @@ def _proposal_drc(source, output):
                                 flipped_conflicts)
         write_json(scratch / 'placement-silkscreen.json', artwork)
         comparison = final
+    comparison['open_defects'] = [
+        dict(type='placement_silkscreen_conflict', status='open', verdict='defect', native=v)
+        for v in comparison['silkscreen_findings'] if v['type'] in SILK_CONFLICTS] + [
+        dict(d, status='open', verdict='defect') for d in flipped_conflicts]
     write_json(scratch / 'native-drc-comparison.json', comparison)
     if comparison['blocking_findings']:
         raise ValueError(f"saved-board placement introduced native DRC collisions: {comparison['added_by_type']}")
-    if flipped_conflicts or any(v['type'] in SILK_CONFLICTS for v in comparison['silkscreen_findings']):
-        raise ValueError(f"saved-board placement has unresolved native silkscreen findings: {comparison['added_by_type']}")
     if artwork_regressions:
         raise ValueError('silkscreen relocation introduced other native DRC findings')
     return [v for v in after['violations'] if v['type'] in DRC_COURTYARDS], comparison
@@ -388,7 +390,9 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed its declared electrical locality')
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),
-            'status': 'placed', 'outcome': 'info', 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],
+            'status': 'placed', 'outcome': 'defect' if comparison['open_defects'] else 'info',
+            'verdict': 'defect' if comparison['open_defects'] else 'info',
+            'open_defects': comparison['open_defects'], 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],
             'plan': plan, 'judgment': judgment,
             'native_courtyard_overlaps': overlaps, 'native_drc_comparison': comparison,
             'authority': 'disposable-unsealed-proposal'}
