@@ -1,59 +1,71 @@
 {
   "baseline_id": "aa364d5ac09e969c3149714bba0af57d02a8db7b9c9d065317aab6bd68fff141",
-  "candidate_id": "ba2a6d691277a395e1bea76f6cc8a1d18739f789f62f479cca83399ff8c60028",
+  "candidate_id": "bc6db45a8f7e4260333171631fad16bef3e503f91a0cf3d917fc499239bb045f",
   "checks": {
     "containment": {
       "artifacts": {
         "work/containment/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
-        "work/containment/execution.json": "d49d1bd54cfc72a8319ba932d3a939d0d63495931a32c72a91f308086a6d75b9",
-        "work/containment/placement-judgment.json": "4d94150405478bfedc7299c3a7d22885f4bd4d2c9fe54359b41fc1ed0a0851b9",
-        "work/containment/placement-probe.json": "f2216dca9aa3432c34a46af1dfe95c69e9f8b84ceebcfaf1dc3839d51789adfe",
-        "work/drc-placement/drc.json": "ad206bac56ec994a19c3ab58f02896589ec5ed21365335939f0f01e115ea290c"
+        "work/containment/execution.json": "93aed9032ca92baa26867264a9d2fbbe39a1661a8abcf49dfcd83f15d96b6625",
+        "work/containment/placement-judgment.json": "5a737c718e0ed79157fe27023109f7e4280968aa3aff3741426017c3d69c7481",
+        "work/containment/placement-probe.json": "2833a0ace3d8f6bdfa435e31e44422c8a79b81b55d43e41665ebf82c246e00cc",
+        "work/drc-placement/drc.json": "fbb32d8674ef7b64d5f5bc46af1e6de0f467add7eec47d4dc5a51b56bb6bce8f"
       },
-      "result": "95763a601e507329b58f3a2ebde5d9b8f6f08ff655d87c0de8dd75cc283f0929"
+      "result": "58168e033a7b445a323f6df9ac1d3b23afcbd2513bd1fdf9c67bdb9dc64a2481"
     },
     "courtyard": {
       "artifacts": {
         "work/courtyard/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
-        "work/courtyard/execution.json": "36e4bdb4c38424c3100befa3f35b186333d07f5f545a88dc14f218ebd58212c1",
-        "work/courtyard/placement-judgment.json": "7a95491f5c717b5759daec27ff5be2480001a8f947fda50f4a469d1ce516098c",
-        "work/courtyard/placement-probe.json": "f2216dca9aa3432c34a46af1dfe95c69e9f8b84ceebcfaf1dc3839d51789adfe",
-        "work/drc-placement/drc.json": "ad206bac56ec994a19c3ab58f02896589ec5ed21365335939f0f01e115ea290c"
+        "work/courtyard/execution.json": "c5245d42b7d9b0bf1feffa2c276ff30339745d2ab7a13c5413b9f9926ba14e7e",
+        "work/courtyard/placement-judgment.json": "65aab095e1d850011fa674c96aeaae6bd43d177308e3988609c7e634bd6b4d33",
+        "work/courtyard/placement-probe.json": "2833a0ace3d8f6bdfa435e31e44422c8a79b81b55d43e41665ebf82c246e00cc",
+        "work/drc-placement/drc.json": "fbb32d8674ef7b64d5f5bc46af1e6de0f467add7eec47d4dc5a51b56bb6bce8f"
       },
-      "result": "ed6f0f6535d671232e236590051637416fe34f9c6e9f09c1071919c0583fd408"
+      "result": "a1927cecea676c016554c573b0705749e22c247a38910a2b10a989b23d9aaee4"
     },
     "drc-final": {
       "artifacts": {
         "work/drc-final/console.log": "e3fb3731a03f416b3a2b3863d443fe63a9b55f47a9df2da026b6760da5cf35f2",
-        "work/drc-final/drc.json": "c57ce8e21d42b855b2b06565eb7d4717cf9048f42d2922d5836be1b00a7f604f",
-        "work/drc-final/execution.json": "d716eb191d4e0192238b0fe9b07d7a1e77da3c2566b0a912621efe895c5db3b2"
+        "work/drc-final/containment/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+        "work/drc-final/containment/copper-containment.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "work/drc-final/containment/execution.json": "9cc0e61955922f7b3c5163a42d83a229872895b35b0f24090a73aca047cbb106",
+        "work/drc-final/drc-constraints.json": "06c9cf9712b5bd038981a35e2f5d932bd01d6f6b9b33d5d5eb1245e52ea58f9a",
+        "work/drc-final/drc.json": "53616ee0b1c39c408bd40f850f0fe1872ee0096a784089123ff01329947dbb6e",
+        "work/drc-final/execution.json": "4044561e85c781cee8901326c6c662bfb9dba7bf870fa5e4e1016fb7b7dd27ef"
       },
-      "result": "114ba27ea5f046175a53d9fe6dbeec6d412ee94b521181008174655a424e2d10"
+      "result": "2e2f9723bd660643af14adccb1b5e1f84637b589f5ffa0619e97f746e398dfde"
     },
     "drc-placement": {
       "artifacts": {
         "work/drc-placement/console.log": "e3fb3731a03f416b3a2b3863d443fe63a9b55f47a9df2da026b6760da5cf35f2",
-        "work/drc-placement/drc.json": "ad206bac56ec994a19c3ab58f02896589ec5ed21365335939f0f01e115ea290c",
-        "work/drc-placement/execution.json": "e177c28c33d6b443d65b245a35bfffd4a24836889ab7f65de9dc5e19a36f27a7"
+        "work/drc-placement/containment/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+        "work/drc-placement/containment/copper-containment.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "work/drc-placement/containment/execution.json": "004fb3f9a86bc0549c189b7acb0810c65f215092778595f1c1001f2467e75d29",
+        "work/drc-placement/drc-constraints.json": "06c9cf9712b5bd038981a35e2f5d932bd01d6f6b9b33d5d5eb1245e52ea58f9a",
+        "work/drc-placement/drc.json": "fbb32d8674ef7b64d5f5bc46af1e6de0f467add7eec47d4dc5a51b56bb6bce8f",
+        "work/drc-placement/execution.json": "7aec839c745cbc70b697393e3a59b0f6862a67885100a6a790f2ee059079b644"
       },
-      "result": "2103b6263a238311e526b7f882ae2b8f0c2338d10c9a1fd2737f80de4c24f3a1"
+      "result": "f46fc64baabd47ff521af16fb433c228f0ca5d3a14ff37e16881efae123815dd"
     },
     "erc": {
       "artifacts": {
         "work/erc/console.log": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
-        "work/erc/erc.json": "6c3aaf2316ee019c9b25e7b6680a87fc9cf4a831e6b698028196e1f03471fd16",
-        "work/erc/execution.json": "bb8d8c5a0e915ebedb47062c068323089a8f5afc9ad9a674a64cf471540acd27"
+        "work/erc/erc.json": "8695cdca88e66bd46daaeb041390a140fe4808c39b7ea3cdfb61127ed2061ae7",
+        "work/erc/execution.json": "5016793486fbf832afd62c239fcbfe50dbd150d97be13c812dc38368f20295ca",
+        "work/erc/kicad-version/console.log": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7",
+        "work/erc/kicad-version/execution.json": "5677e43d9eaa3d9e5026b85a59f1fc25f1fc7d698a2c8c52dbd3b44c10db5bf7",
+        "work/erc/kicad-version/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "work/erc/kicad-version/stdout.log": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7"
       },
-      "result": "04df55b34914a9e53676292ada808d1d811803f90ebc9266a008faa8c69789f4"
+      "result": "f8d9bcc5bf3546e2a7e45e3bc659fcdc81fd1ae1341818652f3d7df06cc87a4f"
     },
     "netlist": {
       "artifacts": {
         "work/netlist/connectivity.json": "f1976992fdc6d8e309f8a031bb62b94207b6f388bc1c3c5779615975f3a9bc20",
         "work/netlist/console.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "work/netlist/design.xml": "096c6f94a783fbf12825079a0a9768197b58f77d68d05c6fcc8857b30f9ae761",
-        "work/netlist/execution.json": "5563ac8947c19a42d51101259b2b88c07722d3aed33fa5b4f22695930fc7be1a"
+        "work/netlist/design.xml": "535a2b048f560ec4945ec9f25081d5777b149337f951a55e17d8832e9fb9b757",
+        "work/netlist/execution.json": "53d700f18112f94b70231dd99066a2c79def8c9c7eb4d8972df859866bbe0353"
       },
-      "result": "ea7c90b026e07e78ca2ca69bb0b2fbd2c37a7c176274fd47ccc5a7d1102c3723"
+      "result": "2c92a0049a0281625c41d999fcac4bbda932140ff14741d88a8c53d1595ad143"
     }
   },
   "schema": "agent-ee.evidence/1"

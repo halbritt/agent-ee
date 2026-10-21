@@ -1968,8 +1968,10 @@ Baseline comparisons include enforcement changes and the transition to copper
 outside the outline. The same native item identities cannot hide a newly hard
 finding; identical pre-existing findings retain their baseline treatment. Non-collision
 numeric findings include absolute geometry in their baseline identity. Collision
-comparisons without saved geometry retain item-pair identity across wording changes;
-native publication still compares the saved item geometry. Copper
+comparisons without saved geometry retain item-pair identity across wording changes
+but bind it to the printed measured value: a worsened (or otherwise changed) actual
+on the same items is a new finding, never baseline. Native publication still compares
+the saved item geometry. Copper
 outside the board material always refuses placement/plane publication, including
 pre-existing witnesses.
 

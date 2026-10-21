@@ -1,6 +1,7 @@
 """Single-writer disposable-board placement; intended for networkless sandbox use."""
 import argparse
 from collections import Counter
+from decimal import Decimal
 import hashlib
 import json
 import os
@@ -20,7 +21,8 @@ from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
 from .silk_artwork import SILK_CONFLICTS, relocate
 from .storage import digest, read_json, write_json
-from .design_rule_provenance import classify_finding, finding_sources, numeric_finding, require_evaluated_limits
+from .design_rule_provenance import (
+    classify_finding, finding_sources, measured_actual, numeric_finding, require_evaluated_limits)
 
 
 DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard', 'holes_co_located'))
@@ -233,6 +235,11 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
         if states is None:
             if numeric_finding(finding) and finding['type'] not in DRC_COLLISIONS:
                 return (*identity, finding.get('description'), json.dumps(items, sort_keys=True))
+            if finding['type'] in DRC_COLLISIONS:
+                # Without saved geometry the printed measurement is the only physical
+                # witness: any changed value on the same items is new, never baseline.
+                actual = measured_actual(finding)
+                return (*identity, Decimal(actual[1]) if actual else None)
             return identity
         if finding['type'] not in DRC_COLLISIONS | {'solder_mask_bridge'} and not numeric_finding(finding):
             return identity

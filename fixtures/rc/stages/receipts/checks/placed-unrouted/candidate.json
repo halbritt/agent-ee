@@ -1,5 +1,5 @@
 {
-  "candidate_id": "ba2a6d691277a395e1bea76f6cc8a1d18739f789f62f479cca83399ff8c60028",
+  "candidate_id": "bc6db45a8f7e4260333171631fad16bef3e503f91a0cf3d917fc499239bb045f",
   "files": {
     "project/fp-lib-table": "e4212417f18fd0b58d1e0b4ac046b296fa1a9b6625be667f455e5cbba77c77a3",
     "project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "ea709653381ed3f2774ed177900b9d999b34aa8e4bc8e12992ddebfa9554b7a3",
@@ -13,7 +13,7 @@
     "project/sym-lib-table": "bb13ab4fe47da9f272904fa00505f27fac37ced434541d6f5971addf617f5be4",
     "requirements/placed-unrouted.md": "b9dfbde31b2c9836fa49faa9851b30ca32ef1a2d3fe55fa4d224fb1304fa5a7a",
     "requirements/seeded-placement.md": "badd75445c85a0f30f39ea94dc3c3f78b22df29b1716e6bd5a833241af90b29d",
-    "requirements/unplaced.md": "8ac972d41d08fd45fc1e594271f5aefe01a061d85966e3b474a704b64f99d945"
+    "requirements/unplaced.md": "38a014129a642f5f27e08a80e9ad20037dac321e1ed76ee0a25c9e88462770b0"
   },
   "schema": "agent-ee.candidate/1",
   "scope": {
@@ -157,25 +157,25 @@
     "schematic": "project/rc_stage.kicad_sch",
     "scope": "Checks-only stage boundary qualification: placed-unrouted; expected initial outcomes are declared in requirements/placed-unrouted.md."
   },
-  "scope_path": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted.scope.json",
+  "scope_path": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted.scope.json",
   "scope_sha256": "9b415e711fd66619e5ff30dc1f8b7516ed0ef62b6d7ddae486503c771d964de6",
   "source_revisions": {
-    "project": "8de6317cb723045e8621efdf07e6a5bae43506ff",
-    "requirements": "8de6317cb723045e8621efdf07e6a5bae43506ff"
+    "project": "b51f9d7c6a091bc438499b07be4de869a9ae9ba0",
+    "requirements": "b51f9d7c6a091bc438499b07be4de869a9ae9ba0"
   },
   "sources": {
-    "project/fp-lib-table": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/fp-lib-table",
-    "project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod",
-    "project/lib/OwnedFP.pretty/CONN_1x3.kicad_mod": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/lib/OwnedFP.pretty/CONN_1x3.kicad_mod",
-    "project/lib/Owned_Gen.kicad_sym": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/lib/Owned_Gen.kicad_sym",
-    "project/lib/StageRC.kicad_sym": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/lib/StageRC.kicad_sym",
-    "project/rc_stage.kicad_pcb": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/rc_stage.kicad_pcb",
-    "project/rc_stage.kicad_prl": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/rc_stage.kicad_prl",
-    "project/rc_stage.kicad_pro": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/rc_stage.kicad_pro",
-    "project/rc_stage.kicad_sch": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/rc_stage.kicad_sch",
-    "project/sym-lib-table": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/placed-unrouted/sym-lib-table",
-    "requirements/placed-unrouted.md": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/requirements/placed-unrouted.md",
-    "requirements/seeded-placement.md": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/requirements/seeded-placement.md",
-    "requirements/unplaced.md": "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/fixtures/rc/stages/requirements/unplaced.md"
+    "project/fp-lib-table": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/fp-lib-table",
+    "project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod",
+    "project/lib/OwnedFP.pretty/CONN_1x3.kicad_mod": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/lib/OwnedFP.pretty/CONN_1x3.kicad_mod",
+    "project/lib/Owned_Gen.kicad_sym": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/lib/Owned_Gen.kicad_sym",
+    "project/lib/StageRC.kicad_sym": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/lib/StageRC.kicad_sym",
+    "project/rc_stage.kicad_pcb": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/rc_stage.kicad_pcb",
+    "project/rc_stage.kicad_prl": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/rc_stage.kicad_prl",
+    "project/rc_stage.kicad_pro": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/rc_stage.kicad_pro",
+    "project/rc_stage.kicad_sch": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/rc_stage.kicad_sch",
+    "project/sym-lib-table": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/placed-unrouted/sym-lib-table",
+    "requirements/placed-unrouted.md": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/requirements/placed-unrouted.md",
+    "requirements/seeded-placement.md": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/requirements/seeded-placement.md",
+    "requirements/unplaced.md": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/requirements/unplaced.md"
   }
 }

@@ -157,25 +157,25 @@
     "schematic": "project/rc_stage.kicad_sch",
     "scope": "Checks-only stage boundary qualification: unplaced; expected initial outcomes are declared in requirements/unplaced.md."
   },
-  "scope_path": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced.scope.json",
+  "scope_path": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced.scope.json",
   "scope_sha256": "4577c949b3b02f965acb1d6da86cd80da73a286ad8552535d7235c5343925e18",
   "source_revisions": {
-    "project": "181ee554726cdf1ac929d0c915bce5d206f7736d",
-    "requirements": "181ee554726cdf1ac929d0c915bce5d206f7736d"
+    "project": "b51f9d7c6a091bc438499b07be4de869a9ae9ba0",
+    "requirements": "b51f9d7c6a091bc438499b07be4de869a9ae9ba0"
   },
   "sources": {
-    "project/fp-lib-table": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/fp-lib-table",
-    "project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod",
-    "project/lib/OwnedFP.pretty/CONN_1x3.kicad_mod": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/lib/OwnedFP.pretty/CONN_1x3.kicad_mod",
-    "project/lib/Owned_Gen.kicad_sym": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/lib/Owned_Gen.kicad_sym",
-    "project/lib/StageRC.kicad_sym": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/lib/StageRC.kicad_sym",
-    "project/rc_stage.kicad_pcb": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/rc_stage.kicad_pcb",
-    "project/rc_stage.kicad_prl": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/rc_stage.kicad_prl",
-    "project/rc_stage.kicad_pro": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/rc_stage.kicad_pro",
-    "project/rc_stage.kicad_sch": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/rc_stage.kicad_sch",
-    "project/sym-lib-table": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/unplaced/sym-lib-table",
-    "requirements/placed-unrouted.md": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/requirements/placed-unrouted.md",
-    "requirements/seeded-placement.md": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/requirements/seeded-placement.md",
-    "requirements/unplaced.md": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee331i-rulings/fixtures/rc/stages/requirements/unplaced.md"
+    "project/fp-lib-table": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/fp-lib-table",
+    "project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod",
+    "project/lib/OwnedFP.pretty/CONN_1x3.kicad_mod": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/lib/OwnedFP.pretty/CONN_1x3.kicad_mod",
+    "project/lib/Owned_Gen.kicad_sym": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/lib/Owned_Gen.kicad_sym",
+    "project/lib/StageRC.kicad_sym": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/lib/StageRC.kicad_sym",
+    "project/rc_stage.kicad_pcb": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/rc_stage.kicad_pcb",
+    "project/rc_stage.kicad_prl": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/rc_stage.kicad_prl",
+    "project/rc_stage.kicad_pro": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/rc_stage.kicad_pro",
+    "project/rc_stage.kicad_sch": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/rc_stage.kicad_sch",
+    "project/sym-lib-table": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/unplaced/sym-lib-table",
+    "requirements/placed-unrouted.md": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/requirements/placed-unrouted.md",
+    "requirements/seeded-placement.md": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/requirements/seeded-placement.md",
+    "requirements/unplaced.md": "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/fixtures/rc/stages/requirements/unplaced.md"
   }
 }

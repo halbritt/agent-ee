@@ -120,6 +120,32 @@ class ProvenanceLimitsTest(unittest.TestCase):
                 same = _drc_comparison(copy.deepcopy(after), copy.deepcopy(after), sources=sources)
                 self.assertEqual(same['added_findings'], [])
 
+    def test_sourced_collision_identity_survives_rewording_but_not_a_changed_measurement(self):
+        sources = {'settings': [source('board.design_settings.rules.min_clearance', .09, 'manufacturer'),
+                                source('net_settings.classes.Default.clearance', .2, 'default')], 'rules': {}}
+
+        def report(actual, wording='board setup constraints clearance 0.0900', pos=(1, 2)):
+            return {'ignored_checks': [], 'violations': [dict(type='clearance', description=
+                f'Clearance violation ({wording} mm; actual {actual:.4f} mm)',
+                pos={'x': pos[0], 'y': pos[1]}, items=[{'uuid': 'a'}, {'uuid': 'b'}])]}
+        before = report(.05)
+        reworded = report(.05, "netclass 'Default' clearance 0.2000", pos=(7, 9))
+        states = {'a': ('U1', 'pad', (0, 0, 0, 0)), 'b': ('U2', 'pad', (100, 0, 0, 0))}
+        moved = {**states, 'b': ('U2', 'pad', (90, 0, 0, 0))}
+        for after_states in (None, states):
+            with self.subTest(states=after_states is not None):
+                kept = _drc_comparison(before, copy.deepcopy(reworded), after_states, after_states, sources)
+                self.assertEqual(kept['candidate_findings'][0]['constraint_provenance']['class'], 'manufacturer')
+                self.assertEqual(kept['added_findings'], [])
+        delta = _drc_comparison(before, copy.deepcopy(reworded), states, moved, sources)
+        self.assertEqual(len(delta['blocking_findings']), 1, delta)
+        # Without saved geometry a worsened or changed measurement is new, never baseline.
+        for actual in (.03, .07):
+            with self.subTest(actual=actual):
+                delta = _drc_comparison(before, report(actual), sources=sources)
+                self.assertEqual(delta['added_by_type'], {'clearance': 1})
+                self.assertEqual(len(delta['blocking_findings']), 1, delta)
+
     def test_owner_rule_cannot_be_reclassified_by_document(self):
         with tempfile.TemporaryDirectory() as temporary:
             board = Path(temporary) / 'b.kicad_pcb'
