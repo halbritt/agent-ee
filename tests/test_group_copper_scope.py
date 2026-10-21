@@ -587,7 +587,9 @@ class SublayoutCampaignTest(unittest.TestCase):
                                               'sha256': digest(MODULE)}])
         self.assertIn('group-local copper of the captured sub-layout request subs/reuse.json', self.prompts[1])
         self.assertIn('This is a placement iteration', self.prompts[1])
-        self.assertEqual(prompt_context(self.prompts[1])['placement']['findings'][0]['local_id'], 'outline')
+        self.assertEqual([finding['local_id'] for finding in
+                          prompt_context(self.prompts[1])['placement']['findings']],
+                         ['drc-placement', 'outline'])
         self.assertEqual(verify_campaign(self.out)['state'], 'criteria_satisfied')
         # The captured source tree is never written.
         self.assertEqual(inventory(self.source), inventory(self.base))
