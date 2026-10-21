@@ -74,6 +74,59 @@ def bound_output_loop():
     return facts, doc
 
 
+class LocalityInvariantTests(unittest.TestCase):
+    def test_untyped_distinct_sources_require_disjoint_net_sets(self):
+        for supply_end in ('from', 'to'):
+            for return_end in ('from', 'to'):
+                facts, doc = output_loop()
+                row = doc['obligations'][0]
+                for role, prefix in (('supply', 'OUT'), ('return', 'GND')):
+                    for end in ('from', 'to'):
+                        row[role][end]['net'] = prefix + '_' + end
+                row['supply'][supply_end]['net'] = row['return'][return_end]['net']
+                with self.subTest(supply=supply_end, ground=return_end):
+                    for evaluate in (lambda: locality.validate(doc),
+                                     lambda: locality.grade(facts, doc),
+                                     lambda: pack(facts, request(electrical_locality=doc))):
+                        with self.assertRaisesRegex(ValueError, 'distinct-source supply and return nets must differ'):
+                            evaluate()
+
+    def test_bound_switch_net_is_disjoint_from_supply_and_return(self):
+        for end in ('from', 'to', 'both'):
+            for net in ('VCC', 'GND'):
+                facts, doc = bound_output_loop()
+                row = doc['obligations'][0]
+                for key in (('from', 'to') if end == 'both' else (end,)):
+                    row['switch'][key]['net'] = net
+                with self.subTest(end=end, net=net):
+                    for evaluate in (lambda: locality.validate(doc),
+                                     lambda: locality.grade(facts, doc),
+                                     lambda: pack(facts, request(electrical_locality=doc))):
+                        with self.assertRaisesRegex(ValueError, 'loop switch nets must differ from supply and return'):
+                            evaluate()
+
+    def test_same_source_and_untyped_switch_keep_generic_net_semantics(self):
+        facts, doc = board(), declaration(supply='GND', ground='GND')
+        self.assertIs(locality.validate(doc), doc)
+        self.assertEqual(locality.grade(facts, doc)['status'], 'defect')
+        facts, doc = output_loop()
+        for end in ('from', 'to'):
+            doc['obligations'][0]['switch'][end]['net'] = 'VCC'
+        self.assertIs(locality.validate(doc), doc)
+        self.assertEqual(locality.grade(facts, doc)['status'], 'unknown')
+
+    def test_bound_switch_on_supply_net_cannot_pass_with_matching_pads(self):
+        facts, doc = bound_output_loop()
+        extra = copy.deepcopy(facts['footprints'][0]['pads'][1])
+        extra.update(number='3', uuid='U13', net='VCC')
+        facts['footprints'][0]['pads'].append(extra)
+        row = doc['obligations'][0]
+        row['switch']['from'] = endpoint('U1', '3', 'VCC')
+        row['switch']['to'] = endpoint('L1', '2', 'VCC')
+        with self.assertRaisesRegex(ValueError, 'loop switch nets must differ from supply and return'):
+            locality.grade(facts, doc)
+
+
 class BoundOutputLoopTests(unittest.TestCase):
     def test_owned_evidence_and_optional_switch(self):
         facts, doc = bound_output_loop()
@@ -655,11 +708,40 @@ class LocalityIndexTests(unittest.TestCase):
         self.assertGreater(loops, 300)
         self.assertEqual(rotations, {0, 90, 180, 270})
 
+    def test_direct_constructor_revalidates_role_and_net_bindings(self):
+        for mutation, message in (
+                ('unrelated', 'supply must start at the declared inductor'),
+                ('swapped', 'return must use the declared return_net'),
+                ('switch_source', 'switch pair must start at the declared IC'),
+                ('switch_target', 'switch must end at the declared inductor'),
+                ('switch_net', 'switch nets must differ from supply and return'),
+                ('overlap', 'distinct-source supply and return nets must differ')):
+            _, doc = bound_output_loop()
+            row = doc['obligations'][0]
+            if mutation == 'unrelated':
+                row['supply']['from']['reference'] = 'R9'
+            elif mutation == 'swapped':
+                for end in ('from', 'to'):
+                    row['supply'][end]['net'], row['return'][end]['net'] = 'GND', 'VCC'
+            elif mutation == 'switch_source':
+                row['switch']['from']['reference'] = 'R9'
+            elif mutation == 'switch_target':
+                row['switch']['to']['reference'] = 'R9'
+            elif mutation == 'switch_net':
+                row['switch']['from']['net'] = 'VCC'
+            else:
+                for key in ('kind', 'ic', 'inductor', 'return_net'):
+                    row.pop(key)
+                row['supply']['to']['net'] = 'GND'
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, message):
+                locality.PlacementIndex(doc)
+
     def test_uuid_selected_repeated_number_is_indexed_without_aliasing(self):
         b, doc = board(), declaration()
         cap = b['footprints'][1]
         extra = copy.deepcopy(cap['pads'][0])
-        extra.update(uuid='other-pad', position_nm=[999*MM, 0])
+        cap['pads'][0]['uuid'] = '00000000-0000-0000-0000-000000000001'
+        extra.update(uuid='00000000-0000-0000-0000-000000000002', position_nm=[999*MM, 0])
         cap['pads'].append(extra)
         doc['obligations'][0]['supply']['to']['uuid'] = cap['pads'][0]['uuid']
         state = locality.PlacementIndex(doc)
@@ -667,6 +749,11 @@ class LocalityIndexTests(unittest.TestCase):
         candidate = state.prepare(transform(b['footprints'][0], [0,0], 0))
         self.assertEqual(candidate.constraint([MM,MM]), locality.constraint(
             [cap], transform(b['footprints'][0], [MM,MM], 0), doc))
+        for position in ([15*MM, 15*MM], [999*MM, 0]):
+            with self.subTest(position=position):
+                self.assertEqual(candidate.constraint(position), locality.constraint(
+                    [cap], transform(b['footprints'][0], position, 0), doc))
+                self.assertEqual(bool(candidate.constraint(position)[0]), position == [999*MM, 0])
 
     def test_target_budget_refuses_instead_of_truncating_constraints(self):
         pairs = [([0,0], [i*1000, i*1000], 1, {'U1','C1'}) for i in range(100)]

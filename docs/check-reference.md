@@ -1802,10 +1802,15 @@ retaining the same capacitor destination and exact pad/net/UUID validation.
 AGENTEE-334 adds `kind: buck-output-loop` with explicit `ic`, `inductor`, and
 `return_net` declarations. Supply starts at that inductor; return starts at
 that IC. Optional switch starts at the IC and ends at the same inductor.
-Return endpoints use the declared return net, distinct from supply. Inconsistent
-bindings refuse validation. Untyped obligations keep their generic pair
-semantics and existing verdicts. Both legs remain jointly graded and constrained;
-missing bounds stay unknown. See
+Return endpoints use the declared return net, distinct from supply. AGENTEE-341
+requires both switch endpoint nets to differ from return and both supply endpoint
+nets. Distinct-source obligations require disjoint supply/return endpoint net
+sets even without a kind. Inconsistent bindings refuse validation, including
+direct `PlacementIndex` construction, which re-validates its document before
+indexing (AGENTEE-341). Untyped
+same-source obligations retain their existing verdicts; disjoint untyped nets
+alone do not establish component roles or detect swapped supply/return roles.
+Both legs remain jointly graded and constrained; missing bounds stay unknown. See
 [buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
 for the schema, retained owned evidence and committed pod packet locator.
 
