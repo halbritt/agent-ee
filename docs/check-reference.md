@@ -1820,3 +1820,17 @@ The per-rotation cap of 256 distinct locality origins refuses with
 go to stderr, preserving the single JSON summary on `board_build` stdout.
 Heartbeat and partial search results are diagnostics with no acceptance authority;
 the full independent locality check still grades every declared role.
+
+
+## Post-routing silk repair (AGENTEE-350)
+
+The [routed artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
+is a verification-stage implementation step. It preserves every non-silk token
+and permits only declared field positions and rigid translations of supported
+silk graphics. Its receipt binds the source board, output board, tool source pin,
+geometry proof and complete native DRC. Coordinator carry capture and replay
+reuse the placement evidence envelope. Identity-bound closure can then remove
+carried defects; remaining conflicts and unavailable evidence keep their refusal.
+This adds no check registration or verdict waiver. The initial placer continues
+to refuse routed boards. The native campaign regression proves downstream
+refusal before the repair and passing verification geometry and native fab export after closure.

@@ -34,6 +34,36 @@ class PlacementDefectContractTests(unittest.TestCase):
             with self.subTest(scope=scope), self.assertRaisesRegex(ValueError, 'coordinator-owned'):
                 placement_defects.validate_campaign(scope)
 
+    def test_unanchored_initial_placer_receipt_is_not_new_carry(self):
+        # The routed producer must not reinterpret historical generic placer steps.
+        from agent_ee.placement_adapter import STEP
+        receipt = {'spec': {'step': STEP}, 'status': 'completed'}
+        with patch('agent_ee.stage_done._receipts', return_value=[(1, 'unused', receipt)]):
+            self.assertIsNone(placement_defects.adopted('unused', {}, 1))
+
+    def test_graphic_text_style_damage_retains_known_defect(self):
+        with tempfile.TemporaryDirectory() as directory:
+            before, after = (Path(directory) / name for name in ('before', 'after'))
+            text = ('(kicad_pcb (gr_text "Owned mark" (at 1 2) (layer "F.SilkS") '
+                    '(uuid "mark") (effects (font (size 1 1)))))')
+            before.write_text(text)
+            after.write_text(text.replace('(at 1 2)', '(at 2 3)').replace('(size 1 1)', '(size 0.8 1)'))
+            defect = {'type': 'placement_silkscreen_conflict', 'status': 'open', 'verdict': 'defect',
+                      'native': {'items': [{'uuid': 'mark'}]}}
+            self.assertFalse(placement_defects._closes(defect, placement_defects._identities(before),
+                placement_defects._identities(after), set(), set(), True, graphic_translation=True))
+            # A changed item kind is also damage, even when its UUID survives.
+            shape = ('(kicad_pcb (gr_line (start 1 2) (end 2 2) (layer "F.SilkS") '
+                     '(uuid "mark")))')
+            before.write_text(shape)
+            self.assertFalse(placement_defects._closes(defect, placement_defects._identities(before),
+                placement_defects._identities(after), set(), set(), True, graphic_translation=True))
+            before.write_text(text)
+            # Position alone remains permitted; all text content/style is unchanged.
+            after.write_text(text.replace('(at 1 2)', '(at 2 3)'))
+            self.assertTrue(placement_defects._closes(defect, placement_defects._identities(before),
+                placement_defects._identities(after), set(), set(), True, graphic_translation=True))
+
 
 class NativePlacementCarryTests(unittest.TestCase):
     @classmethod
@@ -462,11 +492,11 @@ class DurableClosureTests(unittest.TestCase):
 
 
 class PlacementRoutingCarryTests(unittest.TestCase):
-    def test_real_placement_and_router_keep_open_carry_at_verification(self):
+    def routing_fixture(self):
         from test_placement_campaign import PlacementCampaignFixture
         from test_placement_adapter import owned_design, BOARD, POLICY
         from toolchain import require_kicad_route, require_toolchain
-        from agent_ee import placement_adapter as pa, routing_adapter, campaign, stage_receipts
+        from agent_ee import placement_adapter as pa, routing_adapter
         from agent_ee.placement_probe import extract
         from agent_ee.placer_runner import _plan
         import pcbnew as k
@@ -553,11 +583,17 @@ class PlacementRoutingCarryTests(unittest.TestCase):
             {'id': 'verify', 'kind': 'geometry', 'stage': 'verification',
              'params': {'min_track_width_mm': 0.1}},
         ]
+        route = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
+            schematic='rc_filter.kicad_sch', name='rc_filter', label='carry', checkout=checkout, budget=120)
+        return fixture, checks, route
+
+    def test_real_placement_and_router_keep_open_carry_at_verification(self):
+        from agent_ee import campaign, stage_receipts, placement_adapter as pa
+        from test_placement_adapter import BOARD
+        fixture, checks, route = self.routing_fixture()
         scope = fixture.scope(checks)
         scope['stages']['order'].append('verification')
         scope['stages']['subjects']['routing'] = {'path': BOARD, 'kind': 'tracks', 'minimum': 1}
-        route = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
-            schematic='rc_filter.kicad_sch', name='rc_filter', label='carry', checkout=checkout, budget=120)
         status, state = fixture.campaign(fixture.declaration(), iterations=3, scope=scope, steps=[route])
         self.assertEqual(len(state['history']), 3, {k: state.get(k) for k in ('state', 'reason', 'error', 'history')})
         self.assertEqual(status, 1, state)
@@ -594,3 +630,65 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         self.assertEqual((status, state['state'], state['reason']),
                          (1, 'escalated', 'open_placement_defects'))
         self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'escalated')
+
+    def test_native_routed_artwork_closes_carry_and_exports_fab(self):
+        from agent_ee import campaign, stage_receipts
+        from test_placement_adapter import BOARD
+        fixture, checks, route = self.routing_fixture()
+        # The writer remains scripted; placement, routing, artwork and checks are native.
+        from agent_ee import routed_artwork
+        # Original fixture bindings enable a real native fabrication export.
+        from agent_ee.schematic_emitter import _scan, _dump, Q
+        from agent_ee.symbol_library import children
+        schematic_path = fixture.source / 'project/rc_filter.kicad_sch'
+        tree = _scan(schematic_path.read_bytes())
+        for symbol in children(tree, 'symbol'):
+            props = {p[1]: p for p in children(symbol, 'property')}
+            ref = props['Reference'][2]
+            if ref not in ('C1', 'J1', 'R1'):
+                continue
+            for name, value in (('LCSC', 'C900010'), ('Manufacturer', 'Owned Fixture Works'),
+                                ('Partnumber', 'EE350-' + ref)):
+                prop = copy.deepcopy(props['Value'])
+                prop[1:3] = [Q(name), Q(value)]
+                symbol.append(prop)
+        schematic_path.write_text('\n'.join(_dump(tree)) + '\n')
+        artwork_step = routed_artwork.step(fixture.root / 'artwork-tool', BOARD)
+        closure_checks = [checks[0], {'id': 'netlist', 'kind': 'netlist', 'stage': 'placement'},
+                          *checks[1:],
+                          {'id': 'fab', 'kind': 'fab_export', 'stage': 'fab',
+                           'params': {'netlist_check': 'netlist'}}]
+        closure_scope = fixture.scope(closure_checks)
+        # The netlist supplies native XML to fab; it is informational, not an
+        # independent acceptance requirement.
+        closure_scope['baseline']['requirements'] = [r for r in closure_scope['baseline']['requirements']
+                                                      if r['id'] != 'R-netlist']
+        next(r for r in closure_scope['baseline']['requirements'] if r['id'] == 'R-fab')['checks'] = ['netlist', 'fab']
+        closure_scope['stages']['order'].extend(['verification', 'fab'])
+        closure_scope['stages']['subjects']['routing'] = {'path': BOARD, 'kind': 'tracks', 'minimum': 1}
+        status, closed_state = fixture.campaign(fixture.declaration(), iterations=4,
+            scope=closure_scope, steps=[route, artwork_step], name='receipted-closure')
+        self.assertEqual((status, closed_state['state']), (0, 'criteria_satisfied'),
+                         {key: closed_state.get(key) for key in ('state', 'reason', 'error')})
+        refused = fixture.out / 'runs/3'
+        for check_id in ('verify', 'fab'):
+            self.assertEqual(read_json(refused / f'checks/{check_id}.json')['outcome'], 'defect')
+        fixed = fixture.out / 'runs/4'
+        fixed_manifest = read_json(fixed / 'candidate.json')
+        self.assertEqual(placement_defects.open_defects(fixed_manifest, fixed / 'inputs'), [])
+        self.assertEqual(len(fixed_manifest['scope'][placement_defects.DECLARATION]), 2)
+        for check_id in ('verify', 'fab', 'routed'):
+            self.assertEqual(read_json(fixed / f'checks/{check_id}.json')['outcome'], 'pass')
+        artwork_receipt_dir = fixture.out / 'implementations/3/receipts/1-agent-ee-routed-artwork'
+        artwork_receipt = stage_receipts.validate_receipt(artwork_receipt_dir)
+        self.assertEqual(artwork_receipt['status'], 'completed')
+        self.assertEqual(artwork_receipt['violations'], [])
+        proof = routed_artwork.write_scope((refused / 'inputs' / BOARD).read_bytes(),
+                                           (fixed / 'inputs' / BOARD).read_bytes())
+        self.assertTrue(proof['moved_identities'])
+        export = fixed / 'work/fab/fab'
+        self.assertTrue(list((export / 'gerbers').glob('*')))
+        self.assertTrue(list((export / 'drill').glob('*')))
+        self.assertTrue((export / 'bom.csv').is_file())
+        self.assertTrue((export / 'cpl.csv').is_file())
+        self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'criteria_satisfied')
