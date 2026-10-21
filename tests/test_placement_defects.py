@@ -333,6 +333,21 @@ class NativePlacementCarryTests(unittest.TestCase):
             self.assertTrue(silk(reports[0]))
             self.assertEqual(silk(reports[0]), silk(reports[1]))
 
+    def test_native_mid_token_quotes_cannot_hide_added_artwork(self):
+        import pcbnew as k
+        source = self.candidate_run / 'inputs' / self.manifest['scope']['board']
+        original = source.read_text().rstrip()[:-1]
+        with tempfile.TemporaryDirectory(dir=self.helper.root) as temporary:
+            after = Path(temporary) / 'hidden.kicad_pcb'
+            for prefix in ('h1', '\x0b', '\xa0', '\x85'):
+                with self.subTest(prefix=repr(prefix)):
+                    after.write_text(original + ClosureEscapeTests.quote_hidden_artwork(prefix) + ')')
+                    board = k.LoadBoard(str(after))
+                    self.assertIsNotNone(board)
+                    self.assertIn('EVIL', [d.GetText() for d in board.GetDrawings()
+                                          if isinstance(d, k.PCB_TEXT)])
+                    self.assertFalse(placement_defects.same_artwork(source, after))
+
     def test_expired_tool_budget_does_not_erase_known_carried_defects(self):
         from agent_ee.checks import run_checks
         check = run_checks(self.candidate_run, time.monotonic() - 1)[0]
@@ -724,6 +739,52 @@ class ClosureEscapeTests(unittest.TestCase):
         hidden = self.hash_hidden_artwork(footprint)
         self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
 
-    def test_hash_inside_string_preserves_masked_track_liveness(self):
-        track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t\n#x"))'
-        self.assertEqual(self.run_closure(lambda t: t.rstrip()[:-1] + track + ')'), [])
+    def test_hash_inside_string_is_retained_in_raw_comparison(self):
+        track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t#x"))'
+        self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + track + ')')), 1)
+        # The prior attempt's multiline-string input must also reopen closure.
+        multiline = track.replace('t#x', 't\n#x')
+        self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + multiline + ')')), 1)
+
+    @staticmethod
+    def quote_hidden_artwork(prefix):
+        evil = '(gr_text EVIL (at 20 20 0) (layer F.SilkS) (uuid g) (effects (font (size 1 1) (thickness 0.15))))'
+        return ('\n(arc (start 10 10) (mid 11 10.5) (end 12 10) (width 0.2) '
+                '(layer "F.Cu") (net 0) (uuid ' + prefix + '"\n))\n' + evil + '\n'
+                '(arc (start 30 30) (mid 31 30.5) (end 32 30) (width 0.2) '
+                '(layer F.Cu) (net 0) (uuid h2"\n))\n')
+
+    def test_mid_token_quote_hides_gr_text(self):
+        for prefix in ('h1', '\x0b', '\xa0', '\x85'):
+            hidden = self.quote_hidden_artwork(prefix)
+            with self.subTest(prefix=repr(prefix)):
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
+
+    def test_lexer_comment_and_linebreak_variants_reopen(self):
+        artwork = '(gr_text "EVIL" (at 20 20) (layer "F.SilkS"))'
+        for blank in ('', '\t', '\r', '\0', '\v', '\f', '\xa0'):
+            for newline in ('\n', '\r\n', '\r'):
+                hidden = self.hash_hidden_artwork(artwork, blank).replace('\n', newline)
+                with self.subTest(blank=repr(blank), newline=repr(newline)):
+                    self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
+        for edit in (lambda t: t.replace('(property ', '(property \n#\n', 1),
+                     lambda t: t.rstrip()[:-1] + '#((\n)'):
+            self.assertEqual(len(self.run_closure(edit)), 1)
+
+    def test_only_writer_grammar_track_spans_are_exempt(self):
+        track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t"))'
+        # Writer whitespace and bare atoms stay live, including CRLF output.
+        for valid in (track, track.replace(' ', '\t'), track.replace(' ', '\r\n'),
+                      track.replace('"t"', 't_1.+-')):
+            with self.subTest(valid=repr(valid)):
+                self.assertEqual(self.run_closure(lambda t: t.rstrip()[:-1] + valid + ')'), [])
+        for invalid in (track.replace('"t"', 't/1'), track.replace('"t"', 't:1'),
+                        track.replace('"t"', 't#1'), track.replace('"t"', 't;1'),
+                        track.replace('"t"', '"t#1"'), track.replace('"t"', '"t;1"'),
+                        track.replace('"t"', '"t""x"'),
+                        *(track.replace('"t"', '"t' + c + 'x"')
+                          for c in ('\n', '\r', '\t', '\x01', '\x7f', '\x85', '\x9f')),
+                        *(track.replace(' ', c, 1)
+                          for c in ('\r', '\v', '\f', '\xa0', '\x85'))):
+            with self.subTest(invalid=repr(invalid)):
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + invalid + ')')), 1)

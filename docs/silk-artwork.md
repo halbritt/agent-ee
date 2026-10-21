@@ -132,10 +132,15 @@ source bytes. Decoded atoms cannot establish equivalence: KiCad's string escape
 decoding differs from the shared parser's. Comments (`;` outside quoted strings
 and KiCad `#` line comments)
 refuse the proof. A `#` after only spaces, tabs, carriage returns or NUL bytes
-at the start of a line is a comment; hashes inside quoted strings remain data.
-Tracks containing a backslash and unknown track children,
-including mask-exposure attributes, remain in the byte comparison. Whitespace
-inside retained nodes is significant; whitespace between root children is not.
+at the start of a line is a comment.
+A track span is exempt only when its raw source has balanced parentheses,
+bare tokens matching `[A-Za-z0-9_.+-]+`, and double-quoted strings without
+backslashes, embedded quotes or control characters. Only spaces, tabs, LF and
+CRLF separate tokens. Semicolons and hashes anywhere in the span, mid-token quotes,
+other whitespace and unknown track children (including mask exposure) receive
+no exemption: their raw bytes remain in the comparison and reopen closure when
+changed. This also retains printable hashes and semicolons inside quoted strings.
+Whitespace inside retained nodes is significant; whitespace between root children is not.
 Footprint transforms, marking positions/content/ownership, pads, mask, vias,
 zones and setup must remain unchanged. Closure binds the complete captured
 `.kicad_pro` and `.kicad_dru` path/digest inventories from the native DRC receipt

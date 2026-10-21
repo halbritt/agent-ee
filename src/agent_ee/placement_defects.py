@@ -8,6 +8,7 @@ DRC without a later adopted placement receipt.
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from .candidate import safe_relative
@@ -208,6 +209,29 @@ def _items(defect):
     return {defect['uuid']}
 
 
+# This recognizes only the lexical form of writer-produced track spans. Structural
+# parsing and bounds remain the shared S-expression reader's responsibility.
+_WRITER_TOKEN = re.compile(r'(?:[ \t\n]+|\r\n|[()]|[A-Za-z0-9_.+-]+(?=[ \t\r\n()]|$)|'
+                           r'"[^"\\#;\x00-\x1f\x7f-\x9f]*"(?=[ \t\r\n()]|$))')
+
+
+def _writer_track_span(source):
+    depth, pos = 0, 0
+    while pos < len(source):
+        token = _WRITER_TOKEN.match(source, pos)
+        if token is None:
+            return False
+        value = token.group()
+        if value == '(':
+            depth += 1
+        elif value == ')':
+            depth -= 1
+            if depth < 0 or (depth == 0 and token.end() != len(source)):
+                return False
+        pos = token.end()
+    return depth == 0
+
+
 def same_artwork(before, after):
     """Prove identical markings and obstructions except masked board copper tracks.
 
@@ -271,7 +295,7 @@ def same_artwork(before, after):
                 if (len(layers) == 1 and len(layers[0]) == 2 and
                         layers[0][1] in ('F.Cu', 'B.Cu', *(f'In{i}.Cu' for i in range(1, 31))) and
                         all(isinstance(n, list) and n and n[0] in allowed for n in node[1:]) and
-                        '\\' not in source):
+                        _writer_track_span(source)):
                     continue
             kept.append(source.encode('utf-8'))
         return kept

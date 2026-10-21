@@ -1838,10 +1838,14 @@ epoch completion. A clean receipted
 closure can survive masked copper track edits only when retained root nodes have
 identical raw source bytes and the complete captured project/custom-rule path and
 digest inventories remain unchanged, including non-board stems. Semicolons outside
-strings and KiCad `#` line comments refuse equivalence; escaped track spans remain
-in the comparison; vias, zones and unknown track attributes still require fresh
-receipt evidence. The evidence
-seal reconstructs these refusals; release artifact extraction also refuses open carry.
+strings and KiCad `#` line comments refuse equivalence. Exempt track spans must
+match the positive writer grammar: balanced parentheses, `[A-Za-z0-9_.+-]+`
+bare tokens, quoted strings without backslashes, embedded quotes or controls,
+and only spaces, tabs, LF or CRLF between tokens. Hashes and semicolons anywhere
+in a track span prevent exemption. Other track spans remain in
+the raw-byte comparison, including mid-token quotes and multiline strings;
+vias, zones and unknown track attributes still require fresh receipt evidence.
+The evidence seal reconstructs these refusals; release artifact extraction also refuses open carry.
 Uncarried baseline findings retain their existing verdicts. Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.
