@@ -135,6 +135,14 @@ regulator clusters, are search-derived and advisory. Hard classes are disabled
 (`authority_unavailable`) until a verified owner authority exists (AGENTEE-348), and
 every use is admitted by `blocks.admit` on the target.
 
+[Block arrangement](docs/blocks.md#stage-b-arrangement-agentee-340) places the
+admitted candidates as rigid macros, then packs the residual parts with the
+placer, with block members fixed. The search uses deterministic conflict-directed
+backjumping with typed exhaustion. Block rules (keep-outs, opposite-side
+shadows, no block over a fixed part, thermal spread) are hard only with a
+citation. Boundary roles are bound to their board nets. The complete plan goes
+through the writer's native gate.
+
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
 
