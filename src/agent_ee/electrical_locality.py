@@ -6,6 +6,7 @@ Distances use native copper-land centroids, not anchors, routed length or loop i
 from copy import deepcopy
 from fractions import Fraction
 import math
+from types import MappingProxyType
 from uuid import UUID
 
 from . import locality_provenance
@@ -14,7 +15,37 @@ SCHEMA = 'agent-ee.electrical-locality/1'
 CRITERION = 'electrical-locality/1'
 
 
+def _plain_json(value):
+    """Copy exact JSON types into fresh containers unreachable by copy hooks."""
+    ancestors = set()
+
+    def copy_value(value):
+        kind = type(value)
+        if kind is dict or kind is list:
+            identity = id(value)
+            if identity in ancestors:
+                raise ValueError('locality document must contain only JSON values')
+            ancestors.add(identity)
+            try:
+                if kind is list:
+                    return [copy_value(item) for item in value]
+                copied = {}
+                for key, item in value.items():
+                    if type(key) is not str:
+                        raise ValueError('locality document must contain only JSON values')
+                    copied[key] = copy_value(item)
+                return copied
+            finally:
+                ancestors.remove(identity)
+        if value is not None and not any(kind is scalar for scalar in (str, int, float, bool)):
+            raise ValueError('locality document must contain only JSON values')
+        return value
+
+    return copy_value(value)
+
+
 def validate(document):
+    _plain_json(document)
     if (not isinstance(document, dict) or set(document) - {'schema', 'obligations', 'source_records'}
             or not {'schema', 'obligations'} <= document.keys()
             or document['schema'] != SCHEMA or not isinstance(document['obligations'], list)
@@ -230,19 +261,31 @@ class PlacementIndex:
     that footprint. Candidate evaluators contain only incident, placed pairs.
     """
     def __init__(self, document):
+        document = _plain_json(deepcopy(document))
         validate(document)
-        document = deepcopy(document)
-        self.pairs = {}
-        self.endpoints = {}
+        pairs = {}
+        endpoints = {}
         self.positions = {}
         for obligation in document['obligations']:
             for role in roles(obligation):
                 pair = obligation[role]
-                for own, peer in ((pair['from'], pair['to']), (pair['to'], pair['from'])):
+                a, b = (MappingProxyType(dict(pair[end])) for end in ('from', 'to'))
+                for own, peer in ((a, b), (b, a)):
                     ref = own['reference']
-                    self.pairs.setdefault(ref, []).append((own, peer, pair['max_distance_nm'],
+                    pairs.setdefault(ref, []).append((own, peer, pair['max_distance_nm'],
                         locality_provenance.classify(pair, document.get('source_records'))['enforcement'] == 'hard'))
-                    self.endpoints.setdefault(ref, {})[self.key(own)] = own
+                    endpoints.setdefault(ref, {})[self.key(own)] = own
+        self._pairs = MappingProxyType({ref: tuple(rows) for ref, rows in pairs.items()})
+        self._endpoints = MappingProxyType({ref: MappingProxyType(rows)
+                                            for ref, rows in endpoints.items()})
+
+    @property
+    def pairs(self):
+        return self._pairs
+
+    @property
+    def endpoints(self):
+        return self._endpoints
 
     @staticmethod
     def key(endpoint):

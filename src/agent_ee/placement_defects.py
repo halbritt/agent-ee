@@ -40,29 +40,39 @@ def adopted(root, state, number):
     from .placement_adapter import STEP, qualify_receipt
     from .stage_done import _receipts
     from .stage_receipts import validate_receipt
-    if str(number) not in state.get('placement_records', {}):
-        return None
     work = Path(root) / 'implementations' / str(number)
     found = None
+    from . import routed_artwork
     for k, sha, receipt in _receipts(root, state, str(number)):
-        if receipt['spec']['step'] != STEP or receipt['status'] != 'completed':
+        artwork = receipt['spec']['step'] == routed_artwork.STEP
+        if not artwork and str(number) not in state.get('placement_records', {}):
             continue
-        record_path = work / 'placement-adapter.json'
-        if digest(record_path) != state.get('placement_records', {}).get(str(number)):
-            raise ValueError('placement defect carry lacks its anchored adapter record')
-        record = read_json(record_path)
+        if receipt['spec']['step'] not in (STEP, routed_artwork.STEP) or receipt['status'] != 'completed':
+            continue
         link = read_json(work / 'stage-receipts.json')['receipts'][k - 1]
         path = work / link['path']
         source = read_json(Path(state['history'][number - 1]['run']) / 'candidate.json')
         receipt = validate_receipt(path.parent, binding={'implementation': number,
             'source_candidate_id': source['candidate_id'], 'receipt_index': k})
-        if digest(path) != sha or record['status'] != 'proposed':
-            raise ValueError('placement defect carry receipt is not an adopted proposal')
-        qualified = qualify_receipt(path.parent, receipt, record['board'], record['protected'])
-        if (record['helper']['receipt_sha256'] != sha or
-                record['helper']['result_sha256'] != qualified['result_sha256']):
-            raise ValueError('placement defect carry differs from its qualified helper')
+        if digest(path) != sha:
+            raise ValueError('carried helper receipt differs from anchored receipt')
+        if artwork:
+            routed_artwork.qualify_receipt(path.parent, receipt, source['scope']['board'],
+                                           state['launch_environment']['policy_files'])
+        else:
+            record_path = work / 'placement-adapter.json'
+            if digest(record_path) != state.get('placement_records', {}).get(str(number)):
+                raise ValueError('placement defect carry lacks its anchored adapter record')
+            record = read_json(record_path)
+            if record['status'] != 'proposed':
+                raise ValueError('placement defect carry receipt is not an adopted proposal')
+            qualified = qualify_receipt(path.parent, receipt, record['board'], record['protected'])
+            if (record['helper']['receipt_sha256'] != sha or
+                    record['helper']['result_sha256'] != qualified['result_sha256']):
+                raise ValueError('placement defect carry differs from its qualified helper')
         names = [*FILES, *([ARTWORK] if ARTWORK in receipt['artifacts'] else [])]
+        if artwork:
+            names.append(routed_artwork.SOURCE)
         data = {'receipt.json': path.read_bytes()}
         for name in names:
             artifact = path.parent / 'run' / name
@@ -149,8 +159,13 @@ def _bundle(manifest, inputs, link):
             receipt.get('identity') != identity({k: v for k, v in receipt.items() if k != 'identity'})):
         raise ValueError('carried placement receipt identity or status invalid')
     prefix = str(Path(link['receipt']).parent)
+    from . import routed_artwork
+    artwork = receipt['spec']['step'] == routed_artwork.STEP
     loaded = {}
-    for name in [*FILES, *([ARTWORK] if ARTWORK in receipt['artifacts'] else [])]:
+    names = [*FILES, *([ARTWORK] if ARTWORK in receipt['artifacts'] else [])]
+    if artwork:
+        names.append(routed_artwork.SOURCE)
+    for name in names:
         loaded[name] = _read(manifest, inputs, f'{prefix}/{name}', receipt['artifacts'].get(name))
         if receipt['artifacts'].get(name) is None:
             raise ValueError('carried placement receipt lacks required artifact')
@@ -163,6 +178,11 @@ def _bundle(manifest, inputs, link):
             report.get('open_defects') != report.get('native_drc_comparison', {}).get('open_defects') or
             (report.get('open_defects') and (report.get('outcome'), report.get('verdict')) != ('defect', 'defect'))):
         raise ValueError('carried placement result is not bound to its receipt')
+    if artwork:
+        proof = routed_artwork.write_scope(loaded[routed_artwork.SOURCE].read_bytes(), loaded[BOARD].read_bytes())
+        if (report.get('producer') != routed_artwork.STEP or report.get('write_scope') != proof or
+                digest(loaded[routed_artwork.SOURCE]) != receipt['inputs'].get(board)):
+            raise ValueError('carried artwork scope differs from its receipt')
     drc, execution = read_json(loaded[DRC]), read_json(loaded[EXECUTION])
     if (execution.get('execution') != 'ok' or execution.get('exit_code') != 0 or
             set(drc.get('included_severities', [])) != {'error', 'warning', 'exclusion'} or
@@ -172,11 +192,30 @@ def _bundle(manifest, inputs, link):
     return report, loaded, drc
 
 
-def _identities(path):
+class _SavedIdentities(dict):
+    """Saved identities with the receipt's board-bound native containment witness."""
+    def __init__(self, path, witness):
+        super().__init__()
+        self.board_bytes = Path(path).read_bytes()
+        self._contained = set()
+        if not isinstance(witness, dict) or set(witness) != {'board_sha256', 'markings'}:
+            return
+        markings = witness['markings']
+        if (witness['board_sha256'] == hashlib.sha256(self.board_bytes).hexdigest() and
+                isinstance(markings, list) and all(isinstance(u, str) and u for u in markings) and
+                len(markings) == len(set(markings))):
+            self._contained = set(markings)
+
+    def contained(self):
+        # Replay consumes sealed evidence only; missing/invalid witnesses close nothing.
+        return self._contained
+
+
+def _identities(path, witness=None):
     """Saved native item identities and marking content, using the shared parser."""
     from .symbol_library import children, parse_sexpr
-    root = parse_sexpr(Path(path).read_bytes())
-    result = {}
+    result = _SavedIdentities(path, witness)
+    root = parse_sexpr(result.board_bytes)
     def visit(node, owner):
         uid = children(node, 'uuid')
         if uid:
@@ -327,7 +366,7 @@ def open_defects(manifest, inputs):
     active = []
     for link in links:
         report, loaded, drc = _bundle(manifest, inputs, link)
-        identities = _identities(loaded[BOARD])
+        identities = _identities(loaded[BOARD], report.get('containment'))
         moved = {m['uuid'] for m in read_json(loaded[ARTWORK]).get('moved_fields', [])} if ARTWORK in loaded else set()
         conflicts = {i['uuid'] for v in drc['violations'] if v['type'].startswith('silk_') for i in v['items']}
         diagnostics = {d['uuid'] for d in report['open_defects'] if 'uuid' in d}
@@ -351,7 +390,9 @@ def open_defects(manifest, inputs):
                     Path(p).suffix in ('.kicad_pro', '.kicad_dru')}
         current = current and rules(receipt['inputs']) == rules(manifest['files'])
         active = [(d, source, original) for d, source, original in active
-                  if not _closes(d, original, identities, conflicts | diagnostics, moved, current)]
+                  if not _closes(d, original, identities, conflicts | diagnostics, moved, current,
+                                 report.get('producer') == 'agent-ee-routed-artwork' and
+                                 receipt.get('spec', {}).get('step') == 'agent-ee-routed-artwork')]
         for defect in report['open_defects']:
             _items(defect)
             active.append((defect, link, identities))
@@ -366,13 +407,27 @@ def open_defects(manifest, inputs):
     return defects
 
 
-def _closes(defect, original, current, conflicts, moved, current_board):
+def _closes(defect, original, current, conflicts, moved, current_board, graphic_translation=False):
     ids = _items(defect)
     markings = {u for u in ids & current.keys() if current[u][1][0] == 'property' or
                 current[u][1][0].startswith(('fp_', 'gr_'))}
+    def same(u):
+        if current[u][:2] == original[u][:2]:
+            # Text angle lives in the position node; only its x/y may move.
+            return ([at[3:] for at in current[u][2]] ==
+                    [at[3:] for at in original[u][2]])
+        from .routed_artwork import GRAPHICS, translated_content
+        from .symbol_library import children
+        old_owner, old, _ = original[u]
+        new_owner, new, _ = current[u]
+        return (graphic_translation and old_owner == new_owner and old[0] == new[0] and old[0] in GRAPHICS and
+                old[0] not in ('fp_text', 'gr_text') and
+                children(old, 'layer') in ([['layer', 'F.SilkS']], [['layer', 'B.SilkS']]) and
+                translated_content(old) == translated_content(new))
     return (current_board and ids <= current.keys() and ids <= original.keys() and
-            all(current[u][:2] == original[u][:2] for u in ids) and
+            all(same(u) for u in ids) and
             bool(markings) and not (markings & conflicts) and
+            (callable(getattr(current, 'contained', None)) and markings <= current.contained()) and
             ('native' in defect or all(u in moved or current[u][2] != original[u][2] for u in ids)))
 
 
