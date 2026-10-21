@@ -298,7 +298,9 @@ def _isolate(capture, policy, block):
     anchor = anchor_of(block, board)
     sub, deferred = _filter_policy(policy, block)
     sub['fixed_refs'] = [anchor]
-    sub['priority_refs'] = connected_order(board, members, anchor, sub['priority_refs'], sub['ground_nets'])
+    # The anchor is fixed in the block frame, so a board priority on it does not apply.
+    declared = [r for r in sub['priority_refs'] if r != anchor]
+    sub['priority_refs'] = connected_order(board, members, anchor, declared, sub['ground_nets'])
     uuids = {board[r]['uuid'] for r in members}
     areas = [a for a in capture.get('rule_areas', []) if isinstance(a, dict) and a.get('owner') in uuids]
     deferred['board_rule_areas'] = sum(1 for a in capture.get('rule_areas', [])

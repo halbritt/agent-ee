@@ -7,6 +7,7 @@ from fresh sealed checks of the captured proposal.
 """
 
 import contextlib
+import errno
 import hashlib
 import json
 import math
@@ -86,6 +87,28 @@ class LivePackageSourceError(ValueError):
         super().__init__(self.violation)
 
 
+class MountSourceChangedError(ValueError):
+    """A validated mount source disappeared or changed its identity."""
+
+    def __init__(self, at):
+        self.violation = 'mount_source_changed:' + at
+        super().__init__(self.violation)
+
+
+def _live_source_identities():
+    package_source = Path(__file__).resolve(strict=True).parents[1]
+    identities = set()
+
+    def walk_error(exc):
+        raise exc
+
+    for root, directories, files in os.walk(package_source, onerror=walk_error):
+        for path in [Path(root), *(Path(root) / name for name in directories + files)]:
+            observed = path.lstat()
+            identities.add((observed.st_dev, observed.st_ino))
+    return identities
+
+
 def _mount_identity(path):
     observed = path.stat()
     return observed.st_dev, observed.st_ino
@@ -111,15 +134,9 @@ def _validated_mount_source(source, at, *, source_identity=None):
     # live tree here: common ancestors such as / must not reject unrelated tools.
     source_identities = {source_identity, *(_mount_identity(p) for p in resolved.parents)}
 
-    def walk_error(exc):
-        raise exc
-
-    for root, directories, files in os.walk(package_source, onerror=walk_error):
-        for path in [Path(root), *(Path(root) / name for name in directories + files)]:
-            # Do not follow tree symlinks out into unrelated system directories.
-            observed = path.lstat()
-            if (observed.st_dev, observed.st_ino) in source_identities:
-                raise LivePackageSourceError(at)
+    live_identities = _live_source_identities()
+    if source_identities & live_identities:
+        raise LivePackageSourceError(at)
     if resolved.is_dir():
         _refuse_submounts(resolved, at)
     return str(resolved)
@@ -147,11 +164,11 @@ def _resolved_mounts(spec):
             source = _validated_mount_source(str(resolved), mount['at'], source_identity=expected)
             if source != str(resolved) or not (stat.S_ISDIR(observed.st_mode) or
                                                stat.S_ISREG(observed.st_mode)):
-                raise ValueError('mount_source_changed:' + mount['at'])
+                raise MountSourceChangedError(mount['at'])
         except FileNotFoundError as exc:
             raise ValueError('mount source does not exist: ' + mount['source']) from exc
         except OSError as exc:
-            raise ValueError('mount_source_changed:' + mount['at']) from exc
+            raise MountSourceChangedError(mount['at']) from exc
         mounts.append({'source': source, 'at': mount['at']})
         identities.append(expected)
     return {**spec, 'mounts': mounts}, identities
@@ -170,6 +187,7 @@ def _refuse_fd_submounts(descriptor, at):
     # Anchor the inventory to the opened object, not a spelling which a rename
     # can redirect while mountinfo is read. Mount IDs distinguish same-device binds.
     expected = _fd_mount_id(descriptor)
+    live_identities = _live_source_identities()
 
     def walk_error(exc):
         raise exc
@@ -183,6 +201,9 @@ def _refuse_fd_submounts(descriptor, at):
             try:
                 if _fd_mount_id(child) != expected:
                     raise ValueError('mount_source_submount:' + at)
+                observed = os.fstat(child)
+                if (observed.st_dev, observed.st_ino) in live_identities:
+                    raise LivePackageSourceError(at)
             finally:
                 os.close(child)
 
@@ -201,11 +222,11 @@ def _opened_mounts(spec, identities):
                 observed = os.fstat(descriptor)
                 if ((observed.st_dev, observed.st_ino) != expected or
                         not (stat.S_ISDIR(observed.st_mode) or stat.S_ISREG(observed.st_mode))):
-                    raise ValueError('mount_source_changed:' + mount['at'])
+                    raise MountSourceChangedError(mount['at'])
                 if stat.S_ISDIR(observed.st_mode):
                     _refuse_fd_submounts(descriptor, mount['at'])
             except OSError as exc:
-                raise ValueError('mount_source_changed:' + mount['at']) from exc
+                raise MountSourceChangedError(mount['at']) from exc
             mounts.append((descriptor, mount['at']))
         yield mounts
 
@@ -216,10 +237,13 @@ def _recheck_mounts(spec, identities):
         try:
             if (str(source.resolve(strict=True)) != mount['source'] or
                     _mount_identity(source) != expected):
-                raise ValueError('mount_source_changed:' + mount['at'])
+                raise MountSourceChangedError(mount['at'])
             _validated_mount_source(mount['source'], mount['at'], source_identity=expected)
+            # Entries remain mutable in place: re-inventory the held object for live links.
+            if 'descriptor' in mount and stat.S_ISDIR(os.fstat(mount['descriptor']).st_mode):
+                _refuse_fd_submounts(mount['descriptor'], mount['at'])
         except OSError as exc:
-            raise ValueError('mount_source_changed:' + mount['at']) from exc
+            raise MountSourceChangedError(mount['at']) from exc
 
 
 def validate_step(spec, *, host=True):
@@ -433,14 +457,20 @@ def _strict_tree(root):
     return files
 
 
-def _identity_tree(source):
+def _identity_tree(source, *, descriptor=None):
     """Identity of a read-only tool mount: file bytes and link targets."""
     source = Path(source)
-    if source.is_file() and not source.is_symlink():
-        entries = {source.name: digest(source)}
+    name = source.name
+    if descriptor is not None:
+        source = Path(f'/proc/self/fd/{descriptor}')
+    if source.is_file() and (descriptor is not None or not source.is_symlink()):
+        entries = {name: digest(source)}
     else:
         entries = {}
-        for current, dirs, names in os.walk(source, followlinks=False):
+        def walk_error(exc):
+            raise exc
+
+        for current, dirs, names in os.walk(source, followlinks=False, onerror=walk_error):
             base = Path(current)
             for name in [*dirs, *names]:
                 path = base / name
@@ -457,27 +487,89 @@ def tree_identity(source):
     return _identity_tree(source)
 
 
-def _host_path(spec, sandbox_path):
+def _host_path(spec, sandbox_path, *, held=True):
     for mount in spec['mounts']:
         if _under(sandbox_path, mount['at']):
             rel = PurePosixPath(sandbox_path).relative_to(mount['at'])
-            return Path(mount['source']) / rel
+            source = (f"/proc/self/fd/{mount['descriptor']}"
+                      if held and 'descriptor' in mount else mount['source'])
+            return Path(source) / rel
     return Path(sandbox_path)
+
+
+def _escaping_mount_link(spec, sandbox_path):
+    """Return a link target if resolving this path would leave its mount namespace."""
+    mount = next((m for m in spec['mounts'] if _under(sandbox_path, m['at'])), None)
+    if mount is None:
+        return None
+    root = _host_path(spec, mount['at'])
+    pending = [(part, None) for part in PurePosixPath(sandbox_path).relative_to(mount['at']).parts]
+    parts, links = [], 0
+    while pending:
+        part, origin = pending.pop(0)
+        if part == '..':
+            if not parts:
+                return origin
+            parts.pop()
+            continue
+        if part == '.':
+            continue
+        path = root.joinpath(*parts, part)
+        if not path.is_symlink():
+            parts.append(part)
+            continue
+        target = os.readlink(path)
+        if PurePosixPath(target).is_absolute():
+            return target
+        links += 1
+        if links > 40:
+            raise OSError(errno.ELOOP, 'too many tool symlinks', str(path))
+        pending = [(part, target) for part in PurePosixPath(target).parts] + pending
+    return None
+
+
+@contextlib.contextmanager
+def _mount_observation(spec, sandbox_path):
+    try:
+        yield
+    except OSError as exc:
+        mount = next((m for m in spec['mounts'] if _under(sandbox_path, m['at'])), None)
+        if mount is None:
+            raise
+        raise MountSourceChangedError(mount['at']) from exc
 
 
 def observe_tool(spec):
     """Coordinator-side tool identity; missing pieces are recorded as null."""
     host = _host_path(spec, spec['argv'][0])
-    resolved = host.resolve() if host.exists() else None
-    executable = {'path': spec['argv'][0], 'host_path': str(resolved) if resolved else str(host),
-                  'sha256': digest(resolved) if resolved and resolved.is_file() else None}
-    mounts = [{'at': m['at'], **_identity_tree(m['source'])} if Path(m['source']).exists()
-              else {'at': m['at'], 'sha256': None, 'files': 0} for m in spec['mounts']]
+    display = _host_path(spec, spec['argv'][0], held=False)
+    # Resolving an fd path back to its name would reintroduce the rename race.
+    with _mount_observation(spec, spec['argv'][0]):
+        escaped = _escaping_mount_link(spec, spec['argv'][0])
+        resolved = display.resolve() if host == display and display.exists() and escaped is None else display
+        executable = {'path': spec['argv'][0], 'host_path': str(resolved),
+                      'sha256': digest(host) if escaped is None and host.is_file() else None}
+    mounts = []
+    for mount in spec['mounts']:
+        with _mount_observation(spec, mount['at']):
+            observed = (_identity_tree(mount['source'], descriptor=mount.get('descriptor'))
+                        if 'descriptor' in mount or Path(mount['source']).exists()
+                        else {'sha256': None, 'files': 0})
+            mounts.append({'at': mount['at'], **observed})
     source = None
     if spec['source'] is not None:
-        root = _host_path(spec, spec['source'])
-        source = {'path': spec['source'], **(_identity_tree(root) if root.exists()
-                                             else {'sha256': None, 'files': 0})}
+        with _mount_observation(spec, spec['source']):
+            root = _host_path(spec, spec['source'])
+            mount = next((m for m in spec['mounts'] if m['at'] == spec['source']), None)
+            escaped = _escaping_mount_link(spec, spec['source'])
+            if escaped is not None:
+                observation = {'sha256': identity({root.name: 'link:' + escaped}), 'files': 1}
+            elif not root.exists():
+                observation = {'sha256': None, 'files': 0}
+            else:
+                observation = (_identity_tree(mount['source'], descriptor=mount.get('descriptor'))
+                               if mount is not None else _identity_tree(root))
+            source = {'path': spec['source'], **observation}
     return {'executable': executable, 'mounts': mounts, 'source_tree': source}
 
 
@@ -719,6 +811,9 @@ def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation
     spec = validate_step(spec, host=False)
     runtime_spec, mount_identities = _resolved_mounts(spec)
     with _opened_mounts(runtime_spec, mount_identities) as mounts:
+        runtime_spec = {**runtime_spec, 'mounts': [
+            {**mount, 'descriptor': descriptor}
+            for mount, (descriptor, _) in zip(runtime_spec['mounts'], mounts)]}
         return _run_bound_step(receipt_dir, design, spec, binding, runtime_spec,
                                mount_identities, mounts, deadline=deadline, cancellation=cancellation)
 
@@ -772,6 +867,7 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
         # The executor could not keep its records, for example because the tool left /work
         # unwritable. No record on disk is trusted; the receipt is kept and the error re-raised.
         failure = exc
+    _recheck_mounts(runtime_spec, mount_identities)
     tool_after = observe_tool(runtime_spec)
     outputs = _outputs(spec, run)
     violations = _violations(spec, inputs, receipt_dir, tool, tool_after,

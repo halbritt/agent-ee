@@ -375,6 +375,9 @@ def _saved_judgment(output, plan):
     if 'electrical_locality' in policy:
         from .electrical_locality import grade
         judgment['locality_grading'] = grade(facts, policy['electrical_locality'])
+    if 'block_arrangement' in plan:
+        from .block_arrangement import saved_rules
+        judgment['block_rules'] = saved_rules(facts, plan, policy)
     return facts, judgment
 
 
@@ -424,6 +427,8 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed its declared placement groups')
     if judgment.get('locality_grading', {}).get('status', 'pass') != 'pass':
         raise ValueError('saved-board placement failed its declared electrical locality')
+    if any(r['enforcement'] == 'hard' and r['status'] != 'pass' for r in judgment.get('block_rules', [])):
+        raise ValueError('saved-board placement failed a hard block arrangement rule')
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),
             'status': 'placed', 'outcome': 'defect' if comparison['open_defects'] else 'info',
@@ -463,18 +468,28 @@ def _effective_policy(request):
     return {**policy, 'min_courtyard_edge_mm': margin}
 
 
-def _plan(facts, request, policy=None):
+def _heartbeat(record):
+    print(json.dumps({'event': 'placement_heartbeat', **record}, sort_keys=True), file=sys.stderr, flush=True)
+
+
+def _plan(facts, request, policy=None, netlist=None):
     policy = _effective_policy(request) if policy is None else policy
-    if 'targeted' in request and 'targeted_plans' in request:
-        raise ValueError('targeted and targeted_plans cannot be combined')
+    if sum(key in request for key in ('targeted', 'targeted_plans', 'blocks')) > 1:
+        raise ValueError('targeted, targeted_plans and blocks cannot be combined')
+    if 'blocks' in request:
+        # Candidates are packed and admitted against the captured request policy; the
+        # effective policy adds only board obstacles, which arrangement enforces.
+        from .block_arrangement import plan_from_request
+        if netlist is None:
+            raise ValueError('block arrangement needs the captured native netlist')
+        return plan_from_request(facts, request['blocks'], _effective_policy(request), policy, netlist, _heartbeat)
     if 'targeted' in request:
         from .placement_plans import plan
         return plan(facts, policy, request['targeted'])
     if 'targeted_plans' in request:
         from .placement_plans import select
         return select(facts, policy, request['targeted_plans'])
-    return pack(facts, policy, heartbeat=lambda record: print(
-        json.dumps({'event': 'placement_heartbeat', **record}, sort_keys=True), file=sys.stderr, flush=True))
+    return pack(facts, policy, heartbeat=_heartbeat)
 
 
 def place_candidate(source, netlist, destination, request):
@@ -506,7 +521,7 @@ def place_candidate(source, netlist, destination, request):
         board = _unrouted_board(source)
         _netlist_binding(netlist_bytes, facts, _board_only(board))
         policy = reserve_imu_markings(board, _effective_policy(request))
-        plan = _plan(facts, request, policy)
+        plan = _plan(facts, request, policy, netlist)
         refusal = plan['status'] == 'planned' and _padstack_refusal(board)
         if refusal:
             return _failure(facts, policy, 'unsupported_geometry', 'unknown', plan['steps_used'], refusal)

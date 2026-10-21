@@ -103,6 +103,61 @@ fixed courtyard stays usable. Fixed parts must fit the outline and stay clear
 of each other, the obstacles and keepouts by the same rule. Otherwise the plan
 is `fixed_conflict`, `outcome=unknown`, naming the later part of the pair.
 
+### Declared obstacle unions and reserved-gap provenance (AGENTEE-338)
+
+Earlier policy validation refused touching or overlapping polygons within one
+obstacle (`nested or touching polygon contours unsupported`); splitting them
+into separate obstacle entries avoided that refusal. Declared obstacle polygons
+now reserve their exact union on each declared side, whether grouped in one
+entry or split across entries. Each polygon must still be simple, nondegenerate,
+straight and expressed in integer nanometres; each entry permits 1–64 polygons.
+Self-intersections, repeated vertices and zero-area members remain invalid policy
+and raise `ValueError`. Courtyard and outline contour qualification is unchanged.
+
+The union is represented by its member polygons, with no rounding, hull or
+bounding-box replacement. Shared edges and overlaps open no gap; concave notches
+and uncovered holes remain available. Nested members and duplicates add no
+reserved space. Board-capacity calculations union their blocker boxes rather
+than adding overlapping areas. Region-capacity proofs retain only disjoint
+blockers as a conservative lower bound, so overlap may weaken a proof but never
+inflate blocked area.
+
+`gap_nm` applies between fixed courtyards and declared obstacles too. In
+particular, `gap_nm: 250000` requires a 0.25 mm Euclidean edge distance; exactly
+0.25 mm is admitted, while one nanometre less returns `fixed_conflict`,
+`outcome=unknown`, with no placements. Positive-area structural overlap remains
+blocked even when `gap_nm` is zero.
+
+The pod's 0.25 mm value came from agent-491's packing policy (`gap_nm: 250000`),
+as recorded by agent-499 in the AGENTEE-338 comment and AGENTEE-331/337 provenance
+follow-up. It is an **agent-chosen advisory default**, with no captured JLCPCB SMT
+assembly figure establishing it as a manufacturing requirement. The generic
+packing API requires an explicit gap and supplies no 0.25 mm default. This
+value remains a search reservation and a fixed-placement admission guard. A
+capacity proof that depends on it reports `packing_infeasible`, `outcome=unknown`,
+empty placements and `owner_confirmation: ["gap_nm"]`, naming the unsourced
+constraint in `reason` and `binding_constraints`. The diagnostic keeps the
+existing `unknown`/`hard` gap entry: `hard` describes the enforced search
+reservation, not authority to establish a design defect. If the same capacity
+bound proves infeasibility at zero gap, that structural proof retains its defect
+verdict and does not name the gap as binding.
+
+The low-level packing API accepts a qualified gap source in the existing
+`constraint_provenance.gap_nm` entry: `class` (`fixture_author` or
+`manufacturer`), `enforcement: "hard"`, `value_nm` (equal to `gap_nm`) and a
+nonempty `citation`. The source entry is retained in binding constraints.
+Original numeric test fixtures cite their authored gap requirement and retain
+all previous verdict expectations. Manufacturer class is for a gap validated
+against a captured manufacturer requirement, including a captured JLCPCB SMT
+assembly record; those requirements remain hard. A caller must qualify that
+source before calling this geometry API: a citation string is not independently
+authenticated by the placer. The coordinator placement adapter continues to
+refuse policy-supplied `constraint_provenance`; envelope provenance still comes
+only from captured envelopes. This change adds no manufacturer capture pipeline
+or automatic promotion of an agent-chosen number.
+Neither a successful packing plan nor this spacing default establishes native
+DRC or assembly clearance acceptance.
+
 The coordinator derives the request from the envelope. The placement adapter
 adds every `fixed_footprints[].reference` and `mounting_holes[].id` of a captured
 envelope to `fixed_refs` (`placement_adapter.envelope_references`). The scaffold
@@ -335,8 +390,9 @@ pairwise disjoint.
   per vertex, with integer-ceiling lengths and pi taken as 22/7. Only fixed
   courtyards and declared obstacles, which keep the gap, are subtracted.
 
-Both are exact rationals, `packing_infeasible`, `outcome=defect`, with
-`steps_used=0`. Edge margin and the width of a region are not used, so a
+Both use exact rationals and return `packing_infeasible`, with `steps_used=0`.
+A proof bound by a soft limit or an unsourced nonzero gap has `outcome=unknown`;
+a hard sourced gap or a proof independent of the gap retains `outcome=defect`. Edge margin and the width of a region are not used, so a
 region too narrow but large enough by area is still only a search failure.
 
 ### Board capacity (AGENTEE-249)
@@ -389,11 +445,12 @@ that stop before the reservations (unsupported geometry, fixed conflicts, the
 earlier proofs) do not carry it; the earlier proofs still name their
 [binding constraints](#constraint-provenance-agentee-266).
 
-A row that is exceeded becomes a `packing_infeasible` / `defect` result
+A row that is exceeded becomes a `packing_infeasible` result
 (`board_capacity_gap` for the free-area row, `board_capacity_fragmented` for a
 square size) only when the policy sets `capacity_proof: true`. By default the
-result stays the search's unknown. Turning it on changes the verdict of truly
-infeasible inputs that existing tests keep as search failures: the 4 mm board
+result stays the search's unknown. With it enabled, a proof establishes a defect
+only when its binding limits permit that verdict: an unsourced gap remains unknown.
+Examples retained as search failures without the opt-in include the 4 mm board
 with a 1.5 mm margin (`test_placer.PlacerTest.test_edge_margin`), the 3 mm
 notch at a 1.5 mm gap
 (`test_placer.EnvelopeFixedTest.test_fixed_courtyard_is_a_polygon_not_its_bounding_box`)
@@ -403,8 +460,10 @@ Making it the default is an owner decision. No placement constraint is relaxed
 either way. The bound is not tight: a feasible input never exceeds it, but an
 infeasible one may not either. Owned fixtures are in
 `tests/test_placer_capacity.py`. On a 20 × 12 mm board with a 12 × 9 mm fixed
-block, six 3.2 mm squares are placed. Seven are proved infeasible by the
-fragmentation row, although they need only about 81 % of the free area.
+block, six 3.2 mm squares are placed. Seven are proved infeasible against the
+fixture's authored 0.25 mm requirement by the fragmentation row, although they
+need only about 81 % of the free area. Removing that gap's provenance gives the
+same geometric bound with an unknown outcome.
 
 ### Constraint provenance (AGENTEE-266)
 
@@ -421,14 +480,15 @@ limit wins over a soft one.
 Each `capacity.sides.<side>` names its `binding_constraints`: the outline, the
 fixed parts and obstacles in `blocked_by`, and the edge margin and gap. Each
 has its `class` and `enforcement`. The margin and gap come from the policy or a
-fab profile, so their provenance is `unknown`. Without declared provenance the
+fab profile; without a qualified gap source their provenance is `unknown`. Without declared provenance the
 outline is `unknown` too.
 
 Every `packing_infeasible` proof also carries `binding_constraints`. When one
 of them is soft (an assumed or owner-weakened limit), the proof stays in the
 record, but the outcome is `unknown` instead of `defect`. The result then has
 `owner_confirmation` (the soft constraints), and the reason names them. A proof
-bound only by hard or undeclared limits keeps `defect`. Owned tests are in
+bound only by hard or undeclared limits keeps `defect`, except that an unsourced
+gap is advisory under AGENTEE-338. A zero-gap proof does not bind that gap. Owned tests are in
 `tests/test_constraint_provenance.py`.
 
 ### Pad shapes (AGENTEE-109)
@@ -546,8 +606,12 @@ or an engineer allocation file. Each block is packed alone with this search,
 around a fixed anchor on a synthetic plane, into a rigid
 `agent-ee.block-candidate/2`. Its own pad obligations and groups apply, and
 boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
-unchanged. Arrangement admits a candidate only after `blocks.admit` re-grades it
-from the board.
+unchanged. [Arrangement](blocks.md#stage-b-arrangement-agentee-340) admits a
+candidate only after `blocks.admit` (or a mapped match and re-grade) checks it
+against the board. Arrangement places the blocks as rigid macros with this
+module's predicates, then packs the residual parts with `pack`, with block
+members fixed. A writer request with a `blocks` section takes that path
+through the same save, reload, grade and native DRC gate.
 
 ## Pod-scale qualification (AGENTEE-181)
 
