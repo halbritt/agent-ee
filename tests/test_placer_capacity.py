@@ -63,6 +63,20 @@ def rational(pair):
 
 
 class CapacityDiagnosticTest(unittest.TestCase):
+    def test_overlapping_declared_obstacles_do_not_double_count_capacity(self):
+        source = capture([part('C1', 0, 0)])
+        full = rectangle(4, 4, 6, 4)
+        alternatives = [[rectangle(4, 4, 3, 4), rectangle(7, 4, 3, 4)],
+                        [rectangle(4, 4, 4, 4), rectangle(6, 4, 4, 4)],
+                        [full, full, rectangle(5, 5, 1, 1)]]
+        base = request(fixed_refs=[], gap_nm=250000, capacity_proof=True)
+        expected = pack(source, {**base, 'obstacles': [{'side': 'F', 'polygons': [full]}]})
+        self.assertEqual(expected['status'], 'planned', expected)
+        for polygons in alternatives:
+            actual = pack(source, {**base, 'obstacles': [{'side': 'F', 'polygons': polygons}]})
+            self.assertEqual(actual['status'], 'planned', actual)
+            self.assertEqual(actual['capacity'], expected['capacity'])
+
     def test_six_squares_are_placed_and_every_capacity_row_holds(self):
         source, policy = columns_case(6, capacity_proof=True)
         plan = pack(source, policy)

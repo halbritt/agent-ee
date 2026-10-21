@@ -102,6 +102,17 @@ def _edge_margin_nm(policy):
     return margin_nm
 
 
+def _obstacle_polygons(raw):
+    """Reserve the union by testing every member; shared edges never open a gap.
+
+    Unlike courtyard contours, declared obstacles may overlap or touch. Qualify
+    each member with the shared validator, keeping its syntax and work limits.
+    """
+    if not isinstance(raw, list) or not raw or len(raw) > 64:
+        raise ValueError('missing or excessive polygons')
+    return [qualified_polygons({'status': 'proven', 'polygons': [p]})[0] for p in raw]
+
+
 def _validate_policy(policy, refs):
     if policy.get('schema') != 'agent-ee.packing-policy/1':
         raise ValueError('unsupported packing policy')
@@ -127,7 +138,7 @@ def _validate_policy(policy, refs):
     for obstacle in policy['obstacles']:
         if obstacle.get('side') not in ('F', 'B'):
             raise ValueError('obstacle side required')
-        qualified_polygons({'status': 'proven', 'polygons': obstacle['polygons']})
+        _obstacle_polygons(obstacle['polygons'])
     overhangs = policy.get('fixed_overhangs', [])
     if not isinstance(overhangs, list) or any(not isinstance(o, dict) or o.get('reference') not in refs
                                               for o in overhangs):
@@ -966,7 +977,7 @@ def _initial_reservations(capture, policy, outline, obstacles, bands, groups):
     """Fixed parts and declared obstacles become exact polygon obstacles, never boxes."""
     fixed = _fixed_refs(capture, policy)
     placed = [copy.deepcopy(f) for f in capture['footprints'] if f['ref'] in fixed]
-    exact = [_exact(o['side'], qualified_polygons({'status': 'proven', 'polygons': o['polygons']}))
+    exact = [_exact(o['side'], _obstacle_polygons(o['polygons']))
              for o in policy['obstacles']]
     for i, fp in enumerate(placed):
         # Fixed footprints (such as edge-mounted connectors) are exempt from min_courtyard_edge_mm.

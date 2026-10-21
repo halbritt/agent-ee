@@ -161,6 +161,77 @@ class PlacerTest(unittest.TestCase):
         policy['obstacles'] = [{'side': 'F', 'polygons': [rectangle(2, 2, 2, 2)]}]
         self.assertEqual(pack(board, policy)['status'], 'fixed_conflict')
 
+    def test_declared_obstacle_union_is_exact_at_nanometre_seams(self):
+        from test_placement import rectangle
+        # Independent rectangular oracle: no hull, box or epsilon gap at seams.
+        cases = [
+            ([[[2000000, 2000000], [6000000, 2000000], [6000000, 6000000]],
+              [[2000000, 2000000], [6000000, 6000000], [2000000, 6000000]]],
+             lambda x, y: 2 <= x < 6 and 2 <= y < 6),
+            ([rectangle(2, 2, 2, 4), rectangle(4, 2, 2, 4)],
+             lambda x, y: 2 <= x < 6 and 2 <= y < 6),
+            ([rectangle(2, 2, 3, 4), rectangle(4, 2, 2, 4)],
+             lambda x, y: 2 <= x < 6 and 2 <= y < 6),
+            ([rectangle(2, 2, 2, 4), rectangle(4, 4, 2, 2)],
+             lambda x, y: (2 <= x < 4 and 2 <= y < 6) or (4 <= x < 6 and 4 <= y < 6)),
+            ([rectangle(2, 2, 2, 2), rectangle(4, 4, 2, 2)],
+             lambda x, y: (2 <= x < 4 and 2 <= y < 4) or (4 <= x < 6 and 4 <= y < 6)),
+            ([rectangle(2, 2, 4, 4), rectangle(3, 3, 1, 1), rectangle(2, 2, 4, 4)],
+             lambda x, y: 2 <= x < 6 and 2 <= y < 6),
+        ]
+        for polygons, occupied in cases:
+            for x in range(1, 8):
+                for y in range(1, 8):
+                    nm = [[x*1000000, y*1000000], [x*1000000+1, y*1000000],
+                          [x*1000000+1, y*1000000+1], [x*1000000, y*1000000+1]]
+                    source = capture([part('U1', x, y, shape=nm)])
+                    for obstacles in ([{'side': 'F', 'polygons': polygons}],
+                                      [{'side': 'F', 'polygons': [p]} for p in polygons]):
+                        report = pack(source, request(gap_nm=0, obstacles=obstacles))
+                        with self.subTest(polygons=polygons, x=x, y=y, entries=len(obstacles)):
+                            self.assertEqual(report['status'], 'fixed_conflict' if occupied(x, y) else 'planned', report)
+
+    def test_touching_obstacle_ring_keeps_its_hole_and_sides(self):
+        import copy
+        from test_placement import rectangle
+        ring = [rectangle(2, 2, 6, 1), rectangle(2, 7, 6, 1),
+                rectangle(2, 3, 1, 4), rectangle(7, 3, 1, 4)]
+        policy = request(obstacles=[{'side': 'F', 'polygons': ring}], gap_nm=250000)
+        before = copy.deepcopy(policy)
+        report = pack(capture([part('U1', 4, 4)]), policy)
+        self.assertEqual(report['status'], 'planned', report)
+        self.assertEqual(policy, before)
+        self.assertEqual(pack(capture([part('U1', 2, 2, side='B')]), policy)['status'], 'planned')
+        # Movable geometry also stays in the hole, rather than crossing a seam.
+        source = capture([part('C1', 0, 0)], rectangle(2, 2, 6, 6))
+        report = pack(source, {**policy, 'fixed_refs': []})
+        self.assertEqual(report['status'], 'planned', report)
+        x, y = report['placements'][0]['position_nm']
+        self.assertTrue(3250000 <= x <= 4750000 and 3250000 <= y <= 4750000, report)
+
+    def test_invalid_individual_obstacle_polygons_still_refuse(self):
+        from test_placement import polygon, rectangle
+        for invalid in (polygon([(2, 2), (6, 6), (2, 6), (5, 2)]),
+                        polygon([(2, 2), (3, 2), (4, 2)]), [],
+                        [[2, 2], [3, 2], [3, 2], [2, 4]]):
+            with self.assertRaises(ValueError):
+                pack(capture([part('U1', 10, 10)]), request(obstacles=[
+                    {'side': 'F', 'polygons': [rectangle(1, 1, 2, 2), invalid]}]))
+        for polygons in ([], [rectangle(1, 1, 1, 1)] * 65):
+            with self.assertRaisesRegex(ValueError, 'missing or excessive polygons'):
+                pack(capture([part('U1', 10, 10)]), request(obstacles=[{'side': 'F', 'polygons': polygons}]))
+
+    def test_fixed_obstacle_reserved_gap_boundary_and_collision(self):
+        from test_placement import rectangle
+        obstacle = {'side': 'F', 'polygons': [rectangle(2, 2, 2, 2)]}
+        for x, expected in ((4.25, 'planned'), (4.249999, 'fixed_conflict'),
+                            (4, 'fixed_conflict'), (3.999999, 'fixed_conflict')):
+            report = pack(capture([part('U1', x, 2)]), request(gap_nm=250000, obstacles=[obstacle]))
+            self.assertEqual(report['status'], expected, report)
+        # Structural overlap remains blocked even without a policy gap.
+        report = pack(capture([part('U1', 3.999999, 2)]), request(gap_nm=0, obstacles=[obstacle]))
+        self.assertEqual((report['status'], report['outcome']), ('fixed_conflict', 'unknown'))
+
     def padded(self, shape=1, rotation=0):
         board = capture([part('U1', 10, 10), part('C1', 2, 2)])
         board['pcbnew_version'] = '10.0.7'

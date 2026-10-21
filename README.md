@@ -98,6 +98,12 @@ proposals that introduce native DRC shorts, clearance, PTH courtyard findings
 or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
+
+Declared [placer obstacles](docs/placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
+reserve the exact union of touching or overlapping polygons. The pod's 0.25 mm
+packing gap is an agent-chosen advisory default whose supplied value remains
+enforced, including against fixed courtyards.
+
 The [artwork pass](docs/silk-artwork.md) relocates permitted silk fields and
 publishes silk-only conflicts as open defects in the placement receipt, preserving
 graphics and required markings. This establishes placement feasibility only;

@@ -1837,3 +1837,13 @@ Side-flipped footprints' fields remain unchanged with typed conflicts. Source
 project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
+
+## Declared placer obstacles (AGENTEE-338)
+
+The [placer obstacle policy](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
+accepts touching and overlapping declared polygons as their exact same-side union.
+The policy still refuses invalid individual polygons. The pod's 0.25 mm reserved gap is an
+agent-chosen advisory default, currently enforced against fixed courtyards and
+obstacles; it has no captured assembly-rule authority. This changes packing
+policy admission only, with no registered check, schema or verdict change outside
+the newly admitted obstacle class.

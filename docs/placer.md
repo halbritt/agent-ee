@@ -103,6 +103,42 @@ fixed courtyard stays usable. Fixed parts must fit the outline and stay clear
 of each other, the obstacles and keepouts by the same rule. Otherwise the plan
 is `fixed_conflict`, `outcome=unknown`, naming the later part of the pair.
 
+### Declared obstacle unions and reserved-gap provenance (AGENTEE-338)
+
+Earlier policy validation refused touching or overlapping polygons within one
+obstacle (`nested or touching polygon contours unsupported`); splitting them
+into separate obstacle entries avoided that refusal. Declared obstacle polygons
+now reserve their exact union on each declared side, whether grouped in one
+entry or split across entries. Each polygon must still be simple, nondegenerate,
+straight and expressed in integer nanometres; each entry permits 1–64 polygons.
+Self-intersections, repeated vertices and zero-area members remain invalid policy
+and raise `ValueError`. Courtyard and outline contour qualification is unchanged.
+
+The union is represented by its member polygons, with no rounding, hull or
+bounding-box replacement. Shared edges and overlaps open no gap; concave notches
+and uncovered holes remain available. Nested members and duplicates add no
+reserved space. Board-capacity calculations union their blocker boxes rather
+than adding overlapping areas. Region-capacity proofs retain only disjoint
+blockers as a conservative lower bound, so overlap may weaken a proof but never
+inflate blocked area.
+
+`gap_nm` applies between fixed courtyards and declared obstacles too. In
+particular, `gap_nm: 250000` requires a 0.25 mm Euclidean edge distance; exactly
+0.25 mm is admitted, while one nanometre less returns `fixed_conflict`,
+`outcome=unknown`, with no placements. Positive-area structural overlap remains
+blocked even when `gap_nm` is zero.
+
+The pod's 0.25 mm value came from agent-491's packing policy (`gap_nm: 250000`),
+as recorded by agent-499 in the AGENTEE-338 comment and AGENTEE-331/337 provenance
+follow-up. It is an **agent-chosen advisory default**, with no captured JLCPCB SMT
+assembly figure establishing it as a manufacturing requirement. The generic
+packing API requires an explicit gap and supplies no 0.25 mm default. This
+classification describes the value's provenance: current packing still enforces
+the supplied value and reports gap binding provenance as `unknown`/`hard`.
+Changing that enforcement exceeds this change's verdict-preservation authority.
+Neither a successful packing plan nor this spacing default establishes native
+DRC or assembly clearance acceptance.
+
 The coordinator derives the request from the envelope. The placement adapter
 adds every `fixed_footprints[].reference` and `mounting_holes[].id` of a captured
 envelope to `fixed_refs` (`placement_adapter.envelope_references`). The scaffold
