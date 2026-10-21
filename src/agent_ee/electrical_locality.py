@@ -23,7 +23,7 @@ def _plain_json(value):
     elif type(value) is list:
         for item in value:
             _plain_json(item)
-    elif value is not None and type(value) not in (str, int, float, bool):
+    elif value is not None and not any(type(value) is kind for kind in (str, int, float, bool)):
         raise ValueError('locality document must contain only JSON values')
     return value
 

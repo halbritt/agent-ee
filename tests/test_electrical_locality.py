@@ -634,9 +634,19 @@ class LocalityIndexTests(unittest.TestCase):
                 operation(doc)
 
     def test_non_json_types_and_subclasses_are_refused_before_schema_reads(self):
+        class PretendJSON(type):
+            __hash__ = type.__hash__
+
+            def __eq__(cls, other):
+                return True
+
+        class Text(str, metaclass=PretendJSON):
+            pass
+
         values = (type('Dict', (dict,), {})(), type('List', (list,), {})([]),
                   type('Text', (str,), {})('text'), type('Integer', (int,), {})(1),
-                  type('Float', (float,), {})(1.0), (), set(), object(), {1: 'text'})
+                  type('Float', (float,), {})(1.0), Text('citation'),
+                  (), set(), object(), {1: 'text'})
         for value in values:
             facts, doc = bound_output_loop()
             doc['obligations'][0]['supply']['citation'] = value
