@@ -296,6 +296,46 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         self.assertEqual(graded[0]['status'], 'defect')
         self.assertTrue(all(f[2] == 'J1' for f in graded[0]['findings']))
 
+    def test_hard_rule_obstacles_carry_their_source_into_residual_capacity_proofs(self):
+        # AGENTEE-365: J1 is a residual back part; a hard rule covers the whole back side.
+        back = copy.deepcopy(self.board)
+        j1 = next(f for f in back['footprints'] if f['ref'] == 'J1')
+        j1['side'] = 'B'
+        j1['courtyards'] = {'B': j1['courtyards']['F']}
+        for pad in j1['pads']:
+            pad['layers'] = ['B.Cu']
+        pol, derivation = policy(capacity_proof=True), self.derive(capture=back)
+        entries = [{'candidate': blocks.pack_block(back, self.inv, derivation, b, pol)['candidate']}
+                   for b in ('Power', 'Sensor')]
+        hard = {'enforcement': 'hard', 'citation': CITE}
+        keepout = {'id': 'back', 'side': 'B', 'polygons': [rectangle(0, 0, 50, 40)], 'provenance': hard}
+        source = {'class': 'arrangement_rule', 'enforcement': 'hard', 'citation': CITE}
+        for name, rules in (('keep-out back', plan_policy(keepouts=[keepout])),
+                            ('shadow H1', plan_policy(no_stacking={'references': ['H1'], 'margin_nm': 60 * MM,
+                                                                   'provenance': hard}))):
+            with self.subTest(name):
+                plan = self.arrange(rules, entries=entries, capture=back, pol=pol, derivation=derivation)
+                self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                                 ('packing_infeasible', 'defect', []), plan.get('reason'))
+                self.assertNotIn('owner_confirmation', plan)
+                self.assertEqual(plan['proof']['blocked_by'], ['obstacle 0'])
+                self.assertEqual(plan['binding_constraints'][1], {'constraint': 'obstacle 0', **source})
+                self.assertEqual([(o['source'], o['provenance']) for o in placer_obstacles(plan, self)],
+                                 [('block-arrangement ' + name, source)])
+        # An advisory rule is no obstacle: it is graded on the complete plan and reported only.
+        advisory = dict(keepout, provenance={'enforcement': 'advisory', 'reason': 'unsourced isolation'})
+        soft = self.arrange(plan_policy(keepouts=[advisory]), entries=entries, capture=back, pol=pol,
+                            derivation=derivation)
+        self.assertEqual((soft['status'], soft['outcome']), ('planned', 'info'), soft.get('reason'))
+        self.assertEqual(placer_obstacles(soft, self), [])
+        self.assertEqual([(r['enforcement'], r['status'], r['findings']) for r in soft['block_arrangement']['rules']],
+                         [('advisory', 'defect', ['J1'])])
+        # The same geometry as an unsourced policy obstacle still proves only an unknown.
+        unsourced = placer.pack(back, policy(capacity_proof=True, electrical_locality=None,
+                                             obstacles=[{'side': 'B', 'polygons': keepout['polygons']}]))
+        self.assertEqual((unsourced['status'], unsourced['outcome'], unsourced['owner_confirmation']),
+                         ('packing_infeasible', 'unknown', ['obstacle 0']))
+
     def test_internal_stacking_and_stranded_groups_refuse(self):
         back = copy.deepcopy(self.board)
         c1 = next(f for f in back['footprints'] if f['ref'] == 'C1')

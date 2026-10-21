@@ -582,6 +582,152 @@ class MaterializeTests(LibraryFixture, unittest.TestCase):
         self.assertEqual([p['kind'] for p in result['problems']], ['source_mismatch'])
 
 
+class AllocationBindingTests(LibraryFixture, unittest.TestCase):
+    """AGENTEE-375: a materialized entry binds the target's own allocation under an explicit block id,
+    so placer_runner, which derives from the allocation text, admits and arranges it."""
+    second_instance = MaterializeTests.second_instance
+    MAPPING = MaterializeTests.MAPPING
+    BUCK_B = ['C11', 'C13', 'L11', 'U11']
+
+    def allocation(self, buck_b=None, **extra):
+        document = {'schema': blocks.ALLOCATION, 'blocks': [
+            {'id': 'buck-a', 'references': ['C1', 'C3', 'L1', 'U1']},
+            {'id': 'buck-b', 'references': buck_b or self.BUCK_B, **extra},
+            {'id': 'sensor', 'references': ['C2', 'R1', 'U2']}]}
+        return json.dumps(document, indent=1).encode()
+
+    def setUp(self):
+        super().setUp()
+        self.entry = self.cluster()
+        self.target, self.tinv, self.tnames, self.tsha = self.second_instance()
+
+    def materialize(self, allocation_raw, block_id, mapping=MAPPING):
+        return bl.materialize(self.entry, self.target, self.tinv, self.tnames, self.tsha, self.policy, mapping,
+                              allocation_raw=allocation_raw, block_id=block_id)
+
+    def target_derivation(self, allocation_raw):
+        return blocks.derive(self.tinv, self.tnames, self.target, inventory_sha256=self.tsha,
+                             allocation_raw=allocation_raw)
+
+    def test_binds_the_allocation_and_admits_under_the_block_id(self):
+        raw = self.allocation()
+        result = self.materialize(raw, 'buck-b')
+        self.assertEqual(result['status'], 'materialized', result['problems'])
+        self.assertEqual((result['id'], result['block']), ('owned-buck', 'buck-b'))
+        candidate = blocks.validate_candidate(result['candidate'])
+        self.assertEqual(candidate['block_id'], 'buck-b')
+        derivation = self.target_derivation(raw)
+        self.assertEqual(candidate['sources']['allocation_sha256'], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(candidate['sources']['derivation_sha256'], blocks.digest(derivation))
+        self.assertEqual(blocks.admit(candidate, self.target, self.tinv, derivation, self.policy),
+                         {'status': 'admitted', 'problems': []})
+        # Without an allocation the record is unchanged: a one-block allocation under the entry id.
+        bare = bl.materialize(self.entry, self.target, self.tinv, self.tnames, self.tsha, self.policy, self.MAPPING)
+        self.assertEqual((bare['candidate']['block_id'], 'block' in bare), ('owned-buck', False))
+        refused = blocks.admit(bare['candidate'], self.target, self.tinv, derivation, self.policy)
+        self.assertEqual({p['source'] for p in refused['problems']}, {'allocation_sha256', 'derivation_sha256'})
+
+    def test_allocation_anchor_frames_the_candidate(self):
+        raw = self.allocation(anchor='C13')
+        result = self.materialize(raw, 'buck-b')
+        self.assertEqual(result['status'], 'materialized', result['problems'])
+        self.assertEqual(result['candidate']['frame']['anchor'], 'C13')
+        self.assertEqual(blocks.admit(result['candidate'], self.target, self.tinv, self.target_derivation(raw), self.policy),
+                         {'status': 'admitted', 'problems': []})
+
+    def test_unmapped_unknown_and_member_mismatch_refuse(self):
+        raw = self.allocation()
+        for block_id, kind in ((None, 'block_unmapped'), ('owned-buck', 'block_unknown'),
+                               ('buck-a', 'block_members'), ('sensor', 'block_members')):
+            with self.subTest(block=block_id):
+                result = self.materialize(raw, block_id)
+                self.assertEqual(result['status'], 'refused')
+                self.assertEqual([p['kind'] for p in result['problems']], [kind])
+                self.assertNotIn('candidate', result)
+        # The allocated block has a member the entry does not map.
+        grown = self.allocation(buck_b=self.BUCK_B + ['R9'])
+        result = self.materialize(grown, 'buck-b')
+        self.assertEqual(result['problems'], [{'kind': 'block_members', 'block': 'buck-b',
+                                               'expected': ['C11', 'C13', 'L11', 'R9', 'U11'],
+                                               'actual': ['C11', 'C13', 'L11', 'U11']}])
+        self.assertNotIn('candidate', result)
+        with self.assertRaisesRegex(ValueError, 'block id binds an allocation block'):
+            bl.materialize(self.entry, self.target, self.tinv, self.tnames, self.tsha, self.policy, self.MAPPING,
+                           block_id='buck-b')
+
+    def test_candidate_bound_to_another_allocation_refuses_admission(self):
+        result = self.materialize(self.allocation(), 'buck-b')
+        self.assertEqual(result['status'], 'materialized', result['problems'])
+        other = self.target_derivation(self.allocation(anchor='C13'))
+        admission = blocks.admit(result['candidate'], self.target, self.tinv, other, self.policy)
+        self.assertEqual(admission['status'], 'refused')
+        self.assertEqual({(p['kind'], p['source']) for p in admission['problems']},
+                         {('source_mismatch', 'allocation_sha256'), ('source_mismatch', 'derivation_sha256')})
+        # The same id with different members under another allocation refuses as well.
+        grown = self.target_derivation(self.allocation(buck_b=self.BUCK_B + ['R9']))
+        admission = blocks.admit(result['candidate'], self.target, self.tinv, grown, self.policy)
+        self.assertEqual(admission['status'], 'refused')
+        self.assertIn(('source_mismatch', 'allocation_sha256'),
+                      {(p['kind'], p.get('source')) for p in admission['problems']})
+
+    def test_placer_runner_request_admits_and_arranges(self):
+        from agent_ee import block_arrangement
+        raw = self.allocation()
+        derivation = self.target_derivation(raw)
+        (self.dir / 'allocation.json').write_bytes(raw)
+        (self.dir / 'arrangement.json').write_text(json.dumps({'schema': block_arrangement.POLICY,
+                                                              'step_budget': 20000}))
+        paths = []
+        for block_id in ('buck-a', 'sensor'):
+            packed = blocks.pack_block(self.target, self.tinv, derivation, block_id, self.policy)['candidate']
+            paths.append(self.dir / f'{block_id}.json')
+            paths[-1].write_text(json.dumps(packed))
+        (self.dir / 'buck-b.json').write_text(json.dumps(self.materialize(raw, 'buck-b')['candidate']))
+        section = block_arrangement.request_section(self.dir / 'allocation.json', self.dir / 'arrangement.json',
+                                                    paths + [self.dir / 'buck-b.json'])
+        plan = block_arrangement.plan_from_request(self.target, section, self.policy, self.policy,
+                                                   self.dir / 'design.xml')
+        self.assertEqual(plan['status'], 'planned', plan.get('block_arrangement', {}).get('problems'))
+        record = {b['block']: b for b in plan['block_arrangement']['blocks']}
+        self.assertEqual(record['buck-b']['references'], self.BUCK_B)
+        self.assertEqual(record['buck-b']['provenance']['method'], 'project-cluster/1')
+        # The materialize record is not a candidate file: it is refused, never unwrapped.
+        (self.dir / 'record.json').write_text(json.dumps(self.materialize(raw, 'buck-b')))
+        with self.assertRaisesRegex(ValueError, 'expected a bare agent-ee.block-candidate/2'):
+            block_arrangement.request_section(self.dir / 'allocation.json', self.dir / 'arrangement.json',
+                                              [self.dir / 'record.json'])
+
+    def test_cli_writes_the_bare_candidate(self):
+        (self.dir / 'probe.json').write_text(json.dumps(self.target))
+        (self.dir / 'target.xml').write_bytes((self.dir / 'design.xml').read_bytes())
+        (self.dir / 'policy.json').write_text(json.dumps(self.policy))
+        (self.dir / 'entry.json').write_text(json.dumps(self.entry))
+        (self.dir / 'mapping.json').write_text(json.dumps(self.MAPPING))
+        (self.dir / 'allocation.json').write_bytes(self.allocation())
+        common = ('materialize', '--probe', self.dir / 'probe.json', '--netlist', self.dir / 'target.xml',
+                  '--policy', self.dir / 'policy.json', '--entry', self.dir / 'entry.json',
+                  '--mapping', self.dir / 'mapping.json')
+        done = CliTests.run_cli(self, *common, '--allocation', self.dir / 'allocation.json', '--block', 'buck-b',
+                                '--out', self.dir / 'use.json')
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(json.loads(done.stdout), {'status': 'materialized', 'out': str(self.dir / 'use.json'),
+                                                   'id': 'owned-buck', 'version': 1, 'block': 'buck-b'})
+        written = blocks.validate_candidate(json.loads((self.dir / 'use.json').read_text()))
+        self.assertEqual((written['schema'], written['block_id']), (blocks.CANDIDATE, 'buck-b'))
+        self.assertEqual(written['sources']['allocation_sha256'], hashlib.sha256(self.allocation()).hexdigest())
+        for extra, kind in ((('--allocation', self.dir / 'allocation.json'), 'block_unmapped'),
+                            (('--allocation', self.dir / 'allocation.json', '--block', 'buck-a'), 'block_members')):
+            done = CliTests.run_cli(self, *common, *extra, '--out', self.dir / 'refused.json')
+            with self.subTest(kind=kind):
+                self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+                result = json.loads(done.stdout)
+                self.assertEqual((result['status'], [p['kind'] for p in result['problems']]), ('refused', [kind]))
+                self.assertFalse((self.dir / 'refused.json').exists())
+        done = CliTests.run_cli(self, *common, '--block', 'buck-b', '--out', self.dir / 'refused.json')
+        self.assertEqual((done.returncode, json.loads(done.stdout)['status']), (1, 'refused'))
+        self.assertFalse((self.dir / 'refused.json').exists())
+
+
 class AuthorityHoldTests(LibraryFixture, unittest.TestCase):
     """Regressions for the AGENTEE-342 review HOLD: admission (H1), hard-class authority (H2),
     receipt replay binding copper (H3) and independent scale checks (H4)."""

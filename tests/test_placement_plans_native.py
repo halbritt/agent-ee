@@ -163,7 +163,9 @@ class NativePlansTest(unittest.TestCase):
     def test_fixed_overhang_preview_and_saved_native_judge_agree(self):
         import pcbnew as k
         native = k.LoadBoard(str(self.source))
-        next(fp for fp in native.GetFootprints() if fp.GetReference() == 'U1').SetPosition(k.VECTOR2I(0, 3_000_000))
+        fixed = next(fp for fp in native.GetFootprints() if fp.GetReference() == 'U1')
+        fixed.SetPosition(k.VECTOR2I(0, 3_000_000))
+        next(iter(fixed.Pads())).SetPosition(k.VECTOR2I(500_000, 3_000_000))
         k.SaveBoard(str(self.source), native)
         self.config['authorization']['source_sha256'] = hashlib.sha256(self.source.read_bytes()).hexdigest()
         self.config['policy']['fixed_overhangs'] = [{'reference': 'U1',

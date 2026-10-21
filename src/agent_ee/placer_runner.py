@@ -12,6 +12,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
+from . import placement_groups
 from .board_net_names import from_xml
 from .locking import writer_lock
 from .placement import judge
@@ -20,9 +21,10 @@ from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
 from .silk_artwork import SILK_CONFLICTS, relocate
 from .storage import digest, read_json, write_json
+from .design_rule_provenance import classify_finding, finding_sources, numeric_finding, require_evaluated_limits
 
 
-DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard'))
+DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard', 'holes_co_located'))
 DRC_MASK = 'solder_mask_bridge'
 DRC_COURTYARDS = frozenset(('courtyards_overlap', 'malformed_courtyard', 'missing_courtyard'))
 
@@ -165,6 +167,9 @@ def _native_drc(board, scratch):
     violations = report['violations']
     if any(not isinstance(v, dict) or not isinstance(v.get('type'), str) for v in violations):
         raise ValueError('native DRC contains malformed violations')
+    require_evaluated_limits(report, finding_sources(board))
+    from .outline_containment import run
+    report['violations'].extend(run(board, scratch))
     # Excluded courtyard findings still prevent a placed result.
     return report
 
@@ -191,14 +196,24 @@ def _drc_item_states(path):
                 # A KIID shared across footprints would merge their states.
                 raise ValueError('native collision item identities ambiguous')
             states[uuid] = (owner, geometry, pose)
+    from .sublayout_probe import facts
+    for item in facts(board)['items']:
+        if not item['supported']:
+            continue
+        uid = item['uuid']
+        if uid in states:
+            raise ValueError('native collision item identities ambiguous')
+        # Native facts ignore serialization whitespace and retain absolute
+        # conductor/drawing geometry, layers and widths.
+        states[uid] = (uid, json.dumps(item, sort_keys=True), ())
     return states
 
 
-def _drc_comparison(before, after, before_states=None, after_states=None):
+def _drc_comparison(before, after, before_states=None, after_states=None, sources=None):
     """Preserve rigid intra-footprint findings; moved cross-footprint collisions are new.
 
     Native geometry is supplied by the publication path, never by the caller's
-    placement plan. Non-collision reporting retains its existing identity rule.
+    placement plan. Numeric findings bind to absolute saved geometry, including single-item findings.
     """
     if (before['ignored_checks'] != after['ignored_checks'] or
             before.get('included_severities') != after.get('included_severities')):
@@ -210,16 +225,30 @@ def _drc_comparison(before, after, before_states=None, after_states=None):
                 any(not isinstance(i, dict) or not isinstance(i.get('uuid'), str) or not i['uuid'] for i in items)):
             raise ValueError('native DRC finding lacks item identities')
         identities = tuple(sorted(i['uuid'] for i in items))
-        if states is None or finding['type'] not in DRC_COLLISIONS | {'solder_mask_bridge'}:
-            return finding['type'], identities
+        provenance = finding['constraint_provenance']
+        # An existing advisory cannot hide a new sourced violation on the same
+        # items; crossing the outline is new even below an already violated floor.
+        identity = (finding['type'], identities, provenance['enforcement'],
+                    finding['type'] == 'copper_edge_clearance' and
+                    provenance['reason'] == 'Structural invariant; numeric provenance does not relax it')
+        if states is None:
+            if numeric_finding(finding) and finding['type'] not in DRC_COLLISIONS:
+                return (*identity, finding.get('description'), json.dumps(items, sort_keys=True))
+            return identity
+        if finding['type'] not in DRC_COLLISIONS | {'solder_mask_bridge'} and not numeric_finding(finding):
+            return identity
         try:
             geometry = [states[uuid] for uuid in identities]
         except KeyError as exc:
             raise ValueError('native collision item geometry unavailable') from exc
         # Local pad geometry proves a rigid intra-footprint violation unchanged.
-        intra = len({state[0] for state in geometry}) == 1
-        return finding['type'], identities, tuple(state[:2] if intra else state for state in geometry)
+        intra = (finding['type'] in DRC_COLLISIONS | {'solder_mask_bridge'} and
+                 len({state[0] for state in geometry}) == 1)
+        return (*identity, tuple(state[:2] if intra else state for state in geometry))
 
+    for report in (before, after):
+        for finding in report['violations']:
+            classify_finding(finding, sources)
     old = Counter(key(v, before_states) for v in before['violations'])
     remaining = Counter(key(v, after_states) for v in after['violations']) - old
     added = []
@@ -229,9 +258,15 @@ def _drc_comparison(before, after, before_states=None, after_states=None):
             added.append(finding)
             remaining[identity] -= 1
     return {'added_findings': added,
-            'blocking_findings': [v for v in added if v['type'] in DRC_COLLISIONS or
-                                  (v['type'] == DRC_MASK and (after_states is None or
-                                   len({after_states[i['uuid']][0] for i in v['items']}) > 1))],
+            'blocking_findings': [v for v in after['violations'] if v['type'] == 'copper_outside_outline'] + [v for v in added if
+                v['constraint_provenance']['enforcement'] == 'hard' and
+                (v['type'] in DRC_COLLISIONS | {DRC_MASK} or numeric_finding(v)) and
+                (v['type'] != DRC_MASK or after_states is None or
+                 len({after_states[i['uuid']][0] for i in v['items']}) > 1)],
+            'baseline_findings': before['violations'],
+            'candidate_findings': after['violations'],
+            'advisory_findings': [v for v in after['violations'] if
+                                  v['constraint_provenance']['enforcement'] == 'advisory'],
             'silkscreen_findings': [v for v in added if v['type'].startswith('silk_')],
             'added_by_type': dict(Counter(v['type'] for v in added))}
 
@@ -258,7 +293,8 @@ def _proposal_drc(source, output):
     after = _native_drc(output, scratch)
     baseline_states = _drc_item_states(baseline)
     placed_states = _drc_item_states(output)
-    comparison = _drc_comparison(before, after, baseline_states, placed_states)
+    sources = finding_sources(source, before['violations'] + after['violations'])
+    comparison = _drc_comparison(before, after, baseline_states, placed_states, sources)
     artwork_regressions = []
     flipped_conflicts = []
     if any(v['type'] in SILK_CONFLICTS for v in comparison['silkscreen_findings']):
@@ -283,10 +319,12 @@ def _proposal_drc(source, output):
         pre_artwork = after
         after = _native_drc(output, scratch)
         artwork_states = _drc_item_states(output)
-        artwork_delta = _drc_comparison(pre_artwork, after, placed_states, artwork_states)
+        sources = finding_sources(source, before['violations'] + pre_artwork['violations'] + after['violations'])
+        artwork_delta = _drc_comparison(pre_artwork, after, placed_states, artwork_states, sources)
         artwork_regressions = [v for v in artwork_delta['added_findings']
-                               if v['type'] not in SILK_CONFLICTS]
-        final = _drc_comparison(before, after, baseline_states, artwork_states)
+                               if v['type'] not in SILK_CONFLICTS and
+                               not (numeric_finding(v) and v['constraint_provenance']['enforcement'] == 'advisory')]
+        final = _drc_comparison(before, after, baseline_states, artwork_states, sources)
         flipped_conflicts = [dict(type='placement_silkscreen_conflict', **d)
                              for d in artwork['search_diagnostics']
                              if d['reason'] == 'footprint_side_flipped']
@@ -307,7 +345,42 @@ def _proposal_drc(source, output):
         raise ValueError(f"saved-board placement introduced native DRC collisions: {comparison['added_by_type']}")
     if artwork_regressions:
         raise ValueError('silkscreen relocation introduced other native DRC findings')
+    if comparison['open_defects']:
+        after = _stamp_lineage(output, project_payloads, comparison, before, baseline_states)
     return [v for v in after['violations'] if v['type'] in DRC_COURTYARDS], comparison
+
+
+def _stamp_lineage(output, project_payloads, comparison, before, baseline_states):
+    """Record this result's carry digest in the saved board's title block (AGENTEE-351).
+
+    A published board with open defects names them in its own bytes, so a copy released
+    outside the campaign must bring its placement evidence. Native DRC is repeated on the
+    stamped bytes and must reproduce the same comparison.
+    """
+    import pcbnew
+    from .placement_defects import STAMP, STAMP_COMMENT, carry_digest, stamp
+    digests = stamp(output.read_bytes()) or []
+    board = pcbnew.LoadBoard(str(output))
+    block = board.GetTitleBlock()
+    slot = int(STAMP_COMMENT) - 1
+    if block.GetComment(slot) and not digests:
+        raise ValueError(f'title block comment {STAMP_COMMENT} is occupied; placement lineage cannot be recorded')
+    value = carry_digest(comparison['open_defects'])
+    block.SetComment(slot, ' '.join([STAMP, *digests, *([value] if value not in digests else [])]))
+    board.SetTitleBlock(block)
+    if not pcbnew.SaveBoard(str(output), board):
+        raise ValueError('native lineage stamp save failed')
+    for suffix, payload in project_payloads.items():
+        target = output.with_suffix(suffix)
+        if payload is None:
+            target.unlink(missing_ok=True)
+        else:
+            target.write_bytes(payload)
+    after = _native_drc(output, output.parent)
+    restamped = _drc_comparison(before, after, baseline_states, _drc_item_states(output))
+    if {k: v for k, v in comparison.items() if k != 'open_defects'} != restamped:
+        raise ValueError('native DRC changed after recording the placement lineage stamp')
+    return after
 
 
 def _apply_plan(board, plan, output):
@@ -388,7 +461,7 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
     _netlist_binding(netlist_bytes, saved, _board_only(board))
     if judgment['verdict'] != 'pass' or overlaps:
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
-    if judgment.get('group_grading', {'status': 'pass'})['status'] != 'pass':
+    if 'group_grading' in judgment and not placement_groups.satisfied(judgment['group_grading']):
         raise ValueError('saved-board placement failed its declared placement groups')
     if judgment.get('locality_grading', {}).get('status', 'pass') not in ('pass', 'info'):
         raise ValueError('saved-board placement failed its declared electrical locality')

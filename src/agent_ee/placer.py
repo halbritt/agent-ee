@@ -25,7 +25,7 @@ from fractions import Fraction
 import math
 import time
 
-from . import electrical_locality, placement_groups
+from . import electrical_locality, placement_groups, placement_provenance
 from .placement import (area2, boxes_meet, convex, courtyard_bounds, cross, edges, intersection_area, judge,
                         overhang_bands, qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
@@ -196,6 +196,7 @@ def _validate_policy(policy, refs):
         if obstacle.get('side') not in ('F', 'B'):
             raise ValueError('obstacle side required')
         _obstacle_polygons(obstacle['polygons'])
+        placement_provenance.classify(obstacle, 'provenance', 'obstacle')
     overhangs = policy.get('fixed_overhangs', [])
     if not isinstance(overhangs, list) or any(not isinstance(o, dict) or o.get('reference') not in refs
                                               for o in overhangs):
@@ -226,11 +227,8 @@ def _validate_provenance(value):
         if name not in value:
             continue
         gap = value[name]
-        if (not isinstance(gap, dict) or set(gap) != {'class', 'enforcement', 'value_nm', 'citation'}
-                or gap.get('class') not in ('fixture_author', 'manufacturer')
-                or gap.get('enforcement') != 'hard' or type(gap.get('value_nm')) is not int
-                or gap['value_nm'] < 0 or not isinstance(gap.get('citation'), str) or not gap['citation'].strip()):
-            raise ValueError(f'constraint_provenance {name} needs a sourced hard value and citation')
+        placement_provenance.sourced(gap, f'constraint_provenance {name}',
+                                      gap.get('value_nm', 0) if isinstance(gap, dict) else 0)
     entries = ([value['outline']] if 'outline' in value else []) + list(value.get('fixed', {}).values())
     for entry in entries:
         if (not isinstance(entry, dict) or entry.get('class') not in PROVENANCE_CLASSES
@@ -249,9 +247,16 @@ def _binding_constraints(policy, margin_nm, blocked_by=()):
     declared = policy.get('constraint_provenance', {})
     fixed = declared.get('fixed', {})
     out = [{'constraint': 'outline', **declared.get('outline', UNDECLARED)}]
-    # References have no spaces; obstacles, rule areas and keepouts are named with one.
-    out += [{'constraint': name, **UNDECLARED} if ' ' in name else
-            {'constraint': f'fixed {name}', **fixed.get(name, UNDECLARED)} for name in blocked_by]
+    for name in blocked_by:
+        if name.startswith('obstacle '):
+            obstacle = policy['obstacles'][int(name.split()[1])]
+            entry = placement_provenance.classify(obstacle, 'provenance', name)
+        elif ' ' in name:
+            entry = {'class': 'board', 'enforcement': 'hard', 'reason': 'captured native keepout geometry'}
+        else:
+            entry = fixed.get(name, UNDECLARED)
+            name = f'fixed {name}'
+        out.append({'constraint': name, **entry})
     if margin_nm:
         out.append({'constraint': 'min_courtyard_edge_mm', **declared.get('min_courtyard_edge_mm', {
             'class': 'unknown', 'enforcement': 'soft',
@@ -957,7 +962,7 @@ def _swept_area_high(polygon, r):
             + len(polygon) * Fraction(22, 7) * r * r / 2)
 
 
-def _region_impossibility(capture, outline, groups, fixed, placed, obstacles, policy):
+def _region_impossibility(capture, outline, groups, fixed, placed, obstacles, policy, *, sourced_only=False):
     """A declared region too small for the movable courtyards that must lie in it.
 
     Every movable member of a group whose region lies inside this group's region
@@ -972,10 +977,13 @@ def _region_impossibility(capture, outline, groups, fixed, placed, obstacles, po
     quantity is an exact rational, so either bound is a proof, never a guess.
     """
     by_ref = {fp['ref']: fp for fp in capture['footprints']}
+    if sourced_only:
+        groups = [g for g in groups if placement_groups.constraint_source(g, 'region')['enforcement'] == 'hard']
     regions = [(g, [[tuple(p) for p in poly] for poly in g['region']['polygons']]) for g in groups if 'region' in g]
     r = Fraction(policy['gap_nm'], 2)
     gapped = [(fp['ref'], side, _inner(c)) for fp in placed for side, c in sorted(fp['courtyards'].items())]
-    gapped += [(f"obstacle {i}", o['side'], o['polygons']) for i, o in enumerate(policy['obstacles'])]
+    gapped += [(f"obstacle {i}", o['side'], o['polygons']) for i, o in enumerate(policy['obstacles'])
+               if not sourced_only or placement_provenance.classify(o, 'provenance', f'obstacle {i}')['enforcement'] == 'hard']
     others = [(f"rule area {i}", o['side'], o['polygons']) for i, o in enumerate(obstacles)]
     others += [(f"{fp['ref']} keepout", o['side'], o['polygons']) for fp in placed for o in fp.get('packing_keepouts', [])]
     def disjoint(candidates, inside):
@@ -1005,7 +1013,9 @@ def _region_impossibility(capture, outline, groups, fixed, placed, obstacles, po
             if not required:
                 continue
             record = {'group': group['id'], 'side': side, 'groups': sorted(g['id'] for g in contained),
-                      'references': refs}
+                      'references': refs, 'binding_regions': [
+                          {'constraint': f"group {g['id']} region", **placement_groups.constraint_source(g, 'region')}
+                          for g in sorted(contained, key=lambda g: g['id'])]}
             area, names = blocked(plain[side], region)
             if required > board_area - area:
                 return {'kind': 'region_capacity', **record, 'region_board_area_nm2': _fraction(board_area),
@@ -1163,7 +1173,7 @@ def _grown_area_low(polygons, r):
     return sum(Fraction(abs(area2(p)), 2) for p in polygons)
 
 
-def _board_capacity(capture, outline, fixed, policy, margin_nm):
+def _board_capacity(capture, outline, fixed, policy, margin_nm, *, sourced_only=False):
     """Board-wide capacity at the packing gap, per side, with exact rationals (AGENTEE-249).
 
     With r = gap/2, the movable courtyards grown by r are pairwise disjoint, clear
@@ -1192,7 +1202,8 @@ def _board_capacity(capture, outline, fixed, policy, margin_nm):
         blockers, names = [], set()
         sources = [(fp['ref'], _inner(fp['courtyards'][side])) for fp in capture['footprints']
                    if fp['ref'] in fixed and side in fp['courtyards']]
-        sources += [(f'obstacle {i}', o['polygons']) for i, o in enumerate(policy['obstacles']) if o['side'] == side]
+        sources += [(f'obstacle {i}', o['polygons']) for i, o in enumerate(policy['obstacles']) if o['side'] == side
+                    and (not sourced_only or placement_provenance.classify(o, 'provenance', f'obstacle {i}')['enforcement'] == 'hard')]
         for name, polygons in sources:
             for poly in polygons:
                 slabs = _slabs([(2 * x, 2 * y) for x, y in poly])
@@ -1250,6 +1261,42 @@ def _capacity_impossibility(sides, policy):
                 return {'kind': kind, 'side': side, 'gap_nm': policy['gap_nm'],
                         'blocked_by': s['blocked_by'], **row}
     return None
+
+
+def _capacity_proof(capture, outline, fixed, policy, margin_nm):
+    """Keep diagnostic inputs, but prefer proofs independent of advisory constraints."""
+    sides = _board_capacity(capture, outline, fixed, policy, margin_nm)
+    capacity = _capacity_diagnostic(sides, policy, margin_nm)
+    # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
+    proof = _capacity_impossibility(sides, policy) if policy.get('capacity_proof') else None
+    if proof:
+        proof_policy, proof_margin = policy, margin_nm
+        declared = policy.get('constraint_provenance', {})
+        unsourced_gap = policy['gap_nm'] and 'gap_nm' not in declared
+        unsourced_margin = margin_nm and 'min_courtyard_edge_mm' not in declared
+        # First remove all advisory limits, then each alone. A proof independent
+        # of one limit must not ask for that limit's confirmation.
+        advisory_obstacles = any(placement_provenance.classify(o, 'provenance', f'obstacle {i}')['enforcement'] == 'soft'
+                                 for i, o in enumerate(policy['obstacles']))
+        retries = []
+        if advisory_obstacles:
+            retries.append(({**policy, 'gap_nm': 0} if unsourced_gap else policy,
+                            0 if unsourced_margin else margin_nm, True))
+            retries.append((policy, margin_nm, True))
+        if unsourced_gap and unsourced_margin:
+            retries.append(({**policy, 'gap_nm': 0}, 0, False))
+        if unsourced_gap:
+            retries.append(({**policy, 'gap_nm': 0}, margin_nm, False))
+        if unsourced_margin:
+            retries.append((policy, 0, False))
+        for retry_policy, retry_margin, sourced_only in retries:
+            retry_proof = _capacity_impossibility(
+                _board_capacity(capture, outline, fixed, retry_policy, retry_margin, sourced_only=sourced_only), retry_policy)
+            if retry_proof:
+                proof, proof_policy, proof_margin = retry_proof, retry_policy, retry_margin
+                break
+        return capacity, proof, _binding_constraints(proof_policy, proof_margin, proof['blocked_by'])
+    return capacity, None, []
 
 
 def _fixed_refs(capture, policy):
@@ -1715,44 +1762,34 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
             return (1,), rank(f), 0, rank(f)
         return (1,), rank(by_ref[anchor]), 1, rank(f)
     queue = sorted((fp for fp in capture['footprints'] if fp['ref'] not in fixed), key=cluster)
+    region_failure = None
     proof = _region_impossibility(capture, outline, groups, fixed, placed, obstacles, policy)
     if proof:
+        independent = _region_impossibility(capture, outline, groups, fixed, placed, obstacles,
+                                            policy, sourced_only=True)
+        proof = independent or proof
         if proof.get('gap_nm') and 'gap_nm' not in policy.get('constraint_provenance', {}):
-            proof = _region_impossibility(capture, outline, groups, fixed, placed, obstacles,
-                                          {**policy, 'gap_nm': 0}) or proof
+            proof = (_region_impossibility(capture, outline, groups, fixed, placed, obstacles,
+                                           {**policy, 'gap_nm': 0}, sourced_only=True)
+                     or _region_impossibility(capture, outline, groups, fixed, placed, obstacles,
+                                              {**policy, 'gap_nm': 0}) or proof)
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"group {proof['group']} region cannot hold its {proof['side']} courtyards", margin_nm)
-        binding = _binding_constraints({**policy, 'gap_nm': proof.get('gap_nm', 0)}, 0, proof['blocked_by'])
-        return _soft_proof({**failure, 'proof': proof}, binding)
-    sides = _board_capacity(capture, outline, fixed, policy, margin_nm)
-    capacity = _capacity_diagnostic(sides, policy, margin_nm)
-    # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
-    proof = _capacity_impossibility(sides, policy) if policy.get('capacity_proof') else None
+        binding = (_binding_constraints({**policy, 'gap_nm': proof.get('gap_nm', 0)}, 0, proof['blocked_by'])
+                   + proof['binding_regions'])
+        region_failure = _soft_proof({**failure, 'proof': proof}, binding)
+    if region_failure is not None and (region_failure['outcome'] == 'defect' or not policy.get('capacity_proof')):
+        return region_failure
+    capacity, proof, binding = _capacity_proof(capture, outline, fixed, policy, margin_nm)
     if proof:
-        proof_policy, proof_margin = policy, margin_nm
-        declared = policy.get('constraint_provenance', {})
-        unsourced_gap = policy['gap_nm'] and 'gap_nm' not in declared
-        unsourced_margin = margin_nm and 'min_courtyard_edge_mm' not in declared
-        # First remove all advisory limits, then each alone. A proof independent
-        # of one limit must not ask for that limit's confirmation.
-        retries = []
-        if unsourced_gap and unsourced_margin:
-            retries.append(({**policy, 'gap_nm': 0}, 0))
-        if unsourced_gap:
-            retries.append(({**policy, 'gap_nm': 0}, margin_nm))
-        if unsourced_margin:
-            retries.append((policy, 0))
-        for retry_policy, retry_margin in retries:
-            retry_proof = _capacity_impossibility(
-                _board_capacity(capture, outline, fixed, retry_policy, retry_margin), retry_policy)
-            if retry_proof:
-                proof, proof_policy, proof_margin = retry_proof, retry_policy, retry_margin
-                break
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['side']} courtyards grown by half the gap exceed the board's free area"
                            + (f" usable by {proof['square_nm']} nm squares" if proof['square_nm'] else ''), margin_nm)
-        return _soft_proof({**failure, 'proof': proof, 'capacity': capacity},
-                           _binding_constraints(proof_policy, proof_margin, proof['blocked_by']))
+        board_failure = _soft_proof({**failure, 'proof': proof, 'capacity': capacity}, binding)
+        if board_failure['outcome'] == 'defect' or region_failure is None:
+            return board_failure
+    if region_failure is not None:
+        return region_failure
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
     search.copper_axes = copper_axes
     if runtime is not None:
@@ -1848,7 +1885,7 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     if judgment['verdict'] != 'pass':
         return stopped('judge_rejected', 'independent full-polygon judge rejected complete proposal')
     grading = placement_groups.grade(proposed_capture, groups) if groups else None
-    if grading is not None and grading['status'] != 'pass':
+    if grading is not None and not placement_groups.satisfied(grading):
         return stopped('judge_rejected', 'declared placement groups not satisfied by the complete proposal')
     extra = {} if grading is None else {'group_grading': grading}
     if locality:

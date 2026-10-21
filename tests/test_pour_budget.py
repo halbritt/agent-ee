@@ -169,7 +169,13 @@ class PourBudget(unittest.TestCase):
         self.assertEqual(json.loads(run.stdout), budget.derive(self.report, 40))
 
     def test_unplaced_board_is_not_a_baseline(self):
-        source = build(self.root, PADS + [('C1', 'SIG_A', 70, 20)], 'staged')
+        import pcbnew as k
+        source = build(self.root, PADS + [('C1', 'SIG_A', 30, 20)], 'staged')
+        path = source / 'project/probe.kicad_pcb'
+        board = k.LoadBoard(str(path))
+        next(fp for fp in board.GetFootprints() if fp.GetReference() == 'C1').SetPosition(
+            k.VECTOR2I(k.FromMM(70), k.FromMM(20)))
+        k.SaveBoard(str(path), board)
         report = budget.measure(source, 'project/probe.kicad_pcb', self.root/'staged-measure')
         self.assertEqual(report['execution'], 'ok', report.get('reason'))
         self.assertEqual(report['outside_outline'], ['C1'])

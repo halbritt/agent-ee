@@ -173,6 +173,12 @@ class PodPlacementFixture(EnvelopeScaffoldFixture):
         staged = self.root / (name + '-inputs')
         staged.mkdir()
         (staged / 'board.kicad_pcb').write_bytes(board)
+        # Preserve the same immutable constraint inputs used by the initial
+        # probe; a board-only staging loses its captured provenance binding.
+        for suffix in ('.kicad_pro', '.kicad_dru'):
+            rules = (inputs / 'project/design.kicad_pcb').with_suffix(suffix)
+            if rules.is_file():
+                (staged / 'board.kicad_pcb').with_suffix(suffix).write_bytes(rules.read_bytes())
         (staged / 'netlist.xml').write_bytes(xml.read_bytes())
         write_json(staged / 'request.json', config)
         work = self.root / name

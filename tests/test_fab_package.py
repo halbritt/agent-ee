@@ -242,6 +242,31 @@ class NativeRun(unittest.TestCase):
 class NativeFabPackageTests(NativeRun):
     """The real export, gate and seal; fault injection between the producer and the gate."""
 
+    def test_unlineaged_silk_conflict_refuses_only_package_release(self):
+        """A stripped/legacy board cannot release merely because its exports agree."""
+        source = self.root / 'conflicted'
+        shutil.copytree(FIXTURE, source)
+        board = source / 'fab.kicad_pcb'
+        board.write_text(board.read_text().replace('(at 0 -2 0)', '(at 0 0 0)', 1))
+        scope = generation_scope('agent-ee.scope/3')
+        scope['inputs'][0]['path'] = str(source)
+        refused = self.run_case(scope=scope)
+        self.assertEqual((refused['execution'], refused['outcome']), ('malformed', 'unknown'))
+        self.assertIn('silkscreen conflict', refused['summary'])
+        self.assertNotIn('artifacts', refused['details'])
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            artifact_record(self.run_dir, {**refused, 'execution': 'ok', 'outcome': 'pass'})
+        from agent_ee.placement_defects import verify_gate
+        manifest = read_json(self.run_dir / 'candidate.json')
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            verify_gate(self.run_dir, {**refused, 'execution': 'ok', 'outcome': 'pass'}, manifest)
+        # The same board still has a determinate, sealed standalone fab export.
+        scope.pop('generation')
+        scope['checks'][-1]['kind'] = 'fab_export'
+        passed = self.run_case(scope=scope)
+        self.assertEqual((passed['execution'], passed['outcome']), ('ok', 'pass'), passed)
+        self.assertFalse((self.run_dir / 'work/fab/placement-lineage.json').exists())
+
     def test_declared_custom_copper_jumper_composes_with_native_bom_variant(self):
         from tests.test_fab_export import copper_fixture, variant_schematic
         source = self.root / 'source'
@@ -274,7 +299,7 @@ class NativeFabPackageTests(NativeRun):
         text = mark_board(board.read_text(), 'J1')
         text = text.replace('(attr smd)', '(attr smd) (model "${KICAD10_3DMODEL_DIR}/Synth.3dshapes/owned.step")', 1)
         # Original mechanical fixture: no schematic part, copper or supplier claim.
-        holes = ''.join(f'''(footprint "Owned:Mount" (layer "F.Cu") (at {105+i*3} 105)
+        holes = ''.join(f'''(footprint "Owned:Mount" (layer "F.Cu") (at {105+i*3} 118)
             (property "Reference" "H{i}" (at 0 0) (layer "F.Fab"))
             (attr board_only exclude_from_bom exclude_from_pos_files)
             (pad "" np_thru_hole circle (at 0 0) (size 2 2) (drill 2) (layers "*.Cu" "*.Mask")))'''
@@ -575,6 +600,27 @@ class GenerationCampaignFixture(unittest.TestCase):
         return code, out.getvalue()
 
 class GenerationCampaignTests(GenerationCampaignFixture):
+    def test_campaign_cannot_publish_unlineaged_conflicted_board(self):
+        source = self.root / 'conflicted'
+        shutil.copytree(FIXTURE, source)
+        board = source / 'fab.kicad_pcb'
+        board.write_text(board.read_text().replace('(at 0 -2 0)', '(at 0 0 0)', 1))
+        scope = generation_scope()
+        scope['inputs'][0]['path'] = str(source)
+        self.write_campaign(scope, ['design/fab.kicad_pcb'])
+        root = self.root / 'campaign'
+        with contextlib.redirect_stdout(io.StringIO()):
+            status = run_campaign(self.root / 'campaign.json', root)
+        state = read_json(root / 'state.json')
+        self.assertNotEqual(status, 0)
+        self.assertNotEqual(state['state'], 'criteria_satisfied')
+        self.assertNotIn('fab_artifacts', state)
+        final = Path(state['history'][-1]['run'])
+        check = read_json(final / 'checks/fab.json')
+        self.assertEqual((check['execution'], check['outcome']), ('malformed', 'unknown'))
+        self.assertIn('silkscreen conflict', check['summary'])
+        self.assertNotIn('fab_artifacts', verify_campaign(root))
+
     def test_final_state_lists_fab_hashes_that_verify_campaign_recomputes(self):
         root = self.root / 'campaign'
         with contextlib.redirect_stdout(io.StringIO()):

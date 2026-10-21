@@ -317,15 +317,22 @@ The disposable producer also runs a [silk artwork pass](silk-artwork.md) after
 placement, preserving graphics and required markings while recording remaining
 added silk overlap/copper findings as open defects in published proposals
 (AGENTEE-333). Adopted helper receipt evidence follows successor candidates;
-downstream fab/verification gates and package release refuse open carry.
-Placement feasibility does not establish fab legibility. AGENTEE-344 extends
-carry refusal to fab-family kinds in every stage and to campaign acceptance.
+downstream fab/verification gates and package release refuse open carry. A
+board lineage stamp makes a re-scoped copy refuse release without that evidence.
+Imported closure evidence must match native DRC on the captured board
+(AGENTEE-351). Package release also requires a sealed clean native DRC witness
+for every board; stamps and imported lineage cannot waive it until AGENTEE-348
+authenticates them, so stripped or fabricated stamps cannot drop this release
+obligation. Individual checks keep their existing verdicts. AGENTEE-344
+extends carry refusal to fab-family kinds in every stage and to campaign acceptance.
 Closed markings retain receipt-backed closure across proven masked-track edits.
 The [post-routing artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
 repairs silk through a scope-proven receipt and enables identity-bound closure
 after routing. Final saved-board containment witnesses are sealed in producer
-reports and reused on replay; footprint-owned cutouts cannot close carry.
-Lineage enforcement after out-of-campaign re-scoping remains open.
+reports and reused on replay; qualified straight cutouts (AGENTEE-362) and
+conservatively bounded curved holes (AGENTEE-368) can close carry, while
+unqualified outlines cannot.
+Placement feasibility does not establish fab legibility.
 Its local reports do not replace the
 coordinator checks.
 
@@ -508,3 +515,10 @@ source claims; selection receipts name unknown-attribute exclusions. This shares
 the catalog replay already consumed by `parts/1` and complements AGENTEE-164's
 exact named-IC records. It does not add parametric claims to named records or
 select an actual pod regulator without captured rows and declared constraints.
+
+AGENTEE-331 binds declared numeric rule provenance into scaffold receipts and
+immutable projects. Native publication gates and captured DRC retain unsourced
+numeric findings as advisories; sourced limits and structural defects still gate.
+Generated per-net rules compose with immutable owner rules without inheriting
+owner authority. Review packets retain the classifications and citations.
+See [constraint sources](scaffold.md#declared-design-rule-sources-agentee-331).

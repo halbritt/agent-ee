@@ -162,3 +162,13 @@ kicad-route for integration routing, decide whether the candidate is done.
 Tests: `tests/test_sublayout.py`, over the owned routed module
 `fixtures/generation/regulator.kicad_pcb` and the owned top board
 `fixtures/sublayout/top.kicad_pcb` ([provenance](../fixtures/sublayout/PROVENANCE.md)).
+
+AGENTEE-331 carries the top project's native `.kicad_pro`, `.kicad_prl` and
+`.kicad_dru` into both sandbox DRC inputs. The provenance classifier retains
+classes and citations in `drc/constraints.json` and each new finding. Numeric
+defaults are advisory, reported in `new_violations` and `advisory_findings`, and
+do not alone make a group defective. Sourced numeric and structural findings
+still grade. The saved-board copper containment child contributes engineering
+witnesses for effective copper beyond the outline, including cutouts.
+Numeric delta identities include measured descriptions and absolute item geometry;
+a moved item cannot reuse its old UUID to hide a worsened edge or hole gap.
