@@ -1,0 +1,425 @@
+{
+  "work_item": "AGENTEE-337",
+  "sources": {
+    "spacing": {
+      "url": "https://jlcpcb.com/help/article/minimum-spacing-for-smd-components",
+      "resolved_url": "https://jlcpcb.com/help/article/minimum-spacing-for-smd-components",
+      "captured_at": "2026-10-21T01:57:29.530534+00:00",
+      "sha256": "1c696592e13da945bfd327ffe7757d8d0070e6b61ed3739942b9ed6b9b073ffe",
+      "bytes": 111306
+    },
+    "pcb": {
+      "url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "resolved_url": "https://jlcpcb.com/capabilities/pcb-capabilities",
+      "captured_at": "2026-10-21T01:57:29.955447+00:00",
+      "sha256": "0b94b018873d1616366e532dd5ce159560b68fa55527f1bc5726557670c749fb",
+      "bytes": 136932
+    },
+    "assembly": {
+      "url": "https://jlcpcb.com/capabilities/pcb-assembly-capabilities",
+      "resolved_url": "https://jlcpcb.com/capabilities/pcb-assembly-capabilities",
+      "captured_at": "2026-10-21T01:57:30.410254+00:00",
+      "sha256": "cecba2bbb5011e410819dbb7932f337e6827cd354b53b70ca7201d3ee80d4a08",
+      "bytes": 108980
+    }
+  },
+  "raw_bytes_committed": false,
+  "recording_method": "Host urllib capture; original transcription of numeric facts only. Raw response hashes identify captures but do not replay absent vendor bytes.",
+  "locators": {
+    "spacing": "Minimum Spacing Requirements for SMD Components / package-pair matrix, mm column; measurement diagram measures component body/lead extents, not courtyard",
+    "pcb": "PCB capabilities / SMD pad to pad clearance (different nets)"
+  },
+  "different_net_clearance_nm": 150000,
+  "component_spacing": [
+    {
+      "packages": [
+        "chip 0201",
+        "chip 0201"
+      ],
+      "spacing_nm": 150000
+    },
+    {
+      "packages": [
+        "chip 0201",
+        "chip 0402"
+      ],
+      "spacing_nm": 150000
+    },
+    {
+      "packages": [
+        "chip 0201",
+        "chip 0603"
+      ],
+      "spacing_nm": 180000
+    },
+    {
+      "packages": [
+        "chip 0201",
+        "chip 0805"
+      ],
+      "spacing_nm": 180000
+    },
+    {
+      "packages": [
+        "chip 0201",
+        "chip 1206"
+      ],
+      "spacing_nm": 250000
+    },
+    {
+      "packages": [
+        "QFN",
+        "chip 0201"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "QFP",
+        "chip 0201"
+      ],
+      "spacing_nm": 500000
+    },
+    {
+      "packages": [
+        "SOIC",
+        "chip 0201"
+      ],
+      "spacing_nm": 400000
+    },
+    {
+      "packages": [
+        "SOT",
+        "chip 0201"
+      ],
+      "spacing_nm": 200000
+    },
+    {
+      "packages": [
+        "BGA",
+        "chip 0201"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "chip 0402",
+        "chip 0402"
+      ],
+      "spacing_nm": 150000
+    },
+    {
+      "packages": [
+        "chip 0402",
+        "chip 0603"
+      ],
+      "spacing_nm": 180000
+    },
+    {
+      "packages": [
+        "chip 0402",
+        "chip 0805"
+      ],
+      "spacing_nm": 180000
+    },
+    {
+      "packages": [
+        "chip 0402",
+        "chip 1206"
+      ],
+      "spacing_nm": 250000
+    },
+    {
+      "packages": [
+        "QFN",
+        "chip 0402"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "QFP",
+        "chip 0402"
+      ],
+      "spacing_nm": 500000
+    },
+    {
+      "packages": [
+        "SOIC",
+        "chip 0402"
+      ],
+      "spacing_nm": 400000
+    },
+    {
+      "packages": [
+        "SOT",
+        "chip 0402"
+      ],
+      "spacing_nm": 200000
+    },
+    {
+      "packages": [
+        "BGA",
+        "chip 0402"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "chip 0603",
+        "chip 0603"
+      ],
+      "spacing_nm": 180000
+    },
+    {
+      "packages": [
+        "chip 0603",
+        "chip 0805"
+      ],
+      "spacing_nm": 180000
+    },
+    {
+      "packages": [
+        "chip 0603",
+        "chip 1206"
+      ],
+      "spacing_nm": 250000
+    },
+    {
+      "packages": [
+        "QFN",
+        "chip 0603"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "QFP",
+        "chip 0603"
+      ],
+      "spacing_nm": 500000
+    },
+    {
+      "packages": [
+        "SOIC",
+        "chip 0603"
+      ],
+      "spacing_nm": 400000
+    },
+    {
+      "packages": [
+        "SOT",
+        "chip 0603"
+      ],
+      "spacing_nm": 200000
+    },
+    {
+      "packages": [
+        "BGA",
+        "chip 0603"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "chip 0805",
+        "chip 0805"
+      ],
+      "spacing_nm": 180000
+    },
+    {
+      "packages": [
+        "chip 0805",
+        "chip 1206"
+      ],
+      "spacing_nm": 250000
+    },
+    {
+      "packages": [
+        "QFN",
+        "chip 0805"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "QFP",
+        "chip 0805"
+      ],
+      "spacing_nm": 500000
+    },
+    {
+      "packages": [
+        "SOIC",
+        "chip 0805"
+      ],
+      "spacing_nm": 400000
+    },
+    {
+      "packages": [
+        "SOT",
+        "chip 0805"
+      ],
+      "spacing_nm": 200000
+    },
+    {
+      "packages": [
+        "BGA",
+        "chip 0805"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "chip 1206",
+        "chip 1206"
+      ],
+      "spacing_nm": 350000
+    },
+    {
+      "packages": [
+        "QFN",
+        "chip 1206"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "QFP",
+        "chip 1206"
+      ],
+      "spacing_nm": 500000
+    },
+    {
+      "packages": [
+        "SOIC",
+        "chip 1206"
+      ],
+      "spacing_nm": 400000
+    },
+    {
+      "packages": [
+        "SOT",
+        "chip 1206"
+      ],
+      "spacing_nm": 200000
+    },
+    {
+      "packages": [
+        "BGA",
+        "chip 1206"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "QFN",
+        "QFN"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "QFN",
+        "QFP"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "QFN",
+        "SOIC"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "QFN",
+        "SOT"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "BGA",
+        "QFN"
+      ],
+      "spacing_nm": 1500000
+    },
+    {
+      "packages": [
+        "QFP",
+        "QFP"
+      ],
+      "spacing_nm": 1250000
+    },
+    {
+      "packages": [
+        "QFP",
+        "SOIC"
+      ],
+      "spacing_nm": 1250000
+    },
+    {
+      "packages": [
+        "QFP",
+        "SOT"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "BGA",
+        "QFP"
+      ],
+      "spacing_nm": 1500000
+    },
+    {
+      "packages": [
+        "SOIC",
+        "SOIC"
+      ],
+      "spacing_nm": 500000
+    },
+    {
+      "packages": [
+        "SOIC",
+        "SOT"
+      ],
+      "spacing_nm": 400000
+    },
+    {
+      "packages": [
+        "BGA",
+        "SOIC"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "SOT",
+        "SOT"
+      ],
+      "spacing_nm": 400000
+    },
+    {
+      "packages": [
+        "BGA",
+        "SOT"
+      ],
+      "spacing_nm": 1000000
+    },
+    {
+      "packages": [
+        "BGA",
+        "BGA"
+      ],
+      "spacing_nm": 2000000
+    }
+  ],
+  "limits": [
+    "Recommended assembly spacing, not an electrical maximum or supplier approval.",
+    "1210 chips and inductors outside the listed chip families have no captured spacing value.",
+    "Native different-net copper disks establish a necessary lower bound; assembly pad-envelope estimates are advisory because native lands do not establish physical component extents. Whole-footprint minimum is unqualified."
+  ]
+}

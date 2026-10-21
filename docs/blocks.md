@@ -3,10 +3,10 @@
 `agent_ee.blocks` derives placement blocks from the sealed schematic hierarchy
 and packs each block in isolation into a rigid block candidate (stage A).
 [Stage B](#stage-b-arrangement-agentee-340) (`agent_ee.block_arrangement`)
-arranges the candidates as rigid macros and packs the residual parts. The block
-library (AGENTEE-342) catalogues and imports cited candidates. Neither module
+arranges the candidates as rigid macros and packs the residual parts. The
+[block library](block-library.md) (AGENTEE-342) catalogues and imports cited candidates. Neither module
 writes a board; the native writer does. The complete board plan must still pass native save/reload,
-the [locality grade](placer.md#pad-level-electrical-locality-agentee-322) and the
+retain usable [locality evidence](placer.md#pad-level-electrical-locality-agentee-322) and pass the
 [native publication gate](placer.md#through-hole-reservations-and-native-publication-gate-agentee-318).
 
 ```sh
@@ -203,9 +203,10 @@ refuse, and a `/1` document is refused. Only `status: packed` is usable.
 - each member has one pin record per pad; one role names one net with one
   `boundary` flag, and one net has one role;
 - `grade.electrical_locality` and `grade.groups` are `null` exactly when the
-  block policy has no internal obligations or groups. Otherwise they pass with
-  no defects or unknowns, declare the block policy, measure every internal pair
-  or group member once, and each exact squared distance is within its limit;
+  block policy has no internal obligations or groups. Otherwise they have no
+  defects or unknowns, declare the block policy and measure every internal pair
+  or group member once. Groups must pass. Locality may be `pass` or `info`, with
+  every hard squared distance within its limit and every advisory reported;
 - the witness is `exact-courtyard-separation/1` at the block policy gap, with
   status `pass`, no pair below the gap, no drilled-pad conflict, and exact
   rational minima (`[numerator, denominator]`, positive denominator) at least
@@ -234,13 +235,14 @@ returns `{"status": "admitted" | "refused", "problems": [...]}`. Problem kinds:
 | `deferred_mismatch` | The recomputed deferred record equals `deferred`, so a boundary obligation or group cannot be dropped |
 | `identity` | `match` with the identity mapping succeeds, which binds each `pad_geometry_sha256` to the board |
 | `stale_evidence` | The board's own footprints at the frame poses reproduce `outline`, `grade` and `witness` exactly, including drilled-pad reservations; a `compaction` record's area equals that outline's box area |
-| `evidence_failed` | That re-grade and witness pass |
+| `evidence_failed` | Locality is `pass` or advisory `info`; groups and witness pass |
 
 Identity matching and grading stay separate. `match` compares identity only,
 and the graders are the registered checks' own. A candidate from another board
 or policy is refused by `admit`. Reusing it there takes `match` with a mapping
-plus a re-grade on the target board, which is arrangement (AGENTEE-340) and
-library (AGENTEE-342) work.
+plus a re-grade on the target board. The
+[block library](block-library.md#materialization) does that for catalogued
+entries; arranging them is AGENTEE-340.
 
 **Frame.** The anchor's origin is `(0, 0)` and its rotation is 0. A member pose
 is its footprint origin and its rotation relative to the anchor, in integer
@@ -283,17 +285,20 @@ Layout provenance uses AGENTEE-331's class / citation / enforcement record:
 
 `pack_block` emits only `search-derived` candidates. Their poses are a proposal:
 arrangement may re-pack or replace them, and they never become a reference
-layout. A `hard` class means arrangement must keep the block rigid. Importing
-such a layout, and verifying its citation and source, is AGENTEE-342.
+layout. A `hard` class means arrangement must keep the block rigid. The
+[block library](block-library.md#import-paths) imports such layouts and binds
+their source hashes.
 `validate_candidate` only checks that the record is present and well formed; a
 `search-derived` record has no `source`. It does not verify the cited document.
 
-Unsourced numeric limits are meant to stay advisory, following AGENTEE-331/337.
-That is not implemented yet: the intra-block search still enforces every
-locality limit in the block policy as hard, so an unsourced bound that is too
-tight gives `packing_search_exhausted` rather than a candidate. Carrying each
-pair's class and enforcement into `blocks._locality` waits for AGENTEE-337's
-bound-provenance contract.
+Unsourced numeric limits remain advisory, following AGENTEE-331/337. The
+isolated policy preserves `source_records` and each pair's provenance. Only hard
+pairs prune the search. Candidate production, validation and admission accept
+locality `info` with no defects or unknowns and retain every advisory, including
+`exceeded` and `below_floor`. Validation checks the stored classification and
+advisory status; admission independently re-grades native lands against the
+source-bound policy. Sourced distance violations, infeasibility and unknown
+coverage still refuse. Group grades and courtyard witnesses must pass.
 
 ## Matching
 
@@ -352,6 +357,9 @@ macros. The plan records each block's provenance class and citation.
   match. The mapped references must be exactly one derived block, with the same
   anchor. Their frame poses are then re-graded with the target board's own
   footprints and isolated policy (locality, groups and the courtyard witness).
+  The block's deferred obligations and groups are the target board's, from its
+  own isolated record (`blocks._isolate`). The source candidate's `deferred`
+  record names the source board's obligations and is never graded on the target.
 - **Boundary nets.** Matching compares net roles, but not which outside net a
   boundary role lands on (the 339 review gap). Arrangement binds every role to
   the board net its pins land on. A boundary role must reach a footprint outside
@@ -365,6 +373,12 @@ macros. The plan records each block's provenance class and citation.
 `policy` is the captured packing policy that the candidates were packed and are
 admitted against. `effective_policy` may only add board obstacles, for example
 the writer's `IMU_AXES` reservations. Arrangement enforces those obstacles.
+It refuses any other difference with `EffectivePolicyError`, a `ValueError`
+subclass whose `problems` name each key that differs. Every key except
+`obstacles` must be equal, and the captured obstacles must stay unchanged and in
+order as the prefix of the effective list. So the effective policy cannot drop or
+relax a captured constraint, such as an obstacle, the gap, fixed parts, groups,
+locality or the edge margin. Nothing is published.
 A group that ties a block member to a residual movable anchor refuses
 (`group_anchor_residual`): the member is fixed before that anchor is placed.
 
@@ -725,9 +739,10 @@ were graded with the same grader in the same frame.
 | U15 | 5 | 7 | 0.917 / 0.964 | 21.28 / 23.55 | 119.14 / 147.96 | 1422, 1 | 4.86 s |
 | U26 | 3 | 4 | 0.760 / 0.762 | 18.18 / 18.46 | 68.33 / 69.50 | 7, 0 | 0.82 s |
 
-All four candidates and the hand clusters pass the internal locality grade and the
-0.25 mm courtyard witness. Repeated packing gave identical candidates. The search
-pose is shorter than the hand pose on 21 of the 33 pairs. It is longer on 12: the
+In this historical diagnostic, all four candidates and the hand clusters passed
+the internal locality grade and the 0.25 mm courtyard witness. Under AGENTEE-337,
+these unsourced locality bounds now grade as advisory `info`. Repeated packing
+gave identical candidates. The search pose is shorter than the hand pose on 21 of the 33 pairs. It is longer on 12: the
 U5/U7 boot supply and high-frequency input supply, return and switch, U15's input
 supply and switch and C68 supply, and U26's C97 supply. The hand-pose time was
 not recorded. The wall times are single observations on a loaded host, not limits.
@@ -750,6 +765,8 @@ It covers:
 - default and allocated derivation, with every ambiguity refusal;
 - board/netlist disagreement and locked members;
 - packing with internal and deferred obligations and groups;
+- advisory-only and mixed hard/advisory packing, truthful advisory records,
+  and source-record preservation through JSON round trips and admission;
 - frame rigidity under anchor rotation and determinism;
 - fail-closed locality, fixed-member and synthetic-plane cases;
 - every provenance class and the structural refusals;
@@ -776,7 +793,11 @@ covers:
   provenance and determinism;
 - admission refusals: missing, duplicate and wrong-policy candidates, and a
   recorded net that differs from the board net;
-- a mapped library candidate, with undeclared, wrong and correct boundary nets;
+- a mapped library candidate, with undeclared, wrong and correct boundary nets,
+  and graded on the target board's deferred obligations, not the source's;
+- an effective policy that only appends obstacles is accepted. One that drops,
+  replaces or reorders a captured obstacle, or changes any other key, refuses
+  with `EffectivePolicyError`;
 - hard and advisory keep-outs, thermal limits and objective order, shadows,
   no block over a fixed part, internal stacking and stranded groups;
 - typed search and budget exhaustion, including the backjump bound, and policy

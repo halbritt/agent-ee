@@ -87,14 +87,98 @@ link target. Added `.py`, `.pyc` or other files in the mounted snapshot still
 cause `mount_changed` and `source_changed` and refuse adoption.
 
 Host validation refuses a mount whose resolved source is the running package's
-`src` tree or an ancestor containing it
-(AGENTEE-327). Symlink and parent-directory aliases receive the same
+`src` tree, an ancestor containing it, or any descendant directory or file
+(AGENTEE-327/329), except the qualified single helper files listed below.
+Symlink and parent-directory aliases receive the same
 `LivePackageSourceError` (`ValueError`) with violation `live_package_source:<at>`.
 `run_step` validates before tool observation or launch and creates no receipt for
 an invalid declaration. This applies to every mount, regardless of its sandbox
 name or the optional `source` field. Use a snapshot for package tools.
 `validate_step(host=False)` remains structural validation for retained receipt
 replay; it does not inspect today's host source paths.
+
+AGENTEE-329 also refuses device/inode aliases of `src`, its ancestors and descendants,
+including bind mounts whose resolved spelling is outside the checkout. Execution
+opens each validated resolved source with `O_PATH | O_CLOEXEC | O_NOFOLLOW`
+(and `O_DIRECTORY` for directories), compares the descriptor device/inode with
+the validated identity, and passes it to bwrap using `--ro-bind-fd` and
+`pass_fds`. Some bwrap versions, including the qualified host's 0.9.0,
+canonicalize fd sources back to pathnames. Therefore both the version command
+and main step also run a fixed isolated Python prelude inside the sandbox. It
+compares every mounted root's device/inode with the opened descriptor identity
+before native `execvp` of the declared command. The prelude restores signals
+ignored by Python and keeps bwrap's native script execution behavior. A rename that redirects bwrap's mount
+cannot cause the declared command to run against that unexpected object.
+Descriptors close on success, failure and interruption. The retained specification
+keeps its original declaration. Both tool observations read declared mount trees,
+mounted executable bytes and the optional source tree through held descriptors,
+including after an A–B–A rename of a source root (AGENTEE-349). Host path strings
+remain descriptive; they are never resolved back from a descriptor to read bytes.
+Single-file mounts keep their original basename in the identity digest.
+The resolved source device/inode is also checked after initial observation,
+before the main step, and after execution; replacement or disappearance raises
+`MountSourceChangedError` (`ValueError`) with violation `mount_source_changed:<at>`.
+A post-run refusal leaves executor records for diagnosis and no adoptable receipt. A missing
+source at initial validation raises `ValueError("mount source does not exist: …")`.
+A failure before initial observation finishes removes the partial receipt and
+launches no tool. Retained replay remains independent of host paths.
+
+The prelude emits a fixed success line before executing the tool. The executor
+consumes that line, records `execution.mount_guard` as a boolean, and keeps tool
+stdout/version text unchanged. No success line means no verified mount: the
+receipt adds `mount_guard_failed:run` or `mount_guard_failed:version`, even when
+the guard's exit code 125 is in `adoptable_exits`. A tool that actually runs and
+returns 125 keeps the ordinary declared exit policy. Retained guarded commands
+require the exact prelude and a coordinator guard observation; routing replay
+also checks the complete declared fd mount set and identity payload. Historical
+path-form receipts retain their original verification behavior: only fd-form
+receipts carry the mount-guard observation. Replay still accepts historical
+path-form receipts without that observation. This compatibility is a deliberate
+downgrade in assurance; replay does not establish that an old path bind was
+descriptor-bound or protected from a source rename (AGENTEE-349).
+
+The explicit live-helper allow-list is `agent_ee/kicad_route_attempt.py`,
+`agent_ee/net_binding.py` and `agent_ee/symbol_library.py` relative to `src`.
+`routing_adapter._step` mounts these three standalone files to run the pinned
+routing adapter and its binding/parser imports. Only their canonical resolved
+paths as regular files qualify; a directory containing them or a bind alias of
+one of them does not qualify. All other package tools must use snapshots.
+`tests.test_tool_source` discovers and exercises every package-source step builder;
+`tests.test_stage_receipts` covers helper admission and descendant/alias refusal.
+
+The identity guard compares the mount source with live ancestors and compares
+the source and its ancestors with every entry of the live source tree. It walks
+without following tree symlinks into external directories and propagates lookup
+errors rather than admitting an uninspected tree. It does not cache this inventory.
+Directory sources containing a descendant mountpoint in `/proc/self/mountinfo`
+are refused with `mount_source_submount:<at>`, including same-device bind mounts
+and mountpoints with escaped names. After opening a directory source, a no-follow
+walk relative to that descriptor also compares directory and entry mount IDs
+from `/proc/self/fdinfo`. Every inventoried entry is also compared by device/inode
+against the live source inventory, refusing hard links into live `src` as
+`live_package_source:<at>`, including links to qualified helpers embedded in a
+directory. The held descriptor is re-inventoried before each launch and after
+the run, so a persistent link planted after the initial inventory is also refused.
+A byte-for-byte independent copy is allowed. An ancestor rename cannot redirect this inventory;
+file bind mounts and directory binds are both refused. This conservative rule also refuses benign
+submounts: registered builders need plain tool trees, never nested mount
+hierarchies. A mountpoint at the source itself is allowed only after the ordinary
+live-tree identity checks. A caller able to change the coordinator's mount
+namespace after validation is outside this guard; sandboxed builders have no
+authority in that namespace. Tree entries and file bytes remain mutable in place:
+the existing before
+and after tool identity checks still refuse observed content changes. Lookup
+errors during mount observation raise typed `mount_source_changed:<at>` refusals,
+including entry deletion during the post-run walk; no completed receipt is written.
+Absolute symlinks and relative symlinks that escape above a mount root are recorded
+as `link:` targets in tree identity, without digesting their host targets. If the
+executable resolves through such a link, its digest is unknown and the receipt
+is unadoptable; an escaped source subtree records link identity only. Relative
+links that stay inside the mount retain their ordinary executable digest. This
+observation does not emulate cross-mount sandbox symlink resolution. Transient
+in-place edits between observations remain outside the guard. This
+guard requires Linux `/proc/self/mountinfo`, `/proc/self/fdinfo`, `O_PATH`, and bwrap support for
+`--ro-bind-fd`; unavailable facilities fail closed.
 
 Snapshots live under `AGENT_EE_TOOL_SOURCE_CACHE`, or
 `~/.cache/agent-ee/tool-source` by default, in a directory named for the ordinary

@@ -103,6 +103,61 @@ fixed courtyard stays usable. Fixed parts must fit the outline and stay clear
 of each other, the obstacles and keepouts by the same rule. Otherwise the plan
 is `fixed_conflict`, `outcome=unknown`, naming the later part of the pair.
 
+### Declared obstacle unions and reserved-gap provenance (AGENTEE-338)
+
+Earlier policy validation refused touching or overlapping polygons within one
+obstacle (`nested or touching polygon contours unsupported`); splitting them
+into separate obstacle entries avoided that refusal. Declared obstacle polygons
+now reserve their exact union on each declared side, whether grouped in one
+entry or split across entries. Each polygon must still be simple, nondegenerate,
+straight and expressed in integer nanometres; each entry permits 1–64 polygons.
+Self-intersections, repeated vertices and zero-area members remain invalid policy
+and raise `ValueError`. Courtyard and outline contour qualification is unchanged.
+
+The union is represented by its member polygons, with no rounding, hull or
+bounding-box replacement. Shared edges and overlaps open no gap; concave notches
+and uncovered holes remain available. Nested members and duplicates add no
+reserved space. Board-capacity calculations union their blocker boxes rather
+than adding overlapping areas. Region-capacity proofs retain only disjoint
+blockers as a conservative lower bound, so overlap may weaken a proof but never
+inflate blocked area.
+
+`gap_nm` applies between fixed courtyards and declared obstacles too. In
+particular, `gap_nm: 250000` requires a 0.25 mm Euclidean edge distance; exactly
+0.25 mm is admitted, while one nanometre less returns `fixed_conflict`,
+`outcome=unknown`, with no placements. Positive-area structural overlap remains
+blocked even when `gap_nm` is zero.
+
+The pod's 0.25 mm value came from agent-491's packing policy (`gap_nm: 250000`),
+as recorded by agent-499 in the AGENTEE-338 comment and AGENTEE-331/337 provenance
+follow-up. It is an **agent-chosen advisory default**, with no captured JLCPCB SMT
+assembly figure establishing it as a manufacturing requirement. The generic
+packing API requires an explicit gap and supplies no 0.25 mm default. This
+value remains a search reservation and a fixed-placement admission guard. A
+capacity proof that depends on it reports `packing_infeasible`, `outcome=unknown`,
+empty placements and `owner_confirmation: ["gap_nm"]`, naming the unsourced
+constraint in `reason` and `binding_constraints`. The diagnostic keeps the
+existing `unknown`/`hard` gap entry: `hard` describes the enforced search
+reservation, not authority to establish a design defect. If the same capacity
+bound proves infeasibility at zero gap, that structural proof retains its defect
+verdict and does not name the gap as binding.
+
+The low-level packing API accepts a qualified gap source in the existing
+`constraint_provenance.gap_nm` entry: `class` (`fixture_author` or
+`manufacturer`), `enforcement: "hard"`, `value_nm` (equal to `gap_nm`) and a
+nonempty `citation`. The source entry is retained in binding constraints.
+Original numeric test fixtures cite their authored gap requirement and retain
+all previous verdict expectations. Manufacturer class is for a gap validated
+against a captured manufacturer requirement, including a captured JLCPCB SMT
+assembly record; those requirements remain hard. A caller must qualify that
+source before calling this geometry API: a citation string is not independently
+authenticated by the placer. The coordinator placement adapter continues to
+refuse policy-supplied `constraint_provenance`; envelope provenance still comes
+only from captured envelopes. This change adds no manufacturer capture pipeline
+or automatic promotion of an agent-chosen number.
+Neither a successful packing plan nor this spacing default establishes native
+DRC or assembly clearance acceptance.
+
 The coordinator derives the request from the envelope. The placement adapter
 adds every `fixed_footprints[].reference` and `mounting_holes[].id` of a captured
 envelope to `fixed_refs` (`placement_adapter.envelope_references`). The scaffold
@@ -335,8 +390,9 @@ pairwise disjoint.
   per vertex, with integer-ceiling lengths and pi taken as 22/7. Only fixed
   courtyards and declared obstacles, which keep the gap, are subtracted.
 
-Both are exact rationals, `packing_infeasible`, `outcome=defect`, with
-`steps_used=0`. Edge margin and the width of a region are not used, so a
+Both use exact rationals and return `packing_infeasible`, with `steps_used=0`.
+A proof bound by a soft limit or an unsourced nonzero gap has `outcome=unknown`;
+a hard sourced gap or a proof independent of the gap retains `outcome=defect`. Edge margin and the width of a region are not used, so a
 region too narrow but large enough by area is still only a search failure.
 
 ### Board capacity (AGENTEE-249)
@@ -389,11 +445,12 @@ that stop before the reservations (unsupported geometry, fixed conflicts, the
 earlier proofs) do not carry it; the earlier proofs still name their
 [binding constraints](#constraint-provenance-agentee-266).
 
-A row that is exceeded becomes a `packing_infeasible` / `defect` result
+A row that is exceeded becomes a `packing_infeasible` result
 (`board_capacity_gap` for the free-area row, `board_capacity_fragmented` for a
 square size) only when the policy sets `capacity_proof: true`. By default the
-result stays the search's unknown. Turning it on changes the verdict of truly
-infeasible inputs that existing tests keep as search failures: the 4 mm board
+result stays the search's unknown. With it enabled, a proof establishes a defect
+only when its binding limits permit that verdict: an unsourced gap remains unknown.
+Examples retained as search failures without the opt-in include the 4 mm board
 with a 1.5 mm margin (`test_placer.PlacerTest.test_edge_margin`), the 3 mm
 notch at a 1.5 mm gap
 (`test_placer.EnvelopeFixedTest.test_fixed_courtyard_is_a_polygon_not_its_bounding_box`)
@@ -403,8 +460,10 @@ Making it the default is an owner decision. No placement constraint is relaxed
 either way. The bound is not tight: a feasible input never exceeds it, but an
 infeasible one may not either. Owned fixtures are in
 `tests/test_placer_capacity.py`. On a 20 × 12 mm board with a 12 × 9 mm fixed
-block, six 3.2 mm squares are placed. Seven are proved infeasible by the
-fragmentation row, although they need only about 81 % of the free area.
+block, six 3.2 mm squares are placed. Seven are proved infeasible against the
+fixture's authored 0.25 mm requirement by the fragmentation row, although they
+need only about 81 % of the free area. Removing that gap's provenance gives the
+same geometric bound with an unknown outcome.
 
 ### Constraint provenance (AGENTEE-266)
 
@@ -421,14 +480,15 @@ limit wins over a soft one.
 Each `capacity.sides.<side>` names its `binding_constraints`: the outline, the
 fixed parts and obstacles in `blocked_by`, and the edge margin and gap. Each
 has its `class` and `enforcement`. The margin and gap come from the policy or a
-fab profile, so their provenance is `unknown`. Without declared provenance the
+fab profile; without a qualified gap source their provenance is `unknown`. Without declared provenance the
 outline is `unknown` too.
 
 Every `packing_infeasible` proof also carries `binding_constraints`. When one
 of them is soft (an assumed or owner-weakened limit), the proof stays in the
 record, but the outcome is `unknown` instead of `defect`. The result then has
 `owner_confirmation` (the soft constraints), and the reason names them. A proof
-bound only by hard or undeclared limits keeps `defect`. Owned tests are in
+bound only by hard or undeclared limits keeps `defect`, except that an unsourced
+gap is advisory under AGENTEE-338. A zero-gap proof does not bind that gap. Owned tests are in
 `tests/test_constraint_provenance.py`.
 
 ### Pad shapes (AGENTEE-109)
@@ -786,15 +846,16 @@ diagnostics but cannot establish a coordinator capture binding.
 }
 ```
 
-These example limits are authored fixture requirements, with no manufacturer or
-pod acceptance claim. Each obligation requires explicit supply and return pad
+These example limits have no recorded provenance and are advisory (AGENTEE-337),
+with no manufacturer or pod acceptance claim. Each obligation requires explicit supply and return pad
 identities ending at the same capacitor, with distinct physical pads on each
 shared footprint. The supply source may differ from the return source
 (AGENTEE-330): a buck output loop declares inductor pad 2 → capacitor positive
 as `supply` and IC PGND → capacitor negative as `return`. Pad numbers may be equal
 on different source references; reference, pad number, net and any captured UUID
-still identify each endpoint exactly. Each pair
-must name the same net at both ends. A buck may additionally declare `switch`
+still identify each endpoint exactly. For distinct source references, the supply
+and return endpoint net sets must be disjoint, even without a `kind`
+(AGENTEE-341). Each pair must name the same net at both ends. A buck may additionally declare `switch`
 with the identical pair structure: `from` selects the return-source IC switch
 pad and `to` selects its inductor pad. Shared rail membership never assigns a capacitor to
 an IC. Select the explicit `buck-output-loop` kind below to bind component and
@@ -832,20 +893,21 @@ loop inductance. Other metric names remain unknown. A missing/duplicated
 reference or pad, wrong native net, unavailable centroid, absent limit or absent
 citation remains unknown. Limits must be explicit nonnegative integer
 nanometres. The citation is the declaring engineer's source/locator text,
-retained verbatim in the immutable obligation document; this check does not
-verify a datasheet quotation or infer its applicability. Supply, return and
-switch are all measured; any proved violation remains a defect even when
-another pair is unknown. Missing limits never inherit an origin-group radius.
+retained verbatim in the immutable obligation document. A citation alone grants
+no hard numeric authority. Supply, return and switch are all measured; a proved
+sourced violation remains a defect even when another pair is unknown. Missing limits never inherit an origin-group radius.
 
 The **placement constraint** is distinct from this **check**. For each rotation,
 the packer adds candidate origins from the selected native pad offsets, peer
 pad centres and declared radius extrema. It ranks candidates by the exact sum
 of squared distance/limit squared across all resolved supply, return and switch
 pairs, ahead of the existing net cost. Ground pairs participate even when the
-net is in `ground_nets`. Every resolved pair is a hard constraint, checked
-symmetrically whichever endpoint is placed second. An unplaced peer is deferred;
-all pairs must pass before the complete plan is returned and again after native
-save/reload. Fixed violations or finite search exhaustion publish no placements
+net is in `ground_nets`. Only pairs with verified numeric provenance impose a
+hard distance constraint, checked symmetrically whichever endpoint is placed second.
+Advisory pairs affect the objective only; they generate no extra target origins
+and cannot exhaust the hard target-origin cap. An unplaced peer is deferred;
+all sourced pairs must pass before the complete plan is returned and again after
+native save/reload. An advisory-only `info` judgment permits publication. Fixed violations or finite search exhaustion publish no placements
 and remain unknown feasibility. Missing inputs refuse before search. Targeted
 plans also refuse a completed proposal violating these obligations; their
 existing origin-based objectives are unchanged.
@@ -860,6 +922,96 @@ fixed conflicts, a saved native proposal and the registered captured check.
 `tests.test_locality_copper` adds native offset and custom copper on both sides
 at all quarter turns, exact fractional distances, distinct-UUID near/far
 selection, and coordinator policy/hash binding with refusal boundaries.
+
+
+### Locality provenance (AGENTEE-337)
+
+Every pair may add `provenance`, an object with `class` and a nonempty `basis`.
+Classes use the AGENTEE-331 vocabulary: `datasheet`, `manufacturer`, `owner`,
+`engineering`, `default`. Missing, unknown, prose-only or invalid derivations
+produce `advisories` with `kind: unsourced`, `severity: defect`, and `exceeded`
+and `below_floor` flags. Advisory-only results are `info`; they never become coordinator gate
+findings or hard pack constraints. Geometry/identity failures and absent limits retain unknown coverage.
+A citation is required only for hard enforcement. Hard defects retain priority
+when another pair is advisory or unknown.
+
+The document may include `source_records`, mapping relative source paths to
+captured UTF-8 source text. Records are part of the same immutable locality
+capture; they are not files to open, a live fetch, or an owner evidence store.
+Each source reference contains `path`, the SHA-256 of that exact UTF-8 text,
+`locator`, and an exact `quote` present in that text. Hash, missing-text or quote
+failures leave the bound advisory. Source identity and applicability remain
+review obligations: a matching digest is not proof of vendor authenticity or
+owner authorship. Do not publish third-party source text without rights approval;
+original numeric transcription records can retain source identities instead.
+
+For `datasheet`, `derivation.kind: numeric` requires `value_nm` equal to
+`max_distance_nm` and an equal explicit nm or mm number in the source quote.
+`derivation.source` carries the source reference above. A prose citation such as
+“as close as possible” cannot qualify. A measured recommended/reference layout
+uses `kind: layout`, integer `distance_units`, integer `scale_nm_per_unit`, a
+nonempty `scale_reference`, and the same source reference. The check recomputes
+the product exactly. This is a declared measurement with a recorded scale;
+it does not automatically interpret a PDF image.
+
+For `owner`, `decision_reference` carries the same verified source reference
+plus a nonempty `owner` identity. An agent identity or a case-insensitive
+`design-owner`, `design_owner`, `design owner` or `designowner` label is
+not admitted. An owner label without the recorded decision stays advisory.
+This checks the retained decision reference, not authenticated authorship.
+Original tests use explicit fixture-author decisions to retain their numerical
+contracts; those decisions establish no real hardware requirements.
+
+For `manufacturer`, the pinned original numeric records in
+`src/agent_ee/data/jlcpcb-locality.json` retain host capture URLs, timestamps,
+response hashes and package-pair spacing values. Raw vendor bytes are excluded.
+The numeric-record digest is pinned in policy code. A missing or changed record
+leaves an explicit manufacturer check unknown; it cannot earn an advisory-only
+result from unavailable manufacturing evidence.
+The check computes a **necessary copper floor** from both footprints' native
+lands and the captured 0.15 mm different-net PCB clearance. Each qualified SMD
+circle, rectangle, oval or roundrect supplies an inscribed disk. At coincident
+selected centroids, each different-net cross-footprint pad pair excludes a disk
+of relative translations. The maximum of `r1 + r2 + clearance - offset1 - offset2`
+(over zero), rounded down, is a necessary distance to escape those exclusions.
+Each offset is a pad centroid distance from its selected locality centroid,
+rounded up. The triangle inequality makes this lower bound valid at every
+relative footprint rotation.
+Only pads sharing a copper layer participate. This disk subset can prove a
+lower bound even when other copper is unsupported; it never proves completeness.
+Pad-pair products over 4096 and unsupported selected lands have unknown floors.
+Disk identities are resolved once per footprint in each independent grade.
+
+For hard sourced or explicit `manufacturer` provenance, a bound below this known PCB floor
+returns a typed `locality_infeasible` defect naming the obligation, role and
+references; packing refuses it before search. Unsourced bounds remain advisory
+even below that floor, with `below_floor: true`. An unavailable geometric floor
+also stays advisory for manufacturer labels; captured-record integrity failures
+remain unknown. Hard bounds below the necessary floor are typed infeasibility
+defects (coordinator ruling G3).
+A manufacturer minimum supplies no electrical maximum, so exceeding a larger
+agent-selected maximum remains advisory.
+
+Assembly spacing remains an **unknown full manufacturing floor**. The captured
+matrix measures body/lead extents, while native pads describe solder lands.
+The report includes an advisory `assembly.pad_envelope_estimate_nm` for explicitly
+named package families in the matrix; it never rejects against that estimate.
+Unlisted packages and opposite-side placement never inherit another package's
+value. Other leads, bodies and different-net copper can raise the true minimum.
+The exact whole-footprint minimum and qualified physical extents are not
+implemented. AGENTEE-337 therefore retains this acceptance gap; a known copper
+floor, including zero, is not an assembly or whole-footprint pass.
+
+`tests.test_locality_provenance` covers legacy/agent advisories, source derivation,
+source/decision refusals, soft index constraints and computed infeasibility.
+Joint-cluster axis pruning and conflict sets use hard pairs only; advisory pairs
+may influence ordering but never exclude candidates. The registered check
+summary reports both the advisory count and the exceeded-advisory count.
+
+The [block candidate path](blocks.md) preserves captured `source_records` and
+pair provenance. Advisory-only and mixed blocks can pack and admit with locality
+`info`; only hard pairs prune the search. Candidate validation checks truthful
+advisory records, and admission re-grades every pair from the source board.
 
 ### Read-only pod diagnostic
 
@@ -882,8 +1034,10 @@ Using those explicit identities with absent pad limits, each check is `unknown`.
 Each guided pack request returns, verbatim:
 `status=electrical_locality_unavailable`, `outcome=unknown`, `steps_used=0`,
 `placements=[]`, reason `pad locality needs unambiguous native pads, limits and citations`.
-No pod design was changed or copied into this repository. Cited supply, return
-and switch limits are required before a bounded guided pod run can proceed.
+No pod design was changed or copied into this repository. Numeric limits are
+required for declared supply, return and switch pairs before a bounded guided
+pod run can proceed. Unsourced limits can guide it as advisory terms; hard
+enforcement additionally requires the validated provenance and citation above.
 The owned fixture does demonstrate a changed packed transform: an unguided
 0.500 mm supply / 4.924 mm return becomes 1.803 mm / 1.803 mm under its explicitly
 declared 4 mm limits. That fixture limit supplies no pod acceptance threshold.
@@ -913,6 +1067,9 @@ native pads and carry their own limits and citations. For this kind,
 `ic`, and these two references must differ. When present, `switch.from.reference`
 must equal `ic` and `switch.to.reference` must equal `inductor`. Both return
 endpoints must use `return_net`; neither supply endpoint may use that net.
+Neither switch endpoint may use `return_net` or either supply endpoint net
+(AGENTEE-341). A switch leg on the output rail therefore refuses even when its
+native pads and distance would otherwise pass.
 Net names and reference prefixes never infer these roles. A declaration of IC
 and inductor identity is supplied by the engineer; this check does not establish
 the component's device type from a library or datasheet.
@@ -921,14 +1078,17 @@ Role metadata requires the complete four-field binding above. Unknown kinds,
 missing role identities, swapped supply/return nets and unrelated rail members
 refuse validation before grading or packing. Per-pair native identity, centroid,
 limit and citation failures retain their existing unknown/defect precedence.
-Omit the switch pair when no cited switch limit has been declared.
+Omit the switch pair when no numeric switch limit has been declared. An unsourced
+switch limit is advisory under the same provenance rules as supply and return.
 
-Untyped obligations retain their existing generic pair semantics, including
-same-source input decoupling with a switch leg and previously admitted distinct
-sources. They do not assert this loop-role contract. This compatibility rule
-preserves existing verdicts; new output-loop declarations must select the kind
-explicitly. Check, pack constraints, candidate targets and saved-proposal grading
-then use all declared pairs. Distances bound individual legs, not a summed
+Untyped same-source obligations retain their existing verdicts, including
+input decoupling with a switch leg. Untyped distinct-source obligations require
+disjoint supply/return net sets but do not assert the loop-role contract.
+Disjoint nets alone cannot identify an unrelated source on the same rail or
+detect a supply/return swap: explicit role binding is required for those cases.
+New output-loop declarations must select the kind explicitly. Check, pack
+constraints, candidate targets and saved-proposal grading then use all declared
+pairs. Distances bound individual legs, not a summed
 perimeter, routed path or inductance.
 
 The retained original fixture is `bound_output_loop()` in
@@ -959,7 +1119,13 @@ captured declaration.
 ## Incremental locality search and diagnostics (AGENTEE-332)
 
 After the independent initial locality grade qualifies identities and copper
-centroids, packing caches selected pad positions per footprint. Search push/pop
+centroids, packing caches selected pad positions per footprint. Direct
+`PlacementIndex(document)` construction re-validates the declaration before
+building caches, including role bindings, disjoint nets and canonical UUIDs
+(AGENTEE-341). After validation it deep-copies the document and builds the index
+from that snapshot, so later edits to the caller's nested dictionaries cannot
+change indexed endpoints or bypass validation (AGENTEE-352).
+It still requires independently qualified native geometry. Search push/pop
 updates this index, including backjumps. Each rotation resolves only its incident
 roles with placed peers once; candidate costs translate those exact centroids
 without copying footprint geometry or scanning other footprints. Footprints with
@@ -1032,9 +1198,9 @@ their existing ordering, candidates and verdicts.
 
 Each unit searches joint transforms around its placed members. If a later
 member cannot fit, search revisits every earlier member's alternatives,
-including nonlead members. Necessary axis projections prune impossible pad
-distances before candidate ranking; the existing exact predicates and the
-independent complete-plan grade still enforce every declared limit. Origin
+including nonlead members. Necessary axis projections prune impossible sourced
+pad distances before candidate ranking; advisory bounds remain soft. The exact
+predicates and independent complete-plan grade enforce hard locality limits. Origin
 group distances, fixed geometry, gaps and other placement constraints remain
 enforced. A backjump moves the whole cluster without splitting its membership.
 
@@ -1071,17 +1237,91 @@ step guards and cleanup. Public contract tests cover unchanged legacy plans,
 shared remaining steps and absolute deadlines. A seeded differential freezes
 16 original multi-member cases from the pre-cluster placer, including movable
 hubs, and checks every legacy plan's verdict, placements and steps. AGENTEE-347
-adds a 25-case deterministic differential against the retained per-part engine:
-legacy plans and failures keep whole-result equality (apart from additive joint
-diagnostics on failures), repeated runs are identical, total steps stay within
-budget, and new joint completions pass an independent locality regrade. The
-cluster-guard regression compares the whole legacy result, including steps and
+adds a 22-case deterministic differential against the retained per-part engine:
+legacy plans and failures keep whole-result equality (apart from
+`search.joint_cluster_attempt` on failures; legacy `locality_clusters` stays equal),
+repeated runs are identical, total steps stay within budget, and seed 2 case 55
+completes jointly and passes an independent locality regrade. Three redundant
+slow refusal cases are omitted. The cluster-guard regression compares the whole
+legacy result, including steps and
 search records. Fault injection into the search predicate makes complete proposals
-fail the real locality grade on both paths and requires `judge_rejected` with
-empty placements. Refusal bounds use candidate counts, not wall time. The locality-index suite adds exact
-limit and placed-state scan bounds for both paths; a joint evaluation bound
-catches removal of projection pruning.
+fail the real locality grade on both internal paths and public `pack()`,
+requiring `judge_rejected` with empty placements. The public joint-attempt
+diagnostic must also report `judge_rejected`. Refusal bounds use candidate counts,
+not wall time. The locality-index suite adds exact limit and placed-state scan
+bounds for both paths; a joint evaluation bound catches removal of projection
+pruning.
 
 The real pod remains diagnostic. Fail-fast completion of that run is outside
 AGENTEE-335 after the legacy-first ruling; block-level placement (AGENTEE-339/340)
 is its path. No refusal publishes a board or establishes physical impossibility.
+
+## Qualification and candidate cost (AGENTEE-332, AGENTEE-353)
+
+The real pod's guided search spent most of its wall time outside locality:
+courtyard qualification self-intersection tests over 1,900 native pad copper
+polygons (up to 96 vertices each), a deep copy of the whole footprint record for
+every tested candidate, and an exact wire cost for every generated candidate
+position (about 33,000 per scan) while only a handful per scan are ever tested.
+Each change below keeps every answer; none relaxes a predicate or changes a rank.
+
+- `simple_polygon` tests edge pairs through a sweep over edge bounding boxes
+  sorted by least x. Two segments cross or touch only where their closed boxes
+  overlap, so the exact `intersects` test runs on exactly those pairs.
+- `transform` copies only the containers it rewrites (courtyards, keepouts,
+  packing geometry entries, pads, a proven custom geometry) and shares the
+  leaves it leaves unchanged; the search, judge, graders and writer only read
+  placed footprints. The search keeps one at-origin transform per part and
+  rotation and translates it per candidate (`_translate`), which equals the full
+  transform exactly: a rotated point plus the position, and a translated box is
+  the box of the translated corners.
+- `_fits` runs the edge-margin distance only against outline edges whose box is
+  nearer than the margin to the courtyard box; every other edge is at least the
+  margin away from every courtyard point.
+- Without an overhang band, `_fits` decides containment in a convex
+  counter-clockwise outline by the vertex test (every courtyard vertex on or
+  left of every outline edge), which equals the area test for closed polygons;
+  concave outlines and bands keep the exact clipping.
+- Hole/copper reservations carry union boxes, so `_hole_conflict` skips a pair
+  of parts whose inventories cannot meet, and keepout tests run only against
+  placed parts that own a keepout (an empty keepout list never blocks).
+- `_overlaps` answers "positive shared area" exactly: boxes that do not
+  overlap share none; two convex counter-clockwise polygons share positive area
+  exactly when neither has an edge with every vertex of the other on or right
+  of it (integer cross products, no clipping); every other pair keeps the exact
+  rational clipping. Hole reservations and keepouts use it.
+- Candidates enter the ranking with a lower bound on their wire cost (for each
+  signal pad, the distance to the nearest peer x coordinate plus the distance
+  to the nearest peer y coordinate on its net, which separates by axis and is
+  evaluated once per axis value by bisection). `_ranked` resolves the exact
+  wire cost only when an entry may be next: a popped exact key precedes every
+  remaining entry, whose exact key is at least its own bound, and candidate
+  x, y and rotation make keys unique. The sequence equals sorting every exact
+  key, so steps, tie breaks and the chosen candidate are unchanged. Every exact
+  resolution first calls the search checkpoint, so the deadline and heartbeat
+  are checked before each exact wire cost, as when generation computed them.
+- Hole exclusion skips a peer whose target union box misses the hole union box.
+  Qualification therefore requires a native target inventory on every
+  footprint whenever any footprint declares a nonempty hole inventory, and
+  refuses otherwise as `unsupported_geometry` / `unknown` ("native packing
+  target reservations missing"), drilled pads or not. The reservation caches
+  are rebuilt from qualified inventories; input-supplied `_packing_*` keys are
+  discarded, never trusted.
+
+`tests.test_placer_geometry_cost` also holds a pod-scale qualification benchmark
+(331 footprints, 1,986 native-style 96-gons) bounded by pair-test counts, with a
+safety ceiling; `AGENT_EE_SKIP_BENCHMARKS=1` skips it only outside strict runs
+(`AGENT_EE_REQUIRE_TOOLCHAIN=1` always runs it). It holds the proof: seeded differentials of the
+transform, translation, sweep and margin prefilter against the previous
+formulations, the lazy order against full sorting, and 40 seeded owned boards
+whose plan digests (status, steps, search record and placements) are pinned
+from the ac662ff packer. Their authored numeric locality requirements carry
+fixture-author source records so provenance enforcement preserves the pinned
+plans. An advisory-only joint-cluster differential also compares lazy ranking
+with full exact sorting, including exceeded bounds without hard pruning.
+A direct scan regression isolates advisory axis pruning and movable-peer
+conflicts with opposite-side courtyards.
+On the pod inputs, a 20,000-step guided budget, the
+full 200,000-step guided run, the 10-obligation run and the unguided run
+produce identical results before and after (see the AGENTEE-332 performance
+report for the measured times).

@@ -4,6 +4,7 @@ No test contacts DigiKey or uses real credentials. Every response is an
 original synthetic document in the v4 shape the parser reads, with invented
 part numbers; the live response shape is qualified only by an owner-run capture.
 """
+import base64
 import contextlib
 import hashlib
 import io
@@ -18,6 +19,7 @@ import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from agent_ee import datasheet_capture
@@ -381,11 +383,54 @@ class DigiKeyCaptureTests(unittest.TestCase):
         verify_external_identity(self.root, identity)
 
     def test_deadline_and_token_refresh(self):
-        server = self.stub({'AE-SLOW': 'slow', 'AE-A': (200, details(product('AE-A'))),
-                            'AE-B': (200, details(product('AE-B'))),
-                            'AE-ECHO': (200, json.dumps({'echo': TOKEN}).encode())}, expires_in=2)
-        doc = self.capture(server, [q('a', 'AE-A'), q('b', 'AE-B'), q('c', 'AE-SLOW'), q('d', 'AE-ECHO')],
-                           timeout=0.8)
+        # This test exercises session timing and capture outcomes. Real HTTP and
+        # child cleanup are covered separately; host scheduling must not decide
+        # which of these synthetic exchanges exceeds its deadline.
+        elapsed = 0.0
+        requests = []
+        payloads = {'AE-A': details(product('AE-A')), 'AE-B': details(product('AE-B')),
+                    'AE-ECHO': json.dumps({'echo': TOKEN}).encode()}
+
+        def advance(seconds):
+            nonlocal elapsed
+            self.assertGreaterEqual(seconds, 0)
+            elapsed += seconds
+
+        def child(command, seconds, stdin=None):
+            self.assertEqual(command[-2:], ['agent_ee.digikey_capture', '--fetch'])
+            self.assertEqual(seconds, 0.8)
+            spec = json.loads(stdin)
+            self.assertEqual(spec['seconds'], seconds)
+            url = urllib.parse.urlsplit(spec['url'])
+            self.assertEqual(url.netloc, '127.0.0.1:1')
+            requests.append(url.path)
+            if url.path == dk.TOKEN_PATH:
+                self.assertEqual(spec['method'], 'POST')
+                self.assertEqual(urllib.parse.parse_qs(base64.b64decode(spec['body']).decode()),
+                                 {'client_id': [CLIENT_ID], 'client_secret': [CLIENT_SECRET],
+                                  'grant_type': ['client_credentials']})
+                raw = json.dumps({'access_token': TOKEN, 'token_type': 'Bearer', 'expires_in': 2}).encode()
+            else:
+                self.assertEqual(spec['method'], 'GET')
+                self.assertEqual(spec['headers']['Authorization'], 'Bearer ' + TOKEN)
+                self.assertEqual(spec['headers']['X-DIGIKEY-Client-Id'], CLIENT_ID)
+                query = url.path.removeprefix('/products/v4/search/').removesuffix('/productdetails')
+                self.assertEqual(url.path, dk.PRODUCT_PATH.format(query=query))
+                if query == 'AE-SLOW':
+                    advance(seconds)
+                    return None  # The owned-child runner's timeout contract.
+                raw = payloads[query]  # An unexpected request must fail the test.
+            advance(0.1)
+            return json.dumps({'http_status': 200, 'body': base64.b64encode(raw).decode(),
+                               'reason': None, 'retry_after': None}).encode()
+
+        clock = SimpleNamespace(monotonic=lambda: elapsed, sleep=advance)
+        with patch.object(dk, 'time', clock), patch.object(datasheet_capture, 'run_owned_child', child):
+            doc = capture_digikey([q('a', 'AE-A'), q('b', 'AE-B'), q('c', 'AE-SLOW'), q('d', 'AE-ECHO')],
+                                  self.root / 'cap', allow_network=True, credentials=CREDENTIALS,
+                                  base='http://127.0.0.1:1', min_interval=0.5, timeout=0.8)
+        self.assertEqual([(r['status'], r['http_status'], r['reason']) for r in doc['requests'][:2]],
+                         [('found', 200, None), ('found', 200, None)])
         record = doc['requests'][2]
         self.assertEqual((record['status'], record['response'], record['reason']),
                          ('failed', None, 'fetch deadline exceeded'))
@@ -396,7 +441,12 @@ class DigiKeyCaptureTests(unittest.TestCase):
         self.assertFalse((self.root / 'cap/responses/d.json').exists())
         # A 2 s token is renewed before it lapses; each renewal is recorded without the token.
         self.assertGreaterEqual(len(doc['token_exchanges']), 2)
-        self.assertEqual([r['path'] for r in server.requests].count('/v1/oauth2/token'), len(doc['token_exchanges']))
+        self.assertEqual(requests.count('/v1/oauth2/token'), len(doc['token_exchanges']))
+        self.assertEqual(requests, [dk.TOKEN_PATH,
+                                   dk.PRODUCT_PATH.format(query='AE-A'),
+                                   dk.PRODUCT_PATH.format(query='AE-B'), dk.TOKEN_PATH,
+                                   dk.PRODUCT_PATH.format(query='AE-SLOW'), dk.TOKEN_PATH,
+                                   dk.PRODUCT_PATH.format(query='AE-ECHO')])
         info = validate_capture(doc, lambda rel: (self.root / 'cap' / rel).read_bytes(), allow_failed=True)
         self.assertEqual(info['response_verdicts']['c'], {'path': None, 'sha256': None, 'verdict': 'missing'})
 

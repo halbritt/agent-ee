@@ -837,14 +837,18 @@ class FailureCampaignTest(PlacementCampaignFixture):
 
     def test_helper_cancellation(self):
         import _thread
+        import signal
         from agent_ee import executor, stage_receipts
+        # interrupt_main() is a no-op while SIGINT is ignored (e.g. a backgrounded runner).
+        self.addCleanup(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, signal.default_int_handler))
         real_execute, real_popen = stage_receipts.execute, executor.subprocess.Popen
         started = []
-        # The real sandboxed launcher acknowledges entry, then waits for cancellation.
-        # Its coordinator interrupts only inside communicate(), where executor cleanup owns it.
-        launcher = ("from pathlib import Path\nimport time\n"
+        # AGENTEE-345: readiness must persist even if communicate() misses the marker
+        # under load. Only cancellation (or the executor deadline) ends this helper.
+        # Interrupt inside communicate(), where executor cleanup owns the process.
+        launcher = ("from pathlib import Path\nimport signal\n"
                     "Path('/work/helper-started').write_text('started')\n"
-                    "time.sleep(60)\n" + pa.LAUNCHER)
+                    "while True:\n    signal.pause()\n")
         def interrupted(inputs, work, argv, **kwargs):
             if argv[:4] != ['/usr/bin/python3', '-B', '-I', f'{pa.TOOL_AT}/launch.py']:
                 return real_execute(inputs, work, argv, **kwargs)
@@ -864,7 +868,7 @@ class FailureCampaignTest(PlacementCampaignFixture):
                 return real_execute(inputs, work, argv, **kwargs)
         edit_board(self.source / BOARD, move={'R1': (109, 100)})
         with patch.object(pa, 'LAUNCHER', launcher), patch('agent_ee.stage_receipts.execute', side_effect=interrupted):
-            state, record = self.failed('KeyboardInterrupt', receipt_status='cancelled')
+            state, record = self.failed('KeyboardInterrupt', self.declaration(timeout_s=120), receipt_status='cancelled')
         self.assertEqual(len(started), 1)
         self.assertIsNotNone(started[0].poll())
         self.assertEqual((record['status'], record['error']), ('cancelled', 'KeyboardInterrupt'))

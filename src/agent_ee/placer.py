@@ -19,14 +19,15 @@ parts bound to an anchor point are placed first.
 """
 import bisect
 import copy
+import heapq
 from decimal import Decimal
 from fractions import Fraction
 import math
 import time
 
 from . import electrical_locality, placement_groups
-from .placement import (area2, convex, courtyard_bounds, cross, edges, intersection_area, judge, overhang_bands,
-                        qualified_polygons, validate_capture)
+from .placement import (area2, boxes_meet, convex, courtyard_bounds, cross, edges, intersection_area, judge,
+                        overhang_bands, qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
 from .symbol_library import LibraryError, nanometres
 
@@ -44,13 +45,29 @@ def rotate(point, quarter_turns):
     return [x, y]
 
 
-def transform(fp, position, rotation):
-    placed = copy.deepcopy(fp)
-    origin = fp['position_nm']
-    turns = int((rotation-fp['rotation_deg']) / 90)
-    def move(p):
-        x, y = rotate([p[0]-origin[0], p[1]-origin[1]], turns)
-        return [x+position[0], y+position[1]]
+def _copy_footprint(fp):
+    """A structural copy of a footprint record for transform() to write into.
+
+    Every container transform() rewrites (courtyards, keepouts, packing pad
+    geometry entries, pads and a proven custom-pad geometry) is copied one level
+    deep; the leaves it leaves unchanged are shared with the source, which the
+    search, judge, graders and writer only read. The ephemeral box caches are
+    rebuilt by _cache_pad_reservations. The result equals copy.deepcopy(fp) with
+    the cache keys removed (AGENTEE-332: deepcopy dominated per-candidate cost).
+    """
+    placed = {key: value for key, value in fp.items() if not key.startswith('_packing_')}
+    placed['courtyards'] = {side: dict(courtyard) for side, courtyard in fp['courtyards'].items()}
+    if 'packing_keepouts' in fp:
+        placed['packing_keepouts'] = [dict(keepout) for keepout in fp['packing_keepouts']]
+    geometry = fp.get('packing_pad_geometry')
+    if isinstance(geometry, dict):
+        placed['packing_pad_geometry'] = {**geometry, **{kind: [dict(entry) for entry in geometry[kind]]
+                                                         for kind in ('copper', 'holes') if kind in geometry}}
+    placed['pads'] = [dict(pad) for pad in fp['pads']]
+    return placed
+
+
+def _move_geometry(placed, move):
     for courtyard in placed['courtyards'].values():
         for key in ('polygons', 'inner_polygons'):
             if key in courtyard:
@@ -60,15 +77,25 @@ def transform(fp, position, rotation):
     for kind in ('copper', 'holes'):
         for entry in placed.get('packing_pad_geometry', {}).get(kind, []):
             entry['polygons'] = [[move(p) for p in poly] for poly in entry['polygons']]
+
+
+def transform(fp, position, rotation):
+    placed = _copy_footprint(fp)
+    origin = fp['position_nm']
+    turns = int((rotation-fp['rotation_deg']) / 90)
+    def move(p):
+        x, y = rotate([p[0]-origin[0], p[1]-origin[1]], turns)
+        return [x+position[0], y+position[1]]
+    _move_geometry(placed, move)
     for pad in placed['pads']:
         custom = pad.get('custom_geometry', {})
         if not isinstance(custom, dict):
             raise ValueError('custom_geometry must be an object')
         if custom.get('status') == 'proven':
-            box = pad['custom_geometry']['bbox_nm']
+            box = custom['bbox_nm']
             corners = [move([x, y]) for x in (box[0], box[2]) for y in (box[1], box[3])]
-            pad['custom_geometry']['bbox_nm'] = [min(p[0] for p in corners), min(p[1] for p in corners),
-                                                 max(p[0] for p in corners), max(p[1] for p in corners)]
+            pad['custom_geometry'] = {**custom, 'bbox_nm': [min(p[0] for p in corners), min(p[1] for p in corners),
+                                                            max(p[0] for p in corners), max(p[1] for p in corners)]}
         if 'copper_centroid_offset_nm' in pad:
             offset = rotate([Fraction(*v) for v in pad['copper_centroid_offset_nm']], turns)
             pad['copper_centroid_offset_nm'] = [[v.numerator, v.denominator] for v in offset]
@@ -79,12 +106,37 @@ def transform(fp, position, rotation):
     return placed
 
 
+def _translate(at_origin, position):
+    """transform(fp, position, rotation) computed from transform(fp, [0, 0], rotation).
+
+    Identical output: every moved point is its rotated point plus the position,
+    a translated box is the box of the translated corners, and pad rotations and
+    centroid offsets are already rotated. No rotation pass runs per candidate.
+    """
+    dx, dy = position
+    def move(p):
+        return [p[0]+dx, p[1]+dy]
+    placed = _copy_footprint(at_origin)
+    _move_geometry(placed, move)
+    for pad in placed['pads']:
+        custom = pad.get('custom_geometry', {})
+        if custom.get('status') == 'proven':
+            box = custom['bbox_nm']
+            pad['custom_geometry'] = {**custom, 'bbox_nm': [box[0]+dx, box[1]+dy, box[2]+dx, box[3]+dy]}
+        pad['position_nm'] = move(pad['position_nm'])
+    placed['position_nm'] = list(position)
+    _cache_pad_reservations(placed)
+    return placed
+
+
+def _box(polygons):
+    xs = [p[0] for poly in polygons for p in poly]
+    ys = [p[1] for poly in polygons for p in poly]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def boxes(fp):
-    return {side: (min(p[0] for poly in courtyard['polygons'] for p in poly),
-                   min(p[1] for poly in courtyard['polygons'] for p in poly),
-                   max(p[0] for poly in courtyard['polygons'] for p in poly),
-                   max(p[1] for poly in courtyard['polygons'] for p in poly))
-            for side, courtyard in fp['courtyards'].items()}
+    return {side: _box(courtyard['polygons']) for side, courtyard in fp['courtyards'].items()}
 
 
 def _edge_margin_nm(policy):
@@ -100,6 +152,17 @@ def _edge_margin_nm(policy):
     if margin_nm < 0:
         raise ValueError('min_courtyard_edge_mm must be nonnegative')
     return margin_nm
+
+
+def _obstacle_polygons(raw):
+    """Reserve the union by testing every member; shared edges never open a gap.
+
+    Unlike courtyard contours, declared obstacles may overlap or touch. Qualify
+    each member with the shared validator, keeping its syntax and work limits.
+    """
+    if not isinstance(raw, list) or not raw or len(raw) > 64:
+        raise ValueError('missing or excessive polygons')
+    return [qualified_polygons({'status': 'proven', 'polygons': [p]})[0] for p in raw]
 
 
 def _validate_policy(policy, refs):
@@ -127,7 +190,7 @@ def _validate_policy(policy, refs):
     for obstacle in policy['obstacles']:
         if obstacle.get('side') not in ('F', 'B'):
             raise ValueError('obstacle side required')
-        qualified_polygons({'status': 'proven', 'polygons': obstacle['polygons']})
+        _obstacle_polygons(obstacle['polygons'])
     overhangs = policy.get('fixed_overhangs', [])
     if not isinstance(overhangs, list) or any(not isinstance(o, dict) or o.get('reference') not in refs
                                               for o in overhangs):
@@ -138,6 +201,9 @@ def _validate_policy(policy, refs):
         placement_groups.validate(policy['groups'], refs)
     if 'constraint_provenance' in policy:
         _validate_provenance(policy['constraint_provenance'])
+        gap = policy['constraint_provenance'].get('gap_nm')
+        if gap is not None and gap['value_nm'] != policy['gap_nm']:
+            raise ValueError('constraint_provenance gap_nm value differs from policy')
 
 
 PROVENANCE_CLASSES = ('owner_stated', 'derived', 'assumed', 'unknown')
@@ -146,9 +212,16 @@ UNDECLARED = {'class': 'unknown', 'enforcement': 'hard',
 
 
 def _validate_provenance(value):
-    """Envelope constraint provenance (AGENTEE-266), bound by the placement adapter from captured envelopes."""
-    if not isinstance(value, dict) or set(value) - {'outline', 'fixed'} or not isinstance(value.get('fixed', {}), dict):
-        raise ValueError('constraint_provenance declares only outline and fixed')
+    """Envelope limits (AGENTEE-266) and caller-qualified gap sources (AGENTEE-338)."""
+    if not isinstance(value, dict) or set(value) - {'outline', 'fixed', 'gap_nm'} or not isinstance(value.get('fixed', {}), dict):
+        raise ValueError('constraint_provenance declares only outline, fixed and gap_nm')
+    if 'gap_nm' in value:
+        gap = value['gap_nm']
+        if (not isinstance(gap, dict) or set(gap) != {'class', 'enforcement', 'value_nm', 'citation'}
+                or gap.get('class') not in ('fixture_author', 'manufacturer')
+                or gap.get('enforcement') != 'hard' or type(gap.get('value_nm')) is not int
+                or gap['value_nm'] < 0 or not isinstance(gap.get('citation'), str) or not gap['citation'].strip()):
+            raise ValueError('constraint_provenance gap_nm needs a sourced hard value and citation')
     entries = ([value['outline']] if 'outline' in value else []) + list(value.get('fixed', {}).values())
     for entry in entries:
         if (not isinstance(entry, dict) or entry.get('class') not in PROVENANCE_CLASSES
@@ -163,7 +236,7 @@ def _binding_constraints(policy, margin_nm, blocked_by=()):
     """The limits a capacity row or proof binds, each with its provenance class (AGENTEE-266).
 
     Fixed parts and obstacles bind only where they block; the edge margin and gap come
-    from the packing policy or a fab profile, not an envelope, so their provenance is unknown."""
+    from the packing policy or a fab profile. Gaps need an explicit source to establish a defect."""
     declared = policy.get('constraint_provenance', {})
     fixed = declared.get('fixed', {})
     out = [{'constraint': 'outline', **declared.get('outline', UNDECLARED)}]
@@ -173,7 +246,7 @@ def _binding_constraints(policy, margin_nm, blocked_by=()):
     if margin_nm:
         out.append({'constraint': 'min_courtyard_edge_mm', **UNDECLARED})
     if policy['gap_nm']:
-        out.append({'constraint': 'gap_nm', **UNDECLARED})
+        out.append({'constraint': 'gap_nm', **declared.get('gap_nm', UNDECLARED)})
     return out
 
 
@@ -181,8 +254,11 @@ def _soft_proof(failure, binding):
     """A proof against a soft (assumed or owner-weakened) limit is not a design defect.
 
     It stays a proof about that limit, reported as unknown with the limits the owner
-    must confirm; a proof bound only by hard or undeclared limits keeps its verdict."""
-    soft = [b for b in binding if b['enforcement'] == 'soft']
+    must confirm; an unsourced gap is advisory even though search enforces it."""
+    soft = [b if b['enforcement'] == 'soft' else
+            {**b, 'soft_reason': 'unsourced packing gap is advisory'}
+            for b in binding if b['enforcement'] == 'soft'
+            or (b['constraint'] == 'gap_nm' and b['class'] == 'unknown')]
     if not soft:
         return {**failure, 'binding_constraints': binding}
     return {**failure, 'outcome': 'unknown', 'binding_constraints': binding,
@@ -213,6 +289,9 @@ def _qualified(capture):
     has_holes = any(isinstance(p, dict) and drilled(p)
                     for f in capture['footprints'] for p in f['pads'])
     for fp in capture['footprints']:
+        # Reservation caches are derived here from qualified inventories only, never taken from input.
+        for key in [key for key in fp if key.startswith('_packing_')]:
+            del fp[key]
         geometry = fp.get('packing_pad_geometry')
         if geometry is not None:
             if not isinstance(geometry, dict) or geometry.get('status') != 'proven':
@@ -269,6 +348,11 @@ def _qualified(capture):
             if type(pad.get('rotation_deg')) not in (int, float) or pad['rotation_deg'] % 90:
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: pad rotation must be a quarter turn")
         _cache_pad_reservations(fp)
+    # A hole excludes every peer's courtyard and copper: a peer without a native
+    # target inventory leaves the exclusion unproven, which is unknown, not clear.
+    geometries = [fp.get('packing_pad_geometry') for fp in capture['footprints']]
+    if any(g is not None and g['holes'] for g in geometries) and any(g is None for g in geometries):
+        raise ValueError('native packing target reservations missing')
     return outline[0]
 
 
@@ -309,8 +393,26 @@ def _keepout_boxes(obstacles):
             boxes({'courtyards': {obstacle['side']: obstacle}}).items()]
 
 
+def _overlaps(left, right):
+    """intersection_area(left, right) > 0, exactly, for qualified polygons.
+
+    Boxes that do not overlap with positive area share no area. Two convex
+    counter-clockwise polygons share positive area exactly when neither has an
+    edge with every vertex of the other on or right of it (a separating edge
+    line exists for convex polygons with disjoint interiors, and a shared
+    boundary alone puts the other polygon on the edge's closed right side).
+    Any other pair keeps the exact rational clipping.
+    """
+    if not boxes_meet([left], [right]):
+        return False
+    if convex(left) and convex(right):
+        return not any(all(cross(a, b, v) <= 0 for v in other)
+                       for own, other in ((left, right), (right, left)) for a, b in edges(own))
+    return intersection_area(left, right) > 0
+
+
 def _in_keepouts(fp, obstacles):
-    return any(intersection_area(c, p) > 0
+    return any(_overlaps(c, p)
                for obstacle in obstacles
                for c in fp['courtyards'].get(obstacle['side'], {}).get('polygons', [])
                for p in obstacle['polygons'])
@@ -364,11 +466,14 @@ def _cache_pad_reservations(fp):
         return
 
     def inventory(polygons):
-        return [(boxes({'courtyards': {'F': {'polygons': [p]}}})['F'], p) for p in polygons]
+        return [(_box([p]), p) for p in polygons]
 
     fp['_packing_holes'] = inventory(p for e in geometry['holes'] for p in e['polygons'])
     fp['_packing_targets'] = inventory([p for c in fp['courtyards'].values() for p in c['polygons']] +
                                        [p for e in geometry['copper'] for p in e['polygons']])
+    # Union boxes: two inventories whose unions do not meet have no meeting pair.
+    for key in ('_packing_holes', '_packing_targets'):
+        fp[key + '_box'] = _box([[(x0, y0), (x1, y1)] for (x0, y0, x1, y1), _ in fp[key]]) if fp[key] else None
 
 
 def _hole_conflict(candidate, peer):
@@ -377,31 +482,52 @@ def _hole_conflict(candidate, peer):
         holes = owner.get('_packing_holes', [])
         if not holes:
             continue
+        # Qualification proves every peer's target inventory; a missing one fails loudly here.
+        (x0, y0, x1, y1), targets = owner['_packing_holes_box'], other['_packing_targets_box']
+        if targets is None or x1 <= targets[0] or targets[2] <= x0 or y1 <= targets[1] or targets[3] <= y0:
+            continue
         for (x0, y0, x1, y1), polygon in holes:
             for (a0, b0, a1, b1), target in other['_packing_targets']:
                 if x1 <= a0 or a1 <= x0 or y1 <= b0 or b1 <= y0:
                     continue
-                if intersection_area(polygon, target) > 0:
+                if _overlaps(polygon, target):
                     return True
     return False
 
 
 def _fits(candidate, outline, margin_nm=0, band=()):
     # A band is a declared overhang across outline edges; its regions share no area with the board.
+    # Without a band, a courtyard lies in a convex counter-clockwise outline exactly
+    # when every vertex is on or left of every outline edge (closed sets, exact
+    # integers): the same answer as the area test, without clipping.
+    vertex_test = not band and convex(outline)
     for courtyard in candidate['courtyards'].values():
         for p in courtyard['polygons']:
-            inside = intersection_area(p, outline) + sum(intersection_area(p, r) for r in band)
-            if inside != Fraction(abs(area2(p)), 2):
-                return False
-            if margin_nm > 0 and min(segment_distance2(a, b, c, d)
-                                     for a, b in edges(p) for c, d in edges(outline)) < margin_nm * margin_nm:
-                return False
+            if vertex_test:
+                if any(cross(a, b, v) < 0 for a, b in edges(outline) for v in p):
+                    return False
+            else:
+                inside = intersection_area(p, outline) + sum(intersection_area(p, r) for r in band)
+                if inside != Fraction(abs(area2(p)), 2):
+                    return False
+            if margin_nm > 0:
+                # An outline edge whose box is at least the margin from the
+                # courtyard box in x or y is at least the margin from every courtyard
+                # point; only the remaining edges can decide the exact test.
+                x0, y0, x1, y1 = _box([p])
+                near = [(c, d) for c, d in edges(outline)
+                        if min(c[0], d[0]) - margin_nm < x1 and x0 < max(c[0], d[0]) + margin_nm
+                        and min(c[1], d[1]) - margin_nm < y1 and y0 < max(c[1], d[1]) + margin_nm]
+                if near and min(segment_distance2(a, b, c, d)
+                                for a, b in edges(p) for c, d in near) < margin_nm * margin_nm:
+                    return False
     return True
 
 
-def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(), window=None):
+def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(), window=None, at_origin=None):
     """Sorted candidate origin x and y values; every pairing is a candidate position."""
-    at_origin = transform(fp, [0, 0], rotation)
+    if at_origin is None:
+        at_origin = transform(fp, [0, 0], rotation)
     bounds = list(boxes(at_origin).values())
     bounds = [(min(b[0] for b in bounds), min(b[1] for b in bounds),
                max(b[2] for b in bounds), max(b[3] for b in bounds))]
@@ -549,6 +675,43 @@ def _wire_cost(pads, peers):
         if net in peers:
             cost += min(abs(x-a) + abs(y-b) for a, b in peers[net])
     return cost
+
+
+def _wire_bounds(signal, peers, xs, ys):
+    """Lower bounds on _wire_cost split by axis, one value per candidate axis value.
+
+    ``signal`` holds the at-origin signal pads of one rotation. A pad's nearest
+    same-net peer is at least as far as the nearest peer x coordinate plus the
+    nearest peer y coordinate (each a minimum over all peers), so the sum over
+    pads bounds the cost from below and separates into a function of x and a
+    function of y, found by bisection in the sorted peer coordinates (AGENTEE-332).
+    """
+    along_x = [(ox, sorted({a for a, _ in peers[net]})) for net, ox, _ in signal if net in peers]
+    along_y = [(oy, sorted({b for _, b in peers[net]})) for net, _, oy in signal if net in peers]
+    def nearest(value, coordinates):
+        i = bisect.bisect_left(coordinates, value)
+        return min(abs(value-c) for c in coordinates[max(0, i-1):i+1])
+    def bound(values, spans):
+        return {v: sum(nearest(o+v, coordinates) for o, coordinates in spans) for v in values}
+    return bound(xs, along_x), bound(ys, along_y)
+
+
+def _ranked(bounds, exact):
+    """Keys in exact order, resolving each exact key only when its entry may be next.
+
+    Every bound compares at most equal to its exact key and no two entries share
+    a key (candidate x, y and rotation are part of it), so a popped exact key
+    precedes every remaining entry, whose exact key is at least its own bound.
+    The sequence equals sorted(map(exact, bounds)).
+    """
+    heap = [(key, False) for key in bounds]
+    heapq.heapify(heap)
+    while heap:
+        key, resolved = heapq.heappop(heap)
+        if resolved:
+            yield key
+        else:
+            heapq.heappush(heap, (exact(key), True))
 
 
 def _margin_mm(margin_nm):
@@ -966,7 +1129,7 @@ def _initial_reservations(capture, policy, outline, obstacles, bands, groups):
     """Fixed parts and declared obstacles become exact polygon obstacles, never boxes."""
     fixed = _fixed_refs(capture, policy)
     placed = [copy.deepcopy(f) for f in capture['footprints'] if f['ref'] in fixed]
-    exact = [_exact(o['side'], qualified_polygons({'status': 'proven', 'polygons': o['polygons']}))
+    exact = [_exact(o['side'], _obstacle_polygons(o['polygons']))
              for o in policy['obstacles']]
     for i, fp in enumerate(placed):
         # Fixed footprints (such as edge-mounted connectors) are exempt from min_courtyard_edge_mm.
@@ -1025,15 +1188,15 @@ def _locality_clusters(index, queue, fixed, document):
             if ref in refs:
                 continue
             refs.add(ref)
-            pending.extend(peer['reference'] for _, peer, _ in index.pairs[ref]
+            pending.extend(peer['reference'] for _, peer, *_ in index.pairs[ref]
                            if peer['reference'] not in refs)
         remaining -= refs
         movable = refs - fixed
         if len(refs) < 3 or not movable:
             continue
-        hub = min(refs, key=lambda ref: (-len({peer['reference'] for _, peer, _ in index.pairs[ref]}),
+        hub = min(refs, key=lambda ref: (-len({peer['reference'] for _, peer, *_ in index.pairs[ref]}),
                                         order.get(ref, -1), ref))
-        tightness = lambda ref: min(limit for _, _, limit in index.pairs[ref])
+        tightness = lambda ref: min(limit for _, _, limit, *_ in index.pairs[ref])
         unit = tuple(sorted(movable, key=lambda ref: (ref != hub, tightness(ref), order[ref], ref)))
         clusters.append({'references': list(unit), 'all_references': [hub] + sorted(refs - {hub}),
                          'strategy': 'joint-tightest-first/1',
@@ -1069,6 +1232,7 @@ class _Search:
         self.solid = [(o['side'], slab) for o in exact for poly in o['polygons'] for slab in _slabs(poly) or ()]
         self.gap, self.budget, self.grounds = policy['gap_nm'], policy['step_budget'], policy['ground_nets']
         self.members, self.steps, self.placed, self.reserved = members, 0, [], []
+        self.origins = {}
         self.positions, self.peers = {}, {}
         self.cluster_active = None
         self.cluster_start_steps = None
@@ -1092,6 +1256,13 @@ class _Search:
             raise _SearchTimedOut
         if self.cluster_active is not None and self.steps - self.cluster_start_steps >= CLUSTER_STEP_BUDGET:
             raise _ClusterExhausted
+
+    def at_origin(self, fp, rotation):
+        """The part at origin per rotation, once per search: candidates are translations of it."""
+        key = (fp['ref'], rotation)
+        if key not in self.origins:
+            self.origins[key] = transform(fp, [0, 0], rotation)
+        return self.origins[key]
 
     def ties(self, ref):
         """(partner, point, max distance) for every anchor relation whose other end is placed.
@@ -1156,8 +1327,9 @@ class _Search:
         if (not _fits(proposed, self.outline, self.margin_nm) or _near(proposed, self.exact, self.gap) or
                 _in_keepouts(proposed, self.obstacles)):
             return set()
-        hit = [fp['ref'] for fp in self.placed if _in_keepouts(proposed, fp.get('packing_keepouts', [])) or
-               _in_keepouts(fp, proposed.get('packing_keepouts', []))]
+        own = proposed.get('packing_keepouts', [])
+        hit = [fp['ref'] for fp in self.placed if (fp.get('packing_keepouts') and
+               _in_keepouts(proposed, fp['packing_keepouts'])) or (own and _in_keepouts(fp, own))]
         if hit:
             return set(hit) - self.fixed
         if group is not None and 'region' in group and not placement_groups.admits(
@@ -1189,24 +1361,29 @@ class _Search:
         window = _window(self.outline, self.margin_nm, group, ties)
         ranked, evaluators = [], {}
         for rotation in (0, 90, 180, 270):
-            at_origin = transform(fp, [0, 0], rotation)
+            at_origin = self.at_origin(fp, rotation)
             evaluator = self.locality.prepare(at_origin) if participating else None
             evaluators[rotation] = evaluator
             local_targets = evaluator.targets() if evaluator is not None else []
             xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm,
-                                     targets + local_targets, window)
+                                     targets + local_targets, window, at_origin)
             if self.cluster_active is not None and evaluator is not None:
                 # Intersections of axis projections of the exact pad discs are
                 # necessary only; the full coupled predicates still judge every point.
-                for offset, target, limit, _ in evaluator.pairs:
+                for offset, target, limit, _, hard in evaluator.pairs:
+                    if not hard:
+                        continue  # AGENTEE-337: advisory bounds never prune candidates
                     xs = [x for x in xs if abs(x + offset[0] - target[0]) <= limit]
                     ys = [y for y in ys if abs(y + offset[1] - target[1]) <= limit]
-                conflicts.update(ref for _, _, _, involved in evaluator.pairs
+                conflicts.update(ref for _, _, _, involved, hard in evaluator.pairs if hard
                                  for ref in involved if ref not in self.fixed and ref != fp['ref'])
             rectangles = {side: [r for poly in c['polygons'] for r in _slabs(poly)]
                           for side, c in at_origin['courtyards'].items()
                           if all(_slabs(poly) is not None for poly in c['polygons'])}
             doomed = set()
+            # Bound keys enter the ranking; the exact wire cost is resolved lazily
+            # by _ranked, in the same order as sorting every exact key.
+            bound_x, bound_y = _wire_bounds(_pad_nets(fp, (0, 0), rotation, self.grounds), self.peers, xs, ys)
             for x, y in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid,
                                     self.gap, conflicts, doomed, self.checkpoint):
                 self.checkpoint()
@@ -1214,17 +1391,20 @@ class _Search:
                 if self.cluster_active is not None and hit:
                     conflicts.update(hit - self.fixed - {fp['ref']})
                     continue
-                ranked.append((local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
-                               x, y, rotation, (x, y) in doomed))
-        ranked.sort()
-        for _, _, x, y, rotation, doomed in ranked:
+                ranked.append((local_cost, bound_x[x] + bound_y[y], x, y, rotation, (x, y) in doomed))
+        def exact(key):
+            self.checkpoint()  # Each exact cost is checked as promptly as when generation computed it.
+            local_cost, _, x, y, rotation, doomed = key
+            return (local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
+                    x, y, rotation, doomed)
+        for _, _, x, y, rotation, doomed in _ranked(ranked, exact):
             self.checkpoint()
             if self.steps == self.budget:
                 raise _BudgetExhausted
             self.steps += 1
             if doomed:
                 continue  # Nearer than the gap to a fixed courtyard or obstacle: the exact test rejects it.
-            proposed = transform(fp, [x, y], rotation)
+            proposed = _translate(self.at_origin(fp, rotation), (x, y))
             hit = self.blockers(proposed, group, ties, evaluators[rotation])
             if hit is None:
                 yield proposed
@@ -1318,6 +1498,10 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     locality = policy.get('electrical_locality')
     if locality:
         initial = electrical_locality.grade(capture, locality)
+        if any(d['kind'] == 'locality_infeasible' for d in initial['defects']):
+            return {**_failure(capture, policy, 'locality_infeasible', 'defect', 0,
+                               'declared bound below computed manufacturing floor', margin_nm),
+                    'locality_grading': initial}
         if initial['unknown']:
             return {**_failure(capture, policy, 'electrical_locality_unavailable', 'unknown', 0,
                                'pad locality needs unambiguous native pads, limits and citations', margin_nm),
@@ -1373,6 +1557,9 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     queue = sorted((fp for fp in capture['footprints'] if fp['ref'] not in fixed), key=cluster)
     proof = _region_impossibility(capture, outline, groups, fixed, placed, obstacles, policy)
     if proof:
+        if proof.get('gap_nm') and 'gap_nm' not in policy.get('constraint_provenance', {}):
+            proof = _region_impossibility(capture, outline, groups, fixed, placed, obstacles,
+                                          {**policy, 'gap_nm': 0}) or proof
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"group {proof['group']} region cannot hold its {proof['side']} courtyards", margin_nm)
         binding = _binding_constraints({**policy, 'gap_nm': proof.get('gap_nm', 0)}, 0, proof['blocked_by'])
@@ -1382,11 +1569,18 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
     proof = _capacity_impossibility(sides, policy) if policy.get('capacity_proof') else None
     if proof:
+        proof_policy = policy
+        if policy['gap_nm'] and 'gap_nm' not in policy.get('constraint_provenance', {}):
+            zero_policy = {**policy, 'gap_nm': 0}
+            zero_proof = _capacity_impossibility(_board_capacity(capture, outline, fixed, zero_policy, margin_nm),
+                                                zero_policy)
+            if zero_proof:
+                proof, proof_policy = zero_proof, zero_policy
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['side']} courtyards grown by half the gap exceed the board's free area"
                            + (f" usable by {proof['square_nm']} nm squares" if proof['square_nm'] else ''), margin_nm)
         return _soft_proof({**failure, 'proof': proof, 'capacity': capacity},
-                           _binding_constraints(policy, margin_nm, proof['blocked_by']))
+                           _binding_constraints(proof_policy, margin_nm, proof['blocked_by']))
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
     if runtime is not None:
         runtime['search'] = search
@@ -1484,7 +1678,7 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     extra = {} if grading is None else {'group_grading': grading}
     if locality:
         extra['locality_grading'] = electrical_locality.grade(proposed_capture, locality)
-        if extra['locality_grading']['status'] != 'pass':
+        if extra['locality_grading']['status'] not in ('pass', 'info'):
             return {**stopped('judge_rejected', 'complete proposal failed pad locality'), **extra}
     custom_pads = [{'reference': f['ref'], 'uuid': p['uuid'], 'number': p['number']}
                    for f in capture['footprints'] for p in f['pads'] if p['shape'] == 6]

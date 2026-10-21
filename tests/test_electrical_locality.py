@@ -1,5 +1,6 @@
 """Owned pad identities, coupled limits, pack guidance and captured native checks."""
 import copy
+import hashlib
 import json
 import random
 import unittest
@@ -11,6 +12,19 @@ from test_placement import capture, part, MM
 from test_placer import request
 
 
+
+FIXTURE_DECISION = 'Original fixture author: test parameters define EE322 numerical requirements.'
+FIXTURE_SOURCES = {'fixture-decisions/EE322.txt': FIXTURE_DECISION}
+
+
+def fixture_provenance():
+    return {'class': 'owner', 'basis': 'Explicit original fixture requirement',
+            'decision_reference': {'path': 'fixture-decisions/EE322.txt',
+                'sha256': hashlib.sha256(FIXTURE_DECISION.encode()).hexdigest(),
+                'locator': 'EE322 test parameter contract', 'quote': FIXTURE_DECISION,
+                'owner': 'Original fixture author'}}
+
+
 def endpoint(ref, pad, net):
     return dict(reference=ref, pad=pad, net=net)
 
@@ -18,8 +32,8 @@ def endpoint(ref, pad, net):
 def declaration(ic='U1', cap='C1', supply='VCC', ground='GND', limit=5*MM):
     def pair(a, b, net):
         return {'from': endpoint(ic, a, net), 'to': endpoint(cap, b, net),
-                'max_distance_nm': limit, 'citation': 'Owned fixture requirement EE322: declared test limit.'}
-    return dict(schema=locality.SCHEMA, obligations=[dict(id=cap, metric='pad-centre-to-centre',
+                'provenance': fixture_provenance(), 'max_distance_nm': limit, 'citation': 'Owned fixture requirement EE322: declared test limit.'}
+    return dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id=cap, metric='pad-centre-to-centre',
                 supply=pair('1', '1', supply), **{'return': pair('2', '2', ground)})])
 
 
@@ -50,7 +64,7 @@ def output_loop():
     row['supply']['from'] = endpoint('L1', '2', 'VCC')
     row['switch'] = dict(**{'from': endpoint('U1', '1', 'SW'),
                            'to': endpoint('L1', '1', 'SW')},
-                         max_distance_nm=20*MM, citation='Owned output-loop switch limit.')
+                         provenance=fixture_provenance(), max_distance_nm=20*MM, citation='Owned output-loop switch limit.')
     return facts, doc
 
 
@@ -58,6 +72,59 @@ def bound_output_loop():
     facts, doc = output_loop()
     doc['obligations'][0].update(kind='buck-output-loop', ic='U1', inductor='L1', return_net='GND')
     return facts, doc
+
+
+class LocalityInvariantTests(unittest.TestCase):
+    def test_untyped_distinct_sources_require_disjoint_net_sets(self):
+        for supply_end in ('from', 'to'):
+            for return_end in ('from', 'to'):
+                facts, doc = output_loop()
+                row = doc['obligations'][0]
+                for role, prefix in (('supply', 'OUT'), ('return', 'GND')):
+                    for end in ('from', 'to'):
+                        row[role][end]['net'] = prefix + '_' + end
+                row['supply'][supply_end]['net'] = row['return'][return_end]['net']
+                with self.subTest(supply=supply_end, ground=return_end):
+                    for evaluate in (lambda: locality.validate(doc),
+                                     lambda: locality.grade(facts, doc),
+                                     lambda: pack(facts, request(electrical_locality=doc))):
+                        with self.assertRaisesRegex(ValueError, 'distinct-source supply and return nets must differ'):
+                            evaluate()
+
+    def test_bound_switch_net_is_disjoint_from_supply_and_return(self):
+        for end in ('from', 'to', 'both'):
+            for net in ('VCC', 'GND'):
+                facts, doc = bound_output_loop()
+                row = doc['obligations'][0]
+                for key in (('from', 'to') if end == 'both' else (end,)):
+                    row['switch'][key]['net'] = net
+                with self.subTest(end=end, net=net):
+                    for evaluate in (lambda: locality.validate(doc),
+                                     lambda: locality.grade(facts, doc),
+                                     lambda: pack(facts, request(electrical_locality=doc))):
+                        with self.assertRaisesRegex(ValueError, 'loop switch nets must differ from supply and return'):
+                            evaluate()
+
+    def test_same_source_and_untyped_switch_keep_generic_net_semantics(self):
+        facts, doc = board(), declaration(supply='GND', ground='GND')
+        self.assertIs(locality.validate(doc), doc)
+        self.assertEqual(locality.grade(facts, doc)['status'], 'defect')
+        facts, doc = output_loop()
+        for end in ('from', 'to'):
+            doc['obligations'][0]['switch'][end]['net'] = 'VCC'
+        self.assertIs(locality.validate(doc), doc)
+        self.assertEqual(locality.grade(facts, doc)['status'], 'unknown')
+
+    def test_bound_switch_on_supply_net_cannot_pass_with_matching_pads(self):
+        facts, doc = bound_output_loop()
+        extra = copy.deepcopy(facts['footprints'][0]['pads'][1])
+        extra.update(number='3', uuid='U13', net='VCC')
+        facts['footprints'][0]['pads'].append(extra)
+        row = doc['obligations'][0]
+        row['switch']['from'] = endpoint('U1', '3', 'VCC')
+        row['switch']['to'] = endpoint('L1', '2', 'VCC')
+        with self.assertRaisesRegex(ValueError, 'loop switch nets must differ from supply and return'):
+            locality.grade(facts, doc)
 
 
 class BoundOutputLoopTests(unittest.TestCase):
@@ -364,7 +431,7 @@ class LocalityTests(unittest.TestCase):
             b['footprints'].append(inductor)
             doc['obligations'][0]['switch'] = dict(
                 **{'from': endpoint(ic,'8','SW'), 'to':endpoint(ind,'1','SW')},
-                max_distance_nm=7*MM, citation='Owned counterexample fixture: switch centres within 7 mm.')
+                provenance=fixture_provenance(), max_distance_nm=7*MM, citation='Owned counterexample fixture: switch centres within 7 mm.')
             self.assertEqual([d['role'] for d in locality.grade(b,doc)['defects']], ['switch'])
             inductor['pads'][0]['position_nm'] = [after,0]
             self.assertEqual(locality.grade(b,doc)['status'], 'pass')
@@ -395,20 +462,21 @@ class NativeLocalityTests(unittest.TestCase):
         self.addCleanup(helper.doCleanups)
         # Native RC: select actual exact pad nets from the owned saved board.
         from agent_ee.placement_probe import extract
-        for expected, limit in (('pass', 100*MM), ('defect', 0), ('unknown', None)):
+        for expected, limit in (('pass', 100*MM), ('defect', 0), ('unknown', None), ('info', 0)):
             source = helper.source()
             facts = extract(source / 'project/rc_filter.kicad_pcb')
             fps = {f['ref']: f for f in facts['footprints']}
             shared = [(a, b) for a in fps['J1']['pads'] for b in fps['C1']['pads'] if a['net'] and a['net']==b['net']]
             a, b = shared[0]
             pair = {'from': endpoint('J1', a['number'], a['net']), 'to': endpoint('C1', b['number'], b['net']),
-                    'citation': 'Owned RC diagnostic distance requirement.'}
+                    'provenance': fixture_provenance(), 'citation': 'Owned RC diagnostic distance requirement.'}
             if limit is not None: pair['max_distance_nm'] = limit
+            if expected == 'info': pair.pop('provenance')
             cap_ground = next(p for p in fps['C1']['pads'] if p['net'] != a['net'])
             header_ground = next(p for p in fps['J1']['pads'] if p['net'] == cap_ground['net'])
             ground = {**pair, 'from': endpoint('J1', header_ground['number'], header_ground['net']),
                       'to': endpoint('C1', cap_ground['number'], cap_ground['net'])}
-            doc = dict(schema=locality.SCHEMA, obligations=[dict(id='RC', metric='pad-centre-to-centre',
+            doc = dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id='RC', metric='pad-centre-to-centre',
                        supply=pair, **{'return': ground})])
             (source / 'project/locality.json').write_text(json.dumps(doc))
             spec = placement('locality', locality.CRITERION, locality='project/locality.json')
@@ -416,6 +484,8 @@ class NativeLocalityTests(unittest.TestCase):
             result = results['locality']
             self.assertEqual(result['outcome'], expected, result)
             self.assertEqual(result['execution'], 'unsupported' if expected=='unknown' else 'ok', result)
+            if expected == 'info':
+                self.assertIn('2 advisory locality bound(s), 2 exceeded', result['summary'])
             self.assertIn('work/locality/placement-judgment.json', result['evidence'])
             baseline = read_json(run / 'baseline.json')
             self.assertEqual(baseline['coverage']['checks']['locality']['predicates'], ['placement:electrical-locality/1'])
@@ -444,8 +514,8 @@ class NativeLocalityTests(unittest.TestCase):
             pad = next(p for p in fps[ref]['pads'] if p['net'] == target['net'])
             return dict(**{'from': {**endpoint(ref, pad['number'], pad['net']), 'uuid': pad['uuid']},
                            'to': {**endpoint('C1', target['number'], target['net']), 'uuid': target['uuid']}},
-                        max_distance_nm=100*MM, citation='Owned native three-reference loop requirement.')
-        doc = dict(schema=locality.SCHEMA, obligations=[dict(id='output-loop', metric='pad-centre-to-centre',
+                        provenance=fixture_provenance(), max_distance_nm=100*MM, citation='Owned native three-reference loop requirement.')
+        doc = dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id='output-loop', metric='pad-centre-to-centre',
                    supply=pair('R1', supply), **{'return': pair('J1', ground)})])
         if bound:
             doc['obligations'][0].update(kind='buck-output-loop', ic='J1', inductor='R1',
@@ -494,8 +564,8 @@ class NativeLocalityTests(unittest.TestCase):
         self.assertTrue(pairs)
         a,b = pairs[0]
         pair = {'from': endpoint('U1', a['number'], a['net']), 'to': endpoint('C1', b['number'], b['net']),
-                'max_distance_nm': 5*MM, 'citation': 'Owned native geometry fixture: 5 mm diagnostic limit.'}
-        doc = dict(schema=locality.SCHEMA, obligations=[dict(id='native', metric='pad-centre-to-centre',
+                'provenance': fixture_provenance(), 'max_distance_nm': 5*MM, 'citation': 'Owned native geometry fixture: 5 mm diagnostic limit.'}
+        doc = dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id='native', metric='pad-centre-to-centre',
                    supply=pair, **{'return': {**pair, 'from': endpoint('U1', '2', 'GND'),
                                                       'to': endpoint('C1', '2', 'GND')}})])
         helper.config['policy']['electrical_locality'] = doc
@@ -503,6 +573,14 @@ class NativeLocalityTests(unittest.TestCase):
         self.assertEqual(result['status'], 'placed', result)
         self.assertEqual(result['judgment']['locality_grading']['status'], 'pass')
         self.assertEqual(locality.grade(extract(helper.scratch/'guided/candidate.kicad_pcb'), doc)['status'], 'pass')
+        # The same native writer must publish exceeded, unsourced guidance.
+        for role in ('supply', 'return'):
+            doc['obligations'][0][role].pop('provenance')
+            doc['obligations'][0][role]['max_distance_nm'] = 0
+        advisory = place_candidate(helper.source, helper.netlist, helper.scratch / 'advisory', helper.config)
+        self.assertEqual(advisory['status'], 'placed', advisory)
+        self.assertEqual(advisory['judgment']['locality_grading']['status'], 'info')
+        self.assertTrue(all(a['exceeded'] for a in advisory['judgment']['locality_grading']['advisories']))
 
 
     def test_runner_timeout_writes_partial_result_and_heartbeat_without_proposal(self):
@@ -536,6 +614,41 @@ class NativeLocalityTests(unittest.TestCase):
 
 
 class LocalityIndexTests(unittest.TestCase):
+    def test_index_snapshots_caller_document_before_push_and_prepare(self):
+        mutations = [(role, end, field, value)
+                     for role in ('supply', 'return', 'switch')
+                     for end in ('from', 'to')
+                     for field, value in (('net', 'CHANGED'), ('reference', 'R9'),
+                                          ('pad', '99'), ('uuid', 'invalid'))]
+        mutations += [(role, None, 'max_distance_nm', 0)
+                      for role in ('supply', 'return', 'switch')]
+        mutations.append((None, None, 'obligations', []))
+        for role, end, field, value in mutations:
+            with self.subTest(role=role, end=end, field=field):
+                facts, doc = bound_output_loop()
+                original = copy.deepcopy(doc)
+                state = locality.PlacementIndex(doc)
+                if role is None:
+                    doc[field].clear()
+                else:
+                    target = doc['obligations'][0][role]
+                    if end is not None:
+                        target = target[end]
+                    target[field] = value
+                for movable in facts['footprints']:
+                    fixed = [fp for fp in facts['footprints'] if fp is not movable]
+                    for fp in fixed:
+                        state.push(fp)
+                    origin = transform(movable, [0, 0], 0)
+                    candidate = state.prepare(origin)
+                    self.assertEqual(candidate.targets(), sorted(set(map(tuple,
+                        locality.targets(fixed, origin, original)))))
+                    for position in ([0, 0], movable['position_nm'], [99*MM, 99*MM]):
+                        self.assertEqual(candidate.constraint(position), locality.constraint(
+                            fixed, transform(movable, position, 0), original))
+                    for fp in fixed:
+                        state.pop(fp['ref'])
+
     def test_index_matches_original_cost_targets_and_backtracking(self):
         b, doc = board(), declaration()
         # Fractional, rotated copper centroids must keep exact candidate ranks.
@@ -581,7 +694,7 @@ class LocalityIndexTests(unittest.TestCase):
                     for k, net in ((1, 'VCC'), (2, 'GND'), (3, 'SW'))]
                 footprints[ref] = fp
             refs = list(footprints)
-            doc = {'schema': locality.SCHEMA, 'obligations': []}
+            doc = {'schema': locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': []}
             for j in range(rng.randint(1, 5)):
                 ic, cap, inductor = rng.sample(refs, 3)
                 obligation = declaration(ic=ic, cap=cap, limit=rng.choice((2, 4, 6, 9, 15))*MM)['obligations'][0]
@@ -630,11 +743,40 @@ class LocalityIndexTests(unittest.TestCase):
         self.assertGreater(loops, 300)
         self.assertEqual(rotations, {0, 90, 180, 270})
 
+    def test_direct_constructor_revalidates_role_and_net_bindings(self):
+        for mutation, message in (
+                ('unrelated', 'supply must start at the declared inductor'),
+                ('swapped', 'return must use the declared return_net'),
+                ('switch_source', 'switch pair must start at the declared IC'),
+                ('switch_target', 'switch must end at the declared inductor'),
+                ('switch_net', 'switch nets must differ from supply and return'),
+                ('overlap', 'distinct-source supply and return nets must differ')):
+            _, doc = bound_output_loop()
+            row = doc['obligations'][0]
+            if mutation == 'unrelated':
+                row['supply']['from']['reference'] = 'R9'
+            elif mutation == 'swapped':
+                for end in ('from', 'to'):
+                    row['supply'][end]['net'], row['return'][end]['net'] = 'GND', 'VCC'
+            elif mutation == 'switch_source':
+                row['switch']['from']['reference'] = 'R9'
+            elif mutation == 'switch_target':
+                row['switch']['to']['reference'] = 'R9'
+            elif mutation == 'switch_net':
+                row['switch']['from']['net'] = 'VCC'
+            else:
+                for key in ('kind', 'ic', 'inductor', 'return_net'):
+                    row.pop(key)
+                row['supply']['to']['net'] = 'GND'
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, message):
+                locality.PlacementIndex(doc)
+
     def test_uuid_selected_repeated_number_is_indexed_without_aliasing(self):
         b, doc = board(), declaration()
         cap = b['footprints'][1]
         extra = copy.deepcopy(cap['pads'][0])
-        extra.update(uuid='other-pad', position_nm=[999*MM, 0])
+        cap['pads'][0]['uuid'] = '00000000-0000-0000-0000-000000000001'
+        extra.update(uuid='00000000-0000-0000-0000-000000000002', position_nm=[999*MM, 0])
         cap['pads'].append(extra)
         doc['obligations'][0]['supply']['to']['uuid'] = cap['pads'][0]['uuid']
         state = locality.PlacementIndex(doc)
@@ -642,6 +784,11 @@ class LocalityIndexTests(unittest.TestCase):
         candidate = state.prepare(transform(b['footprints'][0], [0,0], 0))
         self.assertEqual(candidate.constraint([MM,MM]), locality.constraint(
             [cap], transform(b['footprints'][0], [MM,MM], 0), doc))
+        for position in ([15*MM, 15*MM], [999*MM, 0]):
+            with self.subTest(position=position):
+                self.assertEqual(candidate.constraint(position), locality.constraint(
+                    [cap], transform(b['footprints'][0], position, 0), doc))
+                self.assertEqual(bool(candidate.constraint(position)[0]), position == [999*MM, 0])
 
     def test_target_budget_refuses_instead_of_truncating_constraints(self):
         pairs = [([0,0], [i*1000, i*1000], 1, {'U1','C1'}) for i in range(100)]
@@ -725,7 +872,7 @@ class LocalityIndexTests(unittest.TestCase):
             footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
         b = capture(footprints, rectangle(0, 0, 84, 72))
         b['pcbnew_version'] = '10.0.7'
-        doc = {'schema': locality.SCHEMA, 'obligations': []}
+        doc = {'schema': locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': []}
         for i in range(15):
             doc['obligations'] += declaration(ic='P'+str(2*i), cap='P'+str(2*i+1),
                                               limit=8*MM)['obligations']
@@ -820,7 +967,7 @@ class LocalityIndexTests(unittest.TestCase):
         b = capture(footprints, rectangle(0, 0, 84, 72))
         b['pcbnew_version'] = '10.0.7'
         for movable, clustered in (({'P29'}, False), ({'P29', 'P31'}, True)):
-            doc = {'schema': locality.SCHEMA, 'obligations': []}
+            doc = {'schema': locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': []}
             for i in range(15):
                 doc['obligations'] += declaration(ic='P'+str(2*i), cap='P'+str(2*i+1),
                                                   limit=8*MM)['obligations']

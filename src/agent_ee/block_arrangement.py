@@ -117,6 +117,33 @@ def validate_policy(document, block_ids, refs):
     return {**document, 'objective': objective, 'priority_blocks': priority}
 
 
+class EffectivePolicyError(ValueError):
+    """The effective packing policy discards or relaxes a captured constraint."""
+
+    def __init__(self, problems):
+        super().__init__('the effective policy may only add board obstacles to the captured policy: '
+                         + ', '.join(p['key'] for p in problems))
+        self.problems = problems
+
+
+def check_effective(policy, effective):
+    """Refuse an effective policy that is not the captured one plus appended board obstacles.
+
+    Candidates are packed and admitted against ``policy``; arrangement and the residual
+    pass run on ``effective``. Every key must be equal except ``obstacles``, whose
+    captured entries must remain, unchanged and in order, as its prefix.
+    """
+    problems = [{'key': key, 'kind': 'changed' if key in policy and key in effective else
+                 'removed' if key in policy else 'added'}
+                for key in sorted(set(policy) | set(effective)) if key != 'obstacles'
+                and (key not in policy or key not in effective or policy[key] != effective[key])]
+    captured, obstacles = policy.get('obstacles'), effective.get('obstacles')
+    if not isinstance(obstacles, list) or not isinstance(captured, list) or obstacles[:len(captured)] != captured:
+        problems.append({'key': 'obstacles', 'kind': 'captured_obstacles_not_kept'})
+    if problems:
+        raise EffectivePolicyError(problems)
+
+
 def _hard(rule):
     return rule is not None and rule['provenance']['enforcement'] == 'hard'
 
@@ -180,8 +207,8 @@ def admit_entry(entry, capture, inventory, derivation, policy):
     Without a mapping this is ``blocks.admit`` on the candidate's own board. With one
     (a library or reused layout), identity is ``blocks.match`` with the mapping, the
     mapped members must be one derived block with the same anchor, and the frame
-    poses are re-graded with the target board's own footprints and isolated policy.
-    Either way every boundary role is bound to its board net.
+    poses are re-graded with the target board's own footprints and isolated policy;
+    its deferred obligations are the target board's (``blocks._isolate``). Either way every boundary role is bound to its board net.
     """
     blocks._keys(entry, {'candidate'}, {'mapping', 'boundary_nets'}, label='arrangement candidate')
     document = entry['candidate']
@@ -199,7 +226,8 @@ def admit_entry(entry, capture, inventory, derivation, policy):
         if len(found) != 1:
             return None, [{'kind': 'block_members', 'actual': sorted(mapping.values(), key=blocks._natural)}]
         block = found[0]
-        anchor, sub, _, _ = blocks._isolate(capture, policy, block)
+        # The target board's own isolated policy and deferred record; the source's never apply.
+        anchor, sub, deferred, _ = blocks._isolate(capture, policy, block)
         if mapping[document['frame']['anchor']] != anchor:
             return None, [{'kind': 'frame_anchor', 'expected': anchor,
                            'actual': mapping[document['frame']['anchor']]}]
@@ -207,18 +235,20 @@ def admit_entry(entry, capture, inventory, derivation, policy):
         framed = [placer.transform(board[mapping[r['reference']]], r['pose']['position_nm'], r['pose']['rotation_deg'])
                   for r in sorted(document['members'], key=lambda r: blocks._natural(mapping[r['reference']]))]
         _, grade, witness = blocks._evidence(capture, framed, sub)
-        failed = [k for k, g in grade.items() if g and g['status'] != 'pass'] + (
+        failed = [k for k, g in grade.items() if g and not blocks._grade_usable(k, g)] + (
             ['witness'] if witness['status'] != 'pass' else [])
         if failed:
             return None, [{'kind': 'evidence_failed', 'evidence': failed}]
     binding = bind_boundary(document, capture, mapping, entry.get('boundary_nets'))
     if binding['problems']:
         return None, binding['problems']
-    mapping = mapping or {r['reference']: r['reference'] for r in document['members']}
+    if mapping is None:
+        # ``blocks.admit`` refused any deferred record other than the recomputed one.
+        mapping, deferred = {r['reference']: r['reference'] for r in document['members']}, document['deferred']
     poses = {mapping[r['reference']]: r['pose'] for r in document['members']}
     return {'block': block['id'], 'anchor': mapping[document['frame']['anchor']], 'poses': poses,
             'mapping': mapping, 'binding': binding['roles'], 'candidate_sha256': digest(document),
-            'provenance': document['provenance'], 'deferred': document['deferred']}, []
+            'provenance': document['provenance'], 'deferred': deferred}, []
 
 
 def _opposite(side):
@@ -615,11 +645,11 @@ class _Arrangement:
             return electrical_locality.CandidateLocality([])
         pairs = []
         for fp in members:
-            for own, peer, limit in self.locality.pairs.get(fp['ref'], ()):
+            for own, peer, limit, hard in self.locality.pairs.get(fp['ref'], ()):
                 if peer['reference'] in self.positions:
                     offset = electrical_locality.resolve([fp], own)
                     target = self.locality.positions[peer['reference']][self.locality.key(peer)]
-                    pairs.append((offset, target, limit, {fp['ref'], peer['reference']}))
+                    pairs.append((offset, target, limit, {fp['ref'], peer['reference']}, hard))
         return electrical_locality.CandidateLocality(pairs)
 
     def _group_targets(self, members):
@@ -928,8 +958,9 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     """Arrange every derived block, pack the residual parts, grade the complete plan.
 
     ``policy`` is the captured packing policy the candidates were packed and are
-    admitted against; ``effective_policy`` (default ``policy``) may add board
-    obstacles, such as the runner's IMU marking reservations. Returns a complete
+    admitted against; ``effective_policy`` (default ``policy``) may only append board
+    obstacles, such as the runner's IMU marking reservations; anything else raises
+    ``EffectivePolicyError``. Returns a complete
     ``agent-ee.packing-plan/1`` with a ``block_arrangement`` record, or a typed
     failure; no search-derived arrangement is ever reported as a pass.
     """
@@ -937,6 +968,7 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     refs = {fp['ref'] for fp in capture['footprints']}
     placer._validate_policy(policy, refs)
     placer._validate_policy(effective, refs)
+    check_effective(policy, effective)
     if derivation['board_sha256'] != capture['board_sha256']:
         raise ValueError('derivation belongs to another board capture')
     block_ids = [b['id'] for b in derivation['blocks']]

@@ -3,19 +3,27 @@
 Limits and citations are supplied by the engineer, never inferred from a net name.
 Distances use native copper-land centroids, not anchors, routed length or loop inductance.
 """
+from copy import deepcopy
 from fractions import Fraction
 import math
 from uuid import UUID
+
+from . import locality_provenance
 
 SCHEMA = 'agent-ee.electrical-locality/1'
 CRITERION = 'electrical-locality/1'
 
 
 def validate(document):
-    if (not isinstance(document, dict) or set(document) != {'schema', 'obligations'}
+    if (not isinstance(document, dict) or set(document) - {'schema', 'obligations', 'source_records'}
+            or not {'schema', 'obligations'} <= document.keys()
             or document['schema'] != SCHEMA or not isinstance(document['obligations'], list)
             or not document['obligations']):
         raise ValueError(f'expected {SCHEMA} with nonempty obligations')
+    records = document.get('source_records', {})
+    if not isinstance(records, dict) or any(not isinstance(k, str) or not isinstance(v, str)
+                                             for k, v in records.items()):
+        raise ValueError('locality source_records must map source paths to captured UTF-8 text')
     ids = set()
     for obligation in document['obligations']:
         if (not isinstance(obligation, dict) or set(obligation) - {
@@ -30,9 +38,11 @@ def validate(document):
             raise ValueError('locality metric must be text')
         for role in roles(obligation):
             pair = obligation[role]
-            if (not isinstance(pair, dict) or set(pair) - {'from', 'to', 'max_distance_nm', 'citation'}
+            if (not isinstance(pair, dict) or set(pair) - {'from', 'to', 'max_distance_nm', 'citation', 'provenance'}
                     or not {'from', 'to'} <= pair.keys()):
                 raise ValueError('locality pair needs from/to, optionally max_distance_nm and citation')
+            if 'provenance' in pair and not isinstance(pair['provenance'], dict):
+                raise ValueError('locality provenance must be an object')
             for endpoint in (pair['from'], pair['to']):
                 if (not isinstance(endpoint, dict) or set(endpoint) - {'reference', 'pad', 'net', 'uuid'}
                         or not {'reference', 'pad', 'net'} <= endpoint.keys()
@@ -52,6 +62,9 @@ def validate(document):
         if any(supply[k]['reference'] == ground[k]['reference']
                and supply[k]['pad'] == ground[k]['pad'] for k in ('from', 'to')):
             raise ValueError('supply and return must select distinct physical pads')
+        if (supply['from']['reference'] != ground['from']['reference']
+                and {supply[k]['net'] for k in ('from', 'to')} & {ground[k]['net'] for k in ('from', 'to')}):
+            raise ValueError('distinct-source supply and return nets must differ')
         loop_fields = {'kind', 'ic', 'inductor', 'return_net'}
         if loop_fields & obligation.keys():
             if (not loop_fields <= obligation.keys() or obligation['kind'] != 'buck-output-loop'
@@ -71,6 +84,9 @@ def validate(document):
             if ('switch' in obligation
                     and obligation['switch']['to']['reference'] != obligation['inductor']):
                 raise ValueError('loop switch must end at the declared inductor')
+            if ('switch' in obligation and {obligation['switch'][k]['net'] for k in ('from', 'to')}
+                    & ({supply[k]['net'] for k in ('from', 'to')} | {obligation['return_net']})):
+                raise ValueError('loop switch nets must differ from supply and return')
         if 'switch' in obligation and obligation['switch']['from']['reference'] != ground['from']['reference']:
             raise ValueError('switch pair must start at the declared IC')
     return document
@@ -111,7 +127,8 @@ def resolve(footprints, endpoint):
 def grade(probe, document):
     """CHECK: grade every pair, preserving determinate defects alongside unknowns."""
     validate(document)
-    measured, defects, unknown = [], [], []
+    measured, defects, unknown, advisories = [], [], [], []
+    disk_cache = {}
     for obligation in document['obligations']:
         for role in roles(obligation):
             pair = obligation[role]
@@ -128,15 +145,30 @@ def grade(probe, document):
                               {'numerator': squared.numerator, 'denominator': squared.denominator}),
                               distance_mm=math.sqrt(squared)/10**6,
                               geometry='native copper-land centroid (before drill subtraction)')
+                record['constraint_provenance'] = locality_provenance.classify(pair, document.get('source_records'))
+                record['manufacturing_floor'] = locality_provenance.floor(probe['footprints'], pair, (a, b), disk_cache)
                 measured.append(record)
-                if 'max_distance_nm' not in pair or 'citation' not in pair:
+                authority = record['constraint_provenance']
+                floor = record['manufacturing_floor']
+                if 'max_distance_nm' not in pair or ('citation' not in pair and authority['enforcement'] == 'hard'):
                     raise ValueError('declared numeric limit and citation required')
-                if squared > pair['max_distance_nm']**2:
-                    defects.append({'kind': 'electrical_locality_distance', **record})
+                if (authority['enforcement'] == 'feasibility' and floor['status'] != 'known'
+                        and floor['reason'].startswith('captured JLCPCB numeric record')):
+                    raise ValueError('manufacturer floor unavailable: ' + floor['reason'])
+                below = floor['status'] == 'known' and pair['max_distance_nm'] < floor['floor_nm']
+                if authority['enforcement'] in ('hard', 'feasibility') and below:
+                    defects.append({'kind': 'locality_infeasible', **record})
+                elif authority['enforcement'] == 'hard':
+                    if squared > pair['max_distance_nm']**2:
+                        defects.append({'kind': 'electrical_locality_distance', **record})
+                else:
+                    advisories.append({'kind': 'unsourced', 'severity': 'defect', **record,
+                                       'exceeded': squared > pair['max_distance_nm']**2, 'below_floor': below})
             except ValueError as exc:
                 unknown.append({'kind': 'electrical_locality_unavailable', **record, 'reason': str(exc)})
-    return {'criterion': CRITERION, 'status': 'defect' if defects else 'unknown' if unknown else 'pass',
-            'measured': measured, 'defects': defects, 'unknown': unknown, 'declaration': document}
+    return {'criterion': CRITERION, 'status': 'defect' if defects else 'unknown' if unknown else 'info' if advisories else 'pass',
+            'measured': measured, 'defects': defects, 'unknown': unknown, 'advisories': advisories,
+            'declaration': document}
 
 
 def constraint(footprints, proposed, document):
@@ -158,7 +190,7 @@ def constraint(footprints, proposed, document):
             squared = sum((x-y)**2 for x, y in zip(a, b))
             limit2 = pair['max_distance_nm']**2
             cost += Fraction(squared, max(1, limit2))
-            if squared > limit2:
+            if squared > limit2 and locality_provenance.classify(pair, document.get('source_records'))['enforcement'] == 'hard':
                 blockers |= involved
     return blockers, cost
 
@@ -170,6 +202,8 @@ def targets(footprints, proposed, document):
     for obligation in document['obligations']:
         for role in roles(obligation):
             pair = obligation[role]
+            if locality_provenance.classify(pair, document.get('source_records'))['enforcement'] != 'hard':
+                continue
             for own, peer in ((pair['from'], pair['to']), (pair['to'], pair['from'])):
                 if own['reference'] != proposed['ref'] or peer['reference'] not in refs:
                     continue
@@ -196,6 +230,8 @@ class PlacementIndex:
     that footprint. Candidate evaluators contain only incident, placed pairs.
     """
     def __init__(self, document):
+        validate(document)
+        document = deepcopy(document)
         self.pairs = {}
         self.endpoints = {}
         self.positions = {}
@@ -204,7 +240,8 @@ class PlacementIndex:
                 pair = obligation[role]
                 for own, peer in ((pair['from'], pair['to']), (pair['to'], pair['from'])):
                     ref = own['reference']
-                    self.pairs.setdefault(ref, []).append((own, peer, pair['max_distance_nm']))
+                    self.pairs.setdefault(ref, []).append((own, peer, pair['max_distance_nm'],
+                        locality_provenance.classify(pair, document.get('source_records'))['enforcement'] == 'hard'))
                     self.endpoints.setdefault(ref, {})[self.key(own)] = own
 
     @staticmethod
@@ -225,7 +262,7 @@ class PlacementIndex:
         ref = at_origin['ref']
         own_positions = {}
         pairs = []
-        for own, peer, limit in self.pairs.get(ref, ()):
+        for own, peer, limit, hard in self.pairs.get(ref, ()):
             if peer['reference'] not in self.positions:
                 continue
             key = self.key(own)
@@ -233,22 +270,22 @@ class PlacementIndex:
                 own_positions[key] = resolve([at_origin], own)
             offset = own_positions[key]
             target = self.positions[peer['reference']][self.key(peer)]
-            pairs.append((offset, target, limit, {ref, peer['reference']}))
+            pairs.append((offset, target, limit, {ref, peer['reference']}, hard))
         return CandidateLocality(pairs)
 
 
 class CandidateLocality:
     """Exact translated centroid cost; no board scan or geometry copy per point."""
     def __init__(self, pairs):
-        self.pairs = pairs
+        self.pairs = [tuple(pair) if len(pair) == 5 else (*pair, True) for pair in pairs]
 
     def constraint(self, position):
         blockers, cost = set(), Fraction(0)
-        for offset, target, limit, involved in self.pairs:
+        for offset, target, limit, involved, hard in self.pairs:
             squared = sum((offset[i] + position[i] - target[i])**2 for i in (0, 1))
             limit2 = limit**2
             cost += Fraction(squared, max(1, limit2))
-            if squared > limit2:
+            if squared > limit2 and hard:
                 blockers |= involved
         return blockers, cost
 
@@ -256,7 +293,9 @@ class CandidateLocality:
         # At most five distinct origins per incident role with a placed peer;
         # duplicates never add axes. No truncation of the original candidate set.
         points = set()
-        for offset, target, limit, _ in self.pairs:
+        for offset, target, limit, _, hard in self.pairs:
+            if not hard:
+                continue
             x, y = [round(target[i]-offset[i]) for i in (0, 1)]
             points.update(((x, y), (x-limit, y), (x+limit, y), (x, y-limit), (x, y+limit)))
             if len(points) > MAX_PLACEMENT_TARGETS:

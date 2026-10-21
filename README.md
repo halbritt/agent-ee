@@ -98,6 +98,13 @@ proposals that introduce native DRC shorts, clearance, PTH courtyard findings
 or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
+
+Declared [placer obstacles](docs/placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
+reserve the exact union of touching or overlapping polygons. The pod's 0.25 mm
+packing gap is an agent-chosen advisory default. Its supplied value remains a
+search reservation, including against fixed courtyards; capacity proofs that
+bind an unsourced gap report unknown and name it for confirmation.
+
 The [artwork pass](docs/silk-artwork.md) relocates permitted silk fields and
 publishes silk-only conflicts as open defects in the placement receipt, preserving
 graphics and required markings. This establishes placement feasibility only;
@@ -105,11 +112,19 @@ downstream fab, verification and release gates refuse carried open defects,
 naming their native fields/graphics and source receipts (AGENTEE-333).
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
-copper-centroid distances against cited limits. Captured pad UUIDs select
+copper-centroid distances against sourced limits.
+[Locality provenance](docs/placer.md#locality-provenance-agentee-337) keeps unsourced
+agent-selected bounds advisory in checks, packing and block-candidate admission.
+Captured JLCPCB spacing supplies necessary copper floors and advisory assembly estimates, with
+whole-footprint minima still unqualified. Captured pad UUIDs select
 multi-pad pins. Explicit `buck-output-loop` declarations bind the supply source
 and switch target to the inductor, the return source and switch source to the
-IC, and return pads to a declared net distinct from supply. Coordinator packing
-binds to the check's immutable locality file. Origin-group distance supplies no electrical acceptance.
+IC, and return pads to a declared net distinct from supply. Switch nets must
+differ from supply and return. Distinct-source supply/return net sets must be
+disjoint even without a kind. Direct placement-index construction re-validates
+these declarations and snapshots the validated document before indexing it.
+Coordinator packing binds to the check's immutable locality file. Origin-group
+distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)
 caches selected pads and retains typed partial diagnostics on its optional search deadline.
 [Joint locality clusters](docs/placer.md#joint-locality-clusters-agentee-335)
@@ -125,6 +140,14 @@ A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
 refuses any mismatch.
+The [block library](docs/block-library.md) keeps versioned known-good blocks in
+`blocks/` with provenance receipts. Its entries come from KiCad board regions,
+scale-verified datasheet figures and project clusters. A lookup returns each block
+with its provenance class. Project clusters, including the four telemetry pod
+regulator clusters, are search-derived and advisory. Hard classes are disabled
+(`authority_unavailable`) until a verified owner authority exists (AGENTEE-348), and
+every use is admitted by `blocks.admit` on the target.
+
 [Block arrangement](docs/blocks.md#stage-b-arrangement-agentee-340) places the
 admitted candidates as rigid macros, then packs the residual parts with the
 placer, with block members fixed. The search uses deterministic conflict-directed
@@ -280,6 +303,9 @@ symbol placement, fields, UUIDs and reference bindings across those turns,
 with explicit change reports and refusal of conflicting native edits.
 [Stage receipts](docs/stage-receipts.md) support artifact-only steps,
 such as fab export, with an empty write scope and retained artifact hashes.
+New receipts bind tool identity observations to held mount descriptors and refuse
+hard links into live package source (AGENTEE-349); historical path-form replay
+retains its documented lower assurance.
 An artifact-only step is unadoptable if any declared artifact entry lacks a hash.
 With a declared fab step in the stage order, the fab checks require its sealed
 package and compare it with fresh sandbox exports before passing.
@@ -938,4 +964,4 @@ label/text overlaps. Opt-in `--native-text-work` emission uses measured bounds
 and refuses unresolved overlaps before publication, without changing electrical
 check verdicts.
 
-Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Runtime validation refuses mounts exposing the live package source tree, including resolved parent and symlink aliases (AGENTEE-327). Refused fab receipts retain their violations and diagnostic paths.
+Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Runtime validation refuses mounts of live package source directories, their ancestors or unqualified source files, including symlink and bind aliases (AGENTEE-327/329). Validated tool mounts pass opened descriptors and verify mounted identities inside the sandbox before execution to prevent rename races; directory sources containing submounts are refused. Refused fab receipts retain their violations and diagnostic paths.
