@@ -467,6 +467,15 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed its declared electrical locality')
     if any(r['enforcement'] == 'hard' and r['status'] != 'pass' for r in judgment.get('block_rules', [])):
         raise ValueError('saved-board placement failed a hard block arrangement rule')
+    from .reserved_area import report as reserve_report, fabrication_outlines, alternatives
+    fabrication = fabrication_outlines(output)
+    reserve_policy = {**plan['policy'], 'obstacles': [*plan['policy']['obstacles'],
+        *plan.get('block_arrangement', {}).get('arrangement', {}).get('keepouts', [])]}
+    reserve = reserve_report(saved, reserve_policy, fabrication)
+    if reserve.get('sides'):
+        alternatives(saved, plan['policy'], fabrication, reserve, plan)
+    judgment['reserved_area'] = reserve
+    write_json(output.parent / 'placement-judgment.json', judgment)
     from .silk_artwork import containment_witness
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
             'containment': containment_witness(output),
@@ -474,7 +483,7 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
             'status': 'placed', 'outcome': 'defect' if comparison['open_defects'] else 'info',
             'verdict': 'defect' if comparison['open_defects'] else 'info',
             'open_defects': comparison['open_defects'], 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],
-            'plan': plan, 'judgment': judgment,
+            'plan': plan, 'judgment': judgment, 'reserved_area': reserve,
             'native_courtyard_overlaps': overlaps, 'native_drc_comparison': comparison,
             'authority': 'disposable-unsealed-proposal'}
 
@@ -587,7 +596,8 @@ def place_candidate(source, netlist, destination, request):
                     from .block_arrangement import provenance_artifact
                     write_json(scratch / 'block-provenance.json', provenance_artifact(
                         plan, report['board_sha256'], report['judgment']['block_rules'],
-                        plan_sha256=digest(scratch / 'placement-plan.json')))
+                        plan_sha256=digest(scratch / 'placement-plan.json'),
+                        reserved_area=report['reserved_area']))
                     report['block_provenance_sha256'] = digest(scratch / 'block-provenance.json')
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:
                     raise ValueError('captured placement inputs changed during execution')
