@@ -380,13 +380,16 @@ same bytes. [tests/test_fixture_generators.py](../tests/test_fixture_generators.
 (AGENTEE-367) runs each generator twice in the native sandbox and requires:
 
 - the two runs to be byte-identical;
-- the schematics and supplier records to equal the committed files byte for byte;
-- the boards to equal the committed boards once KIID nodes are removed and
-  top-level items are unordered.
+- every output (schematics, supplier records and the four boards) to equal the
+  committed file byte for byte.
 
-The committed boards were saved before seeding, and KiCad orders board items by
-KIID, so their KIIDs and item order are the only bytes regeneration does not
-reproduce. They are pinned inputs and stay as committed.
+The four boards (`fab`, `fab4`, `pod4` and `cpl.kicad_pcb`) were re-pinned to
+the seeded output under the coordinator ruling on AGENTEE-367. Before seeding
+they carried random KIIDs, and KiCad orders board items by KIID. Content was
+unchanged: with KIIDs removed and top-level items unordered, the old and new
+boards compare equal. No test, receipt or doc pinned their digests or KIIDs.
+To change a board, edit its generator, rerun it with the pinned KiCad and
+commit the output.
 
 [tests/test_fab_export.py](../tests/test_fab_export.py) covers the following:
 
