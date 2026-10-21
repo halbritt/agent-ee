@@ -365,6 +365,25 @@ def _recorded(run, cid, manifest):
     return witness['silk_findings']
 
 
+def clean_provenance(findings):
+    """An unlineaged release needs native DRC without any silkscreen conflict."""
+    conflicts = [finding for finding in findings if finding[0].startswith('silk_')]
+    if conflicts:
+        raise ValueError(f'board shows {len(conflicts)} native silkscreen conflict(s) but captured '
+                         'no placement lineage; release requires its placement-evidence or a clean board')
+
+
+def _needs_clean_provenance(manifest, inputs):
+    # An empty or self-asserted imported index cannot stand in for stamped ancestry.
+    return _board(manifest) and not (lineage(manifest) and _board_stamp(manifest, inputs))
+
+
+def prepare_release(ctx):
+    """Capture clean provenance only at the package release boundary, never per check."""
+    if _needs_clean_provenance(ctx.manifest, ctx.inputs):
+        _recompute(ctx)
+
+
 def open_defects(manifest, inputs, native=None):
     """Reconstruct open carry; only later receipted current artwork can close it.
 
@@ -487,12 +506,20 @@ def verify_gate(run, check, manifest):
                 gated(next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])) and
                 _board_stamp(manifest, Path(run) / 'inputs')):
             raise ValueError('stamped board passed a downstream gate without its placement lineage')
+        spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
+        if (spec.get('kind') == 'fab_package' and _board(manifest) and
+                (check.get('execution'), check.get('outcome')) == ('ok', 'pass')):
+            release_defects(run, check, manifest)
         return
     spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
     if not gated(spec):
         return
     defects = open_defects(manifest, Path(run) / 'inputs', lambda: _recorded(run, check['id'], manifest))
     if not defects:
+        if (spec.get('kind') == 'fab_package' and
+                (check.get('execution'), check.get('outcome')) == ('ok', 'pass') and
+                _needs_clean_provenance(manifest, Path(run) / 'inputs')):
+            release_defects(run, check, manifest)
         if check.get('details', {}).get('reason') == 'open_placement_defects':
             raise ValueError('carried placement refusal without open defects')
         return
@@ -506,5 +533,12 @@ def verify_gate(run, check, manifest):
 
 
 def release_defects(run, check, manifest):
-    """Open carry for a release artifact; a closure needs the check's native witness."""
-    return open_defects(manifest, Path(run) / 'inputs', lambda: _recorded(run, check.get('id'), manifest))
+    """Open carry for release; missing lineage requires a clean native witness."""
+    def native():
+        findings = _recorded(run, check.get('id'), manifest)
+        _read(manifest, Path(run) / 'inputs', _board(manifest))
+        return findings
+    defects = open_defects(manifest, Path(run) / 'inputs', native)
+    if _needs_clean_provenance(manifest, Path(run) / 'inputs'):
+        clean_provenance(native())
+    return defects

@@ -320,7 +320,9 @@ added silk overlap/copper findings as open defects in published proposals
 downstream fab/verification gates and package release refuse open carry. A
 board lineage stamp makes a re-scoped copy refuse release without that evidence.
 Imported closure evidence must match native DRC on the captured board
-(AGENTEE-351).
+(AGENTEE-351). Package release also requires a sealed clean native DRC witness
+when stamped ancestry is absent; stripped stamps cannot silently drop this
+release obligation. Individual checks keep their existing verdicts.
 Placement feasibility does not establish fab legibility.
 Its local reports do not replace the
 coordinator checks.

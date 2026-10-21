@@ -323,6 +323,8 @@ def check_fab_package(ctx):
             if rel in prior.get('evidence', []) and rel not in ctx.result['evidence']:
                 ctx.result['evidence'].append(rel)
     try:
+        from .placement_defects import prepare_release
+        prepare_release(ctx)
         artifacts = artifact_record(ctx.run_dir, {**ctx.result, 'execution': 'ok', 'outcome': 'pass'})
     except (ValueError, OSError, KeyError, TypeError) as exc:
         raise CheckError('malformed', f'fab artifacts do not verify: {exc}') from exc

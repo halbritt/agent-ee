@@ -1039,6 +1039,14 @@ class NativeProbeTests(unittest.TestCase):
         return evaluate(self.root, 'parts.json', work / 'design.xml', ['probe.kicad_sch'])
 
     def full_fab(self, project, probes):
+        # This control intends a successful release; resistor labels must clear their pads.
+        import pcbnew
+        board = project / 'probe.kicad_pcb'
+        native = pcbnew.LoadBoard(str(board))
+        for fp in native.GetFootprints():
+            if fp.GetReference() in {'R1', 'R2', 'R3'}:
+                fp.Reference().SetFPRelativePosition(pcbnew.VECTOR2I(0, -2000000))
+        self.assertTrue(pcbnew.SaveBoard(str(board), native))
         from agent_ee.candidate import capture
         from agent_ee.checks import run_checks
         scope = read_json(self.root / 'scaffold/scope.json')

@@ -384,6 +384,46 @@ class NativePlacementCarryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'lineage'):
             artifact_record(run, {'id': 'package', 'kind': 'fab_package', 'execution': 'ok', 'outcome': 'pass'})
 
+    def test_stripped_or_never_stamped_carried_board_cannot_pass_release(self):
+        """H1: without lineage, only native DRC on the captured board can admit a release."""
+        import pcbnew
+        from agent_ee.checks import Ctx
+        from agent_ee.fab_package import artifact_record
+        board_rel = self.manifest['scope']['board']
+
+        def native_strip(design):
+            # An actor outside agent-ee clears the stamp with the native editor API.
+            board = pcbnew.LoadBoard(str(design / board_rel))
+            block = board.GetTitleBlock()
+            block.SetComment(int(placement_defects.STAMP_COMMENT) - 1, '')
+            board.SetTitleBlock(block)
+            self.assertTrue(pcbnew.SaveBoard(str(design / board_rel), board))
+
+        def never_stamped(design):
+            # A carried board published before the stamp contract: the same bytes, no comment 9.
+            data = (design / board_rel).read_bytes()
+            line = re.search(rb'\n\s*\(comment 9 "agent-ee\.placement-lineage/1 [0-9a-f ]+"\)', data)
+            (design / board_rel).write_bytes(data.replace(line.group(0), b''))
+        for name, edit in (('stripped', native_strip), ('never-stamped', never_stamped)):
+            with self.subTest(name=name):
+                run, manifest = self.rescope(f'rescoped-{name}', lineage=False, edit=edit)
+                self.assertIsNone(placement_defects.stamp((run / 'inputs' / board_rel).read_bytes()))
+                self.assertEqual(placement_defects.open_defects(manifest, run / 'inputs'), [])
+                spec = manifest['scope']['checks'][0]
+                ctx = Ctx(run, manifest, spec, time.monotonic() + 300)
+                self.assertTrue(placement_defects.before_check(ctx))
+                # The standalone check is unchanged; the release boundary captures native evidence.
+                placement_defects.prepare_release(ctx)
+                witness = read_json(run / 'work' / spec['id'] / placement_defects.WITNESS)
+                self.assertEqual(witness['board_sha256'], manifest['files'][board_rel])
+                self.assertTrue(witness['silk_findings'])
+                with self.assertRaisesRegex(ValueError, 'silkscreen conflict.*no placement lineage'):
+                    artifact_record(run, {'id': spec['id'], 'kind': 'fab_package',
+                                          'execution': 'ok', 'outcome': 'pass'})
+                with self.assertRaisesRegex(ValueError, 'without native placement lineage verification'):
+                    artifact_record(run, {'id': 'package', 'kind': 'fab_package',
+                                          'execution': 'ok', 'outcome': 'pass'})
+
     def closure(self, name, *, honest, rules=None):
         """Re-scope with an appended imported placement bundle that claims the carry closed.
 
@@ -560,3 +600,124 @@ class ClosureContractTests(unittest.TestCase):
         original = {**self.original, 'pad': ('footprint', ['pad', '1', 'smd'], [['at', '0', '0']])}
         self.assertTrue(placement_defects._closes(defect, original, original, {'pad', 'other-field'}, set(), True))
         self.assertFalse(placement_defects._closes(defect, original, original, {'field'}, set(), True))
+
+
+class CleanProvenanceTests(unittest.TestCase):
+    """Clean provenance is required only at the release artifact boundary."""
+    @classmethod
+    def setUpClass(cls):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+
+    def setUp(self):
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+
+    def capture(self, fixture, name, *, rules=None):
+        from agent_ee.candidate import capture
+        root = Path(__file__).resolve().parents[1] / 'fixtures' / fixture
+        design = self.tmp / 'design'
+        shutil.rmtree(design, ignore_errors=True)
+        shutil.rmtree(self.tmp / 'run', ignore_errors=True)
+        shutil.copytree(root, design)
+        if rules is not None:
+            (design / f'{name}.kicad_dru').write_text(rules)
+        scope = {'schema': 'agent-ee.scope/1', 'board': f'project/{name}.kicad_pcb',
+                 'schematic': f'project/{name}.kicad_sch', 'inputs': [{'path': str(design), 'at': 'project'}],
+                 'checks': [{'id': 'release', 'kind': 'fab_package'}, {'id': 'erc', 'kind': 'erc'},
+                            {'id': 'export', 'kind': 'fab_export'}]}
+        write_json(self.tmp / 'scope.json', scope)
+        run = self.tmp / 'run'
+        run.mkdir()
+        return run, capture(self.tmp / 'scope.json', run)
+
+    def admitted(self, run, manifest, index, outcome='pass', seconds=300):
+        """Run the placement gate, then judge a check that reached `outcome`."""
+        from agent_ee.checks import Ctx
+        ctx = Ctx(run, manifest, manifest['scope']['checks'][index], time.monotonic() + seconds)
+        self.assertTrue(placement_defects.before_check(ctx))
+        ctx.result.update(execution='ok', outcome=outcome)
+        if index == 0:
+            placement_defects.prepare_release(ctx)
+            placement_defects.release_defects(run, ctx.result, manifest)
+        return ctx
+
+    def test_clean_board_without_lineage_passes_on_native_evidence(self):
+        run, manifest = self.capture('rc/control', 'rc_filter')
+        for index in (0, 2):
+            self.admitted(run, manifest, index)
+        witness = read_json(run / 'work/release' / placement_defects.WITNESS)
+        self.assertEqual((witness['board_sha256'], witness['silk_findings']),
+                         (manifest['files']['project/rc_filter.kicad_pcb'], []))
+        passed = {'id': 'release', 'execution': 'ok', 'outcome': 'pass'}
+        placement_defects.verify_gate(run, passed, manifest)
+        self.assertEqual(placement_defects.release_defects(run, passed, manifest), [])
+        # Ungated checks neither run nor need the verification.
+        self.admitted(run, manifest, 1)
+        self.assertFalse((run / 'work/erc' / placement_defects.WITNESS).exists())
+        placement_defects.verify_gate(run, {'id': 'erc', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+        board = run / 'inputs/project/rc_filter.kicad_pcb'
+        original_board = board.read_bytes()
+        board.write_bytes(original_board + b'\n')
+        with self.assertRaisesRegex(ValueError, 'missing or changed'):
+            placement_defects.release_defects(run, passed, manifest)
+        with self.assertRaisesRegex(ValueError, 'missing or changed'):
+            placement_defects.verify_gate(run, passed, manifest)
+        board.write_bytes(original_board)
+        report = run / 'work/release' / placement_defects.VERIFICATION / 'native-drc.json'
+        original = report.read_bytes()
+        for mutation in ('report', 'board', 'missing'):
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'verification'):
+                if mutation == 'report':
+                    report.write_bytes(original + b' ')
+                    placement_defects.verify_gate(run, passed, manifest)
+                elif mutation == 'board':
+                    changed = copy.deepcopy(manifest)
+                    changed['files']['project/rc_filter.kicad_pcb'] = '0' * 64
+                    placement_defects.verify_gate(run, passed, changed)
+                else:
+                    placement_defects.verify_gate(run, {**passed, 'id': 'export-missing'},
+                        {**manifest, 'scope': {**manifest['scope'], 'checks': [
+                            *manifest['scope']['checks'], {'id': 'export-missing', 'kind': 'fab_package'}]}})
+            report.write_bytes(original)
+
+    def test_unlineaged_board_with_silk_conflicts_cannot_pass(self):
+        run, manifest = self.capture('rc/stages/seeded-placement', 'rc_stage')
+        self.assertIsNone(placement_defects.stamp((run / 'inputs/project/rc_stage.kicad_pcb').read_bytes()))
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            self.admitted(run, manifest, 0)
+        # Ordinary fab export keeps its verdict and needs no provenance witness.
+        self.admitted(run, manifest, 2)
+        self.assertFalse((run / 'work/export' / placement_defects.WITNESS).exists())
+        placement_defects.verify_gate(run, {'id': 'export', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            placement_defects.verify_gate(run, {'id': 'release', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+        for kept in ({'execution': 'ok', 'outcome': 'defect'}, {'execution': 'malformed', 'outcome': 'unknown'}):
+            placement_defects.verify_gate(run, {'id': 'release', **kept}, manifest)
+
+    def test_empty_imported_index_does_not_replace_clean_native_provenance(self):
+        run, manifest = self.capture('rc/stages/seeded-placement', 'rc_stage')
+        index = 'placement-evidence/index.json'
+        write_json(run / 'inputs' / index, [])
+        manifest['files'][index] = digest(run / 'inputs' / index)
+        manifest['scope'][placement_defects.DECLARATION] = []
+        self.assertTrue(placement_defects.lineage(manifest))
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            self.admitted(run, manifest, 0)
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            placement_defects.verify_gate(run, {'id': 'release', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+
+    def test_unverifiable_native_evidence_cannot_pass(self):
+        from agent_ee.checks import CheckError
+        run, manifest = self.capture('rc/control', 'rc_filter', rules='(version 1)\n(rule quiet (severity ignore))\n')
+        with self.assertRaisesRegex(ValueError, 'custom DRC rule ignores'):
+            self.admitted(run, manifest, 0)
+        run, manifest = self.capture('rc/control', 'rc_filter')
+        with self.assertRaises(CheckError) as caught:
+            self.admitted(run, manifest, 0, seconds=-1)
+        self.assertEqual(caught.exception.execution, 'interrupted')
+        board = run / 'inputs/project/rc_filter.kicad_pcb'
+        board.write_bytes(board.read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'board missing or changed'):
+            self.admitted(run, manifest, 0)

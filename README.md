@@ -113,7 +113,10 @@ naming their native fields/graphics and source receipts (AGENTEE-333). Such a
 board carries a [lineage stamp](docs/silk-artwork.md#board-lineage-stamp-agentee-351),
 so a re-scoped copy refuses release as unknown unless it brings its
 `placement-evidence`. Imported evidence closes carry only when native DRC on the
-captured board reproduces it (AGENTEE-351).
+captured board reproduces it (AGENTEE-351). At package release, an unstamped
+board also needs native DRC on its captured bytes showing no `silk_*` conflicts;
+a missing or unverifiable witness refuses as unknown. Standalone checks keep
+their verdicts.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against cited limits. Captured pad UUIDs select

@@ -214,6 +214,9 @@ def make_board(path, copper_layers, pod=False):
         board.Add(fp)
         if side == 'B':
             fp.Flip(vec(x, y), p.FLIP_DIRECTION_TOP_BOTTOM)
+        # Release controls keep their reference text clear of pads and neighbouring rows.
+        if not pod:
+            fp.Reference().SetFPRelativePosition(vec(0, -6 if ref == 'J1' else -2))
 
     def track(a, b, layer, net, width=0.25):
         segment = p.PCB_TRACK(board)

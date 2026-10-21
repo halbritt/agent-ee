@@ -180,14 +180,26 @@ The board file therefore has no dedicated non-user field. The stamp stays in
 comment 9, and a placement result with open defects refuses publication when
 comment 9 holds other text.
 
-Three limits remain. An unlineaged board without the stamp keeps its existing
-verdicts. That includes a board whose stamp was stripped outside agent-ee and a
-board with carry published before this contract. Refusing such boards unless
-native DRC shows no silk conflicts changes existing `pass` expectations for the
-fab fixtures, which have native silk conflicts. That change awaits a coordinator
-ruling that names the affected tests.
+Release admission also covers boards whose stamp was stripped outside agent-ee
+and boards published before the stamp contract. `fab_package` captures a native
+DRC witness on the captured board bytes before extracting release artifacts.
+Without stamped, verified ancestry, release requires no open carry and no
+`silk_*` finding at any severity. An empty imported index does not establish
+ancestry. Missing, changed or incomplete native evidence refuses as typed
+unknown (`malformed`, or `interrupted` on deadline exhaustion). The package's
+sealed witness is rechecked by `verify_gate`, artifact extraction and campaign
+completion; a forged passing package cannot bypass it. The stamp therefore is
+not the sole indicator of a board that needs release verification.
 
-Stamp digests name the defects' native item UUID sets, not board bytes, so
+This clean-provenance rule applies only at the release artifact boundary.
+Standalone `fab_export`, `cpl_rotation`, `fab_consistency` and other checks keep
+their verdicts, including determinate defects and unknown coverage. The check
+scheduler has no post-check verdict rewrite. The owned successful-release
+controls have their reference text relocated away from pads; their asserted
+outcomes are unchanged. Native evidence is produced by the existing networkless
+executor; this creates no owner evidence store.
+
+Two limits remain. Stamp digests name the defects' native item UUID sets, not board bytes, so
 replayed evidence on an unrelated board is accepted as open carry rather than
 refused as foreign. That outcome is conservative: replay cannot close
 carry, because closure requires the bundle's board hash to equal the captured
@@ -206,3 +218,6 @@ with and without lineage. They also cover an unbound stamp and a campaign
 successor that drops the stamp. Further tests cover forged and honest imported
 closures at the check, seal and artifact boundaries, a missing or changed
 witness, and verification that is out of time or ignored by a custom rule.
+Release regressions cover stripped and legacy unstamped boards, clean native
+provenance, empty imported indexes, sealed-witness tampering and standalone
+fab-export verdict preservation.
