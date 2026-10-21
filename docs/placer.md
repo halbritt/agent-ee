@@ -931,7 +931,15 @@ has none, so a native land always has a box or refuses. Only a record with
 none of `copper_centroid_offset_nm`, `copper_centroid_reason` and
 `copper_land_offset_nm` (a hand-built capture, possibly with `size_nm` alone,
 which places nothing) keeps the courtyard-only bound; existing hand-built
-fixtures plan exactly as before. Inner-layer-only keep-outs, rule areas
+fixtures plan exactly as before. This is an accepted residual (coordinator
+ruling, AGENTEE-366): a native record edited down to `size_nm` alone is
+indistinguishable from such a capture and is also bounded by its courtyard
+only. Native extraction never emits that shape, and the native tests assert
+exactly one of centroid or reason per pad. A native record that keeps its
+`copper_centroid_reason` but is relabelled as a stock shape stays unknown
+(`test_placer_custom_pads.CustomPadPlacementTest.test_stock_pad_without_custom_evidence_still_plans`);
+the same record with the reason removed plans
+(`test_legacy_stock_pad_without_custom_evidence_still_plans`). Inner-layer-only keep-outs, rule areas
 forbidding only pads, and copper against peer courtyards are not packing
 constraints. The native DRC publication gate remains the authority for copper
 clearance.
