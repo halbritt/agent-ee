@@ -157,7 +157,9 @@ walk relative to that descriptor also compares directory and entry mount IDs
 from `/proc/self/fdinfo`. Every inventoried entry is also compared by device/inode
 against the live source inventory, refusing hard links into live `src` as
 `live_package_source:<at>`, including links to qualified helpers embedded in a
-directory. A byte-for-byte independent copy is allowed. An ancestor rename cannot redirect this inventory;
+directory. The held descriptor is re-inventoried before each launch and after
+the run, so a persistent link planted after the initial inventory is also refused.
+A byte-for-byte independent copy is allowed. An ancestor rename cannot redirect this inventory;
 file bind mounts and directory binds are both refused. This conservative rule also refuses benign
 submounts: registered builders need plain tool trees, never nested mount
 hierarchies. A mountpoint at the source itself is allowed only after the ordinary
@@ -165,7 +167,16 @@ live-tree identity checks. A caller able to change the coordinator's mount
 namespace after validation is outside this guard; sandboxed builders have no
 authority in that namespace. Tree entries and file bytes remain mutable in place:
 the existing before
-and after tool identity checks still refuse observed content changes. This
+and after tool identity checks still refuse observed content changes. Lookup
+errors during mount observation raise typed `mount_source_changed:<at>` refusals,
+including entry deletion during the post-run walk; no completed receipt is written.
+Absolute symlinks and relative symlinks that escape above a mount root are recorded
+as `link:` targets in tree identity, without digesting their host targets. If the
+executable resolves through such a link, its digest is unknown and the receipt
+is unadoptable; an escaped source subtree records link identity only. Relative
+links that stay inside the mount retain their ordinary executable digest. This
+observation does not emulate cross-mount sandbox symlink resolution. Transient
+in-place edits between observations remain outside the guard. This
 guard requires Linux `/proc/self/mountinfo`, `/proc/self/fdinfo`, `O_PATH`, and bwrap support for
 `--ro-bind-fd`; unavailable facilities fail closed.
 

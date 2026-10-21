@@ -7,6 +7,7 @@ from fresh sealed checks of the captured proposal.
 """
 
 import contextlib
+import errno
 import hashlib
 import json
 import math
@@ -238,6 +239,9 @@ def _recheck_mounts(spec, identities):
                     _mount_identity(source) != expected):
                 raise MountSourceChangedError(mount['at'])
             _validated_mount_source(mount['source'], mount['at'], source_identity=expected)
+            # Entries remain mutable in place: re-inventory the held object for live links.
+            if 'descriptor' in mount and stat.S_ISDIR(os.fstat(mount['descriptor']).st_mode):
+                _refuse_fd_submounts(mount['descriptor'], mount['at'])
         except OSError as exc:
             raise MountSourceChangedError(mount['at']) from exc
 
@@ -493,26 +497,79 @@ def _host_path(spec, sandbox_path, *, held=True):
     return Path(sandbox_path)
 
 
+def _escaping_mount_link(spec, sandbox_path):
+    """Return a link target if resolving this path would leave its mount namespace."""
+    mount = next((m for m in spec['mounts'] if _under(sandbox_path, m['at'])), None)
+    if mount is None:
+        return None
+    root = _host_path(spec, mount['at'])
+    pending = [(part, None) for part in PurePosixPath(sandbox_path).relative_to(mount['at']).parts]
+    parts, links = [], 0
+    while pending:
+        part, origin = pending.pop(0)
+        if part == '..':
+            if not parts:
+                return origin
+            parts.pop()
+            continue
+        if part == '.':
+            continue
+        path = root.joinpath(*parts, part)
+        if not path.is_symlink():
+            parts.append(part)
+            continue
+        target = os.readlink(path)
+        if PurePosixPath(target).is_absolute():
+            return target
+        links += 1
+        if links > 40:
+            raise OSError(errno.ELOOP, 'too many tool symlinks', str(path))
+        pending = [(part, target) for part in PurePosixPath(target).parts] + pending
+    return None
+
+
+@contextlib.contextmanager
+def _mount_observation(spec, sandbox_path):
+    try:
+        yield
+    except OSError as exc:
+        mount = next((m for m in spec['mounts'] if _under(sandbox_path, m['at'])), None)
+        if mount is None:
+            raise
+        raise MountSourceChangedError(mount['at']) from exc
+
+
 def observe_tool(spec):
     """Coordinator-side tool identity; missing pieces are recorded as null."""
     host = _host_path(spec, spec['argv'][0])
     display = _host_path(spec, spec['argv'][0], held=False)
     # Resolving an fd path back to its name would reintroduce the rename race.
-    resolved = display.resolve() if host == display and display.exists() else display
-    executable = {'path': spec['argv'][0], 'host_path': str(resolved),
-                  'sha256': digest(host) if host.is_file() else None}
-    mounts = [{'at': m['at'], **_identity_tree(m['source'], descriptor=m.get('descriptor'))}
-              if 'descriptor' in m or Path(m['source']).exists()
-              else {'at': m['at'], 'sha256': None, 'files': 0} for m in spec['mounts']]
+    with _mount_observation(spec, spec['argv'][0]):
+        escaped = _escaping_mount_link(spec, spec['argv'][0])
+        resolved = display.resolve() if host == display and display.exists() and escaped is None else display
+        executable = {'path': spec['argv'][0], 'host_path': str(resolved),
+                      'sha256': digest(host) if escaped is None and host.is_file() else None}
+    mounts = []
+    for mount in spec['mounts']:
+        with _mount_observation(spec, mount['at']):
+            observed = (_identity_tree(mount['source'], descriptor=mount.get('descriptor'))
+                        if 'descriptor' in mount or Path(mount['source']).exists()
+                        else {'sha256': None, 'files': 0})
+            mounts.append({'at': mount['at'], **observed})
     source = None
     if spec['source'] is not None:
-        root = _host_path(spec, spec['source'])
-        mount = next((m for m in spec['mounts'] if m['at'] == spec['source']), None)
-        observation = ((_identity_tree(mount['source'], descriptor=mount.get('descriptor'))
-                        if mount is not None else _identity_tree(root)) if root.exists()
-                       else {'sha256': None, 'files': 0})
-        source = {'path': spec['source'], **(observation if root.exists()
-                                             else {'sha256': None, 'files': 0})}
+        with _mount_observation(spec, spec['source']):
+            root = _host_path(spec, spec['source'])
+            mount = next((m for m in spec['mounts'] if m['at'] == spec['source']), None)
+            escaped = _escaping_mount_link(spec, spec['source'])
+            if escaped is not None:
+                observation = {'sha256': identity({root.name: 'link:' + escaped}), 'files': 1}
+            elif not root.exists():
+                observation = {'sha256': None, 'files': 0}
+            else:
+                observation = (_identity_tree(mount['source'], descriptor=mount.get('descriptor'))
+                               if mount is not None else _identity_tree(root))
+            source = {'path': spec['source'], **observation}
     return {'executable': executable, 'mounts': mounts, 'source_tree': source}
 
 
