@@ -707,7 +707,9 @@ belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
 or an engineer allocation file. Each block is packed alone with this search,
 around a fixed anchor on a synthetic plane, into a rigid
 `agent-ee.block-candidate/2`, then re-packed on shrinking outlines to the least
-box area ([compaction](blocks.md#compaction-agentee-355), AGENTEE-355). Its own pad obligations and groups apply, and
+box area ([compaction](blocks.md#compaction-agentee-355), AGENTEE-355). A first plan that
+strands a plane-only member is retried with a temporary anchor-proximity group
+([recovery](blocks.md#recovery-agentee-359), AGENTEE-359). Its own pad obligations and groups apply, and
 boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
 unchanged. [Arrangement](blocks.md#stage-b-arrangement-agentee-340) admits a
 candidate only after `blocks.admit` (or a mapped match and re-grade) checks it

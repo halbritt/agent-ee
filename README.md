@@ -148,6 +148,9 @@ engineer allocation file. Each block is packed alone into a rigid, versioned blo
 candidate, with relative poses, an obligation grade, a courtyard witness,
 per-side outlines and source hashes. A compaction pass re-packs each block on
 shrinking outlines and keeps the smallest box with the same obligations.
+If the first plan strands a member tied in only through a plane net,
+[recovery](docs/blocks.md#recovery-agentee-359) retries with a bounded
+temporary anchor-proximity group, then grades on the unchanged policy.
 Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
