@@ -1,0 +1,109 @@
+{
+  "schema": "agent-ee.routing-policy-contract-example/1",
+  "status": "documentation example for KICADROUTE-91 (AGENTEE-388); no agent-ee code reads this file. tests/test_routing_policy_contract.py checks it against the adapter constants",
+  "sources": {
+    "agent_ee": "f06b30bc (wt/ee-krt91-contract base)",
+    "fome_mc": "8c42f2ee3e7c5c77c51e21632a8900bfbef23726",
+    "kicad_route_pin": "5f1c072b86e0caee82c7656226c4d0e3ec580a58"
+  },
+  "adapter": {
+    "pin": "5f1c072b86e0caee82c7656226c4d0e3ec580a58",
+    "pinned_code_files": 276,
+    "pinned_code_sha256": "1ef09f3aa3eed99ebcd58224475fd7deff8a6444a4605c67e8a0b17374e6e7a2",
+    "pinned_code_digest_rule": "sha256 of kicad_route_attempt.canonical_json(PINNED_CODE)",
+    "pinned_campaign_py_sha256": "5cfad4d863c03578aa02fb2221598e8dcab73b2ac673124f8ff9d440ab4d2aa6",
+    "command": "run",
+    "consumes": {
+      "result": ["kicad-route/route/1", "kicad-route/route/2"],
+      "attempt": ["kicad-route/attempt/1", "kicad-route/attempt/2"],
+      "refusal": ["kicad-route/refusal/1"],
+      "version_2_only_with": "diff_pairs auto"
+    },
+    "refusal_reason_classes": ["usage", "input", "ledger", "canary", "state"],
+    "retained_files": ["result.json", "attempt.json", "RESULT.md", "snapshot.json"],
+    "retained_dirs": ["validate", "facts", "work"],
+    "never_consumed": ["kicad-route/route-campaign/1", "campaign/2 (planned)", "routability-experiment/1 (planned)", "blocked/2"]
+  },
+  "request_example": {
+    "declaration": {
+      "schema": "agent-ee.routing-adapter/1",
+      "project": "project", "board": "pod.kicad_pcb", "schematic": "pod.kicad_sch",
+      "name": "pod", "label": "routing", "checkout": "/opt/kicad-route", "budget": 900
+    },
+    "layer_policy_d_pcb_7_v2": {
+      "signal_layers": ["F.Cu", "In2.Cu", "B.Cu"],
+      "pour_area_loss_pct": null,
+      "per_net_signal_layers": {"/POD_GNSS_RF": ["F.Cu"]},
+      "reference": {"net": "/GND", "layers": ["In1.Cu"], "rf_nets": ["/POD_GNSS_RF"]}
+    },
+    "pour_area_loss_pct_note": "never stated in configuration: derived per routing turn by layer_policy_derivation (AGENTEE-260) from an agent-ee.via-budget/2 pilot; null here means unknown, not zero",
+    "expected_backend_args": ["--layers", "F.Cu", "In2.Cu", "B.Cu"],
+    "expected_settings_without_policy": {
+      "backend": "krt", "budget_s": 900, "protect": "existing", "max_iterations": null, "passes": null,
+      "default_clearance_mm": null, "clearance_margin_mm": null, "pour_area_loss_pct": null,
+      "pour_min_spokes": null, "backend_args": [], "backend_env": {}, "reserve_spokes": null,
+      "barrier": null, "stall_s": null, "mode": "all", "rule_floor_sha256": null
+    }
+  },
+  "pod_policy": {
+    "board": "expanded telemetry pod, 90 x 65 mm, 4 copper layers; native probe of placement-seed-microsd/base-seed.kicad_pcb with design-rules/board-setup.kicad_pro and telemetry-pod.kicad_dru",
+    "files_sha256": {
+      "design-rules/board-setup.kicad_pro": "7c7933bf09fad1617887d95dce24ae2b994737bf4cc46c20662e447561515b74",
+      "design-rules/telemetry-pod.kicad_dru": "ff62208301c38bca2c963a0682e0a2ee843d8a546bace3719340cfcca1b08d0d",
+      "design-rules/constraints.json": "6c73a35a7c2fb427f892d0e93e099709982ec236d336da159acc14c51590a9a6",
+      "design-rules/planes.json": "9e592e3ee4bdf5b6042fd3a595235cc5425359f4a69f87787ce00fc3624779aa",
+      "placement-seed-microsd/base-seed.kicad_pcb": "05da3eb69336089a8f8ab7111c900c4b4431508c45c99aed8ffee0ce8b6523c8"
+    },
+    "values": [
+      {"item": "Default track width", "value_mm": 0.2, "source": "board-setup.kicad_pro:288", "fome_mc_class": "engineering (constraints.json:153)", "agent_ee_class": "default", "enforcement": "advisory"},
+      {"item": "Default clearance", "value_mm": 0.2, "source": "board-setup.kicad_pro:277", "fome_mc_class": "engineering (constraints.json:152)", "agent_ee_class": "default", "enforcement": "advisory"},
+      {"item": "Default via diameter", "value_mm": 0.6, "source": "board-setup.kicad_pro:290", "fome_mc_class": "engineering (constraints.json:154)", "agent_ee_class": "default", "enforcement": "advisory"},
+      {"item": "Default via drill", "value_mm": 0.3, "source": "board-setup.kicad_pro:291", "fome_mc_class": "engineering (constraints.json:155)", "agent_ee_class": "default", "enforcement": "advisory"},
+      {"item": "min_track_width", "value_mm": 0.09, "source": "board-setup.kicad_pro:156", "fome_mc_class": "manufacturer (constraints.json:25)", "agent_ee_class": "manufacturer", "enforcement": "hard"},
+      {"item": "min_clearance", "value_mm": 0.09, "source": "board-setup.kicad_pro:143", "fome_mc_class": "manufacturer (constraints.json:18)", "agent_ee_class": "manufacturer", "enforcement": "hard"},
+      {"item": "min_via_diameter", "value_mm": 0.5, "source": "board-setup.kicad_pro:158", "fome_mc_class": "engineering (constraints.json:38)", "agent_ee_class": "engineering", "enforcement": "hard"},
+      {"item": "min_through_hole_diameter", "value_mm": 0.3, "source": "board-setup.kicad_pro:155", "fome_mc_class": "engineering (constraints.json:32)", "agent_ee_class": "engineering", "enforcement": "hard"},
+      {"item": "min_via_annular_width", "value_mm": 0.1, "source": "board-setup.kicad_pro:157", "fome_mc_class": "engineering (constraints.json:44)", "agent_ee_class": "engineering", "enforcement": "hard"},
+      {"item": "min_hole_clearance", "value_mm": 0.25, "source": "board-setup.kicad_pro:147", "fome_mc_class": "engineering (constraints.json:56)", "agent_ee_class": "engineering", "enforcement": "hard"},
+      {"item": "min_hole_to_hole", "value_mm": 0.25, "source": "board-setup.kicad_pro:148", "fome_mc_class": "engineering (constraints.json:50)", "agent_ee_class": "engineering", "enforcement": "hard"},
+      {"item": "min_copper_edge_clearance", "value_mm": 0.3, "source": "board-setup.kicad_pro:145", "fome_mc_class": "engineering (constraints.json:62)", "agent_ee_class": "engineering", "enforcement": "hard"},
+      {"item": "RF_50 track width min", "value_mm": 0.335, "source": "telemetry-pod.kicad_dru:2-4", "fome_mc_class": "engineering (constraints.json:96-97)", "agent_ee_class": "owner (captured same-stem rule file)", "enforcement": "inert: no RF_50 net class exists, /POD_GNSS_RF is Default"},
+      {"item": "fine-pitch intra-footprint pad clearance U2, U16-U19", "value_mm": 0.15, "source": "telemetry-pod.kicad_dru:5-19", "fome_mc_class": "datasheet (constraints.json:101-102)", "agent_ee_class": "owner (captured same-stem rule file)", "enforcement": "hard; pad-to-pad inside one footprint only, never a routing clearance"}
+    ],
+    "layers": {
+      "stack": "F.Cu / In1.Cu / In2.Cu / B.Cu, JLC04161H-7628 (constraints.json:136-140, engineering)",
+      "native_layer_types": {"F.Cu": "signal", "In1.Cu": "signal", "In2.Cu": "signal", "B.Cu": "signal"},
+      "native_rule_areas": 0,
+      "planes": "In1.Cu /GND and In2.Cu /+3V3 over the outline (planes.json:4-31; D-PCB-5, constraints.json:146), produced before routing",
+      "decision": "D-PCB-7 v2 (constraints.json:148, decisions_pending_next_seed): SIG / GND / PWR+SIG / SIG",
+      "in1_tracks": "none, of any length; through vias may cross In1 except inside the D-PCB-6 corridor",
+      "in2_tracks": "allowed, any length; the +3V3 pour fills around them, bounded by the derived area-loss bound",
+      "short_plane_tracks": "no exception exists in the decision or in the adapter: a new In1 track is a disallowed_tracks defect",
+      "rf_corridor": "D-PCB-6 (constraints.json:147): no tracks or vias on In1/In2 in x 76..88, y 26.5..30.6 mm; needs a native rule area on the input board, not expressible in layer_policy"
+    }
+  },
+  "target_identity": {
+    "captured": {
+      "input_board_and_rules": "report.inputs.files (sha256 of every candidate file: .kicad_pcb, .kicad_pro, .kicad_dru, .kicad_sch, library tables) and report.inputs.sha256",
+      "router_input_fingerprint": "result.input.fingerprint over snapshot.json files",
+      "rule_files_loaded": "result.input.rules_files / attempt.rules_files (names only: project, custom_rules, not_loaded)",
+      "rule_floor": "result.settings.rule_floor_sha256 (always null through the adapter)",
+      "effective_netclass_per_net": "retained facts/reference-facts.json nets[].{netclass,track_width,clearance,via_diameter,via_drill}",
+      "layer_stack": "retained facts/reference-facts.json copper_layers, stackup",
+      "layer_policy": "report.request.layer_policy, result.settings.backend_args and pour_area_loss_pct",
+      "tool_code": "report.tool.commit == PIN; identity_before/after.code (bin, src); PINNED_CODE inside the adapter bytes",
+      "engine_and_state": "identity_before/after.state (.venv-krt), state_manifest digest, result.backend (version, build, commit, source_sha256)",
+      "toolchain": "report.tool.{python,kicad_cli,kicad_route}.sha256 and kicad_share_templates",
+      "adapter_and_binding": "receipt mounts, state.json.routing_binding.adapter_sha256"
+    },
+    "gaps": [
+      "no separate placement, netlist or mechanical identity: the board sha256 changes with any edit",
+      "no netclass/policy digest independent of the whole .kicad_pro bytes",
+      "effective KRT configuration (grid, per-layer costs after defaults, iteration limits, net order, seed, rescue/finalize env defaults, plane-fragility cost) is not in route/1",
+      "backend_env is fixed to {}: the KICAD_NET_RESCUE=0 / KICAD_PLANE_FINALIZE=0 pod diagnostics cannot be reproduced through the adapter",
+      "no chain root or predecessor: the adapter runs one attempt",
+      "RSS, host identity and repair counters are not recorded",
+      "kicad-route schemas/ is outside the code pin; agent-ee checks exact key sets itself"
+    ]
+  }
+}
