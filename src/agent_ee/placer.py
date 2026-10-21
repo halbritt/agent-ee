@@ -99,6 +99,8 @@ def transform(fp, position, rotation):
         if 'copper_centroid_offset_nm' in pad:
             offset = rotate([Fraction(*v) for v in pad['copper_centroid_offset_nm']], turns)
             pad['copper_centroid_offset_nm'] = [[v.numerator, v.denominator] for v in offset]
+        if 'copper_land_offset_nm' in pad:
+            pad['copper_land_offset_nm'] = rotate(pad['copper_land_offset_nm'], turns)
         pad['position_nm'] = move(pad['position_nm'])
         pad['rotation_deg'] = (pad['rotation_deg'] + rotation-fp['rotation_deg']) % 360
     placed.update(position_nm=list(position), rotation_deg=rotation)
@@ -506,30 +508,49 @@ def _hole_conflict(candidate, peer):
 
 
 def _copper_box(fp, pad):
-    """Integer box containing the pad's copper land, or None when the record carries no land facts.
+    """Integer box containing the pad's copper land, or None for a hand-built record without native land facts.
 
     A proven custom pad carries its native box (anchor and every primitive). A
     symmetric stock land is its size, quarter-turned, about the native shape
-    centre (anchor plus copper centroid offset). A chamfered land contains its
-    area centroid, so the box twice its size about that centroid contains it.
-    Rational bounds round outward.
+    centre (anchor plus copper centroid offset); a circle is native, its X
+    diameter on both axes. A chamfered land contains its area centroid, so the
+    box twice its size about that centroid contains it. A land whose centroid
+    native extraction could not qualify (copper_centroid_reason) is bounded by
+    its size box about its native land offset when extraction proved one, and
+    otherwise has no proven extent: that, or a partial land record, raises, so
+    missing copper extent is never taken as no constraint. Rational bounds
+    round outward.
     """
     custom = pad.get('custom_geometry', {})
     if pad['shape'] == 6 and custom.get('status') == 'proven':
         return tuple(custom['bbox_nm'])
-    size, offset = pad.get('size_nm'), pad.get('copper_centroid_offset_nm')
-    if size is None or offset is None:
+    # Native extraction records a centroid or the reason it has none for every
+    # pad; a record with neither is a hand-built one whose size alone places nothing.
+    if all(key not in pad for key in ('copper_centroid_offset_nm', 'copper_centroid_reason', 'copper_land_offset_nm')):
         return None
+    size, offset, land = pad.get('size_nm'), pad.get('copper_centroid_offset_nm'), pad.get('copper_land_offset_nm')
+    where = f"{fp['ref']} pad {pad.get('number')!r}"
     if (not isinstance(size, list) or len(size) != 2 or any(type(v) is not int or v < 0 for v in size)
-            or not isinstance(offset, list) or len(offset) != 2
-            or any(not isinstance(v, list) or len(v) != 2 or any(type(t) is not int for t in v) or v[1] <= 0
-                   for v in offset)
             or type(pad.get('position_nm')) is not list or len(pad['position_nm']) != 2
             or any(type(v) is not int for v in pad['position_nm'])):
-        raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: copper land size or centroid malformed")
+        raise ValueError(f'{where}: copper land size or centroid malformed')
     w, h = size if pad['rotation_deg'] % 180 == 0 else size[::-1]
-    reach = 1 if pad['shape'] == 5 else Fraction(1, 2)
-    cx, cy = (p + Fraction(*v) for p, v in zip(pad['position_nm'], offset))
+    if pad['shape'] == 0:
+        w = h = size[0]
+    if offset is not None:
+        if (not isinstance(offset, list) or len(offset) != 2
+                or any(not isinstance(v, list) or len(v) != 2 or any(type(t) is not int for t in v) or v[1] <= 0
+                       for v in offset)):
+            raise ValueError(f'{where}: copper land size or centroid malformed')
+        reach = 1 if pad['shape'] == 5 else Fraction(1, 2)
+        cx, cy = (p + Fraction(*v) for p, v in zip(pad['position_nm'], offset))
+    elif land is not None and pad['shape'] == 5:
+        if not isinstance(land, list) or len(land) != 2 or any(type(v) is not int for v in land):
+            raise ValueError(f'{where}: copper land offset malformed')
+        reach = Fraction(1, 2)
+        cx, cy = (p + v for p, v in zip(pad['position_nm'], land))
+    else:
+        raise ValueError(f"{where}: copper extent unproven ({pad.get('copper_centroid_reason', 'no native land fact')})")
     return (math.floor(cx - reach*w), math.floor(cy - reach*h), math.ceil(cx + reach*w), math.ceil(cy + reach*h))
 
 

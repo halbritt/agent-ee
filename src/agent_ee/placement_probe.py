@@ -356,6 +356,25 @@ def copper_centroid(pad, custom):
     return [[v.numerator, v.denominator] for v in offset]
 
 
+def copper_land_offset(pad):
+    """Native land-box centre relative to the electrical anchor, for a land whose centroid is unqualified.
+
+    A rounded chamfered rectangle is its size rectangle with corners cut or
+    rounded inward, so the size box (pad-turned) about ShapePos contains its
+    copper whether or not an exact area centroid exists (AGENTEE-366). Any
+    other land without a qualified centroid has no proven extent here.
+    """
+    import pcbnew
+    layer = pcbnew.PADSTACK.ALL_LAYERS
+    if pad.Padstack().Mode() != pcbnew.PADSTACK.MODE_NORMAL:
+        raise ValueError('per-layer copper land not qualified')
+    if (pad.GetShape(layer) != pcbnew.PAD_SHAPE_CHAMFERED_RECT
+            or any(v <= 0 for v in vector_nm(pad.GetSize(layer)))
+            or not any(pcbnew.LayerName(l).endswith('.Cu') for l in pad.GetLayerSet().Seq())):
+        raise ValueError('native copper land extent not qualified')
+    return [c - p for c, p in zip(vector_nm(pad.ShapePos(layer)), vector_nm(pad.GetPosition()))]
+
+
 def extract(board_path):
     import pcbnew
     path = Path(board_path)
@@ -402,6 +421,10 @@ def extract(board_path):
                 pads[-1]['copper_centroid_offset_nm'] = copper_centroid(pad, pads[-1].get('custom_geometry', {}))
             except ValueError as exc:
                 pads[-1]['copper_centroid_reason'] = str(exc)
+                try:
+                    pads[-1]['copper_land_offset_nm'] = copper_land_offset(pad)
+                except ValueError:
+                    pass
         footprints.append({'ref': fp.GetReference(), 'uuid': fp.m_Uuid.AsString(), 'value': fp.GetValue(),
                            'fpid': fp.GetFPIDAsString(),
                            'side': {pcbnew.B_Cu: 'B', pcbnew.F_Cu: 'F'}.get(fp.GetLayer(), 'unsupported'),

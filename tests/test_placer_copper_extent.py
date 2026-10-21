@@ -270,6 +270,52 @@ class CopperExtentTest(unittest.TestCase):
                 plan = self.pack(board([offset_part(pads=[pad])]), request(fixed_refs=[]))
                 self.assertEqual((plan['status'], plan['outcome']), ('unsupported_geometry', 'unknown'), plan)
 
+    def test_unproven_or_partial_native_land_is_typed_unknown(self):
+        # Missing copper extent is never "no constraint" (AGENTEE-366 H1): the courtyard-only
+        # search would put this land, 4 mm left of its anchor, off the board.
+        base = {'uuid': 'C1-1', 'number': '1', 'net': '', 'position_nm': [0, 0], 'shape': 5, 'rotation_deg': 0,
+                'size_nm': [1_000_000, 800_000], 'layers': ['F.Cu']}
+        unqualified = {**base, 'copper_centroid_reason': 'curved asymmetric copper centroid not qualified'}
+        partial = {**base, 'copper_centroid_offset_nm': [[-4_000_000, 1], [0, 1]]}
+        del partial['size_nm']
+        for name, pad in (('no land offset', unqualified),
+                          ('per-layer', {**unqualified, 'copper_centroid_reason': 'per-layer copper centroid not qualified'}),
+                          ('centroid without size', partial),
+                          ('land offset without size', {k: v for k, v in unqualified.items() if k != 'size_nm'}
+                           | {'copper_land_offset_nm': [-4_000_000, 0]})):
+            with self.subTest(name):
+                capture_ = board([offset_part(pads=[pad])])
+                plan = self.pack(capture_, request(fixed_refs=[]))
+                self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                                 ('unsupported_geometry', 'unknown', []), plan)
+                self.assertEqual(self.pack(capture_, request(fixed_refs=[]), mutant=True)['status'], 'planned')
+        # With the native land offset proven, the land is gated and flush with the outline at every turn.
+        for side in ('F', 'B'):
+            for rotation in (0, 90, 180, 270):
+                with self.subTest(side=side, rotation=rotation):
+                    # Four lands, 4 mm out from the anchor on each side: some always lead.
+                    pads = [{**unqualified, 'uuid': f'C1-{n}', 'number': str(n), 'layers': [side + '.Cu'],
+                             'copper_land_offset_nm': offset}
+                            for n, offset in enumerate(([-4_000_000, 0], [4_000_000, 0], [0, -4_000_000],
+                                                        [0, 4_000_000]), 1)]
+                    capture_ = board([offset_part(side, rotation, pads)])
+                    plan = self.pack(capture_, request(fixed_refs=[]))
+                    self.assertEqual(plan['status'], 'planned', plan)
+                    for mutant, contained in ((False, True), (True, False)):
+                        if mutant:
+                            plan = self.pack(capture_, request(fixed_refs=[]), mutant=True)
+                        boxes = []
+                        for land in placed(capture_, plan)['pads']:
+                            # Independent of _copper_box: the moved land centre and its turned size.
+                            cx, cy = (a + b for a, b in zip(land['position_nm'], land['copper_land_offset_nm']))
+                            w, h = (1_000_000, 800_000) if land['rotation_deg'] % 180 == 0 else (800_000, 1_000_000)
+                            boxes.append((cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2))
+                        box = tuple(f(b[i] for b in boxes) for f, i in ((min, 0), (min, 1), (max, 2), (max, 3)))
+                        self.assertEqual(0 <= box[0] and 0 <= box[1] and box[2] <= 20 * MM and box[3] <= 20 * MM,
+                                         contained, (mutant, box))
+                        if contained:  # copper bounds align to the outline: flush, not merely inset
+                            self.assertEqual(box[:2], (0, 0), box)
+
     def test_copper_box_by_shape_turn_and_record(self):
         fp = {'ref': 'C1'}
         rect = {'number': '1', 'shape': 1, 'position_nm': [10, 20], 'rotation_deg': 90, 'size_nm': [6, 4],
@@ -280,8 +326,28 @@ class CopperExtentTest(unittest.TestCase):
         # The area centroid lies in the land: twice its size about the centroid contains it.
         self.assertEqual(copper(fp, chamfered), (4, 16, 16, 24))
         self.assertEqual(copper(fp, custom_pad()), tuple(BBOX))
-        self.assertIsNone(copper(fp, {k: v for k, v in rect.items() if k != 'size_nm'}))
+        # A centroid without its land size is a partial native record: no proven extent.
+        with self.assertRaisesRegex(ValueError, 'malformed'):
+            copper(fp, {k: v for k, v in rect.items() if k != 'size_nm'})
+        # Size alone, without any native centroid fact, is a hand-built record: courtyard only.
         self.assertIsNone(copper(fp, {k: v for k, v in rect.items() if k != 'copper_centroid_offset_nm'}))
+        # A native circle is its X diameter on both axes at every turn (AGENTEE-366 H2).
+        circle = {**rect, 'shape': 0, 'size_nm': [12, 8], 'copper_centroid_offset_nm': [[0, 1], [0, 1]]}
+        for turn in (0, 90, 180, 270):
+            self.assertEqual(copper(fp, {**circle, 'rotation_deg': turn}), (4, 14, 16, 26))
+        # A centroid the extraction could not qualify: the size box about the native land
+        # offset when one was proven (rounded chamfered rectangles), otherwise no extent.
+        unqualified = {k: v for k, v in rect.items() if k != 'copper_centroid_offset_nm'}
+        unqualified.update(shape=5, copper_centroid_reason='curved asymmetric copper centroid not qualified')
+        self.assertEqual(copper(fp, {**unqualified, 'copper_land_offset_nm': [-4, 1]}), (4, 18, 8, 24))
+        self.assertEqual(copper(fp, {**unqualified, 'copper_land_offset_nm': [-4, 1], 'rotation_deg': 0}),
+                         (3, 19, 9, 23))
+        for record in (unqualified, {**unqualified, 'shape': 1, 'copper_land_offset_nm': [-4, 1]},
+                       {**unqualified, 'copper_land_offset_nm': [-4, 'x']},
+                       {**unqualified, 'copper_centroid_reason': 'per-layer copper centroid not qualified'},
+                       {k: v for k, v in unqualified.items() if k != 'size_nm'}):
+            with self.subTest(record=record), self.assertRaisesRegex(ValueError, 'unproven|malformed'):
+                copper(fp, record)
         self.assertEqual(placer._copper_sides({'layers': ['F.Paste', 'F.Mask']}), ((), False))
         self.assertEqual(placer._copper_sides({'layers': ['*.Cu', '*.Mask']}), (('F', 'B'), True))
         self.assertEqual(placer._copper_sides({'layers': ['In1.Cu']}), ((), True))
@@ -407,8 +473,8 @@ class BlockArrangementCopperTest(unittest.TestCase):
 
 
 
-class NativeOffsetCustomPadTest(unittest.TestCase):
-    """Native writer, every quarter turn and side: the saved copper stays on the board."""
+class NativeBoard:
+    """A 20 mm native board and the native placement writer."""
 
     @classmethod
     def setUpClass(cls):
@@ -424,6 +490,18 @@ class NativeOffsetCustomPadTest(unittest.TestCase):
         self.netlist = self.root / 'netlist.xml'
         self.netlist.write_text('<export><components><comp ref="C1"/></components>'
                                 '<nets><net code="1" name="SIGNAL"><node ref="C1" pin="1"/></net></nets></export>')
+
+    def place(self, source, name):
+        from agent_ee.placer_runner import place_candidate
+        config = {'policy': request(fixed_refs=[]), 'authorization': {
+            'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
+            'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'writable_root': str(self.scratch)}}
+        return place_candidate(source, self.netlist, self.scratch / name, config)
+
+
+
+class NativeOffsetCustomPadTest(NativeBoard, unittest.TestCase):
+    """Native writer, every quarter turn and side: the saved copper stays on the board."""
 
     def source(self, rotation, back):
         """C1: a 4 mm courtyard about its origin; one custom pad whose copper reaches past it on every side."""
@@ -483,13 +561,6 @@ class NativeOffsetCustomPadTest(unittest.TestCase):
         k.SaveBoard(str(path), board)
         return path
 
-    def place(self, source, name):
-        from agent_ee.placer_runner import place_candidate
-        config = {'policy': request(fixed_refs=[]), 'authorization': {
-            'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
-            'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'writable_root': str(self.scratch)}}
-        return place_candidate(source, self.netlist, self.scratch / name, config)
-
     def saved_copper(self, name):
         import pcbnew as k
         board = k.LoadBoard(str(self.scratch / name / 'candidate.kicad_pcb'))
@@ -528,6 +599,220 @@ class NativeOffsetCustomPadTest(unittest.TestCase):
                                      ('placed', 'info', []))
                     box = self.saved_copper(name + '-legacy')
                     self.assertTrue(box[0] < 0 or box[1] < 0, box)
+
+
+
+class NativeStockLandTest(NativeBoard, unittest.TestCase):
+    """Native stock lands whose extent the area centroid cannot give (AGENTEE-366 H1, H2).
+
+    Each C1 has a 4 mm courtyard and four lands that reach past it on every
+    side, so a leading land meets the outline at every turn. The saved board's
+    own copper polygons, not the placer's boxes, decide containment.
+    """
+
+    def setUp(self):
+        super().setUp()
+        nodes = ''.join(f'<node ref="C1" pin="{n}"/>' for n in range(1, 5))
+        self.netlist.write_text('<export><components><comp ref="C1"/></components>'
+                                f'<nets><net code="1" name="SIGNAL">{nodes}</net></nets></export>')
+
+    def stock_source(self, name, rotation, back, configure, reach):
+        import pcbnew as k
+        board = k.BOARD()
+
+        def line(parent, layer, a, b):
+            shape = k.PCB_SHAPE(parent)
+            shape.SetShape(k.SHAPE_T_SEGMENT)
+            shape.SetLayer(layer)
+            shape.SetStart(k.VECTOR2I(int(a[0] * MM), int(a[1] * MM)))
+            shape.SetEnd(k.VECTOR2I(int(b[0] * MM), int(b[1] * MM)))
+            shape.SetWidth(50000)
+            parent.Add(shape)
+        corners = [(0, 0), (20, 0), (20, 20), (0, 20)]
+        for i, a in enumerate(corners):
+            line(board, k.Edge_Cuts, a, corners[(i + 1) % 4])
+        net = k.NETINFO_ITEM(board, 'SIGNAL')
+        board.Add(net)
+        fp = k.FOOTPRINT(board)
+        fp.SetReference('C1')
+        fp.SetValue('owned')
+        board.Add(fp)
+        box = [(-2, -2), (2, -2), (2, 2), (-2, 2)]
+        for i, a in enumerate(box):
+            line(fp, k.F_CrtYd, a, box[(i + 1) % 4])
+        fp.SetPosition(k.VECTOR2I(10 * MM, 10 * MM))
+        for n, (dx, dy) in enumerate(((-reach, 0), (reach, 0), (0, -reach), (0, reach)), 1):
+            pad = k.PAD(fp)
+            pad.SetNumber(str(n))
+            layers = k.LSET()
+            for layer in (k.F_Cu, k.F_Paste, k.F_Mask):
+                layers.AddLayer(layer)
+            pad.SetLayerSet(layers)
+            pad.SetAttribute(k.PAD_ATTRIB_SMD)
+            configure(k, pad)
+            pad.SetOffset(k.F_Cu, k.VECTOR2I(dx, dy))
+            pad.SetPosition(fp.GetPosition())
+            pad.SetNet(net)
+            fp.Add(pad)
+        if back:
+            fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
+        fp.SetOrientationDegrees(rotation)
+        path = self.root / f'{name}-{rotation}-{back}.kicad_pcb'
+        k.SaveBoard(str(path), board)
+        return path
+
+    def saved_lands(self, name):
+        """Extremes of the saved board's native copper polygons, every land of C1."""
+        import pcbnew as k
+        board = k.LoadBoard(str(self.scratch / name / 'candidate.kicad_pcb'))
+        xs, ys = [], []
+        for pad in next(iter(board.GetFootprints())).Pads():
+            layer = k.F_Cu if pad.IsOnLayer(k.F_Cu) else k.B_Cu
+            poly = k.SHAPE_POLY_SET()
+            pad.TransformShapeToPolygon(poly, layer, 0, 1, k.ERROR_INSIDE)
+            for i in range(poly.OutlineCount()):
+                chain = poly.COutline(i)
+                for j in range(chain.PointCount()):
+                    xs.append(chain.CPoint(j).x)
+                    ys.append(chain.CPoint(j).y)
+        return min(xs), min(ys), max(xs), max(ys)
+
+    def boundary(self, name, configure, reach, check_facts, mutant):
+        from agent_ee.placement_probe import extract
+        for back in (False, True):
+            for rotation in (0, 90, 180, 270):
+                with self.subTest(name, back=back, rotation=rotation):
+                    source = self.stock_source(name, rotation, back, configure, reach)
+                    pads = extract(source)['footprints'][0]['pads']
+                    for pad in pads:
+                        # The extraction contract _copper_box relies on: a centroid or its reason, never neither.
+                        self.assertEqual(('copper_centroid_offset_nm' in pad) + ('copper_centroid_reason' in pad), 1)
+                        self.assertEqual(pad['layers'][0], ('B' if back else 'F') + '.Cu')
+                        check_facts(pad)
+                    tag = f'{name}-{back}-{rotation}'
+                    report = self.place(source, tag)
+                    self.assertEqual((report['status'], report['outcome']), ('placed', 'info'), report)
+                    x0, y0, x1, y1 = self.saved_lands(tag)
+                    self.assertTrue(0 <= x0 and 0 <= y0 and x1 <= 20 * MM and y1 <= 20 * MM, (x0, y0, x1, y1))
+                    # Flush with the outline corner to within the native polygon error (1 nm).
+                    self.assertLessEqual(max(x0, y0), 1, (x0, y0))
+                    # The superseded bound publishes the same board with copper off it, no open defect.
+                    patches = mutant()
+                    for p in patches:
+                        p.start()
+                    try:
+                        legacy = self.place(source, tag + '-legacy')
+                    finally:
+                        for p in patches:
+                            p.stop()
+                    self.assertEqual((legacy['status'], legacy['outcome'], legacy['open_defects']),
+                                     ('placed', 'info', []))
+                    x0, y0, _, _ = self.saved_lands(tag + '-legacy')
+                    self.assertTrue(x0 < 0 or y0 < 0, (x0, y0))
+
+    def test_rounded_chamfered_land_is_bounded_by_its_native_land_box(self):
+        def configure(k, pad):
+            pad.SetShape(k.F_Cu, k.PAD_SHAPE_CHAMFERED_RECT)
+            pad.SetSize(k.F_Cu, k.VECTOR2I(1_000_000, 800_000))
+            pad.SetRoundRectRadiusRatio(k.F_Cu, .2)
+            pad.SetChamferRectRatio(k.F_Cu, .2)
+            pad.SetChamferPositions(k.F_Cu, 1)
+
+        def check_facts(pad):
+            self.assertEqual((pad['shape'], pad['copper_centroid_reason']),
+                             (5, 'curved asymmetric copper centroid not qualified'), pad)
+            self.assertIn('copper_land_offset_nm', pad)
+        # Before H1, a land without a centroid was no constraint: courtyard-only gating.
+        self.boundary('rounded-chamfer', configure, 4 * MM, check_facts, courtyard_only)
+
+    def test_unequal_size_circle_is_bounded_by_its_x_diameter(self):
+        def configure(k, pad):
+            pad.SetShape(k.F_Cu, k.PAD_SHAPE_CIRCLE)
+            pad.SetSize(k.F_Cu, k.VECTOR2I(1_200_000, 800_000))
+
+        def check_facts(pad):
+            self.assertEqual((pad['shape'], pad['size_nm']), (0, [1_200_000, 800_000]), pad)
+
+        def rectangular_circle():
+            # Before H2, a circle was boxed as a rectangle of its recorded size.
+            original = placer._copper_box
+            return [patch.object(placer, '_copper_box', lambda fp, pad: original(
+                fp, {**pad, 'shape': 1} if pad['shape'] == 0 else pad))]
+        self.boundary('unequal-circle', configure, 2_300_000, check_facts, rectangular_circle)
+
+    def test_copper_box_contains_every_native_land_vertex(self):
+        # Every packing stock shape, unequal circles and rounded chamfers included, offset
+        # from its anchor, both sides, every quarter turn: records built the way extraction builds them.
+        import pcbnew as k
+        from agent_ee.placement_probe import copper_centroid, copper_land_offset
+        shapes = {'circle': (0, 0, 0), 'unequal circle': (0, 0, 0), 'rect': (1, 0, 0), 'oval': (2, 0, 0),
+                  'roundrect': (4, .25, 0), 'chamfered': (5, 0, .3), 'rounded chamfered': (5, .2, .3)}
+        for name, (shape, radius, chamfer) in shapes.items():
+            for side in ('F', 'B'):
+                for turn in (0, 90, 180, 270):
+                    with self.subTest(name, side=side, turn=turn):
+                        board = k.BOARD()
+                        fp = k.FOOTPRINT(board)
+                        board.Add(fp)
+                        pad = k.PAD(fp)
+                        fp.Add(pad)
+                        layer = k.F_Cu if side == 'F' else k.B_Cu
+                        layers = k.LSET()
+                        layers.AddLayer(layer)
+                        pad.SetLayerSet(layers)
+                        pad.SetAttribute(k.PAD_ATTRIB_SMD)
+                        pad.SetShape(layer, shape)
+                        pad.SetSize(layer, k.VECTOR2I(1_200_000, 1_200_000 if name == 'circle' else 800_000))
+                        if shape in (4, 5):  # a new native pad's default ratio rounds it
+                            pad.SetRoundRectRadiusRatio(layer, radius)
+                        if chamfer:
+                            pad.SetChamferRectRatio(layer, chamfer)
+                            pad.SetChamferPositions(layer, 1)
+                        pad.SetOffset(layer, k.VECTOR2I(-3_300_000, 2_100_000))
+                        pad.SetPosition(k.VECTOR2I(123_457, -98_765))
+                        pad.SetOrientationDegrees(turn)
+                        size = pad.GetSize(layer)
+                        record = {'number': '1', 'shape': shape, 'rotation_deg': turn, 'size_nm': [size.x, size.y],
+                                  'position_nm': [pad.GetPosition().x, pad.GetPosition().y]}
+                        try:
+                            record['copper_centroid_offset_nm'] = copper_centroid(pad, {})
+                        except ValueError as exc:
+                            record['copper_centroid_reason'] = str(exc)
+                            record['copper_land_offset_nm'] = copper_land_offset(pad)
+                        self.assertEqual('copper_land_offset_nm' in record, name == 'rounded chamfered')
+                        box = placer._copper_box({'ref': 'C1'}, record)
+                        poly = k.SHAPE_POLY_SET()
+                        pad.TransformShapeToPolygon(poly, layer, 0, 1, k.ERROR_INSIDE)
+                        points = [poly.COutline(i).CPoint(j) for i in range(poly.OutlineCount())
+                                  for j in range(poly.COutline(i).PointCount())]
+                        self.assertTrue(points)
+                        for q in points:
+                            self.assertTrue(box[0] <= q.x <= box[2] and box[1] <= q.y <= box[3], (box, q.x, q.y))
+                        if shape != 5 or radius:  # the size box about the land centre is tight
+                            self.assertLessEqual(max(min(q.x for q in points) - box[0], box[2] - max(q.x for q in points),
+                                                     min(q.y for q in points) - box[1], box[3] - max(q.y for q in points)),
+                                                 1, box)
+
+    def test_per_layer_land_without_proven_extent_is_typed_unknown(self):
+        from agent_ee.placement_probe import extract
+
+        def configure(k, pad):
+            pad.Padstack().SetMode(k.PADSTACK.MODE_FRONT_INNER_BACK)
+            pad.SetShape(k.F_Cu, k.PAD_SHAPE_RECT)
+            pad.SetSize(k.F_Cu, k.VECTOR2I(1_000_000, 800_000))
+        for back in (False, True):
+            with self.subTest(back=back):
+                source = self.stock_source('per-layer', 0, back, configure, 4 * MM)
+                facts = extract(source)
+                for pad in facts['footprints'][0]['pads']:
+                    self.assertEqual(pad['copper_centroid_reason'], 'per-layer copper centroid not qualified')
+                    self.assertNotIn('copper_land_offset_nm', pad)
+                plan = pack(facts, request(fixed_refs=[]))
+                self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                                 ('unsupported_geometry', 'unknown', []), plan)
+                report = self.place(source, f'per-layer-{back}')
+                self.assertEqual(report['outcome'], 'unknown', report)
+                self.assertFalse((self.scratch / f'per-layer-{back}' / 'candidate.kicad_pcb').exists())
 
 
 if __name__ == '__main__':

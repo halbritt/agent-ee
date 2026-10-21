@@ -792,12 +792,20 @@ capture only:
 
 - a proven custom pad uses its native `custom_geometry.bbox_nm` (the anchor
   and every primitive);
-- circle, rectangle, oval and rounded-rectangle lands use `size_nm`, quarter-turned
+- rectangle, oval and rounded-rectangle lands use `size_nm`, quarter-turned
   by the pad rotation, about the native shape centre (`position_nm` plus
   `copper_centroid_offset_nm`, which is the shape centre for these symmetric
   shapes);
+- a circle is native: its X diameter (`size_nm[0]`) on both axes at every
+  rotation, so a record with unequal sizes is not under-bounded;
 - a chamfered rectangle contains its area centroid, so the box twice its size
-  about that centroid contains it (conservative).
+  about that centroid contains it (conservative);
+- a chamfered rectangle with rounded corners has no qualified area centroid
+  (`copper_centroid_reason`); native extraction then records
+  `copper_land_offset_nm`, the integer offset from `position_nm` to the native
+  shape position (`ShapePos`), and the land is its quarter-turned size box about
+  that point. The land is its size rectangle with corners cut or rounded
+  inward, so the box contains it.
 
 A copper box that lies in a courtyard polygon of the part adds nothing: that
 courtyard's own outline test already covers it. Each remaining box must lie in
@@ -856,18 +864,26 @@ A fixed part's copper is taken as given. In seed 4, fixed `P0` has a land
 0.055 mm past the board edge in the input itself, and the plan reports it
 unchanged.
 
-Boundaries. Malformed `size_nm`, `copper_centroid_offset_nm` or `layers`
-return `unsupported_geometry`, `outcome=unknown`. A pad record without the
-land facts (no `size_nm`, or a stock land without `copper_centroid_offset_nm`)
-contributes no copper box. Native extraction records both for every copper
-stock land except a chamfered rectangle with rounded corners, whose centroid is
-not qualified; such a land, and hand-built captures without these facts, keep
-the courtyard-only bound. Inner-layer-only keep-outs, rule areas forbidding
-only pads, and copper against peer courtyards are not packing constraints. The
-native DRC publication gate remains the authority for copper clearance.
+Boundaries. Missing copper extent is never "no constraint". Malformed
+`size_nm`, `copper_centroid_offset_nm`, `copper_land_offset_nm` or `layers`,
+a centroid or land offset without `size_nm`, and a copper land whose
+`copper_centroid_reason` comes without a proven land offset (per-layer
+padstacks, for example) return `unsupported_geometry`, `outcome=unknown`.
+Native extraction records, for every pad, either a centroid or the reason it
+has none, so a native land always has a box or refuses. Only a record with
+none of `copper_centroid_offset_nm`, `copper_centroid_reason` and
+`copper_land_offset_nm` (a hand-built capture, possibly with `size_nm` alone,
+which places nothing) keeps the courtyard-only bound; existing hand-built
+fixtures plan exactly as before. Inner-layer-only keep-outs, rule areas
+forbidding only pads, and copper against peer courtyards are not packing
+constraints. The native DRC publication gate remains the authority for copper
+clearance.
 
-Focused regression, including a native writer run at every quarter turn on both
-sides and courtyard-only mutant controls:
+Focused regression, including native writer runs at every quarter turn on both
+sides (offset custom pads, rounded chamfered lands and unequal-size circles,
+measured from the saved board's own copper polygons) with mutant controls for
+the superseded bounds, a per-layer padstack refusal, and the box against every
+native land vertex for each stock shape:
 
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_copper_extent -v
@@ -1025,7 +1041,9 @@ centroid evidence remain unknown; there is no anchor fallback. Footprint
 rotations and native side flips move the copper with the pad. The native probe
 adds per-pad `copper_centroid_offset_nm`: two `[numerator, denominator]` pairs
 in board axes, relative to `position_nm`. Missing evidence has a
-`copper_centroid_reason`. Older captures need a fresh native probe before they
+`copper_centroid_reason`; a rounded chamfered rectangle also gets
+`copper_land_offset_nm`, a bound for the copper extent gate only, never a
+centroid. Older captures need a fresh native probe before they
 can establish copper locality.
 
 Squared distances are exact rational nanometres, including equality. Integral
