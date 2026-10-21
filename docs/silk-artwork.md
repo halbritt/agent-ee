@@ -143,8 +143,11 @@ cutout, than the bounds can separate leaves the outline unqualified.
 Touching/crossing contours, nested cutouts, multiple board islands, open rings,
 curves below twice the tolerance and polygons with arcs establish no
 containment. Bounding boxes may neither cross nor touch a cutout bound, nor
-enclose an entire cutout. A mark tangent to, or within 5 um outside, a round
-hole therefore refuses, although it does not touch the true circle.
+enclose an entire cutout. The 5 um tolerance is the maximum error of the
+circumscribed hole bound, not a uniform exclusion band: a mark tangent to a
+round hole, or near a polygon vertex of its bound, refuses even though it does
+not touch the true circle, while a mark between two bound vertices may qualify
+closer than 5 um, because it still lies outside the bound.
 
 Containment models only Edge.Cuts. Non-plated drills (for example an NPTH
 mounting-hole footprint) and plated or oval pad slots are not holes in this
