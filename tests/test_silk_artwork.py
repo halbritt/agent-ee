@@ -147,6 +147,131 @@ class SilkArtworkTest(unittest.TestCase):
                 board.Add(shape)
                 self.assertIsNone(_outline_with_holes(board))
 
+    def test_curved_outline_bounds_are_conservative(self):
+        import pcbnew as k
+        from agent_ee.silk_artwork import _outline_with_holes, _box_contained, contained_markings
+        from agent_ee.placement_probe import primitive, prove_contours
+        M = 1000000
+        def add(board, kind, *points, radius=0):
+            shape = k.PCB_SHAPE(board)
+            shape.SetShape(kind)
+            shape.SetLayer(k.Edge_Cuts)
+            if kind == k.SHAPE_T_ARC:
+                shape.SetArcGeometry(*(k.VECTOR2I(*p) for p in points))
+            elif kind == k.SHAPE_T_CIRCLE:
+                (cx, cy), = points
+                shape.SetCenter(k.VECTOR2I(cx, cy))
+                shape.SetEnd(k.VECTOR2I(cx + radius, cy))
+            else:
+                shape.SetStart(k.VECTOR2I(*points[0]))
+                shape.SetEnd(k.VECTOR2I(*points[1]))
+                if radius:
+                    shape.SetCornerRadius(radius)
+            board.Add(shape)
+        def box(x0, y0, x1, y1):
+            return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        c, r = 15*M, 1600000
+        def round_hole(b):
+            add(b, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M))
+            add(b, k.SHAPE_T_CIRCLE, (c, c), radius=r)
+        def oblong(b):
+            add(b, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M))
+            add(b, k.SHAPE_T_SEGMENT, (10*M, 14*M), (20*M, 14*M))
+            add(b, k.SHAPE_T_SEGMENT, (20*M, 16*M), (10*M, 16*M))
+            add(b, k.SHAPE_T_ARC, (20*M, 14*M), (21*M, 15*M), (20*M, 16*M))
+            add(b, k.SHAPE_T_ARC, (10*M, 16*M), (9*M, 15*M), (10*M, 14*M))
+        def rounded(b):
+            add(b, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M), radius=3*M)
+            add(b, k.SHAPE_T_RECT, (10*M, 10*M), (20*M, 20*M), radius=2*M)
+        def square_hole(b):
+            add(b, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M))
+            add(b, k.SHAPE_T_RECT, (10*M, 10*M), (20*M, 20*M))
+        def disc(b):
+            add(b, k.SHAPE_T_CIRCLE, (c, c), radius=15*M)
+            add(b, k.SHAPE_T_CIRCLE, (c, c), radius=2*M)
+        for case, build, probes in (
+                ('round_hole', round_hole, (
+                    ('clear', box(M, M, 3*M, 3*M), True),
+                    ('tangent', box(c+r, c-M, c+r+M, c+M), False),
+                    ('within_tolerance', box(c+r+1, c-M, c+r+M, c+M), False),
+                    ('beyond_tolerance', box(c+r+5001, c-M, c+r+M, c+M), True),
+                    ('inside_hole', box(c-M//10, c-M//10, c+M//10, c+M//10), False),
+                    ('straddle', box(c+r-1000, c-M, c+r+M, c+M), False),
+                    ('diagonal_clear', box(c+1131400, c+1131400, c+3*M, c+3*M), True),
+                    ('encloses', box(c-2*M, c-2*M, c+2*M, c+2*M), False))),
+                ('oblong_slot', oblong, (
+                    ('tip_tangent', box(21*M, 14*M, 22*M, 16*M), False),
+                    ('tip_straddle', box(21*M-1, 14*M, 22*M, 16*M), False),
+                    ('tip_clear', box(21*M+5001, 14*M, 22*M, 16*M), True),
+                    ('side_clear', box(12*M, 16*M+1, 13*M, 17*M), True))),
+                ('rounded_rectangles', rounded, (
+                    ('outer_corner_cut', box(0, 0, M, M), False),
+                    ('outer_corner_kept', box(M, M, 2*M, 2*M), True),
+                    # The cutout's rounded corner frees a square its sharp corner would block.
+                    ('cutout_corner_freed', box(9*M, 9*M, 10*M+500000, 10*M+500000), True),
+                    ('cutout_side', box(9*M, 14*M, 10*M, 15*M), False))),
+                ('square_hole', square_hole, tuple(
+                    (f'touch_{side}', box(*corners), False) for side, corners in (
+                        ('left', (9*M, 12*M, 10*M, 13*M)), ('right', (20*M, 12*M, 21*M, 13*M)),
+                        ('top', (12*M, 9*M, 13*M, 10*M)), ('bottom', (12*M, 20*M, 13*M, 21*M)))) + (
+                    ('apart', box(20*M+1, 12*M, 21*M, 13*M), True),)),
+                ('disc_board', disc, (
+                    ('near_rim', box(29*M-20000, 14*M, 29*M, 15*M), True),
+                    # On the true rim, inside the outer bound: only the subset ring refuses.
+                    ('rim_bulge', box(c+15*M-M, c-1000, c+15*M+1, c+1000), False),
+                    ('rim_tangent', box(29*M, 14*M, 30*M, 16*M), False)))):
+            with self.subTest(case=case):
+                board = k.BOARD()
+                build(board)
+                outline = _outline_with_holes(board)
+                self.assertIsNotNone(outline)
+                for label, corners, expected in probes:
+                    self.assertEqual(_box_contained(corners, outline), expected, label)
+                # Placement grading keeps refusing curved outlines.
+                legacy = prove_contours([primitive(s) for s in board.GetDrawings()], 'missing', 'unknown')
+                self.assertEqual(legacy['status'], 'unknown')
+        for case, build in (
+                ('touching_circles', lambda b: (add(b, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M)),
+                                                add(b, k.SHAPE_T_CIRCLE, (10*M, 10*M), radius=M),
+                                                add(b, k.SHAPE_T_CIRCLE, (12*M, 10*M), radius=M))),
+                ('circle_touches_edge', lambda b: (add(b, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M)),
+                                                   add(b, k.SHAPE_T_CIRCLE, (M, 10*M), radius=M))),
+                ('below_tolerance', lambda b: (add(b, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M)),
+                                               add(b, k.SHAPE_T_CIRCLE, (c, c), radius=5000))),
+                ('over_rounded', lambda b: (add(b, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M)),
+                                            add(b, k.SHAPE_T_RECT, (10*M, 10*M), (14*M, 20*M), radius=2*M))),
+                ('open_arc', lambda b: (add(b, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M)),
+                                        add(b, k.SHAPE_T_ARC, (10*M, 10*M), (11*M, 11*M), (12*M, 10*M)))),
+                ('hole_tangent_to_rim', lambda b: (add(b, k.SHAPE_T_CIRCLE, (c, c), radius=15*M),
+                                                   add(b, k.SHAPE_T_CIRCLE, (c+13*M, c), radius=2*M))),
+                # Disjoint from the rim, but closer than the bounds can separate.
+                ('hole_near_rim', lambda b: (add(b, k.SHAPE_T_CIRCLE, (c, c), radius=15*M),
+                                             add(b, k.SHAPE_T_CIRCLE, (c+13*M-1000, c), radius=2*M))),
+                ('circle_islands', lambda b: (add(b, k.SHAPE_T_CIRCLE, (5*M, 5*M), radius=2*M),
+                                              add(b, k.SHAPE_T_CIRCLE, (20*M, 5*M), radius=2*M)))):
+            with self.subTest(case=case):
+                board = k.BOARD()
+                build(board)
+                self.assertIsNone(_outline_with_holes(board))
+        # Native field bounds against a round hole, board- and footprint-owned.
+        for footprint_owned in (False, True):
+            with self.subTest(native=footprint_owned):
+                board = k.BOARD()
+                fp = k.FOOTPRINT(board)
+                board.Add(fp)
+                fp.Value().SetVisible(False)
+                field = fp.Reference()
+                field.SetLayer(k.F_SilkS)
+                field.SetTextSize(k.VECTOR2I(M, M))
+                field.SetTextThickness(150000)
+                add(board, k.SHAPE_T_RECT, (0, 0), (30*M, 30*M))
+                add(fp if footprint_owned else board, k.SHAPE_T_CIRCLE, (c, c), radius=r)
+                uid = field.m_Uuid.AsString()
+                for label, x, expected in (('clear', 5*M, True), ('over_hole', c, False),
+                                           ('straddle', c + r, False)):
+                    field.SetPosition(k.VECTOR2I(x, c))
+                    self.assertEqual(uid in contained_markings(board), expected, label)
+
     def test_independent_contours_keep_resource_limit(self):
         from agent_ee.placement_probe import prove_contours
         rings = [dict(kind='polygon', points=[[i*3,0],[i*3+1,0],[i*3+1,1],[i*3,1]])
@@ -252,7 +377,11 @@ class SilkArtworkTest(unittest.TestCase):
         self.assertEqual(len([f for f in art['findings']
                               if f.get('reason') == 'footprint_side_flipped']), 2)
         self.assertTrue(all(f['type'] == 'placement_silkscreen_conflict' for f in art['findings']))
-        self.assertEqual(out.read_bytes(), original)
+        # Only the lineage stamp of the carried result is added (AGENTEE-351); every other byte is kept.
+        from agent_ee.placement_defects import STAMP, carry_digest
+        block = f'\t(title_block\n\t\t(comment 9 "{STAMP} {carry_digest(delta["open_defects"])}")\n\t)\n'.encode()
+        self.assertEqual(out.read_bytes().count(block), 1)
+        self.assertEqual(out.read_bytes().replace(block, b''), original)
 
     def test_flipped_conflict_is_carried_even_if_other_field_moves_clear(self):
         import pcbnew as k
@@ -296,6 +425,54 @@ class SilkArtworkTest(unittest.TestCase):
             for path in (source.with_suffix(suffix), out.with_suffix(suffix),
                          (out.parent / 'baseline' / out.name).with_suffix(suffix)):
                 self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected)
+
+    def test_artwork_comparisons_retain_bound_numeric_sources(self):
+        from agent_ee.design_rule_provenance import bind_project, import_constraints
+        from agent_ee.storage import json_bytes, write_json
+        import pcbnew as k
+        original = self.board()
+        board = k.LoadBoard(str(original))
+        text = k.PCB_TEXT(board)
+        text.SetText('Original undersized board marking')
+        text.SetLayer(k.F_SilkS)
+        text.SetTextSize(k.VECTOR2I(500000, 500000))
+        text.SetTextThickness(100000)
+        text.SetPosition(k.VECTOR2I(5000000, 8000000))
+        board.Add(text)
+        k.SaveBoard(str(original), board)
+        for cls in ('default', 'owner', 'manufacturer', 'datasheet', 'engineering'):
+            with self.subTest(provenance=cls):
+                root = self.root / cls
+                root.mkdir()
+                source = root / original.name
+                source.write_bytes(original.read_bytes())
+                declared = {'schema': 'fome-mc.constraint-provenance/1',
+                            'board_setup_rules': {'min_text_height': {
+                                'value_mm': 0.8, 'class': cls, 'basis': 'Original artwork test limit'}}}
+                project, record = import_constraints({'board': {'design_settings': {
+                    'rules': {'min_text_height': 0.8}}}}, json_bytes(declared),
+                    'original-limits.json', 'original-test-source')
+                bind_project(project, record)
+                write_json(source.with_suffix('.kicad_pro'), project)
+                # output() uses self.root for its unique proposal directory.
+                self.root = root
+                try:
+                    out = self.output(source)
+                finally:
+                    self.root = root.parent
+                _, delta = _proposal_drc(source, out)
+                artwork = json.loads((out.parent / 'placement-silkscreen.json').read_text())
+                self.assertTrue(artwork['moved_fields'])
+                for findings in (delta['baseline_findings'], delta['candidate_findings']):
+                    heights = [v for v in findings if v['type'] == 'text_height']
+                    self.assertTrue(heights, delta)
+                    for finding in heights:
+                        provenance = finding['constraint_provenance']
+                        self.assertEqual(provenance['class'], cls)
+                        self.assertEqual(provenance['enforcement'],
+                                         'advisory' if cls == 'default' else 'hard')
+                        self.assertEqual(provenance['citation']['path'], 'original-limits.json')
+                self.assertEqual(delta['blocking_findings'], [])
 
     def test_ignored_silk_edge_clearance_refuses_native_coverage(self):
         source = self.board()

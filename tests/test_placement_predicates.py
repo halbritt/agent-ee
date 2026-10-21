@@ -12,6 +12,7 @@ import math
 import unittest
 
 from agent_ee import placement_predicates as p
+from tests.test_placer import authored_source
 from agent_ee.placement_check import parameters, predicate_names
 
 MM = 1_000_000
@@ -134,7 +135,8 @@ class EdgeClearanceTest(unittest.TestCase):
         # Courtyard right edge at 19 mm; outline edge at 20 mm.
         facts = probe([part('R1', 18, 10)])
         self.assertEqual(p.edge_clearance(facts, MM)['status'], 'pass')
-        result = p.edge_clearance(facts, MM + 1)
+        result = p.edge_clearance(facts, MM + 1, {'min_courtyard_edge_mm':
+            authored_source('tests/test_placement_predicates.py: authored 1 mm plus 1 nm edge minimum', MM + 1)})
         self.assertEqual(result['status'], 'defect')
         self.assertEqual((result['defects'][0]['ref'], result['defects'][0]['distance_mm']), ('R1', 1.0))
 
@@ -157,7 +159,8 @@ class EdgeClearanceTest(unittest.TestCase):
         notch = [[0, 0], [20*MM, 0], [20*MM, 20*MM], [12*MM, 20*MM], [12*MM, 8*MM], [8*MM, 8*MM],
                  [8*MM, 20*MM], [0, 20*MM]]
         # Bounding-box clearance would be 4.5 mm; the notch edge at x=8 is 1.5 mm away.
-        result = p.edge_clearance(probe([part('R1', 5.5, 12)], notch), 3 * MM)
+        result = p.edge_clearance(probe([part('R1', 5.5, 12)], notch), 3 * MM, {'min_courtyard_edge_mm':
+            authored_source('tests/test_placement_predicates.py: authored concave edge minimum', 3 * MM)})
         self.assertEqual(result['status'], 'defect')
         self.assertEqual(result['defects'][0]['distance_mm'], 1.5)
 

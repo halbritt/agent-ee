@@ -92,7 +92,7 @@
 		(uuid "207b2673-7b95-4f4d-94fd-7c63e12f90c3")
 		(at 80 20)
 		(property "Reference" "R1"
-			(at 0 0 0)
+			(at 0 -4 0)
 			(layer "F.SilkS")
 			(uuid "634b38ee-6aa6-4cf6-b5d9-2cac52c32d5a")
 			(effects
@@ -157,7 +157,7 @@
 		(uuid "533b84b4-362c-40ab-9eda-8c37f52b4c7a")
 		(at 40 20 180)
 		(property "Reference" "JF2"
-			(at 0 0 180)
+			(at 0 -4 180)
 			(layer "F.SilkS")
 			(uuid "06a592d9-446b-4d91-b2e5-1f282f550698")
 			(effects
@@ -225,7 +225,7 @@
 		(uuid "61e56ff8-dce4-445d-a392-af3004874c31")
 		(at 60 20 45)
 		(property "Reference" "JF4"
-			(at 0 0 45)
+			(at 0 -4 45)
 			(layer "F.SilkS")
 			(uuid "138275cd-17b3-4d10-8474-0a0db8b5e1aa")
 			(effects
@@ -293,7 +293,7 @@
 		(uuid "89fe2d16-a24a-49c8-9485-ee15e5882ca8")
 		(at 70 40)
 		(property "Reference" "D1"
-			(at 0 0 0)
+			(at 0 -4 0)
 			(layer "F.SilkS")
 			(uuid "c3788cbf-ddd7-48df-a0ac-0533dc912fcd")
 			(effects
@@ -360,7 +360,7 @@
 		(uuid "a710733d-749a-4642-af90-edfeb98e930f")
 		(at 50 20 -90)
 		(property "Reference" "JF3"
-			(at 0 0 270)
+			(at 0 -4 270)
 			(layer "F.SilkS")
 			(uuid "31695994-fb79-47b4-9243-e79c6b76399f")
 			(effects
@@ -428,7 +428,7 @@
 		(uuid "b0c7d25a-d4e1-4281-9fbd-c85605d89a1a")
 		(at 20 20)
 		(property "Reference" "JF0"
-			(at 0 0 0)
+			(at 0 -4 0)
 			(layer "F.SilkS")
 			(uuid "6cfe49e2-4fee-48fa-94a3-ba2abfc90389")
 			(effects
@@ -496,7 +496,7 @@
 		(uuid "ce904094-9d2e-4333-85cb-19dc64e32121")
 		(at 30 20 90)
 		(property "Reference" "JF1"
-			(at 0 0 90)
+			(at 0 -4 90)
 			(layer "F.SilkS")
 			(uuid "3743d60e-4809-4eee-91c3-b750b47d3e26")
 			(effects
@@ -564,7 +564,7 @@
 		(uuid "eaccd7ee-bda3-414b-9bfb-ca968777b048")
 		(at 47 35 90)
 		(property "Reference" "U1"
-			(at 0 0 90)
+			(at 0 -4 90)
 			(layer "F.SilkS")
 			(uuid "835195e8-ae32-4a09-b5f1-783184ae0548")
 			(effects
@@ -671,7 +671,7 @@
 		(uuid "a0c6be97-3cfd-4065-bb36-7974eb066034")
 		(at 20 45)
 		(property "Reference" "JB0"
-			(at 0 0 180)
+			(at -4 0 180)
 			(layer "B.SilkS")
 			(uuid "79e71846-a9ef-44cb-9970-4ac831cb89b2")
 			(effects
@@ -743,7 +743,7 @@
 		(uuid "c670c1c7-be99-4092-af83-f526eae10303")
 		(at 30 45 -90)
 		(property "Reference" "JB1"
-			(at 0 0 90)
+			(at -4 0 90)
 			(layer "B.SilkS")
 			(uuid "24ff6905-fbe5-4b02-a0d8-06bcd24d407d")
 			(effects

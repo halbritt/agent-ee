@@ -49,7 +49,7 @@ third-party design data is published (owner gate). The full
 `agent-ee.block-candidate/2` is rebuilt from a board's own footprints whenever the
 entry is used ([Materialization](#materialization)).
 
-`agent-ee.block-library-entry/1`. Every field is required and unknown fields refuse:
+`agent-ee.block-library-entry/2`. Every field is required and unknown fields refuse:
 
 | Field | Content |
 | --- | --- |
@@ -64,6 +64,20 @@ Poses, the frame, value rules and pad-geometry and courtyard hashes are those of
 [blocks.md](blocks.md#block-candidate-schema). `pin_functions_sha256` hashes each
 pad's native pin name and electrical type. Roles are numbered as in the
 candidate; net names never identify a role.
+
+### Retired `/1` identities (AGENTEE-370)
+
+An `agent-ee.block-library-entry/1` entry hashed each courtyard in the vertex
+order pcbnew captured. That order changes with the footprint's board rotation, so
+a member rotated in the source refused against the same footprint at another
+rotation. `/2` hashes the [canonical rings](blocks.md#pose-independent-identity-agentee-370).
+A `/1` entry still validates, so a catalogue holding one still loads and its bytes
+stay bound to its catalogue hash. It is never used: `materialize` and `reproduce`
+refuse it with one `identity_version` problem (`expected` `/2`, `actual` `/1`),
+and `add_entry` raises `identity_version`. Import the block again as a new version.
+The four committed pod entries were re-pinned that way (coordinator ruling on
+AGENTEE-370): version 1 of each stays catalogued as `/1` and refuses, and version 2
+is the same import at `/2`. See [(c) Reviewed project clusters](#c-reviewed-project-clusters).
 
 ### Catalogue and versions
 
@@ -243,8 +257,8 @@ from the local object store only:
   `inputs/native.xml`;
 - the D-PL-1 `electrical-locality.json`.
 
-It probes the seed natively in a temporary directory and writes the four
-committed entries:
+It probes the seed natively in a temporary directory and writes version
+`VERSION` (2) of the four committed entries:
 
 | Entry | Part | Members | Internal locality pairs |
 | --- | --- | ---: | ---: |
@@ -254,6 +268,16 @@ committed entries:
 | `pod-lm2903-soic8-u26` | LM2903-SOIC8 | 3 | 4 |
 
 `--check` re-imports and requires byte-identical, catalogued entry files.
+
+Version 1 of each entry is the retired `/1` import. Version 2 (AGENTEE-370 re-pin)
+was written by the same script from the same pinned objects. Only the identity
+version, the courtyard hashes of 25 members captured in a non-canonical vertex
+order, and each candidate hash differ. `tests.test_block_library` proves this two
+ways. The committed v1 and v2 files are equal apart from those fields, with pad
+and pin-function hashes byte-identical. Natively, each v1 courtyard hash is the
+captured-order record, and each v2 hash is the same rings in canonical order.
+Each v1 candidate hash is the v2 candidate with only those records, and the framed
+outline rings built from them, put back in captured order.
 No validated (hard-class) entry is committed, and none can be while hard classes
 are disabled. Seeding one needs the verified owner authority of AGENTEE-348, either
 for a captured TI reference-layout figure measured with its scale reference or for a
@@ -325,11 +349,15 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=/home/halbritt/git/fome-m
 - figure scale verification at its inclusive boundary, axis flips, orientation
   and document-hash refusals, and figure-bound poses;
 - materialization of a second instance and each identity mismatch;
+- materialization with source and target members at every quarter-turn, each
+  captured in pose-dependent vertex order, a grown courtyard still refusing, and
+  retired `/1` entries refused with `identity_version` (AGENTEE-370);
 - a failed re-grade;
 - catalogue immutability, byte binding and ordering;
 - entry structure refusals;
 - the CLI.
 
-Two native tests run under the toolchain. One re-imports the pod entries from
-the pinned fome-mc objects. The other probes an authored two-footprint KiCad
+Three native tests run under the toolchain. One re-imports the pod entries from
+the pinned fome-mc objects. One proves the AGENTEE-370 re-pin changed only the
+identity form, never a courtyard point set, pad or pin function. The other probes an authored two-footprint KiCad
 board with pcbnew and imports its region with copper.

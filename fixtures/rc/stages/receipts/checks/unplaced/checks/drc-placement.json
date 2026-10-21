@@ -1,6 +1,7 @@
 {
-  "candidate_id": "0073fbeacb9e6412e80bb301c07028f66898f6c33bceb4dfc5b2bbf4b59bf5d0",
+  "candidate_id": "c23df919a44b5b71f09007e2839c2c5c7682a6defe578bd9d7ce31272eada24f",
   "details": {
+    "advisory_findings_count": 0,
     "board_sha256": "d7eb1474c3001c20d9fc2748be8809dd41b17f8da746ea79b75240cd202fabcc",
     "by_severity": {
       "error": 4
@@ -8,10 +9,14 @@
     "by_type": {
       "unconnected_items": 4
     },
+    "constraint_classes": {
+      "engineering": 7
+    },
     "graded": [
       "violations",
       "schematic_parity"
     ],
+    "graded_unwaived": 11,
     "ignored_checks": [
       "missing_courtyard",
       "track_not_centered_on_via",
@@ -38,19 +43,29 @@
         "/candidate/project/rc_stage.kicad_pcb"
       ],
       "console_sha256": "e3fb3731a03f416b3a2b3863d443fe63a9b55f47a9df2da026b6760da5cf35f2",
-      "duration_s": 5.61,
+      "duration_s": 1.183,
       "exit_code": 0
     },
     "unconnected_items": 4,
     "ungraded": {
       "unconnected_items": 4
     },
-    "violations": 0
+    "unwaived": 4,
+    "unwaived_by_severity": {
+      "error": 4
+    },
+    "violations": 0,
+    "waived": [],
+    "waived_by_severity": {}
   },
   "evidence": [
     "work/drc-placement/execution.json",
     "work/drc-placement/console.log",
-    "work/drc-placement/drc.json"
+    "work/drc-placement/drc.json",
+    "work/drc-placement/containment/copper-containment.json",
+    "work/drc-placement/containment/execution.json",
+    "work/drc-placement/containment/console.log",
+    "work/drc-placement/drc-constraints.json"
   ],
   "execution": "ok",
   "id": "drc-placement",
@@ -60,6 +75,6 @@
     "zone fill evaluated as saved; the read-only candidate forbids a refill pass",
     "placement-stage/1: unconnected items are retained in drc.json but not graded; a later full DRC with connectivity remains required"
   ],
-  "outcome": "pass",
-  "summary": "placement-stage/1 DRC with schematic parity reported zero violations and parity issues; 4 unconnected item(s) retained ungraded"
+  "outcome": "defect",
+  "summary": "DRC with schematic parity reported 0 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only; 0 waived; 7 structural copper containment finding(s)"
 }

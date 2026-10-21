@@ -9,7 +9,7 @@ alternative does not close the owner gate or qualify a complete rung-1 campaign.
 
 | Variant | Saved boundary | Expected initial checks |
 | --- | --- | --- |
-| `unplaced` | Three footprints on a 10 mm staging row outside the 50 x 30 mm outline; no tracks, vias or zones | ERC and courtyard pass; containment and full DRC fail |
+| `unplaced` | Three footprints on a 10 mm staging row outside the 50 x 30 mm outline; no tracks, vias or zones | ERC and courtyard pass; placement DRC, containment and full DRC fail |
 | `placed-unrouted` | Authored reference anchors; no tracks or vias; B.Cu `/GND` zone retained unfilled | ERC, placement DRC, courtyard and containment pass; full DRC fails on unconnected items |
 | `seeded-placement` | C1 moved into R1's courtyard; J1 moved across the left edge; otherwise the placed-unrouted design | Native courtyard overlap, containment and board-edge defects; full DRC fails |
 
