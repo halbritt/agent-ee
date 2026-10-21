@@ -521,3 +521,12 @@ semantics against the image built on the demonstrated host. It replaced
 - The copied run directory, hidden files included, matched the original.
 
 The action has not yet run on a hosted runner.
+
+## Stock 3D models
+
+The KiCad apt install includes `kicad-packages3d=${KICAD_VERSION}` alongside
+symbols, footprints and templates. The exact package pin uses the existing
+signed package source and fails the build if unavailable. The library adds
+approximately 280 MB of downloads and 3.3 GB unpacked (package estimates).
+[Candidate model coverage](pcb-renders.md#proposal-project-model-closure-agentee-394)
+records the actual referenced model file hashes; runtime rendering is offline.

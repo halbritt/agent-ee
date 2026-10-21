@@ -1032,3 +1032,7 @@ Native [footprint access declarations](docs/access-direction.md) constrain sourc
 socket, connector and antenna lanes to outward board edges during placement,
 block arrangement and saved-board judgment. Uncited lanes remain advisories
 (AGENTEE-379).
+
+Candidate renders record stock-model resolution provenance and per-file hashes.
+Placer proposals carry project-local 3D models with a hashed closure receipt;
+see [3D model closure](docs/pcb-renders.md#proposal-project-model-closure-agentee-394).

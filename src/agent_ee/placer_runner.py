@@ -22,6 +22,7 @@ from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
 from .silk_artwork import SILK_CONFLICTS, relocate
 from .storage import digest, read_json, write_json
+from .models3d import copy_project_models, verify_project_models
 from .design_rule_provenance import (
     classify_finding, finding_sources, measured_actual, numeric_finding, require_evaluated_limits)
 
@@ -569,7 +570,7 @@ def _retain_failure(root, name, scratch, error):
              'placement-judgment.json', 'placement-write-scope.json', 'native-drc.json', 'native-drc.stdout.txt',
              'native-drc.stderr.txt', 'native-drc-execution.json', 'native-drc-comparison.json',
              'candidate.kicad_pro', 'candidate.kicad_dru', 'pre-artwork-drc.json', 'placement-silkscreen.json',
-             'native-drc-restamp.json')
+             'native-drc-restamp.json', 'project-models.json')
     for name in names:
         path = scratch / name
         if path.is_file():
@@ -679,7 +680,10 @@ def place_candidate(source, netlist, destination, request):
                         plan_sha256=digest(scratch / 'placement-plan.json'),
                         reserved_area=report['reserved_area']))
                     report['block_provenance_sha256'] = digest(scratch / 'block-provenance.json')
+                report['project_models'] = copy_project_models(source, scratch)
+                write_json(scratch / 'project-models.json', report['project_models'])
                 report['visuals'] = produce(output, scratch / 'visuals', skip=skip_visuals)
+                verify_project_models(source, scratch, report['project_models'])
                 for image in report['visuals']['images']:
                     image['path'] = 'visuals/' + image['path']
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:

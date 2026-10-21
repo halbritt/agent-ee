@@ -50,6 +50,18 @@ Existing outputs are refused; choose another directory when retrying.
 Without `--models`, component references use inherited environment variables and
 KiCad's native defaults. Each view uses a fresh KiCad configuration, so paths
 configured only in GUI preferences are not loaded.
+
+Model inventory uses an explicit environment value first. On Linux packages,
+a successful `kicad-cli version` identity of 10.0.x qualifies the built-in
+`KICAD10_3DMODEL_DIR` default `/usr/share/kicad/3dmodels`; the directory must
+exist. Unknown tool versions/platforms or an absent default directory leave the
+variable unresolved. The manifest records the CLI identity and default directory
+in `model_coverage.kicad_default`, plus each model's `resolution_source` and
+`variable_sources` (`env`, `kicad-default`, `project`, `relative` or `unresolved`).
+An explicit environment path whose file is absent stays missing; inventory never
+tries another filename or substitutes STEP for WRL. Every resolved file carries
+its SHA-256 and size. Availability still does not prove native model loading;
+review render logs alongside the images.
 To use a separate stock-model cache, supply its root directory:
 
 ```sh
@@ -125,3 +137,24 @@ records this as `reproducibility.status: not_verified` with a reason: native ray
 tracing has no bound seed in this invocation and SVG metadata can vary. Rendering
 is offline; project-local models can be used, but no stock models are downloaded.
 An image with unresolved model coverage is incomplete visual coverage.
+
+### Proposal project model closure (AGENTEE-394)
+
+Before imaging, placer proposals copy enabled project-local models referenced
+through `${KIPRJMOD}` (including project text-variable indirection), and plain
+relative model paths. The referenced directory layout is preserved, including
+`inputs/models/`, so native renders resolve against the disposable proposal.
+`project-models.json` and `placement-result.json` record copied paths, SHA-256
+hashes, sizes and per-reference availability. Repeated references share one copy;
+disabled models are omitted. Missing sources remain reported and are never
+replaced or downloaded. Stock library files are resolved read-only on the host.
+
+Paths escaping the source project, including escaping symlinks, and collisions
+with proposal artifacts refuse publication. Copied bytes and source bytes are
+checked before publication; model drift during imaging refuses the proposal.
+No check verdict is changed by model coverage or image availability.
+
+The container installs `kicad-packages3d` at the same exact package version as
+KiCad. This adds approximately 280 MB of downloads and 3.3 GB of unpacked model
+files (package estimates, not a measured final image delta). Host package
+installation belongs to the owner/infra path. No runtime network is required.

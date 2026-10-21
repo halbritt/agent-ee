@@ -9,6 +9,9 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
 import tempfile
 import time
 from http.client import HTTPException
@@ -93,12 +96,14 @@ def _project_variables(board):
     return variables, {"path": str(project), "sha256": hashlib.sha256(raw).hexdigest()}
 
 
-def _expand_path(path, variables):
+def _expand_path(path, variables, used=None):
     seen = set()
     for _ in range(32):
         if path in seen:
             break
         seen.add(path)
+        if used is not None:
+            used.update(match[1] or match[2] for match in _VARIABLE.finditer(path))
         expanded = _VARIABLE.sub(lambda match: variables.get(match[1] or match[2], match[0]), path)
         if expanded == path:
             break
@@ -114,15 +119,17 @@ def _enabled(model):
     return not hidden or (len(hidden[-1]) > 1 and hidden[-1][1] == "no")
 
 
-def _inspect_model(model, board, variables):
+def _inspect_model(model, board, variables, sources):
     path = model[1] if len(model) > 1 and isinstance(model[1], str) else None
     enabled = _enabled(model)
-    record = {"path": path, "enabled": enabled}
+    record = {"path": path, "enabled": enabled, "resolution_source": "unresolved"}
     if not enabled:
         return {**record, "status": "disabled"}
     if not path:
         return {**record, "status": "unresolved", "reason": "model has no external filename"}
-    expanded, unresolved = _expand_path(path, variables)
+    used = set()
+    expanded, unresolved = _expand_path(path, variables, used)
+    record['variable_sources'] = {key: sources.get(key, 'unresolved') for key in sorted(used)}
     if unresolved:
         return {**record, "status": "unresolved", "unresolved_variables": unresolved,
                 "reason": "unresolved or cyclic model path variables"}
@@ -134,6 +141,9 @@ def _inspect_model(model, board, variables):
     if not resolved.is_absolute():
         resolved = board.parent / resolved
     resolved = resolved.resolve()
+    record['resolution_source'] = next((source for source in ('env', 'kicad-default', 'project')
+                                        if source in record['variable_sources'].values()),
+                                       'project' if used else 'relative')
     record["resolved_path"] = str(resolved)
     if not resolved.is_file():
         return {**record, "status": "missing", "reason": "referenced model file does not exist"}
@@ -163,10 +173,37 @@ def _footprint_status(models):
     return "unresolved" if "unresolved" in active else "missing"
 
 
+def _kicad_model_defaults(env):
+    """Qualified Linux package default, gated by the installed CLI's identity.
+
+    This is the KiCad 10.0.x Linux package layout, not a search for alternate
+    filenames or libraries. Unknown platforms/versions have no inferred default.
+    """
+    if not sys.platform.startswith('linux'):
+        return {}, None
+    cli = shutil.which('kicad-cli', path=env.get('PATH', os.defpath))
+    if cli is None:
+        return {}, None
+    try:
+        probe = subprocess.run([cli, 'version'], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return {}, None
+    version = probe.stdout.strip()
+    if probe.returncode or not re.fullmatch(r'10\.0\.\d+', version):
+        return {}, None
+    directory = Path('/usr/share/kicad/3dmodels')
+    identity = {'executable': cli, 'version': version, 'source': 'kicad-default',
+                'platform': 'linux-packages', 'directory': str(directory),
+                'available': directory.is_dir()}
+    return ({'KICAD10_3DMODEL_DIR': str(directory)} if directory.is_dir() else {}), identity
+
+
 def inspect_models(board: Path, env: dict) -> dict:
     """Inventory every footprint, using supplied environment and project text vars.
 
-    Supplied variables override project text variables. KIPRJMOD defaults to the
+    Supplied variables override project text variables and qualified native
+    defaults. The CLI identity and each reference's sources are recorded.
+    KIPRJMOD defaults to the
     board directory. Relative filenames are relative to that board directory.
     Embedded models and custom KiCad aliases remain explicitly unresolved.
     Malformed input raises ValueError; filesystem failures propagate as OSError.
@@ -175,13 +212,17 @@ def inspect_models(board: Path, env: dict) -> dict:
     raw = board.read_bytes()
     document = _parse_board(raw.decode("utf-8"))
     project_variables, project = _project_variables(board)
-    variables = {**project_variables, **env}
+    defaults, identity = _kicad_model_defaults(env)
+    variables = {**defaults, **project_variables, **env}
+    sources = {**dict.fromkeys(defaults, 'kicad-default'),
+               **dict.fromkeys(project_variables, 'project'), **dict.fromkeys(env, 'env')}
     variables.setdefault("KIPRJMOD", str(board.parent))
+    sources.setdefault('KIPRJMOD', 'project')
     footprints = []
     for node in document:
         if not isinstance(node, list) or not node or node[0] not in ("footprint", "module"):
             continue
-        models = [_inspect_model(model, board, variables) for model in _children(node, "model")]
+        models = [_inspect_model(model, board, variables, sources) for model in _children(node, "model")]
         footprints.append({"reference": _reference(node),
                            "footprint": node[1] if len(node) > 1 and isinstance(node[1], str) else None,
                            "status": _footprint_status(models), "models": models})
@@ -192,8 +233,83 @@ def inspect_models(board: Path, env: dict) -> dict:
     summary.update({status: sum(model["status"] == status for model in models)
                     for status in ("resolved", "missing", "unresolved", "disabled")})
     return {"schema": "agent-ee.models3d/1", "board": {"path": str(board), "sha256": hashlib.sha256(raw).hexdigest()},
-            "project": project, "footprints": footprints, "summary": summary,
+            "project": project, "kicad_default": identity, "footprints": footprints, "summary": summary,
             "warnings": ["File availability is not proof that KiCad loaded a model; inspect native render logs."]}
+
+
+def copy_project_models(board: Path, destination: Path) -> dict:
+    """Carry enabled project-local model files into a fresh proposal with hashes.
+
+    No stock or external files are copied. Missing files remain missing. Paths
+    escaping the source project and collisions with proposal artifacts refuse.
+    """
+    board, destination = Path(board).resolve(), Path(destination).resolve()
+    inventory = inspect_models(board, {'KIPRJMOD': str(board.parent)})
+    variables, _ = _project_variables(board)
+    files, references = {}, []
+    for footprint in inventory['footprints']:
+        for model in footprint['models']:
+            path = model['path']
+            if not model['enabled'] or not path:
+                continue
+            local = 'KIPRJMOD' in model.get('variable_sources', {})
+            relative = (not _VARIABLE.search(path) and not Path(path).is_absolute()
+                        and not PureWindowsPath(path).is_absolute()
+                        and not re.match(r'^[A-Za-z][A-Za-z0-9+.-]*://|^:[^:]+:', path))
+            if not (local or relative):
+                continue
+            record = {'reference': footprint['reference'], 'path': path, 'status': model['status']}
+            references.append(record)
+            if model['status'] == 'unresolved':
+                continue
+            source = Path(model['resolved_path'])
+            if not source.is_relative_to(board.parent):
+                raise ValueError(f'project model escapes source project: {path}')
+            # Preserve the referenced spelling, including an internal symlink alias.
+            expanded, _ = _expand_path(path, {**variables, 'KIPRJMOD': str(board.parent)})
+            target_relative = Path(os.path.normpath(expanded))
+            if target_relative.is_absolute():
+                target_relative = target_relative.relative_to(board.parent)
+            if '..' in target_relative.parts or not target_relative.parts:
+                raise ValueError(f'unsafe project model destination: {path}')
+            record['proposal_path'] = target_relative.as_posix()
+            if model['status'] != 'resolved':
+                continue
+            key = target_relative.as_posix()
+            files[key] = {'source': source, 'sha256': model['sha256'], 'size_bytes': model['size_bytes']}
+    # Validate all targets before copying; never overwrite board/rule/evidence files.
+    targets = {record['proposal_path'] for record in references if 'proposal_path' in record}
+    for relative in targets:
+        target = destination / relative
+        reserved = Path(relative).parts[0] in ('visuals', 'project-models.json', 'placement-result.json')
+        if reserved or target.exists() or target.is_symlink() or any(
+                p.is_symlink() or (p.exists() and not p.is_dir())
+                for p in target.parents if p.is_relative_to(destination)):
+            raise ValueError(f'project model destination collides with proposal: {relative}')
+    for relative, entry in files.items():
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(entry['source'], target)
+        if digest(target) != entry['sha256'] or digest(entry['source']) != entry['sha256']:
+            raise ValueError(f'project model changed during copy: {relative}')
+    return {'files': {key: {k: v for k, v in entry.items() if k != 'source'}
+                      for key, entry in sorted(files.items())}, 'references': references}
+
+
+def verify_project_models(board: Path, destination: Path, closure: dict):
+    """Refuse changed source/proposal model bytes or newly appearing missing files."""
+    for relative, entry in closure['files'].items():
+        source, target = Path(board).parent / relative, Path(destination) / relative
+        if not source.resolve().is_relative_to(Path(board).parent.resolve()):
+            raise ValueError(f'captured placement project model escaped source project: {relative}')
+        if any(p.is_symlink() for p in (target, *target.parents)
+               if p.is_relative_to(Path(destination))):
+            raise ValueError(f'captured placement project model became a symlink: {relative}')
+        if digest(source) != entry['sha256'] or digest(target) != entry['sha256']:
+            raise ValueError(f'captured placement project model changed: {relative}')
+    for model in closure['references']:
+        if model['status'] == 'missing' and (Path(board).parent / model['proposal_path']).exists():
+            raise ValueError(f'captured missing placement project model appeared: {model["proposal_path"]}')
 
 
 def _stock_relative(path):
