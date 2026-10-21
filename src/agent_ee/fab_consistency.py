@@ -391,7 +391,8 @@ def load_manifest(ctx, stage):
         fail('manifest', 'drill must name distinct pth and npth files')
     designators = data['designators']
     non_dnp = designators.get('board_non_dnp') if isinstance(designators, dict) else None
-    if (set(designators or {}) != {'board_non_dnp', 'excluded', 'exclusion_rule'} or
+    if (not ({'board_non_dnp', 'excluded', 'exclusion_rule'} <= set(designators or {})
+                 <= {'board_non_dnp', 'excluded', 'exclusion_rule', 'mechanical'}) or
             not isinstance(non_dnp, list) or
             any(not isinstance(r, str) or not r for r in non_dnp) or
             len(set(non_dnp)) != len(non_dnp)):
@@ -404,6 +405,11 @@ def load_manifest(ctx, stage):
                 e['designator'] not in non_dnp for e in excluded) or
             len({e['designator'] for e in excluded}) != len(excluded)):
         fail('manifest', 'designators.excluded must be unique board_non_dnp designators under exclusion_rule')
+    mechanical = designators.get('mechanical', [])
+    if (not isinstance(mechanical, list) or
+            any(not isinstance(ref, str) or not ref for ref in mechanical) or
+            len(set(mechanical)) != len(mechanical)):
+        fail('manifest', 'designators.mechanical must hold unique references')
     return data
 
 
@@ -954,6 +960,18 @@ def gate(ctx, eid, export_spec, export_result, stage):
             raise CheckError('malformed', f'copper feature evidence unreadable: {exc}') from exc
         if copper_problems or binding_problems:
             raise CheckError('unsupported', '; '.join(copper_problems + binding_problems))
+    from .fab_export import mechanical_inventory
+    try:
+        mechanical, mechanical_problems = mechanical_inventory(
+            (ctx.inputs / ctx.scope['board']).read_bytes(), netlist)
+    except ValueError as exc:
+        raise CheckError('malformed', f'mechanical inventory unreadable: {exc}') from exc
+    if mechanical_problems:
+        raise CheckError('unsupported', '; '.join(mechanical_problems))
+    if ('mechanical' in manifest['designators'] and
+            manifest['designators']['mechanical'] != mechanical):
+        raise CheckError('malformed', 'stale: manifest mechanical differs from the captured board')
+    details['mechanical'] = mechanical
     details['copper_features'] = sorted(copper)
     rule = (export_spec.get('params') or {}).get('assembly_exclusion')
     if manifest['designators']['exclusion_rule'] != rule:

@@ -388,6 +388,21 @@ class FabConsistencyTests(FabCase):
         with self.assertRaises(ValueError):
             verify_evidence(self.run_dir, self.results, required=True)
 
+    def test_netted_mechanical_is_refused_independently_of_producer(self):
+        from tests.test_fab_export import mounting_holes
+        original = board_text()
+        result = self.run_case(board=original.rstrip()[:-1] + mounting_holes(net='(net "IN")') + ')',
+                               non_dnp=NON_DNP + ['H1', 'H2', 'H3', 'H4'])
+        self.assertStatus(result, 'unsupported', 'unknown')
+        self.assertIn('netted or unqualified pad', result['summary'])
+
+    def test_mechanical_manifest_claim_is_rederived(self):
+        for claim in (['H1'], ['H1', 'H1'], 'H1', [None]):
+            with self.subTest(claim=claim):
+                result = self.run_case(manifest_edit=lambda m: m['designators'].update(mechanical=claim))
+                self.assertStatus(result, 'malformed', 'unknown')
+                self.assertIn('mechanical', result['summary'])
+
     def test_defect_citations_stay_sealable_when_export_seals_only_manifest(self):
         files = package()
         files['bom.csv'] = files['bom.csv'].replace(b'"R1,R2"', b'"R1,R1"')
