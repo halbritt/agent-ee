@@ -1496,7 +1496,9 @@ preservation, runs the existing write-scope witness with all other footprints
 protected, regrades the saved geometry, and runs native DRC under the captured
 project and custom-rule bytes. Baseline DRC is retained under the same rules.
 No artwork repair changes an alternative. Numeric limits without a source remain
-advisory; other native findings reject the pose. Ignored placement checks,
+advisory only for native numeric constraint types; a rule-area or zone name
+cannot make a structural finding numeric. Courtyard findings always reject the
+pose, as do other native findings. Ignored placement checks,
 missing reports and tool failures remain unknown. Ignored checks for track centering, tuning geometry, footprint filters and
 footprint component types are outside this placement diagnostic. Attempt
 witnesses include board, rule, DRC and write-scope digests. The report
@@ -1512,9 +1514,13 @@ Standalone geometry diagnostics without native validation remain
 never rank as legal. Fixed owners and rigid block members are explicitly
 `not_searched`; zero costs are `already_zero`. A movable courtyard's excess is
 invariant under full containment, so it reports `no_cheaper_contained_pose`
-without running the pose diagnostic. `none_found` means only that this finite
-set found no validated saving; its attempt records distinguish rejection from
-unknown execution. No global minimum or impossibility is claimed.
+without running the pose diagnostic. If no cheaper attempt validates and any
+attempt is unknown, the alternative is `unknown`, labelled
+`hypothetical, unverified`, with `search_complete: false` and all attempts retained.
+`none_found` means only that this finite set found no saving and no native
+attempt was unknown. Its `search_complete` is true when a native validator was
+supplied, false for geometry-only diagnostics. No global minimum or
+impossibility is claimed.
 
 The original native card-lane regression measures 600 mm² on B inboard, validates
 a 0 mm² edge alternative, and rejects a geometrically cheapest pose with a native

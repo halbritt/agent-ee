@@ -254,7 +254,13 @@ def _cheapest(row, trials, native_validator=None):
                 'position_nm': list(best[1]), 'rotation_deg': best[2], 'area_mm2': _ratio(best[0]),
                 'saving_mm2': _ratio(Fraction(*row['area_mm2'])-best[0]), 'tested': len(trials),
                 'domain': 'quarter turns at current origin and four outline-box edges'}
+    if any(a['validation']['status'] == 'unknown' for a in attempts):
+        return {'status': 'unknown', 'qualification': 'hypothetical, unverified', 'search_complete': False,
+                'tested': len(trials), 'native_attempts': attempts,
+                'domain': 'quarter turns at current origin and four outline-box edges',
+                'reason': 'a cheaper pose could not be natively validated; minimum unresolved'}
     return {'status': 'none_found', 'tested': len(trials), 'native_attempts': attempts,
+            'search_complete': native_validator is not None,
             'domain': 'quarter turns at current origin and four outline-box edges',
             'reason': 'finite diagnostic set; not a continuous optimality proof'}
 

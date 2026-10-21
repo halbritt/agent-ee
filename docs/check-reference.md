@@ -2094,6 +2094,8 @@ per-owner clipped reserve areas and `large_reserve` findings. Unsupported bodies
 or outlines remain unknown. The unsourced 5% suggestion never affects check
 verdicts. Saved proposals validate cheaper poses with native DRC, captured rules and the
 existing write-scope preservation witness on scratch boards. Rejected and unknown
-attempts remain visible; standalone geometric poses stay hypothetical and
-unverified. The optimum is limited to the declared finite pose set. Fixed and
-rigid-block alternatives remain unsearched.
+attempts remain visible; if no attempt validates and any attempt is unknown,
+the alternative stays unknown with an incomplete search. Numeric-looking zone
+names never waive structural native findings. Standalone geometric poses stay
+hypothetical and unverified. The optimum is limited to the declared finite pose
+set. Fixed and rigid-block alternatives remain unsearched.

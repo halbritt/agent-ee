@@ -89,6 +89,14 @@ class AreaTests(unittest.TestCase):
         self.assertEqual(lane['alternative']['status'], 'none_found')
         self.assertEqual(lane['area_mm2'], [16, 1])
 
+    def test_geometry_only_no_saving_is_not_a_complete_native_search(self):
+        row = {'side': 'B', 'kind': 'rule_area', 'id': 'lane', 'owner': 'J3', 'area_mm2': [2, 1]}
+        trials = [(((0, 0), 0), {('B', 'rule_area', 'lane'): {'area_mm2': [2, 1]}})]
+        alternative = reserve._cheapest(row, trials)
+        self.assertEqual(alternative['status'], 'none_found')
+        self.assertIs(alternative['search_complete'], False)
+        self.assertEqual(alternative['native_attempts'], [])
+
     def test_contained_courtyard_excess_has_no_rigid_pose_saving(self):
         facts = capture([part('U1', 2, 2)])
         fab = {'U1': {'F': proven([rectangle(2, 2, 1, 1)])}}
@@ -326,6 +334,80 @@ class NativeAlternativeTests(unittest.TestCase):
         self.assertEqual(attempts[-1]['validation']['status'], 'validated')
         self.assertNotEqual((alternative['position_nm'], alternative['rotation_deg']),
                             (attempts[0]['position_nm'], attempts[0]['rotation_deg']))
+
+    def test_numeric_text_in_keepout_name_cannot_waive_structural_finding(self):
+        import pcbnew as k
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        from agent_ee.storage import read_json
+        board = k.LoadBoard(str(self.source))
+        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowPads(True)
+        zone.SetLayer(k.B_Cu); zone.SetZoneName('keepout 1 mm; actual 0.5 mm')
+        polygon = zone.Outline(); polygon.NewOutline()
+        for x, y in rectangle(0, 31, 2, 2): polygon.Append(x, y)
+        board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        validator = NativeAlternatives(self.source, self.root / 'injected-name',
+                                       extract(self.source), self.policy, {})
+        result = validator('J3', (0, 32*MM), 180)
+        drc = read_json(self.root / result['directory'] / 'native-drc.json')
+        self.assertTrue(any('keepout 1 mm; actual 0.5 mm' in v['description']
+                            for v in drc['violations']))
+        self.assertEqual(result['status'], 'rejected', result)
+        self.assertEqual(result['blocking_types'], ['items_not_allowed'])
+        self.assertNotIn('items_not_allowed', result['advisory_types'])
+
+    def test_every_alternative_drc_failure_keeps_search_unknown(self):
+        from unittest.mock import patch
+        from agent_ee import placer_runner
+        native = placer_runner._native_drc
+        calls = []
+        def fail_alternatives(board, scratch):
+            calls.append(str(board))
+            if len(calls) > 1:
+                raise OSError('injected alternative DRC failure')
+            return native(board, scratch)
+        with patch('agent_ee.placer_runner._native_drc', side_effect=fail_alternatives):
+            lane, validator = self.run_alternatives('all-unknown')
+        self.assertIsNotNone(validator.baseline)
+        self.assertGreater(len(calls), 1)
+        self.assert_unknown_search(lane['alternative'], 'injected alternative DRC failure')
+
+    def test_baseline_drc_failure_keeps_search_unknown(self):
+        from unittest.mock import patch
+        with patch('agent_ee.placer_runner._native_drc',
+                   side_effect=OSError('injected baseline DRC failure')):
+            lane, validator = self.run_alternatives('baseline-unknown')
+        self.assertIsNone(validator.baseline)
+        self.assert_unknown_search(lane['alternative'], 'injected baseline DRC failure')
+
+    def assert_unknown_search(self, alternative, first_reason):
+        from agent_ee.storage import read_json
+        self.assertEqual(alternative['status'], 'unknown', alternative)
+        self.assertEqual(alternative['qualification'], 'hypothetical, unverified')
+        self.assertIs(alternative['search_complete'], False)
+        attempts = alternative['native_attempts']
+        self.assertGreater(len(attempts), 1)
+        for attempt in attempts:
+            validation = attempt['validation']
+            self.assertEqual(validation['status'], 'unknown')
+            self.assertEqual(validation['qualification'], 'hypothetical, unverified')
+            self.assertEqual(read_json(self.root / validation['witness'])['status'], 'unknown')
+        self.assertIn(first_reason, read_json(self.root / attempts[0]['validation']['witness'])['reason'])
+
+    def test_all_native_rejections_complete_finite_search(self):
+        self.source.with_suffix('.kicad_dru').write_bytes(b'''(version 1)
+(rule "Owned fixture pad exclusion"
+  (condition "A.Type == 'Pad'")
+  (constraint disallow pad))
+''')
+        lane, _ = self.run_alternatives('all-rejected')
+        alternative = lane['alternative']
+        self.assertEqual(alternative['status'], 'none_found', alternative)
+        self.assertIs(alternative['search_complete'], True)
+        self.assertGreater(len(alternative['native_attempts']), 1)
+        for attempt in alternative['native_attempts']:
+            self.assertEqual(attempt['validation']['status'], 'rejected')
+            self.assertIn('items_not_allowed', attempt['validation']['blocking_types'])
 
     def test_tool_failure_stays_unknown_and_is_never_legal(self):
         from unittest.mock import patch

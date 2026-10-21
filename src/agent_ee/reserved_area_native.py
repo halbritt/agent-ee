@@ -64,7 +64,8 @@ class NativeAlternatives:
         from .placement_adapter import write_scope
         from .placement_probe import extract
         from .reserved_area import _candidate_cost
-        from .design_rule_provenance import classify_finding, finding_sources, numeric_finding
+        from .design_rule_provenance import (classify_finding, finding_sources, numeric_finding,
+                                            NATIVE_CONSTRAINT_TYPES)
 
         if (self.source.read_bytes() != self.board_bytes or
                 self.facts['board_sha256'] != evidence['source_sha256']):
@@ -130,7 +131,8 @@ class NativeAlternatives:
         # be waived merely because there is no numeric source for their category.
         blockers = [v for v in report['violations'] if
                     v['type'] in DRC_COURTYARDS or
-                    not (numeric_finding(v) and v['constraint_provenance']['enforcement'] == 'advisory')]
+                    not (v['type'] in NATIVE_CONSTRAINT_TYPES and numeric_finding(v) and
+                         v['constraint_provenance']['enforcement'] == 'advisory')]
         evidence.update(status='rejected' if blockers else 'validated',
                         reason='native DRC findings' if blockers else 'native DRC and preservation passed',
                         board_sha256=digest(output), drc_sha256=digest(output.parent / 'native-drc.json'),
