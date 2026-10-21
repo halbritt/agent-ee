@@ -60,12 +60,98 @@ class CandidateVisualTests(unittest.TestCase):
         packet = build_packet(run, result['checks'], result['run_id'])
         self.assertEqual(packet['candidate_visuals'], visuals)
         self.assertEqual(visuals['reproducibility']['status'], 'not_verified')
-        self.assertTrue(visuals['reproducibility']['reason'])
+        self.assertIn('0.67%', visuals['reproducibility']['reason'])
+        self.assertIn('SVG <title> creation timestamp', visuals['reproducibility']['reason'])
+        self.assertIn('not normalized', visuals['reproducibility']['reason'])
         self.assertEqual(before, {p.name: p.read_bytes() for p in self.source.iterdir() if p.is_file()})
         image = visuals['images'][0]
         (run / image['path']).write_bytes(b'changed')
         with self.assertRaisesRegex(ValueError, 'image changed'):
             build_packet(run, [], 'tampered')
+
+    def test_imaging_preserves_twenty_second_drc_budget(self):
+        from agent_ee.cli import run_review
+        outcomes = []
+        for skip in (True, False):
+            with self.subTest(skip=skip):
+                scope = {'schema': 'agent-ee.scope/1', 'name': 'visual-budget',
+                         'scope': 'inspection', 'skip_visuals': skip,
+                         'inputs': [{'path': str(self.source), 'at': 'project'}],
+                         'board': 'project/rc_filter.kicad_pcb',
+                         'schematic': 'project/rc_filter.kicad_sch',
+                         'checks': [{'id': 'drc', 'kind': 'drc'}]}
+                scope_path = self.root / f'budget-{skip}.json'
+                scope_path.write_text(json.dumps(scope))
+                run = self.root / f'budget-{skip}'
+                run_review(scope_path, run, 20, checks_only=True)
+                result = json.loads((run / 'result.json').read_text())
+                self.assertNotIn('error', result, result.get('error'))
+                check = result['checks'][0]
+                outcomes.append((check['execution'], check['outcome']))
+                self.assertEqual(outcomes[-1], ('ok', 'defect'))
+                self.assertFalse(any('budget exhausted' in x for x in result['limitations']))
+                manifest = json.loads((run / 'candidate.json').read_text())
+                self.assertEqual(manifest['visuals']['status'], 'skipped' if skip else 'available')
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_long_imaging_excluded_without_refreshing_expired_budget(self):
+        import time
+        from types import SimpleNamespace
+        from agent_ee.cli import run_review
+        for budget in (0, 20):
+            with self.subTest(budget=budget):
+                scope = {'schema': 'agent-ee.scope/1', 'name': 'long-visual-budget',
+                         'scope': 'inspection', 'skip_visuals': True,
+                         'inputs': [{'path': str(self.source), 'at': 'project'}],
+                         'board': 'project/rc_filter.kicad_pcb',
+                         'schematic': 'project/rc_filter.kicad_sch',
+                         'checks': [{'id': 'drc', 'kind': 'drc'}]}
+                scope_path = self.root / f'long-budget-{budget}.json'
+                scope_path.write_text(json.dumps(scope))
+                offset = [0]
+                clock = SimpleNamespace(monotonic=lambda: time.monotonic() + offset[0])
+                remaining = []
+
+                def imaging(run):
+                    result = capture_visuals(run)
+                    offset[0] += 300
+                    return result
+
+                def observe_deadline(run, deadline):
+                    remaining.append(deadline - clock.monotonic())
+                    return []
+
+                with patch('agent_ee.cli.time', clock), \
+                     patch('agent_ee.candidate_visuals.capture_visuals', side_effect=imaging), \
+                     patch('agent_ee.checks.run_checks', side_effect=observe_deadline):
+                    run_review(scope_path, self.root / f'long-budget-{budget}', budget, checks_only=True)
+                self.assertEqual(len(remaining), 1)
+                self.assertLessEqual(remaining[0], budget)
+                self.assertGreater(remaining[0], budget - 5)
+
+    def test_missing_changed_and_linked_images_share_refusal(self):
+        image = self.root / 'image.png'
+        image.write_bytes(b'original')
+        manifest = {'scope': {'board': 'board'}, 'files': {'board': 'current'},
+                    'visuals': {'board_sha256': 'current',
+                                'images': [{'path': image.name, 'sha256': digest(image)}]}}
+        image.unlink()
+        for state in ('missing', 'changed', 'directory', 'symlink'):
+            with self.subTest(state=state):
+                if state == 'changed':
+                    image.write_bytes(b'changed')
+                elif state == 'directory':
+                    image.mkdir()
+                elif state == 'symlink':
+                    target = self.root / 'original.png'
+                    target.write_bytes(b'original')
+                    image.symlink_to(target)
+                with self.assertRaisesRegex(ValueError, '^candidate visual image changed$'):
+                    packet_visuals(self.root, manifest)
+                if image.is_dir():
+                    image.rmdir()
+                elif image.exists() or image.is_symlink():
+                    image.unlink()
 
     def test_declared_check_cannot_overwrite_coordinator_visual_manifest(self):
         import time
@@ -112,10 +198,11 @@ class CandidateVisualTests(unittest.TestCase):
     def test_timeout_and_missing_manifest_remain_unavailable(self):
         for status in ('timeout', 'failed', 'ok'):
             with self.subTest(status=status), patch('agent_ee.candidate_visuals.execute',
-                                                    return_value={'execution': status}):
+                                                    return_value={'execution': status}) as execute:
                 report = produce(self.board, self.root / status)
                 self.assertEqual(report['status'], 'unavailable')
                 self.assertEqual(report['images'], [])
+                self.assertEqual(execute.call_args.kwargs['timeout'], 180)
 
     def test_old_capture_and_stale_source_are_explicit(self):
         self.assertEqual(packet_visuals(self.root, {})['status'], 'unavailable')

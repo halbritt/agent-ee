@@ -98,7 +98,9 @@ PNGs, front and back SVG composites (copper, silk, courtyard and board outline),
 and one SVG for every enabled inner copper layer plus the outline. A four-layer
 board therefore has six images. Two PNG renders run concurrently with separate
 KiCad configuration directories. The 180-second executor guard bounds imaging
-work; it is a resource guard, not an engineering acceptance limit. Small-board
+work; it is a resource guard, not an engineering acceptance limit. Coordinator
+imaging elapsed time is excluded from `max_seconds`, leaving the same budget
+for checks and reviewers whether imaging is enabled or skipped. Small-board
 performance does not qualify pod-scale performance.
 
 `reviewers.build_packet` includes `candidate_visuals` outside the text excerpt
@@ -122,6 +124,10 @@ that images are unavailable rather than implicitly generating new evidence.
 
 Native image bytes are hashed, but byte determinism is not certified. The result
 records this as `reproducibility.status: not_verified` with a reason: native ray
-tracing has no bound seed in this invocation and SVG metadata can vary. Rendering
+tracing has no bound seed in this invocation. The AGENTEE-382 reviewer repeat on
+KiCad 10.0.7 measured PNG ray-trace noise in about 0.67% of raw pixel bytes
+and changing SVG `<title>` creation timestamps. These are prior measured causes,
+not a repeat comparison of each capture. Native SVG metadata is retained without
+normalization; PNG determinism is not claimed. Rendering
 is offline; project-local models can be used, but no stock models are downloaded.
 An image with unresolved model coverage is incomplete visual coverage.
