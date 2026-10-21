@@ -29,11 +29,12 @@ FIG_NM = 250000  # nanometres per authored figure unit
 AUTO = object()
 
 
-def authority(provenance_class, kind, source, references, dimensions=None, **changes):
-    """A synthetic owner authority record. It exercises the format only and confers no design acceptance;
-    real records come from the owner through the coordinator boundary."""
+def authority(provenance_class, kind, source, references, dimensions=None, payload='0' * 64, **changes):
+    """A synthetic authority record. It exercises the binding only: while hard classes are disabled
+    (AGENTEE-348) no record confers a class, and every path refuses it with authority_unavailable."""
     record = {'schema': bl.AUTHORITY_RECORD, 'class': provenance_class, 'import': kind, 'source': source,
-              'references': sorted(references, key=blocks._natural), 'owner': 'Owned EE342 synthetic owner',
+              'references': sorted(references, key=blocks._natural), 'payload_sha256': payload,
+              'owner': 'Owned EE342 synthetic owner',
               'disposition': 'approved', 'reference': 'synthetic test record; not an owner approval'}
     if provenance_class.startswith('manufacturer-'):
         record['capture'] = {'origin': 'Owned EE342 synthetic capture', 'captured_by': 'coordinator test boundary'}
@@ -109,23 +110,48 @@ class LibraryFixture(Fixture):
         source = {'locator': 'Owned EVM rev A', 'sha256': hashlib.sha256(raw).hexdigest(), **identity}
         return authority(provenance_class, 'board-region/1', source, references)
 
-    def region(self, provenance_class='manufacturer-evm', capture=None, raw=None, authority_raw=AUTO, **identity):
+    def region(self, provenance_class='search-derived', capture=None, raw=None, authority_raw=None, **identity):
         if capture is None:
             capture, raw = self.placed_region()
-        if authority_raw is AUTO:
-            authority_raw = (self.region_authority(provenance_class, raw, **identity)
-                             if provenance_class in HARD else None)
         return bl.import_board_region(raw, capture, self.inv, self.names, self.sha, self.policy,
                                       references=','.join(POWER), anchor='U1', block_id='owned-evm', version=1,
                                       part='OWNED-BUCK', provenance_class=provenance_class,
                                       citation='Owned EE342 evaluation board', locator='Owned EVM rev A',
                                       authority_raw=authority_raw, **identity)
 
-    def keep_authority(self, root, authority_raw):
-        """Place an owner record where a library keeps it; the library code never writes there."""
-        path = root / bl.authority_path(hashlib.sha256(authority_raw).hexdigest())
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(authority_raw)
+    def harden(self, entry, provenance_class, record=None, **changes):
+        """An agent-authored hard-class copy of an entry with a record bound to its whole payload.
+
+        This is exactly what any caller can author; it must never be accepted as hard."""
+        hard = copy.deepcopy(entry)
+        source = hard['receipt']['source']
+        hard['provenance'].update({'class': provenance_class, 'enforcement': 'hard',
+                                   'source': {'locator': source['locator'], 'sha256': source['sha256']}})
+        hard['receipt'].pop('authority_sha256', None)
+        if record is None:
+            scale = hard['receipt'].get('figure', {}).get('scale')
+            dimensions = ([{'basis': d['basis'], 'length_nm': d['length_nm']}
+                           for d in [scale['reference']] + scale['checks']] if scale else None)
+            record = authority(provenance_class, hard['receipt']['import'], source,
+                               [r['reference'] for r in hard['layout']['members']], dimensions,
+                               payload=bl.payload_sha256(hard), **changes)
+        hard['receipt']['authority_sha256'] = hashlib.sha256(record).hexdigest()
+        return hard, record
+
+    def plant(self, root, entry, record=None):
+        """Write an entry (and a record under owner/) straight into a catalogue root, as any agent can."""
+        relative = bl.entry_path(entry['id'], entry['version'])
+        raw = bl.entry_bytes(entry)
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_bytes(raw)
+        catalogue = json.loads((root / bl.CATALOGUE_PATH).read_text())
+        catalogue['entries'].append({'id': entry['id'], 'version': entry['version'], 'path': relative,
+                                     'sha256': hashlib.sha256(raw).hexdigest()})
+        (root / bl.CATALOGUE_PATH).write_text(json.dumps(catalogue))
+        if record is not None:
+            path = root / 'owner/block-authority' / (hashlib.sha256(record).hexdigest() + '.json')
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(record)
 
 
 class ProjectClusterTests(LibraryFixture, unittest.TestCase):
@@ -226,17 +252,16 @@ class BoardRegionTests(LibraryFixture, unittest.TestCase):
         capture, _ = self.placed_board()
         raw = self.board_text(capture).encode()
         capture['board_sha256'] = hashlib.sha256(raw).hexdigest()
-        record = self.region_authority('manufacturer-evm', raw)
-        entry = self.region(capture=capture, raw=raw, authority_raw=record)
+        entry = self.region(capture=capture, raw=raw)
         rows = {r['reference']: r for r in entry['layout']['members']}
         # The anchor's board rotation and offset drop out: the frame equals the packed frame.
         self.assertEqual({r: rows[r]['pose'] for r in rows}, self.poses)
         sha = hashlib.sha256(raw).hexdigest()
         self.assertEqual(entry['provenance'], {
-            'class': 'manufacturer-evm', 'enforcement': 'hard', 'citation': 'Owned EE342 evaluation board',
-            'label': 'Owned EVM rev A, manufacturer-evm', 'source': {'locator': 'Owned EVM rev A', 'sha256': sha}})
+            'class': 'search-derived', 'enforcement': 'advisory', 'citation': 'Owned EE342 evaluation board',
+            'label': 'search-derived (advisory): board region from Owned EVM rev A'})
         self.assertEqual(entry['receipt']['source'], {'locator': 'Owned EVM rev A', 'sha256': sha})
-        self.assertEqual(entry['receipt']['authority_sha256'], hashlib.sha256(record).hexdigest())
+        self.assertNotIn('authority_sha256', entry['receipt'])
         copper = entry['copper']
         framed = {r: placer.transform(next(f for f in self.board['footprints'] if f['ref'] == r),
                                       self.poses[r]['position_nm'], self.poses[r]['rotation_deg']) for r in POWER}
@@ -253,18 +278,21 @@ class BoardRegionTests(LibraryFixture, unittest.TestCase):
         self.assertEqual(copper['arcs'], [{'start': sw_a, 'mid': vout, 'end': sw_b, 'width_nm': 250000,
                                            'layer': 'F.Cu', 'role': sw_role}])
         self.assertNotIn('"SW"', json.dumps(entry))
-        self.assertEqual(bl.reproduce(entry, raw, capture, self.inv, self.names, self.sha, self.policy, record),
+        self.assertEqual(bl.reproduce(entry, raw, capture, self.inv, self.names, self.sha, self.policy),
                          {'status': 'reproduced', 'problems': []})
 
     def test_region_refusals(self):
         capture, raw = self.placed_board()
         with self.assertRaisesRegex(ValueError, 'differ from the placement probe'):
             self.region(capture=capture, raw=raw + b' ')
-        with self.assertRaisesRegex(ValueError, 'repository, commit and path'):
-            self.region('qualified-owner-board', capture=capture, raw=raw, repository=REPOSITORY, commit=COMMIT)
-        entry = self.region('qualified-owner-board', capture=capture, raw=raw, repository=REPOSITORY, commit=COMMIT,
-                            path='owned.kicad_pcb')
-        self.assertEqual(entry['provenance']['label'], 'owned.kicad_pcb@aaaaaaaaaaaa, qualified-owner-board')
+        with self.assertRaisesRegex(bl.AuthorityUnavailable, 'authority_unavailable: qualified-owner-board'):
+            self.region('qualified-owner-board', capture=capture, raw=raw, repository=REPOSITORY, commit=COMMIT,
+                        path='owned.kicad_pcb')
+        entry = self.region(capture=capture, raw=raw, repository=REPOSITORY, commit=COMMIT, path='owned.kicad_pcb')
+        self.assertEqual(entry['provenance']['label'],
+                         'search-derived (advisory): board region from owned.kicad_pcb@aaaaaaaaaaaa')
+        with self.assertRaisesRegex(ValueError, 'unknown provenance class'):
+            self.region('trusted', capture=capture, raw=raw)
         search = self.region('search-derived', capture=capture, raw=raw)
         self.assertNotIn('source', search['provenance'])
         turned = copy.deepcopy(capture)
@@ -316,10 +344,8 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
         return authority(figure['class'], 'reference-figure/1', source, [m['reference'] for m in figure['members']],
                          dimensions)
 
-    def imported(self, figure=None, document=None, authority_raw=AUTO):
+    def imported(self, figure=None, document=None, authority_raw=None):
         figure = figure or self.figure()
-        if authority_raw is AUTO:
-            authority_raw = self.figure_authority(figure)
         return bl.import_reference_figure(figure, document or self.DOCUMENT, self.board, self.inv,
                                           self.names, self.sha, self.policy, block_id='owned-figure', version=1,
                                           part='OWNED-BUCK', citation='Owned EE342 Fig. 1 recommended layout',
@@ -331,14 +357,17 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
                 with self.subTest(axes=axes, turns=turns):
                     self.assertEqual(bl.figure_poses(self.figure(axes, turns=turns), self.board), self.poses)
         entry = self.imported()
-        self.assertEqual(entry['provenance']['label'], 'Owned EE342 Fig. 1, scale-verified')
+        self.assertEqual(entry['provenance']['label'], 'search-derived (advisory): Owned EE342 Fig. 1, scale-verified')
+        # The figure claims a manufacturer reference layout; the entry stays advisory (hard classes disabled).
+        self.assertEqual(entry['receipt']['figure']['class'], 'manufacturer-reference-layout')
         self.assertEqual((entry['provenance']['class'], entry['provenance']['enforcement']),
-                         ('manufacturer-reference-layout', 'hard'))
+                         ('search-derived', 'advisory'))
+        self.assertNotIn('source', entry['provenance'])
         self.assertEqual(entry['receipt']['scale']['status'], 'scale-verified')
         self.assertEqual(entry['receipt']['scale']['nm_per_unit_squared'], [FIG_NM ** 2, 1])
         self.assertEqual(entry['receipt']['scale']['checks'][0]['status'], 'pass')
-        self.assertEqual(bl.reproduce(entry, self.DOCUMENT, self.board, self.inv, self.names, self.sha, self.policy,
-                                      self.figure_authority())['status'], 'reproduced')
+        self.assertEqual(bl.reproduce(entry, self.DOCUMENT, self.board, self.inv, self.names, self.sha,
+                                      self.policy)['status'], 'reproduced')
 
     def test_scale_check_boundary_and_refusals(self):
         # 20 units at 0.25 mm is 5 mm; a cited 5.1 mm is 1/51 off: inside 1/50, outside 1/60.
@@ -367,8 +396,8 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
         figure['members'][0]['pads'] = {'9': [0, 0], '1': [1, 1]}
         with self.assertRaisesRegex(ValueError, 'are not footprint pads'):
             self.imported(figure)
-        with self.assertRaisesRegex(ValueError, 'authority_required: manufacturer-reference-layout'):
-            self.imported(authority_raw=None)
+        with self.assertRaisesRegex(bl.AuthorityUnavailable, 'authority_unavailable'):
+            self.imported(authority_raw=self.figure_authority())
 
     def test_entry_scale_and_figure_are_bound(self):
         entry = self.imported()
@@ -377,8 +406,12 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'stored scale verification differs'):
             bl.validate_entry(forged)
         forged = copy.deepcopy(entry)
-        forged['receipt']['figure']['class'] = 'manufacturer-evm'
-        with self.assertRaisesRegex(ValueError, 'figure document and class'):
+        forged['receipt']['figure']['document']['sha256'] = 'b' * 64
+        with self.assertRaisesRegex(ValueError, 'figure document must equal the receipt source'):
+            bl.validate_entry(forged)
+        forged = copy.deepcopy(entry)
+        forged['receipt']['figure']['class'] = 'qualified-owner-board'
+        with self.assertRaisesRegex(ValueError, 'manufacturer reference layout or EVM'):
             bl.validate_entry(forged)
         forged = copy.deepcopy(entry)
         del forged['receipt']['figure']
@@ -387,8 +420,7 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
         # A pose edited away from the figure is caught when the figure is re-derived.
         forged = copy.deepcopy(entry)
         next(r for r in forged['layout']['members'] if r['reference'] == 'C1')['pose']['position_nm'][0] += 100000
-        result = bl.materialize(forged, self.board, self.inv, self.names, self.sha, self.policy,
-                                authority_raw=self.figure_authority())
+        result = bl.materialize(forged, self.board, self.inv, self.names, self.sha, self.policy)
         self.assertEqual([p['kind'] for p in result['problems']], ['figure_pose_mismatch'])
 
 
@@ -527,38 +559,61 @@ class AuthorityHoldTests(LibraryFixture, unittest.TestCase):
         unlocked.assert_not_called()
 
     # H2 ------------------------------------------------------------------------------
-    def test_hard_classes_need_an_owner_authority_record(self):
+    def test_hard_classes_refuse_authority_unavailable_on_import(self):
+        """Coordinator ruling 2026-10-21: no hard class until AGENTEE-348; no record confers one."""
         capture, raw = self.placed_region()
-        for name in ('manufacturer-evm', 'manufacturer-reference-layout'):
-            with self.subTest(name=name), self.assertRaisesRegex(ValueError, f'authority_required: {name}'):
-                self.region(name, capture=capture, raw=raw, authority_raw=None)
-        with self.assertRaisesRegex(ValueError, 'authority_required: qualified-owner-board'):
-            self.region('qualified-owner-board', capture=capture, raw=raw, authority_raw=None, repository=REPOSITORY,
-                        commit=COMMIT, path='owned.kicad_pcb')
-        with self.assertRaisesRegex(ValueError, 'authority_required: manufacturer-reference-layout'):
-            self.imported(authority_raw=None)
-        with self.assertRaisesRegex(ValueError, 'search-derived import takes no authority'):
+        identity = {'repository': REPOSITORY, 'commit': COMMIT, 'path': 'owned.kicad_pcb'}
+        for name in HARD:
+            extra = identity if name == 'qualified-owner-board' else {}
+            for record in (None, self.region_authority(name, raw, **extra)):
+                with self.subTest(name=name, record=record is not None), self.assertRaisesRegex(
+                        bl.AuthorityUnavailable, 'authority_unavailable: .*AGENTEE-348'):
+                    self.region(name, capture=capture, raw=raw, authority_raw=record, **extra)
+        with self.assertRaisesRegex(bl.AuthorityUnavailable, 'authority_unavailable: an authority record'):
             self.region('search-derived', capture=capture, raw=raw,
                         authority_raw=self.region_authority('manufacturer-evm', raw))
-        source = {'locator': 'Owned EVM rev A', 'sha256': hashlib.sha256(raw).hexdigest()}
+        with self.assertRaisesRegex(bl.AuthorityUnavailable, 'authority_unavailable'):
+            self.imported(authority_raw=self.figure_authority())
+        self.assertEqual(self.imported()['provenance']['class'], 'search-derived')
+
+    def test_authority_record_binding_contract(self):
+        """The binding kept for AGENTEE-348: each record field is checked against the entry."""
+        capture, raw = self.placed_region()
+        entry, record = self.harden(self.region(capture=capture, raw=raw), 'manufacturer-evm')
+        source = entry['receipt']['source']
+        payload = bl.payload_sha256(entry)
         cases = (
-            (authority('manufacturer-reference-layout', 'board-region/1', source, POWER), 'record class differs'),
-            (authority('manufacturer-evm', 'board-region/1', source, ('U1', 'C1')), 'record references differ'),
-            (authority('manufacturer-evm', 'board-region/1', dict(source, sha256='b' * 64), POWER),
+            (authority('manufacturer-reference-layout', 'board-region/1', source, POWER, payload=payload),
+             'record class differs'),
+            (authority('manufacturer-evm', 'board-region/1', source, ('U1', 'C1'), payload=payload),
+             'record references differ'),
+            (authority('manufacturer-evm', 'board-region/1', dict(source, sha256='b' * 64), POWER, payload=payload),
              'record source differs'),
-            (authority('manufacturer-evm', 'board-region/1', source, POWER, disposition='pending'),
+            (authority('manufacturer-evm', 'board-region/1', source, POWER), 'record payload_sha256 differs'),
+            (authority('manufacturer-evm', 'board-region/1', source, POWER, payload=payload, disposition='pending'),
              'disposition must be approved'),
-            (authority('manufacturer-evm', 'board-region/1', source, POWER, capture=None),
+            (authority('manufacturer-evm', 'board-region/1', source, POWER, payload=payload, capture=None),
              'independent capture of its source'),
-            (authority('manufacturer-evm', 'board-region/1', source, POWER,
+            (authority('manufacturer-evm', 'board-region/1', source, POWER, payload=payload,
                        capture={'origin': 'o', 'captured_by': bl.IMPORTER}), 'importer cannot be the capturer'),
-            (authority('manufacturer-evm', 'project-cluster/1', source, POWER), 'cannot carry class'),
-            (authority('qualified-owner-board', 'board-region/1', source, POWER), 'repository, commit and path'),
+            (authority('manufacturer-evm', 'project-cluster/1', source, POWER, payload=payload), 'cannot carry class'),
+            (authority('qualified-owner-board', 'board-region/1', source, POWER, payload=payload),
+             'repository, commit and path'),
+            (authority('manufacturer-evm', 'board-region/1', source, POWER, payload='x'), 'payload sha256'),
             (b'{"schema": "agent-ee.block-authority/1", "schema": "x"}', 'duplicate'),
         )
-        for record, pattern in cases:
+        for case, pattern in cases:
+            bound = dict(entry, receipt=dict(entry['receipt'], authority_sha256=hashlib.sha256(case).hexdigest()))
             with self.subTest(pattern=pattern), self.assertRaisesRegex(ValueError, pattern):
-                self.region(capture=capture, raw=raw, authority_raw=record)
+                bl.verify_authority(case, bound)
+        self.assertEqual(bl.verify_authority(record, entry)['payload_sha256'], payload)
+        with self.assertRaisesRegex(ValueError, 'authority_unverified'):
+            bl.verify_authority(None, entry)
+        with self.assertRaisesRegex(ValueError, 'authority_mismatch: record bytes'):
+            bl.verify_authority(record + b' ', entry)
+        # A bound record still confers nothing.
+        with self.assertRaisesRegex(bl.AuthorityUnavailable, 'manufacturer-evm cannot be conferred'):
+            bl.validate_entry(entry)
 
     def test_relabelled_cluster_receipt_refuses(self):
         """Owner ruling 2026-10-21: pod and agent work is search-derived/advisory only."""
@@ -568,7 +623,6 @@ class AuthorityHoldTests(LibraryFixture, unittest.TestCase):
         root = self.library()
         for name in HARD:
             record = authority(name, 'board-region/1', source, POWER)
-            self.keep_authority(root, record)
             relabelled = []
             # The class alone, as before.
             forged = copy.deepcopy(entry)
@@ -578,52 +632,27 @@ class AuthorityHoldTests(LibraryFixture, unittest.TestCase):
             forged = copy.deepcopy(forged)
             forged['receipt']['import'] = 'board-region/1'
             forged['copper'] = {'tracks': [], 'arcs': [], 'vias': []}
-            relabelled.append((forged, 'authority_required'))
+            relabelled.append((forged, 'authority_unavailable'))
             forged = copy.deepcopy(forged)
             forged['receipt']['authority_sha256'] = hashlib.sha256(record).hexdigest()
-            relabelled.append((forged, 'source is the probed board'))
+            relabelled.append((forged, 'authority_unavailable'))
             # ... and as a reference figure.
             forged = copy.deepcopy(relabelled[0][0])
             forged['receipt']['import'] = 'reference-figure/1'
             forged['receipt']['authority_sha256'] = hashlib.sha256(record).hexdigest()
-            relabelled.append((forged, 'cannot carry provenance class|keeps its figure record'))
+            relabelled.append((forged, 'cannot carry provenance class|authority_unavailable'))
             for forged, pattern in relabelled:
                 with self.subTest(name=name, pattern=pattern):
                     with self.assertRaisesRegex(ValueError, pattern):
                         bl.validate_entry(forged)
-                    with self.assertRaisesRegex(ValueError, pattern):
+                    with self.assertRaisesRegex(ValueError, 'authority_unavailable'):
                         bl.materialize(forged, self.board, self.inv, self.names, self.sha, self.policy,
                                        authority_raw=record)
                     with self.assertRaisesRegex(ValueError, pattern):
+                        bl.materialize(forged, self.board, self.inv, self.names, self.sha, self.policy)
+                    with self.assertRaisesRegex(ValueError, pattern):
                         bl.add_entry(root, forged)
         self.assertEqual(bl.validate_library(root), [])
-
-    def test_hard_entry_use_verifies_its_authority(self):
-        capture, raw = self.placed_region()
-        record = self.region_authority('manufacturer-evm', raw)
-        entry = self.region(capture=capture, raw=raw, authority_raw=record)
-        result = bl.materialize(entry, capture, self.inv, self.names, self.sha, self.policy)
-        self.assertEqual((result['status'], [p['kind'] for p in result['problems']]), ('refused', ['authority']))
-        self.assertRegex(result['problems'][0]['reason'], 'authority_unverified')
-        result = bl.materialize(entry, capture, self.inv, self.names, self.sha, self.policy,
-                                authority_raw=record + b' ')
-        self.assertRegex(result['problems'][0]['reason'], 'authority_mismatch')
-        self.assertNotIn('candidate', result)
-        result = bl.materialize(entry, capture, self.inv, self.names, self.sha, self.policy, authority_raw=record)
-        self.assertEqual(result['status'], 'materialized', result['problems'])
-        self.assertEqual(result['candidate']['provenance']['class'], 'manufacturer-evm')
-        # The library keeps the record content-addressed under owner/; a changed record refuses.
-        root = self.library()
-        self.keep_authority(root, record)
-        bl.add_entry(root, entry)
-        self.assertEqual(bl.load_authority(root, entry), record)
-        self.assertEqual([e['id'] for e in bl.validate_library(root)], ['owned-evm'])
-        (root / bl.authority_path(entry['receipt']['authority_sha256'])).write_bytes(record + b' ')
-        with self.assertRaisesRegex(ValueError, 'owned-evm v1: authority_mismatch'):
-            bl.validate_library(root)
-        (root / bl.authority_path(entry['receipt']['authority_sha256'])).unlink()
-        with self.assertRaisesRegex(ValueError, 'owned-evm v1: authority_unverified'):
-            bl.lookup(root, part='OWNED-BUCK')
 
     # H3 ------------------------------------------------------------------------------
     def test_receipt_replay_binds_stored_copper_and_layout(self):
@@ -673,17 +702,182 @@ class AuthorityHoldTests(LibraryFixture, unittest.TestCase):
         # Exactly 45 degrees is accepted (inclusive), as is a perpendicular check.
         diagonal = {'from': [0, 10], 'to': [4, 14], 'length_nm': 1_414_214, 'basis': 'diagonal 45'}
         self.assertEqual(bl.verify_scale(self.figure(checks=[diagonal]))['status'], 'scale-verified')
-        # The cited lengths come from the authority's documented dimensions, not from the importer.
+        # The binding for AGENTEE-348: cited lengths must be the authority's documented dimensions.
+        entry = self.imported()
+        for dimensions, pattern in (
+                ([{'basis': 'Owned scale bar, 1 mm', 'length_nm': 1_000_000},
+                  {'basis': 'Owned package body length 5 mm', 'length_nm': 5_100_000}],
+                 'authority_mismatch: figure dimensions not documented by the authority: Owned package body length 5 mm'),
+                ([], 'lists the documented scale and check dimensions')):
+            hard, _ = self.harden(entry, 'manufacturer-reference-layout')
+            record = authority('manufacturer-reference-layout', 'reference-figure/1', hard['receipt']['source'],
+                               POWER, dimensions, payload=bl.payload_sha256(hard))
+            hard['receipt']['authority_sha256'] = hashlib.sha256(record).hexdigest()
+            with self.subTest(pattern=pattern), self.assertRaisesRegex(ValueError, pattern):
+                bl.verify_authority(record, hard)
+
+
+class AuthorityDisabledTests(LibraryFixture, unittest.TestCase):
+    """Regressions for the AGENTEE-342 Sol delta-review HOLD (reviews/ee342b-library-authority-sol.md).
+
+    H1: every agent-authored record, string or file reproduced by the reviewer's probes.py
+    must refuse with authority_unavailable; no path yields enforcement hard. H2 (payload.py):
+    a record is bound to the complete payload, so an edited layout no longer matches it.
+    """
+    DOCUMENT = ReferenceFigureTests.DOCUMENT
+    figure = ReferenceFigureTests.figure
+    figure_authority = ReferenceFigureTests.figure_authority
+    imported = ReferenceFigureTests.imported
+
+    def assert_unavailable(self, call):
+        with self.assertRaisesRegex(bl.AuthorityUnavailable, '^authority_unavailable: '):
+            call()
+
+    def test_probe_importer_authored_records_never_confer_hard(self):
+        """probes.py 'NEW H2 importer-authored record' and 'forged owner namespace lookup'."""
+        capture, raw = self.placed_region()
+        root = self.library()
+        for name in HARD:
+            identity = {'repository': REPOSITORY, 'commit': COMMIT, 'path': 'owned.kicad_pcb'} \
+                if name == 'qualified-owner-board' else {}
+            source = {'locator': 'Owned EVM rev A', 'sha256': hashlib.sha256(raw).hexdigest(), **identity}
+            capture_claim = ({'capture': {'origin': 'invented vendor capture', 'captured_by': 'agent-author-alias'}}
+                             if name.startswith('manufacturer-') else {})
+            record = authority(name, 'board-region/1', source, POWER, owner=bl.IMPORTER,
+                               reference='importer self-approval', **capture_claim)
+            with self.subTest(name=name, path='import'):
+                self.assert_unavailable(lambda: self.region(name, capture=capture, raw=raw, authority_raw=record,
+                                                            **identity))
+            # The same record bound to the whole payload of an otherwise valid entry.
+            entry, bound = self.harden(self.region(capture=capture, raw=raw, **identity), name, owner=bl.IMPORTER,
+                                       reference='importer self-approval', **capture_claim)
+            self.assertEqual(bl.verify_authority(bound, entry)['owner'], bl.IMPORTER)
+            with self.subTest(name=name, path='use'):
+                self.assert_unavailable(lambda: bl.validate_entry(entry))
+                self.assert_unavailable(lambda: bl.materialize(entry, capture, self.inv, self.names, self.sha,
+                                                               self.policy, authority_raw=bound))
+                self.assert_unavailable(lambda: bl.materialize(entry, capture, self.inv, self.names, self.sha,
+                                                               self.policy))
+                self.assert_unavailable(lambda: bl.reproduce(entry, raw, capture, self.inv, self.names, self.sha,
+                                                             self.policy, bound))
+                self.assert_unavailable(lambda: bl.add_entry(root, entry))
+        # A catalogue root an agent wrote directly: entry file, catalogue line and owner/ record.
+        entry, record = self.harden(self.region(capture=capture, raw=raw), 'manufacturer-evm', owner=bl.IMPORTER)
+        self.plant(root, entry, record)
+        self.assert_unavailable(lambda: bl.validate_library(root))
+        self.assert_unavailable(lambda: bl.lookup(root, part='OWNED-BUCK'))
+        self.assertEqual(bl.lookup(ROOT, classes=set(HARD)), [])
+
+    def test_probe_coherent_relabel_refuses(self):
+        """probes.py 'NEW H2 coherent relabel': every self-declared binding updated together."""
+        forged = self.cluster()
+        forged['receipt']['import'] = 'board-region/1'
+        forged['copper'] = {'tracks': [], 'arcs': [], 'vias': []}
+        forged['receipt']['source'] = {'locator': 'agent relabelled as EVM',
+                                       'sha256': forged['receipt']['inputs']['board_sha256']}
+        forged, record = self.harden(forged, 'manufacturer-evm', owner=bl.IMPORTER)
+        self.assertEqual(bl.verify_authority(record, forged)['class'], 'manufacturer-evm')
+        self.assert_unavailable(lambda: bl.materialize(forged, self.board, self.inv, self.names, self.sha,
+                                                       self.policy, authority_raw=record))
+        self.assert_unavailable(lambda: bl.materialize(forged, self.board, self.inv, self.names, self.sha,
+                                                       self.policy))
+
+    def test_probe_copied_rotated_scale_with_fabricated_record(self):
+        """probes.py 'NEW copied/rotated scale plus fabricated record': the record refuses, and the
+        figure without it is advisory only."""
         figure = self.figure()
-        undocumented = self.figure_authority(figure, dimensions=[{'basis': 'Owned scale bar, 1 mm',
-                                                                  'length_nm': 1_000_000},
-                                                                 {'basis': 'Owned package body length 5 mm',
-                                                                  'length_nm': 5_100_000}])
-        with self.assertRaisesRegex(ValueError, 'authority_mismatch: figure dimensions not documented by the '
-                                                'authority: Owned package body length 5 mm'):
-            self.imported(figure, authority_raw=undocumented)
-        with self.assertRaisesRegex(ValueError, 'lists the documented scale and check dimensions'):
-            self.imported(figure, authority_raw=self.figure_authority(figure, dimensions=[]))
+        reference = figure['scale']['reference']
+        figure['scale']['checks'] = [dict(reference, **{'from': [10, 10], 'to': [10, 14],
+                                                        'basis': 'invented independent dimension'})]
+        self.assert_unavailable(lambda: self.imported(figure, authority_raw=self.figure_authority(figure)))
+        entry = self.imported(figure)
+        self.assertEqual((entry['provenance']['class'], entry['provenance']['enforcement']),
+                         ('search-derived', 'advisory'))
+        result = bl.materialize(entry, self.board, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual(result['status'], 'materialized', result['problems'])
+        self.assertEqual((result['enforcement'], result['candidate']['provenance']['enforcement']),
+                         ('advisory', 'advisory'))
+        hard, record = self.harden(entry, 'manufacturer-reference-layout')
+        self.assert_unavailable(lambda: bl.materialize(hard, self.board, self.inv, self.names, self.sha,
+                                                       self.policy, authority_raw=record))
+
+    def test_payload_bound_record_refuses_an_edited_layout(self):
+        """payload.py: approved record and receipt unchanged, C1 moved -100000 nm in X."""
+        capture, raw = self.placed_region()
+        entry, record = self.harden(self.region(capture=capture, raw=raw), 'manufacturer-evm')
+        self.assertEqual(bl.verify_authority(record, entry)['payload_sha256'], bl.payload_sha256(entry))
+        edits = (
+            ('layout', lambda e: e.update(self.moved(e))),
+            ('copper', lambda e: e['copper']['tracks'][0].update(width_nm=e['copper']['tracks'][0]['width_nm'] + 1)),
+            ('receipt', lambda e: e['receipt'].update(candidate_sha256='0' * 64)),
+            ('inputs', lambda e: e['receipt']['inputs'].update(policy_sha256='0' * 64)),
+            ('members', lambda e: next(r for r in e['layout']['members'] if r['reference'] == 'C1').update(
+                courtyard_sha256='0' * 64)),
+        )
+        for label, edit in edits:
+            changed = copy.deepcopy(entry)
+            edit(changed)
+            self.assertEqual(changed['receipt']['authority_sha256'], entry['receipt']['authority_sha256'])
+            with self.subTest(edit=label):
+                with self.assertRaisesRegex(ValueError, 'authority_mismatch: record payload_sha256 differs'):
+                    bl.verify_authority(record, changed)
+                self.assert_unavailable(lambda: bl.materialize(changed, capture, self.inv, self.names, self.sha,
+                                                               self.policy, authority_raw=record))
+                self.assert_unavailable(lambda: bl.add_entry(self.library_once(), changed))
+        root = self.library_once()
+        self.plant(root, self.moved(entry), record)
+        self.assert_unavailable(lambda: bl.lookup(root))
+
+    def library_once(self):
+        root = self.dir / 'library'
+        return root if root.exists() else self.library()
+
+    @staticmethod
+    def moved(entry):
+        changed = copy.deepcopy(entry)
+        next(r for r in changed['layout']['members'] if r['reference'] == 'C1')['pose']['position_nm'][0] -= 100000
+        return changed
+
+    def test_cli_refuses_hard_classes_and_records(self):
+        """The CLI paths: --class, --authority, materialize and a planted catalogue --root."""
+        capture, raw = self.placed_region()
+        (self.dir / 'probe.json').write_text(json.dumps(capture))
+        (self.dir / 'board.kicad_pcb').write_bytes(raw)
+        (self.dir / 'design.xml').write_bytes(native_xml())
+        (self.dir / 'policy.json').write_text(json.dumps(self.policy))
+        record = self.region_authority('manufacturer-evm', raw)
+        (self.dir / 'authority.json').write_bytes(record)
+        common = ('--probe', self.dir / 'probe.json', '--netlist', self.dir / 'design.xml',
+                  '--policy', self.dir / 'policy.json')
+        board_args = (*common, '--board', self.dir / 'board.kicad_pcb', '--references', ','.join(POWER),
+                      '--anchor', 'U1', '--locator', 'Owned EVM rev A', '--id', 'owned-evm', '--version', '1',
+                      '--part', 'OWNED-BUCK', '--citation', 'c')
+        run = CliTests.run_cli
+        cases = (('import-board', *board_args, '--class', 'manufacturer-evm', '--authority', self.dir / 'authority.json',
+                  '--out', self.dir / 'a.json'),
+                 ('import-board', *board_args, '--class', 'manufacturer-reference-layout', '--out', self.dir / 'b.json'),
+                 ('import-board', *board_args, '--class', 'search-derived', '--authority', self.dir / 'authority.json',
+                  '--out', self.dir / 'c.json'))
+        entry, bound = self.harden(self.region(capture=capture, raw=raw), 'manufacturer-evm')
+        (self.dir / 'hard.json').write_text(json.dumps(entry))
+        (self.dir / 'bound.json').write_bytes(bound)
+        cases += (('materialize', *common, '--entry', self.dir / 'hard.json', '--authority', self.dir / 'bound.json',
+                   '--out', self.dir / 'd.json'),)
+        root = self.library()
+        self.plant(root, entry, bound)
+        cases += (('validate', '--root', root), ('lookup', '--root', root), ('add', '--root', self.dir / 'library',
+                                                                              '--entry', self.dir / 'hard.json'))
+        for args in cases:
+            done = run(self, *args)
+            with self.subTest(command=args[0], argv=[str(a) for a in args[-3:]]):
+                self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+                result = json.loads(done.stdout)
+                self.assertEqual((result['status'], result['kind']), ('refused', 'authority_unavailable'))
+        for name in 'abcd':
+            self.assertFalse((self.dir / f'{name}.json').exists())
+        done = run(self, 'import-board', *board_args, '--class', 'search-derived', '--out', self.dir / 'e.json')
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(json.loads((self.dir / 'e.json').read_text())['provenance']['enforcement'], 'advisory')
 
 
 class CatalogueTests(LibraryFixture, unittest.TestCase):
@@ -697,16 +891,14 @@ class CatalogueTests(LibraryFixture, unittest.TestCase):
             bl.add_entry(root, self.cluster(version=3))
         second = self.cluster(version=2)
         bl.add_entry(root, second)
-        evm = self.region()
-        with self.assertRaisesRegex(ValueError, 'authority_unverified'):
+        evm, record = self.harden(self.region(), 'manufacturer-evm')
+        with self.assertRaisesRegex(bl.AuthorityUnavailable, 'authority_unavailable'):
             bl.add_entry(root, evm)
-        capture, raw = self.placed_region()
-        self.keep_authority(root, self.region_authority('manufacturer-evm', raw))
-        bl.add_entry(root, evm)
+        bl.add_entry(root, self.region())
         found = bl.lookup(root, part='OWNED-BUCK')
         self.assertEqual([(r['id'], r['version'], r['provenance']) for r in found],
-                         [('owned-evm', 1, 'manufacturer-evm'), ('owned-buck', 2, 'search-derived')])
-        self.assertEqual(found[0]['label'], 'Owned EVM rev A, manufacturer-evm')
+                         [('owned-buck', 2, 'search-derived'), ('owned-evm', 1, 'search-derived')])
+        self.assertEqual(found[1]['label'], 'search-derived (advisory): board region from Owned EVM rev A')
         self.assertEqual([r['version'] for r in bl.lookup(root, block_id='owned-buck', version=1)], [1])
         self.assertEqual(bl.lookup(root, part='OTHER'), [])
         self.assertEqual(len(bl.validate_library(root)), 3)

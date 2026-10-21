@@ -5,19 +5,25 @@
 entries build on the [block candidate](blocks.md#block-candidate-schema) of
 AGENTEE-339. Their provenance classes follow
 [blocks.md](blocks.md#provenance): a lookup returns each block with its class, so
-a reviewer sees, for example, `TI SNVSBF0C Fig. 8-22, scale-verified` versus
-`search-derived (advisory): project cluster U5 from ...`.
+a reviewer sees, for example, `search-derived (advisory): TI SNVSBF0C Fig. 8-22,
+scale-verified` or `search-derived (advisory): project cluster U5 from ...`.
+
+**Hard classes are disabled** (coordinator ruling 2026-10-21, AGENTEE-342 delta-review
+HOLD). agent-ee has no enforceable owner or manufacturer trust boundary yet: agents run
+as the same user and can author any record, file, catalogue root or CLI argument. Until
+AGENTEE-348 delivers a verified authority mechanism, every entry is `search-derived`
+and advisory, and every path refuses a hard class with `authority_unavailable`
+([Authority](#authority-for-hard-classes)).
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.block_library validate
 PYTHONPATH=src python3 -m agent_ee.block_library lookup --part LMR36520-DDA
 PYTHONPATH=src python3 -m agent_ee.block_library import-board --board evm.kicad_pcb \
   --probe build/evm-probe.json --netlist build/evm.xml --policy design/packing.json \
-  --references U1,C1,C2,L1 --anchor U1 --class manufacturer-evm --locator "Owned EVM rev A" \
-  --authority owner/block-authority/<sha256>.json \
+  --references U1,C1,C2,L1 --anchor U1 --class search-derived --locator "Owned EVM rev A" \
   --id owned-evm --version 1 --part OWNED-BUCK --citation "..." --out build/entry.json
 PYTHONPATH=src python3 -m agent_ee.block_library import-figure --figure design/fig-8-22.json \
-  --document private/datasheet.pdf --authority owner/block-authority/<sha256>.json \
+  --document private/datasheet.pdf \
   --probe ... --netlist ... --policy ... --id ... --version 1 \
   --part ... --citation ... --out build/entry.json
 PYTHONPATH=src python3 -m agent_ee.block_library import-cluster --cluster-poses cluster-poses.json \
@@ -26,13 +32,14 @@ PYTHONPATH=src python3 -m agent_ee.block_library import-cluster --cluster-poses 
 PYTHONPATH=src python3 -m agent_ee.block_library add --entry build/entry.json
 PYTHONPATH=src python3 -m agent_ee.block_library materialize --entry blocks/entries/<id>/v1.json \
   --probe build/placement-probe.json --netlist build/design.xml --policy design/packing.json \
-  --mapping design/mapping.json --out build/block.json   # plus --authority for a hard-class entry
+  --mapping design/mapping.json --out build/block.json
 ```
 
 Imports and `materialize` write a new `--out` file; an existing file is refused.
 Each command prints one JSON status line. The exit code is 0 for `valid`, a
 nonempty lookup, `added`, `imported` and `materialized`, and 1 otherwise. A
-refused input prints `{"status": "refused", "reason": ...}` and writes nothing.
+refused input prints `{"status": "refused", "reason": ...}` and writes nothing; a
+hard class or an `--authority` record adds `"kind": "authority_unavailable"`.
 
 ## What is stored
 
@@ -48,10 +55,10 @@ entry is used ([Materialization](#materialization)).
 | --- | --- |
 | `id`, `version` | Lowercase id (letters, digits, hyphens); version from 1 |
 | `part` | Lookup key, for example `LMR36520-DDA` |
-| `provenance` | `class`, `enforcement`, `citation`, `label`; a hard class adds `source: {locator, sha256}` equal to the receipt source |
+| `provenance` | `class` (`search-derived`), `enforcement` (`advisory`), `citation`, `label`; no `source` |
 | `layout` | `anchor` and `members[]`: `reference`, `fpid`, `side`, `value` rule, anchor-relative `pose`, `pad_geometry_sha256`, `courtyard_sha256`, `pin_functions_sha256`, `pins` (pad number to `[role, boundary]` or `null`) |
 | `copper` | Board-region entries only: framed `tracks`, `arcs` and `vias`, each with its net role; `null` otherwise |
-| `receipt` | `importer` (`agent_ee.block_library/1`), `import` path, `source` (`locator`, `sha256`, optional `repository`, `commit`, `path`), `inputs` (`board_sha256`, `inventory_sha256`, `policy_sha256`), `candidate_sha256`; a figure entry adds `figure` and `scale`; a hard-class entry adds `authority_sha256` ([Authority](#authority-for-hard-classes)) and a search-derived entry never has it |
+| `receipt` | `importer` (`agent_ee.block_library/1`), `import` path, `source` (`locator`, `sha256`, optional `repository`, `commit`, `path`), `inputs` (`board_sha256`, `inventory_sha256`, `policy_sha256`), `candidate_sha256`; a figure entry adds `figure` and `scale`; an `authority_sha256` refuses with `authority_unavailable` ([Authority](#authority-for-hard-classes)) |
 
 Poses, the frame, value rules and pad-geometry and courtyard hashes are those of
 [blocks.md](blocks.md#block-candidate-schema). `pin_functions_sha256` hashes each
@@ -68,71 +75,79 @@ candidate; net names never identify a role.
   (sorted keys, one-space indent);
 - the entry validates, with the catalogued id and version;
 - each id's versions run 1, 2, ... in order;
-- a hard-class entry's authority record is present at
-  `owner/block-authority/<authority_sha256>.json` and binds to the entry.
+- no entry carries a hard class or an authority hash (`authority_unavailable`);
+  records placed anywhere under the root, including `owner/`, are not consulted.
 
-`add_entry` appends only the next version of an id and never writes under
-`owner/`: a hard-class entry is refused until its authority record is already in
-place. It refuses an existing
+`add_entry` appends only the next version of an id. It refuses an existing
 id/version, so a published version is never rewritten. A correction is a new
 version.
 
 `lookup(root, part=, block_id=, version=, classes=)` returns each id's latest
 version, unless `version` is given. Results are ordered by authority:
 `manufacturer-reference-layout`, `manufacturer-evm`, `qualified-owner-board`,
-then `search-derived`. Each result carries `provenance`, `enforcement`, `label`
-and the entry. `load_authority(root, entry)` returns the record bytes a
-hard-class entry needs for `materialize`.
+then `search-derived` (today every result is `search-derived`). Each result carries
+`provenance`, `enforcement`, `label` and the entry.
 
 ## Authority for hard classes
 
 A hard class (`manufacturer-reference-layout`, `manufacturer-evm`,
-`qualified-owner-board`) is never reachable from agent-authored bytes. Per the
-owner ruling of 2026-10-21, pod and agent work is search-derived and advisory
-only. An import labelled with a hard class refuses with `authority_required`
-unless it is given an `agent-ee.block-authority/1` record. That record is either
-an owner-recorded qualification or an independently captured source record:
+`qualified-owner-board`) is disabled. Per the owner ruling of 2026-10-21, pod and
+agent work is search-derived and advisory only. Per the coordinator ruling of the
+same day, no caller-supplied record, string or file can yield enforcement `hard`:
+validation can check a record's structure and binding but cannot authenticate who
+wrote it, and every writer in agent-ee runs as the same user. The reviewer showed
+that importer-authored records, owner-namespace files in a catalogue root, coherent
+relabels and invented figure dimensions all reached `hard` before this ruling.
+
+Every path therefore raises `AuthorityUnavailable` (a `ValueError`, message
+`authority_unavailable: ...`):
+
+- `import_board_region` with a hard `provenance_class` (CLI `--class`), before any
+  file is read;
+- any `authority_raw` record (CLI `--authority`) given to `import_board_region`,
+  `import_reference_figure`, `materialize` or `reproduce`;
+- `validate_entry` on an entry with a hard class or an `authority_sha256`, and so
+  `add_entry`, `validate_library`, `lookup` and `materialize` on such an entry, and
+  the CLI `add`, `validate`, `lookup` and `materialize` on a planted catalogue root.
+
+A datasheet figure is downgraded rather than refused: its `class` records what the
+document claims to be, and the entry is `search-derived` and advisory.
+
+### Binding kept for AGENTEE-348
+
+The `agent-ee.block-authority/1` format and `verify_authority(raw, entry)` stay, so
+the verified mechanism of AGENTEE-348 can use them. Verifying a binding confers
+nothing; `validate_entry` still refuses the class.
 
 ```json
 {"schema": "agent-ee.block-authority/1", "class": "manufacturer-evm", "import": "board-region/1",
  "source": {"locator": "Owned EVM rev A", "sha256": "<source bytes SHA-256>"},
- "references": ["C1", "C3", "L1", "U1"],
+ "references": ["C1", "C3", "L1", "U1"], "payload_sha256": "<payload_sha256(entry)>",
  "capture": {"origin": "<where the vendor bytes were obtained>", "captured_by": "<who captured them>"},
  "owner": "<owner identity>", "disposition": "approved", "reference": "<where the owner recorded it>"}
 ```
 
-- `import` is `board-region/1` or `reference-figure/1`, and `class` must be one that
-  import may carry. `source` must equal the entry receipt's source exactly; a
-  qualified owner board names `repository`, full `commit` and `path`.
-- `references` must equal the entry members in natural order, so a record cannot be
-  reused for another region.
+- `payload_sha256` binds the complete immutable payload: `payload_sha256(entry)` is
+  the canonical hash of the entry without its `receipt.authority_sha256`, so it covers
+  provenance, every layout pose and identity hash, copper, and every receipt identity
+  (source, inputs, candidate hash, figure and scale). An approved record does not
+  endorse an edited layout, copper item or receipt (`authority_mismatch: record
+  payload_sha256 differs`).
+- `class`, `import`, `source` and `references` (members in natural order) must equal
+  the entry; a qualified owner board names `repository`, full `commit` and `path`.
 - A manufacturer class needs `capture` (`origin`, `captured_by`), and the importer
-  (`agent_ee.block_library/1`) cannot be the capturer. A qualified owner board has
-  no capture.
-- A figure record lists `dimensions` (`basis`, `length_nm`, at least two). Every
-  scale reference and check dimension of the figure must cite one of them, so the
-  lengths a figure is verified against are documented by the authority, not chosen by
-  the importer.
-- `disposition` must be `approved`.
-
-The receipt binds the record's SHA-256 (`authority_sha256`). A library keeps it,
-content-addressed, at `owner/block-authority/<sha256>.json`. This module validates
-and binds records; it never writes one. As with
-[violation waivers](violation-waivers.md), the record is owner input supplied
-through the trusted coordinator boundary. Validation checks its structure and
-binding but does not authenticate a human identity, so agents must not
-manufacture one. The test suite's synthetic records exercise the format only.
-
-Every use re-checks the binding. `validate_library`, `lookup` and `add_entry`
-refuse a hard entry whose record is missing (`authority_unverified`) or differs
-(`authority_mismatch`). `materialize` and `reproduce` take the record bytes and
-refuse without them.
+  (`agent_ee.block_library/1`) cannot be the capturer.
+- A figure record lists `dimensions` (`basis`, `length_nm`, at least two), and every
+  scale reference and check dimension must cite one of them.
+- `disposition` must be `approved`; the entry's `authority_sha256` must be the
+  record's SHA-256 (`authority_unverified` without bytes, `authority_mismatch` on any
+  difference).
 
 A relabelled receipt also refuses on structure:
 
 - a `project-cluster/1` entry can carry no class but `search-derived`;
 - a `board-region/1` source must be the probed board itself (source `sha256` equal
-  to `inputs.board_sha256`);
+  to `inputs.board_sha256`), and a hard class refuses with `authority_unavailable`;
 - a `reference-figure/1` entry needs its figure record, with the document hash
   equal to the source.
 
@@ -153,8 +168,8 @@ record is `imported-layout/1` with zero steps, and the judgment basis is
 
 | Import | Classes it may carry | Source |
 | --- | --- | --- |
-| `board-region/1` | `search-derived`; a hard class only with an authority record (`qualified-owner-board` also needs `repository`, `commit` and `path`) | The board bytes, which must hash to the probe's `board_sha256` |
-| `reference-figure/1` | `manufacturer-reference-layout`, `manufacturer-evm`, only with an authority record | The captured document bytes, which must hash to the figure record's `document.sha256` |
+| `board-region/1` | `search-derived`; a hard class refuses (`authority_unavailable`) | The board bytes, which must hash to the probe's `board_sha256` |
+| `reference-figure/1` | `search-derived`; the figure records its claimed `manufacturer-reference-layout` or `manufacturer-evm` | The captured document bytes, which must hash to the figure record's `document.sha256` |
 | `project-cluster/1` | `search-derived` only | The cluster-poses file, with `repository`, full `commit` and `path` |
 
 ### (a) KiCad board region
@@ -199,8 +214,8 @@ refuses with `scale_self_check`. The rules are:
 - at least one check must lie at 45 degrees or more to the reference (inclusive),
   so the other figure axis is verified too.
 
-The cited lengths must also be documented by the figure's
-[authority record](#authority-for-hard-classes).
+When AGENTEE-348 enables authority, the cited lengths must also be documented by
+the figure's [authority record](#authority-for-hard-classes).
 
 Each member measures at least two pad centres. Its rotation is the quarter
 turn whose footprint-local pad positions fit the measurements best. The fit must
@@ -239,15 +254,16 @@ committed entries:
 | `pod-lm2903-soic8-u26` | LM2903-SOIC8 | 3 | 4 |
 
 `--check` re-imports and requires byte-identical, catalogued entry files.
-No validated (hard-class) entry is committed yet. Seeding one needs an owner
-authority record, either for a captured TI reference-layout figure measured with
-its scale reference or for a qualified fome-mc board region.
+No validated (hard-class) entry is committed, and none can be while hard classes
+are disabled. Seeding one needs the verified owner authority of AGENTEE-348, either
+for a captured TI reference-layout figure measured with its scale reference or for a
+qualified fome-mc board region.
 
 ## Materialization
 
 `materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy, mapping, authority_raw)`
-uses an entry on a board. A hard-class entry first verifies its authority record
-(`authority` problem). `mapping` pairs every entry member with a distinct
+uses an entry on a board. A hard-class entry or any `authority_raw` raises
+`AuthorityUnavailable` before anything is built. `mapping` pairs every entry member with a distinct
 target reference, identity by default. The result is
 `{status: materialized | refused, id, version, provenance, enforcement, label, problems}`,
 plus `candidate` only when materialized. Identity follows
@@ -277,7 +293,7 @@ replays the receipt. `source_raw` is the source bytes the import read: the board
 the captured document or the cluster-poses file. Their SHA-256 and the board,
 netlist and policy hashes must match (`source_mismatch`). The import is then
 re-run, and the rebuilt entry must equal the stored one field for field
-(`entry_mismatch` lists the fields). Altered copper, poses, labels or candidate
+(`entry_mismatch` lists the fields). `authority_raw` raises `AuthorityUnavailable`. Altered copper, poses, labels or candidate
 hashes therefore refuse. A re-import that itself refuses is reported as
 `import_refused`.
 
@@ -293,10 +309,17 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=/home/halbritt/git/fome-m
 - each import path with receipt reproduction;
 - the review-HOLD regressions (`AuthorityHoldTests`):
   - admission on the target's own lock state;
-  - hard classes only through a bound authority record, with relabelled cluster
-    receipts refused;
+  - hard classes refused with `authority_unavailable` on import, and the record
+    binding contract, with relabelled cluster receipts refused;
   - replay binding copper and layout;
   - scale self-checks refused;
+- the delta-review HOLD regressions (`AuthorityDisabledTests`), one per reviewer
+  probe: importer-authored records for each hard class on import, use, replay,
+  `add_entry` and a planted catalogue root with an `owner/` record; a coherent
+  relabel; a copied, rotated scale check with a fabricated record; an approved
+  record against a layout, copper, receipt, input or member edit (payload binding);
+  and every CLI path (`--class`, `--authority`, `materialize`, `validate`, `lookup`,
+  `add`);
 - the owner-ruling assertions on project clusters and on the committed pod entries;
 - board-region framing under anchor rotation, with copper selection by net and extent;
 - figure scale verification at its inclusive boundary, axis flips, orientation

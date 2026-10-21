@@ -10,12 +10,14 @@ entry poses and re-grades it with the same graders, so every use is re-proven.
 
 Three import paths: a KiCad board region, a datasheet reference-layout figure whose
 scale is verified against independent dimensions, and a project's hand-placed
-cluster. A project cluster is always ``search-derived`` and advisory (owner ruling
-2026-10-21). A hard class (manufacturer reference layout, manufacturer EVM, qualified
-owner board) needs an ``agent-ee.block-authority/1`` record: an owner-recorded
-qualification or an independently captured source identity, kept under
-``owner/block-authority/`` and never written by this module. Agent-authored bytes
-alone are always search-derived. See docs/block-library.md.
+cluster. Every entry is ``search-derived`` and advisory. The hard classes
+(manufacturer reference layout, manufacturer EVM, qualified owner board) are disabled
+(coordinator ruling 2026-10-21): agents run as the same user and can author any record,
+file, catalogue root or argument, so no caller-supplied input can confer one until a
+verified owner authority mechanism exists (AGENTEE-348). Every path refuses a hard
+class with ``authority_unavailable``; a datasheet figure imports as advisory. The
+``agent-ee.block-authority/1`` binding (``verify_authority``) is kept for that
+mechanism and binds the complete numeric payload. See docs/block-library.md.
 """
 import argparse
 import copy
@@ -35,24 +37,41 @@ ENTRY = 'agent-ee.block-library-entry/1'
 CATALOGUE = 'agent-ee.block-catalogue/1'
 FIGURE = 'agent-ee.reference-layout-figure/1'
 AUTHORITY_RECORD = 'agent-ee.block-authority/1'
-AUTHORITY_DIR = 'owner/block-authority'
 IMPORTER = 'agent_ee.block_library/1'
 STRATEGY = 'imported-layout/1'
 CATALOGUE_PATH = 'blocks/catalogue.json'
+# What a datasheet figure claims to be; its entry is search-derived while hard classes are disabled.
+FIGURE_CLASSES = frozenset(('manufacturer-reference-layout', 'manufacturer-evm'))
 # Which provenance classes each import path may carry. A project cluster is the
 # engineer's or an agent's arrangement, never a reference layout (owner ruling 2026-10-21).
 IMPORTS = {'board-region/1': frozenset(blocks.PROVENANCE),
-           'reference-figure/1': frozenset(('manufacturer-reference-layout', 'manufacturer-evm')),
+           'reference-figure/1': FIGURE_CLASSES | {'search-derived'},
            'project-cluster/1': frozenset(('search-derived',))}
 # Lookup order: the strongest authority first.
 AUTHORITY = ('manufacturer-reference-layout', 'manufacturer-evm', 'qualified-owner-board', 'search-derived')
-# Classes that only an owner authority record can confer.
+# Classes that only a verified owner authority can confer; disabled until AGENTEE-348.
 HARD = frozenset(c for c, enforcement in blocks.PROVENANCE.items() if enforcement == 'hard')
 ENTRY_KEYS = frozenset(('schema', 'id', 'version', 'part', 'provenance', 'layout', 'copper', 'receipt'))
 MEMBER_KEYS = frozenset(('reference', 'fpid', 'side', 'value', 'pose', 'pad_geometry_sha256', 'courtyard_sha256',
                          'pin_functions_sha256', 'pins'))
 RECEIPT_KEYS = frozenset(('importer', 'import', 'source', 'inputs', 'candidate_sha256'))
 INPUT_KEYS = ('board_sha256', 'inventory_sha256', 'policy_sha256')
+
+
+class AuthorityUnavailable(ValueError):
+    """A hard class, or an authority record, was offered while no verified authority exists."""
+
+    def __init__(self, what):
+        super().__init__(f'authority_unavailable: {what}; hard classes are disabled until a verified owner '
+                         'authority mechanism exists (AGENTEE-348), so library entries are search-derived only')
+
+
+def _no_authority(provenance_class=None, authority_raw=None):
+    """Refuse a hard class or any caller-supplied authority record (``authority_unavailable``)."""
+    if provenance_class in HARD:
+        raise AuthorityUnavailable(f'{provenance_class} cannot be conferred')
+    if authority_raw is not None:
+        raise AuthorityUnavailable('an authority record cannot confer a class')
 
 
 def _keys(value, required, optional=(), label='record'):
@@ -130,6 +149,9 @@ def _validate_entry(entry):
         raise ValueError('entry provenance needs a known class and its enforcement')
     if provenance['class'] not in IMPORTS[kind]:
         raise ValueError(f"import {kind} cannot carry provenance class {provenance['class']}")
+    _no_authority(provenance['class'])
+    if 'authority_sha256' in receipt:
+        raise AuthorityUnavailable('an entry cannot bind an authority record')
     _text(provenance['citation'], 'entry citation')
     _text(provenance['label'], 'entry label')
     source = _source_record(receipt['source'], 'receipt source')
@@ -138,14 +160,6 @@ def _validate_entry(entry):
             raise ValueError('a search-derived entry has no reference source')
     elif provenance.get('source') != {'locator': source['locator'], 'sha256': source['sha256']}:
         raise ValueError('a reference entry cites its receipt source locator and sha256')
-    if provenance['class'] == 'qualified-owner-board' and not {'repository', 'commit', 'path'} <= set(source):
-        raise ValueError('a qualified owner board needs its repository, commit and path')
-    # A hard class is conferred only by an owner authority record, bound by its hash.
-    if (provenance['class'] in HARD) != ('authority_sha256' in receipt):
-        raise ValueError('authority_required: a hard class needs an owner authority record and a search-derived '
-                         'entry has none')
-    if 'authority_sha256' in receipt:
-        blocks._hex(receipt['authority_sha256'], 'authority sha256')
     if kind == 'project-cluster/1' and not {'repository', 'commit', 'path'} <= set(source):
         raise ValueError('a project cluster names its repository, commit and path')
     inputs = _keys(receipt['inputs'], set(INPUT_KEYS), label='receipt inputs')
@@ -158,8 +172,8 @@ def _validate_entry(entry):
         if 'figure' not in receipt or 'scale' not in receipt:
             raise ValueError('a reference figure entry keeps its figure record and scale verification')
         figure = validate_figure(receipt['figure'])
-        if figure['document']['sha256'] != source['sha256'] or figure['class'] != provenance['class']:
-            raise ValueError('figure document and class must equal the receipt source and entry class')
+        if figure['document']['sha256'] != source['sha256']:
+            raise ValueError('figure document must equal the receipt source')
         if verify_scale(figure) != receipt['scale']:
             raise ValueError('stored scale verification differs from the figure record')
     elif 'figure' in receipt or 'scale' in receipt:
@@ -210,25 +224,30 @@ def _source_record(value, label):
     return source
 
 
-# Owner authority records -----------------------------------------------------------
+# Owner authority binding (for AGENTEE-348) -------------------------------------------
 
-def authority_path(sha256):
-    """Where a library keeps the authority record with this SHA-256 (content-addressed)."""
-    blocks._hex(sha256, 'authority sha256')
-    return f'{AUTHORITY_DIR}/{sha256}.json'
+def payload_sha256(entry):
+    """Identity of an entry's complete immutable payload: everything but its authority hash.
+
+    It covers id, version, part, provenance, the layout poses and identities, copper and
+    every receipt identity (source, inputs, candidate hash, figure and scale).
+    """
+    body = copy.deepcopy(entry)
+    body['receipt'].pop('authority_sha256', None)
+    return digest(body)
 
 
 def validate_authority(record):
-    """An ``agent-ee.block-authority/1`` record: who confers which hard class on which source.
+    """An ``agent-ee.block-authority/1`` record: who confers which hard class on which payload.
 
-    The record is owner input, supplied through the trusted coordinator boundary like a
-    violation-waiver approval; this module validates and binds it and never writes one.
-    A manufacturer class also needs the independent capture of the source (its origin
-    and who captured it); a figure lists the documented dimensions its scale is checked
-    against. Raises ValueError.
+    The record format the verified owner authority mechanism (AGENTEE-348) will deliver.
+    Validating it confers nothing: no caller-supplied record yields a hard class (see
+    ``AuthorityUnavailable``). A manufacturer class also names the independent capture of
+    the source; a figure lists the documented dimensions its scale is checked against.
+    Raises ValueError.
     """
-    _keys(record, {'schema', 'class', 'import', 'source', 'references', 'owner', 'disposition', 'reference'},
-          {'capture', 'dimensions'}, label='authority record')
+    _keys(record, {'schema', 'class', 'import', 'source', 'references', 'payload_sha256', 'owner', 'disposition',
+                   'reference'}, {'capture', 'dimensions'}, label='authority record')
     if record['schema'] != AUTHORITY_RECORD:
         raise ValueError(f'expected {AUTHORITY_RECORD}')
     if record['class'] not in HARD:
@@ -241,6 +260,7 @@ def validate_authority(record):
     references = _texts(record['references'])
     if references != sorted(set(references), key=blocks._natural):
         raise ValueError('authority references must be unique and in natural order')
+    blocks._hex(record['payload_sha256'], 'authority payload sha256')
     for key in ('owner', 'reference'):
         _text(record[key], 'authority ' + key)
     if record['disposition'] != 'approved':
@@ -270,7 +290,12 @@ def validate_authority(record):
 
 
 def verify_authority(raw, entry):
-    """The authority record bytes bound to an entry: hash, class, import, source and members."""
+    """Whether authority record bytes bind to an entry: hash, class, import, source, members and payload.
+
+    A binding check only, for the verified authority mechanism (AGENTEE-348); it confers
+    no class, and ``validate_entry`` still refuses every hard-class entry. Any change to
+    the layout, copper or receipt identities after approval is ``authority_mismatch``.
+    """
     receipt = entry['receipt']
     if 'authority_sha256' not in receipt:
         raise ValueError('authority_required: the entry names no authority record')
@@ -281,7 +306,8 @@ def verify_authority(raw, entry):
     record = validate_authority(strict_json(raw))
     members = sorted((r['reference'] for r in entry['layout']['members']), key=blocks._natural)
     for key, expected in (('class', entry['provenance']['class']), ('import', receipt['import']),
-                          ('source', receipt['source']), ('references', members)):
+                          ('source', receipt['source']), ('references', members),
+                          ('payload_sha256', payload_sha256(entry))):
         if record[key] != expected:
             raise ValueError(f'authority_mismatch: record {key} differs from the entry')
     if receipt['import'] == 'reference-figure/1':
@@ -293,27 +319,6 @@ def verify_authority(raw, entry):
             raise ValueError('authority_mismatch: figure dimensions not documented by the authority: '
                              + '; '.join(missing))
     return record
-
-
-def _authority_receipt(provenance_class, authority_raw):
-    """The receipt's authority binding; a hard class without its owner record refuses before any build."""
-    if provenance_class not in HARD:
-        if authority_raw is not None:
-            raise ValueError('a search-derived import takes no authority record')
-        return {}
-    if authority_raw is None:
-        raise ValueError(f'authority_required: {provenance_class} needs an owner authority record '
-                         f'({AUTHORITY_RECORD}); agent-authored bytes are search-derived only')
-    return {'authority_sha256': hashlib.sha256(authority_raw).hexdigest()}
-
-
-def _authorize(entry, authority_raw):
-    """An imported entry with its class conferred, or refused when a class lacks its authority."""
-    if entry['provenance']['class'] in HARD:
-        verify_authority(authority_raw, entry)
-    elif authority_raw is not None:
-        raise ValueError('a search-derived import takes no authority record')
-    return entry
 
 
 def _copper(copper, roles, kind):
@@ -351,7 +356,7 @@ def validate_figure(figure):
     blocks._hex(document['sha256'], 'figure document sha256')
     if type(document['page']) is not int or document['page'] < 1:
         raise ValueError('figure document page must be a positive integer')
-    if figure['class'] not in IMPORTS['reference-figure/1']:
+    if figure['class'] not in FIGURE_CLASSES:
         raise ValueError('a figure is a manufacturer reference layout or EVM')
     if figure['axes'] not in ('x-right-y-down', 'x-right-y-up'):
         raise ValueError('figure axes must be x-right-y-down or x-right-y-up')
@@ -610,13 +615,14 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
     Identity follows ``blocks.match``: footprint, side, land pattern, courtyard, pin
     functions, value rule and the one-to-one net-role partition; net names are not
     identities. A figure entry's poses are re-derived from the figure and the target
-    lands. A hard-class entry needs its authority record bytes. The candidate is
-    built on the target's own lock state and must be admitted by ``blocks.admit``
+    lands. A hard-class entry or an ``authority_raw`` record raises
+    ``AuthorityUnavailable``. The candidate is built on the target's own lock state and must be admitted by ``blocks.admit``
     (binding sources, isolated policy, identity and a native re-grade); anything other
     than ``admitted`` refuses with the admission evidence. Returns ``{'status':
     'materialized' | 'refused', 'provenance', 'label', 'problems', 'candidate'}``;
     the candidate is present only when materialized.
     """
+    _no_authority(authority_raw=authority_raw)
     validate_entry(entry)
     rows = {r['reference']: r for r in entry['layout']['members']}
     mapping = {r: r for r in rows} if mapping is None else mapping
@@ -627,12 +633,6 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
               'provenance': entry['provenance']['class'], 'enforcement': entry['provenance']['enforcement'],
               'label': entry['provenance']['label'], 'problems': []}
     problems = result['problems']
-    if entry['provenance']['class'] in HARD:
-        try:
-            verify_authority(authority_raw, entry)
-        except ValueError as exc:
-            problems.append({'kind': 'authority', 'reason': str(exc)})
-            return result
     for ref, target in sorted(mapping.items()):
         if target not in board or target not in inventory['components']:
             problems.append({'reference': ref, 'target': target, 'kind': 'target_missing'})
@@ -743,8 +743,10 @@ def reproduce(entry, source_raw, capture, inventory, sheet_names, inventory_sha2
     ``source_raw`` is what the import read: the board bytes, the captured document or
     the cluster-poses file. The rebuilt entry must equal the stored one field for
     field, so poses, copper, labels and the candidate hash are all bound. Returns
-    ``{'status': 'reproduced' | 'refused', 'problems': [...]}``.
+    ``{'status': 'reproduced' | 'refused', 'problems': [...]}``. An ``authority_raw``
+    record raises ``AuthorityUnavailable``.
     """
+    _no_authority(authority_raw=authority_raw)
     validate_entry(entry)
     receipt, source = entry['receipt'], entry['receipt']['source']
     source_policy = _import_policy(policy, {r['reference'] for r in entry['layout']['members']})
@@ -758,7 +760,7 @@ def reproduce(entry, source_raw, capture, inventory, sheet_names, inventory_sha2
     if problems:
         return {'status': 'refused', 'problems': problems}
     common = dict(block_id=entry['id'], version=entry['version'], part=entry['part'],
-                  citation=entry['provenance']['citation'], authority_raw=authority_raw)
+                  citation=entry['provenance']['citation'])
     kind = receipt['import']
     try:
         if kind == 'board-region/1':
@@ -771,9 +773,6 @@ def reproduce(entry, source_raw, capture, inventory, sheet_names, inventory_sha2
             rebuilt = import_reference_figure(copy.deepcopy(receipt['figure']), source_raw, capture, inventory,
                                               sheet_names, inventory_sha256, policy, **common)
         else:
-            common.pop('authority_raw')
-            if authority_raw is not None:
-                raise ValueError('a search-derived import takes no authority record')
             rebuilt = import_project_cluster(source_raw, entry['layout']['anchor'], capture, inventory, sheet_names,
                                              inventory_sha256, policy, repository=source['repository'],
                                              commit=source['commit'], path=source['path'], **common)
@@ -797,7 +796,8 @@ def _source(locator, sha256, **identity):
 def _label(kind, provenance_class, source, detail=None):
     """What a reviewer sees beside the block, e.g. ``TI SNVSBF0C Fig. 8-22, scale-verified``."""
     if kind == 'reference-figure/1':
-        return f"{detail['document']['locator']} {detail['document']['figure']}, scale-verified"
+        return (f"search-derived (advisory): {detail['document']['locator']} {detail['document']['figure']}, "
+                'scale-verified')
     where = (source.get('path') or source['locator']) + (f"@{source['commit'][:12]}" if 'commit' in source else '')
     if kind == 'project-cluster/1':
         return f'search-derived (advisory): project cluster {detail} from {where}'
@@ -875,15 +875,15 @@ def import_board_region(board_raw, capture, inventory, sheet_names, inventory_sh
                         repository=None, commit=None, path=None, authority_raw=None):
     """Import path (a): a KiCad board region, its relative poses, copper and source hash.
 
-    The region is ``search-derived`` unless ``authority_raw`` is an owner authority
-    record conferring ``provenance_class`` on exactly this board and these members.
+    The region is ``search-derived``; a hard ``provenance_class`` or any
+    ``authority_raw`` raises ``AuthorityUnavailable`` before anything is read.
     """
+    if provenance_class not in IMPORTS['board-region/1']:
+        raise ValueError(f'unknown provenance class {provenance_class}')
+    _no_authority(provenance_class, authority_raw)
     sha = hashlib.sha256(board_raw).hexdigest()
     if sha != capture['board_sha256']:
         raise ValueError('board bytes differ from the placement probe board_sha256')
-    if provenance_class not in IMPORTS['board-region/1']:
-        raise ValueError(f'unknown provenance class {provenance_class}')
-    authority = _authority_receipt(provenance_class, authority_raw)
     board = {fp['ref']: fp for fp in capture['footprints']}
     refs = set(_texts(references))
     if anchor not in refs or refs - set(board):
@@ -897,28 +897,27 @@ def import_board_region(board_raw, capture, inventory, sheet_names, inventory_sh
                                                 origin, turns)
         poses[ref] = {'position_nm': [int(v) for v in position], 'rotation_deg': rotation}
     source = _source(locator, sha, repository=repository, commit=commit, path=path)
-    provenance = {'class': provenance_class, 'citation': citation, 'method': 'board-region/1',
-                  **({} if provenance_class == 'search-derived' else {'source': {'locator': locator, 'sha256': sha}})}
+    provenance = {'class': provenance_class, 'citation': citation, 'method': 'board-region/1'}
     built, inputs = _import(capture, inventory, sheet_names, inventory_sha256, policy, block_id, poses, anchor,
                             _with_enforcement(provenance))
     copper = board_copper(board_raw, capture, built[0],
                           {'position_nm': origin, 'rotation_deg': turns * 90})
     entry_provenance = {'class': provenance_class, 'enforcement': blocks.PROVENANCE[provenance_class],
-                        'citation': citation, 'label': _label('board-region/1', provenance_class, source),
-                        **({'source': provenance['source']} if 'source' in provenance else {})}
-    receipt = {'importer': IMPORTER, 'import': 'board-region/1', 'source': source, 'inputs': inputs, **authority}
-    return _authorize(_entry(block_id, version, part, entry_provenance, built, copper, receipt), authority_raw)
+                        'citation': citation, 'label': _label('board-region/1', provenance_class, source)}
+    receipt = {'importer': IMPORTER, 'import': 'board-region/1', 'source': source, 'inputs': inputs}
+    return _entry(block_id, version, part, entry_provenance, built, copper, receipt)
 
 
 def import_reference_figure(figure, document_raw, capture, inventory, sheet_names, inventory_sha256, policy, *,
                             block_id, version, part, citation, authority_raw=None):
     """Import path (b): a datasheet reference-layout figure, scale-verified, realized on the board's lands.
 
-    The figure's class is conferred only by ``authority_raw``, an owner authority record
-    for the captured document that also documents every scale and check dimension.
+    The figure's ``class`` is what the document claims to be; while hard classes are
+    disabled the entry is ``search-derived`` and advisory, and any ``authority_raw``
+    raises ``AuthorityUnavailable``.
     """
+    _no_authority(authority_raw=authority_raw)
     validate_figure(figure)
-    authority = _authority_receipt(figure['class'], authority_raw)
     sha = hashlib.sha256(document_raw).hexdigest()
     if sha != figure['document']['sha256']:
         raise ValueError('captured document bytes differ from the figure document sha256')
@@ -926,16 +925,15 @@ def import_reference_figure(figure, document_raw, capture, inventory, sheet_name
     poses = figure_poses(figure, capture)
     document = figure['document']
     source = _source(document['locator'], sha)
-    provenance = {'class': figure['class'], 'citation': citation, 'method': 'reference-figure/1',
-                  'source': {'locator': document['locator'], 'sha256': sha}}
+    provenance = {'class': 'search-derived', 'citation': citation, 'method': 'reference-figure/1'}
     built, inputs = _import(capture, inventory, sheet_names, inventory_sha256, policy, block_id, poses,
                             figure['anchor'], _with_enforcement(provenance))
-    entry_provenance = {'class': figure['class'], 'enforcement': blocks.PROVENANCE[figure['class']],
-                        'citation': citation, 'label': _label('reference-figure/1', figure['class'], source, figure),
-                        'source': provenance['source']}
+    entry_provenance = {'class': 'search-derived', 'enforcement': blocks.PROVENANCE['search-derived'],
+                        'citation': citation,
+                        'label': _label('reference-figure/1', 'search-derived', source, figure)}
     receipt = {'importer': IMPORTER, 'import': 'reference-figure/1', 'source': source, 'inputs': inputs,
-               'figure': copy.deepcopy(figure), 'scale': scale, **authority}
-    return _authorize(_entry(block_id, version, part, entry_provenance, built, None, receipt), authority_raw)
+               'figure': copy.deepcopy(figure), 'scale': scale}
+    return _entry(block_id, version, part, entry_provenance, built, None, receipt)
 
 
 def import_project_cluster(cluster_raw, cluster, capture, inventory, sheet_names, inventory_sha256, policy, *,
@@ -1018,31 +1016,13 @@ def validate_library(root):
             raise ValueError(f"{record['path']}: entry id and version differ from the catalogue")
         if raw != entry_bytes(entry):
             raise ValueError(f"{record['path']}: entry is not in canonical form")
-        _library_authority(root, entry)
         loaded.append(entry)
     return loaded
-
-
-def load_authority(root, entry):
-    """The authority record bytes a library keeps for a hard-class entry, or None."""
-    if 'authority_sha256' not in entry['receipt']:
-        return None
-    path = Path(root) / authority_path(entry['receipt']['authority_sha256'])
-    return path.read_bytes() if path.is_file() else None
-
-
-def _library_authority(root, entry):
-    if 'authority_sha256' in entry['receipt']:
-        try:
-            verify_authority(load_authority(root, entry), entry)
-        except ValueError as exc:
-            raise ValueError(f"{entry['id']} v{entry['version']}: {exc}") from None
 
 
 def add_entry(root, entry):
     """Append a new version; an existing id/version is immutable and never rewritten."""
     validate_entry(entry)
-    _library_authority(root, entry)
     entries = validate_library(root)
     latest = max((e['version'] for e in entries if e['id'] == entry['id']), default=0)
     if entry['version'] != latest + 1:
@@ -1131,7 +1111,8 @@ def main(argv=None):
         board.add_argument('--' + key)
     for name in ('import-board', 'import-figure', 'materialize'):
         sub.choices[name].add_argument('--authority', type=Path,
-                                       help=f'owner {AUTHORITY_RECORD} record; required for a hard class')
+                                       help=f'{AUTHORITY_RECORD} record; refused (authority_unavailable) '
+                                            'until AGENTEE-348')
     figure = sub.choices['import-figure']
     figure.add_argument('--figure', required=True, type=Path, help=FIGURE)
     figure.add_argument('--document', required=True, type=Path, help='captured datasheet bytes (not committed)')
@@ -1181,7 +1162,8 @@ def main(argv=None):
                                  authority)
         _write(args.out, result)
     except (OSError, ValueError) as exc:
-        print(json.dumps({'status': 'refused', 'reason': str(exc)}))
+        kind = {'kind': 'authority_unavailable'} if isinstance(exc, AuthorityUnavailable) else {}
+        print(json.dumps({'status': 'refused', **kind, 'reason': str(exc)}))
         return 1
     status = result.get('status', 'imported') if args.command == 'materialize' else 'imported'
     print(json.dumps({'status': status, 'out': str(args.out)}))
