@@ -290,6 +290,11 @@ def check_placement(ctx):
                           summary=f"{criterion}: {len(result['advisories'])} advisory locality bound(s), "
                                   f"{sum(a['exceeded'] for a in result['advisories'])} exceeded")
         return
+    if status == 'info' and 'advisories' in result:
+        ctx.result.update(execution='ok', outcome='info',
+                          summary=f"{criterion}: {len(result['advisories'])} advisory unsourced limit(s), "
+                                  f"{sum(a['exceeded'] for a in result['advisories'])} exceeded; no proved violation")
+        return
     if status == 'info':
         ctx.result.update(execution='ok', outcome='info',
                           summary=f"{criterion}: pad-centre MST proxy {result['totals']['manhattan_nm'] / 10**6} mm "

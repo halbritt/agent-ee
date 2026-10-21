@@ -75,12 +75,12 @@ class UnsourcedPlacementTest(unittest.TestCase):
         self.assertEqual(report['outcome'], 'defect')
         self.assertNotIn('obstacle 0', [b['constraint'] for b in report['binding_constraints']])
 
-    def test_edge_minimum_unsourced_is_unknown_but_outside_stays_defect(self):
+    def test_edge_minimum_unsourced_is_advisory_but_outside_stays_defect(self):
         board = capture([part('C1', 0, 5)], rectangle(0, 0, 10, 10))
         params = {'criterion': 'edge-clearance/1', 'drc_check': 'drc', 'min_courtyard_edge_mm': 1}
         report = evaluate('edge-clearance/1', board, {}, params)
-        self.assertEqual(report['status'], 'unknown')
-        self.assertEqual(report['unknown'][0]['kind'], 'unsourced_limit')
+        self.assertEqual((report['status'], report['unknown'], report['defects']), ('info', [], []))
+        self.assertEqual(report['advisories'][0]['kind'], 'unsourced_limit')
         self.assertEqual(report['measured'][0]['constraint_provenance']['class'], 'unknown')
         params['constraint_provenance'] = {'min_courtyard_edge_mm': source(MM)}
         self.assertEqual(parameters(params), [])
@@ -92,8 +92,8 @@ class UnsourcedPlacementTest(unittest.TestCase):
         board = capture([part('C1', 10, 10)], rectangle(0, 0, 20, 20))
         group = {**region(), 'anchor': {'point_nm': [0, 0]}, 'max_distance_nm': MM}
         report = placement_groups.grade(board, placement_groups.validate([group]))
-        self.assertEqual((report['status'], report['defects']), ('unknown', []))
-        self.assertEqual({u['kind'] for u in report['unknown']}, {'unsourced_limit'})
+        self.assertEqual((report['status'], report['defects'], report['unknown']), ('info', [], []))
+        self.assertEqual({u['kind'] for u in report['advisories']}, {'unsourced_limit'})
         self.assertEqual(report['measured'][0]['constraint_provenance']['enforcement'], 'soft')
         group['constraint_provenance'] = {'region': source(), 'max_distance_nm': source(MM)}
         hard = placement_groups.grade(board, placement_groups.validate([group]))
@@ -103,6 +103,48 @@ class UnsourcedPlacementTest(unittest.TestCase):
         mixed = placement_groups.grade(board, placement_groups.validate([group]))
         self.assertEqual(mixed['status'], 'defect')
         self.assertEqual([d['kind'] for d in mixed['defects']], ['outside_group_region'])
+
+    def test_satisfied_unsourced_limits_are_reported_and_keep_pass(self):
+        board = capture([part('C1', 5, 5)], rectangle(0, 0, 10, 10))
+        params = {'criterion': 'edge-clearance/1', 'drc_check': 'drc', 'min_courtyard_edge_mm': 1}
+        edge = evaluate('edge-clearance/1', board, {}, params)
+        self.assertEqual((edge['status'], edge['defects'], edge['unknown']), ('pass', [], []))
+        self.assertEqual({a['exceeded'] for a in edge['advisories']}, {False})
+        self.assertEqual(len(edge['advisories']), len(edge['measured']))
+        params['constraint_provenance'] = {'min_courtyard_edge_mm': source(MM)}
+        sourced = evaluate('edge-clearance/1', board, {}, params)
+        self.assertEqual((sourced['status'], sourced['advisories']), ('pass', []))
+        group = {**region(size=10), 'anchor': {'point_nm': [5 * MM, 5 * MM]}, 'max_distance_nm': MM}
+        report = placement_groups.grade(board, placement_groups.validate([group]))
+        self.assertEqual((report['status'], report['defects'], report['unknown']), ('pass', [], []))
+        self.assertEqual(sorted((a['constraint'], a['exceeded']) for a in report['advisories']),
+                         [('group g max_distance_nm', False), ('group g region', False)])
+        self.assertTrue(placement_groups.satisfied(report))
+        group['constraint_provenance'] = {'region': source(), 'max_distance_nm': source(MM)}
+        hard = placement_groups.grade(board, placement_groups.validate([group]))
+        self.assertEqual((hard['status'], hard['advisories']), ('pass', []))
+
+    def test_exceeded_advisories_stay_blocking_for_planners(self):
+        from agent_ee import block_arrangement, blocks
+        board = capture([part('C1', 10, 10)], rectangle(0, 0, 20, 20))
+        group = {'id': 'g', 'references': ['C1'], 'anchor': {'point_nm': [0, 0]}, 'max_distance_nm': MM}
+        report = placement_groups.grade(board, placement_groups.validate([group]))
+        self.assertEqual((report['status'], report['defects'], report['unknown']), ('info', [], []))
+        self.assertFalse(placement_groups.satisfied(report))
+        self.assertEqual([v['constraint'] for v in placement_groups.violations(report)], ['group g max_distance_nm'])
+        self.assertFalse(blocks._grade_usable('groups', report))
+        self.assertTrue(blocks._grade_usable('groups', placement_groups.grade(
+            capture([part('C1', 0.5, 0.5)], rectangle(0, 0, 20, 20)), placement_groups.validate([group]))))
+        admitted = {'B1': {'deferred': {'obligations': [], 'groups': ['g']}}}
+        self.assertEqual(block_arrangement._deferred_grading({'group_grading': report}, admitted)[0]['status'], 'defect')
+
+    def test_planner_accepts_satisfied_unsourced_group(self):
+        board = capture([part('C1', 5, 5)], rectangle(0, 0, 20, 20))
+        group = {'id': 'g', 'references': ['C1'], 'anchor': {'point_nm': [5 * MM, 5 * MM]}, 'max_distance_nm': 3 * MM}
+        report = pack(board, request(fixed_refs=[], gap_nm=0, groups=[group]))
+        self.assertEqual(report['status'], 'planned')
+        self.assertEqual(report['group_grading']['status'], 'pass')
+        self.assertEqual({a['exceeded'] for a in report['group_grading']['advisories']}, {False})
 
     def test_unsourced_obstacle_does_not_hide_independent_board_proof(self):
         from test_placer_capacity import columns_case

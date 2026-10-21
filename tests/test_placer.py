@@ -2,7 +2,7 @@
 import unittest
 
 from agent_ee.placer import pack
-from tests.test_placement import capture, part
+from test_placement import capture, part
 
 
 def request(**changes):

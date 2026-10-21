@@ -471,9 +471,11 @@ retains the original requested geometry and limits.
 
 Search still reserves the declared geometry and group radii; search failure
 remains unknown. Saved-board grading reports unsourced region and radius
-violations as `unsourced_limit` unknowns with the original `advisory_kind`,
-measured values and source class. Sourced defects survive alongside those
-unknowns. These source records follow the existing caller qualification contract;
+limits as `unsourced_limit` advisories with the original `advisory_kind`,
+measured values, source class and `exceeded`. The status is `info` when only
+exceeded advisories remain; satisfied ones keep `pass`. Sourced defects survive alongside them. Because search enforces the
+groups, a plan or saved board is accepted only when no advisory is exceeded
+(`placement_groups.satisfied`). These source records follow the existing caller qualification contract;
 authenticating declared citations remains AGENTEE-348.
 
 ### Board capacity (AGENTEE-249)

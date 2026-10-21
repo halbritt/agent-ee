@@ -752,7 +752,8 @@ bounded exactly within a declared 5 um tolerance. A fixed courtyard may leave th
 outline only across envelope-declared edges and distances. Declared group
 regions and anchor distances are enforced and graded by `placement-groups/1`.
 [Unsourced obstacle, region and saved-board limits](docs/placer.md#obstacle-and-group-sources-agentee-361)
-report advisory unknowns when they would otherwise establish a defect; authored
+never establish a defect: capacity proofs that need them are unknown, and
+saved-board edge and group checks report them as `info` advisories. Authored
 fixtures and captured geometry retain their sourced verdicts.
 Parts without courtyards are refused by name
 ([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). Every placer

@@ -584,6 +584,8 @@ def _block_policy(sub, refs, anchor):
 
 
 def _grade_usable(kind, record):
+    if kind == 'groups':
+        return placement_groups.satisfied(record)
     return record.get('status') in (('pass', 'info') if kind == 'electrical_locality' else ('pass',))
 
 

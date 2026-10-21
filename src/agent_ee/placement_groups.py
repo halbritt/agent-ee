@@ -137,12 +137,23 @@ def admits(fp, group, positions):
     return True
 
 
+def violations(record):
+    """Every defect, unknown and exceeded advisory of a grade; search consumers enforce all of them."""
+    return (record.get('defects', []) + record.get('unknown', [])
+            + [a for a in record.get('advisories', []) if a.get('exceeded') is not False])
+
+
+def satisfied(record):
+    """A grade that a planner may accept: pass, or info whose unsourced limits all hold."""
+    return record.get('status') in ('pass', 'info') and not violations(record)
+
+
 def grade(probe, groups):
-    """placement-groups/1 over a saved-board probe: pass, defect or unknown, never inferred."""
+    """placement-groups/1 over a saved-board probe: pass, info (exceeded unsourced advisories only), defect or unknown, never inferred."""
     by_ref = {}
     for fp in probe['footprints']:
         by_ref.setdefault(fp['ref'], []).append(fp)
-    defects, unknown, measured = [], [], []
+    defects, unknown, measured, advisories = [], [], [], []
     def unique(ref, gid, kind):
         found = by_ref.get(ref, [])
         if len(found) != 1:
@@ -150,14 +161,16 @@ def grade(probe, groups):
                             'reason': 'reference missing' if not found else 'reference duplicated'})
             return None
         return found[0]
-    def finding(record, group, name):
+    def finding(record, group, name, exceeded=True):
+        # Hard limits prove defects; unsourced ones are advisories, satisfied or exceeded.
         authority = constraint_source(group, name)
         record = {**record, 'constraint_provenance': authority}
-        if authority['enforcement'] == 'hard':
+        if authority['enforcement'] != 'hard':
+            advisories.append({**record, 'kind': 'unsourced_limit', 'advisory_kind': record['kind'],
+                               'exceeded': exceeded, 'constraint': f"group {group['id']} {name}",
+                               'reason': authority['soft_reason']})
+        elif exceeded:
             defects.append(record)
-        else:
-            unknown.append({**record, 'kind': 'unsourced_limit', 'advisory_kind': record['kind'],
-                            'constraint': f"group {group['id']} {name}", 'reason': authority['soft_reason']})
     for group in groups:
         gid = group['id']
         point = None
@@ -189,6 +202,9 @@ def grade(probe, groups):
                     elif inner is not outer and outside_region(outer, region) > 0:
                         unknown.append({'kind': 'courtyard_approximation', 'group': gid, 'ref': ref, 'side': side,
                                         'reason': 'region boundary lies between the declared curve bounds'})
+                    else:
+                        finding({'kind': 'outside_group_region', 'group': gid, 'ref': ref, 'side': side,
+                                 'outside_area_mm2': 0.0}, group, 'region', exceeded=False)
             if 'anchor' in group and point is not None:
                 d2 = distance2(fp['position_nm'], point)
                 # The decision is exact on squared integers; the millimetre distance is a report.
@@ -196,8 +212,10 @@ def grade(probe, groups):
                           'max_distance_mm': group['max_distance_nm'] / 10**6,
                           'constraint_provenance': constraint_source(group, 'max_distance_nm')}
                 measured.append(record)
-                if d2 > group['max_distance_nm'] ** 2:
-                    finding({'kind': 'group_anchor_distance', **record}, group, 'max_distance_nm')
-    status = 'defect' if defects else 'unknown' if unknown else 'pass'
-    return {'criterion': CRITERION, 'status': status, 'defects': defects, 'unknown': unknown,
+                finding({'kind': 'group_anchor_distance', **record}, group, 'max_distance_nm',
+                        exceeded=d2 > group['max_distance_nm'] ** 2)
+    # Satisfied advisories are reported but keep pass; only an exceeded one makes the result info.
+    status = ('defect' if defects else 'unknown' if unknown
+              else 'info' if any(a['exceeded'] for a in advisories) else 'pass')
+    return {'criterion': CRITERION, 'status': status, 'defects': defects, 'unknown': unknown, 'advisories': advisories,
             'measured': measured, 'groups': groups}

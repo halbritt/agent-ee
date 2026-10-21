@@ -836,7 +836,7 @@ def _deferred_grading(plan, admitted):
                         'status': 'pass' if measured and not bad else 'defect' if bad else 'unknown'})
         for gid in deferred['groups']:
             measured = [m for m in groups.get('measured', []) if m.get('group') == gid]
-            bad = [d for d in groups.get('defects', []) + groups.get('unknown', []) if d.get('group') == gid]
+            bad = [d for d in placement_groups.violations(groups) if d.get('group') == gid]
             out.append({'block': bid, 'kind': 'group', 'id': gid, 'measured': len(measured),
                         'status': 'pass' if measured and not bad else 'defect' if bad else 'unknown'})
     return out

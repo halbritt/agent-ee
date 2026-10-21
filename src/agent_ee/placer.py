@@ -1728,7 +1728,7 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     if judgment['verdict'] != 'pass':
         return stopped('judge_rejected', 'independent full-polygon judge rejected complete proposal')
     grading = placement_groups.grade(proposed_capture, groups) if groups else None
-    if grading is not None and grading['status'] != 'pass':
+    if grading is not None and not placement_groups.satisfied(grading):
         return stopped('judge_rejected', 'declared placement groups not satisfied by the complete proposal')
     extra = {} if grading is None else {'group_grading': grading}
     if locality:

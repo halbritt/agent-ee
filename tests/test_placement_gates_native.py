@@ -266,10 +266,10 @@ class NativePlacementGates(unittest.TestCase):
             DRC_STAGE, placement('edge-advisory', 'edge-clearance/1',
                                  min_courtyard_edge_mm='0.250001', constraint_provenance={}),
             placement('edge-sourced', 'edge-clearance/1', min_courtyard_edge_mm='0.250001'), DRC_FULL])
-        self.assertStatus(results['edge-advisory'], 'unsupported', 'unknown')
+        self.assertStatus(results['edge-advisory'], 'ok', 'info')
         advisory = results['edge-advisory']['details']
-        self.assertEqual(advisory['defects'], [])
-        self.assertEqual(advisory['unknown'][0]['kind'], 'unsourced_limit')
+        self.assertEqual((advisory['defects'], advisory['unknown']), ([], []))
+        self.assertEqual(advisory['advisories'][0]['kind'], 'unsourced_limit')
         self.assertNotIn('gate_findings', advisory)
         self.assertStatus(results['edge-sourced'], 'ok', 'defect')
         self.assertEqual(results['edge-sourced']['details']['gate_findings'],
