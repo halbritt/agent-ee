@@ -154,6 +154,17 @@ def _edge_margin_nm(policy):
     return margin_nm
 
 
+def _obstacle_polygons(raw):
+    """Reserve the union by testing every member; shared edges never open a gap.
+
+    Unlike courtyard contours, declared obstacles may overlap or touch. Qualify
+    each member with the shared validator, keeping its syntax and work limits.
+    """
+    if not isinstance(raw, list) or not raw or len(raw) > 64:
+        raise ValueError('missing or excessive polygons')
+    return [qualified_polygons({'status': 'proven', 'polygons': [p]})[0] for p in raw]
+
+
 def _validate_policy(policy, refs):
     if policy.get('schema') != 'agent-ee.packing-policy/1':
         raise ValueError('unsupported packing policy')
@@ -179,7 +190,7 @@ def _validate_policy(policy, refs):
     for obstacle in policy['obstacles']:
         if obstacle.get('side') not in ('F', 'B'):
             raise ValueError('obstacle side required')
-        qualified_polygons({'status': 'proven', 'polygons': obstacle['polygons']})
+        _obstacle_polygons(obstacle['polygons'])
     overhangs = policy.get('fixed_overhangs', [])
     if not isinstance(overhangs, list) or any(not isinstance(o, dict) or o.get('reference') not in refs
                                               for o in overhangs):
@@ -190,6 +201,9 @@ def _validate_policy(policy, refs):
         placement_groups.validate(policy['groups'], refs)
     if 'constraint_provenance' in policy:
         _validate_provenance(policy['constraint_provenance'])
+        gap = policy['constraint_provenance'].get('gap_nm')
+        if gap is not None and gap['value_nm'] != policy['gap_nm']:
+            raise ValueError('constraint_provenance gap_nm value differs from policy')
 
 
 PROVENANCE_CLASSES = ('owner_stated', 'derived', 'assumed', 'unknown')
@@ -198,9 +212,16 @@ UNDECLARED = {'class': 'unknown', 'enforcement': 'hard',
 
 
 def _validate_provenance(value):
-    """Envelope constraint provenance (AGENTEE-266), bound by the placement adapter from captured envelopes."""
-    if not isinstance(value, dict) or set(value) - {'outline', 'fixed'} or not isinstance(value.get('fixed', {}), dict):
-        raise ValueError('constraint_provenance declares only outline and fixed')
+    """Envelope limits (AGENTEE-266) and caller-qualified gap sources (AGENTEE-338)."""
+    if not isinstance(value, dict) or set(value) - {'outline', 'fixed', 'gap_nm'} or not isinstance(value.get('fixed', {}), dict):
+        raise ValueError('constraint_provenance declares only outline, fixed and gap_nm')
+    if 'gap_nm' in value:
+        gap = value['gap_nm']
+        if (not isinstance(gap, dict) or set(gap) != {'class', 'enforcement', 'value_nm', 'citation'}
+                or gap.get('class') not in ('fixture_author', 'manufacturer')
+                or gap.get('enforcement') != 'hard' or type(gap.get('value_nm')) is not int
+                or gap['value_nm'] < 0 or not isinstance(gap.get('citation'), str) or not gap['citation'].strip()):
+            raise ValueError('constraint_provenance gap_nm needs a sourced hard value and citation')
     entries = ([value['outline']] if 'outline' in value else []) + list(value.get('fixed', {}).values())
     for entry in entries:
         if (not isinstance(entry, dict) or entry.get('class') not in PROVENANCE_CLASSES
@@ -215,7 +236,7 @@ def _binding_constraints(policy, margin_nm, blocked_by=()):
     """The limits a capacity row or proof binds, each with its provenance class (AGENTEE-266).
 
     Fixed parts and obstacles bind only where they block; the edge margin and gap come
-    from the packing policy or a fab profile, not an envelope, so their provenance is unknown."""
+    from the packing policy or a fab profile. Gaps need an explicit source to establish a defect."""
     declared = policy.get('constraint_provenance', {})
     fixed = declared.get('fixed', {})
     out = [{'constraint': 'outline', **declared.get('outline', UNDECLARED)}]
@@ -225,7 +246,7 @@ def _binding_constraints(policy, margin_nm, blocked_by=()):
     if margin_nm:
         out.append({'constraint': 'min_courtyard_edge_mm', **UNDECLARED})
     if policy['gap_nm']:
-        out.append({'constraint': 'gap_nm', **UNDECLARED})
+        out.append({'constraint': 'gap_nm', **declared.get('gap_nm', UNDECLARED)})
     return out
 
 
@@ -233,8 +254,11 @@ def _soft_proof(failure, binding):
     """A proof against a soft (assumed or owner-weakened) limit is not a design defect.
 
     It stays a proof about that limit, reported as unknown with the limits the owner
-    must confirm; a proof bound only by hard or undeclared limits keeps its verdict."""
-    soft = [b for b in binding if b['enforcement'] == 'soft']
+    must confirm; an unsourced gap is advisory even though search enforces it."""
+    soft = [b if b['enforcement'] == 'soft' else
+            {**b, 'soft_reason': 'unsourced packing gap is advisory'}
+            for b in binding if b['enforcement'] == 'soft'
+            or (b['constraint'] == 'gap_nm' and b['class'] == 'unknown')]
     if not soft:
         return {**failure, 'binding_constraints': binding}
     return {**failure, 'outcome': 'unknown', 'binding_constraints': binding,
@@ -1105,7 +1129,7 @@ def _initial_reservations(capture, policy, outline, obstacles, bands, groups):
     """Fixed parts and declared obstacles become exact polygon obstacles, never boxes."""
     fixed = _fixed_refs(capture, policy)
     placed = [copy.deepcopy(f) for f in capture['footprints'] if f['ref'] in fixed]
-    exact = [_exact(o['side'], qualified_polygons({'status': 'proven', 'polygons': o['polygons']}))
+    exact = [_exact(o['side'], _obstacle_polygons(o['polygons']))
              for o in policy['obstacles']]
     for i, fp in enumerate(placed):
         # Fixed footprints (such as edge-mounted connectors) are exempt from min_courtyard_edge_mm.
@@ -1527,6 +1551,9 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     queue = sorted((fp for fp in capture['footprints'] if fp['ref'] not in fixed), key=cluster)
     proof = _region_impossibility(capture, outline, groups, fixed, placed, obstacles, policy)
     if proof:
+        if proof.get('gap_nm') and 'gap_nm' not in policy.get('constraint_provenance', {}):
+            proof = _region_impossibility(capture, outline, groups, fixed, placed, obstacles,
+                                          {**policy, 'gap_nm': 0}) or proof
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"group {proof['group']} region cannot hold its {proof['side']} courtyards", margin_nm)
         binding = _binding_constraints({**policy, 'gap_nm': proof.get('gap_nm', 0)}, 0, proof['blocked_by'])
@@ -1536,11 +1563,18 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
     proof = _capacity_impossibility(sides, policy) if policy.get('capacity_proof') else None
     if proof:
+        proof_policy = policy
+        if policy['gap_nm'] and 'gap_nm' not in policy.get('constraint_provenance', {}):
+            zero_policy = {**policy, 'gap_nm': 0}
+            zero_proof = _capacity_impossibility(_board_capacity(capture, outline, fixed, zero_policy, margin_nm),
+                                                zero_policy)
+            if zero_proof:
+                proof, proof_policy = zero_proof, zero_policy
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['side']} courtyards grown by half the gap exceed the board's free area"
                            + (f" usable by {proof['square_nm']} nm squares" if proof['square_nm'] else ''), margin_nm)
         return _soft_proof({**failure, 'proof': proof, 'capacity': capacity},
-                           _binding_constraints(policy, margin_nm, proof['blocked_by']))
+                           _binding_constraints(proof_policy, margin_nm, proof['blocked_by']))
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
     if runtime is not None:
         runtime['search'] = search

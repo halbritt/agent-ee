@@ -19,7 +19,7 @@ from agent_ee import placement_groups
 from agent_ee.placement import judge
 from agent_ee.placer import pack, transform
 from test_placement import MM, capture, part, rectangle
-from test_placer import request
+from test_placer import authored_gap, request
 from test_placer_residuals import box, fresh_pad_layers, netlist
 from toolchain import require_toolchain
 
@@ -220,11 +220,21 @@ class RegionCapacityTest(unittest.TestCase):
         self.assertEqual((report['proof']['group'], report['proof']['groups'], report['proof']['references']),
                          ('outer', ['inner', 'outer'], ['M1', 'M2', 'M3']))
 
+    def test_unsourced_region_gap_proof_is_unknown(self):
+        source, groups = self.squares(5, 4)
+        report = pack(source, request(fixed_refs=[], gap_nm=500000, groups=groups))
+        self.assertEqual((report['status'], report['outcome'], report['placements']),
+                         ('packing_infeasible', 'unknown', []))
+        self.assertEqual(report['proof']['kind'], 'region_capacity_gap')
+        self.assertEqual(report['owner_confirmation'], ['gap_nm'])
+        self.assertIn('unsourced packing gap', report['reason'])
+
     def test_gap_bound_proves_what_area_alone_cannot(self):
         # Four 5 mm squares tile the 10 mm region only with no gap; a 0.5 mm gap grows
         # each to at least 30.1875 mm2 against at most ~110.4 mm2 of grown region.
         source, groups = self.squares(5, 4)
-        report = pack(source, request(fixed_refs=[], gap_nm=500_000, groups=groups))
+        report = pack(source, authored_gap(request(fixed_refs=[], gap_nm=500_000, groups=groups),
+            'tests/test_placer_search.py:test_gap_bound_proves_what_area_alone_cannot; authored 0.5 mm gap'))
         self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
         proof = report['proof']
         self.assertEqual((proof['kind'], proof['gap_nm']), ('region_capacity_gap', 500_000))
