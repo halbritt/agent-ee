@@ -346,6 +346,88 @@ class WriteScopeTest(unittest.TestCase):
         self.assertEqual(pa.write_scope(mutate(('(start 1 -1) (end 1 1)', '(start 1 -1) (end 29.0 1)')),
                                         mutate(('(start 1 -1) (end 1 1)', '(start 1 -1) (end 29 1)')))['status'], 'allowed')
 
+    def test_numeric_spellings_only_at_each_graphic_kinds_own_argument_slots(self):
+        # AGENTEE-372 (Sol HOLD H1): each graphic kind has its own children, and only identified numeric
+        # slots with a supported argument count compare as decimals; the rest stays exact.
+        circle = '(fp_circle (center 0 0) (end 0.5 0) (stroke (width 0.05) (type solid)) (fill no) (layer "F.Fab") (uuid "g1"))'
+        rect = '(fp_rect (start 0 0) (end 1 1) (stroke (width 0.05) (type solid)) (fill no) (layer "F.Fab") (uuid "g2"))'
+        poly = '(fp_poly (pts (xy 0 0) (xy 1 0) (xy 1 1)) (stroke (width 0.05) (type solid)) (fill yes) (layer "F.Fab") (uuid "g3"))'
+        zone = ('(zone (net 0) (net_name "") (layer "F.Cu") (uuid "z9") (hatch edge 0.5) (min_thickness 0.25) '
+                '(polygon (pts (xy 9 9) (xy 11 9) (xy 11 11))))')
+        before = mutate(('  (path "/r1")', f'  {circle}\n  {rect}\n  {poly}\n  {zone}\n  (path "/r1")'))
+        admitted = (('(center 0 0)', '(center 0.0 -0)'), ('(end 0.5 0) (stroke', '(end 0.50 0) (stroke'),
+                    ('(start 0 0) (end 1 1)', '(start 0 0) (end 1.0 1)'), ('(xy 1 0) (xy 1 1)', '(xy 1 0) (xy 1.0 1)'),
+                    ('(hatch edge 0.5)', '(hatch edge 0.50)'), ('(at 0 0 90)', '(at 0 0 90.0)'),
+                    ('(at -0.5 0)', '(at -0.50 0)'))
+        for old, new in admitted:
+            with self.subTest(admitted=new):
+                self.assertEqual(before.count(old.encode()), 1)
+                report = pa.write_scope(before, before.replace(old.encode(), new.encode()))
+                self.assertEqual(report['status'], 'allowed', report['violations'])
+        refused = {
+            # A child that belongs to another graphic kind, under a known graphic.
+            'fp_line mid': ('(uuid "a4")', '(mid 1 2) (uuid "a4")', '(mid 1 2)', '(mid 1.0 2)', 'fp_line a4'),
+            'fp_line center': ('(uuid "a4")', '(center 1 2) (uuid "a4")', '(center 1 2)', '(center 1.0 2)', 'fp_line a4'),
+            'fp_circle start': ('(uuid "g1")', '(start 1 2) (uuid "g1")', '(start 1 2)', '(start 1.0 2)', 'fp_circle g1'),
+            'fp_rect center': ('(uuid "g2")', '(center 1 2) (uuid "g2")', '(center 1 2)', '(center 1.0 2)', 'fp_rect g2'),
+            'fp_poly start': ('(uuid "g3")', '(start 1 2) (uuid "g3")', '(start 1 2)', '(start 1.0 2)', 'fp_poly g3'),
+            'legacy angle': ('(uuid "a4")', '(angle 90) (uuid "a4")', '(angle 90)', '(angle 90.0)', 'fp_line a4'),
+            # The `at` tail beyond x, y and angle, and the hatch style, are not numeric slots.
+            'at tail': ('(at 0 0 90)', '(at 0 0 90 1)', '(at 0 0 90 1)', '(at 0 0 90 1.0)', 'fp_text a5'),
+            'hatch style': ('(hatch edge 0.5)', '(hatch 1 0.5)', '(hatch 1 0.5)', '(hatch 1.0 0.5)', 'zone z9'),
+            # Unsupported argument counts keep the whole node exact.
+            'point arity': ('(end 1 1)', '(end 1 1 0)', '(end 1 1 0)', '(end 1 1 0.0)', 'fp_rect g2'),
+            'size arity': ('(at 0.5 0) (size 0.5 0.5)', '(at 0.5 0) (size 0.5 0.5 1)', '(size 0.5 0.5 1)',
+                           '(size 0.50 0.5 1)', 'pad a7'),
+            'oval drill': ('(net "/OUT")', '(drill oval 1 0.5) (net "/OUT")', '(drill oval 1 0.5)',
+                           '(drill oval 1.0 0.5)', 'pad a7'),
+        }
+        for name, (anchor, added, old, new, fragment) in refused.items():
+            with self.subTest(refused=name):
+                source = before.replace(anchor.encode(), added.encode(), 1)
+                self.assertEqual(source.count(old.encode()), 1)
+                after = source.replace(old.encode(), new.encode())
+                report = pa.write_scope(source, after)
+                self.assertEqual(report['status'], 'refused', report)
+                self.assertTrue(any(fragment in v for v in report['violations']), report['violations'])
+        # The original ticket case still passes and a real change still refuses.
+        for spelling, status in (('29', 'allowed'), ('29.001', 'refused')):
+            self.assertEqual(pa.write_scope(mutate(('(start 1 -1) (end 1 1)', '(start 1 -1) (end 29.0 1)')),
+                                            mutate(('(start 1 -1) (end 1 1)', f'(start 1 -1) (end {spelling} 1)')))
+                             ['status'], status)
+
+    def test_flip_compares_unknown_subtrees_exactly_before_interpreting_points_or_layers(self):
+        # AGENTEE-372 (Sol HOLD H2): during a flip, points and layers are mirrored only at their known
+        # grammar positions; an unknown subtree must be identical and hold nothing a flip transforms.
+        source = TEXT.replace('(uuid "a4")', '(unknown (xy 1 0)) (uuid "a4")').encode()
+        self.assertEqual(pa.write_scope(source, flipped().replace(b'(uuid "a4")', b'(unknown (xy 1 0)) (uuid "a4")'))
+                         ['status'], 'refused')
+        cases = {
+            'numeric respelling': ('(unknown (xy 1 0))', '(unknown (xy 1.0 0))', 'a4'),
+            'mirrored unknown point': ('(unknown (xy 1 2))', '(unknown (xy 1 -2))', 'a4'),
+            'other unknown point': ('(unknown (xy 1 2))', '(unknown (xy 1 3))', 'a4'),
+            'unknown layer swap': ('(unknown (layer "F.Fab"))', '(unknown (layer "B.Fab"))', 'a4'),
+            'pad unknown point': ('(unknown (start 1 2))', '(unknown (start 1 -2))', 'a6'),
+            'text unknown layer': ('(unknown (layer "F.Fab"))', '(unknown (layer "B.Fab"))', 'a5'),
+            'misplaced graphic point': ('(center 1 2)', '(center 1 -2)', 'a4'),
+        }
+        for name, (old, new, uuid_) in cases.items():
+            with self.subTest(name):
+                anchor = f'(uuid "{uuid_}")'
+                before = TEXT.replace(anchor, f'{old} {anchor}').encode()
+                after = flipped().replace(anchor.encode(), f'{new} {anchor}'.encode())
+                report = pa.write_scope(before, after)
+                self.assertEqual((report['status'], report['transforms']), ('refused', []), report)
+                self.assertTrue(any(f' {uuid_} ' in v + ' ' for v in report['violations']), report['violations'])
+        # Unknown subtrees without geometry stay admitted when identical; known positions still mirror,
+        # with numeric respellings at their slots.
+        plain = TEXT.replace('(uuid "a4")', '(unknown (name "x")) (uuid "a4")').encode()
+        self.assertEqual(pa.write_scope(plain, flipped().replace(b'(uuid "a4")', b'(unknown (name "x")) (uuid "a4")'))
+                         ['status'], 'allowed')
+        respelled = flipped().replace(b'(start 1 1) (end 1 -1) (stroke (width 0.05)',
+                                      b'(start 1.0 1) (end 1 -1.00) (stroke (width 0.050)')
+        self.assertEqual(pa.write_scope(TEXT.encode(), respelled)['status'], 'allowed')
+
     def test_real_numeric_changes_and_non_numeric_spellings_still_refuse_and_name_the_token(self):
         source = mutate(('(start 1 -1) (end 1 1)', '(start 1 -1) (end 29.0 1)'))
         moved = mutate(('(start 1 -1) (end 1 1)', '(start 1 -1) (end 29.001 1)'), ('(at 10 10)', '(at 20 3)'))
