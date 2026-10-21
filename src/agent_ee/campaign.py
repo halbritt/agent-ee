@@ -552,7 +552,7 @@ def record_iteration(root, state, run, config):
     from .layer_policy_lineage import verify_candidate as verify_layer_policy_provenance
     verify_layer_policy_provenance(root, state, config, len(state["history"]) + 1, manifest)
     from .placement_defects import verify_candidate as verify_placement_provenance
-    verify_placement_provenance(root, state, len(state["history"]) + 1, manifest)
+    verify_placement_provenance(root, state, len(state["history"]) + 1, manifest, run / 'inputs')
     if "baseline" not in state:
         state["baseline"] = baseline
         state["mutable_inputs"] = mutable_inputs(manifest, baseline)
@@ -796,7 +796,7 @@ def verify_campaign_records(root, *, observations=None):
     from .placement_defects import verify_candidate as verify_placement_provenance
     for number, stored in enumerate(state['history'], 1):
         manifest = read_json(Path(stored['run']) / 'candidate.json')
-        verify_placement_provenance(root, state, number, manifest)
+        verify_placement_provenance(root, state, number, manifest, Path(stored['run']) / 'inputs')
     verify_writer_records(root, state, config)
     from .intent_retry import verify as verify_intent_retries
     verify_intent_retries(root, state, config)

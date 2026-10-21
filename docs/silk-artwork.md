@@ -123,7 +123,42 @@ another field moves and native `added_after` is empty. A new current native
 result remains necessary after further board changes; this guard supplies no
 waiver or electrical acceptance.
 
+### Board lineage stamp (AGENTEE-351)
+
+Carry in `placement-evidence` follows a campaign's candidate lineage. A delivered
+board copied into a new scope without that directory would lose it, so the board
+bytes name their own lineage. When a published result has open defects, the
+placement writer sets title block comment 9 to
+`agent-ee.placement-lineage/1 <digest>...`. Each digest is `carry_digest` of one
+result's open defects: the SHA-256 identity of their sorted native item UUID
+sets. A later result with open defects appends its digest; a result without open
+defects keeps the source stamp. The writer then reruns native DRC on the stamped
+bytes and refuses unless the comparison is unchanged, so `native-drc.json` and
+`board_sha256` describe the stamped board. It refuses as well when comment 9 holds
+other text. Placement write scope admits only a stamp that adds or extends this
+comment. Dropping or rewriting a digest, or editing any other title block field,
+is a violation. Campaign verification also refuses a successor candidate whose
+board drops or rewrites its predecessor's stamp, whichever step wrote it.
+
+The stamp is persistent and cannot be discarded by re-scoping. A gated check or
+release artifact extraction on a stamped board refuses as unknown, with execution
+`malformed`, in two cases. One is a candidate with no captured placement evidence:
+an out-of-campaign `review`/`run` scope, or a new campaign started from the
+delivered design. The other is captured evidence that binds no stamp digest. The
+evidence seal refuses a gated `ok` result on a stamped board without lineage. To
+release a re-scoped design, include the delivered `placement-evidence` directory
+as an input at `placement-evidence`. Its `index.json` then supplies the ordered
+links, and open carry gates the release exactly as it does in the campaign.
+This happens even after carry closes, because the stamp stays on the board.
+Unstamped boards, including boards with carry published before this contract,
+keep their existing verdicts. The stamp is a lineage record in the design file,
+not an owner evidence store. An actor outside agent-ee who removes it from the
+title block is not detected; a campaign writer that removes it is.
+
 `tests.test_placement_defects` exercises actual native helper publication,
 adoption, coordinator capture, successor binding and downstream refusal, plus
 missing/stale/tampered carry, side-flip closure boundaries and verdict isolation.
 The existing BOM-variant fab regression retains its original pass expectation.
+Its stamp tests cover native stamping on the DRC-checked bytes, the write-scope
+extension/drop boundary, and re-scoped release with and without lineage. They
+also cover an unbound stamp and a campaign successor that drops the stamp.

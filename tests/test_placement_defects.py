@@ -22,6 +22,73 @@ class PlacementDefectContractTests(unittest.TestCase):
                 placement_defects.validate_campaign(scope)
 
 
+def stamped(data, *digests, block=''):
+    """Saved board bytes with a title block lineage stamp, as the placement writer records it."""
+    line = ' '.join([placement_defects.STAMP, *digests])
+    head, rest = data.split(b'\n', 1)
+    return head + f'\n (title_block {block}(comment 9 "{line}"))\n'.encode() + rest
+
+
+class BoardLineageStampContractTests(unittest.TestCase):
+    """AGENTEE-351: the board bytes name their carry lineage; re-scoping cannot drop it."""
+    def setUp(self):
+        from test_placement_adapter import TEXT
+        self.board = TEXT.encode()
+        self.a, self.b = 'a' * 64, 'b' * 64
+
+    def test_stamp_reads_only_a_well_formed_title_block_comment(self):
+        self.assertIsNone(placement_defects.stamp(self.board))
+        self.assertEqual(placement_defects.stamp(stamped(self.board, self.a, self.b)), [self.a, self.b])
+        self.assertEqual(placement_defects.stamp(stamped(self.board, self.a, block='(title "T") ')), [self.a])
+        for data in (stamped(self.board), stamped(self.board, 'A' * 64), stamped(self.board, self.a, self.a),
+                     stamped(self.board, 'a' * 63),
+                     self.board.replace(b'(uuid "e2")', f'(uuid "e2")) (gr_text "{placement_defects.STAMP} {self.a}"'.encode(), 1),
+                     stamped(stamped(self.board, self.a), self.b)):
+            with self.subTest(data=data[:200]), self.assertRaisesRegex(ValueError, 'lineage stamp'):
+                placement_defects.stamp(data)
+
+    def test_write_scope_admits_extension_and_refuses_drop_or_rewrite(self):
+        from agent_ee import placement_adapter as pa
+        one, two = stamped(self.board, self.a), stamped(self.board, self.a, self.b)
+        for before, after in ((self.board, one), (one, one), (one, two)):
+            with self.subTest(before=before[:120], after=after[:120]):
+                self.assertEqual(pa.write_scope(before, after)['status'], 'allowed')
+        for before, after in ((one, self.board), (two, one), (one, stamped(self.board, self.b)),
+                              (self.board, stamped(self.board, self.a, block='(title "T") '))):
+            with self.subTest(before=before[:120], after=after[:120]):
+                self.assertEqual(pa.write_scope(before, after)['status'], 'refused')
+
+    def test_stamped_board_without_lineage_refuses_release_as_unknown(self):
+        import tempfile
+        from agent_ee.checks import CheckError, Ctx
+        from agent_ee.fab_package import artifact_record
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / 'inputs').mkdir()
+            spec = {'id': 'fab', 'kind': 'fab_export'}
+            manifest = {'candidate_id': 'c' * 64, 'scope': {'board': 'b.kicad_pcb', 'checks': [spec]},
+                        'files': {'b.kicad_pcb': 'f' * 64}}
+            (run / 'inputs/b.kicad_pcb').write_bytes(self.board)
+            self.assertEqual(placement_defects.open_defects(manifest, run / 'inputs'), [])
+            (run / 'inputs/b.kicad_pcb').write_bytes(stamped(self.board, self.a))
+            with self.assertRaisesRegex(ValueError, 'lineage'):
+                placement_defects.open_defects(manifest, run / 'inputs')
+            ctx = Ctx(run, manifest, spec, time.monotonic() + 60)
+            with self.assertRaisesRegex(CheckError, 'lineage'):
+                placement_defects.before_check(ctx)
+            write_json(run / 'candidate.json', manifest)
+            with self.assertRaisesRegex(ValueError, 'lineage'):
+                artifact_record(run, {'id': 'package', 'kind': 'fab_package', 'execution': 'ok', 'outcome': 'pass'})
+            placement_defects.verify_gate(run, {'id': 'fab', 'execution': 'malformed', 'outcome': 'unknown'}, manifest)
+            with self.assertRaisesRegex(ValueError, 'without its placement lineage'):
+                placement_defects.verify_gate(run, {'id': 'fab', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+            # Ungated checks keep their verdicts.
+            ungated = {'id': 'erc', 'kind': 'erc'}
+            manifest['scope']['checks'].append(ungated)
+            self.assertTrue(placement_defects.before_check(Ctx(run, manifest, ungated, time.monotonic() + 60)))
+            placement_defects.verify_gate(run, {'id': 'erc', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+
+
 class NativePlacementCarryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -209,6 +276,9 @@ class NativePlacementCarryTests(unittest.TestCase):
         result = read_json(work / record['helper']['receipt'] / pa.RESULT)
         self.assertEqual(result['open_defects'], [])
         self.assertEqual(result['native_drc_comparison']['added_by_type'], {})
+        # A clean later result keeps the source board's lineage stamp (AGENTEE-351).
+        self.assertEqual(placement_defects.stamp((design / self.manifest['scope']['board']).read_bytes()),
+                         placement_defects.stamp((self.candidate_run / 'inputs' / self.manifest['scope']['board']).read_bytes()))
         scope = copy.deepcopy(self.scope)
         scope['inputs'] = [{'path': str(p), 'at': p.name} for p in design.iterdir()]
         scope = placement_defects.proposal_scope(scope, work, helper.root, state)
@@ -254,6 +324,85 @@ class NativePlacementCarryTests(unittest.TestCase):
         freeze_evidence(run, checks)
         verify_evidence(run, checks, required=True)
 
+
+    def test_native_writer_stamps_its_carry_digest_on_drc_checked_bytes(self):
+        from agent_ee import placement_adapter as pa
+        board = self.candidate_run / 'inputs' / self.manifest['scope']['board']
+        self.assertIsNone(placement_defects.stamp((self.helper.source / self.manifest['scope']['board']).read_bytes()))
+        self.assertEqual(placement_defects.stamp(board.read_bytes()),
+                         [placement_defects.carry_digest(self.result['open_defects'])])
+        self.assertEqual(self.result['board_sha256'], digest(board))
+        reversed_scope = pa.write_scope(board.read_bytes(), (self.helper.source / self.manifest['scope']['board']).read_bytes())
+        self.assertIn('placement lineage stamp removed or rewritten', reversed_scope['violations'])
+        self.assertEqual(self.result['write_scope']['status'], 'allowed')
+
+    def rescope(self, name, *, lineage):
+        """Release a delivered candidate's files under a fresh, out-of-campaign scope."""
+        from agent_ee.candidate import capture
+        root = self.helper.root / name
+        design = root / 'design'
+        shutil.copytree(self.candidate_run / 'inputs', design,
+                        ignore=None if lineage else shutil.ignore_patterns(placement_defects.DIRECTORY))
+        scope = {'schema': 'agent-ee.scope/1', 'board': self.manifest['scope']['board'],
+                 'schematic': self.manifest['scope']['schematic'],
+                 'inputs': [{'path': str(p), 'at': p.name} for p in design.iterdir()],
+                 'checks': copy.deepcopy(self.manifest['scope']['checks'])}
+        write_json(root / 'scope.json', scope)
+        run = root / 'run'
+        run.mkdir()
+        return run, capture(root / 'scope.json', run)
+
+    def test_rescoped_release_without_lineage_refuses_as_unknown(self):
+        from agent_ee.checks import run_checks
+        from agent_ee.fab_package import artifact_record
+        run, manifest = self.rescope('rescoped-bare', lineage=False)
+        self.assertFalse(placement_defects.lineage(manifest))
+        check = run_checks(run, time.monotonic() + 60)[0]
+        self.assertEqual((check['execution'], check['outcome']), ('malformed', 'unknown'))
+        self.assertIn('placement lineage stamp', check['summary'])
+        self.assertFalse((run / 'work/fab/fab/manifest.json').exists())
+        placement_defects.verify_gate(run, check, manifest)
+        with self.assertRaisesRegex(ValueError, 'without its placement lineage'):
+            placement_defects.verify_gate(run, {**check, 'execution': 'ok', 'outcome': 'pass'}, manifest)
+        with self.assertRaisesRegex(ValueError, 'lineage'):
+            artifact_record(run, {'id': 'package', 'kind': 'fab_package', 'execution': 'ok', 'outcome': 'pass'})
+
+    def test_rescoped_release_with_lineage_keeps_open_carry(self):
+        from agent_ee.checks import run_checks
+        run, manifest = self.rescope('rescoped-lineage', lineage=True)
+        self.assertNotIn(placement_defects.DECLARATION, manifest['scope'])
+        defects = placement_defects.open_defects(manifest, run / 'inputs')
+        self.assertEqual(defects, placement_defects.open_defects(self.manifest, self.candidate_run / 'inputs'))
+        check = run_checks(run, time.monotonic() + 60)[0]
+        self.assertEqual((check['execution'], check['outcome'], check['details']['reason']),
+                         ('ok', 'defect', 'open_placement_defects'))
+        placement_defects.verify_gate(run, check, manifest)
+
+    def test_stamp_unbound_to_captured_lineage_refuses(self):
+        board = self.candidate_run / 'inputs' / self.manifest['scope']['board']
+        original = board.read_bytes()
+        digest_value = placement_defects.carry_digest(self.result['open_defects'])
+        try:
+            for data in (original.replace(digest_value.encode(), b'0' * 64),
+                         original.replace(digest_value.encode(), (digest_value + ' ' + '0' * 64).encode())):
+                board.write_bytes(data)
+                with self.subTest(data=data[:0]), self.assertRaisesRegex(ValueError, 'not bound'):
+                    placement_defects.open_defects(self.manifest, self.candidate_run / 'inputs')
+        finally:
+            board.write_bytes(original)
+
+    def test_campaign_successor_cannot_drop_board_stamp(self):
+        helper = self.helper
+        state = {**helper.state, 'history': [*helper.state['history'], {'run': str(self.candidate_run)}]}
+        manifest = copy.deepcopy(self.manifest)
+        manifest['scope_path'] = 'not-an-implementation-proposal'
+        placement_defects.verify_candidate(helper.root, state, 3, manifest, self.candidate_run / 'inputs')
+        successor = helper.root / 'runs/stripped/inputs'
+        shutil.copytree(self.candidate_run / 'inputs', successor)
+        board = successor / manifest['scope']['board']
+        board.write_bytes(board.read_bytes().replace(placement_defects.STAMP.encode(), b'erased'))
+        with self.assertRaisesRegex(ValueError, 'placement lineage stamp'):
+            placement_defects.verify_candidate(helper.root, state, 3, manifest, successor)
 
     def test_expired_tool_budget_does_not_erase_known_carried_defects(self):
         from agent_ee.checks import run_checks

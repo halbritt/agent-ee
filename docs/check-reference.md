@@ -1830,7 +1830,11 @@ helper receipts and artwork under `placement-evidence`, with ordered
 stages and fab export, package, consistency, CPL and JLC DFM checks refuse open
 carry with typed field/graphic identities and source receipts. The evidence seal
 reconstructs these refusals; release artifact extraction also refuses open carry.
-Uncarried baseline findings retain their existing verdicts. Explicitly
+Uncarried baseline findings retain their existing verdicts. A board published
+with open carry has a [title block lineage stamp](silk-artwork.md#board-lineage-stamp-agentee-351)
+(AGENTEE-351). The same gates refuse it as unknown when the candidate has no
+`placement-evidence` binding every stamp digest, for example after a re-scope
+outside the campaign. Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.
 Side-flipped footprints' fields remain unchanged with typed conflicts. Source

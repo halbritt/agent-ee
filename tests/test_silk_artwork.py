@@ -149,7 +149,11 @@ class SilkArtworkTest(unittest.TestCase):
         self.assertEqual(len([f for f in art['findings']
                               if f.get('reason') == 'footprint_side_flipped']), 2)
         self.assertTrue(all(f['type'] == 'placement_silkscreen_conflict' for f in art['findings']))
-        self.assertEqual(out.read_bytes(), original)
+        # Only the lineage stamp of the carried result is added (AGENTEE-351); every other byte is kept.
+        from agent_ee.placement_defects import STAMP, carry_digest
+        block = f'\t(title_block\n\t\t(comment 9 "{STAMP} {carry_digest(delta["open_defects"])}")\n\t)\n'.encode()
+        self.assertEqual(out.read_bytes().count(block), 1)
+        self.assertEqual(out.read_bytes().replace(block, b''), original)
 
     def test_flipped_conflict_is_carried_even_if_other_field_moves_clear(self):
         import pcbnew as k

@@ -22,6 +22,68 @@ ARTWORK = 'placement/placed/placement-silkscreen.json'
 EXECUTION = 'placement/placed/native-drc-execution.json'
 FILES = (REPORT, BOARD, DRC, EXECUTION)
 GATED_KINDS = frozenset({'fab_export', 'fab_package', 'cpl_rotation', 'fab_consistency', 'jlc_dfm'})
+# Board lineage stamp (AGENTEE-351): title block comment 9 names each carry digest of the
+# placement results that published open defects on this board's ancestry. It travels with
+# the board bytes, so a re-scoped copy cannot release without its placement evidence.
+STAMP = 'agent-ee.placement-lineage/1'
+STAMP_COMMENT = '9'
+
+
+def carry_digest(defects):
+    """Identity of one placement result's open defects, from their native item identities."""
+    return identity(sorted(sorted(_items(d)) for d in defects))
+
+
+def _stamp_digests(value):
+    words = value.split(' ')
+    if (words[0] != STAMP or len(words) < 2 or len(set(words[1:])) != len(words) - 1 or
+            any(len(w) != 64 or w.strip('0123456789abcdef') for w in words[1:])):
+        raise ValueError('malformed placement lineage stamp')
+    return words[1:]
+
+
+def unstamped(nodes):
+    """Board-level nodes without the lineage stamp, and its digests (None when unstamped)."""
+    kept, found = [], None
+    for node in nodes:
+        if isinstance(node, list) and node and node[0] == 'title_block':
+            comments = [c for c in node[1:] if isinstance(c, list) and c[:2] == ['comment', STAMP_COMMENT]]
+            if any(len(c) == 3 and isinstance(c[2], str) and c[2].startswith(STAMP) for c in comments):
+                if found is not None or len(comments) != 1:
+                    raise ValueError('ambiguous placement lineage stamp')
+                found = _stamp_digests(comments[0][2])
+                node = [c for c in node if c is not comments[0]]
+                if len(node) == 1:
+                    continue
+        kept.append(node)
+    return kept, found
+
+
+def stamp(data):
+    """Lineage stamp digests of saved board bytes; None when the board carries no stamp."""
+    if STAMP.encode() not in data:
+        return None
+    from .symbol_library import parse_sexpr
+    root = parse_sexpr(data)
+    found = unstamped(root[1:])[1] if root and root[0] == 'kicad_pcb' else None
+    if found is None:
+        raise ValueError('placement lineage stamp outside the board title block')
+    return found
+
+
+def stamp_violations(before, after):
+    """A writer may extend the stamp with a new digest; it may never drop or rewrite one."""
+    if before and (after is None or after[:len(before)] != before):
+        return ['placement lineage stamp removed or rewritten']
+    return []
+
+
+def _board_stamp(manifest, inputs):
+    board = manifest.get('scope', {}).get('board')
+    if inputs is None or not isinstance(board, str) or board not in manifest.get('files', {}):
+        return None
+    path = Path(inputs) / str(safe_relative(board))
+    return stamp(path.read_bytes()) if path.is_file() and not path.is_symlink() else None
 
 
 def validate_campaign(scope):
@@ -103,10 +165,15 @@ def delivered_view(captured, delivered):
     return dict(sorted(view.items()))
 
 
-def verify_candidate(root, state, number, manifest):
+def verify_candidate(root, state, number, manifest, inputs=None):
+    """Bind carry to the adopted receipt lineage; with `inputs`, the board stamp is kept too."""
     expected, owed = [], {}
     if number > 1:
         previous = read_json(Path(state['history'][number - 2]['run']) / 'candidate.json')
+        if inputs is not None:
+            before = _board_stamp(previous, Path(state['history'][number - 2]['run']) / 'inputs')
+            if stamp_violations(before, _board_stamp(manifest, inputs)):
+                raise ValueError('candidate dropped or rewrote its placement lineage stamp')
         expected = list(previous['scope'].get(DECLARATION, []))
         owed = {p: sha for p, sha in previous['files'].items() if p.split('/')[0] == DIRECTORY}
         work = Path(root) / 'implementations' / str(number - 1)
@@ -206,8 +273,11 @@ def _items(defect):
 def open_defects(manifest, inputs):
     """Reconstruct open carry; only later receipted current artwork can close it."""
     index = f'{DIRECTORY}/index.json'
-    if DECLARATION not in manifest.get('scope', {}) and not any(
-            p.startswith(DIRECTORY + '/') for p in manifest.get('files', {})):
+    stamped = _board_stamp(manifest, inputs)
+    if not lineage(manifest):
+        if stamped:
+            raise ValueError('board carries a placement lineage stamp but its campaign placement '
+                             'evidence was not captured; release requires that lineage')
         return []
     indexed = read_json(_read(manifest, inputs, index))
     links = manifest['scope'].get(DECLARATION, indexed)
@@ -215,9 +285,11 @@ def open_defects(manifest, inputs):
         raise ValueError('placement provenance differs from its captured index')
     if not isinstance(links, list):
         raise ValueError('placement provenance must be ordered receipt links')
-    active = []
+    active, bound = [], set()
     for link in links:
         report, loaded, drc = _bundle(manifest, inputs, link)
+        if report['open_defects']:
+            bound.add(carry_digest(report['open_defects']))
         identities = _identities(loaded[BOARD])
         moved = {m['uuid'] for m in read_json(loaded[ARTWORK]).get('moved_fields', [])} if ARTWORK in loaded else set()
         conflicts = {i['uuid'] for v in drc['violations'] if v['type'].startswith('silk_') for i in v['items']}
@@ -228,6 +300,8 @@ def open_defects(manifest, inputs):
         for defect in report['open_defects']:
             _items(defect)
             active.append((defect, link, identities))
+    if stamped and not set(stamped) <= bound:
+        raise ValueError('placement lineage stamp is not bound to the captured placement evidence')
     defects = []
     for defect, source, original in active:
         value = dict(defect, source_receipt=source)
@@ -288,10 +362,17 @@ def gate_record(cid, candidate_id, defects):
     return witness
 
 
+def lineage(manifest):
+    return DECLARATION in manifest.get('scope', {}) or any(
+        p.startswith(DIRECTORY + '/') for p in manifest.get('files', {}))
+
+
 def verify_gate(run, check, manifest):
     """Reconstruct refusals from captured artifacts before sealing or releasing evidence."""
-    if DECLARATION not in manifest.get('scope', {}) and not any(
-            p.startswith(DIRECTORY + '/') for p in manifest.get('files', {})):
+    if not lineage(manifest):
+        if (check.get('execution') == 'ok' and _board_stamp(manifest, Path(run) / 'inputs') and
+                gated(next(c for c in manifest['scope']['checks'] if c['id'] == check['id']))):
+            raise ValueError('stamped board passed a downstream gate without its placement lineage')
         return
     spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
     if not gated(spec):
