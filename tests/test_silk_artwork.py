@@ -691,6 +691,132 @@ assert write_scope(before,p.read_bytes())['status']=='allowed'
         self.assertGreater(sum(v['type'] == 'silk_over_copper' for v in report['violations']), 0)
 
 
+    def carried_board(self):
+        """Flipped footprints carry open silk defects on a board whose project binds native limits."""
+        import pcbnew as k
+        source = self.board()
+        # Like a real project, the saved settings name the silk and edge limits DRC reports
+        # (AGENTEE-383: the lineage re-check must classify under the same provenance).
+        source.with_suffix('.kicad_pro').write_text(json.dumps({'board': {'design_settings': {
+            'rules': {'min_silk_clearance': 0.0, 'min_copper_edge_clearance': 0.5}}}}))
+        out = self.output(source)
+        board = k.LoadBoard(str(out))
+        for fp in board.GetFootprints():
+            fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
+        k.SaveBoard(str(out), board)
+        return source, out
+
+    def test_carried_silk_defects_with_bound_limits_survive_lineage_stamp(self):
+        from agent_ee.placement_defects import carry_digest, stamp
+        source, out = self.carried_board()
+        _, delta = _proposal_drc(source, out)
+        self.assertGreater(len(delta['open_defects']), 1)
+        self.assertEqual(stamp(out.read_bytes()), [carry_digest(delta['open_defects'])])
+        limited = [v for v in delta['candidate_findings'] if v['constraint_provenance'].get('limits')]
+        self.assertTrue(limited, delta['candidate_findings'])
+        self.assertFalse((out.parent / 'native-drc-restamp.json').exists())
+
+    def test_native_drc_change_after_lineage_stamp_refuses_and_names_findings(self):
+        from unittest.mock import patch
+        import pcbnew as k
+        from agent_ee import placer_runner
+        from agent_ee.placement_defects import stamp
+        source, out = self.carried_board()
+        real = placer_runner._native_drc
+        added = []
+
+        def drc(board, scratch):
+            if board == out and stamp(board.read_bytes()):
+                # A genuine native change on the stamped bytes: new silk over a pad.
+                b = k.LoadBoard(str(board))
+                pad = next(iter(next(iter(b.GetFootprints())).Pads()))
+                shape = k.PCB_SHAPE(b, k.SHAPE_T_SEGMENT)
+                shape.SetLayer(k.B_SilkS if pad.IsOnLayer(k.B_Cu) else k.F_SilkS)
+                shape.SetStart(pad.GetPosition() - k.VECTOR2I(500000, 0))
+                shape.SetEnd(pad.GetPosition() + k.VECTOR2I(500000, 0))
+                shape.SetWidth(150000)
+                b.Add(shape)
+                k.SaveBoard(str(board), b)
+                added.append(shape.m_Uuid.AsString())
+            return real(board, scratch)
+
+        with patch.object(placer_runner, '_native_drc', drc):
+            with self.assertRaisesRegex(ValueError, r'native DRC changed after recording the placement lineage '
+                                                    r'stamp \(.*added_findings: \+[1-9][0-9]* -0;.*findings ') as caught:
+                _proposal_drc(source, out)
+        self.assertEqual(len(added), 1)
+        self.assertIn(added[0], str(caught.exception))
+        changes = json.loads((out.parent / 'native-drc-restamp.json').read_text())['changes']
+        self.assertTrue(changes['added_findings']['added'])
+        self.assertEqual(changes['added_findings']['removed'], [])
+        self.assertTrue(all(added[0] in [i['uuid'] for i in f['items']]
+                            for f in changes['added_findings']['added']))
+
+
+class StampComparisonTest(unittest.TestCase):
+    """Re-stamp DRC identity is the finding multiset, never native report order (AGENTEE-383)."""
+
+    @staticmethod
+    def finding(uuid, kind='silk_over_copper', x=1.0):
+        return {'type': kind, 'severity': 'warning', 'description': 'Silkscreen clipped by solder mask',
+                'items': [{'uuid': uuid, 'description': 'Reference field', 'pos': {'x': x, 'y': 0.0}},
+                          {'uuid': 'pad-' + uuid, 'description': 'Pad 1', 'pos': {'x': x, 'y': 0.0}}]}
+
+    def report(self, findings):
+        return {'violations': findings, 'ignored_checks': [], 'included_severities': ['error', 'warning', 'exclusion']}
+
+    def test_reordered_native_reports_give_the_same_comparison(self):
+        from agent_ee.placer_runner import _comparison_changes, _drc_comparison
+        findings = [self.finding('a'), self.finding('b'), self.finding('a', x=2.0), self.finding('c')]
+        baseline = [self.finding('a')]
+        first = _drc_comparison(self.report(json.loads(json.dumps(baseline))),
+                                self.report(json.loads(json.dumps(findings))))
+        second = _drc_comparison(self.report(json.loads(json.dumps(baseline))),
+                                 self.report(json.loads(json.dumps(findings[::-1]))))
+        self.assertNotEqual(first['candidate_findings'], second['candidate_findings'])
+        self.assertEqual(_comparison_changes(first, second), {})
+        self.assertEqual(len(first['added_findings']), 3)
+
+    def test_changed_finding_is_named_with_its_key(self):
+        from agent_ee.placer_runner import _comparison_changes, _drc_comparison
+        before = self.report([])
+        first = _drc_comparison(before, self.report([self.finding('a')]))
+        second = _drc_comparison(self.report([]), self.report([self.finding('a'), self.finding('n', 'silk_overlap')]))
+        changes = _comparison_changes(first, second)
+        self.assertEqual(set(changes), {'added_findings', 'candidate_findings', 'advisory_findings',
+                                        'silkscreen_findings', 'added_by_type'})
+        self.assertEqual([f['items'][0]['uuid'] for f in changes['added_findings']['added']], ['n'])
+        self.assertEqual(changes['added_findings']['removed'], [])
+        self.assertEqual(changes['added_by_type']['repeated'], {'silk_over_copper': 1, 'silk_overlap': 1})
+
+    def test_restamp_with_saved_states_decides_unmeasured_hard_collisions(self):
+        """The re-stamp has native states on both sides: 369's stateless refusal is not its path."""
+        from agent_ee.placer_runner import CollisionMeasurementRefusal, _comparison_changes, _drc_comparison
+        short = {'type': 'shorting_items', 'severity': 'error', 'description': 'Items shorting two nets (nets U1 and C1)',
+                 'items': [{'uuid': 'a'}, {'uuid': 'b'}]}
+        findings = [short, self.finding('s'), self.finding('t')]
+        states = {'a': ('U1', 'pad', (0, 0, 0, 0)), 'b': ('C1', 'pad', (100, 0, 0, 0)),
+                  **{u: (u, 'silk', ()) for u in ('s', 'pad-s', 't', 'pad-t')}}
+        recorded = _drc_comparison(self.report([dict(short)]), self.report(json.loads(json.dumps(findings))),
+                                   states, states)
+        self.assertEqual(recorded['added_by_type'], {'silk_over_copper': 2})
+        self.assertEqual(recorded['blocking_findings'], [])
+        repeated = _drc_comparison(self.report([dict(short)]), self.report(json.loads(json.dumps(findings[::-1]))),
+                                   states, states)
+        self.assertEqual(_comparison_changes(recorded, repeated), {})
+        # Without saved states the same carried short cannot be decided (AGENTEE-369).
+        with self.assertRaisesRegex(CollisionMeasurementRefusal, 'native saved geometry required'):
+            _drc_comparison(self.report([dict(short)]), self.report(json.loads(json.dumps(findings))))
+        # Moved copper on the stamped bytes is a new hard collision and a named change.
+        moved = dict(states, b=('C1', 'pad', (50, 0, 0, 0)))
+        changed = _drc_comparison(self.report([dict(short)]), self.report(json.loads(json.dumps(findings))),
+                                  states, moved)
+        self.assertEqual([v['type'] for v in changed['blocking_findings']], ['shorting_items'])
+        changes = _comparison_changes(recorded, changed)
+        self.assertEqual([f['type'] for f in changes['blocking_findings']['added']], ['shorting_items'])
+        self.assertEqual(changes['added_by_type']['repeated'], {'shorting_items': 1, 'silk_over_copper': 2})
+
+
 class SilkScopeTest(unittest.TestCase):
     def test_only_silk_positions_are_writable(self):
         from test_placement_adapter import TEXT, mutate
