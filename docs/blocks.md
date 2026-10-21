@@ -389,8 +389,10 @@ block's bounding box is not reserved, so sparse blocks can interleave. On the
 pod, stage-A block boxes total 3590 mm² (F) and 3212 mm² (B) of a 5850 mm²
 side, so whole-block boxes did not fit.
 
-Blocks are ordered by `priority_blocks`. After those, the next block is the one
-that shares the most non-ground nets with the fixed parts and the blocks
+Blocks are ordered by `priority_blocks`. Then come blocks that constrain both
+board sides: those with a drilled pad (a through-board reservation) or a
+hard-shadowed part. The rest follow. Within each group, the next block is the
+one that shares the most non-ground nets with the fixed parts and the blocks
 already ordered (ties: larger courtyard area, then id). For each block,
 candidate origins align to the outline, placed boxes, exact obstacles, group
 points and obligation targets, in four quarter turns. The objective terms rank
@@ -399,13 +401,16 @@ rotation; there are no weights:
 
 - `pad-locality`: the exact cross-block obligation cost (squared distance over
   squared limit), as the placer ranks it;
-- `inter-block-wire`: the integer Manhattan distance from each signal pad to the
-  nearest placed pad on its net. This is the block-level wire cost; a block
-  pair sharing more nets adds more terms;
+- `inter-block-wire`: for each non-ground net the block shares with placed
+  parts, the integer Manhattan distance from the centroid of the block's pads on
+  that net (floored to 1 nm) to the nearest placed pad on it, summed. Each shared
+  net is one term, so a block pair sharing more nets weighs more;
 - `thermal-spread`: the negated smallest squared distance to a placed source.
 
 A hard thermal limit and the obligation limits are exact, so a violating
-position is dropped while ranking and its blocking blocks are recorded. The
+position is dropped while ranking and its blocking blocks are recorded. A
+position where a rectilinear member courtyard overlaps a fixed courtyard,
+obstacle or footprint-forbidding rule area is dropped the same way. The
 first admissible candidate is taken. Every candidate given to the exact
 predicates costs one step. A block with no admissible candidate backjumps to
 the latest placed block among the recorded blockers, which then tries its next
@@ -415,7 +420,7 @@ candidate (conflict-directed backjumping). Results:
 | --- | --- | --- |
 | `planned` | `info` | Complete plan; see below |
 | `arrangement_search_exhausted` | `unknown` | A block has no candidate, and no placed block blocked it. Infeasibility is unproved: the candidate set is finite |
-| `arrangement_budget_exhausted` | `unknown` | Step budget, opt-in wall time, or the locality target budget |
+| `arrangement_budget_exhausted` | `unknown` | Step budget (candidates and, as in the placer, backjumps), opt-in wall time, or the locality target budget |
 | `arrangement_refused`, `electrical_locality_unavailable`, `unsupported_geometry`, `fixed_conflict` | `unknown` | Inputs |
 | `judge_rejected` | `unknown` | The complete plan failed a hard rule or a deferred obligation |
 
@@ -441,8 +446,9 @@ steps. `block_arrangement` records:
   and deferred record;
 - `order` and `inter_block_nets`, which counts shared non-ground nets per pair of
   blocks or fixed parts;
-- `search` (`steps_used`, `step_budget`, `backjumps`, `elapsed_s`) and `arranged`
-  block poses;
+- `search` (`steps_used`, `step_budget`, `backjumps`, `rejected` per predicate,
+  `elapsed_s`) and `arranged` block poses. Heartbeats carry the current block,
+  backjumps and rejections;
 - `residual`: references, the residual policy hash, the added obstacles and
   steps;
 - `rules`: every block rule graded with its enforcement;

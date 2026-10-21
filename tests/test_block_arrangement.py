@@ -200,6 +200,12 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         search = far['block_arrangement']['search']
         self.assertEqual((search['unplaced'], search['placed_peak']), ('Power', 1))
         self.assertGreater(search['backjumps'], 0)
+        # Backjumps count against the step budget, as in the placer.
+        bounded = self.arrange(plan_policy(step_budget=search['backjumps'] // 2,
+                                           thermal=dict(thermal, min_distance_nm=10 * MM)))
+        self.assertEqual((bounded['status'], bounded['outcome']), ('arrangement_budget_exhausted', 'unknown'))
+        self.assertIn(bounded['reason'], ('deterministic backjump budget exhausted',
+                                          'deterministic arrangement candidate budget exhausted'))
 
     def test_shadows_and_fixed_parts_across_the_board(self):
         # J1 is a residual part on the back; L1 casts a hard shadow through the board.
@@ -304,6 +310,13 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         plan = self.arrange(plan_policy(priority_blocks=['Sensor']))
         self.assertEqual(plan['block_arrangement']['order'], ['Sensor', 'Power'])
         self.assertEqual(self.arrange()['block_arrangement']['order'], ['Power', 'Sensor'])
+        # A block with a hard opposite-side shadow constrains both sides, so it goes first.
+        shadow = {'references': ['R1'], 'margin_nm': 0, 'provenance': {'enforcement': 'hard', 'citation': CITE}}
+        self.assertEqual(self.arrange(plan_policy(no_stacking=shadow))['block_arrangement']['order'],
+                         ['Sensor', 'Power'])
+        advisory = dict(shadow, provenance={'enforcement': 'advisory'})
+        self.assertEqual(self.arrange(plan_policy(no_stacking=advisory))['block_arrangement']['order'],
+                         ['Power', 'Sensor'])
 
 
 class SweepTests(unittest.TestCase):
@@ -330,10 +343,46 @@ class SweepTests(unittest.TestCase):
             with self.subTest(seed=seed):
                 self.assertEqual(got, want)
                 self.assertEqual(mine, theirs)
+                # A forbidding rule area blocks exact overlaps only, as a gapless solid.
+                forbid = list(arrangement._sweep([('F', cand)], [('F', cand)], xs, ys, [], [], gap, set(), set(),
+                                                 lambda: None, solid))
+                self.assertEqual(forbid, list(placer._unreserved({'F': cand}, {'F': [cand]}, xs, ys, [], solid, 0,
+                                                                 set(), set())))
+                # A drilled square overlapping a target slab on either side blocks; its owner conflicts.
+                square = box(3)
+                owners = set()
+                drilled = list(arrangement._sweep([('F', cand)], [], xs, ys, [], [], gap, owners, set(), lambda: None,
+                                                  (), [square], [(b, o) for _, b, o in reserved]))
+                pseudo = [('F', b, o) for _, b, o in reserved]
+                theirs = set()
+                self.assertEqual(drilled, list(placer._unreserved({'F': square}, {}, xs, ys, pseudo, [], 0, theirs)))
+                self.assertEqual(owners, theirs)
+                # A candidate shadow reserves against placed members only, never against placed shadows.
+                owners, theirs = set(), set()
+                shaded = list(arrangement._sweep([], [], xs, ys, reserved, [], gap, owners, set(), lambda: None,
+                                                 shadows=[('B', cand)], shaded=[('B', box(), 'S')]))
+                self.assertEqual(shaded, list(placer._unreserved({'B': cand}, {}, xs, ys, reserved, [], gap, theirs)))
+                self.assertEqual(owners, theirs)
             seen['doomed'] += len(mine[1])
             seen['conflicts'] += len(mine[0])
             seen['blocked'] += len(xs) * len(ys) - len(got)
         self.assertTrue(all(seen.values()), seen)
+
+    def test_inscribed_square_lies_inside_the_drilled_reservation(self):
+        import math
+        from fractions import Fraction
+        from agent_ee.placement import area2, intersection_area
+        for n in (6, 8, 32):
+            for r in (150000, 400000):
+                poly = [[round(r * math.cos(2 * math.pi * k / n)) + 5 * MM,
+                         round(r * math.sin(2 * math.pi * k / n)) - 3 * MM] for k in range(n)]
+                x0, y0, x1, y1 = arrangement._inscribed(poly)
+                square = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+                self.assertEqual(intersection_area(square, poly), Fraction(abs(area2(square)), 2))
+                self.assertGreater(x1 - x0, r)
+                self.assertEqual(arrangement._inscribed(poly[::-1]), (x0, y0, x1, y1))
+        self.assertIsNone(arrangement._inscribed([[0, 0], [4, 0], [4, 4], [2, 1], [0, 4]]))
+        self.assertIsNone(arrangement._inscribed([[0, 0], [2, 0], [2, 2], [0, 2]]))
 
 
 class CliTests(ArrangementFixture, unittest.TestCase):

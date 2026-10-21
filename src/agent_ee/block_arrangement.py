@@ -25,7 +25,8 @@ from . import blocks, electrical_locality, placement_groups, placer
 from .catalog import strict_json
 from .footprint_library import digest
 from .native_netlist import read_native_inventory, read_sheet_names
-from .placement import intersection_area, overhang_bands, qualified_polygons
+from .placement import convex, cross, edges, intersection_area, overhang_bands, qualified_polygons
+from .placement_predicates import point_segment2
 
 POLICY = 'agent-ee.block-arrangement/1'
 STRATEGY = 'ranked-first-fit-conflict-backjump/1'
@@ -304,6 +305,25 @@ def _apart(a, b):
     return a is None or b is None or a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
 
 
+def _inscribed(polygon):
+    """An axis-aligned square inside a convex polygon, or None.
+
+    About an integer interior point at least r from every edge, a square of half
+    side h with 2h^2 < r^2 lies in the disc of radius r, so inside the polygon:
+    any positive-area overlap with the square is one with the polygon.
+    """
+    points = [tuple(p) for p in polygon]
+    if not (convex(points) or convex(points[::-1])):
+        return None
+    cx, cy = sum(p[0] for p in points) // len(points), sum(p[1] for p in points) // len(points)
+    turns = {cross(a, b, (cx, cy)) > 0 for a, b in edges(points)}
+    if len(turns) != 1 or any(cross(a, b, (cx, cy)) == 0 for a, b in edges(points)):
+        return None
+    r2 = min(point_segment2((cx, cy), a, b) for a, b in edges(points))
+    h = math.isqrt(math.floor(r2 / 2)) - 1
+    return None if h <= 0 else (cx - h, cy - h, cx + h, cy + h)
+
+
 def _indexed(entries):
     """Per side: boxes sorted by left edge, their left edges and the widest box."""
     out = {}
@@ -313,16 +333,26 @@ def _indexed(entries):
             for side, rows in out.items()}
 
 
-def _sweep(boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed, checkpoint):
+def _sweep(boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed, checkpoint, forbid=(),
+           holes=(), targets=(), shadows=(), shaded=()):
     """Positions where every member box clears every reserved member box by the gap.
 
     ``placer._unreserved`` for a candidate made of many boxes: a reserved box that a
     member box meets in x blocks the open y interval (b0 - gap - y1, b1 + gap - y0),
     and its owner joins ``conflicts``. A rectilinear member slab overlapping a solid
     slab of a fixed courtyard or obstacle blocks the position; one nearer than the
-    gap marks it ``doomed`` (the exact obstacle test would reject it).
+    gap marks it ``doomed`` (the exact obstacle test would reject it). One overlapping a
+    ``forbid`` slab of a footprint-forbidding rule area is blocked (no gap applies), and so
+    is one where a square inside one of the candidate's drilled-pad reservations overlaps
+    a ``targets`` courtyard slab on either side; that slab's owner joins ``conflicts``.
+    Opposite-side shadows reserve like members: the candidate's ``shadows`` against the
+    reserved member boxes, and placed ``shaded`` boxes against the candidate's members.
     """
-    reserved, solid = _indexed(reserved), _indexed([(side, box, None) for side, box in solid])
+    targets = _indexed([('*', box, owner) for box, owner in targets])
+    members = reserved
+    reserved, solid = _indexed(list(reserved) + list(shaded)), _indexed([(side, box, None) for side, box in solid])
+    members = _indexed(members) if shadows else {}
+    forbid = _indexed([(side, box, None) for side, box in forbid])
 
     def near(index, side, lo, hi, reach):
         rows, lefts, width = index.get(side, ((), (), 0))
@@ -340,6 +370,13 @@ def _sweep(boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed, c
                     if i < j:
                         blocked.append((i, j))
                         conflicts.add(owner)
+        for side, (x0, y0, x1, y1) in shadows:
+            for (a0, b0, a1, b1), owner in near(members, side, x0 + x, x1 + x, gap):
+                if not (x1 + x + gap <= a0 or a1 + gap <= x0 + x):
+                    i, j = bisect.bisect_right(ys, b0 - gap - y1), bisect.bisect_left(ys, b1 + gap - y0)
+                    if i < j:
+                        blocked.append((i, j))
+                        conflicts.add(owner)
         for side, (r0, s0, r1, s1) in rectangles:
             for (a0, b0, a1, b1), _ in near(solid, side, r0 + x, r1 + x, gap):
                 if not (r1 + x <= a0 or a1 <= r0 + x):
@@ -347,11 +384,25 @@ def _sweep(boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed, c
                     if i < j:
                         blocked.append((i, j))
                 dx = max(0, a0 - r1 - x, r0 + x - a1)
-                if gap and dx < gap:
-                    reach = math.isqrt(gap * gap - dx * dx - 1)
-                    i, j = bisect.bisect_left(ys, b0 - s1 - reach), bisect.bisect_right(ys, b1 - s0 + reach)
+                if not gap or dx >= gap:
+                    continue
+                reach = math.isqrt(gap * gap - dx * dx - 1)
+                i, j = bisect.bisect_left(ys, b0 - s1 - reach), bisect.bisect_right(ys, b1 - s0 + reach)
+                if i < j:
+                    close.append((i, j))
+            for (a0, b0, a1, b1), _ in near(forbid, side, r0 + x, r1 + x, 0):
+                if not (r1 + x <= a0 or a1 <= r0 + x):
+                    i, j = bisect.bisect_right(ys, b0 - s1), bisect.bisect_left(ys, b1 - s0)
                     if i < j:
-                        close.append((i, j))
+                        blocked.append((i, j))
+        for h0, k0, h1, k1 in holes:
+            for (a0, b0, a1, b1), owner in near(targets, '*', h0 + x, h1 + x, 0):
+                if not (h1 + x <= a0 or a1 <= h0 + x):
+                    i, j = bisect.bisect_right(ys, b0 - k1), bisect.bisect_left(ys, b1 - k0)
+                    if i < j:
+                        blocked.append((i, j))
+                        if owner is not None:
+                            conflicts.add(owner)
         close = {k for i, j in close for k in range(i, j)}
         free, start = [], 0
         for i, j in sorted(blocked):
@@ -379,7 +430,7 @@ class _Arrangement:
         self.margin = placer._edge_margin_nm(policy)
         self.gap, self.grounds = policy['gap_nm'], set(policy['ground_nets'])
         self.budget, self.steps = arrangement['step_budget'], 0
-        self.current, self.backjumps = None, 0
+        self.current, self.backjumps, self.rejected = None, 0, {}
         self.started = time.monotonic()
         self.deadline = (self.started + arrangement['search_timeout_s'] if 'search_timeout_s' in arrangement
                          else None)
@@ -389,6 +440,15 @@ class _Arrangement:
         self.fixed_fps = placed
         self.exact = exact
         self.solid = [(o['side'], slab) for o in exact for poly in o['polygons'] for slab in placer._slabs(poly) or ()]
+        # Footprint-forbidding rule areas of the board and of fixed parts: exact overlap prefilter.
+        self.forbid = [(k['side'], slab) for k in keepouts + [a for fp in placed for a in fp.get('packing_keepouts', [])]
+                       for poly in k['polygons'] for slab in placer._slabs(poly) or ()]
+        # Courtyard slabs on either side that a candidate's drilled-pad reservation may not overlap.
+        self.targets = [(slab, None) for fp in placed for c in fp['courtyards'].values() for poly in c['polygons']
+                        for slab in placer._slabs(poly) or ()]
+        # A fixed drilled-pad reservation excludes courtyards on both sides (placer._hole_conflict).
+        self.forbid += [(side, square) for fp in placed for _, poly in fp.get('_packing_holes', ())
+                        for square in [_inscribed(poly)] if square for side in ('F', 'B')]
         self.owner = {ref: a['block'] for a in admitted.values() for ref in a['poses']}
         self.frames, self.macros, self.rotated = {}, {}, {}
         for bid, entry in admitted.items():
@@ -428,7 +488,8 @@ class _Arrangement:
         now = time.monotonic()
         if self.heartbeat is not None and now - self.last_heartbeat >= 5:
             self.heartbeat({'status': 'arranging', 'steps_used': self.steps, 'blocks_placed': len(self.placed_blocks),
-                            'block': self.current, 'backjumps': self.backjumps, 'elapsed_s': now - self.started})
+                            'block': self.current, 'backjumps': self.backjumps, 'rejected': dict(sorted(self.rejected.items())),
+                            'elapsed_s': now - self.started})
             self.last_heartbeat = now
         if self.deadline is not None and now >= self.deadline:
             raise _Stopped('arrangement_budget_exhausted', 'wall-time arrangement budget exhausted')
@@ -453,6 +514,8 @@ class _Arrangement:
                                    'members': members})
         for fp in members:
             self.reserved.extend((side, box, bid) for side, box in sorted(placer.boxes(fp).items()))
+            self.targets.extend((slab, bid) for _, c in sorted(fp['courtyards'].items()) for poly in c['polygons']
+                                for slab in placer._slabs(poly) or ())
             self.placed_fps.append(fp)
             self._push_fp(fp)
             self.member_exact.extend((bid, placer._exact(side, c['polygons'])) for side, c in sorted(fp['courtyards'].items()))
@@ -464,6 +527,7 @@ class _Arrangement:
         record = self.placed_blocks.pop()
         bid = record['block']
         self.reserved = [r for r in self.reserved if r[2] != bid]
+        self.targets = [t for t in self.targets if t[1] != bid]
         self.member_exact = [e for e in self.member_exact if e[0] != bid]
         self.shadow_exact = [e for e in self.shadow_exact if e[0] != bid]
         for fp in reversed(record['members']):
@@ -526,15 +590,26 @@ class _Arrangement:
             targets = evaluator.targets() + self._group_targets(members)
             xs, ys = placer._candidate_axes(macro, rotation, self.outline, anchors, self.gap, self.margin,
                                             targets, window)
-            pads = [(pad['net'], *pad['position_nm']) for fp in members for pad in fp['pads']
-                    if pad.get('net') and pad['net'] not in self.grounds and pad['net'] in self.peers]
+            # One term per net shared with placed parts: the block's pad centroid on that net.
+            on_net = {}
+            for fp in members:
+                for pad in fp['pads']:
+                    if pad.get('net') and pad['net'] not in self.grounds and pad['net'] in self.peers:
+                        on_net.setdefault(pad['net'], []).append(pad['position_nm'])
+            pads = [(net, sum(p[0] for p in points) // len(points), sum(p[1] for p in points) // len(points))
+                    for net, points in sorted(on_net.items())]
             sources = [fp['position_nm'] for fp in members if fp['ref'] in self.sources]
             placed_refs = sorted(r for r in self.sources if r in self.positions)
             placed_sources = [self.positions[r] for r in placed_refs]
             doomed = set()
             limit2 = None if self.thermal_min is None else self.thermal_min ** 2
+            holes = [square for _, poly in at_origin.get('_packing_holes', ()) for square in [_inscribed(poly)]
+                     if square]
+            shadows = [(shadow['side'], placer.boxes({'courtyards': {shadow['side']: shadow}})[shadow['side']])
+                       for fp in members if fp['ref'] in self.stacking for shadow in [_shadow(fp, self.stack_margin)]]
+            shaded = [(entry['side'], entry['box'], owner) for owner, entry in self.shadow_exact]
             for x, y in _sweep(member_boxes, slabs, xs, ys, self.reserved, self.solid, self.gap, conflicts, doomed,
-                               self.checkpoint):
+                               self.checkpoint, self.forbid, holes, self.targets, shadows, shaded):
                 # Exact and cheap: a violating position is dropped here, its blockers recorded.
                 hit, local_cost = evaluator.constraint((x, y))
                 if hit:
@@ -557,47 +632,50 @@ class _Arrangement:
         return ranked
 
     def blockers(self, bid, proposed, members):
-        """None when every hard predicate admits the macro, else the blocks that blocked it."""
+        """None when every hard predicate admits the macro, else (predicate, blocking blocks)."""
         hits, reach = set(), _reach(proposed)
         for fp in self.placed_fps:
             if not _apart(reach, self.reach[fp['ref']]) and placer._hole_conflict(proposed, fp):
                 hits.add(self.owner.get(fp['ref']))
         if hits:
-            return hits - {None}
-        if (not placer._fits(proposed, self.outline, self.margin) or placer._near(proposed, self.exact, self.gap)
-                or placer._in_keepouts(proposed, self.keepouts)):
-            return set()
+            return 'drilled_pad', hits - {None}
+        if not placer._fits(proposed, self.outline, self.margin):
+            return 'outline', set()
+        if placer._near(proposed, self.exact, self.gap):
+            return 'fixed_or_obstacle', set()
+        if placer._in_keepouts(proposed, self.keepouts):
+            return 'rule_area', set()
         hits = {self.owner.get(fp['ref']) for fp in self.placed_fps
                 if placer._in_keepouts(proposed, fp.get('packing_keepouts', []))
                 or placer._in_keepouts(fp, proposed.get('packing_keepouts', []))}
         if hits:
-            return hits - {None}
+            return 'rule_area', hits - {None}
         hits = {owner for owner, entry in self.shadow_exact if placer._near(proposed, [entry], self.gap)}
         for fp in members:
             if fp['ref'] in self.stacking:
                 shadow = _shadow(fp, self.stack_margin)
                 own = {'courtyards': {shadow['side']: {'polygons': shadow['polygons']}}}
                 if placer._near(own, self.fixed_courtyards, self.gap):
-                    return set()
+                    return 'no_stacking', set()
                 hits |= {owner for owner, entry in self.member_exact if placer._near(own, [entry], self.gap)}
         if hits:
-            return hits
+            return 'no_stacking', hits
         if bid in self.over_fixed and any(_through(fp, self.fixed_courtyards) for fp in members):
-            return set()
+            return 'no_block_over_fixed', set()
         positions = dict(self.positions, **{fp['ref']: fp['position_nm'] for fp in members})
         for fp in members:
             group = self.groups.get(fp['ref'])
             if group is not None:
                 if 'region' in group and not placement_groups.admits(fp, {'region': group['region']}, {}):
-                    return set()
+                    return 'group', set()
                 point = placement_groups.anchor_point(group, positions) if 'anchor' in group else None
                 if point is not None and placement_groups.distance2(fp['position_nm'], point) > \
                         group['max_distance_nm'] ** 2:
-                    return {self.owner.get(group['anchor'].get('reference'))} - {None, bid}
+                    return 'group', {self.owner.get(group['anchor'].get('reference'))} - {None, bid}
             for ref, g in self.anchored.get(fp['ref'], ()):
                 if ref in self.positions and placement_groups.distance2(
                         self.positions[ref], fp['position_nm']) > g['max_distance_nm'] ** 2:
-                    return {self.owner.get(ref)} - {None}
+                    return 'group', {self.owner.get(ref)} - {None}
         return None
 
     def candidates(self, bid, conflicts):
@@ -616,11 +694,13 @@ class _Arrangement:
             if hit is None:
                 yield [x, y], rotation, proposed
             else:
-                conflicts |= hit
+                self.rejected[hit[0]] = self.rejected.get(hit[0], 0) + 1
+                conflicts |= hit[1]
 
 
-def _order(admitted, by_ref, fixed, priority, grounds):
-    """Declared priorities, then the block sharing most signal nets with what is placed."""
+def _order(admitted, by_ref, fixed, priority, grounds, through=frozenset()):
+    """Declared priorities, then blocks in ``through`` (they reserve both board sides),
+    then the rest; within each, the block sharing most signal nets with what is placed."""
     nets = {bid: {p['net'] for r in a['poses'] for p in by_ref[r]['pads']
                   if p.get('net') and p['net'] not in grounds} for bid, a in admitted.items()}
     area = {bid: sum((b[2] - b[0]) * (b[3] - b[1]) for r in a['poses']
@@ -631,7 +711,7 @@ def _order(admitted, by_ref, fixed, priority, grounds):
         reached |= nets[bid]
     while len(order) < len(admitted):
         bid = min((b for b in admitted if b not in order),
-                  key=lambda b: (-len(nets[b] & reached), -area[b], blocks._natural(b)))
+                  key=lambda b: (b not in through, -len(nets[b] & reached), -area[b], blocks._natural(b)))
         order.append(bid)
         reached |= nets[bid]
     return order
@@ -825,7 +905,10 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
         return failure('fixed_conflict', str(exc))
     placed = [fp for fp in placed if fp['ref'] not in members]
     search = _Arrangement(work, effective, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat)
-    order = _order(admitted, by_ref, fixed, arrangement['priority_blocks'], set(effective['ground_nets']))
+    # Blocks with drilled pads or a hard opposite-side shadow constrain both sides: place them first.
+    through = {bid for bid, entry in admitted.items() if any(
+        any(by_ref[r].get('_packing_holes', ())) or r in search.stacking for r in entry['poses'])}
+    order = _order(admitted, by_ref, fixed, arrangement['priority_blocks'], set(effective['ground_nets']), through)
     record.update(order=order, inter_block_nets=_net_counts(admitted, by_ref, fixed, set(effective['ground_nets'])),
                   objective=arrangement['objective'])
     if heartbeat is not None:
@@ -837,7 +920,8 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
                    for p in search.placed_blocks]
         return failure(status, reason, search.steps, search={
             'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget, 'backjumps': backjumps,
-            'placed_peak': peak, **({'unplaced': unplaced} if unplaced else {}),
+            'placed_peak': peak, 'rejected': dict(sorted(search.rejected.items())),
+            **({'unplaced': unplaced} if unplaced else {}),
             'partial': {'authority': 'diagnostic-only-unvalidated-partial-arrangement', 'blocks': partial}})
     try:
         while len(search.placed_blocks) < len(order):
@@ -860,6 +944,9 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
                                f"no candidate for block {level['block']} in the finite search; infeasibility unproved",
                                level['block'])
             j = culprits[0]
+            if backjumps == search.budget:
+                return stopped('arrangement_budget_exhausted', 'deterministic backjump budget exhausted',
+                               level['block'])
             backjumps += 1
             search.backjumps = backjumps
             while len(search.placed_blocks) > j:
@@ -874,7 +961,7 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     elapsed = time.monotonic() - search.started
     poses = {fp['ref']: fp for p in search.placed_blocks for fp in p['members']}
     record['search'] = {'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget,
-                        'backjumps': backjumps, 'elapsed_s': elapsed}
+                        'backjumps': backjumps, 'rejected': dict(sorted(search.rejected.items())), 'elapsed_s': elapsed}
     record['arranged'] = [{'block': p['block'], 'position_nm': p['position_nm'], 'rotation_deg': p['rotation_deg']}
                           for p in search.placed_blocks]
     # Residual packing: the unchanged placer with every block member fixed at its arranged pose.
