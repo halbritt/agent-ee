@@ -295,6 +295,12 @@ image still hashes differently. Framed members (`blocks.frame_member`) carry the
 rings, so a candidate outline and its `admit` and arrangement re-derivations do
 not depend on the captured order either.
 
+`NativeCustomPadIdentityTests` (AGENTEE-373) saves an original asymmetric custom
+pad through pcbnew on both sides at all four quarter turns, then extracts its
+geometry. Every cyclic start and winding of the extracted copper contour keeps
+its pad identity; moving a copper vertex by 1 nm changes it. Opposite sides
+retain distinct identities.
+
 `admit(candidate, probe, inventory, derivation, policy)` admits a candidate onto
 the board it was packed from. Stage B must call it before using a candidate. It
 returns `{"status": "admitted" | "refused", "problems": [...]}`. Problem kinds:

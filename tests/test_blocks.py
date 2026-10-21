@@ -1137,6 +1137,68 @@ class MatchingTests(Fixture, unittest.TestCase):
                 self.assertEqual(blocks.match(doc, target, inventory, self.MAPPING)['status'], status)
 
 
+class NativeCustomPadIdentityTests(unittest.TestCase):
+    """Saved original custom copper, probed through pcbnew (AGENTEE-373)."""
+
+    def test_native_custom_pad_rotation_and_contour_relabeling(self):
+        """AGENTEE-373: saved custom copper keeps identity on each side and quarter turn."""
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import pcbnew as k
+        from agent_ee.placement_probe import extract
+
+        # Original asymmetric L copper, with no arcs or rounded anchor to introduce
+        # tessellation differences. Native extraction, not captured_at, supplies it.
+        source = '''(kicad_pcb (version 20260206) (generator "pcbnew")
+          (general (thickness 1.6))
+          (layers (0 "F.Cu" signal) (2 "B.Cu" signal)
+            (31 "F.CrtYd" user "F.Courtyard") (29 "B.CrtYd" user "B.Courtyard"))
+          (setup (pad_to_mask_clearance 0))
+          (footprint "Owned:CustomL" (layer "F.Cu") (at 10 10)
+            (property "Reference" "U1" (at 0 -2) (layer "F.Cu"))
+            (fp_rect (start -2 -2) (end 3 2)
+              (stroke (width 0.05) (type solid)) (fill none) (layer "F.CrtYd"))
+            (pad "1" smd custom (at 0 0) (size 0.2 0.2) (layers "F.Cu")
+              (zone_connect 2) (options (clearance outline) (anchor rect))
+              (primitives (gr_poly (pts (xy -1 -1) (xy 2 -1) (xy 2 0)
+                (xy 0 0) (xy 0 1) (xy -1 1)) (width 0) (fill yes))))))'''
+        with tempfile.TemporaryDirectory(prefix='agent-ee-custom-identity-') as tmp:
+            path = Path(tmp) / 'owned.kicad_pcb'
+            identities = {}
+            for side in ('F', 'B'):
+                for turns in range(4):
+                    with self.subTest(side=side, turns=turns):
+                        path.write_text(source)
+                        native = k.LoadBoard(str(path))
+                        fp = next(iter(native.GetFootprints()))
+                        if side == 'B':
+                            fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
+                        fp.SetOrientationDegrees(90 * turns)
+                        fp.SetPosition(k.VECTOR2I((10 + turns) * MM, (20 - turns) * MM))
+                        k.SaveBoard(str(path), native)
+                        captured = extract(path)['footprints'][0]
+                        self.assertEqual(captured['side'], side)
+                        custom = captured['pads'][0]['custom_geometry']
+                        self.assertEqual(custom['status'], 'proven', custom)
+                        rings = custom['merged_polygons_nm']
+                        self.assertEqual(len(rings), 1)
+                        self.assertGreaterEqual(len(rings[0]), 6)
+                        identity = (blocks.pad_geometry_sha256(captured), blocks.courtyard_sha256(captured))
+                        self.assertEqual(identity, identities.setdefault(side, identity))
+                        for reverse in (False, True):
+                            for start in range(len(rings[0])):
+                                relabeled = copy.deepcopy(captured)
+                                ring = rings[0][::-1] if reverse else rings[0]
+                                relabeled['pads'][0]['custom_geometry']['merged_polygons_nm'] = [
+                                    ring[start:] + ring[:start]]
+                                self.assertEqual(blocks.pad_geometry_sha256(relabeled), identity[0])
+                        changed = copy.deepcopy(captured)
+                        changed['pads'][0]['custom_geometry']['merged_polygons_nm'][0][0][0] += 1
+                        self.assertNotEqual(blocks.pad_geometry_sha256(changed), identity[0])
+                        self.assertEqual(blocks.courtyard_sha256(changed), identity[1])
+            self.assertNotEqual(identities['F'], identities['B'])
+
+
 class NativeHierarchyTests(unittest.TestCase):
     """Blocks from an actual sandboxed KiCad XML export of the AGENTEE-46 owned hierarchy."""
 

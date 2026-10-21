@@ -387,6 +387,9 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=/home/halbritt/git/fome-m
 - materialization with source and target members at every quarter-turn, each
   captured in pose-dependent vertex order, a grown courtyard still refusing, and
   retired `/1` entries refused with `identity_version` (AGENTEE-370);
+- all 16 B-side source/target quarter-turn materializations, validating each
+  candidate and its target identity, with a 1 nm courtyard change still refusing
+  every pair (AGENTEE-373);
 - a failed re-grade;
 - the allocation binding (`AllocationBindingTests`, AGENTEE-375): the candidate
   binds the target allocation and block id and admits; the allocation's anchor

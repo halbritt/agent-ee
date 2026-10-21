@@ -1869,6 +1869,12 @@ Block candidates preserve source records and accept truthful advisory `info`
 through production, validation and independent admission regrading; hard defects
 and unknown coverage still refuse. See [blocks](blocks.md).
 
+Block identity regressions (AGENTEE-373) exercise saved native custom-pad copper
+on both sides at all quarter turns, contour start/winding relabeling, and all 16
+B-side source/target [library materializations](block-library.md#materialization).
+Moved copper vertices and changed courtyards retain their identity refusals.
+These add coverage without changing any registered check or verdict.
+
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.
 AGENTEE-334 adds `kind: buck-output-loop` with explicit `ic`, `inductor`, and
