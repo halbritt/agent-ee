@@ -557,6 +557,11 @@ initial structural findings: its unplaced copper fails both `drc-placement` and
 `outline`. Reusing the module must still pass fresh DRC and every later campaign
 assertion, including `criteria_satisfied`; containment witnesses stay visible.
 
+A further 2026-10-21 coordinator ruling keeps the native DRC waiver contract's
+initial defect. Its fixture declares its 0.9 mm track-width minimum through the
+constraint-source import, as an owner-class synthetic test-fixture source bound
+in the project receipt. Those violations stay hard; waiver assertions are unchanged.
+
 ## Unsourced packing gaps (2026-10-21, AGENTEE-338)
 
 The coordinator's AGENTEE-338 ruling applies the owner's requirement that limits
