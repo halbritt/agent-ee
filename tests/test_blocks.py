@@ -557,6 +557,107 @@ class RecoveryTests(Fixture, unittest.TestCase):
                                             'anchor': {'reference': 'U1'}, 'max_distance_nm': 1}]
         refuses(leaked, 'never reaches the block policy|block grade groups')
 
+    def refused(self, cand, mutate, text):
+        # A malformed recovery history refuses through validation and so through admission.
+        bad = copy.deepcopy(cand)
+        mutate(bad['search']['recovery'])
+        with self.assertRaisesRegex(ValueError, text):
+            blocks.validate_candidate(bad)
+        with self.assertRaisesRegex(ValueError, text):
+            blocks.admit(bad, self.board, self.inv, self.derived, self.stranded_policy)
+
+    def test_every_recovery_trial_is_validated(self):
+        cand = self.stranded({'1': 'VX', '2': 'GND'})['candidate']
+        record = cand['search']['recovery']
+        self.assertEqual(len(record['trials']), 1)
+        start = record['trials'][0]['max_distance_nm']
+
+        def before(**row):
+            return lambda r: r['trials'].insert(0, {'references': ['C9'], 'max_distance_nm': 2 * start,
+                                                    'status': 'synthetic_plane_reached', 'steps_used': 0, **row})
+        # The reviewer's adversarial set (AGENTEE-359 H1): a zero-step row ahead of the real trial.
+        self.refused(cand, before(references=['OUTSIDE', 'U1', 'U1'], max_distance_nm='unbounded', status='infeasible'),
+                     'trial references must be distinct movable block members')
+        self.refused(cand, before(max_distance_nm=-1), 'trial max_distance_nm must be a positive integer')
+        self.refused(cand, before(references=[], max_distance_nm=1), 'trial references must be distinct')
+        self.refused(cand, lambda r: (r.update(max_distance_nm=True), r['trials'][-1].update(max_distance_nm=True)),
+                     'max_distance_nm must be a positive integer')
+        self.refused(cand, lambda r: r['trials'][-1].update(steps_used=self.stranded_policy['step_budget'] + 1),
+                     'step budget')
+        self.refused(cand, lambda r: r.pop('trials'), 'missing trials')
+        self.refused(cand, lambda r: r.update(trials=[]), 'list of 1 to')
+        self.refused(cand, lambda r: r.update(references=['C9', 'C9']), 'distinct movable block members')
+        # Each field of an intermediate row on its own.
+        self.refused(cand, before(status='infeasible'), 'reached the synthetic plane')
+        self.refused(cand, before(status='recovered'), 'reached the synthetic plane')
+        self.refused(cand, before(max_distance_nm=float(2 * start)), 'positive integer')
+        self.refused(cand, before(max_distance_nm=float('inf')), 'positive integer')
+        self.refused(cand, before(max_distance_nm=False), 'positive integer')
+        self.refused(cand, before(references=['C9', 'C9']), 'distinct')
+        self.refused(cand, before(references=['U1']), 'movable block members')
+        self.refused(cand, before(references=['OUTSIDE']), 'movable block members')
+        self.refused(cand, before(references=[9]), 'movable block members')
+        self.refused(cand, before(steps_used=-1), 'steps_used')
+        self.refused(cand, before(steps_used=self.stranded_policy['step_budget'] + 1), 'step budget')
+        self.refused(cand, before(note='x'), 'recovery trial')
+        # The retry ladder: halve only when the group did not grow, never shrink the group.
+        self.refused(cand, before(max_distance_nm=start), 'halves its distance')
+        self.refused(cand, before(max_distance_nm=4 * start), 'halves its distance')
+        self.refused(cand, before(max_distance_nm=start // 2), 'halves its distance')
+        self.refused(cand, before(references=['C1', 'C9']), 'first recovery trial groups exactly the stranded')
+        self.refused(cand, lambda r: r['trials'][0].update(status='synthetic_plane_reached'),
+                     'the last is recovered')
+        self.refused(cand, lambda r: r.update(steps_total=r['steps_total'] + 1), 'sum of its trials')
+
+    def test_multi_trial_history_follows_the_ladder(self):
+        self.stranded({'1': 'VX', '2': 'GND'})
+        # Forced boundary contact: C9 stays on the plane once, then C1 joins it, then all clear.
+        with mock.patch.object(blocks, '_touching', side_effect=[['C9'], ['C9'], ['C1', 'C9'], []]):
+            result = blocks.pack_block(self.board, self.inv, self.derived, 'Power', self.stranded_policy,
+                                       compact=False)
+        self.assertEqual(result['status'], 'packed', result.get('reason'))
+        cand = result['candidate']
+        record = cand['search']['recovery']
+        start = record['trials'][0]['max_distance_nm']
+        self.assertEqual([(t['references'], t['max_distance_nm'], t['status']) for t in record['trials']],
+                         [(['C9'], start, 'synthetic_plane_reached'), (['C9'], start // 2, 'synthetic_plane_reached'),
+                          (['C1', 'C9'], start // 2, 'recovered')])
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, self.derived, self.stranded_policy)['status'],
+                         'admitted')
+        self.refused(cand, lambda r: r['trials'][0].update(references=['C1']), 'first recovery trial')
+        self.refused(cand, lambda r: r['trials'][0].update(max_distance_nm=1), 'halves its distance')
+        self.refused(cand, lambda r: r['trials'][0].update(status=None), 'reached the synthetic plane')
+        self.refused(cand, lambda r: r['trials'][1].update(status='recovered'), 'reached the synthetic plane')
+        # A grown group keeps its distance; a later group keeps every earlier member.
+        self.refused(cand, lambda r: (r['trials'][2].update(max_distance_nm=start // 4),
+                                      r.update(max_distance_nm=start // 4)), 'grows the group keeps its distance')
+        self.refused(cand, lambda r: r['trials'][1].update(references=['C1', 'C9']), 'grows the group keeps its distance')
+        self.refused(cand, lambda r: (r['trials'][2].update(references=['C1']), r.update(references=['C1'])),
+                     'keeps every member')
+        self.refused(cand, lambda r: (r['trials'][2].update(references=['C9', 'C1']),
+                                      r.update(references=['C9', 'C1'])), 'natural order')
+        self.refused(cand, lambda r: r['trials'][1].update(steps_used=r['trials'][1]['steps_used'] + 1),
+                     'sum of its trials')
+
+    def test_admission_binds_the_recovery_ladder_to_the_board(self):
+        cand = self.stranded({'1': 'VX', '2': 'GND'})['candidate']
+        record = cand['search']['recovery']
+        # A self-consistent history that starts from a distance the board's plane does not give.
+        bad = copy.deepcopy(cand)
+        bad['search']['recovery']['trials'][0]['max_distance_nm'] *= 2
+        bad['search']['recovery']['max_distance_nm'] *= 2
+        blocks.validate_candidate(bad)
+        verdict = blocks.admit(bad, self.board, self.inv, self.derived, self.stranded_policy)
+        self.assertEqual(verdict['status'], 'refused')
+        self.assertEqual(verdict['problems'][0]['kind'], 'recovery_mismatch')
+        self.assertEqual(verdict['problems'][0]['start_distance_nm'], record['max_distance_nm'])
+        # Admission re-applies the producer's eligibility rule to every grouped member on the board.
+        with mock.patch.object(blocks, '_recovery_eligible', lambda board, ref, grouped: ref != 'C9'):
+            verdict = blocks.admit(cand, self.board, self.inv, self.derived, self.stranded_policy)
+        self.assertEqual((verdict['status'], verdict['problems'][0]['ineligible']), ('refused', ['C9']))
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, self.derived, self.stranded_policy)['status'],
+                         'admitted')
+
 
 # A buck anchor driving a seven-resistor chain: the first run strings it out (AGENTEE-355).
 CHAIN = (('U1', '/s1/', 'BUCK', 'Owned:QFN4', 'owned-buck', {'1': 'N1', '2': 'GND', '3': 'M1', '4': 'FB'}),) + tuple(

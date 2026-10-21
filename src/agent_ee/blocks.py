@@ -486,18 +486,12 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
     board = {fp['ref']: fp for fp in capture['footprints']}
     members = sorted(block['references'], key=_natural)
     anchor, sub, deferred, areas = _isolate(capture, policy, block)
-    # A synthetic square that any chain of the members fits inside, centred on the
-    # fixed anchor: the plane is unbounded for the search unless a member reaches it.
-    reach = _extent(board[anchor]) + sum(2 * _extent(board[r]) + sub['gap_nm'] for r in members if r != anchor)
-    reach += sub['gap_nm'] + 1
-    ax, ay = board[anchor]['position_nm']
-    plan = placer.pack(_isolated(capture, board, members, areas, (ax - reach, ay - reach, ax + reach, ay + reach)),
-                       sub, heartbeat=heartbeat)
+    plane = _plane(board, members, anchor, sub)
+    plan = placer.pack(_isolated(capture, board, members, areas, plane), sub, heartbeat=heartbeat)
     base = {'schema': CANDIDATE, 'block_id': block_id, 'block_policy': sub, 'deferred': deferred}
     if plan['status'] != 'planned':
         return {**base, 'status': plan['status'], 'outcome': plan['outcome'], 'reason': plan.get('reason'),
                 'plan': plan}
-    plane = (ax - reach, ay - reach, ax + reach, ay + reach)
     touching = _touching(board, members, plan, plane)
     recovery = None
     if touching:
@@ -519,6 +513,25 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
         validate_candidate(result)
     return {'status': result['status'], 'outcome': 'info' if result['status'] == 'packed' else 'unknown',
             'candidate': result}
+
+
+def _plane(board, members, anchor, sub):
+    """A synthetic square that any chain of the members fits inside, centred on the fixed
+    anchor: the plane is unbounded for the search unless a member reaches it."""
+    reach = _extent(board[anchor]) + sum(2 * _extent(board[r]) + sub['gap_nm'] for r in members if r != anchor)
+    reach += sub['gap_nm'] + 1
+    ax, ay = board[anchor]['position_nm']
+    return ax - reach, ay - reach, ax + reach, ay + reach
+
+
+def _recovery_start(plane):
+    """The first recovery trial's distance: half the synthetic plane's half-side."""
+    return (plane[2] - plane[0]) // 4
+
+
+def _recovery_eligible(board, ref, grouped):
+    """A stranded member the retry may group: in no declared group, on at least two nets."""
+    return ref not in grouped and len(set(_pad_nets(board[ref]).values()) - {''}) >= 2
 
 
 def _touching(board, members, plan, plane):
@@ -555,15 +568,14 @@ def _recover(capture, board, members, anchor, sub, areas, plane, touching, heart
     declared = sub.get('groups', [])
     grouped = {r for g in declared for r in g['references']}
     anchored = {r for g in declared if 'anchor' in g for r in g['references']}
-    x0, y0, x1, y1 = plane
-    distance = (x1 - x0) // 4
+    distance = _recovery_start(plane)
     record = {'method': RECOVERY, 'stranded': touching, 'trials': [], 'steps_total': 0}
     if anchor in anchored or any(g['id'] == RECOVERY_GROUP for g in declared):
         return {**record, 'status': 'not_applicable', 'reason': f'the anchor {anchor} cannot lead a new group'}, None
     stranded = list(touching)
     isolated = _isolated(capture, board, members, areas, plane)
     for _ in range(RECOVERY_TRIALS):
-        ineligible = [r for r in stranded if r in grouped or len(set(_pad_nets(board[r]).values()) - {''}) < 2]
+        ineligible = [r for r in stranded if not _recovery_eligible(board, r, grouped)]
         if ineligible:
             return {**record, 'status': 'not_applicable',
                     'reason': 'in a declared group or on fewer than two nets: ' + ', '.join(ineligible)}, None
@@ -1032,31 +1044,61 @@ def _compaction(record):
 
 
 def _recovery(record, sub, refs):
-    """The stage-A recovery record (a search log): bounded trials, the last one recovered."""
+    """The stage-A recovery record (a search log), checked trial by trial against ``_recover``.
+
+    Every trial names distinct movable members in natural order and a positive integer
+    distance; every trial but the last reached the synthetic plane and the last one
+    recovered. The first trial groups exactly the stranded members; each later trial
+    either grows the group at the same distance or keeps the group at half the
+    distance. ``admit`` binds the first distance and member eligibility to the board.
+    """
     _keys(record, {'method', 'status', 'stranded', 'references', 'max_distance_nm', 'trials', 'steps_total'},
           label='recovery')
     if record['method'] != RECOVERY or record['status'] != 'recovered':
         raise ValueError(f'recovery must be a recovered {RECOVERY} record')
+    grouped = {r for g in sub.get('groups', []) for r in g['references']}
     if any(g['id'] == RECOVERY_GROUP for g in sub.get('groups', [])):
         raise ValueError('the recovery group never reaches the block policy')
+
+    def members(value, label):
+        if (not isinstance(value, list) or not value or not all(isinstance(r, str) for r in value)
+                or len(set(value)) != len(value) or not set(value) <= refs
+                or value != sorted(value, key=_natural)):
+            raise ValueError(f'recovery {label} must be distinct movable block members in natural order')
+        if set(value) & grouped:
+            raise ValueError(f'recovery {label} cannot include a declared group member')
+
+    def distance(value, label):
+        if type(value) is not int or value <= 0:
+            raise ValueError(f'recovery {label} must be a positive integer')
     for key in ('stranded', 'references'):
-        if (not isinstance(record[key], list) or not record[key] or len(set(map(str, record[key]))) != len(record[key])
-                or not set(record[key]) <= refs):
-            raise ValueError(f'recovery {key} must be distinct movable block members')
-    if not set(record['stranded']) <= set(record['references']):
-        raise ValueError('recovery references keep every stranded member')
-    if type(record['max_distance_nm']) is not int or record['max_distance_nm'] <= 0:
-        raise ValueError('recovery max_distance_nm must be a positive integer')
+        members(record[key], key)
+    distance(record['max_distance_nm'], 'max_distance_nm')
     _count(record['steps_total'], 'recovery steps_total')
     if not isinstance(record['trials'], list) or not 0 < len(record['trials']) <= RECOVERY_TRIALS:
         raise ValueError(f'recovery trials must be a list of 1 to {RECOVERY_TRIALS}')
+    previous = None
     for i, row in enumerate(record['trials']):
         _keys(row, {'references', 'max_distance_nm', 'status', 'steps_used'}, label='recovery trial')
+        members(row['references'], 'trial references')
+        distance(row['max_distance_nm'], 'trial max_distance_nm')
         _count(row['steps_used'], 'recovery trial steps_used')
         if row['steps_used'] > sub['step_budget']:
             raise ValueError('a recovery trial stays within the block step budget')
-        if (row['status'] == 'recovered') != (i == len(record['trials']) - 1):
-            raise ValueError('exactly the last recovery trial is recovered')
+        if row['status'] != ('recovered' if i == len(record['trials']) - 1 else 'synthetic_plane_reached'):
+            raise ValueError('every recovery trial but the last reached the synthetic plane; the last is recovered')
+        if previous is None:
+            if row['references'] != record['stranded']:
+                raise ValueError('the first recovery trial groups exactly the stranded members')
+        elif set(row['references']) > set(previous['references']):
+            if row['max_distance_nm'] != previous['max_distance_nm']:
+                raise ValueError('a recovery trial that grows the group keeps its distance')
+        elif row['references'] == previous['references']:
+            if row['max_distance_nm'] != previous['max_distance_nm'] // 2:
+                raise ValueError('a recovery trial that keeps the group halves its distance')
+        else:
+            raise ValueError("a recovery trial keeps every member of the previous trial's group")
+        previous = row
     last = record['trials'][-1]
     if (last['references'], last['max_distance_nm']) != (record['references'], record['max_distance_nm']):
         raise ValueError('the recovery record names its last trial')
@@ -1109,6 +1151,15 @@ def admit(document, capture, inventory, derivation, policy):
     for name, value in (('outline', outline), ('grade', grade), ('witness', witness)):
         if _plain(value) != document[name]:
             problems.append({'kind': 'stale_evidence', 'evidence': name})
+    recovery = document['search'].get('recovery')
+    if recovery is not None:
+        members = sorted(block['references'], key=_natural)
+        grouped = {r for g in sub.get('groups', []) for r in g['references']}
+        start = _recovery_start(_plane(board, members, anchor, sub))
+        ineligible = [r for r in recovery['references'] if not _recovery_eligible(board, r, grouped)]
+        if recovery['trials'][0]['max_distance_nm'] != start or ineligible:
+            problems.append({'kind': 'recovery_mismatch', 'start_distance_nm': start,
+                             'actual': recovery['trials'][0]['max_distance_nm'], 'ineligible': ineligible})
     compaction = document['search'].get('compaction')
     if compaction is not None and compaction['box_area_nm2'] != _box_area(_plain(outline)):
         problems.append({'kind': 'stale_evidence', 'evidence': 'compaction'})

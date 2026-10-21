@@ -168,12 +168,20 @@ carries a `recovery` record with `status` `not_applicable` or `exhausted`, a
 A recovered candidate's `search` gains `recovery`:
 `{method: "anchor-proximity-retry/1", status: "recovered", stranded,
 references, max_distance_nm, trials: [{references, max_distance_nm, status,
-steps_used}], steps_total}`. `validate_candidate` checks it. `stranded` and
-`references` are distinct non-anchor members, and `references` keeps every
-stranded member. There are at most six trials, each within the block budget.
-Exactly the last trial is `recovered` and names the record's references and
-distance, and `steps_total` is the trials' sum. No `stage-a-anchor-proximity`
-group may appear in `block_policy`. Compaction then runs on the recovered
+steps_used}], steps_total}`. `validate_candidate` checks every trial, not
+just the last. `stranded`, `references` and each trial's `references` are
+distinct non-anchor members in natural order, none in a declared group; each
+`max_distance_nm` is a positive integer. There are at most six trials, each
+within the block budget. Every trial but the last is `synthetic_plane_reached`
+and the last is `recovered`, naming the record's references and distance. The
+first trial groups exactly `stranded`. Each later trial either grows the group
+(a strict superset) at the same distance, or keeps the group at half the
+previous distance (integer halving); anything else refuses. `steps_total` is
+the trials' sum. No `stage-a-anchor-proximity` group may appear in
+`block_policy`. `admit` also binds the ladder to the board: the first
+distance must be half the synthetic plane's half-side recomputed from the
+board, and every grouped member must be eligible there (no declared group, at
+least two nets), else `recovery_mismatch`. Compaction then runs on the recovered
 candidate as usual. The record stays on whichever run compaction selects.
 
 ### Compaction (AGENTEE-355)
@@ -297,6 +305,7 @@ returns `{"status": "admitted" | "refused", "problems": [...]}`. Problem kinds:
 | `deferred_mismatch` | The recomputed deferred record equals `deferred`, so a boundary obligation or group cannot be dropped |
 | `identity` | `match` with the identity mapping succeeds, which binds each `pad_geometry_sha256` to the board |
 | `stale_evidence` | The board's own footprints at the frame poses reproduce `outline`, `grade` and `witness` exactly, including drilled-pad reservations; a `compaction` record's area equals that outline's box area |
+| `recovery_mismatch` | A `recovery` record's first trial distance is half the synthetic plane's half-side recomputed from the board, and every grouped member is eligible there (in no declared group, on at least two nets) |
 | `evidence_failed` | Locality is `pass` or advisory `info`; groups and witness pass |
 
 Identity matching and grading stay separate. `match` compares identity only,
@@ -925,7 +934,11 @@ It covers:
   deterministic, and compaction keeps its record. A first plan inside the plane
   runs no recovery. A declared-group member and a single-net member stay
   `synthetic_plane_reached`. Exhaustion is bounded at six trials with halving
-  distances and stays unknown. Each malformed recovery record refuses;
+  distances and stays unknown. Each malformed recovery record refuses,
+  through `validate_candidate` and `admit`, including a malformed intermediate
+  trial (status, references, distance, steps) and any history off the
+  grow-or-halve ladder; an honest three-trial grow/halve history admits, and a
+  self-consistent ladder from the wrong start distance is `recovery_mismatch`;
 - the CLI, with and without `--no-compact`.
 
 A native test derives the two blocks of the [block-first](block-first.md)
