@@ -1790,7 +1790,9 @@ requires both switch endpoint nets to differ from return and both supply endpoin
 nets. Distinct-source obligations require disjoint supply/return endpoint net
 sets even without a kind. Inconsistent bindings refuse validation, including
 direct `PlacementIndex` construction, which re-validates its document before
-indexing (AGENTEE-341). Untyped
+indexing (AGENTEE-341), then indexes a deep copy of the validated document.
+Later caller mutations cannot alter its endpoint identities or cached keys
+(AGENTEE-352). Untyped
 same-source obligations retain their existing verdicts; disjoint untyped nets
 alone do not establish component roles or detect swapped supply/return roles.
 Both legs remain jointly graded and constrained; missing bounds stay unknown. See
