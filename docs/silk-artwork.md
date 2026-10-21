@@ -221,8 +221,19 @@ result's open defects: the SHA-256 identity of their sorted native item UUID
 sets. A later result with open defects appends its digest; a result without open
 defects keeps the source stamp. The writer then reruns native DRC on the stamped
 bytes and refuses unless the comparison is unchanged, so `native-drc.json` and
-`board_sha256` describe the stamped board. It refuses as well when comment 9 holds
-other text. Placement write scope admits only a stamp that adds or extends this
+`board_sha256` describe the stamped board. The rerun classifies findings under the
+same captured rule provenance (`finding_sources` of the source project) as the
+recorded comparison, and compares each comparison list as a finding multiset,
+because `kicad-cli` does not keep violation order stable between runs of the same
+board (AGENTEE-383). Among findings of one comparison identity, added findings are
+chosen in canonical order, so the comparison depends only on the findings. The
+rerun compares with native saved states on both sides, so collision identities bind
+to saved geometry and the stateless unmeasured-collision refusal (AGENTEE-369) does
+not apply to it; moved copper is still a new collision. Any
+difference still refuses: the error names each changed comparison key with its
+added/removed counts and the changed finding types and item UUIDs, and
+`native-drc-restamp.json` (retained with a failed proposal) holds the full
+difference. It refuses as well when comment 9 holds other text. Placement write scope admits only a stamp that adds or extends this
 comment. Dropping or rewriting a digest, or editing any other title block field,
 is a violation. Campaign verification also refuses a successor candidate whose
 board drops or rewrites its predecessor's stamp, whichever step wrote it.

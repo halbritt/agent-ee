@@ -211,6 +211,25 @@ def _drc_item_states(path):
     return states
 
 
+def _canonical(value):
+    return json.dumps(value, sort_keys=True)
+
+
+def _comparison_changes(recorded, repeated):
+    """Per-key finding multiset differences between two DRC comparisons, ignoring report order."""
+    changes = {}
+    for name in sorted(recorded.keys() | repeated.keys()):
+        old, new = recorded.get(name), repeated.get(name)
+        if isinstance(old, list) and isinstance(new, list):
+            old_set, new_set = Counter(map(_canonical, old)), Counter(map(_canonical, new))
+            if old_set != new_set:
+                changes[name] = {'added': [json.loads(v) for v in sorted((new_set - old_set).elements())],
+                                 'removed': [json.loads(v) for v in sorted((old_set - new_set).elements())]}
+        elif _canonical(old) != _canonical(new):
+            changes[name] = {'recorded': old, 'repeated': new}
+    return changes
+
+
 class CollisionMeasurementRefusal(ValueError):
     """Stateless comparison cannot decide an unmeasured hard collision; native geometry required."""
 
@@ -284,12 +303,15 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
                     'stateless collision comparison lacks a measured actual; native saved geometry required')
     old = Counter(key(v, before_states) for v in before['violations'])
     remaining = Counter(key(v, after_states) for v in after['violations']) - old
-    added = []
-    for finding in after['violations']:
-        identity = key(finding, after_states)
+    # Native report order varies between runs of the same board (AGENTEE-383); choosing among
+    # findings of one identity in canonical order makes the comparison a function of the findings.
+    chosen = set()
+    for index in sorted(range(len(after['violations'])), key=lambda i: _canonical(after['violations'][i])):
+        identity = key(after['violations'][index], after_states)
         if remaining[identity]:
-            added.append(finding)
+            chosen.add(index)
             remaining[identity] -= 1
+    added = [v for i, v in enumerate(after['violations']) if i in chosen]
     return {'added_findings': added,
             'blocking_findings': [v for v in after['violations'] if v['type'] == 'copper_outside_outline'] + [v for v in added if
                 v['constraint_provenance']['enforcement'] == 'hard' and
@@ -379,17 +401,19 @@ def _proposal_drc(source, output):
     if artwork_regressions:
         raise ValueError('silkscreen relocation introduced other native DRC findings')
     if comparison['open_defects']:
-        after = _stamp_lineage(output, project_payloads, comparison, before, baseline_states)
+        after = _stamp_lineage(source, output, project_payloads, comparison, before, baseline_states)
     return [v for v in after['violations'] if v['type'] in DRC_COURTYARDS], comparison
 
 
-def _stamp_lineage(output, project_payloads, comparison, before, baseline_states):
+def _stamp_lineage(source, output, project_payloads, comparison, before, baseline_states):
     """Record this result's carry digest in the saved board's title block (AGENTEE-351).
 
     A published board with open defects names them in its own bytes, so a copy released
     outside the campaign must bring its placement evidence. Native DRC is repeated on the
-    stamped bytes and must reproduce the same comparison.
+    stamped bytes and must reproduce the same comparison, under the same captured rule
+    provenance and independent of native report order (AGENTEE-383).
     """
+    import copy
     import pcbnew
     from .placement_defects import STAMP, STAMP_COMMENT, carry_digest, stamp
     digests = stamp(output.read_bytes()) or []
@@ -410,9 +434,24 @@ def _stamp_lineage(output, project_payloads, comparison, before, baseline_states
         else:
             target.write_bytes(payload)
     after = _native_drc(output, output.parent)
-    restamped = _drc_comparison(before, after, baseline_states, _drc_item_states(output))
-    if {k: v for k, v in comparison.items() if k != 'open_defects'} != restamped:
-        raise ValueError('native DRC changed after recording the placement lineage stamp')
+    # Reclassify a copy: the recorded comparison's baseline findings are these same objects.
+    before = copy.deepcopy(before)
+    sources = finding_sources(source, before['violations'] + comparison['candidate_findings'] + after['violations'])
+    # Both sides carry native saved states, so collision identities bind to saved geometry and
+    # the stateless unmeasured-collision refusal (AGENTEE-369) never applies to this re-check.
+    restamped = _drc_comparison(before, after, baseline_states, _drc_item_states(output), sources)
+    changes = _comparison_changes({k: v for k, v in comparison.items() if k != 'open_defects'}, restamped)
+    if changes:
+        write_json(output.parent / 'native-drc-restamp.json',
+                   {'schema': 'agent-ee.placement-restamp-drc/1', 'changes': changes})
+        named = sorted({(f['type'], tuple(sorted(i['uuid'] for i in f.get('items', []))))
+                        for change in changes.values()
+                        for f in change.get('added', []) + change.get('removed', [])})
+        summary = '; '.join(f'{name}: +{len(c["added"])} -{len(c["removed"])}' if 'added' in c else name
+                            for name, c in changes.items())
+        findings = ', '.join(f'{t} {"/".join(u)}' for t, u in named[:5]) + (' ...' if len(named) > 5 else '')
+        raise ValueError(f'native DRC changed after recording the placement lineage stamp ({summary}'
+                         + (f'; findings {findings}' if findings else '') + ')')
     return after
 
 
@@ -517,7 +556,8 @@ def _retain_failure(root, name, scratch, error):
     names = ('candidate.kicad_pcb', 'placement-plan.json', 'placement-probe.json',
              'placement-judgment.json', 'placement-write-scope.json', 'native-drc.json', 'native-drc.stdout.txt',
              'native-drc.stderr.txt', 'native-drc-execution.json', 'native-drc-comparison.json',
-             'candidate.kicad_pro', 'candidate.kicad_dru', 'pre-artwork-drc.json', 'placement-silkscreen.json')
+             'candidate.kicad_pro', 'candidate.kicad_dru', 'pre-artwork-drc.json', 'placement-silkscreen.json',
+             'native-drc-restamp.json')
     for name in names:
         path = scratch / name
         if path.is_file():
