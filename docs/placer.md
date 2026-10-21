@@ -981,3 +981,42 @@ parts, with fewer than 400 pad resolutions, at most 3,000 locality evaluations a
 These isolate locality scaling; courtyard qualification,
 capacity proofs, broad backtracking and native saved-board gates still have
 independent costs.
+
+### Qualification and candidate cost (AGENTEE-332)
+
+The real pod's guided search spent most of its wall time outside locality:
+courtyard qualification self-intersection tests over 1,900 native pad copper
+polygons (up to 96 vertices each), a deep copy of the whole footprint record for
+every tested candidate, and an exact wire cost for every generated candidate
+position (about 33,000 per scan) while only a handful per scan are ever tested.
+Each change below keeps every answer; none relaxes a predicate or changes a rank.
+
+- `simple_polygon` tests edge pairs through a sweep over edge bounding boxes
+  sorted by least x. Two segments cross or touch only where their closed boxes
+  overlap, so the exact `intersects` test runs on exactly those pairs.
+- `transform` copies only the containers it rewrites (courtyards, keepouts,
+  packing geometry entries, pads, a proven custom geometry) and shares the
+  leaves it leaves unchanged; the search, judge, graders and writer only read
+  placed footprints. The search keeps one at-origin transform per part and
+  rotation and translates it per candidate (`_translate`), which equals the full
+  transform exactly: a rotated point plus the position, and a translated box is
+  the box of the translated corners.
+- `_fits` runs the edge-margin distance only against outline edges whose box is
+  nearer than the margin to the courtyard box; every other edge is at least the
+  margin away from every courtyard point.
+- Candidates enter the ranking with a lower bound on their wire cost (each
+  signal pad's distance to its net's peer x range plus y range, which separates
+  by axis and is evaluated once per axis value). `_ranked` resolves the exact
+  wire cost only when an entry may be next: a popped exact key precedes every
+  remaining entry, whose exact key is at least its own bound, and candidate
+  x, y and rotation make keys unique. The sequence equals sorting every exact
+  key, so steps, tie breaks and the chosen candidate are unchanged.
+
+`tests.test_placer_geometry_cost` holds the proof: seeded differentials of the
+transform, translation, sweep and margin prefilter against the previous
+formulations, the lazy order against full sorting, and 40 seeded owned boards
+whose plan digests (status, steps, search record and placements) are pinned
+from the ac662ff packer. On the pod inputs, a 20,000-step guided budget, the
+full 200,000-step guided run, the 10-obligation run and the unguided run
+produce identical results before and after (see the AGENTEE-332 performance
+report for the measured times).

@@ -1,0 +1,355 @@
+"""AGENTEE-332: cheaper qualification and candidate transforms with identical answers.
+
+Seeded differentials against in-test oracles (the pre-change pairwise, deepcopy
+and full-scan formulations) and plan digests pinned from the ac662ff packer.
+"""
+import copy
+import hashlib
+import json
+import random
+import unittest
+from fractions import Fraction
+
+from agent_ee import placement
+from agent_ee.placement import area2, edges, intersection_area, intersects
+from agent_ee.placement_predicates import segment_distance2
+from agent_ee.placer import _fits, pack, transform
+from test_placement import MM, capture, polygon, rectangle
+from test_placer import request
+
+
+def seeded_board(seed):
+    """An owned random board: rectangles, netted pads, optional keepouts, geometry and locality."""
+    rng = random.Random(seed)
+    parts, nets = [], ['VCC', 'GND', 'SIG_A', 'SIG_B', 'SW']
+    size = rng.randint(13, 20)
+    for i in range(rng.randint(9, 16)):
+        ref = 'P' + str(i)
+        x, y = rng.randint(1, size-4), rng.randint(1, size-4)
+        w, h = rng.randint(1, 4), rng.randint(1, 4)
+        side = 'F' if rng.random() < .8 else 'B'
+        fp = {'ref': ref, 'uuid': 'uuid-' + ref, 'value': '', 'side': side,
+              'position_nm': [x*MM, y*MM], 'rotation_deg': rng.choice((0, 90, 180, 270)),
+              'courtyards': {side: {'status': 'proven', 'polygons': [rectangle(x, y, w, h)]}}, 'pads': []}
+        if w > 1 and h > 1 and rng.random() < .3:  # an L-shaped courtyard
+            fp['courtyards'][side]['polygons'] = [polygon([(x, y), (x+w, y), (x+w, y+1), (x+1, y+1), (x+1, y+h), (x, y+h)])]
+        for k in range(rng.randint(1, 3)):
+            px, py = x*MM + rng.randint(0, w*MM), y*MM + rng.randint(0, h*MM)
+            fp['pads'].append({'uuid': f'{ref}-{k+1}', 'number': str(k+1), 'net': rng.choice(nets),
+                               'position_nm': [px, py], 'size_nm': [200000, 200000], 'shape': rng.choice((0, 1, 4)),
+                               'attribute': 'smd', 'layers': [side + '.Cu'], 'rotation_deg': rng.choice((0, 90)),
+                               'copper_centroid_offset_nm': [[rng.randint(-40, 40), rng.choice((1, 2, 5))],
+                                                             [rng.randint(-40, 40), rng.choice((1, 3))]]})
+        if rng.random() < .5:
+            fp['packing_pad_geometry'] = {'status': 'proven', 'holes': [], 'copper': [
+                {'layers': [side + '.Cu'], 'polygons': [[[p['position_nm'][0]-100000, p['position_nm'][1]-100000],
+                                                         [p['position_nm'][0]+100000, p['position_nm'][1]-100000],
+                                                         [p['position_nm'][0]+100000, p['position_nm'][1]+100000],
+                                                         [p['position_nm'][0]-100000, p['position_nm'][1]+100000]]]}
+                for p in fp['pads']]}
+        parts.append(fp)
+    board = capture(parts, rectangle(0, 0, size, size))
+    board['pcbnew_version'] = '10.0.7'
+    if rng.random() < .3:
+        board['rule_areas'] = [{'uuid': 'zone', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+                                'outline': {'status': 'proven', 'polygons': [rectangle(6, 6, 4, 3)]}}]
+    policy = request(step_budget=3000, gap_nm=rng.choice((0, 250000, 500000)),
+                     fixed_refs=[parts[0]['ref']], priority_refs=[parts[-1]['ref']],
+                     min_courtyard_edge_mm=rng.choice((0, 0.5, 1.0)))
+    if rng.random() < .5 and len(parts) >= 3:
+        ic, cap = parts[1], parts[2]
+        ic['pads'][0]['net'] = cap['pads'][0]['net'] = 'VCC'
+        if len(ic['pads']) > 1 and len(cap['pads']) > 1:
+            ic['pads'][1]['net'] = cap['pads'][1]['net'] = 'GND'
+            limit = rng.choice((5, 8, 12)) * MM
+            policy['electrical_locality'] = {'schema': 'agent-ee.electrical-locality/1', 'obligations': [{
+                'id': 'o1', 'metric': 'pad-centre-to-centre',
+                'supply': {'from': {'reference': ic['ref'], 'pad': '1', 'net': 'VCC'},
+                           'to': {'reference': cap['ref'], 'pad': '1', 'net': 'VCC'},
+                           'max_distance_nm': limit, 'citation': 'Owned seeded fixture limit.'},
+                'return': {'from': {'reference': ic['ref'], 'pad': '2', 'net': 'GND'},
+                           'to': {'reference': cap['ref'], 'pad': '2', 'net': 'GND'},
+                           'max_distance_nm': limit, 'citation': 'Owned seeded fixture limit.'}}]}
+    return board, policy
+
+
+def plan_digest(result):
+    keys = ('status', 'outcome', 'reason', 'steps_used', 'search', 'placements')
+    return hashlib.sha256(json.dumps({k: result.get(k) for k in keys}, sort_keys=True).encode()).hexdigest()[:16]
+
+
+# Digests of pack(*seeded_board(seed)) computed with the ac662ff packer (before this change).
+PINNED = {
+    0: '1240485c5331c844',
+    1: '0d5aa4f15a941cc0',
+    2: 'ae08e933892b1e88',
+    3: 'f259a365458fe810',
+    4: '09b23360d8a95cc5',
+    5: '3c46df6fd9305d1a',
+    6: 'd313f75a3cfdbd56',
+    7: '777a59037f3ffdc4',
+    8: '2e85300b93402a02',
+    9: 'e02185f7851d0996',
+    10: 'f2ab3ca3e1cc1ce6',
+    11: '1521230d33ab9e2e',
+    12: '72e0f8277b1683e1',
+    13: '6a29a8f2a7857d5c',
+    14: 'c664064d0d37f301',
+    15: '399a119463a05d4f',
+    16: 'd978a0fa28d7e773',
+    17: '0444d37ea7d6f653',
+    18: '15a48b2fcd8ecd9d',
+    19: '44c4df1469d1eb85',
+    20: 'a60a301148bd0d50',
+    21: '866791f48730197e',
+    22: '95ccca70a8e1aab2',
+    23: 'd811cb743ff8ea89',
+    24: 'aa3fd93efc95a660',
+    25: '8ca216b473944963',
+    26: '1077b78a42c5b39a',
+    27: '285efa2c09d1c809',
+    28: '4948f9e467f6a828',
+    29: '1f2c9f3828aa6f0f',
+    30: '4da96b8a8d3c363e',
+    31: '9f28a86c33bc69b6',
+    32: '145f3a6c72c6fb23',
+    33: '4cb17af59e0d87dd',
+    34: '94634067d906f081',
+    35: '3e1e3826b8410485',
+    36: 'a8ca538f90429ba5',
+    37: '29de9f60e3175c54',
+    38: '604b78d8b5e25ab8',
+    39: '9bf5febe723a0055',
+}
+
+
+def oracle_transform(fp, position, rotation):
+    """The pre-change formulation: deep copy, then move every point."""
+    from agent_ee.placer import rotate, _cache_pad_reservations
+    placed = copy.deepcopy(fp)
+    origin = fp['position_nm']
+    turns = int((rotation-fp['rotation_deg']) / 90)
+    def move(p):
+        x, y = rotate([p[0]-origin[0], p[1]-origin[1]], turns)
+        return [x+position[0], y+position[1]]
+    for courtyard in placed['courtyards'].values():
+        for key in ('polygons', 'inner_polygons'):
+            if key in courtyard:
+                courtyard[key] = [[move(p) for p in poly] for poly in courtyard[key]]
+    for keepout in placed.get('packing_keepouts', []):
+        keepout['polygons'] = [[move(p) for p in poly] for poly in keepout['polygons']]
+    for kind in ('copper', 'holes'):
+        for entry in placed.get('packing_pad_geometry', {}).get(kind, []):
+            entry['polygons'] = [[move(p) for p in poly] for poly in entry['polygons']]
+    for pad in placed['pads']:
+        custom = pad.get('custom_geometry', {})
+        if custom.get('status') == 'proven':
+            box = pad['custom_geometry']['bbox_nm']
+            corners = [move([x, y]) for x in (box[0], box[2]) for y in (box[1], box[3])]
+            pad['custom_geometry']['bbox_nm'] = [min(p[0] for p in corners), min(p[1] for p in corners),
+                                                 max(p[0] for p in corners), max(p[1] for p in corners)]
+        if 'copper_centroid_offset_nm' in pad:
+            offset = rotate([Fraction(*v) for v in pad['copper_centroid_offset_nm']], turns)
+            pad['copper_centroid_offset_nm'] = [[v.numerator, v.denominator] for v in offset]
+        pad['position_nm'] = move(pad['position_nm'])
+        pad['rotation_deg'] = (pad['rotation_deg'] + rotation-fp['rotation_deg']) % 360
+    placed.update(position_nm=list(position), rotation_deg=rotation)
+    _cache_pad_reservations(placed)
+    return placed
+
+
+def oracle_simple(points):
+    """Pairwise self-intersection as before the sweep; the rest of simple_polygon is unchanged."""
+    segments = list(edges(points))
+    for i, (a, b) in enumerate(segments):
+        for j in range(i+1, len(segments)):
+            if j == i+1 or (i == 0 and j == len(segments)-1):
+                continue
+            if intersects(a, b, *segments[j]):
+                return False
+    return True
+
+
+def oracle_fits(candidate, outline, margin_nm):
+    for courtyard in candidate['courtyards'].values():
+        for p in courtyard['polygons']:
+            if intersection_area(p, outline) != Fraction(abs(area2(p)), 2):
+                return False
+            if margin_nm > 0 and min(segment_distance2(a, b, c, d)
+                                     for a, b in edges(p) for c, d in edges(outline)) < margin_nm * margin_nm:
+                return False
+    return True
+
+
+class TransformCopyTests(unittest.TestCase):
+    def footprint(self, rng, custom=False):
+        board, _ = seeded_board(rng.randint(0, 10**6))
+        fp = rng.choice(board['footprints'])
+        fp['packing_keepouts'] = [{'layers': ['F.Cu'], 'polygons': [rectangle(1, 1, 2, 1)]}]
+        side = fp['side']
+        fp['courtyards'][side]['inner_polygons'] = [rectangle(2, 2, 1, 1)]
+        if custom and fp['pads']:
+            fp['pads'][0]['shape'] = 6
+            fp['pads'][0]['custom_geometry'] = {'status': 'proven', 'primitives': [{'kind': 'owned'}],
+                                                'merged_polygons_nm': [rectangle(0, 0, 1, 1)],
+                                                'bbox_nm': [0, 0, 300000, 700000]}
+        return fp
+
+    def test_transform_and_translation_equal_the_deepcopy_oracle(self):
+        from agent_ee.placer import _translate
+        rng = random.Random(332)
+        cases = 0
+        for case in range(120):
+            fp = self.footprint(rng, custom=case % 3 == 0)
+            before = copy.deepcopy(fp)
+            for rotation in (0, 90, 180, 270):
+                origin = transform(fp, [0, 0], rotation)
+                for _ in range(2):
+                    position = [rng.randint(-30*MM, 30*MM), rng.randint(-30*MM, 30*MM)]
+                    expected = oracle_transform(fp, position, rotation)
+                    self.assertEqual(transform(fp, position, rotation), expected)
+                    self.assertEqual(_translate(origin, tuple(position)), expected)
+                    cases += 1
+            self.assertEqual(fp, before, 'transform must not mutate its source')
+        self.assertGreater(cases, 900)
+
+    def test_result_containers_are_independent_of_the_source(self):
+        fp = self.footprint(random.Random(7), custom=True)
+        before = copy.deepcopy(fp)
+        placed = transform(fp, [3*MM, 4*MM], 90)
+        placed['courtyards'][fp['side']]['polygons'][0][0][0] += 1
+        placed['pads'][0]['position_nm'][0] += 1
+        placed['pads'][0]['custom_geometry']['bbox_nm'][0] += 1
+        placed['pads'][0]['rotation_deg'] += 90
+        placed['packing_keepouts'][0]['polygons'][0][0][1] += 1
+        placed['packing_pad_geometry'] = {'status': 'other'}
+        placed['_packing_targets'].clear()
+        self.assertEqual(fp, before)
+
+
+class PolygonSweepTests(unittest.TestCase):
+    def test_sweep_self_intersection_matches_pairwise_oracle(self):
+        import math
+        rng = random.Random(9332)
+        outcomes = {True: 0, False: 0}
+        for case in range(3000):
+            k = rng.randint(3, 14)
+            if case % 2:
+                cx, cy = rng.randint(0, 100), rng.randint(0, 100)
+                angles = sorted((rng.uniform(0, 2*math.pi), rng.randint(1, 40)) for _ in range(k))
+                raw = [[cx + int(r*math.cos(t)), cy + int(r*math.sin(t))] for t, r in angles]
+            else:
+                raw = [[rng.randint(0, 12), rng.randint(0, 12)] for _ in range(k)]
+            try:
+                points = placement.simple_polygon(raw)
+                simple = True
+            except ValueError as exc:
+                if str(exc) != 'polygon self-intersection':
+                    continue
+                simple = False
+            outcomes[simple] += 1
+            if simple:
+                self.assertTrue(oracle_simple(points))
+            else:
+                reduced = [tuple(p) for p in raw]
+                if reduced[0] == reduced[-1]:
+                    reduced.pop()
+                self.assertFalse(oracle_simple(reduced))
+        self.assertGreater(outcomes[True], 500)
+        self.assertGreater(outcomes[False], 500)
+
+    def test_adjacent_edges_and_touching_contours_keep_their_verdicts(self):
+        placement.simple_polygon([[0, 0], [4, 0], [4, 4], [0, 4]])
+        with self.assertRaisesRegex(ValueError, 'self-intersection'):
+            placement.simple_polygon([[0, 0], [4, 4], [4, 0], [0, 3]])  # a bow tie with nonzero signed area
+        with self.assertRaisesRegex(ValueError, 'self-intersection'):  # a vertex touching a far edge
+            placement.simple_polygon([[0, 0], [8, 0], [8, 8], [4, 0], [0, 8]])
+        placement.simple_polygon([[0, 0], [8, 0], [8, 8], [4, 1], [0, 8]])  # the same vertex lifted off the edge
+
+
+class FitsPrefilterTests(unittest.TestCase):
+    def test_margin_prefilter_matches_the_full_edge_scan(self):
+        rng = random.Random(5332)
+        outlines = [rectangle(0, 0, 20, 20),
+                    polygon([(0, 0), (20, 0), (20, 12), (12, 12), (12, 20), (0, 20)]),
+                    polygon([(0, 0), (20, 0), (20, 20), (14, 20), (14, 6), (6, 6), (6, 20), (0, 20)])]
+        verdicts = {True: 0, False: 0}
+        for case in range(1500):
+            outline = rng.choice(outlines)
+            w, h = rng.randint(1, 5), rng.randint(1, 5)
+            x, y = rng.randint(-1, 19), rng.randint(-1, 19)
+            shape = rectangle(x, y, w, h) if case % 3 else polygon(
+                [(x, y), (x+w, y), (x+w, y+h), (x+w-Fraction(1, 2), y+h), (x+w-Fraction(1, 2), y+Fraction(1, 2)), (x, y+Fraction(1, 2))])
+            candidate = {'courtyards': {'F': {'polygons': [shape]}}}
+            margin = rng.choice((0, 250000, 500000, 1500000))
+            expected = oracle_fits(candidate, outline, margin)
+            self.assertEqual(_fits(candidate, outline, margin), expected)
+            verdicts[expected] += 1
+        self.assertGreater(verdicts[True], 200)
+        self.assertGreater(verdicts[False], 200)
+
+
+class SeededPackDifferentialTests(unittest.TestCase):
+    def test_seeded_boards_pack_to_the_pinned_ac662ff_plans(self):
+        statuses = set()
+        for seed, pinned in PINNED.items():
+            board, policy = seeded_board(seed)
+            result = pack(board, policy)
+            statuses.add(result['status'])
+            with self.subTest(seed=seed, status=result['status']):
+                self.assertEqual(plan_digest(result), pinned)
+        self.assertIn('planned', statuses)
+
+
+class LazyRankingTests(unittest.TestCase):
+    def test_lazy_order_equals_sorting_every_exact_key_and_resolves_a_prefix_only(self):
+        from agent_ee.placer import _ranked
+        rng = random.Random(1332)
+        for case in range(300):
+            exact = {}
+            bounds = []
+            for i in range(rng.randint(1, 60)):
+                x, y, rotation = rng.randint(0, 5), rng.randint(0, 5), rng.choice((0, 90, 180, 270))
+                if (x, y, rotation) in exact:
+                    continue
+                local = rng.choice((0, Fraction(1, 3), Fraction(2, 3), 1))
+                wire = rng.randint(0, 40)
+                key = (local, wire, x, y, rotation, rng.random() < .2)
+                exact[(x, y, rotation)] = key
+                bounds.append((local, wire - rng.randint(0, wire), *key[2:]))
+            resolved = []
+            def resolve(key):
+                resolved.append(key)
+                return exact[key[2:5]]
+            ordered = list(_ranked(bounds, resolve))
+            self.assertEqual(ordered, sorted(exact.values()))
+            self.assertEqual(len(resolved), len(bounds))
+            # Consuming only the first key resolves only entries whose bound precedes it.
+            resolved.clear()
+            first = next(iter(_ranked(bounds, resolve)))
+            self.assertEqual(first, ordered[0])
+            self.assertTrue(all(key <= first for key in resolved))
+
+    def test_axis_bounds_never_exceed_the_exact_wire_cost(self):
+        from agent_ee.placer import _pad_nets, _wire_bounds, _wire_cost
+        rng = random.Random(2332)
+        exact_hits = cases = 0
+        for case in range(400):
+            board, policy = seeded_board(rng.randint(0, 10**6))
+            fps = board['footprints']
+            peers = {}
+            for fp in fps[:-1]:
+                for pad in fp['pads']:
+                    peers.setdefault(pad['net'], []).append(tuple(pad['position_nm']))
+            fp, rotation = fps[-1], rng.choice((0, 90, 180, 270))
+            xs = sorted({rng.randint(-5*MM, 25*MM) for _ in range(12)})
+            ys = sorted({rng.randint(-5*MM, 25*MM) for _ in range(12)})
+            bound_x, bound_y = _wire_bounds(_pad_nets(fp, (0, 0), rotation, policy['ground_nets']), peers, xs, ys)
+            for x in xs:
+                for y in ys:
+                    cost = _wire_cost(_pad_nets(fp, (x, y), rotation, policy['ground_nets']), peers)
+                    self.assertLessEqual(bound_x[x] + bound_y[y], cost)
+                    exact_hits += bound_x[x] + bound_y[y] == cost
+                    cases += 1
+        self.assertGreater(exact_hits, 0)
+        self.assertGreater(cases, 10000)
