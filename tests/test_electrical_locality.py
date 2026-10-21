@@ -29,7 +29,7 @@ def board():
         x, y = f['position_nm']
         f['pads'] = [dict(uuid=f['ref']+str(i), number=str(i), net=net,
                           position_nm=[x+MM, y+(i-1)*MM], size_nm=[100000,100000],
-                          shape=1, attribute='smd', layers=['F.Cu'], rotation_deg=0)
+                          copper_centroid_offset_nm=[[0,1],[0,1]], shape=1, attribute='smd', layers=['F.Cu'], rotation_deg=0)
                      for i, net in ((1, 'VCC'), (2, 'GND'))]
     return b
 
@@ -169,8 +169,8 @@ class LocalityTests(unittest.TestCase):
             b['footprints'][0]['ref'], b['footprints'][1]['ref'] = ic, cap
             for f in b['footprints']:
                 for i,pad in enumerate(f['pads']): pad['position_nm'] = [0,i*MM]
-            b['footprints'][0]['pads'].append(dict(number='8', net='SW', position_nm=[0,0]))
-            inductor = dict(ref=ind,pads=[dict(number='1', net='SW', position_nm=[before,0])])
+            b['footprints'][0]['pads'].append(dict(number='8', net='SW', position_nm=[0,0], copper_centroid_offset_nm=[[0,1],[0,1]]))
+            inductor = dict(ref=ind,pads=[dict(number='1', net='SW', position_nm=[before,0], copper_centroid_offset_nm=[[0,1],[0,1]])])
             b['footprints'].append(inductor)
             doc['obligations'][0]['switch'] = dict(
                 **{'from': endpoint(ic,'8','SW'), 'to':endpoint(ind,'1','SW')},
@@ -231,6 +231,8 @@ class NativeLocalityTests(unittest.TestCase):
             self.assertEqual(baseline['coverage']['checks']['locality']['predicates'], ['placement:electrical-locality/1'])
             self.assertIn('project/locality.json', baseline['coverage']['checks']['locality']['immutable_inputs'])
             self.assertIn('project/locality.json', baseline['files'])
+            self.assertEqual(result['details']['locality'], {'path': 'project/locality.json',
+                             'sha256': baseline['files']['project/locality.json']})
 
     def test_native_guided_save_reload(self):
         from test_placer_native import NativePlacerTest

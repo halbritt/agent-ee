@@ -290,6 +290,65 @@ def _packing_pad_geometry(board, fp):
             'error_nm': 1000, 'bound': 'outside'}
 
 
+def copper_centroid(pad, custom):
+    """Exact native copper-land centroid relative to its electrical anchor.
+
+    Symmetric stock shapes use ShapePos; straight native polygons use signed
+    area moments. Curved asymmetric copper has no qualified exact centroid.
+    Drill voids are not subtracted from the pad's copper-land silhouette.
+    """
+    import pcbnew
+    from .symbol_library import field
+    layer = pcbnew.PADSTACK.ALL_LAYERS
+    if pad.Padstack().Mode() != pcbnew.PADSTACK.MODE_NORMAL:
+        raise ValueError('per-layer copper centroid not qualified')
+    if not any(pcbnew.LayerName(l).endswith('.Cu') for l in pad.GetLayerSet().Seq()):
+        raise ValueError('pad has no copper layer')
+    shape = pad.GetShape(layer)
+    if any(v <= 0 for v in vector_nm(pad.GetSize(layer))):
+        raise ValueError('native copper centroid needs a nonempty pad land')
+    if shape in (pcbnew.PAD_SHAPE_CIRCLE, pcbnew.PAD_SHAPE_RECT,
+                 pcbnew.PAD_SHAPE_OVAL, pcbnew.PAD_SHAPE_ROUNDRECT):
+        center = vector_nm(pad.ShapePos(layer))
+    else:
+        if shape == pcbnew.PAD_SHAPE_CUSTOM:
+            if custom.get('status') != 'proven' or custom['anchor'] != pcbnew.PAD_SHAPE_RECT:
+                raise ValueError('custom copper centroid needs qualified straight copper and rectangular anchor')
+            for primitive in custom['primitives']:
+                if (primitive[0] not in ('gr_poly', 'gr_rect') or field(primitive, 'width', 1) != ['0']
+                        or field(primitive, 'fill', 1) != ['yes']):
+                    raise ValueError('curved or stroked custom copper centroid not qualified')
+        elif shape == pcbnew.PAD_SHAPE_CHAMFERED_RECT:
+            if pad.GetRoundRectRadiusRatio(layer) != 0:
+                raise ValueError('curved asymmetric copper centroid not qualified')
+        elif shape != pcbnew.PAD_SHAPE_TRAPEZOID:
+            raise ValueError('native copper shape not qualified for centroid')
+        poly = pcbnew.SHAPE_POLY_SET()
+        # With straight copper and zero clearance, ERROR_INSIDE returns the
+        # native contour; ERROR_OUTSIDE adds a 1 nm safety rim even to polygons.
+        pad.TransformShapeToPolygon(poly, layer, 0, 1, pcbnew.ERROR_INSIDE)
+        if not poly.OutlineCount() or poly.HasHoles():
+            raise ValueError('native copper centroid polygon empty or has holes')
+        total, moments = 0, [0, 0]
+        for i in range(poly.OutlineCount()):
+            chain = poly.COutline(i)
+            if chain.ArcCount():
+                raise ValueError('native copper centroid polygon has arcs')
+            points = [vector_nm(chain.CPoint(j)) for j in range(chain.PointCount())]
+            signed = area2(points)
+            if not signed:
+                raise ValueError('native copper centroid polygon has zero area')
+            sense = 1 if signed > 0 else -1
+            total += abs(signed)
+            for a, b in zip(points, points[1:] + points[:1]):
+                cross_product = a[0]*b[1] - b[0]*a[1]
+                for axis in (0, 1):
+                    moments[axis] += sense * (a[axis]+b[axis]) * cross_product
+        center = [Fraction(m, 3*total) for m in moments]
+    offset = [Fraction(c-p) for c, p in zip(center, vector_nm(pad.GetPosition()))]
+    return [[v.numerator, v.denominator] for v in offset]
+
+
 def extract(board_path):
     import pcbnew
     path = Path(board_path)
@@ -332,6 +391,10 @@ def extract(board_path):
                     pads[-1]['custom_geometry'] = _qualify_custom_pad(pad, node)
                 except (ValueError, KeyError) as exc:
                     pads[-1]['custom_geometry'] = {'status': 'unsupported', 'reason': str(exc)}
+            try:
+                pads[-1]['copper_centroid_offset_nm'] = copper_centroid(pad, pads[-1].get('custom_geometry', {}))
+            except ValueError as exc:
+                pads[-1]['copper_centroid_reason'] = str(exc)
         footprints.append({'ref': fp.GetReference(), 'uuid': fp.m_Uuid.AsString(), 'value': fp.GetValue(),
                            'fpid': fp.GetFPIDAsString(),
                            'side': {pcbnew.B_Cu: 'B', pcbnew.F_Cu: 'F'}.get(fp.GetLayer(), 'unsupported'),

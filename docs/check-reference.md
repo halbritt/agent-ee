@@ -1760,7 +1760,13 @@ earlier same-candidate native DRC, and `locality` naming a captured
 predicate are respectively that path and `placement:electrical-locality/1`.
 See the [declaration, verdicts and separate packer constraint](placer.md#pad-level-electrical-locality-agentee-322).
 Supply and return are mandatory and switch/inductor pairs optional. The native
-pad-centre metric preserves proved defects alongside unknowns; missing limits
-or citations stay unknown. The engineer declares limits and citation locators;
+copper-land centroid metric preserves proved defects alongside unknowns;
+missing limits or citations stay unknown. Optional captured pad `uuid` selectors
+must also match the declared reference, number and net; unselected duplicate
+pad numbers refuse. Native copper offsets participate in the distance, and
+unqualified centroid geometry stays unknown. Coordinator packing derives its
+obligations from the same immutable locality file, recording its raw hash in
+`electrical_locality_binding`; the check judgment records `locality: {path,
+sha256}` (AGENTEE-328). The engineer declares limits and citation locators;
 the check never supplies a manufacturer radius or verifies cited prose.
 Origin-group success supplies no electrical-locality acceptance.
