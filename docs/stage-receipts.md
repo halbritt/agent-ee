@@ -110,9 +110,15 @@ before native `execvp` of the declared command. The prelude restores signals
 ignored by Python and keeps bwrap's native script execution behavior. A rename that redirects bwrap's mount
 cannot cause the declared command to run against that unexpected object.
 Descriptors close on success, failure and interruption. The retained specification
-keeps its original declaration; tool observations use the validated resolved path.
-Its device/inode is also checked after initial observation and before the main
-step; replacement or disappearance raises `mount_source_changed:<at>`. A missing
+keeps its original declaration. Both tool observations read declared mount trees,
+mounted executable bytes and the optional source tree through held descriptors,
+including after an A–B–A rename of a source root (AGENTEE-349). Host path strings
+remain descriptive; they are never resolved back from a descriptor to read bytes.
+Single-file mounts keep their original basename in the identity digest.
+The resolved source device/inode is also checked after initial observation,
+before the main step, and after execution; replacement or disappearance raises
+`MountSourceChangedError` (`ValueError`) with violation `mount_source_changed:<at>`.
+A post-run refusal leaves executor records for diagnosis and no adoptable receipt. A missing
 source at initial validation raises `ValueError("mount source does not exist: …")`.
 A failure before initial observation finishes removes the partial receipt and
 launches no tool. Retained replay remains independent of host paths.
@@ -125,7 +131,11 @@ the guard's exit code 125 is in `adoptable_exits`. A tool that actually runs and
 returns 125 keeps the ordinary declared exit policy. Retained guarded commands
 require the exact prelude and a coordinator guard observation; routing replay
 also checks the complete declared fd mount set and identity payload. Historical
-path-bound receipts retain their original verification behavior.
+path-form receipts retain their original verification behavior: only fd-form
+receipts carry the mount-guard observation. Replay still accepts historical
+path-form receipts without that observation. This compatibility is a deliberate
+downgrade in assurance; replay does not establish that an old path bind was
+descriptor-bound or protected from a source rename (AGENTEE-349).
 
 The explicit live-helper allow-list is `agent_ee/kicad_route_attempt.py`,
 `agent_ee/net_binding.py` and `agent_ee/symbol_library.py` relative to `src`.
@@ -144,7 +154,10 @@ Directory sources containing a descendant mountpoint in `/proc/self/mountinfo`
 are refused with `mount_source_submount:<at>`, including same-device bind mounts
 and mountpoints with escaped names. After opening a directory source, a no-follow
 walk relative to that descriptor also compares directory and entry mount IDs
-from `/proc/self/fdinfo`. An ancestor rename cannot redirect this inventory;
+from `/proc/self/fdinfo`. Every inventoried entry is also compared by device/inode
+against the live source inventory, refusing hard links into live `src` as
+`live_package_source:<at>`, including links to qualified helpers embedded in a
+directory. A byte-for-byte independent copy is allowed. An ancestor rename cannot redirect this inventory;
 file bind mounts and directory binds are both refused. This conservative rule also refuses benign
 submounts: registered builders need plain tool trees, never nested mount
 hierarchies. A mountpoint at the source itself is allowed only after the ordinary

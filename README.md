@@ -269,6 +269,9 @@ symbol placement, fields, UUIDs and reference bindings across those turns,
 with explicit change reports and refusal of conflicting native edits.
 [Stage receipts](docs/stage-receipts.md) support artifact-only steps,
 such as fab export, with an empty write scope and retained artifact hashes.
+New receipts bind tool identity observations to held mount descriptors and refuse
+hard links into live package source (AGENTEE-349); historical path-form replay
+retains its documented lower assurance.
 An artifact-only step is unadoptable if any declared artifact entry lacks a hash.
 With a declared fab step in the stage order, the fab checks require its sealed
 package and compare it with fresh sandbox exports before passing.

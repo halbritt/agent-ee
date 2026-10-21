@@ -481,6 +481,109 @@ assert not (outer / 'receipt').exists()
             run_step(Path(self.tmp.name) / 'receipt', Path(self.tmp.name) / 'absent', spec, {})
         self.assertEqual(str(failure.exception), 'mount source does not exist: ' + missing)
 
+    @toolchain_test
+    def test_directory_hardlink_to_live_source_refused(self):
+        live = Path(stage_receipts.__file__).resolve().parent / 'storage.py'
+        nested = Path(self.tool) / 'nested'
+        nested.mkdir()
+        os.link(live, nested / 'innocent.txt')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        spec = self.spec(argv=['/usr/bin/true'], writes={}, artifacts=['listing'], version_argv=None)
+        with self.assertRaises(stage_receipts.LivePackageSourceError):
+            run_step(receipt_dir, design, spec, {})
+        self.assertFalse(receipt_dir.exists())
+
+    def test_held_file_and_nested_executable_observations_survive_aba(self):
+        tool = Path(self.tool)
+        nested = tool / 'nested'
+        nested.mkdir()
+        program = nested / 'program'
+        program.write_text('original')
+        standalone = tool.with_name('single')
+        standalone.write_text('single original')
+        expected_tree = stage_receipts.tree_identity(tool)
+        expected_file = stage_receipts.tree_identity(standalone)
+        spec = self.spec(argv=['/tool/nested/program'], source='/tool/nested',
+                         mounts=[{'source': str(tool), 'at': '/tool'},
+                                 {'source': str(standalone), 'at': '/single'}])
+        runtime, identities = stage_receipts._resolved_mounts(spec)
+        with stage_receipts._opened_mounts(runtime, identities) as mounts:
+            runtime['mounts'] = [{**m, 'descriptor': fd}
+                                 for m, (fd, _) in zip(runtime['mounts'], mounts)]
+            tool.rename(tool.with_name('held'))
+            standalone.rename(standalone.with_name('held-single'))
+            tool.mkdir()
+            (tool / 'nested').mkdir()
+            (tool / 'nested/program').write_text('wrong')
+            standalone.write_text('wrong')
+            observed = stage_receipts.observe_tool(runtime)
+            self.assertEqual(observed['mounts'], [
+                {'at': '/tool', **expected_tree}, {'at': '/single', **expected_file}])
+            self.assertEqual(observed['executable']['sha256'],
+                             digest(tool.with_name('held') / 'nested/program'))
+            self.assertEqual(observed['source_tree'], {
+                'path': '/tool/nested',
+                **stage_receipts.tree_identity(tool.with_name('held') / 'nested')})
+            runtime['source'] = '/single'
+            self.assertEqual(stage_receipts.observe_tool(runtime)['source_tree'],
+                             {'path': '/single', **expected_file})
+
+    @toolchain_test
+    def test_aba_observation_uses_held_object(self):
+        tool = Path(self.tool)
+        (tool / 'BENIGN').write_text('original')
+        wrong = tool.with_name('wrong')
+        wrong.mkdir()
+        (wrong / 'WRONGOBJECT').write_text('other')
+        expected = stage_receipts.tree_identity(tool)
+        design = tool.with_name('design')
+        design.mkdir()
+        real_observe = stage_receipts.observe_tool
+        calls = []
+
+        def observe(value):
+            tool.rename(tool.with_name('held'))
+            wrong.rename(tool)
+            try:
+                result = real_observe(value)
+                calls.append(result)
+                return result
+            finally:
+                tool.rename(wrong)
+                tool.with_name('held').rename(tool)
+
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
+                         version_argv=None, writes={}, artifacts=['listing'])
+        receipt_dir = tool.with_name('receipt')
+        with patch.object(stage_receipts, 'observe_tool', observe):
+            receipt = run_step(receipt_dir, design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertEqual((receipt_dir / 'run/listing').read_text().split(), ['BENIGN'])
+        self.assertEqual(len(calls), 2)
+        for observed in calls:
+            self.assertEqual(observed['mounts'][0], {'at': '/tool', **expected})
+            self.assertEqual(observed['source_tree'], {'path': '/tool', **expected})
+        self.assertEqual(validate_receipt(receipt_dir), receipt)
+
+    @toolchain_test
+    def test_post_run_disappearance_is_typed(self):
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        spec = self.spec(argv=['/usr/bin/true'], writes={}, artifacts=['listing'], version_argv=None)
+        real_execute = stage_receipts.execute
+
+        def execute(*args, **kwargs):
+            record = real_execute(*args, **kwargs)
+            shutil.rmtree(self.tool)
+            return record
+
+        with patch.object(stage_receipts, 'execute', execute):
+            with self.assertRaisesRegex(ValueError, 'mount_source_changed:/tool') as failure:
+                run_step(Path(self.tmp.name) / 'receipt', design, spec, {})
+        self.assertEqual(failure.exception.violation, 'mount_source_changed:/tool')
+
     def test_open_mount_identity_mismatch_and_partial_failure_close_descriptors(self):
         other = Path(self.tmp.name) / 'other'
         other.mkdir()
