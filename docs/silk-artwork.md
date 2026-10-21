@@ -20,8 +20,9 @@ the schematic SVG parser is specific to schematic plotting and is not reused
 for PCB field geometry. Candidate offsets use a 0.25 mm grid within 10 mm of the
 field's post-placement anchor, ordered by squared displacement then coordinates.
 The existing qualified outline parser requires the entire text box, grown by
-at least 0.2 mm or the native silk clearance, to remain inside one straight
-board contour, outside all qualified internal slots and cutouts. Same-side native silk and mask geometry, visible fields, and
+at least 0.2 mm or the native silk clearance, to remain inside one qualified
+board contour, outside all qualified internal slots and cutouts (curved
+contours use the conservative bounds below). Same-side native silk and mask geometry, visible fields, and
 surface pad copper/mask bounds reserve space. Other footprints' same-side
 courtyard bounding boxes also reserve their entire interiors, so moved labels
 cannot end up beneath another assembled component. The owning courtyard is
@@ -123,14 +124,37 @@ later receipted placement result for the current board, complete native DRC with
 no remaining silk finding on the same identities, and preserved item ownership,
 marking content, layer and style. Missing, hidden or relabeled fields do not
 close a defect. Every closed field/graphic must also be visible silk wholly
-inside the proven straight board outline and outside every internal slot/cutout. Both producers measure native
+inside the proven board outline and outside every internal slot/cutout. Both producers measure native
 bounding boxes from the final saved board in their networkless tool process,
 checking every box edge against the qualified outline. The outline includes
 board drawings and footprint-owned Edge.Cuts, as in placement qualification.
 AGENTEE-362 qualifies one outer ring with disjoint, strictly internal straight
-cutout rings. Touching/crossing contours, nested cutouts, multiple board islands,
-open rings and unsupported curves establish no containment. Bounding boxes may
-neither cross nor touch a cutout boundary, nor enclose an entire cutout.
+cutout rings. AGENTEE-368 extends this to curved Edge.Cuts: circles (round
+mounting holes), arcs (oblong slots, curved board edges) and native rounded
+rectangles. Each curved ring is replaced by the exact integer polygons proven
+for courtyards ([AGENTEE-212](placement.md#circular-and-arc-courtyards-agentee-212), `courtyard_curves`, within
+5 um): a cutout uses its circumscribed superset polygon, the outer ring its
+inscribed subset polygon, so the qualified region lies inside the true board.
+A rounded-rectangle corner arc is cited by an exact rational point on its
+circle; rotated or over-rounded rectangles stay unsupported. Topology is
+checked on these bounds: the subset outer ring must still strictly enclose
+every superset cutout, so a cutout closer to a curved edge, or to another
+cutout, than the bounds can separate leaves the outline unqualified.
+Touching/crossing contours, nested cutouts, multiple board islands, open rings,
+curves below twice the tolerance and polygons with arcs establish no
+containment. Bounding boxes may neither cross nor touch a cutout bound, nor
+enclose an entire cutout. A mark tangent to, or within 5 um outside, a round
+hole therefore refuses, although it does not touch the true circle.
+
+Containment models only Edge.Cuts. Non-plated drills (for example an NPTH
+mounting-hole footprint) and plated or oval pad slots are not holes in this
+outline model: a marking over such a drill is neither excluded by the
+containment witness nor relocated around the hole itself. Relocation still
+reserves the pad's copper/mask bounds where the pad has them, and native
+saved-board DRC remains the authority on silk over those features
+(AGENTEE-368 G2). The fome-mc telemetry pod (published allocation, fome-mc
+3d7ff5f) uses NPTH mounting-hole footprints on a straight 90 x 65 mm outline,
+which qualified before and after AGENTEE-368.
 The same qualification gates relocation, including its clearance margin.
 Placement outline grading retains its existing single-contour contract.
 Entirely off-board, edge-straddling and cutout markings stay typed open defects
@@ -271,3 +295,8 @@ and cutouts with native saved-board identities: relocation permits receipt-bound
 closure after repair, while in-cutout, slot-straddling and off-board marks refuse.
 Topology probes preserve the default placement parser contract and reject
 ambiguous contour relationships and boxes surrounding entire holes (AGENTEE-362).
+AGENTEE-368 probes round holes, arc-ended slots, rounded rectangles and a
+circular board with tangent, straddling, in-hole, within-tolerance and cleared
+boxes, plus native board- and footprint-owned round holes. `tests.test_routed_artwork`
+moves both carried labels of a routed board around a straight slot and a round
+hole placed over their hole-free destinations, then closes the carry.
