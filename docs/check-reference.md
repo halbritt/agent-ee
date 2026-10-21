@@ -1897,6 +1897,14 @@ project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
 
+Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
+or `A;B`) never receive the exemption, even when KiCad writes the net name as a
+quoted string. Such edits reopen closure and require a fresh receipt. This is a
+conservative liveness bound of the writer grammar (AGENTEE-360).
+Nested-list children of a segment or arc refuse comparison with `ValueError`;
+the coordinator retains the carried defect instead of letting an untyped error
+escape.
+
 ## Declared placer obstacles (AGENTEE-338)
 
 The [placer obstacle policy](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)

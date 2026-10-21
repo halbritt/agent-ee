@@ -140,6 +140,15 @@ CRLF separate tokens. Semicolons and hashes anywhere in the span, mid-token quot
 other whitespace and unknown track children (including mask exposure) receive
 no exemption: their raw bytes remain in the comparison and reopen closure when
 changed. This also retains printable hashes and semicolons inside quoted strings.
+
+Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
+or `A;B`) never receive the exemption, even when KiCad writes the net name as a
+quoted string. Such edits reopen closure and require a fresh receipt. This is a
+conservative liveness bound of the writer grammar (AGENTEE-360).
+Nested-list children of a segment or arc refuse comparison with `ValueError`;
+the coordinator retains the carried defect instead of letting an untyped error
+escape.
+
 Whitespace inside retained nodes is significant; whitespace between root children is not.
 Footprint transforms, marking positions/content/ownership, pads, mask, vias,
 zones and setup must remain unchanged. Closure binds the complete captured

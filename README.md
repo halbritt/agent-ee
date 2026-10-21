@@ -114,7 +114,9 @@ Fab-family kinds gate carry regardless of stage, and campaign acceptance refuses
 open carry. Receipt-backed closure survives only proven masked-track edits
 whose exempt spans match the KiCad writer grammar, preserving raw
 artwork/obstruction bytes and all captured project/rule paths
-and bytes (AGENTEE-344). Bench-feedback acceptance also refuses open carry.
+and bytes (AGENTEE-344). Masked-track edits on nets containing `#` or `;`
+reopen closure even with KiCad-written quoted net names (AGENTEE-360).
+Bench-feedback acceptance also refuses open carry.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against sourced limits.
