@@ -115,6 +115,14 @@ caches selected pads and retains typed partial diagnostics on its optional searc
 [Joint locality clusters](docs/placer.md#joint-locality-clusters-agentee-335)
 preserve per-part plans, then try capacitors and switch peers together with the
 remaining budget. Joint refusals retain named cluster diagnostics.
+[Placement blocks](docs/blocks.md) come from the sealed child sheets or a hashed
+engineer allocation file. Each block is packed alone into a rigid, versioned block
+candidate, with relative poses, an obligation grade, a courtyard witness,
+per-side outlines and source hashes. Candidates are search-derived and advisory.
+A candidate with missing, failed or stale evidence refuses: admission binds its
+sources and policy and re-grades every member from the board.
+Matching by footprint, land-pattern hash, pin roles and declared value tolerance
+refuses any mismatch.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
