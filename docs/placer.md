@@ -1489,14 +1489,34 @@ a design defect.
 
 The diagnostic examines quarter turns at the current origin and four
 outline-box edges, with other parts held still. It checks the existing packing,
-locality, group and hard block predicates and names the cheapest measured saving
-in that finite set. Hypothetical poses have no native DRC evidence and are labelled
-`geometry_qualified_native_unverified`. Fixed owners and rigid block members are
-explicitly `not_searched`; zero costs are `already_zero`. A movable courtyard's
-excess is invariant under full containment, so it reports
-`no_cheaper_contained_pose` without running the pose diagnostic. `none_found`
-means only that this finite set found no saving. No global minimum or impossibility is
-claimed.
-The native original card-lane regression measures 600 mm² on B inboard and 0 mm²
-on a separately saved edge pose; it is not qualification of the actual pod
-iteration-7 and 8k boards.
+locality, group and hard block predicates. Saved proposals try cheaper poses in
+area, position and rotation order on retained scratch copies under
+`reserve-alternatives/`. Each attempt saves the board, reloads it, checks pad
+preservation, runs the existing write-scope witness with all other footprints
+protected, regrades the saved geometry, and runs native DRC under the captured
+project and custom-rule bytes. Baseline DRC is retained under the same rules.
+No artwork repair changes an alternative. Numeric limits without a source remain
+advisory; other native findings reject the pose. Ignored placement checks,
+missing reports and tool failures remain unknown. Ignored checks for track centering, tuning geometry, footprint filters and
+footprint component types are outside this placement diagnostic. Attempt
+witnesses include board, rule, DRC and write-scope digests. The report
+uses stable summaries and witness paths relative to the proposal directory; raw
+DRC hashes stay in `validation.json` because native DRC embeds execution dates.
+
+`native_validated` names the cheapest validated legal saving in this declared
+finite set. `native_attempts` retains rejected and unknown cheaper poses. If a
+cheaper attempt was unknown, `search_complete` is false: the selected pose is
+validated, but the least cost among all legal poses in the set is unresolved.
+Standalone geometry diagnostics without native validation remain
+`geometry_qualified_native_unverified`, labelled `hypothetical, unverified`, and
+never rank as legal. Fixed owners and rigid block members are explicitly
+`not_searched`; zero costs are `already_zero`. A movable courtyard's excess is
+invariant under full containment, so it reports `no_cheaper_contained_pose`
+without running the pose diagnostic. `none_found` means only that this finite
+set found no validated saving; its attempt records distinguish rejection from
+unknown execution. No global minimum or impossibility is claimed.
+
+The original native card-lane regression measures 600 mm² on B inboard, validates
+a 0 mm² edge alternative, and rejects a geometrically cheapest pose with a native
+pad keepout violation before reporting the next legal pose. This owned synthetic
+fixture is not qualification of the actual pod iteration-7 and 8k boards.

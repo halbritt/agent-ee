@@ -2092,5 +2092,8 @@ is advisory saved-proposal evidence, not a registered acceptance check.
 `placement-result.json` and arranged `block-provenance.json` carry per-side,
 per-owner clipped reserve areas and `large_reserve` findings. Unsupported bodies
 or outlines remain unknown. The unsourced 5% suggestion never affects check
-verdicts. Hypothetical cheaper poses still need native validation; fixed and
+verdicts. Saved proposals validate cheaper poses with native DRC, captured rules and the
+existing write-scope preservation witness on scratch boards. Rejected and unknown
+attempts remain visible; standalone geometric poses stay hypothetical and
+unverified. The optimum is limited to the declared finite pose set. Fixed and
 rigid-block alternatives remain unsearched.

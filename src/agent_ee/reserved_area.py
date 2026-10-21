@@ -226,27 +226,45 @@ def _candidate_cost(facts, policy, fabrication, plan, fp, pose):
             for r in side['owners'] if r['status'] == 'measured'}
 
 
-def _cheapest(row, trials):
+def _cheapest(row, trials, native_validator=None):
     choices = [(Fraction(*match['area_mm2']), position, angle)
                for (position, angle), measured in trials if measured is not None
                for match in [measured.get((row['side'], row['kind'], row.get('id')))]
                if match is not None]
-    best = min(choices) if choices else None
+    attempts = []
+    eligible = []
+    for area, position, angle in sorted(choices):
+        if area >= Fraction(*row['area_mm2']):
+            break
+        if native_validator is None:
+            eligible.append((area, position, angle))
+            break
+        validation = native_validator(row['owner'], position, angle)
+        attempts.append({'position_nm': list(position), 'rotation_deg': angle, 'validation': validation})
+        if validation['status'] == 'validated':
+            eligible.append((area, position, angle))
+            break
+    best = eligible[0] if eligible else None
     if best is not None and best[0] < Fraction(*row['area_mm2']):
-        return {'status': 'geometry_qualified_native_unverified',
+        return {'status': 'native_validated' if native_validator else 'geometry_qualified_native_unverified',
+                'qualification': 'legal under captured rules' if native_validator else 'hypothetical, unverified',
+                'native_attempts': attempts,
+                'search_complete': native_validator is not None and not any(
+                    a['validation']['status'] == 'unknown' for a in attempts),
                 'position_nm': list(best[1]), 'rotation_deg': best[2], 'area_mm2': _ratio(best[0]),
                 'saving_mm2': _ratio(Fraction(*row['area_mm2'])-best[0]), 'tested': len(trials),
                 'domain': 'quarter turns at current origin and four outline-box edges'}
-    return {'status': 'none_found', 'tested': len(trials),
+    return {'status': 'none_found', 'tested': len(trials), 'native_attempts': attempts,
+            'domain': 'quarter turns at current origin and four outline-box edges',
             'reason': 'finite diagnostic set; not a continuous optimality proof'}
 
 
-def alternatives(facts, policy, fabrication, costs, plan):
+def alternatives(facts, policy, fabrication, costs, plan, native_validator=None):
     """Cheapest geometry-qualified single-part pose in a finite diagnostic set.
 
     Other parts stay put. Fixed poses and rigid block members are not relaxed.
-    Native DRC has not run on these hypothetical boards, so none is represented
-    as an independently verified legal alternative or a publication candidate.
+    Without a native validator, poses are hypothetical and unverified. With one,
+    cost-ordered poses must pass saved-board DRC and preservation before selection.
     Only the supplied advisory cost record is mutated; design facts are borrowed.
     """
     from . import placer
@@ -277,5 +295,5 @@ def alternatives(facts, policy, fabrication, costs, plan):
                     fp = footprints[ref]
                     trials[ref] = [(pose, _candidate_cost(facts, policy, fabrication, plan, fp, pose))
                                    for pose in _poses(fp, outline, placer._edge_margin_nm(policy))]
-                row['alternative'] = _cheapest(row, trials[ref])
+                row['alternative'] = _cheapest(row, trials[ref], native_validator)
     return costs

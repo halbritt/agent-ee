@@ -239,3 +239,218 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
         artifact['reserved_area']['board_sha256'] = '0'*64
         with self.assertRaisesRegex(ValueError, 'saved board'):
             validate_provenance(artifact)
+
+
+class NativeAlternativeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        require_toolchain(native=True)
+
+    def setUp(self):
+        import pcbnew as k
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        board = k.BOARD()
+        def contour(parent, layer, polygon):
+            for a, b in zip(polygon, polygon[1:]+polygon[:1]):
+                shape = k.PCB_SHAPE(parent); shape.SetShape(k.SHAPE_T_SEGMENT)
+                shape.SetLayer(layer); shape.SetWidth(50000)
+                shape.SetStart(k.VECTOR2I(*a)); shape.SetEnd(k.VECTOR2I(*b)); parent.Add(shape)
+        contour(board, k.Edge_Cuts, rectangle(0, 0, 90, 65))
+        fp = k.FOOTPRINT(board); fp.SetReference('J3'); board.Add(fp)
+        fp.Reference().SetVisible(False); fp.Value().SetVisible(False)
+        fp.Flip(k.VECTOR2I(0, 0), False)
+        contour(fp, k.B_CrtYd, rectangle(0, -1, 2, 2))
+        contour(fp, k.B_Fab, rectangle(0, -1, 1, 2))
+        pad = k.PAD(fp); pad.SetNumber('1'); pad.SetAttribute(k.PAD_ATTRIB_SMD)
+        pad.SetShape(k.PAD_SHAPE_RECT); pad.SetSize(k.VECTOR2I(500000, 500000))
+        layers = k.LSET(); layers.AddLayer(k.B_Cu); pad.SetLayerSet(layers); pad.SetPosition(k.VECTOR2I(MM, 0)); fp.Add(pad)
+        zone = k.ZONE(fp); zone.SetIsRuleArea(True); zone.SetDoNotAllowFootprints(True)
+        zone.SetLayer(k.B_Cu); zone.SetZoneName('owned card lane')
+        polygon = zone.Outline(); polygon.NewOutline()
+        for x, y in rectangle(-30, -10, 30, 20): polygon.Append(x, y)
+        fp.Add(zone); fp.SetPosition(k.VECTOR2I(45*MM, 32*MM))
+        self.source = self.root / 'card.kicad_pcb'
+        self.assertTrue(k.SaveBoard(str(self.source), board))
+        import json
+        self.source.with_suffix('.kicad_pro').write_text(json.dumps({'board': {'design_settings': {
+            'rule_severities': {'missing_courtyard': 'error'}}}}))
+        self.policy = request(gap_nm=0)
+
+    def run_alternatives(self, name):
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        facts = extract(self.source); fab = reserve.fabrication_outlines(self.source)
+        costs = reserve.report(facts, self.policy, fab)
+        validator = NativeAlternatives(self.source, self.root / name, facts, self.policy, {})
+        reserve.alternatives(facts, self.policy, fab, costs, {}, validator)
+        return next(r for r in costs['sides']['B']['owners']
+                    if r['kind'] == 'rule_area' and r['owner'] == 'J3'), validator
+
+    def test_owned_six_hundred_lane_native_legal_zero_and_retained_witnesses(self):
+        from agent_ee.storage import digest, read_json
+        original = self.source.read_bytes()
+        lane, validator = self.run_alternatives('native')
+        alternative = lane['alternative']
+        self.assertEqual(lane['area_mm2'], [600, 1])
+        self.assertEqual(alternative['status'], 'native_validated', alternative)
+        self.assertEqual(alternative['saving_mm2'], [600, 1])
+        self.assertEqual(alternative['area_mm2'], [0, 1])
+        witness = alternative['native_attempts'][-1]['validation']
+        path = self.root / witness['directory']
+        self.assertEqual(digest(path / 'candidate.kicad_pcb'), witness['board_sha256'])
+        raw = read_json(self.root / witness['witness'])
+        self.assertEqual(digest(path / 'native-drc.json'), raw['drc_sha256'])
+        self.assertEqual(read_json(path / 'placement-write-scope.json')['status'], 'allowed')
+        self.assertEqual(self.source.read_bytes(), original)
+        again, _ = self.run_alternatives('native-again')
+        self.assertEqual(again['alternative']['position_nm'], alternative['position_nm'])
+        self.assertEqual(again['alternative']['rotation_deg'], alternative['rotation_deg'])
+
+    def test_cheapest_geometry_fails_native_then_next_legal_pose_is_reported(self):
+        import pcbnew as k
+        board = k.LoadBoard(str(self.source))
+        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowPads(True)
+        zone.SetLayer(k.B_Cu); zone.SetZoneName('native-only pad exclusion')
+        polygon = zone.Outline(); polygon.NewOutline()
+        for x, y in rectangle(0, 31, 2, 2): polygon.Append(x, y)
+        board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        lane, _ = self.run_alternatives('blocked-cheapest')
+        alternative = lane['alternative']
+        self.assertEqual(alternative['status'], 'native_validated', alternative)
+        attempts = alternative['native_attempts']
+        self.assertEqual(attempts[0]['position_nm'], [0, 32*MM])
+        self.assertEqual(attempts[0]['validation']['status'], 'rejected', attempts)
+        self.assertIn('items_not_allowed', attempts[0]['validation']['blocking_types'])
+        self.assertEqual(attempts[-1]['validation']['status'], 'validated')
+        self.assertNotEqual((alternative['position_nm'], alternative['rotation_deg']),
+                            (attempts[0]['position_nm'], attempts[0]['rotation_deg']))
+
+    def test_tool_failure_stays_unknown_and_is_never_legal(self):
+        from unittest.mock import patch
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        facts = extract(self.source)
+        validator = NativeAlternatives(self.source, self.root / 'unavailable', facts, self.policy, {})
+        with patch('agent_ee.placer_runner._native_drc', side_effect=OSError('test tool unavailable')):
+            result = validator('J3', (0, 32*MM), 180)
+        self.assertEqual(result['status'], 'unknown')
+        self.assertEqual(result['qualification'], 'hypothetical, unverified')
+        self.assertIn('test tool unavailable', (self.root / result['witness']).read_text())
+
+    def test_preservation_refusal_is_never_legal(self):
+        from unittest.mock import patch
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        validator = NativeAlternatives(self.source, self.root / 'bad-save', extract(self.source), self.policy, {})
+        with patch('agent_ee.placement_adapter.write_scope', return_value={
+                'status': 'refused', 'violations': ['injected preservation refusal']}):
+            result = validator('J3', (0, 32*MM), 180)
+        self.assertEqual(result['status'], 'rejected')
+        self.assertIn('preservation', result['reason'])
+
+    def test_ignored_placement_category_never_establishes_legality(self):
+        import json
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        self.source.with_suffix('.kicad_pro').write_text(json.dumps({'board': {'design_settings': {
+            'rule_severities': {'items_not_allowed': 'ignore', 'missing_courtyard': 'error'}}}}))
+        validator = NativeAlternatives(self.source, self.root / 'ignored', extract(self.source), self.policy, {})
+        result = validator('J3', (0, 32*MM), 180)
+        self.assertEqual(result['status'], 'unknown', result)
+        self.assertIn('ignored placement', (self.root / result['witness']).read_text())
+
+    def test_captured_rule_bytes_are_used_and_preserved(self):
+        from agent_ee.storage import digest
+        original = self.source.with_suffix('.kicad_pro').read_bytes()
+        lane, validator = self.run_alternatives('rules')
+        self.assertEqual(lane['alternative']['status'], 'native_validated')
+        witness = lane['alternative']['native_attempts'][-1]['validation']
+        saved = self.root / witness['directory'] / 'candidate.kicad_pro'
+        self.assertEqual(saved.read_bytes(), original)
+        self.assertEqual(digest(saved), witness['rules']['.kicad_pro'])
+        self.assertEqual(self.source.with_suffix('.kicad_pro').read_bytes(), original)
+
+    def test_saved_proposal_judgment_reports_native_alternative_without_moving_proposal(self):
+        import json
+        import pcbnew as k
+        from agent_ee.placement_probe import extract
+        from agent_ee.placer import pack
+        from agent_ee.placer_runner import _evaluate_proposal
+        facts = extract(self.source)
+        # Author a planned inboard pose; diagnostic motion remains authorized.
+        plan = pack(facts, {**self.policy, 'fixed_refs': ['J3']})
+        self.assertEqual(plan['status'], 'planned')
+        plan['policy'] = self.policy
+        plan['placements'][0]['fixed'] = False
+        original_plan = copy.deepcopy(plan)
+        output = self.root / 'proposal' / 'candidate.kicad_pcb'
+        output.parent.mkdir()
+        netlist = b'<export><components><comp ref="J3"/></components><nets/></export>'
+        result = _evaluate_proposal(k.LoadBoard(str(self.source)), output, plan, netlist, facts, self.source)
+        lane = next(r for r in result['reserved_area']['sides']['B']['owners']
+                    if r['kind'] == 'rule_area' and r['owner'] == 'J3')
+        self.assertEqual(lane['alternative']['status'], 'native_validated', lane)
+        self.assertEqual(lane['alternative']['saving_mm2'], [600, 1])
+        self.assertEqual(plan, original_plan)
+        saved = extract(output)
+        self.assertEqual(saved['footprints'][0]['position_nm'], [45*MM, 32*MM])
+        self.assertEqual(result['reserved_area'], json.loads(
+            (output.parent / 'placement-judgment.json').read_text())['reserved_area'])
+        witness = lane['alternative']['native_attempts'][-1]['validation']
+        self.assertTrue((output.parent / witness['directory'] / 'validation.json').is_file())
+
+    def test_unknown_cheaper_attempt_keeps_minimum_unresolved(self):
+        from unittest.mock import patch
+        from agent_ee import placer_runner
+        native = placer_runner._native_drc
+        calls = []
+        def transient_failure(board, scratch):
+            calls.append(str(board))
+            if len(calls) == 2:  # Baseline succeeded; first alternative tool failed.
+                raise OSError('injected first-alternative tool failure')
+            return native(board, scratch)
+        with patch('agent_ee.placer_runner._native_drc', side_effect=transient_failure):
+            lane, _ = self.run_alternatives('transient')
+        alternative = lane['alternative']
+        self.assertEqual(alternative['status'], 'native_validated', alternative)
+        self.assertFalse(alternative['search_complete'])
+        self.assertEqual(alternative['native_attempts'][0]['validation']['status'], 'unknown')
+        self.assertEqual(alternative['native_attempts'][-1]['validation']['status'], 'validated')
+
+    def test_captured_custom_rule_is_executed_on_the_alternative(self):
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        rules = b'''(version 1)
+(rule "Owned fixture pad exclusion"
+  (condition "A.Type == 'Pad'")
+  (constraint disallow pad))
+'''
+        self.source.with_suffix('.kicad_dru').write_bytes(rules)
+        validator = NativeAlternatives(self.source, self.root / 'custom-rules',
+                                       extract(self.source), self.policy, {})
+        result = validator('J3', (0, 32*MM), 180)
+        self.assertEqual(result['status'], 'rejected', result)
+        self.assertIn('items_not_allowed', result['blocking_types'])
+        output = self.root / result['directory'] / 'candidate.kicad_dru'
+        self.assertEqual(output.read_bytes(), rules)
+        self.assertEqual(self.source.with_suffix('.kicad_dru').read_bytes(), rules)
+
+    def test_native_cost_report_is_deterministic_across_drc_timestamps(self):
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        facts = extract(self.source); fab = reserve.fabrication_outlines(self.source)
+        reports = []
+        for name in ('first', 'second'):
+            costs = reserve.report(facts, self.policy, fab)
+            validator = NativeAlternatives(self.source, self.root / name / 'reserve-alternatives',
+                                           facts, self.policy, {})
+            reserve.alternatives(facts, self.policy, fab, costs, {}, validator)
+            lane = next(r for r in costs['sides']['B']['owners'] if r['kind'] == 'rule_area')
+            self.assertEqual(lane['alternative']['status'], 'native_validated', lane)
+            selected = lane['alternative']['native_attempts'][-1]['validation']
+            self.assertNotIn('drc_sha256', selected)
+            self.assertTrue((self.root / name / selected['witness']).is_file())
+            reports.append(costs)
+        self.assertEqual(reports[0], reports[1])

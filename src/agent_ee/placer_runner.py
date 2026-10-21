@@ -473,7 +473,10 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         *plan.get('block_arrangement', {}).get('arrangement', {}).get('keepouts', [])]}
     reserve = reserve_report(saved, reserve_policy, fabrication)
     if reserve.get('sides'):
-        alternatives(saved, plan['policy'], fabrication, reserve, plan)
+        from .reserved_area_native import NativeAlternatives
+        alternatives(saved, plan['policy'], fabrication, reserve, plan,
+                     NativeAlternatives(output, output.parent / 'reserve-alternatives',
+                                        saved, plan['policy'], plan))
     judgment['reserved_area'] = reserve
     write_json(output.parent / 'placement-judgment.json', judgment)
     from .silk_artwork import containment_witness
