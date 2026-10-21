@@ -126,6 +126,9 @@ def _translate(at_origin, position):
         pad['position_nm'] = move(pad['position_nm'])
     placed['position_nm'] = list(position)
     _cache_pad_reservations(placed)
+    # A rigid translation keeps which copper boxes leave the courtyards.
+    if '_packing_copper' in at_origin:
+        placed['_packing_copper'] = _shift_copper(at_origin['_packing_copper'], dx, dy)
     return placed
 
 
@@ -354,6 +357,7 @@ def _qualified(capture):
             if type(pad.get('rotation_deg')) not in (int, float) or pad['rotation_deg'] % 90:
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: pad rotation must be a quarter turn")
         _cache_pad_reservations(fp)
+        _cache_copper_extent(fp)
     # A hole excludes every peer's courtyard and copper: a peer without a native
     # target inventory leaves the exclusion unproven, which is unknown, not clear.
     geometries = [fp.get('packing_pad_geometry') for fp in capture['footprints']]
@@ -501,6 +505,102 @@ def _hole_conflict(candidate, peer):
     return False
 
 
+def _copper_box(fp, pad):
+    """Integer box containing the pad's copper land, or None when the record carries no land facts.
+
+    A proven custom pad carries its native box (anchor and every primitive). A
+    symmetric stock land is its size, quarter-turned, about the native shape
+    centre (anchor plus copper centroid offset). A chamfered land contains its
+    area centroid, so the box twice its size about that centroid contains it.
+    Rational bounds round outward.
+    """
+    custom = pad.get('custom_geometry', {})
+    if pad['shape'] == 6 and custom.get('status') == 'proven':
+        return tuple(custom['bbox_nm'])
+    size, offset = pad.get('size_nm'), pad.get('copper_centroid_offset_nm')
+    if size is None or offset is None:
+        return None
+    if (not isinstance(size, list) or len(size) != 2 or any(type(v) is not int or v < 0 for v in size)
+            or not isinstance(offset, list) or len(offset) != 2
+            or any(not isinstance(v, list) or len(v) != 2 or any(type(t) is not int for t in v) or v[1] <= 0
+                   for v in offset)
+            or type(pad.get('position_nm')) is not list or len(pad['position_nm']) != 2
+            or any(type(v) is not int for v in pad['position_nm'])):
+        raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: copper land size or centroid malformed")
+    w, h = size if pad['rotation_deg'] % 180 == 0 else size[::-1]
+    reach = 1 if pad['shape'] == 5 else Fraction(1, 2)
+    cx, cy = (p + Fraction(*v) for p, v in zip(pad['position_nm'], offset))
+    return (math.floor(cx - reach*w), math.floor(cy - reach*h), math.ceil(cx + reach*w), math.ceil(cy + reach*h))
+
+
+def _copper_sides(pad):
+    """Outer copper sides of a pad; a record without layers is taken to reach both."""
+    layers = pad.get('layers')
+    if layers is None:
+        return ('F', 'B'), True
+    if not isinstance(layers, list) or any(not isinstance(l, str) for l in layers):
+        raise ValueError(f"pad {pad.get('number')!r}: malformed layers")
+    sides = tuple(s for s in ('F', 'B') if s + '.Cu' in layers or '*.Cu' in layers)
+    return sides, any(l.endswith('.Cu') for l in layers)
+
+
+def _cache_copper_extent(fp):
+    """Ephemeral copper boxes that leave the courtyards (AGENTEE-366).
+
+    ``outline`` holds every copper box that lies in no courtyard polygon of the
+    part: a box inside one is inside the outline whenever that courtyard is.
+    ``sides`` holds, per outer copper side, the boxes outside that side's
+    courtyards, for that side's footprint keep-outs. A part whose copper lies in
+    its courtyards caches nothing, and its search is the courtyard-only one.
+    """
+    fp.pop('_packing_copper', None)
+    polygons = [(side, p) for side, c in fp['courtyards'].items() for p in c['polygons']]
+    outline, sides = [], {}
+    for pad in fp['pads']:
+        on, copper = _copper_sides(pad)
+        box = _copper_box(fp, pad) if copper else None
+        if box is None or box[0] == box[2] or box[1] == box[3]:
+            continue
+        x0, y0, x1, y1 = box
+        poly = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        inside = {side for side, p in polygons if _fits({'courtyards': {'': {'polygons': [poly]}}}, p)}
+        if not inside:
+            outline.append(poly)
+        for side in on:
+            if side not in inside:
+                sides.setdefault(side, {'polygons': []})['polygons'].append(poly)
+    if outline or sides:
+        fp['_packing_copper'] = {'outline': outline, 'sides': sides}
+
+
+def _shift_copper(copper, dx, dy):
+    def move(poly):
+        return [(x + dx, y + dy) for x, y in poly]
+    return {'outline': [move(p) for p in copper['outline']],
+            'sides': {side: {'polygons': [move(p) for p in c['polygons']]} for side, c in copper['sides'].items()}}
+
+
+def _copper_escapes(candidate, outline, obstacles, placed=()):
+    """'outline' or 'rule_area' when copper outside the courtyards leaves the board or enters a keep-out.
+
+    The owner of a keep-out stays exempt from it; a placed peer's copper is
+    checked against the candidate's own keep-outs, and the candidate's copper
+    against every placed owner's. Returns (reason, blocking refs) or None.
+    """
+    copper = candidate.get('_packing_copper')
+    if copper is not None:
+        if copper['outline'] and not _fits({'courtyards': {'': {'polygons': copper['outline']}}}, outline):
+            return 'outline', set()
+        if _in_keepouts({'courtyards': copper['sides']}, obstacles):
+            return 'rule_area', set()
+    own = candidate.get('packing_keepouts', [])
+    hit = {fp['ref'] for fp in placed
+           if (copper is not None and fp.get('packing_keepouts')
+               and _in_keepouts({'courtyards': copper['sides']}, fp['packing_keepouts']))
+           or (own and '_packing_copper' in fp and _in_keepouts({'courtyards': fp['_packing_copper']['sides']}, own))}
+    return ('rule_area', hit) if hit else None
+
+
 def _fits(candidate, outline, margin_nm=0, band=()):
     # A band is a declared overhang across outline edges; its regions share no area with the board.
     # Without a band, a courtyard lies in a convex counter-clockwise outline exactly
@@ -530,7 +630,8 @@ def _fits(candidate, outline, margin_nm=0, band=()):
     return True
 
 
-def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(), window=None, at_origin=None):
+def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(), window=None, at_origin=None,
+                    copper_axes=False):
     """Sorted candidate origin x and y values; every pairing is a candidate position."""
     if at_origin is None:
         at_origin = transform(fp, [0, 0], rotation)
@@ -538,6 +639,9 @@ def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(
     bounds = [(min(b[0] for b in bounds), min(b[1] for b in bounds),
                max(b[2] for b in bounds), max(b[3] for b in bounds))]
     bounds.extend(b for _, b in _keepout_boxes(at_origin.get('packing_keepouts', [])))
+    if copper_axes:
+        # Copper outside every courtyard aligns to the outline as a courtyard does (AGENTEE-366).
+        bounds.extend(_box([p]) for p in at_origin.get('_packing_copper', {}).get('outline', []))
     xs, ys = set(), set()
     for x0, y0, x1, y1 in bounds:
         xs.update(p[0] + margin_nm - x0 for p in outline)
@@ -1242,6 +1346,7 @@ class _Search:
         self.positions, self.peers = {}, {}
         self.cluster_active = None
         self.cluster_start_steps = None
+        self.copper_axes = False
         self.cluster_work = {}
         # Anchor distance is symmetric: it binds whichever of the pair is placed second.
         self.anchored = {}
@@ -1268,6 +1373,7 @@ class _Search:
         key = (fp['ref'], rotation)
         if key not in self.origins:
             self.origins[key] = transform(fp, [0, 0], rotation)
+            _cache_copper_extent(self.origins[key])
         return self.origins[key]
 
     def ties(self, ref):
@@ -1338,6 +1444,9 @@ class _Search:
                _in_keepouts(proposed, fp['packing_keepouts'])) or (own and _in_keepouts(fp, own))]
         if hit:
             return set(hit) - self.fixed
+        escaped = _copper_escapes(proposed, self.outline, self.obstacles, self.placed)
+        if escaped is not None:
+            return escaped[1] - self.fixed
         if group is not None and 'region' in group and not placement_groups.admits(
                 proposed, {'region': group['region']}, {}):
             return set()
@@ -1372,7 +1481,7 @@ class _Search:
             evaluators[rotation] = evaluator
             local_targets = evaluator.targets() if evaluator is not None else []
             xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm,
-                                     targets + local_targets, window, at_origin)
+                                     targets + local_targets, window, at_origin, self.copper_axes)
             if self.cluster_active is not None and evaluator is not None:
                 # Intersections of axis projections of the exact pad discs are
                 # necessary only; the full coupled predicates still judge every point.
@@ -1470,9 +1579,33 @@ class _Search:
 
 
 def pack(capture, policy, *, heartbeat=None):
-    """Preserve legacy plans; try joint clusters only with the remaining budget."""
+    """Preserve legacy plans; try joint clusters, then copper-aligned candidates, only with the remaining budget."""
     runtime = {}
+    result = _pack_joint(capture, policy, heartbeat, runtime)
+    if result['status'] == 'planned' or not runtime.get('copper_escapes'):
+        return result
+    # AGENTEE-366: every pass gates copper; only a failed search adds the copper
+    # alignment axes, so an earlier admissible plan is never replaced.
+    used = runtime['steps']
+    remaining = policy['step_budget'] - used
+    if remaining == 0:
+        result['search']['copper_aligned_attempt'] = {
+            'status': 'not_attempted', 'reason': 'no remaining deterministic candidate budget', 'steps_used': 0}
+        return result
+    aligned = _pack(capture, policy, heartbeat=heartbeat, joint=False, remaining_steps=remaining,
+                    deadline=runtime['search'].deadline, copper_axes=True)
+    if aligned['status'] != 'planned':
+        result['search']['copper_aligned_attempt'] = {
+            'status': aligned['status'], 'steps_used': aligned['steps_used'], 'reason': aligned['reason']}
+        return result
+    aligned['steps_used'] += used
+    aligned['search']['legacy_attempt'] = {'status': result['status'], 'steps_used': used}
+    return aligned
+
+
+def _pack_joint(capture, policy, heartbeat, runtime):
     legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime)
+    runtime['steps'] = runtime['search'].steps if 'search' in runtime else 0
     if legacy['status'] == 'planned' or not legacy.get('search', {}).get('locality_clusters'):
         return legacy
     previous = runtime['search']
@@ -1483,6 +1616,7 @@ def pack(capture, policy, *, heartbeat=None):
         return legacy
     joint = _pack(capture, policy, heartbeat=heartbeat, joint=True,
                   remaining_steps=remaining, deadline=previous.deadline)
+    runtime['steps'] += joint['steps_used']
     if joint['status'] != 'planned':
         legacy['search']['joint_cluster_attempt'] = {
             'status': joint['status'], 'steps_used': joint['steps_used'], 'reason': joint['reason'],
@@ -1494,7 +1628,7 @@ def pack(capture, policy, *, heartbeat=None):
     return joint
 
 
-def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=None, deadline=None):
+def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=None, deadline=None, copper_axes=False):
     if heartbeat is not None:
         heartbeat({'status': 'qualifying', 'steps_used': 0, 'placed_count': 0})
     capture = copy.deepcopy(capture)
@@ -1600,8 +1734,11 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
         return _soft_proof({**failure, 'proof': proof, 'capacity': capacity},
                            _binding_constraints(proof_policy, proof_margin, proof['blocked_by']))
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
+    search.copper_axes = copper_axes
     if runtime is not None:
         runtime['search'] = search
+        runtime['copper_escapes'] = any(fp.get('_packing_copper', {}).get('outline')
+                                        for fp in capture['footprints'] if fp['ref'] not in fixed)
     if remaining_steps is not None:
         search.budget = remaining_steps
         search.deadline = deadline  # Absolute legacy search deadline; qualification never resets it.

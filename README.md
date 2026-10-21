@@ -98,6 +98,9 @@ proposals that introduce native DRC shorts, clearance, PTH courtyard findings
 or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
+Candidates are gated on [copper extent](docs/placer.md#copper-extent-gate-agentee-366)
+as well as courtyard, so pad copper past a courtyard cannot be planned off the
+board or into a same-side footprint keep-out.
 
 Declared [placer obstacles](docs/placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
 reserve the exact union of touching or overlapping polygons. The pod's 0.25 mm

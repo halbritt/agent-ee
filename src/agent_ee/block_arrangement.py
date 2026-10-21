@@ -333,6 +333,8 @@ def _shift(fp, dx, dy):
         if key + '_box' in fp:
             box = fp[key + '_box']
             out[key + '_box'] = None if box is None else (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
+    if '_packing_copper' in fp:
+        out['_packing_copper'] = placer._shift_copper(fp['_packing_copper'], dx, dy)
     return out
 
 
@@ -602,8 +604,12 @@ class _Arrangement:
 
     def members_at(self, bid, position, rotation):
         turns = rotation // 90
-        return [placer.transform(fp, [position[0] + p[0], position[1] + p[1]], (fp['rotation_deg'] + rotation) % 360)
-                for fp in self.frames[bid] for p in [placer.rotate(fp['position_nm'], turns)]]
+        members = [placer.transform(fp, [position[0] + p[0], position[1] + p[1]],
+                                    (fp['rotation_deg'] + rotation) % 360)
+                   for fp in self.frames[bid] for p in [placer.rotate(fp['position_nm'], turns)]]
+        for fp in members:
+            placer._cache_copper_extent(fp)
+        return members
 
     def push(self, bid, position, rotation, proposed):
         members = self.members_at(bid, position, rotation)
@@ -799,6 +805,11 @@ class _Arrangement:
                 or placer._in_keepouts(fp, proposed.get('packing_keepouts', []))}
         if hits:
             return 'rule_area', hits - {None}
+        # Member copper outside its courtyards (AGENTEE-366); the macro carries no pads.
+        for fp in members:
+            escaped = placer._copper_escapes(fp, self.outline, self.keepouts, self.placed_fps)
+            if escaped is not None:
+                return escaped[0], {self.owner.get(r) for r in escaped[1]} - {None, bid}
         hits = {owner for owner, entry in self.shadow_exact if placer._near(proposed, [entry], self.gap)}
         for fp in members:
             if fp['ref'] in self.stacking:

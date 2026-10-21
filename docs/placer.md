@@ -777,6 +777,79 @@ The exact front-side courtyard-area proof records board area
 `[5850000000000000, 1]` and required area `[6549088000000000, 1]` nm².
 Admission of the candidate transform does not establish packing feasibility.
 
+### Copper extent gate (AGENTEE-366)
+
+Before AGENTEE-366 the search packed and gated candidates on the declared
+courtyard only. A part whose copper reached past its courtyard (an offset custom
+pad, or a stock land whose shape centre sits off its anchor) could be planned
+with that copper off the board. On an original native fixture the courtyard-only
+search published such a board as `placed`, `outcome=info`, with no open defect,
+so no later stage caught it.
+
+Candidates are now gated on courtyard and copper extent together. Each pad's
+copper is bounded by an integer box, rounded outward and derived from the
+capture only:
+
+- a proven custom pad uses its native `custom_geometry.bbox_nm` (the anchor
+  and every primitive);
+- circle, rectangle, oval and rounded-rectangle lands use `size_nm`, quarter-turned
+  by the pad rotation, about the native shape centre (`position_nm` plus
+  `copper_centroid_offset_nm`, which is the shape centre for these symmetric
+  shapes);
+- a chamfered rectangle contains its area centroid, so the box twice its size
+  about that centroid contains it (conservative).
+
+A copper box that lies in a courtyard polygon of the part adds nothing: that
+courtyard's own outline test already covers it. Each remaining box must lie in
+the board outline (closed set, without `min_courtyard_edge_mm`, which stays a
+courtyard margin). On each outer copper side (`F.Cu`, `B.Cu`, `*.Cu`), boxes
+outside that side's courtyards must avoid footprint-forbidding keep-outs on
+that side. Board keep-outs, placed owners' keep-outs and a moving owner's
+keep-out against placed peers' copper are all checked; an owner stays exempt
+from its own areas. A pad record without `layers` is taken to reach both
+sides.
+
+Legacy first. Every pass gates copper, but the first search (and the joint
+cluster pass) keeps the courtyard-derived candidate positions unchanged. Only
+when those fail and some movable part has copper outside all its courtyards
+does `pack` run a copper-aligned pass. That pass uses the remaining step budget
+and the same absolute deadline, and aligns escaping copper boxes to the outline
+as courtyard boxes are, so the fit can be flush with the board edge. A plan from
+it records `search.legacy_attempt`; its failure is recorded as
+`search.copper_aligned_attempt` on the earlier result. An earlier admissible
+plan is therefore never replaced. A plan changes only where the courtyard-only
+search would have put copper off the board or into a keep-out.
+
+The gate applies to the packing search, to Stage-B block arrangement (each
+member's copper, so a member at the block edge cannot overhang; block candidate
+positions are unchanged) and to targeted plans (`target copper outside outline
+or in keep-out`). A part whose copper lies in its courtyards caches nothing, and
+its candidates, steps and plan are those of the courtyard-only search.
+Rejections count against the existing step budget only; no wall-clock limit is
+added. Fixed parts are not regated, because their pose is the designer's.
+
+The pinned seeded differential `tests.test_placer_geometry_cost` (ac662ff plans)
+changes for seeds 0, 3, 23 and 38 only: the pinned plan puts 0.2 mm lands up to
+0.073 mm off the board (3, 23, 38) or into a board keep-out (0). The gated
+results remain `planned`. The pins are left for an integrator ruling.
+
+Boundaries. Malformed `size_nm`, `copper_centroid_offset_nm` or `layers`
+return `unsupported_geometry`, `outcome=unknown`. A pad record without the
+land facts (no `size_nm`, or a stock land without `copper_centroid_offset_nm`)
+contributes no copper box. Native extraction records both for every copper
+stock land except a chamfered rectangle with rounded corners, whose centroid is
+not qualified; such a land, and hand-built captures without these facts, keep
+the courtyard-only bound. Inner-layer-only keep-outs, rule areas forbidding
+only pads, and copper against peer courtyards are not packing constraints. The
+native DRC publication gate remains the authority for copper clearance.
+
+Focused regression, including a native writer run at every quarter turn on both
+sides and courtyard-only mutant controls:
+
+```sh
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_copper_extent -v
+```
+
 ### Through-hole reservations and native publication gate (AGENTEE-318)
 
 On a board with PTH or NPTH pads, the native probe records

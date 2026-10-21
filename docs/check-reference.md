@@ -1756,6 +1756,12 @@ requires exact saved primitives, arc nodes and native merged-copper evidence;
 mutation or missing native output refuses admission. This changes transform
 admission only; check registration and placement grading remain unchanged.
 
+AGENTEE-366 gates [placer candidates on copper extent](placer.md#copper-extent-gate-agentee-366)
+as well as courtyard: pad copper beyond a part's courtyards must stay in the
+outline and out of same-side footprint keep-outs during packing, block
+arrangement and targeted plans. Parts whose copper lies in their courtyards plan
+as before. This adds no registered check or acceptance predicate.
+
 ## Copper feature consumers (AGENTEE-315)
 
 AGENTEE-315 cross-checks `fab_export` and `fab_package` copper declarations
