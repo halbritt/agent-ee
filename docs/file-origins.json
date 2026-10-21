@@ -415,6 +415,16 @@
   "rules": [
     {
       "paths": [
+        "tests/test_placement_defects.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-344 carried-silk regressions. The hash-comment attack embeds authored minimal copper arcs and silk text and derives the hidden R9 footprint from the existing owned test_placement_adapter.TEXT fixture. No upstream design or library bytes are copied."
+    },
+    {
+      "paths": [
         "tests/test_citation_locators.py"
       ],
       "kind": "owned-source",
