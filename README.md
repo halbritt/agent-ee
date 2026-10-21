@@ -98,14 +98,30 @@ proposals that introduce native DRC shorts, clearance, PTH courtyard findings
 or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
+
+Declared [placer obstacles](docs/placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
+reserve the exact union of touching or overlapping polygons. The pod's 0.25 mm
+packing gap is an agent-chosen advisory default. Its supplied value remains a
+search reservation, including against fixed courtyards; capacity proofs that
+bind an unsourced gap report unknown and name it for confirmation.
+
 The [artwork pass](docs/silk-artwork.md) relocates permitted silk fields and
 publishes silk-only conflicts as open defects in the placement receipt, preserving
 graphics and required markings. This establishes placement feasibility only;
 downstream fab, verification and release gates refuse carried open defects,
 naming their native fields/graphics and source receipts (AGENTEE-333).
+Fab-family kinds gate carry regardless of stage, and campaign acceptance refuses
+open carry. Receipt-backed closure survives only proven masked-track edits
+whose exempt spans match the KiCad writer grammar, preserving raw
+artwork/obstruction bytes and all captured project/rule paths
+and bytes (AGENTEE-344). Bench-feedback acceptance also refuses open carry.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
-copper-centroid distances against cited limits. Captured pad UUIDs select
+copper-centroid distances against sourced limits.
+[Locality provenance](docs/placer.md#locality-provenance-agentee-337) keeps unsourced
+agent-selected bounds advisory in checks, packing and block-candidate admission.
+Captured JLCPCB spacing supplies necessary copper floors and advisory assembly estimates, with
+whole-footprint minima still unqualified. Captured pad UUIDs select
 multi-pad pins. Explicit `buck-output-loop` declarations bind the supply source
 and switch target to the inductor, the return source and switch source to the
 IC, and return pads to a declared net distinct from supply. Switch nets must

@@ -595,7 +595,7 @@ def _build(capture, inventory, sheet_names, inventory_sha256, block_id, poses, a
         problems.append({'kind': 'witness', 'below_gap': candidate['witness']['below_gap'],
                          'drilled_pad_conflicts': candidate['witness']['drilled_pad_conflicts']})
     for name, grade in candidate['grade'].items():
-        if grade and grade['status'] != 'pass':
+        if grade and not blocks._grade_usable(name, grade):
             problems.append({'kind': 'grade', 'evidence': name, 'defects': grade.get('defects'),
                              'unknown': grade.get('unknown')})
     if not problems:

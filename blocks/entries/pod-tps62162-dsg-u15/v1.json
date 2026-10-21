@@ -187,7 +187,7 @@
   "label": "search-derived (advisory): project cluster U15 from telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json@7a8baa137bb5"
  },
  "receipt": {
-  "candidate_sha256": "fa9cd861375a5d5e0cadc5b51480b780374cf16e704328a2c9e83099cc149e79",
+  "candidate_sha256": "8a325d3c0172f4604bd5742350e0cfded766aa3b2e992d66388d28ed1fcbcf5c",
   "import": "project-cluster/1",
   "importer": "agent_ee.block_library/1",
   "inputs": {

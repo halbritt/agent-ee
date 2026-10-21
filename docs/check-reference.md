@@ -1796,16 +1796,35 @@ Locality documents and copied index snapshots require exact built-in JSON types;
 subclasses and other Python objects refuse before schema or net-binding checks
 (AGENTEE-356). Supply and return are mandatory and switch/inductor pairs
 optional. The native copper-land centroid metric preserves proved defects
-alongside unknowns;
-missing limits or citations stay unknown. Optional captured pad `uuid` selectors
+alongside unknowns; missing limits stay unknown; hard enforcement also requires
+a citation. Optional captured pad `uuid` selectors
 must also match the declared reference, number and net; unselected duplicate
 pad numbers refuse. Native copper offsets participate in the distance, and
 unqualified centroid geometry stays unknown. Coordinator packing derives its
 obligations from the same immutable locality file, recording its raw hash in
 `electrical_locality_binding`; the check judgment records `locality: {path,
 sha256}` (AGENTEE-328). The engineer declares limits and citation locators;
-the check never supplies a manufacturer radius or verifies cited prose.
+the check never infers an electrical maximum from manufacturer spacing or prose.
 Origin-group success supplies no electrical-locality acceptance.
+AGENTEE-337 adds [numeric provenance and manufacturing floors](placer.md#locality-provenance-agentee-337):
+legacy or unsourced bounds report defect-level `unsourced` advisories with `info`
+when no hard defect/unknown exists; these never block publication. Datasheet
+numeric/scale derivations and owner decision references retain hard constraints.
+Captured JLCPCB different-net PCB clearance computes a necessary copper floor and
+refuses hard sourced or explicit manufacturer bounds below it as `locality_infeasible`.
+Assembly package spacing produces advisory estimates only, because native lands
+do not establish physical body/lead extents. The exact
+whole-footprint manufacturing minimum remains unqualified; unknown package
+combinations never inherit an invented value.
+
+AGENTEE-337 locality info summaries report total and exceeded advisory counts.
+Joint-cluster bounds prune only with hard provenance. Missing advisory citations
+and geometry-unknown manufacturer floors stay advisory; absent numeric maxima
+and captured manufacturer-record integrity failures retain unknown coverage.
+A sourced bound below the necessary copper floor is `locality_infeasible`.
+Block candidates preserve source records and accept truthful advisory `info`
+through production, validation and independent admission regrading; hard defects
+and unknown coverage still refuse. See [blocks](blocks.md).
 
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.
@@ -1817,8 +1836,10 @@ requires both switch endpoint nets to differ from return and both supply endpoin
 nets. Distinct-source obligations require disjoint supply/return endpoint net
 sets even without a kind. Inconsistent bindings refuse validation, including
 direct `PlacementIndex` construction (AGENTEE-341). It deep-copies the document
-first, validates that snapshot, then indexes it (AGENTEE-356). Its public pairs
-and endpoint maps are read-only at every level, including endpoint fields.
+first, copies its exact JSON values into fresh owned containers, validates that
+snapshot, then indexes it (AGENTEE-356). Cyclic containers raise the typed JSON
+`ValueError`. Its public pairs and endpoint maps are read-only at every level,
+including endpoint fields.
 Later caller mutations cannot alter its endpoint identities or cached keys
 (AGENTEE-352/356). Untyped
 same-source obligations retain their existing verdicts; disjoint untyped nets
@@ -1857,9 +1878,23 @@ receipt `open_defects`. Their receipt outcome/verdict is `defect`. This separate
 placement feasibility from fab legibility. The coordinator captures validated
 helper receipts and artwork under `placement-evidence`, with ordered
 `placement_provenance` links in successor scopes (AGENTEE-333). Verification/fab
-stages and fab export, package, consistency, CPL and JLC DFM checks refuse open
-carry with typed field/graphic identities and source receipts. The evidence seal
-reconstructs these refusals; release artifact extraction also refuses open carry.
+stages and the coordinator ruling's 18 fab-family kinds refuse open carry with typed field/graphic
+identities and source receipts, regardless of declared stage (AGENTEE-344).
+This includes DRC, fab profile, DFM geometry, DFA/DFT, assembly readiness, cost,
+roundtrip, parts/catalog/binding and land-pattern gates. Campaign acceptance
+refuses open carry even without a declared downstream gate, including bench-feedback
+epoch completion. A clean receipted
+closure can survive masked copper track edits only when retained root nodes have
+identical raw source bytes and the complete captured project/custom-rule path and
+digest inventories remain unchanged, including non-board stems. Semicolons outside
+strings and KiCad `#` line comments refuse equivalence. Exempt track spans must
+match the positive writer grammar: balanced parentheses, `[A-Za-z0-9_.+-]+`
+bare tokens, quoted strings without backslashes, embedded quotes or controls,
+and only spaces, tabs, LF or CRLF between tokens. Hashes and semicolons anywhere
+in a track span prevent exemption. Other track spans remain in
+the raw-byte comparison, including mid-token quotes and multiline strings;
+vias, zones and unknown track attributes still require fresh receipt evidence.
+The evidence seal reconstructs these refusals; release artifact extraction also refuses open carry.
 Uncarried baseline findings retain their existing verdicts. Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.
@@ -1867,3 +1902,16 @@ Side-flipped footprints' fields remain unchanged with typed conflicts. Source
 project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
+
+## Declared placer obstacles (AGENTEE-338)
+
+The [placer obstacle policy](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
+accepts touching and overlapping declared polygons as their exact same-side union.
+The policy still refuses invalid individual polygons. The pod's 0.25 mm reserved gap is an
+agent-chosen advisory default, currently enforced against fixed courtyards and
+obstacles; it has no captured assembly-rule authority. A capacity proof that
+binds an unsourced gap is typed unknown and names `gap_nm` for owner confirmation.
+Proofs independent of that gap retain their verdicts; authored fixture requirements
+carry explicit fixture-author provenance. Qualified manufacturer gap requirements
+remain hard. There is no registered-check change; the existing packing policy's
+constraint provenance gains an optional value-bound `gap_nm` source entry.

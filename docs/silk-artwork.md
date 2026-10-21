@@ -102,10 +102,16 @@ bytes unchanged; campaign verification recomputes the owed capture from anchored
 stage receipts and the qualified adapter record. The writer cannot remove or
 edit this evidence, and routing or other implementation steps retain it.
 
-Checks in verification/fab stages and `fab_export`, `fab_package`,
-`fab_consistency`, `cpl_rotation` and `jlc_dfm` refuse while carried defects remain
-open. Each typed `placement_silkscreen_conflict` finding names its native
-field/graphic UUID, available description/reference and source receipt. The
+Checks in verification/fab/release stages and the fab-family kinds refuse while
+carried defects remain open, regardless of declared stage (AGENTEE-344). These
+are exactly the coordinator ruling's 18 kinds: `fab_export`, `fab_package`, `fab_roundtrip`, `fab_consistency`,
+`cpl_rotation`, `jlc_dfm`, `fab_profile`, `dfm_geometry`, `dfa_dft`,
+`assembly_readiness`, `jlc_cost_estimate`, `drc`, `part_binding`,
+`package_consistency`, `parts_subset`, `land_pattern`, `catalog` and
+`part_selection`. Campaign acceptance also refuses open carry when no fab or
+verification check was declared, including acceptance projected by a bench-feedback epoch. Each typed `placement_silkscreen_conflict`
+finding names its native field/graphic UUID, available description/reference
+and source receipt. The
 check retains a candidate-bound `placement-defects.json` witness. Sealing
 reconstructs the refusal from captured receipt artifacts; fab package artifact
 extraction refuses open carry too. Missing, changed or malformed evidence cannot
@@ -119,11 +125,40 @@ marking content, layer and style. Missing, hidden or relabeled fields do not
 close a defect. An unsupported side-flip diagnostic also requires positive
 artwork movement of that field, either recorded by the later artwork pass or
 visible in its saved position. The original side-flip case stays open even when
-another field moves and native `added_after` is empty. A new current native
-result remains necessary after further board changes; this guard supplies no
-waiver or electrical acceptance.
+another field moves and native `added_after` is empty. A later board may retain
+that closure across masked copper track/arc edits only when the shared saved-board
+parser validates the structure and every other root-level node has identical raw
+source bytes. Decoded atoms cannot establish equivalence: KiCad's string escape
+decoding differs from the shared parser's. Comments (`;` outside quoted strings
+and KiCad `#` line comments)
+refuse the proof. A `#` after only spaces, tabs, carriage returns or NUL bytes
+at the start of a line is a comment.
+A track span is exempt only when its raw source has balanced parentheses,
+bare tokens matching `[A-Za-z0-9_.+-]+`, and double-quoted strings without
+backslashes, embedded quotes or control characters. Only spaces, tabs, LF and
+CRLF separate tokens. Semicolons and hashes anywhere in the span, mid-token quotes,
+other whitespace and unknown track children (including mask exposure) receive
+no exemption: their raw bytes remain in the comparison and reopen closure when
+changed. This also retains printable hashes and semicolons inside quoted strings.
+Whitespace inside retained nodes is significant; whitespace between root children is not.
+Footprint transforms, marking positions/content/ownership, pads, mask, vias,
+zones and setup must remain unchanged. Closure binds the complete captured
+`.kicad_pro` and `.kicad_dru` path/digest inventories from the native DRC receipt
+and current candidate, rather than guessing a board-stem rule path. This is a
+conservative superset of the files native DRC loaded: even an unrelated captured
+rule file's addition, removal or change reopens carry. Changes
+outside that subset require a fresh receipt; a track comparison supplies no
+electrical or routing acceptance (AGENTEE-344). If the equivalence proof cannot
+read or parse the later board, the carried defect stays open.
 
 `tests.test_placement_defects` exercises actual native helper publication,
 adoption, coordinator capture, successor binding and downstream refusal, plus
 missing/stale/tampered carry, side-flip closure boundaries and verdict isolation.
 The existing BOM-variant fab regression retains its original pass expectation.
+
+The out-of-campaign lineage gap remains open: a design re-scoped without both
+`placement_provenance` and `placement-evidence/` cannot be distinguished from an
+uncarried design. Exporters must retain the lineage. This implementation does
+not add a persistent board marker or an owner evidence store. A receipted
+post-routing artwork producer and a campaign test that closes the defect after
+routing also remain outstanding.

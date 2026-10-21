@@ -232,7 +232,7 @@ def admit_entry(entry, capture, inventory, derivation, policy):
         framed = [placer.transform(board[mapping[r['reference']]], r['pose']['position_nm'], r['pose']['rotation_deg'])
                   for r in sorted(document['members'], key=lambda r: blocks._natural(mapping[r['reference']]))]
         _, grade, witness = blocks._evidence(capture, framed, sub)
-        failed = [k for k, g in grade.items() if g and g['status'] != 'pass'] + (
+        failed = [k for k, g in grade.items() if g and not blocks._grade_usable(k, g)] + (
             ['witness'] if witness['status'] != 'pass' else [])
         if failed:
             return None, [{'kind': 'evidence_failed', 'evidence': failed}]
@@ -577,11 +577,11 @@ class _Arrangement:
             return electrical_locality.CandidateLocality([])
         pairs = []
         for fp in members:
-            for own, peer, limit in self.locality.pairs.get(fp['ref'], ()):
+            for own, peer, limit, hard in self.locality.pairs.get(fp['ref'], ()):
                 if peer['reference'] in self.positions:
                     offset = electrical_locality.resolve([fp], own)
                     target = self.locality.positions[peer['reference']][self.locality.key(peer)]
-                    pairs.append((offset, target, limit, {fp['ref'], peer['reference']}))
+                    pairs.append((offset, target, limit, {fp['ref'], peer['reference']}, hard))
         return electrical_locality.CandidateLocality(pairs)
 
     def _group_targets(self, members):
