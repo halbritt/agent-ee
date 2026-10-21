@@ -446,15 +446,28 @@ class DurableClosureTests(unittest.TestCase):
     def test_receipt_closure_currency_uses_artwork_subject_after_routing(self):
         # Unit-level state-machine probe; native receipt validation is covered above.
         from tests.test_placement_adapter import TEXT
+        # TEXT's overlapping Edge.Cuts lines cannot prove containment. Give this
+        # closure fixture a rectangle enclosing both original and moved markings.
+        outlined = TEXT.replace('(start 30 0) (end 0 0)', '(start 30 0) (end 30 20)')
+        outline_tail = (
+            '(gr_line (start 30 20) (end 0 20) (stroke (width 0.05) (type default)) '
+            '(layer "Edge.Cuts") (uuid "e3"))\n'
+            '(gr_line (start 0 20) (end 0 0) (stroke (width 0.05) (type default)) '
+            '(layer "Edge.Cuts") (uuid "e4"))\n')
+        outlined = outlined.rstrip()[:-1] + outline_tail + ')\n'
+        # Native KiCad expands the abbreviated UUID in TEXT; use its canonical
+        # spelling so the saved identity and the containment witness agree.
+        field_uuid = '00000000-0000-0000-0000-0000000000a1'
+        outlined = outlined.replace('(uuid "a1")', f'(uuid "{field_uuid}")')
         with tempfile.TemporaryDirectory() as temporary:
             inputs = Path(temporary)
             old, fixed, current = (inputs / n for n in ('old.kicad_pcb', 'fixed.kicad_pcb', 'board.kicad_pcb'))
-            old.write_text(TEXT)
-            fixed.write_text(TEXT.replace('(at 0 -1.5 0)', '(at 0 -2.5 0)'))
+            old.write_text(outlined)
+            fixed.write_text(outlined.replace('(at 0 -1.5 0)', '(at 0 -2.5 0)'))
             current.write_bytes(fixed.read_bytes())
             links, bundles, files = [], {}, {}
             defect = {'type': 'placement_silkscreen_conflict', 'status': 'open', 'verdict': 'defect',
-                      'native': {'items': [{'uuid': 'a1'}]}}
+                      'native': {'items': [{'uuid': field_uuid}]}}
             for number, board, defects in ((1, old, [defect]), (2, fixed, [])):
                 path = inputs / f'placement-evidence/{number}/receipt.json'
                 write_json(path, {'inputs': {}})
@@ -500,6 +513,20 @@ class DurableClosureTests(unittest.TestCase):
                 manifest['files'][current.name] = digest(current)
                 manifest['files']['board.kicad_pro'] = 'changed-rule-settings'
                 self.assertEqual(len(placement_defects.open_defects(manifest, inputs)), 1)
+                del manifest['files']['board.kicad_pro']
+                # A clean native delta and otherwise identical receipts cannot
+                # close the same defect when the board has no proven outline.
+                for board in (old, fixed):
+                    board.write_text(''.join(line for line in board.read_text().splitlines(keepends=True)
+                                             if not line.startswith(' (gr_line') and
+                                             not line.startswith('(gr_line')))
+                for report, loaded, _ in bundles.values():
+                    report['board_sha256'] = digest(loaded[placement_defects.BOARD])
+                for routed in (False, True):
+                    with self.subTest(outline=False, routed=routed):
+                        current.write_text(fixed.read_text().rstrip()[:-1] + (track if routed else '') + ')')
+                        manifest['files'][current.name] = digest(current)
+                        self.assertEqual(len(placement_defects.open_defects(manifest, inputs)), 1)
 
 
 class PlacementRoutingCarryTests(unittest.TestCase):

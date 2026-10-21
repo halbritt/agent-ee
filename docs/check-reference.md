@@ -1869,3 +1869,6 @@ containing backslashes refuse the producer's scope proof.
 This adds no check registration or verdict waiver. The initial placer continues
 to refuse routed boards. The native campaign regression proves downstream
 refusal before the repair and passing verification geometry and native fab export after closure.
+The closure-currency regression preserves closure after masked-track edits on a
+board with a proven outline and retains the defect on the same board without
+an outline.

@@ -204,6 +204,10 @@ and a nonroot read-only host sandbox.
 verification/fab refusal, receipted graphic repair, closure, passing verification
 geometry and native fab export (Gerbers, drill, BOM and CPL), followed by campaign
 replay. A passing export does not authorize fabrication.
+Its closure-currency fixture uses a closed Edge.Cuts rectangle and a canonical
+native field UUID: closure survives a masked-track edit, while the same receipt
+chain on a board without an outline keeps the defect open, with or without that
+track edit.
 
 The producer restores the source `.kicad_dru` bytes but does not authenticate a
 writer-editable custom rule file against an earlier placement receipt. A writer
