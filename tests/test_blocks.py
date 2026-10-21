@@ -85,6 +85,7 @@ def board(parts=PARTS):
     hole.update(fpid='Owned:Hole', locked=True)
     b = capture(fps + [hole], outline=rectangle(0, 0, 50, 40))
     b['pcbnew_version'] = '10.0.7'
+    b['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits
     return b
 
 
@@ -349,6 +350,21 @@ class PackingTests(Fixture, unittest.TestCase):
             change(forged['grade']['electrical_locality'])
             with self.assertRaisesRegex(ValueError, 'every advisory'):
                 blocks.validate_candidate(forged)
+
+    def test_isolated_block_capture_carries_the_board_copper_setback(self):
+        # AGENTEE-366e/f: the isolated capture keeps the board's m_MaxError; an absent fact stays typed unknown.
+        for fp in self.board['footprints']:
+            for i, pad in enumerate(fp['pads']):
+                pad['position_nm'] = [fp['position_nm'][0] + i * 500000, fp['position_nm'][1]]
+        board = {fp['ref']: fp for fp in self.board['footprints']}
+        isolated = blocks._isolated(self.board, board, ['C1'], [], [0, 0, MM, MM])
+        self.assertEqual(isolated['max_error_nm'], 5000)
+        self.assertEqual(self.pack()['status'], 'packed')
+        del self.board['max_error_nm']
+        self.assertNotIn('max_error_nm', blocks._isolated(self.board, board, ['C1'], [], [0, 0, MM, MM]))
+        result = self.pack()
+        self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'), result)
+        self.assertIn('copper setback unknown', result['reason'])
 
     def test_advisory_below_manufacturing_floor_is_retained(self):
         # Original, non-overlapping lands at 0.5 mm pitch establish a positive

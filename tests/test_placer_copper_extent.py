@@ -6,7 +6,9 @@ not be placed with that copper off the board or inside a footprint keep-out.
 import copy
 from fractions import Fraction
 import hashlib
+import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -79,7 +81,7 @@ def _axis_box(poly):
     return xs[0], ys[0], xs[1], ys[1]
 
 
-def copper_violations(capture_, placements):
+def copper_violations(capture_, placements, setback=0):
     """Pad copper of a plan off the board or in a board copper keep-out.
 
     Independent of the placer's gate (_copper_box, _cache_copper_extent,
@@ -88,6 +90,7 @@ def copper_violations(capture_, placements):
     2 and 4), together with every packing_pad_geometry copper polygon, and the
     exact rational box is compared with the rectangular outline and with every
     board rule area forbidding footprints on that pad's outer copper layer.
+    With setback, a box closer than setback nm to the outline also counts.
     Returns (ref, item, box, reason) rows; empty means contained.
     """
     poses = {p['ref']: p for p in placements}
@@ -125,7 +128,7 @@ def copper_violations(capture_, placements):
                               (min(p[0] for p in moved), min(p[1] for p in moved),
                                max(p[0] for p in moved), max(p[1] for p in moved))))
         for item, layers, (x0, y0, x1, y1) in items:
-            if x0 < ox0 or y0 < oy0 or x1 > ox1 or y1 > oy1:
+            if x0 < ox0 + setback or y0 < oy0 + setback or x1 > ox1 - setback or y1 > oy1 - setback:
                 rows.append((fp['ref'], item, (x0, y0, x1, y1), 'outline'))
             for side, (kx0, ky0, kx1, ky1) in keepouts:
                 if side + '.Cu' in layers and x0 < kx1 and kx0 < x1 and y0 < ky1 and ky0 < y1:
@@ -584,6 +587,31 @@ class NativeBoard:
         self.assertEqual(facts['max_error_nm'], max_error)
         return max_error + 50
 
+    def refused(self, source, name, patches):
+        """Native publication refuses a placement under patches; returns the retained failed board.
+
+        The AGENTEE-331 structural refusal: the saved board has copper outside
+        its outline, so no candidate is published and the failed board is kept
+        only as an unknown, not-placed diagnostic.
+        """
+        for p in patches:
+            p.start()
+        try:
+            with self.assertRaises(ValueError) as caught:
+                self.place(source, name)
+        finally:
+            for p in patches:
+                p.stop()
+        message = str(caught.exception)
+        self.assertIn('saved-board placement introduced native DRC collisions', message)
+        self.assertIn("'copper_outside_outline'", message)
+        self.assertFalse((self.scratch / name).exists())
+        retained = Path(re.search(r'diagnostics retained at (\S+): ', message).group(1))
+        self.assertEqual(retained.parent, self.scratch)
+        failure = json.loads((retained / 'failure.json').read_text())
+        self.assertEqual((failure['status'], failure['outcome']), ('not_placed', 'unknown'))
+        return retained / 'failed-candidate.kicad_pcb'
+
 
 
 class NativeOffsetCustomPadTest(NativeBoard, unittest.TestCase):
@@ -647,9 +675,9 @@ class NativeOffsetCustomPadTest(NativeBoard, unittest.TestCase):
         k.SaveBoard(str(path), board)
         return path
 
-    def saved_copper(self, name):
+    def saved_copper(self, path):
         import pcbnew as k
-        board = k.LoadBoard(str(self.scratch / name / 'candidate.kicad_pcb'))
+        board = k.LoadBoard(str(path))
         pad = next(iter(next(iter(board.GetFootprints())).Pads()))
         self.assertEqual(pad.GetShape(k.F_Cu), k.PAD_SHAPE_CUSTOM)
         box = pad.GetBoundingBox()
@@ -672,23 +700,14 @@ class NativeOffsetCustomPadTest(NativeBoard, unittest.TestCase):
                     self.assertEqual((report['status'], report['outcome'], report['open_defects']),
                                      ('placed', 'info', []), report)
                     self.assertEqual(report['judgment']['verdict'], 'pass')
-                    box = self.saved_copper(name)
+                    box = self.saved_copper(self.scratch / name / 'candidate.kicad_pcb')
                     self.assertTrue(0 <= box[0] and 0 <= box[1] and box[2] <= 20 * MM and box[3] <= 20 * MM, box)
                     # The saved native copper extent sits the structural setback from the outline corner.
                     self.assertTrue(setback <= box[0] <= setback + 1 and setback <= box[1] <= setback + 1,
                                     (box, setback))
-                    # Courtyard-only gating publishes the same copper off the board, with no open defect.
-                    patches = courtyard_only()
-                    for p in patches:
-                        p.start()
-                    try:
-                        legacy = self.place(source, name + '-legacy')
-                    finally:
-                        for p in patches:
-                            p.stop()
-                    self.assertEqual((legacy['status'], legacy['outcome'], legacy['open_defects']),
-                                     ('placed', 'info', []))
-                    box = self.saved_copper(name + '-legacy')
+                    # Courtyard-only gating saves the same copper off the board (independent native
+                    # geometry); only the AGENTEE-331 publication gate refuses it (ruling 366f F3).
+                    box = self.saved_copper(self.refused(source, name + '-legacy', courtyard_only()))
                     self.assertTrue(box[0] < 0 or box[1] < 0, box)
 
 
@@ -752,10 +771,10 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
         k.SaveBoard(str(path), board)
         return path
 
-    def saved_lands(self, name):
+    def saved_lands(self, path):
         """Extremes of the saved board's native copper polygons, every land of C1."""
         import pcbnew as k
-        board = k.LoadBoard(str(self.scratch / name / 'candidate.kicad_pcb'))
+        board = k.LoadBoard(str(path))
         xs, ys = [], []
         for pad in next(iter(board.GetFootprints())).Pads():
             layer = k.F_Cu if pad.IsOnLayer(k.F_Cu) else k.B_Cu
@@ -787,23 +806,14 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
                     # The native publication gate (AGENTEE-331 copper containment and edge clearance) accepts it.
                     self.assertEqual((report['status'], report['outcome'], report['open_defects']),
                                      ('placed', 'info', []), report)
-                    x0, y0, x1, y1 = self.saved_lands(tag)
+                    x0, y0, x1, y1 = self.saved_lands(self.scratch / tag / 'candidate.kicad_pcb')
                     self.assertTrue(0 <= x0 and 0 <= y0 and x1 <= 20 * MM and y1 <= 20 * MM, (x0, y0, x1, y1))
                     # The structural setback from the outline corner, within the native polygon error (1 nm).
                     self.assertTrue(setback <= x0 <= setback + 1 and setback <= y0 <= setback + 1,
                                     (x0, y0, setback))
-                    # The superseded bound publishes the same board with copper off it, no open defect.
-                    patches = mutant()
-                    for p in patches:
-                        p.start()
-                    try:
-                        legacy = self.place(source, tag + '-legacy')
-                    finally:
-                        for p in patches:
-                            p.stop()
-                    self.assertEqual((legacy['status'], legacy['outcome'], legacy['open_defects']),
-                                     ('placed', 'info', []))
-                    x0, y0, _, _ = self.saved_lands(tag + '-legacy')
+                    # The superseded bound saves the same board with copper off it (independent native
+                    # geometry); only the AGENTEE-331 publication gate refuses it (ruling 366f F3).
+                    x0, y0, _, _ = self.saved_lands(self.refused(source, tag + '-legacy', mutant()))
                     self.assertTrue(x0 < 0 or y0 < 0, (x0, y0))
 
     def test_rounded_chamfered_land_is_bounded_by_its_native_land_box(self):

@@ -52,6 +52,7 @@ def seeded_board(seed):
         parts.append(fp)
     board = capture(parts, rectangle(0, 0, size, size))
     board['pcbnew_version'] = '10.0.7'
+    board['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits
     if rng.random() < .3:
         board['rule_areas'] = [{'uuid': 'zone', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
                                 'outline': {'status': 'proven', 'polygons': [rectangle(6, 6, 4, 3)]}}]

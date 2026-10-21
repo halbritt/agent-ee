@@ -884,7 +884,8 @@ arrangement, any non-fixed member's copper), the search returns
 `unsupported_geometry`, `outcome=unknown` ("copper setback unknown"). A
 targeted plan reports `missing coverage: <ref>: copper setback unknown`. A
 malformed value (negative, or not an integer) is also `unsupported_geometry`.
-Without the fact, the in-courtyard exemption uses closed containment. That only
+Block packing (`blocks.pack_block`) copies `max_error_nm` into the isolated
+capture when the board has it, so the same setback applies there. Without the fact, the in-courtyard exemption uses closed containment. That only
 matters for hand-built records, because native extraction always records the
 value. Edge-clearance limits keep their AGENTEE-331 provenance grading,
 unchanged. On each outer copper side (`F.Cu`, `B.Cu`, `*.Cu`), boxes

@@ -23,6 +23,7 @@ def clone(fp, ref):
 def random_cluster_case(rng):
     """Original seeded geometry shared with the reviewer's random differential."""
     source = board()
+    source['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits
     hub, capacitor = source['footprints']
     count = rng.randint(2, 4)
     footprints = [hub] + [clone(capacitor, f'C{i}') for i in range(1, count + 1)]
@@ -410,6 +411,8 @@ class ClusterTests(unittest.TestCase):
         # Frozen per-part outputs from ee40bb3579bb00843c34ca9b5dfe60c4f4b8fb52; seeded original multi-member fixtures.
         # (seed, case) in copper_gated were re-pinned by AGENTEE-366 (coordinator ruling):
         # their frozen plans put C3's pad 1 copper at y=-50000..50000 nm, off the board.
+        # (1, 1) was re-pinned again by ruling 366f: the structural setback S = max_error_nm + 50
+        # (5050 nm on this fixture) moves every placement +S in y; verdict and steps are unchanged.
         copper_gated = {(1, 1), (2, 1)}
         expected = {1: [{'outcome': 'unknown',
               'placements': [],
@@ -417,27 +420,27 @@ class ClusterTests(unittest.TestCase):
               'steps_used': 200},
              {'outcome': 'info',
               'placements': [{'fixed': False,
-                              'position_nm': [2500000, 2550000],
+                              'position_nm': [2500000, 2555050],
                               'ref': 'C1',
                               'rotation_deg': 0,
                               'uuid': 'C1'},
                              {'fixed': False,
-                              'position_nm': [0, 2550000],
+                              'position_nm': [0, 2555050],
                               'ref': 'C2',
                               'rotation_deg': 0,
                               'uuid': 'C2'},
                              {'fixed': False,
-                              'position_nm': [0, 50000],
+                              'position_nm': [0, 55050],
                               'ref': 'C3',
                               'rotation_deg': 0,
                               'uuid': 'C3'},
                              {'fixed': False,
-                              'position_nm': [5000000, 2050000],
+                              'position_nm': [5000000, 2055050],
                               'ref': 'C4',
                               'rotation_deg': 90,
                               'uuid': 'C4'},
                              {'fixed': False,
-                              'position_nm': [2500000, 2050000],
+                              'position_nm': [2500000, 2055050],
                               'ref': 'U1',
                               'rotation_deg': 90,
                               'uuid': 'U1'}],
@@ -795,7 +798,8 @@ class ClusterTests(unittest.TestCase):
                         for key in ('status', 'outcome', 'steps_used', 'placements'):
                             self.assertEqual(result[key], legacy[key], key)
                         if (seed, i) in copper_gated:
-                            self.assertEqual(copper_violations(source, result['placements']), [])
+                            setback = source['max_error_nm'] + 50  # S, derived here independently
+                            self.assertEqual(copper_violations(source, result['placements'], setback), [])
                     if result['status'] == 'planned':
                         self.assertEqual(result['locality_grading']['status'], 'pass')
                         poses = {p['ref']: p for p in result['placements']}
