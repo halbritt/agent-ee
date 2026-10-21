@@ -473,7 +473,57 @@ hash. Combining `blocks` with `targeted` or `targeted_plans` is refused.
 `block_arrangement.request_section(allocation, arrangement, candidates)` builds
 the section from files.
 
-## Real-pod diagnostic
+### Real-pod diagnostic (stage B)
+
+This is a read-only scratch diagnostic; nothing was adopted or written to fome-mc.
+The inputs are fome-mc `768df2d`
+`telemetry-pod/expansion/blocks/allocation.json` (checked against
+`blocks/SHA256SUMS`), the pre-placement seed board
+`placement-inputs/rejected-seed.kicad_pcb.gz` (uncompressed SHA-256
+`6f458cea…`) and `released-source-migration/native.xml`. The packing policy is
+iteration 3's (0.25 mm gap, 0.5 mm edge margin) with the rev-2 pad obligations.
+Only the allocation's residual anchors (H1–H4, J1, J2, U1, U2) stay fixed. Of
+the obstacles, only the five IMU-isolation strips stay. The other four were
+derived from the hand cluster poses and move with the blocks. The arrangement
+policy cites iteration 2's inductor shadows (L1, L2, L4, +0.5 mm) and its
+no-cluster-over-a-fixed-part rule (for the regulator blocks pre-6v3, buck-3v3,
+storage-power and wheel-input) as hard. Thermal spread (U5, U7, U15; 15 mm) is
+advisory: no sourced limit. Each run used the full writer path through
+`placer_runner`. The host's load average was about 100 on 12 cores, so wall
+times are not comparable with earlier runs; CPU time is given too.
+
+`derive` reproduces agent-499's read-only derivation exactly: 21 blocks, 313
+members and 14 residual. Stage A packs 19 of the 21 blocks (123 s in total). In
+buck-3v3, C18 (a `/PRE_6V3` decoupler) and in mcu, R33 (a pull-down to the fixed
+module U1) have no signal peer inside their block, so both blocks reach the
+synthetic plane. Stage A also refused the gnss block, whose anchor U3 is a board
+priority. That is fixed here: `_isolate` drops a priority on the anchor.
+
+| Run | Outcome | Wall (CPU) | Steps, backjumps | Blocks placed (peak) |
+| --- | --- | --- | --- | --- |
+| Allocation as given | `arrangement_refused`: `block_candidate_missing` buck-3v3, mcu | 140 s | – | – |
+| Variant: C18, R33 moved to residual; default order; `search_timeout_s` 1800 | `arrangement_budget_exhausted` (wall time), unplaced wheel-input | 2042 s (641 s) | 604, 550 | 6 |
+| Same variant, `priority_blocks` wheel-input, diagnostic | `arrangement_budget_exhausted` (wall time), unplaced gnss | 2029 s (644 s) | 4245, 650 | 14 |
+
+In the variant, all 21 blocks pack (104 s). No arrangement completed in 30
+minutes, so the pod has no complete plan, locality grade or DRC result from
+stage B. For comparison, the flat AGENTEE-322 guided search exhausted its budget
+after 53 minutes with 41 of 331 parts placed. Agent-499's hand-anchored
+iterations 2 and 3 placed all 331 parts in 1429 s and 866 s, with clearance,
+courtyard, hole and copper-edge DRC at 0 on the cited project. The partial
+arrangements are recorded as `diagnostic-only-unvalidated-partial-arrangement`.
+
+The gaps are in the search. Stage-A candidates are sparse: diagnostic is
+32 × 34 mm, and wheel-input is 53 × 14 mm for 26 parts. Several regulator blocks
+have through-board thermal vias, and the inductor shadows and the over-fixed
+rule bind the opposite side. Positions are aligned only to the macro's bounding
+box, so interleaving two sparse blocks is found only by chance. Conflict-directed
+backjumping recovers from local dead ends, but each backjump re-ranks the next
+block, which takes seconds per block on the pod. Compact intra-block packing (a
+stage-A objective), member-aligned candidate axes, or a cited library layout
+for the regulator blocks (AGENTEE-342) are the next levers.
+
+## Real-pod diagnostic (stage A)
 
 This is a read-only scratch diagnostic. No pod file was changed or copied into
 the repository. The inputs are fome-mc `7a8baa137bb5072016c49b5b57c1e38bf0634cff`
@@ -515,7 +565,7 @@ These limits remain the pod lane's advisory bounds. No pod acceptance is claimed
 ## Validation
 
 ```sh
-AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_blocks -v
+AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_blocks tests.test_block_arrangement -v
 ```
 
 `tests.test_blocks` uses authored hierarchical XML, boards, pads and limits.
@@ -538,3 +588,21 @@ It covers:
 
 A native test derives the two blocks of the [block-first](block-first.md)
 fixture from its actual sandboxed `kicad-cli` XML export.
+
+`tests.test_block_arrangement` (stage B) uses the same authored fixture. It
+covers:
+
+- rigid arranged poses, residual packing, deferred grading, boundary binding,
+  provenance and determinism;
+- admission refusals: missing, duplicate and wrong-policy candidates, and a
+  recorded net that differs from the board net;
+- a mapped library candidate, with undeclared, wrong and correct boundary nets;
+- hard and advisory keep-outs, thermal limits and objective order, shadows,
+  no block over a fixed part, internal stacking and stranded groups;
+- typed search and budget exhaustion, including the backjump bound, and policy
+  validation;
+- a seeded differential of the multi-box sweep against `placer._unreserved`, and
+  the inscribed drilled-pad squares;
+- the CLI;
+- a native pcbnew board through `placer_runner`, with save, reload, judge,
+  locality grade, native DRC and a rigidity check on the saved board.
