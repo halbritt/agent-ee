@@ -15,25 +15,57 @@ SCHEMA = 'agent-ee.electrical-locality/1'
 CRITERION = 'electrical-locality/1'
 
 
+MAX_DOCUMENT_DEPTH = 64
+DEPTH_ERROR = f'locality document nesting exceeds {MAX_DOCUMENT_DEPTH} levels'
+
+
+def _bounded_depth(value):
+    """Refuse deep or cyclic containers before stdlib copying can recurse without bound.
+
+    Subclass storage is read through the base type, so no override runs here.
+    """
+    ancestors = set()
+
+    def visit(value, depth):
+        kind = type(value)  # Not isinstance: a __class__ property cannot pose as a container.
+        if not issubclass(kind, (dict, list)):
+            return
+        if depth > MAX_DOCUMENT_DEPTH:
+            raise ValueError(DEPTH_ERROR)
+        identity = id(value)
+        if identity in ancestors:
+            raise ValueError('locality document must contain only JSON values')
+        ancestors.add(identity)
+        try:
+            for item in (dict.values(value) if issubclass(kind, dict) else list.copy(value)):
+                visit(item, depth + 1)
+        finally:
+            ancestors.remove(identity)
+
+    visit(value, 0)
+
+
 def _plain_json(value):
     """Copy exact JSON types into fresh containers unreachable by copy hooks."""
     ancestors = set()
 
-    def copy_value(value):
+    def copy_value(value, depth):
         kind = type(value)
         if kind is dict or kind is list:
+            if depth > MAX_DOCUMENT_DEPTH:
+                raise ValueError(DEPTH_ERROR)
             identity = id(value)
             if identity in ancestors:
                 raise ValueError('locality document must contain only JSON values')
             ancestors.add(identity)
             try:
                 if kind is list:
-                    return [copy_value(item) for item in value]
+                    return [copy_value(item, depth + 1) for item in value]
                 copied = {}
                 for key, item in value.items():
                     if type(key) is not str:
                         raise ValueError('locality document must contain only JSON values')
-                    copied[key] = copy_value(item)
+                    copied[key] = copy_value(item, depth + 1)
                 return copied
             finally:
                 ancestors.remove(identity)
@@ -41,11 +73,12 @@ def _plain_json(value):
             raise ValueError('locality document must contain only JSON values')
         return value
 
-    return copy_value(value)
+    return copy_value(value, 0)
 
 
 def validate(document):
-    _plain_json(document)
+    """Validate a fresh exact-type snapshot and return it; the caller's object is not reread."""
+    document = _plain_json(document)
     if (not isinstance(document, dict) or set(document) - {'schema', 'obligations', 'source_records'}
             or not {'schema', 'obligations'} <= document.keys()
             or document['schema'] != SCHEMA or not isinstance(document['obligations'], list)
@@ -156,8 +189,11 @@ def resolve(footprints, endpoint):
 
 
 def grade(probe, document):
-    """CHECK: grade every pair, preserving determinate defects alongside unknowns."""
-    validate(document)
+    """CHECK: grade every pair, preserving determinate defects alongside unknowns.
+
+    Grades and reports only the validated snapshot, never the caller's document.
+    """
+    document = validate(document)
     measured, defects, unknown, advisories = [], [], [], []
     disk_cache = {}
     for obligation in document['obligations']:
@@ -261,8 +297,8 @@ class PlacementIndex:
     that footprint. Candidate evaluators contain only incident, placed pairs.
     """
     def __init__(self, document):
-        document = _plain_json(deepcopy(document))
-        validate(document)
+        _bounded_depth(document)
+        document = validate(_plain_json(deepcopy(document)))
         pairs = {}
         endpoints = {}
         self.positions = {}

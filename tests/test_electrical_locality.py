@@ -668,6 +668,116 @@ class LocalityIndexTests(unittest.TestCase):
                           if pair[0]['reference'] == row['switch']['from']['reference']
                           and pair[0]['pad'] == row['switch']['from']['pad']}, {'SW'})
 
+    def test_grade_never_rereads_caller_document_after_validation(self):
+        import sys
+        facts, doc = bound_output_loop()
+        expected = locality.grade(facts, copy.deepcopy(doc))
+        self.assertEqual(expected['status'], 'pass')
+
+        def tighten(d):
+            for row in d['obligations']:
+                for role in locality.roles(row):
+                    row[role]['max_distance_nm'] = 0
+
+        def unbind(d):
+            d['obligations'][0]['supply']['from']['net'] = 'NOT_A_NET'
+
+        mutations = {'tighten': tighten, 'unbind': unbind, 'clear': lambda d: d['obligations'].clear(),
+                     'records': lambda d: d.update(source_records={'x': 1}),
+                     'metric': lambda d: d['obligations'][0].update(metric='other')}
+        for name, mutate in mutations.items():  # AGENTEE-363 A: mutation after validate() returns.
+            facts, doc = bound_output_loop()
+            fired = []
+
+            def after_validate(frame, event, arg):  # Stands in for a thread switch.
+                if event == 'return' and frame.f_code is locality.validate.__code__ and not fired:
+                    fired.append(name)
+                    mutate(doc)
+
+            previous_profile = sys.getprofile()
+            sys.setprofile(after_validate)
+            try:
+                result = locality.grade(facts, doc)
+            finally:
+                sys.setprofile(previous_profile)
+            with self.subTest(mutation=name):
+                self.assertEqual(fired, [name])
+                self.assertEqual(result, expected)
+                self.assertIsNot(result['declaration'], doc)
+                self.assertNotEqual(result['declaration'], doc)
+
+    def test_validate_returns_fresh_snapshot_and_grade_reports_it(self):
+        facts, doc = bound_output_loop()
+        snapshot = locality.validate(doc)
+        self.assertEqual(snapshot, doc)
+        self.assertIsNot(snapshot, doc)
+        self.assertIsNot(snapshot['obligations'][0], doc['obligations'][0])
+        declaration = locality.grade(facts, doc)['declaration']
+        doc['obligations'][0]['supply']['max_distance_nm'] = 0
+        self.assertEqual(declaration, snapshot)
+
+    def test_deep_nesting_raises_typed_error_at_every_entry_point(self):
+        def chain(kind, depth, leaf='x'):
+            value = leaf
+            for _ in range(depth):
+                value = [value] if kind == 'list' else {'k': value}
+            return value
+
+        # Provenance values sit at depth 5 (document, obligations, obligation, pair, provenance).
+        allowed = locality.MAX_DOCUMENT_DEPTH - 4
+        operations = (('index', locality.PlacementIndex), ('validate', locality.validate))
+        for kind in ('list', 'dict'):
+            for depth in (allowed + 1, 100_000):  # Far beyond the interpreter recursion limit.
+                for where in ('provenance', 'citation', 'top'):
+                    facts, doc = bound_output_loop()
+                    nested = chain(kind, depth)
+                    if where == 'provenance':
+                        doc['obligations'][0]['supply']['provenance']['extra'] = nested
+                    elif where == 'citation':  # One level shallower than provenance values.
+                        doc['obligations'][0]['supply']['citation'] = [nested]
+                    else:
+                        doc = chain(kind, depth, doc)
+                    for name, operation in operations + (('grade', lambda d: locality.grade(facts, d)),):
+                        with self.subTest(kind=kind, depth=depth, where=where, operation=name), \
+                                self.assertRaisesRegex(ValueError, f'^{locality.DEPTH_ERROR}$'):
+                            operation(doc)
+        for kind in ('list', 'dict'):  # The boundary itself stays acceptable.
+            facts, doc = bound_output_loop()
+            expected = locality.grade(facts, copy.deepcopy(doc))
+            doc['obligations'][0]['supply']['provenance']['extra'] = chain(kind, allowed)
+            locality.validate(doc)
+            locality.PlacementIndex(doc)
+            graded = locality.grade(facts, doc)
+            with self.subTest(boundary=kind):
+                self.assertEqual(graded['status'], expected['status'])
+                self.assertEqual(graded['declaration'], doc)
+
+    def test_deep_nesting_under_subclass_or_copy_hook_never_raises_recursion_error(self):
+        class Wrapper(dict):
+            def __deepcopy__(self, memo):
+                return copy.deepcopy(dict(self), memo)
+
+        deep = 'x'
+        for _ in range(100_000):
+            deep = [deep]
+        for container in (Wrapper, type('Listing', (list,), {})):
+            facts, doc = bound_output_loop()
+            supply = doc['obligations'][0]['supply']
+            supply['provenance'] = (Wrapper(supply['provenance'], extra=deep) if container is Wrapper
+                                    else supply['provenance'])
+            if container is not Wrapper:
+                supply['provenance']['extra'] = container([deep])
+            # The index walks subclass storage before copying: depth refuses first.
+            with self.subTest(container=container, operation='index'), \
+                    self.assertRaisesRegex(ValueError, f'^{locality.DEPTH_ERROR}$'):
+                locality.PlacementIndex(doc)
+            # validate() and grade() refuse the subclass before descending into it.
+            for name, operation in (('validate', locality.validate),
+                                    ('grade', lambda d: locality.grade(facts, d))):
+                with self.subTest(container=container, operation=name), self.assertRaisesRegex(
+                        ValueError, '^locality document must contain only JSON values$'):
+                    operation(doc)
+
     def test_cyclic_documents_raise_typed_json_error_at_every_entry_point(self):
         for cycle in ('dict', 'list', 'mixed'):
             facts, doc = bound_output_loop()
