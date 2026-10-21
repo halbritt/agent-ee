@@ -2195,3 +2195,13 @@ the alternative stays unknown with an incomplete search. Numeric-looking zone
 names never waive structural native findings. Standalone geometric poses stay
 hypothetical and unverified. The optimum is limited to the declared finite pose
 set. Fixed and rigid-block alternatives remain unsearched.
+
+## Access direction in placement containment (AGENTEE-379)
+
+The existing `placement` check with `outline-containment/1` also grades native
+[footprint access declarations](access-direction.md). Sourced declarations with
+an inboard lane or an unexitable mouth are defects; malformed or unsupported
+sourced geometry remains unknown. Uncited declarations are reported advisories
+and never gate. The saved-board placement judge retains transformed lane
+measurements and the shared fixed-overhang edge-sweep geometry for review.
+This adds no check kind or independent acceptance authority.

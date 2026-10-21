@@ -220,8 +220,6 @@ def overhang_bands(declarations, outline):
     exempted by default."""
     if not isinstance(declarations, list):
         raise ValueError('courtyard overhangs must be a list')
-    vertices = [tuple(p) for p in outline]
-    sides = {frozenset((vertices[i-1], p)) for i, p in enumerate(vertices)}
     bands = {}
     for declaration in declarations:
         if (not isinstance(declaration, dict) or set(declaration) != {'reference', 'edges', 'source'}
@@ -234,21 +232,28 @@ def overhang_bands(declarations, outline):
         if (not isinstance(declared, list) or not declared or
                 len({e.get('name') if isinstance(e, dict) else None for e in declared}) != len(declared)):
             raise ValueError(f'{ref}: overhang edges must be a nonempty list of distinct edges')
-        swept = [_overhang_edge(ref, edge, sides, outline) for edge in declared]
-        regions = [[a, b, (b[0]+dx, b[1]+dy), (a[0]+dx, a[1]+dy)] for (a, b), (dx, dy) in swept]
-        for i, ((a, b), (dx, dy)) in enumerate(swept):
-            for (c, d), (fx, fy) in swept[i+1:]:
-                for v in {a, b} & {c, d}:
-                    regions.append([v, (v[0]+dx, v[1]+dy), (v[0]+dx+fx, v[1]+dy+fy), (v[0]+fx, v[1]+fy)])
-        regions = [simple_polygon(r) for r in regions]
-        if any(intersection_area(r, outline) for r in regions) or any(
-                intersection_area(r, q) for i, r in enumerate(regions) for q in regions[i+1:]):
-            raise ValueError(f'{ref}: declared overhang regions point into the board or overlap')
-        bands[ref] = regions
+        bands[ref] = overhang_regions(ref, declared, outline)
     return bands
 
 
-def _geometry(capture, overhangs=None):
+def overhang_regions(ref, declared, outline):
+    """Shared exact edge-sweep geometry; callers qualify their declaration source."""
+    vertices = [tuple(p) for p in outline]
+    sides = {frozenset((vertices[i-1], p)) for i, p in enumerate(vertices)}
+    swept = [_overhang_edge(ref, edge, sides, outline) for edge in declared]
+    regions = [[a, b, (b[0]+dx, b[1]+dy), (a[0]+dx, a[1]+dy)] for (a, b), (dx, dy) in swept]
+    for i, ((a, b), (dx, dy)) in enumerate(swept):
+        for (c, d), (fx, fy) in swept[i+1:]:
+            for v in {a, b} & {c, d}:
+                regions.append([v, (v[0]+dx, v[1]+dy), (v[0]+dx+fx, v[1]+dy+fy), (v[0]+fx, v[1]+fy)])
+    regions = [simple_polygon(r) for r in regions]
+    if any(intersection_area(r, outline) for r in regions) or any(
+            intersection_area(r, q) for i, r in enumerate(regions) for q in regions[i+1:]):
+        raise ValueError(f'{ref}: declared overhang regions point into the board or overlap')
+    return regions
+
+
+def _geometry(capture, overhangs=None, access_lanes=None):
     unknown, failures, courtyard_records, declared = [], [], [], []
     try:
         outline = qualified_polygons(capture.get('outline'))
@@ -257,7 +262,9 @@ def _geometry(capture, overhangs=None):
     except ValueError as exc:
         outline = []
         unknown.append({'kind': 'outline', 'reason': str(exc)})
-    bands = overhang_bands(overhangs, outline[0]) if outline and overhangs is not None else {}
+    bands = dict(access_lanes or {})
+    # Explicit envelope maxima retain precedence over the access allowance.
+    bands.update(overhang_bands(overhangs, outline[0]) if outline and overhangs is not None else {})
     for fp in sorted(capture['footprints'], key=lambda f: f['ref']):
         courtyards = fp.get('courtyards', {})
         if fp.get('side') not in courtyards:
@@ -447,8 +454,15 @@ def judge(capture, policy=None, overhangs=None):
     This standalone record is not a sealed coordinator check finding.
     """
     validate_capture(capture)
-    failures, unknown, declared = _geometry(capture, overhangs)
+    from .access_direction import grade as access_grade
+    access, access_unknown = access_grade(capture)
+    access_lanes = {row['ref']: row['lane_polygons_nm'] for row in access
+                    if 'overhang' in row and row['provenance']['enforcement'] == 'hard'}
+    failures, unknown, declared = _geometry(capture, overhangs, access_lanes)
+    failures += [row for row in access if row['status'] == 'defect']
+    unknown += access_unknown
     associations, advisories, score = _advisories(capture, policy)
+    advisories += [row for row in access if row['status'] == 'info']
     verdict = 'hard_fail' if failures else 'unknown' if unknown else 'pass'
     off_board = sorted({f['ref'] for f in failures if f['kind'] == 'outside_outline'})
     return {'schema': 'agent-ee.placement-judgment/1', 'board_sha256': capture['board_sha256'],
@@ -456,4 +470,6 @@ def judge(capture, policy=None, overhangs=None):
             'score': score, 'hard_failures': failures, 'off_board': off_board, 'unknown': unknown,
             'associations': associations, 'advisories': advisories, 'policy': policy,
             'authority': 'standalone-unsealed',
+            **({'access_directions': access} if access or access_unknown else {}),
+            **({'declared_overhangs': declared} if access_lanes and overhangs is None else {}),
             **({} if overhangs is None else {'declared_overhangs': declared, 'overhangs': overhangs})}

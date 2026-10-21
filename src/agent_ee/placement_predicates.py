@@ -168,12 +168,15 @@ def outline_containment(probe, overhangs=None):
     (``envelope_overhangs``): area inside a declared band is reported, area
     beyond it, or for an undeclared reference, remains a defect."""
     report = judge(probe, overhangs=overhangs)
-    defects = [f for f in report['hard_failures'] if f['kind'] == 'outside_outline']
+    defects = [f for f in report['hard_failures'] if f['kind'] in ('outside_outline', 'access_direction')]
     unknown = [u for u in report['unknown'] if 'refs' not in u]
     result = {'criterion': 'outline-containment/1', 'status': verdict(defects, unknown),
               'defects': defects, 'unknown': unknown}
     if overhangs is not None:
         result['declared_overhangs'] = report['declared_overhangs']
+    if 'access_directions' in report:
+        result['access_directions'] = report['access_directions']
+        result['advisories'] = [r for r in report['access_directions'] if r['status'] == 'info']
     return result
 
 

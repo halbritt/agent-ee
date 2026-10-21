@@ -1569,3 +1569,11 @@ The original native card-lane regression measures 600 mm² on B inboard, validat
 a 0 mm² edge alternative, and rejects a geometrically cheapest pose with a native
 pad keepout violation before reporting the next legal pose. This owned synthetic
 fixture is not qualification of the actual pod iteration-7 and 8k boards.
+
+## Footprint access lanes (AGENTEE-379)
+
+A native [access-direction declaration](access-direction.md) binds an outward
+vector and clearance envelope to a socket, connector or antenna. Sourced
+declarations constrain movable parts and rigid block members to outline edges;
+uncited declarations remain reported advisories. The saved-board polygon judge
+replays the rule and retains its lane and overhang measurements.
