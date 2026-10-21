@@ -115,8 +115,9 @@ and switch target to the inductor, the return source and switch source to the
 IC, and return pads to a declared net distinct from supply. Switch nets must
 differ from supply and return. Distinct-source supply/return net sets must be
 disjoint even without a kind. Direct placement-index construction re-validates
-these declarations. Coordinator packing
-binds to the check's immutable locality file. Origin-group distance supplies no electrical acceptance.
+these declarations and snapshots the validated document before indexing it.
+Coordinator packing binds to the check's immutable locality file. Origin-group
+distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)
 caches selected pads and retains typed partial diagnostics on its optional search deadline.
 [Joint locality clusters](docs/placer.md#joint-locality-clusters-agentee-335)
@@ -130,6 +131,13 @@ A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
 refuses any mismatch.
+The [block library](docs/block-library.md) keeps versioned known-good blocks in
+`blocks/` with provenance receipts. Its entries come from KiCad board regions,
+scale-verified datasheet figures and project clusters. A lookup returns each block
+with its provenance class. Project clusters, including the four telemetry pod
+regulator clusters, are search-derived and advisory. Hard classes are disabled
+(`authority_unavailable`) until a verified owner authority exists (AGENTEE-348), and
+every use is admitted by `blocks.admit` on the target.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

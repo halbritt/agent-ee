@@ -380,7 +380,8 @@
         "repository": "https://github.com/halbritt/fome-mc",
         "local_path": "/home/halbritt/git/fome-mc (object store only; the working tree is never read)",
         "revisions": {
-          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory, fixtures/fome-mc/psu and fixtures/fome-mc/wbo1 (AGENTEE-105/106/107, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files. Capture commit of fixtures/fome-mc/rules (AGENTEE-189): ERC and DRC rule_severities of fome-mc.kicad_pro, blob 8f749a35326790337ca3fb7ef1b2e3126bf9a8c7, SHA-256 in rules/severities.json source."
+          "df304f3321296f7e517e0d2e2aa52e1380d52993": "Capture commit of fixtures/fome-mc/inventory, fixtures/fome-mc/psu and fixtures/fome-mc/wbo1 (AGENTEE-105/106/107, 2026-10-18). Per-file SHA-256 and Git blob ids: fixtures/fome-mc/inventory/capture/inventory-report.json source_files. Capture commit of fixtures/fome-mc/rules (AGENTEE-189): ERC and DRC rule_severities of fome-mc.kicad_pro, blob 8f749a35326790337ca3fb7ef1b2e3126bf9a8c7, SHA-256 in rules/severities.json source.",
+          "7a8baa137bb5072016c49b5b57c1e38bf0634cff": "Source commit of the AGENTEE-342 block library entries under blocks/entries/pod-*: telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json, seed.kicad_pcb.gz and request.json, revised-native/native.xml and electrical-locality/pad-obligations/electrical-locality.json, read from the object store; each entry receipt records the cluster-poses.json SHA-256 and the board, netlist and policy SHA-256 it was imported from."
         },
         "license_file": null
       },
@@ -403,7 +404,8 @@
         "fixtures/fome-mc/psu/capture/inventory-report.json",
         "fixtures/fome-mc/wbo1/blocks/wbo1/block.json",
         "fixtures/fome-mc/rules/severities.json",
-        "fixtures/fome-mc/pod-can/block/block.json"
+        "fixtures/fome-mc/pod-can/block/block.json",
+        "blocks/catalogue.json"
       ],
       "capture_sources": [
         "/fixtures/fome-mc/"
@@ -3211,6 +3213,29 @@
         "T16"
       ],
       "note": "Explicit owner-scoped source reference and native net mappings for the existing admitted CAN capture. Preserves source custody and licence boundaries; no source-review qualification or new publication grant."
+    },
+    {
+      "paths": [
+        "blocks/"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE",
+        "T16"
+      ],
+      "note": "Original AGENTEE-342 block library catalogue and entries. Numeric records and identities only: footprint identifiers, anchor-relative poses, value text, pad numbers with local net roles, and SHA-256 identities of land patterns, courtyards, pin functions and sources. The pod entries are imported from the pinned fome-mc commit named in each receipt; no board, netlist, courtyard polygon, net name, pin name, figure or vendor text is copied."
+    },
+    {
+      "paths": [
+        "src/agent_ee/block_library.py",
+        "scripts/import_pod_blocks.py",
+        "tests/test_block_library.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-342 block library code, pod import script and tests. The two-footprint native board and the copper snippets in the tests are authored here; the script reads pinned fome-mc objects into a temporary directory and writes only numeric entries. No upstream design, library or vendor document bytes are embedded."
     },
     {
       "paths": [

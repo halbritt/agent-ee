@@ -253,3 +253,15 @@ package comparison is made.
   assembly stock, and `assembly_readiness` does not treat them as stock.
 - Live use needs owner-provided credentials and the explicit network opt-in.
   No credential or capture is stored in the repository.
+
+## Deadline regression test
+
+`test_deadline_and_token_refresh` (AGENTEE-354) uses a virtual monotonic
+clock and an in-memory stub at the owned-child boundary. Successful exchanges
+advance 0.1 seconds; only `AE-SLOW` consumes the 0.8-second deadline and returns
+the runner's timeout sentinel. Pacing and token renewal run through the real
+session code. The test checks successful lookups, timeout recording, token
+renewal, credential-echo rejection and offline validation without depending on
+host load. Other capture tests retain real loopback HTTP and child processes;
+`test_real_child_success_and_timeout_are_reaped` in `tests/test_datasheet_capture.py`
+covers the shared runner's actual timeout and process cleanup.

@@ -589,6 +589,41 @@ class NativeLocalityTests(unittest.TestCase):
 
 
 class LocalityIndexTests(unittest.TestCase):
+    def test_index_snapshots_caller_document_before_push_and_prepare(self):
+        mutations = [(role, end, field, value)
+                     for role in ('supply', 'return', 'switch')
+                     for end in ('from', 'to')
+                     for field, value in (('net', 'CHANGED'), ('reference', 'R9'),
+                                          ('pad', '99'), ('uuid', 'invalid'))]
+        mutations += [(role, None, 'max_distance_nm', 0)
+                      for role in ('supply', 'return', 'switch')]
+        mutations.append((None, None, 'obligations', []))
+        for role, end, field, value in mutations:
+            with self.subTest(role=role, end=end, field=field):
+                facts, doc = bound_output_loop()
+                original = copy.deepcopy(doc)
+                state = locality.PlacementIndex(doc)
+                if role is None:
+                    doc[field].clear()
+                else:
+                    target = doc['obligations'][0][role]
+                    if end is not None:
+                        target = target[end]
+                    target[field] = value
+                for movable in facts['footprints']:
+                    fixed = [fp for fp in facts['footprints'] if fp is not movable]
+                    for fp in fixed:
+                        state.push(fp)
+                    origin = transform(movable, [0, 0], 0)
+                    candidate = state.prepare(origin)
+                    self.assertEqual(candidate.targets(), sorted(set(map(tuple,
+                        locality.targets(fixed, origin, original)))))
+                    for position in ([0, 0], movable['position_nm'], [99*MM, 99*MM]):
+                        self.assertEqual(candidate.constraint(position), locality.constraint(
+                            fixed, transform(movable, position, 0), original))
+                    for fp in fixed:
+                        state.pop(fp['ref'])
+
     def test_index_matches_original_cost_targets_and_backtracking(self):
         b, doc = board(), declaration()
         # Fractional, rotated copper centroids must keep exact candidate ranks.
