@@ -156,6 +156,27 @@ class CandidateVisualTests(unittest.TestCase):
         self.assertTrue((destination / 'visuals/manifest.json').is_file())
         self.assertEqual(json.loads((destination / 'placement-result.json').read_text()), result)
 
+    def test_networkless_placement_runner_retains_images_through_nested_executor(self):
+        from agent_ee.executor import execute
+        fixture = self._placement_fixture()
+        inputs = self.root / 'placement-inputs'
+        inputs.mkdir()
+        (inputs / 'board.kicad_pcb').write_bytes(fixture.source.read_bytes())
+        (inputs / 'netlist.xml').write_bytes(fixture.netlist.read_bytes())
+        config = {**fixture.config, 'authorization': {
+            **fixture.config['authorization'], 'writable_root': '/work'}}
+        (inputs / 'request.json').write_text(json.dumps(config))
+        work = self.root / 'sandbox-placement'
+        execution = execute(inputs, work, ['/usr/bin/python3', '-B', '-m', 'agent_ee.placer_runner',
+            '/candidate/board.kicad_pcb', '/candidate/netlist.xml', '--request', '/candidate/request.json',
+            '--destination', '/work/proposal', '--result', '/work/result.json'], timeout=240)
+        self.assertEqual(execution['execution'], 'ok', (work / 'console.log').read_text())
+        report = json.loads((work / 'result.json').read_text())
+        self.assertEqual(report['visuals']['status'], 'available', report['visuals'])
+        self.assertEqual(len(report['visuals']['images']), 4)
+        for image in report['visuals']['images']:
+            self.assertEqual(digest(work / 'proposal' / image['path']), image['sha256'])
+
     def test_native_placement_skip_preserves_result_verdict(self):
         from agent_ee.placer_runner import place_candidate
         fixture = self._placement_fixture()
