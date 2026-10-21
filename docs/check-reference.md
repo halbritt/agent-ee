@@ -1116,7 +1116,9 @@ is another writer request mode (`blocks`). It adds no check kind. The saved
 board is judged, graded for groups and pad locality, and DRC-gated as every
 placer plan is. In addition, the hard block rules are re-graded from the saved
 bytes (`judgment.block_rules`). A failed hard rule refuses publication;
-advisory rows are reported only.
+advisory rows are reported only. AGENTEE-355 changes only the search
+([compaction](blocks.md#compaction-agentee-355), member-aligned origins and the
+ranking cache); it adds no check kind and changes no gate.
 
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.

@@ -131,6 +131,39 @@ members are copied into an isolated capture.
   arrangement. Their ids and counts are recorded in `deferred`. A block
   member in `fixed_refs` or `fixed_overhangs` refuses.
 
+### Compaction (AGENTEE-355)
+
+The first run's poses follow the placer's wire cost, so a block can come out
+sparse or strung out (on the pod, wheel-input was 53 × 14 mm). `pack_block`
+therefore re-packs a packed block on shrinking rectangular outlines and keeps
+the candidate with the least total outline box area (summed over both sides).
+Two families are bisected in turn, each for at most six trials:
+
+- `anchor-square`: a square centred on the anchor, by half-side. The lower bound
+  is the anchor's own courtyard reach; the upper bound is the best candidate's.
+- `box-scale`: the best box so far, scaled about its centre in per mille. The
+  lower bound keeps the anchor's courtyard inside.
+
+A trial runs the unchanged placer with the same isolated block policy, so every
+internal obligation, group, gap and rule area applies unchanged. A trial counts
+as packed only when its candidate passes the same re-grade and courtyard witness
+as the first run. A packed trial lowers the upper bound to its own extent; any
+other result raises the lower bound. Bisection stops when the bounds are within
+the larger of the gap and 0.1 mm. Ties keep the earlier candidate, so the result
+is deterministic. Each trial may use at most the larger of 10 000 steps and ten
+times the first run's steps, and never more than the block budget. This cap is
+search effort, not a design limit.
+
+Compaction runs only after the first run has packed without reaching the
+synthetic plane, so `synthetic_plane_reached` and every refusal are unchanged.
+The candidate's `search` gains `compaction`:
+`{objective: "outline-bisection-min-box-area/1", first_box_area_nm2, box_area_nm2,
+step_cap, trials: [{family, parameter, status, steps_used, box_area_nm2?}], steps_total}`.
+`validate_candidate` checks that record: the stored area is the outline's own box
+area and at most the first run's, and every trial is within the cap. The
+candidate's `steps_used` is the selected run's. `pack --no-compact` (and
+`compact=False`) keeps the first run.
+
 A member pad number that carries several nets refuses, because its pin role
 would be ambiguous. The placer's own refusals propagate unchanged, with `status`, `outcome`, `reason`
 and the full `plan`. For example, obligations without limits or citations give
@@ -156,7 +189,7 @@ refuse, and a `/1` document is refused. Only `status: packed` is usable.
 | `witness` | `exact-courtyard-separation/1`: `gap_nm`, `pairs_checked`, per-side `minimum` exact squared distance `[numerator, denominator]`, `below_gap`, `drilled_pad_conflicts`, `status` |
 | `placer_judgment` | Verdict and basis of the placer's full-polygon judge |
 | `deferred` | Boundary groups and obligations by id; counts of obstacles and board rule areas |
-| `search` | `strategy`, `backjumps`, `steps_used`, `step_budget` |
+| `search` | `strategy`, `backjumps`, `steps_used`, `step_budget`; optional `compaction` ([AGENTEE-355](#compaction-agentee-355)) |
 | `block_policy` | The exact isolated packing policy |
 | `sources` | `board_sha256`, `inventory_sha256`, `allocation_sha256` (`null` without an allocation file), `derivation_sha256`, `policy_sha256` |
 
@@ -395,7 +428,15 @@ hard-shadowed part. The rest follow. Within each group, the next block is the
 one that shares the most non-ground nets with the fixed parts and the blocks
 already ordered (ties: larger courtyard area, then id). For each block,
 candidate origins align to the outline, placed boxes, exact obstacles, group
-points and obligation targets, in four quarter turns. The objective terms rank
+points and obligation targets, in four quarter turns.
+
+Member-aligned axes (AGENTEE-355) add two sets of origins. In x, a frontier
+member box touches a placed box or obstacle at the gap: a frontier box has no
+other member box of its side wholly to its left (or right) within its y span.
+In y, at each x, the ends of the blocked runs are added: the origins where some
+member box touches a reserved box, shadow, obstacle or drilled pad in y. Both
+stay within the outline window. The macro-aligned origins remain, so the
+candidate set only grows. The objective terms rank
 the candidates lexicographically, in the declared order, then by position and
 rotation; there are no weights:
 
@@ -412,7 +453,20 @@ position is dropped while ranking and its blocking blocks are recorded. A
 position where a rectilinear member courtyard overlaps a fixed courtyard,
 obstacle or footprint-forbidding rule area is dropped the same way. The
 first admissible candidate is taken. Every candidate given to the exact
-predicates costs one step. A block with no admissible candidate backjumps to
+predicates costs one step.
+
+The prefilter is a sweep over blocked rectangles: for each pair of a member box
+and a reserved box, the open set of origins where the two come within the gap.
+A placed block's drilled-pad reservation (an inscribed square) blocks any
+member courtyard that would overlap it on either side. Its owner is recorded as
+a blocker. Only parts with pad geometry count, as in `placer._hole_conflict`.
+On the pod, this channel cut drilled-pad rejections at the exact predicate from
+4341 to 48 in a 300 s window. The rectangles are cached as the incremental
+ranking cache: a block's rotated geometry and its rectangles against fixed parts
+are computed once, and its rectangles against each placed block are kept per
+(block, rotation, placed block, pose). After a backjump, only the blocks that
+moved are recomputed. The cache is bounded (`OWNED_CACHE` entries, least
+recently used first) and changes no result. A block with no admissible candidate backjumps to
 the latest placed block among the recorded blockers, which then tries its next
 candidate (conflict-directed backjumping). Results:
 
@@ -584,7 +638,10 @@ It covers:
   a changed land pattern;
 - matching of a second instance, with each mismatch kind and the inclusive
   tolerance boundaries;
-- the CLI.
+- compaction (AGENTEE-355): an authored resistor chain shrinks from 81.375 to
+  56.25 mm² with the same block policy, witness and admission, deterministically;
+  an internal group still passes; each malformed compaction record refuses;
+- the CLI, with and without `--no-compact`.
 
 A native test derives the two blocks of the [block-first](block-first.md)
 fixture from its actual sandboxed `kicad-cli` XML export.
@@ -603,6 +660,11 @@ covers:
   validation;
 - a seeded differential of the multi-box sweep against `placer._unreserved`, and
   the inscribed drilled-pad squares;
+- member-aligned origins (AGENTEE-355): the contact origins of a seeded scan are
+  free of every blocked rectangle, lie on a run end inside the window, and add to
+  the plain scan without removing anything; frontier members; a placed drilled
+  pad blocks only positions that `placer._hole_conflict` rejects; and the ranking
+  cache changes no result (cache size 0 gives identical plans and failures);
 - the CLI;
 - a native pcbnew board through `placer_runner`, with save, reload, judge,
   locality grade, native DRC and a rigidity check on the saved board.

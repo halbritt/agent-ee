@@ -13,6 +13,7 @@ the complete plan is graded as one board. See docs/blocks.md.
 """
 import argparse
 import bisect
+import collections
 import copy
 import hashlib
 import json
@@ -25,11 +26,13 @@ from . import blocks, electrical_locality, placement_groups, placer
 from .catalog import strict_json
 from .footprint_library import digest
 from .native_netlist import read_native_inventory, read_sheet_names
-from .placement import convex, cross, edges, intersection_area, overhang_bands, qualified_polygons
+from .placement import convex, cross, edges, intersection_area, overhang_bands, qualified_polygons, simple_polygon
 from .placement_predicates import point_segment2
 
 POLICY = 'agent-ee.block-arrangement/1'
 STRATEGY = 'ranked-first-fit-conflict-backjump/1'
+# Blocked-rectangle cache entries kept across backjumps (search memory, not a design limit).
+OWNED_CACHE = 4096
 TERMS = ('pad-locality', 'inter-block-wire', 'thermal-spread')
 DEFAULT_OBJECTIVE = {'terms': list(TERMS), 'provenance': {
     'enforcement': 'advisory', 'reason': 'default lexicographic order; no sourced objective weights'}}
@@ -230,11 +233,15 @@ def _shadow(fp, margin):
 
 
 def _overlaps(fp, entries):
-    """Positive-area overlap of a courtyard with an exact entry on the same side."""
+    """Positive-area overlap of a courtyard with an exact entry on the same side.
+
+    Probe polygons keep their native winding (a back-side courtyard may be
+    clockwise); ``intersection_area`` needs them counter-clockwise.
+    """
     for side, courtyard in fp['courtyards'].items():
         for entry in entries:
-            if entry['side'] == side and any(intersection_area(c, p) > 0 for c in courtyard['polygons']
-                                             for p in entry['polygons']):
+            if entry['side'] == side and any(intersection_area(simple_polygon(c), simple_polygon(p)) > 0
+                                             for c in courtyard['polygons'] for p in entry['polygons']):
                 return True
     return False
 
@@ -324,13 +331,99 @@ def _inscribed(polygon):
     return None if h <= 0 else (cx - h, cy - h, cx + h, cy + h)
 
 
-def _indexed(entries):
-    """Per side: boxes sorted by left edge, their left edges and the widest box."""
-    out = {}
-    for side, box, owner in entries:
-        out.setdefault(side, []).append((box, owner))
-    return {side: (sorted(rows), [b[0] for b, _ in sorted(rows)], max(b[2] - b[0] for b, _ in rows))
-            for side, rows in out.items()}
+def _gapped(cand, placed, gap, owner):
+    """Open origin rectangles where a candidate box comes within the gap of a placed box.
+
+    ``cand`` and ``placed`` hold ``(side, box)``; side ``'*'`` meets both sides. A
+    rectangle is ``(x_lo, x_hi, y_lo, y_hi, owner, None)``: an origin strictly inside it
+    on both axes is blocked, and its owner (if any) is a conflict.
+    """
+    out = []
+    for side, (x0, y0, x1, y1) in cand:
+        for other, (a0, b0, a1, b1) in placed:
+            if side == other or '*' in (side, other):
+                out.append((a0 - gap - x1, a1 + gap - x0, b0 - gap - y1, b1 + gap - y0, owner, None))
+    return out
+
+
+def _solid(slabs, solid, gap):
+    """Rectilinear member slabs against fixed courtyard and obstacle slabs.
+
+    An overlap blocks the origin (no gap); nearer than the gap dooms it, since the exact
+    obstacle test would reject it. A doom rectangle carries ``(c0, c1)`` with
+    ``dx = max(0, c0 - x, x - c1)``, valid for ``dx < gap``.
+    """
+    out = []
+    for side, (r0, s0, r1, s1) in slabs:
+        for other, (a0, b0, a1, b1) in solid:
+            if side != other:
+                continue
+            out.append((a0 - r1, a1 - r0, b0 - s1, b1 - s0, None, None))
+            if gap:
+                out.append((a0 - r1 - gap, a1 - r0 + gap, b0 - s1, b1 - s0, None, (a0 - r1, a1 - r0)))
+    return out
+
+
+def _scan(entries, xs, ys, gap, conflicts, doomed, checkpoint, contacts=None):
+    """Positions on the axes that no blocked rectangle covers, in x then y order.
+
+    With ``contacts = (y_lo, y_hi)`` each x also tries the ends of its blocked y runs
+    inside that window: the origins where some member box touches a reserved box or
+    obstacle in y (member-aligned axes, AGENTEE-355).
+    """
+    if not xs or not (ys or contacts):
+        return
+    # A rectangle wholly outside every candidate y (doom rectangles reach at most the gap) never acts.
+    bounds = ([ys[0], ys[-1]] if ys else []) + (list(contacts) if contacts is not None else [])
+    low, high = min(bounds), max(bounds)
+    entries = sorted((e for e in entries if e[3] + gap >= low and e[2] - gap <= high), key=lambda e: e[0])
+    right, left = bisect.bisect_right, bisect.bisect_left
+    # Active rectangles: plain ones kept in y_lo order (insertion), doom ones apart.
+    plain, dooms, k, n = [], [], 0, len(entries)
+    for x in xs:
+        checkpoint()
+        while k < n and entries[k][0] < x:
+            if entries[k][5] is None:
+                bisect.insort(plain, entries[k], key=lambda e: e[2])
+            else:
+                dooms.append(entries[k])
+            k += 1
+        plain = [e for e in plain if e[1] > x]
+        dooms = [e for e in dooms if e[1] > x]
+        runs = []
+        for _, _, lo, hi, _, _ in plain:
+            if runs and lo < runs[-1][1]:
+                if hi > runs[-1][1]:
+                    runs[-1][1] = hi
+            else:
+                runs.append([lo, hi])
+        here = ys
+        if contacts is not None:
+            ends = {y for run in runs for y in run if contacts[0] <= y <= contacts[1]}.difference(ys)
+            if ends:
+                here = sorted(ends.union(ys))
+        count = len(here)
+        for _, _, lo, hi, owner, _ in plain:
+            if owner is not None and owner not in conflicts:
+                i = right(here, lo)
+                if i < count and here[i] < hi:
+                    conflicts.add(owner)
+        close = set()
+        for e in dooms:
+            dx = max(0, e[5][0] - x, x - e[5][1])
+            if dx >= gap:
+                continue
+            reach = math.isqrt(gap * gap - dx * dx - 1)
+            close.update(range(left(here, e[2] - reach), right(here, e[3] + reach)))
+        start = 0
+        for lo, hi in runs + [[math.inf, math.inf]]:
+            stop = right(here, lo) if lo != math.inf else count
+            for c in range(start, stop):
+                if c in close:
+                    doomed.add((x, here[c]))
+                yield x, here[c]
+            if lo != math.inf:
+                start = max(start, left(here, hi))
 
 
 def _sweep(boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed, checkpoint, forbid=(),
@@ -347,72 +440,36 @@ def _sweep(boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed, c
     a ``targets`` courtyard slab on either side; that slab's owner joins ``conflicts``.
     Opposite-side shadows reserve like members: the candidate's ``shadows`` against the
     reserved member boxes, and placed ``shaded`` boxes against the candidate's members.
+    The search itself scans cached rectangles (``_Arrangement.entries``); this is the
+    same scan from plain lists.
     """
-    targets = _indexed([('*', box, owner) for box, owner in targets])
-    members = reserved
-    reserved, solid = _indexed(list(reserved) + list(shaded)), _indexed([(side, box, None) for side, box in solid])
-    members = _indexed(members) if shadows else {}
-    forbid = _indexed([(side, box, None) for side, box in forbid])
+    entries = []
+    for side, box, owner in list(reserved) + list(shaded):
+        entries += _gapped(boxes, [(side, box)], gap, owner)
+    if shadows:
+        for side, box, owner in reserved:
+            entries += _gapped(shadows, [(side, box)], gap, owner)
+    entries += _solid(rectangles, solid, gap)
+    entries += _gapped(rectangles, forbid, 0, None)
+    for box, owner in targets:
+        entries += _gapped([('*', h) for h in holes], [('*', box)], 0, owner)
+    return _scan(entries, xs, ys, gap, conflicts, doomed, checkpoint)
 
-    def near(index, side, lo, hi, reach):
-        rows, lefts, width = index.get(side, ((), (), 0))
-        for k in range(bisect.bisect_right(lefts, lo - reach - width), bisect.bisect_left(lefts, hi + reach)):
-            box, owner = rows[k]
-            if box[2] + reach > lo:
-                yield box, owner
-    for x in xs:
-        checkpoint()
-        blocked, close = [], []
-        for side, (x0, y0, x1, y1) in boxes:
-            for (a0, b0, a1, b1), owner in near(reserved, side, x0 + x, x1 + x, gap):
-                if not (x1 + x + gap <= a0 or a1 + gap <= x0 + x):
-                    i, j = bisect.bisect_right(ys, b0 - gap - y1), bisect.bisect_left(ys, b1 + gap - y0)
-                    if i < j:
-                        blocked.append((i, j))
-                        conflicts.add(owner)
-        for side, (x0, y0, x1, y1) in shadows:
-            for (a0, b0, a1, b1), owner in near(members, side, x0 + x, x1 + x, gap):
-                if not (x1 + x + gap <= a0 or a1 + gap <= x0 + x):
-                    i, j = bisect.bisect_right(ys, b0 - gap - y1), bisect.bisect_left(ys, b1 + gap - y0)
-                    if i < j:
-                        blocked.append((i, j))
-                        conflicts.add(owner)
-        for side, (r0, s0, r1, s1) in rectangles:
-            for (a0, b0, a1, b1), _ in near(solid, side, r0 + x, r1 + x, gap):
-                if not (r1 + x <= a0 or a1 <= r0 + x):
-                    i, j = bisect.bisect_right(ys, b0 - s1), bisect.bisect_left(ys, b1 - s0)
-                    if i < j:
-                        blocked.append((i, j))
-                dx = max(0, a0 - r1 - x, r0 + x - a1)
-                if not gap or dx >= gap:
-                    continue
-                reach = math.isqrt(gap * gap - dx * dx - 1)
-                i, j = bisect.bisect_left(ys, b0 - s1 - reach), bisect.bisect_right(ys, b1 - s0 + reach)
-                if i < j:
-                    close.append((i, j))
-            for (a0, b0, a1, b1), _ in near(forbid, side, r0 + x, r1 + x, 0):
-                if not (r1 + x <= a0 or a1 <= r0 + x):
-                    i, j = bisect.bisect_right(ys, b0 - s1), bisect.bisect_left(ys, b1 - s0)
-                    if i < j:
-                        blocked.append((i, j))
-        for h0, k0, h1, k1 in holes:
-            for (a0, b0, a1, b1), owner in near(targets, '*', h0 + x, h1 + x, 0):
-                if not (h1 + x <= a0 or a1 <= h0 + x):
-                    i, j = bisect.bisect_right(ys, b0 - k1), bisect.bisect_left(ys, b1 - k0)
-                    if i < j:
-                        blocked.append((i, j))
-                        if owner is not None:
-                            conflicts.add(owner)
-        close = {k for i, j in close for k in range(i, j)}
-        free, start = [], 0
-        for i, j in sorted(blocked):
-            free.extend(range(start, i))
-            start = max(start, j)
-        free.extend(range(start, len(ys)))
-        for k in free:
-            if k in close:
-                doomed.add((x, ys[k]))
-            yield x, ys[k]
+
+def _frontier(member_boxes):
+    """``(side, box)`` member boxes with no other box of their side wholly to the left, and to the right.
+
+    Only these can touch, in x, a reserved box or obstacle with their outer edge.
+    """
+    left, right = [], []
+    for k, (side, box) in enumerate(member_boxes):
+        x0, y0, x1, y1 = box
+        others = [b for j, (s, b) in enumerate(member_boxes) if j != k and s == side and b[1] < y1 and y0 < b[3]]
+        if not any(b[2] <= x0 for b in others):
+            left.append((side, box))
+        if not any(b[0] >= x1 for b in others):
+            right.append((side, box))
+    return left, right
 
 
 class _Stopped(Exception):
@@ -443,14 +500,17 @@ class _Arrangement:
         # Footprint-forbidding rule areas of the board and of fixed parts: exact overlap prefilter.
         self.forbid = [(k['side'], slab) for k in keepouts + [a for fp in placed for a in fp.get('packing_keepouts', [])]
                        for poly in k['polygons'] for slab in placer._slabs(poly) or ()]
-        # Courtyard slabs on either side that a candidate's drilled-pad reservation may not overlap.
-        self.targets = [(slab, None) for fp in placed for c in fp['courtyards'].values() for poly in c['polygons']
+        # Fixed courtyard slabs on either side that a candidate's drilled-pad reservation may not overlap.
+        self.targets = [('*', slab) for fp in placed for c in fp['courtyards'].values() for poly in c['polygons']
                         for slab in placer._slabs(poly) or ()]
         # A fixed drilled-pad reservation excludes courtyards on both sides (placer._hole_conflict).
         self.forbid += [(side, square) for fp in placed for _, poly in fp.get('_packing_holes', ())
                         for square in [_inscribed(poly)] if square for side in ('F', 'B')]
         self.owner = {ref: a['block'] for a in admitted.values() for ref in a['poses']}
         self.frames, self.macros, self.rotated = {}, {}, {}
+        # Incremental ranking cache (AGENTEE-355): rotation-only geometry per (block, rotation),
+        # and blocked rectangles per (block, rotation, placed owner, owner pose).
+        self.static, self.owned, self.geometry = {}, collections.OrderedDict(), {}
         for bid, entry in admitted.items():
             members = [placer.transform(self.by_ref[r], entry['poses'][r]['position_nm'],
                                         entry['poses'][r]['rotation_deg'])
@@ -512,22 +572,30 @@ class _Arrangement:
         members = self.members_at(bid, position, rotation)
         self.placed_blocks.append({'block': bid, 'position_nm': list(position), 'rotation_deg': rotation,
                                    'members': members})
+        geometry = {'pose': (position[0], position[1], rotation), 'boxes': [], 'slabs': [], 'holes': [],
+                    'shaded': []}
+        self.geometry[bid] = geometry
         for fp in members:
             self.reserved.extend((side, box, bid) for side, box in sorted(placer.boxes(fp).items()))
-            self.targets.extend((slab, bid) for _, c in sorted(fp['courtyards'].items()) for poly in c['polygons']
-                                for slab in placer._slabs(poly) or ())
+            geometry['boxes'] += [(side, box) for side, box in sorted(placer.boxes(fp).items())]
+            # Courtyards are drilled-pad targets only with pad geometry (placer._hole_conflict).
+            geometry['slabs'] += [('*', slab) for _, c in sorted(fp['courtyards'].items()) for poly in c['polygons']
+                                  for slab in placer._slabs(poly) or () if '_packing_targets' in fp]
+            geometry['holes'] += [('*', square) for _, poly in fp.get('_packing_holes', ())
+                                  for square in [_inscribed(poly)] if square]
             self.placed_fps.append(fp)
             self._push_fp(fp)
             self.member_exact.extend((bid, placer._exact(side, c['polygons'])) for side, c in sorted(fp['courtyards'].items()))
             if fp['ref'] in self.stacking:
                 shadow = _shadow(fp, self.stack_margin)
                 self.shadow_exact.append((bid, placer._exact(shadow['side'], shadow['polygons'])))
+                geometry['shaded'].append((shadow['side'], self.shadow_exact[-1][1]['box']))
 
     def pop(self):
         record = self.placed_blocks.pop()
         bid = record['block']
+        del self.geometry[bid]
         self.reserved = [r for r in self.reserved if r[2] != bid]
-        self.targets = [t for t in self.targets if t[1] != bid]
         self.member_exact = [e for e in self.member_exact if e[0] != bid]
         self.shadow_exact = [e for e in self.shadow_exact if e[0] != bid]
         for fp in reversed(record['members']):
@@ -570,6 +638,49 @@ class _Arrangement:
                 points += [(p[0] - fp['position_nm'][0], p[1] - fp['position_nm'][1]) for p in poly]
         return points
 
+    def rotated_static(self, bid, rotation):
+        """Geometry of a block turned at the origin; it depends on nothing placed (cached)."""
+        key = (bid, rotation)
+        if key not in self.static:
+            members = self.members_at(bid, [0, 0], rotation)
+            boxes = [(side, box) for fp in members for side, box in sorted(placer.boxes(fp).items())]
+            slabs = [(side, slab) for fp in members for side, c in sorted(fp['courtyards'].items())
+                     for poly in c['polygons'] for slab in placer._slabs(poly) or ()]
+            at_origin = placer.transform(self.macros[bid], [0, 0], rotation)
+            holes = [('*', square) for _, poly in at_origin.get('_packing_holes', ()) for square in [_inscribed(poly)]
+                     if square]
+            shadows = [(shadow['side'], placer.boxes({'courtyards': {shadow['side']: shadow}})[shadow['side']])
+                       for fp in members if fp['ref'] in self.stacking for shadow in [_shadow(fp, self.stack_margin)]]
+            # Against fixed parts, obstacles, rule areas and fixed courtyards: placement-independent.
+            entries = (_solid(slabs, self.solid, self.gap) + _gapped(slabs, self.forbid, 0, None)
+                       + _gapped(holes, self.targets, 0, None))
+            self.static[key] = {'members': members, 'at_origin': at_origin, 'boxes': boxes, 'holes': holes,
+                                'slabs': [('*', slab) for fp in members if '_packing_targets' in fp
+                                          for c in fp['courtyards'].values() for poly in c['polygons']
+                                          for slab in placer._slabs(poly) or ()], 'shadows': shadows,
+                                'frontier': _frontier(boxes), 'entries': entries,
+                                'bbox': (min(b[0] for _, b in boxes), min(b[1] for _, b in boxes),
+                                         max(b[2] for _, b in boxes), max(b[3] for _, b in boxes))}
+        return self.static[key]
+
+    def entries(self, bid, rotation, owner):
+        """Blocked rectangles of a block turned at the origin against one placed block (cached)."""
+        placed = self.geometry[owner]
+        key = (bid, rotation, owner, placed['pose'])
+        if key in self.owned:
+            self.owned.move_to_end(key)
+            return self.owned[key]
+        own = self.rotated_static(bid, rotation)
+        entries = (_gapped(own['boxes'], placed['boxes'] + placed['shaded'], self.gap, owner)
+                   + _gapped(own['shadows'], placed['boxes'], self.gap, owner)
+                   + _gapped(own['holes'], placed['slabs'], 0, owner)
+                   # A placed block's drilled pads pierce the board: no courtyard may overlap them.
+                   + _gapped(own['slabs'], placed['holes'], 0, owner))
+        self.owned[key] = entries
+        if len(self.owned) > OWNED_CACHE:
+            self.owned.popitem(last=False)
+        return entries
+
     def ranked(self, bid, conflicts):
         """Admissible-by-box candidates in rank order; box blockers join ``conflicts``."""
         self.checkpoint()
@@ -578,18 +689,24 @@ class _Arrangement:
         anchors += self.solid
         anchors += placer._keepout_boxes(self.keepouts + [a for f in self.placed_fps for a in f.get('packing_keepouts', [])])
         window = placer._window(self.outline, self.margin, None, ())
+        lo_x, lo_y, hi_x, hi_y = window['box']
         ranked = []
         for rotation in (0, 90, 180, 270):
-            members = self.members_at(bid, [0, 0], rotation)
-            at_origin = placer.transform(macro, [0, 0], rotation)
+            own = self.rotated_static(bid, rotation)
+            members, at_origin = own['members'], own['at_origin']
             self.rotated[bid, rotation] = at_origin, members
-            member_boxes = [(side, box) for fp in members for side, box in sorted(placer.boxes(fp).items())]
-            slabs = [(side, slab) for fp in members for side, c in sorted(fp['courtyards'].items())
-                     for poly in c['polygons'] for slab in placer._slabs(poly) or ()]
             evaluator = self._locality(members)
             targets = evaluator.targets() + self._group_targets(members)
             xs, ys = placer._candidate_axes(macro, rotation, self.outline, anchors, self.gap, self.margin,
                                             targets, window)
+            # Member-aligned axes: a frontier member box touching a reserved box or obstacle in x.
+            bx0, by0, bx1, by1 = own['bbox']
+            left, right = own['frontier']
+            touch = {a[2] + self.gap - m[0] for side, m in left for other, a in anchors if other == side}
+            touch |= {a[0] - self.gap - m[2] for side, m in right for other, a in anchors if other == side}
+            xs = sorted(set(xs) | {x for x in touch if lo_x <= bx0 + x and bx1 + x <= hi_x})
+            entries = own['entries'] + [e for placed in self.placed_blocks for e in self.entries(
+                bid, rotation, placed['block'])]
             # One term per net shared with placed parts: the block's pad centroid on that net.
             on_net = {}
             for fp in members:
@@ -603,13 +720,8 @@ class _Arrangement:
             placed_sources = [self.positions[r] for r in placed_refs]
             doomed = set()
             limit2 = None if self.thermal_min is None else self.thermal_min ** 2
-            holes = [square for _, poly in at_origin.get('_packing_holes', ()) for square in [_inscribed(poly)]
-                     if square]
-            shadows = [(shadow['side'], placer.boxes({'courtyards': {shadow['side']: shadow}})[shadow['side']])
-                       for fp in members if fp['ref'] in self.stacking for shadow in [_shadow(fp, self.stack_margin)]]
-            shaded = [(entry['side'], entry['box'], owner) for owner, entry in self.shadow_exact]
-            for x, y in _sweep(member_boxes, slabs, xs, ys, self.reserved, self.solid, self.gap, conflicts, doomed,
-                               self.checkpoint, self.forbid, holes, self.targets, shadows, shaded):
+            for x, y in _scan(entries, xs, ys, self.gap, conflicts, doomed, self.checkpoint,
+                              contacts=(lo_y - by0, hi_y - by1)):
                 # Exact and cheap: a violating position is dropped here, its blockers recorded.
                 hit, local_cost = evaluator.constraint((x, y))
                 if hit:

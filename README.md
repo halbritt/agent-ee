@@ -118,7 +118,9 @@ remaining budget. Joint refusals retain named cluster diagnostics.
 [Placement blocks](docs/blocks.md) come from the sealed child sheets or a hashed
 engineer allocation file. Each block is packed alone into a rigid, versioned block
 candidate, with relative poses, an obligation grade, a courtyard witness,
-per-side outlines and source hashes. Candidates are search-derived and advisory.
+per-side outlines and source hashes. A compaction pass re-packs each block on
+shrinking outlines and keeps the smallest box with the same obligations.
+Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
@@ -126,7 +128,9 @@ refuses any mismatch.
 [Block arrangement](docs/blocks.md#stage-b-arrangement-agentee-340) places the
 admitted candidates as rigid macros, then packs the residual parts with the
 placer, with block members fixed. The search uses deterministic conflict-directed
-backjumping with typed exhaustion. Block rules (keep-outs, opposite-side
+backjumping with typed exhaustion. Candidate origins align to block members as
+well as block outlines, and the blocked regions are cached per placed block, so
+a backjump recomputes only what moved. Block rules (keep-outs, opposite-side
 shadows, no block over a fixed part, thermal spread) are hard only with a
 citation. Boundary roles are bound to their board nets. The complete plan goes
 through the writer's native gate.

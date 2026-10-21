@@ -4,13 +4,14 @@ Every fixture is original: the authored stage-A sheets, parts, pads, nets and li
 """
 import copy
 import json
+import random
 import subprocess
 import sys
 import unittest
 
 from agent_ee import block_arrangement as arrangement, blocks, placer
 from test_blocks import Fixture, PARTS, ROOT, SHEETS, board, native_xml, policy
-from test_placement import MM, rectangle
+from test_placement import MM, part, rectangle
 
 CITE = 'Owned fixture rule EE340: authored test requirement.'
 
@@ -223,6 +224,13 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         self.assertIn('block-arrangement shadow L1', [o.get('source') for o in placer_obstacles(plan, self)])
         soft = self.arrange(plan_policy(no_stacking=dict(rule, provenance={'enforcement': 'advisory'})), capture=back)
         self.assertEqual(soft['block_arrangement']['rules'][0]['findings'], [['L1', 'J1']])
+        # AGENTEE-355: a probe keeps native winding, so a back courtyard may be clockwise.
+        # Grading the complete plan once raised "polygon cannot be triangulated" here.
+        clockwise = copy.deepcopy(back)
+        next(f for f in clockwise['footprints'] if f['ref'] == 'J1')['courtyards']['B']['polygons'][0].reverse()
+        turned = self.arrange(plan_policy(no_stacking=dict(rule, provenance={'enforcement': 'advisory'})),
+                              capture=clockwise)
+        self.assertEqual(turned['block_arrangement']['rules'][0]['findings'], [['L1', 'J1']])
         # A fixed back part: no block lands over it unless exempt.
         fixed = copy.deepcopy(back)
         j1 = next(f for f in fixed['footprints'] if f['ref'] == 'J1')
@@ -383,6 +391,107 @@ class SweepTests(unittest.TestCase):
                 self.assertEqual(arrangement._inscribed(poly[::-1]), (x0, y0, x1, y1))
         self.assertIsNone(arrangement._inscribed([[0, 0], [4, 0], [4, 4], [2, 1], [0, 4]]))
         self.assertIsNone(arrangement._inscribed([[0, 0], [2, 0], [2, 2], [0, 2]]))
+
+
+class MemberAxesTests(unittest.TestCase):
+    """Member-aligned axes, the placed drilled-pad prefilter and the ranking cache (AGENTEE-355)."""
+
+    def test_contacts_add_only_free_member_aligned_origins(self):
+        seen = {'extra': 0, 'doomed': 0}
+        for seed in range(40):
+            rng = random.Random(seed)
+
+            def box(size=6):
+                x, y = rng.randrange(0, 30), rng.randrange(0, 30)
+                return (x * MM // 2, y * MM // 2, (x + rng.randrange(1, size)) * MM // 2,
+                        (y + rng.randrange(1, size)) * MM // 2)
+            members = [('F', box(4)) for _ in range(rng.randrange(1, 4))]
+            reserved = [(rng.choice('FB'), box(), f'R{i}') for i in range(rng.randrange(1, 12))]
+            solid = [(rng.choice('FB'), box()) for _ in range(rng.randrange(0, 4))]
+            gap = rng.choice((0, 250000, MM))
+            entries = [e for side, b, owner in reserved for e in arrangement._gapped(members, [(side, b)], gap, owner)]
+            entries += arrangement._solid(members, solid, gap)
+            xs = sorted({rng.randrange(-5, 25) * MM // 4 for _ in range(25)})
+            ys = sorted({rng.randrange(-5, 25) * MM // 4 for _ in range(25)})
+            window = (-2 * MM, 6 * MM)
+            plain = list(arrangement._scan(entries, xs, ys, gap, set(), set(), lambda: None))
+            doomed = set()
+            got = list(arrangement._scan(entries, xs, ys, gap, set(), doomed, lambda: None, contacts=window))
+            with self.subTest(seed=seed):
+                self.assertEqual([p for p in got if p[1] in ys], plain)
+                for x, y in got:
+                    live = [e for e in entries if e[0] < x < e[1]]
+                    # Every origin is free of every blocked rectangle (open on both axes).
+                    self.assertFalse([e for e in live if e[5] is None and e[2] < y < e[3]])
+                    near = any(max(0, e[5][0] - x, x - e[5][1]) < gap and e[2] - gap <= y <= e[3] + gap
+                               for e in live if e[5] is not None)
+                    if (x, y) in doomed:
+                        self.assertTrue(near)
+                    if y not in ys:
+                        # A contact: some member box touches a reserved box or obstacle in y.
+                        self.assertTrue(window[0] <= y <= window[1])
+                        self.assertTrue(any(y in (e[2], e[3]) for e in live if e[5] is None))
+                        seen['extra'] += 1
+                seen['doomed'] += len(doomed)
+        self.assertTrue(all(seen.values()), seen)
+
+    def test_frontier_members(self):
+        boxes = [('F', (0, 0, 2, 2)), ('F', (3, 0, 5, 2)), ('F', (3, 3, 5, 5)), ('B', (1, 0, 4, 2))]
+        left, right = arrangement._frontier(boxes)
+        self.assertEqual(left, [('F', (0, 0, 2, 2)), ('F', (3, 3, 5, 5)), ('B', (1, 0, 4, 2))])
+        self.assertEqual(right, [('F', (3, 0, 5, 2)), ('F', (3, 3, 5, 5)), ('B', (1, 0, 4, 2))])
+
+    def test_placed_drilled_pads_block_only_overlapping_courtyards(self):
+        import math
+        octagon = [[round(400000 * math.cos(math.pi * k / 4)) + 10 * MM,
+                    round(400000 * math.sin(math.pi * k / 4)) + 10 * MM] for k in range(8)]
+        holed = part('P1', 9, 9, side='B')
+        holed['packing_pad_geometry'] = {'status': 'proven', 'copper': [], 'holes': [{'polygons': [octagon]}]}
+        holed = placer.transform(holed, holed['position_nm'], 0)
+        cand = part('C1', 0, 0, shape=rectangle(0, 0, 2, 1))
+        cand['packing_pad_geometry'] = {'status': 'proven', 'copper': [], 'holes': []}
+        square = arrangement._inscribed(octagon)
+        slabs = [('*', s) for poly in cand['courtyards']['F']['polygons'] for s in placer._slabs(poly)]
+        entries = arrangement._gapped(slabs, [('*', square)], 0, 'P')
+        blocked = 0
+        for x in range(6 * MM, 12 * MM, MM // 4):
+            for y in range(7 * MM, 12 * MM, MM // 4):
+                if any(e[0] < x < e[1] and e[2] < y < e[3] for e in entries):
+                    blocked += 1
+                    moved = placer.transform(cand, [x, y], 0)
+                    self.assertTrue(placer._hole_conflict(moved, holed), (x, y))
+        self.assertGreater(blocked, 0)
+
+    def test_ranking_cache_is_transparent(self):
+        fixture = ArrangementTests('test_deterministic_and_input_preserving')
+        fixture.setUp()
+        self.addCleanup(fixture.tmp.cleanup)
+        cases = []
+        for hole in (2, 5):
+            # A 10 mm board: with H1 at 2 mm both blocks fit; at 5 mm the search backjumps and exhausts.
+            small = copy.deepcopy(fixture.board)
+            small['outline']['polygons'] = [rectangle(0, 0, 10, 10)]
+            next(f for f in small['footprints'] if f['ref'] == 'H1').update(
+                position_nm=[hole * MM, hole * MM],
+                courtyards={'F': {'status': 'proven', 'polygons': [rectangle(hole, hole, 2, 2)]}})
+            derivation = fixture.derive(capture=small)
+            cases.append((small, derivation, [{'candidate': blocks.pack_block(
+                small, fixture.inv, derivation, b, fixture.policy)['candidate']} for b in ('Power', 'Sensor')]))
+
+        def runs():
+            out = []
+            for capture, derivation, entries in cases:
+                result = fixture.arrange(capture=capture, derivation=derivation, entries=entries)
+                result['block_arrangement'].get('search', {}).pop('elapsed_s', None)
+                out.append(result)
+            return out
+        cached = runs()
+        self.assertEqual([r['status'] for r in cached], ['planned', 'arrangement_search_exhausted'])
+        self.assertEqual(cached[1]['block_arrangement']['search']['backjumps'], 5)
+        original = arrangement.OWNED_CACHE
+        arrangement.OWNED_CACHE = 0
+        self.addCleanup(setattr, arrangement, 'OWNED_CACHE', original)
+        self.assertEqual(runs(), cached)
 
 
 class CliTests(ArrangementFixture, unittest.TestCase):
