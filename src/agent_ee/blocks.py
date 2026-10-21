@@ -42,6 +42,14 @@ WITNESS = 'exact-courtyard-separation/1'
 SOURCE_KEYS = ('board_sha256', 'inventory_sha256', 'allocation_sha256', 'derivation_sha256', 'policy_sha256')
 CANDIDATE_KEYS = frozenset(('schema', 'block_id', 'status', 'provenance', 'frame', 'members', 'outline', 'grade',
                             'witness', 'placer_judgment', 'deferred', 'search', 'block_policy', 'sources'))
+# Stage-A compactness (AGENTEE-355): bisection on the anchor-centred square, least box area.
+COMPACTION = 'outline-bisection-min-box-area/1'
+COMPACT_FAMILIES = ('anchor-square', 'box-scale')
+COMPACT_TRIALS = 6  # per family
+COMPACT_RESOLUTION_NM = 100_000
+# Search effort, not a design limit: a trial may use at most max(floor, factor x first-run steps).
+COMPACT_STEP_FLOOR = 10_000
+COMPACT_STEP_FACTOR = 10
 MEMBER_KEYS = frozenset(('reference', 'fpid', 'side', 'value', 'pose', 'pad_geometry_sha256', 'courtyard_sha256',
                          'courtyard', 'pins'))
 
@@ -382,8 +390,39 @@ def anchor_of(block, board):
                   key=lambda r: (-sum(1 for p in board[r]['pads'] if p['number']), _natural(r)))[0]
 
 
-def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=None):
-    """Pack one block in isolation. Returns {'status': 'packed', 'candidate'} or the typed failure."""
+def _isolated(capture, board, members, areas, box):
+    """The isolated capture: the members on the rectangle ``box`` = [x0, y0, x1, y1] (board nm)."""
+    x0, y0, x1, y1 = box
+    return {'schema': capture['schema'], 'board_sha256': capture['board_sha256'],
+            'pcbnew_version': capture.get('pcbnew_version'),
+            'outline': {'status': 'proven', 'polygons': [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]},
+            'footprints': [copy.deepcopy(board[r]) for r in members], 'rule_areas': copy.deepcopy(areas)}
+
+
+def _box_area(outline):
+    """Sum over sides of the outline box areas (nm^2): the compactness objective."""
+    return sum((b[2] - b[0]) * (b[3] - b[1]) for b in (side['box_nm'] for side in outline.values()))
+
+
+def _board_box(document, anchor_fp):
+    """The candidate's union outline box in board coordinates, from the anchor's board pose."""
+    turns = int(anchor_fp['rotation_deg']) // 90
+    ax, ay = anchor_fp['position_nm']
+    corners = [placer.rotate([x, y], turns) for side in document['outline'].values()
+               for x in side['box_nm'][0::2] for y in side['box_nm'][1::2]]
+    return (min(c[0] for c in corners) + ax, min(c[1] for c in corners) + ay,
+            max(c[0] for c in corners) + ax, max(c[1] for c in corners) + ay)
+
+
+def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=None, compact=True):
+    """Pack one block in isolation. Returns {'status': 'packed', 'candidate'} or the typed failure.
+
+    With ``compact`` (AGENTEE-355) a packed block is re-packed on shrinking anchor-centred
+    squares (deterministic bisection on the half-side, at most ``COMPACT_TRIALS`` runs of the
+    unchanged placer with the same isolated policy); the candidate with the smallest total
+    outline box area is kept. Every trial is graded and witnessed like the first run, so
+    compaction never loosens an obligation; a failed trial only narrows the bisection.
+    """
     blocks = [b for b in derivation['blocks'] if b['id'] == block_id]
     if len(blocks) != 1:
         raise ValueError(f'unknown block {block_id}')
@@ -398,12 +437,8 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
     reach = _extent(board[anchor]) + sum(2 * _extent(board[r]) + sub['gap_nm'] for r in members if r != anchor)
     reach += sub['gap_nm'] + 1
     ax, ay = board[anchor]['position_nm']
-    square = [[ax - reach, ay - reach], [ax + reach, ay - reach], [ax + reach, ay + reach], [ax - reach, ay + reach]]
-    isolated = {'schema': capture['schema'], 'board_sha256': capture['board_sha256'],
-                'pcbnew_version': capture.get('pcbnew_version'),
-                'outline': {'status': 'proven', 'polygons': [square]},
-                'footprints': [copy.deepcopy(board[r]) for r in members], 'rule_areas': copy.deepcopy(areas)}
-    plan = placer.pack(isolated, sub, heartbeat=heartbeat)
+    plan = placer.pack(_isolated(capture, board, members, areas, (ax - reach, ay - reach, ax + reach, ay + reach)),
+                       sub, heartbeat=heartbeat)
     base = {'schema': CANDIDATE, 'block_id': block_id, 'block_policy': sub, 'deferred': deferred}
     if plan['status'] != 'planned':
         return {**base, 'status': plan['status'], 'outcome': plan['outcome'], 'reason': plan.get('reason'),
@@ -417,10 +452,82 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
         return {**base, 'status': 'synthetic_plane_reached', 'outcome': 'unknown',
                 'reason': 'members reached the synthetic plane edge: ' + ', '.join(touching), 'plan': plan}
     result = candidate(capture, inventory, derivation, block, anchor, poses, policy, sub, deferred, plan)
+    if result['status'] == 'packed' and compact:
+        result = _compact(capture, inventory, derivation, block, anchor, policy, sub, deferred, areas, result,
+                          heartbeat)
     if result['status'] == 'packed':
         validate_candidate(result)
     return {'status': result['status'], 'outcome': 'info' if result['status'] == 'packed' else 'unknown',
             'candidate': result}
+
+
+def _compact(capture, inventory, derivation, block, anchor, policy, sub, deferred, areas, first, heartbeat):
+    """Shrink the block outline by deterministic bisection; keep the packed candidate of least box area.
+
+    Two families of rectangular outlines are bisected in turn, each over an integer
+    parameter: ``anchor-square`` (half-side in nm of a square centred on the anchor) and
+    ``box-scale`` (per-mille scale of the best box so far about its centre). The lower
+    bound keeps the anchor's courtyard inside; the upper bound is the best packed
+    candidate's own extent. A trial that packs (placer plan, re-grade and witness all
+    pass) lowers the upper bound to its own extent; any other outcome raises the lower
+    bound. Each trial runs the unchanged placer with the same isolated policy under a
+    step cap of at most the block budget. Ties on area keep the earlier candidate.
+    """
+    board = {fp['ref']: fp for fp in capture['footprints']}
+    members = sorted(block['references'], key=_natural)
+    ax, ay = board[anchor]['position_nm']
+    own = [v for box in placer.boxes(board[anchor]).values() for v in box]
+    own = (min(own[0::2]), min(own[1::2]), max(own[0::2]), max(own[1::2]))
+    cap = min(sub['step_budget'], max(COMPACT_STEP_FLOOR, COMPACT_STEP_FACTOR * first['search']['steps_used']))
+    trial_policy = {**sub, 'step_budget': cap}
+    best, trials, total = first, [], first['search']['steps_used']
+
+    def run(family, parameter, box):
+        nonlocal best, total
+        plan = placer.pack(_isolated(capture, board, members, areas, box), trial_policy, heartbeat=heartbeat)
+        total += plan['steps_used']
+        row = {'family': family, 'parameter': parameter, 'status': plan['status'], 'steps_used': plan['steps_used']}
+        result = None
+        if plan['status'] == 'planned':
+            # The candidate records the block policy budget; the trial ran under the cap.
+            plan = {**plan, 'step_budget': sub['step_budget']}
+            result = candidate(capture, inventory, derivation, block, anchor,
+                               {p['ref']: p for p in plan['placements']}, policy, sub, deferred, plan)
+            row['status'] = 'packed' if result['status'] == 'packed' else 'evidence_failed'
+        trials.append(row)
+        if row['status'] != 'packed':
+            return None
+        row['box_area_nm2'] = _box_area(result['outline'])
+        if row['box_area_nm2'] < _box_area(best['outline']):
+            best = result
+        return _board_box(result, board[anchor])
+
+    def reach(box):
+        return max(ax - box[0], ay - box[1], box[2] - ax, box[3] - ay)
+    low, high = reach(own), reach(_board_box(first, board[anchor]))
+    for _ in range(COMPACT_TRIALS):
+        if high - low <= max(sub['gap_nm'], COMPACT_RESOLUTION_NM):
+            break
+        half = (low + high) // 2
+        packed = run('anchor-square', half, (ax - half, ay - half, ax + half, ay + half))
+        low, high = (half, high) if packed is None else (low, reach(packed))
+    x0, y0, x1, y1 = _board_box(best, board[anchor])
+    cx, cy, w, h = (x0 + x1) // 2, (y0 + y1) // 2, (x1 - x0) // 2 + 1, (y1 - y0) // 2 + 1
+
+    def scale(box):
+        return max(-(-1000 * max(cx - box[0], box[2] - cx) // w), -(-1000 * max(cy - box[1], box[3] - cy) // h))
+    low, high = scale(own), 1000
+    for _ in range(COMPACT_TRIALS):
+        if (high - low) * max(w, h) // 1000 <= max(sub['gap_nm'], COMPACT_RESOLUTION_NM):
+            break
+        mille = (low + high) // 2
+        dx, dy = w * mille // 1000, h * mille // 1000
+        packed = run('box-scale', mille, (cx - dx, cy - dy, cx + dx, cy + dy))
+        low, high = (mille, high) if packed is None else (low, min(mille, scale(packed)))
+    best['search']['compaction'] = {
+        'objective': COMPACTION, 'first_box_area_nm2': _box_area(first['outline']),
+        'box_area_nm2': _box_area(best['outline']), 'step_cap': cap, 'trials': trials, 'steps_total': total}
+    return best
 
 
 def _frame_pose(pose, origin, turns):
@@ -746,18 +853,48 @@ def _validate_candidate(document):
         o['id'] for o in sub.get('electrical_locality', {}).get('obligations', [])}
     if internal & (set(deferred['groups']) | set(deferred['obligations'])):
         raise ValueError('an internal obligation cannot also be deferred')
-    search = _keys(document['search'], {'strategy', 'steps_used', 'step_budget'}, {'backjumps'}, label='search record')
+    search = _keys(document['search'], {'strategy', 'steps_used', 'step_budget'}, {'backjumps', 'compaction'},
+                   label='search record')
     _text(search['strategy'], 'search strategy')
     for key in ('steps_used', 'step_budget', 'backjumps'):
         if key in search:
             _count(search[key], 'search ' + key)
     if search['step_budget'] != sub['step_budget'] or search['steps_used'] > search['step_budget']:
         raise ValueError('search steps must lie within the block policy budget')
+    if 'compaction' in search:
+        _compaction(search['compaction'])
     sources = _keys(document['sources'], set(SOURCE_KEYS), label='candidate sources')
     for key in SOURCE_KEYS:
         if not (key == 'allocation_sha256' and sources[key] is None):
             _hex(sources[key], key.replace('_sha256', ' sha256'))
     return document
+
+
+def _compaction(record):
+    """The stage-A compaction record (a search log). ``admit`` binds its area to the board outline."""
+    _keys(record, {'objective', 'first_box_area_nm2', 'box_area_nm2', 'step_cap', 'trials', 'steps_total'},
+          label='compaction')
+    if record['objective'] != COMPACTION:
+        raise ValueError(f'compaction objective must be {COMPACTION}')
+    for key in ('first_box_area_nm2', 'box_area_nm2', 'step_cap', 'steps_total'):
+        _count(record[key], 'compaction ' + key)
+    if record['box_area_nm2'] > record['first_box_area_nm2']:
+        raise ValueError("compaction area must be at most the first run's")
+    limit = COMPACT_TRIALS * len(COMPACT_FAMILIES)
+    if not isinstance(record['trials'], list) or len(record['trials']) > limit:
+        raise ValueError(f'compaction trials must be a list of at most {limit}')
+    for row in record['trials']:
+        _keys(row, {'family', 'parameter', 'status', 'steps_used'}, {'box_area_nm2'}, label='compaction trial')
+        if row['family'] not in COMPACT_FAMILIES:
+            raise ValueError('compaction trial family must be one of ' + ', '.join(COMPACT_FAMILIES))
+        for key in ('parameter', 'steps_used', 'box_area_nm2'):
+            if key in row:
+                _count(row[key], 'compaction trial ' + key)
+        if row['steps_used'] > record['step_cap']:
+            raise ValueError('a compaction trial stays within the step cap')
+        _text(row['status'], 'compaction trial status')
+        if ('box_area_nm2' in row) != (row['status'] == 'packed'):
+            raise ValueError('a compaction trial records its box area exactly when it packed')
 
 
 def admit(document, capture, inventory, derivation, policy):
@@ -805,6 +942,9 @@ def admit(document, capture, inventory, derivation, policy):
     for name, value in (('outline', outline), ('grade', grade), ('witness', witness)):
         if _plain(value) != document[name]:
             problems.append({'kind': 'stale_evidence', 'evidence': name})
+    compaction = document['search'].get('compaction')
+    if compaction is not None and compaction['box_area_nm2'] != _box_area(_plain(outline)):
+        problems.append({'kind': 'stale_evidence', 'evidence': 'compaction'})
     failed = [k for k, g in grade.items() if g and not _grade_usable(k, g)] + (
         ['witness'] if witness['status'] != 'pass' else [])
     if failed:
@@ -936,6 +1076,8 @@ def main(argv=None):
             command.add_argument('--policy', required=True, type=Path, help='agent-ee.packing-policy/1')
         if name == 'pack':
             command.add_argument('--block', required=True)
+            command.add_argument('--no-compact', action='store_true',
+                                 help='keep the first packing; skip the outline bisection (AGENTEE-355)')
         if name in ('match', 'admit'):
             command.add_argument('--candidate', required=True, type=Path)
         if name == 'match':
@@ -947,7 +1089,7 @@ def main(argv=None):
             result, ok = derivation, True
         elif args.command == 'pack':
             policy = strict_json(args.policy.read_bytes())
-            result = pack_block(capture, inventory, derivation, args.block, policy,
+            result = pack_block(capture, inventory, derivation, args.block, policy, compact=not args.no_compact,
                                 heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True))
             result = result.get('candidate', result)
             ok = result['status'] == 'packed'

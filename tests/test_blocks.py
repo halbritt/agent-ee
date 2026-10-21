@@ -453,6 +453,87 @@ class PackingTests(Fixture, unittest.TestCase):
         self.assertNotIn('candidate', result)
 
 
+# A buck anchor driving a seven-resistor chain: the first run strings it out (AGENTEE-355).
+CHAIN = (('U1', '/s1/', 'BUCK', 'Owned:QFN4', 'owned-buck', {'1': 'N1', '2': 'GND', '3': 'M1', '4': 'FB'}),) + tuple(
+    (f'R{i}', '/s1/', 'R', 'Owned:R0603', '10k', {'1': f'N{i}', '2': f'N{i + 1}'}) for i in range(1, 8)) + (
+    ('J1', '/', 'CONN', 'Owned:HDR2', 'owned-conn', {'1': 'N8', '2': 'GND'}),)
+
+
+class CompactionTests(Fixture, unittest.TestCase):
+    """Stage-A compactness objective (AGENTEE-355)."""
+
+    def chain(self, compact=True, **changes):
+        self.board = board(CHAIN)
+        raw = native_xml(CHAIN)
+        self.inv = self.inventory(raw)[0]
+        self.derived = self.derive(raw=raw)
+        self.chain_policy = policy(electrical_locality=None, **changes)
+        return blocks.pack_block(self.board, self.inv, self.derived, 'Power', self.chain_policy, compact=compact)
+
+    def test_compaction_shrinks_the_outline_deterministically(self):
+        loose = self.chain(compact=False)['candidate']
+        tight = self.chain()['candidate']
+        area = blocks._box_area
+        self.assertNotIn('compaction', loose['search'])
+        record = blocks.validate_candidate(tight)['search']['compaction']
+        self.assertEqual(record['objective'], blocks.COMPACTION)
+        self.assertEqual(record['first_box_area_nm2'], area(loose['outline']))
+        self.assertEqual(record['box_area_nm2'], area(tight['outline']))
+        self.assertLess(area(tight['outline']), area(loose['outline']))
+        self.assertEqual(area(loose['outline']), 81375 * 10 ** 9)
+        self.assertEqual(area(tight['outline']), 56250 * 10 ** 9)
+        # The bisection both packs and fails, and every trial stays within the step cap.
+        self.assertTrue({t['status'] for t in record['trials']} >= {'packed', 'packing_search_exhausted'})
+        self.assertTrue(all(t['steps_used'] <= record['step_cap'] <= 20000 for t in record['trials']))
+        self.assertEqual({t['family'] for t in record['trials']}, set(blocks.COMPACT_FAMILIES))
+        self.assertEqual(record['steps_total'], loose['search']['steps_used'] + sum(
+            t['steps_used'] for t in record['trials']))
+        # The same isolated policy, witness and admission: nothing is loosened.
+        self.assertEqual(tight['block_policy'], loose['block_policy'])
+        self.assertEqual(tight['witness']['status'], 'pass')
+        self.assertEqual(blocks.admit(tight, self.board, self.inv, self.derived, self.chain_policy)['status'],
+                         'admitted')
+        self.assertEqual(self.chain(), {'status': 'packed', 'outcome': 'info', 'candidate': tight})
+
+    def test_compaction_keeps_every_internal_obligation(self):
+        derived = self.derive()
+        loose = blocks.pack_block(self.board, self.inventory()[0], derived, 'Power', policy(), compact=False)
+        tight = blocks.pack_block(self.board, self.inventory()[0], derived, 'Power', policy())
+        self.assertEqual(tight['candidate']['block_policy'], loose['candidate']['block_policy'])
+        self.assertEqual(tight['candidate']['grade']['electrical_locality']['status'], 'pass')
+        self.assertLessEqual(blocks._box_area(tight['candidate']['outline']),
+                             blocks._box_area(loose['candidate']['outline']))
+        # A tight internal group bounds every trial too: a candidate that packs still passes it.
+        group = [{'id': 'near', 'references': ['R7'], 'anchor': {'reference': 'U1'}, 'max_distance_nm': 6 * MM}]
+        grouped = self.chain(groups=group)['candidate']
+        self.assertEqual(grouped['grade']['groups']['status'], 'pass')
+        self.assertEqual(grouped['block_policy']['groups'], group)
+
+    def test_compaction_record_is_validated(self):
+        cand = self.chain()['candidate']
+        cases = (
+            (lambda r: r.update(objective='other/1'), 'compaction objective'),
+            (lambda r: r.update(first_box_area_nm2=r['box_area_nm2'] - 1), "at most the first run's"),
+            (lambda r: r['trials'][0].update(family='spiral'), 'trial family'),
+            (lambda r: r['trials'][0].update(steps_used=r['step_cap'] + 1), 'within the step cap'),
+            (lambda r: r['trials'][0].pop('box_area_nm2'), 'exactly when it packed'),
+            (lambda r: r['trials'].extend([r['trials'][0]] * 12), 'at most 12'),
+            (lambda r: r.update(extra=1), 'unknown extra'),
+            (lambda r: r.update(steps_total=-1), 'nonnegative'),
+        )
+        for mutate, message in cases:
+            doc = copy.deepcopy(cand)
+            mutate(doc['search']['compaction'])
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                blocks.validate_candidate(doc)
+        # Admission binds the recorded area to the board's own outline.
+        doc = copy.deepcopy(cand)
+        doc['search']['compaction']['box_area_nm2'] -= 1
+        blocks.validate_candidate(doc)
+        self.assertEqual(blocks.admit(doc, self.board, self.inv, self.derived, self.chain_policy)['problems'],
+                         [{'kind': 'stale_evidence', 'evidence': 'compaction'}])
+
+
 class CandidateSchemaTests(Fixture, unittest.TestCase):
     def setUp(self):
         super().setUp()
@@ -744,6 +825,11 @@ class CliTests(Fixture, unittest.TestCase):
         self.assertIn('"status": "qualifying"', done.stderr)
         cand = json.loads((self.dir / 'power.json').read_text())
         blocks.validate_candidate(cand)
+        self.assertIn('compaction', cand['search'])
+        done = self.run_cli('pack', *common, '--policy', self.dir / 'policy.json', '--block', 'Power', '--no-compact',
+                            '--out', self.dir / 'loose.json')
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn('compaction', json.loads((self.dir / 'loose.json').read_text())['search'])
         done = self.run_cli('match', *common, '--candidate', self.dir / 'power.json', '--out', self.dir / 'match.json')
         self.assertEqual(done.returncode, 0, done.stderr)
         done = self.run_cli('admit', *common, '--policy', self.dir / 'policy.json', '--candidate', self.dir / 'power.json',
