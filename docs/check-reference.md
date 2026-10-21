@@ -1792,8 +1792,11 @@ earlier same-candidate native DRC, and `locality` naming a captured
 `agent-ee.electrical-locality/1` document. Its immutable input and capability
 predicate are respectively that path and `placement:electrical-locality/1`.
 See the [declaration, verdicts and separate packer constraint](placer.md#pad-level-electrical-locality-agentee-322).
-Supply and return are mandatory and switch/inductor pairs optional. The native
-copper-land centroid metric preserves proved defects alongside unknowns;
+Locality documents and copied index snapshots require exact built-in JSON types;
+subclasses and other Python objects refuse before schema or net-binding checks
+(AGENTEE-356). Supply and return are mandatory and switch/inductor pairs
+optional. The native copper-land centroid metric preserves proved defects
+alongside unknowns;
 missing limits or citations stay unknown. Optional captured pad `uuid` selectors
 must also match the declared reference, number and net; unselected duplicate
 pad numbers refuse. Native copper offsets participate in the distance, and

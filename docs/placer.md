@@ -966,11 +966,13 @@ captured declaration.
 After the independent initial locality grade qualifies identities and copper
 centroids, packing caches selected pad positions per footprint. Direct
 `PlacementIndex(document)` deep-copies the declaration first, validates that
-snapshot, then builds caches, including role bindings, disjoint nets and
-canonical UUIDs (AGENTEE-341/352/356). Validation covers values produced by
-copying; later caller edits cannot change indexed values. Its public `pairs` and
-`endpoints` properties expose mapping proxies, tuple pair sequences and
-read-only endpoint fields; callers cannot mutate the indexed declarations.
+snapshot after requiring exact built-in JSON types, then builds caches, including
+role bindings, disjoint nets and canonical UUIDs (AGENTEE-341/352/356).
+Validation covers values produced by copying; subclasses left by copying refuse with `locality document must contain only JSON values`.
+Direct `validate()` and `grade()` apply the same exact-type check, including
+object keys, before schema and net-disjointness checks. Later caller edits cannot
+change indexed values. Its public `pairs` and `endpoints` properties expose
+mapping proxies, tuple pair sequences and read-only endpoint fields; callers cannot mutate the indexed declarations.
 Copying does not promise an atomic view of concurrent edits: an invalid
 snapshot refuses, and only the validated snapshot supplies the index.
 It still requires independently qualified native geometry. Search push/pop

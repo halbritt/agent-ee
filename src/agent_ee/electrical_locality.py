@@ -13,7 +13,23 @@ SCHEMA = 'agent-ee.electrical-locality/1'
 CRITERION = 'electrical-locality/1'
 
 
+def _plain_json(value):
+    """Require exact JSON types so validation and indexing read the same values."""
+    if type(value) is dict:
+        for key, item in value.items():
+            if type(key) is not str:
+                raise ValueError('locality document must contain only JSON values')
+            _plain_json(item)
+    elif type(value) is list:
+        for item in value:
+            _plain_json(item)
+    elif value is not None and type(value) not in (str, int, float, bool):
+        raise ValueError('locality document must contain only JSON values')
+    return value
+
+
 def validate(document):
+    _plain_json(document)
     if (not isinstance(document, dict) or set(document) != {'schema', 'obligations'}
             or document['schema'] != SCHEMA or not isinstance(document['obligations'], list)
             or not document['obligations']):
@@ -204,7 +220,7 @@ class PlacementIndex:
     that footprint. Candidate evaluators contain only incident, placed pairs.
     """
     def __init__(self, document):
-        document = deepcopy(document)
+        document = _plain_json(deepcopy(document))
         validate(document)
         pairs = {}
         endpoints = {}

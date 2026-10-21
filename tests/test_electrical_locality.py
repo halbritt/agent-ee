@@ -589,6 +589,63 @@ class NativeLocalityTests(unittest.TestCase):
 
 
 class LocalityIndexTests(unittest.TestCase):
+    def test_lying_dict_snapshot_is_refused_with_and_without_deepcopy_hook(self):
+        class Liar(dict):
+            def __getitem__(self, key):
+                return 'SW' if key == 'net' else dict.__getitem__(self, key)
+
+            def values(self):
+                return [self[key] for key in self]
+
+        class Wrapper(dict):
+            def __deepcopy__(self, memo):
+                endpoint = copy.deepcopy(dict(self), memo)
+                endpoint['net'] = 'GND'
+                return Liar(endpoint)
+
+        for wrapped in (False, True):  # Reviewer P7b and P7.
+            facts, doc = bound_output_loop()
+            row = doc['obligations'][0]
+            raw = dict(row['switch']['from'], net=row['return_net'])
+            row['switch']['from'] = Wrapper(raw) if wrapped else Liar(raw)
+            for operation in (locality.PlacementIndex, locality.validate,
+                              lambda d: locality.grade(facts, d)):
+                with self.subTest(wrapped=wrapped, operation=operation), self.assertRaisesRegex(
+                        ValueError, 'locality document must contain only JSON values'):
+                    operation(doc)
+
+    def test_hostile_string_cannot_bypass_net_disjointness(self):
+        class Net(str):
+            __hash__ = object.__hash__
+
+            def __eq__(self, other):
+                return False
+
+            def __ne__(self, other):
+                return True
+
+        facts, doc = bound_output_loop()
+        row = doc['obligations'][0]
+        row['switch']['from']['net'] = Net(row['return_net'])  # Reviewer P8.
+        for operation in (locality.PlacementIndex, locality.validate,
+                          lambda d: locality.grade(facts, d)):
+            with self.subTest(operation=operation), self.assertRaisesRegex(
+                    ValueError, 'locality document must contain only JSON values'):
+                operation(doc)
+
+    def test_non_json_types_and_subclasses_are_refused_before_schema_reads(self):
+        values = (type('Dict', (dict,), {})(), type('List', (list,), {})([]),
+                  type('Text', (str,), {})('text'), type('Integer', (int,), {})(1),
+                  type('Float', (float,), {})(1.0), (), set(), object(), {1: 'text'})
+        for value in values:
+            facts, doc = bound_output_loop()
+            doc['obligations'][0]['supply']['citation'] = value
+            for operation in (locality.PlacementIndex, locality.validate,
+                              lambda d: locality.grade(facts, d)):
+                with self.subTest(type=type(value), operation=operation), self.assertRaisesRegex(
+                        ValueError, 'locality document must contain only JSON values'):
+                    operation(doc)
+
     def test_index_validates_deepcopy_output_including_hostile_endpoint(self):
         from unittest.mock import patch
 
