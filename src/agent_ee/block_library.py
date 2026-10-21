@@ -582,15 +582,18 @@ def _judgment(capture, framed, gap_nm):
 
 
 def _build(capture, inventory, sheet_names, inventory_sha256, block_id, poses, anchor, policy, provenance, *,
-           unlock=False):
+           unlock=False, derivation=None):
     """A block candidate of the board's own footprints at the given anchor-relative poses.
 
     Only a read-only source import unlocks the members (``unlock``); a target board is
     used with its own lock state, so a locked target member refuses in ``blocks.derive``.
+    A given ``derivation`` (the target's own allocation) is bound as is; otherwise a
+    one-block allocation of the members is derived.
     """
     refs = set(poses)
     unlocked = _unlocked(capture, refs) if unlock else capture
-    derivation = _derivation(unlocked, inventory, sheet_names, inventory_sha256, block_id, refs, anchor)
+    if derivation is None:
+        derivation = _derivation(unlocked, inventory, sheet_names, inventory_sha256, block_id, refs, anchor)
     block = next(b for b in derivation['blocks'] if b['id'] == block_id)
     board = {fp['ref']: fp for fp in unlocked['footprints']}
     _, sub, deferred, _ = blocks._isolate(unlocked, policy, block)
@@ -623,7 +626,8 @@ def _candidate_provenance(entry):
             'method': entry['receipt']['import'], **({'source': record['source']} if 'source' in record else {})}
 
 
-def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy, mapping=None, authority_raw=None):
+def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy, mapping=None, authority_raw=None, *,
+                allocation_raw=None, block_id=None):
     """Rebuild and re-grade an entry on a board's own footprints, mapped by reference.
 
     Identity follows ``blocks.match``: footprint, side, land pattern, courtyard, pin
@@ -635,9 +639,21 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
     than ``admitted`` refuses with the admission evidence. Returns ``{'status':
     'materialized' | 'refused', 'provenance', 'label', 'problems', 'candidate'}``;
     the candidate is present only when materialized.
+
+    Without ``allocation_raw`` the candidate binds a one-block allocation of the mapped
+    members under the entry id. With the target's ``agent-ee.block-allocation/1`` bytes
+    it binds the same derivation ``placer_runner`` recomputes from that allocation
+    (``allocation_sha256`` and ``derivation_sha256``) under the explicit ``block_id``,
+    and the record gains ``block``. The entry id is never matched to a block id by name:
+    a missing ``block_id`` refuses ``block_unmapped``, an id naming no single derived
+    block refuses ``block_unknown``, and an allocated block whose members are not exactly
+    the mapped references refuses ``block_members``. The frame anchor is the allocated
+    block's anchor (declared, else ``blocks.anchor_of``), as admission requires.
     """
     _no_authority(authority_raw=authority_raw)
     validate_entry(entry)
+    if block_id is not None and allocation_raw is None:
+        raise ValueError('a block id binds an allocation block; give the allocation')
     rows = {r['reference']: r for r in entry['layout']['members']}
     mapping = {r: r for r in rows} if mapping is None else mapping
     if set(mapping) != set(rows) or len(set(mapping.values())) != len(mapping):
@@ -679,6 +695,29 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
         return result
     anchor = mapping[entry['layout']['anchor']]
     poses = {mapping[r]: copy.deepcopy(rows[r]['pose']) for r in rows}
+    derivation, target_id = None, entry['id']
+    if allocation_raw is not None:
+        if block_id is None:
+            problems.append({'kind': 'block_unmapped', 'entry': entry['id'],
+                             'reason': 'an allocation needs an explicit block id for the entry'})
+            return result
+        result['block'] = target_id = block_id
+        try:
+            derivation = blocks.derive(inventory, sheet_names, capture, inventory_sha256=inventory_sha256,
+                                       allocation_raw=allocation_raw)
+        except ValueError as exc:
+            problems.append({'kind': 'admission', 'status': 'refused', 'reason': str(exc)})
+            return result
+        found = [b for b in derivation['blocks'] if b['id'] == block_id]
+        if len(found) != 1:
+            problems.append({'kind': 'block_unknown', 'block': block_id,
+                             'blocks': [b['id'] for b in derivation['blocks']]})
+            return result
+        if set(found[0]['references']) != set(poses):
+            problems.append({'kind': 'block_members', 'block': block_id,
+                             'expected': sorted(found[0]['references'], key=blocks._natural),
+                             'actual': sorted(poses, key=blocks._natural)})
+            return result
     if entry['receipt']['import'] == 'reference-figure/1':
         figure = copy.deepcopy(entry['receipt']['figure'])
         for member in figure['members']:
@@ -688,9 +727,11 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
         if derived != poses:
             problems.append({'kind': 'figure_pose_mismatch', 'expected': poses, 'actual': derived})
             return result
+    if derivation is not None:
+        anchor = blocks.anchor_of(found[0], board)
     try:
-        candidate, failed, derivation = _build(capture, inventory, sheet_names, inventory_sha256, entry['id'], poses,
-                                               anchor, policy, _candidate_provenance(entry))
+        candidate, failed, derivation = _build(capture, inventory, sheet_names, inventory_sha256, target_id, poses,
+                                               anchor, policy, _candidate_provenance(entry), derivation=derivation)
     except ValueError as exc:
         problems.append({'kind': 'admission', 'status': 'refused', 'reason': str(exc)})
         return result
@@ -1145,6 +1186,8 @@ def main(argv=None):
     use = sub.choices['materialize']
     use.add_argument('--entry', required=True, type=Path)
     use.add_argument('--mapping', type=Path, help='JSON object: entry reference -> target reference')
+    use.add_argument('--allocation', type=Path, help=f'target {blocks.ALLOCATION} JSON, as given to placer_runner')
+    use.add_argument('--block', help='allocation block id the entry is bound to (required with --allocation)')
     args = parser.parse_args(argv)
     try:
         if args.command == 'validate':
@@ -1180,15 +1223,23 @@ def main(argv=None):
         else:
             mapping = strict_json(args.mapping.read_bytes()) if args.mapping else None
             result = materialize(strict_json(args.entry.read_bytes()), capture, inventory, names, sha, policy, mapping,
-                                 authority)
+                                 authority, allocation_raw=args.allocation.read_bytes() if args.allocation else None,
+                                 block_id=args.block)
+            if result['status'] != 'materialized':
+                print(json.dumps(result, sort_keys=True))
+                return 1
+            # The bare candidate, as request_section and placer_runner read it.
+            _write(args.out, result['candidate'])
+            print(json.dumps({'status': 'materialized', 'out': str(args.out), 'id': result['id'],
+                              'version': result['version'], 'block': result['candidate']['block_id']}))
+            return 0
         _write(args.out, result)
     except (OSError, ValueError) as exc:
         kind = {'kind': 'authority_unavailable'} if isinstance(exc, AuthorityUnavailable) else {}
         print(json.dumps({'status': 'refused', **kind, 'reason': str(exc)}))
         return 1
-    status = result.get('status', 'imported') if args.command == 'materialize' else 'imported'
-    print(json.dumps({'status': status, 'out': str(args.out)}))
-    return 0 if status in ('imported', 'materialized') else 1
+    print(json.dumps({'status': 'imported', 'out': str(args.out)}))
+    return 0
 
 
 if __name__ == '__main__':
