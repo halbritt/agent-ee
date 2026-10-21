@@ -133,9 +133,28 @@ as recorded by agent-499 in the AGENTEE-338 comment and AGENTEE-331/337 provenan
 follow-up. It is an **agent-chosen advisory default**, with no captured JLCPCB SMT
 assembly figure establishing it as a manufacturing requirement. The generic
 packing API requires an explicit gap and supplies no 0.25 mm default. This
-classification describes the value's provenance: current packing still enforces
-the supplied value and reports gap binding provenance as `unknown`/`hard`.
-Changing that enforcement exceeds this change's verdict-preservation authority.
+value remains a search reservation and a fixed-placement admission guard. A
+capacity proof that depends on it reports `packing_infeasible`, `outcome=unknown`,
+empty placements and `owner_confirmation: ["gap_nm"]`, naming the unsourced
+constraint in `reason` and `binding_constraints`. The diagnostic keeps the
+existing `unknown`/`hard` gap entry: `hard` describes the enforced search
+reservation, not authority to establish a design defect. If the same capacity
+bound proves infeasibility at zero gap, that structural proof retains its defect
+verdict and does not name the gap as binding.
+
+The low-level packing API accepts a qualified gap source in the existing
+`constraint_provenance.gap_nm` entry: `class` (`fixture_author` or
+`manufacturer`), `enforcement: "hard"`, `value_nm` (equal to `gap_nm`) and a
+nonempty `citation`. The source entry is retained in binding constraints.
+Original numeric test fixtures cite their authored gap requirement and retain
+all previous verdict expectations. Manufacturer class is for a gap validated
+against a captured manufacturer requirement, including a captured JLCPCB SMT
+assembly record; those requirements remain hard. A caller must qualify that
+source before calling this geometry API: a citation string is not independently
+authenticated by the placer. The coordinator placement adapter continues to
+refuse policy-supplied `constraint_provenance`; envelope provenance still comes
+only from captured envelopes. This change adds no manufacturer capture pipeline
+or automatic promotion of an agent-chosen number.
 Neither a successful packing plan nor this spacing default establishes native
 DRC or assembly clearance acceptance.
 
@@ -371,8 +390,9 @@ pairwise disjoint.
   per vertex, with integer-ceiling lengths and pi taken as 22/7. Only fixed
   courtyards and declared obstacles, which keep the gap, are subtracted.
 
-Both are exact rationals, `packing_infeasible`, `outcome=defect`, with
-`steps_used=0`. Edge margin and the width of a region are not used, so a
+Both use exact rationals and return `packing_infeasible`, with `steps_used=0`.
+A proof bound by a soft limit or an unsourced nonzero gap has `outcome=unknown`;
+a hard sourced gap or a proof independent of the gap retains `outcome=defect`. Edge margin and the width of a region are not used, so a
 region too narrow but large enough by area is still only a search failure.
 
 ### Board capacity (AGENTEE-249)
@@ -425,11 +445,12 @@ that stop before the reservations (unsupported geometry, fixed conflicts, the
 earlier proofs) do not carry it; the earlier proofs still name their
 [binding constraints](#constraint-provenance-agentee-266).
 
-A row that is exceeded becomes a `packing_infeasible` / `defect` result
+A row that is exceeded becomes a `packing_infeasible` result
 (`board_capacity_gap` for the free-area row, `board_capacity_fragmented` for a
 square size) only when the policy sets `capacity_proof: true`. By default the
-result stays the search's unknown. Turning it on changes the verdict of truly
-infeasible inputs that existing tests keep as search failures: the 4 mm board
+result stays the search's unknown. With it enabled, a proof establishes a defect
+only when its binding limits permit that verdict: an unsourced gap remains unknown.
+Examples retained as search failures without the opt-in include the 4 mm board
 with a 1.5 mm margin (`test_placer.PlacerTest.test_edge_margin`), the 3 mm
 notch at a 1.5 mm gap
 (`test_placer.EnvelopeFixedTest.test_fixed_courtyard_is_a_polygon_not_its_bounding_box`)
@@ -439,8 +460,10 @@ Making it the default is an owner decision. No placement constraint is relaxed
 either way. The bound is not tight: a feasible input never exceeds it, but an
 infeasible one may not either. Owned fixtures are in
 `tests/test_placer_capacity.py`. On a 20 × 12 mm board with a 12 × 9 mm fixed
-block, six 3.2 mm squares are placed. Seven are proved infeasible by the
-fragmentation row, although they need only about 81 % of the free area.
+block, six 3.2 mm squares are placed. Seven are proved infeasible against the
+fixture's authored 0.25 mm requirement by the fragmentation row, although they
+need only about 81 % of the free area. Removing that gap's provenance gives the
+same geometric bound with an unknown outcome.
 
 ### Constraint provenance (AGENTEE-266)
 
@@ -457,14 +480,15 @@ limit wins over a soft one.
 Each `capacity.sides.<side>` names its `binding_constraints`: the outline, the
 fixed parts and obstacles in `blocked_by`, and the edge margin and gap. Each
 has its `class` and `enforcement`. The margin and gap come from the policy or a
-fab profile, so their provenance is `unknown`. Without declared provenance the
+fab profile; without a qualified gap source their provenance is `unknown`. Without declared provenance the
 outline is `unknown` too.
 
 Every `packing_infeasible` proof also carries `binding_constraints`. When one
 of them is soft (an assumed or owner-weakened limit), the proof stays in the
 record, but the outcome is `unknown` instead of `defect`. The result then has
 `owner_confirmation` (the soft constraints), and the reason names them. A proof
-bound only by hard or undeclared limits keeps `defect`. Owned tests are in
+bound only by hard or undeclared limits keeps `defect`, except that an unsourced
+gap is advisory under AGENTEE-338. A zero-gap proof does not bind that gap. Owned tests are in
 `tests/test_constraint_provenance.py`.
 
 ### Pad shapes (AGENTEE-109)

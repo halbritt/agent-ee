@@ -296,14 +296,16 @@ class ProvenancePlacementTests(unittest.TestCase):
         before = pack(source, policy)
         self.assertEqual((before['status'], before['outcome']), ('packing_infeasible', 'defect'))
         self.assertEqual(before['binding_constraints'][0]['class'], 'unknown')
-        report = pack(source, {**policy, 'constraint_provenance': {'outline': ASSUMED}})
+        report = pack(source, {**policy, 'constraint_provenance': {
+            **policy['constraint_provenance'], 'outline': ASSUMED}})
         self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'unknown'))
         self.assertEqual(report['proof'], before['proof'])
         self.assertEqual(report['owner_confirmation'], ['outline'])
         self.assertEqual(report['binding_constraints'][0], {'constraint': 'outline', **ASSUMED})
         self.assertIn('binds soft limit(s) outline (assumed', report['reason'])
         # Owner-stated limits enforce as before.
-        stated = pack(source, {**policy, 'constraint_provenance': {'outline': STATED}})
+        stated = pack(source, {**policy, 'constraint_provenance': {
+            **policy['constraint_provenance'], 'outline': STATED}})
         self.assertEqual((stated['status'], stated['outcome']), ('packing_infeasible', 'defect'))
 
     def test_capacity_report_names_the_assumed_binding_constraint(self):

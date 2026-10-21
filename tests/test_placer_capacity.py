@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from agent_ee import placer
 from agent_ee.placer import pack
 from test_placement import MM, capture, part, polygon, rectangle
-from test_placer import request
+from test_placer import authored_gap, request
 from test_placer_residuals import box
 import test_placer_search
 from test_placer_search import board
@@ -31,8 +31,10 @@ MM2 = MM * MM
 def columns_case(count, **changes):
     parts = [part('U1', 4, 3, shape=box(4, 1.5, 16, 10.5))]
     parts += [part(f'C{i + 1}', 0, 0, shape=box(0, 0, 3.2, 3.2)) for i in range(count)]
-    return board(parts, rectangle(0, 0, 20, 12)), request(gap_nm=250_000, min_courtyard_edge_mm=0.5,
-                                                          step_budget=20000, **changes)
+    policy = request(gap_nm=250_000, min_courtyard_edge_mm=0.5, step_budget=20000, **changes)
+    if policy.get('capacity_proof'):
+        policy = authored_gap(policy, 'tests/test_placer_capacity.py:columns_case; authored 0.25 mm gap')
+    return board(parts, rectangle(0, 0, 20, 12)), policy
 
 
 def grown_square(side_mm, r_mm):
@@ -117,6 +119,51 @@ class CapacityDiagnosticTest(unittest.TestCase):
         self.assertEqual(source, original)
         self.assertEqual(report, pack(source, policy))
 
+    def test_unsourced_gap_cannot_establish_a_fragmentation_defect(self):
+        source, policy = columns_case(7, capacity_proof=True)
+        del policy['constraint_provenance']
+        report = pack(source, policy)
+        self.assertEqual((report['status'], report['outcome'], report['placements']),
+                         ('packing_infeasible', 'unknown', []))
+        self.assertEqual(report['owner_confirmation'], ['gap_nm'])
+        self.assertIn('gap_nm', report['reason'])
+        self.assertEqual(report['proof']['kind'], 'board_capacity_fragmented')
+        self.assertEqual(next(b for b in report['binding_constraints'] if b['constraint'] == 'gap_nm')['class'],
+                         'unknown')
+
+    def test_sourced_gap_is_value_bound_and_retained_in_the_proof(self):
+        source, policy = columns_case(7, capacity_proof=True)
+        gap = policy['constraint_provenance']['gap_nm']
+        report = pack(source, policy)
+        self.assertEqual(report['outcome'], 'defect')
+        self.assertIn({'constraint': 'gap_nm', **gap}, report['binding_constraints'])
+        for bad in ({**gap, 'value_nm': 1}, {**gap, 'value_nm': True},
+                    {**gap, 'citation': ''}, {**gap, 'citation': ' '}, {**gap, 'value_nm': -1},
+                    {**gap, 'class': 'assumed'}, {**gap, 'extra': 'x'},
+                    {**gap, 'enforcement': 'soft'}, []):
+            with self.subTest(gap=bad), self.assertRaisesRegex(ValueError, 'constraint_provenance'):
+                pack(source, {**policy, 'constraint_provenance': {'gap_nm': bad}})
+
+    def test_caller_qualified_manufacturer_gap_remains_hard(self):
+        # Exercise the geometry API's class handling with an original synthetic declaration.
+        # This test does not claim to capture or authenticate a JLCPCB assembly record.
+        source, policy = columns_case(7, capacity_proof=True)
+        gap = {**policy['constraint_provenance']['gap_nm'], 'class': 'manufacturer',
+               'citation': 'synthetic caller-qualified manufacturer requirement: gap 0.25 mm'}
+        report = pack(source, {**policy, 'constraint_provenance': {'gap_nm': gap}})
+        self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
+        self.assertIn({'constraint': 'gap_nm', **gap}, report['binding_constraints'])
+        self.assertNotIn('owner_confirmation', report)
+
+    def test_unsourced_gap_does_not_weaken_a_zero_gap_capacity_defect(self):
+        # Area alone fits, but the authored edge margin leaves a strip too narrow for a square.
+        source = capture([part('C1', 5, 5)], rectangle(0, 0, 4, 20))
+        policy = request(fixed_refs=[], gap_nm=250000, min_courtyard_edge_mm=1.5, capacity_proof=True)
+        report = pack(source, policy)
+        self.assertEqual((report['status'], report['outcome'], report['proof']['gap_nm']),
+                         ('packing_infeasible', 'defect', 0))
+        self.assertNotIn('gap_nm', [b['constraint'] for b in report['binding_constraints']])
+
     def test_without_the_opt_in_the_same_input_stays_unknown_with_the_diagnostic(self):
         source, policy = columns_case(7)
         report = pack(source, policy)
@@ -130,7 +177,9 @@ class CapacityDiagnosticTest(unittest.TestCase):
         # Sixteen 2 mm squares (64 mm2) on a 10 x 10 mm board pass the plain area proof;
         # grown by 0.5 mm in a container shrunk by 0.5 - 0.5 = 0 mm they need 140 mm2.
         parts = [part(f'C{i}', 0, 0) for i in range(16)]
-        policy = request(fixed_refs=[], gap_nm=1_000_000, min_courtyard_edge_mm=0.5, capacity_proof=True)
+        policy = authored_gap(request(fixed_refs=[], gap_nm=1_000_000, min_courtyard_edge_mm=0.5,
+                                      capacity_proof=True),
+                              'tests/test_placer_capacity.py:test_squares_grown_by_half_the_gap_exceed_the_free_area')
         report = pack(board(parts, rectangle(0, 0, 10, 10)), policy)
         self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
         self.assertEqual(report['proof']['kind'], 'board_capacity_gap')
@@ -148,7 +197,8 @@ class CapacityDiagnosticTest(unittest.TestCase):
                  request(gap_nm=1_500_000))
         for source, policy in (tight, notch):
             self.assertEqual(pack(source, policy)['status'], 'packing_search_exhausted')
-            proved = pack(source, dict(policy, capacity_proof=True))
+            proved = pack(source, authored_gap(dict(policy, capacity_proof=True),
+                'tests/test_placer_capacity.py:test_existing_unknowns_become_proofs_only_with_the_opt_in'))
             self.assertEqual((proved['status'], proved['outcome'], proved['proof']['kind']),
                              ('packing_infeasible', 'defect', 'board_capacity_fragmented'))
 

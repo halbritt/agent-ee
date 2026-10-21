@@ -13,6 +13,12 @@ def request(**changes):
     return params
 
 
+def authored_gap(policy, citation):
+    """Declare the numeric gap as an authored requirement of this original test fixture."""
+    return {**policy, 'constraint_provenance': {**policy.get('constraint_provenance', {}), 'gap_nm': {
+        'class': 'fixture_author', 'enforcement': 'hard', 'value_nm': policy['gap_nm'], 'citation': citation}}}
+
+
 class PlacerTest(unittest.TestCase):
     def keepout_board(self, *, owner='U1', layers=('F.Cu', 'B.Cu'), shape=None):
         from test_placement import rectangle

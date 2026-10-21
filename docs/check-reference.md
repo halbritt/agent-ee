@@ -1846,6 +1846,9 @@ The [placer obstacle policy](placer.md#declared-obstacle-unions-and-reserved-gap
 accepts touching and overlapping declared polygons as their exact same-side union.
 The policy still refuses invalid individual polygons. The pod's 0.25 mm reserved gap is an
 agent-chosen advisory default, currently enforced against fixed courtyards and
-obstacles; it has no captured assembly-rule authority. This changes packing
-policy admission only, with no registered check, schema or verdict change outside
-the newly admitted obstacle class.
+obstacles; it has no captured assembly-rule authority. A capacity proof that
+binds an unsourced gap is typed unknown and names `gap_nm` for owner confirmation.
+Proofs independent of that gap retain their verdicts; authored fixture requirements
+carry explicit fixture-author provenance. Qualified manufacturer gap requirements
+remain hard. There is no registered-check change; the existing packing policy's
+constraint provenance gains an optional value-bound `gap_nm` source entry.
