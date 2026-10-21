@@ -235,7 +235,7 @@ def admit_entry(entry, capture, inventory, derivation, policy):
             return None, [{'kind': 'frame_anchor', 'expected': anchor,
                            'actual': mapping[document['frame']['anchor']]}]
         board = {fp['ref']: fp for fp in capture['footprints']}
-        framed = [placer.transform(board[mapping[r['reference']]], r['pose']['position_nm'], r['pose']['rotation_deg'])
+        framed = [blocks.frame_member(board[mapping[r['reference']]], r['pose']['position_nm'], r['pose']['rotation_deg'])
                   for r in sorted(document['members'], key=lambda r: blocks._natural(mapping[r['reference']]))]
         _, grade, witness = blocks._evidence(capture, framed, sub)
         failed = [k for k, g in grade.items() if g and not blocks._grade_usable(k, g)] + (

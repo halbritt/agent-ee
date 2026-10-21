@@ -152,7 +152,8 @@ Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
-refuses any mismatch.
+refuses any mismatch. Land-pattern and courtyard hashes use canonical contour rings,
+so they do not depend on the captured board rotation (AGENTEE-370).
 The [block library](docs/block-library.md) keeps versioned known-good blocks in
 `blocks/` with provenance receipts. Its entries come from KiCad board regions,
 scale-verified datasheet figures and project clusters. A lookup returns each block
