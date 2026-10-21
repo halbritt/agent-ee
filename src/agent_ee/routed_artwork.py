@@ -53,6 +53,10 @@ def translated_content(node):
 def write_scope(before, after):
     """Compare every saved token except allowed silk translations; unknowns refuse."""
     from .silk_artwork import DECLARATION, movable_names
+    # The shared parser decodes escapes; token equality alone cannot prove the
+    # saved spelling KiCad renders. Refuse this unsupported input conservatively.
+    if any(b'\\' in data for data in (before, after)):
+        raise ValueError('backslash in artwork comparison is unsupported')
     roots = [parse_sexpr(b) for b in (before, after)]
     moves = []
     def compare(b, a, names=frozenset()):
@@ -68,6 +72,8 @@ def write_scope(before, after):
         silk = children(b, 'layer') in ([['layer', 'F.SilkS']], [['layer', 'B.SilkS']])
         field = b[0] == 'property' and len(b) > 2 and b[1] in names
         if silk and (field or b[0] in GRAPHICS):
+            if children(b, 'render_cache') or children(a, 'render_cache'):
+                raise ValueError('changed silk render_cache requires regenerated comparison')
             uid = children(b, 'uuid')
             if len(uid) != 1 or uid != children(a, 'uuid'):
                 raise ValueError('silk identity changed')

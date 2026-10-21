@@ -145,3 +145,39 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
     if graphics:
         report['moved_graphics'] = moved_graphics
     return report
+
+
+def contained_markings(board):
+    """Visible silk whose full native bounds fit one proven straight outline.
+
+    Checking all box edges also rejects boxes crossing a concavity even when
+    their corners are inside. Unsupported/multiple contours establish no closure.
+    Run in the native tool process, never import pcbnew into the coordinator.
+    """
+    import pcbnew as k
+    from .board_envelope import segment_inside
+    from .placement_probe import primitive, prove_contours
+    outline = prove_contours([primitive(s) for s in board.GetDrawings()
+                              if s.GetLayer() == k.Edge_Cuts], 'outline_missing', 'outline_unproven')
+    if outline['status'] != 'proven' or len(outline['polygons']) != 1:
+        return []
+    items = list(board.GetDrawings())
+    for fp in board.GetFootprints():
+        items.extend(fp.GraphicalItems())
+        items.extend(fp.GetFields())
+    contained = []
+    for item in items:
+        if item.GetLayer() not in (k.F_SilkS, k.B_SilkS):
+            continue
+        if item.GetClass() in ('PCB_FIELD', 'PCB_TEXT', 'FP_TEXT') and not item.IsVisible():
+            continue
+        # Unsupported native artwork cannot qualify by a possibly empty bbox.
+        if item.GetClass() not in ('PCB_FIELD', 'PCB_TEXT', 'FP_TEXT', 'PCB_SHAPE', 'FP_SHAPE'):
+            continue
+        box = item.GetBoundingBox()
+        corners = [(box.GetLeft(), box.GetTop()), (box.GetRight(), box.GetTop()),
+                   (box.GetRight(), box.GetBottom()), (box.GetLeft(), box.GetBottom())]
+        if all(segment_inside(a, b, outline['polygons'][0])
+               for a, b in zip(corners, corners[1:] + corners[:1])):
+            contained.append(item.m_Uuid.AsString())
+    return sorted(contained)

@@ -122,7 +122,14 @@ A board edit or a clean DRC delta alone does not close carry. Closure requires a
 later receipted placement result for the current board, complete native DRC with
 no remaining silk finding on the same identities, and preserved item ownership,
 marking content, layer and style. Missing, hidden or relabeled fields do not
-close a defect. An unsupported side-flip diagnostic also requires positive
+close a defect. Every closed field/graphic must also be visible silk wholly
+inside the single proven straight board outline. Closure recomputes native
+bounding boxes in a read-only, networkless tool process from the retained board
+bytes, checking every box edge against the qualified outline. Entirely off-board
+and edge-straddling markings stay typed open defects even when DRC is silent.
+Unqualified outlines or failed native containment probes cannot close carry.
+This applies to both placement and routed-artwork receipts. An unsupported
+side-flip diagnostic also requires positive
 artwork movement of that field, either recorded by the later artwork pass or
 visible in its saved position. The original side-flip case stays open even when
 another field moves and native `added_after` is empty. A later board may retain
@@ -169,7 +176,11 @@ supported silk graphic translated rigidly. The shared S-expression parser
 compares all other tokens exactly, including copper, mask, courtyards, pads,
 footprint poses, zones, tracks, vias, setup and unknown attributes. Numeric
 coordinates are normalized only within permitted graphic translations. Any
-other token change refuses publication. Project and custom-rule bytes
+other token change refuses publication. Changed text or fields carrying a
+`render_cache` refuse because this producer does not regenerate and compare the
+cache. Boards containing backslashes also refuse the scope proof: the shared
+parser decodes escapes, so decoded token equality cannot establish the saved
+spelling KiCad renders. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
 new non-silk native findings refuse the producer; remaining silk conflicts stay
 open. Uncarried baseline findings retain their existing check verdicts.
@@ -193,3 +204,9 @@ and a nonroot read-only host sandbox.
 verification/fab refusal, receipted graphic repair, closure, passing verification
 geometry and native fab export (Gerbers, drill, BOM and CPL), followed by campaign
 replay. A passing export does not authorize fabrication.
+
+The producer restores the source `.kicad_dru` bytes but does not authenticate a
+writer-editable custom rule file against an earlier placement receipt. A writer
+can relax a numeric silk constraint before this step without using severity
+`ignore`; this remains a recorded limitation (AGENTEE-350 review G5). The
+containment requirement is independent of custom silk constraints.

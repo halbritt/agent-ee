@@ -41,6 +41,16 @@ class PlacementDefectContractTests(unittest.TestCase):
         with patch('agent_ee.stage_done._receipts', return_value=[(1, 'unused', receipt)]):
             self.assertIsNone(placement_defects.adopted('unused', {}, 1))
 
+    def test_nonanchored_artwork_receipt_is_ignored(self):
+        from agent_ee.routed_artwork import STEP
+        # A file on disk is insufficient: only the anchored receipt index is read.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            work = root / 'implementations/1/receipts/1-agent-ee-routed-artwork'
+            work.mkdir(parents=True)
+            write_json(work / 'receipt.json', {'spec': {'step': STEP}, 'status': 'completed'})
+            self.assertIsNone(placement_defects.adopted(root, {}, 1))
+
     def test_graphic_text_style_damage_retains_known_defect(self):
         with tempfile.TemporaryDirectory() as directory:
             before, after = (Path(directory) / name for name in ('before', 'after'))
@@ -59,9 +69,10 @@ class PlacementDefectContractTests(unittest.TestCase):
             self.assertFalse(placement_defects._closes(defect, placement_defects._identities(before),
                 placement_defects._identities(after), set(), set(), True, graphic_translation=True))
             before.write_text(text)
-            # Position alone remains permitted; all text content/style is unchanged.
+            # This own-branch fixture lacks a proven outline: position alone
+            # cannot establish visible in-board silk, even with unchanged style.
             after.write_text(text.replace('(at 1 2)', '(at 2 3)'))
-            self.assertTrue(placement_defects._closes(defect, placement_defects._identities(before),
+            self.assertFalse(placement_defects._closes(defect, placement_defects._identities(before),
                 placement_defects._identities(after), set(), set(), True, graphic_translation=True))
 
 
@@ -672,7 +683,9 @@ class PlacementRoutingCarryTests(unittest.TestCase):
                          {key: closed_state.get(key) for key in ('state', 'reason', 'error')})
         refused = fixture.out / 'runs/3'
         for check_id in ('verify', 'fab'):
-            self.assertEqual(read_json(refused / f'checks/{check_id}.json')['outcome'], 'defect')
+            refused_check = read_json(refused / f'checks/{check_id}.json')
+            self.assertEqual(refused_check['outcome'], 'defect')
+            self.assertEqual(refused_check['details']['reason'], 'open_placement_defects')
         fixed = fixture.out / 'runs/4'
         fixed_manifest = read_json(fixed / 'candidate.json')
         self.assertEqual(placement_defects.open_defects(fixed_manifest, fixed / 'inputs'), [])

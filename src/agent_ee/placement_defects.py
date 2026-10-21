@@ -191,11 +191,43 @@ def _bundle(manifest, inputs, link):
     return report, loaded, drc
 
 
+class _SavedIdentities(dict):
+    """Parsed identities retaining their exact saved board for lazy native proof."""
+    def __init__(self, path):
+        super().__init__()
+        self.board_bytes = Path(path).read_bytes()
+        self._contained = None
+
+    def contained(self):
+        if self._contained is not None:
+            return self._contained
+        import tempfile
+        from .executor import execute
+        # Reuse the native search's outline qualification and exact segment test.
+        # A fresh read-only snapshot prevents path changes during replay.
+        script = ("import json, pcbnew; from agent_ee.silk_artwork import contained_markings; "
+                  "from pathlib import Path; "
+                  "Path('/work/contained.json').write_text(json.dumps(contained_markings("
+                  "pcbnew.LoadBoard('/candidate/board.kicad_pcb'))))")
+        with tempfile.TemporaryDirectory(prefix='agent-ee-silk-closure-') as directory:
+            root = Path(directory)
+            inputs = root / 'inputs'
+            inputs.mkdir()
+            (inputs / 'board.kicad_pcb').write_bytes(self.board_bytes)
+            work = root / 'work'
+            record = execute(inputs, work, ['/usr/bin/python3', '-B', '-c', script], timeout=120)
+            # Failure cannot erase a known defect or become passing coverage.
+            self._contained = (set(read_json(work / 'contained.json'))
+                               if record['execution'] == 'ok' and record['exit_code'] == 0 and
+                               (work / 'contained.json').is_file() else set())
+        return self._contained
+
+
 def _identities(path):
     """Saved native item identities and marking content, using the shared parser."""
     from .symbol_library import children, parse_sexpr
-    root = parse_sexpr(Path(path).read_bytes())
-    result = {}
+    result = _SavedIdentities(path)
+    root = parse_sexpr(result.board_bytes)
     def visit(node, owner):
         uid = children(node, 'uuid')
         if uid:
@@ -322,7 +354,9 @@ def _closes(defect, original, current, conflicts, moved, current_board, graphic_
                 current[u][1][0].startswith(('fp_', 'gr_'))}
     def same(u):
         if current[u][:2] == original[u][:2]:
-            return True
+            # Text angle lives in the position node; only its x/y may move.
+            return ([at[3:] for at in current[u][2]] ==
+                    [at[3:] for at in original[u][2]])
         from .routed_artwork import GRAPHICS, translated_content
         from .symbol_library import children
         old_owner, old, _ = original[u]
@@ -334,6 +368,7 @@ def _closes(defect, original, current, conflicts, moved, current_board, graphic_
     return (current_board and ids <= current.keys() and ids <= original.keys() and
             all(same(u) for u in ids) and
             bool(markings) and not (markings & conflicts) and
+            (not isinstance(current, _SavedIdentities) or markings <= current.contained()) and
             ('native' in defect or all(u in moved or current[u][2] != original[u][2] for u in ids)))
 
 

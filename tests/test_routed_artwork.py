@@ -158,6 +158,65 @@ class RoutedArtworkTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             art.write_scope(before, after)
 
+    def test_stale_render_cache_refuses_text_or_field_translation(self):
+        nodes = (
+            '(gr_text "mark" (at 1 2) (layer "F.SilkS") (uuid "mark") '
+            '(render_cache "mark" 0 (polygon (pts (xy 1 2) (xy 2 2) (xy 1 3)))))',
+            '(footprint "owned" (property "Reference" "U1" (at 1 2) '
+            '(layer "F.SilkS") (uuid "mark") (render_cache "U1" 0)))',
+        )
+        for node in nodes:
+            before = ('(kicad_pcb ' + node + ')').encode()
+            after = before.replace(b'(at 1 2)', b'(at 2 3)')
+            with self.subTest(node=node), self.assertRaisesRegex(ValueError, 'render_cache'):
+                art.write_scope(before, after)
+
+    def test_scope_refuses_backslashes_even_when_parser_erases_them(self):
+        before = b'(kicad_pcb (gr_text "R1" (at 1 2) (layer "F.SilkS") (uuid "mark")))'
+        for escaped in (b'R\\1', b'R\\01'):
+            after = before.replace(b'R1', escaped)
+            with self.subTest(escaped=escaped), self.assertRaisesRegex(ValueError, 'backslash'):
+                art.write_scope(before, after)
+            with self.assertRaisesRegex(ValueError, 'backslash'):
+                art.write_scope(after, after)
+
+    def test_carried_markings_must_remain_wholly_inside_outline(self):
+        import pcbnew as k
+        from agent_ee import placement_defects as pd
+        from agent_ee.placer_runner import _native_drc
+        for case in ('offboard_all', 'offboard_one', 'edge_straddle'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory(dir=self.root) as d:
+                prior, self.root = self.root, Path(d)
+                try:
+                    source = self.board()
+                    baseline = self.root / 'baseline-drc'
+                    baseline.mkdir()
+                    drc = _native_drc(source, baseline)
+                    defects = [dict(type='placement_silkscreen_conflict', status='open',
+                                    verdict='defect', native=v) for v in drc['violations']
+                               if v['type'] in ('silk_overlap', 'silk_over_copper')]
+                    self.assertTrue(defects)
+                    original = pd._identities(source)
+                    board = k.LoadBoard(str(source))
+                    fields = sorted(board.GetFootprints(), key=lambda f: f.GetReference())
+                    moved = fields if case == 'offboard_all' else fields[:1]
+                    bad = {fp.Reference().m_Uuid.AsString() for fp in moved}
+                    for fp in moved:
+                        fp.Reference().SetPosition(k.VECTOR2I(-300000, 3000000) if case == 'edge_straddle'
+                                                   else k.VECTOR2I(-80000000, -80000000))
+                    k.SaveBoard(str(source), board, True)
+                    art.produce(source, self.root / 'run')
+                    current = pd._identities(self.root / 'run' / art.BOARD)
+                    # Even a silent DRC cannot establish on-board containment.
+                    affected = [d for d in defects if pd._items(d) & bad]
+                    self.assertTrue(affected)
+                    for graphic_translation in (False, True):
+                        for defect in affected:
+                            self.assertFalse(pd._closes(defect, original, current, set(), set(), True,
+                                                        graphic_translation=graphic_translation))
+                finally:
+                    self.root = prior
+
     def test_native_receipt_is_bound_to_source_and_saved_geometry(self):
         from agent_ee.cli import policy_files
         source = self.board(graphic=True)
