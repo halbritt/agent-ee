@@ -338,6 +338,8 @@ def _shift(fp, dx, dy):
                           for side, c in fp['courtyards'].items()},
            'packing_keepouts': [{'side': k['side'], 'polygons': [move(poly) for poly in k['polygons']]}
                                 for k in fp.get('packing_keepouts', [])], 'pads': []}
+    if 'access_direction' in fp:
+        out['access_direction'] = fp['access_direction']
     for key in ('_packing_holes', '_packing_targets'):
         if key in fp:
             out[key] = boxed(fp[key])
@@ -345,6 +347,10 @@ def _shift(fp, dx, dy):
         if key + '_box' in fp:
             box = fp[key + '_box']
             out[key + '_box'] = None if box is None else (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
+    if '_packing_copper' in fp:
+        out['_packing_copper'] = placer._shift_copper(fp['_packing_copper'], dx, dy)
+    if '_packing_copper_setback' in fp:
+        out['_packing_copper_setback'] = fp['_packing_copper_setback']
     return out
 
 
@@ -537,6 +543,7 @@ class _Arrangement:
         self.gap, self.grounds = policy['gap_nm'], set(policy['ground_nets'])
         self.budget, self.steps = arrangement['step_budget'], 0
         self.current, self.backjumps, self.rejected = None, 0, {}
+        self.access_rejections = {}
         self.started = time.monotonic()
         self.deadline = (self.started + arrangement['search_timeout_s'] if 'search_timeout_s' in arrangement
                          else None)
@@ -614,8 +621,12 @@ class _Arrangement:
 
     def members_at(self, bid, position, rotation):
         turns = rotation // 90
-        return [placer.transform(fp, [position[0] + p[0], position[1] + p[1]], (fp['rotation_deg'] + rotation) % 360)
-                for fp in self.frames[bid] for p in [placer.rotate(fp['position_nm'], turns)]]
+        members = [placer.transform(fp, [position[0] + p[0], position[1] + p[1]],
+                                    (fp['rotation_deg'] + rotation) % 360)
+                   for fp in self.frames[bid] for p in [placer.rotate(fp['position_nm'], turns)]]
+        for fp in members:
+            placer._cache_copper_extent(fp)
+        return members
 
     def push(self, bid, position, rotation, proposed):
         members = self.members_at(bid, position, rotation)
@@ -746,14 +757,31 @@ class _Arrangement:
             self.rotated[bid, rotation] = at_origin, members
             evaluator = self._locality(members)
             targets = evaluator.targets() + self._group_targets(members)
+            access_overhang = any(placer.access_direction.overhangs_courtyard(fp) for fp in members)
             xs, ys = placer._candidate_axes(macro, rotation, self.outline, anchors, self.gap, self.margin,
-                                            targets, window)
+                                            targets, None if access_overhang else window)
+            access_x, access_y = set(), set()
+            for fp in members:
+                ax, ay = placer.access_direction.axes(fp, self.outline)
+                access_x.update(ax)
+                access_y.update(ay)
+            xs = sorted(set(xs) | {x for x in access_x if access_overhang or lo_x <= own['bbox'][0] + x and own['bbox'][2] + x <= hi_x})
+            ys = sorted(set(ys) | {y for y in access_y if access_overhang or lo_y <= own['bbox'][1] + y and own['bbox'][3] + y <= hi_y})
             # Member-aligned axes: a frontier member box touching a reserved box or obstacle in x.
             bx0, by0, bx1, by1 = own['bbox']
             left, right = own['frontier']
             touch = {a[2] + self.gap - m[0] for side, m in left for other, a in anchors if other == side}
             touch |= {a[0] - self.gap - m[2] for side, m in right for other, a in anchors if other == side}
             xs = sorted(set(xs) | {x for x in touch if lo_x <= bx0 + x and bx1 + x <= hi_x})
+            # Member copper outside its courtyards aligns to the outline, held off it by the
+            # structural setback (AGENTEE-366e); a block without such copper keeps its axes.
+            copper = [(fp['_packing_copper_setback'], placer._box([poly])) for fp in members
+                      for poly in fp.get('_packing_copper', {}).get('outline', ())]
+            if copper:
+                xs = sorted(set(xs) | {x for s, (c0, _, c1, _) in copper for p in self.outline
+                                       for x in (p[0] + s - c0, p[0] - s - c1) if lo_x <= bx0 + x and bx1 + x <= hi_x})
+                ys = sorted(set(ys) | {y for s, (_, c0, _, c1) in copper for p in self.outline
+                                       for y in (p[1] + s - c0, p[1] - s - c1) if lo_y <= by0 + y and by1 + y <= hi_y})
             entries = own['entries'] + [e for placed in self.placed_blocks for e in self.entries(
                 bid, rotation, placed['block'])]
             # One term per net shared with placed parts: the block's pad centroid on that net.
@@ -800,7 +828,16 @@ class _Arrangement:
                 hits.add(self.owner.get(fp['ref']))
         if hits:
             return 'drilled_pad', hits - {None}
-        if not placer._fits(proposed, self.outline, self.margin):
+        rejected_access = [fp['ref'] for fp in members if not placer.access_direction.admits(fp, self.outline)]
+        if rejected_access:
+            for ref in rejected_access:
+                self.access_rejections[ref] = self.access_rejections.get(ref, 0) + 1
+            return 'access_direction', set()
+        if any(placer.access_direction.overhangs_courtyard(fp) for fp in members):
+            fits = all(placer._fits(fp, self.outline, self.margin) for fp in members)
+        else:
+            fits = placer._fits(proposed, self.outline, self.margin)
+        if not fits:
             return 'outline', set()
         if placer._near(proposed, self.exact, self.gap):
             return 'fixed_or_obstacle', set()
@@ -811,6 +848,11 @@ class _Arrangement:
                 or placer._in_keepouts(fp, proposed.get('packing_keepouts', []))}
         if hits:
             return 'rule_area', hits - {None}
+        # Member copper outside its courtyards (AGENTEE-366); the macro carries no pads.
+        for fp in members:
+            escaped = placer._copper_escapes(fp, self.outline, self.keepouts, self.placed_fps)
+            if escaped is not None:
+                return escaped[0], {self.owner.get(r) for r in escaped[1]} - {None, bid}
         hits = {owner for owner, entry in self.shadow_exact if placer._near(proposed, [entry], self.gap)}
         for fp in members:
             if fp['ref'] in self.stacking:
@@ -1030,6 +1072,9 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     work = copy.deepcopy(capture)
     try:
         outline = placer._qualified(work)
+        for fp in work['footprints']:
+            if placer.access_direction.hard(fp):
+                placer.access_direction.geometry(fp)
         keepouts = placer._keepouts(work)
         bands = overhang_bands(effective.get('fixed_overhangs', []), outline)
     except ValueError as exc:
@@ -1074,6 +1119,9 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     except ValueError as exc:
         return failure('fixed_conflict', str(exc))
     placed = [fp for fp in placed if fp['ref'] not in members]
+    missing = placer.copper_setback_missing(fp for fp in work['footprints'] if fp['ref'] not in fixed)
+    if missing:
+        return failure('unsupported_geometry', missing)
     search = _Arrangement(work, effective, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat)
     # Blocks with drilled pads or a hard opposite-side shadow constrain both sides: place them first.
     through = {bid for bid, entry in admitted.items() if any(
@@ -1086,11 +1134,14 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     levels, backjumps, peak = [], 0, 0
 
     def stopped(status, reason, unplaced=None):
+        if search.access_rejections:
+            reason += '; access direction rejected poses for ' + ', '.join(sorted(search.access_rejections))
         partial = [{'block': p['block'], 'position_nm': p['position_nm'], 'rotation_deg': p['rotation_deg']}
                    for p in search.placed_blocks]
         return failure(status, reason, search.steps, search={
             'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget, 'backjumps': backjumps,
             'placed_peak': peak, 'rejected': dict(sorted(search.rejected.items())),
+            **({'access_rejections': dict(sorted(search.access_rejections.items()))} if search.access_rejections else {}),
             **({'unplaced': unplaced} if unplaced else {}),
             'partial': {'authority': 'diagnostic-only-unvalidated-partial-arrangement', 'blocks': partial}})
     try:
@@ -1205,7 +1256,7 @@ def _roster(plan):
     return rows
 
 
-def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256):
+def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256, reserved_area=None):
     """The review input of a complete arranged plan: every placed block's identity, class and enforcement.
 
     ``plan_sha256`` is the SHA-256 of the written placement-plan.json bytes, which the
@@ -1223,6 +1274,8 @@ def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256):
                 'plan_sha256': plan_sha256, 'blocks': rows,
                 'rules': [{k: r[k] for k in ('rule', 'id', 'enforcement', 'status') if k in r}
                           for r in (record['rules'] if rules is None else rules)]}
+    if reserved_area is not None:
+        document['reserved_area'] = reserved_area
     return validate_provenance(document)
 
 
@@ -1261,13 +1314,18 @@ def _sha256(value, label):
 def validate_provenance(document):
     """Refuse a block provenance artifact whose classes, enforcement or identities are inconsistent."""
     blocks._keys(document, {'schema', 'authority', 'source_sha256', 'board_sha256', 'derivation_sha256',
-                            'policy_sha256', 'plan_sha256', 'blocks', 'rules'}, label='block provenance')
+                            'policy_sha256', 'plan_sha256', 'blocks', 'rules'}, {'reserved_area'}, label='block provenance')
     if document['schema'] != PROVENANCE_ARTIFACT or document['authority'] != PROVENANCE_AUTHORITY:
         raise ValueError(f'block provenance must be {PROVENANCE_ARTIFACT} with its fixed authority statement')
     for key in ('source_sha256', 'board_sha256', 'derivation_sha256', 'policy_sha256', 'plan_sha256'):
         _sha256(document[key], key)
     if not isinstance(document['blocks'], list) or not document['blocks']:
         raise ValueError('block provenance names no placed block')
+    if 'reserved_area' in document:
+        reserve = document['reserved_area']
+        if (not isinstance(reserve, dict) or reserve.get('schema') != 'agent-ee.reserved-area/1'
+                or reserve.get('board_sha256') != document['board_sha256']):
+            raise ValueError('reserved area must name the provenance saved board')
     seen, references = set(), set()
     for row in document['blocks']:
         blocks._keys(row, {'block', 'references', 'anchor', 'candidate_sha256', 'class', 'enforcement', 'citation',

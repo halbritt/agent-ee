@@ -40,6 +40,7 @@ def declaration(ic='U1', cap='C1', supply='VCC', ground='GND', limit=5*MM):
 def board():
     b = capture([part('U1', 6, 6), part('C1', 15, 15)])
     b['pcbnew_version'] = '10.0.7'
+    b['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits
     for f in b['footprints']:
         x, y = f['position_nm']
         f['pads'] = [dict(uuid=f['ref']+str(i), number=str(i), net=net,
@@ -1262,6 +1263,7 @@ class LocalityIndexTests(unittest.TestCase):
             footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
         b = capture(footprints, rectangle(0, 0, 84, 72))
         b['pcbnew_version'] = '10.0.7'
+        b['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits
         doc = {'schema': locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': []}
         for i in range(15):
             doc['obligations'] += declaration(ic='P'+str(2*i), cap='P'+str(2*i+1),
@@ -1356,6 +1358,7 @@ class LocalityIndexTests(unittest.TestCase):
             footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
         b = capture(footprints, rectangle(0, 0, 84, 72))
         b['pcbnew_version'] = '10.0.7'
+        b['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits
         for movable, clustered in (({'P29'}, False), ({'P29', 'P31'}, True)):
             doc = {'schema': locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': []}
             for i in range(15):

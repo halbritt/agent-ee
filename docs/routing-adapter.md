@@ -861,7 +861,9 @@ hashes. A routed board remains a proposal requiring fresh agent-ee checks.
 ## Limits
 
 - One pin. A new kicad-route commit needs a reviewed new pin and fixture
-  qualification. Nothing upgrades automatically.
+  qualification. Nothing upgrades automatically. The
+  [routing policy contract](routing-policy-contract.md#3-consumer-impact-of-campaign2-and-routability-experiment1)
+  lists what a re-pin changes.
 - When the state is the checkout itself, the read-only mount includes the
   checkout's `.git` and `build/` directories. Host-side kicad-route runs by
   others still change directory metadata there, for example a transient git

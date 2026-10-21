@@ -1787,6 +1787,14 @@ requires exact saved primitives, arc nodes and native merged-copper evidence;
 mutation or missing native output refuses admission. This changes transform
 admission only; check registration and placement grading remain unchanged.
 
+AGENTEE-366 gates [placer candidates on copper extent](placer.md#copper-extent-gate-agentee-366)
+as well as courtyard: pad copper beyond a part's courtyards must stay in the
+outline and out of same-side footprint keep-outs during packing, block
+arrangement and targeted plans. That copper is also held a structural setback
+of the board `m_MaxError` plus 50 nm inside the outline, so it composes with the
+AGENTEE-331 publication gate. The setback is typed unknown when the facts lack
+`max_error_nm`, for in-courtyard copper as well. With the fact present, parts whose copper lies in their courtyards plan as before. This adds no registered check or acceptance predicate.
+
 ## Copper feature consumers (AGENTEE-315)
 
 AGENTEE-315 cross-checks `fab_export` and `fab_package` copper declarations
@@ -2182,3 +2190,38 @@ already refuse a policy-level `constraint_provenance`. Hard block-arrangement
 keep-outs and `no_stacking` shadows carry their rule's citation as
 `arrangement_rule`/`hard`, so a residual capacity proof that rests on one
 reports `defect` instead of `unknown`. No check registration changes.
+
+### Saved-placement reserve diagnostics (AGENTEE-380)
+
+The [placer reserve-cost record](placer.md#advisory-reserve-cost-agentee-380)
+is advisory saved-proposal evidence, not a registered acceptance check.
+`placement-result.json` and arranged `block-provenance.json` carry per-side,
+per-owner clipped reserve areas and `large_reserve` findings. Unsupported bodies
+or outlines remain unknown. The unsourced 5% suggestion never affects check
+verdicts. Saved proposals validate cheaper poses with native DRC, captured rules and the
+existing write-scope preservation witness on scratch boards. Rejected and unknown
+attempts remain visible; if no attempt validates and any attempt is unknown,
+the alternative stays unknown with an incomplete search. Numeric-looking zone
+names never waive structural native findings. Standalone geometric poses stay
+hypothetical and unverified. The optimum is limited to the declared finite pose
+set. Fixed and rigid-block alternatives remain unsearched.
+
+## Access direction in placement containment (AGENTEE-379)
+
+The existing `placement` check with `outline-containment/1` also grades native
+[footprint access declarations](access-direction.md). Sourced declarations with
+an inboard lane or an unexitable mouth are defects; malformed or unsupported
+sourced geometry remains unknown. Uncited declarations are reported advisories
+and never gate. The saved-board placement judge retains transformed lane
+measurements and the shared fixed-overhang edge-sweep geometry for review.
+This adds no check kind or independent acceptance authority.
+
+## Candidate inspection images (AGENTEE-382)
+
+[Candidate imaging](pcb-renders.md#candidate-inspection-images-agentee-382) runs
+after saved placement and during coordinator capture. It is not a registered
+acceptance check. Review packets carry board-bound top/bottom PNG and copper,
+silk and courtyard SVG paths and hashes, including every enabled inner layer.
+Skipped or failed imaging remains explicit missing coverage and leaves every
+existing check verdict unchanged. No image can establish geometric fit or waive
+a native defect.

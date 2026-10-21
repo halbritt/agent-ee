@@ -539,6 +539,18 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed its declared electrical locality')
     if any(r['enforcement'] == 'hard' and r['status'] != 'pass' for r in judgment.get('block_rules', [])):
         raise ValueError('saved-board placement failed a hard block arrangement rule')
+    from .reserved_area import report as reserve_report, fabrication_outlines, alternatives
+    fabrication = fabrication_outlines(output)
+    reserve_policy = {**plan['policy'], 'obstacles': [*plan['policy']['obstacles'],
+        *plan.get('block_arrangement', {}).get('arrangement', {}).get('keepouts', [])]}
+    reserve = reserve_report(saved, reserve_policy, fabrication)
+    if reserve.get('sides'):
+        from .reserved_area_native import NativeAlternatives
+        alternatives(saved, plan['policy'], fabrication, reserve, plan,
+                     NativeAlternatives(output, output.parent / 'reserve-alternatives',
+                                        saved, plan['policy'], plan))
+    judgment['reserved_area'] = reserve
+    write_json(output.parent / 'placement-judgment.json', judgment)
     from .silk_artwork import containment_witness
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
             'containment': containment_witness(output),
@@ -546,7 +558,7 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
             'status': 'placed', 'outcome': 'defect' if comparison['open_defects'] else 'info',
             'verdict': 'defect' if comparison['open_defects'] else 'info',
             'open_defects': comparison['open_defects'], 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],
-            'plan': plan, 'judgment': judgment,
+            'plan': plan, 'judgment': judgment, 'reserved_area': reserve,
             'native_courtyard_overlaps': overlaps, 'native_drc_comparison': comparison,
             'authority': 'disposable-unsealed-proposal'}
 
@@ -612,6 +624,8 @@ def place_candidate(source, netlist, destination, request):
     return without creating a destination. Existing coordinator baseline, source
     allowlist and evidence-sealing checks remain the caller's responsibility.
     """
+    from .candidate_visuals import produce, skip_requested
+    skip_visuals = skip_requested(request.get('skip_visuals', False))
     source, netlist = Path(source).resolve(), Path(netlist).resolve()
     destination = Path(destination).absolute()
     root = _authorization(source, destination, request['authorization'])
@@ -635,7 +649,9 @@ def place_candidate(source, netlist, destination, request):
         _netlist_binding(netlist_bytes, facts, _board_only(board))
         policy = reserve_imu_markings(board, _effective_policy(request))
         plan = _plan(facts, request, policy, netlist)
-        refusal = plan['status'] == 'planned' and _padstack_refusal(board)
+        # A per-layer padstack also leaves its copper extent unproven (AGENTEE-366):
+        # the padstack refusal names the cause either way.
+        refusal = plan['status'] in ('planned', 'unsupported_geometry') and _padstack_refusal(board)
         if refusal:
             return _failure(facts, policy, 'unsupported_geometry', 'unknown', plan['steps_used'], refusal)
         if plan['status'] != 'planned':
@@ -660,8 +676,12 @@ def place_candidate(source, netlist, destination, request):
                     from .block_arrangement import provenance_artifact
                     write_json(scratch / 'block-provenance.json', provenance_artifact(
                         plan, report['board_sha256'], report['judgment']['block_rules'],
-                        plan_sha256=digest(scratch / 'placement-plan.json')))
+                        plan_sha256=digest(scratch / 'placement-plan.json'),
+                        reserved_area=report['reserved_area']))
                     report['block_provenance_sha256'] = digest(scratch / 'block-provenance.json')
+                report['visuals'] = produce(output, scratch / 'visuals', skip=skip_visuals)
+                for image in report['visuals']['images']:
+                    image['path'] = 'visuals/' + image['path']
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:
                     raise ValueError('captured placement inputs changed during execution')
                 if any((p.read_bytes() if p.is_file() else None) != payload for p, payload in project_inputs.items()):
@@ -683,8 +703,11 @@ def main(argv=None):
     parser.add_argument('--request', required=True)
     parser.add_argument('--destination', required=True)
     parser.add_argument('--result', required=True)
+    parser.add_argument('--skip-visuals', action='store_true')
     args = parser.parse_args(argv)
     request = read_json(args.request)
+    if args.skip_visuals:
+        request['skip_visuals'] = True
     root = Path(request['authorization']['writable_root'])
     result_path = Path(args.result).absolute()
     if result_path.parent != root or result_path.exists() or result_path.is_symlink():

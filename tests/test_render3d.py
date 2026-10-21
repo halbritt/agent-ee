@@ -76,6 +76,19 @@ Path(sys.argv[sys.argv.index('--output')+1]).write_bytes(image)
     def render(self, **kwargs):
         return render_board(self.board, self.out, width=96, height=80, timeout=5, **kwargs)
 
+    def test_selected_top_bottom_views_use_the_same_renderer_contract(self):
+        manifest = json.loads(self.render(views=('top', 'bottom'), jobs=2).read_text())
+        self.assertEqual(manifest['status'], 'completed')
+        self.assertEqual(set(manifest['views']), {'top', 'bottom'})
+        self.assertEqual({i['view'] for i in manifest['images']}, {'top', 'bottom'})
+        self.assertFalse((self.out / 'isometric.json').exists())
+
+    def test_invalid_view_selection_refuses_before_output_creation(self):
+        for views in ((), ('top', 'top'), ('sideways',), 'top'):
+            with self.subTest(views=views), self.assertRaises(ValueError):
+                self.render(views=views)
+            self.assertFalse(self.out.exists())
+
     def test_three_native_views_preserve_inputs_and_record_actual_pngs(self):
         before = {p.name: digest(p) for p in self.source.iterdir()}
         progress = []

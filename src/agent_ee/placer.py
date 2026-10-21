@@ -25,9 +25,9 @@ from fractions import Fraction
 import math
 import time
 
-from . import electrical_locality, placement_groups, placement_provenance
+from . import access_direction, electrical_locality, placement_groups, placement_provenance
 from .placement import (area2, boxes_meet, convex, courtyard_bounds, cross, edges, intersection_area, judge,
-                        overhang_bands, qualified_polygons, validate_capture)
+                        on_segment, overhang_bands, qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
 from .symbol_library import LibraryError, nanometres
 
@@ -36,6 +36,9 @@ from .symbol_library import LibraryError, nanometres
 # TRAPEZOID (3) is unqualified; CUSTOM (6) requires per-pad native evidence.
 PAD_SHAPES = {0: 'circle', 1: 'rect', 2: 'oval', 4: 'roundrect', 5: 'chamfered_rect'}
 PAD_SHAPE_PCBNEW_MAJOR = '10'
+# AGENTEE-331 reports edge clearance to 4 decimals of a millimetre: below 50 nm
+# touching cannot be told from crossing (design_rule_provenance), a structural defect.
+COPPER_REPORT_WINDOW_NM = 50
 
 
 def rotate(point, quarter_turns):
@@ -53,9 +56,12 @@ def _copy_footprint(fp):
     deep; the leaves it leaves unchanged are shared with the source, which the
     search, judge, graders and writer only read. The ephemeral box caches are
     rebuilt by _cache_pad_reservations. The result equals copy.deepcopy(fp) with
-    the cache keys removed (AGENTEE-332: deepcopy dominated per-candidate cost).
+    the cache keys removed (AGENTEE-332: deepcopy dominated per-candidate cost);
+    the derived copper setback is a board fact, not a cache, and is kept.
     """
     placed = {key: value for key, value in fp.items() if not key.startswith('_packing_')}
+    if '_packing_copper_setback' in fp:
+        placed['_packing_copper_setback'] = fp['_packing_copper_setback']
     placed['courtyards'] = {side: dict(courtyard) for side, courtyard in fp['courtyards'].items()}
     if 'packing_keepouts' in fp:
         placed['packing_keepouts'] = [dict(keepout) for keepout in fp['packing_keepouts']]
@@ -99,6 +105,8 @@ def transform(fp, position, rotation):
         if 'copper_centroid_offset_nm' in pad:
             offset = rotate([Fraction(*v) for v in pad['copper_centroid_offset_nm']], turns)
             pad['copper_centroid_offset_nm'] = [[v.numerator, v.denominator] for v in offset]
+        if 'copper_land_offset_nm' in pad:
+            pad['copper_land_offset_nm'] = rotate(pad['copper_land_offset_nm'], turns)
         pad['position_nm'] = move(pad['position_nm'])
         pad['rotation_deg'] = (pad['rotation_deg'] + rotation-fp['rotation_deg']) % 360
     placed.update(position_nm=list(position), rotation_deg=rotation)
@@ -126,6 +134,9 @@ def _translate(at_origin, position):
         pad['position_nm'] = move(pad['position_nm'])
     placed['position_nm'] = list(position)
     _cache_pad_reservations(placed)
+    # A rigid translation keeps which copper boxes leave the courtyards.
+    if '_packing_copper' in at_origin:
+        placed['_packing_copper'] = _shift_copper(at_origin['_packing_copper'], dx, dy)
     return placed
 
 
@@ -296,6 +307,7 @@ def _qualified(capture):
     missing = sorted(fp['ref'] for fp in capture['footprints'] if fp['side'] not in fp['courtyards'])
     if missing:
         raise ValueError(f"mounting-side courtyard missing: {', '.join(missing)}")
+    setback = copper_setback(capture)
     def drilled(p):
         return p.get('attribute') in ('PTH', 'NPTH') or any(p.get('drill_size_nm', []))
 
@@ -360,7 +372,9 @@ def _qualified(capture):
                                  f"{pad.get('shape')!r} not qualified for packing")
             if type(pad.get('rotation_deg')) not in (int, float) or pad['rotation_deg'] % 90:
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: pad rotation must be a quarter turn")
+        fp['_packing_copper_setback'] = setback
         _cache_pad_reservations(fp)
+        _cache_copper_extent(fp)
     # A hole excludes every peer's courtyard and copper: a peer without a native
     # target inventory leaves the exclusion unproven, which is unknown, not clear.
     geometries = [fp.get('packing_pad_geometry') for fp in capture['footprints']]
@@ -374,6 +388,9 @@ def _keepouts(capture):
     owners = {fp['uuid']: fp for fp in capture['footprints']}
     for fp in owners.values():
         fp['packing_keepouts'] = []
+        if access_direction.hard(fp):
+            _, _, _, lane = access_direction.geometry(fp)
+            fp['packing_keepouts'].append({'side': fp['side'], 'polygons': lane})
     obstacles = []
     areas = capture.get('rule_areas', [])
     if not isinstance(areas, list):
@@ -508,7 +525,183 @@ def _hole_conflict(candidate, peer):
     return False
 
 
+def _copper_box(fp, pad):
+    """Integer box containing the pad's copper land, or None for a hand-built record without native land facts.
+
+    A proven custom pad carries its native box (anchor and every primitive). A
+    symmetric stock land is its size, quarter-turned, about the native shape
+    centre (anchor plus copper centroid offset); a circle is native, its X
+    diameter on both axes. A chamfered land contains its area centroid, so the
+    box twice its size about that centroid contains it. A land whose centroid
+    native extraction could not qualify (copper_centroid_reason) is bounded by
+    its size box about its native land offset when extraction proved one, and
+    otherwise has no proven extent: that, or a partial land record, raises, so
+    missing copper extent is never taken as no constraint. Rational bounds
+    round outward.
+    """
+    custom = pad.get('custom_geometry', {})
+    if pad['shape'] == 6 and custom.get('status') == 'proven':
+        return tuple(custom['bbox_nm'])
+    # Native extraction records a centroid or the reason it has none for every
+    # pad; a record with neither is a hand-built one whose size alone places nothing.
+    if all(key not in pad for key in ('copper_centroid_offset_nm', 'copper_centroid_reason', 'copper_land_offset_nm')):
+        return None
+    size, offset, land = pad.get('size_nm'), pad.get('copper_centroid_offset_nm'), pad.get('copper_land_offset_nm')
+    where = f"{fp['ref']} pad {pad.get('number')!r}"
+    if (not isinstance(size, list) or len(size) != 2 or any(type(v) is not int or v < 0 for v in size)
+            or type(pad.get('position_nm')) is not list or len(pad['position_nm']) != 2
+            or any(type(v) is not int for v in pad['position_nm'])):
+        raise ValueError(f'{where}: copper land size or centroid malformed')
+    w, h = size if pad['rotation_deg'] % 180 == 0 else size[::-1]
+    if pad['shape'] == 0:
+        w = h = size[0]
+    if offset is not None:
+        if (not isinstance(offset, list) or len(offset) != 2
+                or any(not isinstance(v, list) or len(v) != 2 or any(type(t) is not int for t in v) or v[1] <= 0
+                       for v in offset)):
+            raise ValueError(f'{where}: copper land size or centroid malformed')
+        reach = 1 if pad['shape'] == 5 else Fraction(1, 2)
+        cx, cy = (p + Fraction(*v) for p, v in zip(pad['position_nm'], offset))
+    elif land is not None and pad['shape'] == 5:
+        if not isinstance(land, list) or len(land) != 2 or any(type(v) is not int for v in land):
+            raise ValueError(f'{where}: copper land offset malformed')
+        reach = Fraction(1, 2)
+        cx, cy = (p + v for p, v in zip(pad['position_nm'], land))
+    else:
+        raise ValueError(f"{where}: copper extent unproven ({pad.get('copper_centroid_reason', 'no native land fact')})")
+    return (math.floor(cx - reach*w), math.floor(cy - reach*h), math.ceil(cx + reach*w), math.ceil(cy + reach*h))
+
+
+def _copper_sides(pad):
+    """Outer copper sides of a pad; a record without layers is taken to reach both."""
+    layers = pad.get('layers')
+    if layers is None:
+        return ('F', 'B'), True
+    if not isinstance(layers, list) or any(not isinstance(l, str) for l in layers):
+        raise ValueError(f"pad {pad.get('number')!r}: malformed layers")
+    sides = tuple(s for s in ('F', 'B') if s + '.Cu' in layers or '*.Cu' in layers)
+    return sides, any(l.endswith('.Cu') for l in layers)
+
+
+def copper_setback(capture):
+    """Structural copper-to-outline setback S in nm, or None when the facts lack it (AGENTEE-366e).
+
+    S = the saved board's m_MaxError (the ERROR_OUTSIDE arc inflation KiCad
+    applies when it polygonises pads; placement_probe records it as
+    ``max_error_nm``) plus the AGENTEE-331 reporting window. It is a derived
+    structural tolerance, not an engineering clearance: copper closer than S to
+    the outline is reported by the native publication gate as touching it.
+    """
+    if 'max_error_nm' not in capture:
+        return None
+    value = capture['max_error_nm']
+    if type(value) is not int or value < 0:
+        raise ValueError('board max_error_nm must be a nonnegative integer')
+    return value + COPPER_REPORT_WINDOW_NM
+
+
+def copper_setback_record(capture):
+    """The setback and its sources, for a plan's search record."""
+    setback = copper_setback(capture)
+    return {'setback_nm': setback, 'max_error_nm': setback - COPPER_REPORT_WINDOW_NM,
+            'report_window_nm': COPPER_REPORT_WINDOW_NM,
+            'source': 'saved board m_MaxError (ERROR_OUTSIDE) plus the AGENTEE-331 edge-clearance reporting window'}
+
+
+def copper_setback_missing(footprints):
+    """Typed-unknown reason when a part has bounded copper and the board setback is unknown."""
+    refs = sorted(fp['ref'] for fp in footprints
+                  if fp.get('_packing_copper', {}).get('outline') and fp.get('_packing_copper_setback') is None)
+    if refs:
+        return (f"copper setback unknown: the placement facts carry no board max_error_nm (m_MaxError), "
+                f"so the copper of {', '.join(refs)} is not proven to stay the setback inside the outline")
+    return None
+
+
+def _inflate(poly, by):
+    x0, y0, x1, y1 = _box([poly])
+    return [(x0 - by, y0 - by), (x1 + by, y0 - by), (x1 + by, y1 + by), (x0 - by, y1 + by)]
+
+
+def _cache_copper_extent(fp):
+    """Ephemeral copper boxes that leave the courtyards (AGENTEE-366).
+
+    ``outline`` holds every copper box that lies in no courtyard polygon of the
+    part at the copper setback S (the box grown by S fits the courtyard): such a
+    box is at least S inside the outline whenever that courtyard is inside it.
+    Without a known S no courtyard discharges it: every box is kept, and the
+    search is typed unknown (copper_setback_missing). A hand-built record with
+    no native land facts has no box (_copper_box) and caches nothing.
+    ``sides`` holds, per outer copper side, the boxes outside that side's
+    courtyards, for that side's footprint keep-outs. With S known, a part whose
+    copper lies in its courtyards caches nothing, and its search is the
+    courtyard-only one.
+    """
+    fp.pop('_packing_copper', None)
+    setback = fp.get('_packing_copper_setback')
+    polygons = [(side, p) for side, c in fp['courtyards'].items() for p in c['polygons']]
+    outline, sides = [], {}
+    for pad in fp['pads']:
+        on, copper = _copper_sides(pad)
+        box = _copper_box(fp, pad) if copper else None
+        if box is None or box[0] == box[2] or box[1] == box[3]:
+            continue
+        x0, y0, x1, y1 = box
+        poly = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        inside = {side for side, p in polygons if _fits({'courtyards': {'': {'polygons': [poly]}}}, p)}
+        if setback is None or not any(_fits({'courtyards': {'': {'polygons': [_inflate(poly, setback)]}}}, p)
+                                      for _, p in polygons):
+            outline.append(poly)
+        for side in on:
+            if side not in inside:
+                sides.setdefault(side, {'polygons': []})['polygons'].append(poly)
+    if outline or sides:
+        fp['_packing_copper'] = {'outline': outline, 'sides': sides}
+
+
+def _shift_copper(copper, dx, dy):
+    def move(poly):
+        return [(x + dx, y + dy) for x, y in poly]
+    return {'outline': [move(p) for p in copper['outline']],
+            'sides': {side: {'polygons': [move(p) for p in c['polygons']]} for side, c in copper['sides'].items()}}
+
+
+def _copper_escapes(candidate, outline, obstacles, placed=()):
+    """'outline' or 'rule_area' when copper outside the courtyards leaves the board or enters a keep-out.
+
+    Copper must stay the structural setback S inside the outline
+    (copper_setback); with S unknown, such copper is never admitted
+    ('setback_unknown'). The owner of a keep-out stays exempt from it; a placed peer's copper is
+    checked against the candidate's own keep-outs, and the candidate's copper
+    against every placed owner's. Returns (reason, blocking refs) or None.
+    """
+    copper = candidate.get('_packing_copper')
+    if copper is not None:
+        if copper['outline']:
+            setback = candidate.get('_packing_copper_setback')
+            if setback is None:
+                return 'setback_unknown', set()
+            if not _fits({'courtyards': {'': {'polygons': copper['outline']}}}, outline, setback):
+                return 'outline', set()
+        if _in_keepouts({'courtyards': copper['sides']}, obstacles):
+            return 'rule_area', set()
+    own = candidate.get('packing_keepouts', [])
+    hit = {fp['ref'] for fp in placed
+           if (copper is not None and fp.get('packing_keepouts')
+               and _in_keepouts({'courtyards': copper['sides']}, fp['packing_keepouts']))
+           or (own and '_packing_copper' in fp and _in_keepouts({'courtyards': fp['_packing_copper']['sides']}, own))}
+    return ('rule_area', hit) if hit else None
+
+
 def _fits(candidate, outline, margin_nm=0, band=()):
+    exit_edges = []
+    if 'access_direction' in candidate:
+        access = access_direction.evaluate(candidate, outline)
+        if access['status'] not in ('pass', 'info'):
+            return False
+        if not band and access['provenance']['enforcement'] == 'hard':
+            band = access['lane_polygons_nm']
+            exit_edges = access['overhang']['edges']
     # A band is a declared overhang across outline edges; its regions share no area with the board.
     # Without a band, a courtyard lies in a convex counter-clockwise outline exactly
     # when every vertex is on or left of every outline edge (closed sets, exact
@@ -529,7 +722,9 @@ def _fits(candidate, outline, margin_nm=0, band=()):
                 # point; only the remaining edges can decide the exact test.
                 x0, y0, x1, y1 = _box([p])
                 near = [(c, d) for c, d in edges(outline)
-                        if min(c[0], d[0]) - margin_nm < x1 and x0 < max(c[0], d[0]) + margin_nm
+                        if not any(on_segment(c, d, e['start_nm']) and on_segment(c, d, e['end_nm'])
+                                   for e in exit_edges)
+                        and min(c[0], d[0]) - margin_nm < x1 and x0 < max(c[0], d[0]) + margin_nm
                         and min(c[1], d[1]) - margin_nm < y1 and y0 < max(c[1], d[1]) + margin_nm]
                 if near and min(segment_distance2(a, b, c, d)
                                 for a, b in edges(p) for c, d in near) < margin_nm * margin_nm:
@@ -537,7 +732,8 @@ def _fits(candidate, outline, margin_nm=0, band=()):
     return True
 
 
-def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(), window=None, at_origin=None):
+def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(), window=None, at_origin=None,
+                    copper_axes=False):
     """Sorted candidate origin x and y values; every pairing is a candidate position."""
     if at_origin is None:
         at_origin = transform(fp, [0, 0], rotation)
@@ -545,6 +741,11 @@ def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(
     bounds = [(min(b[0] for b in bounds), min(b[1] for b in bounds),
                max(b[2] for b in bounds), max(b[3] for b in bounds))]
     bounds.extend(b for _, b in _keepout_boxes(at_origin.get('packing_keepouts', [])))
+    if copper_axes:
+        # Copper outside every courtyard aligns to the outline as a courtyard does (AGENTEE-366),
+        # held off it by the structural setback S (copper_setback).
+        setback = at_origin.get('_packing_copper_setback') or 0
+        bounds.extend(_box([_inflate(p, setback)]) for p in at_origin.get('_packing_copper', {}).get('outline', []))
     xs, ys = set(), set()
     for x0, y0, x1, y1 in bounds:
         xs.update(p[0] + margin_nm - x0 for p in outline)
@@ -560,12 +761,16 @@ def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(
         for p in targets:
             xs.update((p[0]-x0, p[0]-x1, p[0]))
             ys.update((p[1]-y0, p[1]-y1, p[1]))
+    access_x, access_y = access_direction.axes(at_origin, outline)
+    xs.update(access_x)
+    ys.update(access_y)
     if window is not None:
         # Origin limits from necessary conditions only (see _window): nothing admissible is dropped.
         x0, y0, x1, y1 = bounds[0]
         lo_x, lo_y, hi_x, hi_y = window['box']
-        xs = {x for x in xs if lo_x <= x0+x and x1+x <= hi_x}
-        ys = {y for y in ys if lo_y <= y0+y and y1+y <= hi_y}
+        if not access_direction.overhangs_courtyard(at_origin):
+            xs = {x for x in xs if lo_x <= x0+x and x1+x <= hi_x}
+            ys = {y for y in ys if lo_y <= y0+y and y1+y <= hi_y}
         if 'origin' in window:
             ox0, oy0, ox1, oy1 = window['origin']
             xs = {x for x in xs if ox0 <= x <= ox1}
@@ -749,11 +954,11 @@ def _inner(courtyard):
 
 def _area_impossibility(capture, outline, bands):
     # Inner bounds only: an outer curve bound overstates area. A fixed part with a
-    # declared overhang counts only its area on the board; every other courtyard,
-    # fixed or movable, must lie wholly inside the outline.
+    # declared overhang counts its captured onboard area. A cited access lane
+    # supplies a rigid-invariant lower bound for a movable overhang instead.
     board_area = Fraction(abs(area2(outline)), 2)
     for side in ('F', 'B'):
-        area = sum(intersection_area(p, outline) if fp['ref'] in bands else Fraction(abs(area2(p)), 2)
+        area = sum(intersection_area(p, outline) if fp['ref'] in bands else access_direction.minimum_inside_area(fp, [p])
                    for fp in capture['footprints'] if side in fp['courtyards']
                    for p in _inner(fp['courtyards'][side]))
         if area > board_area:
@@ -790,10 +995,10 @@ def _extent(points):
 def _part_impossibility(capture, outline, bands):
     # Every courtyard of a part, on either side, must lie inside the one outline,
     # whatever rigid motion is chosen; this proof is not limited to quarter turns.
-    # A fixed part with a declared overhang need not fit the outline.
+    # Fixed envelope overhangs and cited access lanes invalidate whole-part extents.
     board = _extent(outline)
     for fp in sorted(capture['footprints'], key=lambda f: f['ref']):
-        if fp['ref'] in bands:
+        if fp['ref'] in bands or access_direction.overhangs_courtyard(fp):
             continue
         part = _extent([p for courtyard in fp['courtyards'].values()
                         for poly in _inner(courtyard) for p in poly])
@@ -883,6 +1088,10 @@ def _region_impossibility(capture, outline, groups, fixed, placed, obstacles, po
         contained = [g for g, q in regions if q == region or (len(region) == 1 and all(
             _inside(p, region[0]) for p in q))]
         refs = sorted({ref for g in contained for ref in g['references']} - fixed)
+        if not all(_inside(q, outline) for q in region):
+            # Only these parts may use the portion of a declared region outside
+            # the board; omitting them leaves a valid lower bound for the rest.
+            refs = [ref for ref in refs if not access_direction.overhangs_courtyard(by_ref[ref])]
         board_area = sum(intersection_area(q, outline) for q in region)
         for side in ('F', 'B'):
             courtyards = [_inner(by_ref[ref]['courtyards'][side]) for ref in refs if side in by_ref[ref]['courtyards']]
@@ -1094,7 +1303,8 @@ def _board_capacity(capture, outline, fixed, policy, margin_nm, *, sourced_only=
         parts = [(fp['ref'], min(_square_size(p) for p in _inner(fp['courtyards'][side])),
                   _grown_area_low(_inner(fp['courtyards'][side]), Fraction(r2, 2)))
                  for fp in sorted(capture['footprints'], key=lambda f: f['ref'])
-                 if fp['ref'] not in fixed and side in fp['courtyards']]
+                 if fp['ref'] not in fixed and side in fp['courtyards']
+                 and not access_direction.overhangs_courtyard(fp)]
         if not parts:
             continue
         rows = []
@@ -1144,6 +1354,10 @@ def _capacity_proof(capture, outline, fixed, policy, margin_nm):
     """Keep diagnostic inputs, but prefer proofs independent of advisory constraints."""
     sides = _board_capacity(capture, outline, fixed, policy, margin_nm)
     capacity = _capacity_diagnostic(sides, policy, margin_nm)
+    omitted = sorted(fp['ref'] for fp in capture['footprints']
+                     if fp['ref'] not in fixed and access_direction.overhangs_courtyard(fp))
+    if omitted:
+        capacity['excluded_access_overhang_refs'] = omitted
     # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
     proof = _capacity_impossibility(sides, policy) if policy.get('capacity_proof') else None
     if proof:
@@ -1224,11 +1438,13 @@ def _initial_reservations(capture, policy, outline, obstacles, bands, groups, ca
                else None for i, o in enumerate(policy['obstacles'])]
     gap = policy['gap_nm']
     for i, fp in enumerate(placed):
+        if not access_direction.admits(fp, outline):
+            raise ValueError(f"fixed placement {fp['ref']}: access direction requires an outward edge and an outside lane")
         pre = carry and _unchanged(fp, seeds.get(fp['ref']))
         held = [e for e, o in zip(exact, origins) if not (pre and o)]
         facts = [(e, o) for e, o in zip(exact, origins) if pre and o]
         # Fixed footprints (such as edge-mounted connectors) are exempt from min_courtyard_edge_mm.
-        # Only an envelope-bound overhang band lets a fixed courtyard leave the outline.
+        # Envelope bands and cited access lanes bound permitted courtyard overhang.
         if (not _fits(fp, outline, 0, bands.get(fp['ref'], ())) or _near(fp, held, gap)
                 or _near(fp, [e for e, _ in facts], 0) or _keepout_blocked(fp, placed[:i], obstacles)):
             raise ValueError(f"fixed placement {fp['ref']} conflicts with outline, obstacle, keepout or reserved gap")
@@ -1345,6 +1561,8 @@ class _Search:
         self.positions, self.peers = {}, {}
         self.cluster_active = None
         self.cluster_start_steps = None
+        self.copper_axes = False
+        self.copper_setback = copper_setback(capture)
         self.cluster_work = {}
         # Anchor distance is symmetric: it binds whichever of the pair is placed second.
         self.anchored = {}
@@ -1371,6 +1589,8 @@ class _Search:
         key = (fp['ref'], rotation)
         if key not in self.origins:
             self.origins[key] = transform(fp, [0, 0], rotation)
+            self.origins[key]['_packing_copper_setback'] = self.copper_setback
+            _cache_copper_extent(self.origins[key])
         return self.origins[key]
 
     def ties(self, ref):
@@ -1441,6 +1661,9 @@ class _Search:
                _in_keepouts(proposed, fp['packing_keepouts'])) or (own and _in_keepouts(fp, own))]
         if hit:
             return set(hit) - self.fixed
+        escaped = _copper_escapes(proposed, self.outline, self.obstacles, self.placed)
+        if escaped is not None:
+            return escaped[1] - self.fixed
         if group is not None and 'region' in group and not placement_groups.admits(
                 proposed, {'region': group['region']}, {}):
             return set()
@@ -1475,7 +1698,7 @@ class _Search:
             evaluators[rotation] = evaluator
             local_targets = evaluator.targets() if evaluator is not None else []
             xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm,
-                                     targets + local_targets, window, at_origin)
+                                     targets + local_targets, window, at_origin, self.copper_axes)
             if self.cluster_active is not None and evaluator is not None:
                 # Intersections of axis projections of the exact pad discs are
                 # necessary only; the full coupled predicates still judge every point.
@@ -1573,13 +1796,32 @@ class _Search:
 
 
 def pack(capture, policy, *, heartbeat=None, seed=None):
-    """Preserve legacy plans; try joint clusters only with the remaining budget.
-
-    ``seed`` is the capture a caller derived ``capture`` from; fixed parts it re-posed
-    are not seed facts for ``carry_seed_fixed_pairs`` (default: ``capture`` itself).
-    """
+    """Preserve legacy plans; try joint clusters, then copper-aligned candidates, only with the remaining budget."""
     runtime = {}
+    result = _pack_joint(capture, policy, heartbeat, runtime, seed)
+    if result['status'] == 'planned' or not runtime.get('copper_escapes'):
+        return result
+    # AGENTEE-366: every pass gates copper; only a failed search adds the copper
+    # alignment axes, so an earlier admissible plan is never replaced. A failed
+    # aligned pass leaves the earlier (legacy or joint-annotated) result unchanged.
+    used = runtime['steps']
+    remaining = policy['step_budget'] - used
+    if remaining == 0:
+        return result
+    aligned = _pack(capture, policy, heartbeat=heartbeat, joint=False, remaining_steps=remaining,
+                    deadline=runtime['search'].deadline, copper_axes=True, seed=seed)
+    if aligned['status'] != 'planned':
+        return result
+    aligned['steps_used'] += used
+    aligned['search']['legacy_attempt'] = runtime['legacy']
+    aligned['search']['copper_aligned'] = {'prior_steps_used': used, 'copper_setback': copper_setback_record(capture)}
+    return aligned
+
+
+def _pack_joint(capture, policy, heartbeat, runtime, seed):
     legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime, seed=seed)
+    runtime['steps'] = runtime['search'].steps if 'search' in runtime else 0
+    runtime['legacy'] = {'status': legacy['status'], 'steps_used': runtime['steps']}
     if legacy['status'] == 'planned' or not legacy.get('search', {}).get('locality_clusters'):
         return legacy
     previous = runtime['search']
@@ -1590,6 +1832,7 @@ def pack(capture, policy, *, heartbeat=None, seed=None):
         return legacy
     joint = _pack(capture, policy, heartbeat=heartbeat, joint=True,
                   remaining_steps=remaining, deadline=previous.deadline, seed=seed)
+    runtime['steps'] += joint['steps_used']
     if joint['status'] != 'planned':
         legacy['search']['joint_cluster_attempt'] = {
             'status': joint['status'], 'steps_used': joint['steps_used'], 'reason': joint['reason'],
@@ -1610,7 +1853,7 @@ def _pack(capture, policy, *, seed=None, **options):
     return result
 
 
-def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, remaining_steps=None, deadline=None):
+def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, remaining_steps=None, deadline=None, copper_axes=False):
     if heartbeat is not None:
         heartbeat({'status': 'qualifying', 'steps_used': 0, 'placed_count': 0})
     capture = copy.deepcopy(capture)
@@ -1632,6 +1875,9 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, r
     members = placement_groups.membership(groups)
     try:
         outline = _qualified(capture)
+        for fp in capture['footprints']:
+            if access_direction.hard(fp):
+                access_direction.geometry(fp)
         obstacles = _keepouts(capture)
         bands = overhang_bands(policy.get('fixed_overhangs', []), outline)
     except ValueError as exc:
@@ -1708,9 +1954,15 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, r
             return board_failure
     if region_failure is not None:
         return region_failure
+    missing = copper_setback_missing(fp for fp in capture['footprints'] if fp['ref'] not in fixed)
+    if missing:
+        return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, missing, margin_nm)
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
+    search.copper_axes = copper_axes
     if runtime is not None:
         runtime['search'] = search
+        runtime['copper_escapes'] = any(fp.get('_packing_copper', {}).get('outline')
+                                        for fp in capture['footprints'] if fp['ref'] not in fixed)
     if remaining_steps is not None:
         search.budget = remaining_steps
         search.deadline = deadline  # Absolute legacy search deadline; qualification never resets it.
@@ -1771,7 +2023,9 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, r
         culprits = sorted({index[ref] for ref in conflicts if ref in index}, reverse=True)
         if not culprits:
             return stopped('locality_cluster_exhausted' if unit[0] in cluster_by_ref else 'packing_search_exhausted',
-                           f'no candidate for {unit[0]} in the finite search; infeasibility unproved', unit[0])
+                           f'no candidate for {unit[0]} in the finite search; infeasibility unproved'
+                           + ('; access direction requires an outward edge and an outside lane'
+                              if access_direction.hard(by_ref[unit[0]]) else ''), unit[0])
         i = len(stack)
         anchor = members.get(unit[0], {}).get('anchor', {}).get('reference')
         failures[unit[0]] = failures.get(unit[0], 0) + 1

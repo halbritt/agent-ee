@@ -367,6 +367,25 @@ def copper_centroid(pad, custom):
     return [[v.numerator, v.denominator] for v in offset]
 
 
+def copper_land_offset(pad):
+    """Native land-box centre relative to the electrical anchor, for a land whose centroid is unqualified.
+
+    A rounded chamfered rectangle is its size rectangle with corners cut or
+    rounded inward, so the size box (pad-turned) about ShapePos contains its
+    copper whether or not an exact area centroid exists (AGENTEE-366). Any
+    other land without a qualified centroid has no proven extent here.
+    """
+    import pcbnew
+    layer = pcbnew.PADSTACK.ALL_LAYERS
+    if pad.Padstack().Mode() != pcbnew.PADSTACK.MODE_NORMAL:
+        raise ValueError('per-layer copper land not qualified')
+    if (pad.GetShape(layer) != pcbnew.PAD_SHAPE_CHAMFERED_RECT
+            or any(v <= 0 for v in vector_nm(pad.GetSize(layer)))
+            or not any(pcbnew.LayerName(l).endswith('.Cu') for l in pad.GetLayerSet().Seq())):
+        raise ValueError('native copper land extent not qualified')
+    return [c - p for c, p in zip(vector_nm(pad.ShapePos(layer)), vector_nm(pad.GetPosition()))]
+
+
 def extract(board_path):
     import pcbnew
     path = Path(board_path)
@@ -419,12 +438,21 @@ def extract(board_path):
                 pads[-1]['copper_centroid_offset_nm'] = copper_centroid(pad, pads[-1].get('custom_geometry', {}))
             except ValueError as exc:
                 pads[-1]['copper_centroid_reason'] = str(exc)
+                try:
+                    pads[-1]['copper_land_offset_nm'] = copper_land_offset(pad)
+                except ValueError:
+                    pass
         footprints.append({'ref': fp.GetReference(), 'uuid': fp.m_Uuid.AsString(), 'value': fp.GetValue(),
                            'fpid': fp.GetFPIDAsString(),
                            'side': {pcbnew.B_Cu: 'B', pcbnew.F_Cu: 'F'}.get(fp.GetLayer(), 'unsupported'),
                            'locked': bool(fp.IsLocked()), 'position_nm': vector_nm(fp.GetPosition()),
                            'rotation_deg': fp.GetOrientationDegrees(), 'courtyards': courtyards,
                            'pads': sorted(pads, key=lambda p: (p['number'], p['uuid']))})
+        from .access_direction import DECLARATION
+        declarations = [f.GetText() for f in fp.GetFields() if f.GetName() == DECLARATION]
+        if declarations:
+            # Keep invalid bytes visible so independent judgment reports unknown.
+            footprints[-1]['access_direction'] = declarations[0] if len(declarations) == 1 else None
         if has_holes:
             try:
                 footprints[-1]['packing_pad_geometry'] = {
@@ -438,6 +466,8 @@ def extract(board_path):
         outline.update(status='outline_unproven', reason='multiple board contours unsupported')
     return {'schema': 'agent-ee.placement-probe/1', 'board_sha256': hashlib.sha256(before).hexdigest(),
             'pcbnew_version': pcbnew.Version(), 'outline': outline,
+            # ERROR_OUTSIDE arc inflation of polygonised pads; the placer's copper setback (AGENTEE-366e).
+            'max_error_nm': int(board.GetDesignSettings().m_MaxError),
             'markings': sorted(markings, key=lambda m: (m['uuid'], m['owner_ref'] or '')),
             'rule_areas': sorted(areas, key=lambda a: (a['owner'], a['uuid'])),
             'footprints': sorted(footprints, key=lambda f: (f['ref'], f['uuid']))}
