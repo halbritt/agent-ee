@@ -384,7 +384,7 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
     if judgment.get('group_grading', {'status': 'pass'})['status'] != 'pass':
         raise ValueError('saved-board placement failed its declared placement groups')
-    if judgment.get('locality_grading', {}).get('status', 'pass') != 'pass':
+    if judgment.get('locality_grading', {}).get('status', 'pass') not in ('pass', 'info'):
         raise ValueError('saved-board placement failed its declared electrical locality')
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),

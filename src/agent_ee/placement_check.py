@@ -280,6 +280,10 @@ def check_placement(ctx):
     status = result['status']
     if status == 'unknown':
         raise CheckError('unsupported', f'{criterion} coverage incomplete: {len(result["unknown"])} unknown item(s)')
+    if status == 'info' and criterion == electrical_locality.CRITERION:
+        ctx.result.update(execution='ok', outcome='info',
+                          summary=f"{criterion}: {len(result['advisories'])} advisory locality bound(s)")
+        return
     if status == 'info':
         ctx.result.update(execution='ok', outcome='info',
                           summary=f"{criterion}: pad-centre MST proxy {result['totals']['manhattan_nm'] / 10**6} mm "

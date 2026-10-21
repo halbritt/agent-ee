@@ -103,7 +103,11 @@ refuses proposals with added native silk overlap or copper conflicts, preserving
 graphics and required markings.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
-copper-centroid distances against cited limits. Captured pad UUIDs select
+copper-centroid distances against sourced limits.
+[Locality provenance](docs/placer.md#locality-provenance-agentee-337) keeps unsourced
+agent-selected bounds advisory in checks and packing; captured JLCPCB spacing
+supplies necessary copper floors and advisory assembly estimates, with
+whole-footprint minima still unqualified. Captured pad UUIDs select
 multi-pad pins. Buck output loops may pair a supply leg from the inductor with
 a return leg from the IC PGND. Coordinator packing binds to the check's
 immutable locality file. Origin-group distance supplies no electrical acceptance.

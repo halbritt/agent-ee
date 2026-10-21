@@ -1199,6 +1199,10 @@ def pack(capture, policy, *, heartbeat=None):
     locality = policy.get('electrical_locality')
     if locality:
         initial = electrical_locality.grade(capture, locality)
+        if any(d['kind'] == 'locality_infeasible' for d in initial['defects']):
+            return {**_failure(capture, policy, 'locality_infeasible', 'defect', 0,
+                               'declared bound below computed manufacturing floor', margin_nm),
+                    'locality_grading': initial}
         if initial['unknown']:
             return {**_failure(capture, policy, 'electrical_locality_unavailable', 'unknown', 0,
                                'pad locality needs unambiguous native pads, limits and citations', margin_nm),
@@ -1344,7 +1348,7 @@ def pack(capture, policy, *, heartbeat=None):
     extra = {} if grading is None else {'group_grading': grading}
     if locality:
         extra['locality_grading'] = electrical_locality.grade(proposed_capture, locality)
-        if extra['locality_grading']['status'] != 'pass':
+        if extra['locality_grading']['status'] not in ('pass', 'info'):
             return {**stopped('judge_rejected', 'complete proposal failed pad locality'), **extra}
     custom_pads = [{'reference': f['ref'], 'uuid': p['uuid'], 'number': p['number']}
                    for f in capture['footprints'] for p in f['pads'] if p['shape'] == 6]

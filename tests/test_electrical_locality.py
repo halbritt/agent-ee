@@ -1,5 +1,6 @@
 """Owned pad identities, coupled limits, pack guidance and captured native checks."""
 import copy
+import hashlib
 import json
 import unittest
 
@@ -10,6 +11,19 @@ from test_placement import capture, part, MM
 from test_placer import request
 
 
+
+FIXTURE_DECISION = 'Original fixture author: test parameters define EE322 numerical requirements.'
+FIXTURE_SOURCES = {'fixture-decisions/EE322.txt': FIXTURE_DECISION}
+
+
+def fixture_provenance():
+    return {'class': 'owner', 'basis': 'Explicit original fixture requirement',
+            'decision_reference': {'path': 'fixture-decisions/EE322.txt',
+                'sha256': hashlib.sha256(FIXTURE_DECISION.encode()).hexdigest(),
+                'locator': 'EE322 test parameter contract', 'quote': FIXTURE_DECISION,
+                'owner': 'Original fixture author'}}
+
+
 def endpoint(ref, pad, net):
     return dict(reference=ref, pad=pad, net=net)
 
@@ -17,8 +31,8 @@ def endpoint(ref, pad, net):
 def declaration(ic='U1', cap='C1', supply='VCC', ground='GND', limit=5*MM):
     def pair(a, b, net):
         return {'from': endpoint(ic, a, net), 'to': endpoint(cap, b, net),
-                'max_distance_nm': limit, 'citation': 'Owned fixture requirement EE322: declared test limit.'}
-    return dict(schema=locality.SCHEMA, obligations=[dict(id=cap, metric='pad-centre-to-centre',
+                'provenance': fixture_provenance(), 'max_distance_nm': limit, 'citation': 'Owned fixture requirement EE322: declared test limit.'}
+    return dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id=cap, metric='pad-centre-to-centre',
                 supply=pair('1', '1', supply), **{'return': pair('2', '2', ground)})])
 
 
@@ -49,7 +63,7 @@ def output_loop():
     row['supply']['from'] = endpoint('L1', '2', 'VCC')
     row['switch'] = dict(**{'from': endpoint('U1', '1', 'SW'),
                            'to': endpoint('L1', '1', 'SW')},
-                         max_distance_nm=20*MM, citation='Owned output-loop switch limit.')
+                         provenance=fixture_provenance(), max_distance_nm=20*MM, citation='Owned output-loop switch limit.')
     return facts, doc
 
 
@@ -267,7 +281,7 @@ class LocalityTests(unittest.TestCase):
             b['footprints'].append(inductor)
             doc['obligations'][0]['switch'] = dict(
                 **{'from': endpoint(ic,'8','SW'), 'to':endpoint(ind,'1','SW')},
-                max_distance_nm=7*MM, citation='Owned counterexample fixture: switch centres within 7 mm.')
+                provenance=fixture_provenance(), max_distance_nm=7*MM, citation='Owned counterexample fixture: switch centres within 7 mm.')
             self.assertEqual([d['role'] for d in locality.grade(b,doc)['defects']], ['switch'])
             inductor['pads'][0]['position_nm'] = [after,0]
             self.assertEqual(locality.grade(b,doc)['status'], 'pass')
@@ -298,20 +312,21 @@ class NativeLocalityTests(unittest.TestCase):
         self.addCleanup(helper.doCleanups)
         # Native RC: select actual exact pad nets from the owned saved board.
         from agent_ee.placement_probe import extract
-        for expected, limit in (('pass', 100*MM), ('defect', 0), ('unknown', None)):
+        for expected, limit in (('pass', 100*MM), ('defect', 0), ('unknown', None), ('info', 0)):
             source = helper.source()
             facts = extract(source / 'project/rc_filter.kicad_pcb')
             fps = {f['ref']: f for f in facts['footprints']}
             shared = [(a, b) for a in fps['J1']['pads'] for b in fps['C1']['pads'] if a['net'] and a['net']==b['net']]
             a, b = shared[0]
             pair = {'from': endpoint('J1', a['number'], a['net']), 'to': endpoint('C1', b['number'], b['net']),
-                    'citation': 'Owned RC diagnostic distance requirement.'}
+                    'provenance': fixture_provenance(), 'citation': 'Owned RC diagnostic distance requirement.'}
             if limit is not None: pair['max_distance_nm'] = limit
+            if expected == 'info': pair.pop('provenance')
             cap_ground = next(p for p in fps['C1']['pads'] if p['net'] != a['net'])
             header_ground = next(p for p in fps['J1']['pads'] if p['net'] == cap_ground['net'])
             ground = {**pair, 'from': endpoint('J1', header_ground['number'], header_ground['net']),
                       'to': endpoint('C1', cap_ground['number'], cap_ground['net'])}
-            doc = dict(schema=locality.SCHEMA, obligations=[dict(id='RC', metric='pad-centre-to-centre',
+            doc = dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id='RC', metric='pad-centre-to-centre',
                        supply=pair, **{'return': ground})])
             (source / 'project/locality.json').write_text(json.dumps(doc))
             spec = placement('locality', locality.CRITERION, locality='project/locality.json')
@@ -344,8 +359,8 @@ class NativeLocalityTests(unittest.TestCase):
             pad = next(p for p in fps[ref]['pads'] if p['net'] == target['net'])
             return dict(**{'from': {**endpoint(ref, pad['number'], pad['net']), 'uuid': pad['uuid']},
                            'to': {**endpoint('C1', target['number'], target['net']), 'uuid': target['uuid']}},
-                        max_distance_nm=100*MM, citation='Owned native three-reference loop requirement.')
-        doc = dict(schema=locality.SCHEMA, obligations=[dict(id='output-loop', metric='pad-centre-to-centre',
+                        provenance=fixture_provenance(), max_distance_nm=100*MM, citation='Owned native three-reference loop requirement.')
+        doc = dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id='output-loop', metric='pad-centre-to-centre',
                    supply=pair('R1', supply), **{'return': pair('J1', ground)})])
         (source / 'project/locality.json').write_text(json.dumps(doc))
         spec = placement('loop', locality.CRITERION, locality='project/locality.json')
@@ -391,8 +406,8 @@ class NativeLocalityTests(unittest.TestCase):
         self.assertTrue(pairs)
         a,b = pairs[0]
         pair = {'from': endpoint('U1', a['number'], a['net']), 'to': endpoint('C1', b['number'], b['net']),
-                'max_distance_nm': 5*MM, 'citation': 'Owned native geometry fixture: 5 mm diagnostic limit.'}
-        doc = dict(schema=locality.SCHEMA, obligations=[dict(id='native', metric='pad-centre-to-centre',
+                'provenance': fixture_provenance(), 'max_distance_nm': 5*MM, 'citation': 'Owned native geometry fixture: 5 mm diagnostic limit.'}
+        doc = dict(schema=locality.SCHEMA, source_records=FIXTURE_SOURCES, obligations=[dict(id='native', metric='pad-centre-to-centre',
                    supply=pair, **{'return': {**pair, 'from': endpoint('U1', '2', 'GND'),
                                                       'to': endpoint('C1', '2', 'GND')}})])
         helper.config['policy']['electrical_locality'] = doc
@@ -400,6 +415,14 @@ class NativeLocalityTests(unittest.TestCase):
         self.assertEqual(result['status'], 'placed', result)
         self.assertEqual(result['judgment']['locality_grading']['status'], 'pass')
         self.assertEqual(locality.grade(extract(helper.scratch/'guided/candidate.kicad_pcb'), doc)['status'], 'pass')
+        # The same native writer must publish exceeded, unsourced guidance.
+        for role in ('supply', 'return'):
+            doc['obligations'][0][role].pop('provenance')
+            doc['obligations'][0][role]['max_distance_nm'] = 0
+        advisory = place_candidate(helper.source, helper.netlist, helper.scratch / 'advisory', helper.config)
+        self.assertEqual(advisory['status'], 'placed', advisory)
+        self.assertEqual(advisory['judgment']['locality_grading']['status'], 'info')
+        self.assertTrue(all(a['exceeded'] for a in advisory['judgment']['locality_grading']['advisories']))
 
 
     def test_runner_timeout_writes_partial_result_and_heartbeat_without_proposal(self):
@@ -546,7 +569,7 @@ class LocalityIndexTests(unittest.TestCase):
             footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
         b = capture(footprints, rectangle(0, 0, 84, 72))
         b['pcbnew_version'] = '10.0.7'
-        doc = {'schema': locality.SCHEMA, 'obligations': []}
+        doc = {'schema': locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': []}
         for i in range(15):
             doc['obligations'] += declaration(ic='P'+str(2*i), cap='P'+str(2*i+1),
                                               limit=8*MM)['obligations']

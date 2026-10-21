@@ -1770,6 +1770,16 @@ obligations from the same immutable locality file, recording its raw hash in
 sha256}` (AGENTEE-328). The engineer declares limits and citation locators;
 the check never supplies a manufacturer radius or verifies cited prose.
 Origin-group success supplies no electrical-locality acceptance.
+AGENTEE-337 adds [numeric provenance and manufacturing floors](placer.md#locality-provenance-agentee-337):
+legacy or unsourced bounds report defect-level `unsourced` advisories with `info`
+when no hard defect/unknown exists; these never block publication. Datasheet
+numeric/scale derivations and owner decision references retain hard constraints.
+Captured JLCPCB different-net PCB clearance computes a necessary copper floor and
+refuses an explicit manufacturer bound below it as `locality_infeasible`.
+Assembly package spacing produces advisory estimates only, because native lands
+do not establish physical body/lead extents. The exact
+whole-footprint manufacturing minimum remains unqualified; unknown package
+combinations never inherit an invented value.
 
 ## Post-placement silk publication gate (AGENTEE-320)
 

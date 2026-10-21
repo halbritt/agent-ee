@@ -768,8 +768,8 @@ diagnostics but cannot establish a coordinator capture binding.
 }
 ```
 
-These example limits are authored fixture requirements, with no manufacturer or
-pod acceptance claim. Each obligation requires explicit supply and return pad
+These example limits have no recorded provenance and are advisory (AGENTEE-337),
+with no manufacturer or pod acceptance claim. Each obligation requires explicit supply and return pad
 identities ending at the same capacitor, with distinct physical pads on each
 shared footprint. The supply source may differ from the return source
 (AGENTEE-330): a buck output loop declares inductor pad 2 → capacitor positive
@@ -813,20 +813,21 @@ loop inductance. Other metric names remain unknown. A missing/duplicated
 reference or pad, wrong native net, unavailable centroid, absent limit or absent
 citation remains unknown. Limits must be explicit nonnegative integer
 nanometres. The citation is the declaring engineer's source/locator text,
-retained verbatim in the immutable obligation document; this check does not
-verify a datasheet quotation or infer its applicability. Supply, return and
-switch are all measured; any proved violation remains a defect even when
-another pair is unknown. Missing limits never inherit an origin-group radius.
+retained verbatim in the immutable obligation document. A citation alone grants
+no hard numeric authority. Supply, return and switch are all measured; a proved
+sourced violation remains a defect even when another pair is unknown. Missing limits never inherit an origin-group radius.
 
 The **placement constraint** is distinct from this **check**. For each rotation,
 the packer adds candidate origins from the selected native pad offsets, peer
 pad centres and declared radius extrema. It ranks candidates by the exact sum
 of squared distance/limit squared across all resolved supply, return and switch
 pairs, ahead of the existing net cost. Ground pairs participate even when the
-net is in `ground_nets`. Every resolved pair is a hard constraint, checked
-symmetrically whichever endpoint is placed second. An unplaced peer is deferred;
-all pairs must pass before the complete plan is returned and again after native
-save/reload. Fixed violations or finite search exhaustion publish no placements
+net is in `ground_nets`. Only pairs with verified numeric provenance impose a
+hard distance constraint, checked symmetrically whichever endpoint is placed second.
+Advisory pairs affect the objective only; they generate no extra target origins
+and cannot exhaust the hard target-origin cap. An unplaced peer is deferred;
+all sourced pairs must pass before the complete plan is returned and again after
+native save/reload. An advisory-only `info` judgment permits publication. Fixed violations or finite search exhaustion publish no placements
 and remain unknown feasibility. Missing inputs refuse before search. Targeted
 plans also refuse a completed proposal violating these obligations; their
 existing origin-based objectives are unchanged.
@@ -841,6 +842,84 @@ fixed conflicts, a saved native proposal and the registered captured check.
 `tests.test_locality_copper` adds native offset and custom copper on both sides
 at all quarter turns, exact fractional distances, distinct-UUID near/far
 selection, and coordinator policy/hash binding with refusal boundaries.
+
+
+### Locality provenance (AGENTEE-337)
+
+Every pair may add `provenance`, an object with `class` and a nonempty `basis`.
+Classes use the AGENTEE-331 vocabulary: `datasheet`, `manufacturer`, `owner`,
+`engineering`, `default`. Missing, unknown, prose-only or invalid derivations
+produce `advisories` with `kind: unsourced`, `severity: defect`, and an `exceeded`
+flag. Advisory-only results are `info`; they never become coordinator gate
+findings or hard pack constraints. Geometry/identity failures and absent limits
+or citations retain their existing unknown coverage. Hard defects retain priority
+when another pair is advisory or unknown.
+
+The document may include `source_records`, mapping relative source paths to
+captured UTF-8 source text. Records are part of the same immutable locality
+capture; they are not files to open, a live fetch, or an owner evidence store.
+Each source reference contains `path`, the SHA-256 of that exact UTF-8 text,
+`locator`, and an exact `quote` present in that text. Hash, missing-text or quote
+failures leave the bound advisory. Source identity and applicability remain
+review obligations: a matching digest is not proof of vendor authenticity or
+owner authorship. Do not publish third-party source text without rights approval;
+original numeric transcription records can retain source identities instead.
+
+For `datasheet`, `derivation.kind: numeric` requires `value_nm` equal to
+`max_distance_nm` and an equal explicit nm or mm number in the source quote.
+`derivation.source` carries the source reference above. A prose citation such as
+“as close as possible” cannot qualify. A measured recommended/reference layout
+uses `kind: layout`, integer `distance_units`, integer `scale_nm_per_unit`, a
+nonempty `scale_reference`, and the same source reference. The check recomputes
+the product exactly. This is a declared measurement with a recorded scale;
+it does not automatically interpret a PDF image.
+
+For `owner`, `decision_reference` carries the same verified source reference
+plus a nonempty `owner` identity. An agent identity or `design-owner` label is
+not admitted. An owner label without the recorded decision stays advisory.
+This checks the retained decision reference, not authenticated authorship.
+Original tests use explicit fixture-author decisions to retain their numerical
+contracts; those decisions establish no real hardware requirements.
+
+For `manufacturer`, the pinned original numeric records in
+`src/agent_ee/data/jlcpcb-locality.json` retain host capture URLs, timestamps,
+response hashes and package-pair spacing values. Raw vendor bytes are excluded.
+The numeric-record digest is pinned in policy code. A missing or changed record
+leaves an explicit manufacturer check unknown; it cannot earn an advisory-only
+result from unavailable manufacturing evidence.
+The check computes a **necessary copper floor** from both footprints' native
+lands and the captured 0.15 mm different-net PCB clearance. Each qualified SMD
+circle, rectangle, oval or roundrect supplies an inscribed disk. At coincident
+selected centroids, each different-net cross-footprint pad pair excludes a disk
+of relative translations. The maximum of `r1 + r2 + clearance - offset1 - offset2`
+(over zero), rounded down, is a necessary distance to escape those exclusions.
+Each offset is a pad centroid distance from its selected locality centroid,
+rounded up. The triangle inequality makes this lower bound valid at every
+relative footprint rotation.
+Only pads sharing a copper layer participate. This disk subset can prove a
+lower bound even when other copper is unsupported; it never proves completeness.
+Pad-pair products over 4096 and unsupported selected lands have unknown floors.
+Disk identities are resolved once per footprint in each independent grade.
+
+For explicit `manufacturer` provenance, a bound below this known PCB floor
+returns a typed `locality_infeasible` defect naming the obligation, role and
+references; packing refuses it before search. Unsourced bounds remain advisory
+even below that floor. Existing owner/datasheet distance verdicts are unchanged.
+A manufacturer minimum supplies no electrical maximum, so exceeding a larger
+agent-selected maximum remains advisory.
+
+Assembly spacing remains an **unknown full manufacturing floor**. The captured
+matrix measures body/lead extents, while native pads describe solder lands.
+The report includes an advisory `assembly.pad_envelope_estimate_nm` for explicitly
+named package families in the matrix; it never rejects against that estimate.
+Unlisted packages and opposite-side placement never inherit another package's
+value. Other leads, bodies and different-net copper can raise the true minimum.
+The exact whole-footprint minimum and qualified physical extents are not
+implemented. AGENTEE-337 therefore retains this acceptance gap; a known copper
+floor, including zero, is not an assembly or whole-footprint pass.
+
+`tests.test_locality_provenance` covers legacy/agent advisories, source derivation,
+source/decision refusals, soft index constraints and computed infeasibility.
 
 ### Read-only pod diagnostic
 

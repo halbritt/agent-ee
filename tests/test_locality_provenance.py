@@ -1,0 +1,194 @@
+"""AGENTEE-337: numeric authority, soft legacy guidance and manufacturing floors."""
+import copy
+import hashlib
+import unittest
+
+from agent_ee import electrical_locality as locality
+from agent_ee.placer import pack, transform
+from test_electrical_locality import board, declaration, MM
+from test_placer import request
+
+
+def source(text='Original numeric requirement: 1 mm'):
+    return {'path': 'requirements/owned-numeric.txt',
+            'sha256': hashlib.sha256(text.encode()).hexdigest(),
+            'locator': 'numeric distance row', 'quote': text}
+
+
+def numeric(pair):
+    pair['provenance'] = {'class': 'datasheet', 'basis': 'Original synthetic numeric source',
+        'derivation': {'kind': 'numeric', 'value_nm': pair['max_distance_nm'], 'source': source()}}
+
+
+class LocalityProvenanceTests(unittest.TestCase):
+    def test_legacy_and_agent_owner_label_are_advisory_even_when_exceeded(self):
+        for provenance in (None, {'class': 'owner', 'basis': 'agent selected design-owner D-PL-1'},
+                           {'class': 'owner', 'basis': 'agent self-assertion',
+                            'decision_reference': {**source(), 'owner': 'agent-499'}},
+                           {'class': 'owner', 'basis': 'design-owner self-assertion',
+                            'decision_reference': {**source(), 'owner': 'design-owner'}},
+                           {'class': 'default', 'basis': 'default'},
+                           {'class': 'engineering', 'basis': 'agent selected'}):
+            facts, doc = board(), declaration(limit=MM)
+            doc['source_records'] = {**doc['source_records'], 'requirements/owned-numeric.txt': 'Original numeric requirement: 1 mm'}
+            for role in ('supply', 'return'):
+                pair = doc['obligations'][0][role]
+                pair.pop('provenance', None)
+                if provenance: pair['provenance'] = provenance
+            result = locality.grade(facts, doc)
+            self.assertEqual(result['status'], 'info', result)
+            self.assertFalse(result['defects'])
+            self.assertEqual(len(result['advisories']), 2)
+            self.assertTrue(all(a['kind'] == 'unsourced' and a['severity'] == 'defect'
+                                for a in result['advisories']))
+            self.assertFalse(locality.constraint(facts['footprints'], facts['footprints'][1], doc)[0])
+            index = locality.PlacementIndex(doc)
+            index.push(facts['footprints'][0])
+            candidate = index.prepare(transform(facts['footprints'][1], [0, 0], 0))
+            self.assertFalse(candidate.constraint([100*MM, 100*MM])[0])
+            self.assertEqual(candidate.targets(), [])
+            plan = pack(facts, request(fixed_refs=['U1', 'C1'], electrical_locality=doc))
+            self.assertEqual(plan['status'], 'planned', plan)
+            self.assertEqual(plan['locality_grading']['status'], 'info')
+
+    def test_numeric_datasheet_and_owner_decision_block(self):
+        for kind in ('datasheet', 'owner'):
+            facts, doc = board(), declaration(limit=MM)
+            doc['source_records'] = {**doc['source_records'], 'requirements/owned-numeric.txt': 'Original numeric requirement: 1 mm'}
+            for role in ('supply', 'return'):
+                pair = doc['obligations'][0][role]
+                numeric(pair)
+                if kind == 'owner':
+                    pair['provenance'] = {'class': 'owner', 'basis': 'Owned fixture requirement',
+                        'decision_reference': {**source(), 'owner': 'fixture author'}}
+            result = locality.grade(facts, doc)
+            self.assertEqual(result['status'], 'defect')
+            self.assertEqual(len(result['defects']), 2)
+            self.assertTrue(locality.constraint(facts['footprints'], facts['footprints'][1], doc)[0])
+
+    def test_numeric_mismatch_prose_only_and_bad_references_stay_unsourced(self):
+        facts, doc = board(), declaration(limit=MM)
+        doc['source_records'] = {**doc['source_records'], 'requirements/owned-numeric.txt': 'Original numeric requirement: 1 mm'}
+        for mutation in ('value', 'locator', 'hash', 'kind', 'class', 'bytes', 'missing_source', 'quote', 'malformed_class'):
+            changed = copy.deepcopy(doc)
+            for role in ('supply', 'return'):
+                pair = changed['obligations'][0][role]
+                numeric(pair)
+                p = pair['provenance']
+                if mutation == 'value': p['derivation']['value_nm'] += 1
+                if mutation == 'locator': p['derivation']['source']['locator'] = ''
+                if mutation == 'hash': p['derivation']['source']['sha256'] = 'not-a-hash'
+                if mutation == 'kind': p['derivation'] = {'kind': 'prose', 'text': 'as close as possible'}
+                if mutation == 'class': p['class'] = 'design-owner'
+                if mutation == 'malformed_class': p['class'] = ['owner']
+                if mutation == 'bytes': changed['source_records']['requirements/owned-numeric.txt'] = 'changed'
+                if mutation == 'missing_source': changed['source_records'].pop('requirements/owned-numeric.txt', None)
+                if mutation == 'quote': p['derivation']['source']['quote'] = 'unsupported 1 mm quote'
+            result = locality.grade(facts, changed)
+            self.assertEqual(result['status'], 'info', (mutation, result))
+            self.assertTrue(all(a['kind'] == 'unsourced' for a in result['advisories']))
+
+    def test_scaled_layout_derivation_recomputes_distance(self):
+        facts, doc = board(), declaration(limit=MM)
+        doc['source_records'] = {**doc['source_records'], 'requirements/owned-numeric.txt': 'Original numeric requirement: 1 mm'}
+        for role in ('supply', 'return'):
+            pair = doc['obligations'][0][role]
+            pair['provenance'] = {'class': 'datasheet', 'basis': 'Original reference-layout measurement',
+                'derivation': {'kind': 'layout', 'distance_units': 10, 'scale_nm_per_unit': 100000,
+                               'scale_reference': '1 mm scale bar measures 10 units', 'source': source()}}
+        self.assertEqual(locality.grade(facts, doc)['status'], 'defect')
+        doc['obligations'][0]['supply']['provenance']['derivation']['scale_nm_per_unit'] = 1
+        result = locality.grade(facts, doc)
+        self.assertEqual(result['status'], 'defect')  # Return defect survives advisory supply.
+        self.assertEqual(len(result['advisories']), 1)
+
+    def test_manufacturing_floor_is_computed_and_names_infeasible_pair(self):
+        facts, doc = board(), declaration(limit=149999)
+        facts['footprints'][0]['pads'][0]['size_nm'] = [1000000, 1000000]
+        facts['footprints'][1]['pads'][1]['size_nm'] = [1000000, 1000000]
+        facts['footprints'][0]['fpid'] = 'Owned:SOIC-8_Original'
+        facts['footprints'][1]['fpid'] = 'Owned:C_0603_Original'
+        for role in ('supply', 'return'):
+            doc['obligations'][0][role]['provenance'] = {'class': 'manufacturer', 'basis': 'JLCPCB spacing'}
+        result = locality.grade(facts, doc)
+        self.assertEqual(result['status'], 'defect', result)
+        self.assertEqual([d['kind'] for d in result['defects']], ['locality_infeasible']*2)
+        self.assertEqual(result['defects'][0]['manufacturing_floor']['floor_nm'], 150000)
+        self.assertEqual(result['defects'][0]['refs'], ['C1', 'U1'])
+        refusal = pack(facts, request(electrical_locality=doc))
+        self.assertEqual((refusal['status'], refusal['outcome'], refusal['placements']),
+                         ('locality_infeasible', 'defect', []))
+        estimate = result['measured'][0]['manufacturing_floor']['assembly']
+        self.assertEqual(estimate['status'], 'unknown')
+        self.assertIn('pad_envelope_estimate_nm', estimate)
+        # Geometry, never a supplied floor, changes the computed result.
+        facts['footprints'][1]['pads'][1]['size_nm'] = [1200000, 1200000]
+        self.assertEqual(locality.grade(facts, doc)['measured'][0]['manufacturing_floor']['floor_nm'], 250000)
+
+    def test_missing_or_tampered_captured_manufacturer_rules_remain_unknown(self):
+        from pathlib import Path
+        import tempfile
+        from unittest.mock import patch
+        from agent_ee import locality_provenance
+        facts, doc = board(), declaration(limit=MM)
+        for role in ('supply', 'return'):
+            doc['obligations'][0][role]['provenance'] = {'class': 'manufacturer', 'basis': 'Captured PCB clearance'}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for content in (None, b'{}'):
+                if content is not None:
+                    (root/'data').mkdir()
+                    (root/'data/jlcpcb-locality.json').write_bytes(content)
+                # Package resource I/O boundary, using actual absent/tampered files.
+                with patch.object(locality_provenance, 'files', return_value=root):
+                    result = locality.grade(facts, doc)
+                self.assertEqual(result['status'], 'unknown', result)
+                self.assertEqual(len(result['unknown']), 2)
+                self.assertFalse(result['defects'])
+
+    def test_copper_floor_is_rotation_invariant_and_ignores_mask_only_overlap(self):
+        facts, doc = board(), declaration(limit=149999)
+        facts['footprints'][0]['pads'][0]['size_nm'] = [1000000, 1000000]
+        facts['footprints'][1]['pads'][1]['size_nm'] = [1000000, 1000000]
+        pair = doc['obligations'][0]['supply']
+        pair['provenance'] = {'class': 'manufacturer', 'basis': 'Captured PCB clearance'}
+        for rotation in (0, 90, 180, 270):
+            changed = copy.deepcopy(facts)
+            changed['footprints'][1] = transform(changed['footprints'][1], [10*MM, 10*MM], rotation)
+            result = locality.grade(changed, doc)
+            self.assertEqual(result['measured'][0]['manufacturing_floor']['floor_nm'], 150000)
+        for fp, layer in zip(facts['footprints'], ('F.Cu', 'B.Cu')):
+            for pad in fp['pads']:
+                pad['layers'] = [layer, 'F.Mask']
+        result = locality.grade(facts, doc)
+        self.assertEqual(result['measured'][0]['manufacturing_floor']['floor_nm'], 0)
+        self.assertFalse(any(d['kind'] == 'locality_infeasible' for d in result['defects']))
+
+    def test_missing_package_geometry_and_other_side_are_unknown_floors(self):
+        facts, doc = board(), declaration(limit=MM)
+        doc['source_records'] = {**doc['source_records'], 'requirements/owned-numeric.txt': 'Original numeric requirement: 1 mm'}
+        for role in ('supply', 'return'): doc['obligations'][0][role].pop('provenance')
+        for fp in facts['footprints']: fp['fpid'] = 'Owned:Unsupported'
+        result = locality.grade(facts, doc)
+        self.assertTrue(all(m['manufacturing_floor']['assembly']['status'] == 'unknown' for m in result['measured']))
+        opposite = copy.deepcopy(facts)
+        opposite['footprints'][1]['side'] = 'B'
+        self.assertEqual(locality.grade(opposite, doc)['measured'][0]['manufacturing_floor']['status'], 'unknown')
+        # Geometry identity failures retain existing unknown coverage, even for advisories.
+        facts['footprints'][1]['pads'][0]['net'] = 'OTHER'
+        self.assertEqual(locality.grade(facts, doc)['status'], 'unknown')
+
+
+class AdvisoryPublicationTests(unittest.TestCase):
+    def test_targeted_plans_admit_exceeded_unsourced_bounds(self):
+        from agent_ee.placement_plans import plan
+        from test_placement_plans import scoring, row
+        facts, doc = board(), declaration(limit=0)
+        for role in ('supply', 'return'):
+            doc['obligations'][0][role].pop('provenance')
+        policy = scoring()
+        policy['capacitors'].pop('C2')
+        result = plan(facts, request(electrical_locality=doc),
+                      row(capacitor_refs=['C1'], judge_policy=policy))
+        self.assertEqual(result['status'], 'planned', result)
+        self.assertEqual(result['locality_grading']['status'], 'info')
