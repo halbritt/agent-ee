@@ -99,12 +99,33 @@ replay; it does not inspect today's host source paths.
 
 AGENTEE-329 also refuses device/inode aliases of `src`, its ancestors and descendants,
 including bind mounts whose resolved spelling is outside the checkout. Execution
-uses the resolved path validated for that run, while the retained specification
-keeps its original declaration. Observation and both execution calls use that
-resolved path. Its device/inode is checked after initial observation and before
-the main step; replacement or disappearance raises `mount_source_changed:<at>`.
+opens each validated resolved source with `O_PATH | O_CLOEXEC | O_NOFOLLOW`
+(and `O_DIRECTORY` for directories), compares the descriptor device/inode with
+the validated identity, and passes it to bwrap using `--ro-bind-fd` and
+`pass_fds`. Some bwrap versions, including the qualified host's 0.9.0,
+canonicalize fd sources back to pathnames. Therefore both the version command
+and main step also run a fixed isolated Python prelude inside the sandbox. It
+compares every mounted root's device/inode with the opened descriptor identity
+before native `execvp` of the declared command. The prelude restores signals
+ignored by Python and keeps bwrap's native script execution behavior. A rename that redirects bwrap's mount
+cannot cause the declared command to run against that unexpected object.
+Descriptors close on success, failure and interruption. The retained specification
+keeps its original declaration; tool observations use the validated resolved path.
+Its device/inode is also checked after initial observation and before the main
+step; replacement or disappearance raises `mount_source_changed:<at>`. A missing
+source at initial validation raises `ValueError("mount source does not exist: …")`.
 A failure before initial observation finishes removes the partial receipt and
 launches no tool. Retained replay remains independent of host paths.
+
+The prelude emits a fixed success line before executing the tool. The executor
+consumes that line, records `execution.mount_guard` as a boolean, and keeps tool
+stdout/version text unchanged. No success line means no verified mount: the
+receipt adds `mount_guard_failed:run` or `mount_guard_failed:version`, even when
+the guard's exit code 125 is in `adoptable_exits`. A tool that actually runs and
+returns 125 keeps the ordinary declared exit policy. Retained guarded commands
+require the exact prelude and a coordinator guard observation; routing replay
+also checks the complete declared fd mount set and identity payload. Historical
+path-bound receipts retain their original verification behavior.
 
 The explicit live-helper allow-list is `agent_ee/kicad_route_attempt.py`,
 `agent_ee/net_binding.py` and `agent_ee/symbol_library.py` relative to `src`.
@@ -119,8 +140,21 @@ The identity guard compares the mount source with live ancestors and compares
 the source and its ancestors with every entry of the live source tree. It walks
 without following tree symlinks into external directories and propagates lookup
 errors rather than admitting an uninspected tree. It does not cache this inventory.
-The path check does not pin an open mount descriptor: a concurrent namespace
-change after the last check remains outside this guarantee.
+Directory sources containing a descendant mountpoint in `/proc/self/mountinfo`
+are refused with `mount_source_submount:<at>`, including same-device bind mounts
+and mountpoints with escaped names. After opening a directory source, a no-follow
+walk relative to that descriptor also compares directory and entry mount IDs
+from `/proc/self/fdinfo`. An ancestor rename cannot redirect this inventory;
+file bind mounts and directory binds are both refused. This conservative rule also refuses benign
+submounts: registered builders need plain tool trees, never nested mount
+hierarchies. A mountpoint at the source itself is allowed only after the ordinary
+live-tree identity checks. A caller able to change the coordinator's mount
+namespace after validation is outside this guard; sandboxed builders have no
+authority in that namespace. Tree entries and file bytes remain mutable in place:
+the existing before
+and after tool identity checks still refuse observed content changes. This
+guard requires Linux `/proc/self/mountinfo`, `/proc/self/fdinfo`, `O_PATH`, and bwrap support for
+`--ro-bind-fd`; unavailable facilities fail closed.
 
 Snapshots live under `AGENT_EE_TOOL_SOURCE_CACHE`, or
 `~/.cache/agent-ee/tool-source` by default, in a directory named for the ordinary

@@ -1696,9 +1696,13 @@ host-independent. `tests.test_stage_receipts.StepDeclarationTests` covers refusa
 and snapshot admission; `tests.test_tool_source` validates all registered step
 builders against this runtime guard. AGENTEE-329 also refuses bind aliases of
 `src`, its ancestors and descendants by device/inode (including ancestors of
-the mount source), binds the validated resolved path, and rechecks that identity
-before execution. The three qualified canonical routing helper files and the
-remaining concurrent namespace limit are recorded in
+the mount source). It binds opened, identity-checked descriptors using bwrap
+`--ro-bind-fd` and verifies the actual mounted identities inside the sandbox
+before executing either command, covering bwrap versions that canonicalize fd
+sources to pathnames. Directory
+sources containing submounts are conservatively refused, including same-device
+bind mounts. The three qualified canonical routing helper files and the
+mount-namespace authority limit are recorded in
 [stage receipts](stage-receipts.md#python-tool-source-snapshots).
 
 Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
