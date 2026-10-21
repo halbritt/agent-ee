@@ -9,13 +9,13 @@ read-only saved-board probe.
 import json
 from pathlib import PurePosixPath
 
-from . import electrical_locality, placement_groups
+from . import electrical_locality, placement_groups, placement_provenance
 from . import placement_predicates as predicates
 from .placement import judge, validate_capture
 from .storage import digest, read_json, write_json
 
 COMMON = {'criterion', 'drc_check', 'policy', 'routing_feedback'}
-EXTRA = {'edge-clearance/1': {'min_courtyard_edge_mm'}, 'connector-edge/1': {'envelope', 'reference'},
+EXTRA = {'edge-clearance/1': {'min_courtyard_edge_mm', 'constraint_provenance'}, 'connector-edge/1': {'envelope', 'reference'},
          'ratsnest-mst/1': {'max_manhattan_mm', 'max_euclidean_mm'},
          'imu-axes/1': {'envelope', 'imu_ref', 'graphic_id', 'marker_ref', 'forward_axis', 'side',
                         'max_distance_mm', 'marker_rotation_deg', 'facts_check', 'axis_fact'},
@@ -49,7 +49,11 @@ def parameters(params):
         from .board_envelope import name
         name(params['reference'], 'connector reference')
     if 'min_courtyard_edge_mm' in params:
-        predicates.exact_nm(params['min_courtyard_edge_mm'], 'min_courtyard_edge_mm')
+        value_nm = predicates.exact_nm(params['min_courtyard_edge_mm'], 'min_courtyard_edge_mm')
+        declared = params.get('constraint_provenance', {})
+        if not isinstance(declared, dict) or set(declared) - {'min_courtyard_edge_mm'}:
+            raise ValueError('edge-clearance constraint_provenance names only min_courtyard_edge_mm')
+        placement_provenance.classify(declared, 'min_courtyard_edge_mm', 'courtyard edge margin', value_nm)
     for key in MAXIMA:
         if key in params:
             predicates.exact_nm(params[key], key)
@@ -208,7 +212,8 @@ def evaluate(criterion, facts, report, params, declarations=None):
         return placement_groups.grade(facts, declarations)
     if criterion == 'edge-clearance/1':
         return predicates.edge_clearance(facts, predicates.exact_nm(params['min_courtyard_edge_mm'],
-                                                                    'min_courtyard_edge_mm'))
+                                                                    'min_courtyard_edge_mm'),
+                                         params.get('constraint_provenance'))
     if criterion == 'footprint-keepout/1':
         return predicates.footprint_keepout(facts, report)
     if criterion == 'connector-edge/1':

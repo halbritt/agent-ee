@@ -165,7 +165,14 @@ nothing, which is why courtyard presence comes from the probe. A proved defect
 remains a defect beside unrelated unknown coverage; pass needs complete coverage.
 
 `edge-clearance/1` takes an explicit scope minimum, bound into the baseline with
-the check criteria. The AGENTEE-75 profile has only a copper-to-edge key
+the check criteria. Under AGENTEE-361 it may declare
+`constraint_provenance.min_courtyard_edge_mm` with `class` (`fixture_author`
+or `manufacturer`), `enforcement: hard`, nonempty `citation` and integer
+`value_nm` exactly equal to the minimum in nanometres. Without this source,
+a shortfall is an `unsourced_limit` unknown carrying the source class and
+measured distance, and creates no gate finding. A courtyard proved outside the
+board still establishes a structural defect. Missing or uncertain geometry
+retains its unknown verdict. The AGENTEE-75 profile has only a copper-to-edge key
 (`min_edge_clearance_mm`); it is not reinterpreted as a courtyard limit.
 
 ### Keep tall and heavy parts apart
@@ -256,7 +263,11 @@ the captured packing policy whose `groups` the packer enforced. For each group
 member, the predicate checks every courtyard side against the group `region`;
 membership alone grades nothing. It also checks the origin distance from the
 `anchor` (exact squared integers; `measured` reports millimetres). A malformed
-or unconstrained declaration is `malformed`. Proved defects become gate
+or unconstrained declaration is `malformed`. Groups may carry the
+[constraint source records](placer.md#obstacle-and-group-sources-agentee-361).
+Unsourced region or origin-distance violations are advisory `unsourced_limit`
+unknowns, with the measured violation and source class retained. Sourced
+violations remain defects beside unrelated unknowns. Proved defects become gate
 findings with the member as entity.
 
 Optional advisory parameters never decide pass or defect. `policy` keeps the

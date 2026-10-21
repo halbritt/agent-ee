@@ -1147,7 +1147,12 @@ The [owned-zone write scope](placement-adapter.md#placement-write-scope)
 The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned
 footprint-forbidding polygons as exclusions for peer courtyards.
 AGENTEE-212 adds `placement-groups/1` (declared group regions and anchor
-distances) and an optional `envelope` on `outline-containment/1` that grades
+distances). AGENTEE-361 classifies group regions and distance limits, and the
+`edge-clearance/1` courtyard minimum: violations of unsourced declarations are
+reported as typed unknowns and never create gate findings. Sourced violations
+and structural courtyard-outside-board defects retain their verdicts. See
+[constraint source records](placer.md#obstacle-and-group-sources-agentee-361).
+AGENTEE-212 also adds an optional `envelope` on `outline-containment/1` that grades
 envelope-declared fixed-courtyard overhangs. Curved courtyards are judged on
 exact outer and inner bounds: pass on the outer, defect only on the inner;
 a result only between them is `courtyard_approximation` (unknown), even where

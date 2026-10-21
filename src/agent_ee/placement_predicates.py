@@ -12,6 +12,7 @@ import hashlib
 import math
 import re
 
+from . import placement_provenance
 from .placement import (area2, boxes_meet, courtyard_bounds, edges, intersection_area, intersects, judge,
                         on_segment, qualified_polygons)
 from .symbol_library import LibraryError, nanometres
@@ -253,8 +254,10 @@ def proven_outline(probe):
     return polygons[0]
 
 
-def edge_clearance(probe, minimum_nm):
+def edge_clearance(probe, minimum_nm, constraint_provenance=None):
     """Exact minimum courtyard-to-Edge.Cuts distance against a declared minimum."""
+    authority = placement_provenance.classify(constraint_provenance or {}, 'min_courtyard_edge_mm',
+                                              'courtyard edge margin', minimum_nm)
     try:
         outline = proven_outline(probe)
     except ValueError as exc:
@@ -275,14 +278,20 @@ def edge_clearance(probe, minimum_nm):
             for index, polygon in enumerate(contours):
                 outside, distance2, short = clearance(polygon)
                 record = {'ref': fp['ref'], 'uuid': fp['uuid'], 'side': side, 'inside_outline': outside == 0,
-                          'distance_mm': round(math.sqrt(distance2) / 10**6, 6), 'minimum_mm': mm(minimum_nm)}
+                          'distance_mm': round(math.sqrt(distance2) / 10**6, 6), 'minimum_mm': mm(minimum_nm),
+                          'constraint_provenance': authority}
                 measured.append(record)
                 if not short:
                     continue
                 # A curved courtyard's outer bound may be short only by its tolerance;
                 # the defect is proved on the inner bound, which lies within the true curve.
-                if clearance(inner[side][index])[2]:
-                    defects.append({'kind': 'courtyard_edge_clearance', **record})
+                inner_outside, _, inner_short = clearance(inner[side][index])
+                if inner_short:
+                    if authority['enforcement'] == 'hard' or inner_outside > 0:
+                        defects.append({'kind': 'courtyard_edge_clearance', **record})
+                    else:
+                        unknown.append({'kind': 'unsourced_limit', 'constraint': 'min_courtyard_edge_mm',
+                                        'reason': authority['soft_reason'], **record})
                 else:
                     unknown.append({'kind': 'courtyard_approximation', 'ref': fp['ref'], 'uuid': fp['uuid'],
                                     'side': side, 'reason': 'edge clearance lies between the declared curve bounds'})

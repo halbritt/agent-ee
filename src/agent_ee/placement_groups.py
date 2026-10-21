@@ -12,17 +12,24 @@ them on a saved board with exact rationals.
 from fractions import Fraction
 import math
 
+from . import placement_provenance
 from .placement import area2, boxes_meet, courtyard_bounds, intersection_area, qualified_polygons
 
 SCHEMA = 'agent-ee.placement-groups/1'
 CRITERION = 'placement-groups/1'
-KEYS = {'id', 'references', 'region', 'anchor', 'max_distance_nm'}
+KEYS = {'id', 'references', 'region', 'anchor', 'max_distance_nm', 'constraint_provenance'}
 
 
 def _text(value, label):
     if not isinstance(value, str) or not value:
         raise ValueError(f'{label} must be nonempty text')
     return value
+
+
+def constraint_source(group, name):
+    return placement_provenance.classify(group.get('constraint_provenance', {}), name,
+                                        f"group {group['id']} {name}",
+                                        group[name] if name == 'max_distance_nm' else placement_provenance.GEOMETRY)
 
 
 def validate(groups, refs=None):
@@ -74,6 +81,11 @@ def validate(groups, refs=None):
             if type(distance) is not int or distance <= 0:
                 raise ValueError(f'group {gid}: max_distance_nm must be a positive integer')
             normalized.update(anchor=dict(anchor), max_distance_nm=distance)
+        if 'constraint_provenance' in group:
+            declared = group['constraint_provenance']
+            if not isinstance(declared, dict) or set(declared) - (set(group) & {'region', 'max_distance_nm'}):
+                raise ValueError(f'group {gid}: constraint_provenance must name region or max_distance_nm constraints')
+            normalized['constraint_provenance'] = {name: constraint_source(group, name) for name in declared}
         out.append(normalized)
     anchored = {r for g in out if 'anchor' in g for r in g['references']}
     for g in out:
@@ -138,6 +150,14 @@ def grade(probe, groups):
                             'reason': 'reference missing' if not found else 'reference duplicated'})
             return None
         return found[0]
+    def finding(record, group, name):
+        authority = constraint_source(group, name)
+        record = {**record, 'constraint_provenance': authority}
+        if authority['enforcement'] == 'hard':
+            defects.append(record)
+        else:
+            unknown.append({**record, 'kind': 'unsourced_limit', 'advisory_kind': record['kind'],
+                            'constraint': f"group {group['id']} {name}", 'reason': authority['soft_reason']})
     for group in groups:
         gid = group['id']
         point = None
@@ -164,8 +184,8 @@ def grade(probe, groups):
                         continue
                     outside = outside_region(inner, region)
                     if outside > 0:
-                        defects.append({'kind': 'outside_group_region', 'group': gid, 'ref': ref, 'side': side,
-                                        'outside_area_mm2': float(outside / 10**12)})
+                        finding({'kind': 'outside_group_region', 'group': gid, 'ref': ref, 'side': side,
+                                 'outside_area_mm2': float(outside / 10**12)}, group, 'region')
                     elif inner is not outer and outside_region(outer, region) > 0:
                         unknown.append({'kind': 'courtyard_approximation', 'group': gid, 'ref': ref, 'side': side,
                                         'reason': 'region boundary lies between the declared curve bounds'})
@@ -173,10 +193,11 @@ def grade(probe, groups):
                 d2 = distance2(fp['position_nm'], point)
                 # The decision is exact on squared integers; the millimetre distance is a report.
                 record = {'group': gid, 'ref': ref, 'distance_mm': round(math.sqrt(d2) / 10**6, 6),
-                          'max_distance_mm': group['max_distance_nm'] / 10**6}
+                          'max_distance_mm': group['max_distance_nm'] / 10**6,
+                          'constraint_provenance': constraint_source(group, 'max_distance_nm')}
                 measured.append(record)
                 if d2 > group['max_distance_nm'] ** 2:
-                    defects.append({'kind': 'group_anchor_distance', **record})
+                    finding({'kind': 'group_anchor_distance', **record}, group, 'max_distance_nm')
     status = 'defect' if defects else 'unknown' if unknown else 'pass'
     return {'criterion': CRITERION, 'status': status, 'defects': defects, 'unknown': unknown,
             'measured': measured, 'groups': groups}
