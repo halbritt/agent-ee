@@ -19,6 +19,7 @@ from pathlib import Path
 
 NAMESPACE = uuid.UUID('6f1d7e0a-3c55-4a8e-9a43-0f3b1a2b5c11')
 ROOT = 'fab'
+QUALIFIED_PCBNEW = '10.0.7'
 
 # ref: (symbol, value, footprint, LCSC, Manufacturer, Partnumber, dnp, side, x, y, nets by pin)
 PARTS = {
@@ -146,13 +147,31 @@ def pod_copper(p, board, nets, vec):
     p.ZONE_FILLER(board).Fill(board.Zones())
 
 
+def qualified_pcbnew():
+    """Import pcbnew, refusing any version but the one the committed boards were made with."""
+    import pcbnew as p
+    try:
+        version = p.Version()
+    except Exception as exc:
+        raise RuntimeError(f'pcbnew version unknown ({exc!r}); fixture boards need {QUALIFIED_PCBNEW}') from exc
+    if version != QUALIFIED_PCBNEW:
+        raise RuntimeError(f'pcbnew {version!r} is not the qualified {QUALIFIED_PCBNEW}; refusing to generate boards')
+    return p
+
+
 def seed_kiids(p, label):
-    """Seed pcbnew's KIID generator so every saved board is byte-reproducible."""
+    """Seed pcbnew's KIID generator so every saved board is byte-reproducible.
+
+    A seeded board's KIIDs differ depending on whether another board was built
+    earlier in the process, so a warm-up board is built before seeding: each
+    board's bytes are then independent of generation order and earlier boards.
+    """
+    p.BOARD()
     p.KIID.SeedGenerator(uuid.uuid5(NAMESPACE, 'board/' + label).int % 2 ** 32)
 
 
 def make_board(path, copper_layers, pod=False):
-    import pcbnew as p
+    p = qualified_pcbnew()
     seed_kiids(p, f'{copper_layers}{"-pod" if pod else ""}')
     board = p.BOARD()
     board.SetCopperLayerCount(copper_layers)
@@ -261,6 +280,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
     args = parser.parse_args()
+    qualified_pcbnew()  # refuse before writing anything
     args.directory.mkdir(parents=True, exist_ok=True)
     (args.directory / 'fab.kicad_sch').write_text(schematic())
     make_board(args.directory / 'fab.kicad_pcb', 2)

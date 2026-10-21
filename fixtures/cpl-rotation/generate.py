@@ -24,6 +24,7 @@ from pathlib import Path
 
 NAMESPACE = uuid.UUID('2b8f6c1e-7d4a-4f0e-9c35-5a1e0b7d2c64')
 ROOT = 'cpl'
+QUALIFIED_PCBNEW = '10.0.7'
 HEADER = 'agent_cpl:PinHeader_1x02_P2.54mm_owned'
 BIND = ('Owned Fixture Works',)
 # ref: (symbol, value, footprint, LCSC, part number, side, x, y, angle)
@@ -97,13 +98,31 @@ def schematic():
     return '\n'.join(out) + '\n)\n'
 
 
+def qualified_pcbnew():
+    """Import pcbnew, refusing any version but the one the committed boards were made with."""
+    import pcbnew as p
+    try:
+        version = p.Version()
+    except Exception as exc:
+        raise RuntimeError(f'pcbnew version unknown ({exc!r}); fixture boards need {QUALIFIED_PCBNEW}') from exc
+    if version != QUALIFIED_PCBNEW:
+        raise RuntimeError(f'pcbnew {version!r} is not the qualified {QUALIFIED_PCBNEW}; refusing to generate boards')
+    return p
+
+
 def seed_kiids(p, label):
-    """Seed pcbnew's KIID generator so every saved board is byte-reproducible."""
+    """Seed pcbnew's KIID generator so every saved board is byte-reproducible.
+
+    A seeded board's KIIDs differ depending on whether another board was built
+    earlier in the process, so a warm-up board is built before seeding: each
+    board's bytes are then independent of generation order and earlier boards.
+    """
+    p.BOARD()
     p.KIID.SeedGenerator(uuid.uuid5(NAMESPACE, 'board/' + label).int % 2 ** 32)
 
 
 def make_board(path):
-    import pcbnew as p
+    p = qualified_pcbnew()
     seed_kiids(p, ROOT)
     board = p.BOARD()
     board.SetCopperLayerCount(2)
@@ -219,6 +238,8 @@ if __name__ == '__main__':
     parser.add_argument('directory', type=Path)
     parser.add_argument('--supplier-only', action='store_true', help='rewrite supplier records only (no pcbnew)')
     args = parser.parse_args()
+    if not args.supplier_only:
+        qualified_pcbnew()  # refuse before writing anything
     args.directory.mkdir(parents=True, exist_ok=True)
     (args.directory / 'supplier').mkdir(exist_ok=True)
     for lcsc, data in suppliers().items():

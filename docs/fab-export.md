@@ -374,20 +374,31 @@ placeholders. Nothing is copied from FOME-MC, a donor or a supplier library.
 Both owned generators (this one and
 [fixtures/cpl-rotation](../fixtures/cpl-rotation/generate.py)) are
 deterministic. Schematic and supplier UUIDs are UUIDv5 values from a fixed
-namespace. Before each board is built, pcbnew's KIID generator is seeded with
-a fixed per-board value, so repeat runs on the pinned KiCad 10 produce the
-same bytes. [tests/test_fixture_generators.py](../tests/test_fixture_generators.py)
-(AGENTEE-367) runs each generator twice in the native sandbox and requires:
+namespace. Before each board is built, the generator builds a warm-up board
+and then seeds pcbnew's KIID generator with a fixed per-board value. Without
+the warm-up, a board's KIIDs depended on whether another board had been built
+earlier in the process. Boards are pinned to pcbnew 10.0.7: both generators
+refuse any other or unreadable `pcbnew.Version()` before writing anything
+(the cpl `--supplier-only` mode needs no pcbnew and does not check).
+[tests/test_fixture_generators.py](../tests/test_fixture_generators.py)
+(AGENTEE-367) fails unless the sandbox's pcbnew reports 10.0.7, and requires:
 
-- the two runs to be byte-identical;
+- two full runs of each generator in the native sandbox to be byte-identical;
 - every output (schematics, supplier records and the four boards) to equal the
-  committed file byte for byte.
+  committed file byte for byte;
+- each board, generated alone in a fresh process and in one shared process in
+  reordered and repeated sequence across both generators, to equal its
+  committed file;
+- both generators, with `pcbnew.Version()` reporting another version, an empty
+  value, `None` or an error, to exit non-zero without writing output, from
+  the command line and from `make_board`.
 
 The four boards (`fab`, `fab4`, `pod4` and `cpl.kicad_pcb`) were re-pinned to
-the seeded output under the coordinator ruling on AGENTEE-367. Before seeding
-they carried random KIIDs, and KiCad orders board items by KIID. Content was
-unchanged: with KIIDs removed and top-level items unordered, the old and new
-boards compare equal. No test, receipt or doc pinned their digests or KIIDs.
+the seeded output under the coordinator ruling on AGENTEE-367, and again after
+the warm-up was added, composed with AGENTEE-351g's Reference positions.
+Before seeding they carried random KIIDs, and KiCad orders board items by KIID.
+Content was unchanged by either re-pin: with KIIDs removed and top-level items
+unordered, the old and new boards compare equal. No test, receipt or doc pinned their digests or KIIDs.
 To change a board, edit its generator, rerun it with the pinned KiCad and
 commit the output.
 
