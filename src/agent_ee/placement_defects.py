@@ -652,7 +652,62 @@ def _closes(defect, original, current, conflicts, moved, current_board, graphic_
 
 
 def gated(spec):
+    if placement_projection(spec):
+        return False
     return spec.get('stage') in ('verification', 'fab', 'release') or spec.get('kind') in GATED_KINDS
+
+
+def placement_projection(spec):
+    """The placement-stage DRC projection grades carry instead of refusing it (AGENTEE-346)."""
+    params = spec.get('params')
+    return (spec.get('kind') == 'drc' and isinstance(params, dict) and
+            params.get('projection') == 'placement-stage/1' and
+            spec.get('stage') in (None, 'placement'))
+
+
+def _carried_identity(violation):
+    from .silk_artwork import SILK_CONFLICTS
+    items = violation.get('items') if isinstance(violation, dict) else None
+    if (violation.get('type') not in SILK_CONFLICTS or not isinstance(items, list) or not items or
+            any(not isinstance(i, dict) or not isinstance(i.get('uuid'), str) or not i['uuid'] for i in items)):
+        return None
+    return violation['type'], tuple(sorted(i['uuid'] for i in items))
+
+
+def carried_silk(defects, unwaived):
+    """Raw locators of unwaived native silk conflicts that are exactly an open carried defect."""
+    carried = {_carried_identity(d['native']) for d in defects if isinstance(d.get('native'), dict)}
+    carried.discard(None)
+    return sorted(i['raw_locator'] for i in unwaived if i['raw_locator'].startswith('/violations/') and
+                  _carried_identity(i) in carried)
+
+
+def projection_record(ctx, unwaived):
+    """Open carry for the placement projection; its silk conflicts grade as carried, not violations."""
+    from .checks import CheckError
+    cache = []
+
+    def native():
+        # The full gate's closure contract (AGENTEE-351): native DRC on the captured board.
+        if not cache:
+            cache.append(_recompute(ctx))
+        return cache[0]
+    try:
+        defects = open_defects(ctx.manifest, ctx.inputs, native)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CheckError('malformed', f'carried placement evidence refused: {exc}') from exc
+    if not defects:
+        return []
+    carried = carried_silk(defects, unwaived)
+    witness = dict(gate_record(ctx.cid, ctx.manifest['candidate_id'], defects), carried_findings=carried)
+    write_json(ctx.work / 'placement-defects.json', witness)
+    ctx.evidence('placement-defects.json')
+    ctx.result['details'].update(open_defects=defects, carried_findings=carried)
+    ctx.result['limitations'].append(
+        f'{len(defects)} carried open placement silkscreen defect(s); {len(carried)} matching native '
+        'silk finding(s) graded as carried, not stage-blocking; verification, fab and release refuse '
+        'until a receipted closure')
+    return carried
 
 
 def before_check(ctx):
@@ -703,6 +758,9 @@ def lineage(manifest):
 
 def verify_gate(run, check, manifest):
     """Reconstruct refusals from captured artifacts before sealing or releasing evidence."""
+    if placement_projection(next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])):
+        # Structural containment and parity are reconstructed with or without lineage.
+        return verify_projection(run, check, manifest)
     if not lineage(manifest):
         if (check.get('execution') == 'ok' and
                 gated(next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])) and
@@ -744,3 +802,54 @@ def release_defects(run, check, manifest):
     if not defects and _needs_clean_provenance(manifest, Path(run) / 'inputs'):
         clean_provenance(native(), lineage(manifest))
     return defects
+
+
+def verify_projection(run, check, manifest):
+    """Reconstruct the projection verdict with the runtime policy (checks.grade_drc): raw DRC,
+    captured waivers, numeric provenance, retained structural containment and receipt-backed carry."""
+    defects = open_defects(manifest, Path(run) / 'inputs', lambda: _recorded(run, check['id'], manifest))
+    details = check.get('details', {})
+    if not defects and ('open_defects' in details or 'carried_findings' in details):
+        raise ValueError('carried placement grading without open defects')
+    if check['execution'] != 'ok' or details.get('reason') in ('stage_blocked', 'stage_not_reached'):
+        return
+    from .violation_waivers import replay_unwaived
+    spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
+    report = read_json(Path(run) / 'work' / check['id'] / 'drc.json')
+    if not isinstance(report, dict) or any(
+            not isinstance(report.get(k), list) or any(not isinstance(v, dict) for v in report[k])
+            for k in ('violations', 'unconnected_items', 'schematic_parity')):
+        raise ValueError('placement projection native report is malformed')
+    unwaived = replay_unwaived(spec, manifest['scope'], manifest, Path(run) / 'inputs', report)
+    carried = carried_silk(defects, unwaived) if defects else []
+    from .checks import grade_drc
+    from .design_rule_provenance import finding_sources
+    sources = finding_sources(Path(run) / 'inputs' / manifest['scope']['board'], report['violations'])
+    failing = grade_drc(unwaived, sources, spec['params']['projection'], carried,
+                        replay_containment(run, check, sources))[2]
+    if check['outcome'] != ('defect' if failing else 'pass') or (
+            check['outcome'] == 'pass' and details.get('containment') is not None):
+        raise ValueError('placement projection verdict differs from its unwaived native findings, '
+                         'structural containment and receipt-backed carry')
+    if not defects:
+        return
+    witness = read_json(Path(run) / 'work' / check['id'] / 'placement-defects.json')
+    if (details.get('open_defects') != defects or details.get('carried_findings') != carried or
+            witness != dict(gate_record(check['id'], manifest['candidate_id'], defects),
+                            carried_findings=carried)):
+        raise ValueError('placement projection carried grading differs from open carry')
+
+
+def replay_containment(run, check, sources):
+    """Retained supplemental copper containment, or None when the check recorded it unavailable."""
+    from .design_rule_provenance import classify_finding
+    if check.get('details', {}).get('containment') is not None:
+        return None
+    work = Path(run) / 'work' / check['id'] / 'containment'
+    record = read_json(work / 'execution.json')
+    if not isinstance(record, dict) or record.get('execution') != 'ok' or record.get('exit_code') != 0:
+        raise ValueError('placement projection copper containment did not complete')
+    findings = read_json(work / 'copper-containment.json')
+    if not isinstance(findings, list) or any(not isinstance(f, dict) for f in findings):
+        raise ValueError('placement projection copper containment is malformed')
+    return [classify_finding(f, sources) for f in findings]

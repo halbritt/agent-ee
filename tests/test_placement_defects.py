@@ -56,6 +56,38 @@ class PlacementDefectContractTests(unittest.TestCase):
                     self.assertTrue(placement_defects.gated({'kind': kind, 'stage': stage}))
 
 
+    def test_projection_grading_composes_silk_carry_with_numeric_provenance(self):
+        """Ruling 346c (1): overlap silk follows receipt-backed carry; numeric silk limits follow 331."""
+        from agent_ee.checks import grade_drc
+        sourced = {'rules': {}, 'settings': [{
+            'setting': 'board.design_settings.rules.min_silk_clearance', 'value': 0.2, 'class': 'owner',
+            'citation': {'path': 'constraints.json', 'basis': 'original test'}}]}
+        edge = {'raw_locator': '/violations/2', 'type': 'silk_edge_clearance', 'items': [{'uuid': 'e'}],
+                'description': 'Silkscreen clipped by board edge (board setup constraints silk '
+                               'clearance 0.2000 mm; actual 0.1000 mm)'}
+        unwaived = [{'raw_locator': '/violations/0', 'type': 'silk_overlap', 'items': [{'uuid': 'a'}]},
+                    {'raw_locator': '/violations/1', 'type': 'silk_over_copper', 'items': [{'uuid': 'b'}]},
+                    edge, {'raw_locator': '/unconnected_items/0', 'type': 'unconnected_items'}]
+        outside = {'type': 'copper_outside_outline', 'items': [{'uuid': 'c'}]}
+
+        def failing(projection, carried, structural=(), sources=None, items=unwaived):
+            return [i.get('raw_locator') or i['type']
+                    for i in grade_drc(items, sources, projection, carried, list(structural))[2]]
+        projection = 'placement-stage/1'
+        # Uncarried overlap silk blocks in the projection even under a default limit.
+        self.assertEqual(failing(projection, []), ['/violations/0', '/violations/1'])
+        self.assertEqual(failing(projection, ['/violations/0', '/violations/1']), [])
+        # Default numeric silk-edge limit is advisory; a sourced one is hard (carry never names it).
+        self.assertEqual(failing(projection, ['/violations/0', '/violations/1'], sources=sourced),
+                         ['/violations/2'])
+        # Structural containment blocks whatever silk is carried.
+        self.assertEqual(failing(projection, ['/violations/0', '/violations/1'], [outside]),
+                         ['copper_outside_outline'])
+        # Unavailable containment is not a defect proved by native DRC.
+        self.assertEqual(grade_drc(unwaived[2:], None, projection, [], None)[2], [])
+        # The full DRC keeps its released 331 grading: unconnected items block, default silk is advisory.
+        self.assertEqual(failing(None, []), ['/unconnected_items/0'])
+
     def test_initial_campaign_cannot_supply_coordinator_carry(self):
         placement_defects.validate_campaign({'inputs': []})
         for scope in ({'inputs': [{'at': placement_defects.DIRECTORY}]},
@@ -621,6 +653,72 @@ class NativePlacementCarryTests(unittest.TestCase):
         with self.assertRaisesRegex(CheckError, 'custom DRC rule ignores'):
             placement_defects.before_check(Ctx(run, manifest, spec, time.monotonic() + 300))
 
+    def closure_projection(self, name, *, honest):
+        """A receipted closure lineage that still declares the placement projection, audited."""
+        from agent_ee.candidate import capture
+        run, _ = self.closure(name, honest=honest)
+        root = run.parent
+        requirement = root / 'requirements.md'
+        requirement.write_text('A natively closed carry must keep the placement projection usable.\n')
+        scope = read_json(root / 'scope.json')
+        scope['schema'] = 'agent-ee.scope/2'
+        scope['inputs'].append({'path': str(requirement), 'at': 'requirements.md'})
+        scope['checks'] = [{'id': 'drc-placement', 'kind': 'drc', 'params': {'projection': 'placement-stage/1'}},
+                           {'id': 'drc', 'kind': 'drc'}]
+        scope['baseline'] = {'requirements': [{'id': 'R-native', 'statement': requirement.read_text().strip(),
+            'source': {'path': 'requirements.md', 'locator': 'R-native'}, 'checks': ['drc-placement', 'drc']}],
+            'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}
+        write_json(root / 'audited.scope.json', scope)
+        audited = root / 'audited'
+        audited.mkdir()
+        return audited, capture(root / 'audited.scope.json', audited)
+
+    def test_projection_consumes_a_natively_closed_carry_and_seals(self):
+        """Ruling 346d H1: the projection verifies closure natively, like the full gate."""
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        run, manifest = self.closure_projection('projection-closed', honest=True)
+        self.assertTrue(placement_defects.lineage(manifest))
+        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+            placement_defects.open_defects(manifest, run / 'inputs')
+        projection, full = run_checks(run, time.monotonic() + 300)
+        self.assertEqual(projection['execution'], 'ok', projection['summary'])
+        self.assertEqual(full['execution'], 'ok', full['summary'])
+        self.assertNotIn('open_defects', projection['details'])
+        self.assertNotIn('reason', full['details'])
+        self.assertIn(f'work/drc-placement/{placement_defects.WITNESS}', projection['evidence'])
+        self.assertEqual(placement_defects.open_defects(
+            manifest, run / 'inputs', lambda: placement_defects._recorded(run, 'drc-placement', manifest)), [])
+        report = read_json(run / 'work/drc-placement/drc.json')
+        self.assertFalse(any(v['type'].startswith('silk_') for v in report['violations']), report)
+        # With the carry closed, the projection grades its native violations and parity as usual.
+        self.assertEqual(projection['outcome'],
+                         'defect' if report['violations'] or report['schematic_parity'] else 'pass', report)
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        # Replay is tool-free and binds the retained native witness.
+        witness = run / 'work/drc-placement' / placement_defects.WITNESS
+        original = read_json(witness)
+        changed = dict(original, silk_findings=[['silk_overlap', ['forged']]])
+        write_json(witness, changed)
+        with self.assertRaisesRegex(ValueError, 'witness missing or changed'):
+            placement_defects.verify_gate(run, projection, manifest)
+        with self.assertRaisesRegex(ValueError, 'witness missing or changed'):
+            verify_evidence(run, [projection, full], required=True)
+        write_json(witness, original)
+        verify_evidence(run, [projection, full], required=True)
+
+        # A self-consistent imported false closure still refuses (AGENTEE-351 unchanged).
+        run, manifest = self.closure_projection('projection-forged', honest=False)
+        projection, full = run_checks(run, time.monotonic() + 300)
+        for check in (projection, full):
+            self.assertEqual((check['execution'], check['outcome']), ('malformed', 'unknown'))
+            self.assertIn('differs from native DRC', check['summary'])
+        forged = dict(projection, execution='ok', outcome='pass', details={})
+        with self.assertRaisesRegex(ValueError, 'differs from native DRC|witness missing or changed|'
+                                                'without native placement lineage verification'):
+            placement_defects.verify_gate(run, forged, manifest)
+
     def test_fabricated_stamp_and_imported_lineage_cannot_waive_release_witness(self):
         """H1: a self-asserted stamp and a self-hashed imported closure cannot release a
         natively silk-conflicted board; only a clean sealed native witness can."""
@@ -769,6 +867,286 @@ class NativePlacementCarryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'did not retain'):
             freeze_evidence(run, [forged])
 
+    def projection_run(self, name):
+        from agent_ee.candidate import capture
+        root = self.helper.root / name
+        root.mkdir()
+        requirement = root / 'requirements.md'
+        requirement.write_text('Native DRC must grade the placed board.\n')
+        scope = copy.deepcopy(self.scope)
+        scope['schema'] = 'agent-ee.scope/2'
+        scope['inputs'].append({'path': str(requirement), 'at': 'requirements.md'})
+        scope['checks'] = [{'id': 'drc-placement', 'kind': 'drc', 'params': {'projection': 'placement-stage/1'}},
+                           {'id': 'drc', 'kind': 'drc'}]
+        scope['baseline'] = {'requirements': [{'id': 'R-native', 'statement': requirement.read_text().strip(),
+            'source': {'path': 'requirements.md', 'locator': 'R-native'}, 'checks': ['drc-placement', 'drc']}],
+            'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}
+        write_json(root / 'scope.json', scope)
+        run = root / 'run'
+        run.mkdir()
+        return run, capture(root / 'scope.json', run)
+
+    def test_placement_projection_grades_exact_carried_silk_and_full_drc_refuses(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        from agent_ee.silk_artwork import SILK_CONFLICTS
+        run, manifest = self.projection_run('projection-carry')
+        defects = placement_defects.open_defects(manifest, run / 'inputs')
+        projection, full = run_checks(run, time.monotonic() + 120)
+        report = read_json(run / 'work/drc-placement/drc.json')
+        silk = [f'/violations/{i}' for i, v in enumerate(report['violations']) if v['type'] in SILK_CONFLICTS]
+        self.assertTrue(silk, 'native fixture placed board reports no silk conflict')
+        self.assertEqual(sorted(projection['details']['carried_findings']), sorted(silk))
+        self.assertEqual(projection['details']['open_defects'], defects)
+        # Only carried silk conflicts change grade; anything else still blocks.
+        blocking = [v['type'] for v in report['violations'] + report['schematic_parity']
+                    if v['type'] not in SILK_CONFLICTS]
+        self.assertEqual(projection['execution'], 'ok')
+        self.assertEqual(projection['outcome'], 'defect' if blocking else 'pass', report)
+        self.assertNotIn('reason', projection['details'])
+        self.assertIn('graded as carried open placement defects', projection['summary'])
+        self.assertTrue(any('carried open placement silkscreen' in l for l in projection['limitations']))
+        self.assertIn('work/drc-placement/placement-defects.json', projection['evidence'])
+        # The full DRC remains a fab-family gate and refuses the same carry.
+        self.assertEqual((full['execution'], full['outcome'], full['details']['reason']),
+                         ('ok', 'defect', 'open_placement_defects'))
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+
+        forged = copy.deepcopy(projection)
+        forged['details']['carried_findings'] = ['/violations/999']
+        with self.assertRaisesRegex(ValueError, 'carried grading differs'):
+            placement_defects.verify_gate(run, forged, manifest)
+        dropped = copy.deepcopy(projection)
+        for key in ('open_defects', 'carried_findings'):
+            dropped['details'].pop(key)
+        with self.assertRaisesRegex(ValueError, 'carried grading differs'):
+            placement_defects.verify_gate(run, dropped, manifest)
+
+    def test_projection_seal_reconstructs_the_verdict_over_parity_and_subset_forgeries(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        run, manifest = self.projection_run('projection-verdict')
+        projection, full = run_checks(run, time.monotonic() + 120)
+        report = read_json(run / 'work/drc-placement/drc.json')
+        self.assertTrue(report['schematic_parity'], 'fixture lost its unwaived parity findings')
+        self.assertTrue(projection['details']['carried_findings'])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'))
+        freeze_evidence(run, [projection, full])
+        witness = read_json(run / 'work/drc-placement/placement-defects.json')
+        forged_pass = copy.deepcopy(projection)
+        forged_pass['outcome'] = 'pass'
+        empty = copy.deepcopy(projection)
+        empty['details']['carried_findings'] = []
+        for name, forged, carried in (('pass over parity', forged_pass, witness['carried_findings']),
+                                      ('empty subset', empty, []),
+                                      ('empty subset plus pass', dict(empty, outcome='pass'), [])):
+            with self.subTest(forgery=name):
+                write_json(run / 'checks/drc-placement.json', forged)
+                write_json(run / 'work/drc-placement/placement-defects.json', dict(witness, carried_findings=carried))
+                with self.assertRaisesRegex(ValueError, 'differs'):
+                    freeze_evidence(run, [forged, full])
+                with self.assertRaisesRegex(ValueError, 'differs'):
+                    verify_evidence(run, [forged, full], required=True)
+        write_json(run / 'checks/drc-placement.json', projection)
+        write_json(run / 'work/drc-placement/placement-defects.json', witness)
+        verify_evidence(run, [projection, full], required=True)
+
+    def uncarried_silk_design(self, name):
+        """Parity-clean candidate whose added silk segment crosses C1 under a UUID no receipt carries."""
+        import subprocess
+        import xml.etree.ElementTree as ET
+        import pcbnew as k
+        source, _ = self.projection_run(name + '-source')
+        root = self.helper.root / name
+        design = root / 'design'
+        shutil.copytree(source / 'inputs', design)
+        scope = copy.deepcopy(read_json(source / 'candidate.json')['scope'])
+        path = design / scope['board']
+        netlist = root / 'netlist.xml'
+        subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml', '-o', str(netlist),
+                        str(design / scope['schematic'])], check=True, capture_output=True)
+        symbols = {c.get('ref'): (c.findtext('value'), c.findtext('footprint'))
+                   for c in ET.parse(netlist).getroot().findall('components/comp')}
+        board = k.LoadBoard(str(path))
+        for fp in board.GetFootprints():
+            value, footprint = symbols[fp.GetReference()]
+            fp.SetValue(value)
+            fp.SetFPID(k.LIB_ID(*footprint.split(':')))
+        graphic = k.PCB_SHAPE(board)
+        graphic.SetShape(k.SHAPE_T_SEGMENT)
+        graphic.SetLayer(k.F_SilkS)
+        graphic.SetStart(k.VECTOR2I(2200000, 10600000))
+        graphic.SetEnd(k.VECTOR2I(5800000, 10600000))
+        graphic.SetWidth(150000)
+        board.Add(graphic)
+        uncarried = graphic.m_Uuid.AsString()
+        k.SaveBoard(str(path), board, True)
+        # Owned stand-in footprints have no library; only that comparison is ignored, never silk.
+        write_json(path.with_suffix('.kicad_pro'), {'board': {'design_settings': {'rule_severities': {
+            'lib_footprint_issues': 'ignore', 'lib_footprint_mismatch': 'ignore'}}}})
+        scope['inputs'] = [{'path': str(design / i['at']), 'at': i['at']} for i in scope['inputs']]
+        return root, scope, uncarried
+
+    @staticmethod
+    def capture_design(root, scope, name, waive=None):
+        from agent_ee.candidate import capture
+        scope = copy.deepcopy(scope)
+        if waive is not None:
+            waivers = root / (name + '-waivers.json')
+            write_json(waivers, waive)
+            scope['inputs'].append({'path': str(waivers), 'at': 'waivers/drc.json'})
+            scope['checks'][0]['params']['waivers'] = 'waivers/drc.json'
+        write_json(root / (name + '.scope.json'), scope)
+        run = root / name
+        run.mkdir()
+        return run, capture(root / (name + '.scope.json'), run)
+
+    def test_projection_seal_refuses_a_pass_over_native_uncarried_silk(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        from agent_ee.storage import identity
+        from agent_ee.violation_waivers import SCHEMA, violation_key
+        root, scope, uncarried = self.uncarried_silk_design('projection-uncarried')
+        run, manifest = self.capture_design(root, scope, 'run')
+        projection, full = run_checks(run, time.monotonic() + 120)
+        report = read_json(run / 'work/drc-placement/drc.json')
+        self.assertEqual(report['schematic_parity'], [])
+        self.assertFalse(any(c['key'].startswith('silk_') for c in report['ignored_checks']))
+        extra = [(i, v) for i, v in enumerate(report['violations'])
+                 if uncarried in [item['uuid'] for item in v['items']]]
+        self.assertTrue(extra, 'native DRC did not report the added uncarried silk')
+        carried = projection['details']['carried_findings']
+        self.assertTrue(carried)
+        self.assertTrue(all(f'/violations/{i}' not in carried for i, _ in extra))
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'))
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        forged = dict(projection, outcome='pass')
+        write_json(run / 'checks/drc-placement.json', forged)
+        with self.assertRaisesRegex(ValueError, 'verdict differs'):
+            freeze_evidence(run, [forged, full])
+        with self.assertRaisesRegex(ValueError, 'verdict differs'):
+            verify_evidence(run, [forged, full], required=True)
+
+        # An owner waiver for exactly the uncarried finding is a legitimate pass, and seals.
+        entries = sorted((dict(violation_key('drc', manifest['scope']['board'], 'violations', report, v),
+                               reason='owned probe segment', owner='fixture-owner') for _, v in extra),
+                         key=lambda e: (e['type'], e['items']))
+        record = {'schema': SCHEMA, 'waivers': entries, 'approval': {
+            'owner': 'fixture-owner', 'disposition': 'approved', 'waivers_sha256': identity(entries),
+            'reference': 'test fixture'}}
+        run, _ = self.capture_design(root, scope, 'waived', waive=record)
+        projection, full = run_checks(run, time.monotonic() + 120)
+        self.assertEqual(len(projection['details']['waived']), len(extra))
+        self.assertTrue(projection['details']['carried_findings'])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'pass'))
+        self.assertEqual(full['details']['reason'], 'open_placement_defects')
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        # Without the captured waiver the same retained pass is a forgery.
+        changed = run / 'inputs/waivers/drc.json'
+        changed.chmod(0o644)
+        write_json(changed, dict(record, waivers=[]))
+        with self.assertRaisesRegex(ValueError, 'waiver'):
+            verify_evidence(run, [projection, full], required=True)
+
+    def test_projection_seal_replays_structural_containment_under_carried_silk(self):
+        """Ruling 346c (2): a retained pass never seals over 331 structural containment."""
+        import pcbnew as k
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        root, scope, uncarried = self.uncarried_silk_design('projection-structural')
+        path = root / 'design' / scope['board']
+        board = k.LoadBoard(str(path))
+        board.Remove(next(d for d in board.GetDrawings() if d.m_Uuid.AsString() == uncarried))
+        k.SaveBoard(str(path), board, True)
+        run, _ = self.capture_design(root, scope, 'carried-only')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        self.assertEqual(read_json(run / 'work/drc-placement/containment/copper-containment.json'), [])
+        self.assertTrue(projection['details']['carried_findings'])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'pass'), projection['summary'])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+
+        # Owned B.Cu segment wholly outside the outline; native DRC still reports only carried silk.
+        board = k.LoadBoard(str(path))
+        segment = k.PCB_SHAPE(board)
+        segment.SetShape(k.SHAPE_T_SEGMENT)
+        segment.SetLayer(k.B_Cu)
+        segment.SetStart(k.VECTOR2I(80000000, 80000000))
+        segment.SetEnd(k.VECTOR2I(82000000, 80000000))
+        segment.SetWidth(200000)
+        board.Add(segment)
+        k.SaveBoard(str(path), board, True)
+        run, _ = self.capture_design(root, scope, 'structural')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        report = read_json(run / 'work/drc-placement/drc.json')
+        containment = read_json(run / 'work/drc-placement/containment/copper-containment.json')
+        self.assertEqual([(f['type'], f['layers']) for f in containment], [('copper_outside_outline', ['B.Cu'])])
+        self.assertEqual(sorted(projection['details']['carried_findings']),
+                         sorted(f'/violations/{i}' for i in range(len(report['violations']))))
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'))
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        forged = dict(projection, outcome='pass')
+        unavailable = copy.deepcopy(forged)
+        unavailable['details']['containment'] = dict(execution='unavailable', outcome='unknown', reason='forged')
+        for name, check in (('pass', forged), ('pass with containment unavailable', unavailable)):
+            with self.subTest(forgery=name):
+                write_json(run / 'checks/drc-placement.json', check)
+                with self.assertRaisesRegex(ValueError, 'verdict differs'):
+                    freeze_evidence(run, [check, full])
+                with self.assertRaisesRegex(ValueError, 'verdict differs'):
+                    verify_evidence(run, [check, full], required=True)
+        write_json(run / 'checks/drc-placement.json', projection)
+        verify_evidence(run, [projection, full], required=True)
+
+    def test_placement_projection_does_not_carry_unmatched_or_non_silk_findings(self):
+        located = [{'raw_locator': '/violations/0', 'type': 'silk_overlap',
+                    'items': [{'uuid': 'a'}, {'uuid': 'b'}]},
+                   {'raw_locator': '/violations/1', 'type': 'silk_overlap',
+                    'items': [{'uuid': 'a'}, {'uuid': 'c'}]},
+                   {'raw_locator': '/violations/2', 'type': 'courtyards_overlap',
+                    'items': [{'uuid': 'a'}, {'uuid': 'b'}]},
+                   {'raw_locator': '/violations/3', 'type': 'silk_edge_clearance',
+                    'items': [{'uuid': 'a'}, {'uuid': 'b'}]},
+                   {'raw_locator': '/violations/4', 'type': 'silk_over_copper', 'items': [{'uuid': 'a'}]},
+                   {'raw_locator': '/schematic_parity/0', 'type': 'silk_overlap',
+                    'items': [{'uuid': 'b'}, {'uuid': 'a'}]},
+                   {'raw_locator': '/violations/5', 'type': 'silk_overlap', 'items': [{}]}]
+        defects = [{'native': {'type': 'silk_overlap', 'items': [{'uuid': 'b'}, {'uuid': 'a'}]}},
+                   {'native': {'type': 'silk_overlap', 'items': [{'uuid': 'a'}, {'uuid': 'b'}]}},
+                   {'native': {'type': 'courtyards_overlap', 'items': [{'uuid': 'a'}, {'uuid': 'b'}]}},
+                   {'native': {'type': 'silk_edge_clearance', 'items': [{'uuid': 'a'}, {'uuid': 'b'}]}},
+                   {'native': {'type': 'silk_overlap', 'items': [{'uuid': 'a'}]}},
+                   {'uuid': 'a', 'reason': 'footprint_side_flipped'}]
+        self.assertEqual(placement_defects.carried_silk(defects, located), ['/violations/0'])
+        self.assertEqual(placement_defects.carried_silk([], located), [])
+
+    def test_placement_projection_is_the_only_drc_exempt_from_the_carry_gate(self):
+        projection = {'projection': 'placement-stage/1'}
+        self.assertFalse(placement_defects.gated({'kind': 'drc', 'stage': 'placement', 'params': projection}))
+        self.assertFalse(placement_defects.gated({'kind': 'drc', 'params': projection}))
+        for spec in ({'kind': 'drc', 'stage': 'placement'}, {'kind': 'drc', 'stage': 'placement', 'params': {}},
+                     {'kind': 'drc', 'stage': 'placement', 'params': {'projection': 'other'}},
+                     *({'kind': 'drc', 'stage': s, 'params': projection}
+                       for s in ('schematic', 'routing', 'verification', 'fab', 'release')),
+                     {'kind': 'fab_export', 'stage': 'placement', 'params': projection}):
+            with self.subTest(spec=spec):
+                self.assertTrue(placement_defects.gated(spec))
+
+    def test_projection_with_missing_carry_evidence_is_unknown_not_pass(self):
+        from agent_ee.checks import Ctx, CheckError
+        run, manifest = self.projection_run('projection-tampered')
+        manifest = copy.deepcopy(manifest)
+        manifest['scope'][placement_defects.DECLARATION][0]['sha256'] = '0' * 64
+        ctx = Ctx(run, manifest, manifest['scope']['checks'][0], time.monotonic() + 60)
+        self.assertTrue(placement_defects.before_check(ctx))
+        with self.assertRaisesRegex(CheckError, 'carried placement evidence refused'):
+            placement_defects.projection_record(ctx, [])
+        self.assertNotEqual(ctx.result['outcome'], 'pass')
+
     def test_acceptance_without_any_fab_checks_refuses_open_carry(self):
         diagnostic = {'state': 'criteria_satisfied', 'reason': 'all_criteria_satisfied'}
         refused = placement_defects.acceptance(self.candidate_run, diagnostic)
@@ -863,6 +1241,123 @@ class NativePlacementCarryTests(unittest.TestCase):
             self.assertEqual(read_json(campaign / 'tradeoff.json'),
                              {'state': 'escalated', 'reason': 'open_placement_defects'})
             self.assertEqual(read_json(campaign / 'history/1.json'), result)
+
+
+class NoLineageProjectionSealTests(unittest.TestCase):
+    """Ruling 346d H2: a declared projection reconstructs its verdict without placement lineage."""
+
+    @classmethod
+    def setUpClass(cls):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def design(self, name, *shapes):
+        """Owned RC control plus (layer, start, end) segments; library comparison ignored only."""
+        import pcbnew as k
+        from agent_ee.candidate import capture
+        root = self.root / name
+        design = root / 'design'
+        shutil.copytree(Path(__file__).resolve().parents[1] / 'fixtures/rc/control', design)
+        path = design / 'rc_filter.kicad_pcb'
+        board = k.LoadBoard(str(path))
+        for layer, start, end in shapes:
+            segment = k.PCB_SHAPE(board)
+            segment.SetShape(k.SHAPE_T_SEGMENT)
+            segment.SetLayer(getattr(k, layer))
+            segment.SetStart(k.VECTOR2I(*start))
+            segment.SetEnd(k.VECTOR2I(*end))
+            segment.SetWidth(200000)
+            board.Add(segment)
+        k.SaveBoard(str(path), board, True)
+        project = read_json(design / 'rc_filter.kicad_pro')
+        project['board']['design_settings']['rule_severities'] = {
+            'lib_footprint_issues': 'ignore', 'lib_footprint_mismatch': 'ignore'}
+        write_json(design / 'rc_filter.kicad_pro', project)
+        requirement = root / 'requirements.md'
+        requirement.write_text('Native structural containment must block retained projection passes.\n')
+        scope = {'schema': 'agent-ee.scope/2', 'name': name, 'board': 'project/rc_filter.kicad_pcb',
+                 'schematic': 'project/rc_filter.kicad_sch',
+                 'inputs': [{'path': str(design), 'at': 'project'}, {'path': str(requirement), 'at': 'requirements.md'}],
+                 'checks': [{'id': 'projection', 'kind': 'drc', 'params': {'projection': 'placement-stage/1'}},
+                            {'id': 'full', 'kind': 'drc'}],
+                 'baseline': {'requirements': [{'id': 'R-native', 'statement': requirement.read_text().strip(),
+                     'source': {'path': 'requirements.md', 'locator': 'R-native'}, 'checks': ['projection', 'full']}],
+                     'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}}
+        write_json(root / 'scope.json', scope)
+        run = root / 'run'
+        run.mkdir()
+        manifest = capture(root / 'scope.json', run)
+        self.assertFalse(placement_defects.lineage(manifest))
+        self.assertIsNone(placement_defects._board_stamp(manifest, run / 'inputs'))
+        return run, manifest
+
+    def assert_forgeries_refused(self, run, manifest, projection, full, forgeries):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        for name, check in forgeries:
+            with self.subTest(forgery=name):
+                write_json(run / 'checks/projection.json', check)
+                with self.assertRaisesRegex(ValueError, 'verdict differs|containment'):
+                    placement_defects.verify_gate(run, check, manifest)
+                with self.assertRaisesRegex(ValueError, 'verdict differs|containment'):
+                    freeze_evidence(run, [check, full])
+                with self.assertRaisesRegex(ValueError, 'verdict differs|containment'):
+                    verify_evidence(run, [check, full], required=True)
+        write_json(run / 'checks/projection.json', projection)
+        verify_evidence(run, [projection, full], required=True)
+
+    def test_clean_pass_seals_and_forged_pass_over_structural_containment_refuses(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        run, manifest = self.design('clean')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'pass'), projection['summary'])
+        self.assertEqual(read_json(run / 'work/projection/containment/copper-containment.json'), [])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        # Containment removed from a clean pass is never assumed.
+        containment = run / 'work/projection/containment/copper-containment.json'
+        retained = containment.read_bytes()
+        containment.unlink()
+        with self.assertRaises((OSError, ValueError)):
+            placement_defects.verify_gate(run, projection, manifest)
+        containment.write_bytes(retained)
+
+        # Owned B.Cu segment wholly outside the ~96..116 mm outline: only containment reports it.
+        run, manifest = self.design('structural', ('B_Cu', (80000000, 80000000), (82000000, 80000000)))
+        projection, full = run_checks(run, time.monotonic() + 180)
+        containment = read_json(run / 'work/projection/containment/copper-containment.json')
+        self.assertEqual([(f['type'], f['layers']) for f in containment], [('copper_outside_outline', ['B.Cu'])])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'), projection['summary'])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        forged = dict(projection, outcome='pass')
+        unavailable = copy.deepcopy(forged)
+        unavailable['details']['containment'] = dict(execution='unavailable', outcome='unknown', reason='forged')
+        self.assert_forgeries_refused(run, manifest, projection, full,
+                                      (('pass', forged), ('pass with containment unavailable', unavailable)))
+        # The native structural artifact itself was never altered.
+        self.assertEqual(read_json(run / 'work/projection/containment/copper-containment.json'), containment)
+
+    def test_forged_pass_over_uncarried_silk_refuses_without_lineage(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        # Owned silk segment across R1's pads; without lineage no silk finding is carried.
+        run, manifest = self.design('silk', ('F_SilkS', (104000000, 100000000), (106000000, 100000000)))
+        projection, full = run_checks(run, time.monotonic() + 180)
+        report = read_json(run / 'work/projection/drc.json')
+        self.assertTrue(any(v['type'].startswith('silk_') for v in report['violations']), report)
+        self.assertNotIn('carried_findings', projection['details'])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'), projection['summary'])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        self.assert_forgeries_refused(run, manifest, projection, full,
+                                      (('pass', dict(projection, outcome='pass')),))
 
 
 class ContainedIdentities(dict):
@@ -1284,6 +1779,58 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         self.assertEqual((status, state['state'], state['reason']),
                          (1, 'escalated', 'open_placement_defects'))
         self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'escalated')
+
+    def test_placement_projection_carries_silk_to_routing_and_full_drc_refuses(self):
+        from agent_ee import campaign
+        from test_placement_adapter import BOARD
+        import subprocess
+        import xml.etree.ElementTree as ET
+        import pcbnew as k
+        fixture, checks, route = self.routing_fixture()
+        # Bind the owned stand-ins' value and footprint id to the native schematic, so
+        # schematic parity is clean and only carried silk can reach the projection.
+        exported = fixture.root / 'parity-netlist.xml'
+        subprocess.run(['kicad-cli', 'sch', 'export', 'netlist', '--format', 'kicadxml', '-o', str(exported),
+                        str(fixture.source / 'project/rc_filter.kicad_sch')], check=True, capture_output=True)
+        symbols = {c.get('ref'): (c.findtext('value'), c.findtext('footprint'))
+                   for c in ET.parse(exported).getroot().findall('components/comp')}
+        board = k.LoadBoard(str(fixture.source / BOARD))
+        for fp in board.GetFootprints():
+            value, footprint = symbols[fp.GetReference()]
+            fp.SetValue(value)
+            fp.SetFPID(k.LIB_ID(*footprint.split(':')))
+        k.SaveBoard(str(fixture.source / BOARD), board, True)
+        # The stock footprint libraries are deliberately not captured.
+        write_json((fixture.source / BOARD).with_suffix('.kicad_pro'), {'board': {'design_settings': {
+            'rule_severities': {'lib_footprint_issues': 'ignore', 'lib_footprint_mismatch': 'ignore'}}}})
+        staged = [{'id': 'drc-placement', 'kind': 'drc', 'stage': 'placement',
+                   'params': {'projection': 'placement-stage/1'}}, checks[0], checks[1],
+                  {'id': 'drc', 'kind': 'drc', 'stage': 'routing'}, checks[2]]
+        scope = fixture.scope(staged)
+        scope['stages']['order'].append('verification')
+        scope['stages']['subjects']['routing'] = {'path': BOARD, 'kind': 'tracks', 'minimum': 1}
+        status, state = fixture.campaign(fixture.declaration(), iterations=3, scope=scope, steps=[route])
+        self.assertEqual(len(state['history']), 3, {k: state.get(k) for k in ('state', 'reason', 'error', 'history')})
+        self.assertNotEqual(state['state'], 'criteria_satisfied')
+        placed = fixture.out / 'runs/2'
+        manifest = read_json(placed / 'candidate.json')
+        defects = placement_defects.open_defects(manifest, placed / 'inputs')
+        self.assertTrue(defects)
+        projection = read_json(placed / 'checks/drc-placement.json')
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'pass'), projection)
+        self.assertTrue(projection['details']['carried_findings'])
+        self.assertEqual(projection['details']['open_defects'], defects)
+        # The placement stage no longer holds the campaign: routing checks run,
+        # and the full DRC refuses the open carry instead of grading the board.
+        self.assertEqual(state['history'][1]['earliest_failing_stage'], 'routing', state['history'][1])
+        full = read_json(placed / 'checks/drc.json')
+        self.assertEqual((full['outcome'], full['details']['reason']), ('defect', 'open_placement_defects'))
+        final = fixture.out / 'runs/3'
+        self.assertEqual(read_json(final / 'checks/drc-placement.json')['outcome'], 'pass')
+        for check_id in ('drc', 'verify'):
+            check = read_json(final / f'checks/{check_id}.json')
+            self.assertEqual((check['outcome'], check['details']['reason']), ('defect', 'open_placement_defects'))
+        self.assertEqual(campaign.verify_campaign(fixture.out)['state'], state['state'])
 
     def test_native_routed_artwork_closes_carry_and_exports_fab(self):
         from agent_ee import campaign, stage_receipts
