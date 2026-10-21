@@ -26,8 +26,8 @@ import math
 import time
 
 from . import electrical_locality, placement_groups
-from .placement import (area2, convex, courtyard_bounds, cross, edges, intersection_area, judge, overhang_bands,
-                        qualified_polygons, validate_capture)
+from .placement import (area2, boxes_meet, convex, courtyard_bounds, cross, edges, intersection_area, judge,
+                        overhang_bands, qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
 from .symbol_library import LibraryError, nanometres
 
@@ -362,7 +362,9 @@ def _keepout_boxes(obstacles):
 
 
 def _in_keepouts(fp, obstacles):
-    return any(intersection_area(c, p) > 0
+    # Boxes that do not overlap with positive area cannot share area; only
+    # overlapping pairs reach the exact clipping test.
+    return any(boxes_meet([c], [p]) and intersection_area(c, p) > 0
                for obstacle in obstacles
                for c in fp['courtyards'].get(obstacle['side'], {}).get('polygons', [])
                for p in obstacle['polygons'])
