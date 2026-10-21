@@ -107,8 +107,8 @@ Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agent
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against sourced limits.
 [Locality provenance](docs/placer.md#locality-provenance-agentee-337) keeps unsourced
-agent-selected bounds advisory in checks and packing; captured JLCPCB spacing
-supplies necessary copper floors and advisory assembly estimates, with
+agent-selected bounds advisory in checks, packing and block-candidate admission.
+Captured JLCPCB spacing supplies necessary copper floors and advisory assembly estimates, with
 whole-footprint minima still unqualified. Captured pad UUIDs select
 multi-pad pins. Explicit `buck-output-loop` declarations bind the supply source
 and switch target to the inductor, the return source and switch source to the

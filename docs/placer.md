@@ -943,10 +943,10 @@ Joint-cluster axis pruning and conflict sets use hard pairs only; advisory pairs
 may influence ordering but never exclude candidates. The registered check
 summary reports both the advisory count and the exceeded-advisory count.
 
-The composed block candidate path still requires a passing locality grade,
-so `blocks.pack_block` currently refuses advisory-only grades. Its unsourced
-fixtures also assert hard behavior. This integration gap needs a coordinator
-verdict-preservation ruling before those expectations can change.
+The [block candidate path](blocks.md) preserves captured `source_records` and
+pair provenance. Advisory-only and mixed blocks can pack and admit with locality
+`info`; only hard pairs prune the search. Candidate validation checks truthful
+advisory records, and admission re-grades every pair from the source board.
 
 ### Read-only pod diagnostic
 

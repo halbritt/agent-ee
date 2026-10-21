@@ -1795,7 +1795,9 @@ Joint-cluster bounds prune only with hard provenance. Missing advisory citations
 and geometry-unknown manufacturer floors stay advisory; absent numeric maxima
 and captured manufacturer-record integrity failures retain unknown coverage.
 A sourced bound below the necessary copper floor is `locality_infeasible`.
-The block candidate admission gap is recorded in [locality provenance](placer.md#locality-provenance-agentee-337).
+Block candidates preserve source records and accept truthful advisory `info`
+through production, validation and independent admission regrading; hard defects
+and unknown coverage still refuse. See [blocks](blocks.md).
 
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.
