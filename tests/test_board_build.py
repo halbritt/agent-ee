@@ -212,6 +212,24 @@ class NativeBoardBuildTest(unittest.TestCase):
         pads = {(f['ref'], p['number']): p['net'] for f in extract(board)['footprints'] for p in f['pads']}
         self.assertEqual(pads, EXPECTED)
 
+    def test_cli_stdout_is_one_summary_and_heartbeats_are_on_stderr(self):
+        completed = subprocess.run([
+            '/usr/bin/python3', '-B', '-m', 'agent_ee.board_build', str(self.project),
+            '--netlist', str(self.netlist), '--footprints', str(self.placeholders),
+            '--envelope', str(self.envelope), '--template-board', str(self.template / 'rc_filter.kicad_pcb'),
+            '--placement-request', str(self.request), '--out', str(self.root / 'cli')],
+            capture_output=True, text=True, timeout=180)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        summary = json.loads(completed.stdout)
+        self.assertEqual(summary['status'], 'placed')
+        self.assertEqual(set(summary), {'status', 'outcome', 'placement'})
+        events = [json.loads(line) for line in completed.stderr.splitlines()
+                  if line.startswith('{')]
+        self.assertTrue(events, completed.stderr)
+        self.assertTrue(all(event['event'] == 'placement_heartbeat' for event in events))
+        self.assertIn('qualifying', [event['status'] for event in events])
+        self.assertIn('packing', [event['status'] for event in events])
+
     def test_slash_global_net_builds_places_and_passes_native_schematic_parity(self):
         """AGENTEE-220: the board carries OUT{slash}2 while the placer reads the raw XML OUT/2."""
         from agent_ee.placement_probe import extract

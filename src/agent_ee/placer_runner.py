@@ -8,6 +8,7 @@ import re
 import shutil
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
@@ -434,7 +435,7 @@ def _plan(facts, request, policy=None):
         from .placement_plans import select
         return select(facts, policy, request['targeted_plans'])
     return pack(facts, policy, heartbeat=lambda record: print(
-        json.dumps({'event': 'placement_heartbeat', **record}, sort_keys=True), flush=True))
+        json.dumps({'event': 'placement_heartbeat', **record}, sort_keys=True), file=sys.stderr, flush=True))
 
 
 def place_candidate(source, netlist, destination, request):

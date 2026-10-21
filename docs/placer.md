@@ -938,7 +938,9 @@ Locality targets are deduplicated and capped at 256 distinct origins per rotatio
 Exceeding that cap returns `packing_budget_exhausted`, `outcome=unknown`; it never
 truncates constraints or searches a silently reduced target set. Below the cap,
 candidate axes, exact rational costs, tie breaks and deterministic placements are
-preserved.
+preserved. This is a fail-closed refusal, with reason `locality target budget exhausted`
+and empty `placements`, rather than a geometric infeasibility proof. Raising or
+tiling the cap requires qualification against a real hub-IC case.
 
 Optional `policy.search_timeout_s` is a positive wall-time search budget of at
 most 86,400 seconds.
@@ -952,8 +954,9 @@ Omitting it keeps the deterministic step-only stopping rule.
 `pack(..., heartbeat=callback)` emits qualification/search progress, including
 steps and placed counts; search heartbeats are emitted at five-second intervals
 when checkpoints execute. The standalone runner prints these as flushed JSON
-`placement_heartbeat` events. Its ordinary result file retains a normal typed
-failure after a cooperative timeout.
+`placement_heartbeat` events on stderr; `board_build` stdout remains one final
+JSON summary that can be parsed as a single document. Its ordinary result file
+retains a normal typed failure after a cooperative timeout.
 
 Search, step, target and wall-time exhaustion retain `search.termination` as
 `search_exhausted` or `budget_exhausted`. The normal `placements` field remains
@@ -965,11 +968,16 @@ and unknown geometry verdicts retain their existing meaning.
 
 `tests.test_electrical_locality.LocalityIndexTests` compares indexed and original
 costs/targets with rotations, fractional copper centroids, UUID-selected repeated
-numbers and backtracking. Its 331-footprint, 15-obligation index benchmark checks
-5,000 candidate evaluations against a five-second bound and forbids per-candidate
-pad resolution. A second full packing benchmark has 331 footprints, 15
-obligations and one constrained movable peer among 330 placed parts, with a
-20-second bound and fewer than 400 pad resolutions across qualification, search
-and final grading. These isolate locality scaling; courtyard qualification,
+numbers and backtracking. A committed seed-9332 differential exercises 300 generated
+cases with random LIFO push/pop states, rotations, fractional copper centroids and
+output loops with distinct supply and return sources, comparing exact constraints
+and target sets against the legacy functions. Its 331-footprint, 15-obligation index
+benchmark limits setup to 34 pad resolutions, checks 5,000 two-pair candidate
+evaluations and forbids per-candidate pad resolution. A second full packing benchmark
+has 331 footprints, 15 obligations and one constrained movable peer among 330 placed
+parts, with fewer than 400 pad resolutions, at most 3,000 locality evaluations and
+16 exact candidate tests across qualification, search and final grading. Generous
+120-second and 180-second safety ceilings supplement these deterministic bounds.
+These isolate locality scaling; courtyard qualification,
 capacity proofs, broad backtracking and native saved-board gates still have
 independent costs.
