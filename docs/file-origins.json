@@ -3559,6 +3559,17 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-306 offline-import regression tests with authored PDF envelope bytes, synthetic source-note records and original text_pdf fixture generation. No retained vendor PDF or third-party note is copied into this source."
+    },
+    {
+      "paths": [
+        "src/agent_ee/design_rule_provenance.py",
+        "tests/test_design_rule_provenance.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-331 declared constraint-source import and original synthetic/native tests. Reuses the design lane schema as an interface; no third-party design or library bytes are retained."
     }
   ]
 }

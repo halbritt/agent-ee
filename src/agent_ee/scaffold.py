@@ -530,9 +530,11 @@ def validate_plan(plan):
     if not isinstance(plan, dict) or plan.get('schema') != PLAN_SCHEMA:
         raise ValueError('producer plan must be ' + PLAN_SCHEMA)
     missing = sorted(set(PLAN_FIELDS) - plan.keys())
-    unknown = sorted(plan.keys() - set(PLAN_FIELDS) - NET_PLAN_FIELDS)
+    unknown = sorted(plan.keys() - set(PLAN_FIELDS) - NET_PLAN_FIELDS - {'constraint_source'})
     if missing or unknown:
         raise ValueError(f'producer plan fields: missing {missing}, unknown {unknown}')
+    if 'constraint_source' in plan:
+        canonical(plan['constraint_source'], 'constraint_source')
     if NET_PLAN_FIELDS & plan.keys():
         if not NET_PLAN_FIELDS <= plan.keys():
             raise ValueError('producer plan net_constraints and netclass_qualification are required together')
@@ -801,7 +803,7 @@ def produce(plan, files, inputs, envelope_rel, parts_rel, document, qualificatio
     return record, scope, project, derivation, protected, net_artifacts
 
 
-def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None):
+def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None, constraint_source=None):
     """Copy explicit inputs, replace native design with emptiness, validate, publish.
 
     Exactly one of scope_path (stage one) or plan_path (producer) is required.
@@ -829,6 +831,13 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
     files, sources, _ = source_manifest(scope, planning_path.parent)
     envelope_rel = captured_name(envelope_path, sources)
     parts_rel = captured_name(parts_path, sources)
+    constraint_rel = captured_name(constraint_source, sources) if constraint_source is not None else None
+    if plan_path is not None and 'constraint_source' in scope:
+        if constraint_rel is not None and constraint_rel != scope['constraint_source']:
+            raise ValueError('conflicting declared constraint sources')
+        constraint_rel = scope['constraint_source']
+        if constraint_rel not in files:
+            raise ValueError('producer plan constraint_source is not captured: ' + constraint_rel)
     if plan_path is None:
         sch, pcb = (str(safe_relative(scope[key])) for key in ('schematic', 'board'))
         if (PurePosixPath(sch).suffix != '.kicad_sch' or PurePosixPath(pcb).suffix != '.kicad_pcb' or
@@ -841,7 +850,7 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
         raise ValueError('capture a project template with stage-one design rules and net classes')
     if plan_path is not None:
         for rel in (pro, str(PurePosixPath(sch).with_suffix('.kicad_dru'))):
-            if rel in files:
+            if rel in files and not (rel.endswith('.kicad_dru') and constraint_rel is not None):
                 raise ValueError('the producer derives project rules; refusing captured ' + rel)
         for field in ('template', 'fab_profile', *sorted(NET_PLAN_FIELDS & scope.keys())):
             if scope[field] not in files:
@@ -877,6 +886,19 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
                 plan, files, inputs, envelope_rel, parts_rel, document, qualification, sch, pcb)
             validate_scope(scope)
             protected |= extra
+        from .design_rule_provenance import import_constraints, inventory
+        constraint_record = {'settings': inventory(project)}
+        if constraint_rel is not None:
+            if net_artifacts:
+                raise ValueError('constraint import with generated per-net rules requires a composed source document')
+            project, constraint_record = import_constraints(
+                project, read_captured(inputs, constraint_rel), constraint_rel, files[constraint_rel])
+            protected.add(constraint_rel)
+            owner_rules = str(PurePosixPath(pcb).with_suffix('.kicad_dru'))
+            if owner_rules in files:
+                protected.add(owner_rules)
+                scope['requirements'] = sorted({*scope.get('requirements', []), owner_rules})
+            scope['requirements'] = sorted({*scope.get('requirements', []), constraint_rel})
         plans = sheet_plan(document, sch)
         generated = {path for path, _ in plans.values()} | {pcb}
         if set(scope.get('mutable_inputs', [])) - generated:
@@ -935,8 +957,10 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None)
                          if plan is None else
                          'Derived checks, mappings and project rules cite their captured sources in derivation; '
                          'envelope obligation coverage is not derived.',
-                         'Hierarchical staged presence remains unsupported by the existing stage checker.'],
-            missing_parts_provenance=qualification['missing_provenance'])
+                         'Hierarchical staged presence remains unsupported by the existing stage checker.',
+                         'Constraint provenance enforcement is intended policy; native finding classification remains pending.'],
+            missing_parts_provenance=qualification['missing_provenance'],
+            constraint_provenance=constraint_record)
         if derivation is not None:
             receipt['derivation'] = derivation
         (out / 'scaffold-receipt.json').write_bytes(json_bytes(receipt))

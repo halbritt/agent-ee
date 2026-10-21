@@ -1764,3 +1764,13 @@ pad-centre metric preserves proved defects alongside unknowns; missing limits
 or citations stay unknown. The engineer declares limits and citation locators;
 the check never supplies a manufacturer radius or verifies cited prose.
 Origin-group success supplies no electrical-locality acceptance.
+
+## Design-rule provenance import (AGENTEE-331, partial)
+
+The [scaffold constraint-source import](scaffold.md#declared-design-rule-sources-agentee-331-partial)
+retains declared limit classes and citations in the scaffold receipt. This is
+input provenance, not a new acceptance predicate. Native DRC and placement
+verdicts retain their existing behavior; receipt entries marked advisory do not
+yet make native findings advisory. Finding-level classification and review-prompt
+integration remain pending. Captured owner `.kicad_dru` files survive stage-one
+scaffolding unchanged and remain outside the writer allowlist.

@@ -637,3 +637,44 @@ reference policy is deliberately unchanged.
 Fixed-footprint content generation refuses a selected `copper_feature` with a
 typed `ValueError` before emitting board content. Copper has no purchased MPN;
 this scaffold stage does not synthesize its value, flags or binding fields.
+
+## Declared design-rule sources (AGENTEE-331, partial)
+
+A producer plan may name an optional captured `constraint_source`, for example
+`"constraint_source": "design-rules/constraints.json"`. Stage-one Python callers
+can pass `constraint_source=Path(...)` to `scaffold`. The document must use the
+design lane's existing `fome-mc.constraint-provenance/1` format:
+`board_setup_rules` entries contain `value_mm`, `class` and nonempty `basis`;
+`net_class_default` contains `clearance_mm` and/or `track_width_mm`, with `class`
+and `basis`. Classes are `owner`, `manufacturer`, `datasheet`, `engineering`
+and `default`. The basis text is the citation; importing it does not certify its
+engineering applicability.
+
+The importer applies declared non-default board limits and Default-class values.
+It does not apply a declared `default` value over an existing value. The captured
+source becomes an immutable requirement input. `scaffold-receipt.json` includes
+`constraint_provenance`: the source path, digest, full document, and an inventory
+of emitted board rules and numeric net-class settings. Each inventory entry has
+its value, provenance class, citation (or null), and intended enforcement policy.
+Values without a matching declaration are explicitly `default` and advisory in
+that policy. An absent or null `net_class_default` leaves the captured class
+values unchanged and records their provenance as default. Legacy producer derivation records remain available separately.
+
+The `solder_mask_min_width` entry in the design lane's document is retained as a
+manufacturing obligation; that document explicitly identifies it as outside the
+native board-setup fields. The importer does not invent a KiCad field for it.
+Custom-rule declarations are retained in the receipt; they do not generate or
+rewrite `.kicad_dru` bytes. Stage one carries an existing captured owner
+`.kicad_dru` unchanged and excludes it from the scaffold's mutable inputs. A producer
+with `constraint_source` also carries a captured project-sibling `.kicad_dru`
+unchanged, adds it to the immutable baseline, and excludes it from mutable inputs.
+Combining this import with generated per-net rules refuses until a composed
+source document can bind both outputs.
+
+**Remaining gate work:** this receipt policy does not yet change native DRC or
+placement verdicts. Legacy template values remain in the project, and native
+checks can still enforce them. AGENTEE-331 remains incomplete until every native
+finding is classified against the applicable rule and citation, default/unknown
+limits become advisory in the candidate gate, and review prompts carry those
+classifications. The existing custom-clearance and mask-bridge refusal tests
+conflict with that verdict change and require the coordinator's explicit ruling.
