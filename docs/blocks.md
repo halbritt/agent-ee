@@ -510,7 +510,7 @@ block's bounding box is not reserved, so sparse blocks can interleave. On the
 pod, stage-A block boxes total 3590 mm² (F) and 3212 mm² (B) of a 5850 mm²
 side, so whole-block boxes did not fit.
 
-Blocks are ordered by `priority_blocks`. Then come blocks that constrain both
+Blocks are ordered by `priority_blocks`; an entry that is not a derived block id is refused, and the refusal names every unknown id and lists the derived ids (as does `no_block_over_fixed.exempt_blocks`, AGENTEE-372). Then come blocks that constrain both
 board sides: those with a drilled pad (a through-board reservation) or a
 hard-shadowed part. The rest follow. Within each group, the next block is the
 one that shares the most non-ground nets with the fixed parts and the blocks

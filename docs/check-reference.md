@@ -1159,6 +1159,14 @@ The [placement adapter's property resave rule](placement-adapter.md#property-fon
 admits KiCad's omitted 0.15 mm property-font thickness default during transform
 comparison, including qualified side flips (AGENTEE-313); it does not grade placement
 or relax field value, layer, visibility, size or justification checks.
+Its [numeric token rule](placement-adapter.md#numeric-token-spellings-agentee-372)
+(AGENTEE-372) compares numbers at identified argument slots of supported
+footprint-child grammar positions, per graphic kind, as exact decimals, so a resave of `29.0` as `29` is no change while `29.001`
+still refuses; names, values, pad numbers, unknown contexts and everything
+outside footprints (board setup, stackup, rules, board graphics) stay exact
+text; a side flip mirrors points and layers only at known positions and
+refuses unknown subtrees holding geometry; a refused child names its first
+differing token.
 The [owned-zone write scope](placement-adapter.md#placement-write-scope)
 (AGENTEE-178) admits rigid owner movement and refuses independent zone edits.
 The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned
