@@ -963,10 +963,12 @@ S for that copper, other blocks keep their candidate positions) and to targeted 
 or in keep-out`). A part whose copper lies in its courtyards caches nothing, and
 its candidates, steps and plan are those of the courtyard-only search.
 Rejections count against the existing step budget only; no wall-clock limit is
-added. Fixed parts are not regated, because their pose is the designer's.
+added. Fixed parts are not moved or regated by the search, because their pose is
+the designer's; their copper is checked once, up front, as an input
+([AGENTEE-371](#fixed-part-input-copper-agentee-371)).
 
 The pinned seeded differential `tests.test_placer_geometry_cost` (ac662ff plans)
-changes for seeds 0, 3, 23 and 38 only: the pinned plan puts 0.2 mm lands up to
+changed under AGENTEE-366 for seeds 0, 3, 23 and 38 only: the pinned plan puts 0.2 mm lands up to
 0.073 mm off the board (3, 23, 38) or into a board keep-out (0). The gated
 results remain `planned`. Likewise, in `tests.test_placer_clusters`
 `test_seeded_legacy_plans_preserve_verdict_placements_and_steps`, the frozen
@@ -980,15 +982,73 @@ outline and the board copper keep-outs.
 `IndependentCopperCheckTest` reproduces each superseded pin with the
 courtyard-only search and shows the check flags it.
 
-A failed copper-aligned pass is not reported in the result. Any added field,
-including one outside `search`, breaks the whole-result legacy-first identity
-pinned by `test_cluster_guard_is_unknown_and_cleans_up_partial_state` and
-`test_seeded_legacy_first_differential_preserves_whole_results` (cases 1:3 and
-1:5). The steps it spends are therefore not visible in the failure record.
+A failed copper-aligned pass is recorded as a diagnostic only
+(AGENTEE-371, 366b gap 4): `search.copper_aligned_attempt` holds its
+`status`, `outcome`, `reason`, `steps_used` and `prior_steps_used`. The rest of
+the earlier result, including `steps_used`, is unchanged, and the legacy-first
+identity (`without_joint_diagnostics` in `tests/test_placer_clusters.py`)
+removes this field as it removes `joint_cluster_attempt`.
 
-A fixed part's copper is taken as given. In seed 4, fixed `P0` has a land
-0.055 mm past the board edge in the input itself, and the plan reports it
-unchanged.
+A fixed part's copper is an input fact, checked before the search
+([AGENTEE-371](#fixed-part-input-copper-agentee-371)). In seed 4, fixed `P0`
+has a land 0.055 mm past the board edge in the input itself; the result is the
+typed `fixed_input_copper` refusal.
+
+### Fixed-part input copper (AGENTEE-371)
+
+A fixed footprint stands where the designer put it, and the placer never moves
+or re-poses it. Before AGENTEE-371 its copper was not checked: in seed 4 the
+fixed `P0` pad 2 land reaches y = 48165155/3 nm on a 16 mm board, and the plan
+was `planned` around it. Only the AGENTEE-331 publication witness caught the
+saved copper outside the outline, downstream.
+
+Coordinator ruling 371a: such copper is an input defect, reported up front.
+After the fixed courtyards are reserved (`fixed_conflict` keeps precedence), and
+before any locality, region or capacity proof or search, every native copper box
+of every fixed part (the same `_copper_box` bounds as the copper extent gate, at
+the fixed pose, on each of the pad's outer copper sides) must:
+
+- lie inside the board outline (`violation: outside_outline`);
+- stay at least the structural setback S (`max_error_nm` + 50 nm) from every
+  outline edge (`within_setback`, with the measured `outline_distance_nm`,
+  floored);
+- not enter, with positive area, a footprint-forbidding keep-out on its side:
+  a board rule area or another fixed part's rule area or access lane
+  (`in_keepout`, naming `rule area <uuid>` or `<ref> access lane`). An owner
+  stays exempt from its own.
+
+Unlike the search gate, no courtyard discharges a box here. A declared
+courtyard overhang (`fixed_overhangs`) admits the courtyard only, and seed
+fixed pairs carried under `carry_seed_fixed_pairs` (AGENTEE-376) cover spacing,
+never outline or keep-out copper.
+
+Any such box makes the result `status: fixed_input_copper`, `outcome: defect`,
+`steps_used: 0`, no placements, and `findings`: one row per box and violation,
+with `kind: fixed_input_copper`, `reference`, `pad`, `copper_bounds_nm` (the
+box rounded outward), `setback_nm` and the outline or keep-out it meets. With no
+determinate finding and no `max_error_nm` in the facts, any fixed copper box is
+unproven (ruling 366e). The result is then `unsupported_geometry`,
+`outcome: unknown`, with `violation: setback_unknown` rows. A box outside the
+outline itself stays a defect without S. Unsupported copper geometry is
+`unsupported_geometry`, `outcome: unknown`, as for movable parts.
+
+Stage-B block arrangement applies the same check to its fixed parts (not block
+members) and returns the same typed refusal. Its residual pass fixes the
+arranged members, but `pack` checks only owner-posed fixed parts: those that
+stand as in the seed capture, which by default is the capture itself. Arranged
+members were already gated by the arrangement's copper extent gate. The
+AGENTEE-331 publication containment witness is unchanged and stays as defence in
+depth.
+
+The only pin this changes by ruling is seed 4 in
+`tests.test_placer_geometry_cost` (`FIXED_INPUT_COPPER`). Focused regression:
+
+```bash
+PYTHONPATH=src:tests python3 -m unittest \
+  tests.test_placer_copper_extent.FixedInputCopperTest \
+  tests.test_placer_copper_extent.FailedCopperAlignedPassTest \
+  tests.test_placer_copper_extent.BlockArrangementCopperTest -v
+```
 
 Boundaries. Missing copper extent is never "no constraint". Malformed
 `size_nm`, `copper_centroid_offset_nm`, `copper_land_offset_nm` or `layers`,

@@ -62,9 +62,10 @@ def random_cluster_case(rng):
 
 
 def without_joint_diagnostics(result):
-    """Only the joint attempt is additive; preserve legacy cluster membership."""
+    """Only the joint and failed copper-aligned attempts are additive; preserve legacy cluster membership."""
     result = copy.deepcopy(result)
     result.get('search', {}).pop('joint_cluster_attempt', None)
+    result.get('search', {}).pop('copper_aligned_attempt', None)  # AGENTEE-371 (366b gap 4)
     return result
 
 

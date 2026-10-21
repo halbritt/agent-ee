@@ -383,14 +383,23 @@ def _qualified(capture):
     return outline[0]
 
 
-def _keepouts(capture):
-    """Reuse the native rule-area inventory; unqualified exclusions stop packing."""
+def _keepouts(capture, labels=None):
+    """Reuse the native rule-area inventory; unqualified exclusions stop packing.
+
+    ``labels``, when given, receives per owner ('board' or a reference) the
+    name of each exclusion, parallel to the board obstacles or that part's
+    ``packing_keepouts``, for typed findings.
+    """
+    labels = {} if labels is None else labels
     owners = {fp['uuid']: fp for fp in capture['footprints']}
+    labels['board'] = []
     for fp in owners.values():
         fp['packing_keepouts'] = []
+        labels[fp['ref']] = []
         if access_direction.hard(fp):
             _, _, _, lane = access_direction.geometry(fp)
             fp['packing_keepouts'].append({'side': fp['side'], 'polygons': lane})
+            labels[fp['ref']].append(f"{fp['ref']} access lane")
     obstacles = []
     areas = capture.get('rule_areas', [])
     if not isinstance(areas, list):
@@ -412,9 +421,11 @@ def _keepouts(capture):
             raise ValueError('malformed rule-area layers')
         polygons = qualified_polygons(area.get('outline'))
         target = obstacles if owner == 'board' else owners[owner]['packing_keepouts']
+        names = labels['board' if owner == 'board' else owners[owner]['ref']]
         for side in ('F', 'B'):
             if side + '.Cu' in layers or '*.Cu' in layers:
                 target.append({'side': side, 'polygons': polygons})
+                names.append(f"rule area {area.get('uuid')}")
     return obstacles
 
 
@@ -691,6 +702,59 @@ def _copper_escapes(candidate, outline, obstacles, placed=()):
                and _in_keepouts({'courtyards': copper['sides']}, fp['packing_keepouts']))
            or (own and '_packing_copper' in fp and _in_keepouts({'courtyards': fp['_packing_copper']['sides']}, own))}
     return ('rule_area', hit) if hit else None
+
+
+def fixed_input_copper(placed, outline, obstacles, labels):
+    """Typed refusal for fixed parts whose copper is an input defect (AGENTEE-371, ruling 371a), or None.
+
+    A fixed footprint is the designer's pose and is never moved. Each native
+    copper box of a fixed part (_copper_box, at its fixed pose) must lie in the
+    outline at least the structural setback S (copper_setback) from every edge,
+    and on each of its outer copper sides out of every board keep-out and every
+    other fixed part's keep-out; an owner stays exempt from its own. Unlike the
+    search gate no courtyard discharges a box, so a declared courtyard overhang
+    or a carried seed pair never admits copper off the board. Determinate
+    findings are a defect; with none, a copper box under an unknown S is typed
+    unknown. Returns {'outcome', 'reason', 'findings'} or None.
+    """
+    findings, unproven = [], []
+    for fp in placed:
+        setback = fp.get('_packing_copper_setback')
+        peers = [(o, name) for peer in placed if peer is not fp
+                 for o, name in zip(peer.get('packing_keepouts', []), labels.get(peer['ref'], []))]
+        for pad in fp['pads']:
+            on, copper = _copper_sides(pad)
+            box = _copper_box(fp, pad) if copper else None
+            if box is None or box[0] == box[2] or box[1] == box[3]:
+                continue
+            x0, y0, x1, y1 = box
+            poly = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+            shape = {'courtyards': {'': {'polygons': [poly]}}}
+            row = {'kind': 'fixed_input_copper', 'reference': fp['ref'], 'pad': pad['number'],
+                   'copper_bounds_nm': list(box), 'setback_nm': setback}
+            if not _fits(shape, outline):
+                findings.append({**row, 'violation': 'outside_outline', 'outline': 'board outline'})
+            elif setback is not None and not _fits(shape, outline, setback):
+                d2 = min(segment_distance2(a, b, c, d) for a, b in edges(poly) for c, d in edges(outline))
+                findings.append({**row, 'violation': 'within_setback', 'outline': 'board outline',
+                                 'outline_distance_nm': math.isqrt(math.floor(d2))})
+            elif setback is None:
+                unproven.append(row)
+            for side in on:
+                for obstacle, name in [*zip(obstacles, labels.get('board', [])), *peers]:
+                    if obstacle['side'] == side and any(_overlaps(poly, p) for p in obstacle['polygons']):
+                        findings.append({**row, 'violation': 'in_keepout', 'side': side, 'keepout': name})
+    if findings:
+        refs = ', '.join(sorted({f"{f['reference']} pad {f['pad']}" for f in findings}))
+        return {'outcome': 'defect', 'findings': findings,
+                'reason': f'fixed part copper outside the outline, within the copper setback of it, '
+                          f'or in a keep-out: {refs}'}
+    if unproven:
+        refs = ', '.join(sorted({f['reference'] for f in unproven}))
+        return {'outcome': 'unknown', 'findings': [{**f, 'violation': 'setback_unknown'} for f in unproven],
+                'reason': f'copper setback unknown: the placement facts carry no board max_error_nm (m_MaxError), '
+                          f'so the copper of fixed {refs} is not proven to stay the setback inside the outline'}
+    return None
 
 
 def _fits(candidate, outline, margin_nm=0, band=()):
@@ -1811,6 +1875,11 @@ def pack(capture, policy, *, heartbeat=None, seed=None):
     aligned = _pack(capture, policy, heartbeat=heartbeat, joint=False, remaining_steps=remaining,
                     deadline=runtime['search'].deadline, copper_axes=True, seed=seed)
     if aligned['status'] != 'planned':
+        # AGENTEE-371 (366b gap 4): a diagnostic only; the earlier result and its steps are unchanged.
+        if 'search' in result:
+            result['search']['copper_aligned_attempt'] = {
+                'status': aligned['status'], 'outcome': aligned['outcome'], 'reason': aligned['reason'],
+                'steps_used': aligned['steps_used'], 'prior_steps_used': used}
         return result
     aligned['steps_used'] += used
     aligned['search']['legacy_attempt'] = runtime['legacy']
@@ -1878,7 +1947,8 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, r
         for fp in capture['footprints']:
             if access_direction.hard(fp):
                 access_direction.geometry(fp)
-        obstacles = _keepouts(capture)
+        labels = {}
+        obstacles = _keepouts(capture, labels)
         bands = overhang_bands(policy.get('fixed_overhangs', []), outline)
     except ValueError as exc:
         return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, str(exc), margin_nm)
@@ -1903,6 +1973,15 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, r
                                                      state.get('carried'), seed)
     except ValueError as exc:
         return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc), margin_nm)
+    # Owner-posed fixed parts stand as in the seed (default: the capture itself). Block members
+    # that arrangement re-posed and fixes for residual packing were gated there (AGENTEE-366).
+    seeds = {f['ref']: f for f in (capture if seed is None else seed)['footprints']}
+    refusal = fixed_input_copper([fp for fp in placed if _unchanged(fp, seeds.get(fp['ref']))],
+                                 outline, obstacles, labels)
+    if refusal is not None:
+        status = 'fixed_input_copper' if refusal['outcome'] == 'defect' else 'unsupported_geometry'
+        return {**_failure(capture, policy, status, refusal['outcome'], 0, refusal['reason'], margin_nm),
+                'findings': refusal['findings']}
     if locality:
         fixed_grade = electrical_locality.grade({'footprints': placed}, locality)
         if fixed_grade['defects']:

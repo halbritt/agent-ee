@@ -1075,7 +1075,8 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
         for fp in work['footprints']:
             if placer.access_direction.hard(fp):
                 placer.access_direction.geometry(fp)
-        keepouts = placer._keepouts(work)
+        labels = {}
+        keepouts = placer._keepouts(work, labels)
         bands = overhang_bands(effective.get('fixed_overhangs', []), outline)
     except ValueError as exc:
         return failure('unsupported_geometry', str(exc))
@@ -1119,6 +1120,11 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     except ValueError as exc:
         return failure('fixed_conflict', str(exc))
     placed = [fp for fp in placed if fp['ref'] not in members]
+    # A fixed part's copper off the board or in a keep-out is an input defect (AGENTEE-371).
+    refusal = placer.fixed_input_copper(placed, outline, keepouts, labels)
+    if refusal is not None:
+        status = 'fixed_input_copper' if refusal['outcome'] == 'defect' else 'unsupported_geometry'
+        return {**failure(status, refusal['reason']), 'outcome': refusal['outcome'], 'findings': refusal['findings']}
     missing = placer.copper_setback_missing(fp for fp in work['footprints'] if fp['ref'] not in fixed)
     if missing:
         return failure('unsupported_geometry', missing)
