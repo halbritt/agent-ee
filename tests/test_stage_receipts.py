@@ -129,12 +129,455 @@ class StepDeclarationTests(unittest.TestCase):
         cache = Path(self.tmp.name) / 'cache'
         with patch.dict(os.environ, AGENT_EE_TOOL_SOURCE_CACHE=str(cache)):
             captured = snapshot(Path(stage_receipts.__file__).resolve().parents[1])
-        for source in (captured, Path(self.tool), Path('/usr'),
-                       Path(stage_receipts.__file__).resolve().parent,
-                       Path(stage_receipts.__file__).resolve()):
+        for source in (captured, Path(self.tool), Path('/usr')):
             with self.subTest(source=source):
                 spec = self.spec(mounts=[{'source': str(source), 'at': '/tool'}])
                 self.assertEqual(validate_step(spec)['mounts'], spec['mounts'])
+
+        # AGENTEE-329 coordinator ruling: these former admissions now refuse.
+        for source in (Path(stage_receipts.__file__).resolve().parent,
+                       Path(stage_receipts.__file__).resolve()):
+            with self.subTest(source=source):
+                spec = self.spec(mounts=[{'source': str(source), 'at': '/tool'}])
+                with self.assertRaises(stage_receipts.LivePackageSourceError) as failure:
+                    validate_step(spec)
+                self.assertEqual(failure.exception.violation, 'live_package_source:/tool')
+
+    def test_only_qualified_live_helper_files_admitted(self):
+        from agent_ee import routing_adapter
+        helpers = [routing_adapter.ADAPTER_SOURCE,
+                   *(Path(m['source']) for m in routing_adapter.BINDING_MOUNTS)]
+        self.assertEqual({p.name for p in helpers},
+                         {'kicad_route_attempt.py', 'net_binding.py', 'symbol_library.py'})
+        for source in helpers:
+            with self.subTest(source=source):
+                spec = self.spec(mounts=[{'source': str(source), 'at': '/tool'}])
+                self.assertEqual(validate_step(spec)['mounts'], spec['mounts'])
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        for source in (live / 'agent_ee', live / 'agent_ee/data',
+                       live / 'agent_ee/storage.py'):
+            alias = Path(self.tmp.name) / 'descendant-link'
+            alias.symlink_to(source)
+            try:
+                with self.assertRaises(stage_receipts.LivePackageSourceError):
+                    validate_step(self.spec(mounts=[{'source': str(alias), 'at': '/tool'}]))
+            finally:
+                alias.unlink()
+
+    def test_qualified_helper_exception_uses_the_captured_object_identity(self):
+        package = Path(self.tmp.name) / 'fixture/src/agent_ee'
+        package.mkdir(parents=True)
+        anchor = package / 'stage_receipts.py'
+        anchor.write_text('# original package fixture\n')
+        helper = package / 'net_binding.py'
+        helper.mkdir()
+        captured = stage_receipts._mount_identity(helper)
+        helper.rename(package / 'moved-directory')
+        helper.write_text('# original helper fixture\n')
+        with patch.object(stage_receipts, '__file__', str(anchor)):
+            with self.assertRaises(stage_receipts.LivePackageSourceError):
+                stage_receipts._validated_mount_source(str(helper), '/tool', source_identity=captured)
+            self.assertEqual(stage_receipts._validated_mount_source(
+                str(helper), '/tool', source_identity=stage_receipts._mount_identity(helper)), str(helper))
+
+    @toolchain_test
+    def test_bind_alias_descendants_and_source_ancestors_refused(self):
+        import subprocess
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        alias = Path(self.tmp.name) / 'bind-alias'
+        alias.mkdir()
+        code = """import os, sys
+from pathlib import Path
+from agent_ee.stage_receipts import validate_step, LivePackageSourceError
+alias, live, suffix = map(Path, sys.argv[1:])
+assert os.path.samefile(alias, live)
+for source in (alias, alias / suffix):
+    spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': 'alias',
+            'argv': ['/usr/bin/true'], 'writes': {'a': 'design/a'},
+            'mounts': [{'source': str(source), 'at': '/tool'}]}
+    try:
+        validate_step(spec)
+    except LivePackageSourceError as exc:
+        assert exc.violation == 'live_package_source:/tool'
+    else:
+        raise AssertionError('live descendant bind alias admitted: ' + str(source))
+"""
+        for source, suffix in ((live, 'agent_ee/storage.py'),
+                               (live / 'agent_ee', 'storage.py'),
+                               (live / 'agent_ee/data', 'spice-templates.json')):
+            with self.subTest(source=source):
+                result = subprocess.run(
+                    ['bwrap', '--bind', '/', '/', '--ro-bind', str(source), str(alias),
+                     '--', '/usr/bin/python3', '-B', '-c', code,
+                     str(alias), str(source), suffix], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # Mask the source file with unrelated bytes: only its aliased parent
+        # identity reveals that this path still lies inside the live tree.
+        unrelated = Path(self.tool) / 'unrelated.py'
+        unrelated.write_text('original fixture')
+        result = subprocess.run(
+            ['bwrap', '--bind', '/', '/', '--ro-bind', str(live / 'agent_ee'), str(alias),
+             '--ro-bind', str(unrelated), str(alias / 'storage.py'),
+             '--', '/usr/bin/python3', '-B', '-c', code,
+             str(alias), str(live / 'agent_ee'), 'storage.py'],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # A file bind alias also cannot acquire the qualified helper exception.
+        helper = live / 'agent_ee/net_binding.py'
+        file_alias = Path(self.tmp.name) / 'helper-alias'
+        file_alias.touch()
+        result = subprocess.run(
+            ['bwrap', '--bind', '/', '/', '--ro-bind', str(helper), str(file_alias),
+             '--', '/usr/bin/python3', '-B', '-c', code,
+             str(file_alias), str(helper), '.'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @toolchain_test
+    def test_symlink_swap_binds_the_validated_source(self):
+        benign = Path(self.tool)
+        (benign / 'BENIGN').write_text('original')
+        alias = Path(self.tmp.name) / 'alias'
+        alias.symlink_to(benign, target_is_directory=True)
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
+                         mounts=[{'source': str(alias), 'at': '/tool'}],
+                         source=None, version_argv=None, writes={}, artifacts=['listing'])
+        real_observe = stage_receipts.observe_tool
+        def swapping(value):
+            if alias.is_symlink() and alias.resolve() == benign:
+                alias.unlink()
+                alias.symlink_to(Path(stage_receipts.__file__).resolve().parents[1],
+                                 target_is_directory=True)
+            return real_observe(value)
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        with patch.object(stage_receipts, 'observe_tool', swapping):
+            receipt = run_step(receipt_dir, design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertEqual((receipt_dir / 'run/listing').read_text().split(), ['BENIGN'])
+        self.assertEqual(receipt['spec']['mounts'], spec['mounts'])
+        self.assertEqual(validate_receipt(receipt_dir), receipt)
+
+    @toolchain_test
+    def test_rename_after_last_check_binds_open_identity(self):
+        benign = Path(self.tool)
+        (benign / 'BENIGN').write_text('original')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool | tee /work/listing'], source=None,
+                         version_argv=['/usr/bin/ls', '/tool'], writes={}, artifacts=['listing'])
+        real_execute = stage_receipts.execute
+        descriptors = []
+
+        def swapping(*args, **kwargs):
+            if benign.is_dir() and not benign.is_symlink():
+                benign.rename(benign.with_name('old-tool'))
+                benign.symlink_to(Path(stage_receipts.__file__).resolve().parents[1])
+            descriptors.extend(source for source, dest in kwargs['extra_ro'] if isinstance(source, int))
+            try:
+                return real_execute(*args, **kwargs)
+            finally:
+                benign.unlink()
+                benign.with_name('old-tool').rename(benign)
+
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        with patch.object(stage_receipts, 'execute', swapping):
+            receipt = run_step(receipt_dir, design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+        for run in ('run', 'version'):
+            self.assertEqual((receipt_dir / run / 'stdout.log').read_text().split(), ['BENIGN'])
+        self.assertEqual(receipt['spec']['mounts'], spec['mounts'])
+        self.assertEqual(validate_receipt(receipt_dir), receipt)
+        self.assertTrue(descriptors)
+        for descriptor in descriptors:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+
+    @toolchain_test
+    def test_contained_submount_refused_even_on_same_device(self):
+        import subprocess
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        outer = Path(self.tool)
+        inner = outer / 'inner'
+        inner.mkdir()
+        # Include whitespace to exercise mountinfo's escaped path spelling.
+        spaced = outer / 'with space'
+        spaced.mkdir()
+        code = """import sys
+from pathlib import Path
+from agent_ee.stage_receipts import validate_step, run_step
+source = sys.argv[1]
+spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': 'nested',
+        'argv': ['/usr/bin/true'], 'writes': {}, 'artifacts': ['listing'],
+        'mounts': [{'source': source, 'at': '/tool'}]}
+for operation in (lambda: validate_step(spec),
+                  lambda: run_step(Path(source) / 'receipt', Path(source) / 'absent', spec, {})):
+    try:
+        operation()
+    except ValueError as exc:
+        assert str(exc) == 'mount_source_submount:/tool', str(exc)
+    else:
+        raise AssertionError('source with submount admitted')
+assert not (Path(source) / 'receipt').exists()
+"""
+        for source, target in ((live, inner), (outer, spaced)):
+            with self.subTest(source=source, target=target):
+                result = subprocess.run(
+                    ['bwrap', '--bind', '/', '/', '--ro-bind', str(source), str(target),
+                     '--', '/usr/bin/python3', '-B', '-c', code, str(outer)],
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @toolchain_test
+    def test_submount_inventory_uses_open_directory_after_ancestor_rename(self):
+        import subprocess
+        outer = Path(self.tool)
+        (outer / 'inner').mkdir()
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        code = """import sys
+from pathlib import Path
+from unittest.mock import patch
+from agent_ee import stage_receipts as s
+outer = Path(sys.argv[1])
+benign = outer.with_name('benign')
+benign.mkdir(exist_ok=True)
+moved = outer.with_name('moved')
+real = s._refuse_submounts
+def redirect(source, at):
+    outer.rename(moved)
+    benign.rename(outer)
+    try:
+        real(source, at)
+    finally:
+        outer.rename(benign)
+        moved.rename(outer)
+spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': 'nested',
+        'argv': ['/usr/bin/true'], 'writes': {}, 'artifacts': ['listing'],
+        'mounts': [{'source': str(outer), 'at': '/tool'}]}
+with patch.object(s, '_refuse_submounts', redirect):
+    try:
+        s.run_step(outer / 'receipt', outer / 'absent-design', spec, {})
+    except ValueError as exc:
+        assert str(exc) == 'mount_source_submount:/tool', str(exc)
+    else:
+        raise AssertionError('renamed source submount admitted')
+assert not (outer / 'receipt').exists()
+"""
+        (outer / 'file').touch()
+        for source, target in ((live, outer / 'inner'),
+                               (live / 'agent_ee/storage.py', outer / 'file')):
+            with self.subTest(source=source):
+                result = subprocess.run(
+                    ['bwrap', '--bind', '/', '/', '--ro-bind', str(source), str(target),
+                     '--', '/usr/bin/python3', '-B', '-c', code, str(outer)],
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @toolchain_test
+    def test_observed_sandbox_mount_mismatch_never_executes_even_for_adoptable_exit(self):
+        import subprocess
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        (design / 'a').write_text('original')
+        argv = ['/usr/bin/sh', '-c', 'touch /work/EXECUTED']
+        spec = self.spec(argv=argv, source=None, version_argv=argv,
+                         writes={'a': 'design/a'}, adoptable_exits=[0, 125])
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        descriptor = os.open(live, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+        self.addCleanup(os.close, descriptor)
+        real_popen = subprocess.Popen
+
+        def wrong_mount(command, **kwargs):
+            # Execute a real bwrap with the wrong native mount, leaving the
+            # coordinator's expected identity and guard command intact.
+            command = list(command)
+            index = command.index('--ro-bind-fd')
+            command[index + 1] = str(descriptor)
+            kwargs['pass_fds'] = (*kwargs['pass_fds'], descriptor)
+            return real_popen(command, **kwargs)
+
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        with patch.object(subprocess, 'Popen', wrong_mount):
+            receipt = run_step(receipt_dir, design, spec, {})
+        self.assertEqual(receipt['status'], 'refused')
+        self.assertEqual(receipt['exit_code'], 125)
+        for name, key in (('run', 'execution'), ('version', 'version_execution')):
+            self.assertFalse(receipt[key]['mount_guard'])
+            self.assertIn('mount_guard_failed:' + name, receipt['violations'])
+            self.assertFalse((receipt_dir / name / 'EXECUTED').exists())
+        self.assertEqual(validate_receipt(receipt_dir), receipt)
+
+    @toolchain_test
+    def test_verified_mount_preserves_tool_exit_125_and_hides_guard_output(self):
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        (design / 'a').write_text('original')
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'printf original; exit 125'],
+                         source=None, version_argv=None, writes={'a': 'design/a'},
+                         adoptable_exits=[0, 125])
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        receipt = run_step(receipt_dir, design, spec, {})
+        self.assertEqual(receipt['status'], 'partial')
+        self.assertTrue(receipt['execution']['mount_guard'])
+        self.assertEqual((receipt_dir / 'run/stdout.log').read_text(), 'original')
+        self.assertEqual(validate_receipt(receipt_dir), receipt)
+
+    @toolchain_test
+    def test_retained_guard_requires_exact_prelude_and_coordinator_observation(self):
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        (design / 'a').write_text('original')
+        spec = self.spec(argv=['/usr/bin/true'], source=None, version_argv=None,
+                         writes={'a': 'design/a'})
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        original = run_step(receipt_dir, design, spec, {})
+        self.assertEqual(original['status'], 'completed')
+        for case in ('observation', 'bypass', 'script', 'identity'):
+            with self.subTest(case=case):
+                value = json.loads(json.dumps(original))
+                execution = value['execution']
+                command = execution['sandbox_argv']
+                start = command.index('--') + 1
+                if case == 'observation':
+                    execution.pop('mount_guard')
+                elif case == 'bypass':
+                    command[start:] = spec['argv']
+                elif case == 'script':
+                    command[start + 4] = 'raise SystemExit(0)'
+                else:
+                    command[start + 5] = '[["/tool",true,1]]'
+                write_json(receipt_dir / 'run/execution.json', execution)
+                value['identity'] = identity({k: v for k, v in value.items() if k != 'identity'})
+                write_json(receipt_dir / 'receipt.json', value)
+                with self.assertRaisesRegex(ValueError, 'guard|sandbox'):
+                    validate_receipt(receipt_dir)
+
+    @toolchain_test
+    def test_guard_preserves_direct_exec_signal_and_plain_script_behavior(self):
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        plain = Path(self.tool) / 'plain'
+        plain.write_text('printf original; exit 7\n')
+        plain.chmod(0o700)
+        runtime, identities = stage_receipts._resolved_mounts(self.spec())
+        cases = {'signal': ['/usr/bin/sh', '-c', 'kill -PIPE $$; printf survived'],
+                 'plain-script': ['/tool/plain']}
+        for name, argv in cases.items():
+            with self.subTest(case=name):
+                direct_dir = Path(self.tmp.name) / (name + '-direct')
+                guarded_dir = Path(self.tmp.name) / (name + '-guarded')
+                direct = stage_receipts.execute(design, direct_dir, argv, extra_ro=[(self.tool, '/tool')])
+                with stage_receipts._opened_mounts(runtime, identities) as mounts:
+                    guarded = stage_receipts.execute(design, guarded_dir, argv, extra_ro=mounts)
+                self.assertTrue(guarded['mount_guard'])
+                self.assertEqual(guarded['exit_code'], direct['exit_code'])
+                self.assertEqual((guarded_dir / 'stdout.log').read_bytes(),
+                                 (direct_dir / 'stdout.log').read_bytes())
+
+    def test_missing_mount_run_retains_typed_error(self):
+        missing = str(Path(self.tmp.name) / 'missing')
+        spec = self.spec(mounts=[{'source': missing, 'at': '/tool'}])
+        with self.assertRaises(ValueError) as failure:
+            run_step(Path(self.tmp.name) / 'receipt', Path(self.tmp.name) / 'absent', spec, {})
+        self.assertEqual(str(failure.exception), 'mount source does not exist: ' + missing)
+
+    def test_open_mount_identity_mismatch_and_partial_failure_close_descriptors(self):
+        other = Path(self.tmp.name) / 'other'
+        other.mkdir()
+        spec = self.spec(mounts=[{'source': self.tool, 'at': '/tool'},
+                                 {'source': str(other), 'at': '/other'}])
+        runtime, identities = stage_receipts._resolved_mounts(spec)
+        other.rename(other.with_name('old-other'))
+        other.mkdir()
+        opened, real_open = [], os.open
+
+        def track(*args, **kwargs):
+            descriptor = real_open(*args, **kwargs)
+            if args[1] & os.O_PATH:
+                opened.append(descriptor)
+            return descriptor
+
+        with patch.object(os, 'open', track):
+            with self.assertRaisesRegex(ValueError, 'mount_source_changed:/other'):
+                with stage_receipts._opened_mounts(runtime, identities):
+                    self.fail('changed inode admitted')
+        self.assertEqual(len(opened), 2)
+        for descriptor in opened:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+
+    def test_open_mount_cleanup_on_failure_and_interruption(self):
+        runtime, identities = stage_receipts._resolved_mounts(self.spec())
+        for failure in (RuntimeError, KeyboardInterrupt):
+            with self.subTest(failure=failure):
+                with self.assertRaises(failure):
+                    with stage_receipts._opened_mounts(runtime, identities) as mounts:
+                        descriptor = mounts[0][0]
+                        self.assertEqual(os.fstat(descriptor).st_ino, Path(self.tool).stat().st_ino)
+                        raise failure()
+                with self.assertRaises(OSError):
+                    os.fstat(descriptor)
+
+    def test_open_mount_refuses_symlink_replacement(self):
+        runtime, identities = stage_receipts._resolved_mounts(self.spec())
+        original = Path(self.tool)
+        original.rename(original.with_name('old-tool'))
+        original.symlink_to(Path(stage_receipts.__file__).resolve().parents[1])
+        with self.assertRaisesRegex(ValueError, 'mount_source_changed:/tool'):
+            with stage_receipts._opened_mounts(runtime, identities):
+                self.fail('symlink replacement admitted')
+
+    def test_sandbox_profile_normalizes_mount_descriptors(self):
+        args = ['/inputs', '/work', ['/usr/bin/true']]
+        first = sandbox_argv(*args, extra_ro=[(3, '/tool')], mount_identities={'/tool': (1, 2)})
+        second = sandbox_argv(*args, extra_ro=[(27, '/tool')], mount_identities={'/tool': (1, 2)})
+        self.assertEqual(sandbox_profile(first), sandbox_profile(second))
+        writable = list(first)
+        writable[writable.index('--ro-bind-fd')] = '--bind'
+        self.assertNotEqual(sandbox_profile(first), sandbox_profile(writable))
+
+    @toolchain_test
+    def test_replaced_resolved_source_refused_before_launch(self):
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        real_observe = stage_receipts.observe_tool
+        def replacing(value):
+            observed = real_observe(value)
+            original = Path(self.tool)
+            original.rename(original.with_name('old-tool'))
+            original.mkdir()
+            return observed
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        with patch.object(stage_receipts, 'observe_tool', replacing), \
+                patch.object(stage_receipts, 'execute') as execute:
+            with self.assertRaisesRegex(ValueError, 'mount_source_changed:/tool'):
+                run_step(receipt_dir, design, self.spec(), {})
+        execute.assert_not_called()
+        self.assertFalse(receipt_dir.exists())
+
+    @toolchain_test
+    def test_bind_alias_live_source_refused(self):
+        import subprocess
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        alias = Path(self.tmp.name) / 'bind-alias'
+        alias.mkdir()
+        code = """import os, sys
+from agent_ee.stage_receipts import validate_step, LivePackageSourceError
+assert os.path.samefile(sys.argv[1], sys.argv[2])
+spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': 'alias',
+        'argv': ['/usr/bin/true'], 'writes': {'a': 'design/a'},
+        'mounts': [{'source': sys.argv[1], 'at': '/tool'}]}
+try:
+    validate_step(spec)
+except LivePackageSourceError as exc:
+    assert exc.violation == 'live_package_source:/tool'
+else:
+    raise AssertionError('live bind alias admitted')
+"""
+        result = subprocess.run(['bwrap', '--bind', '/', '/', '--ro-bind', str(live), str(alias),
+                                 '--', '/usr/bin/python3', '-B', '-c', code, str(alias), str(live)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_normalizes_defaults(self):
         spec = validate_step({k: v for k, v in self.spec().items() if k != 'timeout_s'})
