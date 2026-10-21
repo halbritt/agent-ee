@@ -1330,15 +1330,29 @@ def review_input(run_dir, manifest):
             'plan': {'path': 'inputs/' + plan_rel, 'sha256': manifest['files'][plan_rel]}}
 
 
+def _candidate_file(path):
+    """A bare candidate file; a ``block_library materialize`` record is refused, not unwrapped."""
+    document = strict_json(Path(path).read_bytes())
+    if not isinstance(document, dict) or document.get('schema') != blocks.CANDIDATE:
+        raise ValueError(f'{path}: expected a bare {blocks.CANDIDATE} file '
+                         '(block_library materialize --out writes one; its result record is not a candidate)')
+    return document
+
+
 def load_entries(paths):
-    return [{'candidate': strict_json(Path(p).read_bytes())} for p in paths]
+    return [{'candidate': _candidate_file(p)} for p in paths]
 
 
 def request_section(allocation, arrangement, candidates):
-    """The ``blocks`` section of a placer_runner request from file paths."""
+    """The ``blocks`` section of a placer_runner request from file paths.
+
+    ``allocation`` is the same allocation file every candidate was packed or
+    materialized against (``blocks pack --allocation``, ``block_library materialize
+    --allocation``); the runner derives from its text and admission binds its hash.
+    """
     return {'allocation_text': None if allocation is None else Path(allocation).read_bytes().decode('utf-8'),
             'arrangement': strict_json(Path(arrangement).read_bytes()),
-            'candidates': [{'candidate': strict_json(Path(p).read_bytes())} for p in candidates]}
+            'candidates': load_entries(candidates)}
 
 
 def plan_from_request(facts, section, policy, effective, netlist, heartbeat=None):

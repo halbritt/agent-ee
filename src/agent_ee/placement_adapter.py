@@ -995,6 +995,14 @@ def write_scope(before, after, protected=(), groups=None):
     else:
         others = [[n for n in root[1:] if not (isinstance(n, list) and n and n[0] == 'footprint')]
                   for root in roots]
+        from .placement_defects import stamp_violations, unstamped
+        try:
+            (others[0], stamped), (others[1], restamped) = unstamped(others[0]), unstamped(others[1])
+        except ValueError as exc:
+            violations.append(str(exc))
+        else:
+            # The writer records carry lineage on the board (AGENTEE-351); nothing else in the title block.
+            violations += stamp_violations(stamped, restamped)
         if admitted:
             known = {_uuid(n) for n in others[0] if isinstance(n, list)}
             seen, kept = set(), []

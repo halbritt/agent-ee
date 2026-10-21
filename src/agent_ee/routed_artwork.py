@@ -33,6 +33,10 @@ def translated_content(node):
     for child in node[1:]:
         if not isinstance(child, list):
             continue
+        if not child:
+            raise ValueError('silk graphic refuses empty child')
+        if not isinstance(child[0], str):
+            raise ValueError('silk graphic refuses list-headed child')
         if child[0] in coordinates:
             if len(child) not in ((3, 4) if child[0] == 'at' else (3,)):
                 raise ValueError('malformed silk coordinate')
@@ -68,12 +72,22 @@ def write_scope(before, after):
             return
         if not isinstance(b, list) or not isinstance(a, list) or b[:1] != a[:1]:
             raise ValueError('non-silk board token changed')
+        # A list-headed node is not KiCad syntax; refuse it typed, not by hashing it.
+        if not isinstance(b[0], str):
+            raise ValueError('artwork comparison refuses list-headed node')
         if b[0] == 'footprint':
-            decl = [p[2] for p in children(b, 'property') if p[1] == DECLARATION]
+            if any(len(p) < 2 for p in children(b, 'property')):
+                raise ValueError('artwork comparison refuses nameless property')
+            decl = [p[2:3] for p in children(b, 'property') if p[1:2] == [DECLARATION]]
+            if any(len(d) != 1 or not isinstance(d[0], str) for d in decl):
+                raise ValueError('malformed movable silk declaration')
+            decl = [d[0] for d in decl]
             if len(decl) > 1:
                 raise ValueError('duplicate movable silk declaration')
             names = movable_names(decl[0] if decl else None)
         silk = children(b, 'layer') in ([['layer', 'F.SilkS']], [['layer', 'B.SilkS']])
+        if b[0] == 'property' and len(b) > 2 and not isinstance(b[1], str):
+            raise ValueError('artwork comparison refuses non-atom field name')
         field = b[0] == 'property' and len(b) > 2 and b[1] in names
         if silk and (field or b[0] in GRAPHICS):
             if children(b, 'render_cache') or children(a, 'render_cache'):
@@ -109,7 +123,8 @@ def write_scope(before, after):
         def identities(n):
             uid = children(n, 'uuid')
             if uid:
-                if len(uid) != 1 or len(uid[0]) != 2 or uid[0][1] in seen:
+                if (len(uid) != 1 or len(uid[0]) != 2 or not isinstance(uid[0][1], str) or
+                        uid[0][1] in seen):
                     raise ValueError('ambiguous artwork identity')
                 seen.add(uid[0][1])
             for c in n[1:]:

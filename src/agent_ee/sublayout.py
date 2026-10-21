@@ -295,23 +295,29 @@ def _mm(value):
     return round(value * 1000000)
 
 
-def native_drc(board, work):
+def native_drc(board, work, *, project_board=None):
     """Native DRC of a board copy inside the networkless sandbox; failure is missing coverage."""
     from .executor import execute
+    project_board = Path(project_board if project_board is not None else board)
     work = Path(work)
     inputs = work / 'drc-input'
     inputs.mkdir(parents=True)
-    shutil.copyfile(board, inputs / 'board.kicad_pcb')
+    staged = inputs / project_board.name
+    shutil.copyfile(board, staged)
+    for suffix in ('.kicad_pro', '.kicad_prl', '.kicad_dru'):
+        source = project_board.with_suffix(suffix)
+        if source.is_file():
+            shutil.copyfile(source, staged.with_suffix(suffix))
     config = work / 'drc' / 'kicad-config' / '10.0'
     config.mkdir(parents=True)
     # Empty global tables: the saved board embeds every footprint it uses.
     (config / 'fp-lib-table').write_text('(fp_lib_table\n\t(version 7)\n)\n')
     (config / 'sym-lib-table').write_text('(sym_lib_table\n\t(version 7)\n)\n')
     record = execute(inputs, work / 'drc', ['kicad-cli', 'pcb', 'drc', '--format', 'json', '--severity-all',
-                                            '--units', 'mm', '-o', '/work/drc.json', '/candidate/board.kicad_pcb'],
+                                            '--units', 'mm', '-o', '/work/drc.json', '/candidate/' + staged.name],
                      timeout=DRC_TIMEOUT)
     path = work / 'drc' / 'drc.json'
-    if record['execution'] != 'ok' or not path.is_file():
+    if record['execution'] != 'ok' or record['exit_code'] != 0 or not path.is_file():
         raise SublayoutError('drc_unavailable', f"native DRC {record['execution']} (exit {record['exit_code']})")
     report = json.loads(path.read_text())
     if report.get('coordinate_units') != 'mm' or any(not isinstance(report.get(k), list)
@@ -323,12 +329,29 @@ def native_drc(board, work):
                 not isinstance(i, dict) or not isinstance(i.get('uuid'), str) or not isinstance(i.get('pos'), dict)
                 for i in items):
             raise SublayoutError('drc_unavailable', 'native DRC report has a malformed violation')
+    from .design_rule_provenance import classify_finding, finding_sources, require_evaluated_limits
+    from .outline_containment import sandboxed
+    try:
+        containment = sandboxed(inputs, staged.name, work / 'containment')
+        sources = finding_sources(staged, report['violations'])
+        require_evaluated_limits(report, sources)
+        classified = [classify_finding(dict(v), sources) for v in report['violations'] + containment]
+    except (OSError, ValueError) as exc:
+        raise SublayoutError('drc_unavailable', str(exc)) from exc
+    from .storage import write_json
+    write_json(work / 'drc' / 'constraints.json', {'sources': sources, 'violations': classified})
+    raw_count = len(report['violations'])
+    report = dict(report, violations=classified)
     return dict(report=report, report_sha256=digest(path), kicad_version=report.get('kicad_version'),
-                violations=len(report['violations']), unconnected_items=len(report['unconnected_items']))
+                violations=raw_count, unconnected_items=len(report['unconnected_items']))
 
 
 def _key(violation):
-    return violation['type'], tuple(sorted(i['uuid'] for i in violation['items']))
+    from .design_rule_provenance import numeric_finding
+    key = (violation['type'], tuple(sorted(i['uuid'] for i in violation['items'])))
+    if numeric_finding(violation):
+        return (*key, violation.get('description'), canonical(violation['items']))
+    return key
 
 
 def drc_delta(before, after, bbox, owned):
@@ -340,7 +363,9 @@ def drc_delta(before, after, bbox, owned):
             bbox[0] <= _mm(i['pos']['x']) <= bbox[2] and bbox[1] <= _mm(i['pos']['y']) <= bbox[3])
             for i in violation['items'])
         if inside and _key(violation) not in known:
-            new.append(dict(type=violation['type'], severity=violation.get('severity'),
+            new.append(dict(**({'constraint_provenance': violation['constraint_provenance']}
+                               if 'constraint_provenance' in violation else {}),
+                            type=violation['type'], severity=violation.get('severity'),
                             description=violation.get('description'),
                             items=[dict(uuid=i['uuid'], description=i.get('description'),
                                         pos_nm=[_mm(i['pos']['x']), _mm(i['pos']['y'])])
@@ -506,6 +531,10 @@ def reuse(top_board, request, sub_root, out, work):
             inputs = work / 'apply-input'
             (inputs / 'sub').mkdir(parents=True)
             shutil.copyfile(top_board, inputs / 'board.kicad_pcb')
+            for suffix in ('.kicad_pro', '.kicad_prl', '.kicad_dru'):
+                source = Path(top_board).with_suffix(suffix)
+                if source.is_file():
+                    shutil.copyfile(source, (inputs / 'board.kicad_pcb').with_suffix(suffix))
             for plan in plans:
                 target = inputs / 'sub' / plan['sub_board']['path']
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -514,6 +543,12 @@ def reuse(top_board, request, sub_root, out, work):
             _child(inputs, work / 'apply', ['apply', '/candidate/board.kicad_pcb', '--plan', '/candidate/plan.json',
                                             '--sub-boards', '/candidate/sub', '-o', '/work/board.kicad_pcb'])
             saved = work / 'apply' / 'board.kicad_pcb'
+            for suffix in ('.kicad_pro', '.kicad_prl', '.kicad_dru'):
+                source = (inputs / 'board.kicad_pcb').with_suffix(suffix)
+                if source.is_file():
+                    shutil.copyfile(source, saved.with_suffix(suffix))
+                else:
+                    saved.with_suffix(suffix).unlink(missing_ok=True)
             # A fresh child reads the saved output; the writer's process is not trusted for it.
             owned = verify(plan_record, top, board_facts(saved, work / 'verify'))
             data = saved.read_bytes()
@@ -536,7 +571,7 @@ def reuse(top_board, request, sub_root, out, work):
 def _drc_groups(result, owned, before_board, after_board, work):
     try:
         before = native_drc(before_board, work / 'drc-before')
-        after = native_drc(after_board, work / 'drc-after')
+        after = native_drc(after_board, work / 'drc-after', project_board=before_board)
     except SublayoutError as exc:
         result['findings'].append(dict(code=exc.code, location='/drc', message=str(exc)))
         before = after = None
@@ -552,7 +587,13 @@ def _drc_groups(result, owned, before_board, after_board, work):
             group.update(drc='not_evaluated', outcome='unknown')
             continue
         new = drc_delta(before['report'], after['report'], group['bbox_nm'], owned[group['id']]['uuids'])
-        group.update(drc=dict(new_violations=new), outcome='defect' if new else
+        from .design_rule_provenance import advisory_numeric
+        advisory = [v for v in new if advisory_numeric(v)]
+        hard = [v for v in new if not advisory_numeric(v)]
+        grading = dict(new_violations=new)
+        if advisory:
+            grading['advisory_findings'] = advisory
+        group.update(drc=grading, outcome='defect' if hard else
                      'unknown' if group['status'] == 'partial' else 'pass')
 
 

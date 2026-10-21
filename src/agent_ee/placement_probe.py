@@ -3,8 +3,9 @@
 Run under the existing networkless tool sandbox. Separate from electrical and
 copper geometry adapters: unsupported curves/holes never become polygon hulls.
 Courtyard circles and arcs are bounded by exact inner and outer polygons within
-the declared courtyard_curves.ARC_TOLERANCE_NM (AGENTEE-212); outlines and
-rule areas still refuse every curve.
+the declared courtyard_curves.ARC_TOLERANCE_NM (AGENTEE-212); placement
+outlines and rule areas still refuse every curve. Silk containment reuses the
+same bounds for its separate outline-with-holes model (AGENTEE-368).
 """
 import argparse
 from collections import Counter
@@ -70,9 +71,10 @@ def prove_contours(primitives, missing, unproven, curves_allowed=False, *, separ
     ``separate_contours`` validates each ring independently; callers must then
     qualify their mutual topology before using them as an outline with holes.
 
-    With ``curves_allowed`` (courtyards only), circles are whole contours and arcs
-    are ring edges; the record then carries outer ``polygons`` (a superset of the
-    curved region) and ``inner_polygons`` (a subset), both proven straight."""
+    With ``curves_allowed`` (courtyards and silk containment only), circles are
+    whole contours and arcs are ring edges; the record then carries outer
+    ``polygons`` (a superset of the curved region) and ``inner_polygons`` (a
+    subset), both proven straight."""
     record = {'status': missing if not primitives else unproven, 'primitives': primitives}
     kinds = ('segment', 'polygon') + (('circle', 'arc') if curves_allowed else ())
     if not primitives or any(p['kind'] not in kinds for p in primitives):
@@ -152,7 +154,15 @@ def prove_contours(primitives, missing, unproven, curves_allowed=False, *, separ
         groups = [[p] for p in outer] if separate_contours else [outer]
         for group in groups:
             qualified_polygons({'status': 'proven', 'polygons': group})
-        if inner != outer:
+        if inner != outer and separate_contours:
+            # Independent contours may nest, so each ring's bounds pair alone. A
+            # simple ring whose every edge lies in the closed outer bound is inside it.
+            from .board_envelope import segment_inside
+            for i, o in zip(inner, outer):
+                within, = qualified_polygons({'status': 'proven', 'polygons': [i]})
+                if not all(segment_inside(a, b, o) for a, b in zip(within, within[1:] + within[:1])):
+                    raise ValueError('inner bound not inside outer bound')
+        elif inner != outer:
             within = qualified_polygons({'status': 'proven', 'polygons': inner})
             bounds = qualified_polygons({'status': 'proven', 'polygons': outer})
             if any(intersection_area(i, o) != Fraction(area2(i), 2) for i, o in zip(within, bounds)):
@@ -243,7 +253,7 @@ def _qualify_custom_pad(pad, node):
     return {'status': 'proven', **geometry, 'bbox_nm': box_nm(pad.GetBoundingBox())}
 
 
-def _packing_pad_geometry(board, fp):
+def _packing_pad_geometry(board, fp, own_clearances=None):
     """Native outward bounds; drill/copper reservations are not courtyards."""
     import pcbnew
     settings = board.GetDesignSettings()
@@ -266,7 +276,8 @@ def _packing_pad_geometry(board, fp):
             if not pad.IsOnLayer(layer):
                 continue
             poly = pcbnew.SHAPE_POLY_SET()
-            own_clearance = pad.GetOwnClearance(layer)
+            own_clearance = (pad.GetOwnClearance(layer) if own_clearances is None
+                             else own_clearances[pad.m_Uuid.AsString()])
             # The drill reservation already contributes the board minimum. Peer
             # copper supplies only its excess, so their Minkowski margins cover
             # the peer's larger native netclass/local clearance without doubling
@@ -361,6 +372,12 @@ def extract(board_path):
     path = Path(board_path)
     before = path.read_bytes()
     board = pcbnew.LoadBoard(str(path))
+    project = path.with_suffix('.kicad_pro')
+    from .design_rule_provenance import PROJECT_KEY, finding_sources, packing_clearances
+    from .catalog import strict_json
+    project = strict_json(project.read_bytes()) if project.is_file() else {}
+    own_clearances = (packing_clearances(board, finding_sources(path), project)
+                      if PROJECT_KEY in project else None)
     has_holes = any(p.HasHole() or p.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH)
                     for f in board.GetFootprints() for p in f.Pads())
     outline_shapes = [s for s in board.GetDrawings() if s.GetLayer() == pcbnew.Edge_Cuts]
@@ -410,7 +427,8 @@ def extract(board_path):
                            'pads': sorted(pads, key=lambda p: (p['number'], p['uuid']))})
         if has_holes:
             try:
-                footprints[-1]['packing_pad_geometry'] = {'status': 'proven', **_packing_pad_geometry(board, fp)}
+                footprints[-1]['packing_pad_geometry'] = {
+                    'status': 'proven', **_packing_pad_geometry(board, fp, own_clearances)}
             except ValueError as exc:
                 footprints[-1]['packing_pad_geometry'] = {'status': 'unsupported', 'reason': str(exc)}
     if path.read_bytes() != before:

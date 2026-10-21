@@ -121,7 +121,16 @@ The [post-routing artwork producer](docs/silk-artwork.md#post-routing-artwork-pr
 repairs routed-board silk through a receipted translation-only step, proves that
 all non-silk geometry is unchanged, and enables identity-bound carry closure.
 Closure consumes sealed native containment evidence, including board-owned and footprint-owned
-straight slots and cutouts (AGENTEE-362), without rerunning the tool during campaign replay.
+straight slots and cutouts (AGENTEE-362) and conservatively bounded round holes, arc-ended
+slots and rounded cutouts (AGENTEE-368), without rerunning the tool during campaign replay.
+A board published with open carry has a [lineage stamp](docs/silk-artwork.md#board-lineage-stamp-agentee-351),
+so a re-scoped copy refuses release as unknown unless it brings its
+`placement-evidence`. Imported evidence closes carry only when native DRC on the
+captured board reproduces it (AGENTEE-351). At package release, every board
+also needs native DRC on its captured bytes showing no `silk_*` conflicts; a stamp
+or imported lineage cannot waive it until AGENTEE-348 authenticates them, and a
+missing or unverifiable witness refuses as unknown. Standalone checks keep
+their verdicts.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against sourced limits.
@@ -148,6 +157,9 @@ engineer allocation file. Each block is packed alone into a rigid, versioned blo
 candidate, with relative poses, an obligation grade, a courtyard witness,
 per-side outlines and source hashes. A compaction pass re-packs each block on
 shrinking outlines and keeps the smallest box with the same obligations.
+If the first plan strands a member tied in only through a plane net,
+[recovery](docs/blocks.md#recovery-agentee-359) retries with a bounded
+temporary anchor-proximity group, then grades on the unchanged policy.
 Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
@@ -257,7 +269,10 @@ scope. It preserves project rules, checks and baseline sources, pre-creates chil
 sheets and leaves native execution to the ordinary review/campaign workflow. Its
 stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
 rules from the envelope, its fab profile and the parts manifest instead, and
-refuses incomplete inputs. Optional captured net constraints add per-net classes,
+refuses incomplete inputs. An optional [constraint-source import](docs/scaffold.md#declared-design-rule-sources-agentee-331)
+records design-rule classes and citations. Native DRC retains unsourced numeric
+findings as advisories while sourced limits and structural gates remain hard.
+Optional captured net constraints add per-net classes,
 assignments, width rules and a Default completeness check. Stage-three preparation
 writes declared holes, keepouts, locked fixed footprints and the IMU marking through
 a campaign pre-receipt. Its [packed-board silkscreen policy](docs/scaffold.md#packed-board-silkscreen-policy-agentee-276)
@@ -988,3 +1003,14 @@ and refuses unresolved overlaps before publication, without changing electrical
 check verdicts.
 
 Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Runtime validation refuses mounts of live package source directories, their ancestors or unqualified source files, including symlink and bind aliases (AGENTEE-327/329). Validated tool mounts pass opened descriptors and verify mounted identities inside the sandbox before execution to prevent rename races; directory sources containing submounts are refused. Refused fab receipts retain their violations and diagnostic paths.
+
+[Design-rule provenance](docs/scaffold.md#declared-design-rule-sources-agentee-331)
+keeps unsourced numeric defaults advisory across placement, captured DRC, plane
+production and the experimental row stand-in. Measurements below a sourced floor
+still refuse when KiCad prints a larger default. Co-located drills and copper
+outside the board outline remain structural defects.
+
+Native design-rule grading also checks saved effective copper containment against
+the board outline, including cutouts. Crossing and wholly outside copper remain
+structural engineering defects regardless of advisory edge-clearance defaults;
+see [design-rule provenance](docs/check-reference.md#design-rule-provenance-agentee-331).

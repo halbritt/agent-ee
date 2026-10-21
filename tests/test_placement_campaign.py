@@ -531,13 +531,13 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'repeated_design'), state)
         self.staged_scaffold((self.out / 'runs/1/inputs' / BOARD).read_bytes())
         self.assertEqual([h['earliest_failing_stage'] for h in state['history']], ['placement', 'routing', 'routing'])
-        self.assertEqual(state['history'][0]['stage_failures']['placement'], ['outline'])
+        self.assertEqual(state['history'][0]['stage_failures']['placement'], ['drc-placement', 'outline'])
         judgment = read_json(self.out / 'runs/1/work/outline/placement-judgment.json')
         self.assertEqual(sorted((d['kind'], d['ref']) for d in judgment['defects']),
                          [('outside_outline', 'C1'), ('outside_outline', 'J1'), ('outside_outline', 'R1')])
         # The writer turn received the first run's sealed outline finding and its retained probe.
         context = prompt_context(self.prompts[1])
-        self.assertEqual([f['local_id'] for f in context['placement']['findings']], ['outline'])
+        self.assertEqual([f['local_id'] for f in context['placement']['findings']], ['drc-placement', 'outline'])
         outline, = [c for c in context['placement']['checks'] if c['id'] == 'outline']
         first = read_json(self.out / 'runs/1/candidate.json')
         self.assertEqual(outline['probe']['board_sha256'], first['files'][BOARD])
@@ -558,14 +558,24 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
 
     def test_helper_edge_clearance_gap_is_graded_as_a_defect_and_never_accepted(self):
-        # Without the band the placer packs pads closer to the edge than the board's copper clearance.
+        # AGENTEE-331 ruling (b): the pinned via-only JLC profile has no edge limit.
+        profile = read_json(REPO / 'fixtures/fab-profiles/jlcpcb-standard-2026-10-19/profile.json')
+        self.assertFalse(any('edge' in limit.get('key', '') for limit in profile['limits']))
         status, state = self.campaign(self.declaration(fixed=[]))
-        self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'regression'), state)
-        self.assertEqual([h['stage_failures']['placement'] for h in state['history']], [['outline'], ['drc-placement']])
+        self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'repeated_design'), state)
+        self.assertEqual([h['stage_failures']['placement'] for h in state['history']], [['drc-placement', 'outline'], [], []])
         self.assertEqual(read_json(self.out / 'implementations/1/placement-adapter.json')['status'], 'proposed')
-        self.assertEqual(self.outcomes(2)['drc-placement'], 'defect')
+        self.assertEqual(self.outcomes(2)['drc-placement'], 'pass')
         drc = read_json(self.out / 'runs/2/work/drc-placement/drc.json')
         self.assertEqual({v['type'] for v in drc['violations']}, {'copper_edge_clearance'})
+        classified = read_json(self.out / 'runs/2/work/drc-placement/drc-constraints.json')
+        self.assertTrue(classified['violations'])
+        self.assertTrue(all(v['constraint_provenance']['class'] == 'default' and
+                            v['constraint_provenance']['enforcement'] == 'advisory'
+                            for v in classified['violations']), classified)
+        # Numeric advice supplies no acceptance: final connectivity still fails.
+        self.assertTrue(drc['unconnected_items'])
+        self.assertEqual(self.outcomes(2)['drc-final'], 'defect')
         self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
 
     def test_writer_only_scaffold_placement_is_captured_and_graded(self):

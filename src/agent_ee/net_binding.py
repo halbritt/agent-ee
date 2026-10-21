@@ -54,8 +54,63 @@ def require_project_nets(project, board_raw):
         if not isinstance(entry, dict) or not isinstance(entry.get('pattern'), str):
             raise ValueError('project netclass pattern must be text')
         pattern = entry['pattern']
-        name = re.sub(r'\\(.)', r'\1', pattern)
-        if exact_pattern(name) == pattern.replace(r'\/', '/'):
+        name = literal_name(pattern)
+        if name is not None:
             declared.append(name)
     if declared:
         require_nets(declared, board_net_names(board_raw))
+
+
+def literal_name(pattern):
+    """Decode only the existing canonical literal-name assignment contract."""
+    name = re.sub(r'\\(.)', r'\1', pattern)
+    return name if exact_pattern(name) == pattern.replace(r'\/', '/') else None
+
+
+def literal_project_classes(project, native_names):
+    """Class membership for exact assignments; general/native composites stay unresolved."""
+    settings = project.get('net_settings', {})
+    if settings.get('netclass_assignments') or any(c.get('nets') for c in settings.get('classes', [])):
+        return {}
+    assigned = {}
+    for entry in settings.get('netclass_patterns', []):
+        name = literal_name(entry['pattern'])
+        if name is None or not isinstance(entry.get('netclass'), str):
+            return {}
+        assigned.setdefault(name, set()).add(entry['netclass'])
+    return {name: next(iter(assigned[name])) if name in assigned else 'Default'
+            for name in sorted(native_names) if len(assigned.get(name, ())) <= 1}
+
+
+def board_item_nets(raw):
+    """Native conductor UUID/net facts from the shared bounded S-expression reader.
+
+    Duplicate identities and ambiguous legacy numeric-only nets remain unresolved.
+    Display descriptions are not identity evidence.
+    """
+    import uuid
+    root = parse_sexpr(raw)
+    if root[0] != 'kicad_pcb':
+        raise ValueError('expected kicad_pcb for item net binding')
+    legacy_codes = {n[1] for n in children(root, 'net') if len(n) == 3}
+    result, pending = {}, [root]
+    while pending:
+        node = pending.pop()
+        pending.extend(child for child in node if isinstance(child, list))
+        if not node or node[0] not in ('pad', 'segment', 'arc', 'via', 'zone', 'gr_line', 'gr_arc', 'gr_poly'):
+            continue
+        ids = children(node, 'uuid')
+        if len(ids) != 1 or len(ids[0]) != 2 or not isinstance(ids[0][1], str):
+            continue
+        try:
+            identity = str(uuid.UUID(ids[0][1]))
+        except ValueError:
+            continue
+        nets = children(node, 'net')
+        name = ''
+        if nets:
+            name = (nets[0][-1] if len(nets) == 1 and len(nets[0]) in (2, 3) else None)
+            if len(nets) == 1 and len(nets[0]) == 2 and name in legacy_codes:
+                name = None
+        result[identity] = None if identity in result else name
+    return result

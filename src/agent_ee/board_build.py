@@ -483,13 +483,14 @@ def _row_main(spec_path):
 def write_project(name, files, template_project, destination):
     """Copy the schematic project; take board rules and net classes from the template."""
     destination.mkdir(parents=True, exist_ok=True)
+    from .design_rule_provenance import PROJECT_KEY
     for path in files:
         target = destination / path.name
         if path.suffix == '.kicad_pro':
             project = json.loads(path.read_bytes())
             template = json.loads(template_project.read_bytes())
             merged = dict(project)
-            for key in ('board', 'net_settings'):
+            for key in ('board', 'net_settings', PROJECT_KEY):
                 if key in template:
                     merged[key] = template[key]
                 else:
@@ -545,16 +546,37 @@ def parity_drc(board, scratch):
     ignored = sorted(c.get('key') for c in report['ignored_checks'] if isinstance(c, dict))
     if set(ignored) & set(PARITY_KEYS):
         raise ToolFailure(f'parity checks explicitly ignored by the project: {sorted(set(ignored) & set(PARITY_KEYS))}')
+    from .design_rule_provenance import advisory_numeric, classify_finding, finding_sources, require_evaluated_limits
+    try:
+        sources = finding_sources(copy, report['violations'])
+        require_evaluated_limits(report, sources)
+        classified = [classify_finding(dict(v), sources) for v in report['violations']]
+    except (OSError, ValueError) as exc:
+        raise ToolFailure(f'native DRC constraint provenance: {exc}') from exc
+    from .outline_containment import run
+    coverage = None
+    try:
+        containment = run(copy, scratch)
+    except ValueError as exc:
+        if not (any(not advisory_numeric(v) for v in classified) or
+                report['schematic_parity'] or report['unconnected_items']):
+            raise ToolFailure('native copper containment: ' + str(exc)) from exc
+        coverage = dict(execution='unavailable', outcome='unknown', reason=str(exc))
+    else:
+        classified.extend(classify_finding(v, sources) for v in containment)
     types = {}
     for item in report['violations']:
         types[item.get('type')] = types.get(item.get('type'), 0) + 1
-    return {'argv': argv, 'exit_code': completed.returncode, 'report': report_path,
+    return {**({'containment': coverage} if coverage else {}),
+            'argv': argv, 'exit_code': completed.returncode, 'report': report_path,
             'report_sha256': digest(report_path), 'kicad_version': report.get('kicad_version'),
             'schematic_parity': len(report['schematic_parity']),
             'parity_items': [{'type': i.get('type'), 'description': i.get('description')}
                              for i in report['schematic_parity']],
             'unconnected_items': len(report['unconnected_items']),
             'violations': len(report['violations']), 'violation_types': dict(sorted(types.items())),
+            'graded_violations': sum(not advisory_numeric(v) for v in classified),
+            'classified_findings': classified,
             'ignored_checks': ignored}
 
 
@@ -703,7 +725,7 @@ def _row_standin(receipt, out, name, files, paths, unplaced, envelope, request):
               'judgment': {'verdict': judgment['verdict'], 'outcome': judgment['outcome']}}
     write_json(staging / 'placement-result.json', result)
     clean = (judgment['verdict'] == 'pass' and parity['schematic_parity'] == 0
-             and parity['violations'] == 0)
+             and parity['graded_violations'] == 0)
     record = {'board': str(board.relative_to(out)), 'sha256': digest(board),
               'placements': placements, 'placement_result': str((staging / 'placement-result.json').relative_to(out)),
               'judgment': {'verdict': judgment['verdict'], 'outcome': judgment['outcome'],
