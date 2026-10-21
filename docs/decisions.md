@@ -527,6 +527,41 @@ Real-pod fail-fast is no longer this item's criterion; block-level placement is
 the pod path. See [joint locality clusters](placer.md#joint-locality-clusters-agentee-335)
 for the budget and diagnostic contract.
 
+## Design-rule authority (AGENTEE-331, 2026-10-20)
+
+The owner rejected arbitrary scaffold specifications becoming hard limits.
+Numeric limits require class and citation: owner, manufacturer, datasheet and
+engineering limits gate; default or unresolved limits remain reported advisories.
+The coordinator's ruling preserves owner custom rules as owner authority and
+AGENTEE-318/325 structural invariants as engineering authority. Native crashes,
+missing reports and ignored evaluations remain failures. Captured constraint
+sources and owner rule bytes remain immutable. See [constraint sources](scaffold.md#declared-design-rule-sources-agentee-331).
+
+The AGENTEE-331 continuation applies the coordinator's named oracle rulings:
+the native thin-track default remains visible advisory while the independently
+sourced width requirement remains a defect. The pinned 2026-10-19 JLCPCB via
+profile declares no copper-to-edge limit, so the scaffold campaign's unsourced
+edge findings are advisory; final unconnected items still prevent acceptance.
+The provisioned J1 drawing is a read-only test input and is not retained here.
+
+AGENTEE-331 continuation (coordinator rulings H1/H2/G1/G2/G3/G6): compare actual
+native measurements against all applicable sourced minima, rather than relying
+on the largest limit printed by KiCad. Co-located drills and copper beyond the
+outline are structural engineering findings. Reject declarations that demote
+owner rules. Plane production and the row stand-in share provenance grading.
+G4 (verified reference authority) and G5 (native geometry defaults) remain
+follow-up work; importing a class and citation does not validate their authority.
+
+The coordinator's 2026-10-21 ruling preserves the group-copper campaign's
+initial structural findings: its unplaced copper fails both `drc-placement` and
+`outline`. Reusing the module must still pass fresh DRC and every later campaign
+assertion, including `criteria_satisfied`; containment witnesses stay visible.
+
+A further 2026-10-21 coordinator ruling keeps the native DRC waiver contract's
+initial defect. Its fixture declares its 0.9 mm track-width minimum through the
+constraint-source import, as an owner-class synthetic test-fixture source bound
+in the project receipt. Those violations stay hard; waiver assertions are unchanged.
+
 ## Unsourced packing gaps (2026-10-21, AGENTEE-338)
 
 The coordinator's AGENTEE-338 ruling applies the owner's requirement that limits

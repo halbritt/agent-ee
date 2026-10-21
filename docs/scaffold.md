@@ -36,8 +36,10 @@ readers. An invalid pin, unsupported schema or missing dependency refuses the
 operation. Missing required datasheet provenance is retained explicitly in the
 receipt; it is not converted into qualified evidence or owner approval.
 
-The project template supplies design rules and net classes. Scaffolding changes
-only project filename and sheet metadata. The board receives the envelope's
+The project template supplies design rules and net classes. Scaffolding adds
+project filename, sheet metadata and the provenance binding. A
+[declared constraint source](#declared-design-rule-sources-agentee-331) can replace
+sourced rule values. The board receives the envelope's
 exact straight-edge outline, even copper-layer count, total thickness and each
 stackup layer's thickness. It contains no components, nets, tracks, vias or
 zones until the stage-three pre-receipt below writes the declared mechanics.
@@ -637,3 +639,140 @@ reference policy is deliberately unchanged.
 Fixed-footprint content generation refuses a selected `copper_feature` with a
 typed `ValueError` before emitting board content. Copper has no purchased MPN;
 this scaffold stage does not synthesize its value, flags or binding fields.
+
+## Declared design-rule sources (AGENTEE-331)
+
+A producer plan may name a captured `constraint_source`, for example
+`"constraint_source": "design-rules/constraints.json"`. Stage-one Python callers
+can pass `constraint_source=Path(...)` to `scaffold`. The document uses the design
+lane's existing `fome-mc.constraint-provenance/1` format. `board_setup_rules`
+entries contain `value_mm`, `class` and a nonempty citation `basis`.
+`net_class_default` can declare clearance, track width, via diameter and via drill
+in millimetres. Classes are `owner`, `manufacturer`, `datasheet`, `engineering`
+and `default`. Importing a citation does not certify its applicability. A declared
+non-default net-class setting requires one explicit native `Default` class in
+the project template; the importer refuses an implicit or ambiguous class.
+
+The importer applies declared non-default values. A declared default does not
+replace the template value. The captured source is immutable. The receipt's
+`constraint_provenance` inventories every emitted board rule and numeric net-class
+setting with its value, class, citation and enforcement. Values without a matching
+declaration or verified producer source become `default`, with a null citation.
+Source-verified producer fabricator limits retain their manufacturer citation. The same record is bound
+into the immutable project's `agent_ee_constraint_provenance` field so native
+staging and review can resolve the settings without searching for a document.
+A change to a recorded setting refuses evaluation. KiCad may materialize
+previously absent native defaults when it saves a board; these additions are
+reported as unsourced advisories and acquire no hard authority.
+
+Legacy template values remain available to native DRC as advisories. For a
+scaffold with this binding, the packing probe uses only sourced board and
+net-class margins in memory; it does not rewrite the saved project or pad shapes.
+The native polygon calls receive explicit sourced margins, so cached native
+net-class values and uncited local overrides cannot restore advisory floors.
+Physical copper/drill exclusions and native owner custom rules still apply.
+Unbound standalone packing probes preserve their previous reservations.
+
+Native DRC reports retain every finding. Numeric findings resolve against the
+reported rule name and the inventory's applicable settings. The measured actual
+value is compared against every applicable sourced minimum, even when KiCad
+names a larger default limit. The strictest violated sourced minimum supplies
+the finding's class and citation; all violated sourced settings are retained in
+`constraint_provenance.limits`. Four-decimal native values use the same
+0.00005 mm (50 nm) comparison tolerance as printed-limit matching. A measured
+sourced-limit deficit below this resolution cannot be established from the
+rounded report alone. For copper-to-edge findings, a printed actual below
+0.00005 mm is conservatively structural (engineering/hard): KiCad prints
+`0.0000 mm` for touching or crossing copper, rather than a signed penetration.
+This print-resolution rule does not replace geometric containment.
+Class-specific limits use native conductor UUID/net facts and the existing exact-name
+assignment contract. Legacy ambiguous identities or general/composite class patterns
+remain unresolved. Ambiguous or absent provenance is `default` and advisory. Captured owner custom
+rules have class `owner`, citing the file, SHA-256 and rule name. A declaration
+that assigns another class to an owner rule raises `OwnerRuleReclassification`
+before scaffold publication or native grading. An owner-class declaration cannot
+replace the captured owner-file citation.
+Generated net rules require an exact declaration to acquire hard authority.
+Unclassified generated rules remain advisory, including when composed with owner
+rules. The native gate's structural invariants retain engineering citations from
+AGENTEE-318/325. See the [publication gate](placer.md#through-hole-reservations-and-native-publication-gate-agentee-318).
+
+A captured owner `.kicad_dru` remains immutable. With generated per-net rules, the
+scaffold preserves its original bytes in a sibling `.owner.kicad_dru`, then emits
+one native `.kicad_dru` containing generated rules followed by the owner rules.
+Both files are immutable requirements. Owner rules retain their native last-rule
+precedence. A name already present in the captured owner file keeps its owner
+authority when the generated prefix uses the same name. The receipt cites the preserved owner file and digest, and the net
+constraint record hashes the final project and composed rule file.
+Native rule files use KiCad's `#` comment syntax; semicolon comments are refused.
+
+The document's `solder_mask_min_width` is retained as a manufacturing obligation;
+it is not an invented board-setup field. The native candidate comparison includes
+classified baseline and candidate findings, including silk and text violations.
+Only sourced added numeric violations and the structural invariants
+block publication. Co-located drilled holes and touching/crossing copper-edge findings
+(printed actual below 50 nm) are structural engineering findings, independent
+of numeric defaults. Explicitly ignoring the co-located-drill check refuses
+evaluation as unavailable structural coverage. The captured DRC check also retains raw counts and reports,
+with classified evidence in `drc-constraints.json`; unsourced numeric violations
+alone do not fail it. Tool failures, malformed output, parity, connectivity and
+non-numeric defects keep their existing treatment. Ignoring a sourced numeric
+evaluation is unavailable coverage and refuses; existing ignored-category and
+rule-level ignore refusals remain. Review packets include the
+source inventory and budgeted classified native evidence; reviewer and adjudicator prompts
+require each blocking limit's class and citation.
+
+The post-placement artwork pass uses the same captured source inventory for its
+pre-artwork, relocation and final native comparisons. Saving the artwork cannot
+promote materialized defaults or drop a sourced limit's class and citation.
+Advisory numeric findings remain in the comparison and cannot alone refuse
+publication after relocation; sourced numeric and structural regressions still
+refuse. The artwork pass's carried legibility defects retain their separate
+[downstream gate](silk-artwork.md#placement-feasibility-and-fab-legibility-agentee-333).
+
+Plane production and the experimental board-build row stand-in also classify
+native findings against the captured sources. Plane receipts retain raw native
+DRC plus `drc/constraints.json` and `drc.classified_findings`; only numeric
+advisories leave the planned-zone refusal set. A sourced or structural finding
+refuses even at native warning/exclusion severity. Structural findings, malformed
+metadata and isolated-copper policy refusals remain. Board-build parity records
+retain `violations` and `classified_findings`, with `graded_violations` counting
+only graded findings; the row stand-in uses that count for its clean flag.
+Board-build carries the template provenance binding alongside its imported
+board rules and net classes.
+
+The router and native zone filler still consume template defaults when choosing
+geometry. Classification changes no saved native rule value; resolving that
+geometry policy and reconciling class authority with verified references are
+separate follow-up work (AGENTEE-331 rulings G4/G5).
+
+Thermal-spoke counts are dimensionless numeric limits. A native
+`starved_thermal` finding with an unsourced minimum remains advisory. KiCad's
+count report omits custom-rule names, so the source reader also inventories
+unconditional integer `thermal_spoke_count` minima from captured owner rules.
+It compares the measured count against that source even if the report prints a
+different default. Count comparisons are exact; the millimetre rounding tolerance
+does not apply. Missing count measurements refuse evaluation. Conditional or
+layer-scoped sourced count rules cannot be attributed from these native reports;
+when a count finding is present, their cited source is retained and evaluation
+refuses as unavailable coverage. This is distinct from an unsourced default.
+
+A separate native child subtracts the closed board-material polygon, including
+cutouts, from each saved effective copper polygon on every enabled copper layer.
+It evaluates flashed pads/vias, tracks/arcs, saved zone fills, board and footprint
+copper graphics and text; unfilled zone requests and rule areas are not copper.
+KiCad's outside polygon approximation uses the saved project's native maximum
+error. Bounding-box corners do not determine containment. Missing, open or
+self-intersecting outlines refuse this measurement; a child crash or missing
+output cannot pass. Placement, captured DRC, plane production and board-build
+parity retain `copper-containment.json` and classify `copper_outside_outline`
+witnesses as engineering/hard. Placement and plane publication refuse any such
+saved copper, including a pre-existing violation that native DRC omitted. Raw
+native reports and their hashes remain unchanged.
+
+Sublayout reuse stages the top project's `.kicad_pro`, `.kicad_prl` and
+`.kicad_dru` alongside both DRC boards and uses the same source classifier and
+containment probe. Numeric advisories remain reported in each group's delta;
+only graded new findings make that group defective. Non-collision numeric
+baseline identities include absolute saved geometry, so moving an item closer
+to a sourced edge or hole limit cannot hide behind the same native UUID.

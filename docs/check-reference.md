@@ -1926,6 +1926,77 @@ Nested-list children of a segment or arc refuse comparison with `ValueError`;
 the coordinator retains the carried defect instead of letting an untyped error
 escape.
 
+## Design-rule provenance (AGENTEE-331)
+
+The [scaffold constraint-source import](scaffold.md#declared-design-rule-sources-agentee-331)
+records every emitted numeric setting's class and citation in its receipt and
+immutable project binding. Native DRC classifies findings against that binding
+and captured custom rules. `default` or unresolved numeric limits remain reported
+advisories. Owner, manufacturer, datasheet and engineering limits remain hard.
+The DRC check retains the raw `drc.json`, raw counts, waiver keys and locators;
+`drc-constraints.json` adds the source inventory and classified violations.
+`details.advisory_findings_count`, `constraint_classes` and `graded_unwaived` separate numeric advisories
+from graded issues without changing connectivity or parity treatment.
+A native tool failure or missing/malformed output cannot become a pass.
+
+The placement comparison retains classified baseline and candidate findings,
+including baseline silk/text, and derives added numeric blockers from those
+classifications. Structural shorts, PTH courtyard intrusion and introduced
+inter-footprint mask bridges retain engineering citations and their existing
+refusal behavior. Existing courtyard qualification and ignored-category refusals
+remain. Review packets and prompts carry limit classes and citations. Owner
+custom-rule bytes remain immutable, including when generated net rules are
+composed with them. This metadata adds no capability or acceptance predicate.
+
+Post-placement artwork reruns bind the same source inventory to every native
+comparison. Classified baseline and final findings retain their citations across
+native saves; advisory numeric additions remain reported without becoming
+relocation regressions. The existing carried silk legibility contract is unchanged.
+
+The actual numeric measurement is checked against every applicable sourced
+minimum, so a larger default cannot mask a violated manufacturer floor.
+`constraint_provenance.limits` lists the violated sourced settings, and the
+strictest supplies the finding class. Co-located drilled holes and copper beyond
+the board outline are structural engineering findings and always grade.
+Owner custom rules cannot be demoted by a constraint declaration; such an input
+raises `OwnerRuleReclassification`. Plane production and the board-build row
+stand-in apply the same numeric-advisory policy and retain classified findings.
+`tests.test_provenance_limits` covers masked native gaps, co-located holes,
+zero/negative printed edge clearance, owner-rule declarations and both producer
+paths. `tests.test_outline_containment` exercises saved copper polygon subtraction,
+crossing and wholly outside pads/tracks, concave outlines and cutouts, round
+copper whose bounding-box corners are outside, saved zone fills, captured DRC,
+parity, plane refusal, and sublayout source preservation. The independent
+`containment/copper-containment.json` witnesses are engineering/hard and are
+included in `drc-constraints.json`, without rewriting the native report.
+Four-decimal millimetre reports have a 50 nm comparison limit; printed copper-edge
+actuals below it are structural. The saved polygon check also detects wholly
+outside copper that native edge DRC may omit.
+
+Baseline comparisons include enforcement changes and the transition to copper
+outside the outline. The same native item identities cannot hide a newly hard
+finding; identical pre-existing findings retain their baseline treatment. Non-collision
+numeric findings include absolute geometry in their baseline identity. Collision
+comparisons without saved geometry retain item-pair identity across wording changes;
+native publication still compares the saved item geometry. Copper
+outside the board material always refuses placement/plane publication, including
+pre-existing witnesses.
+
+Explicitly ignoring `holes_co_located` refuses grading as unavailable structural
+coverage, even when the project has only default numeric hole limits.
+
+`starved_thermal` uses dimensionless counts, with exact comparisons. Default
+spoke-count findings remain advisory. Unconditional captured owner count minima
+retain native file/hash/rule citations and gate against the reported actual
+count, independently of the printed minimum. Missing measurements and ambiguous
+conditional/layer-scoped sourced count findings refuse as unavailable coverage.
+
+When the supplemental containment child is unavailable, its coverage remains
+unknown and its failed execution is retained. A defect already proved by native
+DRC retains its defect verdict; an otherwise passing DRC cannot pass without
+containment coverage. Supplemental structural witnesses retain their class and citation in the
+classified evidence cited by the collected coordinator finding.
+
 ## Post-routing silk repair (AGENTEE-350)
 
 The [routed artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)

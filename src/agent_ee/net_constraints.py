@@ -136,20 +136,26 @@ def template_project(raw):
     return project
 
 
-def rule_forms(raw):
+def rule_forms(raw, *, native=False):
     """A .kicad_dru holds several top-level forms; parse them as one wrapped list."""
-    return parse_sexpr(b'(' + raw + b'\n)')
+    if not native:
+        return parse_sexpr(b'(' + raw + b'\n)')
+    return parse_sexpr(b'(rules\n' + raw + b'\n)', comment_chars='#')[1:]
 
 
-def template_rules(raw):
+def template_rules(raw, *, allow_generated=False):
     try:
-        roots = rule_forms(raw)
+        roots = rule_forms(raw, native=allow_generated)
     except LibraryError as exc:
         raise ValueError(f'template rules unreadable: {exc}') from exc
+    if allow_generated and not roots:
+        return raw.decode('utf-8')
     if not roots or roots[0] != ['version', '1'] or any(not isinstance(r, list) or not r for r in roots):
         raise ValueError('template rules must start with (version 1)')
+    if allow_generated and any(node[0] != 'rule' or len(node) < 2 for node in roots[1:]):
+        raise ValueError('unsupported native custom-rule form')
     for node in roots[1:]:
-        if node[0] == 'rule' and len(node) > 1 and str(node[1]).startswith(RULE_PREFIX):
+        if not allow_generated and node[0] == 'rule' and len(node) > 1 and str(node[1]).startswith(RULE_PREFIX):
             raise ValueError(f'template rules already contain reserved rule {node[1]}')
     text = raw.decode('utf-8')
     return text if text.endswith('\n') else text + '\n'

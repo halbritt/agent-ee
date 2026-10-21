@@ -871,12 +871,24 @@ even when both items collided in the baseline. A rigid intra-footprint finding
 with unchanged local geometry remains a baseline finding. Missing native item
 geometry refuses comparison. A native item KIID shared across different
 footprints also refuses comparison, including case aliases normalized by KiCad;
-it cannot establish an intra-footprint baseline. Other categories retain UUID-based reporting.
-Any added `shorting_items`, `clearance` or `pth_inside_courtyard` refuses
-publication and retains the findings with the failed candidate. An introduced
+it cannot establish an intra-footprint baseline. Non-collision numeric categories also bind to absolute saved geometry; other categories retain UUID-based reporting. Enforcement changes and a new
+outline crossing count as new findings on otherwise identical item UUIDs.
+Any added `shorting_items`, `pth_inside_courtyard` or `holes_co_located` refuses
+publication with an engineering citation to AGENTEE-318/325/331. Printed copper-edge actuals below 0.00005 mm (50 nm) are also structural,
+regardless of the numeric edge limit. KiCad reports touching/crossing copper as
+zero. A separate native child subtracts the board material from every saved
+effective copper polygon; nonempty differences are engineering/hard
+`copper_outside_outline` witnesses and always refuse publication, even when
+native DRC omits wholly outside copper. See the
+[measurement boundary](scaffold.md#declared-design-rule-sources-agentee-331). Numeric findings, including `clearance`,
+resolve against the [declared sources](scaffold.md#declared-design-rule-sources-agentee-331):
+owner, manufacturer, datasheet and engineering limits block; default or unresolved
+limits remain visible advisories. Captured owner rules cite the immutable file,
+SHA-256 and rule name. The comparison retains classified baseline and candidate
+findings, including silk and text findings, and retains failures with the candidate. An introduced
 `solder_mask_bridge` between different footprints also blocks publication;
 baseline and intra-footprint mask bridges remain non-blocking and reported.
-Ignoring any of these four categories, a failed tool, missing output,
+Ignoring a required collision or mask category, a failed tool, missing output,
 incomplete severity coverage or changed evaluation settings also refuses publication. Existing
 courtyard and write-scope gates remain in force. Rule-level `(severity ignore)`
 in `.kicad_dru` never appears in native `ignored_checks`, so the gate refuses

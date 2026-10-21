@@ -297,6 +297,54 @@ class SilkArtworkTest(unittest.TestCase):
                          (out.parent / 'baseline' / out.name).with_suffix(suffix)):
                 self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected)
 
+    def test_artwork_comparisons_retain_bound_numeric_sources(self):
+        from agent_ee.design_rule_provenance import bind_project, import_constraints
+        from agent_ee.storage import json_bytes, write_json
+        import pcbnew as k
+        original = self.board()
+        board = k.LoadBoard(str(original))
+        text = k.PCB_TEXT(board)
+        text.SetText('Original undersized board marking')
+        text.SetLayer(k.F_SilkS)
+        text.SetTextSize(k.VECTOR2I(500000, 500000))
+        text.SetTextThickness(100000)
+        text.SetPosition(k.VECTOR2I(5000000, 8000000))
+        board.Add(text)
+        k.SaveBoard(str(original), board)
+        for cls in ('default', 'owner', 'manufacturer', 'datasheet', 'engineering'):
+            with self.subTest(provenance=cls):
+                root = self.root / cls
+                root.mkdir()
+                source = root / original.name
+                source.write_bytes(original.read_bytes())
+                declared = {'schema': 'fome-mc.constraint-provenance/1',
+                            'board_setup_rules': {'min_text_height': {
+                                'value_mm': 0.8, 'class': cls, 'basis': 'Original artwork test limit'}}}
+                project, record = import_constraints({'board': {'design_settings': {
+                    'rules': {'min_text_height': 0.8}}}}, json_bytes(declared),
+                    'original-limits.json', 'original-test-source')
+                bind_project(project, record)
+                write_json(source.with_suffix('.kicad_pro'), project)
+                # output() uses self.root for its unique proposal directory.
+                self.root = root
+                try:
+                    out = self.output(source)
+                finally:
+                    self.root = root.parent
+                _, delta = _proposal_drc(source, out)
+                artwork = json.loads((out.parent / 'placement-silkscreen.json').read_text())
+                self.assertTrue(artwork['moved_fields'])
+                for findings in (delta['baseline_findings'], delta['candidate_findings']):
+                    heights = [v for v in findings if v['type'] == 'text_height']
+                    self.assertTrue(heights, delta)
+                    for finding in heights:
+                        provenance = finding['constraint_provenance']
+                        self.assertEqual(provenance['class'], cls)
+                        self.assertEqual(provenance['enforcement'],
+                                         'advisory' if cls == 'default' else 'hard')
+                        self.assertEqual(provenance['citation']['path'], 'original-limits.json')
+                self.assertEqual(delta['blocking_findings'], [])
+
     def test_ignored_silk_edge_clearance_refuses_native_coverage(self):
         source = self.board()
         path = source.with_name('ignored-edge.kicad_pcb')

@@ -257,7 +257,10 @@ scope. It preserves project rules, checks and baseline sources, pre-creates chil
 sheets and leaves native execution to the ordinary review/campaign workflow. Its
 stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
 rules from the envelope, its fab profile and the parts manifest instead, and
-refuses incomplete inputs. Optional captured net constraints add per-net classes,
+refuses incomplete inputs. An optional [constraint-source import](docs/scaffold.md#declared-design-rule-sources-agentee-331)
+records design-rule classes and citations. Native DRC retains unsourced numeric
+findings as advisories while sourced limits and structural gates remain hard.
+Optional captured net constraints add per-net classes,
 assignments, width rules and a Default completeness check. Stage-three preparation
 writes declared holes, keepouts, locked fixed footprints and the IMU marking through
 a campaign pre-receipt. Its [packed-board silkscreen policy](docs/scaffold.md#packed-board-silkscreen-policy-agentee-276)
@@ -987,3 +990,14 @@ and refuses unresolved overlaps before publication, without changing electrical
 check verdicts.
 
 Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Runtime validation refuses mounts of live package source directories, their ancestors or unqualified source files, including symlink and bind aliases (AGENTEE-327/329). Validated tool mounts pass opened descriptors and verify mounted identities inside the sandbox before execution to prevent rename races; directory sources containing submounts are refused. Refused fab receipts retain their violations and diagnostic paths.
+
+[Design-rule provenance](docs/scaffold.md#declared-design-rule-sources-agentee-331)
+keeps unsourced numeric defaults advisory across placement, captured DRC, plane
+production and the experimental row stand-in. Measurements below a sourced floor
+still refuse when KiCad prints a larger default. Co-located drills and copper
+outside the board outline remain structural defects.
+
+Native design-rule grading also checks saved effective copper containment against
+the board outline, including cutouts. Crossing and wholly outside copper remain
+structural engineering defects regardless of advisory edge-clearance defaults;
+see [design-rule provenance](docs/check-reference.md#design-rule-provenance-agentee-331).
