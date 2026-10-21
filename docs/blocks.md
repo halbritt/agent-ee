@@ -562,7 +562,10 @@ The runner derives the blocks from the captured netlist it already binds.
 `allocation_text` is the allocation file's UTF-8 text, so its hash is the file
 hash. Combining `blocks` with `targeted` or `targeted_plans` is refused.
 `block_arrangement.request_section(allocation, arrangement, candidates)` builds
-the section from files.
+the section from files. Every candidate file must be a bare
+`agent-ee.block-candidate/2` packed (`blocks pack --allocation`) or materialized
+(`block_library materialize --allocation --block`) against the same allocation
+file; any other document, such as a materialize result record, is refused.
 
 ### Review input: block provenance (AGENTEE-355)
 
