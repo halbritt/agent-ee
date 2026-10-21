@@ -274,7 +274,9 @@ def outcome(result):
     # A disposition cannot silently change a declared executable criterion.
     if any(c["outcome"] == "defect" for c in result.get("checks", [])):
         return "defects_or_unresolved"
-    statuses = [finding_status(f) for f in result.get("findings", [])]
+    # An adjudicated purpose deferral is advisory (AGENTEE-385): savings cannot block acceptance.
+    statuses = [finding_status(f) for f in result.get("findings", [])
+                if not (f.get("purpose_status") == "advisory" and finding_status(f) == "deferred")]
     if any(s in ("accepted", "unresolved", "deferred") for s in statuses):
         return "defects_or_unresolved"
     return "criteria_satisfied"
@@ -305,11 +307,15 @@ def render(run, result):
         lines += ["", f"{review['role']} coverage: " + "; ".join(review["coverage"])]
         for limitation in review["limitations"]:
             lines.append(f"- {limitation}")
+    for record in result.get("purpose_coverage", []):
+        lines.append(f"- {record['role']} purpose coverage: {record['status']}.")
     lines += ["", "## Findings and dispositions", ""]
     for f in result.get("findings", []):
         lines += [f"### {f['id']}: {f['title']}", "", f"Disposition: **{finding_status(f)}**.", "",
                   *(["Authority: advisory check; the defect is confirmed but witnesses no requirement.", ""]
                     if f.get("authority") == "advisory" else []),
+                  *(["Purpose status: advisory; an estimated saving that does not hold the run outcome.", ""]
+                    if f.get("purpose_status") == "advisory" else []),
                   f"Location: {f.get('location', '')}. Condition: {f.get('condition', '')}.", "",
                   f.get("mechanism", f.get("summary", "")), "", f.get("reasoning", "")]
         decision = f.get("decision", {})
@@ -526,6 +532,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
             result["reviews"], result["review_executions"] = initial_reviews(run, packet, deadline, launch_context=launch_context,
                                                                              roles=review_roles)
             result["findings"] = collect_findings(result["reviews"], result["checks"])
+            from .purpose_review import record_coverage
+            record_coverage(result)
             save_result(run, result)
             from .preflight import verify_calls
             verify_calls(run, result, m)

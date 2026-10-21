@@ -53,7 +53,8 @@ REVIEW_SCHEMA = {"type": "object", "additionalProperties": False,
             "properties": {**{k: {"type": "string"} for k in
                 ("id", "title", "location", "condition", "mechanism", "reasoning")},
                 "severity": {"type": "string", "enum": ["blocking", "major", "minor", "info"]},
-                "assessment": {"type": "string", "enum": ["defect", "concern"]}, "evidence": EVIDENCE_SCHEMA}}}}}
+                "assessment": {"type": "string", "enum": ["defect", "concern"]}, "evidence": EVIDENCE_SCHEMA,
+                "dimension": {"type": "string", "enum": ["purpose_review"]}}}}}}
 DECISIONS_SCHEMA = {"type": "object", "additionalProperties": False,
     "required": ["schema", "candidate_id", "run_id", "decisions"],
     "properties": {**{k: {"type": "string"} for k in ("schema", "candidate_id", "run_id")},
@@ -139,7 +140,8 @@ def build_packet(run_dir, checks, run_id):
             packet["packet_limits"].append(f"citation inventory unavailable: {rel}: {exc}")
             continue
         packet["citation_files"].append({"path": rel, **citation_format((run_dir / rel).read_bytes())})
-    packet['purpose_review'] = purpose_dimension(m, packet['citation_files'], checks)
+    packet['purpose_review'] = purpose_dimension(m, packet['citation_files'], checks,
+                                                packet.get('candidate_visuals'))
     remaining = scope.get("packet_max_bytes", 240_000)
     for rel in dict.fromkeys(paths):
         p = (run_dir / rel).resolve()
@@ -444,7 +446,9 @@ def adjudicator_call(run_dir, packet, findings, reviews, deadline, *, launch_con
     prompt = ("Preserve supported purpose-review waste observations beside correctness findings, with their "
         "estimated saving, basis and uncertainty. Purpose suggestions are minor/info concerns: note them when "
         "supported. Missing evidence for a purpose saving is a coverage limitation, never an acceptance "
-        "requirement. Never promote an estimated saving to a blocking requirement or downgrade an "
+        "requirement. A finding with dimension=purpose_review has advisory purpose status: noting or deferring "
+        "it keeps it visible but cannot hold the run outcome, and no correctness finding may be duplicated "
+        "into it. Never promote an estimated saving to a blocking requirement or downgrade an "
         "established correctness defect. Apply the ordinary evidence rules to unsupported claims. "
         "Adjudicate design-rule limits using their stated class and citation. Default or unresolved "
         "numeric limits remain reported advisories; retain tool failures and structural defects. "

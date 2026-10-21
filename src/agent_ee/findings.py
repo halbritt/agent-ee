@@ -35,7 +35,7 @@ REVIEW_TOP_KEYS = frozenset(
 FINDING_REQUIRED_KEYS = frozenset(
     ("id", "title", "location", "condition", "mechanism", "severity", "assessment", "evidence", "reasoning")
 )
-FINDING_OPTIONAL_KEYS = frozenset(("downgraded_from", "validation_note", "witnesses"))
+FINDING_OPTIONAL_KEYS = frozenset(("downgraded_from", "validation_note", "witnesses", "dimension"))
 DECISIONS_TOP_KEYS = frozenset(("schema", "candidate_id", "run_id", "decisions"))
 DECISION_REQUIRED_KEYS = frozenset(("finding_id", "disposition", "reason", "evidence"))
 DECISION_OPTIONAL_KEYS = frozenset(("duplicate_of", "checks", "previous_run"))
@@ -336,6 +336,9 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
             "evidence": evidence,
             "reasoning": reasoning,
         }
+        from .purpose_review import DIMENSION, check_finding
+        if check_finding(fid, item):
+            normalized["dimension"] = DIMENSION
         if "witnesses" in item:
             from .baseline import validate_witness_shape
             validate_witness_shape(item["witnesses"])
@@ -478,6 +481,9 @@ def collect_findings(reviews, checks):
             }
             if downgraded_from:
                 finding["downgraded_from"] = downgraded_from
+            from .purpose_review import DIMENSION, check_finding
+            if check_finding(fid, item):
+                finding["dimension"] = DIMENSION
             if rcand:
                 finding["candidate_id"] = rcand
             if rrun:
@@ -848,6 +854,10 @@ def adjudicate(findings, decisions, run_dir):
                 raise ValueError(
                     f"duplicate {fid} -> {root_id}: an acceptance check defect cannot be represented by an advisory finding"
                 )
+        if by_id[root_id].get("dimension") == "purpose_review" and by_id[fid].get("dimension") != "purpose_review":
+            raise ValueError(
+                f"duplicate {fid} -> {root_id}: a correctness finding cannot be represented by an advisory purpose finding"
+            )
         if root_status == "noted" and (
             by_id[fid].get("source") == "check"
             or by_id[fid].get("assessment") == "defect"
@@ -887,6 +897,11 @@ def adjudicate(findings, decisions, run_dir):
         if raw_item.get("authority") == "advisory":
             event["authority"] = "advisory"
             target_finding["authority"] = "advisory"
+        if target_finding.get("dimension") == "purpose_review":
+            # AGENTEE-385: purpose savings are advisory; recorded so a deferral stays visible
+            # without holding the run outcome.
+            event["purpose_status"] = "advisory"
+            target_finding["purpose_status"] = "advisory"
         if disp == "closed":
             event["closed_in_candidate_id"] = cand_id
             event["closed_in_run_id"] = run_id

@@ -29,9 +29,21 @@ Only files admitted to the packet's citation inventory are indexed; peer review
 work is excluded. The index does not generate missing measurements or renders.
 An image filename alone does not establish board-side coverage or model fidelity.
 
-Reviewers explain justified constraints and reserves in `coverage`. Supported
-waste observations use the existing `findings` array beside correctness findings,
-with `assessment: concern` and `severity: info` or `minor`. The `reasoning` states
+`board_renders` keys visual coverage to admitted board renders per side.
+`purpose_review.render_sides` reads the coordinator visuals record
+(`agent-ee.candidate-visuals/1`, AGENTEE-382): view `top` or `front` covers F,
+`bottom` or `back` covers B, and inner-layer plots cover neither side. A side is
+covered only when the visuals record has `status: available` and the image path
+is in the packet's citation inventory. Each uncovered side adds its own
+`visual purpose coverage is missing` limitation. Other images, such as a
+schematic SVG or a drawn illustration, stay in `images` for navigation and cover
+no side. Without a coordinator visuals record, both sides are missing.
+
+Reviewers explain justified constraints and reserves in `coverage`, with each
+purpose entry beginning `purpose_review:`. Supported waste observations use the
+existing `findings` array beside correctness findings, with `assessment: concern`,
+`severity: info` or `minor`, and the optional `dimension: purpose_review`. A
+finding with that dimension and any other assessment or severity is refused. The `reasoning` states
 the change, saving in mm² or a named routability measure, calculation or basis,
 and uncertainty. An unquantifiable saving stays unknown with the missing
 measurement named. Renders supplement structured citations to captured text
@@ -43,7 +55,24 @@ double-counted, and a bounding box alone cannot prove recoverable area.
 The central adjudicator retains supported advisories through the existing `noted`
 disposition. Missing evidence for a purpose saving is a coverage limitation.
 Unsupported claims remain subject to the ordinary evidence rules. Estimated savings
-do not become blocking requirements. Existing check defects remain defects, and
+do not become blocking requirements.
+
+Every decision on a `purpose_review` finding records `purpose_status: advisory`
+on the finding and its decision event, and the report shows it. A deferred
+purpose finding stays visible but does not hold the run outcome at
+`defects_or_unresolved`. An undecided one still holds it. Other findings are
+adjudicated exactly as before. A deferred correctness concern still holds the
+outcome, and a check defect still fails the run. No finding without the
+dimension may be marked a duplicate of a purpose finding, so a correctness
+concern cannot become advisory that way.
+
+Each initial review records purpose coverage in `result.json`
+`purpose_coverage`. A role is `addressed` when it has a `purpose_review:`
+coverage or limitation entry or a purpose finding. Otherwise it is `unknown`,
+and the run adds a `purpose coverage unknown` limitation for it. That limitation
+records an unassessed dimension; it is not a pass, and it does not block
+acceptance. The record shows that the reviewer marked the dimension, not that
+its purpose reasoning is sound. Existing check defects remain defects, and
 the baseline witness and evidence-seal contracts are unchanged. Initial reviewer
 independence and the single design writer are unchanged. There is no new review
 schema or check kind. This is a review instruction, not a deterministic detector
@@ -53,7 +82,9 @@ or a validator that guarantees every reviewer follows the brief.
 
 `tests.test_purpose_review` exercises complete navigation with no excerpts,
 independent prompt delivery with custom lenses, missing/link/peer image handling,
-and retention of an advisory saving beside an accepted correctness defect.
+retention of an advisory saving beside an accepted correctness defect, per-side
+render coverage, advisory status for deferred purpose findings, and recorded
+purpose coverage.
 Its original illustrative card-reserve declarations compare an inboard 600 mm²
 reserve with an edge alternative. They are not the pod iteration-7/8k designs and
 do not establish that a live model catches that real example. A sealed review of

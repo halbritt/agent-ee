@@ -155,3 +155,185 @@ class PurposeReviewTests(unittest.TestCase):
         decisions['decisions'][1]['disposition'] = 'noted'
         with self.assertRaisesRegex(ValueError, "cannot be 'noted'"):
             adjudicate(findings, decisions, self.run_dir)
+
+
+class PurposeFollowupTests(unittest.TestCase):
+    """AGENTEE-385: per-side render coverage, advisory purpose status, recorded coverage."""
+    setUp = fixture.FindingsTests.setUp
+    _review = fixture.FindingsTests._review
+    packet = PurposeReviewTests.packet
+
+    def visuals(self, views, status='available'):
+        # Record shape of AGENTEE-382 coordinator imaging (agent-ee.candidate-visuals/1); drawn bytes only.
+        images = []
+        for view in views:
+            path = self.run_dir / 'work/candidate.visuals/native' / f'{view}.svg'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+            images.append({'view': view, 'path': path.relative_to(self.run_dir).as_posix(),
+                           'sha256': digest(path), 'layers': None})
+        return {'schema': 'agent-ee.candidate-visuals/1', 'status': status, 'images': images}
+
+    def dimension(self, visuals):
+        from agent_ee.purpose_review import dimension
+        packet = build_packet(self.run_dir, [], self.run_id)
+        return dimension(read_json(self.run_dir / 'candidate.json'), packet['citation_files'], [], visuals)
+
+    def test_schematic_or_unlabelled_image_is_not_board_render_coverage(self):
+        packet = self.packet()
+        purpose = packet['purpose_review']
+        self.assertIn('work/illustration/bottom.svg', purpose['images'])
+        self.assertEqual(purpose['board_renders'], {'F': [], 'B': []})
+        self.assertEqual(len(purpose['limitations']), 2)
+        self.assertTrue(all('visual purpose coverage is missing' in text for text in purpose['limitations']))
+
+    def test_board_render_coverage_is_keyed_per_side(self):
+        visuals = self.visuals(['top', 'bottom', 'front', 'back', 'In1.Cu', 'In2.Cu'])
+        purpose = self.dimension(visuals)
+        root = 'work/candidate.visuals/native/'
+        self.assertEqual(purpose['board_renders'], {'F': [root + 'front.svg', root + 'top.svg'],
+                                                    'B': [root + 'back.svg', root + 'bottom.svg']})
+        self.assertEqual(purpose['limitations'], [])
+        for views, missing in ((['top', 'front', 'In1.Cu'], 'B'), (['back'], 'F'),
+                               (['In1.Cu', 'In2.Cu', 'isometric'], 'FB')):
+            for image in (self.run_dir / 'work/candidate.visuals').rglob('*.svg'):
+                image.unlink()
+            purpose = self.dimension(self.visuals(views))
+            self.assertEqual({side for side, paths in purpose['board_renders'].items() if not paths}, set(missing))
+            self.assertEqual(len(purpose['limitations']), len(missing))
+            for side in missing:
+                self.assertTrue(any(f'missing for {side}.' in text for text in purpose['limitations']))
+
+    def test_unavailable_or_unadmitted_renders_cover_no_side(self):
+        visuals = self.visuals(['top', 'bottom'])
+        self.assertEqual(self.dimension({**visuals, 'status': 'skipped'})['board_renders'], {'F': [], 'B': []})
+        private = self.run_dir / 'review-work/physical/experiments/top.svg'
+        private.parent.mkdir(parents=True)
+        private.write_text('<svg/>')
+        peer = {**visuals, 'images': [{'view': 'top', 'path': 'review-work/physical/experiments/top.svg'},
+                                      visuals['images'][1]]}
+        purpose = self.dimension(peer)
+        self.assertEqual(purpose['board_renders']['F'], [])
+        self.assertNotIn('review-work/', json.dumps(purpose))
+        self.assertEqual(self.dimension(None)['board_renders'], {'F': [], 'B': []})
+
+    def purpose_finding(self, **changes):
+        evidence = [{'path': 'inputs/project/arrangement.json', 'locator': 'illustrative reserve declaration',
+                     'pointer': '/policy/obstacles/0'}]
+        return {'id': 'purpose-area', 'title': 'Purpose alternative', 'location': 'Illustrative J1 reserve',
+                'condition': 'Inboard pose compared with the edge alternative',
+                'mechanism': 'Edge insertion could recover the declared reserve',
+                'assessment': 'concern', 'severity': 'info', 'evidence': evidence, 'dimension': 'purpose_review',
+                'reasoning': 'Illustrative saving up to 600 mm2; unqualified estimate.', **changes}
+
+    def validated(self, findings):
+        if not hasattr(self, 'sealed'):
+            self.sealed = self.packet()
+        packet = self.sealed
+        self.candidate_id, self.packet_sha256 = packet['candidate_id'], packet['packet_sha256']
+        return validate_review({**self._review(findings=findings), 'schema': 'agent-ee.review/2'},
+                               self.candidate_id, self.run_id, self.packet_sha256, self.run_dir)
+
+    def test_purpose_dimension_is_limited_to_info_or_minor_concerns(self):
+        review = self.validated([self.purpose_finding(severity='minor')])
+        self.assertEqual(review['findings'][0]['dimension'], 'purpose_review')
+        for changes, message in (({'assessment': 'defect'}, 'must be concern'),
+                                 ({'severity': 'major'}, 'must be concern'),
+                                 ({'severity': 'blocking'}, 'must be concern'),
+                                 ({'dimension': 'correctness'}, 'invalid dimension')):
+            with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, message):
+                self.validated([self.purpose_finding(**changes)])
+            with self.subTest(collect=changes), self.assertRaisesRegex(ValueError, message):
+                collect_findings([self._review(findings=[self.purpose_finding(**changes)])], [])
+
+    def adjudicated(self, extra_findings, decisions):
+        review = self.validated([self.purpose_finding(), *extra_findings])
+        findings = collect_findings([review], [self.rc_check])
+        return findings, adjudicate(findings, {'schema': 'agent-ee.decisions/2', 'candidate_id': self.candidate_id,
+                                               'run_id': self.run_id, 'decisions': decisions}, self.run_dir)
+
+    def test_deferred_purpose_concern_is_recorded_advisory_and_cannot_hold_outcome(self):
+        from agent_ee.cli import outcome, render
+        check = [{'finding_id': 'check/rc_transient', 'disposition': 'accepted', 'reason': 'Failing criterion',
+                  'evidence': [{'path': 'checks/rc_transient.json', 'locator': 'failed response',
+                                'pointer': '/details/v_1ms'}]}]
+        deferred = {'finding_id': 'circuit/purpose-area', 'disposition': 'deferred',
+                    'reason': 'Saving needs enclosure measurement', 'evidence': []}
+        _, retained = self.adjudicated([], [deferred, *check])
+        retained = {f['id']: f for f in retained}
+        purpose = retained['circuit/purpose-area']
+        self.assertEqual((purpose['status'], purpose['purpose_status']), ('deferred', 'advisory'))
+        self.assertEqual(purpose['events'][-1]['purpose_status'], 'advisory')
+        self.assertNotIn('purpose_status', retained['check/rc_transient'])
+        result = {'state': 'complete', 'adjudicated': True,
+                  'checks': [{'id': 'erc', 'execution': 'ok', 'outcome': 'pass', 'summary': 'clean'}],
+                  'review_executions': [{'execution': 'ok'}, {'execution': 'ok'}], 'reviews': [{}, {}],
+                  'findings': [purpose]}
+        self.assertEqual(outcome(result), 'criteria_satisfied')
+        # Correctness keeps blocking exactly as before: an accepted defect or any other deferral.
+        self.assertEqual(outcome({**result, 'findings': [purpose, retained['check/rc_transient']]}),
+                         'defects_or_unresolved')
+        self.assertEqual(outcome({**result, 'checks': [{'id': 'rc', 'execution': 'ok', 'outcome': 'defect'}]}),
+                         'defects_or_unresolved')
+        plain = {k: v for k, v in purpose.items() if k not in ('purpose_status', 'dimension')}
+        self.assertEqual(outcome({**result, 'findings': [plain]}), 'defects_or_unresolved')
+        unresolved = collect_findings([self.validated([self.purpose_finding()])], [])[0]
+        self.assertEqual(outcome({**result, 'findings': [unresolved]}), 'defects_or_unresolved')
+        run = self.root / 'rendered'
+        run.mkdir()
+        render(run, {**result, 'outcome': outcome(result), 'run_id': self.run_id, 'reviews': [], 'review_executions': [],
+                     'purpose_coverage': [{'role': 'circuit', 'status': 'unknown'}]})
+        text = (run / 'REPORT.md').read_text()
+        self.assertIn('Purpose status: advisory', text)
+        self.assertIn('circuit purpose coverage: unknown', text)
+
+    def test_correctness_concern_cannot_be_duplicated_into_purpose_finding(self):
+        concern = {**self.purpose_finding(id='clearance', severity='minor'), 'title': 'Clearance concern'}
+        concern.pop('dimension')
+        decisions = [{'finding_id': 'circuit/purpose-area', 'disposition': 'deferred', 'reason': 'Unmeasured',
+                      'evidence': []},
+                     {'finding_id': 'circuit/clearance', 'disposition': 'duplicate', 'reason': 'Same area',
+                      'evidence': [], 'duplicate_of': 'circuit/purpose-area'}]
+        with self.assertRaisesRegex(ValueError, 'advisory purpose finding'):
+            self.adjudicated([concern], decisions)
+        decisions[1].update(disposition='deferred')
+        decisions[1].pop('duplicate_of')
+        _, retained = self.adjudicated([concern], decisions)
+        self.assertNotIn('purpose_status', {f['id']: f for f in retained}['circuit/clearance'])
+
+    def test_purpose_coverage_is_recorded_per_review_and_never_inferred(self):
+        from agent_ee.purpose_review import coverage, coverage_limitations
+        silent = {'role': 'circuit', 'coverage': ['Checked purpose of R1 value'], 'limitations': [], 'findings': []}
+        prefixed = {'role': 'physical', 'coverage': ['purpose_review: J1 reserve justified by card insertion'],
+                    'limitations': [], 'findings': []}
+        limited = {'role': 'rf', 'coverage': [], 'limitations': ['Purpose_Review: no B render'], 'findings': []}
+        finding = {'role': 'layout', 'coverage': [], 'limitations': [],
+                   'findings': [{'id': 'purpose-area', 'dimension': 'purpose_review'}]}
+        records = coverage([silent, prefixed, limited, finding])
+        self.assertEqual([r['status'] for r in records], ['unknown', 'addressed', 'addressed', 'addressed'])
+        self.assertEqual(records[3]['findings'], ['purpose-area'])
+        [limit] = coverage_limitations(records)
+        self.assertTrue(limit.startswith('circuit: purpose coverage unknown'))
+        self.assertIn('not passed', limit)
+        from agent_ee.purpose_review import record_coverage
+        result = {'reviews': [silent, prefixed], 'limitations': ['Declared scope limitation']}
+        record_coverage(record_coverage(result))
+        self.assertEqual(result['purpose_coverage'], records[:2])
+        self.assertEqual(result['limitations'], ['Declared scope limitation', limit])
+
+    def test_brief_and_adjudicator_prompt_state_the_advisory_contract(self):
+        from agent_ee.purpose_review import BRIEF
+        self.assertIn('dimension=purpose_review', BRIEF)
+        self.assertIn("'purpose_review:'", BRIEF)
+        packet = build_packet(self.run_dir, [], self.run_id)
+        prompts = []
+
+        def transport(run, role, definition, prompt, schema, timeout, **kwargs):
+            prompts.append(prompt)
+            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/2',
+                'candidate_id': packet['candidate_id'], 'run_id': packet['run_id'], 'decisions': []}
+
+        with patch('agent_ee.reviewers.reviewer_call', side_effect=transport):
+            adjudicator_call(self.run_dir, packet, [], [], time.monotonic() + 30)
+        self.assertIn('advisory purpose status', prompts[0])
+        self.assertIn('no correctness finding may be duplicated', prompts[0])
