@@ -6,6 +6,7 @@ Distances use native copper-land centroids, not anchors, routed length or loop i
 from copy import deepcopy
 from fractions import Fraction
 import math
+from types import MappingProxyType
 from uuid import UUID
 
 SCHEMA = 'agent-ee.electrical-locality/1'
@@ -203,18 +204,30 @@ class PlacementIndex:
     that footprint. Candidate evaluators contain only incident, placed pairs.
     """
     def __init__(self, document):
-        validate(document)
         document = deepcopy(document)
-        self.pairs = {}
-        self.endpoints = {}
+        validate(document)
+        pairs = {}
+        endpoints = {}
         self.positions = {}
         for obligation in document['obligations']:
             for role in roles(obligation):
                 pair = obligation[role]
-                for own, peer in ((pair['from'], pair['to']), (pair['to'], pair['from'])):
+                a, b = (MappingProxyType(dict(pair[end])) for end in ('from', 'to'))
+                for own, peer in ((a, b), (b, a)):
                     ref = own['reference']
-                    self.pairs.setdefault(ref, []).append((own, peer, pair['max_distance_nm']))
-                    self.endpoints.setdefault(ref, {})[self.key(own)] = own
+                    pairs.setdefault(ref, []).append((own, peer, pair['max_distance_nm']))
+                    endpoints.setdefault(ref, {})[self.key(own)] = own
+        self._pairs = MappingProxyType({ref: tuple(rows) for ref, rows in pairs.items()})
+        self._endpoints = MappingProxyType({ref: MappingProxyType(rows)
+                                            for ref, rows in endpoints.items()})
+
+    @property
+    def pairs(self):
+        return self._pairs
+
+    @property
+    def endpoints(self):
+        return self._endpoints
 
     @staticmethod
     def key(endpoint):

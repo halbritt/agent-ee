@@ -589,6 +589,78 @@ class NativeLocalityTests(unittest.TestCase):
 
 
 class LocalityIndexTests(unittest.TestCase):
+    def test_index_validates_deepcopy_output_including_hostile_endpoint(self):
+        from unittest.mock import patch
+
+        class Sly(dict):
+            def __deepcopy__(self, memo):
+                endpoint = copy.deepcopy(dict(self), memo)
+                endpoint['net'] += '_SWAPPED'
+                return endpoint
+
+        _, doc = bound_output_loop()
+        row = doc['obligations'][0]
+        row['switch']['from'] = Sly(row['switch']['from'])
+        # Reviewer P5: the copied endpoint differs from the caller's endpoint.
+        with patch.object(locality, 'validate', wraps=locality.validate) as validate:
+            state = locality.PlacementIndex(doc)
+        snapshot = validate.call_args.args[0]
+        self.assertIsNot(snapshot, doc)
+        self.assertEqual(snapshot['obligations'][0]['switch']['from']['net'], 'SW_SWAPPED')
+        self.assertTrue(any(pair[0]['net'] == 'SW_SWAPPED'
+                            for pairs in state.pairs.values() for pair in pairs))
+
+        class InvalidCopy(dict):
+            def __deepcopy__(self, memo):
+                endpoint = copy.deepcopy(dict(self), memo)
+                endpoint['net'] = row['return']['from']['net']
+                return endpoint
+
+        row['switch']['from'] = InvalidCopy(row['switch']['from'])
+        with self.assertRaisesRegex(ValueError, 'switch nets must differ'):
+            locality.PlacementIndex(doc)
+
+    def test_index_validates_snapshot_when_caller_changes_during_copy(self):
+        from unittest.mock import patch
+
+        facts, doc = bound_output_loop()
+        snapshot = copy.deepcopy(doc)
+
+        def copy_then_mutate(document):
+            self.assertIs(document, doc)
+            document['obligations'].clear()
+            return snapshot
+
+        with patch.object(locality, 'deepcopy', side_effect=copy_then_mutate), \
+                patch.object(locality, 'validate', wraps=locality.validate) as validate:
+            state = locality.PlacementIndex(doc)
+        validate.assert_called_once_with(snapshot)
+        self.assertIs(validate.call_args.args[0], snapshot)
+        movable, *fixed = facts['footprints']
+        for fp in fixed:
+            state.push(fp)
+        self.assertEqual(state.prepare(transform(movable, [0, 0], 0)).constraint([0, 0]),
+                         locality.constraint(fixed, transform(movable, [0, 0], 0), snapshot))
+
+    def test_index_pairs_and_endpoints_are_read_only_at_every_level(self):
+        _, doc = bound_output_loop()
+        state = locality.PlacementIndex(doc)
+        ref = next(iter(state.pairs))
+        own, peer = state.pairs[ref][0][:2]
+        endpoint_map = state.endpoints[ref]
+        key = next(iter(endpoint_map))
+        mutations = [(state.pairs, ref, ()), (state.endpoints, ref, {}),
+                     (state.pairs[ref], 0, (peer, own, 0)),
+                     (state.pairs[ref][0], 2, 0),
+                     (endpoint_map, key, {}), (own, 'net', 'CHANGED'),
+                     (peer, 'reference', 'R9'), (endpoint_map[key], 'pad', '99')]
+        for mapping, key, value in mutations:
+            with self.subTest(key=key), self.assertRaises(TypeError):
+                mapping[key] = value
+        for attribute in ('pairs', 'endpoints'):
+            with self.subTest(attribute=attribute), self.assertRaises(AttributeError):
+                setattr(state, attribute, {})
+
     def test_index_snapshots_caller_document_before_push_and_prepare(self):
         mutations = [(role, end, field, value)
                      for role in ('supply', 'return', 'switch')

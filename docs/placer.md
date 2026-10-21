@@ -961,11 +961,14 @@ captured declaration.
 
 After the independent initial locality grade qualifies identities and copper
 centroids, packing caches selected pad positions per footprint. Direct
-`PlacementIndex(document)` construction re-validates the declaration before
-building caches, including role bindings, disjoint nets and canonical UUIDs
-(AGENTEE-341). After validation it deep-copies the document and builds the index
-from that snapshot, so later edits to the caller's nested dictionaries cannot
-change indexed endpoints or bypass validation (AGENTEE-352).
+`PlacementIndex(document)` deep-copies the declaration first, validates that
+snapshot, then builds caches, including role bindings, disjoint nets and
+canonical UUIDs (AGENTEE-341/352/356). Validation covers values produced by
+copying; later caller edits cannot change indexed values. Its public `pairs` and
+`endpoints` properties expose mapping proxies, tuple pair sequences and
+read-only endpoint fields; callers cannot mutate the indexed declarations.
+Copying does not promise an atomic view of concurrent edits: an invalid
+snapshot refuses, and only the validated snapshot supplies the index.
 It still requires independently qualified native geometry. Search push/pop
 updates this index, including backjumps. Each rotation resolves only its incident
 roles with placed peers once; candidate costs translate those exact centroids
