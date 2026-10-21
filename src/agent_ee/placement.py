@@ -60,11 +60,19 @@ def simple_polygon(raw):
     if len(points) < 3 or area2(points) == 0:
         raise ValueError('zero polygon area')
     segments = list(edges(points))
-    for i, (a, b) in enumerate(segments):
-        for j in range(i+1, len(segments)):
-            if j == i+1 or (i == 0 and j == len(segments)-1):
+    # Two segments cross or touch only where their closed bounding boxes
+    # overlap, so a sweep over boxes sorted by least x runs the exact test on
+    # exactly the pairs that can intersect (AGENTEE-332 qualification cost).
+    last = len(segments) - 1
+    spans = sorted((min(a[0], b[0]), max(a[0], b[0]), min(a[1], b[1]), max(a[1], b[1]), i)
+                   for i, (a, b) in enumerate(segments))
+    for k, (x0, x1, y0, y1, i) in enumerate(spans):
+        for u0, u1, v0, v1, j in spans[k+1:]:
+            if u0 > x1:
+                break
+            if abs(i-j) == 1 or {i, j} == {0, last} or v0 > y1 or v1 < y0:
                 continue
-            if intersects(a, b, *segments[j]):
+            if intersects(*segments[i], *segments[j]):
                 raise ValueError('polygon self-intersection')
     return points if area2(points) > 0 else list(reversed(points))
 
