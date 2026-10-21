@@ -779,7 +779,8 @@ still identify each endpoint exactly. Each pair
 must name the same net at both ends. A buck may additionally declare `switch`
 with the identical pair structure: `from` selects the return-source IC switch
 pad and `to` selects its inductor pad. Shared rail membership never assigns a capacitor to
-an IC. Multiple selected supply/return pins require separate obligations.
+an IC. Select the explicit `buck-output-loop` kind below to bind component and
+return-net roles. Multiple selected supply/return pins require separate obligations.
 
 An endpoint may add `uuid` with the canonical native pad UUID from the captured
 `placement-probe.json`. The UUID must occur exactly once across the board and
@@ -881,48 +882,61 @@ gate refuses a gap that satisfies the board minimum.
 
 ### Buck output-capacitor loops (AGENTEE-330)
 
-Use the existing `supply` and `return` roles together; no new role or schema is
-needed. For example, an owned fixture may replace the example supply source with
-`{"reference": "L1", "pad": "2", "net": "VCC"}` while keeping the return
-source at U1 PGND. Optional `switch.from` stays at that IC, rather than moving to
-the inductor. The same captured UUID selector works on all endpoints. Check,
-constraint cost, candidate targets and saved-proposal grading use all declared
-pairs, including when the three footprints are placed in different orders.
-A loop obligation specifies paired distance bounds, not a summed perimeter,
-routed path or inductance measurement.
+AGENTEE-334 adds an explicit role binding to the existing
+`agent-ee.electrical-locality/1` document. Add these fields to an obligation:
 
-The read-only D-PL-1 pod diagnostic at fome-mc
-`00a6b0316b871171bda5654a8436162aaa83a914` now supports seven
-output-loop declarations on its frozen board. Fresh native copper-centroid
-measurements are below, verbatim in mm. Supply is L1/L2/L4 pad 2 to capacitor
-pad 1; return is U5/U7/U15 PGND pad 1 to capacitor pad 2. Every endpoint was
-selected by its captured UUID, reference, pad and net.
+```json
+{"kind": "buck-output-loop", "ic": "U1", "inductor": "L1", "return_net": "GND"}
+```
 
-| IC / capacitor | Supply mm | Return mm | Declared supply / return bound mm |
-| --- | ---: | ---: | --- |
-| U5 / C6 | 5.561025085359713 | 13.77350082586123 | absent / absent |
-| U5 / C7 | 18.029556289604024 | 13.43448268449515 | absent / absent |
-| U7 / C13 | 8.82704508881653 | 13.746538655239725 | absent / absent |
-| U7 / C14 | 9.91641190148937 | 10.520495473122926 | absent / absent |
-| U7 / C15 | 13.284491898450614 | 13.96913830556488 | absent / absent |
-| U15 / C68 | 3.303240832879129 | 6.5517650293642244 | absent / 5.0 |
-| U15 / C69 | 5.525273748874349 | 6.894833210455493 | absent / 7.0 |
+The existing `supply`, `return`, and optional `switch` pairs still select exact
+native pads and carry their own limits and citations. For this kind,
+`supply.from.reference` must equal `inductor`, `return.from.reference` must equal
+`ic`, and these two references must differ. When present, `switch.from.reference`
+must equal `ic` and `switch.to.reference` must equal `inductor`. Both return
+endpoints must use `return_net`; neither supply endpoint may use that net.
+Net names and reference prefixes never infer these roles. A declaration of IC
+and inductor identity is supplied by the engineer; this check does not establish
+the component's device type from a library or datasheet.
 
-The locators are LMR36520 §8.5.1 item 8 and TPS6216x-Q1 §11.1 items 4–5.
-D-PL-1 supplies only the two unchanged U15 return bounds for these endpoints;
-its VOS-to-capacitor bounds do not transfer to inductor-to-capacitor pairs.
-All 14 pairs resolve and measure. Twelve remain unknown for missing bounds;
-C68 return is a proved defect and C69 return passes. The combined verdict is
-`defect`, preserving that determinate violation alongside unknown coverage.
-The declarations, native probe and raw measurements remain in worker scratch;
-no pod design was adopted or published. Missing bounds must be declared by the
-engineer before guided placement can run.
+Role metadata requires the complete four-field binding above. Unknown kinds,
+missing role identities, swapped supply/return nets and unrelated rail members
+refuse validation before grading or packing. Per-pair native identity, centroid,
+limit and citation failures retain their existing unknown/defect precedence.
+Omit the switch pair when no cited switch limit has been declared.
 
-`OutputLoopTests` covers distinct sources, equal pad numbers on different
-footprints, coupled failures in both endpoint orders, all six packing orders,
-UUID-selected repeated PGND pads, net failures, absent limits/citations and
-defect precedence. The native captured-check regression uses an original RC
-three-reference topology with UUID-selected endpoints.
+Untyped obligations retain their existing generic pair semantics, including
+same-source input decoupling with a switch leg and previously admitted distinct
+sources. They do not assert this loop-role contract. This compatibility rule
+preserves existing verdicts; new output-loop declarations must select the kind
+explicitly. Check, pack constraints, candidate targets and saved-proposal grading
+then use all declared pairs. Distances bound individual legs, not a summed
+perimeter, routed path or inductance.
+
+The retained original fixture is `bound_output_loop()` in
+`tests/test_electrical_locality.py`. Its U1/L1/C1 pad identities, citations and
+limits are authored test requirements; it contains no third-party design data.
+`BoundOutputLoopTests.test_owned_evidence_and_optional_switch` reproduces exact
+squared distances of 89, 162 and 16 mm² for supply, return and switch, retains
+each citation and the full declaration in the result, and exercises omission of
+the switch leg. Other tests refuse R9 on VCC, independently exercise both switch
+bindings with distinct endpoints, and guide all six placement orders. Existing
+generic-pair regressions retain their verdict expectations.
+A captured native check also exercises explicitly bound roles on the owned RC
+stand-in; its R1/J1 roles are fixture declarations, not a claim about RC hardware.
+
+The read-only pod D-PL-1 packet is committed in fome-mc at
+`fc73b20f2dd91f26b3eb3a7319e5b0895d0a8be9`, under
+`telemetry-pod/expansion/electrical-locality/pad-obligations/`.
+`electrical-locality.json` retains 15 generic obligations / 33 pairs;
+`frozen-79cc1310-measurements.json` retains their diagnostic measurements and
+`README.md` gives the declarations and source locators. These existing untyped
+obligations remain valid. The packet does not declare the seven additional
+inductor-to-output-capacitor loops previously reported here from disposable
+scratch. Those measurements are withdrawn as retained evidence; the owned fixture
+above is the reproducible output-loop evidence. No pod design is copied,
+modified or adopted, and pod output-loop bounds still require an engineer's
+captured declaration.
 
 ## Incremental locality search and diagnostics (AGENTEE-332)
 
