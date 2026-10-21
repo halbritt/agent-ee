@@ -53,6 +53,47 @@ class NativePlacerTest(unittest.TestCase):
             'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
             'source_sha256': hashlib.sha256(self.saved).hexdigest(), 'writable_root': str(self.scratch)}}
 
+    def test_silk_only_proposal_publishes_receipt_with_open_defects(self):
+        import json
+        import pcbnew as k
+        from agent_ee.placer_runner import _plan
+        from agent_ee.placement_probe import extract
+        board = k.LoadBoard(str(self.source))
+        for fp in board.GetFootprints():
+            fp.Reference().SetVisible(False)
+            fp.Value().SetVisible(False)
+            pad = next(iter(fp.Pads()))
+            layers = pad.GetLayerSet()
+            layers.AddLayer(k.F_Mask)
+            pad.SetLayerSet(layers)
+        k.SaveBoard(str(self.source), board)
+        plan = _plan(extract(self.source), self.config)
+        # Static board graphics at future pad positions cannot be relocated.
+        for placement in plan['placements']:
+            x, y = placement['position_nm']
+            shape = k.PCB_SHAPE(board)
+            shape.SetShape(k.SHAPE_T_SEGMENT)
+            shape.SetLayer(k.F_SilkS)
+            shape.SetStart(k.VECTOR2I(x - 200000, y))
+            shape.SetEnd(k.VECTOR2I(x + 200000, y))
+            shape.SetWidth(150000)
+            board.Add(shape)
+        k.SaveBoard(str(self.source), board)
+        original = self.source.read_bytes()
+        self.config['authorization']['source_sha256'] = hashlib.sha256(original).hexdigest()
+        destination = self.scratch / 'open-silk'
+        report = place_candidate(self.source, self.netlist, destination, self.config)
+        self.assertEqual((report['status'], report['outcome'], report['verdict']),
+                         ('placed', 'defect', 'defect'))
+        self.assertTrue(report['open_defects'])
+        self.assertTrue(all(d['type'] == 'placement_silkscreen_conflict' and
+                            d['status'] == 'open' and d['verdict'] == 'defect'
+                            for d in report['open_defects']))
+        self.assertEqual(report['native_drc_comparison']['blocking_findings'], [])
+        self.assertEqual(report['open_defects'], report['native_drc_comparison']['open_defects'])
+        self.assertEqual(json.loads((destination / 'placement-result.json').read_text()), report)
+        self.assertEqual(self.source.read_bytes(), original)
+
     def test_imu_axes_reserved_in_recorded_effective_policy(self):
         import subprocess
         script = """
