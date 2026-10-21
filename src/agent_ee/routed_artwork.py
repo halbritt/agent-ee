@@ -31,8 +31,10 @@ def translated_content(node):
                    'rect': {'start', 'end'}, 'circle': {'center', 'end'},
                    'poly': set(), 'text': {'at'}}[kind]
     for child in node[1:]:
-        if not isinstance(child, list) or not child:
+        if not isinstance(child, list):
             continue
+        if not child:
+            raise ValueError('silk graphic refuses empty child')
         if not isinstance(child[0], str):
             raise ValueError('silk graphic refuses list-headed child')
         if child[0] in coordinates:
@@ -74,6 +76,8 @@ def write_scope(before, after):
         if not isinstance(b[0], str):
             raise ValueError('artwork comparison refuses list-headed node')
         if b[0] == 'footprint':
+            if any(len(p) < 2 for p in children(b, 'property')):
+                raise ValueError('artwork comparison refuses nameless property')
             decl = [p[2:3] for p in children(b, 'property') if p[1:2] == [DECLARATION]]
             if any(len(d) != 1 or not isinstance(d[0], str) for d in decl):
                 raise ValueError('malformed movable silk declaration')

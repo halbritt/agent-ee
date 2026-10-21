@@ -195,6 +195,32 @@ class RoutedArtworkTest(unittest.TestCase):
                                   b'(kicad_pcb ' + field.replace(b'(at 1 2)', b'(at 2 2)') + b')')
         self.assertEqual(allowed['moved_identities'], ['f'])
 
+    def test_empty_child_and_nameless_property_refuse_in_both_orders(self):
+        # The base crashed on both shapes; a typed refusal must not become a skip.
+        line = (b'(gr_line (start 1 2) (end 3 2) (layer "F.SilkS") '
+                b'(uuid "11111111-1111-4111-8111-111111111111"))')
+        field = (b'(footprint "x" (property "Reference" "R1" (at 1 2) (layer "F.SilkS") (uuid "f")) '
+                 b'(uuid "x"))')
+        def moved(board):
+            return board.replace(b'(start 1 2)', b'(start 2 2)').replace(
+                b'(end 3 2)', b'(end 4 2)').replace(b'(at 1 2)', b'(at 2 2)')
+        cases = {
+            'empty graphic child': (b'(kicad_pcb ' + line.replace(b'))', b') ())') + b')',
+                                    'empty child', line, ['11111111-1111-4111-8111-111111111111']),
+            'nameless property': (b'(kicad_pcb ' + field.replace(b'(uuid "x")', b'(property) (uuid "x")') + b')',
+                                  'nameless property', field, ['f']),
+        }
+        for name, (before, message, control, identities) in cases.items():
+            for left, right in ((before, moved(before)), (moved(before), before)):
+                with self.subTest(case=name, order=left is before), \
+                        self.assertRaisesRegex(ValueError, message):
+                    art.write_scope(left, right)
+            # The well-formed spelling of the same translation stays allowed.
+            control = b'(kicad_pcb ' + control + b')'
+            allowed = art.write_scope(control, moved(control))
+            self.assertEqual(allowed['status'], 'allowed')
+            self.assertEqual(allowed['moved_identities'], identities)
+
     def test_stale_render_cache_refuses_text_or_field_translation(self):
         nodes = (
             '(gr_text "mark" (at 1 2) (layer "F.SilkS") (uuid "mark") '

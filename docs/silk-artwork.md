@@ -217,9 +217,11 @@ other token change refuses publication. Changed text or fields carrying a
 `render_cache` refuse because this producer does not regenerate and compare the
 cache. A backslash anywhere in either board also refuses the scope proof,
 including unchanged strings and non-silk content. A changed list-headed node,
-a property whose name is a nested list, a nested-list `uuid` value or a
+a property whose name is a nested list, a nameless property of a changed
+footprint, an empty `()` child of a changed silk graphic, a nested-list `uuid`
+value or a
 malformed movable-field declaration refuses with `ValueError`, never an untyped
-error (AGENTEE-364). This conservative scope limit
+error or a silent skip (AGENTEE-364). This conservative scope limit
 can refuse legitimate boards: the shared parser decodes escapes, so decoded
 token equality cannot establish the saved spelling KiCad renders. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
