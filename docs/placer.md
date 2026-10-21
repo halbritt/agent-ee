@@ -28,7 +28,7 @@ board with native DRC. The [rung-1 policy](rung1-qualified.md#placement-policy)
 uses 1.5 mm to preserve space for J1's reference text outside its courtyard;
 using the copper-edge rule as the courtyard margin alone clipped that text.
 
-The placer sorts explicit priorities first, then descending pad count, then
+The initial per-part search sorts explicit priorities first, then descending pad count, then
 reference (parts bound to a declared anchor point, then declared group anchors
 and their members, are ordered first; see [search](#bounded-search-agentee-212)
 and [crowded clusters](#crowded-clusters-agentee-212)). It tries four quarter-turn rotations at deterministic positions
@@ -966,7 +966,7 @@ run during candidate generation, empty reservation sweeps and candidate testing;
 individual geometry operations and sorting are not interrupted. Set this budget
 below the enclosing executor deadline, leaving time for qualification and result
 serialization. An external process kill cannot guarantee a retained partial result.
-Omitting it keeps the deterministic step-only stopping rule.
+Omitting it keeps deterministic step-only stopping, including joint clusters.
 
 `pack(..., heartbeat=callback)` emits qualification/search progress, including
 steps and placed counts; search heartbeats are emitted at five-second intervals
@@ -998,3 +998,68 @@ parts, with fewer than 400 pad resolutions, at most 3,000 locality evaluations a
 These isolate locality scaling; courtyard qualification,
 capacity proofs, broad backtracking and native saved-board gates still have
 independent costs.
+
+## Joint locality clusters (AGENTEE-335)
+
+Packing first runs the unchanged per-part search. Every previously planned
+input keeps exactly its placements and counted steps. Only a failure with a
+multi-member locality component can trigger joint search. Existing determinate
+geometry/capacity proofs retain their verdicts and do not trigger it.
+
+In that second search, connected locality components with at least three
+footprints are packed as a unit. The highest-degree footprint is the hub
+(ties use the existing queue order and reference); a movable hub goes first. Other movable endpoints follow
+in ascending order of their tightest incident pad-distance limit, with the
+existing queue order and reference breaking ties. Fixed endpoints stay fixed.
+Supply, return and switch roles all contribute, so a shared inductor stays with
+its IC and capacitors. Two-footprint components and unguided placements retain
+their existing ordering, candidates and verdicts.
+
+Each unit searches joint transforms around its placed members. If a later
+member cannot fit, search revisits every earlier member's alternatives,
+including nonlead members. Necessary axis projections prune impossible pad
+distances before candidate ranking; the existing exact predicates and the
+independent complete-plan grade still enforce every declared limit. Origin
+group distances, fixed geometry, gaps and other placement constraints remain
+enforced. A backjump moves the whole cluster without splitting its membership.
+
+Each joint cluster has a cumulative guard of 4,096 tested candidates across
+backjumps and a maximum of 64 movable members to bound recursion. There is no
+default wall-clock cluster guard. These limits describe search coverage, not
+physical infeasibility. Finite joint exhaustion also does not establish that a
+continuous placement is impossible.
+
+Both attempts share `policy.step_budget`: joint search receives only the
+candidates remaining after the legacy attempt. If none remain, it is recorded
+as `not_attempted`. A joint completion reports the sum of both attempts in
+`steps_used` and records `search.legacy_attempt`. The original policy remains
+bound to the plan. The joint attempt uses the legacy search's absolute opt-in
+`search_timeout_s` deadline, including time spent requalifying the second
+attempt; the deadline is never restarted. Qualification precedes the initial
+search deadline. Individual geometry calls and sorts are cooperative and are
+not interrupted. Heartbeats may read the clock for progress only; they never
+change a step-only verdict.
+
+Only an independently regraded joint completion replaces the legacy result.
+Otherwise the original typed failure, steps, partial diagnostics, and empty
+`placements` remain authoritative. `search.joint_cluster_attempt` records the
+second attempt's status, steps, termination and any `blocking_cluster` naming
+references and obligations. A cluster guard or finite refusal appears there as
+`locality_cluster_exhausted`, never as a feasibility proof. Cluster membership
+and tightest-first order are available in `search.locality_clusters` even when
+legacy search succeeds; this describes the optional strategy, not a claim that
+it ran. Partials have diagnostic-only authority and cannot enter a board writer.
+
+`tests.test_placer_clusters` covers the joint engine's tightest-first order,
+nonlead backtracking, switch peers, movable hubs, exact regrading, cumulative
+step guards and cleanup. Public contract tests cover unchanged legacy plans,
+shared remaining steps and absolute deadlines. A seeded differential freezes
+16 original multi-member cases from the pre-cluster placer, including movable
+hubs, and checks every legacy plan's verdict, placements and steps. Refusal
+bounds use candidate counts, not wall time. The locality-index suite adds exact
+limit and placed-state scan bounds for both paths; a joint evaluation bound
+catches removal of projection pruning.
+
+The real pod remains diagnostic. Fail-fast completion of that run is outside
+AGENTEE-335 after the legacy-first ruling; block-level placement (AGENTEE-339/340)
+is its path. No refusal publishes a board or establishes physical impossibility.

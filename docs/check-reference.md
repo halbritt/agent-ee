@@ -1783,6 +1783,18 @@ missing bounds stay unknown. See
 [buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
 for the schema, retained owned evidence and committed pod packet locator.
 
+Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
+Multi-member components use [joint cluster search](placer.md#joint-locality-clusters-agentee-335)
+after per-part search fails, with tightest-limit-first peers and only the remaining
+step/time budget. Joint refusals retain the legacy typed failure and cluster
+diagnostics in `search.joint_cluster_attempt`; only regraded completions replace it.
+The per-rotation cap of 256 distinct locality origins refuses with
+`packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
+`locality target budget exhausted`; it never truncates targets. Runner heartbeats
+go to stderr, preserving the single JSON summary on `board_build` stdout.
+Heartbeat and partial search results are diagnostics with no acceptance authority;
+the full independent locality check still grades every declared role.
+
 ## Post-placement silk publication gate (AGENTEE-320)
 
 The [artwork pass](silk-artwork.md) uses native field bounds to search for
@@ -1806,11 +1818,3 @@ Side-flipped footprints' fields remain unchanged with typed conflicts. Source
 project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
-
-Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
-The per-rotation cap of 256 distinct locality origins refuses with
-`packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
-`locality target budget exhausted`; it never truncates targets. Runner heartbeats
-go to stderr, preserving the single JSON summary on `board_build` stdout.
-Heartbeat and partial search results are diagnostics with no acceptance authority;
-the full independent locality check still grades every declared role.

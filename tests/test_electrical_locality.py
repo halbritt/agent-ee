@@ -746,3 +746,97 @@ class LocalityIndexTests(unittest.TestCase):
         self.assertLessEqual(evaluator.call_count, 3000, 'bounded candidate locality work')
         self.assertLessEqual(result['steps_used'], 16, 'bounded exact candidate tests')
         self.assertLess(elapsed, 180.0, '331-footprint guided packing safety ceiling')
+
+    def test_exact_limit_passes_and_one_nanometre_over_blocks(self):
+        # Every admissible slot beside the fixed U1 lies exactly 2.5 mm from its
+        # pads, so a plan exists at the limit and none one nanometre tighter.
+        for limit, planned in ((5*MM//2, True), (5*MM//2 - 1, False)):
+            for caps in (1, 3):
+                with self.subTest(limit=limit, caps=caps):
+                    b, doc = board(), declaration(limit=limit)
+                    for i in range(2, caps + 1):
+                        c = copy.deepcopy(b['footprints'][1])
+                        c['ref'] = c['uuid'] = 'C' + str(i)
+                        for pad in c['pads']:
+                            pad['uuid'] = c['ref'] + '-' + pad['number']
+                        b['footprints'].append(c)
+                        doc['obligations'] += declaration(cap=c['ref'], limit=limit)['obligations']
+                    result = pack(b, request(electrical_locality=doc))
+                    self.assertEqual(result['status'] == 'planned', planned, result['status'])
+                    if planned:
+                        self.assertEqual(result['locality_grading']['status'], 'pass')
+                        self.assertIn(limit**2, {m['distance_squared_nm']
+                                                 for m in result['locality_grading']['measured']})
+                    else:
+                        self.assertEqual((result['outcome'], result['placements']), ('unknown', []))
+                    if caps == 3:
+                        from agent_ee.placer import _pack
+                        joint = _pack(b, request(electrical_locality=doc), heartbeat=None, joint=True)
+                        self.assertEqual(joint['status'] == 'planned', planned, joint['status'])
+                        if planned:
+                            self.assertEqual(joint['locality_grading']['status'], 'pass')
+                            self.assertIn(limit**2, {m['distance_squared_nm']
+                                for m in joint['locality_grading']['measured']})
+                        else:
+                            self.assertEqual((joint['outcome'], joint['placements']), ('unknown', []))
+        b, doc = board(), declaration(limit=5*MM//2)
+        index = locality.PlacementIndex(doc)
+        index.push(b['footprints'][0])
+        evaluator = index.prepare(transform(b['footprints'][1], [0, 0], 0))
+        for x, blocked in ((int(8.5*MM), False), (int(8.5*MM) + 1, True)):
+            moved = transform(b['footprints'][1], [x, 6*MM], 0)
+            expected = locality.constraint([b['footprints'][0]], moved, doc)
+            self.assertEqual(evaluator.constraint([x, 6*MM]), expected)
+            self.assertEqual(bool(expected[0]), blocked)
+            graded = locality.grade({**b, 'footprints': [b['footprints'][0], moved]}, doc)['status']
+            self.assertEqual(graded, 'defect' if blocked else 'pass')
+
+    def test_guided_pack_does_not_scan_placed_footprints_per_candidate(self):
+        from unittest.mock import patch
+        from test_placement import rectangle
+        import agent_ee.placer as placer
+
+        class Counting(list):
+            iterations = 0
+
+            def __iter__(self):
+                Counting.iterations += 1
+                return super().__iter__()
+
+        original = placer._Search.__init__
+
+        def counted(search, *args, **kwargs):
+            original(search, *args, **kwargs)
+            search.placed = Counting(search.placed)
+
+        templates = board()['footprints']
+        footprints = []
+        for i in range(331):
+            fp = copy.deepcopy(templates[i % 2])
+            fp.update(ref='P'+str(i), uuid='P'+str(i))
+            for pad in fp['pads']:
+                pad['uuid'] = fp['ref'] + pad['number']
+            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
+        b = capture(footprints, rectangle(0, 0, 84, 72))
+        b['pcbnew_version'] = '10.0.7'
+        for movable, clustered in (({'P29'}, False), ({'P29', 'P31'}, True)):
+            doc = {'schema': locality.SCHEMA, 'obligations': []}
+            for i in range(15):
+                doc['obligations'] += declaration(ic='P'+str(2*i), cap='P'+str(2*i+1),
+                                                  limit=8*MM)['obligations']
+            if clustered:  # P28 also feeds P31: one joint cluster with two movable members
+                doc['obligations'] = [o for o in doc['obligations'] if o['id'] != 'P31']
+                doc['obligations'].append(dict(declaration(ic='P28', cap='P31', limit=8*MM)['obligations'][0],
+                                               id='P31-from-P28'))
+            policy = request(fixed_refs=[f['ref'] for f in footprints if f['ref'] not in movable],
+                             electrical_locality=doc)
+            Counting.iterations = 0
+            with self.subTest(clustered=clustered), patch.object(placer._Search, '__init__', counted), \
+                    patch.object(locality, 'resolve', wraps=locality.resolve) as resolver:
+                result = (placer._pack(b, policy, heartbeat=None, joint=True) if clustered else pack(b, policy))
+                self.assertEqual(result['status'], 'planned', result)
+                self.assertEqual(bool(result['search'].get('locality_clusters')), clustered)
+                self.assertEqual(result['locality_grading']['status'], 'pass')
+                self.assertLess(resolver.call_count, 400)
+                # Placed-state scans scale with exact tests and scans, never with ranked candidates.
+                self.assertLessEqual(Counting.iterations, 4*result['steps_used'] + 64)
