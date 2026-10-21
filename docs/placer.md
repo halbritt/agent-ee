@@ -38,8 +38,9 @@ smallest integer Manhattan same-net pad distance to already placed parts,
 excluding explicitly declared ground nets, with position and rotation tie
 breaks. Boxes conservatively reserve a minimum gap around parts the search
 places; fixed courtyards and declared obstacles are exact polygons (below). The
-full polygon judge checks the complete proposal. No random numbers, wall-clock stopping rule, new
-runtime dependency or third-party implementation is used.
+full polygon judge checks the complete proposal. No random numbers, new runtime dependency or third-party implementation is used.
+An optional [search wall-time budget](#incremental-locality-search-and-diagnostics-agentee-332)
+retains a typed unknown partial diagnostic on expiry.
 
 The plan records budget and actual steps. Only a complete plan contains
 placements. A board too small for its parts yields `packing_infeasible`,
@@ -922,3 +923,53 @@ footprints, coupled failures in both endpoint orders, all six packing orders,
 UUID-selected repeated PGND pads, net failures, absent limits/citations and
 defect precedence. The native captured-check regression uses an original RC
 three-reference topology with UUID-selected endpoints.
+
+## Incremental locality search and diagnostics (AGENTEE-332)
+
+After the independent initial locality grade qualifies identities and copper
+centroids, packing caches selected pad positions per footprint. Search push/pop
+updates this index, including backjumps. Each rotation resolves only its incident
+roles with placed peers once; candidate costs translate those exact centroids
+without copying footprint geometry or scanning other footprints. Footprints with
+no declared roles skip locality evaluation. The independent final and saved-board
+graders still check every obligation.
+
+Locality targets are deduplicated and capped at 256 distinct origins per rotation.
+Exceeding that cap returns `packing_budget_exhausted`, `outcome=unknown`; it never
+truncates constraints or searches a silently reduced target set. Below the cap,
+candidate axes, exact rational costs, tie breaks and deterministic placements are
+preserved.
+
+Optional `policy.search_timeout_s` is a positive wall-time search budget of at
+most 86,400 seconds.
+It starts after geometry qualification and capacity proofs. Cooperative checks
+run during candidate generation, empty reservation sweeps and candidate testing;
+individual geometry operations and sorting are not interrupted. Set this budget
+below the enclosing executor deadline, leaving time for qualification and result
+serialization. An external process kill cannot guarantee a retained partial result.
+Omitting it keeps the deterministic step-only stopping rule.
+
+`pack(..., heartbeat=callback)` emits qualification/search progress, including
+steps and placed counts; search heartbeats are emitted at five-second intervals
+when checkpoints execute. The standalone runner prints these as flushed JSON
+`placement_heartbeat` events. Its ordinary result file retains a normal typed
+failure after a cooperative timeout.
+
+Search, step, target and wall-time exhaustion retain `search.termination` as
+`search_exhausted` or `budget_exhausted`. The normal `placements` field remains
+empty and the outcome remains unknown. `search.partial` retains the deepest
+visited placement under authority
+`diagnostic-only-unvalidated-partial-placement`; it cannot be adopted or passed
+to the board writer as a complete plan. Already established infeasibility proofs
+and unknown geometry verdicts retain their existing meaning.
+
+`tests.test_electrical_locality.LocalityIndexTests` compares indexed and original
+costs/targets with rotations, fractional copper centroids, UUID-selected repeated
+numbers and backtracking. Its 331-footprint, 15-obligation index benchmark checks
+5,000 candidate evaluations against a five-second bound and forbids per-candidate
+pad resolution. A second full packing benchmark has 331 footprints, 15
+obligations and one constrained movable peer among 330 placed parts, with a
+20-second bound and fewer than 400 pad resolutions across qualification, search
+and final grading. These isolate locality scaling; courtyard qualification,
+capacity proofs, broad backtracking and native saved-board gates still have
+independent costs.

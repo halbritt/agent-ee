@@ -400,3 +400,166 @@ class NativeLocalityTests(unittest.TestCase):
         self.assertEqual(result['status'], 'placed', result)
         self.assertEqual(result['judgment']['locality_grading']['status'], 'pass')
         self.assertEqual(locality.grade(extract(helper.scratch/'guided/candidate.kicad_pcb'), doc)['status'], 'pass')
+
+
+    def test_runner_timeout_writes_partial_result_and_heartbeat_without_proposal(self):
+        import contextlib
+        import io
+        from agent_ee.placer_runner import main
+        from test_placer_native import NativePlacerTest
+        helper = NativePlacerTest()
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        helper.config['policy']['search_timeout_s'] = 1e-12
+        request_path = helper.root / 'timeout-request.json'
+        request_path.write_text(json.dumps(helper.config))
+        result_path = helper.scratch / 'result.json'
+        destination = helper.scratch / 'proposal'
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = main([str(helper.source), str(helper.netlist), '--request', str(request_path),
+                         '--destination', str(destination), '--result', str(result_path)])
+        self.assertEqual(code, 1)
+        result = json.loads(result_path.read_text())
+        self.assertEqual((result['status'], result['outcome'], result['placements']),
+                         ('packing_budget_exhausted', 'unknown', []))
+        self.assertTrue(result['search']['partial']['placements'])
+        self.assertFalse(destination.exists())
+        events = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertTrue(events)
+        self.assertTrue(all(e['event'] == 'placement_heartbeat' for e in events))
+        self.assertEqual(helper.source.read_bytes(), helper.saved)
+
+
+class LocalityIndexTests(unittest.TestCase):
+    def test_index_matches_original_cost_targets_and_backtracking(self):
+        b, doc = board(), declaration()
+        # Fractional, rotated copper centroids must keep exact candidate ranks.
+        b['footprints'][1]['pads'][0]['copper_centroid_offset_nm'] = [[1, 3], [-2, 7]]
+        state = locality.PlacementIndex(doc)
+        fixed, movable = b['footprints']
+        state.push(fixed)
+        for rotation in (0, 90, 180, 270):
+            candidate = state.prepare(transform(movable, [0, 0], rotation))
+            self.assertEqual(candidate.targets(), sorted(set(map(tuple, locality.targets(
+                [fixed], transform(movable, [0, 0], rotation), doc)))))
+            for position in ([0, 0], [7*MM, 6*MM], [19*MM, MM]):
+                self.assertEqual(candidate.constraint(position), locality.constraint(
+                    [fixed], transform(movable, position, rotation), doc))
+        state.pop('U1')
+        self.assertEqual(state.prepare(transform(movable, [0, 0], 0)).pairs, [])
+        moved = transform(fixed, [12*MM, 8*MM], 90)
+        state.push(moved)
+        candidate = state.prepare(transform(movable, [0, 0], 0))
+        self.assertEqual(candidate.constraint([MM, 2*MM]), locality.constraint(
+            [moved], transform(movable, [MM, 2*MM], 0), doc))
+
+    def test_uuid_selected_repeated_number_is_indexed_without_aliasing(self):
+        b, doc = board(), declaration()
+        cap = b['footprints'][1]
+        extra = copy.deepcopy(cap['pads'][0])
+        extra.update(uuid='other-pad', position_nm=[999*MM, 0])
+        cap['pads'].append(extra)
+        doc['obligations'][0]['supply']['to']['uuid'] = cap['pads'][0]['uuid']
+        state = locality.PlacementIndex(doc)
+        state.push(cap)
+        candidate = state.prepare(transform(b['footprints'][0], [0,0], 0))
+        self.assertEqual(candidate.constraint([MM,MM]), locality.constraint(
+            [cap], transform(b['footprints'][0], [MM,MM], 0), doc))
+
+    def test_target_budget_refuses_instead_of_truncating_constraints(self):
+        pairs = [([0,0], [i*1000, i*1000], 1, {'U1','C1'}) for i in range(100)]
+        candidate = locality.CandidateLocality(pairs)
+        with self.assertRaises(locality.TargetBudgetExhausted):
+            candidate.targets()
+        # Every role is still included in cost/constraint evaluation.
+        self.assertEqual(candidate.constraint([0,0])[0], {'U1','C1'})
+        doc = declaration()
+        doc['obligations'] = [{**copy.deepcopy(doc['obligations'][0]), 'id': str(i)} for i in range(100)]
+        for i, obligation in enumerate(doc['obligations']):
+            for role in ('supply', 'return'):
+                obligation[role]['max_distance_nm'] = (i+1)*MM
+        result = pack(board(), request(electrical_locality=doc))
+        self.assertEqual((result['status'], result['outcome'], result['placements']),
+                         ('packing_budget_exhausted', 'unknown', []))
+        self.assertEqual(result['reason'], 'locality target budget exhausted')
+
+    def test_timeout_and_step_budget_keep_diagnostic_partial_separate(self):
+        events = []
+        for changes in ({'search_timeout_s': 1e-12}, {'step_budget': 1}):
+            result = pack(board(), request(electrical_locality=declaration(), **changes),
+                          heartbeat=events.append)
+            self.assertEqual((result['status'], result['outcome'], result['placements']),
+                             ('packing_budget_exhausted', 'unknown', []))
+            self.assertEqual(result['search']['termination'], 'budget_exhausted')
+            self.assertEqual(result['search']['partial']['placements'][0]['ref'], 'U1')
+            self.assertEqual(result['search']['partial']['authority'],
+                             'diagnostic-only-unvalidated-partial-placement')
+        exhausted = pack(board(), request(electrical_locality=declaration(limit=0)))
+        self.assertEqual(exhausted['status'], 'packing_search_exhausted')
+        self.assertEqual(exhausted['search']['termination'], 'search_exhausted')
+        self.assertEqual(exhausted['placements'], [])
+        self.assertTrue(events)
+        self.assertTrue(all(e['steps_used'] >= 0 for e in events))
+        for invalid in (None, 0, -1, True, float('inf'), float('nan'), '1', 86401, 10**1000):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                pack(board(), request(search_timeout_s=invalid))
+
+    def test_pod_scale_index_benchmark_331_footprints_15_obligations(self):
+        import time
+        from unittest.mock import patch
+        b = board()
+        for i in range(329):
+            fp = copy.deepcopy(b['footprints'][1])
+            fp['ref'] = 'R'+str(i)
+            for pad in fp['pads']:
+                pad['uuid'] = fp['ref'] + pad['number']
+            b['footprints'].append(fp)
+        doc = declaration()
+        doc['obligations'] += [declaration(cap='R'+str(i))['obligations'][0] for i in range(14)]
+        self.assertEqual(len(b['footprints']), 331)
+        self.assertEqual(len(doc['obligations']), 15)
+        started = time.monotonic()
+        state = locality.PlacementIndex(doc)
+        for fp in b['footprints']:
+            state.push(fp)
+        candidate = state.prepare(transform(b['footprints'][1], [0,0], 0))
+        expected = locality.constraint(b['footprints'], b['footprints'][1], doc)
+        with patch.object(locality, 'resolve', side_effect=AssertionError('per-candidate pad scan')):
+            for _ in range(5000):
+                self.assertEqual(candidate.constraint(b['footprints'][1]['position_nm']), expected)
+            for fp in b['footprints'][16:]:
+                self.assertEqual(state.prepare(fp).pairs, [])
+        self.assertLess(time.monotonic()-started, 5.0, '331-footprint incremental locality benchmark')
+
+    def test_pod_scale_guided_pack_331_footprints_with_wall_time_bound(self):
+        import time
+        from unittest.mock import patch
+        from test_placement import rectangle
+        templates = board()['footprints']
+        footprints = []
+        for i in range(331):
+            fp = copy.deepcopy(templates[i % 2])
+            fp.update(ref='P'+str(i), uuid='P'+str(i))
+            for pad in fp['pads']:
+                pad['uuid'] = fp['ref'] + pad['number']
+            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
+        b = capture(footprints, rectangle(0, 0, 84, 72))
+        b['pcbnew_version'] = '10.0.7'
+        doc = {'schema': locality.SCHEMA, 'obligations': []}
+        for i in range(15):
+            doc['obligations'] += declaration(ic='P'+str(2*i), cap='P'+str(2*i+1),
+                                              limit=8*MM)['obligations']
+        # One constrained movable peer among 330 placed footprints isolates the
+        # reported per-state/per-candidate growth without benchmarking backjumps.
+        policy = request(fixed_refs=[f['ref'] for f in footprints if f['ref'] != 'P29'],
+                         electrical_locality=doc)
+        started = time.monotonic()
+        with patch.object(locality, 'resolve', wraps=locality.resolve) as resolver:
+            result = pack(b, policy)
+        elapsed = time.monotonic()-started
+        self.assertEqual(result['status'], 'planned', result)
+        self.assertEqual(len(result['placements']), 331)
+        self.assertEqual(result['locality_grading']['status'], 'pass')
+        self.assertLess(resolver.call_count, 400, 'resolution must scale with state updates, not candidates')
+        self.assertLess(elapsed, 20.0, '331-footprint guided packing benchmark')

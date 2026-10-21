@@ -1792,3 +1792,7 @@ UUID validation. Optional `switch.from` names the return-source IC. Both roles
 remain jointly graded and constrained; missing loop bounds stay unknown. See
 [buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
 for declaration semantics, owned regressions and read-only pod measurements.
+
+Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
+Heartbeat and partial search results are diagnostics with no acceptance authority;
+the full independent locality check still grades every declared role.

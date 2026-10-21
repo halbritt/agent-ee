@@ -22,6 +22,7 @@ import copy
 from decimal import Decimal
 from fractions import Fraction
 import math
+import time
 
 from . import electrical_locality, placement_groups
 from .placement import (area2, convex, courtyard_bounds, cross, edges, intersection_area, judge, overhang_bands,
@@ -109,6 +110,10 @@ def _validate_policy(policy, refs):
     if type(policy.get('gap_nm')) is not int or policy['gap_nm'] < 0:
         raise ValueError('gap must be nonnegative integer nanometres')
     _edge_margin_nm(policy)
+    timeout = policy.get('search_timeout_s')
+    if 'search_timeout_s' in policy and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                                       or not 0 < timeout <= 86400):
+        raise ValueError('search_timeout_s must be positive and at most 86400 seconds')
     if type(policy.get('capacity_proof', False)) is not bool:
         raise ValueError('capacity_proof must be a boolean')
     for name in ('fixed_refs', 'priority_refs', 'ground_nets'):
@@ -446,7 +451,7 @@ def _slabs(polygon):
     return out
 
 
-def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed=None):
+def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed=None, checkpoint=None):
     """Positions whose courtyard boxes clear every same-side reserved box by the gap.
 
     The reservation test applied as a sweep: for each x, a reserved box that the
@@ -465,6 +470,8 @@ def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts,
     caller still counts it as a step and rejects it without the polygon test.
     """
     for x in xs:
+        if checkpoint is not None:
+            checkpoint()
         blocked, near = [], []
         for side, (x0, y0, x1, y1) in side_boxes.items():
             for other, (a0, b0, a1, b1), ref in reserved:
@@ -987,6 +994,10 @@ class _BudgetExhausted(Exception):
     pass
 
 
+class _SearchTimedOut(Exception):
+    pass
+
+
 class _Search:
     """Candidate scans over the current partial placement (AGENTEE-212).
 
@@ -996,7 +1007,14 @@ class _Search:
     predicates. A rejection records which placed movable parts blocked it, so a
     failed part names the parts a backjump may move.
     """
-    def __init__(self, capture, placed, exact, obstacles, outline, margin_nm, policy, members):
+    def __init__(self, capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat=None):
+        self.started = time.monotonic()
+        self.deadline = (self.started + policy['search_timeout_s']
+                         if 'search_timeout_s' in policy else None)
+        self.heartbeat, self.last_heartbeat = heartbeat, self.started
+        self.locality = (electrical_locality.PlacementIndex(policy['electrical_locality'])
+                         if 'electrical_locality' in policy else None)
+        self.best = []
         self.policy = policy
         self.fps = {fp['ref']: fp for fp in capture['footprints']}
         self.fixed = {fp['ref'] for fp in placed}
@@ -1012,6 +1030,16 @@ class _Search:
                 self.anchored.setdefault(group['anchor']['reference'], []).append((ref, group['max_distance_nm']))
         for fp in placed:
             self.push(fp)
+
+    def checkpoint(self):
+        now = time.monotonic()
+        if self.heartbeat is not None and now - self.last_heartbeat >= 5:
+            self.heartbeat({'status': 'packing', 'steps_used': self.steps,
+                            'placed_count': len(self.placed), 'placed_peak': len(self.best),
+                            'elapsed_s': now - self.started})
+            self.last_heartbeat = now
+        if self.deadline is not None and now >= self.deadline:
+            raise _SearchTimedOut
 
     def ties(self, ref):
         """(partner, point, max distance) for every anchor relation whose other end is placed.
@@ -1038,6 +1066,10 @@ class _Search:
 
     def push(self, fp):
         self.placed.append(fp)
+        if self.locality is not None:
+            self.locality.push(fp)
+        if len(self.placed) > len(self.best):
+            self.best = list(self.placed)
         self.positions[fp['ref']] = fp['position_nm']
         if fp['ref'] not in self.fixed:
             self.reserved.extend((side, box, fp['ref']) for side, box in boxes(fp).items())
@@ -1047,6 +1079,8 @@ class _Search:
 
     def pop(self):
         fp = self.placed.pop()
+        if self.locality is not None:
+            self.locality.pop(fp['ref'])
         del self.positions[fp['ref']]
         while self.reserved and self.reserved[-1][2] == fp['ref']:
             self.reserved.pop()
@@ -1056,7 +1090,7 @@ class _Search:
                 if not self.peers[pad['net']]:
                     del self.peers[pad['net']]
 
-    def blockers(self, proposed, group, ties):
+    def blockers(self, proposed, group, ties, candidate_locality=None):
         """None when every predicate admits the candidate, else the movable parts that blocked it."""
         hit = {ref for side, (x0, y0, x1, y1) in boxes(proposed).items()
                for other, (a0, b0, a1, b1), ref in self.reserved
@@ -1079,8 +1113,11 @@ class _Search:
             return set()
         if any(placement_groups.distance2(proposed['position_nm'], point) > d*d for _, point, d in ties):
             return set()
-        if 'electrical_locality' in self.policy:
-            hit, _ = electrical_locality.constraint(self.placed, proposed, self.policy['electrical_locality'])
+        if (candidate_locality is None and self.locality is not None
+                and proposed['ref'] in self.locality.pairs):
+            candidate_locality = self.locality.prepare(transform(proposed, [0, 0], proposed['rotation_deg']))
+        if candidate_locality is not None:
+            hit, _ = candidate_locality.constraint(proposed['position_nm'])
             if hit:
                 return hit - self.fixed - {proposed['ref']}
         return None
@@ -1088,7 +1125,8 @@ class _Search:
     def scan(self, fp, conflicts):
         """Admissible candidates in rank order; rejections add their blockers to ``conflicts``."""
         group = self.members.get(fp['ref'])
-        locality = self.policy.get('electrical_locality')
+        participating = self.locality is not None and fp['ref'] in self.locality.pairs
+        self.checkpoint()
         anchors = [(side, box) for side, box, _ in self.reserved] + [(o['side'], o['box']) for o in self.exact]
         # A concave fixed courtyard's box can lie far from its edges; its slabs carry them.
         anchors += self.solid
@@ -1097,10 +1135,12 @@ class _Search:
         targets = [] if group is None else [p for poly in group.get('region', {}).get('polygons', []) for p in poly]
         targets += [point for _, point, _ in ties]
         window = _window(self.outline, self.margin_nm, group, ties)
-        ranked = []
+        ranked, evaluators = [], {}
         for rotation in (0, 90, 180, 270):
             at_origin = transform(fp, [0, 0], rotation)
-            local_targets = electrical_locality.targets(self.placed, at_origin, locality) if locality else []
+            evaluator = self.locality.prepare(at_origin) if participating else None
+            evaluators[rotation] = evaluator
+            local_targets = evaluator.targets() if evaluator is not None else []
             xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm,
                                      targets + local_targets, window)
             rectangles = {side: [r for poly in c['polygons'] for r in _slabs(poly)]
@@ -1108,20 +1148,21 @@ class _Search:
                           if all(_slabs(poly) is not None for poly in c['polygons'])}
             doomed = set()
             for x, y in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid,
-                                    self.gap, conflicts, doomed):
-                local_cost = electrical_locality.constraint(
-                    self.placed, transform(fp, [x, y], rotation), locality)[1] if locality else 0
+                                    self.gap, conflicts, doomed, self.checkpoint):
+                self.checkpoint()
+                local_cost = evaluator.constraint((x, y))[1] if evaluator is not None else 0
                 ranked.append((local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
                                x, y, rotation, (x, y) in doomed))
         ranked.sort()
         for _, _, x, y, rotation, doomed in ranked:
+            self.checkpoint()
             if self.steps == self.budget:
                 raise _BudgetExhausted
             self.steps += 1
             if doomed:
                 continue  # Nearer than the gap to a fixed courtyard or obstacle: the exact test rejects it.
             proposed = transform(fp, [x, y], rotation)
-            hit = self.blockers(proposed, group, ties)
+            hit = self.blockers(proposed, group, ties, evaluators[rotation])
             if hit is None:
                 yield proposed
             else:
@@ -1147,8 +1188,10 @@ class _Search:
         return None, conflicts - set(unit)
 
 
-def pack(capture, policy):
+def pack(capture, policy, *, heartbeat=None):
     """Return a complete deterministic plan or typed failure; never mutate inputs."""
+    if heartbeat is not None:
+        heartbeat({'status': 'qualifying', 'steps_used': 0, 'placed_count': 0})
     capture = copy.deepcopy(capture)
     validate_capture(capture)
     _validate_policy(policy, {f['ref'] for f in capture['footprints']})
@@ -1225,7 +1268,7 @@ def pack(capture, policy):
                            + (f" usable by {proof['square_nm']} nm squares" if proof['square_nm'] else ''), margin_nm)
         return _soft_proof({**failure, 'proof': proof, 'capacity': capacity},
                            _binding_constraints(policy, margin_nm, proof['blocked_by']))
-    search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members)
+    search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
     units = [(fp['ref'],) for fp in queue]
     stack, seen, backjumps, failures, peak = [], {tuple(units)}, 0, {}, 0
     def stopped(status, reason, unplaced=None):
@@ -1233,11 +1276,23 @@ def pack(capture, policy):
         record = search.record(backjumps, unplaced)
         if unplaced is not None:
             record['placed_peak'] = peak  # Diagnostic only: a plan is complete or empty.
+        if status in ('packing_search_exhausted', 'packing_budget_exhausted'):
+            record['termination'] = status.removeprefix('packing_')
+            record['partial'] = {'authority': 'diagnostic-only-unvalidated-partial-placement',
+                                 'placements': [{'ref': f['ref'], 'uuid': f['uuid'],
+                                     'position_nm': f['position_nm'], 'rotation_deg': f['rotation_deg']}
+                                    for f in sorted(search.best, key=lambda f: f['ref'])]}
         return {**failure, 'search': record, 'capacity': capacity}
+    if heartbeat is not None:
+        heartbeat({'status': 'packing', 'steps_used': 0, 'placed_count': len(placed)})
     while len(stack) < len(units):
         unit = units[len(stack)]
         try:
             fps, conflicts = search.place_unit(unit)
+        except electrical_locality.TargetBudgetExhausted:
+            return stopped('packing_budget_exhausted', 'locality target budget exhausted', unit[0])
+        except _SearchTimedOut:
+            return stopped('packing_budget_exhausted', 'wall-time search budget exhausted', unit[0])
         except _BudgetExhausted:
             return stopped('packing_budget_exhausted', 'deterministic candidate budget exhausted', unit[0])
         if fps is not None:

@@ -433,7 +433,8 @@ def _plan(facts, request, policy=None):
     if 'targeted_plans' in request:
         from .placement_plans import select
         return select(facts, policy, request['targeted_plans'])
-    return pack(facts, policy)
+    return pack(facts, policy, heartbeat=lambda record: print(
+        json.dumps({'event': 'placement_heartbeat', **record}, sort_keys=True), flush=True))
 
 
 def place_candidate(source, netlist, destination, request):
