@@ -64,8 +64,11 @@ def marking(item, owner_ref=None):
             'font': item.GetFontName() or None}
 
 
-def prove_contours(primitives, missing, unproven, curves_allowed=False):
+def prove_contours(primitives, missing, unproven, curves_allowed=False, *, separate_contours=False):
     """Every primitive must belong to an exact-endpoint degree-two closed ring.
+
+    ``separate_contours`` validates each ring independently; callers must then
+    qualify their mutual topology before using them as an outline with holes.
 
     With ``curves_allowed`` (courtyards only), circles are whole contours and arcs
     are ring edges; the record then carries outer ``polygons`` (a superset of the
@@ -144,7 +147,11 @@ def prove_contours(primitives, missing, unproven, curves_allowed=False):
         outer.append(ring_out)
         inner.append(ring_in)
     try:
-        qualified_polygons({'status': 'proven', 'polygons': outer})
+        if separate_contours and len(outer) > 64:
+            raise ValueError('excessive polygons')
+        groups = [[p] for p in outer] if separate_contours else [outer]
+        for group in groups:
+            qualified_polygons({'status': 'proven', 'polygons': group})
         if inner != outer:
             within = qualified_polygons({'status': 'proven', 'polygons': inner})
             bounds = qualified_polygons({'status': 'proven', 'polygons': outer})

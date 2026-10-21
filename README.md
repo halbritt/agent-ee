@@ -118,8 +118,8 @@ and bytes (AGENTEE-344). Bench-feedback acceptance also refuses open carry.
 The [post-routing artwork producer](docs/silk-artwork.md#post-routing-artwork-producer-agentee-350)
 repairs routed-board silk through a receipted translation-only step, proves that
 all non-silk geometry is unchanged, and enables identity-bound carry closure.
-Closure consumes sealed native containment evidence, including footprint-owned
-board cutouts, without rerunning the tool during campaign replay.
+Closure consumes sealed native containment evidence, including board-owned and footprint-owned
+straight slots and cutouts (AGENTEE-362), without rerunning the tool during campaign replay.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against sourced limits.
