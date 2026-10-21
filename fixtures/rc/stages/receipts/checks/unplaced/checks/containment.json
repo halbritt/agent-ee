@@ -28,11 +28,11 @@
     "drc": {
       "check_id": "drc-placement",
       "drc_json": "work/drc-placement/drc.json",
-      "drc_sha256": "2fe408a18d2236f569809baea18bbbe2fe90aaa8f33a94249f60211e2d610fd1",
+      "drc_sha256": "475f9337bc22c8b1ec67ba74f34a5ba7df79fbc84de07f5648da29929106dbcc",
       "kicad_version": "10.0.7",
       "outcome": "defect",
       "projection": "placement-stage/1",
-      "result_sha256": "91f26d1eb2e28496ce1c6b06eef60eef26253324c248c5470e23e3a219b8c821"
+      "result_sha256": "09c14a474ad58dfe8ac015ca91b8c0533da0aacd4787e6db885a707949b3db93"
     },
     "gate_findings": [
       {
@@ -65,7 +65,7 @@
         "/work/placement-probe.json"
       ],
       "console_sha256": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
-      "duration_s": 0.42,
+      "duration_s": 1.018,
       "exit_code": 0
     },
     "unknown": []

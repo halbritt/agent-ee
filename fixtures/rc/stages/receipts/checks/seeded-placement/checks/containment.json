@@ -1,9 +1,9 @@
 {
-  "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+  "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
   "details": {
     "advisory": null,
     "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
-    "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+    "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
     "criterion": "outline-containment/1",
     "defects": [
       {
@@ -16,12 +16,19 @@
     "drc": {
       "check_id": "drc-placement",
       "drc_json": "work/drc-placement/drc.json",
-      "drc_sha256": "f4464b3a5143fb6c83fc3b6574d5529eeb114e732f9900e17a000ac1d29b7cd9",
+      "drc_sha256": "3d075c8ed79f56340ee1915cd8473d587dac153ddef2b4ed13310680162aa6fd",
       "kicad_version": "10.0.7",
       "outcome": "defect",
       "projection": "placement-stage/1",
-      "result_sha256": "afb6923d914079902bfe42d905cb5cd87a64286ca65cc4dba70c0d5b19e9d810"
+      "result_sha256": "e00a9c48c6d3987147806281a302f69a6218b74d269dc2bdbf7cc9410aa0853c"
     },
+    "gate_findings": [
+      {
+        "check_id": "containment",
+        "entity": "J1",
+        "kind": "outside_outline"
+      }
+    ],
     "pcbnew_version": "10.0.7",
     "routing_feedback": null,
     "status": "defect",
@@ -36,7 +43,7 @@
         "/work/placement-probe.json"
       ],
       "console_sha256": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
-      "duration_s": 0.697,
+      "duration_s": 0.487,
       "exit_code": 0
     },
     "unknown": []

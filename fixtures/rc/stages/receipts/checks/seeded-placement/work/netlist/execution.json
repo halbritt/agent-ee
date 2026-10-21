@@ -12,7 +12,7 @@
   ],
   "console": "console.log",
   "console_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "duration_s": 5.721,
+  "duration_s": 1.049,
   "execution": "ok",
   "exit_code": 0,
   "sandbox_argv": [
@@ -51,13 +51,13 @@
     "--dir",
     "/run",
     "--ro-bind",
-    "/tmp/agent-ee-burndown-20261017/workers/ee103-rung1-stage-fixtures/scratch/checks-seeded/inputs",
+    "/tmp/agent-ee-burndown-20261017/workers/ee369-stateless-identity/scratch/rc-stage-checks/seeded-placement/inputs",
     "/candidate",
     "--ro-bind",
-    "/home/halbritt/git/agent-ee-worktrees/ee103-rung1-stage-fixtures/src",
+    "/home/halbritt/.cache/agent-worktrees/agent-ee/ee369-stateless-identity/src",
     "/app",
     "--bind",
-    "/tmp/agent-ee-burndown-20261017/workers/ee103-rung1-stage-fixtures/scratch/checks-seeded/work/netlist",
+    "/tmp/agent-ee-burndown-20261017/workers/ee369-stateless-identity/scratch/rc-stage-checks/seeded-placement/work/netlist",
     "/work",
     "--chdir",
     "/work",
@@ -88,7 +88,7 @@
     "/candidate/stock/template",
     "--unshare-net",
     "--ro-bind",
-    "/tmp/agent-ee-burndown-20261017/workers/ee103-rung1-stage-fixtures/scratch/checks-seeded/baseline.json",
+    "/tmp/agent-ee-burndown-20261017/workers/ee369-stateless-identity/scratch/rc-stage-checks/seeded-placement/baseline.json",
     "/evidence/baseline.json",
     "--",
     "kicad-cli",
@@ -103,5 +103,5 @@
   ],
   "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "timeout_s": 293.34747764095664
+  "timeout_s": 298.5278250640258
 }

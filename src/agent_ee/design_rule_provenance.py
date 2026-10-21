@@ -263,6 +263,23 @@ def finding_sources(board, findings=()):
             'conditional_spoke_rules': conditional_spokes}
 
 
+def measured_actual(finding):
+    """Match KiCad's printed measured value in a native finding, or None.
+
+    Only numeric constraint types carry a measurement, and only in the final
+    '<limit>; actual <value>)' clause KiCad appends; net names, rule names and
+    item text earlier in the description never supply one. Shorts, co-located
+    holes, PTH courtyard intrusion and every other structural type stay unmeasured.
+    """
+    import re
+    kind = finding.get('type')
+    if kind not in NUMERIC_FIELDS:
+        return None
+    pattern = (r'min spoke count [0-9]+; actual ([0-9]+)\)$' if kind == 'starved_thermal' else
+               r' [0-9]+(?:\.[0-9]+)? mm; actual (-?[0-9]+(?:\.[0-9]+)?) mm\)$')
+    return re.search(pattern, finding.get('description', ''))
+
+
 def classify_finding(finding, sources=None):
     """Resolve one native finding; unknown numeric authority remains visible advisory."""
     import re
@@ -271,11 +288,9 @@ def classify_finding(finding, sources=None):
     kind = finding.get('type', 'unknown')
     source = {'class': 'default', 'citation': None}
     reason = 'No unambiguous captured source for the native limit'
-    actual_pattern = (r'actual ([0-9]+)(?=[); ]|$)' if kind == 'starved_thermal' else
-                      r'actual (-?[0-9]+(?:\.[0-9]+)?) mm')
     limit_pattern = (r'min spoke count ([0-9]+); actual' if kind == 'starved_thermal' else
                      r' ([0-9]+(?:\.[0-9]+)?) mm; actual')
-    actual = re.search(actual_pattern, finding.get('description', ''))
+    actual = measured_actual(finding)
     if kind == 'starved_thermal' and (not actual or not re.search(limit_pattern, finding.get('description', ''))):
         raise ValueError('native thermal-spoke finding lacks a qualified count measurement')
     # Four-decimal reports cannot distinguish touching/crossing from a gap below 50 nm.

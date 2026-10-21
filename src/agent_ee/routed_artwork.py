@@ -219,7 +219,11 @@ def produce(source, root):
             output.with_suffix(suffix).write_bytes(payload)
     proof = write_scope(source.read_bytes(), output.read_bytes())
     after = _native_drc(output, output.parent)
-    comparison = _drc_comparison(before, after)
+    # The silk-only write scope is the copper-unchanged witness that lets unmeasured
+    # collisions keep baseline treatment; it must cover exactly the DRC'd bytes.
+    if (digest(original), digest(output)) != (proof['before_sha256'], proof['after_sha256']):
+        raise ValueError('artwork DRC boards differ from the write-scope proof')
+    comparison = _drc_comparison(before, after, unchanged_copper=proof)
     if any(v['type'] not in SILK_CONFLICTS for v in comparison['added_findings']):
         raise ValueError('artwork introduced a non-silk native DRC finding')
     defects = [dict(type='placement_silkscreen_conflict', status='open', verdict='defect', native=v)
