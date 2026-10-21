@@ -840,11 +840,12 @@ class FailureCampaignTest(PlacementCampaignFixture):
         from agent_ee import executor, stage_receipts
         real_execute, real_popen = stage_receipts.execute, executor.subprocess.Popen
         started = []
-        # The real sandboxed launcher acknowledges entry, then waits for cancellation.
-        # Its coordinator interrupts only inside communicate(), where executor cleanup owns it.
-        launcher = ("from pathlib import Path\nimport time\n"
+        # AGENTEE-345: readiness must persist even if communicate() misses the marker
+        # under load. Only cancellation (or the executor deadline) ends this helper.
+        # Interrupt inside communicate(), where executor cleanup owns the process.
+        launcher = ("from pathlib import Path\nimport signal\n"
                     "Path('/work/helper-started').write_text('started')\n"
-                    "time.sleep(60)\n" + pa.LAUNCHER)
+                    "while True:\n    signal.pause()\n")
         def interrupted(inputs, work, argv, **kwargs):
             if argv[:4] != ['/usr/bin/python3', '-B', '-I', f'{pa.TOOL_AT}/launch.py']:
                 return real_execute(inputs, work, argv, **kwargs)

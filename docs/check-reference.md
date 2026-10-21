@@ -82,6 +82,11 @@ revalidates them as one ordered custody chain; `verify-campaign` refuses changed
 reordered or unbound imports.
 They do not replace fresh checks or the declared-stage done binding.
 
+The [placement campaign cancellation regression](placement-adapter.md) holds a
+real sandboxed helper at its readiness marker until interruption (AGENTEE-345).
+It requires cancelled receipts, process cleanup and no next candidate. This test
+synchronization change adds no check kind and changes no candidate verdict.
+
 Test refusal diagnostics (AGENTEE-326) use an absolute
 `AGENT_EE_REFUSED_RECEIPTS` override, the writable repository build directory,
 or private per-user temporary storage. Retention errors preserve the original
