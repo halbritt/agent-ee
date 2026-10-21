@@ -1124,7 +1124,13 @@ is another writer request mode (`blocks`). It adds no check kind. The saved
 board is judged, graded for groups and pad locality, and DRC-gated as every
 placer plan is. In addition, the hard block rules are re-graded from the saved
 bytes (`judgment.block_rules`). A failed hard rule refuses publication;
-advisory rows are reported only.
+advisory rows are reported only. AGENTEE-355 changes only the search
+([compaction](blocks.md#compaction-agentee-355), member-aligned origins and the
+ranking cache); it adds no check kind and changes no gate. The writer also
+publishes `block-provenance.json`; a scope's `block_provenance` binds it to the
+captured board and carries it to every initial reviewer
+([review input](blocks.md#review-input-block-provenance-agentee-355)). It is
+review input, not a check result, and an advisory block confers no acceptance.
 
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
@@ -1911,6 +1917,14 @@ Side-flipped footprints' fields remain unchanged with typed conflicts. Source
 project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
+
+Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
+or `A;B`) never receive the exemption, even when KiCad writes the net name as a
+quoted string. Such edits reopen closure and require a fresh receipt. This is a
+conservative liveness bound of the writer grammar (AGENTEE-360).
+Nested-list children of a segment or arc refuse comparison with `ValueError`;
+the coordinator retains the carried defect instead of letting an untyped error
+escape.
 
 ## Post-routing silk repair (AGENTEE-350)
 
