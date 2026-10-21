@@ -11,8 +11,11 @@ entry poses and re-grades it with the same graders, so every use is re-proven.
 Three import paths: a KiCad board region, a datasheet reference-layout figure whose
 scale is verified against independent dimensions, and a project's hand-placed
 cluster. A project cluster is always ``search-derived`` and advisory (owner ruling
-2026-10-21); only a scale-verified manufacturer figure or a cited owner board record
-can carry a hard class. See docs/block-library.md.
+2026-10-21). A hard class (manufacturer reference layout, manufacturer EVM, qualified
+owner board) needs an ``agent-ee.block-authority/1`` record: an owner-recorded
+qualification or an independently captured source identity, kept under
+``owner/block-authority/`` and never written by this module. Agent-authored bytes
+alone are always search-derived. See docs/block-library.md.
 """
 import argparse
 import copy
@@ -31,6 +34,8 @@ from .symbol_library import LibraryError, children, nanometres, parse_sexpr
 ENTRY = 'agent-ee.block-library-entry/1'
 CATALOGUE = 'agent-ee.block-catalogue/1'
 FIGURE = 'agent-ee.reference-layout-figure/1'
+AUTHORITY_RECORD = 'agent-ee.block-authority/1'
+AUTHORITY_DIR = 'owner/block-authority'
 IMPORTER = 'agent_ee.block_library/1'
 STRATEGY = 'imported-layout/1'
 CATALOGUE_PATH = 'blocks/catalogue.json'
@@ -41,6 +46,8 @@ IMPORTS = {'board-region/1': frozenset(blocks.PROVENANCE),
            'project-cluster/1': frozenset(('search-derived',))}
 # Lookup order: the strongest authority first.
 AUTHORITY = ('manufacturer-reference-layout', 'manufacturer-evm', 'qualified-owner-board', 'search-derived')
+# Classes that only an owner authority record can confer.
+HARD = frozenset(c for c, enforcement in blocks.PROVENANCE.items() if enforcement == 'hard')
 ENTRY_KEYS = frozenset(('schema', 'id', 'version', 'part', 'provenance', 'layout', 'copper', 'receipt'))
 MEMBER_KEYS = frozenset(('reference', 'fpid', 'side', 'value', 'pose', 'pad_geometry_sha256', 'courtyard_sha256',
                          'pin_functions_sha256', 'pins'))
@@ -112,7 +119,7 @@ def _validate_entry(entry):
     _id(entry['id'])
     _version(entry['version'])
     _text(entry['part'], 'entry part')
-    receipt = _keys(entry['receipt'], RECEIPT_KEYS, {'figure', 'scale'}, label='entry receipt')
+    receipt = _keys(entry['receipt'], RECEIPT_KEYS, {'figure', 'scale', 'authority_sha256'}, label='entry receipt')
     if receipt['importer'] != IMPORTER or receipt['import'] not in IMPORTS:
         raise ValueError(f'receipt must name {IMPORTER} and one of ' + ', '.join(sorted(IMPORTS)))
     kind = receipt['import']
@@ -125,28 +132,27 @@ def _validate_entry(entry):
         raise ValueError(f"import {kind} cannot carry provenance class {provenance['class']}")
     _text(provenance['citation'], 'entry citation')
     _text(provenance['label'], 'entry label')
-    source = _keys(receipt['source'], {'locator', 'sha256'}, {'repository', 'commit', 'path', 'owner_record'},
-                   label='receipt source')
-    _text(source['locator'], 'source locator')
-    blocks._hex(source['sha256'], 'source sha256')
-    for key in ('repository', 'path', 'owner_record'):
-        if key in source:
-            _text(source[key], 'source ' + key)
-    if 'commit' in source and (not isinstance(source['commit'], str) or len(source['commit']) != 40
-                               or any(c not in '0123456789abcdef' for c in source['commit'])):
-        raise ValueError('source commit must be a full lowercase Git object id')
+    source = _source_record(receipt['source'], 'receipt source')
     if provenance['class'] == 'search-derived':
         if 'source' in provenance:
             raise ValueError('a search-derived entry has no reference source')
     elif provenance.get('source') != {'locator': source['locator'], 'sha256': source['sha256']}:
         raise ValueError('a reference entry cites its receipt source locator and sha256')
-    if provenance['class'] == 'qualified-owner-board' and not {'repository', 'commit', 'owner_record'} <= set(source):
-        raise ValueError('a qualified owner board needs its repository, commit and owner record')
+    if provenance['class'] == 'qualified-owner-board' and not {'repository', 'commit', 'path'} <= set(source):
+        raise ValueError('a qualified owner board needs its repository, commit and path')
+    # A hard class is conferred only by an owner authority record, bound by its hash.
+    if (provenance['class'] in HARD) != ('authority_sha256' in receipt):
+        raise ValueError('authority_required: a hard class needs an owner authority record and a search-derived '
+                         'entry has none')
+    if 'authority_sha256' in receipt:
+        blocks._hex(receipt['authority_sha256'], 'authority sha256')
     if kind == 'project-cluster/1' and not {'repository', 'commit', 'path'} <= set(source):
         raise ValueError('a project cluster names its repository, commit and path')
     inputs = _keys(receipt['inputs'], set(INPUT_KEYS), label='receipt inputs')
     for key in INPUT_KEYS:
         blocks._hex(inputs[key], 'input ' + key)
+    if kind == 'board-region/1' and source['sha256'] != inputs['board_sha256']:
+        raise ValueError('a board region source is the probed board: source sha256 must equal its board_sha256')
     blocks._hex(receipt['candidate_sha256'], 'candidate sha256')
     if kind == 'reference-figure/1':
         if 'figure' not in receipt or 'scale' not in receipt:
@@ -188,6 +194,125 @@ def _validate_entry(entry):
             if roles.setdefault(role[0], role[1]) != role[1]:
                 raise ValueError(f'net role {role[0]} must have one boundary flag')
     _copper(entry['copper'], set(roles), kind)
+    return entry
+
+
+def _source_record(value, label):
+    source = _keys(value, {'locator', 'sha256'}, {'repository', 'commit', 'path'}, label=label)
+    _text(source['locator'], 'source locator')
+    blocks._hex(source['sha256'], 'source sha256')
+    for key in ('repository', 'path'):
+        if key in source:
+            _text(source[key], 'source ' + key)
+    if 'commit' in source and (not isinstance(source['commit'], str) or len(source['commit']) != 40
+                               or any(c not in '0123456789abcdef' for c in source['commit'])):
+        raise ValueError('source commit must be a full lowercase Git object id')
+    return source
+
+
+# Owner authority records -----------------------------------------------------------
+
+def authority_path(sha256):
+    """Where a library keeps the authority record with this SHA-256 (content-addressed)."""
+    blocks._hex(sha256, 'authority sha256')
+    return f'{AUTHORITY_DIR}/{sha256}.json'
+
+
+def validate_authority(record):
+    """An ``agent-ee.block-authority/1`` record: who confers which hard class on which source.
+
+    The record is owner input, supplied through the trusted coordinator boundary like a
+    violation-waiver approval; this module validates and binds it and never writes one.
+    A manufacturer class also needs the independent capture of the source (its origin
+    and who captured it); a figure lists the documented dimensions its scale is checked
+    against. Raises ValueError.
+    """
+    _keys(record, {'schema', 'class', 'import', 'source', 'references', 'owner', 'disposition', 'reference'},
+          {'capture', 'dimensions'}, label='authority record')
+    if record['schema'] != AUTHORITY_RECORD:
+        raise ValueError(f'expected {AUTHORITY_RECORD}')
+    if record['class'] not in HARD:
+        raise ValueError('an authority record confers a hard class')
+    if record['import'] not in IMPORTS or record['class'] not in IMPORTS[record['import']]:
+        raise ValueError(f"authority import {record['import']} cannot carry class {record['class']}")
+    source = _source_record(record['source'], 'authority source')
+    if record['class'] == 'qualified-owner-board' and not {'repository', 'commit', 'path'} <= set(source):
+        raise ValueError('a qualified owner board authority names its repository, commit and path')
+    references = _texts(record['references'])
+    if references != sorted(set(references), key=blocks._natural):
+        raise ValueError('authority references must be unique and in natural order')
+    for key in ('owner', 'reference'):
+        _text(record[key], 'authority ' + key)
+    if record['disposition'] != 'approved':
+        raise ValueError('authority disposition must be approved')
+    if record['class'].startswith('manufacturer-'):
+        if 'capture' not in record:
+            raise ValueError('a manufacturer class needs the independent capture of its source')
+        capture = _keys(record['capture'], {'origin', 'captured_by'}, label='authority capture')
+        _text(capture['origin'], 'capture origin')
+        _text(capture['captured_by'], 'capture captured_by')
+        if capture['captured_by'] == IMPORTER:
+            raise ValueError('the importer cannot be the capturer of its own source')
+    elif 'capture' in record:
+        raise ValueError('only a manufacturer class records a source capture')
+    if record['import'] == 'reference-figure/1':
+        dimensions = record.get('dimensions')
+        if not isinstance(dimensions, list) or len(dimensions) < 2:
+            raise ValueError('a figure authority lists the documented scale and check dimensions')
+        for dimension in dimensions:
+            _keys(dimension, {'basis', 'length_nm'}, label='authority dimension')
+            _text(dimension['basis'], 'dimension basis')
+            if type(dimension['length_nm']) is not int or dimension['length_nm'] <= 0:
+                raise ValueError('authority dimension length_nm must be a positive integer')
+    elif 'dimensions' in record:
+        raise ValueError('only a figure authority lists dimensions')
+    return record
+
+
+def verify_authority(raw, entry):
+    """The authority record bytes bound to an entry: hash, class, import, source and members."""
+    receipt = entry['receipt']
+    if 'authority_sha256' not in receipt:
+        raise ValueError('authority_required: the entry names no authority record')
+    if raw is None:
+        raise ValueError('authority_unverified: the hard-class entry needs its authority record bytes')
+    if hashlib.sha256(raw).hexdigest() != receipt['authority_sha256']:
+        raise ValueError('authority_mismatch: record bytes differ from the receipt authority_sha256')
+    record = validate_authority(strict_json(raw))
+    members = sorted((r['reference'] for r in entry['layout']['members']), key=blocks._natural)
+    for key, expected in (('class', entry['provenance']['class']), ('import', receipt['import']),
+                          ('source', receipt['source']), ('references', members)):
+        if record[key] != expected:
+            raise ValueError(f'authority_mismatch: record {key} differs from the entry')
+    if receipt['import'] == 'reference-figure/1':
+        documented = {(d['basis'], d['length_nm']) for d in record['dimensions']}
+        scale = receipt['figure']['scale']
+        cited = [(d['basis'], d['length_nm']) for d in [scale['reference']] + scale['checks']]
+        missing = [basis for basis, length in cited if (basis, length) not in documented]
+        if missing:
+            raise ValueError('authority_mismatch: figure dimensions not documented by the authority: '
+                             + '; '.join(missing))
+    return record
+
+
+def _authority_receipt(provenance_class, authority_raw):
+    """The receipt's authority binding; a hard class without its owner record refuses before any build."""
+    if provenance_class not in HARD:
+        if authority_raw is not None:
+            raise ValueError('a search-derived import takes no authority record')
+        return {}
+    if authority_raw is None:
+        raise ValueError(f'authority_required: {provenance_class} needs an owner authority record '
+                         f'({AUTHORITY_RECORD}); agent-authored bytes are search-derived only')
+    return {'authority_sha256': hashlib.sha256(authority_raw).hexdigest()}
+
+
+def _authorize(entry, authority_raw):
+    """An imported entry with its class conferred, or refused when a class lacks its authority."""
+    if entry['provenance']['class'] in HARD:
+        verify_authority(authority_raw, entry)
+    elif authority_raw is not None:
+        raise ValueError('a search-derived import takes no authority record')
     return entry
 
 
@@ -282,6 +407,7 @@ def verify_scale(figure):
     """
     scale = figure['scale']
     reference = scale['reference']
+    _independent(scale)
     scale2 = Fraction(reference['length_nm'] ** 2) / _distance2(_point(reference['from']), _point(reference['to']))
     tolerance = Fraction(*scale['tolerance'])
     checks = []
@@ -297,6 +423,33 @@ def verify_scale(figure):
         raise ValueError('scale_unverified: check dimension outside tolerance: ' + '; '.join(failed))
     return {'method': 'reference-dimension-with-checks/1', 'nm_per_unit_squared': _encode(scale2),
             'tolerance': list(scale['tolerance']), 'checks': checks, 'status': 'scale-verified'}
+
+
+def _independent(scale):
+    """Refuse a check that is the reference dimension again: no repeated segment or basis,
+    no check on the reference dimension's own line, and at least one check at 45 degrees
+    or more to it, so the other figure axis is verified too (``scale_self_check``)."""
+    reference = scale['reference']
+    start, end = _point(reference['from']), _point(reference['to'])
+    axis = [end[0] - start[0], end[1] - start[1]]
+    segments = {frozenset((tuple(start), tuple(end)))}
+    bases = {reference['basis']}
+    crossing = False
+    for record in scale['checks']:
+        a, b = _point(record['from']), _point(record['to'])
+        segment = frozenset((tuple(a), tuple(b)))
+        if segment in segments or record['basis'] in bases:
+            raise ValueError(f"scale_self_check: {record['basis']} repeats the reference or another check")
+        segments.add(segment)
+        bases.add(record['basis'])
+        if all(axis[0] * (p[1] - start[1]) - axis[1] * (p[0] - start[0]) == 0 for p in (a, b)):
+            raise ValueError(f"scale_self_check: {record['basis']} lies on the reference dimension's line")
+        vector = [b[0] - a[0], b[1] - a[1]]
+        dot = axis[0] * vector[0] + axis[1] * vector[1]
+        crossing |= 2 * dot ** 2 <= (axis[0] ** 2 + axis[1] ** 2) * (vector[0] ** 2 + vector[1] ** 2)
+    if not crossing:
+        raise ValueError('scale_self_check: no check dimension lies at 45 degrees or more to the reference, '
+                         'so the other figure axis is unverified')
 
 
 def figure_poses(figure, capture):
@@ -409,10 +562,15 @@ def _judgment(capture, framed, gap_nm):
             'hard_failures': result['hard_failures'], 'unknown': result['unknown']}
 
 
-def _build(capture, inventory, sheet_names, inventory_sha256, block_id, poses, anchor, policy, provenance):
-    """A block candidate of the board's own footprints at the given anchor-relative poses."""
+def _build(capture, inventory, sheet_names, inventory_sha256, block_id, poses, anchor, policy, provenance, *,
+           unlock=False):
+    """A block candidate of the board's own footprints at the given anchor-relative poses.
+
+    Only a read-only source import unlocks the members (``unlock``); a target board is
+    used with its own lock state, so a locked target member refuses in ``blocks.derive``.
+    """
     refs = set(poses)
-    unlocked = _unlocked(capture, refs)
+    unlocked = _unlocked(capture, refs) if unlock else capture
     derivation = _derivation(unlocked, inventory, sheet_names, inventory_sha256, block_id, refs, anchor)
     block = next(b for b in derivation['blocks'] if b['id'] == block_id)
     board = {fp['ref']: fp for fp in unlocked['footprints']}
@@ -437,7 +595,7 @@ def _build(capture, inventory, sheet_names, inventory_sha256, block_id, poses, a
                              'unknown': grade.get('unknown')})
     if not problems:
         blocks.validate_candidate(candidate)
-    return candidate, problems
+    return candidate, problems, derivation
 
 
 def _candidate_provenance(entry):
@@ -446,14 +604,18 @@ def _candidate_provenance(entry):
             'method': entry['receipt']['import'], **({'source': record['source']} if 'source' in record else {})}
 
 
-def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy, mapping=None):
+def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy, mapping=None, authority_raw=None):
     """Rebuild and re-grade an entry on a board's own footprints, mapped by reference.
 
     Identity follows ``blocks.match``: footprint, side, land pattern, courtyard, pin
     functions, value rule and the one-to-one net-role partition; net names are not
     identities. A figure entry's poses are re-derived from the figure and the target
-    lands. Returns ``{'status': 'materialized' | 'refused', 'provenance', 'label',
-    'problems', 'candidate'}``; the candidate is present only when materialized.
+    lands. A hard-class entry needs its authority record bytes. The candidate is
+    built on the target's own lock state and must be admitted by ``blocks.admit``
+    (binding sources, isolated policy, identity and a native re-grade); anything other
+    than ``admitted`` refuses with the admission evidence. Returns ``{'status':
+    'materialized' | 'refused', 'provenance', 'label', 'problems', 'candidate'}``;
+    the candidate is present only when materialized.
     """
     validate_entry(entry)
     rows = {r['reference']: r for r in entry['layout']['members']}
@@ -465,6 +627,12 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
               'provenance': entry['provenance']['class'], 'enforcement': entry['provenance']['enforcement'],
               'label': entry['provenance']['label'], 'problems': []}
     problems = result['problems']
+    if entry['provenance']['class'] in HARD:
+        try:
+            verify_authority(authority_raw, entry)
+        except ValueError as exc:
+            problems.append({'kind': 'authority', 'reason': str(exc)})
+            return result
     for ref, target in sorted(mapping.items()):
         if target not in board or target not in inventory['components']:
             problems.append({'reference': ref, 'target': target, 'kind': 'target_missing'})
@@ -503,9 +671,21 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
         if derived != poses:
             problems.append({'kind': 'figure_pose_mismatch', 'expected': poses, 'actual': derived})
             return result
-    candidate, failed = _build(capture, inventory, sheet_names, inventory_sha256, entry['id'], poses, anchor, policy,
-                               _candidate_provenance(entry))
+    try:
+        candidate, failed, derivation = _build(capture, inventory, sheet_names, inventory_sha256, entry['id'], poses,
+                                               anchor, policy, _candidate_provenance(entry))
+    except ValueError as exc:
+        problems.append({'kind': 'admission', 'status': 'refused', 'reason': str(exc)})
+        return result
     problems.extend(failed)
+    if not failed:
+        try:
+            admission = blocks.admit(candidate, capture, inventory, derivation, policy)
+        except ValueError as exc:
+            admission = {'status': 'refused', 'problems': [{'kind': 'admission_error', 'reason': str(exc)}]}
+        if admission.get('status') != 'admitted':
+            problems.append({'kind': 'admission', 'status': admission.get('status'),
+                             'problems': admission.get('problems')})
     found = _role_partition(candidate['members'])
     images = {}
     for ref, row in rows.items():
@@ -545,8 +725,8 @@ def _entry(block_id, version, part, provenance, built, copper, receipt):
 def _import(capture, inventory, sheet_names, inventory_sha256, policy, block_id, poses, anchor, provenance):
     """The source candidate at the imported poses; it must pass its own evidence."""
     source_policy = _import_policy(policy, set(poses))
-    candidate, problems = _build(capture, inventory, sheet_names, inventory_sha256, block_id, poses, anchor,
-                                 source_policy, provenance)
+    candidate, problems, _ = _build(capture, inventory, sheet_names, inventory_sha256, block_id, poses, anchor,
+                                    source_policy, provenance, unlock=True)
     if problems:
         raise ValueError('import_refused: the imported layout fails its own evidence: ' + json.dumps(problems))
     functions = {row['reference']: pin_functions_sha256(inventory['components'][row['reference']],
@@ -557,24 +737,51 @@ def _import(capture, inventory, sheet_names, inventory_sha256, policy, block_id,
     return (candidate, functions), inputs
 
 
-def reproduce(entry, capture, inventory, sheet_names, inventory_sha256, policy):
-    """Re-run an entry's receipt on its recorded source inputs: same hashes, same candidate.
+def reproduce(entry, source_raw, capture, inventory, sheet_names, inventory_sha256, policy, authority_raw=None):
+    """Replay an entry's receipt: re-run its import on the source bytes and recorded inputs.
 
-    Returns ``{'status': 'reproduced' | 'refused', 'problems': [...]}``.
+    ``source_raw`` is what the import read: the board bytes, the captured document or
+    the cluster-poses file. The rebuilt entry must equal the stored one field for
+    field, so poses, copper, labels and the candidate hash are all bound. Returns
+    ``{'status': 'reproduced' | 'refused', 'problems': [...]}``.
     """
     validate_entry(entry)
-    receipt = entry['receipt']
+    receipt, source = entry['receipt'], entry['receipt']['source']
     source_policy = _import_policy(policy, {r['reference'] for r in entry['layout']['members']})
     actual = {'board_sha256': capture['board_sha256'], 'inventory_sha256': inventory_sha256,
               'policy_sha256': digest(source_policy)}
     problems = [{'kind': 'source_mismatch', 'input': k, 'expected': receipt['inputs'][k], 'actual': actual[k]}
                 for k in INPUT_KEYS if receipt['inputs'][k] != actual[k]]
-    if not problems:
-        result = materialize(entry, capture, inventory, sheet_names, inventory_sha256, source_policy)
-        problems = result['problems']
-        if result['status'] == 'materialized' and digest(result['candidate']) != receipt['candidate_sha256']:
-            problems.append({'kind': 'candidate_mismatch', 'expected': receipt['candidate_sha256'],
-                             'actual': digest(result['candidate'])})
+    if hashlib.sha256(source_raw).hexdigest() != source['sha256']:
+        problems.append({'kind': 'source_mismatch', 'input': 'source_sha256', 'expected': source['sha256'],
+                         'actual': hashlib.sha256(source_raw).hexdigest()})
+    if problems:
+        return {'status': 'refused', 'problems': problems}
+    common = dict(block_id=entry['id'], version=entry['version'], part=entry['part'],
+                  citation=entry['provenance']['citation'], authority_raw=authority_raw)
+    kind = receipt['import']
+    try:
+        if kind == 'board-region/1':
+            rebuilt = import_board_region(
+                source_raw, capture, inventory, sheet_names, inventory_sha256, policy,
+                references=[r['reference'] for r in entry['layout']['members']], anchor=entry['layout']['anchor'],
+                provenance_class=entry['provenance']['class'], locator=source['locator'],
+                repository=source.get('repository'), commit=source.get('commit'), path=source.get('path'), **common)
+        elif kind == 'reference-figure/1':
+            rebuilt = import_reference_figure(copy.deepcopy(receipt['figure']), source_raw, capture, inventory,
+                                              sheet_names, inventory_sha256, policy, **common)
+        else:
+            common.pop('authority_raw')
+            if authority_raw is not None:
+                raise ValueError('a search-derived import takes no authority record')
+            rebuilt = import_project_cluster(source_raw, entry['layout']['anchor'], capture, inventory, sheet_names,
+                                             inventory_sha256, policy, repository=source['repository'],
+                                             commit=source['commit'], path=source['path'], **common)
+    except ValueError as exc:
+        return {'status': 'refused', 'problems': [{'kind': 'import_refused', 'reason': str(exc)}]}
+    differ = sorted(k for k in set(entry) | set(rebuilt) if entry.get(k) != rebuilt.get(k))
+    if differ or entry_bytes(entry) != entry_bytes(rebuilt):
+        problems.append({'kind': 'entry_mismatch', 'fields': differ})
     return {'status': 'refused' if problems else 'reproduced', 'problems': problems}
 
 
@@ -665,13 +872,18 @@ def board_copper(board_raw, capture, candidate, anchor_pose):
 
 def import_board_region(board_raw, capture, inventory, sheet_names, inventory_sha256, policy, *, references,
                         anchor, block_id, version, part, provenance_class, citation, locator,
-                        repository=None, commit=None, path=None, owner_record=None):
-    """Import path (a): a KiCad board region, its relative poses, copper and source hash."""
+                        repository=None, commit=None, path=None, authority_raw=None):
+    """Import path (a): a KiCad board region, its relative poses, copper and source hash.
+
+    The region is ``search-derived`` unless ``authority_raw`` is an owner authority
+    record conferring ``provenance_class`` on exactly this board and these members.
+    """
     sha = hashlib.sha256(board_raw).hexdigest()
     if sha != capture['board_sha256']:
         raise ValueError('board bytes differ from the placement probe board_sha256')
     if provenance_class not in IMPORTS['board-region/1']:
         raise ValueError(f'unknown provenance class {provenance_class}')
+    authority = _authority_receipt(provenance_class, authority_raw)
     board = {fp['ref']: fp for fp in capture['footprints']}
     refs = set(_texts(references))
     if anchor not in refs or refs - set(board):
@@ -684,7 +896,7 @@ def import_board_region(board_raw, capture, inventory, sheet_names, inventory_sh
         position, rotation = blocks._frame_pose({'position_nm': board[ref]['position_nm'], 'rotation_deg': rotation},
                                                 origin, turns)
         poses[ref] = {'position_nm': [int(v) for v in position], 'rotation_deg': rotation}
-    source = _source(locator, sha, repository=repository, commit=commit, path=path, owner_record=owner_record)
+    source = _source(locator, sha, repository=repository, commit=commit, path=path)
     provenance = {'class': provenance_class, 'citation': citation, 'method': 'board-region/1',
                   **({} if provenance_class == 'search-derived' else {'source': {'locator': locator, 'sha256': sha}})}
     built, inputs = _import(capture, inventory, sheet_names, inventory_sha256, policy, block_id, poses, anchor,
@@ -694,14 +906,19 @@ def import_board_region(board_raw, capture, inventory, sheet_names, inventory_sh
     entry_provenance = {'class': provenance_class, 'enforcement': blocks.PROVENANCE[provenance_class],
                         'citation': citation, 'label': _label('board-region/1', provenance_class, source),
                         **({'source': provenance['source']} if 'source' in provenance else {})}
-    receipt = {'importer': IMPORTER, 'import': 'board-region/1', 'source': source, 'inputs': inputs}
-    return _entry(block_id, version, part, entry_provenance, built, copper, receipt)
+    receipt = {'importer': IMPORTER, 'import': 'board-region/1', 'source': source, 'inputs': inputs, **authority}
+    return _authorize(_entry(block_id, version, part, entry_provenance, built, copper, receipt), authority_raw)
 
 
 def import_reference_figure(figure, document_raw, capture, inventory, sheet_names, inventory_sha256, policy, *,
-                            block_id, version, part, citation):
-    """Import path (b): a datasheet reference-layout figure, scale-verified, realized on the board's lands."""
+                            block_id, version, part, citation, authority_raw=None):
+    """Import path (b): a datasheet reference-layout figure, scale-verified, realized on the board's lands.
+
+    The figure's class is conferred only by ``authority_raw``, an owner authority record
+    for the captured document that also documents every scale and check dimension.
+    """
     validate_figure(figure)
+    authority = _authority_receipt(figure['class'], authority_raw)
     sha = hashlib.sha256(document_raw).hexdigest()
     if sha != figure['document']['sha256']:
         raise ValueError('captured document bytes differ from the figure document sha256')
@@ -717,8 +934,8 @@ def import_reference_figure(figure, document_raw, capture, inventory, sheet_name
                         'citation': citation, 'label': _label('reference-figure/1', figure['class'], source, figure),
                         'source': provenance['source']}
     receipt = {'importer': IMPORTER, 'import': 'reference-figure/1', 'source': source, 'inputs': inputs,
-               'figure': copy.deepcopy(figure), 'scale': scale}
-    return _entry(block_id, version, part, entry_provenance, built, None, receipt)
+               'figure': copy.deepcopy(figure), 'scale': scale, **authority}
+    return _authorize(_entry(block_id, version, part, entry_provenance, built, None, receipt), authority_raw)
 
 
 def import_project_cluster(cluster_raw, cluster, capture, inventory, sheet_names, inventory_sha256, policy, *,
@@ -801,13 +1018,31 @@ def validate_library(root):
             raise ValueError(f"{record['path']}: entry id and version differ from the catalogue")
         if raw != entry_bytes(entry):
             raise ValueError(f"{record['path']}: entry is not in canonical form")
+        _library_authority(root, entry)
         loaded.append(entry)
     return loaded
+
+
+def load_authority(root, entry):
+    """The authority record bytes a library keeps for a hard-class entry, or None."""
+    if 'authority_sha256' not in entry['receipt']:
+        return None
+    path = Path(root) / authority_path(entry['receipt']['authority_sha256'])
+    return path.read_bytes() if path.is_file() else None
+
+
+def _library_authority(root, entry):
+    if 'authority_sha256' in entry['receipt']:
+        try:
+            verify_authority(load_authority(root, entry), entry)
+        except ValueError as exc:
+            raise ValueError(f"{entry['id']} v{entry['version']}: {exc}") from None
 
 
 def add_entry(root, entry):
     """Append a new version; an existing id/version is immutable and never rewritten."""
     validate_entry(entry)
+    _library_authority(root, entry)
     entries = validate_library(root)
     latest = max((e['version'] for e in entries if e['id'] == entry['id']), default=0)
     if entry['version'] != latest + 1:
@@ -892,8 +1127,11 @@ def main(argv=None):
     board.add_argument('--anchor', required=True)
     board.add_argument('--class', dest='provenance_class', required=True, choices=sorted(blocks.PROVENANCE))
     board.add_argument('--locator', required=True)
-    for key in ('repository', 'commit', 'path', 'owner-record'):
+    for key in ('repository', 'commit', 'path'):
         board.add_argument('--' + key)
+    for name in ('import-board', 'import-figure', 'materialize'):
+        sub.choices[name].add_argument('--authority', type=Path,
+                                       help=f'owner {AUTHORITY_RECORD} record; required for a hard class')
     figure = sub.choices['import-figure']
     figure.add_argument('--figure', required=True, type=Path, help=FIGURE)
     figure.add_argument('--document', required=True, type=Path, help='captured datasheet bytes (not committed)')
@@ -920,6 +1158,7 @@ def main(argv=None):
             print(json.dumps({'status': 'added', 'path': path}))
             return 0
         capture, inventory, names, sha, policy = _inputs(args)
+        authority = args.authority.read_bytes() if getattr(args, 'authority', None) else None
         common = dict(block_id=getattr(args, 'id', None), version=getattr(args, 'version', None),
                       part=getattr(args, 'part', None), citation=getattr(args, 'citation', None))
         if args.command == 'import-board':
@@ -927,17 +1166,19 @@ def main(argv=None):
                                          references=args.references, anchor=args.anchor,
                                          provenance_class=args.provenance_class, locator=args.locator,
                                          repository=args.repository, commit=args.commit, path=args.path,
-                                         owner_record=args.owner_record, **common)
+                                         authority_raw=authority, **common)
         elif args.command == 'import-figure':
             result = import_reference_figure(strict_json(args.figure.read_bytes()), args.document.read_bytes(),
-                                             capture, inventory, names, sha, policy, **common)
+                                             capture, inventory, names, sha, policy, authority_raw=authority,
+                                             **common)
         elif args.command == 'import-cluster':
             result = import_project_cluster(args.cluster_poses.read_bytes(), args.cluster, capture, inventory, names,
                                             sha, policy, repository=args.repository, commit=args.commit,
                                             path=args.path, **common)
         else:
             mapping = strict_json(args.mapping.read_bytes()) if args.mapping else None
-            result = materialize(strict_json(args.entry.read_bytes()), capture, inventory, names, sha, policy, mapping)
+            result = materialize(strict_json(args.entry.read_bytes()), capture, inventory, names, sha, policy, mapping,
+                                 authority)
         _write(args.out, result)
     except (OSError, ValueError) as exc:
         print(json.dumps({'status': 'refused', 'reason': str(exc)}))

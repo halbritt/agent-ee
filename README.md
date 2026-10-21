@@ -130,7 +130,8 @@ The [block library](docs/block-library.md) keeps versioned known-good blocks in
 `blocks/` with provenance receipts. Its entries come from KiCad board regions,
 scale-verified datasheet figures and project clusters. A lookup returns each block
 with its provenance class. Project clusters, including the four telemetry pod
-regulator clusters, are search-derived and advisory.
+regulator clusters, are search-derived and advisory. A hard class needs an
+owner authority record, and every use is admitted by `blocks.admit` on the target.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

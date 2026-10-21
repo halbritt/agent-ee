@@ -15,6 +15,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agent_ee import block_library as bl, blocks, placer
 from test_blocks import Fixture, MM, PARTS, SHEETS, board, native_xml, policy
@@ -25,6 +26,21 @@ COMMIT = 'a' * 40
 HARD = ('manufacturer-reference-layout', 'manufacturer-evm', 'qualified-owner-board')
 POWER = ('U1', 'C1', 'L1', 'C3')
 FIG_NM = 250000  # nanometres per authored figure unit
+AUTO = object()
+
+
+def authority(provenance_class, kind, source, references, dimensions=None, **changes):
+    """A synthetic owner authority record. It exercises the format only and confers no design acceptance;
+    real records come from the owner through the coordinator boundary."""
+    record = {'schema': bl.AUTHORITY_RECORD, 'class': provenance_class, 'import': kind, 'source': source,
+              'references': sorted(references, key=blocks._natural), 'owner': 'Owned EE342 synthetic owner',
+              'disposition': 'approved', 'reference': 'synthetic test record; not an owner approval'}
+    if provenance_class.startswith('manufacturer-'):
+        record['capture'] = {'origin': 'Owned EE342 synthetic capture', 'captured_by': 'coordinator test boundary'}
+    if dimensions is not None:
+        record['dimensions'] = dimensions
+    record.update(changes)
+    return json.dumps({k: v for k, v in record.items() if v is not None}, sort_keys=True).encode()
 
 
 class LibraryFixture(Fixture):
@@ -83,15 +99,33 @@ class LibraryFixture(Fixture):
                 f' (arc (start {mm(sw_a)}) (mid {mm(vout)}) (end {mm(sw_b)}) (width 0.25) (layer "F.Cu") '
                 '(net "SW") (uuid "a1"))\n' + extra + ')\n')
 
-    def region(self, provenance_class='manufacturer-evm', capture=None, raw=None, **identity):
+    def placed_region(self):
+        capture, _ = self.placed_board()
+        raw = self.board_text(capture).encode()
+        capture['board_sha256'] = hashlib.sha256(raw).hexdigest()
+        return capture, raw
+
+    def region_authority(self, provenance_class, raw, references=POWER, **identity):
+        source = {'locator': 'Owned EVM rev A', 'sha256': hashlib.sha256(raw).hexdigest(), **identity}
+        return authority(provenance_class, 'board-region/1', source, references)
+
+    def region(self, provenance_class='manufacturer-evm', capture=None, raw=None, authority_raw=AUTO, **identity):
         if capture is None:
-            capture, _ = self.placed_board()
-            raw = self.board_text(capture).encode()
-            capture['board_sha256'] = hashlib.sha256(raw).hexdigest()
+            capture, raw = self.placed_region()
+        if authority_raw is AUTO:
+            authority_raw = (self.region_authority(provenance_class, raw, **identity)
+                             if provenance_class in HARD else None)
         return bl.import_board_region(raw, capture, self.inv, self.names, self.sha, self.policy,
                                       references=','.join(POWER), anchor='U1', block_id='owned-evm', version=1,
                                       part='OWNED-BUCK', provenance_class=provenance_class,
-                                      citation='Owned EE342 evaluation board', locator='Owned EVM rev A', **identity)
+                                      citation='Owned EE342 evaluation board', locator='Owned EVM rev A',
+                                      authority_raw=authority_raw, **identity)
+
+    def keep_authority(self, root, authority_raw):
+        """Place an owner record where a library keeps it; the library code never writes there."""
+        path = root / bl.authority_path(hashlib.sha256(authority_raw).hexdigest())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(authority_raw)
 
 
 class ProjectClusterTests(LibraryFixture, unittest.TestCase):
@@ -112,8 +146,8 @@ class ProjectClusterTests(LibraryFixture, unittest.TestCase):
             self.assertNotIn(absent, text)
         self.assertEqual(rows['U1']['pins']['3'], rows['L1']['pins']['1'])
         self.assertEqual(entry['copper'], None)
-        self.assertEqual(bl.reproduce(entry, self.board, self.inv, self.names, self.sha, self.policy),
-                         {'status': 'reproduced', 'problems': []})
+        self.assertEqual(bl.reproduce(entry, self.cluster_raw(), self.board, self.inv, self.names, self.sha,
+                                      self.policy), {'status': 'reproduced', 'problems': []})
         self.assertEqual(self.cluster(), entry)
 
     def test_owner_ruling_cluster_can_never_be_a_reference_class(self):
@@ -180,8 +214,11 @@ class ProjectClusterTests(LibraryFixture, unittest.TestCase):
                                           commit=COMMIT, path='p')
         self.assertEqual(entry['receipt']['inputs']['policy_sha256'], blocks.digest(policy(fixed_refs=['H1'])))
         # materialize applies stage A's rule: a fixed member cannot be a rigid-block member.
-        with self.assertRaisesRegex(ValueError, 'fixed references cannot be rigid-block members'):
-            bl.materialize(entry, self.board, self.inv, self.names, self.sha, fixed)
+        result = bl.materialize(entry, self.board, self.inv, self.names, self.sha, fixed)
+        self.assertEqual(result['status'], 'refused')
+        self.assertNotIn('candidate', result)
+        self.assertEqual([p['kind'] for p in result['problems']], ['admission'])
+        self.assertRegex(result['problems'][0]['reason'], 'fixed references cannot be rigid-block members')
 
 
 class BoardRegionTests(LibraryFixture, unittest.TestCase):
@@ -189,7 +226,8 @@ class BoardRegionTests(LibraryFixture, unittest.TestCase):
         capture, _ = self.placed_board()
         raw = self.board_text(capture).encode()
         capture['board_sha256'] = hashlib.sha256(raw).hexdigest()
-        entry = self.region(capture=capture, raw=raw)
+        record = self.region_authority('manufacturer-evm', raw)
+        entry = self.region(capture=capture, raw=raw, authority_raw=record)
         rows = {r['reference']: r for r in entry['layout']['members']}
         # The anchor's board rotation and offset drop out: the frame equals the packed frame.
         self.assertEqual({r: rows[r]['pose'] for r in rows}, self.poses)
@@ -198,6 +236,7 @@ class BoardRegionTests(LibraryFixture, unittest.TestCase):
             'class': 'manufacturer-evm', 'enforcement': 'hard', 'citation': 'Owned EE342 evaluation board',
             'label': 'Owned EVM rev A, manufacturer-evm', 'source': {'locator': 'Owned EVM rev A', 'sha256': sha}})
         self.assertEqual(entry['receipt']['source'], {'locator': 'Owned EVM rev A', 'sha256': sha})
+        self.assertEqual(entry['receipt']['authority_sha256'], hashlib.sha256(record).hexdigest())
         copper = entry['copper']
         framed = {r: placer.transform(next(f for f in self.board['footprints'] if f['ref'] == r),
                                       self.poses[r]['position_nm'], self.poses[r]['rotation_deg']) for r in POWER}
@@ -214,17 +253,17 @@ class BoardRegionTests(LibraryFixture, unittest.TestCase):
         self.assertEqual(copper['arcs'], [{'start': sw_a, 'mid': vout, 'end': sw_b, 'width_nm': 250000,
                                            'layer': 'F.Cu', 'role': sw_role}])
         self.assertNotIn('"SW"', json.dumps(entry))
-        self.assertEqual(bl.reproduce(entry, capture, self.inv, self.names, self.sha, self.policy)['status'],
-                         'reproduced')
+        self.assertEqual(bl.reproduce(entry, raw, capture, self.inv, self.names, self.sha, self.policy, record),
+                         {'status': 'reproduced', 'problems': []})
 
     def test_region_refusals(self):
         capture, raw = self.placed_board()
         with self.assertRaisesRegex(ValueError, 'differ from the placement probe'):
             self.region(capture=capture, raw=raw + b' ')
-        with self.assertRaisesRegex(ValueError, 'repository, commit and owner record'):
+        with self.assertRaisesRegex(ValueError, 'repository, commit and path'):
             self.region('qualified-owner-board', capture=capture, raw=raw, repository=REPOSITORY, commit=COMMIT)
         entry = self.region('qualified-owner-board', capture=capture, raw=raw, repository=REPOSITORY, commit=COMMIT,
-                            path='owned.kicad_pcb', owner_record='docs/decisions.md owned EE342 record')
+                            path='owned.kicad_pcb')
         self.assertEqual(entry['provenance']['label'], 'owned.kicad_pcb@aaaaaaaaaaaa, qualified-owner-board')
         search = self.region('search-derived', capture=capture, raw=raw)
         self.assertNotIn('source', search['provenance'])
@@ -238,7 +277,7 @@ class BoardRegionTests(LibraryFixture, unittest.TestCase):
             self.region(capture=other, raw=b'(kicad_sch)')
         with self.assertRaisesRegex(ValueError, 'include the anchor'):
             bl.import_board_region(raw, capture, self.inv, self.names, self.sha, self.policy, references='C1,L1',
-                                   anchor='U1', block_id='x', version=1, part='P', provenance_class='manufacturer-evm',
+                                   anchor='U1', block_id='x', version=1, part='P', provenance_class='search-derived',
                                    citation='c', locator='l')
 
 
@@ -267,10 +306,24 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
                           'tolerance': list(tolerance)},
                 'members': members}
 
-    def imported(self, figure=None, document=None):
-        return bl.import_reference_figure(figure or self.figure(), document or self.DOCUMENT, self.board, self.inv,
+    def figure_authority(self, figure=None, dimensions=None):
+        figure = figure or self.figure()
+        scale = figure['scale']
+        if dimensions is None:
+            dimensions = [{'basis': d['basis'], 'length_nm': d['length_nm']}
+                          for d in [scale['reference']] + scale['checks']]
+        source = {'locator': figure['document']['locator'], 'sha256': figure['document']['sha256']}
+        return authority(figure['class'], 'reference-figure/1', source, [m['reference'] for m in figure['members']],
+                         dimensions)
+
+    def imported(self, figure=None, document=None, authority_raw=AUTO):
+        figure = figure or self.figure()
+        if authority_raw is AUTO:
+            authority_raw = self.figure_authority(figure)
+        return bl.import_reference_figure(figure, document or self.DOCUMENT, self.board, self.inv,
                                           self.names, self.sha, self.policy, block_id='owned-figure', version=1,
-                                          part='OWNED-BUCK', citation='Owned EE342 Fig. 1 recommended layout')
+                                          part='OWNED-BUCK', citation='Owned EE342 Fig. 1 recommended layout',
+                                          authority_raw=authority_raw)
 
     def test_figure_poses_are_scale_verified_and_frame_invariant(self):
         for axes in ('x-right-y-down', 'x-right-y-up'):
@@ -284,8 +337,8 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
         self.assertEqual(entry['receipt']['scale']['status'], 'scale-verified')
         self.assertEqual(entry['receipt']['scale']['nm_per_unit_squared'], [FIG_NM ** 2, 1])
         self.assertEqual(entry['receipt']['scale']['checks'][0]['status'], 'pass')
-        self.assertEqual(bl.reproduce(entry, self.board, self.inv, self.names, self.sha, self.policy)['status'],
-                         'reproduced')
+        self.assertEqual(bl.reproduce(entry, self.DOCUMENT, self.board, self.inv, self.names, self.sha, self.policy,
+                                      self.figure_authority())['status'], 'reproduced')
 
     def test_scale_check_boundary_and_refusals(self):
         # 20 units at 0.25 mm is 5 mm; a cited 5.1 mm is 1/51 off: inside 1/50, outside 1/60.
@@ -303,7 +356,7 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
         figure = self.figure()
         figure['class'] = 'qualified-owner-board'
         with self.assertRaisesRegex(ValueError, 'manufacturer reference layout or EVM'):
-            self.imported(figure)
+            self.imported(figure, authority_raw=None)
         # A pad measured 1 mm off fits no quarter turn of the member's own lands.
         figure = self.figure()
         member = next(m for m in figure['members'] if m['reference'] == 'L1')
@@ -314,6 +367,8 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
         figure['members'][0]['pads'] = {'9': [0, 0], '1': [1, 1]}
         with self.assertRaisesRegex(ValueError, 'are not footprint pads'):
             self.imported(figure)
+        with self.assertRaisesRegex(ValueError, 'authority_required: manufacturer-reference-layout'):
+            self.imported(authority_raw=None)
 
     def test_entry_scale_and_figure_are_bound(self):
         entry = self.imported()
@@ -332,7 +387,8 @@ class ReferenceFigureTests(LibraryFixture, unittest.TestCase):
         # A pose edited away from the figure is caught when the figure is re-derived.
         forged = copy.deepcopy(entry)
         next(r for r in forged['layout']['members'] if r['reference'] == 'C1')['pose']['position_nm'][0] += 100000
-        result = bl.materialize(forged, self.board, self.inv, self.names, self.sha, self.policy)
+        result = bl.materialize(forged, self.board, self.inv, self.names, self.sha, self.policy,
+                                authority_raw=self.figure_authority())
         self.assertEqual([p['kind'] for p in result['problems']], ['figure_pose_mismatch'])
 
 
@@ -404,8 +460,230 @@ class MaterializeTests(LibraryFixture, unittest.TestCase):
         self.assertEqual(result['status'], 'refused')
         self.assertIn('witness', [p['kind'] for p in result['problems']])
         self.assertNotIn('candidate', result)
-        result = bl.reproduce(entry, self.board, self.inv, self.names, self.sha, tight)
+        result = bl.reproduce(entry, self.cluster_raw(), self.board, self.inv, self.names, self.sha, tight)
         self.assertEqual([p['kind'] for p in result['problems']], ['source_mismatch'])
+
+
+class AuthorityHoldTests(LibraryFixture, unittest.TestCase):
+    """Regressions for the AGENTEE-342 review HOLD: admission (H1), hard-class authority (H2),
+    receipt replay binding copper (H3) and independent scale checks (H4)."""
+    DOCUMENT = ReferenceFigureTests.DOCUMENT
+    figure = ReferenceFigureTests.figure
+    figure_authority = ReferenceFigureTests.figure_authority
+    imported = ReferenceFigureTests.imported
+
+    # H1 ------------------------------------------------------------------------------
+    def test_locked_target_member_refuses_without_candidate(self):
+        entry = self.cluster()
+        target = copy.deepcopy(self.board)
+        next(f for f in target['footprints'] if f['ref'] == 'L1')['locked'] = True
+        result = bl.materialize(entry, target, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual(result['status'], 'refused')
+        self.assertNotIn('candidate', result)
+        self.assertEqual([p['kind'] for p in result['problems']], ['admission'])
+        self.assertRegex(result['problems'][0]['reason'], 'locked footprints cannot be rigid-block members.*L1')
+        # The caller's capture is never unlocked.
+        self.assertTrue(next(f for f in target['footprints'] if f['ref'] == 'L1')['locked'])
+
+    def test_materialize_requires_explicit_admission_on_the_target(self):
+        entry = self.cluster()
+        target = copy.deepcopy(self.board)
+        with mock.patch.object(blocks, 'admit', wraps=blocks.admit) as admit:
+            result = bl.materialize(entry, target, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual(result['status'], 'materialized', result['problems'])
+        admit.assert_called_once()
+        document, capture, inventory, derivation, used = admit.call_args.args
+        self.assertIs(document, result['candidate'])
+        self.assertIs(capture, target)
+        self.assertIs(used, self.policy)
+        self.assertEqual(derivation['board_sha256'], target['board_sha256'])
+        for status in ('unknown', 'refused', 'pending', None):
+            evidence = [{'kind': 'probe-' + str(status)}]
+            with self.subTest(status=status), mock.patch.object(
+                    blocks, 'admit', return_value={'status': status, 'problems': evidence}):
+                result = bl.materialize(entry, target, self.inv, self.names, self.sha, self.policy)
+                self.assertEqual(result['status'], 'refused')
+                self.assertNotIn('candidate', result)
+                self.assertEqual(result['problems'], [{'kind': 'admission', 'status': status, 'problems': evidence}])
+        with mock.patch.object(blocks, 'admit', side_effect=ValueError('derivation belongs to another board')):
+            result = bl.materialize(entry, target, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual(result['status'], 'refused')
+        self.assertNotIn('candidate', result)
+        self.assertEqual(result['problems'][0]['problems'][0]['kind'], 'admission_error')
+
+    def test_unlocking_is_confined_to_source_import(self):
+        source = copy.deepcopy(self.board)
+        for fp in source['footprints']:
+            if fp['ref'] in POWER:
+                fp['locked'] = True
+        # A read-only import of a hand-anchored source reads the locked poses ...
+        entry = self.cluster(capture=source)
+        self.assertEqual(bl.reproduce(entry, self.cluster_raw(), source, self.inv, self.names, self.sha,
+                                      self.policy)['status'], 'reproduced')
+        # ... but the same locked board is not a target the block may be placed on.
+        with mock.patch.object(bl, '_unlocked', wraps=bl._unlocked) as unlocked:
+            result = bl.materialize(entry, source, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual(result['status'], 'refused')
+        unlocked.assert_not_called()
+
+    # H2 ------------------------------------------------------------------------------
+    def test_hard_classes_need_an_owner_authority_record(self):
+        capture, raw = self.placed_region()
+        for name in ('manufacturer-evm', 'manufacturer-reference-layout'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, f'authority_required: {name}'):
+                self.region(name, capture=capture, raw=raw, authority_raw=None)
+        with self.assertRaisesRegex(ValueError, 'authority_required: qualified-owner-board'):
+            self.region('qualified-owner-board', capture=capture, raw=raw, authority_raw=None, repository=REPOSITORY,
+                        commit=COMMIT, path='owned.kicad_pcb')
+        with self.assertRaisesRegex(ValueError, 'authority_required: manufacturer-reference-layout'):
+            self.imported(authority_raw=None)
+        with self.assertRaisesRegex(ValueError, 'search-derived import takes no authority'):
+            self.region('search-derived', capture=capture, raw=raw,
+                        authority_raw=self.region_authority('manufacturer-evm', raw))
+        source = {'locator': 'Owned EVM rev A', 'sha256': hashlib.sha256(raw).hexdigest()}
+        cases = (
+            (authority('manufacturer-reference-layout', 'board-region/1', source, POWER), 'record class differs'),
+            (authority('manufacturer-evm', 'board-region/1', source, ('U1', 'C1')), 'record references differ'),
+            (authority('manufacturer-evm', 'board-region/1', dict(source, sha256='b' * 64), POWER),
+             'record source differs'),
+            (authority('manufacturer-evm', 'board-region/1', source, POWER, disposition='pending'),
+             'disposition must be approved'),
+            (authority('manufacturer-evm', 'board-region/1', source, POWER, capture=None),
+             'independent capture of its source'),
+            (authority('manufacturer-evm', 'board-region/1', source, POWER,
+                       capture={'origin': 'o', 'captured_by': bl.IMPORTER}), 'importer cannot be the capturer'),
+            (authority('manufacturer-evm', 'project-cluster/1', source, POWER), 'cannot carry class'),
+            (authority('qualified-owner-board', 'board-region/1', source, POWER), 'repository, commit and path'),
+            (b'{"schema": "agent-ee.block-authority/1", "schema": "x"}', 'duplicate'),
+        )
+        for record, pattern in cases:
+            with self.subTest(pattern=pattern), self.assertRaisesRegex(ValueError, pattern):
+                self.region(capture=capture, raw=raw, authority_raw=record)
+
+    def test_relabelled_cluster_receipt_refuses(self):
+        """Owner ruling 2026-10-21: pod and agent work is search-derived/advisory only."""
+        entry = self.cluster()
+        source = entry['receipt']['source']
+        hard = {'locator': source['locator'], 'sha256': source['sha256']}
+        root = self.library()
+        for name in HARD:
+            record = authority(name, 'board-region/1', source, POWER)
+            self.keep_authority(root, record)
+            relabelled = []
+            # The class alone, as before.
+            forged = copy.deepcopy(entry)
+            forged['provenance'].update({'class': name, 'enforcement': 'hard', 'source': hard})
+            relabelled.append((forged, 'cannot carry provenance class'))
+            # The receipt relabelled as a board region, without and with an authority hash.
+            forged = copy.deepcopy(forged)
+            forged['receipt']['import'] = 'board-region/1'
+            forged['copper'] = {'tracks': [], 'arcs': [], 'vias': []}
+            relabelled.append((forged, 'authority_required'))
+            forged = copy.deepcopy(forged)
+            forged['receipt']['authority_sha256'] = hashlib.sha256(record).hexdigest()
+            relabelled.append((forged, 'source is the probed board'))
+            # ... and as a reference figure.
+            forged = copy.deepcopy(relabelled[0][0])
+            forged['receipt']['import'] = 'reference-figure/1'
+            forged['receipt']['authority_sha256'] = hashlib.sha256(record).hexdigest()
+            relabelled.append((forged, 'cannot carry provenance class|keeps its figure record'))
+            for forged, pattern in relabelled:
+                with self.subTest(name=name, pattern=pattern):
+                    with self.assertRaisesRegex(ValueError, pattern):
+                        bl.validate_entry(forged)
+                    with self.assertRaisesRegex(ValueError, pattern):
+                        bl.materialize(forged, self.board, self.inv, self.names, self.sha, self.policy,
+                                       authority_raw=record)
+                    with self.assertRaisesRegex(ValueError, pattern):
+                        bl.add_entry(root, forged)
+        self.assertEqual(bl.validate_library(root), [])
+
+    def test_hard_entry_use_verifies_its_authority(self):
+        capture, raw = self.placed_region()
+        record = self.region_authority('manufacturer-evm', raw)
+        entry = self.region(capture=capture, raw=raw, authority_raw=record)
+        result = bl.materialize(entry, capture, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual((result['status'], [p['kind'] for p in result['problems']]), ('refused', ['authority']))
+        self.assertRegex(result['problems'][0]['reason'], 'authority_unverified')
+        result = bl.materialize(entry, capture, self.inv, self.names, self.sha, self.policy,
+                                authority_raw=record + b' ')
+        self.assertRegex(result['problems'][0]['reason'], 'authority_mismatch')
+        self.assertNotIn('candidate', result)
+        result = bl.materialize(entry, capture, self.inv, self.names, self.sha, self.policy, authority_raw=record)
+        self.assertEqual(result['status'], 'materialized', result['problems'])
+        self.assertEqual(result['candidate']['provenance']['class'], 'manufacturer-evm')
+        # The library keeps the record content-addressed under owner/; a changed record refuses.
+        root = self.library()
+        self.keep_authority(root, record)
+        bl.add_entry(root, entry)
+        self.assertEqual(bl.load_authority(root, entry), record)
+        self.assertEqual([e['id'] for e in bl.validate_library(root)], ['owned-evm'])
+        (root / bl.authority_path(entry['receipt']['authority_sha256'])).write_bytes(record + b' ')
+        with self.assertRaisesRegex(ValueError, 'owned-evm v1: authority_mismatch'):
+            bl.validate_library(root)
+        (root / bl.authority_path(entry['receipt']['authority_sha256'])).unlink()
+        with self.assertRaisesRegex(ValueError, 'owned-evm v1: authority_unverified'):
+            bl.lookup(root, part='OWNED-BUCK')
+
+    # H3 ------------------------------------------------------------------------------
+    def test_receipt_replay_binds_stored_copper_and_layout(self):
+        capture, raw = self.placed_region()
+        entry = self.region('search-derived', capture=capture, raw=raw)
+        self.assertEqual(bl.reproduce(entry, raw, capture, self.inv, self.names, self.sha, self.policy),
+                         {'status': 'reproduced', 'problems': []})
+        edits = (lambda e: e['copper']['tracks'][0].update(width_nm=1),
+                 lambda e: e['copper']['vias'].clear(),
+                 lambda e: e['copper']['arcs'][0]['mid'].__setitem__(0, e['copper']['arcs'][0]['mid'][0] + 1),
+                 lambda e: e['copper']['tracks'].append(dict(e['copper']['tracks'][0], layer='B.Cu')))
+        for edit in edits:
+            altered = copy.deepcopy(entry)
+            edit(altered)
+            bl.validate_entry(altered)
+            result = bl.reproduce(altered, raw, capture, self.inv, self.names, self.sha, self.policy)
+            with self.subTest(copper=altered['copper']):
+                self.assertEqual(result, {'status': 'refused', 'problems': [{'kind': 'entry_mismatch',
+                                                                              'fields': ['copper']}]})
+        altered = copy.deepcopy(self.cluster())
+        next(r for r in altered['layout']['members'] if r['reference'] == 'C1')['pose']['position_nm'][0] += 1
+        result = bl.reproduce(altered, self.cluster_raw(), self.board, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual(result['problems'], [{'kind': 'entry_mismatch', 'fields': ['layout']}])
+        result = bl.reproduce(entry, raw + b' ', capture, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual([(p['kind'], p['input']) for p in result['problems']], [('source_mismatch', 'source_sha256')])
+
+    # H4 ------------------------------------------------------------------------------
+    def test_scale_self_check_is_not_independent(self):
+        reference = self.figure()['scale']['reference']
+        cross = {'from': [10, 10], 'to': [10, 30], 'length_nm': 5_000_000, 'basis': 'Owned package body length 5 mm'}
+        cases = (
+            ([copy.deepcopy(reference)], 'repeats the reference'),
+            ([dict(reference, **{'from': reference['to'], 'to': reference['from'], 'basis': 'reversed'})],
+             'repeats the reference'),
+            ([dict(cross, basis=reference['basis'])], 'repeats the reference'),
+            ([cross, dict(cross, basis='again')], 'repeats the reference or another check'),
+            ([cross, {'from': [8, 0], 'to': [12, 0], 'length_nm': 1_000_000, 'basis': 'bar extended'}],
+             "lies on the reference dimension's line"),
+            ([{'from': [0, 10], 'to': [8, 10], 'length_nm': 2_000_000, 'basis': 'parallel pitch'}],
+             'no check dimension lies at 45 degrees'),
+            ([{'from': [0, 10], 'to': [8, 15], 'length_nm': 2_358_495, 'basis': 'shallow diagonal'}],
+             'no check dimension lies at 45 degrees'),
+        )
+        for checks, pattern in cases:
+            with self.subTest(pattern=pattern), self.assertRaisesRegex(ValueError, 'scale_self_check: .*' + pattern):
+                bl.verify_scale(self.figure(checks=checks))
+        # Exactly 45 degrees is accepted (inclusive), as is a perpendicular check.
+        diagonal = {'from': [0, 10], 'to': [4, 14], 'length_nm': 1_414_214, 'basis': 'diagonal 45'}
+        self.assertEqual(bl.verify_scale(self.figure(checks=[diagonal]))['status'], 'scale-verified')
+        # The cited lengths come from the authority's documented dimensions, not from the importer.
+        figure = self.figure()
+        undocumented = self.figure_authority(figure, dimensions=[{'basis': 'Owned scale bar, 1 mm',
+                                                                  'length_nm': 1_000_000},
+                                                                 {'basis': 'Owned package body length 5 mm',
+                                                                  'length_nm': 5_100_000}])
+        with self.assertRaisesRegex(ValueError, 'authority_mismatch: figure dimensions not documented by the '
+                                                'authority: Owned package body length 5 mm'):
+            self.imported(figure, authority_raw=undocumented)
+        with self.assertRaisesRegex(ValueError, 'lists the documented scale and check dimensions'):
+            self.imported(figure, authority_raw=self.figure_authority(figure, dimensions=[]))
 
 
 class CatalogueTests(LibraryFixture, unittest.TestCase):
@@ -420,6 +698,10 @@ class CatalogueTests(LibraryFixture, unittest.TestCase):
         second = self.cluster(version=2)
         bl.add_entry(root, second)
         evm = self.region()
+        with self.assertRaisesRegex(ValueError, 'authority_unverified'):
+            bl.add_entry(root, evm)
+        capture, raw = self.placed_region()
+        self.keep_authority(root, self.region_authority('manufacturer-evm', raw))
         bl.add_entry(root, evm)
         found = bl.lookup(root, part='OWNED-BUCK')
         self.assertEqual([(r['id'], r['version'], r['provenance']) for r in found],
@@ -560,7 +842,7 @@ class NativeTests(unittest.TestCase):
             self.assertEqual(rows['C1']['pose'], {'position_nm': [0, 4 * MM], 'rotation_deg': 0})
             self.assertEqual([t['role'] for t in entry['copper']['tracks']], [rows['R1']['pins']['2'][0]])
             self.assertEqual(entry['copper']['tracks'][0]['width_nm'], 250000)
-            self.assertEqual(bl.reproduce(entry, capture, inventory, names, sha, native_policy)['status'],
+            self.assertEqual(bl.reproduce(entry, raw, capture, inventory, names, sha, native_policy)['status'],
                              'reproduced')
 
 
