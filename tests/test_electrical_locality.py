@@ -60,6 +60,59 @@ def bound_output_loop():
     return facts, doc
 
 
+class LocalityInvariantTests(unittest.TestCase):
+    def test_untyped_distinct_sources_require_disjoint_net_sets(self):
+        for supply_end in ('from', 'to'):
+            for return_end in ('from', 'to'):
+                facts, doc = output_loop()
+                row = doc['obligations'][0]
+                for role, prefix in (('supply', 'OUT'), ('return', 'GND')):
+                    for end in ('from', 'to'):
+                        row[role][end]['net'] = prefix + '_' + end
+                row['supply'][supply_end]['net'] = row['return'][return_end]['net']
+                with self.subTest(supply=supply_end, ground=return_end):
+                    for evaluate in (lambda: locality.validate(doc),
+                                     lambda: locality.grade(facts, doc),
+                                     lambda: pack(facts, request(electrical_locality=doc))):
+                        with self.assertRaisesRegex(ValueError, 'distinct-source supply and return nets must differ'):
+                            evaluate()
+
+    def test_bound_switch_net_is_disjoint_from_supply_and_return(self):
+        for end in ('from', 'to', 'both'):
+            for net in ('VCC', 'GND'):
+                facts, doc = bound_output_loop()
+                row = doc['obligations'][0]
+                for key in (('from', 'to') if end == 'both' else (end,)):
+                    row['switch'][key]['net'] = net
+                with self.subTest(end=end, net=net):
+                    for evaluate in (lambda: locality.validate(doc),
+                                     lambda: locality.grade(facts, doc),
+                                     lambda: pack(facts, request(electrical_locality=doc))):
+                        with self.assertRaisesRegex(ValueError, 'loop switch nets must differ from supply and return'):
+                            evaluate()
+
+    def test_same_source_and_untyped_switch_keep_generic_net_semantics(self):
+        facts, doc = board(), declaration(supply='GND', ground='GND')
+        self.assertIs(locality.validate(doc), doc)
+        self.assertEqual(locality.grade(facts, doc)['status'], 'defect')
+        facts, doc = output_loop()
+        for end in ('from', 'to'):
+            doc['obligations'][0]['switch'][end]['net'] = 'VCC'
+        self.assertIs(locality.validate(doc), doc)
+        self.assertEqual(locality.grade(facts, doc)['status'], 'unknown')
+
+    def test_bound_switch_on_supply_net_cannot_pass_with_matching_pads(self):
+        facts, doc = bound_output_loop()
+        extra = copy.deepcopy(facts['footprints'][0]['pads'][1])
+        extra.update(number='3', uuid='U13', net='VCC')
+        facts['footprints'][0]['pads'].append(extra)
+        row = doc['obligations'][0]
+        row['switch']['from'] = endpoint('U1', '3', 'VCC')
+        row['switch']['to'] = endpoint('L1', '2', 'VCC')
+        with self.assertRaisesRegex(ValueError, 'loop switch nets must differ from supply and return'):
+            locality.grade(facts, doc)
+
+
 class BoundOutputLoopTests(unittest.TestCase):
     def test_owned_evidence_and_optional_switch(self):
         facts, doc = bound_output_loop()
@@ -630,11 +683,40 @@ class LocalityIndexTests(unittest.TestCase):
         self.assertGreater(loops, 300)
         self.assertEqual(rotations, {0, 90, 180, 270})
 
+    def test_direct_constructor_revalidates_role_and_net_bindings(self):
+        for mutation, message in (
+                ('unrelated', 'supply must start at the declared inductor'),
+                ('swapped', 'return must use the declared return_net'),
+                ('switch_source', 'switch pair must start at the declared IC'),
+                ('switch_target', 'switch must end at the declared inductor'),
+                ('switch_net', 'switch nets must differ from supply and return'),
+                ('overlap', 'distinct-source supply and return nets must differ')):
+            _, doc = bound_output_loop()
+            row = doc['obligations'][0]
+            if mutation == 'unrelated':
+                row['supply']['from']['reference'] = 'R9'
+            elif mutation == 'swapped':
+                for end in ('from', 'to'):
+                    row['supply'][end]['net'], row['return'][end]['net'] = 'GND', 'VCC'
+            elif mutation == 'switch_source':
+                row['switch']['from']['reference'] = 'R9'
+            elif mutation == 'switch_target':
+                row['switch']['to']['reference'] = 'R9'
+            elif mutation == 'switch_net':
+                row['switch']['from']['net'] = 'VCC'
+            else:
+                for key in ('kind', 'ic', 'inductor', 'return_net'):
+                    row.pop(key)
+                row['supply']['to']['net'] = 'GND'
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, message):
+                locality.PlacementIndex(doc)
+
     def test_uuid_selected_repeated_number_is_indexed_without_aliasing(self):
         b, doc = board(), declaration()
         cap = b['footprints'][1]
         extra = copy.deepcopy(cap['pads'][0])
-        extra.update(uuid='other-pad', position_nm=[999*MM, 0])
+        cap['pads'][0]['uuid'] = '00000000-0000-0000-0000-000000000001'
+        extra.update(uuid='00000000-0000-0000-0000-000000000002', position_nm=[999*MM, 0])
         cap['pads'].append(extra)
         doc['obligations'][0]['supply']['to']['uuid'] = cap['pads'][0]['uuid']
         state = locality.PlacementIndex(doc)
@@ -642,6 +724,11 @@ class LocalityIndexTests(unittest.TestCase):
         candidate = state.prepare(transform(b['footprints'][0], [0,0], 0))
         self.assertEqual(candidate.constraint([MM,MM]), locality.constraint(
             [cap], transform(b['footprints'][0], [MM,MM], 0), doc))
+        for position in ([15*MM, 15*MM], [999*MM, 0]):
+            with self.subTest(position=position):
+                self.assertEqual(candidate.constraint(position), locality.constraint(
+                    [cap], transform(b['footprints'][0], position, 0), doc))
+                self.assertEqual(bool(candidate.constraint(position)[0]), position == [999*MM, 0])
 
     def test_target_budget_refuses_instead_of_truncating_constraints(self):
         pairs = [([0,0], [i*1000, i*1000], 1, {'U1','C1'}) for i in range(100)]
@@ -746,3 +833,97 @@ class LocalityIndexTests(unittest.TestCase):
         self.assertLessEqual(evaluator.call_count, 3000, 'bounded candidate locality work')
         self.assertLessEqual(result['steps_used'], 16, 'bounded exact candidate tests')
         self.assertLess(elapsed, 180.0, '331-footprint guided packing safety ceiling')
+
+    def test_exact_limit_passes_and_one_nanometre_over_blocks(self):
+        # Every admissible slot beside the fixed U1 lies exactly 2.5 mm from its
+        # pads, so a plan exists at the limit and none one nanometre tighter.
+        for limit, planned in ((5*MM//2, True), (5*MM//2 - 1, False)):
+            for caps in (1, 3):
+                with self.subTest(limit=limit, caps=caps):
+                    b, doc = board(), declaration(limit=limit)
+                    for i in range(2, caps + 1):
+                        c = copy.deepcopy(b['footprints'][1])
+                        c['ref'] = c['uuid'] = 'C' + str(i)
+                        for pad in c['pads']:
+                            pad['uuid'] = c['ref'] + '-' + pad['number']
+                        b['footprints'].append(c)
+                        doc['obligations'] += declaration(cap=c['ref'], limit=limit)['obligations']
+                    result = pack(b, request(electrical_locality=doc))
+                    self.assertEqual(result['status'] == 'planned', planned, result['status'])
+                    if planned:
+                        self.assertEqual(result['locality_grading']['status'], 'pass')
+                        self.assertIn(limit**2, {m['distance_squared_nm']
+                                                 for m in result['locality_grading']['measured']})
+                    else:
+                        self.assertEqual((result['outcome'], result['placements']), ('unknown', []))
+                    if caps == 3:
+                        from agent_ee.placer import _pack
+                        joint = _pack(b, request(electrical_locality=doc), heartbeat=None, joint=True)
+                        self.assertEqual(joint['status'] == 'planned', planned, joint['status'])
+                        if planned:
+                            self.assertEqual(joint['locality_grading']['status'], 'pass')
+                            self.assertIn(limit**2, {m['distance_squared_nm']
+                                for m in joint['locality_grading']['measured']})
+                        else:
+                            self.assertEqual((joint['outcome'], joint['placements']), ('unknown', []))
+        b, doc = board(), declaration(limit=5*MM//2)
+        index = locality.PlacementIndex(doc)
+        index.push(b['footprints'][0])
+        evaluator = index.prepare(transform(b['footprints'][1], [0, 0], 0))
+        for x, blocked in ((int(8.5*MM), False), (int(8.5*MM) + 1, True)):
+            moved = transform(b['footprints'][1], [x, 6*MM], 0)
+            expected = locality.constraint([b['footprints'][0]], moved, doc)
+            self.assertEqual(evaluator.constraint([x, 6*MM]), expected)
+            self.assertEqual(bool(expected[0]), blocked)
+            graded = locality.grade({**b, 'footprints': [b['footprints'][0], moved]}, doc)['status']
+            self.assertEqual(graded, 'defect' if blocked else 'pass')
+
+    def test_guided_pack_does_not_scan_placed_footprints_per_candidate(self):
+        from unittest.mock import patch
+        from test_placement import rectangle
+        import agent_ee.placer as placer
+
+        class Counting(list):
+            iterations = 0
+
+            def __iter__(self):
+                Counting.iterations += 1
+                return super().__iter__()
+
+        original = placer._Search.__init__
+
+        def counted(search, *args, **kwargs):
+            original(search, *args, **kwargs)
+            search.placed = Counting(search.placed)
+
+        templates = board()['footprints']
+        footprints = []
+        for i in range(331):
+            fp = copy.deepcopy(templates[i % 2])
+            fp.update(ref='P'+str(i), uuid='P'+str(i))
+            for pad in fp['pads']:
+                pad['uuid'] = fp['ref'] + pad['number']
+            footprints.append(transform(fp, [(i % 20)*4*MM, (i // 20)*4*MM], 0))
+        b = capture(footprints, rectangle(0, 0, 84, 72))
+        b['pcbnew_version'] = '10.0.7'
+        for movable, clustered in (({'P29'}, False), ({'P29', 'P31'}, True)):
+            doc = {'schema': locality.SCHEMA, 'obligations': []}
+            for i in range(15):
+                doc['obligations'] += declaration(ic='P'+str(2*i), cap='P'+str(2*i+1),
+                                                  limit=8*MM)['obligations']
+            if clustered:  # P28 also feeds P31: one joint cluster with two movable members
+                doc['obligations'] = [o for o in doc['obligations'] if o['id'] != 'P31']
+                doc['obligations'].append(dict(declaration(ic='P28', cap='P31', limit=8*MM)['obligations'][0],
+                                               id='P31-from-P28'))
+            policy = request(fixed_refs=[f['ref'] for f in footprints if f['ref'] not in movable],
+                             electrical_locality=doc)
+            Counting.iterations = 0
+            with self.subTest(clustered=clustered), patch.object(placer._Search, '__init__', counted), \
+                    patch.object(locality, 'resolve', wraps=locality.resolve) as resolver:
+                result = (placer._pack(b, policy, heartbeat=None, joint=True) if clustered else pack(b, policy))
+                self.assertEqual(result['status'], 'planned', result)
+                self.assertEqual(bool(result['search'].get('locality_clusters')), clustered)
+                self.assertEqual(result['locality_grading']['status'], 'pass')
+                self.assertLess(resolver.call_count, 400)
+                # Placed-state scans scale with exact tests and scans, never with ranked candidates.
+                self.assertLessEqual(Counting.iterations, 4*result['steps_used'] + 64)

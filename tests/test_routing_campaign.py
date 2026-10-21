@@ -261,7 +261,7 @@ class RoutingCampaignTests(unittest.TestCase):
         execution = receipt['execution']
         argv = execution['sandbox_argv']
         at = argv.index('/opt/kicad-route-state')
-        self.assertEqual(argv[at - 2], '--ro-bind')
+        self.assertEqual(argv[at - 2], '--ro-bind-fd')
         argv[at - 2] = '--bind'
         write_json(receipt_dir / 'run/execution.json', execution)
         receipt['sandbox_profile_sha256'] = identity(stage_receipts.sandbox_profile(argv))
@@ -271,6 +271,52 @@ class RoutingCampaignTests(unittest.TestCase):
         stage_receipts.validate_receipt(receipt_dir)
         with self.assertRaisesRegex(ValueError, 'declared read-only mounts'):
             routing.verify_campaign_receipt(receipt_dir)
+
+    def test_fd_mount_replay_rejects_tampering_and_preserves_legacy_receipts(self):
+        _, _, work = self.run_campaign(self.spec(separate=True))
+        receipt_dir = work / 'receipts/1-kicad-route-krt'
+        original = read_json(receipt_dir / 'receipt.json')
+        summary = routing.verify_campaign_receipt(receipt_dir)
+
+        def retain(value):
+            write_json(receipt_dir / 'run/execution.json', value['execution'])
+            value['sandbox_profile_sha256'] = identity(
+                stage_receipts.sandbox_profile(value['execution']['sandbox_argv']))
+            value['identity'] = identity({k: v for k, v in value.items() if k != 'identity'})
+            write_json(receipt_dir / 'receipt.json', value)
+            stage_receipts.validate_receipt(receipt_dir)
+
+        for case in ('invalid-fd', 'stdio-fd', 'duplicate-fd', 'destination', 'mixed-path'):
+            with self.subTest(case=case):
+                value = copy.deepcopy(original)
+                argv = value['execution']['sandbox_argv']
+                first = argv.index('--ro-bind-fd')
+                second = argv.index('--ro-bind-fd', first + 1)
+                if case == 'invalid-fd':
+                    argv[first + 1] = 'not-a-descriptor'
+                elif case == 'stdio-fd':
+                    argv[first + 1] = '2'
+                elif case == 'duplicate-fd':
+                    argv[second + 1] = argv[first + 1]
+                elif case == 'destination':
+                    argv[first + 2] = '/foreign-tool'
+                else:
+                    argv[first:first + 2] = ['--ro-bind', original['spec']['mounts'][0]['source']]
+                retain(value)
+                with self.assertRaisesRegex(ValueError, 'campaign routing sandbox'):
+                    routing.verify_campaign_receipt(receipt_dir)
+        # Existing retained path-bound receipts remain verifiable without opening
+        # their old host sources or borrowing any of today's descriptors.
+        legacy = copy.deepcopy(original)
+        argv = legacy['execution']['sandbox_argv']
+        for mount in legacy['spec']['mounts']:
+            index = argv.index('--ro-bind-fd')
+            self.assertEqual(argv[index + 2], mount['at'])
+            argv[index:index + 2] = ['--ro-bind', mount['source']]
+        argv[argv.index('--') + 1:] = legacy['spec']['argv']
+        legacy['execution'].pop('mount_guard')
+        retain(legacy)
+        self.assertEqual(routing.verify_campaign_receipt(receipt_dir), summary)
 
     def test_routing_verifier_runs_before_adoption_and_during_campaign_replay(self):
         spec = self.spec()
