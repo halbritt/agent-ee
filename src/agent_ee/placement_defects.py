@@ -524,17 +524,22 @@ def _recorded(run, cid, manifest):
     return witness['silk_findings']
 
 
-def clean_provenance(findings):
-    """An unlineaged release needs native DRC without any silkscreen conflict."""
+def clean_provenance(findings, lineaged=False):
+    """A release needs native DRC without any silkscreen conflict."""
     conflicts = [finding for finding in findings if finding[0].startswith('silk_')]
+    if conflicts and lineaged:
+        raise ValueError(f'board shows {len(conflicts)} native silkscreen conflict(s); its captured placement '
+                         'lineage and stamp are not yet authenticated (AGENTEE-348), so release requires a '
+                         'natively clean board')
     if conflicts:
         raise ValueError(f'board shows {len(conflicts)} native silkscreen conflict(s) but captured '
                          'no placement lineage; release requires its placement-evidence or a clean board')
 
 
 def _needs_clean_provenance(manifest, inputs):
-    # An empty or self-asserted imported index cannot stand in for stamped ancestry.
-    return _board(manifest) and not (lineage(manifest) and _board_stamp(manifest, inputs))
+    # A stamp and an imported index are both self-asserted until AGENTEE-348, so
+    # neither can waive the clean native witness at release (AGENTEE-351 H1).
+    return bool(_board(manifest))
 
 
 def prepare_release(ctx):
@@ -732,6 +737,6 @@ def release_defects(run, check, manifest):
         _read(manifest, Path(run) / 'inputs', _board(manifest))
         return findings
     defects = open_defects(manifest, Path(run) / 'inputs', native)
-    if _needs_clean_provenance(manifest, Path(run) / 'inputs'):
-        clean_provenance(native())
+    if not defects and _needs_clean_provenance(manifest, Path(run) / 'inputs'):
+        clean_provenance(native(), lineage(manifest))
     return defects

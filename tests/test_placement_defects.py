@@ -621,6 +621,89 @@ class NativePlacementCarryTests(unittest.TestCase):
         with self.assertRaisesRegex(CheckError, 'custom DRC rule ignores'):
             placement_defects.before_check(Ctx(run, manifest, spec, time.monotonic() + 300))
 
+    def test_fabricated_stamp_and_imported_lineage_cannot_waive_release_witness(self):
+        """H1: a self-asserted stamp and a self-hashed imported closure cannot release a
+        natively silk-conflicted board; only a clean sealed native witness can."""
+        from agent_ee.fab_package import artifact_record
+        from agent_ee.placer_runner import _native_drc
+        from agent_ee.storage import identity
+        from test_fab_package import FIXTURE, NativeRun, generation_scope
+        runner = NativeRun()
+        runner.setUp()
+        self.addCleanup(runner.doCleanups)
+        source = runner.root / 'attack'
+        shutil.copytree(FIXTURE, source)
+        board = source / 'fab.kicad_pcb'
+        board.write_text(board.read_text().replace('(at 0 -2 0)', '(at 0 0 0)', 1))
+        (runner.root / 'drc-before').mkdir()
+        silk = placement_defects.silk_findings(_native_drc(board, runner.root / 'drc-before'))
+        self.assertTrue(silk)
+        conflicted = {u for finding in silk for u in finding[1]}
+        prop = next(u for u, (_, node, _) in sorted(placement_defects._identities(board).items())
+                    if node[0] == 'property' and u not in conflicted)
+        evidence = self.candidate_run / 'inputs' / placement_defects.DIRECTORY
+        template = self.candidate_run / 'inputs' / Path(read_json(evidence / 'index.json')[0]['receipt']).parent
+        fake = copy.deepcopy(read_json(template / placement_defects.REPORT)['open_defects'][0])
+        self.assertIn('native', fake)
+        fake['native']['items'] = [{'description': 'fabricated', 'uuid': prop}]
+        # The attacker writes its own stamp text; it names only the fabricated carry.
+        board.write_text(board.read_text().replace('(paper "A4")', '(paper "A4")\n\t(title_block\n\t\t(comment 9 "'
+                         f'{placement_defects.STAMP} {placement_defects.carry_digest([fake])}")\n\t)', 1))
+        (runner.root / 'drc-stamped').mkdir()
+        self.assertEqual(placement_defects.silk_findings(_native_drc(board, runner.root / 'drc-stamped')), silk)
+        scope = generation_scope('agent-ee.scope/3')
+        scope['inputs'][0]['path'] = str(source)
+        board_rel = scope['board']
+        imported = runner.root / 'evidence'
+
+        def bundle(name, defects):
+            # Self-hashed receipts: one opens the fabricated carry, the next closes it with
+            # honest native DRC of the conflicted board and a self-asserted containment.
+            target = imported / name
+            shutil.copytree(template, target)
+            shutil.copyfile(board, target / placement_defects.BOARD)
+            shutil.copyfile(runner.root / 'drc-stamped/native-drc.json', target / placement_defects.DRC)
+            shutil.copyfile(runner.root / 'drc-stamped/native-drc-execution.json', target / placement_defects.EXECUTION)
+            report = read_json(target / placement_defects.REPORT)
+            report.update(board_sha256=digest(board), source_sha256=digest(board), open_defects=defects,
+                          containment={'board_sha256': digest(board), 'markings': [prop]})
+            report['native_drc_comparison']['open_defects'] = defects
+            if not defects:
+                report.update(outcome='pass', verdict='pass')
+            write_json(target / placement_defects.REPORT, report)
+            receipt = read_json(target / 'receipt.json')
+            receipt['inputs'] = receipt['outputs'] = {board_rel: digest(board)}
+            for artifact in (*placement_defects.FILES, placement_defects.ARTWORK):
+                if artifact in receipt['artifacts']:
+                    receipt['artifacts'][artifact] = digest(target / artifact)
+            receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
+            write_json(target / 'receipt.json', receipt)
+            return {'receipt': f'{placement_defects.DIRECTORY}/{name}/receipt.json',
+                    'sha256': digest(target / 'receipt.json')}
+        imported.mkdir()
+        write_json(imported / 'index.json', [bundle('fabricated', [fake]), bundle('closure', [])])
+        scope['inputs'].append({'path': str(imported), 'at': placement_defects.DIRECTORY})
+        result = runner.run_case(scope=scope)
+        self.assertEqual((result['execution'], result['outcome']), ('malformed', 'unknown'))
+        self.assertIn('silkscreen conflict', result['summary'])
+        self.assertNotIn('artifacts', result['details'])
+        run = runner.run_dir
+        manifest = read_json(run / 'candidate.json')
+        # The forgery is self-consistent: lineage and stamp are present and bound, and the
+        # sealed native witness agrees with the closure, so no carry remains open.
+        self.assertTrue(placement_defects.lineage(manifest))
+        self.assertTrue(placement_defects._board_stamp(manifest, run / 'inputs'))
+        recorded = placement_defects._recorded(run, result['id'], manifest)
+        self.assertEqual(recorded, silk)
+        self.assertEqual(placement_defects.open_defects(manifest, run / 'inputs', lambda: recorded), [])
+        passed = {**result, 'execution': 'ok', 'outcome': 'pass'}
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict.*not yet authenticated'):
+            placement_defects.release_defects(run, passed, manifest)
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            artifact_record(run, passed)
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            placement_defects.verify_gate(run, passed, manifest)
+
     def test_rescoped_release_with_lineage_keeps_open_carry(self):
         from agent_ee.checks import run_checks
         run, manifest = self.rescope('rescoped-lineage', lineage=True)

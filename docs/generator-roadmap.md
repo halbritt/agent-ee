@@ -321,8 +321,9 @@ downstream fab/verification gates and package release refuse open carry. A
 board lineage stamp makes a re-scoped copy refuse release without that evidence.
 Imported closure evidence must match native DRC on the captured board
 (AGENTEE-351). Package release also requires a sealed clean native DRC witness
-when stamped ancestry is absent; stripped stamps cannot silently drop this
-release obligation. Individual checks keep their existing verdicts. AGENTEE-344
+for every board; stamps and imported lineage cannot waive it until AGENTEE-348
+authenticates them, so stripped or fabricated stamps cannot drop this release
+obligation. Individual checks keep their existing verdicts. AGENTEE-344
 extends carry refusal to fab-family kinds in every stage and to campaign acceptance.
 Closed markings retain receipt-backed closure across proven masked-track edits.
 The [post-routing artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)

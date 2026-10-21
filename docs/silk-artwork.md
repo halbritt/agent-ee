@@ -196,8 +196,8 @@ comment. Dropping or rewriting a digest, or editing any other title block field,
 is a violation. Campaign verification also refuses a successor candidate whose
 board drops or rewrites its predecessor's stamp, whichever step wrote it.
 
-A gated check (verification, fab and release stages, and the fab export,
-package, consistency, CPL and JLC DFM kinds) on a stamped board refuses as
+A gated check (verification, fab and release stages, and the 18 fab-family
+kinds in `GATED_KINDS`, see the [check reference](check-reference.md)) on a stamped board refuses as
 unknown, with execution `malformed`, when the candidate captured no
 `placement-evidence` or that evidence binds no stamp digest.
 
@@ -239,13 +239,18 @@ comment 9 holds other text.
 Release admission also covers boards whose stamp was stripped outside agent-ee
 and boards published before the stamp contract. `fab_package` captures a native
 DRC witness on the captured board bytes before extracting release artifacts.
-Without stamped, verified ancestry, release requires no open carry and no
-`silk_*` finding at any severity. An empty imported index does not establish
-ancestry. Missing, changed or incomplete native evidence refuses as typed
+Release requires no open carry and no `silk_*` finding at any severity, for
+every board. A stamp and an imported index are both self-asserted until
+AGENTEE-348 authenticates them, so neither waives the witness: a fabricated
+stamp with a self-hashed imported closure still refuses a natively
+silk-conflicted board. Open carry refuses first with its own typed message.
+An empty imported index does not establish ancestry. Missing, changed or incomplete native evidence refuses as typed
 unknown (`malformed`, or `interrupted` on deadline exhaustion). The package's
 sealed witness is rechecked by `verify_gate`, artifact extraction and campaign
 completion; a forged passing package cannot bypass it. The stamp therefore is
-not the sole indicator of a board that needs release verification.
+not an indicator of which boards need release verification: all of them do.
+In-campaign releases of boards with uncarried baseline `silk_*` findings are
+refused too.
 
 This clean-provenance rule applies only at the release artifact boundary.
 Standalone `fab_export`, `cpl_rotation`, `fab_consistency` and other checks keep

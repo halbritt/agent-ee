@@ -1909,9 +1909,10 @@ outside the campaign. Captured evidence closes carry only when its claimed
 `silk_*` findings equal native DRC recomputed on the captured board in the
 sandbox. A mismatch, or a verification that cannot run, is unknown. The seal and
 release extraction recheck the witness `work/<check>/placement-lineage.json`.
-At release artifact extraction, a board without stamped, verified ancestry
-requires a sealed native DRC witness showing no `silk_*` conflicts and no open
-carry. `fab_package`, sealed release verification and campaign completion refuse
+At release artifact extraction, every board requires a sealed native DRC
+witness showing no `silk_*` conflicts and no open carry. Until AGENTEE-348
+authenticates imported lineage and stamps, neither waives this witness; open
+carry still refuses first with its own typed message. `fab_package`, sealed release verification and campaign completion refuse
 missing or unverifiable evidence as unknown. Standalone checks retain their
 verdicts; there is no scheduler verdict rewrite. See the
 [release contract](silk-artwork.md#board-lineage-stamp-agentee-351). Explicitly

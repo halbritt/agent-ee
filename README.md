@@ -125,9 +125,10 @@ straight slots and cutouts (AGENTEE-362), without rerunning the tool during camp
 A board published with open carry has a [lineage stamp](docs/silk-artwork.md#board-lineage-stamp-agentee-351),
 so a re-scoped copy refuses release as unknown unless it brings its
 `placement-evidence`. Imported evidence closes carry only when native DRC on the
-captured board reproduces it (AGENTEE-351). At package release, an unstamped
-board also needs native DRC on its captured bytes showing no `silk_*` conflicts;
-a missing or unverifiable witness refuses as unknown. Standalone checks keep
+captured board reproduces it (AGENTEE-351). At package release, every board
+also needs native DRC on its captured bytes showing no `silk_*` conflicts; a stamp
+or imported lineage cannot waive it until AGENTEE-348 authenticates them, and a
+missing or unverifiable witness refuses as unknown. Standalone checks keep
 their verdicts.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
