@@ -115,12 +115,14 @@ def verify_records(run, result):
     reviews = [read_json(p) for p in sorted((run / 'reviews').glob('*.json'))]
     expected = coverage(reviews)
     stored = result.get('purpose_coverage')
-    if stored is not None or expected:
+    # A stored record must match; a complete run must have one. An incomplete run cannot be
+    # accepted, and apply_decisions records coverage again before any completion.
+    if stored is not None or (expected and result.get('state') == 'complete'):
         if not isinstance(stored, list) or (sorted(stored, key=lambda r: str(r.get('role')))
                                             != sorted(expected, key=lambda r: r['role'])):
             raise ValueError('purpose coverage differs from the retained initial reviews')
-    if any(text not in result.get('limitations', []) for text in coverage_limitations(expected)):
-        raise ValueError('result omits a purpose coverage unknown limitation')
+        if any(text not in result.get('limitations', []) for text in coverage_limitations(expected)):
+            raise ValueError('result omits a purpose coverage unknown limitation')
     retained = {f"{r['role']}/{f['id']}": f for r in reviews for f in r.get('findings', [])}
     granted = {}
     records = [(read_json(p), p.name) for p in (run / 'events').glob('*adjudication*.json')]

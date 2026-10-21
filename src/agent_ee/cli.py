@@ -613,6 +613,9 @@ def _apply_decisions(run, decisions_path):
     event = run / "events" / (str(uuid.uuid4()) + "-adjudication.json")
     write_json(event, {"at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "decisions": decisions})
     result.update(findings=updated, adjudicated=True)
+    if result["reviews"]:
+        from .purpose_review import record_coverage
+        record_coverage(result)
     if (len(result["reviews"]) >= 2 and all(c["execution"] == "ok" and c["outcome"] != "unknown"
             for c in result["checks"]) and all(r["execution"] == "ok" for r in result["review_executions"])
             and all(finding_status(f) != "unresolved" for f in updated)

@@ -497,6 +497,9 @@ class PurposeIntegrityRunTests(unittest.TestCase):
                 ('coverage deleted', drop_coverage, 'purpose coverage differs'),
                 ('coverage key removed', lambda value: value.pop('purpose_coverage'), 'purpose coverage differs'),
                 ('forged addressed', forge_addressed, 'purpose coverage differs'),
+                ('forged addressed, incomplete', lambda value: (forge_addressed(value),
+                                                                value.update(state='incomplete')),
+                 'purpose coverage differs'),
                 ('unknown limitation removed', lambda value: value.update(limitations=[
                     text for text in value['limitations'] if 'purpose coverage unknown' not in text]),
                  'omits a purpose coverage unknown limitation')):
