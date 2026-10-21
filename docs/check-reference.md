@@ -1878,15 +1878,6 @@ project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
 
-Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
-The per-rotation cap of 256 distinct locality origins refuses with
-`packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
-`locality target budget exhausted`; it never truncates targets. Runner heartbeats
-go to stderr, preserving the single JSON summary on `board_build` stdout.
-Heartbeat and partial search results are diagnostics with no acceptance authority;
-the full independent locality check still grades every declared role.
-
-
 ## Post-routing silk repair (AGENTEE-350)
 
 The [routed artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
@@ -1897,7 +1888,11 @@ geometry proof and complete native DRC. Coordinator carry capture and replay
 reuse the placement evidence envelope. Identity-bound closure can then remove
 carried defects only when each marking is visible, unchanged in style and
 silk layer, and wholly inside the qualified outline. Off-board and straddling
-marks remain open even if native DRC is silent. Remaining conflicts and
+marks remain open even if native DRC is silent. Footprint-owned Edge.Cuts
+participate in outline qualification; slots and cutouts cannot establish
+containment. Both producers seal a board-bound native containment witness in
+the placement report. Closure and campaign replay read it without rerunning
+pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
 unavailable evidence keep their refusal. Cached-text translations and boards
 containing backslashes refuse the producer's scope proof.
 This adds no check registration or verdict waiver. The initial placer continues
@@ -1906,6 +1901,7 @@ refusal before the repair and passing verification geometry and native fab expor
 The closure-currency regression preserves closure after masked-track edits on a
 board with a proven outline and retains the defect on the same board without
 an outline.
+
 ## Declared placer obstacles (AGENTEE-338)
 
 The [placer obstacle policy](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)

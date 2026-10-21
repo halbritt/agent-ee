@@ -2321,7 +2321,6 @@
     },
     {
       "paths": [
-        "tests/test_placement_defects.py",
         "tests/test_routed_artwork.py"
       ],
       "kind": "owned-source",

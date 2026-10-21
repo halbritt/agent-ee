@@ -12,6 +12,11 @@ from agent_ee import placement_defects
 from agent_ee.storage import digest, read_json, write_json
 
 
+def native_containment(board):
+    from agent_ee.silk_artwork import containment_witness
+    return containment_witness(board)
+
+
 def outlined_closure_text():
     from tests.test_placement_adapter import TEXT
     # TEXT's overlapping Edge.Cuts lines cannot prove containment. Give this
@@ -71,27 +76,30 @@ class PlacementDefectContractTests(unittest.TestCase):
 
     def test_graphic_text_style_damage_retains_known_defect(self):
         with tempfile.TemporaryDirectory() as directory:
-            before, after = (Path(directory) / name for name in ('before', 'after'))
-            text = ('(kicad_pcb (gr_text "Owned mark" (at 1 2) (layer "F.SilkS") '
-                    '(uuid "mark") (effects (font (size 1 1)))))')
+            before, after = (Path(directory) / name for name in ('before.kicad_pcb', 'after.kicad_pcb'))
+            outlined, _ = outlined_closure_text()
+            mark = '00000000-0000-0000-0000-0000000000aa'
+            graphic = ('(gr_text "Owned mark" (at 4 5) (layer "F.SilkS") '
+                       f'(uuid "{mark}") (effects (font (size 1 1))))')
+            text = outlined.rstrip()[:-1] + graphic + ')'
+
             before.write_text(text)
-            after.write_text(text.replace('(at 1 2)', '(at 2 3)').replace('(size 1 1)', '(size 0.8 1)'))
+            after.write_text(text.replace('(at 4 5)', '(at 5 6)').replace('(size 1 1)', '(size 0.8 1)'))
             defect = {'type': 'placement_silkscreen_conflict', 'status': 'open', 'verdict': 'defect',
-                      'native': {'items': [{'uuid': 'mark'}]}}
+                      'native': {'items': [{'uuid': mark}]}}
             self.assertFalse(placement_defects._closes(defect, placement_defects._identities(before),
-                placement_defects._identities(after), set(), set(), True, graphic_translation=True))
+                placement_defects._identities(after, native_containment(after)), set(), set(), True, graphic_translation=True))
             # A changed item kind is also damage, even when its UUID survives.
-            shape = ('(kicad_pcb (gr_line (start 1 2) (end 2 2) (layer "F.SilkS") '
-                     '(uuid "mark")))')
+            shape = (outlined.rstrip()[:-1] +
+                     f'(gr_line (start 4 5) (end 5 5) (layer "F.SilkS") (uuid "{mark}")))')
             before.write_text(shape)
             self.assertFalse(placement_defects._closes(defect, placement_defects._identities(before),
-                placement_defects._identities(after), set(), set(), True, graphic_translation=True))
+                placement_defects._identities(after, native_containment(after)), set(), set(), True, graphic_translation=True))
             before.write_text(text)
-            # This own-branch fixture lacks a proven outline: position alone
-            # cannot establish visible in-board silk, even with unchanged style.
-            after.write_text(text.replace('(at 1 2)', '(at 2 3)'))
-            self.assertFalse(placement_defects._closes(defect, placement_defects._identities(before),
-                placement_defects._identities(after), set(), set(), True, graphic_translation=True))
+            # Restore the positive translation control with a qualified outline.
+            after.write_text(text.replace('(at 4 5)', '(at 5 6)'))
+            self.assertTrue(placement_defects._closes(defect, placement_defects._identities(before),
+                placement_defects._identities(after, native_containment(after)), set(), set(), True, graphic_translation=True))
 
 
 class NativePlacementCarryTests(unittest.TestCase):
@@ -451,13 +459,19 @@ class NativePlacementCarryTests(unittest.TestCase):
             self.assertEqual(read_json(campaign / 'history/1.json'), result)
 
 
+class ContainedIdentities(dict):
+    """Unit closure caller supplying an explicit positive containment witness."""
+    def contained(self):
+        return {'field'}
+
+
 class ClosureContractTests(unittest.TestCase):
     def setUp(self):
         self.native = {'type': 'placement_silkscreen_conflict', 'status': 'open', 'verdict': 'defect',
                        'native': {'items': [{'uuid': 'field'}]}}
         self.diagnostic = {'type': 'placement_silkscreen_conflict', 'status': 'open', 'verdict': 'defect',
                            'uuid': 'field', 'reason': 'footprint_side_flipped'}
-        self.original = {'field': ('footprint', ['property', 'Reference', 'U1'], [['at', '0', '0']])}
+        self.original = ContainedIdentities({'field': ('footprint', ['property', 'Reference', 'U1'], [['at', '0', '0']])})
 
     def test_native_closes_only_on_current_clear_same_identity_evidence(self):
         self.assertTrue(placement_defects._closes(self.native, self.original, self.original, set(), set(), True))
@@ -465,6 +479,15 @@ class ClosureContractTests(unittest.TestCase):
                                           (self.original, set(), False),
                                           ({'field': ('other-footprint', ['property', 'Reference', 'U1'], [])}, set(), True)):
             self.assertFalse(placement_defects._closes(self.native, self.original, current, conflicts, set(), fresh))
+
+    def test_plain_mapping_cannot_bypass_containment(self):
+        self.assertFalse(placement_defects._closes(self.native, self.original,
+            dict(self.original), set(), set(), True))
+        class Uncontained(ContainedIdentities):
+            def contained(self):
+                return set()
+        self.assertFalse(placement_defects._closes(self.native, self.original,
+            Uncontained(self.original), set(), set(), True))
 
     def test_side_flip_empty_native_delta_does_not_close_without_artwork_change(self):
         self.assertFalse(placement_defects._closes(self.diagnostic, self.original, self.original, set(), set(), True))
@@ -481,7 +504,7 @@ class ClosureContractTests(unittest.TestCase):
     def test_unrelated_baseline_silk_on_same_pad_does_not_prevent_field_resolution(self):
         defect = copy.deepcopy(self.native)
         defect['native']['items'].append({'uuid': 'pad'})
-        original = {**self.original, 'pad': ('footprint', ['pad', '1', 'smd'], [['at', '0', '0']])}
+        original = ContainedIdentities({**self.original, 'pad': ('footprint', ['pad', '1', 'smd'], [['at', '0', '0']])})
         self.assertTrue(placement_defects._closes(defect, original, original, {'pad', 'other-field'}, set(), True))
         self.assertFalse(placement_defects._closes(defect, original, original, {'field'}, set(), True))
 
@@ -533,7 +556,8 @@ class DurableClosureTests(unittest.TestCase):
                 files[rel] = digest(path)
                 link = {'receipt': rel, 'sha256': digest(path)}
                 links.append(link)
-                bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects},
+                bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects,
+                                 'containment': native_containment(board)},
                                 {placement_defects.BOARD: board}, {'violations': []})
             index = 'placement-evidence/index.json'
             write_json(inputs / index, links)
@@ -580,6 +604,7 @@ class DurableClosureTests(unittest.TestCase):
                                              not line.startswith('(gr_line')))
                 for report, loaded, _ in bundles.values():
                     report['board_sha256'] = digest(loaded[placement_defects.BOARD])
+                    report['containment'] = native_containment(loaded[placement_defects.BOARD])
                 for routed in (False, True):
                     with self.subTest(outline=False, routed=routed):
                         current.write_text(fixed.read_text().rstrip()[:-1] + (track if routed else '') + ')')
@@ -789,10 +814,12 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         self.assertTrue(list((export / 'drill').glob('*')))
         self.assertTrue((export / 'bom.csv').is_file())
         self.assertTrue((export / 'cpl.csv').is_file())
-        self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'criteria_satisfied')
+        with patch('agent_ee.executor.execute', side_effect=AssertionError('replay launched a tool')):
+            self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'criteria_satisfied')
 
 class ClosureEscapeTests(unittest.TestCase):
-    def run_closure(self, edit=lambda text: text, *, receipt_rules=None, current_rules=None):
+    def run_closure(self, edit=lambda text: text, *, receipt_rules=None, current_rules=None,
+                    witness_edit=lambda witness: witness):
         TEXT, field_uuid = outlined_closure_text()
         with tempfile.TemporaryDirectory() as temporary:
             inputs = Path(temporary)
@@ -809,7 +836,8 @@ class ClosureEscapeTests(unittest.TestCase):
                 files[rel] = digest(path)
                 link = {'receipt': rel, 'sha256': digest(path)}
                 links.append(link)
-                bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects},
+                bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects,
+                                 'containment': witness_edit(native_containment(board))},
                                 {placement_defects.BOARD: board}, {'violations': []})
             write_json(inputs / 'placement-evidence/index.json', links)
             files['placement-evidence/index.json'] = digest(inputs / 'placement-evidence/index.json')
@@ -822,6 +850,18 @@ class ClosureEscapeTests(unittest.TestCase):
 
     def test_control_identical_board_closes(self):
         self.assertEqual(self.run_closure(lambda t: t), [])
+
+    def test_missing_malformed_or_mismatched_witness_retains_known_defect(self):
+        for witness in (None, {}, [], {'board_sha256': 'wrong', 'markings': ['field']},
+                        {'board_sha256': 'wrong', 'markings': [None]}):
+            with self.subTest(witness=witness):
+                self.assertEqual(len(self.run_closure(witness_edit=lambda w: witness)), 1)
+        for markings in (None, 'field', [None], [''], [['nested']], [1],
+                         ['00000000-0000-0000-0000-0000000000a1'] * 2, []):
+            with self.subTest(markings=markings):
+                self.assertEqual(len(self.run_closure(
+                    witness_edit=lambda w: {**w, 'markings': markings})), 1)
+
 
     def test_octal_escape_relabels_closed_reference(self):
         # KiCad's reader decodes "R\1" as 'R\x01'; the shared parser yields 'R1'.

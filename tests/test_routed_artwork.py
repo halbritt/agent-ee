@@ -184,7 +184,8 @@ class RoutedArtworkTest(unittest.TestCase):
         import pcbnew as k
         from agent_ee import placement_defects as pd
         from agent_ee.placer_runner import _native_drc
-        for case in ('offboard_all', 'offboard_one', 'edge_straddle'):
+        for case in ('inside_control', 'footprint_cutout', 'board_cutout',
+                     'offboard_all', 'offboard_one', 'edge_straddle'):
             with self.subTest(case=case), tempfile.TemporaryDirectory(dir=self.root) as d:
                 prior, self.root = self.root, Path(d)
                 try:
@@ -202,18 +203,38 @@ class RoutedArtworkTest(unittest.TestCase):
                     moved = fields if case == 'offboard_all' else fields[:1]
                     bad = {fp.Reference().m_Uuid.AsString() for fp in moved}
                     for fp in moved:
-                        fp.Reference().SetPosition(k.VECTOR2I(-300000, 3000000) if case == 'edge_straddle'
-                                                   else k.VECTOR2I(-80000000, -80000000))
+                        position = (k.VECTOR2I(15000000, 12000000) if case in
+                                    ('inside_control', 'footprint_cutout', 'board_cutout') else
+                                    k.VECTOR2I(-300000, 3000000) if case == 'edge_straddle' else
+                                    k.VECTOR2I(-80000000, -80000000))
+                        fp.Reference().SetPosition(position)
+                        if case in ('footprint_cutout', 'board_cutout'):
+                            # Original reviewer probe: surround a moved reference
+                            # with a slot owned by its footprint (or the board).
+                            owner = fp if case == 'footprint_cutout' else board
+                            box = fp.Reference().GetBoundingBox()
+                            box.Inflate(400000)
+                            points = [(box.GetLeft(), box.GetTop()), (box.GetRight(), box.GetTop()),
+                                      (box.GetRight(), box.GetBottom()), (box.GetLeft(), box.GetBottom())]
+                            for a, b in zip(points, points[1:] + points[:1]):
+                                edge = k.PCB_SHAPE(owner)
+                                edge.SetShape(k.SHAPE_T_SEGMENT)
+                                edge.SetLayer(k.Edge_Cuts)
+                                edge.SetWidth(50000)
+                                edge.SetStart(k.VECTOR2I(*a))
+                                edge.SetEnd(k.VECTOR2I(*b))
+                                owner.Add(edge)
                     k.SaveBoard(str(source), board, True)
-                    art.produce(source, self.root / 'run')
-                    current = pd._identities(self.root / 'run' / art.BOARD)
+                    report = art.produce(source, self.root / 'run')
+                    current = pd._identities(self.root / 'run' / art.BOARD, report['containment'])
                     # Even a silent DRC cannot establish on-board containment.
                     affected = [d for d in defects if pd._items(d) & bad]
                     self.assertTrue(affected)
                     for graphic_translation in (False, True):
                         for defect in affected:
-                            self.assertFalse(pd._closes(defect, original, current, set(), set(), True,
-                                                        graphic_translation=graphic_translation))
+                            closes = pd._closes(defect, original, current, set(), set(), True,
+                                                graphic_translation=graphic_translation)
+                            self.assertEqual(closes, case == 'inside_control')
                 finally:
                     self.root = prior
 

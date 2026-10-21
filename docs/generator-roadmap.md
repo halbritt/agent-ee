@@ -323,7 +323,9 @@ carry refusal to fab-family kinds in every stage and to campaign acceptance.
 Closed markings retain receipt-backed closure across proven masked-track edits.
 The [post-routing artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
 repairs silk through a scope-proven receipt and enables identity-bound closure
-after routing. Lineage enforcement after out-of-campaign re-scoping remains open.
+after routing. Final saved-board containment witnesses are sealed in producer
+reports and reused on replay; footprint-owned cutouts cannot close carry.
+Lineage enforcement after out-of-campaign re-scoping remains open.
 Its local reports do not replace the
 coordinator checks.
 

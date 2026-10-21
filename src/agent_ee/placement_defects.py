@@ -193,41 +193,28 @@ def _bundle(manifest, inputs, link):
 
 
 class _SavedIdentities(dict):
-    """Parsed identities retaining their exact saved board for lazy native proof."""
-    def __init__(self, path):
+    """Saved identities with the receipt's board-bound native containment witness."""
+    def __init__(self, path, witness):
         super().__init__()
         self.board_bytes = Path(path).read_bytes()
-        self._contained = None
+        self._contained = set()
+        if not isinstance(witness, dict) or set(witness) != {'board_sha256', 'markings'}:
+            return
+        markings = witness['markings']
+        if (witness['board_sha256'] == hashlib.sha256(self.board_bytes).hexdigest() and
+                isinstance(markings, list) and all(isinstance(u, str) and u for u in markings) and
+                len(markings) == len(set(markings))):
+            self._contained = set(markings)
 
     def contained(self):
-        if self._contained is not None:
-            return self._contained
-        import tempfile
-        from .executor import execute
-        # Reuse the native search's outline qualification and exact segment test.
-        # A fresh read-only snapshot prevents path changes during replay.
-        script = ("import json, pcbnew; from agent_ee.silk_artwork import contained_markings; "
-                  "from pathlib import Path; "
-                  "Path('/work/contained.json').write_text(json.dumps(contained_markings("
-                  "pcbnew.LoadBoard('/candidate/board.kicad_pcb'))))")
-        with tempfile.TemporaryDirectory(prefix='agent-ee-silk-closure-') as directory:
-            root = Path(directory)
-            inputs = root / 'inputs'
-            inputs.mkdir()
-            (inputs / 'board.kicad_pcb').write_bytes(self.board_bytes)
-            work = root / 'work'
-            record = execute(inputs, work, ['/usr/bin/python3', '-B', '-c', script], timeout=120)
-            # Failure cannot erase a known defect or become passing coverage.
-            self._contained = (set(read_json(work / 'contained.json'))
-                               if record['execution'] == 'ok' and record['exit_code'] == 0 and
-                               (work / 'contained.json').is_file() else set())
+        # Replay consumes sealed evidence only; missing/invalid witnesses close nothing.
         return self._contained
 
 
-def _identities(path):
+def _identities(path, witness=None):
     """Saved native item identities and marking content, using the shared parser."""
     from .symbol_library import children, parse_sexpr
-    result = _SavedIdentities(path)
+    result = _SavedIdentities(path, witness)
     root = parse_sexpr(result.board_bytes)
     def visit(node, owner):
         uid = children(node, 'uuid')
@@ -379,7 +366,7 @@ def open_defects(manifest, inputs):
     active = []
     for link in links:
         report, loaded, drc = _bundle(manifest, inputs, link)
-        identities = _identities(loaded[BOARD])
+        identities = _identities(loaded[BOARD], report.get('containment'))
         moved = {m['uuid'] for m in read_json(loaded[ARTWORK]).get('moved_fields', [])} if ARTWORK in loaded else set()
         conflicts = {i['uuid'] for v in drc['violations'] if v['type'].startswith('silk_') for i in v['items']}
         diagnostics = {d['uuid'] for d in report['open_defects'] if 'uuid' in d}
@@ -440,7 +427,7 @@ def _closes(defect, original, current, conflicts, moved, current_board, graphic_
     return (current_board and ids <= current.keys() and ids <= original.keys() and
             all(same(u) for u in ids) and
             bool(markings) and not (markings & conflicts) and
-            (not isinstance(current, _SavedIdentities) or markings <= current.contained()) and
+            (callable(getattr(current, 'contained', None)) and markings <= current.contained()) and
             ('native' in defect or all(u in moved or current[u][2] != original[u][2] for u in ids)))
 
 

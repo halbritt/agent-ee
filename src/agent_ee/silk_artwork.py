@@ -77,8 +77,10 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
                     item.GetLayer() in (k.F_SilkS, k.B_SilkS)):
                 fp = item.GetParentFootprint()
                 fields[item.m_Uuid.AsString()] = (fp.GetReference() if fp else '', item)
-    outline = prove_contours([primitive(s) for s in board.GetDrawings()
-                              if s.GetLayer() == k.Edge_Cuts], 'outline_missing', 'outline_unproven')
+    edges = [s for s in board.GetDrawings() if s.GetLayer() == k.Edge_Cuts]
+    for fp in board.GetFootprints():
+        edges.extend(s for s in fp.GraphicalItems() if s.GetLayer() == k.Edge_Cuts)
+    outline = prove_contours([primitive(s) for s in edges], 'outline_missing', 'outline_unproven')
     settings = board.GetDesignSettings()
     margin = max(200000, settings.m_SilkClearance)
     # KiCad 10 can omit custom-field UUIDs from silk reports, citing only the
@@ -157,8 +159,10 @@ def contained_markings(board):
     import pcbnew as k
     from .board_envelope import segment_inside
     from .placement_probe import primitive, prove_contours
-    outline = prove_contours([primitive(s) for s in board.GetDrawings()
-                              if s.GetLayer() == k.Edge_Cuts], 'outline_missing', 'outline_unproven')
+    edges = [s for s in board.GetDrawings() if s.GetLayer() == k.Edge_Cuts]
+    for fp in board.GetFootprints():
+        edges.extend(s for s in fp.GraphicalItems() if s.GetLayer() == k.Edge_Cuts)
+    outline = prove_contours([primitive(s) for s in edges], 'outline_missing', 'outline_unproven')
     if outline['status'] != 'proven' or len(outline['polygons']) != 1:
         return []
     items = list(board.GetDrawings())
@@ -181,3 +185,13 @@ def contained_markings(board):
                for a, b in zip(corners, corners[1:] + corners[:1])):
             contained.append(item.m_Uuid.AsString())
     return sorted(contained)
+
+
+def containment_witness(path):
+    """Bind native containment of the final saved board to its receipt report."""
+    import pcbnew
+    from .storage import digest
+    board = pcbnew.LoadBoard(str(path))
+    if board is None:
+        raise ValueError('native containment could not load saved board')
+    return {'board_sha256': digest(path), 'markings': contained_markings(board)}

@@ -123,11 +123,18 @@ later receipted placement result for the current board, complete native DRC with
 no remaining silk finding on the same identities, and preserved item ownership,
 marking content, layer and style. Missing, hidden or relabeled fields do not
 close a defect. Every closed field/graphic must also be visible silk wholly
-inside the single proven straight board outline. Closure recomputes native
-bounding boxes in a read-only, networkless tool process from the retained board
-bytes, checking every box edge against the qualified outline. Entirely off-board
-and edge-straddling markings stay typed open defects even when DRC is silent.
-Unqualified outlines or failed native containment probes cannot close carry.
+inside the single proven straight board outline. Both producers measure native
+bounding boxes from the final saved board in their networkless tool process,
+checking every box edge against the qualified outline. The outline includes
+board drawings and footprint-owned Edge.Cuts, as in placement qualification.
+Slots, cutouts and multiple contours conservatively establish no containment.
+Entirely off-board, edge-straddling and cutout markings stay typed open defects
+even when DRC is silent. The sealed placement result retains `containment`,
+with the saved `board_sha256` and the native `markings` UUID list. Closure and
+campaign replay consume that receipt-bound witness without launching pcbnew.
+Missing, malformed or board-mismatched witnesses close nothing; historical
+receipts lacking the witness retain their open defects until a fresh receipt.
+Unqualified outlines cannot close carry.
 This applies to both placement and routed-artwork receipts. An unsupported
 side-flip diagnostic also requires positive
 artwork movement of that field, either recorded by the later artwork pass or
@@ -195,9 +202,10 @@ footprint poses, zones, tracks, vias, setup and unknown attributes. Numeric
 coordinates are normalized only within permitted graphic translations. Any
 other token change refuses publication. Changed text or fields carrying a
 `render_cache` refuse because this producer does not regenerate and compare the
-cache. Boards containing backslashes also refuse the scope proof: the shared
-parser decodes escapes, so decoded token equality cannot establish the saved
-spelling KiCad renders. Project and custom-rule bytes
+cache. A backslash anywhere in either board also refuses the scope proof,
+including unchanged strings and non-silk content. This conservative scope limit
+can refuse legitimate boards: the shared parser decodes escapes, so decoded
+token equality cannot establish the saved spelling KiCad renders. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
 new non-silk native findings refuse the producer; remaining silk conflicts stay
 open. Uncarried baseline findings retain their existing check verdicts.
@@ -224,7 +232,10 @@ replay. A passing export does not authorize fabrication.
 Its closure-currency fixture uses a closed Edge.Cuts rectangle and a canonical
 native field UUID: closure survives a masked-track edit, while the same receipt
 chain on a board without an outline keeps the defect open, with or without that
-track edit.
+track edit. AGENTEE-344d's closure escape tests use that same outlined fixture
+and canonical field UUID, keeping positive controls live alongside escape and
+writer-grammar refusals. Native regressions cover footprint-owned cutouts as
+well as board-owned cutouts and an in-board positive control.
 
 The producer restores the source `.kicad_dru` bytes but does not authenticate a
 writer-editable custom rule file against an earlier placement receipt. A writer

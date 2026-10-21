@@ -51,7 +51,11 @@ def translated_content(node):
 
 
 def write_scope(before, after):
-    """Compare every saved token except allowed silk translations; unknowns refuse."""
+    """Compare every saved token except allowed silk translations; unknowns refuse.
+
+    Backslashes anywhere in either board refuse, including unchanged strings:
+    decoded token equality cannot prove the saved spelling KiCad renders.
+    """
     from .silk_artwork import DECLARATION, movable_names
     # The shared parser decodes escapes; token equality alone cannot prove the
     # saved spelling KiCad renders. Refuse this unsupported input conservatively.
@@ -169,7 +173,7 @@ def produce(source, root):
     """Write a disposable candidate, retain native DRC and fail on any new non-silk finding."""
     import pcbnew as k
     from .placer_runner import _native_drc, _drc_comparison
-    from .silk_artwork import relocate, SILK_CONFLICTS
+    from .silk_artwork import relocate, SILK_CONFLICTS, containment_witness
     root = Path(root)
     output = root / BOARD
     output.parent.mkdir(parents=True)
@@ -210,7 +214,8 @@ def produce(source, root):
     write_json(root / ARTWORK, artwork)
     report = {'schema': 'agent-ee.placed-candidate/1', 'status': 'placed', 'producer': STEP,
               'authority': 'disposable-unsealed-proposal', 'source_sha256': digest(source),
-              'board_sha256': digest(output), 'write_scope': proof, 'open_defects': defects,
+              'board_sha256': digest(output), 'containment': containment_witness(output),
+              'write_scope': proof, 'open_defects': defects,
               'native_drc_comparison': comparison,
               'outcome': 'defect' if defects else 'informational',
               'verdict': 'defect' if defects else 'informational'}
