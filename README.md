@@ -98,6 +98,9 @@ proposals that introduce native DRC shorts, clearance, PTH courtyard findings
 or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
+The [artwork pass](docs/silk-artwork.md) relocates permitted silk fields and
+refuses proposals with added native silk overlap or copper conflicts, preserving
+graphics and required markings.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against cited limits. Captured pad UUIDs select

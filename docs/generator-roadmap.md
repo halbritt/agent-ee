@@ -313,6 +313,10 @@ Unconnected items are expected before routing and are not graded by
 and pad centres. Placement checks reuse the preceding native DRC report;
 they do not run a second DRC. The [placement reference](placement.md#native-qualification)
 maps the ticket's acceptance criteria to executable tests.
+The disposable producer also runs a [silk artwork pass](silk-artwork.md) after
+placement, preserving graphics and required markings while native DRC gates
+added silk overlap/copper findings. Its local reports do not replace the
+coordinator checks.
 
 The fab profile's `min_edge_clearance_mm` is a copper-to-edge limit. It does
 not supply a courtyard-to-edge minimum. Binding a sourced fabrication limit

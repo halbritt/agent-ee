@@ -705,7 +705,9 @@ in `.kicad_dru` never appears in native `ignored_checks`, so the gate refuses
 any such token, including case, whitespace and quoted variants. This conservative
 refusal also applies to ignores scoped to unrelated categories; it does not
 evaluate custom-rule conditions. Added `silk_*` findings are
-reported separately in `silkscreen_findings`; they are not shorts.
+reported separately in `silkscreen_findings`; they are not shorts. The
+[post-placement artwork pass](silk-artwork.md) relocates permitted fields and
+refuses publication while added `silk_overlap` or `silk_over_copper` remain.
 
 `tests.test_placer_through_holes` supplies original native PTH/NPTH, slot,
 shape, rotation, opposite-side and settings fixtures, plus DRC regression,
