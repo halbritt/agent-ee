@@ -579,3 +579,14 @@ spacing is a minimum and cannot establish an electrical maximum. Captured JLCPCB
 PCB-clearance facts and native geometry can prove a manufacturer bound
 infeasible below a necessary copper floor; assembly pad envelopes are advisory; the exact whole-footprint minimum remains an implementation gap.
 See [locality provenance](placer.md#locality-provenance-agentee-337).
+
+## Unsourced courtyard margins (2026-10-21, AGENTEE-358)
+
+Apply the AGENTEE-338 advisory rule to `min_courtyard_edge_mm`: a capacity proof
+depending on an unsourced margin reports unknown and names it. Retry without
+unsourced margin/gap limits to preserve independent structural defects. Authored
+fixture requirements receive explicit fixture-author provenance. Search keeps
+its reservations, and native saved-board checks retain their authority.
+The [policy audit](placer.md#unsourced-policy-limits-agentee-358) records the
+remaining numeric limits and their effects; gap-source authentication remains
+AGENTEE-348.

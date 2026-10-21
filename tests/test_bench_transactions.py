@@ -789,22 +789,23 @@ class BenchTransactionTests(unittest.TestCase):
         from agent_ee import bench_transactions as tx
         self.initial()
         context = multiprocessing.get_context('fork')
-        queue = context.Queue()
+        completed, completion = context.Pipe(duplex=False)
         def worker():
             def sleeping(run, role, definition, prompt, schema, timeout, **kwargs):
                 self.assertNotEqual(role, 'adjudicator')
                 from agent_ee.executor import execute
                 kwargs.pop('executable', None)
                 work = Path(run) / 'review-work' / role
-                script = ("import subprocess,time; from pathlib import Path; "
-                          "subprocess.Popen(['/usr/bin/sleep','60']); Path('started').write_text('yes'); "
-                          "print('partial provider output',flush=True); time.sleep(60)")
+                script = ("import subprocess,threading; from pathlib import Path; "
+                          "subprocess.Popen(['/usr/bin/sleep','infinity']); Path('started').write_text('yes'); "
+                          "print('partial provider output',flush=True); threading.Event().wait()")
                 return execute(Path(run) / 'inputs', work, ['/usr/bin/python3', '-c', script],
                                timeout=timeout, **kwargs), None
             with patch('agent_ee.reviewers.dispatch', side_effect=sleeping):
                 value = tx.transact(self.root / 'initial', self.root / 'bench.json', self.root / 'feedback',
                                     60, operation_id='signal')
-            queue.put(value)
+            completion.send(value)
+            completion.close()
         process = context.Process(target=worker)
         process.start()
         target = self.root / 'feedback/review'
@@ -822,17 +823,27 @@ class BenchTransactionTests(unittest.TestCase):
         children = descendants(process.pid)
         self.assertGreaterEqual(len(children), 4)
         os.kill(process.pid, signal.SIGINT)
-        process.join(5)
-        if process.is_alive():
+        # Completion is acknowledged by the worker, rather than inferred from five
+        # wall-clock seconds on a loaded host. The timeout only guards a hung test.
+        # Neither scripted provider can finish naturally; their retained execution
+        # records below must prove interruption, not timeout or ordinary completion.
+        settled = completed.poll(120)
+        value = completed.recv() if settled else None
+        process.join(120 if settled else 0)
+        if not settled or process.is_alive():
             for pid in reversed(children):
                 try:
                     os.kill(pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
             process.kill(); process.join()
-            self.fail('transaction cancellation exceeded cleanup bound')
+            self.fail('transaction cancellation did not acknowledge completion')
         self.assertEqual(process.exitcode, 0)
-        value = queue.get(timeout=2)
+        completed.close()
+        completion.close()
+        executions = [read_json(path) for path in (target / 'review-executions').glob('*.json')]
+        self.assertEqual(len(executions), 2)
+        self.assertTrue(all(record['execution'] == 'interrupted' for record in executions))
         self.assertEqual(value['phase'], 'completed')
         self.assertEqual(value['review']['state'], 'interrupted')
         self.assertEqual(value['review']['outcome'], 'incomplete')

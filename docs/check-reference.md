@@ -1872,9 +1872,23 @@ receipt `open_defects`. Their receipt outcome/verdict is `defect`. This separate
 placement feasibility from fab legibility. The coordinator captures validated
 helper receipts and artwork under `placement-evidence`, with ordered
 `placement_provenance` links in successor scopes (AGENTEE-333). Verification/fab
-stages and fab export, package, consistency, CPL and JLC DFM checks refuse open
-carry with typed field/graphic identities and source receipts. The evidence seal
-reconstructs these refusals; release artifact extraction also refuses open carry.
+stages and the coordinator ruling's 18 fab-family kinds refuse open carry with typed field/graphic
+identities and source receipts, regardless of declared stage (AGENTEE-344).
+This includes DRC, fab profile, DFM geometry, DFA/DFT, assembly readiness, cost,
+roundtrip, parts/catalog/binding and land-pattern gates. Campaign acceptance
+refuses open carry even without a declared downstream gate, including bench-feedback
+epoch completion. A clean receipted
+closure can survive masked copper track edits only when retained root nodes have
+identical raw source bytes and the complete captured project/custom-rule path and
+digest inventories remain unchanged, including non-board stems. Semicolons outside
+strings and KiCad `#` line comments refuse equivalence. Exempt track spans must
+match the positive writer grammar: balanced parentheses, `[A-Za-z0-9_.+-]+`
+bare tokens, quoted strings without backslashes, embedded quotes or controls,
+and only spaces, tabs, LF or CRLF between tokens. Hashes and semicolons anywhere
+in a track span prevent exemption. Other track spans remain in
+the raw-byte comparison, including mid-token quotes and multiline strings;
+vias, zones and unknown track attributes still require fresh receipt evidence.
+The evidence seal reconstructs these refusals; release artifact extraction also refuses open carry.
 Uncarried baseline findings retain their existing verdicts. Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.
@@ -1951,6 +1965,29 @@ unknown and its failed execution is retained. A defect already proved by native
 DRC retains its defect verdict; an otherwise passing DRC cannot pass without
 containment coverage. Supplemental structural witnesses retain their class and citation in the
 classified evidence cited by the collected coordinator finding.
+## Post-routing silk repair (AGENTEE-350)
+
+The [routed artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
+is a verification-stage implementation step. It preserves every non-silk token
+and permits only declared field positions and rigid translations of supported
+silk graphics. Its receipt binds the source board, output board, tool source pin,
+geometry proof and complete native DRC. Coordinator carry capture and replay
+reuse the placement evidence envelope. Identity-bound closure can then remove
+carried defects only when each marking is visible, unchanged in style and
+silk layer, and wholly inside the qualified outline. Off-board and straddling
+marks remain open even if native DRC is silent. Footprint-owned Edge.Cuts
+participate in outline qualification; slots and cutouts cannot establish
+containment. Both producers seal a board-bound native containment witness in
+the placement report. Closure and campaign replay read it without rerunning
+pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
+unavailable evidence keep their refusal. Cached-text translations and boards
+containing backslashes refuse the producer's scope proof.
+This adds no check registration or verdict waiver. The initial placer continues
+to refuse routed boards. The native campaign regression proves downstream
+refusal before the repair and passing verification geometry and native fab export after closure.
+The closure-currency regression preserves closure after masked-track edits on a
+board with a proven outline and retains the defect on the same board without
+an outline.
 
 ## Declared placer obstacles (AGENTEE-338)
 
@@ -1964,3 +2001,11 @@ Proofs independent of that gap retain their verdicts; authored fixture requireme
 carry explicit fixture-author provenance. Qualified manufacturer gap requirements
 remain hard. There is no registered-check change; the existing packing policy's
 constraint provenance gains an optional value-bound `gap_nm` source entry.
+
+The [unsourced policy-limit rule](placer.md#unsourced-policy-limits-agentee-358)
+(AGENTEE-358) also makes an unsourced courtyard edge margin advisory for capacity
+proofs. A dependent proof reports unknown and names `min_courtyard_edge_mm`;
+a proof surviving without it retains its verdict. The audit table distinguishes
+search radii, captured keepout geometry and computational guards. The low-level
+packing provenance object accepts a value-bound `min_courtyard_edge_mm` source
+with `value_nm`, class, enforcement and citation; check registration is unchanged.
