@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from agent_ee import block_library as bl, blocks, placer
-from test_blocks import Fixture, MM, PARTS, SHEETS, board, native_xml, policy
+from test_blocks import Fixture, MM, PARTS, SHEETS, board, captured_at, native_xml, policy
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = 'https://example.invalid/owned/ee342'
@@ -484,6 +484,51 @@ class MaterializeTests(LibraryFixture, unittest.TestCase):
         self.assertEqual([p['kind'] for p in result['problems']], ['target_missing'])
         with self.assertRaisesRegex(ValueError, 'distinct target reference'):
             bl.materialize(entry, target, inventory, names, sha, self.policy, dict(self.MAPPING, C3='C11'))
+
+    def test_rotated_members_materialize_at_every_quarter_turn(self):
+        """AGENTEE-370: source and target captured at other quarter-turns, both with pose-dependent
+        vertex order, still share every member identity; a different courtyard still refuses."""
+        def turned(capture, refs, turns):
+            capture = copy.deepcopy(capture)
+            capture['footprints'] = [captured_at(fp, turns) if fp['ref'] in refs else fp for fp in capture['footprints']]
+            return capture
+        target, inventory, names, sha = self.second_instance()
+        for source_turns in range(4):
+            entry = self.cluster(capture=turned(self.board, POWER, source_turns))
+            for turns in range(4):
+                with self.subTest(source=source_turns, target=turns):
+                    result = bl.materialize(entry, turned(target, set(self.MAPPING.values()), turns), inventory,
+                                            names, sha, self.policy, self.MAPPING)
+                    self.assertEqual(result['status'], 'materialized', result['problems'])
+        grown = copy.deepcopy(target)
+        ring = next(f for f in grown['footprints'] if f['ref'] == 'C13')['courtyards']['F']['polygons'][0]
+        ring[2][1] += 1
+        ring[3][1] += 1
+        result = bl.materialize(entry, turned(grown, {'C13'}, 1), inventory, names, sha, self.policy, self.MAPPING)
+        self.assertEqual(result['status'], 'refused')
+        self.assertEqual([(p['kind'], p['reference']) for p in result['problems']], [('courtyard', 'C3')])
+
+    def test_retired_pose_dependent_entries_validate_but_refuse_use(self):
+        """An entry/1 identity was hashed in captured vertex order (AGENTEE-370): it still validates
+        in a catalogue, but materialize, reproduce and add refuse it explicitly."""
+        entry = self.cluster()
+        self.assertEqual(entry['schema'], 'agent-ee.block-library-entry/2')
+        retired = dict(copy.deepcopy(entry), schema=bl.RETIRED_ENTRY)
+        self.assertIs(bl.validate_entry(retired), retired)
+        target, inventory, names, sha = self.second_instance()
+        result = bl.materialize(retired, target, inventory, names, sha, self.policy, self.MAPPING)
+        self.assertEqual(result['status'], 'refused')
+        self.assertNotIn('candidate', result)
+        self.assertEqual([(p['kind'], p['expected'], p['actual']) for p in result['problems']],
+                         [('identity_version', bl.ENTRY, bl.RETIRED_ENTRY)])
+        replay = bl.reproduce(retired, self.cluster_raw(), self.board, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual((replay['status'], [p['kind'] for p in replay['problems']]), ('refused', ['identity_version']))
+        self.assertEqual(bl.reproduce(entry, self.cluster_raw(), self.board, self.inv, self.names, self.sha,
+                                      self.policy)['status'], 'reproduced')
+        with self.assertRaisesRegex(ValueError, 'identity_version'):
+            bl.add_entry(self.library(), retired)
+        committed = [e for e in bl.validate_library(ROOT) if e['id'].startswith('pod-')]
+        self.assertEqual({e['schema'] for e in committed}, {bl.RETIRED_ENTRY})
 
     def test_failed_regrade_refuses_and_is_never_a_pass(self):
         entry = self.cluster()

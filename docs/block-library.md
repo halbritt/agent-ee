@@ -49,7 +49,7 @@ third-party design data is published (owner gate). The full
 `agent-ee.block-candidate/2` is rebuilt from a board's own footprints whenever the
 entry is used ([Materialization](#materialization)).
 
-`agent-ee.block-library-entry/1`. Every field is required and unknown fields refuse:
+`agent-ee.block-library-entry/2`. Every field is required and unknown fields refuse:
 
 | Field | Content |
 | --- | --- |
@@ -64,6 +64,19 @@ Poses, the frame, value rules and pad-geometry and courtyard hashes are those of
 [blocks.md](blocks.md#block-candidate-schema). `pin_functions_sha256` hashes each
 pad's native pin name and electrical type. Roles are numbered as in the
 candidate; net names never identify a role.
+
+### Retired `/1` identities (AGENTEE-370)
+
+An `agent-ee.block-library-entry/1` entry hashed each courtyard in the vertex
+order pcbnew captured. That order changes with the footprint's board rotation, so
+a member rotated in the source refused against the same footprint at another
+rotation. `/2` hashes the [canonical rings](blocks.md#pose-independent-identity-agentee-370).
+A `/1` entry still validates, so a catalogue holding one still loads and its bytes
+stay bound to its catalogue hash. It is never used: `materialize` and `reproduce`
+refuse it with one `identity_version` problem (`expected` `/2`, `actual` `/1`),
+and `add_entry` raises `identity_version`. Import the block again as a new version.
+The four committed pod entries are `/1` and need a coordinator re-pin
+(AGENTEE-370 result).
 
 ### Catalogue and versions
 
@@ -325,6 +338,9 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=/home/halbritt/git/fome-m
 - figure scale verification at its inclusive boundary, axis flips, orientation
   and document-hash refusals, and figure-bound poses;
 - materialization of a second instance and each identity mismatch;
+- materialization with source and target members at every quarter-turn, each
+  captured in pose-dependent vertex order, a grown courtyard still refusing, and
+  retired `/1` entries refused with `identity_version` (AGENTEE-370);
 - a failed re-grade;
 - catalogue immutability, byte binding and ordering;
 - entry structure refusals;

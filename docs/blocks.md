@@ -184,7 +184,7 @@ refuse, and a `/1` document is refused. Only `status: packed` is usable.
 | `block_id`, `status` | Block id; `packed`, or `refused` when a re-grade or witness fails |
 | `provenance` | `class`, `enforcement`, `citation`, optional `method`; reference classes add `source: {locator, sha256}` |
 | `frame` | `{convention: "anchor-origin-quarter-turn/1", anchor}` |
-| `members[]` | `reference`, `fpid`, `side`, `value`, `pose`, `pad_geometry_sha256`, `courtyard_sha256`, `courtyard` (the footprint-local courtyard record that `courtyard_sha256` hashes), `pins[]` |
+| `members[]` | `reference`, `fpid`, `side`, `value`, `pose`, `pad_geometry_sha256`, `courtyard_sha256`, `courtyard` (the footprint-local courtyard record, in canonical rings, that `courtyard_sha256` hashes), `pins[]` |
 | `outline` | Per side: `box_nm` `[x0, y0, x1, y1]` and the framed outer `courtyards` polygons |
 | `grade` | Independent re-grade in the frame: `electrical_locality` and `groups` (each `null` when nothing is internal) |
 | `witness` | `exact-courtyard-separation/1`: `gap_nm`, `pairs_checked`, per-side `minimum` exact squared distance `[numerator, denominator]`, `below_gap`, `drilled_pad_conflicts`, `status` |
@@ -221,7 +221,23 @@ refuse, and a `/1` document is refused. Only `status: packed` is usable.
 It also recomputes pose-dependent courtyard evidence. Each member's `courtyard`
 record must hash to its `courtyard_sha256`; placed at the member's pose, the
 records must reproduce the stored `outline` and witness exactly. A moved pose,
-an empty box or an edited polygon therefore refuses.
+an empty box or an edited polygon therefore refuses. A record whose rings are not
+canonical comes from before AGENTEE-370 and refuses with `identity_version`; it is
+never re-hashed.
+
+### Pose-independent identity (AGENTEE-370)
+
+`pad_geometry_sha256` and `courtyard_sha256` hash the footprint at the origin,
+rotation 0, on its captured side. pcbnew starts a captured contour at a different
+vertex, and may wind it the other way, at each board rotation. So every courtyard
+ring (`polygons`, `inner_polygons`) and every custom-pad `merged_polygons_nm`
+ring is made canonical before hashing (`blocks.canonical_ring`). The ring runs
+with a nonnegative shoelace sum and starts at its lexicographically smallest
+rotation; a zero-area ring takes the smaller of both directions. Each polygon list
+is then sorted. Only vertex order changes: a moved vertex, another size or a mirror
+image still hashes differently. Framed members (`blocks.frame_member`) carry these
+rings, so a candidate outline and its `admit` and arrangement re-derivations do
+not depend on the captured order either.
 
 `admit(candidate, probe, inventory, derivation, policy)` admits a candidate onto
 the board it was packed from. Stage B must call it before using a candidate. It
