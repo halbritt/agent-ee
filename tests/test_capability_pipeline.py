@@ -153,6 +153,16 @@ pcbnew.SaveBoard(p, b)
                     check = next(c for c in result['checks'] if c['id'] == cid)
                     self.assertEqual(check['outcome'], 'unknown', check)
                     self.assertNotIn('check/' + cid, {f['id'] for f in accepted})
+                if name == 'thin_track':
+                    native = next(c for c in result['checks'] if c['id'] == 'drc')
+                    self.assertEqual(native['outcome'], 'pass', native)
+                    self.assertGreater(native['details']['advisory_findings_count'], 0)
+                    report = read_json(root / 'run/work/drc/drc-constraints.json')
+                    widths = [v for v in report['violations'] if v['type'] == 'track_width']
+                    self.assertTrue(widths, report)
+                    self.assertTrue(all(v['constraint_provenance']['class'] == 'default' and
+                                        v['constraint_provenance']['enforcement'] == 'advisory'
+                                        for v in widths), widths)
                 if name in ('control', 'wrong_rc'):
                     response = next(c for c in result['checks'] if c['id'] == 'rc-step')
                     resistance = 100_000 if name == 'wrong_rc' else 10_000

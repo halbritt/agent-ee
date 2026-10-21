@@ -50,6 +50,21 @@ class CustomPadPlacementTest(unittest.TestCase):
                 layers.AddLayer(layer)
             pad.SetLayerSet(layers)
             pad.SetNet(net)
+        # The offset copper must fit the courtyard used by the packer.
+        for shape in list(fp.GraphicalItems()):
+            if shape.GetLayer() == k.F_CrtYd:
+                fp.Remove(shape)
+        corners = [(-4, -2.5), (2, -2.5), (2, 2.5), (-4, 2.5)]
+        for index, start in enumerate(corners):
+            end = corners[(index + 1) % len(corners)]
+            edge = k.PCB_SHAPE(fp)
+            edge.SetShape(k.SHAPE_T_SEGMENT)
+            edge.SetLayer(k.F_CrtYd)
+            edge.SetWidth(50_000)
+            edge.SetStart(k.VECTOR2I(round(start[0] * 1e6), round(start[1] * 1e6)) + fp.GetPosition())
+            edge.SetEnd(k.VECTOR2I(round(end[0] * 1e6), round(end[1] * 1e6)) + fp.GetPosition())
+            fp.Add(edge)
+        fp.SetPosition(k.VECTOR2I(5_000_000, 5_000_000))
         if back:
             fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_LEFT_RIGHT)
         fp.SetOrientationDegrees(rotation)

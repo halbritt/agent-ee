@@ -1387,6 +1387,30 @@ class ReceiptIterationTest(unittest.TestCase):
             pa.binding(self.declaration, self.manifest, self.source, self.state['mutable_inputs'])
         self.assertFalse((self.work / 'placement-adapter.json').exists())
 
+    def test_binding_refuses_caller_supplied_obstacle_and_group_sources(self):
+        # AGENTEE-365: a caller policy may state geometry, never qualify it.
+        base = read_json(self.source / POLICY)
+        source = {'class': 'datasheet', 'enforcement': 'hard', 'citation': 'Original fixture: caller claim'}
+        obstacle = {'side': 'F', 'polygons': [[[0, 0], [1_000_000, 0], [1_000_000, 1_000_000], [0, 1_000_000]]]}
+        group = {'id': 'g', 'references': ['R1', 'C1'], 'region': {'polygons': obstacle['polygons']}}
+        def bind(policy):
+            write_json(self.source / POLICY, policy)
+            self.manifest['files'][POLICY] = digest(self.source / POLICY)
+            return pa.binding(self.declaration, self.manifest, self.source, self.state['mutable_inputs'])
+        refused = [
+            ({**base, 'constraint_provenance': {}}, 'constraint_provenance comes only from a captured envelope'),
+            ({**base, 'obstacles': [obstacle, {**obstacle, 'provenance': source}]},
+             'obstacle provenance is never accepted from the packing policy'),
+            ({**base, 'groups': [{**group, 'constraint_provenance': {'region': source}}]},
+             'group constraint_provenance is never accepted from the packing policy')]
+        for policy, reason in refused:
+            with self.subTest(reason), self.assertRaisesRegex(ValueError, reason):
+                bind(policy)
+        # The same geometry without a caller source binds and stays unsourced.
+        _, _, policy, _, _ = bind({**base, 'obstacles': [obstacle], 'groups': [group]})
+        self.assertEqual((policy['obstacles'], policy['groups']), ([obstacle], [group]))
+        self.assertFalse((self.work / 'placement-adapter.json').exists())
+
     def test_writer_only_iteration_refuses_out_of_scope_writer_edit(self):
         declaration = {**self.declaration, 'helper': None, 'policy': None}
         (self.design / SCHEMATIC).write_bytes((self.design / SCHEMATIC).read_bytes() + b'\n')

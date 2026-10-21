@@ -19,7 +19,7 @@ from agent_ee import placement_groups
 from agent_ee.placement import judge
 from agent_ee.placer import pack, transform
 from test_placement import MM, capture, part, rectangle
-from test_placer import authored_gap, request
+from test_placer import authored_gap, authored_groups, request
 from test_placer_residuals import box, fresh_pad_layers, netlist
 from toolchain import require_toolchain
 
@@ -174,7 +174,8 @@ class RegionCapacityTest(unittest.TestCase):
         parts += [part(ref, x, y, shape=rectangle(x, y, s, s)) for ref, x, y, s in fixed]
         groups = [{'id': 'block', 'references': [f'C{i}' for i in range(1, count + 1)],
                    'region': {'polygons': [box(*region)]}}]
-        return board(parts, rectangle(0, 0, 20, 20)), groups
+        return board(parts, rectangle(0, 0, 20, 20)), authored_groups(groups,
+            'tests/test_placer_search.py: original region capacity fixture')
 
     def test_exactly_full_region_packs_and_one_nanometre_more_is_proven_infeasible(self):
         source, groups = self.squares(5, 4)
@@ -215,7 +216,8 @@ class RegionCapacityTest(unittest.TestCase):
                  part('M3', 17, 12, shape=rectangle(17, 12, 4.5, 4.5))]
         groups = [{'id': 'outer', 'references': ['M1'], 'region': {'polygons': [box(0, 0, 10, 10)]}},
                   {'id': 'inner', 'references': ['M2', 'M3'], 'region': {'polygons': [box(0, 0, 5, 10)]}}]
-        report = pack(board(parts, rectangle(0, 0, 30, 30)), request(fixed_refs=[], gap_nm=0, groups=groups))
+        report = pack(board(parts, rectangle(0, 0, 30, 30)), request(fixed_refs=[], gap_nm=0,
+            groups=authored_groups(groups, 'tests/test_placer_search.py: authored nested regions')))
         self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
         self.assertEqual((report['proof']['group'], report['proof']['groups'], report['proof']['references']),
                          ('outer', ['inner', 'outer'], ['M1', 'M2', 'M3']))
@@ -236,6 +238,7 @@ class RegionCapacityTest(unittest.TestCase):
         source['footprints'].append(part('X', 12, 12, shape=rectangle(12, 12, 3, 3)))
         groups.append({'id': 'structural', 'references': ['X'],
                        'region': {'polygons': [box(10, 0, 12, 2)]}})
+        groups = authored_groups(groups, 'tests/test_placer_search.py: authored structural region')
         report = pack(source, request(fixed_refs=[], gap_nm=500000, groups=groups))
         self.assertEqual((report['status'], report['outcome']), ('packing_infeasible', 'defect'))
         self.assertEqual((report['proof']['kind'], report['proof']['group']), ('region_capacity', 'structural'))

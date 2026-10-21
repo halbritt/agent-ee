@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from agent_ee import block_library as bl, blocks, placer
-from test_blocks import Fixture, MM, PARTS, SHEETS, board, native_xml, policy
+from test_blocks import Fixture, MM, PARTS, SHEETS, board, captured_at, native_xml, policy
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = 'https://example.invalid/owned/ee342'
@@ -27,6 +27,13 @@ HARD = ('manufacturer-reference-layout', 'manufacturer-evm', 'qualified-owner-bo
 POWER = ('U1', 'C1', 'L1', 'C3')
 FIG_NM = 250000  # nanometres per authored figure unit
 AUTO = object()
+POD_IDS = ('pod-lm2903-soic8-u26', 'pod-lmr36520-dda-u5', 'pod-lmr36520-dda-u7', 'pod-tps62162-dsg-u15')
+# Members whose courtyard identity changed in the AGENTEE-370 re-pin: each was captured in a
+# vertex order other than the canonical one.
+POD_REPINNED = {'pod-lm2903-soic8-u26': ['C98'],
+                'pod-lmr36520-dda-u5': ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'L1', 'R2'],
+                'pod-lmr36520-dda-u7': ['C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14', 'C15', 'L2', 'R4'],
+                'pod-tps62162-dsg-u15': ['C68', 'C69', 'C70', 'L4', 'U15']}
 
 
 def authority(provenance_class, kind, source, references, dimensions=None, payload='0' * 64, **changes):
@@ -200,8 +207,9 @@ class ProjectClusterTests(LibraryFixture, unittest.TestCase):
         """The committed telemetry-pod clusters carry no reference-layout, EVM or owner-board class."""
         entries = bl.validate_library(ROOT)
         pods = [e for e in entries if e['receipt']['import'] == 'project-cluster/1']
-        self.assertEqual(sorted(e['id'] for e in pods), ['pod-lm2903-soic8-u26', 'pod-lmr36520-dda-u5',
-                                                        'pod-lmr36520-dda-u7', 'pod-tps62162-dsg-u15'])
+        # Version 2 of each is the AGENTEE-370 re-pin; version 1 stays catalogued and immutable.
+        self.assertEqual(sorted((e['id'], e['version']) for e in pods),
+                         [(i, v) for i in POD_IDS for v in (1, 2)])
         self.assertEqual(sorted({e['part'] for e in pods}), ['LM2903-SOIC8', 'LMR36520-DDA', 'TPS62162-DSG'])
         for entry in pods:
             self.assertEqual((entry['provenance']['class'], entry['provenance']['enforcement']),
@@ -212,6 +220,33 @@ class ProjectClusterTests(LibraryFixture, unittest.TestCase):
             self.assertEqual(entry['receipt']['source']['commit'], '7a8baa137bb5072016c49b5b57c1e38bf0634cff')
         for name in HARD:
             self.assertEqual(bl.lookup(ROOT, part='LMR36520-DDA', classes={name}), [])
+
+    def test_committed_pod_repin_changes_only_courtyard_identity(self):
+        """Coordinator ruling on AGENTEE-370: v2 of each pod entry differs from v1 only in the identity
+        version, the courtyard hashes of members captured in another vertex order, and the candidate hash.
+        Pad and pin-function hashes are byte-identical; NativeTests proves the courtyards are the same
+        point sets and that the candidate hash follows from those member hashes alone."""
+        def masked(entry):
+            entry = copy.deepcopy(entry)
+            del entry['schema'], entry['version'], entry['receipt']['candidate_sha256']
+            for member in entry['layout']['members']:
+                del member['courtyard_sha256']
+            return entry
+        changed = {}
+        for block_id in POD_IDS:
+            old, new = (json.loads((ROOT / bl.entry_path(block_id, v)).read_text()) for v in (1, 2))
+            self.assertEqual((old['schema'], new['schema']), (bl.RETIRED_ENTRY, bl.ENTRY))
+            self.assertEqual(masked(old), masked(new))
+            self.assertNotEqual(old['receipt']['candidate_sha256'], new['receipt']['candidate_sha256'])
+            pairs = zip(old['layout']['members'], new['layout']['members'])
+            changed[block_id] = [a['reference'] for a, b in pairs if a['courtyard_sha256'] != b['courtyard_sha256']]
+        self.assertEqual(changed, POD_REPINNED)
+        # One footprint, one courtyard identity: v1 gave C68 (270) and C69 (180) different hashes.
+        for version, expected in ((1, 2), (2, 1)):
+            members = [m for e in bl.validate_library(ROOT) if e['id'] == 'pod-tps62162-dsg-u15'
+                       and e['version'] == version for m in e['layout']['members'] if m['reference'] in ('C68', 'C69')]
+            self.assertEqual(len({(m['fpid'], m['side'], m['pad_geometry_sha256']) for m in members}), 1)
+            self.assertEqual(len({m['courtyard_sha256'] for m in members}), expected)
 
     def test_cluster_refusals(self):
         with self.assertRaisesRegex(ValueError, 'no cluster U9'):
@@ -485,6 +520,57 @@ class MaterializeTests(LibraryFixture, unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'distinct target reference'):
             bl.materialize(entry, target, inventory, names, sha, self.policy, dict(self.MAPPING, C3='C11'))
 
+    def test_rotated_members_materialize_at_every_quarter_turn(self):
+        """AGENTEE-370: source and target captured at other quarter-turns, both with pose-dependent
+        vertex order, still share every member identity; a different courtyard still refuses."""
+        def turned(capture, refs, turns):
+            capture = copy.deepcopy(capture)
+            capture['footprints'] = [captured_at(fp, turns) if fp['ref'] in refs else fp for fp in capture['footprints']]
+            return capture
+        target, inventory, names, sha = self.second_instance()
+        for source_turns in range(4):
+            entry = self.cluster(capture=turned(self.board, POWER, source_turns))
+            for turns in range(4):
+                with self.subTest(source=source_turns, target=turns):
+                    result = bl.materialize(entry, turned(target, set(self.MAPPING.values()), turns), inventory,
+                                            names, sha, self.policy, self.MAPPING)
+                    self.assertEqual(result['status'], 'materialized', result['problems'])
+        grown = copy.deepcopy(target)
+        ring = next(f for f in grown['footprints'] if f['ref'] == 'C13')['courtyards']['F']['polygons'][0]
+        ring[2][1] += 1
+        ring[3][1] += 1
+        result = bl.materialize(entry, turned(grown, {'C13'}, 1), inventory, names, sha, self.policy, self.MAPPING)
+        self.assertEqual(result['status'], 'refused')
+        self.assertEqual([(p['kind'], p['reference']) for p in result['problems']], [('courtyard', 'C3')])
+
+    def test_retired_pose_dependent_entries_validate_but_refuse_use(self):
+        """An entry/1 identity was hashed in captured vertex order (AGENTEE-370): it still validates
+        in a catalogue, but materialize, reproduce and add refuse it explicitly."""
+        entry = self.cluster()
+        self.assertEqual(entry['schema'], 'agent-ee.block-library-entry/2')
+        retired = dict(copy.deepcopy(entry), schema=bl.RETIRED_ENTRY)
+        self.assertIs(bl.validate_entry(retired), retired)
+        target, inventory, names, sha = self.second_instance()
+        result = bl.materialize(retired, target, inventory, names, sha, self.policy, self.MAPPING)
+        self.assertEqual(result['status'], 'refused')
+        self.assertNotIn('candidate', result)
+        self.assertEqual([(p['kind'], p['expected'], p['actual']) for p in result['problems']],
+                         [('identity_version', bl.ENTRY, bl.RETIRED_ENTRY)])
+        replay = bl.reproduce(retired, self.cluster_raw(), self.board, self.inv, self.names, self.sha, self.policy)
+        self.assertEqual((replay['status'], [p['kind'] for p in replay['problems']]), ('refused', ['identity_version']))
+        self.assertEqual(bl.reproduce(entry, self.cluster_raw(), self.board, self.inv, self.names, self.sha,
+                                      self.policy)['status'], 'reproduced')
+        with self.assertRaisesRegex(ValueError, 'identity_version'):
+            bl.add_entry(self.library(), retired)
+        committed = [e for e in bl.validate_library(ROOT) if e['id'].startswith('pod-')]
+        self.assertEqual({(e['version'], e['schema']) for e in committed}, {(1, bl.RETIRED_ENTRY), (2, bl.ENTRY)})
+        self.assertEqual({(e['id'], e['version'], e['entry']['schema']) for e in bl.lookup(ROOT) if e['id'] in POD_IDS},
+                         {(i, 2, bl.ENTRY) for i in POD_IDS})
+        retired = next(e for e in committed if e['version'] == 1)
+        identity = {m['reference']: m['reference'] for m in retired['layout']['members']}
+        result = bl.materialize(retired, target, inventory, names, sha, self.policy, identity)
+        self.assertEqual((result['status'], [p['kind'] for p in result['problems']]), ('refused', ['identity_version']))
+
     def test_failed_regrade_refuses_and_is_never_a_pass(self):
         entry = self.cluster()
         tight = policy(gap_nm=5 * MM)
@@ -494,6 +580,152 @@ class MaterializeTests(LibraryFixture, unittest.TestCase):
         self.assertNotIn('candidate', result)
         result = bl.reproduce(entry, self.cluster_raw(), self.board, self.inv, self.names, self.sha, tight)
         self.assertEqual([p['kind'] for p in result['problems']], ['source_mismatch'])
+
+
+class AllocationBindingTests(LibraryFixture, unittest.TestCase):
+    """AGENTEE-375: a materialized entry binds the target's own allocation under an explicit block id,
+    so placer_runner, which derives from the allocation text, admits and arranges it."""
+    second_instance = MaterializeTests.second_instance
+    MAPPING = MaterializeTests.MAPPING
+    BUCK_B = ['C11', 'C13', 'L11', 'U11']
+
+    def allocation(self, buck_b=None, **extra):
+        document = {'schema': blocks.ALLOCATION, 'blocks': [
+            {'id': 'buck-a', 'references': ['C1', 'C3', 'L1', 'U1']},
+            {'id': 'buck-b', 'references': buck_b or self.BUCK_B, **extra},
+            {'id': 'sensor', 'references': ['C2', 'R1', 'U2']}]}
+        return json.dumps(document, indent=1).encode()
+
+    def setUp(self):
+        super().setUp()
+        self.entry = self.cluster()
+        self.target, self.tinv, self.tnames, self.tsha = self.second_instance()
+
+    def materialize(self, allocation_raw, block_id, mapping=MAPPING):
+        return bl.materialize(self.entry, self.target, self.tinv, self.tnames, self.tsha, self.policy, mapping,
+                              allocation_raw=allocation_raw, block_id=block_id)
+
+    def target_derivation(self, allocation_raw):
+        return blocks.derive(self.tinv, self.tnames, self.target, inventory_sha256=self.tsha,
+                             allocation_raw=allocation_raw)
+
+    def test_binds_the_allocation_and_admits_under_the_block_id(self):
+        raw = self.allocation()
+        result = self.materialize(raw, 'buck-b')
+        self.assertEqual(result['status'], 'materialized', result['problems'])
+        self.assertEqual((result['id'], result['block']), ('owned-buck', 'buck-b'))
+        candidate = blocks.validate_candidate(result['candidate'])
+        self.assertEqual(candidate['block_id'], 'buck-b')
+        derivation = self.target_derivation(raw)
+        self.assertEqual(candidate['sources']['allocation_sha256'], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(candidate['sources']['derivation_sha256'], blocks.digest(derivation))
+        self.assertEqual(blocks.admit(candidate, self.target, self.tinv, derivation, self.policy),
+                         {'status': 'admitted', 'problems': []})
+        # Without an allocation the record is unchanged: a one-block allocation under the entry id.
+        bare = bl.materialize(self.entry, self.target, self.tinv, self.tnames, self.tsha, self.policy, self.MAPPING)
+        self.assertEqual((bare['candidate']['block_id'], 'block' in bare), ('owned-buck', False))
+        refused = blocks.admit(bare['candidate'], self.target, self.tinv, derivation, self.policy)
+        self.assertEqual({p['source'] for p in refused['problems']}, {'allocation_sha256', 'derivation_sha256'})
+
+    def test_allocation_anchor_frames_the_candidate(self):
+        raw = self.allocation(anchor='C13')
+        result = self.materialize(raw, 'buck-b')
+        self.assertEqual(result['status'], 'materialized', result['problems'])
+        self.assertEqual(result['candidate']['frame']['anchor'], 'C13')
+        self.assertEqual(blocks.admit(result['candidate'], self.target, self.tinv, self.target_derivation(raw), self.policy),
+                         {'status': 'admitted', 'problems': []})
+
+    def test_unmapped_unknown_and_member_mismatch_refuse(self):
+        raw = self.allocation()
+        for block_id, kind in ((None, 'block_unmapped'), ('owned-buck', 'block_unknown'),
+                               ('buck-a', 'block_members'), ('sensor', 'block_members')):
+            with self.subTest(block=block_id):
+                result = self.materialize(raw, block_id)
+                self.assertEqual(result['status'], 'refused')
+                self.assertEqual([p['kind'] for p in result['problems']], [kind])
+                self.assertNotIn('candidate', result)
+        # The allocated block has a member the entry does not map.
+        grown = self.allocation(buck_b=self.BUCK_B + ['R9'])
+        result = self.materialize(grown, 'buck-b')
+        self.assertEqual(result['problems'], [{'kind': 'block_members', 'block': 'buck-b',
+                                               'expected': ['C11', 'C13', 'L11', 'R9', 'U11'],
+                                               'actual': ['C11', 'C13', 'L11', 'U11']}])
+        self.assertNotIn('candidate', result)
+        with self.assertRaisesRegex(ValueError, 'block id binds an allocation block'):
+            bl.materialize(self.entry, self.target, self.tinv, self.tnames, self.tsha, self.policy, self.MAPPING,
+                           block_id='buck-b')
+
+    def test_candidate_bound_to_another_allocation_refuses_admission(self):
+        result = self.materialize(self.allocation(), 'buck-b')
+        self.assertEqual(result['status'], 'materialized', result['problems'])
+        other = self.target_derivation(self.allocation(anchor='C13'))
+        admission = blocks.admit(result['candidate'], self.target, self.tinv, other, self.policy)
+        self.assertEqual(admission['status'], 'refused')
+        self.assertEqual({(p['kind'], p['source']) for p in admission['problems']},
+                         {('source_mismatch', 'allocation_sha256'), ('source_mismatch', 'derivation_sha256')})
+        # The same id with different members under another allocation refuses as well.
+        grown = self.target_derivation(self.allocation(buck_b=self.BUCK_B + ['R9']))
+        admission = blocks.admit(result['candidate'], self.target, self.tinv, grown, self.policy)
+        self.assertEqual(admission['status'], 'refused')
+        self.assertIn(('source_mismatch', 'allocation_sha256'),
+                      {(p['kind'], p.get('source')) for p in admission['problems']})
+
+    def test_placer_runner_request_admits_and_arranges(self):
+        from agent_ee import block_arrangement
+        raw = self.allocation()
+        derivation = self.target_derivation(raw)
+        (self.dir / 'allocation.json').write_bytes(raw)
+        (self.dir / 'arrangement.json').write_text(json.dumps({'schema': block_arrangement.POLICY,
+                                                              'step_budget': 20000}))
+        paths = []
+        for block_id in ('buck-a', 'sensor'):
+            packed = blocks.pack_block(self.target, self.tinv, derivation, block_id, self.policy)['candidate']
+            paths.append(self.dir / f'{block_id}.json')
+            paths[-1].write_text(json.dumps(packed))
+        (self.dir / 'buck-b.json').write_text(json.dumps(self.materialize(raw, 'buck-b')['candidate']))
+        section = block_arrangement.request_section(self.dir / 'allocation.json', self.dir / 'arrangement.json',
+                                                    paths + [self.dir / 'buck-b.json'])
+        plan = block_arrangement.plan_from_request(self.target, section, self.policy, self.policy,
+                                                   self.dir / 'design.xml')
+        self.assertEqual(plan['status'], 'planned', plan.get('block_arrangement', {}).get('problems'))
+        record = {b['block']: b for b in plan['block_arrangement']['blocks']}
+        self.assertEqual(record['buck-b']['references'], self.BUCK_B)
+        self.assertEqual(record['buck-b']['provenance']['method'], 'project-cluster/1')
+        # The materialize record is not a candidate file: it is refused, never unwrapped.
+        (self.dir / 'record.json').write_text(json.dumps(self.materialize(raw, 'buck-b')))
+        with self.assertRaisesRegex(ValueError, 'expected a bare agent-ee.block-candidate/2'):
+            block_arrangement.request_section(self.dir / 'allocation.json', self.dir / 'arrangement.json',
+                                              [self.dir / 'record.json'])
+
+    def test_cli_writes_the_bare_candidate(self):
+        (self.dir / 'probe.json').write_text(json.dumps(self.target))
+        (self.dir / 'target.xml').write_bytes((self.dir / 'design.xml').read_bytes())
+        (self.dir / 'policy.json').write_text(json.dumps(self.policy))
+        (self.dir / 'entry.json').write_text(json.dumps(self.entry))
+        (self.dir / 'mapping.json').write_text(json.dumps(self.MAPPING))
+        (self.dir / 'allocation.json').write_bytes(self.allocation())
+        common = ('materialize', '--probe', self.dir / 'probe.json', '--netlist', self.dir / 'target.xml',
+                  '--policy', self.dir / 'policy.json', '--entry', self.dir / 'entry.json',
+                  '--mapping', self.dir / 'mapping.json')
+        done = CliTests.run_cli(self, *common, '--allocation', self.dir / 'allocation.json', '--block', 'buck-b',
+                                '--out', self.dir / 'use.json')
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(json.loads(done.stdout), {'status': 'materialized', 'out': str(self.dir / 'use.json'),
+                                                   'id': 'owned-buck', 'version': 1, 'block': 'buck-b'})
+        written = blocks.validate_candidate(json.loads((self.dir / 'use.json').read_text()))
+        self.assertEqual((written['schema'], written['block_id']), (blocks.CANDIDATE, 'buck-b'))
+        self.assertEqual(written['sources']['allocation_sha256'], hashlib.sha256(self.allocation()).hexdigest())
+        for extra, kind in ((('--allocation', self.dir / 'allocation.json'), 'block_unmapped'),
+                            (('--allocation', self.dir / 'allocation.json', '--block', 'buck-a'), 'block_members')):
+            done = CliTests.run_cli(self, *common, *extra, '--out', self.dir / 'refused.json')
+            with self.subTest(kind=kind):
+                self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+                result = json.loads(done.stdout)
+                self.assertEqual((result['status'], [p['kind'] for p in result['problems']]), ('refused', [kind]))
+                self.assertFalse((self.dir / 'refused.json').exists())
+        done = CliTests.run_cli(self, *common, '--block', 'buck-b', '--out', self.dir / 'refused.json')
+        self.assertEqual((done.returncode, json.loads(done.stdout)['status']), (1, 'refused'))
+        self.assertFalse((self.dir / 'refused.json').exists())
 
 
 class AuthorityHoldTests(LibraryFixture, unittest.TestCase):
@@ -1005,6 +1237,73 @@ class NativeTests(unittest.TestCase):
                               env=dict(os.environ, PYTHONPATH=str(ROOT / 'src')))
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertEqual(json.loads(done.stdout.splitlines()[-1]), {'status': 'reproduced', 'differ': []})
+
+    def test_committed_pod_repin_preserves_geometry(self):
+        """Coordinator ruling on AGENTEE-370, condition 2 and 3, from the pinned objects: every v1 courtyard
+        hash is the captured-order record, every v2 hash is the same rings in canonical order (the same
+        point sets), and the v1 candidate hash is the v2 candidate with only those records, and the framed
+        outline rings built from them, back in captured order."""
+        from toolchain import fome_mc_store, require_toolchain
+        require_toolchain(native=True)
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import import_pod_blocks
+        repository = fome_mc_store(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', '/home/halbritt/git/fome-mc'),
+                                   import_pod_blocks.COMMIT)
+        candidates = []
+
+        def spy(block_id, version, part, provenance, built, copper, receipt):
+            candidates.append(copy.deepcopy(built[0]))
+            return entry(block_id, version, part, provenance, built, copper, receipt)
+        entry = bl._entry
+        with tempfile.TemporaryDirectory(prefix='agent-ee-pod-repin-') as tmp, mock.patch.object(bl, '_entry', spy):
+            capture = import_pod_blocks.inputs(repository, Path(tmp))[1]
+            built = import_pod_blocks.entries(repository, Path(tmp))
+        board = {fp['ref']: fp for fp in capture['footprints']}
+        changed = {}
+        for new, candidate in zip(built, candidates):
+            old = json.loads((ROOT / bl.entry_path(new['id'], 1)).read_text())
+            self.assertEqual(bl.entry_bytes(new), (ROOT / bl.entry_path(new['id'], 2)).read_bytes())
+            legacy = copy.deepcopy(candidate)
+            for row, before, after in zip(legacy['members'], old['layout']['members'], new['layout']['members']):
+                ref = row['reference']
+                self.assertEqual({ref}, {before['reference'], after['reference']})
+                # The pre-370 record: placer's local courtyards in captured vertex order.
+                local = placer.transform(board[ref], [0, 0], 0)['courtyards']
+                captured = {side: {k: c[k] for k in ('status', 'polygons', 'inner_polygons', 'approximation')
+                                   if k in c} for side, c in sorted(local.items())}
+                with self.subTest(block=new['id'], ref=ref):
+                    self.assertEqual(blocks.digest({'side': row['side'], 'courtyards': captured}),
+                                     before['courtyard_sha256'])
+                    self.assertEqual(blocks.digest({'side': row['side'], 'courtyards': row['courtyard']}),
+                                     after['courtyard_sha256'])
+                    self.assertEqual(sorted(captured), sorted(row['courtyard']))
+                    for side, record in captured.items():
+                        self.assertEqual({k: v for k, v in record.items() if k not in ('polygons', 'inner_polygons')},
+                                         {k: v for k, v in row['courtyard'][side].items()
+                                          if k not in ('polygons', 'inner_polygons')})
+                        for key in ('polygons', 'inner_polygons'):
+                            rings, canonical = record.get(key, []), row['courtyard'][side].get(key, [])
+                            # Same rings, same vertices: only the start vertex and direction differ.
+                            self.assertEqual(sorted(blocks.canonical_ring(r) for r in rings), canonical)
+                            self.assertEqual(sorted(sorted(map(tuple, r)) for r in rings),
+                                             sorted(sorted(map(tuple, r)) for r in canonical))
+                    self.assertEqual((before['pad_geometry_sha256'], before['pin_functions_sha256']),
+                                     (after['pad_geometry_sha256'], after['pin_functions_sha256']))
+                    self.assertEqual(blocks.pad_geometry_sha256(board[ref]), after['pad_geometry_sha256'])
+                if captured != row['courtyard']:
+                    changed.setdefault(new['id'], []).append(ref)
+                row.update(courtyard=captured, courtyard_sha256=before['courtyard_sha256'])
+            # Pre-370 framing transformed the captured footprint itself.
+            legacy['outline'] = blocks._outline([placer.transform(board[r['reference']], r['pose']['position_nm'],
+                                                                  r['pose']['rotation_deg']) for r in legacy['members']])
+            self.assertEqual(sorted(legacy['outline']), sorted(candidate['outline']))
+            for side, outline in legacy['outline'].items():
+                self.assertEqual(outline['box_nm'], candidate['outline'][side]['box_nm'])
+                self.assertEqual([blocks.canonical_ring(r) for r in outline['courtyards']],
+                                 [blocks.canonical_ring(r) for r in candidate['outline'][side]['courtyards']])
+            self.assertEqual(blocks.digest(legacy), old['receipt']['candidate_sha256'])
+            self.assertEqual(blocks.digest(candidate), new['receipt']['candidate_sha256'])
+        self.assertEqual(changed, POD_REPINNED)
 
     def test_native_board_region_with_copper(self):
         from toolchain import require_toolchain

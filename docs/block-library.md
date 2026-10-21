@@ -32,7 +32,8 @@ PYTHONPATH=src python3 -m agent_ee.block_library import-cluster --cluster-poses 
 PYTHONPATH=src python3 -m agent_ee.block_library add --entry build/entry.json
 PYTHONPATH=src python3 -m agent_ee.block_library materialize --entry blocks/entries/<id>/v1.json \
   --probe build/placement-probe.json --netlist build/design.xml --policy design/packing.json \
-  --mapping design/mapping.json --out build/block.json
+  --mapping design/mapping.json --allocation design/allocation.json --block buck-3v3 \
+  --out build/block.json
 ```
 
 Imports and `materialize` write a new `--out` file; an existing file is refused.
@@ -40,6 +41,14 @@ Each command prints one JSON status line. The exit code is 0 for `valid`, a
 nonempty lookup, `added`, `imported` and `materialized`, and 1 otherwise. A
 refused input prints `{"status": "refused", "reason": ...}` and writes nothing; a
 hard class or an `--authority` record adds `"kind": "authority_unavailable"`.
+
+`materialize --out` holds the bare `agent-ee.block-candidate/2`, the file that
+`blocks arrange --candidate` and `block_arrangement.request_section` read; it is
+written only when materialized, and the status line adds the entry `id`,
+`version` and the candidate's `block`. A refusal writes no file and prints the
+whole result record (`status: refused`, `problems`). Consumers take only the bare
+candidate: a result record given as a candidate file is refused, never unwrapped
+(AGENTEE-375).
 
 ## What is stored
 
@@ -49,7 +58,7 @@ third-party design data is published (owner gate). The full
 `agent-ee.block-candidate/2` is rebuilt from a board's own footprints whenever the
 entry is used ([Materialization](#materialization)).
 
-`agent-ee.block-library-entry/1`. Every field is required and unknown fields refuse:
+`agent-ee.block-library-entry/2`. Every field is required and unknown fields refuse:
 
 | Field | Content |
 | --- | --- |
@@ -64,6 +73,20 @@ Poses, the frame, value rules and pad-geometry and courtyard hashes are those of
 [blocks.md](blocks.md#block-candidate-schema). `pin_functions_sha256` hashes each
 pad's native pin name and electrical type. Roles are numbered as in the
 candidate; net names never identify a role.
+
+### Retired `/1` identities (AGENTEE-370)
+
+An `agent-ee.block-library-entry/1` entry hashed each courtyard in the vertex
+order pcbnew captured. That order changes with the footprint's board rotation, so
+a member rotated in the source refused against the same footprint at another
+rotation. `/2` hashes the [canonical rings](blocks.md#pose-independent-identity-agentee-370).
+A `/1` entry still validates, so a catalogue holding one still loads and its bytes
+stay bound to its catalogue hash. It is never used: `materialize` and `reproduce`
+refuse it with one `identity_version` problem (`expected` `/2`, `actual` `/1`),
+and `add_entry` raises `identity_version`. Import the block again as a new version.
+The four committed pod entries were re-pinned that way (coordinator ruling on
+AGENTEE-370): version 1 of each stays catalogued as `/1` and refuses, and version 2
+is the same import at `/2`. See [(c) Reviewed project clusters](#c-reviewed-project-clusters).
 
 ### Catalogue and versions
 
@@ -243,8 +266,8 @@ from the local object store only:
   `inputs/native.xml`;
 - the D-PL-1 `electrical-locality.json`.
 
-It probes the seed natively in a temporary directory and writes the four
-committed entries:
+It probes the seed natively in a temporary directory and writes version
+`VERSION` (2) of the four committed entries:
 
 | Entry | Part | Members | Internal locality pairs |
 | --- | --- | ---: | ---: |
@@ -254,6 +277,16 @@ committed entries:
 | `pod-lm2903-soic8-u26` | LM2903-SOIC8 | 3 | 4 |
 
 `--check` re-imports and requires byte-identical, catalogued entry files.
+
+Version 1 of each entry is the retired `/1` import. Version 2 (AGENTEE-370 re-pin)
+was written by the same script from the same pinned objects. Only the identity
+version, the courtyard hashes of 25 members captured in a non-canonical vertex
+order, and each candidate hash differ. `tests.test_block_library` proves this two
+ways. The committed v1 and v2 files are equal apart from those fields, with pad
+and pin-function hashes byte-identical. Natively, each v1 courtyard hash is the
+captured-order record, and each v2 hash is the same rings in canonical order.
+Each v1 candidate hash is the v2 candidate with only those records, and the framed
+outline rings built from them, put back in captured order.
 No validated (hard-class) entry is committed, and none can be while hard classes
 are disabled. Seeding one needs the verified owner authority of AGENTEE-348, either
 for a captured TI reference-layout figure measured with its scale reference or for a
@@ -261,7 +294,7 @@ qualified fome-mc board region.
 
 ## Materialization
 
-`materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy, mapping, authority_raw)`
+`materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy, mapping, authority_raw, *, allocation_raw, block_id)`
 uses an entry on a board. A hard-class entry or any `authority_raw` raises
 `AuthorityUnavailable` before anything is built. `mapping` pairs every entry member with a distinct
 target reference, identity by default. The result is
@@ -283,6 +316,32 @@ than `admitted` (refused, unknown, an error) refuses with an `admission` problem
 that carries the admission status and evidence. A locked target member, or a
 board-policy fix on a member, refuses as an `admission` problem with stage A's
 reason.
+### Binding the target allocation (AGENTEE-375)
+
+Without `allocation_raw` the candidate binds a one-block allocation of the mapped
+members under the entry id. That candidate admits only against itself: a
+`placer_runner` request derives from the board's own allocation text, and refuses
+it with `source_mismatch` on `allocation_sha256` and `derivation_sha256`.
+
+With `allocation_raw` (CLI `--allocation`, the same file the request's
+`allocation_text` carries) the candidate binds the derivation the runner
+recomputes from those bytes, and its `block_id` is `block_id` (CLI `--block`), the
+allocation's block id; the record gains `block`. The entry id is never matched to
+a block id by name. Before anything is built:
+
+| Problem | When |
+| --- | --- |
+| `block_unmapped` | an allocation without a block id |
+| `block_unknown` | the id names no derived block (the problem lists the derived ids) |
+| `block_members` | the allocated block's members are not exactly the mapped target references |
+| `admission` | the allocation does not derive on the target (`blocks.derive` reason) |
+
+A block id without an allocation raises `ValueError`. The frame anchor is the
+allocated block's (its declared `anchor`, else `blocks.anchor_of`), so the entry
+poses are re-framed when the entry anchor differs; admission then runs against
+the allocation's derivation as above. A candidate bound to one allocation still
+refuses admission under any other (`source_mismatch`).
+
 The candidate's provenance is the entry's class, enforcement, citation and
 source, with `method` set to the import path. Arrangement (AGENTEE-340) decides
 how to use it. `hard` means keep the block rigid; `advisory` means a proposal
@@ -325,11 +384,21 @@ AGENT_EE_REQUIRE_TOOLCHAIN=1 AGENT_EE_FOME_MC_CHECKOUT=/home/halbritt/git/fome-m
 - figure scale verification at its inclusive boundary, axis flips, orientation
   and document-hash refusals, and figure-bound poses;
 - materialization of a second instance and each identity mismatch;
+- materialization with source and target members at every quarter-turn, each
+  captured in pose-dependent vertex order, a grown courtyard still refusing, and
+  retired `/1` entries refused with `identity_version` (AGENTEE-370);
 - a failed re-grade;
+- the allocation binding (`AllocationBindingTests`, AGENTEE-375): the candidate
+  binds the target allocation and block id and admits; the allocation's anchor
+  frames it; `block_unmapped`, `block_unknown` and `block_members` refuse; a
+  candidate bound to another allocation refuses admission; a `request_section`
+  request admits and arranges it through `plan_from_request`, and refuses a
+  result record; the CLI writes the bare candidate;
 - catalogue immutability, byte binding and ordering;
 - entry structure refusals;
 - the CLI.
 
-Two native tests run under the toolchain. One re-imports the pod entries from
-the pinned fome-mc objects. The other probes an authored two-footprint KiCad
+Three native tests run under the toolchain. One re-imports the pod entries from
+the pinned fome-mc objects. One proves the AGENTEE-370 re-pin changed only the
+identity form, never a courtyard point set, pad or pin function. The other probes an authored two-footprint KiCad
 board with pcbnew and imports its region with copper.

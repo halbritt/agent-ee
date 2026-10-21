@@ -29,7 +29,7 @@ from agent_ee.placement_predicates import (courtyard_overlap, envelope_overhangs
 from agent_ee.placement_probe import prove_contours
 from agent_ee.placer import pack
 from test_placement import MM, capture, part, rectangle
-from test_placer import request
+from test_placer import authored_groups, request
 from toolchain import require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
@@ -357,10 +357,10 @@ class GroupRegionTest(unittest.TestCase):
         board['pcbnew_version'] = '10.0.7'
         return board
 
-    GROUPS = [{'id': 'pre-buck', 'references': ['C1', 'C2'], 'anchor': {'reference': 'U5'}, 'max_distance_nm': 4 * MM},
+    GROUPS = authored_groups([{'id': 'pre-buck', 'references': ['C1', 'C2'], 'anchor': {'reference': 'U5'}, 'max_distance_nm': 4 * MM},
               {'id': 'probes', 'references': ['TP1', 'TP2'], 'region': {'polygons': [box(20, 2, 28, 18)]}},
               {'id': 'target', 'references': ['R9'], 'anchor': {'point_nm': [15 * MM, 15 * MM]},
-               'max_distance_nm': 2 * MM}]
+               'max_distance_nm': 2 * MM}], 'tests/test_placer_residuals.py: authored group geometry')
 
     def test_groups_are_enforced_by_the_packer_and_graded(self):
         board = self.board()
@@ -787,6 +787,7 @@ class NativeGroupCheckTest(unittest.TestCase):
         groups = {'schema': placement_groups.SCHEMA, 'groups': [
             {'id': 'filter', 'references': ['R1', 'C1'], 'region': {'polygons': [box(102, 98, 113, 102)]},
              'anchor': {'reference': 'J1'}, 'max_distance_nm': 11 * MM}]}
+        groups['groups'] = authored_groups(groups['groups'], 'tests/test_placer_residuals.py: native group fixture')
         outcomes = {}
         for name, move in (('pass', None), ('defect', {'C1': (114, 104)})):
             source = gates.NativePlacementGates.source(self, move=move, extra={

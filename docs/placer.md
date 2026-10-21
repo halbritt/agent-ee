@@ -152,8 +152,9 @@ against a captured manufacturer requirement, including a captured JLCPCB SMT
 assembly record; those requirements remain hard. A caller must qualify that
 source before calling this geometry API: a citation string is not independently
 authenticated by the placer. The coordinator placement adapter continues to
-refuse policy-supplied `constraint_provenance`; envelope provenance still comes
-only from captured envelopes. This change adds no manufacturer capture pipeline
+refuse policy-supplied `constraint_provenance`, per-obstacle `provenance` and
+per-group `constraint_provenance`; envelope provenance still comes only from
+captured envelopes. This change adds no manufacturer capture pipeline
 or automatic promotion of an agent-chosen number.
 Neither a successful packing plan nor this spacing default establishes native
 DRC or assembly clearance acceptance.
@@ -428,14 +429,67 @@ The policy/capacity audit found these numeric constraints:
 | --- | --- | --- |
 | `min_courtyard_edge_mm` | Unknown/soft without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board proofs are unknown. |
 | `gap_nm` (including pod 0.25 mm) | Unknown/advisory without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board and region proofs are unknown (AGENTEE-338). |
-| Native rule areas and footprint keepouts | Captured geometry, unknown provenance; no numeric padding is added | Structural polygon exclusion; no invented keepout-padding limit exists. |
-| `groups[].max_distance_nm` | Explicit caller declaration, provenance unknown; no default radius | Search predicate and saved-board group grade; unused by all capacity proofs. An unplaceable group is search exhaustion/unknown. The independent group criterion retains its existing verdicts. |
-| Group region polygons, outline, fixed geometry and declared obstacles | Captured/declared geometry; envelope outline/fixed classes retained, otherwise unknown legacy geometry | Structural capacity bounds remain as before; this change adds no geometry provenance mechanism. |
+| Native rule areas and footprint keepouts | Captured board geometry, board/hard; no numeric padding is added | Structural polygon exclusion. |
+| `groups[].max_distance_nm` | Unknown/soft unless its group declares a sourced hard value | Search predicate; saved-board violations without a source are advisory `info` (AGENTEE-361). Unused by capacity proofs. |
+| Group region polygons and policy obstacles | Unknown/soft without a source; sourced geometry is hard | Advisory-dependent proofs are unknown and name the geometry in binding constraints (AGENTEE-361). |
+| Outline and fixed geometry | Envelope classes retained, otherwise unknown legacy hard geometry | Existing structural capacity verdicts remain. |
 | Step budget, search timeout and geometry work guards | Computational bounds, no engineering authority | Exhaustion/refusal is unknown, never a capacity defect. |
 
 The placer has no other numeric edge-margin, reserved-gap, keepout-padding or
 group-radius default that can establish a capacity defect. Electrical locality
 uses its existing per-pair sourced/advisory contract, separately from capacity.
+
+### Obstacle and group sources (AGENTEE-361)
+
+Each policy obstacle may declare `provenance: {class, enforcement, citation}`.
+The accepted geometry classes are `fixture_author`, `board`, `datasheet`,
+`manufacturer` and `arrangement_rule`; enforcement must be `hard` and the
+citation nonempty. Without that record an obstacle is `unknown`/`soft`. Native
+captured rule areas and footprint keepouts remain `board`/`hard` exclusions.
+
+Only a direct caller of this geometry API supplies these records (AGENTEE-365).
+The coordinator placement adapter and the pod driver refuse a packing policy
+whose obstacles carry `provenance` or whose groups carry `constraint_provenance`,
+exactly as they refuse a policy-level `constraint_provenance`: the packing
+policy is caller-authored, so it may state geometry but not qualify it. A
+sourced keep-out reaches the board from a captured envelope as a native rule
+area, graded `board`/`hard`; caller-declared obstacles, regions and distances
+stay advisory. Block arrangement passes the cited source of each hard keep-out
+and `no_stacking` shadow to the residual pack as an `arrangement_rule`/`hard`
+record, so a residual capacity proof resting on one is a defect that names it
+(see [blocks](blocks.md#residual-packing-and-the-complete-plan)).
+
+Each group may declare `constraint_provenance` keyed by `region` and/or
+`max_distance_nm`, only for constraints that group actually has. A region uses
+the geometry source record above; a distance uses the existing numeric record
+(`fixture_author` or `manufacturer`, `hard`, nonempty `citation`, integer
+`value_nm` equal to `max_distance_nm`). For example:
+
+```json
+{"id": "filter", "references": ["C1"],
+ "anchor": {"reference": "U1"}, "max_distance_nm": 1000000,
+ "constraint_provenance": {"max_distance_nm": {
+   "class": "fixture_author", "enforcement": "hard", "value_nm": 1000000,
+   "citation": "Original fixture: C1 origin within 1 mm of U1"}}}
+```
+
+A region capacity proof records every participating region, including nested
+regions, as `group <id> region` in `binding_constraints`. Policy obstacles keep
+their original `obstacle <index>` names. A proof that needs an unsourced region
+or obstacle reports `packing_infeasible`/`unknown`, empty placements and
+`owner_confirmation` naming it. Proofs retry without advisory geometry, then
+without unsourced numeric limits; an independent sourced region or board
+capacity defect takes precedence over an advisory proof. The capacity diagnostic
+retains the original requested geometry and limits.
+
+Search still reserves the declared geometry and group radii; search failure
+remains unknown. Saved-board grading reports unsourced region and radius
+limits as `unsourced_limit` advisories with the original `advisory_kind`,
+measured values, source class and `exceeded`. The status is `info` when only
+exceeded advisories remain; satisfied ones keep `pass`. Sourced defects survive alongside them. Because search enforces the
+groups, a plan or saved board is accepted only when no advisory is exceeded
+(`placement_groups.satisfied`). These source records follow the existing caller qualification contract;
+authenticating declared citations remains AGENTEE-348.
 
 ### Board capacity (AGENTEE-249)
 
@@ -531,8 +585,9 @@ of them is soft (an assumed or owner-weakened limit), the proof stays in the
 record, but the outcome is `unknown` instead of `defect`. The result then has
 `owner_confirmation` (the soft constraints), and the reason names them. A proof
 bound only by hard or undeclared limits keeps `defect`, except that an unsourced
-gap is advisory under AGENTEE-338 and an unsourced margin is soft under
-AGENTEE-358. A zero-gap proof does not bind that gap; a zero-margin proof does
+gap is advisory under AGENTEE-338, an unsourced margin is soft under
+AGENTEE-358, and unsourced policy obstacles and group regions are soft under
+AGENTEE-361. A zero-gap proof does not bind that gap; a zero-margin proof does
 not bind the margin. Owned tests are in
 `tests/test_constraint_provenance.py`.
 
@@ -652,7 +707,9 @@ belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
 or an engineer allocation file. Each block is packed alone with this search,
 around a fixed anchor on a synthetic plane, into a rigid
 `agent-ee.block-candidate/2`, then re-packed on shrinking outlines to the least
-box area ([compaction](blocks.md#compaction-agentee-355), AGENTEE-355). Its own pad obligations and groups apply, and
+box area ([compaction](blocks.md#compaction-agentee-355), AGENTEE-355). A first plan that
+strands a plane-only member is retried with a temporary anchor-proximity group
+([recovery](blocks.md#recovery-agentee-359), AGENTEE-359). Its own pad obligations and groups apply, and
 boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
 unchanged. [Arrangement](blocks.md#stage-b-arrangement-agentee-340) admits a
 candidate only after `blocks.admit` (or a mapped match and re-grade) checks it
@@ -816,12 +873,24 @@ even when both items collided in the baseline. A rigid intra-footprint finding
 with unchanged local geometry remains a baseline finding. Missing native item
 geometry refuses comparison. A native item KIID shared across different
 footprints also refuses comparison, including case aliases normalized by KiCad;
-it cannot establish an intra-footprint baseline. Other categories retain UUID-based reporting.
-Any added `shorting_items`, `clearance` or `pth_inside_courtyard` refuses
-publication and retains the findings with the failed candidate. An introduced
+it cannot establish an intra-footprint baseline. Non-collision numeric categories also bind to absolute saved geometry; other categories retain UUID-based reporting. Enforcement changes and a new
+outline crossing count as new findings on otherwise identical item UUIDs.
+Any added `shorting_items`, `pth_inside_courtyard` or `holes_co_located` refuses
+publication with an engineering citation to AGENTEE-318/325/331. Printed copper-edge actuals below 0.00005 mm (50 nm) are also structural,
+regardless of the numeric edge limit. KiCad reports touching/crossing copper as
+zero. A separate native child subtracts the board material from every saved
+effective copper polygon; nonempty differences are engineering/hard
+`copper_outside_outline` witnesses and always refuse publication, even when
+native DRC omits wholly outside copper. See the
+[measurement boundary](scaffold.md#declared-design-rule-sources-agentee-331). Numeric findings, including `clearance`,
+resolve against the [declared sources](scaffold.md#declared-design-rule-sources-agentee-331):
+owner, manufacturer, datasheet and engineering limits block; default or unresolved
+limits remain visible advisories. Captured owner rules cite the immutable file,
+SHA-256 and rule name. The comparison retains classified baseline and candidate
+findings, including silk and text findings, and retains failures with the candidate. An introduced
 `solder_mask_bridge` between different footprints also blocks publication;
 baseline and intra-footprint mask bridges remain non-blocking and reported.
-Ignoring any of these four categories, a failed tool, missing output,
+Ignoring a required collision or mask category, a failed tool, missing output,
 incomplete severity coverage or changed evaluation settings also refuses publication. Existing
 courtyard and write-scope gates remain in force. Rule-level `(severity ignore)`
 in `.kicad_dru` never appears in native `ignored_checks`, so the gate refuses

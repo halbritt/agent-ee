@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from agent_ee import routed_artwork as art, stage_receipts
+from agent_ee.silk_artwork import DECLARATION
 from agent_ee.storage import read_json
 from agent_ee.symbol_library import children, parse_sexpr
 import test_silk_artwork as silk_fixture
@@ -120,6 +121,64 @@ class RoutedArtworkTest(unittest.TestCase):
                 finally:
                     self.root = prior
 
+    def test_native_producer_moves_carried_labels_around_slot_and_round_hole(self):
+        import pcbnew as k
+        from agent_ee import placement_defects as pd
+        from agent_ee.placer_runner import _native_drc
+        from agent_ee.silk_artwork import relocate
+        source = self.board()
+        probe = self.root / 'probe'
+        probe.mkdir()
+        free = {m['reference']: m['to_nm'] for m in relocate(
+            k.LoadBoard(str(source)), _native_drc(source, probe)['violations'])['moved_fields']}
+        # Both labels drop straight below their pads without cutouts.
+        self.assertEqual(free, {'U1': [3000000, 5250000], 'C1': [15000000, 5250000]})
+        board = k.LoadBoard(str(source))
+        slot = k.PCB_SHAPE(board)
+        slot.SetShape(k.SHAPE_T_RECT)
+        slot.SetLayer(k.Edge_Cuts)
+        slot.SetStart(k.VECTOR2I(2500000, 5000000))
+        slot.SetEnd(k.VECTOR2I(3500000, 7000000))
+        slot.SetWidth(50000)
+        board.Add(slot)
+        hole = k.PCB_SHAPE(board)
+        hole.SetShape(k.SHAPE_T_CIRCLE)
+        hole.SetLayer(k.Edge_Cuts)
+        hole.SetCenter(k.VECTOR2I(15000000, 6000000))
+        hole.SetEnd(k.VECTOR2I(15900000, 6000000))
+        hole.SetWidth(50000)
+        board.Add(hole)
+        k.SaveBoard(str(source), board, True)
+        baseline = self.root / 'baseline'
+        baseline.mkdir()
+        defects = [dict(type='placement_silkscreen_conflict', status='open', verdict='defect', native=v)
+                   for v in _native_drc(source, baseline)['violations']
+                   if v['type'] in ('silk_overlap', 'silk_over_copper')]
+        self.assertEqual(len(defects), 2)
+        original = pd._identities(source)
+        report = art.produce(source, self.root / 'run')
+        self.assertFalse(report['open_defects'])
+        artwork = read_json(self.root / 'run' / art.ARTWORK)
+        self.assertEqual(artwork['search_diagnostics'], [])
+        moved = {m['reference']: m['to_nm'] for m in artwork['moved_fields']}
+        self.assertEqual(set(moved), {'U1', 'C1'})
+        output = k.LoadBoard(str(self.root / 'run' / art.BOARD))
+        for fp in output.GetFootprints():
+            ref = fp.GetReference()
+            self.assertNotEqual(moved[ref], free[ref])
+            box = fp.Reference().GetBoundingBox()
+            if ref == 'U1':
+                self.assertTrue(box.GetRight() < 2500000 or box.GetLeft() > 3500000 or
+                                box.GetBottom() < 5000000 or box.GetTop() > 7000000)
+            else:
+                # Nearest box point to the true circle stays outside its radius.
+                nx = min(max(15000000, box.GetLeft()), box.GetRight())
+                ny = min(max(6000000, box.GetTop()), box.GetBottom())
+                self.assertGreater((nx - 15000000)**2 + (ny - 6000000)**2, 900000**2)
+        current = pd._identities(self.root / 'run' / art.BOARD, report['containment'])
+        for defect in defects:
+            self.assertTrue(pd._closes(defect, original, current, set(), set(), True))
+
     def test_visible_value_fields_are_relocated_on_routed_board(self):
         import pcbnew as k
         source = self.board()
@@ -192,6 +251,68 @@ class RoutedArtworkTest(unittest.TestCase):
         after = before.replace(b'1 2', b'2 3').replace(b'3 2', b'4 3')
         with self.assertRaises(ValueError):
             art.write_scope(before, after)
+
+    def test_list_headed_and_nested_silk_tokens_refuse_typed(self):
+        line = b'(gr_line (start 1 2) (end 3 2) (layer "F.SilkS") (uuid "s"))'
+        field = (b'(footprint "x" (property "Reference" "R1" (at 1 2) (layer "F.SilkS") (uuid "f")) '
+                 b'(uuid "x"))')
+        cases = {
+            'list-headed graphic': (b'(kicad_pcb ' + line.replace(b'(gr_line', b'((gr_line)') + b')',
+                                    b'(kicad_pcb ' + line.replace(b'(gr_line', b'((gr_line)').replace(
+                                        b'1 2', b'2 2') + b')', 'list-headed node'),
+            'list-headed graphic child': (b'(kicad_pcb ' + line.replace(b'(uuid', b'((x) 1) (uuid') + b')',
+                                          b'(kicad_pcb ' + line.replace(b'(uuid', b'((x) 1) (uuid').replace(
+                                              b'1 2', b'2 2').replace(b'3 2', b'4 2') + b')',
+                                          'list-headed child'),
+            'nested field name': (b'(kicad_pcb ' + field.replace(b'"Reference"', b'("Reference")') + b')',
+                                  b'(kicad_pcb ' + field.replace(b'"Reference"', b'("Reference")').replace(
+                                      b'(at 1 2)', b'(at 2 2)') + b')', 'non-atom field name'),
+            'nested uuid': (b'(kicad_pcb ' + line.replace(b'"s"', b'("s")') + b')',
+                            b'(kicad_pcb ' + line.replace(b'"s"', b'("s")') + b')', 'ambiguous artwork identity'),
+            'nested declaration': (b'(kicad_pcb ' + field.replace(
+                                       b'(uuid "x")', b'(property "' + DECLARATION.encode() + b'" ("[]")) (uuid "x")') + b')',
+                                   b'(kicad_pcb ' + field.replace(
+                                       b'(uuid "x")', b'(property "' + DECLARATION.encode() + b'" ("[]")) (uuid "x")').replace(
+                                       b'(at 1 2)', b'(at 2 2)') + b')', 'malformed movable silk declaration'),
+            'bare declaration': (b'(kicad_pcb ' + field.replace(
+                                     b'(uuid "x")', b'(property "' + DECLARATION.encode() + b'") (uuid "x")') + b')',
+                                 b'(kicad_pcb ' + field.replace(
+                                     b'(uuid "x")', b'(property "' + DECLARATION.encode() + b'") (uuid "x")').replace(
+                                     b'(at 1 2)', b'(at 2 2)') + b')', 'malformed movable silk declaration'),
+        }
+        for name, (before, after, message) in cases.items():
+            with self.subTest(case=name), self.assertRaisesRegex(ValueError, message):
+                art.write_scope(before, after)
+        # The atom-only spelling of the same field move remains allowed.
+        allowed = art.write_scope(b'(kicad_pcb ' + field + b')',
+                                  b'(kicad_pcb ' + field.replace(b'(at 1 2)', b'(at 2 2)') + b')')
+        self.assertEqual(allowed['moved_identities'], ['f'])
+
+    def test_empty_child_and_nameless_property_refuse_in_both_orders(self):
+        # The base crashed on both shapes; a typed refusal must not become a skip.
+        line = (b'(gr_line (start 1 2) (end 3 2) (layer "F.SilkS") '
+                b'(uuid "11111111-1111-4111-8111-111111111111"))')
+        field = (b'(footprint "x" (property "Reference" "R1" (at 1 2) (layer "F.SilkS") (uuid "f")) '
+                 b'(uuid "x"))')
+        def moved(board):
+            return board.replace(b'(start 1 2)', b'(start 2 2)').replace(
+                b'(end 3 2)', b'(end 4 2)').replace(b'(at 1 2)', b'(at 2 2)')
+        cases = {
+            'empty graphic child': (b'(kicad_pcb ' + line.replace(b'))', b') ())') + b')',
+                                    'empty child', line, ['11111111-1111-4111-8111-111111111111']),
+            'nameless property': (b'(kicad_pcb ' + field.replace(b'(uuid "x")', b'(property) (uuid "x")') + b')',
+                                  'nameless property', field, ['f']),
+        }
+        for name, (before, message, control, identities) in cases.items():
+            for left, right in ((before, moved(before)), (moved(before), before)):
+                with self.subTest(case=name, order=left is before), \
+                        self.assertRaisesRegex(ValueError, message):
+                    art.write_scope(left, right)
+            # The well-formed spelling of the same translation stays allowed.
+            control = b'(kicad_pcb ' + control + b')'
+            allowed = art.write_scope(control, moved(control))
+            self.assertEqual(allowed['status'], 'allowed')
+            self.assertEqual(allowed['moved_identities'], identities)
 
     def test_stale_render_cache_refuses_text_or_field_translation(self):
         nodes = (

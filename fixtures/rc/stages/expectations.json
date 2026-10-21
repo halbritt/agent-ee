@@ -2,7 +2,7 @@
   "unplaced": {
     "erc": "pass",
     "netlist": "info",
-    "drc-placement": "pass",
+    "drc-placement": "defect",
     "courtyard": "pass",
     "containment": "defect",
     "drc-final": "defect"

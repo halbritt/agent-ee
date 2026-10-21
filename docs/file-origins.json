@@ -2512,7 +2512,7 @@
       "origins": [
         "AE"
       ],
-      "reviewed": "Original regression test that fails the strict suite when any tracked file carries git merge-conflict markers; no fixtures, no KiCad text."
+      "reviewed": "Original regression test that fails the strict suite when any tracked file carries git merge-conflict markers or is a merge leftover (.orig, .rej, mergetool BASE/LOCAL/REMOTE/BACKUP copies); its refusal tests build original temporary trees, no fixtures, no KiCad text."
     },
     {
       "paths": [
@@ -3614,6 +3614,18 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-355 provenance consumer tests. Minimal KiCad board and schematic text literals authored here stand in for captured review inputs; no third-party design or text was copied."
+    },
+    {
+      "paths": [
+        "src/agent_ee/design_rule_provenance.py",
+        "tests/test_design_rule_provenance.py",
+        "tests/test_provenance_limits.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-331 declared constraint-source import and original synthetic/native tests. Reuses the design lane schema as an interface; no third-party design or library bytes are retained."
     }
   ]
 }
