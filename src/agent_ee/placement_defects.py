@@ -218,9 +218,16 @@ def same_artwork(before, after):
     from .symbol_library import children, parse_sexpr
     def spans(text):
         # Byte spans of the root's direct children; quoted strings skip escaped characters.
-        result, depth, start, pos = [], 0, None, 0
+        result, depth, start, pos, line_start = [], 0, None, 0, True
         while pos < len(text):
             char = text[pos]
+            # KiCad's lexer skips a line whose first non-blank (space, tab, CR, NUL) byte is '#'.
+            if char == '\n':
+                line_start = True
+            elif char not in ' \t\r\0':
+                if line_start and char == '#':
+                    raise ValueError('artwork comparison refuses comment syntax')
+                line_start = False
             if char == '"':
                 begin = pos
                 pos += 1

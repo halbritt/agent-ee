@@ -698,3 +698,32 @@ class ClosureEscapeTests(unittest.TestCase):
             for before, after in (({}, sealed), (sealed, {}), (sealed, {name: 'b' * 64})):
                 with self.subTest(name=name, before=before, after=after):
                     self.assertEqual(len(self.run_closure(receipt_rules=before, current_rules=after)), 1)
+
+    def hash_hidden_artwork(self, artwork, blank=''):
+        # KiCad ignores the hash lines; the span locator used to count their parentheses.
+        return ('\n(arc (start 10 10) (end 12 10) (width 0.2) (layer "F.Cu")'
+                ' (net 0) (uuid "h1") (mid 11 10.5\n'
+                + blank + '#((\n))\n' + artwork + '\n'
+                '(arc (start 30 30) (mid 31 30.5) (end 32 30) (width 0.2)'
+                ' (layer "F.Cu") (net 0) (uuid "h2"))\n' + blank + '#))\n')
+
+    def test_hash_comment_hides_gr_text(self):
+        artwork = ('(gr_text "EVIL" (at 20 20 0) (layer "F.SilkS") (uuid "g")'
+                   ' (effects (font (size 1 1) (thickness 0.15))))')
+        for blank in ('', ' ', '\t', '\r', '\0', ' \t\r\0'):
+            with self.subTest(blank=repr(blank)):
+                hidden = self.hash_hidden_artwork(artwork, blank)
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
+
+    def test_hash_comment_hides_second_footprint(self):
+        from tests.test_placement_adapter import TEXT
+        from agent_ee.symbol_library import parse_sexpr
+        footprint = TEXT[TEXT.index('(footprint '):TEXT.index('(footprint "Owned:J"')].strip()
+        footprint = footprint.replace('"R1"', '"R9"').replace('"a1"', '"r9-field"')
+        self.assertEqual(parse_sexpr(footprint.encode('utf-8'))[0], 'footprint')
+        hidden = self.hash_hidden_artwork(footprint)
+        self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
+
+    def test_hash_inside_string_preserves_masked_track_liveness(self):
+        track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t\n#x"))'
+        self.assertEqual(self.run_closure(lambda t: t.rstrip()[:-1] + track + ')'), [])

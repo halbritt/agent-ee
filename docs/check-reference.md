@@ -1835,9 +1835,10 @@ refuses open carry even without a declared downstream gate, including bench-feed
 epoch completion. A clean receipted
 closure can survive masked copper track edits only when retained root nodes have
 identical raw source bytes and the complete captured project/custom-rule path and
-digest inventories remain unchanged, including non-board stems. Comments outside
-strings refuse equivalence; escaped track spans remain in the comparison; vias, zones
-and unknown track attributes still require fresh receipt evidence. The evidence
+digest inventories remain unchanged, including non-board stems. Semicolons outside
+strings and KiCad `#` line comments refuse equivalence; escaped track spans remain
+in the comparison; vias, zones and unknown track attributes still require fresh
+receipt evidence. The evidence
 seal reconstructs these refusals; release artifact extraction also refuses open carry.
 Uncarried baseline findings retain their existing verdicts. Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other

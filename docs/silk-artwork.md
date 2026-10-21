@@ -129,8 +129,11 @@ another field moves and native `added_after` is empty. A later board may retain
 that closure across masked copper track/arc edits only when the shared saved-board
 parser validates the structure and every other root-level node has identical raw
 source bytes. Decoded atoms cannot establish equivalence: KiCad's string escape
-decoding differs from the shared parser's. Comments (`;` outside quoted strings)
-refuse the proof. Tracks containing a backslash and unknown track children,
+decoding differs from the shared parser's. Comments (`;` outside quoted strings
+and KiCad `#` line comments)
+refuse the proof. A `#` after only spaces, tabs, carriage returns or NUL bytes
+at the start of a line is a comment; hashes inside quoted strings remain data.
+Tracks containing a backslash and unknown track children,
 including mask-exposure attributes, remain in the byte comparison. Whitespace
 inside retained nodes is significant; whitespace between root children is not.
 Footprint transforms, marking positions/content/ownership, pads, mask, vias,
