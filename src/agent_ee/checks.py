@@ -404,8 +404,32 @@ def check_drc(ctx):
         "by_type": count_by(v + u + p, "type"),
         "ignored_checks": [c.get("key") for c in report.get("ignored_checks", [])],
     })
+    from .design_rule_provenance import advisory_numeric, classify_finding, finding_sources, require_evaluated_limits
+    try:
+        sources = finding_sources(ctx.inputs / ctx.scope['board'], v)
+        classified = [classify_finding(dict(finding), sources) for finding in v]
+    except (OSError, ValueError) as exc:
+        raise CheckError('malformed', f'DRC constraint provenance: {exc}') from exc
+    write_json(ctx.work / 'drc-constraints.json', {'sources': sources, 'violations': classified})
+    ctx.evidence('drc-constraints.json')
+    ctx.result['details']['constraint_classes'] = count_by(
+        [finding['constraint_provenance'] for finding in classified], 'class')
+    try:
+        require_evaluated_limits(report, sources)
+    except ValueError as exc:
+        raise CheckError('malformed', str(exc)) from exc
     from .violation_waivers import classify
     unwaived = classify(ctx, report)
+    graded = []
+    advisories = []
+    for item in unwaived:
+        if item['raw_locator'].startswith('/violations/'):
+            item = classify_finding(item, sources)
+            if advisory_numeric(item):
+                advisories.append(item)
+                continue
+        graded.append(item)
+    ctx.result['details'].update(advisory_findings_count=len(advisories), graded_unwaived=len(graded))
     ctx.result["execution"] = "ok"
     if projection:
         ctx.result["details"].update(projection=projection, graded=list(DRC_PROJECTIONS[projection]),
@@ -413,9 +437,9 @@ def check_drc(ctx):
         ctx.result["limitations"].append(
             f"{projection}: unconnected items are retained in drc.json but not graded; "
             "a later full DRC with connectivity remains required")
-        failing = any(not i['raw_locator'].startswith('/unconnected_items/') for i in unwaived)
+        failing = any(not i['raw_locator'].startswith('/unconnected_items/') for i in graded)
     else:
-        failing = unwaived
+        failing = graded
     if failing:
         ctx.result["outcome"] = "defect"
         ctx.result["summary"] = (f"DRC with schematic parity reported {len(v)} violation(s), "
@@ -428,7 +452,13 @@ def check_drc(ctx):
     else:
         ctx.result["outcome"] = "pass"
         ctx.result["summary"] = "DRC with schematic parity reported zero unwaived issues on the saved board"
+    if advisories and not failing:
+        ctx.result['summary'] = (f'DRC with schematic parity reported {len(advisories)} advisory numeric '
+                                 'violation(s) and zero unwaived graded issues'
+                                 + (f'; {projection} retains unconnected items ungraded' if projection else ''))
     ctx.result['summary'] += f"; {len(ctx.result['details']['waived'])} waived"
+    if advisories:
+        ctx.result['summary'] += f'; {len(advisories)} numeric advisory finding(s) retained'
 
 
 def parse_xml_netlist(path):

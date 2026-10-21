@@ -10,7 +10,8 @@ CLASSES = frozenset(('owner', 'manufacturer', 'datasheet', 'engineering', 'defau
 BOARD_FIELDS = frozenset(('min_clearance', 'min_track_width', 'min_through_hole_diameter',
     'min_via_diameter', 'min_via_annular_width', 'min_hole_to_hole', 'min_hole_clearance',
     'min_copper_edge_clearance', 'min_silk_clearance', 'min_text_height', 'min_text_thickness'))
-NET_FIELDS = {'clearance_mm': 'clearance', 'track_width_mm': 'track_width'}
+NET_FIELDS = {'clearance_mm': 'clearance', 'track_width_mm': 'track_width',
+              'via_diameter_mm': 'via_diameter', 'via_drill_mm': 'via_drill'}
 
 
 def declaration(raw):
@@ -35,13 +36,19 @@ def declaration(raw):
     custom = document.get('custom_rules', {})
     if not isinstance(custom, dict):
         raise ValueError('constraint source custom_rules must be an object')
-    for rules in custom.values():
+    for filename, rules in custom.items():
+        if not isinstance(filename, str) or not filename.strip():
+            raise ValueError('constraint source custom rules need a file name')
         if not isinstance(rules, list):
             raise ValueError('constraint source custom rules must be lists')
+        names = set()
         for spec in rules:
             _spec(spec)
             if not isinstance(spec.get('rule'), str) or not spec['rule'].strip():
                 raise ValueError('constraint source custom rule needs a native rule name')
+            if spec['rule'] in names:
+                raise ValueError('constraint source duplicates a native rule name')
+            names.add(spec['rule'])
     return document
 
 
@@ -106,3 +113,244 @@ def _record(setting, value, spec, path, locator, key):
             'class': spec['class'] if sourced else 'default',
             'citation': {'path': path, 'locator': locator, 'basis': spec['basis']} if sourced else None,
             'enforcement': 'hard' if sourced and spec['class'] != 'default' else 'advisory'}
+
+
+# This binding travels with the immutable project into each native staging area.
+PROJECT_KEY = 'agent_ee_constraint_provenance'
+STRUCTURAL = frozenset(('shorting_items', 'pth_inside_courtyard', 'solder_mask_bridge'))
+NUMERIC_FIELDS = {
+    'clearance': ('min_clearance', 'clearance'),
+    'track_width': ('min_track_width', 'track_width'),
+    'drill_out_of_range': ('min_through_hole_diameter', 'via_drill'),
+    'via_diameter': ('min_via_diameter', 'via_diameter'),
+    'annular_width': ('min_via_annular_width',),
+    'hole_clearance': ('min_hole_clearance',),
+    'holes_co_located': ('min_hole_to_hole',),
+    'hole_to_hole': ('min_hole_to_hole',),
+    'copper_edge_clearance': ('min_copper_edge_clearance',),
+    'silk_overlap': ('min_silk_clearance',),
+    'silk_over_copper': ('min_silk_clearance',),
+    'silk_edge_clearance': ('min_silk_clearance',),
+    'text_height': ('min_text_height',),
+    'text_thickness': ('min_text_thickness',),
+}
+
+
+def bind_project(project, record):
+    """Bind emitted settings to their receipt without introducing a second schema."""
+    project[PROJECT_KEY] = copy.deepcopy(record)
+
+
+def finding_sources(board, findings=()):
+    """Read only the saved project's binding and same-stem captured native rules.
+
+    Project and custom rules are immutable candidate inputs. A generated rule
+    must be inventoried explicitly, so composition cannot turn it into owner
+    authority merely by placing it in the native custom-rule file.
+    """
+    from pathlib import Path
+    from .storage import digest
+    from .net_constraints import rule_forms, template_rules
+    board = Path(board)
+    project_path = board.with_suffix('.kicad_pro')
+    project = strict_json(project_path.read_bytes()) if project_path.is_file() else {}
+    record = project.get(PROJECT_KEY, {})
+    if not isinstance(record, dict):
+        raise ValueError('constraint provenance binding must be an object')
+    document = record.get('document')
+    if document is not None:
+        from .storage import json_bytes
+        declaration(json_bytes(document))
+    settings = inventory(project, document, record.get('path'))
+    for setting in settings:
+        for derived in record.get('derived_settings', []):
+            if (setting['setting'] == derived['setting'] and setting['value'] == derived['value']
+                    and setting['citation'] is None):
+                setting.update(copy.deepcopy(derived))
+    if record:
+        bound = record.get('settings')
+        if (not isinstance(bound, list) or any(not isinstance(s, dict) or
+                not isinstance(s.get('setting'), str) for s in bound)):
+            raise ValueError('constraint provenance binding has no valid settings inventory')
+        names = {s['setting'] for s in bound}
+        # KiCad materializes previously absent native defaults when saving a
+        # board. Report those additions as advisory; never assign new authority
+        # or excuse a change to any originally bound setting.
+        if ([s for s in settings if s['setting'] in names] != bound or
+                any(s['class'] != 'default' for s in settings if s['setting'] not in names)):
+            raise ValueError('constraint provenance binding differs from saved project settings')
+    for item in settings:
+        if item['citation'] is not None:
+            item['citation'].setdefault('sha256', record.get('sha256'))
+    rules, rule_constraints, ignored_rules = {}, {}, []
+    path = board.with_suffix('.kicad_dru')
+    if path.is_file():
+        raw = path.read_bytes()
+        template_rules(raw, allow_generated=True)
+        for node in rule_forms(raw, native=True):
+            if isinstance(node, list) and len(node) > 1 and node[0] == 'rule':
+                name = str(node[1])
+                rule_constraints[name] = [str(c[1]) for c in node[2:]
+                                          if isinstance(c, list) and len(c) > 1 and c[0] == 'constraint']
+                if any(isinstance(c, list) and len(c) > 1 and c[0] == 'severity'
+                       and str(c[1]).lower() == 'ignore' for c in node[2:]):
+                    ignored_rules.append(name)
+                owner = record.get('owner_rules', {'path': str(path), 'sha256': digest(path)})
+                rules[name] = {'class': 'owner', 'citation': {**owner, 'rule': name}}
+        declared = (document or {}).get('custom_rules', {}).get(path.name, [])
+        for spec in declared:
+            if spec['rule'] in rules:
+                rules[spec['rule']] = {'class': spec['class'], 'citation': {
+                    'path': record.get('path'), 'sha256': record.get('sha256'),
+                    'rule': spec['rule'], 'basis': spec['basis']}}
+        for name, source in record.get('generated_rules', {}).items():
+            if name in rules:
+                rules[name] = source
+    from .net_binding import board_item_nets, board_net_names, literal_project_classes
+    needed = {item['uuid'] for finding in findings
+              if set(NUMERIC_FIELDS.get(finding.get('type'), ())) & set(NET_FIELDS.values())
+              for item in finding.get('items', []) if isinstance(item.get('uuid'), str)}
+    item_classes = {}
+    if (needed and board.is_file() and any(s['setting'].startswith('net_settings.') and
+            s['class'] in CLASSES - {'default'} for s in settings)):
+        raw = board.read_bytes()
+        item_nets = board_item_nets(raw)
+        classes = literal_project_classes(project, board_net_names(raw) | {''})
+        item_classes = {key: classes.get(item_nets[key]) for key in sorted(needed) if key in item_nets}
+    return {'settings': settings, 'rules': rules, 'item_classes': item_classes,
+            'rule_constraints': rule_constraints, 'ignored_rules': ignored_rules}
+
+
+def classify_finding(finding, sources=None):
+    """Resolve one native finding; unknown numeric authority remains visible advisory."""
+    import re
+    from decimal import Decimal
+    sources = sources or {'settings': [], 'rules': {}}
+    kind = finding.get('type', 'unknown')
+    source = {'class': 'default', 'citation': None}
+    reason = 'No unambiguous captured source for the native limit'
+    if kind in STRUCTURAL:
+        source = {'class': 'engineering', 'citation': {
+            'path': 'docs/placer.md', 'locator': 'native DRC publication gate',
+            'basis': 'Coordinator decisions AGENTEE-318/325 and AGENTEE-331: '
+                     'shorts, PTH courtyard intrusion and introduced inter-footprint mask bridges'}}
+        reason = 'Structural invariant; numeric provenance does not relax it'
+    elif kind in ('courtyards_overlap', 'missing_courtyard', 'malformed_courtyard'):
+        source = {'class': 'engineering', 'citation': {
+            'path': 'docs/placer.md', 'locator': 'native courtyard qualification',
+            'basis': 'Existing saved-board courtyard qualification before publication'}}
+        reason = 'Structural courtyard qualification'
+    else:
+        description = finding.get('description', '')
+        custom = re.search(r"\(rule '(.*?)' ", description)
+        if custom:
+            source = sources['rules'].get(custom[1], source)
+            reason = 'Named native custom rule' if source['citation'] else reason
+        elif kind in NUMERIC_FIELDS:
+            fields = NUMERIC_FIELDS[kind]
+            candidates = [s for s in sources['settings'] if
+                          s['setting'].rsplit('.', 1)[-1] in fields and
+                          type(s['value']) in (int, float)]
+            if '(board setup constraints ' in description:
+                candidates = [s for s in candidates if s['setting'].startswith('board.')]
+            else:
+                netclass = re.search(r"\(netclass '(.*?)' ", description)
+                if netclass:
+                    candidates = [s for s in candidates if s['setting'].rsplit('.', 1)[0] == 'net_settings.classes.' + netclass[1]]
+                else:
+                    classes = {sources.get('item_classes', {}).get(item.get('uuid'))
+                               for item in finding.get('items', [])} - {None}
+                    candidates = [s for s in candidates if s['setting'].startswith('board.') or
+                                  any(s['setting'].rsplit('.', 1)[0] == 'net_settings.classes.' + cls
+                                      for cls in classes)]
+            # KiCad prints four decimal places. Do not attach a citation for a
+            # different value just because the finding category is the same.
+            limit = re.search(r' ([0-9]+(?:\.[0-9]+)?) mm; actual', description)
+            if limit:
+                candidates = [s for s in candidates if
+                    abs(Decimal(str(s['value'])) - Decimal(limit[1])) < Decimal('0.00005')]
+            elif len(fields) > 1:
+                candidates = []
+            hard = [s for s in candidates if s['class'] in CLASSES - {'default'} and s['citation']]
+            authorities = {(s['class'], str(s['citation'])) for s in candidates}
+            if hard or (len(authorities) == 1 and candidates):
+                selected = hard or candidates
+                source = {key: selected[0][key] for key in ('class', 'citation')}
+                source['limits'] = [{key: s[key] for key in ('setting', 'value', 'class', 'citation')}
+                                    for s in selected]
+                reason = 'Native limit matched applicable emitted constraints'
+    if (not isinstance(source.get('class'), str) or source['class'] not in CLASSES or
+            (source['class'] != 'default' and
+             (not isinstance(source.get('citation'), dict) or not source['citation'].get('path')))):
+        source = {'class': 'default', 'citation': None}
+        reason = 'Unresolved class or citation; never hard authority'
+    finding['constraint_provenance'] = {**copy.deepcopy(source), 'reason': reason,
+        'enforcement': 'advisory' if source['class'] == 'default' else 'hard'}
+    return finding
+
+
+def packing_clearances(board, sources, project):
+    """Use only sourced numeric margins in a scaffold's in-memory packing probe.
+
+    Physical copper/drill shapes and captured native custom rules remain intact.
+    This changes no saved board or project; publication reruns unchanged rules.
+    """
+    from .net_binding import literal_project_classes
+    import pcbnew
+    hard = {s['setting']: s['value'] for s in sources['settings']
+            if s['class'] in CLASSES - {'default'} and s['citation']}
+    settings = board.GetDesignSettings()
+    for field, native in (('min_clearance', 'm_MinClearance'),
+                          ('min_hole_clearance', 'm_HoleClearance'),
+                          ('min_hole_to_hole', 'm_HoleToHoleMin')):
+        if 'board.design_settings.rules.' + field not in hard:
+            setattr(settings, native, 0)
+    pads = [pad for fp in board.GetFootprints() for pad in fp.Pads()]
+    classes = literal_project_classes(project, {pad.GetNetname() for pad in pads})
+    # KiCad's cached effective NETCLASS can retain a previous clearance after
+    # recomputation. Supply sourced margins explicitly to native polygon calls,
+    # rather than treating that cache or an uncited local override as authority.
+    return {pad.m_Uuid.AsString(): int(pcbnew.FromMM(hard.get(
+        'net_settings.classes.' + classes.get(pad.GetNetname(), '') + '.clearance', 0)))
+        for pad in pads}
+
+
+def numeric_finding(finding):
+    """Recognize numeric native limits without assigning them source authority."""
+    import re
+    return (finding.get('type') in NUMERIC_FIELDS or
+            re.search(r' [0-9]+(?:\.[0-9]+)? mm; actual', finding.get('description', '')) is not None)
+
+
+def advisory_numeric(finding):
+    """Only numeric rule findings can leave native grading through this policy."""
+    return (finding.get('constraint_provenance', {}).get('enforcement') == 'advisory'
+            and numeric_finding(finding))
+
+
+NATIVE_CONSTRAINT_TYPES = {**{kind: kind for kind in NUMERIC_FIELDS},
+    'drill_out_of_range': 'hole_size', 'copper_edge_clearance': 'edge_clearance',
+    'silk_overlap': 'silk_clearance', 'silk_over_copper': 'silk_clearance',
+    'silk_edge_clearance': 'silk_clearance'}
+
+
+def require_evaluated_limits(report, sources):
+    """An ignored sourced numeric limit is unavailable evaluation, never a pass."""
+    numeric = set(NATIVE_CONSTRAINT_TYPES.values())
+    for name in sources.get('ignored_rules', []):
+        source = sources['rules'][name]
+        if (source['class'] in CLASSES - {'default'} and
+                numeric.intersection(sources['rule_constraints'][name])):
+            raise ValueError('native DRC evaluation explicitly ignored by sourced rule '
+                             + name + ': ' + str(source))
+    for ignored in report.get('ignored_checks', []):
+        key = ignored.get('key')
+        fields = NUMERIC_FIELDS.get(key, ())
+        hard = [s for s in sources['settings'] if s['setting'].rsplit('.', 1)[-1] in fields
+                and s['class'] in CLASSES - {'default'} and s['citation']]
+        hard_rules = [dict(rule=name, **source) for name, source in sources['rules'].items()
+                      if source['class'] in CLASSES - {'default'} and key in NATIVE_CONSTRAINT_TYPES
+                      and NATIVE_CONSTRAINT_TYPES[key] in sources['rule_constraints'].get(name, [])]
+        if hard or hard_rules:
+            raise ValueError('native DRC evaluation explicitly ignored for sourced '
+                             + key + ': ' + str(hard + hard_rules))

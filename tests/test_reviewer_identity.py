@@ -27,6 +27,9 @@ class ReviewerIdentityTests(unittest.TestCase):
             write_json(run / "packet.json", packet)
 
             def reviewer(run_dir, role, definition, prompt, schema, timeout, *, cancellation=None, launch_context=None):
+                self.assertIn('provenance class', prompt)
+                self.assertIn('advisory', prompt)
+                self.assertIn('source citation', prompt)
                 self.assertEqual(schema["properties"]["role"]["enum"], [role])
                 for key in ("candidate_id", "run_id", "packet_sha256"):
                     self.assertEqual(schema["properties"][key]["enum"], [packet[key]])

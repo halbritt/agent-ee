@@ -185,8 +185,9 @@ scope. It preserves project rules, checks and baseline sources, pre-creates chil
 sheets and leaves native execution to the ordinary review/campaign workflow. Its
 stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
 rules from the envelope, its fab profile and the parts manifest instead, and
-refuses incomplete inputs. An optional [constraint-source import](docs/scaffold.md#declared-design-rule-sources-agentee-331-partial)
-records design-rule classes and citations; native gate classification remains pending.
+refuses incomplete inputs. An optional [constraint-source import](docs/scaffold.md#declared-design-rule-sources-agentee-331)
+records design-rule classes and citations. Native DRC retains unsourced numeric
+findings as advisories while sourced limits and structural gates remain hard.
 Optional captured net constraints add per-net classes,
 assignments, width rules and a Default completeness check. Stage-three preparation
 writes declared holes, keepouts, locked fixed footprints and the IMU marking through

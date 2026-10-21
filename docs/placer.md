@@ -694,8 +694,13 @@ with unchanged local geometry remains a baseline finding. Missing native item
 geometry refuses comparison. A native item KIID shared across different
 footprints also refuses comparison, including case aliases normalized by KiCad;
 it cannot establish an intra-footprint baseline. Other categories retain UUID-based reporting.
-Any added `shorting_items`, `clearance` or `pth_inside_courtyard` refuses
-publication and retains the findings with the failed candidate. An introduced
+Any added `shorting_items` or `pth_inside_courtyard` refuses publication with an
+engineering citation to AGENTEE-318/325. Numeric findings, including `clearance`,
+resolve against the [declared sources](scaffold.md#declared-design-rule-sources-agentee-331):
+owner, manufacturer, datasheet and engineering limits block; default or unresolved
+limits remain visible advisories. Captured owner rules cite the immutable file,
+SHA-256 and rule name. The comparison retains classified baseline and candidate
+findings, including silk and text findings, and retains failures with the candidate. An introduced
 `solder_mask_bridge` between different footprints also blocks publication;
 baseline and intra-footprint mask bridges remain non-blocking and reported.
 Ignoring any of these four categories, a failed tool, missing output,

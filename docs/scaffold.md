@@ -36,8 +36,10 @@ readers. An invalid pin, unsupported schema or missing dependency refuses the
 operation. Missing required datasheet provenance is retained explicitly in the
 receipt; it is not converted into qualified evidence or owner approval.
 
-The project template supplies design rules and net classes. Scaffolding changes
-only project filename and sheet metadata. The board receives the envelope's
+The project template supplies design rules and net classes. Scaffolding adds
+project filename, sheet metadata and the provenance binding. A
+[declared constraint source](#declared-design-rule-sources-agentee-331) can replace
+sourced rule values. The board receives the envelope's
 exact straight-edge outline, even copper-layer count, total thickness and each
 stackup layer's thickness. It contains no components, nets, tracks, vias or
 zones until the stage-three pre-receipt below writes the declared mechanics.
@@ -638,43 +640,69 @@ Fixed-footprint content generation refuses a selected `copper_feature` with a
 typed `ValueError` before emitting board content. Copper has no purchased MPN;
 this scaffold stage does not synthesize its value, flags or binding fields.
 
-## Declared design-rule sources (AGENTEE-331, partial)
+## Declared design-rule sources (AGENTEE-331)
 
-A producer plan may name an optional captured `constraint_source`, for example
+A producer plan may name a captured `constraint_source`, for example
 `"constraint_source": "design-rules/constraints.json"`. Stage-one Python callers
-can pass `constraint_source=Path(...)` to `scaffold`. The document must use the
-design lane's existing `fome-mc.constraint-provenance/1` format:
-`board_setup_rules` entries contain `value_mm`, `class` and nonempty `basis`;
-`net_class_default` contains `clearance_mm` and/or `track_width_mm`, with `class`
-and `basis`. Classes are `owner`, `manufacturer`, `datasheet`, `engineering`
-and `default`. The basis text is the citation; importing it does not certify its
-engineering applicability.
+can pass `constraint_source=Path(...)` to `scaffold`. The document uses the design
+lane's existing `fome-mc.constraint-provenance/1` format. `board_setup_rules`
+entries contain `value_mm`, `class` and a nonempty citation `basis`.
+`net_class_default` can declare clearance, track width, via diameter and via drill
+in millimetres. Classes are `owner`, `manufacturer`, `datasheet`, `engineering`
+and `default`. Importing a citation does not certify its applicability. A declared
+non-default net-class setting requires one explicit native `Default` class in
+the project template; the importer refuses an implicit or ambiguous class.
 
-The importer applies declared non-default board limits and Default-class values.
-It does not apply a declared `default` value over an existing value. The captured
-source becomes an immutable requirement input. `scaffold-receipt.json` includes
-`constraint_provenance`: the source path, digest, full document, and an inventory
-of emitted board rules and numeric net-class settings. Each inventory entry has
-its value, provenance class, citation (or null), and intended enforcement policy.
-Values without a matching declaration are explicitly `default` and advisory in
-that policy. An absent or null `net_class_default` leaves the captured class
-values unchanged and records their provenance as default. Legacy producer derivation records remain available separately.
+The importer applies declared non-default values. A declared default does not
+replace the template value. The captured source is immutable. The receipt's
+`constraint_provenance` inventories every emitted board rule and numeric net-class
+setting with its value, class, citation and enforcement. Values without a matching
+declaration or verified producer source become `default`, with a null citation.
+Source-verified producer fabricator limits retain their manufacturer citation. The same record is bound
+into the immutable project's `agent_ee_constraint_provenance` field so native
+staging and review can resolve the settings without searching for a document.
+A change to a recorded setting refuses evaluation. KiCad may materialize
+previously absent native defaults when it saves a board; these additions are
+reported as unsourced advisories and acquire no hard authority.
 
-The `solder_mask_min_width` entry in the design lane's document is retained as a
-manufacturing obligation; that document explicitly identifies it as outside the
-native board-setup fields. The importer does not invent a KiCad field for it.
-Custom-rule declarations are retained in the receipt; they do not generate or
-rewrite `.kicad_dru` bytes. Stage one carries an existing captured owner
-`.kicad_dru` unchanged and excludes it from the scaffold's mutable inputs. A producer
-with `constraint_source` also carries a captured project-sibling `.kicad_dru`
-unchanged, adds it to the immutable baseline, and excludes it from mutable inputs.
-Combining this import with generated per-net rules refuses until a composed
-source document can bind both outputs.
+Legacy template values remain available to native DRC as advisories. For a
+scaffold with this binding, the packing probe uses only sourced board and
+net-class margins in memory; it does not rewrite the saved project or pad shapes.
+The native polygon calls receive explicit sourced margins, so cached native
+net-class values and uncited local overrides cannot restore advisory floors.
+Physical copper/drill exclusions and native owner custom rules still apply.
+Unbound standalone packing probes preserve their previous reservations.
 
-**Remaining gate work:** this receipt policy does not yet change native DRC or
-placement verdicts. Legacy template values remain in the project, and native
-checks can still enforce them. AGENTEE-331 remains incomplete until every native
-finding is classified against the applicable rule and citation, default/unknown
-limits become advisory in the candidate gate, and review prompts carry those
-classifications. The existing custom-clearance and mask-bridge refusal tests
-conflict with that verdict change and require the coordinator's explicit ruling.
+Native DRC reports retain every finding. Numeric findings resolve against the
+reported rule name or the inventory's applicable setting and printed value.
+Class-specific limits use native conductor UUID/net facts and the existing exact-name
+assignment contract. Legacy ambiguous identities or general/composite class patterns
+remain unresolved. Ambiguous or absent provenance is `default` and advisory. Captured owner custom
+rules default to class `owner`, citing the file, SHA-256 and rule name; an exact
+custom-rule declaration supplies its declared class and citation instead.
+Generated net rules require an exact declaration to acquire hard authority.
+Unclassified generated rules remain advisory, including when composed with owner
+rules. The native gate's structural invariants retain engineering citations from
+AGENTEE-318/325. See the [publication gate](placer.md#through-hole-reservations-and-native-publication-gate-agentee-318).
+
+A captured owner `.kicad_dru` remains immutable. With generated per-net rules, the
+scaffold preserves its original bytes in a sibling `.owner.kicad_dru`, then emits
+one native `.kicad_dru` containing generated rules followed by the owner rules.
+Both files are immutable requirements. Owner rules retain their native last-rule
+precedence. A name already present in the captured owner file keeps its owner
+authority when the generated prefix uses the same name. The receipt cites the preserved owner file and digest, and the net
+constraint record hashes the final project and composed rule file.
+Native rule files use KiCad's `#` comment syntax; semicolon comments are refused.
+
+The document's `solder_mask_min_width` is retained as a manufacturing obligation;
+it is not an invented board-setup field. The native candidate comparison includes
+classified baseline and candidate findings, including silk and text violations.
+Only sourced added numeric violations and the existing structural invariants
+block publication. The captured DRC check also retains raw counts and reports,
+with classified evidence in `drc-constraints.json`; unsourced numeric violations
+alone do not fail it. Tool failures, malformed output, parity, connectivity and
+non-numeric defects keep their existing treatment. Ignoring a sourced numeric
+evaluation is unavailable coverage and refuses; existing ignored-category and
+rule-level ignore refusals remain. Review packets include the
+source inventory and budgeted classified native evidence; reviewer and adjudicator prompts
+require each blocking limit's class and citation.

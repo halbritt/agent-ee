@@ -18,6 +18,7 @@ from .placement_probe import extract, custom_pad_geometry, primitive
 from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
 from .storage import digest, read_json, write_json
+from .design_rule_provenance import classify_finding, finding_sources, numeric_finding, require_evaluated_limits
 
 
 DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard'))
@@ -162,6 +163,7 @@ def _native_drc(board, scratch):
     violations = report['violations']
     if any(not isinstance(v, dict) or not isinstance(v.get('type'), str) for v in violations):
         raise ValueError('native DRC contains malformed violations')
+    require_evaluated_limits(report, finding_sources(board))
     # Excluded courtyard findings still prevent a placed result.
     return report
 
@@ -191,7 +193,7 @@ def _drc_item_states(path):
     return states
 
 
-def _drc_comparison(before, after, before_states=None, after_states=None):
+def _drc_comparison(before, after, before_states=None, after_states=None, sources=None):
     """Preserve rigid intra-footprint findings; moved cross-footprint collisions are new.
 
     Native geometry is supplied by the publication path, never by the caller's
@@ -217,6 +219,9 @@ def _drc_comparison(before, after, before_states=None, after_states=None):
         intra = len({state[0] for state in geometry}) == 1
         return finding['type'], identities, tuple(state[:2] if intra else state for state in geometry)
 
+    for report in (before, after):
+        for finding in report['violations']:
+            classify_finding(finding, sources)
     old = Counter(key(v, before_states) for v in before['violations'])
     remaining = Counter(key(v, after_states) for v in after['violations']) - old
     added = []
@@ -226,9 +231,15 @@ def _drc_comparison(before, after, before_states=None, after_states=None):
             added.append(finding)
             remaining[identity] -= 1
     return {'added_findings': added,
-            'blocking_findings': [v for v in added if v['type'] in DRC_COLLISIONS or
-                                  (v['type'] == DRC_MASK and (after_states is None or
-                                   len({after_states[i['uuid']][0] for i in v['items']}) > 1))],
+            'blocking_findings': [v for v in added if
+                v['constraint_provenance']['enforcement'] == 'hard' and
+                (v['type'] in DRC_COLLISIONS | {DRC_MASK} or numeric_finding(v)) and
+                (v['type'] != DRC_MASK or after_states is None or
+                 len({after_states[i['uuid']][0] for i in v['items']}) > 1)],
+            'baseline_findings': before['violations'],
+            'candidate_findings': after['violations'],
+            'advisory_findings': [v for v in after['violations'] if
+                                  v['constraint_provenance']['enforcement'] == 'advisory'],
             'silkscreen_findings': [v for v in added if v['type'].startswith('silk_')],
             'added_by_type': dict(Counter(v['type'] for v in added))}
 
@@ -251,7 +262,8 @@ def _proposal_drc(source, output):
             output.with_suffix(suffix).write_bytes(payload)
     before = _native_drc(baseline, baseline_dir)
     after = _native_drc(output, scratch)
-    comparison = _drc_comparison(before, after, _drc_item_states(baseline), _drc_item_states(output))
+    comparison = _drc_comparison(before, after, _drc_item_states(baseline), _drc_item_states(output),
+                                 finding_sources(source, before['violations'] + after['violations']))
     write_json(scratch / 'native-drc-comparison.json', comparison)
     if comparison['blocking_findings']:
         raise ValueError(f"saved-board placement introduced native DRC collisions: {comparison['added_by_type']}")
@@ -315,6 +327,9 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
     _apply_plan(board, plan, output)
     if _pad_inventory(pcbnew.LoadBoard(str(output))) != pads:
         raise ValueError('native saved board changed footprint pad geometry')
+    # Stage the immutable source rules before probing the saved board, so its
+    # margins use the same provenance as the planning probe.
+    overlaps, comparison = _proposal_drc(source, output)
     saved, judgment = _saved_judgment(output, plan)
     initial_custom = {p['uuid']: p['custom_geometry']['primitives'] for f in initial_facts['footprints']
                       for p in f['pads'] if p.get('custom_geometry', {}).get('status') == 'proven'}
@@ -328,7 +343,6 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
     write_json(output.parent / 'placement-probe.json', saved)
     write_json(output.parent / 'placement-judgment.json', judgment)
     _netlist_binding(netlist_bytes, saved, _board_only(board))
-    overlaps, comparison = _proposal_drc(source, output)
     if judgment['verdict'] != 'pass' or overlaps:
         raise ValueError('saved-board placement failed polygon judge or native courtyard DRC')
     if judgment.get('group_grading', {'status': 'pass'})['status'] != 'pass':

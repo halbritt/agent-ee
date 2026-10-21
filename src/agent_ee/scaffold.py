@@ -13,6 +13,7 @@ import argparse
 import copy
 import hashlib
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import sys
@@ -886,11 +887,9 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 plan, files, inputs, envelope_rel, parts_rel, document, qualification, sch, pcb)
             validate_scope(scope)
             protected |= extra
-        from .design_rule_provenance import import_constraints, inventory
+        from .design_rule_provenance import import_constraints, inventory, bind_project
         constraint_record = {'settings': inventory(project)}
         if constraint_rel is not None:
-            if net_artifacts:
-                raise ValueError('constraint import with generated per-net rules requires a composed source document')
             project, constraint_record = import_constraints(
                 project, read_captured(inputs, constraint_rel), constraint_rel, files[constraint_rel])
             protected.add(constraint_rel)
@@ -899,6 +898,66 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 protected.add(owner_rules)
                 scope['requirements'] = sorted({*scope.get('requirements', []), owner_rules})
             scope['requirements'] = sorted({*scope.get('requirements', []), constraint_rel})
+        if derivation is not None:
+            derived_settings = []
+            for emitted in constraint_record['settings']:
+                for item in [*derivation['rules'], *derivation['netclasses']]:
+                    if (emitted['setting'] == item['setting'] and emitted['value'] == item['value']
+                            and emitted['citation'] is None):
+                        emitted.update({'class': 'manufacturer', 'enforcement': 'hard',
+                            'citation': dict(path=plan['fab_profile'], sha256=files[plan['fab_profile']],
+                                             locator=item['locator'], basis='Source-verified fabricator limit')})
+                        derived_settings.append(copy.deepcopy(emitted))
+            constraint_record['derived_settings'] = derived_settings
+        from .net_constraints import rule_forms, template_rules
+        owner_rules = str(PurePosixPath(pcb).with_suffix('.kicad_dru'))
+        composed_rules = None
+        owner_copy = None
+        if 'rules' in net_artifacts:
+            generated_names = [str(n[1]) for n in rule_forms(net_artifacts['rules'])
+                               if n[0] == 'rule']
+            declared = {spec['rule']: spec for spec in
+                        constraint_record.get('document', {}).get('custom_rules', {}).get(
+                            PurePosixPath(owner_rules).name, [])}
+            constraint_record['generated_rules'] = {}
+            for name in generated_names:
+                spec = declared.get(name)
+                constraint_record['generated_rules'][name] = {
+                    'class': spec['class'] if spec else 'default',
+                    'citation': dict(path=constraint_rel, sha256=files[constraint_rel],
+                                     rule=name, basis=spec['basis']) if spec else None}
+            composed_rules = net_artifacts['rules']
+            if owner_rules in files:
+                raw = read_captured(inputs, owner_rules)
+                template_rules(raw, allow_generated=True)
+                owner_forms = rule_forms(raw, native=True)
+                owner_names = {str(n[1]) for n in owner_forms[1:] if len(n) > 1 and n[0] == 'rule'}
+                # An adopted owner rule keeps its authority when its name also
+                # occurs in the generated prefix; native owner clauses stay last.
+                for name in owner_names:
+                    constraint_record['generated_rules'].pop(name, None)
+                owner_copy = str(PurePosixPath(pcb).with_suffix('.owner.kicad_dru'))
+                if owner_copy in files:
+                    raise ValueError('owner rule preservation path already captured: ' + owner_copy)
+                # Insert generated forms before the owner rules, preserving
+                # native last-rule precedence and original owner bytes separately.
+                generated_text = net_artifacts['rules'].split(b'\n', 1)[1]
+                # Re-emission would lose owner quoting/comments; locate the first
+                # version form with the native version grammar already validated.
+                version = re.search(rb'(?m)^[ \t]*\(\s*version\s+1\s*\)', raw)
+                if owner_forms:
+                    if version is None:
+                        raise ValueError('owner rule version form unavailable')
+                    composed_rules = raw[:version.end()] + b'\n' + generated_text + raw[version.end():]
+                else:
+                    composed_rules = net_artifacts['rules'] + b'\n' + raw
+                forms = rule_forms(composed_rules, native=True)
+                if forms[0] != ['version', '1'] or any(n[0] == 'version' for n in forms[1:]):
+                    raise ValueError('composed rules must have one leading native version')
+                constraint_record['owner_rules'] = dict(path=owner_copy, sha256=files[owner_rules])
+                protected.discard(owner_rules)
+                scope['requirements'] = sorted({*scope.get('requirements', []), owner_copy, owner_rules})
+        bind_project(project, constraint_record)
         plans = sheet_plan(document, sch)
         generated = {path for path, _ in plans.values()} | {pcb}
         if set(scope.get('mutable_inputs', [])) - generated:
@@ -913,12 +972,16 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
             report = strict_json(net_artifacts['record'])
             # The shared builder has now added the final sheet and filename metadata.
             report['project_sha256'] = hashlib.sha256(outputs[pro]).hexdigest()
+            if composed_rules is not None:
+                report['rules_sha256'] = hashlib.sha256(composed_rules).hexdigest()
             net_outputs = {record_rel: json_bytes(report)}
             if 'rules' in net_artifacts:
-                net_outputs[str(PurePosixPath(pro).with_suffix('.kicad_dru'))] = net_artifacts['rules']
-            if net_outputs.keys() & files.keys():
+                net_outputs[str(PurePosixPath(pro).with_suffix('.kicad_dru'))] = composed_rules
+            if net_outputs.keys() & (files.keys() - ({owner_rules} if owner_copy else set())):
                 raise ValueError('derived net constraint artifacts collide with captured inputs')
             outputs.update(net_outputs)
+            if owner_copy:
+                outputs[owner_copy] = read_captured(inputs, owner_rules)
             derivation['net_constraints']['record'] = record_rel
             scope['requirements'] = sorted({*scope['requirements'], plan['net_constraints'], *net_outputs})
         library_outputs = library_tables(document, inputs, str(PurePosixPath(sch).parent))
@@ -958,7 +1021,7 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                          'Derived checks, mappings and project rules cite their captured sources in derivation; '
                          'envelope obligation coverage is not derived.',
                          'Hierarchical staged presence remains unsupported by the existing stage checker.',
-                         'Constraint provenance enforcement is intended policy; native finding classification remains pending.'],
+                         'Native numeric limits without a captured source are advisory; structural gates remain mandatory.'],
             missing_parts_provenance=qualification['missing_provenance'],
             constraint_provenance=constraint_record)
         if derivation is not None:

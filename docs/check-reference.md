@@ -1765,12 +1765,24 @@ or citations stay unknown. The engineer declares limits and citation locators;
 the check never supplies a manufacturer radius or verifies cited prose.
 Origin-group success supplies no electrical-locality acceptance.
 
-## Design-rule provenance import (AGENTEE-331, partial)
+## Design-rule provenance (AGENTEE-331)
 
-The [scaffold constraint-source import](scaffold.md#declared-design-rule-sources-agentee-331-partial)
-retains declared limit classes and citations in the scaffold receipt. This is
-input provenance, not a new acceptance predicate. Native DRC and placement
-verdicts retain their existing behavior; receipt entries marked advisory do not
-yet make native findings advisory. Finding-level classification and review-prompt
-integration remain pending. Captured owner `.kicad_dru` files survive stage-one
-scaffolding unchanged and remain outside the writer allowlist.
+The [scaffold constraint-source import](scaffold.md#declared-design-rule-sources-agentee-331)
+records every emitted numeric setting's class and citation in its receipt and
+immutable project binding. Native DRC classifies findings against that binding
+and captured custom rules. `default` or unresolved numeric limits remain reported
+advisories. Owner, manufacturer, datasheet and engineering limits remain hard.
+The DRC check retains the raw `drc.json`, raw counts, waiver keys and locators;
+`drc-constraints.json` adds the source inventory and classified violations.
+`details.advisory_findings_count`, `constraint_classes` and `graded_unwaived` separate numeric advisories
+from graded issues without changing connectivity or parity treatment.
+A native tool failure or missing/malformed output cannot become a pass.
+
+The placement comparison retains classified baseline and candidate findings,
+including baseline silk/text, and derives added numeric blockers from those
+classifications. Structural shorts, PTH courtyard intrusion and introduced
+inter-footprint mask bridges retain engineering citations and their existing
+refusal behavior. Existing courtyard qualification and ignored-category refusals
+remain. Review packets and prompts carry limit classes and citations. Owner
+custom-rule bytes remain immutable, including when generated net rules are
+composed with them. This metadata adds no capability or acceptance predicate.

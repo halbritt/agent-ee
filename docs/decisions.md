@@ -490,3 +490,13 @@ must also fit its actual rating; without it the result is unknown. The pod's
 U1/U2/U4 acceptance at 85 degC cannot suppress a rating or thermal defect. See
 [assembly readiness](assembly-readiness.md#digikey-operating-temperature) for
 the immutable owner and thermal file formats.
+
+## Design-rule authority (AGENTEE-331, 2026-10-20)
+
+The owner rejected arbitrary scaffold specifications becoming hard limits.
+Numeric limits require class and citation: owner, manufacturer, datasheet and
+engineering limits gate; default or unresolved limits remain reported advisories.
+The coordinator's ruling preserves owner custom rules as owner authority and
+AGENTEE-318/325 structural invariants as engineering authority. Native crashes,
+missing reports and ignored evaluations remain failures. Captured constraint
+sources and owner rule bytes remain immutable. See [constraint sources](scaffold.md#declared-design-rule-sources-agentee-331).
