@@ -1802,7 +1802,9 @@ A reference's declared `fixed_overhangs` exit edge waives the setback for its
 own copper on that edge only (ruling 371c), reported as `fixed_overhang_copper`
 input facts; copper past the outline or in a keep-out still refuses. A
 failed copper-aligned pass is recorded as `search.copper_aligned_attempt`, a
-diagnostic only. This adds no registered check or acceptance predicate.
+diagnostic only. Every fixed part is checked whatever the `seed` (ruling 371d);
+only an arranged block member at its exact admitted pose is excluded. This adds
+no registered check or acceptance predicate.
 
 ## Copper feature consumers (AGENTEE-315)
 

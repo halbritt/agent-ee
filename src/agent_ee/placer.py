@@ -1886,8 +1886,18 @@ class _Search:
 
 def pack(capture, policy, *, heartbeat=None, seed=None):
     """Preserve legacy plans; try joint clusters, then copper-aligned candidates, only with the remaining budget."""
+    return _pack_gated(capture, policy, heartbeat=heartbeat, seed=seed, arranged=None)
+
+
+def _pack_gated(capture, policy, *, heartbeat, seed, arranged):
+    """``pack`` with ``arranged``: block members whose exact pose the arrangement copper gate admitted.
+
+    Only block arrangement passes ``arranged`` (reference -> the admitted member
+    footprint); every other fixed part, and an arranged member at any other pose,
+    has its copper validated as an input (AGENTEE-371, ruling 371d).
+    """
     runtime = {}
-    result = _pack_joint(capture, policy, heartbeat, runtime, seed)
+    result = _pack_joint(capture, policy, heartbeat, runtime, seed, arranged)
     if result['status'] == 'planned' or not runtime.get('copper_escapes'):
         return result
     # AGENTEE-366: every pass gates copper; only a failed search adds the copper
@@ -1898,7 +1908,7 @@ def pack(capture, policy, *, heartbeat=None, seed=None):
     if remaining == 0:
         return result
     aligned = _pack(capture, policy, heartbeat=heartbeat, joint=False, remaining_steps=remaining,
-                    deadline=runtime['search'].deadline, copper_axes=True, seed=seed)
+                    deadline=runtime['search'].deadline, copper_axes=True, seed=seed, arranged=arranged)
     if aligned['status'] != 'planned':
         # AGENTEE-371 (366b gap 4): a diagnostic only; the earlier result and its steps are unchanged.
         if 'search' in result:
@@ -1912,8 +1922,8 @@ def pack(capture, policy, *, heartbeat=None, seed=None):
     return aligned
 
 
-def _pack_joint(capture, policy, heartbeat, runtime, seed):
-    legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime, seed=seed)
+def _pack_joint(capture, policy, heartbeat, runtime, seed, arranged):
+    legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime, seed=seed, arranged=arranged)
     runtime['steps'] = runtime['search'].steps if 'search' in runtime else 0
     runtime['legacy'] = {'status': legacy['status'], 'steps_used': runtime['steps']}
     if legacy['status'] == 'planned' or not legacy.get('search', {}).get('locality_clusters'):
@@ -1925,7 +1935,7 @@ def _pack_joint(capture, policy, heartbeat, runtime, seed):
             'status': 'not_attempted', 'reason': 'no remaining deterministic candidate budget', 'steps_used': 0}
         return legacy
     joint = _pack(capture, policy, heartbeat=heartbeat, joint=True,
-                  remaining_steps=remaining, deadline=previous.deadline, seed=seed)
+                  remaining_steps=remaining, deadline=previous.deadline, seed=seed, arranged=arranged)
     runtime['steps'] += joint['steps_used']
     if joint['status'] != 'planned':
         legacy['search']['joint_cluster_attempt'] = {
@@ -1950,7 +1960,8 @@ def _pack(capture, policy, *, seed=None, **options):
     return result
 
 
-def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, remaining_steps=None, deadline=None, copper_axes=False):
+def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, runtime=None, remaining_steps=None,
+              deadline=None, copper_axes=False):
     if heartbeat is not None:
         heartbeat({'status': 'qualifying', 'steps_used': 0, 'placed_count': 0})
     capture = copy.deepcopy(capture)
@@ -2001,11 +2012,11 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, r
                                                      state.get('carried'), seed)
     except ValueError as exc:
         return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc), margin_nm)
-    # Owner-posed fixed parts stand as in the seed (default: the capture itself). Block members
-    # that arrangement re-posed and fixes for residual packing were gated there (AGENTEE-366).
-    seeds = {f['ref']: f for f in (capture if seed is None else seed)['footprints']}
+    # Every fixed part's copper is an input, whatever the seed (ruling 371d). The one exclusion is a
+    # block member at exactly the pose the arrangement copper gate admitted (AGENTEE-366).
+    arranged = arranged or {}
     state['overhang_copper'] = []
-    refusal = fixed_input_copper([fp for fp in placed if _unchanged(fp, seeds.get(fp['ref']))],
+    refusal = fixed_input_copper([fp for fp in placed if not _unchanged(fp, arranged.get(fp['ref']))],
                                  outline, obstacles, labels, policy.get('fixed_overhangs', []),
                                  state['overhang_copper'])
     if refusal is not None:

@@ -1047,9 +1047,14 @@ outline itself stays a defect without S. Unsupported copper geometry is
 
 Stage-B block arrangement applies the same check to its fixed parts (not block
 members) and returns the same typed refusal. Its residual pass fixes the
-arranged members, but `pack` checks only owner-posed fixed parts: those that
-stand as in the seed capture, which by default is the capture itself. Arranged
-members were already gated by the arrangement's copper extent gate. The
+arranged members. Ruling 371d: `pack` checks every fixed part of the board it is
+given, whatever its `seed`. A seed reference that is missing, shifted by 1 nm or
+has a changed courtyard never waives the check, with seed-pair carry on or off.
+Carry (AGENTEE-376) affects only fixed-pair spacing. The one exclusion is a block
+member that arrangement passes internally (`placer._pack_gated`, `arranged`)
+together with the exact member footprint its copper extent gate admitted. That
+member is skipped only at that pose and with those courtyards. The public `pack`
+API cannot pass this exclusion. The
 AGENTEE-331 publication containment witness is unchanged and stays as defence in
 depth.
 

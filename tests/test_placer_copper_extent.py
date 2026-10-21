@@ -759,6 +759,67 @@ class FixedInputCopperTest(unittest.TestCase):
         self.assertEqual(plan['findings'], [self.finding('within_setback', outline='board outline',
                                                          outline_distance_nm=0)])
 
+    def test_a_changed_or_missing_seed_never_waives_fixed_copper(self):
+        # Coordinator ruling 371d: every fixed part's copper is validated whatever the seed,
+        # with seed-pair carry on or off; a seed mismatch is no arrangement copper proof.
+        strip = {'uuid': 'strip', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+                 'outline': {'status': 'proven', 'polygons': [rectangle(-4, -1, 1, 2)]}}
+        cases = (('outline', rectangle(-3, -6, 9, 12), (), MAX_ERROR, ('fixed_input_copper', 'defect'),
+                  self.finding('outside_outline', outline='board outline')),
+                 ('keepout', rectangle(-6, -6, 12, 12), [strip], MAX_ERROR, ('fixed_input_copper', 'defect'),
+                  self.finding('in_keepout', side='F', keepout='rule area strip')),
+                 ('unknown_S', rectangle(-6, -6, 12, 12), (), None, ('unsupported_geometry', 'unknown'),
+                  self.finding('setback_unknown', setback_nm=None)))
+
+        def seeds(capture_):
+            missing, shifted, courtyard = (copy.deepcopy(capture_) for _ in range(3))
+            missing['footprints'] = []
+            shifted['footprints'][0]['position_nm'][0] += 1
+            courtyard['footprints'][0]['courtyards']['F']['polygons'][0][0][0] += 1
+            return (('missing', missing), ('shifted 1 nm', shifted), ('courtyard', courtyard))
+
+        for kind, outline, areas, max_error, verdict, finding in cases:
+            capture_ = board([offset_part()], outline, max_error)
+            capture_['rule_areas'] = list(areas)
+            for carry in (False, True):
+                policy = request(fixed_refs=['C1'], carry_seed_fixed_pairs=carry, gap_nm=250000)
+                for name, seed in seeds(capture_):
+                    with self.subTest(kind=kind, carry=carry, seed=name):
+                        before = copy.deepcopy(capture_)
+                        plan = pack(capture_, policy, seed=seed)
+                        self.assertEqual(capture_, before)
+                        self.assertEqual((plan['status'], plan['outcome'], plan['placements']), (*verdict, []), plan)
+                        self.assertEqual(plan['findings'], [finding])
+        # The seeded board 4 fixed part P0, whose land is off the board, likewise.
+        from test_placer_geometry_cost import seeded_board
+        capture_, policy = seeded_board(4)
+        for name, seed in seeds(capture_):
+            with self.subTest(board='seeded 4', seed=name):
+                plan = pack(copy.deepcopy(capture_), policy, seed=seed)
+                self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+                self.assertEqual({f['reference'] for f in plan['findings']}, {'P0'})
+
+    def test_only_the_exact_admitted_arranged_pose_skips_the_input_gate(self):
+        # Ruling 371d: arrangement's admitted member footprint exempts that reference at that
+        # exact pose and courtyards only; any other pose, or another reference, is validated.
+        capture_ = board([offset_part()], rectangle(-3, -6, 9, 12))
+        policy = request(fixed_refs=['C1'])
+        admitted = copy.deepcopy(capture_['footprints'][0])
+        plan = placer._pack_gated(copy.deepcopy(capture_), policy, heartbeat=None, seed=None,
+                                  arranged={'C1': admitted})
+        self.assertEqual(plan['status'], 'planned', plan)
+        moved = copy.deepcopy(admitted)
+        moved['position_nm'][1] += 1
+        recourted = copy.deepcopy(admitted)
+        recourted['courtyards']['F']['polygons'][0][0][0] += 1
+        for name, arranged in (('none', None), ('other pose', {'C1': moved}), ('other courtyard', {'C1': recourted}),
+                               ('other reference', {'U1': admitted})):
+            with self.subTest(arranged=name):
+                plan = placer._pack_gated(copy.deepcopy(capture_), policy, heartbeat=None, seed=None,
+                                          arranged=arranged)
+                self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+                self.assertEqual(plan['findings'], [self.finding('outside_outline', outline='board outline')])
+
     def test_seeded_board_4_reports_its_fixed_part_copper(self):
         # Coordinator ruling 371a: the only pin this changes. P0 pad 2's land reaches
         # y = 48165155/3 nm (boxed outward to 16055052) on the 16 mm board.

@@ -1207,7 +1207,8 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     record['residual'] = {'references': sorted(movable, key=blocks._natural), 'policy_sha256': digest(residual_policy),
                           'obstacles': residual_policy['obstacles'][len(effective['obstacles']):]}
     # Block members are re-posed, so only parts unchanged from the capture stay seed facts.
-    plan = placer.pack(residual_capture, residual_policy, heartbeat=heartbeat, seed=capture)
+    # Members at exactly their admitted poses passed the arrangement copper gate (ruling 371d).
+    plan = placer._pack_gated(residual_capture, residual_policy, heartbeat=heartbeat, seed=capture, arranged=poses)
     if plan['status'] != 'planned':
         return {**plan, 'block_arrangement': record}
     plan['placements'] = [{**p, 'fixed': p['ref'] in fixed} for p in plan['placements']]
