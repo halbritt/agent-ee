@@ -1796,9 +1796,15 @@ receipt `open_defects`. Their receipt outcome/verdict is `defect`. This separate
 placement feasibility from fab legibility. The coordinator captures validated
 helper receipts and artwork under `placement-evidence`, with ordered
 `placement_provenance` links in successor scopes (AGENTEE-333). Verification/fab
-stages and fab export, package, consistency, CPL and JLC DFM checks refuse open
-carry with typed field/graphic identities and source receipts. The evidence seal
-reconstructs these refusals; release artifact extraction also refuses open carry.
+stages and all fab-family kinds refuse open carry with typed field/graphic
+identities and source receipts, regardless of declared stage (AGENTEE-344).
+This includes DRC, fab profile, DFM geometry, DFA/DFT, assembly readiness, cost,
+roundtrip, parts/catalog/binding and land-pattern gates. Campaign acceptance
+refuses open carry even without a declared downstream gate. A clean receipted
+closure can survive masked copper track edits only when every artwork and
+obstruction token, project and custom-rule byte remains unchanged; vias, zones
+and unknown track attributes still require fresh receipt evidence. The evidence
+seal reconstructs these refusals; release artifact extraction also refuses open carry.
 Uncarried baseline findings retain their existing verdicts. Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.

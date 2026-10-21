@@ -21,7 +21,12 @@ DRC = 'placement/placed/native-drc.json'
 ARTWORK = 'placement/placed/placement-silkscreen.json'
 EXECUTION = 'placement/placed/native-drc-execution.json'
 FILES = (REPORT, BOARD, DRC, EXECUTION)
-GATED_KINDS = frozenset({'fab_export', 'fab_package', 'cpl_rotation', 'fab_consistency', 'jlc_dfm'})
+GATED_KINDS = frozenset({
+    'fab_export', 'fab_package', 'cpl_rotation', 'fab_consistency', 'jlc_dfm',
+    'fab_roundtrip', 'fab_profile', 'dfm_geometry', 'dfa_dft', 'assembly_readiness',
+    'jlc_cost_estimate', 'drc', 'part_binding', 'package_consistency', 'parts_subset',
+    'land_pattern', 'catalog', 'part_selection',
+})
 
 
 def validate_campaign(scope):
@@ -203,6 +208,42 @@ def _items(defect):
     return {defect['uuid']}
 
 
+def same_artwork(before, after):
+    """Prove identical markings and obstructions except masked board copper tracks.
+
+    Unknown track children (including solder-mask exposure) stay in the comparison.
+    Vias, zones, footprint transforms, pads, mask, setup and every artwork token
+    must remain identical. No electrical or routing verdict follows from this.
+    """
+    from .symbol_library import children, parse_sexpr
+    def subject(path):
+        root = parse_sexpr(Path(path).read_bytes())
+        if root[0] != 'kicad_pcb':
+            raise ValueError('artwork comparison requires a saved board')
+        kept = []
+        for node in root:
+            if isinstance(node, list) and node and node[0] in ('segment', 'arc'):
+                allowed = {'start', 'end', 'mid', 'width', 'layer', 'net', 'uuid', 'locked'}
+                layers = children(node, 'layer')
+                if (len(layers) == 1 and len(layers[0]) == 2 and
+                        layers[0][1] in ('F.Cu', 'B.Cu', *(f'In{i}.Cu' for i in range(1, 31))) and
+                        all(isinstance(n, list) and n and n[0] in allowed for n in node[1:])):
+                    continue
+            kept.append(node)
+        return kept
+    return subject(before) == subject(after)
+
+
+def acceptance(run, diagnostic):
+    """Campaign acceptance is a gate even when no downstream check was declared."""
+    if diagnostic['state'] != 'criteria_satisfied':
+        return diagnostic
+    run = Path(run)
+    if open_defects(read_json(run / 'candidate.json'), run / 'inputs'):
+        return {'state': 'escalated', 'reason': 'open_placement_defects'}
+    return diagnostic
+
+
 def open_defects(manifest, inputs):
     """Reconstruct open carry; only later receipted current artwork can close it."""
     index = f'{DIRECTORY}/index.json'
@@ -222,7 +263,21 @@ def open_defects(manifest, inputs):
         moved = {m['uuid'] for m in read_json(loaded[ARTWORK]).get('moved_fields', [])} if ARTWORK in loaded else set()
         conflicts = {i['uuid'] for v in drc['violations'] if v['type'].startswith('silk_') for i in v['items']}
         diagnostics = {d['uuid'] for d in report['open_defects'] if 'uuid' in d}
-        current = report['board_sha256'] == manifest['files'].get(manifest['scope']['board'])
+        board = manifest['scope']['board']
+        current = report['board_sha256'] == manifest['files'].get(board)
+        if not current:
+            # A dishonest candidate digest must not turn a known defect into unknown.
+            path = Path(inputs) / str(safe_relative(board))
+            try:
+                if path.is_file() and not path.is_symlink() and digest(path) == manifest['files'].get(board):
+                    current = same_artwork(loaded[BOARD], path)
+            except (OSError, ValueError):
+                # An unprovable edit cannot downgrade a known carried defect.
+                current = False
+        receipt = read_json(_read(manifest, inputs, link['receipt'], link['sha256']))
+        current = current and all(receipt['inputs'].get(str(Path(board).with_suffix(suffix))) ==
+                                  manifest['files'].get(str(Path(board).with_suffix(suffix)))
+                                  for suffix in ('.kicad_pro', '.kicad_dru'))
         active = [(d, source, original) for d, source, original in active
                   if not _closes(d, original, identities, conflicts | diagnostics, moved, current)]
         for defect in report['open_defects']:

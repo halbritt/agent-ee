@@ -4,7 +4,9 @@ import copy
 from pathlib import Path
 import shutil
 import time
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from agent_ee import placement_defects
 from agent_ee.storage import digest, read_json, write_json
@@ -13,6 +15,17 @@ from agent_ee.storage import digest, read_json, write_json
 class PlacementDefectContractTests(unittest.TestCase):
     def test_uncarried_candidate_has_no_defects(self):
         self.assertEqual(placement_defects.open_defects({'scope': {}, 'files': {}}, None), [])
+
+    def test_all_fab_family_kinds_gate_independent_of_stage(self):
+        kinds = ('fab_profile', 'dfm_geometry', 'dfa_dft', 'assembly_readiness',
+                 'jlc_cost_estimate', 'drc', 'fab_roundtrip', 'fab_export', 'fab_package',
+                 'fab_consistency', 'cpl_rotation', 'jlc_dfm', 'part_binding',
+                 'package_consistency', 'parts_subset', 'land_pattern', 'catalog', 'part_selection')
+        for kind in kinds:
+            for stage in (None, 'placement', 'routing', 'fab', 'verification', 'release'):
+                with self.subTest(kind=kind, stage=stage):
+                    self.assertTrue(placement_defects.gated({'kind': kind, 'stage': stage}))
+
 
     def test_initial_campaign_cannot_supply_coordinator_carry(self):
         placement_defects.validate_campaign({'inputs': []})
@@ -255,6 +268,71 @@ class NativePlacementCarryTests(unittest.TestCase):
         verify_evidence(run, checks, required=True)
 
 
+    def test_forged_retained_pass_is_refused_by_freeze_evidence(self):
+        from agent_ee.baseline import freeze_evidence
+        from agent_ee.candidate import capture
+        from agent_ee.checks import run_checks
+        root = self.helper.root / 'seal-forgery'
+        root.mkdir()
+        requirement = root / 'requirements.md'
+        requirement.write_text('Fab must refuse carried open artwork defects.\n')
+        scope = copy.deepcopy(self.scope)
+        scope['schema'] = 'agent-ee.scope/2'
+        scope['inputs'].append({'path': str(requirement), 'at': 'requirements.md'})
+        scope['baseline'] = {'requirements': [{'id': 'R-fab', 'statement': requirement.read_text().strip(),
+            'source': {'path': 'requirements.md', 'locator': 'R-fab'}, 'checks': ['fab']}],
+            'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}
+        write_json(root / 'scope.json', scope)
+        run = root / 'run'
+        run.mkdir()
+        capture(root / 'scope.json', run)
+        checks = run_checks(run, time.monotonic() + 60)
+        self.assertEqual(checks[0]['outcome'], 'defect')
+        forged = copy.deepcopy(checks[0])
+        forged.update(outcome='pass', summary='forged retained fab pass')
+        for key in ('reason', 'open_defects', 'gate_findings'):
+            forged['details'].pop(key, None)
+        write_json(run / 'checks/fab.json', forged)
+        with self.assertRaisesRegex(ValueError, 'did not retain'):
+            freeze_evidence(run, [forged])
+
+    def test_acceptance_without_any_fab_checks_refuses_open_carry(self):
+        diagnostic = {'state': 'criteria_satisfied', 'reason': 'all_criteria_satisfied'}
+        refused = placement_defects.acceptance(self.candidate_run, diagnostic)
+        self.assertEqual(refused, {'state': 'escalated', 'reason': 'open_placement_defects'})
+        self.assertEqual(diagnostic['state'], 'criteria_satisfied')
+        pending = {'state': 'repair', 'reason': 'criteria_failed'}
+        self.assertEqual(placement_defects.acceptance(self.candidate_run, pending), pending)
+
+
+    def test_native_masked_track_edit_preserves_the_silk_subject(self):
+        from agent_ee.placer_runner import _native_drc
+        import pcbnew as k
+        source = self.candidate_run / 'inputs' / self.manifest['scope']['board']
+        with tempfile.TemporaryDirectory(dir=self.helper.root) as temporary:
+            root = Path(temporary)
+            after = root / 'tracked.kicad_pcb'
+            board = k.LoadBoard(str(source))
+            track = k.PCB_TRACK(board)
+            track.SetStart(k.VECTOR2I(20000000, 20000000))
+            track.SetEnd(k.VECTOR2I(22000000, 20000000))
+            track.SetWidth(250000)
+            track.SetLayer(k.F_Cu)
+            board.Add(track)
+            k.SaveBoard(str(after), board, True)
+            self.assertNotEqual(digest(source), digest(after))
+            self.assertTrue(placement_defects.same_artwork(source, after))
+            reports = []
+            for name, path in (('before', source), ('after', after)):
+                scratch = root / name
+                scratch.mkdir()
+                reports.append(_native_drc(path, scratch))
+            def silk(report):
+                return sorted((v['type'], tuple(sorted(i['uuid'] for i in v['items'])))
+                              for v in report['violations'] if v['type'].startswith('silk_'))
+            self.assertTrue(silk(reports[0]))
+            self.assertEqual(silk(reports[0]), silk(reports[1]))
+
     def test_expired_tool_budget_does_not_erase_known_carried_defects(self):
         from agent_ee.checks import run_checks
         check = run_checks(self.candidate_run, time.monotonic() - 1)[0]
@@ -295,3 +373,224 @@ class ClosureContractTests(unittest.TestCase):
         original = {**self.original, 'pad': ('footprint', ['pad', '1', 'smd'], [['at', '0', '0']])}
         self.assertTrue(placement_defects._closes(defect, original, original, {'pad', 'other-field'}, set(), True))
         self.assertFalse(placement_defects._closes(defect, original, original, {'field'}, set(), True))
+
+
+class DurableClosureTests(unittest.TestCase):
+    def test_only_masked_track_changes_preserve_artwork_and_obstructions(self):
+        from tests.test_placement_adapter import TEXT
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            before, after = root / 'before.kicad_pcb', root / 'after.kicad_pcb'
+            before.write_text(TEXT)
+            track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t"))'
+            after.write_text(TEXT.rstrip()[:-1] + track + ')')
+            self.assertTrue(placement_defects.same_artwork(before, after))
+            for extra in (track.replace('F.Cu', 'F.SilkS'),
+                          track.replace('(net 0)', '(net 0) (solder_mask_margin 0.1)'),
+                          '(via (at 1 2) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu"))',
+                          '(zone (net 0) (layer "F.Cu"))'):
+                after.write_text(TEXT.rstrip()[:-1] + extra + ')')
+                with self.subTest(extra=extra):
+                    self.assertFalse(placement_defects.same_artwork(before, after))
+            for old, new in (('(at 10 10)', '(at 11 10)'), ('"R1"', '"R2"'),
+                             ('(at 0 -1.5 0)', '(at 0 -2.5 0)'),
+                             ('(layer "F.SilkS")', '(layer "B.SilkS")'),
+                             ('(size 0.5 0.5)', '(size 0.6 0.5)'),
+                             ('(pad_to_mask_clearance 0)', '(pad_to_mask_clearance 0.5)')):
+                after.write_text(TEXT.replace(old, new))
+                with self.subTest(old=old):
+                    self.assertFalse(placement_defects.same_artwork(before, after))
+
+
+    def test_receipt_closure_currency_uses_artwork_subject_after_routing(self):
+        # Unit-level state-machine probe; native receipt validation is covered above.
+        from tests.test_placement_adapter import TEXT
+        with tempfile.TemporaryDirectory() as temporary:
+            inputs = Path(temporary)
+            old, fixed, current = (inputs / n for n in ('old.kicad_pcb', 'fixed.kicad_pcb', 'board.kicad_pcb'))
+            old.write_text(TEXT)
+            fixed.write_text(TEXT.replace('(at 0 -1.5 0)', '(at 0 -2.5 0)'))
+            current.write_bytes(fixed.read_bytes())
+            links, bundles, files = [], {}, {}
+            defect = {'type': 'placement_silkscreen_conflict', 'status': 'open', 'verdict': 'defect',
+                      'native': {'items': [{'uuid': 'a1'}]}}
+            for number, board, defects in ((1, old, [defect]), (2, fixed, [])):
+                path = inputs / f'placement-evidence/{number}/receipt.json'
+                write_json(path, {'inputs': {}})
+                rel = path.relative_to(inputs).as_posix()
+                files[rel] = digest(path)
+                link = {'receipt': rel, 'sha256': digest(path)}
+                links.append(link)
+                bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects},
+                                {placement_defects.BOARD: board}, {'violations': []})
+            index = 'placement-evidence/index.json'
+            write_json(inputs / index, links)
+            files[index] = digest(inputs / index)
+            manifest = {'scope': {'board': current.name, placement_defects.DECLARATION: links},
+                        'files': files}
+            with patch.object(placement_defects, '_bundle', side_effect=lambda m, i, link: bundles[link['receipt']]):
+                manifest['files'][current.name] = digest(current)
+                self.assertEqual(placement_defects.open_defects(manifest, inputs), [])
+                track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t"))'
+                current.write_text(fixed.read_text().rstrip()[:-1] + track + ')')
+                manifest['files'][current.name] = digest(current)
+                self.assertEqual(placement_defects.open_defects(manifest, inputs), [])
+                for old_token, new_token in (('(at 0 -2.5 0)', '(at 0 -1.5 0)'),
+                                             ('(at 10 10)', '(at 11 10)'),
+                                             ('(size 0.5 0.5)', '(size 0.6 0.5)')):
+                    current.write_text(fixed.read_text().replace(old_token, new_token))
+                    manifest['files'][current.name] = digest(current)
+                    with self.subTest(change=old_token):
+                        self.assertEqual(len(placement_defects.open_defects(manifest, inputs)), 1)
+                for malformed in ('(kicad_pcb', '(not_a_board)', '()'):
+                    current.write_text(malformed)
+                    manifest['files'][current.name] = digest(current)
+                    with self.subTest(malformed=malformed):
+                        self.assertEqual(len(placement_defects.open_defects(manifest, inputs)), 1)
+                current.write_text(fixed.read_text().rstrip()[:-1] + track + ')')
+                manifest['files'][current.name] = digest(current)
+                def unreadable_board(path):
+                    if Path(path) == current:
+                        raise OSError('candidate board unreadable')
+                    return digest(path)
+                with patch.object(placement_defects, 'digest', side_effect=unreadable_board):
+                    self.assertEqual(len(placement_defects.open_defects(manifest, inputs)), 1)
+                current.write_bytes(fixed.read_bytes())
+                manifest['files'][current.name] = digest(current)
+                manifest['files']['board.kicad_pro'] = 'changed-rule-settings'
+                self.assertEqual(len(placement_defects.open_defects(manifest, inputs)), 1)
+
+
+class PlacementRoutingCarryTests(unittest.TestCase):
+    def test_real_placement_and_router_keep_open_carry_at_verification(self):
+        from test_placement_campaign import PlacementCampaignFixture
+        from test_placement_adapter import owned_design, BOARD, POLICY
+        from toolchain import require_kicad_route, require_toolchain
+        from agent_ee import placement_adapter as pa, routing_adapter, campaign, stage_receipts
+        from agent_ee.placement_probe import extract
+        from agent_ee.placer_runner import _plan
+        import pcbnew as k
+        require_toolchain(native=True)
+        checkout = require_kicad_route()
+        self.assertEqual(routing_adapter.preflight(checkout)['problems'], [])
+        class OwnedCarryCampaign(PlacementCampaignFixture):
+            @classmethod
+            def build_board(cls, project):
+                # Use the original pad/courtyard stand-ins, without copying stock footprints.
+                owned = owned_design(cls.base.parent / 'owned-base')
+                for path in (owned / 'project').iterdir():
+                    shutil.copyfile(path, project / path.name)
+
+            def scope(self, checks):
+                scope = super().scope(checks)
+                # The original RC schematic has its native symbol cache embedded.
+                scope['inputs'] = [i for i in scope['inputs'] if not i['at'].startswith('stock/')]
+                return scope
+
+        OwnedCarryCampaign.setUpClass()
+        self.addCleanup(OwnedCarryCampaign.tearDownClass)
+        fixture = OwnedCarryCampaign()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        from agent_ee import cli
+        import _pcbnew
+        runtime = cli.runtime_files()
+        runtime['pcbnew'] = {'path': _pcbnew.__file__, 'sha256': digest(_pcbnew.__file__)}
+        self.enterContext(patch('agent_ee.cli.runtime_files', return_value=runtime))
+        owned = owned_design(fixture.root / 'owned')
+        shutil.rmtree(fixture.source / 'project')
+        shutil.copytree(owned / 'project', fixture.source / 'project')
+        (fixture.source / BOARD).with_suffix('.kicad_pro').write_text('{}\n')
+        fixture.fixed = {f.GetReference(): f.m_Uuid.AsString()
+                         for f in k.LoadBoard(str(fixture.source / BOARD)).GetFootprints()}
+        board = k.LoadBoard(str(fixture.source / BOARD))
+        for fp in board.GetFootprints():
+            fp.Reference().SetVisible(False)
+            fp.Value().SetVisible(False)
+        k.SaveBoard(str(fixture.source / BOARD), board, True)
+        policy = read_json(fixture.source / POLICY)
+        request = pa.helper_request((fixture.source / BOARD).read_bytes(), policy, ['J1'])
+        plan = _plan(extract(fixture.source / BOARD), request)
+        self.assertEqual(plan['status'], 'planned')
+        for placement in plan['placements']:
+            if placement['fixed']:
+                continue
+            x, y = placement['position_nm']
+            graphic = k.PCB_SHAPE(board)
+            graphic.SetShape(k.SHAPE_T_SEGMENT)
+            graphic.SetLayer(k.F_SilkS)
+            graphic.SetStart(k.VECTOR2I(x - 1800000, y))
+            graphic.SetEnd(k.VECTOR2I(x + 1800000, y))
+            graphic.SetWidth(150000)
+            board.Add(graphic)
+        k.SaveBoard(str(fixture.source / BOARD), board, True)
+        # This acceptance check measures the declared C1/R1 origin separation.
+        # The placement helper still performs its ordinary native collision gates.
+        solver = fixture.source / 'project/separation.py'
+        solver.write_text('import json, math, pcbnew as k\nfrom pathlib import Path\n'
+            'b=k.LoadBoard("/candidate/project/rc_filter.kicad_pcb")\n'
+            'p={f.GetReference():f.GetPosition() for f in b.GetFootprints()}\n'
+            'v=math.hypot(p["C1"].x-p["R1"].x,p["C1"].y-p["R1"].y)/1e6\n'
+            'Path("raw.json").write_text(json.dumps({"value":v}))\n')
+        adapter = fixture.source / 'project/separation-adapter.py'
+        adapter.write_text('import json,sys\nfrom pathlib import Path\n'
+            'r=json.loads(Path(sys.argv[1]).read_text())\n'
+            'v=json.loads(Path("/work/tool/raw.json").read_text())["value"]\n'
+            'Path(sys.argv[2]).write_text(json.dumps({"schema":"agent-ee.measurements/1",'
+            '"candidate_id":r["candidate_id"],"files":r["files"],"tool":"native separation",'
+            '"version":"1","domain":"manufacturing","artifacts":["tool/raw.json"],'
+            '"metrics":{"separation":{"value":v,"unit":"mm","condition":"saved board"}}}))\n')
+        checks = [
+            {'id': 'separation', 'kind': 'measurements', 'stage': 'placement', 'params': {
+                'adapter': 'project/separation-adapter.py', 'tool': {
+                    'argv': ['/usr/bin/python3', '/candidate/project/separation.py'],
+                    'sha256': digest('/usr/bin/python3'), 'domain': 'manufacturing',
+                    'inputs': ['project/separation.py']},
+                'limits': {'separation': {'min': 4.5, 'unit': 'mm', 'condition': 'saved board'}}}},
+            {'id': 'routed', 'kind': 'geometry', 'stage': 'routing',
+             'params': {'criterion': 'copper-width/1', 'covered_primitives': ['PCB_TRACK', 'PCB_ARC'],
+                        'min_track_width_mm': 0.1, 'exclude_nets': []}},
+            {'id': 'verify', 'kind': 'geometry', 'stage': 'verification',
+             'params': {'min_track_width_mm': 0.1}},
+        ]
+        scope = fixture.scope(checks)
+        scope['stages']['order'].append('verification')
+        scope['stages']['subjects']['routing'] = {'path': BOARD, 'kind': 'tracks', 'minimum': 1}
+        route = routing_adapter.step(project='project', board='rc_filter.kicad_pcb',
+            schematic='rc_filter.kicad_sch', name='rc_filter', label='carry', checkout=checkout, budget=120)
+        status, state = fixture.campaign(fixture.declaration(), iterations=3, scope=scope, steps=[route])
+        self.assertEqual(len(state['history']), 3, {k: state.get(k) for k in ('state', 'reason', 'error', 'history')})
+        self.assertEqual(status, 1, state)
+        self.assertNotEqual(state['state'], 'criteria_satisfied')
+        placement = read_json(fixture.out / 'implementations/1/placement-adapter.json')
+        self.assertEqual(placement['status'], 'proposed')
+        result = read_json(fixture.out / 'implementations/1' / placement['helper']['receipt'] / pa.RESULT)
+        self.assertTrue(result['open_defects'])
+        self.assertNotIn('2', state['placement_records'])
+        receipt_dir = fixture.out / 'implementations/2/receipts/1-kicad-route-krt'
+        routed = stage_receipts.validate_receipt(receipt_dir)
+        self.assertIn(routed['status'], ('completed', 'partial'))
+        self.assertEqual(routed['violations'], [])
+        prior = read_json(fixture.out / 'runs/2/candidate.json')
+        self.assertEqual(routed['inputs'][BOARD], prior['files'][BOARD])
+        final = fixture.out / 'runs/3'
+        manifest = read_json(final / 'candidate.json')
+        self.assertEqual(routed['outputs'][BOARD], manifest['files'][BOARD])
+        self.assertEqual(manifest['scope'][placement_defects.DECLARATION],
+                         prior['scope'][placement_defects.DECLARATION])
+        self.assertTrue(placement_defects.open_defects(manifest, final / 'inputs'))
+        check = read_json(final / 'checks/verify.json')
+        self.assertEqual((check['execution'], check['outcome']), ('ok', 'defect'))
+        self.assertEqual(check['details']['reason'], 'open_placement_defects')
+        self.assertEqual(read_json(final / 'checks/routed.json')['outcome'], 'pass')
+        self.assertEqual(campaign.verify_campaign(fixture.out)['state'], state['state'])
+
+        # The same native publication must also fail acceptance in a campaign
+        # that declares no routing, verification or fab gate at all.
+        scope = fixture.scope([checks[0]])
+        scope['stages']['order'] = ['placement']
+        status, state = fixture.campaign(fixture.declaration(), iterations=2, scope=scope,
+                                        name='no-downstream')
+        self.assertEqual((status, state['state'], state['reason']),
+                         (1, 'escalated', 'open_placement_defects'))
+        self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'escalated')
