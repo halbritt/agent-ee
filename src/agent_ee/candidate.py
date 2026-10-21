@@ -98,16 +98,7 @@ def capture(scope_path, run_dir, profile_path=None):
     baseline = compile_baseline(scope, before, inputs)
     if baseline is not None:
         write_json(run_dir / "baseline.json", baseline)
-    if scope.get("board") in before:
-        from .candidate_visuals import produce
-        board = inputs / safe_relative(scope['board'])
-        visuals = produce(board, run_dir / 'work' / 'candidate.visuals',
-                          skip=scope.get('skip_visuals', False), inputs=inputs)
-        for image in visuals['images']:
-            image['path'] = 'work/candidate.visuals/' + image['path']
-        manifest['visuals'] = visuals
     write_json(run_dir / "candidate.json", manifest)
-    verify_snapshot(run_dir)
     return manifest
 
 

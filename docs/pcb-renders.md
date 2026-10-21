@@ -84,12 +84,14 @@ review.
 ## Candidate inspection images (AGENTEE-382)
 
 Every successful `placer_runner.place_candidate` proposal now includes `visuals/`
-beside `placement-result.json`. Coordinator `candidate.capture` independently
-renders the captured board into `work/candidate.visuals/`. The placement result
+beside `placement-result.json`. The coordinator review lifecycle independently
+renders the admitted, captured board into `work/candidate.visuals/`. The placement result
 and candidate manifest retain a `visuals` record with source-board SHA-256,
 KiCad version and executable SHA-256, image paths and SHA-256 hashes, model
 coverage, elapsed time and an explicit reproducibility limitation. Paths are
-relative to the proposal directory or captured run, respectively.
+relative to the proposal directory or captured run, respectively. Generic
+`candidate.capture` remains a pure input capture; the coordinator attaches images
+through `candidate_visuals.capture_visuals` after validating the scope and inputs.
 
 The networkless executor produces high-quality, opaque 1600 × 900 top and bottom
 PNGs, front and back SVG composites (copper, silk, courtyard and board outline),
@@ -109,7 +111,7 @@ packet assembly. Images remain inspection aids; native geometry, DRC and sealed
 coordinator findings retain their authority. Missing models are reported rather
 than replaced with invented component bodies.
 
-For fixture runs, set `skip_visuals: true` in a placement request or capture
+For fixture runs, set `skip_visuals: true` in a placement request or review
 scope, pass `--skip-visuals` to `agent_ee.placer_runner`, or explicitly set
 `AGENT_EE_SKIP_VISUALS=1` for a test process. The environment flag accepts only
 `0` or `1`; JSON flags accept only booleans. Skips retain `status: skipped` and

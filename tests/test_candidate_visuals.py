@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from agent_ee.candidate import capture
-from agent_ee.candidate_visuals import produce, packet_visuals
+from agent_ee.candidate_visuals import produce, packet_visuals, capture_visuals
 from agent_ee.storage import digest
 from toolchain import require_toolchain
 
@@ -33,6 +33,7 @@ class CandidateVisualTests(unittest.TestCase):
     def test_native_four_layer_images_and_packet_hashes(self):
         import pcbnew
         from agent_ee.reviewers import build_packet
+        from agent_ee.cli import run_review
         board = pcbnew.LoadBoard(str(self.board))
         board.SetCopperLayerCount(4)
         pcbnew.SaveBoard(str(self.board), board)
@@ -40,12 +41,15 @@ class CandidateVisualTests(unittest.TestCase):
         scope = {'schema': 'agent-ee.scope/1', 'name': 'visuals', 'scope': 'inspection',
                  'inputs': [{'path': str(self.source), 'at': 'project'}],
                  'board': 'project/rc_filter.kicad_pcb', 'schematic': 'project/rc_filter.kicad_sch',
-                 'checks': []}
+                 'checks': [{'id': 'drc', 'kind': 'drc'}]}
         scope_path = self.root / 'scope.json'
         scope_path.write_text(json.dumps(scope))
         run = self.root / 'run'
-        run.mkdir()
-        manifest = capture(scope_path, run)
+        run_review(scope_path, run, 240, checks_only=True)
+        result = json.loads((run / 'result.json').read_text())
+        self.assertNotIn('error', result, result.get('error'))
+        self.assertEqual(result['checks'][0]['execution'], 'ok', result['checks'])
+        manifest = json.loads((run / 'candidate.json').read_text())
         visuals = manifest['visuals']
         self.assertEqual(visuals['status'], 'available', visuals)
         self.assertEqual(len(visuals['images']), 6)
@@ -53,7 +57,7 @@ class CandidateVisualTests(unittest.TestCase):
                          {'top', 'bottom', 'front', 'back', 'In1.Cu', 'In2.Cu'})
         for image in visuals['images']:
             self.assertEqual(digest(run / image['path']), image['sha256'])
-        packet = build_packet(run, [], 'visual-native')
+        packet = build_packet(run, result['checks'], result['run_id'])
         self.assertEqual(packet['candidate_visuals'], visuals)
         self.assertEqual(visuals['reproducibility']['status'], 'not_verified')
         self.assertTrue(visuals['reproducibility']['reason'])
@@ -76,7 +80,8 @@ class CandidateVisualTests(unittest.TestCase):
         scope_path.write_text(json.dumps(scope))
         run = self.root / 'run'
         run.mkdir()
-        manifest = capture(scope_path, run)
+        capture(scope_path, run)
+        manifest = capture_visuals(run)
         visual_manifest = next((run / 'work').glob('*/manifest.json'))
         captured = visual_manifest.read_bytes()
         ctx = Ctx(run, manifest, scope['checks'][0], time.monotonic() + 30)

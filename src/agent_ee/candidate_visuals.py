@@ -7,7 +7,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from .candidate import safe_relative
+from .candidate import safe_relative, verify_snapshot
 from .executor import execute
 from .render3d import render_board
 from .storage import digest, read_json, write_json
@@ -54,11 +54,27 @@ def produce(board, out, *, skip=False, inputs=None):
     return report
 
 
+def capture_visuals(run_dir):
+    """Attach coordinator imaging after pure input capture and scope admission."""
+    run = Path(run_dir)
+    manifest = verify_snapshot(run)
+    inputs = run / 'inputs'
+    board = inputs / safe_relative(manifest['scope']['board'])
+    visuals = produce(board, run / 'work' / 'candidate.visuals',
+                      skip=manifest['scope'].get('skip_visuals', False), inputs=inputs)
+    for image in visuals['images']:
+        image['path'] = 'work/candidate.visuals/' + image['path']
+    verify_snapshot(run)
+    manifest['visuals'] = visuals
+    write_json(run / 'candidate.json', manifest)
+    return manifest
+
+
 def packet_visuals(run_dir, manifest):
     """Verify coordinator-produced images before exposing paths to reviewers."""
     report = manifest.get('visuals')
     if report is None:
-        return {'status': 'unavailable', 'reason': 'capture predates candidate imaging', 'images': []}
+        return {'status': 'unavailable', 'reason': 'capture has no coordinator imaging record', 'images': []}
     root = Path(run_dir)
     board = manifest['scope']['board']
     if report['board_sha256'] != manifest['files'][board]:
