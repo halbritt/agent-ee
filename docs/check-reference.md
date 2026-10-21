@@ -1792,9 +1792,12 @@ earlier same-candidate native DRC, and `locality` naming a captured
 `agent-ee.electrical-locality/1` document. Its immutable input and capability
 predicate are respectively that path and `placement:electrical-locality/1`.
 See the [declaration, verdicts and separate packer constraint](placer.md#pad-level-electrical-locality-agentee-322).
-Supply and return are mandatory and switch/inductor pairs optional. The native
-copper-land centroid metric preserves proved defects alongside unknowns;
-missing limits stay unknown; hard enforcement also requires a citation. Optional captured pad `uuid` selectors
+Locality documents and copied index snapshots require exact built-in JSON types;
+subclasses and other Python objects refuse before schema or net-binding checks
+(AGENTEE-356). Supply and return are mandatory and switch/inductor pairs
+optional. The native copper-land centroid metric preserves proved defects
+alongside unknowns; missing limits stay unknown; hard enforcement also requires
+a citation. Optional captured pad `uuid` selectors
 must also match the declared reference, number and net; unselected duplicate
 pad numbers refuse. Native copper offsets participate in the distance, and
 unqualified centroid geometry stays unknown. Coordinator packing derives its
@@ -1832,10 +1835,13 @@ Return endpoints use the declared return net, distinct from supply. AGENTEE-341
 requires both switch endpoint nets to differ from return and both supply endpoint
 nets. Distinct-source obligations require disjoint supply/return endpoint net
 sets even without a kind. Inconsistent bindings refuse validation, including
-direct `PlacementIndex` construction, which re-validates its document before
-indexing (AGENTEE-341), then indexes a deep copy of the validated document.
+direct `PlacementIndex` construction (AGENTEE-341). It deep-copies the document
+first, copies its exact JSON values into fresh owned containers, validates that
+snapshot, then indexes it (AGENTEE-356). Cyclic containers raise the typed JSON
+`ValueError`. Its public pairs and endpoint maps are read-only at every level,
+including endpoint fields.
 Later caller mutations cannot alter its endpoint identities or cached keys
-(AGENTEE-352). Untyped
+(AGENTEE-352/356). Untyped
 same-source obligations retain their existing verdicts; disjoint untyped nets
 alone do not establish component roles or detect swapped supply/return roles.
 Both legs remain jointly graded and constrained; missing bounds stay unknown. See
@@ -1967,6 +1973,14 @@ unknown and its failed execution is retained. A defect already proved by native
 DRC retains its defect verdict; an otherwise passing DRC cannot pass without
 containment coverage. Supplemental structural witnesses retain their class and citation in the
 classified evidence cited by the collected coordinator finding.
+Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
+or `A;B`) never receive the exemption, even when KiCad writes the net name as a
+quoted string. Such edits reopen closure and require a fresh receipt. This is a
+conservative liveness bound of the writer grammar (AGENTEE-360).
+Nested-list children of a segment or arc refuse comparison with `ValueError`;
+the coordinator retains the carried defect instead of letting an untyped error
+escape.
+
 ## Post-routing silk repair (AGENTEE-350)
 
 The [routed artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)

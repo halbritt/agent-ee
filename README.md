@@ -114,7 +114,9 @@ Fab-family kinds gate carry regardless of stage, and campaign acceptance refuses
 open carry. Receipt-backed closure survives only proven masked-track edits
 whose exempt spans match the KiCad writer grammar, preserving raw
 artwork/obstruction bytes and all captured project/rule paths
-and bytes (AGENTEE-344). Bench-feedback acceptance also refuses open carry.
+and bytes (AGENTEE-344). Masked-track edits on nets containing `#` or `;`
+reopen closure even with KiCad-written quoted net names (AGENTEE-360).
+Bench-feedback acceptance also refuses open carry.
 The [post-routing artwork producer](docs/silk-artwork.md#post-routing-artwork-producer-agentee-350)
 repairs routed-board silk through a receipted translation-only step, proves that
 all non-silk geometry is unchanged, and enables identity-bound carry closure.
@@ -131,8 +133,9 @@ multi-pad pins. Explicit `buck-output-loop` declarations bind the supply source
 and switch target to the inductor, the return source and switch source to the
 IC, and return pads to a declared net distinct from supply. Switch nets must
 differ from supply and return. Distinct-source supply/return net sets must be
-disjoint even without a kind. Direct placement-index construction re-validates
-these declarations and snapshots the validated document before indexing it.
+disjoint even without a kind. Direct placement-index construction copies these
+declarations, requires exact built-in JSON types, validates the snapshot, and
+exposes read-only indexed pairs and endpoints.
 Coordinator packing binds to the check's immutable locality file. Origin-group
 distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)

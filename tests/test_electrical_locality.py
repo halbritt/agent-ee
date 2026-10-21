@@ -614,6 +614,200 @@ class NativeLocalityTests(unittest.TestCase):
 
 
 class LocalityIndexTests(unittest.TestCase):
+    def test_lying_dict_snapshot_is_refused_with_and_without_deepcopy_hook(self):
+        class Liar(dict):
+            def __getitem__(self, key):
+                return 'SW' if key == 'net' else dict.__getitem__(self, key)
+
+            def values(self):
+                return [self[key] for key in self]
+
+        class Wrapper(dict):
+            def __deepcopy__(self, memo):
+                endpoint = copy.deepcopy(dict(self), memo)
+                endpoint['net'] = 'GND'
+                return Liar(endpoint)
+
+        for wrapped in (False, True):  # Reviewer P7b and P7.
+            facts, doc = bound_output_loop()
+            row = doc['obligations'][0]
+            raw = dict(row['switch']['from'], net=row['return_net'])
+            row['switch']['from'] = Wrapper(raw) if wrapped else Liar(raw)
+            for operation in (locality.PlacementIndex, locality.validate,
+                              lambda d: locality.grade(facts, d)):
+                with self.subTest(wrapped=wrapped, operation=operation), self.assertRaisesRegex(
+                        ValueError, 'locality document must contain only JSON values'):
+                    operation(doc)
+
+    def test_index_snapshot_is_unreachable_by_a_copy_hook_after_validation(self):
+        import sys
+        kept = []
+
+        class Keep(dict):
+            def __deepcopy__(self, memo):
+                endpoint = copy.deepcopy(dict(self), memo)
+                kept.append(endpoint)
+                return endpoint
+
+        _, doc = bound_output_loop()
+        row = doc['obligations'][0]
+        row['switch']['from'] = Keep(row['switch']['from'])
+
+        def after_validate(frame, event, arg):  # Stands in for a thread switch.
+            if event == 'return' and frame.f_code is locality.validate.__code__ and kept:
+                kept[-1]['net'] = row['return_net']
+
+        previous_profile = sys.getprofile()
+        sys.setprofile(after_validate)
+        try:
+            state = locality.PlacementIndex(doc)
+        finally:
+            sys.setprofile(previous_profile)
+        self.assertEqual(kept[-1]['net'], row['return_net'])
+        self.assertEqual({pair[0]['net'] for pairs in state.pairs.values() for pair in pairs
+                          if pair[0]['reference'] == row['switch']['from']['reference']
+                          and pair[0]['pad'] == row['switch']['from']['pad']}, {'SW'})
+
+    def test_cyclic_documents_raise_typed_json_error_at_every_entry_point(self):
+        for cycle in ('dict', 'list', 'mixed'):
+            facts, doc = bound_output_loop()
+            if cycle == 'dict':
+                doc['cycle'] = doc
+            elif cycle == 'list':
+                doc['obligations'].append(doc['obligations'])
+            else:
+                doc['obligations'][0]['supply']['citation'] = [doc]
+            for operation in (locality.PlacementIndex, locality.validate,
+                              lambda d: locality.grade(facts, d)):
+                with self.subTest(cycle=cycle, operation=operation), self.assertRaisesRegex(
+                        ValueError, '^locality document must contain only JSON values$'):
+                    operation(doc)
+
+    def test_shared_acyclic_json_values_are_copied_without_aliases(self):
+        shared = {'items': [None, True, 1, 1.5, 'text']}
+        original = [shared, shared]
+        snapshot = locality._plain_json(original)
+        self.assertEqual(snapshot, original)
+        self.assertIsNot(snapshot, original)
+        self.assertIsNot(snapshot[0], snapshot[1])
+        self.assertIsNot(snapshot[0]['items'], snapshot[1]['items'])
+        shared['items'].clear()
+        self.assertEqual(snapshot[0]['items'], [None, True, 1, 1.5, 'text'])
+
+    def test_hostile_string_cannot_bypass_net_disjointness(self):
+        class Net(str):
+            __hash__ = object.__hash__
+
+            def __eq__(self, other):
+                return False
+
+            def __ne__(self, other):
+                return True
+
+        facts, doc = bound_output_loop()
+        row = doc['obligations'][0]
+        row['switch']['from']['net'] = Net(row['return_net'])  # Reviewer P8.
+        for operation in (locality.PlacementIndex, locality.validate,
+                          lambda d: locality.grade(facts, d)):
+            with self.subTest(operation=operation), self.assertRaisesRegex(
+                    ValueError, 'locality document must contain only JSON values'):
+                operation(doc)
+
+    def test_non_json_types_and_subclasses_are_refused_before_schema_reads(self):
+        class PretendJSON(type):
+            __hash__ = type.__hash__
+
+            def __eq__(cls, other):
+                return True
+
+        class Text(str, metaclass=PretendJSON):
+            pass
+
+        values = (type('Dict', (dict,), {})(), type('List', (list,), {})([]),
+                  type('Text', (str,), {})('text'), type('Integer', (int,), {})(1),
+                  type('Float', (float,), {})(1.0), Text('citation'),
+                  (), set(), object(), {1: 'text'})
+        for value in values:
+            facts, doc = bound_output_loop()
+            doc['obligations'][0]['supply']['citation'] = value
+            for operation in (locality.PlacementIndex, locality.validate,
+                              lambda d: locality.grade(facts, d)):
+                with self.subTest(type=type(value), operation=operation), self.assertRaisesRegex(
+                        ValueError, 'locality document must contain only JSON values'):
+                    operation(doc)
+
+    def test_index_validates_deepcopy_output_including_hostile_endpoint(self):
+        from unittest.mock import patch
+
+        class Sly(dict):
+            def __deepcopy__(self, memo):
+                endpoint = copy.deepcopy(dict(self), memo)
+                endpoint['net'] += '_SWAPPED'
+                return endpoint
+
+        _, doc = bound_output_loop()
+        row = doc['obligations'][0]
+        row['switch']['from'] = Sly(row['switch']['from'])
+        # Reviewer P5: the copied endpoint differs from the caller's endpoint.
+        with patch.object(locality, 'validate', wraps=locality.validate) as validate:
+            state = locality.PlacementIndex(doc)
+        snapshot = validate.call_args.args[0]
+        self.assertIsNot(snapshot, doc)
+        self.assertEqual(snapshot['obligations'][0]['switch']['from']['net'], 'SW_SWAPPED')
+        self.assertTrue(any(pair[0]['net'] == 'SW_SWAPPED'
+                            for pairs in state.pairs.values() for pair in pairs))
+
+        class InvalidCopy(dict):
+            def __deepcopy__(self, memo):
+                endpoint = copy.deepcopy(dict(self), memo)
+                endpoint['net'] = row['return']['from']['net']
+                return endpoint
+
+        row['switch']['from'] = InvalidCopy(row['switch']['from'])
+        with self.assertRaisesRegex(ValueError, 'switch nets must differ'):
+            locality.PlacementIndex(doc)
+
+    def test_index_validates_snapshot_when_caller_changes_during_copy(self):
+        from unittest.mock import patch
+
+        facts, doc = bound_output_loop()
+        snapshot = copy.deepcopy(doc)
+
+        def copy_then_mutate(document):
+            self.assertIs(document, doc)
+            document['obligations'].clear()
+            return snapshot
+
+        with patch.object(locality, 'deepcopy', side_effect=copy_then_mutate), \
+                patch.object(locality, 'validate', wraps=locality.validate) as validate:
+            state = locality.PlacementIndex(doc)
+        validate.assert_called_once_with(snapshot)
+        self.assertIsNot(validate.call_args.args[0], snapshot)  # fresh plain copy, unreachable by the copier
+        movable, *fixed = facts['footprints']
+        for fp in fixed:
+            state.push(fp)
+        self.assertEqual(state.prepare(transform(movable, [0, 0], 0)).constraint([0, 0]),
+                         locality.constraint(fixed, transform(movable, [0, 0], 0), snapshot))
+
+    def test_index_pairs_and_endpoints_are_read_only_at_every_level(self):
+        _, doc = bound_output_loop()
+        state = locality.PlacementIndex(doc)
+        ref = next(iter(state.pairs))
+        own, peer = state.pairs[ref][0][:2]
+        endpoint_map = state.endpoints[ref]
+        key = next(iter(endpoint_map))
+        mutations = [(state.pairs, ref, ()), (state.endpoints, ref, {}),
+                     (state.pairs[ref], 0, (peer, own, 0)),
+                     (state.pairs[ref][0], 2, 0),
+                     (endpoint_map, key, {}), (own, 'net', 'CHANGED'),
+                     (peer, 'reference', 'R9'), (endpoint_map[key], 'pad', '99')]
+        for mapping, key, value in mutations:
+            with self.subTest(key=key), self.assertRaises(TypeError):
+                mapping[key] = value
+        for attribute in ('pairs', 'endpoints'):
+            with self.subTest(attribute=attribute), self.assertRaises(AttributeError):
+                setattr(state, attribute, {})
+
     def test_index_snapshots_caller_document_before_push_and_prepare(self):
         mutations = [(role, end, field, value)
                      for role in ('supply', 'return', 'switch')
