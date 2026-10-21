@@ -60,6 +60,59 @@ def bound_output_loop():
     return facts, doc
 
 
+class LocalityInvariantTests(unittest.TestCase):
+    def test_untyped_distinct_sources_require_disjoint_net_sets(self):
+        for supply_end in ('from', 'to'):
+            for return_end in ('from', 'to'):
+                facts, doc = output_loop()
+                row = doc['obligations'][0]
+                for role, prefix in (('supply', 'OUT'), ('return', 'GND')):
+                    for end in ('from', 'to'):
+                        row[role][end]['net'] = prefix + '_' + end
+                row['supply'][supply_end]['net'] = row['return'][return_end]['net']
+                with self.subTest(supply=supply_end, ground=return_end):
+                    for evaluate in (lambda: locality.validate(doc),
+                                     lambda: locality.grade(facts, doc),
+                                     lambda: pack(facts, request(electrical_locality=doc))):
+                        with self.assertRaisesRegex(ValueError, 'distinct-source supply and return nets must differ'):
+                            evaluate()
+
+    def test_bound_switch_net_is_disjoint_from_supply_and_return(self):
+        for end in ('from', 'to', 'both'):
+            for net in ('VCC', 'GND'):
+                facts, doc = bound_output_loop()
+                row = doc['obligations'][0]
+                for key in (('from', 'to') if end == 'both' else (end,)):
+                    row['switch'][key]['net'] = net
+                with self.subTest(end=end, net=net):
+                    for evaluate in (lambda: locality.validate(doc),
+                                     lambda: locality.grade(facts, doc),
+                                     lambda: pack(facts, request(electrical_locality=doc))):
+                        with self.assertRaisesRegex(ValueError, 'loop switch nets must differ from supply and return'):
+                            evaluate()
+
+    def test_same_source_and_untyped_switch_keep_generic_net_semantics(self):
+        facts, doc = board(), declaration(supply='GND', ground='GND')
+        self.assertIs(locality.validate(doc), doc)
+        self.assertEqual(locality.grade(facts, doc)['status'], 'defect')
+        facts, doc = output_loop()
+        for end in ('from', 'to'):
+            doc['obligations'][0]['switch'][end]['net'] = 'VCC'
+        self.assertIs(locality.validate(doc), doc)
+        self.assertEqual(locality.grade(facts, doc)['status'], 'unknown')
+
+    def test_bound_switch_on_supply_net_cannot_pass_with_matching_pads(self):
+        facts, doc = bound_output_loop()
+        extra = copy.deepcopy(facts['footprints'][0]['pads'][1])
+        extra.update(number='3', uuid='U13', net='VCC')
+        facts['footprints'][0]['pads'].append(extra)
+        row = doc['obligations'][0]
+        row['switch']['from'] = endpoint('U1', '3', 'VCC')
+        row['switch']['to'] = endpoint('L1', '2', 'VCC')
+        with self.assertRaisesRegex(ValueError, 'loop switch nets must differ from supply and return'):
+            locality.grade(facts, doc)
+
+
 class BoundOutputLoopTests(unittest.TestCase):
     def test_owned_evidence_and_optional_switch(self):
         facts, doc = bound_output_loop()
