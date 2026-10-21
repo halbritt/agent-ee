@@ -12,6 +12,24 @@ from agent_ee import placement_defects
 from agent_ee.storage import digest, read_json, write_json
 
 
+def outlined_closure_text():
+    from tests.test_placement_adapter import TEXT
+    # TEXT's overlapping Edge.Cuts lines cannot prove containment. Give this
+    # closure fixture a rectangle enclosing both original and moved markings.
+    outlined = TEXT.replace('(start 30 0) (end 0 0)', '(start 30 0) (end 30 20)')
+    outline_tail = (
+        '(gr_line (start 30 20) (end 0 20) (stroke (width 0.05) (type default)) '
+        '(layer "Edge.Cuts") (uuid "e3"))\n'
+        '(gr_line (start 0 20) (end 0 0) (stroke (width 0.05) (type default)) '
+        '(layer "Edge.Cuts") (uuid "e4"))\n')
+    outlined = outlined.rstrip()[:-1] + outline_tail + ')\n'
+    # Native KiCad expands the abbreviated UUID in TEXT; use its canonical
+    # spelling so the saved identity and the containment witness agree.
+    field_uuid = '00000000-0000-0000-0000-0000000000a1'
+    outlined = outlined.replace('(uuid "a1")', f'(uuid "{field_uuid}")')
+    return outlined, field_uuid
+
+
 class PlacementDefectContractTests(unittest.TestCase):
     def test_uncarried_candidate_has_no_defects(self):
         self.assertEqual(placement_defects.open_defects({'scope': {}, 'files': {}}, None), [])
@@ -374,11 +392,63 @@ class NativePlacementCarryTests(unittest.TestCase):
             self.assertTrue(silk(reports[0]))
             self.assertEqual(silk(reports[0]), silk(reports[1]))
 
+    def test_native_mid_token_quotes_cannot_hide_added_artwork(self):
+        import pcbnew as k
+        source = self.candidate_run / 'inputs' / self.manifest['scope']['board']
+        original = source.read_text().rstrip()[:-1]
+        with tempfile.TemporaryDirectory(dir=self.helper.root) as temporary:
+            after = Path(temporary) / 'hidden.kicad_pcb'
+            for prefix in ('h1', '\x0b', '\xa0', '\x85'):
+                with self.subTest(prefix=repr(prefix)):
+                    after.write_text(original + ClosureEscapeTests.quote_hidden_artwork(prefix) + ')')
+                    board = k.LoadBoard(str(after))
+                    self.assertIsNotNone(board)
+                    self.assertIn('EVIL', [d.GetText() for d in board.GetDrawings()
+                                          if isinstance(d, k.PCB_TEXT)])
+                    self.assertFalse(placement_defects.same_artwork(source, after))
+
     def test_expired_tool_budget_does_not_erase_known_carried_defects(self):
         from agent_ee.checks import run_checks
         check = run_checks(self.candidate_run, time.monotonic() - 1)[0]
         self.assertEqual((check['execution'], check['outcome']), ('ok', 'defect'))
         placement_defects.verify_gate(self.candidate_run, check, self.manifest)
+
+
+    def test_bench_epoch_projects_open_native_carry_before_publishing_terminal_state(self):
+        from agent_ee import bench_transactions as tx
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target, campaign, transaction = root / 'review', root / 'campaign', root / 'transaction'
+            shutil.copytree(self.candidate_run, target)
+            manifest = read_json(target / 'candidate.json')
+            # Isolate finish_campaign's state publication: reuse the real native
+            # carry, with a synthetic successful feedback result and epoch key.
+            manifest['scope']['empirical'] = 'placement-evidence/index.json'
+            write_json(target / 'candidate.json', manifest)
+            result = {'checks': [], 'outcome': 'criteria_satisfied', 'run_id': 'feedback-projection'}
+            write_json(target / 'result.json', result)
+            write_json(campaign / 'config.json', {'max_iterations': 3})
+            write_json(campaign / 'profile.json', {})
+            state = {'baseline': {}, 'history': [], 'state': 'repair'}
+            write_json(campaign / 'state.json', state)
+            request = {'review_out': str(target), 'campaign': {'root': str(campaign), 'state': state,
+                'config_sha256': digest(campaign / 'config.json'),
+                'profile_sha256': digest(campaign / 'profile.json')}}
+            terminal = {'out': str(target), 'result_sha256': digest(target / 'result.json')}
+            # Campaign replay and baseline qualification have independent native
+            # integration coverage; this probe observes the published projection.
+            with patch('agent_ee.campaign.verify_campaign'), patch(
+                    'agent_ee.rating_lineage.sealed_baseline', return_value={}):
+                tx.finish_campaign(transaction, request, terminal)
+            for path in (campaign / 'state.json', transaction / 'campaign-intent.json'):
+                published = read_json(path)
+                if path.name == 'campaign-intent.json':
+                    published = published['state']
+                self.assertEqual((published['state'], published['reason']),
+                                 ('escalated', 'open_placement_defects'))
+            self.assertEqual(read_json(campaign / 'tradeoff.json'),
+                             {'state': 'escalated', 'reason': 'open_placement_defects'})
+            self.assertEqual(read_json(campaign / 'history/1.json'), result)
 
 
 class ClosureContractTests(unittest.TestCase):
@@ -446,19 +516,7 @@ class DurableClosureTests(unittest.TestCase):
     def test_receipt_closure_currency_uses_artwork_subject_after_routing(self):
         # Unit-level state-machine probe; native receipt validation is covered above.
         from tests.test_placement_adapter import TEXT
-        # TEXT's overlapping Edge.Cuts lines cannot prove containment. Give this
-        # closure fixture a rectangle enclosing both original and moved markings.
-        outlined = TEXT.replace('(start 30 0) (end 0 0)', '(start 30 0) (end 30 20)')
-        outline_tail = (
-            '(gr_line (start 30 20) (end 0 20) (stroke (width 0.05) (type default)) '
-            '(layer "Edge.Cuts") (uuid "e3"))\n'
-            '(gr_line (start 0 20) (end 0 0) (stroke (width 0.05) (type default)) '
-            '(layer "Edge.Cuts") (uuid "e4"))\n')
-        outlined = outlined.rstrip()[:-1] + outline_tail + ')\n'
-        # Native KiCad expands the abbreviated UUID in TEXT; use its canonical
-        # spelling so the saved identity and the containment witness agree.
-        field_uuid = '00000000-0000-0000-0000-0000000000a1'
-        outlined = outlined.replace('(uuid "a1")', f'(uuid "{field_uuid}")')
+        outlined, field_uuid = outlined_closure_text()
         with tempfile.TemporaryDirectory() as temporary:
             inputs = Path(temporary)
             old, fixed, current = (inputs / n for n in ('old.kicad_pcb', 'fixed.kicad_pcb', 'board.kicad_pcb'))
@@ -732,3 +790,144 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         self.assertTrue((export / 'bom.csv').is_file())
         self.assertTrue((export / 'cpl.csv').is_file())
         self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'criteria_satisfied')
+
+class ClosureEscapeTests(unittest.TestCase):
+    def run_closure(self, edit=lambda text: text, *, receipt_rules=None, current_rules=None):
+        TEXT, field_uuid = outlined_closure_text()
+        with tempfile.TemporaryDirectory() as temporary:
+            inputs = Path(temporary)
+            old, fixed, current = (inputs / n for n in ('old.kicad_pcb', 'fixed.kicad_pcb', 'board.kicad_pcb'))
+            old.write_text(TEXT)
+            fixed.write_text(TEXT.replace('(at 0 -1.5 0)', '(at 0 -2.5 0)'))
+            links, bundles, files = [], {}, {}
+            defect = {'type': 'placement_silkscreen_conflict', 'status': 'open', 'verdict': 'defect',
+                      'native': {'items': [{'uuid': field_uuid}]}}
+            for number, board, defects in ((1, old, [defect]), (2, fixed, [])):
+                path = inputs / f'placement-evidence/{number}/receipt.json'
+                write_json(path, {'inputs': receipt_rules or {}})
+                rel = path.relative_to(inputs).as_posix()
+                files[rel] = digest(path)
+                link = {'receipt': rel, 'sha256': digest(path)}
+                links.append(link)
+                bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects},
+                                {placement_defects.BOARD: board}, {'violations': []})
+            write_json(inputs / 'placement-evidence/index.json', links)
+            files['placement-evidence/index.json'] = digest(inputs / 'placement-evidence/index.json')
+            manifest = {'scope': {'board': current.name, placement_defects.DECLARATION: links}, 'files': files}
+            manifest['files'].update(current_rules or {})
+            current.write_text(edit(fixed.read_text()))
+            manifest['files'][current.name] = digest(current)
+            with patch.object(placement_defects, '_bundle', side_effect=lambda m, i, link: bundles[link['receipt']]):
+                return placement_defects.open_defects(manifest, inputs)
+
+    def test_control_identical_board_closes(self):
+        self.assertEqual(self.run_closure(lambda t: t), [])
+
+    def test_octal_escape_relabels_closed_reference(self):
+        # KiCad's reader decodes "R\1" as 'R\x01'; the shared parser yields 'R1'.
+        self.assertEqual(len(self.run_closure(lambda t: t.replace('"R1"', '"R\\1"'))), 1)
+
+    def test_nul_escape_truncates_value(self):
+        # KiCad reads "\1\0k" as '\x01' (truncated); the shared parser yields '10k'.
+        self.assertEqual(len(self.run_closure(lambda t: t.replace('"10k"', '"\\1\\0k"'))), 1)
+
+    def test_escape_inside_layer_name(self):
+        # Unknown escape inside the marking's layer token.
+        self.assertEqual(len(self.run_closure(
+            lambda t: t.replace('(property "Reference" "R1" (at 0 -2.5 0) (layer "F.SilkS")',
+                                '(property "Reference" "R1" (at 0 -2.5 0) (layer "F.Silk\\S")'))), 1)
+
+
+
+    def test_comment_syntax_outside_strings_refuses_closure(self):
+        self.assertEqual(len(self.run_closure(lambda text: text.rstrip()[:-1] + '; comment\n)')), 1)
+
+    def test_escaped_track_is_retained(self):
+        track = r'(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net "\1") (uuid "t"))'
+        self.assertEqual(len(self.run_closure(lambda text: text.rstrip()[:-1] + track + ')')), 1)
+
+    def test_unicode_and_semicolon_inside_string_are_byte_sensitive(self):
+        self.assertEqual(len(self.run_closure(lambda text: text.replace('"R1"', '"Rés;1"'))), 1)
+
+    def test_nonstem_rule_addition_removal_and_change_reopen_closure(self):
+        for name in ('other.kicad_pro', 'nested/settings.kicad_dru'):
+            sealed = {name: 'a' * 64}
+            self.assertEqual(self.run_closure(receipt_rules=sealed, current_rules=sealed), [])
+            for before, after in (({}, sealed), (sealed, {}), (sealed, {name: 'b' * 64})):
+                with self.subTest(name=name, before=before, after=after):
+                    self.assertEqual(len(self.run_closure(receipt_rules=before, current_rules=after)), 1)
+
+    def hash_hidden_artwork(self, artwork, blank=''):
+        # KiCad ignores the hash lines; the span locator used to count their parentheses.
+        return ('\n(arc (start 10 10) (end 12 10) (width 0.2) (layer "F.Cu")'
+                ' (net 0) (uuid "h1") (mid 11 10.5\n'
+                + blank + '#((\n))\n' + artwork + '\n'
+                '(arc (start 30 30) (mid 31 30.5) (end 32 30) (width 0.2)'
+                ' (layer "F.Cu") (net 0) (uuid "h2"))\n' + blank + '#))\n')
+
+    def test_hash_comment_hides_gr_text(self):
+        artwork = ('(gr_text "EVIL" (at 20 20 0) (layer "F.SilkS") (uuid "g")'
+                   ' (effects (font (size 1 1) (thickness 0.15))))')
+        for blank in ('', ' ', '\t', '\r', '\0', ' \t\r\0'):
+            with self.subTest(blank=repr(blank)):
+                hidden = self.hash_hidden_artwork(artwork, blank)
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
+
+    def test_hash_comment_hides_second_footprint(self):
+        from tests.test_placement_adapter import TEXT
+        from agent_ee.symbol_library import parse_sexpr
+        footprint = TEXT[TEXT.index('(footprint '):TEXT.index('(footprint "Owned:J"')].strip()
+        footprint = footprint.replace('"R1"', '"R9"').replace('"a1"', '"r9-field"')
+        self.assertEqual(parse_sexpr(footprint.encode('utf-8'))[0], 'footprint')
+        hidden = self.hash_hidden_artwork(footprint)
+        self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
+
+    def test_hash_inside_string_is_retained_in_raw_comparison(self):
+        track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t#x"))'
+        self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + track + ')')), 1)
+        # The prior attempt's multiline-string input must also reopen closure.
+        multiline = track.replace('t#x', 't\n#x')
+        self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + multiline + ')')), 1)
+
+    @staticmethod
+    def quote_hidden_artwork(prefix):
+        evil = '(gr_text EVIL (at 20 20 0) (layer F.SilkS) (uuid g) (effects (font (size 1 1) (thickness 0.15))))'
+        return ('\n(arc (start 10 10) (mid 11 10.5) (end 12 10) (width 0.2) '
+                '(layer "F.Cu") (net 0) (uuid ' + prefix + '"\n))\n' + evil + '\n'
+                '(arc (start 30 30) (mid 31 30.5) (end 32 30) (width 0.2) '
+                '(layer F.Cu) (net 0) (uuid h2"\n))\n')
+
+    def test_mid_token_quote_hides_gr_text(self):
+        for prefix in ('h1', '\x0b', '\xa0', '\x85'):
+            hidden = self.quote_hidden_artwork(prefix)
+            with self.subTest(prefix=repr(prefix)):
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
+
+    def test_lexer_comment_and_linebreak_variants_reopen(self):
+        artwork = '(gr_text "EVIL" (at 20 20) (layer "F.SilkS"))'
+        for blank in ('', '\t', '\r', '\0', '\v', '\f', '\xa0'):
+            for newline in ('\n', '\r\n', '\r'):
+                hidden = self.hash_hidden_artwork(artwork, blank).replace('\n', newline)
+                with self.subTest(blank=repr(blank), newline=repr(newline)):
+                    self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + hidden + ')')), 1)
+        for edit in (lambda t: t.replace('(property ', '(property \n#\n', 1),
+                     lambda t: t.rstrip()[:-1] + '#((\n)'):
+            self.assertEqual(len(self.run_closure(edit)), 1)
+
+    def test_only_writer_grammar_track_spans_are_exempt(self):
+        track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t"))'
+        # Writer whitespace and bare atoms stay live, including CRLF output.
+        for valid in (track, track.replace(' ', '\t'), track.replace(' ', '\r\n'),
+                      track.replace('"t"', 't_1.+-')):
+            with self.subTest(valid=repr(valid)):
+                self.assertEqual(self.run_closure(lambda t: t.rstrip()[:-1] + valid + ')'), [])
+        for invalid in (track.replace('"t"', 't/1'), track.replace('"t"', 't:1'),
+                        track.replace('"t"', 't#1'), track.replace('"t"', 't;1'),
+                        track.replace('"t"', '"t#1"'), track.replace('"t"', '"t;1"'),
+                        track.replace('"t"', '"t""x"'),
+                        *(track.replace('"t"', '"t' + c + 'x"')
+                          for c in ('\n', '\r', '\t', '\x01', '\x7f', '\x85', '\x9f')),
+                        *(track.replace(' ', c, 1)
+                          for c in ('\r', '\v', '\f', '\xa0', '\x85'))):
+            with self.subTest(invalid=repr(invalid)):
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + invalid + ')')), 1)

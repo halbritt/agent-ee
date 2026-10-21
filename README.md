@@ -112,7 +112,9 @@ downstream fab, verification and release gates refuse carried open defects,
 naming their native fields/graphics and source receipts (AGENTEE-333).
 Fab-family kinds gate carry regardless of stage, and campaign acceptance refuses
 open carry. Receipt-backed closure survives only proven masked-track edits
-that preserve artwork and obstructions (AGENTEE-344).
+whose exempt spans match the KiCad writer grammar, preserving raw
+artwork/obstruction bytes and all captured project/rule paths
+and bytes (AGENTEE-344). Bench-feedback acceptance also refuses open carry.
 The [post-routing artwork producer](docs/silk-artwork.md#post-routing-artwork-producer-agentee-350)
 repairs routed-board silk through a receipted translation-only step, proves that
 all non-silk geometry is unchanged, and enables identity-bound carry closure.
