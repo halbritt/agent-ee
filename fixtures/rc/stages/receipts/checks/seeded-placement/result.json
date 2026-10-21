@@ -1,12 +1,12 @@
 {
   "adjudicated": false,
   "artifact_hashes": {
-    "checks/containment.json": "77ab09bd8efc31250063eab7fda6ef5d13a1f368abab58e2af27faf9b23d49c8",
-    "checks/courtyard.json": "5556d7c878d24b7dce2164d5bb5bde1b5e53acdcc43474081f4bfe26517b0ff8",
-    "checks/drc-final.json": "d87c7b6158323e1a13dee48c3ea14fc21dfd94076935b7eb76c456db32569c23",
-    "checks/drc-placement.json": "afb6923d914079902bfe42d905cb5cd87a64286ca65cc4dba70c0d5b19e9d810",
-    "checks/erc.json": "758efc3d34292feb5e52654d237e6f7275aa2d81b0fdf26f836164596c371c8b",
-    "checks/netlist.json": "554cd8d6030094a37ed00bc147757185d1f813e31b96a4ac41a081c8b264654f",
+    "checks/containment.json": "5013a2c5ed4ba322baf50aeb4920cc304adce047fdff97dc9428954f0124e226",
+    "checks/courtyard.json": "552107e3059e7911b5b83746594782da750285a097aba3037752205bbc9de1ec",
+    "checks/drc-final.json": "a589f64b184bcd4f0937500ca5aa88a6cf86c54cebd4d2822b8eb32f8dfe43e1",
+    "checks/drc-placement.json": "e00a9c48c6d3987147806281a302f69a6218b74d269dc2bdbf7cc9410aa0853c",
+    "checks/erc.json": "41ad213e148f40763d537f72028747de26bbd316162e2cff5bd7a04df18e735a",
+    "checks/netlist.json": "fcde3f03ca2c7e5d14e5ee9b6b90aa9f55f497126193199dca7644f121d6879f",
     "inputs/project/fp-lib-table": "e4212417f18fd0b58d1e0b4ac046b296fa1a9b6625be667f455e5cbba77c77a3",
     "inputs/project/lib/OwnedFP.pretty/CAP_2PAD.kicad_mod": "ea709653381ed3f2774ed177900b9d999b34aa8e4bc8e12992ddebfa9554b7a3",
     "inputs/project/lib/OwnedFP.pretty/CONN_1x3.kicad_mod": "e85f3a6a4f7a19cfd5e8a1646aa6b60acc3d9e87bda9d914de6c91835779bc11",
@@ -19,22 +19,28 @@
     "inputs/project/sym-lib-table": "bb13ab4fe47da9f272904fa00505f27fac37ced434541d6f5971addf617f5be4",
     "inputs/requirements/placed-unrouted.md": "b9dfbde31b2c9836fa49faa9851b30ca32ef1a2d3fe55fa4d224fb1304fa5a7a",
     "inputs/requirements/seeded-placement.md": "badd75445c85a0f30f39ea94dc3c3f78b22df29b1716e6bd5a833241af90b29d",
-    "inputs/requirements/unplaced.md": "8ac972d41d08fd45fc1e594271f5aefe01a061d85966e3b474a704b64f99d945",
+    "inputs/requirements/unplaced.md": "38a014129a642f5f27e08a80e9ad20037dac321e1ed76ee0a25c9e88462770b0",
     "work/containment/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
-    "work/containment/execution.json": "0cd16f33566fcedf8f2a17cb2c8a5a848b41d4e8ba2604162892d392eb051288",
-    "work/containment/placement-judgment.json": "c84b8a3a3a4bbcf11a748688e3aaa66e200839cad024e1e21520cfec10d5c866",
-    "work/containment/placement-probe.json": "3c6b61735929c462b738ac3e38b3c3b8363205ed4abbcfe53c4a66b4fcaaf45d",
+    "work/containment/execution.json": "a7a1902569d767652c65225f4950932de945798de3eda0c1e1fd5d517834a3cd",
+    "work/containment/placement-judgment.json": "bcb08c8ec8e51ad84d633b3592ed9fb407d66708c93b47ab439e3fb3491d5fa0",
+    "work/containment/placement-probe.json": "8aa49f435baf70694038a14eb4da6afcb7c5b71219691753816d30562db6c40c",
     "work/containment/stderr.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
     "work/containment/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "work/courtyard/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
-    "work/courtyard/execution.json": "dae33d543ff4c4ccc1b51e333f3902a57b75cc9129dd0a6b175cd0c91de2228e",
-    "work/courtyard/placement-judgment.json": "464267a2f639441fc75d3db4d1290e86efe6782dd13ba3df59defc92cb13d4e0",
-    "work/courtyard/placement-probe.json": "3c6b61735929c462b738ac3e38b3c3b8363205ed4abbcfe53c4a66b4fcaaf45d",
+    "work/courtyard/execution.json": "2ea9f9864e823c4a4abc8e8bdb6e5cc15604d6530a8ce28ca6b15e19983bf8dd",
+    "work/courtyard/placement-judgment.json": "bc7efa1dfb9cf2188d6accf14d909fc0064e14938c793e584550e92cf9278e4e",
+    "work/courtyard/placement-probe.json": "8aa49f435baf70694038a14eb4da6afcb7c5b71219691753816d30562db6c40c",
     "work/courtyard/stderr.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
     "work/courtyard/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "work/drc-final/console.log": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
-    "work/drc-final/drc.json": "3b0d5491fe19abcfa35793d6ad12caf4c923ac5eef348d86e294949a8ade57ea",
-    "work/drc-final/execution.json": "c831b3103e58fc045ca84466b0788ae2bd79e1010d185e2d92f42a29b4af2e45",
+    "work/drc-final/containment/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "work/drc-final/containment/copper-containment.json": "36e2ede6bde86216191cf223e62bb689526cbacce57eaf11a6921bbf88e0ffa3",
+    "work/drc-final/containment/execution.json": "b900244b6e92635257a07d980076b47cd5632989ad0e96aba2e20b5339df0602",
+    "work/drc-final/containment/stderr.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "work/drc-final/containment/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/drc-final/drc-constraints.json": "f1011a17cff39f61b45117088610f3df207aa179707e55295e4e627fd18e8222",
+    "work/drc-final/drc.json": "253d60f740ad9aa85fea77a871456c7a93b10bce69d0a8d22c6652e29d2635d9",
+    "work/drc-final/execution.json": "bf91f0f912c7ad8fd7f470c695b9fc9f92d1b482cb0bde1cd4541982eade5688",
     "work/drc-final/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899",
     "work/drc-final/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390",
     "work/drc-final/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214",
@@ -88,8 +94,14 @@
     "work/drc-final/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "work/drc-final/stdout.log": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
     "work/drc-placement/console.log": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
-    "work/drc-placement/drc.json": "f4464b3a5143fb6c83fc3b6574d5529eeb114e732f9900e17a000ac1d29b7cd9",
-    "work/drc-placement/execution.json": "44a76a15a7b851fa6858175865a0ead48c0769ec0ac98cdb742ca0c015ced482",
+    "work/drc-placement/containment/console.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "work/drc-placement/containment/copper-containment.json": "36e2ede6bde86216191cf223e62bb689526cbacce57eaf11a6921bbf88e0ffa3",
+    "work/drc-placement/containment/execution.json": "808728eb5731609f42451a32ff7f6802c36565df377c2e33f2b2a90cc0eab50c",
+    "work/drc-placement/containment/stderr.log": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+    "work/drc-placement/containment/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/drc-placement/drc-constraints.json": "f1011a17cff39f61b45117088610f3df207aa179707e55295e4e627fd18e8222",
+    "work/drc-placement/drc.json": "3d075c8ed79f56340ee1915cd8473d587dac153ddef2b4ed13310680162aa6fd",
+    "work/drc-placement/execution.json": "fb9db44c93f5f3c558fce342a5f5fc1b7b7c6ee843b13f2287bcbb321c3172ce",
     "work/drc-placement/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899",
     "work/drc-placement/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390",
     "work/drc-placement/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214",
@@ -143,8 +155,8 @@
     "work/drc-placement/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "work/drc-placement/stdout.log": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
     "work/erc/console.log": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
-    "work/erc/erc.json": "a794aeba6caa6a29892c277dcf997fbd122ad5a16d0aae003db5cee2b1dd2827",
-    "work/erc/execution.json": "c2c9efbfe306ba5cdfb3d52e800334f97efd34c6a6d88f25977317e39ca5d950",
+    "work/erc/erc.json": "fa36f99685f27824ff6707055981437b3e83a4eedbf434d51fb9a33e9aba3a6d",
+    "work/erc/execution.json": "097338b65fc7da223ab31db7027df41cd6ed48dc04ff7ceb1dcb09ae3a625ce0",
     "work/erc/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899",
     "work/erc/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390",
     "work/erc/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214",
@@ -192,12 +204,18 @@
     "work/erc/kicad-config/10.0/kicad.json": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650",
     "work/erc/kicad-config/10.0/kicad_common.json": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e",
     "work/erc/kicad-config/10.0/symbol_editor.json": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa",
+    "work/erc/kicad-version/console.log": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7",
+    "work/erc/kicad-version/execution.json": "738b7b954fa772a73bc0ecfee07e8ea46515e87c948561f4f9a2400e5387cb8c",
+    "work/erc/kicad-version/kicad-config/10.0/kicad.json": "20c9db1c1f2caacc9f2fb9bf25909f0e50dcb86f5fbda21233168c0d751bc650",
+    "work/erc/kicad-version/kicad-config/10.0/kicad_common.json": "59ee41cdb78693a42837143ab8fae9d3ee0ab5561c80f13d092a71a46434f41e",
+    "work/erc/kicad-version/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/erc/kicad-version/stdout.log": "c642c34c6e3ab0b0cb88918ea9e158daeb8110e323a741f7f7dbb56623acc0c7",
     "work/erc/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "work/erc/stdout.log": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
     "work/netlist/connectivity.json": "f1976992fdc6d8e309f8a031bb62b94207b6f388bc1c3c5779615975f3a9bc20",
     "work/netlist/console.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "work/netlist/design.xml": "66519d32b0e6560158e716a39d64636934725ce471ea30d88ad8d27a061469b4",
-    "work/netlist/execution.json": "db2485eb721d36223219670725db4db6dbe4aa9f280026c400207fd350a946ba",
+    "work/netlist/design.xml": "f700318678dfc754d1b108112dba750b23cfb41fdf93e1ea6a471f4d328cffef",
+    "work/netlist/execution.json": "e44b925a66d2d67e6379c24868963362525b2bba3fcd81e5d8650304558950f6",
     "work/netlist/home/.cache/fontconfig/0bd3dc0958fa2205aaaa8ebb13e2872b-le64.cache-9": "2258f514d938116afbaaa1ad50666e5c39764640ec19f0a7e02de832dbbf7899",
     "work/netlist/home/.cache/fontconfig/0d83b4deeaa12e01cf49a0e4a38256fa-le64.cache-9": "0fcea8960371c1f066321c86db8aecebffbecaf3564914ffaad7bd1394fd8390",
     "work/netlist/home/.cache/fontconfig/111149350c6eff283e78acef98e70f62-le64.cache-9": "b56579db584b3dfa14f78084b2ba758dc37b9db89a433ea8f6669a1692fb6214",
@@ -246,22 +264,37 @@
     "work/netlist/kicad-config/10.0/symbol_editor.json": "9b42635c84a17cb400a5ff58be7e9376289054294c8ab6b9d92257af7f87a8aa",
     "work/netlist/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "work/netlist/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "work/verification/evidence.json": "fb6ca3c3e436349db0b27cdbb3983172e149a467fb61a88563d4d5972cdc467d"
+    "work/rf-routing/evidence.json": "da7f976e4c409807061108b71a203b8f81fceb082c2867e438869434e0d94e3b",
+    "work/verification/evidence.json": "9ef8e550388fffc77d9d461972ad671e9a7f5a400ce7d7acaa5c266355330d93"
   },
-  "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+  "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
   "checks": [
     {
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "details": {
         "by_severity": {},
         "by_type": {},
+        "erc_coordinates": {
+          "coordinate_units": "mm",
+          "regime": "native",
+          "report_kicad_version": "10.0.7",
+          "scale": 1,
+          "status": "trusted",
+          "version": "10.0.7"
+        },
         "ignored_checks": [
           "single_global_label",
           "four_way_junction",
           "simulation_model_issue",
           "footprint_filter"
         ],
+        "kicad_cli": {
+          "path": "/usr/bin/kicad-cli",
+          "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61",
+          "version": "10.0.7"
+        },
         "kicad_version": "10.0.7",
+        "locations": [],
         "schematic_files": [
           "project/rc_stage.kicad_sch"
         ],
@@ -281,12 +314,20 @@
             "/candidate/project/rc_stage.kicad_sch"
           ],
           "console_sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
-          "duration_s": 6.408,
+          "duration_s": 1.124,
           "exit_code": 0
         },
-        "violations": 0
+        "unwaived": 0,
+        "unwaived_by_severity": {},
+        "violations": 0,
+        "waived": [],
+        "waived_by_severity": {}
       },
       "evidence": [
+        "work/erc/kicad-version/execution.json",
+        "work/erc/kicad-version/console.log",
+        "work/erc/kicad-version/stdout.log",
+        "work/erc/kicad-version/stderr.log",
         "work/erc/execution.json",
         "work/erc/console.log",
         "work/erc/erc.json"
@@ -298,10 +339,10 @@
         "stock template tables not captured: sym-lib-table, fp-lib-table"
       ],
       "outcome": "pass",
-      "summary": "ERC ran on 1 sheet instance(s) with zero violations"
+      "summary": "ERC ran on 1 sheet instance(s) with zero unwaived violations; 0 waived"
     },
     {
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "details": {
         "components": 3,
         "dnp_refs": [],
@@ -332,8 +373,9 @@
       "summary": "native XML netlist exported from a complete 1-instance hierarchy: 3 component(s), 3 net(s), 0 DNP"
     },
     {
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "details": {
+        "advisory_findings_count": 3,
         "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
         "by_severity": {
           "error": 8,
@@ -346,10 +388,15 @@
           "silk_over_copper": 2,
           "unconnected_items": 4
         },
+        "constraint_classes": {
+          "default": 3,
+          "engineering": 7
+        },
         "graded": [
           "violations",
           "schematic_parity"
         ],
+        "graded_unwaived": 11,
         "ignored_checks": [
           "missing_courtyard",
           "track_not_centered_on_via",
@@ -376,19 +423,30 @@
             "/candidate/project/rc_stage.kicad_pcb"
           ],
           "console_sha256": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
-          "duration_s": 5.92,
+          "duration_s": 1.181,
           "exit_code": 0
         },
         "unconnected_items": 4,
         "ungraded": {
           "unconnected_items": 4
         },
-        "violations": 7
+        "unwaived": 11,
+        "unwaived_by_severity": {
+          "error": 8,
+          "warning": 3
+        },
+        "violations": 7,
+        "waived": [],
+        "waived_by_severity": {}
       },
       "evidence": [
         "work/drc-placement/execution.json",
         "work/drc-placement/console.log",
-        "work/drc-placement/drc.json"
+        "work/drc-placement/drc.json",
+        "work/drc-placement/containment/copper-containment.json",
+        "work/drc-placement/containment/execution.json",
+        "work/drc-placement/containment/console.log",
+        "work/drc-placement/drc-constraints.json"
       ],
       "execution": "ok",
       "id": "drc-placement",
@@ -399,14 +457,14 @@
         "placement-stage/1: unconnected items are retained in drc.json but not graded; a later full DRC with connectivity remains required"
       ],
       "outcome": "defect",
-      "summary": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only"
+      "summary": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only; 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)"
     },
     {
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "details": {
         "advisory": null,
         "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
-        "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+        "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
         "criterion": "courtyard-overlap/1",
         "defects": [
           {
@@ -443,12 +501,19 @@
         "drc": {
           "check_id": "drc-placement",
           "drc_json": "work/drc-placement/drc.json",
-          "drc_sha256": "f4464b3a5143fb6c83fc3b6574d5529eeb114e732f9900e17a000ac1d29b7cd9",
+          "drc_sha256": "3d075c8ed79f56340ee1915cd8473d587dac153ddef2b4ed13310680162aa6fd",
           "kicad_version": "10.0.7",
           "outcome": "defect",
           "projection": "placement-stage/1",
-          "result_sha256": "afb6923d914079902bfe42d905cb5cd87a64286ca65cc4dba70c0d5b19e9d810"
+          "result_sha256": "e00a9c48c6d3987147806281a302f69a6218b74d269dc2bdbf7cc9410aa0853c"
         },
+        "gate_findings": [
+          {
+            "check_id": "courtyard",
+            "entity": "C1+R1",
+            "kind": "courtyards_overlap"
+          }
+        ],
         "notes": [],
         "pcbnew_version": "10.0.7",
         "routing_feedback": null,
@@ -464,7 +529,7 @@
             "/work/placement-probe.json"
           ],
           "console_sha256": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
-          "duration_s": 2.843,
+          "duration_s": 0.445,
           "exit_code": 0
         },
         "unknown": []
@@ -486,11 +551,11 @@
       "summary": "courtyard-overlap/1: 1 proved violation(s)"
     },
     {
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "details": {
         "advisory": null,
         "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
-        "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+        "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
         "criterion": "outline-containment/1",
         "defects": [
           {
@@ -503,12 +568,19 @@
         "drc": {
           "check_id": "drc-placement",
           "drc_json": "work/drc-placement/drc.json",
-          "drc_sha256": "f4464b3a5143fb6c83fc3b6574d5529eeb114e732f9900e17a000ac1d29b7cd9",
+          "drc_sha256": "3d075c8ed79f56340ee1915cd8473d587dac153ddef2b4ed13310680162aa6fd",
           "kicad_version": "10.0.7",
           "outcome": "defect",
           "projection": "placement-stage/1",
-          "result_sha256": "afb6923d914079902bfe42d905cb5cd87a64286ca65cc4dba70c0d5b19e9d810"
+          "result_sha256": "e00a9c48c6d3987147806281a302f69a6218b74d269dc2bdbf7cc9410aa0853c"
         },
+        "gate_findings": [
+          {
+            "check_id": "containment",
+            "entity": "J1",
+            "kind": "outside_outline"
+          }
+        ],
         "pcbnew_version": "10.0.7",
         "routing_feedback": null,
         "status": "defect",
@@ -523,7 +595,7 @@
             "/work/placement-probe.json"
           ],
           "console_sha256": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
-          "duration_s": 0.697,
+          "duration_s": 0.487,
           "exit_code": 0
         },
         "unknown": []
@@ -545,8 +617,9 @@
       "summary": "outline-containment/1: 1 proved violation(s)"
     },
     {
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "details": {
+        "advisory_findings_count": 3,
         "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
         "by_severity": {
           "error": 8,
@@ -559,6 +632,11 @@
           "silk_over_copper": 2,
           "unconnected_items": 4
         },
+        "constraint_classes": {
+          "default": 3,
+          "engineering": 7
+        },
+        "graded_unwaived": 11,
         "ignored_checks": [
           "missing_courtyard",
           "track_not_centered_on_via",
@@ -584,16 +662,27 @@
             "/candidate/project/rc_stage.kicad_pcb"
           ],
           "console_sha256": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
-          "duration_s": 4.088,
+          "duration_s": 1.349,
           "exit_code": 0
         },
         "unconnected_items": 4,
-        "violations": 7
+        "unwaived": 11,
+        "unwaived_by_severity": {
+          "error": 8,
+          "warning": 3
+        },
+        "violations": 7,
+        "waived": [],
+        "waived_by_severity": {}
       },
       "evidence": [
         "work/drc-final/execution.json",
         "work/drc-final/console.log",
-        "work/drc-final/drc.json"
+        "work/drc-final/drc.json",
+        "work/drc-final/containment/copper-containment.json",
+        "work/drc-final/containment/execution.json",
+        "work/drc-final/containment/console.log",
+        "work/drc-final/drc-constraints.json"
       ],
       "execution": "ok",
       "id": "drc-final",
@@ -603,7 +692,7 @@
         "zone fill evaluated as saved; the read-only candidate forbids a refill pass"
       ],
       "outcome": "defect",
-      "summary": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s)"
+      "summary": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)"
     }
   ],
   "expected_check_ids": [
@@ -621,7 +710,7 @@
   "findings": [
     {
       "assessment": "defect",
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "check_kind": "drc",
       "condition": "check drc-placement (drc)",
       "disposition": "unresolved",
@@ -638,22 +727,38 @@
         {
           "locator": "check:drc-placement",
           "path": "work/drc-placement/drc.json"
+        },
+        {
+          "locator": "check:drc-placement",
+          "path": "work/drc-placement/containment/copper-containment.json"
+        },
+        {
+          "locator": "check:drc-placement",
+          "path": "work/drc-placement/containment/execution.json"
+        },
+        {
+          "locator": "check:drc-placement",
+          "path": "work/drc-placement/containment/console.log"
+        },
+        {
+          "locator": "check:drc-placement",
+          "path": "work/drc-placement/drc-constraints.json"
         }
       ],
       "id": "check/drc-placement",
       "local_id": "drc-placement",
       "location": "drc-placement",
-      "mechanism": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only",
-      "reasoning": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only",
+      "mechanism": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only; 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)",
+      "reasoning": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only; 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)",
       "role": "check",
       "severity": "blocking",
       "source": "check",
       "status": "unresolved",
-      "title": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only"
+      "title": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only; 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)"
     },
     {
       "assessment": "defect",
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "check_kind": "placement",
       "condition": "check courtyard (placement)",
       "disposition": "unresolved",
@@ -680,6 +785,13 @@
           "path": "work/courtyard/placement-judgment.json"
         }
       ],
+      "gate_findings": [
+        {
+          "check_id": "courtyard",
+          "entity": "C1+R1",
+          "kind": "courtyards_overlap"
+        }
+      ],
       "id": "check/courtyard",
       "local_id": "courtyard",
       "location": "courtyard",
@@ -693,7 +805,7 @@
     },
     {
       "assessment": "defect",
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "check_kind": "placement",
       "condition": "check containment (placement)",
       "disposition": "unresolved",
@@ -720,6 +832,13 @@
           "path": "work/containment/placement-judgment.json"
         }
       ],
+      "gate_findings": [
+        {
+          "check_id": "containment",
+          "entity": "J1",
+          "kind": "outside_outline"
+        }
+      ],
       "id": "check/containment",
       "local_id": "containment",
       "location": "containment",
@@ -733,7 +852,7 @@
     },
     {
       "assessment": "defect",
-      "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+      "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
       "check_kind": "drc",
       "condition": "check drc-final (drc)",
       "disposition": "unresolved",
@@ -750,137 +869,245 @@
         {
           "locator": "check:drc-final",
           "path": "work/drc-final/drc.json"
+        },
+        {
+          "locator": "check:drc-final",
+          "path": "work/drc-final/containment/copper-containment.json"
+        },
+        {
+          "locator": "check:drc-final",
+          "path": "work/drc-final/containment/execution.json"
+        },
+        {
+          "locator": "check:drc-final",
+          "path": "work/drc-final/containment/console.log"
+        },
+        {
+          "locator": "check:drc-final",
+          "path": "work/drc-final/drc-constraints.json"
         }
       ],
       "id": "check/drc-final",
       "local_id": "drc-final",
       "location": "drc-final",
-      "mechanism": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s)",
-      "reasoning": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s)",
+      "mechanism": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)",
+      "reasoning": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)",
       "role": "check",
       "severity": "blocking",
       "source": "check",
       "status": "unresolved",
-      "title": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s)"
+      "title": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)"
     }
   ],
-  "finished_utc": "2026-10-18T03:51:56.078598+00:00",
+  "finished_utc": "2026-10-21T13:46:27.547466+00:00",
   "launch_expectation": {
     "baseline_id": "c4733b35a4a67c8a044d775923548e3ee6a53bf411d69824a4b3766e66711e61",
-    "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+    "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
     "declared_installations": {},
     "declared_tools": {},
     "definitions": [],
-    "identity": "f0a0287620b717e0296bd2091fab4b6bd2151d71f8108351556780c356a1ce60",
+    "identity": "b88dbc628ea2a6673e70c3402b55788f37d5e68768ba1d3ea1e696a893bfee48",
     "policy_files": {
       "__init__.py": "6074e79a961e45e90e80625879b107104b1c2a514c918eba445b2608b1ce4b65",
-      "_connectivity_hierarchy.py": "711484785d4132ccae19fff5317367a7101c9dadc1c4cbc9719de9139897a25b",
-      "active_spice.py": "a3fa310380c1884eeb51ed848d74f8cccedcb6ea68762d339a4ede30117b5a24",
+      "_connectivity_hierarchy.py": "124cf8b2da2ab395a886ae22d86d9c87c03c98779b651139c7d91c9a1154d5cd",
+      "active_spice.py": "c70b9a914e245eb26f2223151f4a3de8e375db1f9b2944a1fb9741476f71e345",
+      "add_planes.py": "0f741fdd7b0b511b51154144c2d08860570c9cf32a62f5fc802522e5c4ba530c",
+      "add_planes_probe.py": "b4eeb54751c868b695f72295200852870ca54d5afa67214deb8b6d8a4c107e54",
       "applicability.py": "09c4b813012add3910dd212aafbaa92056236b6f5e251a76d16adb59a3b0c99d",
-      "assembly_readiness.py": "0c3d2ec4c280a2fd8402fa4f80a2130e30fe986f4f7885b83bdd38f69945682c",
-      "baseline.py": "cf023ab5a1c1c3bac9b4a59743285ff9f3583119c27212c775fd1ac21f4a9050",
-      "bench_transactions.py": "eca2fe9e7d28da8818bce5b4f2253cd976d9558f9beb09e2bae03ca213331ae8",
-      "benchmark.py": "1fbd88855294ad473c6efc88a7d1d083e712f6bcbdc841471381bab76a9ad935",
-      "benchmark_run.py": "555375ed59b5e15e51bd9670437be58945fcd8981be684e416bd8a853d594ca5",
-      "board_build.py": "2b4b7682e8a1752f171cabc1cafcd7fed497bf68e8077dcd2a999b04aa254a55",
-      "board_envelope.py": "fa6aa4cfb30896d0ce0e369ebf2a9d7b8b5b229228c85c16f6af1d5ea7fb04df",
-      "campaign.py": "9260f7448668b3542ff1edb8a84d340611c54a855b7960ce9958e44e12606d4a",
-      "candidate.py": "c2f9cb21852bd644f833f900cbc2adc3d9518cb2c78a774637fa31639585821b",
-      "capabilities.py": "59f849a4e34299d04b85e61ca89b5d4788cb076726637c3c76d589fc9457a55c",
-      "catalog.py": "ae3966e3b4198b7caa02e5c3480dae8a203aeba736a361bb65adec15163e1d2d",
-      "catalog_checks.py": "3a6e887274b2e4499adb9b6bc1dd1701ef6bee4eb6360487ebc48651a6d4e202",
+      "assembly_readiness.py": "1390f38074e49c9a3d9104fdcb6aa77bf01aa1530f5119e6ac7677f3f19a52ae",
+      "baseline.py": "5ee26e442265e7dcae70a71c6341901a4012f3fdf8f077d638cb3f65f671c63f",
+      "bench_transactions.py": "3a9ad82add495ea67120f73a4d8632c38f6c3695095d25c111967b99bf7482bd",
+      "benchmark.py": "9cc5b70bd067d4b02f8cdc90562853c67503bcab64b0a51d33cb25abdc69b2cd",
+      "benchmark_run.py": "d38b427023891129c5551d4dd775ba4bbd5584bb5afb579f18d3ed1f31e38353",
+      "binding_fill.py": "4a3a70b0b3a88bac1f41026428457855ab69e654512e6bd28e998e9ba80ce0f8",
+      "block_adaptation.py": "5792ec15f6dd1e27e243faf85cf0d7b5d491003e4a31ffe418e04e3a976c1ef0",
+      "block_arrangement.py": "b85976a678bae8ba8a70e25d80f267110e8734bd54df3108d818e2e158df5f43",
+      "block_composition.py": "48737adfd8b6d02e3056f76194df6bf4688722e8427a8aa8c654bd6309bb24f6",
+      "block_first.py": "07432e76bbdfb867802d3cc3fc0274db58dfc0e78d33fff32674362b831e6f8f",
+      "block_flat.py": "8f1cb7dc3911f5d71d5e017147576fd95aff8beed383cac7423d3e422094e897",
+      "block_inventory.py": "5e6fc3ceb8161246438380a21d821a606927f81eca6e33f6e282d4ebfe4f2d63",
+      "block_library.py": "59b8c34acb4e59e00660d33536a41e3538806e027b5fb4dd0d7a0492bc0e8b31",
+      "blocks.py": "46079d5bffaa33fa4733a2a483453f465c5636169510e0904679846fa1ca4a7a",
+      "board_build.py": "d6b086189328feed849a9ef5017091e00df1d91fe182844d8b7d0e4899b8bf59",
+      "board_envelope.py": "ca718a59f6e7d5d27f7cb1999c7bde62d7e85981327511ba079588de228f2549",
+      "board_net_names.py": "948ece952d1886413ca2563c871d14b793918bf9c01d7b35d4a4c66bc33c9b1e",
+      "campaign.py": "be69a4b881273da49215eb044eef417a0dcb77f3dd52c59cd6e675f97f92db78",
+      "candidate.py": "d4433394d3fe7d0c66373055e846b1abdadbcb688dd51713c99f9b4c5463578e",
+      "capabilities.py": "4ef8e08eed3742c36dd7e9061d9c67a17b74e4b5cead38f9d0324feb12ca33b2",
+      "catalog.py": "3b06d7bf04d52688c76c517dba0dfed15964f59788a6cf7e92c2dbab2d264c8f",
+      "catalog_checks.py": "6ac25be4a95928e944fc0c1d42b9c4b81a771d23120c7932e28d37f5fbcd2f87",
       "catalog_feed.py": "ae59bc49b565685ddf915647f62b78b734ac6894b7d3cda12429f841367c7283",
-      "catalog_jlcparts.py": "e56cac3bd6a6af06cb12b84b082f46d53c7dd5d6c1473ef90cdbf416ece934ed",
-      "checks.py": "9c6cdcac83ffddc4cf702c202f6152b994161da6261a9c76b1eb76d5b05d223d",
-      "cli.py": "ef4a2dd6aa5f78dceac9998258b5bb9488d70fd974753db049ba735f8cf708b8",
-      "connectivity_ir.py": "a0fa5f121ffb2b5d52fa0089afb5544f5b157f214a80742cb916df3fd021a36b",
-      "convergence.py": "08a8b310f641692b0a5be12a119b85fce4f0b7a14bd8b9c6f6f736ce9a3997de",
-      "datasheet_capture.py": "b61e7e8faec5e110ac53a42a5a4227b525cffc892605fb638646ee8f3edb4be2",
-      "datasheet_facts.py": "499b37b7224652685a1da32707114d83e9b6520eb100bc4aa0ad8a6005aade51",
-      "datasheet_parts.py": "b881268854db466ce701f8ba518ee78f4e6f7d7bd1329bbe583b4cb54d129a9c",
+      "catalog_identity.py": "5ec7725c22124f392a9be35e939f6ab625f128af99c20cadcaa4e939545ce12e",
+      "catalog_jlcparts.py": "02d73791c3159f6db7cc7f5da996c0573db6843559419d86eadf573e1ffe7295",
+      "checks.py": "4f59d28a59feb17f28e6b8b3b46335f3cbf3b693361b2deb948f455588b53f83",
+      "cli.py": "18492334d33f8b1130f566e9dcaaa6350b82b17f283b3ca600f8d5367931be0e",
+      "component_height.py": "6cf7a80d4ccaba34c4b96f1085d3657a831bb351ad06a6c4a86cda64f2429ae7",
+      "component_height_probe.py": "0c25b5d51918e5f671263a6e513df4c867c134777c0da9984581315189ad00fc",
+      "connectivity_ir.py": "466a05ee2e96f8889fdd112b6a63ed7971a37c2c4e3fbf98b34eba293750313d",
+      "convergence.py": "9ed15f3ab4011ab03af1d6e87ac45fcec014bbcb7e64efeb970fcd9b1d57da1d",
+      "copper_features.py": "4b701a69493a15c7db2d124cebdd37990334e32114a13ee62ed94b64b0cd908e",
+      "courtyard_curves.py": "6a1a6667986c6d1fb1348e767b745ad585b4e9cfd429edc1a0db2cb10fd29c27",
+      "cpl_rotation.py": "7d079f5c6cb00b076767ce64674051f98237698d784fc8552b71d2280ddff0f2",
+      "datasheet_capture.py": "bd21bf872263540635d9ae914050aaae8d9cfb4699dc4ce0fcb1761672c20761",
+      "datasheet_cascade.py": "00cf86361c47717a3af38d93564d9a7c34e4be6b54ff93cae148acd4c9fd790e",
+      "datasheet_facts.py": "6e01eeb0afcec7b708d4a6c246aab3381f591d3cdb349ac72c51e51499cae11e",
+      "datasheet_footprint.py": "e06dea5c90bdbd6f8e798b80acb8036f1e29fa08377866c11d295d7db5548ff3",
+      "datasheet_parts.py": "0749e36c362a7ecd4b8df480346104e22472cb82588660fb32bc64429ef7f1dc",
+      "datasheet_selection.py": "53d32ebae545d407cf68a5881ea173769897332e878c8d4782e8ef47a4207db2",
       "dc_geometry_probe.py": "6b0d572cec51872a2e3afea6bd9b0d5c5f74510b65147c54c252bb5e93185bf6",
       "dc_path.py": "ccf5ef7538c77922385a6375e03dc7a9e7a0b7fe0afaf3eca7d293345b15fe81",
-      "design_dialog.py": "cc050cf2e7d4d33455831726928e58accf102066bfccd0bfaaf795b3a6f6aa19",
-      "design_intent.py": "9862f97af3d99f7127e5e9903b51735a8174f3012a6c136aeeb9fb66f112572f",
+      "design_dialog.py": "78eb877377f76ff21bb2ca07c344b3c7308c9ae594087fb57db4572364979093",
+      "design_diff.py": "e520626e58c4d4dfcc9a925130445c287dcd936149cea4a992d4206e7a5f936b",
+      "design_intent.py": "5dac0577718d82f38d0ff23d7b0b4b6308dd6d4018d99f697fe8f5312782c354",
+      "design_limits.py": "c29ea351855149bdbc995274efb67f1431e370e109643ce91bf65d0a4802c447",
+      "design_rule_provenance.py": "b2cba61706f0f113ea1d6ae17f753a13784b372ce8205d47f22d11a3f89536bc",
+      "design_rules.py": "7c747de1650395a53abf388aa0d58262fbab4fab9c051dacade6910d9d5b9ca7",
       "dfa_dft.py": "1a5a50b6a9e6a4c561496ce8489214cfa87f58d67256c32453a4d6e086938373",
+      "dfm_geometry.py": "62ad229a9b4fb505e8b42894457d51a4e3840a9a59a69d14b578f9f581259cef",
       "diagnostics.py": "a2326349cdcfa314ddc762ea58a21ce553fd0bb3a5a66a044dd18cc862248889",
-      "easyeda_footprint.py": "149dc74d40e0ca719ea4cc063768cd56f923246af2e43fe3cd75384ed8b69ab0",
-      "empirical.py": "269b9c05ee5e8b6ebab0d7e4e21d39ae56617330ff34fc0f1c0f913a10e840b5",
-      "envelope_check.py": "76ec64ce5dc2030e4a0fa0797c527c10add50c0b294823b5a0fad2644e5be313",
-      "envelope_probe.py": "e7631d71268bed86685e9955ecfbdcfabd5c72eddef79dfc1364c06f9403cbfc",
+      "digikey_capture.py": "aae98e1136ce5240aaf9f94c771b55f83e54d32fade4173be995db112152a0e1",
+      "digikey_record.py": "dd374d0b9dfd6095802251393c67e6f0aea67711d80f929ce4c06dfa336ae70c",
+      "easyeda_footprint.py": "bc22a90a6d4fa4978b884a7fabbe70c3082d6492953d5d3a1a6193f1f1dfb1fe",
+      "electrical_locality.py": "a12bd895e644c3e29c970a998ac03e764242e2d9c2caed8c7466704363a69977",
+      "empirical.py": "d6f58ec321b7bf30b96a78218664113db1a6ca73d8383a8bb76e86fccfd1ab33",
+      "envelope_check.py": "1ccc62c1245cac031c67fcaedb392c16a2a9262fef48eaaa73164ac4cc27f462",
+      "envelope_probe.py": "1352b09517823ca954c27559f563f3c9934ff6c18f5a53c7ea3c7cc38fbd78f5",
+      "evidence_index.py": "84b4fac921ffca30906fbbc91a490f204296614c217c074d004fc452d295b3a7",
       "evidence_requests.py": "829a5c65664908aefe2ebfa8ccd299d26b5bbe49ac3cf317b100c28922a26983",
-      "executor.py": "56cd1aecd2bc6dff2a6fb589e2c78408a6ab067274c657ab60f7e318d21c5abf",
-      "fab_consistency.py": "7ee52be916c5e82c90ff61b08845bbb17ec20775a894440a16996103847cd688",
-      "fab_export.py": "ee9a05fbe7740914e8dbf2c9e824b518b6e64fcc697540da4e55e751f52557e6",
-      "fab_profile.py": "cbae381830b1f1bd3d894637a0fb2d6c01d79563a276f323f9563610a6b1d3b7",
-      "fab_roundtrip.py": "0d7ce9df6577364a5e2911912c93a277c319e6411fb63e063443db418c672512",
-      "findings.py": "1050ee8f0ebe66b5ef84b6f9ed2c6e5b2bedd9661c38516ccd60b7831fcba7cf",
-      "footprint_library.py": "3fe0fcfb2801567a1a68bee6d077ac7bee34be0aedf50d99ffbf7c926cdf4220",
-      "forward_annotation.py": "19db17f925ff260d72da65b57ab8f85299b96db5f281d65abad03a3ba4681f5d",
-      "forward_annotation_probe.py": "f90e171e782ddeb2f857f1cff558073189724d58b598f2e52b0a7b9b785c7d20",
-      "generate.py": "05c121606d6bc45a8f9f5c4dfa34f99e233546e0d8fe0c5cd0a208ba679f51cc",
-      "geometry_probe.py": "06ee6fd416d267735f88cf2726b9284b53d19dd05dde9411647453230a32ae4a",
+      "executor.py": "ddf004ff3b176373bcf798431cf8b4856a11cc0a3291a900d172e228fdb0d289",
+      "fab_consistency.py": "663fad6a229f5ea1240c85bae27d392b18d9117d701f6f7c7f2bc4893e329a14",
+      "fab_export.py": "7569f1badd151b5c619e299311dc20d0f8d05837ac15c23ff8c22ce20c7737e3",
+      "fab_package.py": "863c3b9c84714780d1aaf5241b899e0e1af3fe24d58f594c714da9c930350595",
+      "fab_profile.py": "6f9719c2562302c5ac16a1fa0862b025610bc117e06ab44f548e4e6eae783bb1",
+      "fab_roundtrip.py": "7a724ff46cfe75d226d442392c5f2d53cb07d9e75146270bb3b619afd57920cf",
+      "fab_stage.py": "47791aaf7f98183815e48e51311f34bc5261f0d1f21183505fbbff6155967af4",
+      "findings.py": "9a72c3ae45d09b20ca5f6e5e1945642df48e5f31f75f44e998b3ddeedf897e89",
+      "footprint_capture.py": "f87c30c9da470cb8b95a70b157b7c4b8ee9a6d9c9ad3606123c4364ba7272153",
+      "footprint_library.py": "6acb436ff874e02a62737e69f52559a35342cb12bac988111ce72df656145cfa",
+      "footprint_probe.py": "b7b950ac8d02cc8f5742fab1af3512b09181630ceed1c1df82cec3e24a66c317",
+      "forward_annotation.py": "0f8f7b5114075c849e921d7acef35ec6ed1f988eb9b2eb0dc47286eb067b98a6",
+      "forward_annotation_probe.py": "48a2564b4b07bbf125c1d72d09ff0aae67113d424e04396afaad108e5f244d54",
+      "fp_calibration.py": "b278af3e2bf469c1575e7c40bc3bb52cbd1eab414fa381653d1159cce90b920a",
+      "generate.py": "2f79c04671288c72660e276e47d63d725ca8bcb7a71e2b1a847baeb5dbe4067c",
+      "generation_benchmark.py": "a7bd46e6866ef5f4559e4dc84224105727fa7f8f4c2fba19f989b67ea45944c8",
+      "geometry_probe.py": "c8dc2d14406dd9f75799701c21a807eb4ffa05e2cd7e26ce01b57f6de12a6b28",
       "happy_adapters.py": "d11f8fe14615e4cfb4067d76e99295a19e434dea0d163462c3de14ea05b25c9e",
-      "hardware_interface.py": "2a7a3ee6dff801cc24e0e074c42dc66190beaaaf2efd4d41ac6189c758cdd49a",
-      "harnesses.py": "e5a2e0bafc86ddaf8294fa0941b4c78ba24582d0ab8c560261e7800d44b695a9",
+      "happy_severity_gate.py": "1b03231d51d27643afb3254c4ea29d7374177fc56deaa5a477c3e29c7f509a8b",
+      "hardware_interface.py": "65521c7141410e719922c2ae0044aee636fe3303978f12c957cf3356ad57b122",
+      "harnesses.py": "ac4bbbede409e0074b94e499a6aae9f20ca96109c5184a9cc82476b247e525ca",
+      "imu_axes.py": "6f7cf5ced0c496990f1a68619a666c3835c7b49468c64c62b79ea82d229f58bb",
+      "intent_retry.py": "ff87a96eab9f3d5435c05fae60d77bc5e14cd6475baba5c13fa48a288201dfea",
+      "interval_assertions.py": "5f1fe3476adaa8b066625639b7d9a4451f4c2458363f238d68a2ac27146ddfc2",
+      "io_map.py": "965b6a464e0906f86c658fd786b2de38b74a8b3dad81615c428fced9f70ea063",
+      "jlc_cost.py": "2c5a19ac782a89acc4564cd16ea4a8b516420f6a97eab524666bbc711349e7b0",
+      "jlc_dfm.py": "6887d7106a6dd222329f09219eef79531f6ca3efba4a1eaecd14fda88755aa17",
+      "jlc_stock_capture.py": "a696f64341cb65710c19e7e6765d6ce533a7784663b8c76f5e2eb7b01ab70156",
       "kicad_embedded.py": "6eeb13582bf9ce31fb2802974818e13d0929dd3262572d82ba87ee0c80ece1db",
-      "kicad_happy.py": "cce69c6560b14fe2d966e74e304939101ab859cf8cd16251e9e1361912009117",
-      "kicad_happy_runner.py": "8a95efdf6aadb0bbb9ae07ebb4459db67f99981980a3bb5453c7d8f8c1fd1ea3",
-      "kicad_route_attempt.py": "f424b0c106ba5e7ab3cd1c6a3e9bff7cbbac203ed1fbfe16c9b01a0a52fba72f",
+      "kicad_happy.py": "1ee47f6d56df584c75ed2b1910f7bccc7a2e32f9d7cd19f65a97e641b2508c22",
+      "kicad_happy_runner.py": "9369184dfaea3391b1ebaea29dae96195d190da50ba24571148a66b70341fb09",
+      "kicad_quirks.py": "8424cee0e3049e4c806336ae0e3aab9c2a19a701561308e25b69d5b75bc2bbb5",
+      "kicad_route_attempt.py": "a8b85a298e24b94c356b524d19117534e3c50f263ff3b3a46477cbcc49821d87",
       "land_geometry.py": "dd094ef5a6a0872e0c9541d9ed8928725487c43de734c21d4e33a2d393dd5935",
       "land_pattern.py": "2a23a788d2c767b173302bca24a476d91a3b6d14bfd690a5fea36b4ae5c8d53b",
-      "library_checks.py": "e120daf1a14feb05f5f2d7038a7f522aa412b138e1bef7e2bd22eae4b97d1a5b",
+      "layer_policy_lineage.py": "853600b6f9149d5f313a1c9b9bd3fb22f468d26a0ae1ff97cf0136b4bd8b26ef",
+      "library_checks.py": "59d07c5a2fac668fa2732dc304b05cf8bb02caa253cca75ce8851e36a1ec239d",
       "library_tools.py": "b03c6a8dc5a29a2d41fb29b54075dcb530d9a7f1f198eeea2f044178f859144a",
+      "locality_provenance.py": "204206e58c0207cc6bacc758e28db312e4e4001b83f1b33cb131deef6c122f59",
       "locking.py": "c67d9c1434614495b78545ef6c18c65a321ca2ae380020a64d335bbc744c7954",
       "measurements.py": "4ef5c12b427f60f6c0d52a214360132eab42d382c9b6cc92e7e4af4410bbb37c",
-      "models3d.py": "b48de18b2221bca41b832fdc332f6c6f688e42f628c68a758dafe585ce9cd25a",
-      "native_binding.py": "ca68c4fc6de0f7ba525ea49ccd2648e7453b051091febb0010e6fe6e6b3bdd2a",
-      "native_netlist.py": "2b6ae1916113cb6fb399e70a45538a84528fa238fbec99367e70ce8c4f437614",
+      "models3d.py": "80dddc7ce4cb32b33140538a20aa6a8e9d1e8eac93ab8d69d3703fa69f2d443f",
+      "native_binding.py": "9b622f0c681de9b5b992cd3e7282280cc6cdba0c6a4b68b26362955fda9622e9",
+      "native_netlist.py": "1eceea33295326739aab32a9c05466df28cdf4d35bbcb8885f5f024fe2f1904d",
+      "net_binding.py": "df5afbadbcbcb898d79f0bdf927e338de623eca34ff367f51cf0590e8ff8a0d8",
+      "net_class_assignment.py": "aae46ae09e14d064216548719a4ffcc80ab3348deace5dca4baee13a710ab42a",
+      "net_constraints.py": "77755d6d08ad38bc8858e8176a2ace8daaecb2f77ba68d42e2ad6c268238cf3a",
+      "net_names.py": "bd1830aba82dd02d5b76d839e93ee2188544577533ad4e15adeff2b7707e258d",
       "netclass_completeness.py": "cfcb3738d5644d5e9a80f9c34661daa80a967aa9ffb45a4077b11ce97271aa01",
-      "netlist_extra.py": "6c930e971e4343372d35dcc554abd527ce7e73cbeaee3ce615a80dba7152bdd9",
-      "netlist_parity.py": "84a819b56f1d7a40e4d83ead7eee14481961e49752cdef1c815814f498ba9a61",
+      "netlist_extra.py": "1d95e730f0fadcf85380043e9ade3d2df2d0bd834dd4c349c654be1ef4c1040f",
+      "netlist_parity.py": "16792d2d6653a0054aa1a7452e8403de87356e615b92913016052758d222a6e9",
+      "outline_containment.py": "af7172d21a5efe25617628ce918e9872c21b72559921cac174ef234acbbe38f4",
       "package_consistency.py": "c1bf0c529094ade0d26f5d315b055becf27d938bc320fff789a670fb0dd05123",
       "packet_index.py": "2ac06f508dd1b15dd84db222bc72783196dec2b4db4c86a9eeae4b752939c216",
-      "part_binding.py": "87eac7f9b294153ceffa0fd8d943104bd54992fd76a17f9a8c423cd09c50c392",
-      "part_selection.py": "7fffae6bb2962e9f055892ca7b38803aea70bd53393553a00622bd21a6d2c121",
-      "parts_manifest.py": "9e797ac37b8f24ee365490e090814f8a74ef480a55b077ff901afab9a07570cc",
-      "parts_subset.py": "2f8f04d810ad122f9e3f63385b5b78b5b3427c72c3b78976c00fa6f1142a4d8a",
+      "packet_probe.py": "05edc1bd9093cb713ec9b472264fc861c39b079bbc39f3bdc2e9b46441440733",
+      "part_binding.py": "c09329bee48baec97db1e4dc9bf4c2d0c5de3cffb8d70c2886b3b43cc27244d5",
+      "part_decisions.py": "b3619667441483072a84e5f6e79c1243f41d453a8ac9e1effd44006d8e86779e",
+      "part_record.py": "9d2c50b5e050f9680b9ec604b4f68dcb8d67e4069907108ed1ecda9e52ce803e",
+      "part_selection.py": "6cc4b2340e2ab68efdbec3e64cdc18c8b8e684cb9b608a3d1305f85ab4582869",
+      "parts_manifest.py": "6cce45d5759d93fb84ca23be5ffe79da264ccbda13e1d6d3ebfc332ebf898e21",
+      "parts_subset.py": "380756768d5a392f35db467dc2aa955fd223d7201b0970a9bc18504e8274e221",
       "passive_corners.py": "9dcecbb83cf888cfc019f2c6445f53aa690f698ebbdabc1636ada09da9a44037",
-      "placement.py": "d4c75f18c799cd4382f8c50a507fcc0783d0b44b94b9dd8f8b7eaf2dbd8909eb",
-      "placement_adapter.py": "89da096e2d8a47a3c8555160ac43e31b9b4954712ed915cd0b484d96ac0ac247",
-      "placement_check.py": "c26f03afbe579dc850823e984645bdecdbbf2e8d9799c0d915bba5f6061bf467",
-      "placement_predicates.py": "f5b4401a4d0662597a4a4ab69d0c216fbb8634eb85fc546d38155a1963146f4a",
-      "placement_probe.py": "2994d0979ce5cf74906ef7987078eee1ac37e740fcb6febffea02fb12f2dd0b5",
-      "placer.py": "5ab4344334300b4677b07535aea17072da765c2ee5cddf3fc99702f3e9ff2267",
-      "placer_runner.py": "e38826ab5f8a39634bd93162ae6990298f9ebf8bfdcc6a862bce37c74b4c34e6",
-      "preflight.py": "6a80bf5f4aa3c0c96bdc182916e6c5b5aa0943f4a4d7235589c8c736e1821865",
-      "profiles.py": "cda0184262298815d89fe82da6bd673b61bc06af820caae6819555949d5bf1b1",
-      "reference_blocks.py": "42554881f8f15f8bc2ae4bd97747b45a7d8f11d4b4b2a6d6b534028f7c543361",
+      "passive_ratings.py": "87ddc5797e057b6a427dc2d4234da22248704692910bad2e96281dee11606666",
+      "pin_contracts.py": "a953bce5466a9360aec6868340a1ada7bbb5a9e67b418784c66beab2ac4efab8",
+      "placement.py": "a0faa9874a1808d298dc1f9bd8612115591076aa540a69117b7690e0f74ccd9b",
+      "placement_adapter.py": "fdb09dc85a98494708e5b3b7e15a6658faf930abee1a70386bb29ee237e77f2a",
+      "placement_check.py": "ace5d4ac5e5d30d550ce4743e04cf9157e5fc6043e409936bf90f943737d860e",
+      "placement_congestion.py": "a0725a57b8cf7e4d056698cb43b064c10b3b0ef187f86c0fcbef97b82c733150",
+      "placement_defects.py": "83cc423642db0561ae325d076b6ad388eeb3a99d86129ec65e64b936daad6aa2",
+      "placement_groups.py": "f92c9c28706aabb0d7d20cae69977e7055b2e10509cc866a8adf57b09f86af36",
+      "placement_plans.py": "e0e22cd0c49f3ea0ec120c250d84170bcaae7c32443ef1099c9efda4a7e546b9",
+      "placement_predicates.py": "a82b36e4f6fbff9f4f2f9b12d2ab8f18b36f595672e692276e76de99bd511074",
+      "placement_probe.py": "ab81dbebb574ff7f5e42b4a9fd48edc1ab6325908abd841e8e2affd95b0a49c0",
+      "placer.py": "56be589db28d0603dd5bdb985d776995f88b7c7dc7eb9a229423e6c9e36abf13",
+      "placer_runner.py": "745b9f8950759575bd7b529b0f4f3e0cbbccad15d51916a9b522a0021c693fe9",
+      "pod_driver.py": "efa9eaf1306d6bc047399e6f842af417e320d2d442ebfe0dce6e262ccf0e5f44",
+      "pour_budget.py": "b4d56ff3819b78cd2b3f8e6db54243ac81b649d471f8353e745f1069cc4c4d03",
+      "pour_budget_probe.py": "4a2ca3b834b2ceb99cf5005f9e7f19bf112e52c919330afc0d5f65716e51ba6d",
+      "preflight.py": "ca03f27b8103267cdeec348c2834d0d426c8c2146a90062287a6f06cc14e7837",
+      "probe_features.py": "2854835ae7d02073707e3d25b39f18ee63153852479e31f22792ce3bf6f5efbf",
+      "profiles.py": "ac940d5c1e9b98fa8a02efe8b36922571e4089b5f180b00c44c1593974162614",
+      "rating_lineage.py": "c3a6e0d9aae23d0f54fcd3c78cd3815a1dd82949db5007a929ec38bd0b94f9ea",
+      "reference_blocks.py": "36b7514a1ce0dd7a783f1a061861a54ecb172dd79a651e94b33991b35aa78265",
       "render3d.py": "4b2b81ec5325e25c0b86b70aaaf357198074ef15c96d09fc456bbbbcfa9b2fae",
-      "replay.py": "0a8e3e1820293660f36ba478032b8050d2a232d0accb4b4387d06efd83c3db52",
+      "replay.py": "e50b987f98a007b72fd8000f1362ac82cc1cdf65b4c9d9c92765cfb53e2f14a1",
       "replay_child.py": "bdffb73d197fe36d5219dccf456d30237e48741d9cf7d6b1a32a04626934ba74",
-      "reviewers.py": "99a104245bfd649c7436f6c918173f0178a2f0ec42a5cd5ddcf136afff7881dc",
-      "routing_adapter.py": "27f56dfac6e8384f4eab4f281c477af194f50d7dd4d98bc3add81e9ad5c916a5",
-      "routing_native.py": "8776c3352e52d343313d8bce49cb584a06c6e3a34654759d378760c572a0b0e9",
+      "requirement_map.py": "f796fd7328f975f7586ca6a52bcff58cda57995c40e59a26472be9b138bd77df",
+      "requirement_scope.py": "fd4c36296bf54f0ef50c4d2caef18465887d22180306e43b90efac9a48d561fc",
+      "review_run.py": "e8ed5535f07805a6186dff9e83705bab80963164655a1394d34bf866bb7c961e",
+      "reviewers.py": "9fd4ecd74861a6c15904692b9be98877b96b9d42e36b3c88a0b8b4afc2672e74",
+      "rf_geometry.py": "46975c4fe3cfbac14bd3906c3bfad4cf8e3f399d671e8416634367a95675c7e1",
+      "rf_review.py": "9e6e0a1e6f9848036901c263d32bb77a591ce6448d2b287d5199b710c51c43a4",
+      "routed_artwork.py": "e28492d53c6f2ec38a8529236eee98e13846059042de44068d86846bd8dc1eb3",
+      "routing_adapter.py": "e7220e57f219f12e8091ebcb1b345b89e98511aa189430c0e93ef51efe21b658",
+      "routing_equivalence.py": "b506b1df0b91c8e5c22957ea23fa098a82c7bea63fe330647f447d072e6de7a4",
+      "routing_native.py": "ca25f878e8e0be8899aff30270f3d8a90a6efd203204bceaca381fc5e9b31435",
       "routing_rules.py": "24d984591f2aba0415fefe50f86c8045fbca86f6164ebe0696a637b05523cecc",
-      "rung1_campaign.py": "031f485c7deb62e05e681b1b8ec998b8bfbdcf35575d2c43178d09b41dd6c09c",
-      "rung1_qualified.py": "0d034ad4234079c86c371a28c82670a4f140bd7ab667a4742fbcfbc7230d4c52",
-      "scaffold.py": "0894b927d3affa7412646a029cc73e7e79923bad6e341acc52054355f039aa48",
-      "schematic_decompile.py": "8e6bc33fae93d1c27b1061d165ae51f8a0008dc33d5cb8d79a3355c57469b4a9",
-      "schematic_emit.py": "7d586d19f30ba5cb0d585afe855b840442780469880001b6cc24df95e1d604bc",
-      "schematic_emitter.py": "e7dcd18ed251f4b1d065da0a419040a24d36551d6aca80d6a93fa9281ae217c0",
-      "schematic_lint.py": "1a99a42d6d353458de9b13a2893a1e92e423bf88f6f037724f0573e8c615d315",
+      "rule_severities.py": "2e00e42551707bf451700a3628963011e27e436d783e3472ee2a1482171bdde3",
+      "rung1_campaign.py": "ba14c1b6ef877a88387c03305d7556799ec17fb4026236880d507d6698cbd30a",
+      "rung1_parts.py": "c5e52dc5454627139b7a552d6de62b17f07030c3f24b2c63dffb79483fbbd2ec",
+      "rung1_qualified.py": "a90ae50358ef7b23f145224224944799ddd11265b9105e1a00bb7e25f5605370",
+      "rung1_stages.py": "3c040dc98c234e0b9c79eb4163837a28d062243eab919e4a765bf82f7203ee69",
+      "scaffold.py": "0a7ad2ae827d209f166c02bb446b73ee0394587948794a1f3045686d60e2b037",
+      "scaffold_rule_areas.py": "bb89216c95e3c0b13c61ba779011d642c7904f4706e1b1abbf891246428c246a",
+      "schematic_decompile.py": "8b1034ad01244754c329b10622716f537f6c99750af6c284722088259c488ff3",
+      "schematic_emit.py": "b5589aafc77f597e269a82a8303fa59c25689a208abbed7cc61a7d042d23fcd9",
+      "schematic_emitter.py": "d90863792ad51c3fc646e3744629ded7ded3b4ea96f1997bf0eeadd749c226d4",
+      "schematic_lint.py": "130763e34bc2a5d3f9d091cf2d1d0683eed0dae4b60d360f310a572d7cddcdda",
+      "schematic_presentation.py": "71388f0c904c651e73b9caa20b6e3a54c36efbad5547935e551ce2f7c1079200",
+      "schematic_regenerate.py": "97620c03d5ac6c9ce1c4eebd607df392d281a43dd6394c2c3ed10d28cf8a45df",
+      "schematic_render.py": "52e602f4fd74f8fd9a10a3d50cadef49d0e715872ca2e69a654bc2c255472cb4",
       "schematic_roundtrip.py": "18908191c58c649c07092163c2d9edcef8e77f27317306120d7a30b1fbd370a0",
-      "stage_receipts.py": "e33bffe0075d48c30d9316f60d1549c75e49fef076f4ca8c483948dbedc666ca",
-      "stages.py": "c94b2fb8713263547cf0d2b70d464d76203b1df921eeca0608c982cd1fa05a17",
-      "storage.py": "469f20d6f44415b8b8978c15485e4c0038340df908d6213babc919ee443c2525",
-      "sublayout.py": "2e950873258128aabcaf3db6aa915dff3d48e1e395156b360b12e3b43842cb41",
-      "sublayout_probe.py": "252088701499043c5c2b9fe9c44bb2d0097ef83c16261238a42413623522b922",
-      "symbol_capture.py": "7090cc3b2c1bfb130f0fee9afbc8a99041052157956bd4d3b0c993fd42531db3",
-      "symbol_checks.py": "e6c2fc5790392ba1b7001f08bbee5df55e3f2235978e66d9fd5a9db87569adc4",
-      "symbol_context.py": "9a8205f6ea92156cb23a9a340458a3d4e1c0f3f0b496db4c146119b36c8f8dac",
-      "symbol_library.py": "2f4adc30193fdc252df562bacaa9854e14ba648eeb051af4aa5d09ba7905ad85",
-      "viewer.py": "fe6a2133d4eb0a0a7f2b9c5c0977558b6ede7b5509031aa3cb7a5b22d1ba2384"
+      "schematic_stage.py": "8d0b1dc9e4a35b32e72aafa28a978b3a9b8fdcabd3a5ddb94f775ff4d1609e25",
+      "schematic_text.py": "8ab14f0982c6b60303a16bb4710b200234aeefb91aea85f1a476b7a4be1dba1a",
+      "silk_artwork.py": "28ba6a760a64a9a1dbbb0fd042bb6d58106b2a6af72127fcde94c5139aa10d1e",
+      "silkscreen.py": "36ebaa7467e3b46b701c629c9a9cf67f26e56d0cc070ae2beb9f2772434050c4",
+      "spec_record.py": "e99ff3dfe738d33c860a27fb08235b2023d27a3ee0cc52edefbdc39c4aa1838c",
+      "spice_templates.py": "ce9710ac2c4947dedf7f7820dea29a0a46d8ecafad601c6a7388c9573c6a5bf9",
+      "stage_done.py": "50f7ff8219bb5251f1906f99e3a868c32be187d04cfd0adfe19ff0d3c2629bd4",
+      "stage_receipts.py": "fd03d9a2953570ff66b1abd4630f6f25ab0eb1d4f7839a8fd6ba74398c7ba52a",
+      "stages.py": "aa77ece36cd758b7187786c4038c04db910ef328d847232d311f9d66153fbb66",
+      "storage.py": "5ba698800db3612c8f99e650ab4d11d28a711c0aa8201e6c2f08e934560cc87e",
+      "sublayout.py": "6d012aeb83414ce4224c831c03239964ed6e660d80e5a9c2420e17f720531eb0",
+      "sublayout_probe.py": "f4f597b7a7fea6a50ce945fc02fe6a0940d10d8c34e5b402a0e104d842e62eb5",
+      "symbol_capture.py": "e33078d49aa87d28cefef0fabfa5696d1a943e5d23d4943ea5a6ca4f8b793395",
+      "symbol_checks.py": "1688bdda9b6d3c0b2892b589e4e029fdf8a5aeeb3cb7087bfde7637c8a9c115a",
+      "symbol_context.py": "85738b7368213f7007381535a536704d914feacd1e4a8e0519fa677ba5491c8e",
+      "symbol_library.py": "378bb6431582e1a8591ba80e67fcf8d806a4022340de39e8a9bd542ac37f070c",
+      "symbol_shortlist.py": "4799c483b7ee5d3ac6c6ce31e337f9a9fda399b025a8227cb8375ec0e71c759a",
+      "tool_source.py": "028edb426d0db0b4858df26a85f41f955fde180af6df4217d9eef2ba1dd38c52",
+      "topology_rules.py": "7b803452adcd6736f821e7bdb026929ec08293ba87d2670d7eff8cf6923d87c8",
+      "via_budget_pilot.py": "5ea6d5a2c15fa24d01c6eab4c336b7d6c9de3a5df23861e6f5a9b07dfedc2e87",
+      "viewer.py": "fe6a2133d4eb0a0a7f2b9c5c0977558b6ede7b5509031aa3cb7a5b22d1ba2384",
+      "violation_waivers.py": "1f7bc7d4937808dbee65febfdb2d3d4cf87793b26f9b46a16051983af7f36831"
     },
     "profile": null,
     "required_runtime": [
@@ -888,7 +1115,7 @@
       "bwrap",
       "kicad-cli"
     ],
-    "run_id": "607a5eb0-2060-457b-8750-c5cb2edc439a",
+    "run_id": "3e5678d9-48fd-4dd6-85e4-acf27c6bf1b9",
     "runtime_files": {
       "/usr/bin/ngspice": {
         "path": "/usr/bin/ngspice",
@@ -900,7 +1127,7 @@
       },
       "agy": {
         "path": "/home/halbritt/.local/bin/agy",
-        "sha256": "085f43e0d0628a8a8dabe1e547067818fa2c0adc86cfac98a3c4492918f455ef"
+        "sha256": "337dcde668441a2828968644d7982829c2d2a5e0c4144f346e1f3fc6abb3cdc7"
       },
       "bwrap": {
         "path": "/usr/bin/bwrap",
@@ -908,7 +1135,7 @@
       },
       "claude": {
         "path": "/home/halbritt/.local/bin/claude",
-        "sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5"
+        "sha256": "520bc6c1f40af466bd03a278b5ae1af1a2938bc7de5b9e5cb15526da20d71cfe"
       },
       "codex": {
         "path": "/home/halbritt/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
@@ -939,123 +1166,322 @@
     "Expected seeded defects remain defects; fixture expectations never invert a production grade.",
     "Checks-only run: independent agent reviews and adjudication not performed."
   ],
-  "manifest_sha256": "3619118a1c3ee15d5c34d96563615f3640a2015911d5a308c6a7a5f2abaf1fc9",
+  "manifest_sha256": "8243e3884025ef8b15dbabe042df8a0dd107e0157551fa4ff0dcdbf596778009",
+  "max_schema_resubmissions": 1,
   "name": "Original RC seeded-placement stage fixture",
   "outcome": "incomplete",
   "policy_files": {
     "__init__.py": "6074e79a961e45e90e80625879b107104b1c2a514c918eba445b2608b1ce4b65",
-    "_connectivity_hierarchy.py": "711484785d4132ccae19fff5317367a7101c9dadc1c4cbc9719de9139897a25b",
-    "active_spice.py": "a3fa310380c1884eeb51ed848d74f8cccedcb6ea68762d339a4ede30117b5a24",
+    "_connectivity_hierarchy.py": "124cf8b2da2ab395a886ae22d86d9c87c03c98779b651139c7d91c9a1154d5cd",
+    "active_spice.py": "c70b9a914e245eb26f2223151f4a3de8e375db1f9b2944a1fb9741476f71e345",
+    "add_planes.py": "0f741fdd7b0b511b51154144c2d08860570c9cf32a62f5fc802522e5c4ba530c",
+    "add_planes_probe.py": "b4eeb54751c868b695f72295200852870ca54d5afa67214deb8b6d8a4c107e54",
     "applicability.py": "09c4b813012add3910dd212aafbaa92056236b6f5e251a76d16adb59a3b0c99d",
-    "assembly_readiness.py": "0c3d2ec4c280a2fd8402fa4f80a2130e30fe986f4f7885b83bdd38f69945682c",
-    "baseline.py": "cf023ab5a1c1c3bac9b4a59743285ff9f3583119c27212c775fd1ac21f4a9050",
-    "bench_transactions.py": "eca2fe9e7d28da8818bce5b4f2253cd976d9558f9beb09e2bae03ca213331ae8",
-    "benchmark.py": "1fbd88855294ad473c6efc88a7d1d083e712f6bcbdc841471381bab76a9ad935",
-    "benchmark_run.py": "555375ed59b5e15e51bd9670437be58945fcd8981be684e416bd8a853d594ca5",
-    "board_build.py": "2b4b7682e8a1752f171cabc1cafcd7fed497bf68e8077dcd2a999b04aa254a55",
-    "board_envelope.py": "fa6aa4cfb30896d0ce0e369ebf2a9d7b8b5b229228c85c16f6af1d5ea7fb04df",
-    "campaign.py": "9260f7448668b3542ff1edb8a84d340611c54a855b7960ce9958e44e12606d4a",
-    "candidate.py": "c2f9cb21852bd644f833f900cbc2adc3d9518cb2c78a774637fa31639585821b",
-    "capabilities.py": "59f849a4e34299d04b85e61ca89b5d4788cb076726637c3c76d589fc9457a55c",
-    "catalog.py": "ae3966e3b4198b7caa02e5c3480dae8a203aeba736a361bb65adec15163e1d2d",
-    "catalog_checks.py": "3a6e887274b2e4499adb9b6bc1dd1701ef6bee4eb6360487ebc48651a6d4e202",
+    "assembly_readiness.py": "1390f38074e49c9a3d9104fdcb6aa77bf01aa1530f5119e6ac7677f3f19a52ae",
+    "baseline.py": "5ee26e442265e7dcae70a71c6341901a4012f3fdf8f077d638cb3f65f671c63f",
+    "bench_transactions.py": "3a9ad82add495ea67120f73a4d8632c38f6c3695095d25c111967b99bf7482bd",
+    "benchmark.py": "9cc5b70bd067d4b02f8cdc90562853c67503bcab64b0a51d33cb25abdc69b2cd",
+    "benchmark_run.py": "d38b427023891129c5551d4dd775ba4bbd5584bb5afb579f18d3ed1f31e38353",
+    "binding_fill.py": "4a3a70b0b3a88bac1f41026428457855ab69e654512e6bd28e998e9ba80ce0f8",
+    "block_adaptation.py": "5792ec15f6dd1e27e243faf85cf0d7b5d491003e4a31ffe418e04e3a976c1ef0",
+    "block_arrangement.py": "b85976a678bae8ba8a70e25d80f267110e8734bd54df3108d818e2e158df5f43",
+    "block_composition.py": "48737adfd8b6d02e3056f76194df6bf4688722e8427a8aa8c654bd6309bb24f6",
+    "block_first.py": "07432e76bbdfb867802d3cc3fc0274db58dfc0e78d33fff32674362b831e6f8f",
+    "block_flat.py": "8f1cb7dc3911f5d71d5e017147576fd95aff8beed383cac7423d3e422094e897",
+    "block_inventory.py": "5e6fc3ceb8161246438380a21d821a606927f81eca6e33f6e282d4ebfe4f2d63",
+    "block_library.py": "59b8c34acb4e59e00660d33536a41e3538806e027b5fb4dd0d7a0492bc0e8b31",
+    "blocks.py": "46079d5bffaa33fa4733a2a483453f465c5636169510e0904679846fa1ca4a7a",
+    "board_build.py": "d6b086189328feed849a9ef5017091e00df1d91fe182844d8b7d0e4899b8bf59",
+    "board_envelope.py": "ca718a59f6e7d5d27f7cb1999c7bde62d7e85981327511ba079588de228f2549",
+    "board_net_names.py": "948ece952d1886413ca2563c871d14b793918bf9c01d7b35d4a4c66bc33c9b1e",
+    "campaign.py": "be69a4b881273da49215eb044eef417a0dcb77f3dd52c59cd6e675f97f92db78",
+    "candidate.py": "d4433394d3fe7d0c66373055e846b1abdadbcb688dd51713c99f9b4c5463578e",
+    "capabilities.py": "4ef8e08eed3742c36dd7e9061d9c67a17b74e4b5cead38f9d0324feb12ca33b2",
+    "catalog.py": "3b06d7bf04d52688c76c517dba0dfed15964f59788a6cf7e92c2dbab2d264c8f",
+    "catalog_checks.py": "6ac25be4a95928e944fc0c1d42b9c4b81a771d23120c7932e28d37f5fbcd2f87",
     "catalog_feed.py": "ae59bc49b565685ddf915647f62b78b734ac6894b7d3cda12429f841367c7283",
-    "catalog_jlcparts.py": "e56cac3bd6a6af06cb12b84b082f46d53c7dd5d6c1473ef90cdbf416ece934ed",
-    "checks.py": "9c6cdcac83ffddc4cf702c202f6152b994161da6261a9c76b1eb76d5b05d223d",
-    "cli.py": "ef4a2dd6aa5f78dceac9998258b5bb9488d70fd974753db049ba735f8cf708b8",
-    "connectivity_ir.py": "a0fa5f121ffb2b5d52fa0089afb5544f5b157f214a80742cb916df3fd021a36b",
-    "convergence.py": "08a8b310f641692b0a5be12a119b85fce4f0b7a14bd8b9c6f6f736ce9a3997de",
-    "datasheet_capture.py": "b61e7e8faec5e110ac53a42a5a4227b525cffc892605fb638646ee8f3edb4be2",
-    "datasheet_facts.py": "499b37b7224652685a1da32707114d83e9b6520eb100bc4aa0ad8a6005aade51",
-    "datasheet_parts.py": "b881268854db466ce701f8ba518ee78f4e6f7d7bd1329bbe583b4cb54d129a9c",
+    "catalog_identity.py": "5ec7725c22124f392a9be35e939f6ab625f128af99c20cadcaa4e939545ce12e",
+    "catalog_jlcparts.py": "02d73791c3159f6db7cc7f5da996c0573db6843559419d86eadf573e1ffe7295",
+    "checks.py": "4f59d28a59feb17f28e6b8b3b46335f3cbf3b693361b2deb948f455588b53f83",
+    "cli.py": "18492334d33f8b1130f566e9dcaaa6350b82b17f283b3ca600f8d5367931be0e",
+    "component_height.py": "6cf7a80d4ccaba34c4b96f1085d3657a831bb351ad06a6c4a86cda64f2429ae7",
+    "component_height_probe.py": "0c25b5d51918e5f671263a6e513df4c867c134777c0da9984581315189ad00fc",
+    "connectivity_ir.py": "466a05ee2e96f8889fdd112b6a63ed7971a37c2c4e3fbf98b34eba293750313d",
+    "convergence.py": "9ed15f3ab4011ab03af1d6e87ac45fcec014bbcb7e64efeb970fcd9b1d57da1d",
+    "copper_features.py": "4b701a69493a15c7db2d124cebdd37990334e32114a13ee62ed94b64b0cd908e",
+    "courtyard_curves.py": "6a1a6667986c6d1fb1348e767b745ad585b4e9cfd429edc1a0db2cb10fd29c27",
+    "cpl_rotation.py": "7d079f5c6cb00b076767ce64674051f98237698d784fc8552b71d2280ddff0f2",
+    "datasheet_capture.py": "bd21bf872263540635d9ae914050aaae8d9cfb4699dc4ce0fcb1761672c20761",
+    "datasheet_cascade.py": "00cf86361c47717a3af38d93564d9a7c34e4be6b54ff93cae148acd4c9fd790e",
+    "datasheet_facts.py": "6e01eeb0afcec7b708d4a6c246aab3381f591d3cdb349ac72c51e51499cae11e",
+    "datasheet_footprint.py": "e06dea5c90bdbd6f8e798b80acb8036f1e29fa08377866c11d295d7db5548ff3",
+    "datasheet_parts.py": "0749e36c362a7ecd4b8df480346104e22472cb82588660fb32bc64429ef7f1dc",
+    "datasheet_selection.py": "53d32ebae545d407cf68a5881ea173769897332e878c8d4782e8ef47a4207db2",
     "dc_geometry_probe.py": "6b0d572cec51872a2e3afea6bd9b0d5c5f74510b65147c54c252bb5e93185bf6",
     "dc_path.py": "ccf5ef7538c77922385a6375e03dc7a9e7a0b7fe0afaf3eca7d293345b15fe81",
-    "design_dialog.py": "cc050cf2e7d4d33455831726928e58accf102066bfccd0bfaaf795b3a6f6aa19",
-    "design_intent.py": "9862f97af3d99f7127e5e9903b51735a8174f3012a6c136aeeb9fb66f112572f",
+    "design_dialog.py": "78eb877377f76ff21bb2ca07c344b3c7308c9ae594087fb57db4572364979093",
+    "design_diff.py": "e520626e58c4d4dfcc9a925130445c287dcd936149cea4a992d4206e7a5f936b",
+    "design_intent.py": "5dac0577718d82f38d0ff23d7b0b4b6308dd6d4018d99f697fe8f5312782c354",
+    "design_limits.py": "c29ea351855149bdbc995274efb67f1431e370e109643ce91bf65d0a4802c447",
+    "design_rule_provenance.py": "b2cba61706f0f113ea1d6ae17f753a13784b372ce8205d47f22d11a3f89536bc",
+    "design_rules.py": "7c747de1650395a53abf388aa0d58262fbab4fab9c051dacade6910d9d5b9ca7",
     "dfa_dft.py": "1a5a50b6a9e6a4c561496ce8489214cfa87f58d67256c32453a4d6e086938373",
+    "dfm_geometry.py": "62ad229a9b4fb505e8b42894457d51a4e3840a9a59a69d14b578f9f581259cef",
     "diagnostics.py": "a2326349cdcfa314ddc762ea58a21ce553fd0bb3a5a66a044dd18cc862248889",
-    "easyeda_footprint.py": "149dc74d40e0ca719ea4cc063768cd56f923246af2e43fe3cd75384ed8b69ab0",
-    "empirical.py": "269b9c05ee5e8b6ebab0d7e4e21d39ae56617330ff34fc0f1c0f913a10e840b5",
-    "envelope_check.py": "76ec64ce5dc2030e4a0fa0797c527c10add50c0b294823b5a0fad2644e5be313",
-    "envelope_probe.py": "e7631d71268bed86685e9955ecfbdcfabd5c72eddef79dfc1364c06f9403cbfc",
+    "digikey_capture.py": "aae98e1136ce5240aaf9f94c771b55f83e54d32fade4173be995db112152a0e1",
+    "digikey_record.py": "dd374d0b9dfd6095802251393c67e6f0aea67711d80f929ce4c06dfa336ae70c",
+    "easyeda_footprint.py": "bc22a90a6d4fa4978b884a7fabbe70c3082d6492953d5d3a1a6193f1f1dfb1fe",
+    "electrical_locality.py": "a12bd895e644c3e29c970a998ac03e764242e2d9c2caed8c7466704363a69977",
+    "empirical.py": "d6f58ec321b7bf30b96a78218664113db1a6ca73d8383a8bb76e86fccfd1ab33",
+    "envelope_check.py": "1ccc62c1245cac031c67fcaedb392c16a2a9262fef48eaaa73164ac4cc27f462",
+    "envelope_probe.py": "1352b09517823ca954c27559f563f3c9934ff6c18f5a53c7ea3c7cc38fbd78f5",
+    "evidence_index.py": "84b4fac921ffca30906fbbc91a490f204296614c217c074d004fc452d295b3a7",
     "evidence_requests.py": "829a5c65664908aefe2ebfa8ccd299d26b5bbe49ac3cf317b100c28922a26983",
-    "executor.py": "56cd1aecd2bc6dff2a6fb589e2c78408a6ab067274c657ab60f7e318d21c5abf",
-    "fab_consistency.py": "7ee52be916c5e82c90ff61b08845bbb17ec20775a894440a16996103847cd688",
-    "fab_export.py": "ee9a05fbe7740914e8dbf2c9e824b518b6e64fcc697540da4e55e751f52557e6",
-    "fab_profile.py": "cbae381830b1f1bd3d894637a0fb2d6c01d79563a276f323f9563610a6b1d3b7",
-    "fab_roundtrip.py": "0d7ce9df6577364a5e2911912c93a277c319e6411fb63e063443db418c672512",
-    "findings.py": "1050ee8f0ebe66b5ef84b6f9ed2c6e5b2bedd9661c38516ccd60b7831fcba7cf",
-    "footprint_library.py": "3fe0fcfb2801567a1a68bee6d077ac7bee34be0aedf50d99ffbf7c926cdf4220",
-    "forward_annotation.py": "19db17f925ff260d72da65b57ab8f85299b96db5f281d65abad03a3ba4681f5d",
-    "forward_annotation_probe.py": "f90e171e782ddeb2f857f1cff558073189724d58b598f2e52b0a7b9b785c7d20",
-    "generate.py": "05c121606d6bc45a8f9f5c4dfa34f99e233546e0d8fe0c5cd0a208ba679f51cc",
-    "geometry_probe.py": "06ee6fd416d267735f88cf2726b9284b53d19dd05dde9411647453230a32ae4a",
+    "executor.py": "ddf004ff3b176373bcf798431cf8b4856a11cc0a3291a900d172e228fdb0d289",
+    "fab_consistency.py": "663fad6a229f5ea1240c85bae27d392b18d9117d701f6f7c7f2bc4893e329a14",
+    "fab_export.py": "7569f1badd151b5c619e299311dc20d0f8d05837ac15c23ff8c22ce20c7737e3",
+    "fab_package.py": "863c3b9c84714780d1aaf5241b899e0e1af3fe24d58f594c714da9c930350595",
+    "fab_profile.py": "6f9719c2562302c5ac16a1fa0862b025610bc117e06ab44f548e4e6eae783bb1",
+    "fab_roundtrip.py": "7a724ff46cfe75d226d442392c5f2d53cb07d9e75146270bb3b619afd57920cf",
+    "fab_stage.py": "47791aaf7f98183815e48e51311f34bc5261f0d1f21183505fbbff6155967af4",
+    "findings.py": "9a72c3ae45d09b20ca5f6e5e1945642df48e5f31f75f44e998b3ddeedf897e89",
+    "footprint_capture.py": "f87c30c9da470cb8b95a70b157b7c4b8ee9a6d9c9ad3606123c4364ba7272153",
+    "footprint_library.py": "6acb436ff874e02a62737e69f52559a35342cb12bac988111ce72df656145cfa",
+    "footprint_probe.py": "b7b950ac8d02cc8f5742fab1af3512b09181630ceed1c1df82cec3e24a66c317",
+    "forward_annotation.py": "0f8f7b5114075c849e921d7acef35ec6ed1f988eb9b2eb0dc47286eb067b98a6",
+    "forward_annotation_probe.py": "48a2564b4b07bbf125c1d72d09ff0aae67113d424e04396afaad108e5f244d54",
+    "fp_calibration.py": "b278af3e2bf469c1575e7c40bc3bb52cbd1eab414fa381653d1159cce90b920a",
+    "generate.py": "2f79c04671288c72660e276e47d63d725ca8bcb7a71e2b1a847baeb5dbe4067c",
+    "generation_benchmark.py": "a7bd46e6866ef5f4559e4dc84224105727fa7f8f4c2fba19f989b67ea45944c8",
+    "geometry_probe.py": "c8dc2d14406dd9f75799701c21a807eb4ffa05e2cd7e26ce01b57f6de12a6b28",
     "happy_adapters.py": "d11f8fe14615e4cfb4067d76e99295a19e434dea0d163462c3de14ea05b25c9e",
-    "hardware_interface.py": "2a7a3ee6dff801cc24e0e074c42dc66190beaaaf2efd4d41ac6189c758cdd49a",
-    "harnesses.py": "e5a2e0bafc86ddaf8294fa0941b4c78ba24582d0ab8c560261e7800d44b695a9",
+    "happy_severity_gate.py": "1b03231d51d27643afb3254c4ea29d7374177fc56deaa5a477c3e29c7f509a8b",
+    "hardware_interface.py": "65521c7141410e719922c2ae0044aee636fe3303978f12c957cf3356ad57b122",
+    "harnesses.py": "ac4bbbede409e0074b94e499a6aae9f20ca96109c5184a9cc82476b247e525ca",
+    "imu_axes.py": "6f7cf5ced0c496990f1a68619a666c3835c7b49468c64c62b79ea82d229f58bb",
+    "intent_retry.py": "ff87a96eab9f3d5435c05fae60d77bc5e14cd6475baba5c13fa48a288201dfea",
+    "interval_assertions.py": "5f1fe3476adaa8b066625639b7d9a4451f4c2458363f238d68a2ac27146ddfc2",
+    "io_map.py": "965b6a464e0906f86c658fd786b2de38b74a8b3dad81615c428fced9f70ea063",
+    "jlc_cost.py": "2c5a19ac782a89acc4564cd16ea4a8b516420f6a97eab524666bbc711349e7b0",
+    "jlc_dfm.py": "6887d7106a6dd222329f09219eef79531f6ca3efba4a1eaecd14fda88755aa17",
+    "jlc_stock_capture.py": "a696f64341cb65710c19e7e6765d6ce533a7784663b8c76f5e2eb7b01ab70156",
     "kicad_embedded.py": "6eeb13582bf9ce31fb2802974818e13d0929dd3262572d82ba87ee0c80ece1db",
-    "kicad_happy.py": "cce69c6560b14fe2d966e74e304939101ab859cf8cd16251e9e1361912009117",
-    "kicad_happy_runner.py": "8a95efdf6aadb0bbb9ae07ebb4459db67f99981980a3bb5453c7d8f8c1fd1ea3",
-    "kicad_route_attempt.py": "f424b0c106ba5e7ab3cd1c6a3e9bff7cbbac203ed1fbfe16c9b01a0a52fba72f",
+    "kicad_happy.py": "1ee47f6d56df584c75ed2b1910f7bccc7a2e32f9d7cd19f65a97e641b2508c22",
+    "kicad_happy_runner.py": "9369184dfaea3391b1ebaea29dae96195d190da50ba24571148a66b70341fb09",
+    "kicad_quirks.py": "8424cee0e3049e4c806336ae0e3aab9c2a19a701561308e25b69d5b75bc2bbb5",
+    "kicad_route_attempt.py": "a8b85a298e24b94c356b524d19117534e3c50f263ff3b3a46477cbcc49821d87",
     "land_geometry.py": "dd094ef5a6a0872e0c9541d9ed8928725487c43de734c21d4e33a2d393dd5935",
     "land_pattern.py": "2a23a788d2c767b173302bca24a476d91a3b6d14bfd690a5fea36b4ae5c8d53b",
-    "library_checks.py": "e120daf1a14feb05f5f2d7038a7f522aa412b138e1bef7e2bd22eae4b97d1a5b",
+    "layer_policy_lineage.py": "853600b6f9149d5f313a1c9b9bd3fb22f468d26a0ae1ff97cf0136b4bd8b26ef",
+    "library_checks.py": "59d07c5a2fac668fa2732dc304b05cf8bb02caa253cca75ce8851e36a1ec239d",
     "library_tools.py": "b03c6a8dc5a29a2d41fb29b54075dcb530d9a7f1f198eeea2f044178f859144a",
+    "locality_provenance.py": "204206e58c0207cc6bacc758e28db312e4e4001b83f1b33cb131deef6c122f59",
     "locking.py": "c67d9c1434614495b78545ef6c18c65a321ca2ae380020a64d335bbc744c7954",
     "measurements.py": "4ef5c12b427f60f6c0d52a214360132eab42d382c9b6cc92e7e4af4410bbb37c",
-    "models3d.py": "b48de18b2221bca41b832fdc332f6c6f688e42f628c68a758dafe585ce9cd25a",
-    "native_binding.py": "ca68c4fc6de0f7ba525ea49ccd2648e7453b051091febb0010e6fe6e6b3bdd2a",
-    "native_netlist.py": "2b6ae1916113cb6fb399e70a45538a84528fa238fbec99367e70ce8c4f437614",
+    "models3d.py": "80dddc7ce4cb32b33140538a20aa6a8e9d1e8eac93ab8d69d3703fa69f2d443f",
+    "native_binding.py": "9b622f0c681de9b5b992cd3e7282280cc6cdba0c6a4b68b26362955fda9622e9",
+    "native_netlist.py": "1eceea33295326739aab32a9c05466df28cdf4d35bbcb8885f5f024fe2f1904d",
+    "net_binding.py": "df5afbadbcbcb898d79f0bdf927e338de623eca34ff367f51cf0590e8ff8a0d8",
+    "net_class_assignment.py": "aae46ae09e14d064216548719a4ffcc80ab3348deace5dca4baee13a710ab42a",
+    "net_constraints.py": "77755d6d08ad38bc8858e8176a2ace8daaecb2f77ba68d42e2ad6c268238cf3a",
+    "net_names.py": "bd1830aba82dd02d5b76d839e93ee2188544577533ad4e15adeff2b7707e258d",
     "netclass_completeness.py": "cfcb3738d5644d5e9a80f9c34661daa80a967aa9ffb45a4077b11ce97271aa01",
-    "netlist_extra.py": "6c930e971e4343372d35dcc554abd527ce7e73cbeaee3ce615a80dba7152bdd9",
-    "netlist_parity.py": "84a819b56f1d7a40e4d83ead7eee14481961e49752cdef1c815814f498ba9a61",
+    "netlist_extra.py": "1d95e730f0fadcf85380043e9ade3d2df2d0bd834dd4c349c654be1ef4c1040f",
+    "netlist_parity.py": "16792d2d6653a0054aa1a7452e8403de87356e615b92913016052758d222a6e9",
+    "outline_containment.py": "af7172d21a5efe25617628ce918e9872c21b72559921cac174ef234acbbe38f4",
     "package_consistency.py": "c1bf0c529094ade0d26f5d315b055becf27d938bc320fff789a670fb0dd05123",
     "packet_index.py": "2ac06f508dd1b15dd84db222bc72783196dec2b4db4c86a9eeae4b752939c216",
-    "part_binding.py": "87eac7f9b294153ceffa0fd8d943104bd54992fd76a17f9a8c423cd09c50c392",
-    "part_selection.py": "7fffae6bb2962e9f055892ca7b38803aea70bd53393553a00622bd21a6d2c121",
-    "parts_manifest.py": "9e797ac37b8f24ee365490e090814f8a74ef480a55b077ff901afab9a07570cc",
-    "parts_subset.py": "2f8f04d810ad122f9e3f63385b5b78b5b3427c72c3b78976c00fa6f1142a4d8a",
+    "packet_probe.py": "05edc1bd9093cb713ec9b472264fc861c39b079bbc39f3bdc2e9b46441440733",
+    "part_binding.py": "c09329bee48baec97db1e4dc9bf4c2d0c5de3cffb8d70c2886b3b43cc27244d5",
+    "part_decisions.py": "b3619667441483072a84e5f6e79c1243f41d453a8ac9e1effd44006d8e86779e",
+    "part_record.py": "9d2c50b5e050f9680b9ec604b4f68dcb8d67e4069907108ed1ecda9e52ce803e",
+    "part_selection.py": "6cc4b2340e2ab68efdbec3e64cdc18c8b8e684cb9b608a3d1305f85ab4582869",
+    "parts_manifest.py": "6cce45d5759d93fb84ca23be5ffe79da264ccbda13e1d6d3ebfc332ebf898e21",
+    "parts_subset.py": "380756768d5a392f35db467dc2aa955fd223d7201b0970a9bc18504e8274e221",
     "passive_corners.py": "9dcecbb83cf888cfc019f2c6445f53aa690f698ebbdabc1636ada09da9a44037",
-    "placement.py": "d4c75f18c799cd4382f8c50a507fcc0783d0b44b94b9dd8f8b7eaf2dbd8909eb",
-    "placement_adapter.py": "89da096e2d8a47a3c8555160ac43e31b9b4954712ed915cd0b484d96ac0ac247",
-    "placement_check.py": "c26f03afbe579dc850823e984645bdecdbbf2e8d9799c0d915bba5f6061bf467",
-    "placement_predicates.py": "f5b4401a4d0662597a4a4ab69d0c216fbb8634eb85fc546d38155a1963146f4a",
-    "placement_probe.py": "2994d0979ce5cf74906ef7987078eee1ac37e740fcb6febffea02fb12f2dd0b5",
-    "placer.py": "5ab4344334300b4677b07535aea17072da765c2ee5cddf3fc99702f3e9ff2267",
-    "placer_runner.py": "e38826ab5f8a39634bd93162ae6990298f9ebf8bfdcc6a862bce37c74b4c34e6",
-    "preflight.py": "6a80bf5f4aa3c0c96bdc182916e6c5b5aa0943f4a4d7235589c8c736e1821865",
-    "profiles.py": "cda0184262298815d89fe82da6bd673b61bc06af820caae6819555949d5bf1b1",
-    "reference_blocks.py": "42554881f8f15f8bc2ae4bd97747b45a7d8f11d4b4b2a6d6b534028f7c543361",
+    "passive_ratings.py": "87ddc5797e057b6a427dc2d4234da22248704692910bad2e96281dee11606666",
+    "pin_contracts.py": "a953bce5466a9360aec6868340a1ada7bbb5a9e67b418784c66beab2ac4efab8",
+    "placement.py": "a0faa9874a1808d298dc1f9bd8612115591076aa540a69117b7690e0f74ccd9b",
+    "placement_adapter.py": "fdb09dc85a98494708e5b3b7e15a6658faf930abee1a70386bb29ee237e77f2a",
+    "placement_check.py": "ace5d4ac5e5d30d550ce4743e04cf9157e5fc6043e409936bf90f943737d860e",
+    "placement_congestion.py": "a0725a57b8cf7e4d056698cb43b064c10b3b0ef187f86c0fcbef97b82c733150",
+    "placement_defects.py": "83cc423642db0561ae325d076b6ad388eeb3a99d86129ec65e64b936daad6aa2",
+    "placement_groups.py": "f92c9c28706aabb0d7d20cae69977e7055b2e10509cc866a8adf57b09f86af36",
+    "placement_plans.py": "e0e22cd0c49f3ea0ec120c250d84170bcaae7c32443ef1099c9efda4a7e546b9",
+    "placement_predicates.py": "a82b36e4f6fbff9f4f2f9b12d2ab8f18b36f595672e692276e76de99bd511074",
+    "placement_probe.py": "ab81dbebb574ff7f5e42b4a9fd48edc1ab6325908abd841e8e2affd95b0a49c0",
+    "placer.py": "56be589db28d0603dd5bdb985d776995f88b7c7dc7eb9a229423e6c9e36abf13",
+    "placer_runner.py": "745b9f8950759575bd7b529b0f4f3e0cbbccad15d51916a9b522a0021c693fe9",
+    "pod_driver.py": "efa9eaf1306d6bc047399e6f842af417e320d2d442ebfe0dce6e262ccf0e5f44",
+    "pour_budget.py": "b4d56ff3819b78cd2b3f8e6db54243ac81b649d471f8353e745f1069cc4c4d03",
+    "pour_budget_probe.py": "4a2ca3b834b2ceb99cf5005f9e7f19bf112e52c919330afc0d5f65716e51ba6d",
+    "preflight.py": "ca03f27b8103267cdeec348c2834d0d426c8c2146a90062287a6f06cc14e7837",
+    "probe_features.py": "2854835ae7d02073707e3d25b39f18ee63153852479e31f22792ce3bf6f5efbf",
+    "profiles.py": "ac940d5c1e9b98fa8a02efe8b36922571e4089b5f180b00c44c1593974162614",
+    "rating_lineage.py": "c3a6e0d9aae23d0f54fcd3c78cd3815a1dd82949db5007a929ec38bd0b94f9ea",
+    "reference_blocks.py": "36b7514a1ce0dd7a783f1a061861a54ecb172dd79a651e94b33991b35aa78265",
     "render3d.py": "4b2b81ec5325e25c0b86b70aaaf357198074ef15c96d09fc456bbbbcfa9b2fae",
-    "replay.py": "0a8e3e1820293660f36ba478032b8050d2a232d0accb4b4387d06efd83c3db52",
+    "replay.py": "e50b987f98a007b72fd8000f1362ac82cc1cdf65b4c9d9c92765cfb53e2f14a1",
     "replay_child.py": "bdffb73d197fe36d5219dccf456d30237e48741d9cf7d6b1a32a04626934ba74",
-    "reviewers.py": "99a104245bfd649c7436f6c918173f0178a2f0ec42a5cd5ddcf136afff7881dc",
-    "routing_adapter.py": "27f56dfac6e8384f4eab4f281c477af194f50d7dd4d98bc3add81e9ad5c916a5",
-    "routing_native.py": "8776c3352e52d343313d8bce49cb584a06c6e3a34654759d378760c572a0b0e9",
+    "requirement_map.py": "f796fd7328f975f7586ca6a52bcff58cda57995c40e59a26472be9b138bd77df",
+    "requirement_scope.py": "fd4c36296bf54f0ef50c4d2caef18465887d22180306e43b90efac9a48d561fc",
+    "review_run.py": "e8ed5535f07805a6186dff9e83705bab80963164655a1394d34bf866bb7c961e",
+    "reviewers.py": "9fd4ecd74861a6c15904692b9be98877b96b9d42e36b3c88a0b8b4afc2672e74",
+    "rf_geometry.py": "46975c4fe3cfbac14bd3906c3bfad4cf8e3f399d671e8416634367a95675c7e1",
+    "rf_review.py": "9e6e0a1e6f9848036901c263d32bb77a591ce6448d2b287d5199b710c51c43a4",
+    "routed_artwork.py": "e28492d53c6f2ec38a8529236eee98e13846059042de44068d86846bd8dc1eb3",
+    "routing_adapter.py": "e7220e57f219f12e8091ebcb1b345b89e98511aa189430c0e93ef51efe21b658",
+    "routing_equivalence.py": "b506b1df0b91c8e5c22957ea23fa098a82c7bea63fe330647f447d072e6de7a4",
+    "routing_native.py": "ca25f878e8e0be8899aff30270f3d8a90a6efd203204bceaca381fc5e9b31435",
     "routing_rules.py": "24d984591f2aba0415fefe50f86c8045fbca86f6164ebe0696a637b05523cecc",
-    "rung1_campaign.py": "031f485c7deb62e05e681b1b8ec998b8bfbdcf35575d2c43178d09b41dd6c09c",
-    "rung1_qualified.py": "0d034ad4234079c86c371a28c82670a4f140bd7ab667a4742fbcfbc7230d4c52",
-    "scaffold.py": "0894b927d3affa7412646a029cc73e7e79923bad6e341acc52054355f039aa48",
-    "schematic_decompile.py": "8e6bc33fae93d1c27b1061d165ae51f8a0008dc33d5cb8d79a3355c57469b4a9",
-    "schematic_emit.py": "7d586d19f30ba5cb0d585afe855b840442780469880001b6cc24df95e1d604bc",
-    "schematic_emitter.py": "e7dcd18ed251f4b1d065da0a419040a24d36551d6aca80d6a93fa9281ae217c0",
-    "schematic_lint.py": "1a99a42d6d353458de9b13a2893a1e92e423bf88f6f037724f0573e8c615d315",
+    "rule_severities.py": "2e00e42551707bf451700a3628963011e27e436d783e3472ee2a1482171bdde3",
+    "rung1_campaign.py": "ba14c1b6ef877a88387c03305d7556799ec17fb4026236880d507d6698cbd30a",
+    "rung1_parts.py": "c5e52dc5454627139b7a552d6de62b17f07030c3f24b2c63dffb79483fbbd2ec",
+    "rung1_qualified.py": "a90ae50358ef7b23f145224224944799ddd11265b9105e1a00bb7e25f5605370",
+    "rung1_stages.py": "3c040dc98c234e0b9c79eb4163837a28d062243eab919e4a765bf82f7203ee69",
+    "scaffold.py": "0a7ad2ae827d209f166c02bb446b73ee0394587948794a1f3045686d60e2b037",
+    "scaffold_rule_areas.py": "bb89216c95e3c0b13c61ba779011d642c7904f4706e1b1abbf891246428c246a",
+    "schematic_decompile.py": "8b1034ad01244754c329b10622716f537f6c99750af6c284722088259c488ff3",
+    "schematic_emit.py": "b5589aafc77f597e269a82a8303fa59c25689a208abbed7cc61a7d042d23fcd9",
+    "schematic_emitter.py": "d90863792ad51c3fc646e3744629ded7ded3b4ea96f1997bf0eeadd749c226d4",
+    "schematic_lint.py": "130763e34bc2a5d3f9d091cf2d1d0683eed0dae4b60d360f310a572d7cddcdda",
+    "schematic_presentation.py": "71388f0c904c651e73b9caa20b6e3a54c36efbad5547935e551ce2f7c1079200",
+    "schematic_regenerate.py": "97620c03d5ac6c9ce1c4eebd607df392d281a43dd6394c2c3ed10d28cf8a45df",
+    "schematic_render.py": "52e602f4fd74f8fd9a10a3d50cadef49d0e715872ca2e69a654bc2c255472cb4",
     "schematic_roundtrip.py": "18908191c58c649c07092163c2d9edcef8e77f27317306120d7a30b1fbd370a0",
-    "stage_receipts.py": "e33bffe0075d48c30d9316f60d1549c75e49fef076f4ca8c483948dbedc666ca",
-    "stages.py": "c94b2fb8713263547cf0d2b70d464d76203b1df921eeca0608c982cd1fa05a17",
-    "storage.py": "469f20d6f44415b8b8978c15485e4c0038340df908d6213babc919ee443c2525",
-    "sublayout.py": "2e950873258128aabcaf3db6aa915dff3d48e1e395156b360b12e3b43842cb41",
-    "sublayout_probe.py": "252088701499043c5c2b9fe9c44bb2d0097ef83c16261238a42413623522b922",
-    "symbol_capture.py": "7090cc3b2c1bfb130f0fee9afbc8a99041052157956bd4d3b0c993fd42531db3",
-    "symbol_checks.py": "e6c2fc5790392ba1b7001f08bbee5df55e3f2235978e66d9fd5a9db87569adc4",
-    "symbol_context.py": "9a8205f6ea92156cb23a9a340458a3d4e1c0f3f0b496db4c146119b36c8f8dac",
-    "symbol_library.py": "2f4adc30193fdc252df562bacaa9854e14ba648eeb051af4aa5d09ba7905ad85",
-    "viewer.py": "fe6a2133d4eb0a0a7f2b9c5c0977558b6ede7b5509031aa3cb7a5b22d1ba2384"
+    "schematic_stage.py": "8d0b1dc9e4a35b32e72aafa28a978b3a9b8fdcabd3a5ddb94f775ff4d1609e25",
+    "schematic_text.py": "8ab14f0982c6b60303a16bb4710b200234aeefb91aea85f1a476b7a4be1dba1a",
+    "silk_artwork.py": "28ba6a760a64a9a1dbbb0fd042bb6d58106b2a6af72127fcde94c5139aa10d1e",
+    "silkscreen.py": "36ebaa7467e3b46b701c629c9a9cf67f26e56d0cc070ae2beb9f2772434050c4",
+    "spec_record.py": "e99ff3dfe738d33c860a27fb08235b2023d27a3ee0cc52edefbdc39c4aa1838c",
+    "spice_templates.py": "ce9710ac2c4947dedf7f7820dea29a0a46d8ecafad601c6a7388c9573c6a5bf9",
+    "stage_done.py": "50f7ff8219bb5251f1906f99e3a868c32be187d04cfd0adfe19ff0d3c2629bd4",
+    "stage_receipts.py": "fd03d9a2953570ff66b1abd4630f6f25ab0eb1d4f7839a8fd6ba74398c7ba52a",
+    "stages.py": "aa77ece36cd758b7187786c4038c04db910ef328d847232d311f9d66153fbb66",
+    "storage.py": "5ba698800db3612c8f99e650ab4d11d28a711c0aa8201e6c2f08e934560cc87e",
+    "sublayout.py": "6d012aeb83414ce4224c831c03239964ed6e660d80e5a9c2420e17f720531eb0",
+    "sublayout_probe.py": "f4f597b7a7fea6a50ce945fc02fe6a0940d10d8c34e5b402a0e104d842e62eb5",
+    "symbol_capture.py": "e33078d49aa87d28cefef0fabfa5696d1a943e5d23d4943ea5a6ca4f8b793395",
+    "symbol_checks.py": "1688bdda9b6d3c0b2892b589e4e029fdf8a5aeeb3cb7087bfde7637c8a9c115a",
+    "symbol_context.py": "85738b7368213f7007381535a536704d914feacd1e4a8e0519fa677ba5491c8e",
+    "symbol_library.py": "378bb6431582e1a8591ba80e67fcf8d806a4022340de39e8a9bd542ac37f070c",
+    "symbol_shortlist.py": "4799c483b7ee5d3ac6c6ce31e337f9a9fda399b025a8227cb8375ec0e71c759a",
+    "tool_source.py": "028edb426d0db0b4858df26a85f41f955fde180af6df4217d9eef2ba1dd38c52",
+    "topology_rules.py": "7b803452adcd6736f821e7bdb026929ec08293ba87d2670d7eff8cf6923d87c8",
+    "via_budget_pilot.py": "5ea6d5a2c15fa24d01c6eab4c336b7d6c9de3a5df23861e6f5a9b07dfedc2e87",
+    "viewer.py": "fe6a2133d4eb0a0a7f2b9c5c0977558b6ede7b5509031aa3cb7a5b22d1ba2384",
+    "violation_waivers.py": "1f7bc7d4937808dbee65febfdb2d3d4cf87793b26f9b46a16051983af7f36831"
   },
   "previous_run": null,
   "review_executions": [],
   "reviews": [],
-  "run_id": "607a5eb0-2060-457b-8750-c5cb2edc439a",
+  "rf_review": {
+    "applicable": false,
+    "basis": [
+      "no RF indicator in 3 schematic lib_ids, 3 schematic labels, board (parsed) or captured net-constraint classes; RF review not applicable"
+    ],
+    "binding_sha256": "54e28370e233e0d4539c81685e61fc89315971ab0d035839081e0ab4529995c3",
+    "board": {
+      "footprint_count": 3,
+      "locations": [
+        {
+          "item": "zone",
+          "lines": [
+            386,
+            405
+          ]
+        }
+      ],
+      "parsed": true,
+      "rf_copper": {},
+      "rf_nets_absent_from_board": [],
+      "rf_parts": [],
+      "stackup": [],
+      "zones": [
+        {
+          "filled": false,
+          "keepout": false,
+          "layers": [
+            "B.Cu"
+          ],
+          "net": "/GND"
+        }
+      ]
+    },
+    "category_sha256": {
+      "antenna_and_module_sources": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "board": "6d720d5937f85f96a2581a9ae08b25fba9a895097d0dea29d4276c998782f704",
+      "datasheets": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "planes": "6d720d5937f85f96a2581a9ae08b25fba9a895097d0dea29d4276c998782f704",
+      "rf_captures": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rf_constraints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "routing_adapter": "d57a77070b403f282b699b5d344400a5fdb5dc978563472c397c56a9836ffd5e",
+      "schematic": "1f36e8672183d940f390b0cdc32f041e2c5a1dfe7eef13ed9d6e1d60c5ae8410",
+      "stackup": "6d720d5937f85f96a2581a9ae08b25fba9a895097d0dea29d4276c998782f704"
+    },
+    "declared": null,
+    "expects": {
+      "ble": false,
+      "controlled_impedance": false,
+      "gnss": false
+    },
+    "impedance_declarations": [],
+    "indicators": [],
+    "missing": [
+      "rf_constraints: no captured source bound",
+      "rf_captures: no captured source bound",
+      "antenna_and_module_sources: no captured source bound",
+      "datasheets: no captured source bound"
+    ],
+    "required": false,
+    "rf_layer_requirements": [],
+    "rf_nets": [],
+    "rf_related_nets": [],
+    "role": "rf",
+    "routing_adapter": {
+      "board": {
+        "path": "inputs/project/rc_stage.kicad_pcb",
+        "sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4"
+      },
+      "reason": "no routing adapter receipt was supplied for this candidate",
+      "receipt": null,
+      "record_sha256": "da7f976e4c409807061108b71a203b8f81fceb082c2867e438869434e0d94e3b",
+      "schema": "agent-ee.rf-routing-evidence/1",
+      "status": "missing_evidence"
+    },
+    "schema": "agent-ee.rf-review-decision/1",
+    "sources": {
+      "antenna_and_module_sources": [],
+      "board": [
+        {
+          "path": "inputs/project/rc_stage.kicad_pcb",
+          "sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4"
+        }
+      ],
+      "datasheets": [],
+      "planes": [
+        {
+          "path": "inputs/project/rc_stage.kicad_pcb",
+          "sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4"
+        }
+      ],
+      "rf_captures": [],
+      "rf_constraints": [],
+      "schematic": [
+        {
+          "path": "inputs/project/rc_stage.kicad_sch",
+          "sha256": "91bf9666349cc634ed94c16a8d10cf96aa4e1f1770f01e152442e7c8454e5651"
+        }
+      ],
+      "stackup": [
+        {
+          "path": "inputs/project/rc_stage.kicad_pcb",
+          "sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4"
+        }
+      ]
+    }
+  },
+  "run_id": "3e5678d9-48fd-4dd6-85e4-acf27c6bf1b9",
   "runtime_files": {
     "/usr/bin/ngspice": {
       "path": "/usr/bin/ngspice",
@@ -1067,7 +1493,7 @@
     },
     "agy": {
       "path": "/home/halbritt/.local/bin/agy",
-      "sha256": "085f43e0d0628a8a8dabe1e547067818fa2c0adc86cfac98a3c4492918f455ef"
+      "sha256": "337dcde668441a2828968644d7982829c2d2a5e0c4144f346e1f3fc6abb3cdc7"
     },
     "bwrap": {
       "path": "/usr/bin/bwrap",
@@ -1075,7 +1501,7 @@
     },
     "claude": {
       "path": "/home/halbritt/.local/bin/claude",
-      "sha256": "60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5"
+      "sha256": "520bc6c1f40af466bd03a278b5ae1af1a2938bc7de5b9e5cb15526da20d71cfe"
     },
     "codex": {
       "path": "/home/halbritt/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
@@ -1098,8 +1524,9 @@
       "sha256": "ba821c4719fbb6e51c378ae98f7db4254a214eb9e39e4822bb88833c986513f8"
     }
   },
+  "runtime_observations": [],
   "schema": "agent-ee.result/1",
   "scope": "Checks-only stage boundary qualification: seeded-placement; expected initial outcomes are declared in requirements/seeded-placement.md.",
-  "started_utc": "2026-10-18T03:51:17.345421+00:00",
+  "started_utc": "2026-10-21T13:46:17.632285+00:00",
   "state": "incomplete"
 }

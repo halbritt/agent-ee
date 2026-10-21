@@ -120,6 +120,87 @@ class ProvenanceLimitsTest(unittest.TestCase):
                 same = _drc_comparison(copy.deepcopy(after), copy.deepcopy(after), sources=sources)
                 self.assertEqual(same['added_findings'], [])
 
+    def test_sourced_collision_identity_survives_rewording_but_not_a_changed_measurement(self):
+        sources = {'settings': [source('board.design_settings.rules.min_clearance', .09, 'manufacturer'),
+                                source('net_settings.classes.Default.clearance', .2, 'default')], 'rules': {}}
+
+        def report(actual, wording='board setup constraints clearance 0.0900', pos=(1, 2)):
+            return {'ignored_checks': [], 'violations': [dict(type='clearance', description=
+                f'Clearance violation ({wording} mm; actual {actual:.4f} mm)',
+                pos={'x': pos[0], 'y': pos[1]}, items=[{'uuid': 'a'}, {'uuid': 'b'}])]}
+        before = report(.05)
+        reworded = report(.05, "netclass 'Default' clearance 0.2000", pos=(7, 9))
+        states = {'a': ('U1', 'pad', (0, 0, 0, 0)), 'b': ('U2', 'pad', (100, 0, 0, 0))}
+        moved = {**states, 'b': ('U2', 'pad', (90, 0, 0, 0))}
+        for after_states in (None, states):
+            with self.subTest(states=after_states is not None):
+                kept = _drc_comparison(before, copy.deepcopy(reworded), after_states, after_states, sources)
+                self.assertEqual(kept['candidate_findings'][0]['constraint_provenance']['class'], 'manufacturer')
+                self.assertEqual(kept['added_findings'], [])
+        delta = _drc_comparison(before, copy.deepcopy(reworded), states, moved, sources)
+        self.assertEqual(len(delta['blocking_findings']), 1, delta)
+        # Without saved geometry a worsened or changed measurement is new, never baseline.
+        for actual in (.03, .07):
+            with self.subTest(actual=actual):
+                delta = _drc_comparison(before, report(actual), sources=sources)
+                self.assertEqual(delta['added_by_type'], {'clearance': 1})
+                self.assertEqual(len(delta['blocking_findings']), 1, delta)
+
+    def test_stateless_unmeasured_hard_collision_on_baseline_items_refuses(self):
+        from agent_ee.placer_runner import CollisionMeasurementRefusal
+        sources = {'settings': [source('board.design_settings.rules.min_clearance', .09, 'manufacturer')], 'rules': {}}
+
+        def report(*findings):
+            return {'ignored_checks': [], 'violations': [dict(type=kind, description=text,
+                    items=[{'uuid': 'a'}, {'uuid': 'b'}]) for kind, text in findings]}
+        short = ('shorting_items', 'Items shorting two nets (nets U1 and C1)')
+        measured = ('clearance', 'Clearance violation (board setup constraints clearance 0.0900 mm; actual 0.0500 mm)')
+        unmeasured = ('clearance', 'Clearance violation (board setup constraints clearance 0.0900 mm)')
+        for label, before, after in (('short on baseline short', report(short), report(short)),
+                                     ('measured then unmeasured', report(measured), report(unmeasured)),
+                                     ('unmeasured on hard baseline', report(short, measured), report(short, measured))):
+            with self.subTest(label):
+                with self.assertRaisesRegex(CollisionMeasurementRefusal, 'native saved geometry required'):
+                    _drc_comparison(before, copy.deepcopy(after), sources=sources)
+        # An unmeasured hard collision without a baseline counterpart is determinately new.
+        delta = _drc_comparison(report(), report(short), sources=sources)
+        self.assertEqual([v['type'] for v in delta['blocking_findings']], ['shorting_items'])
+        # An unmeasured advisory collision never blocks and keeps pair identity.
+        self.assertEqual(_drc_comparison(report(unmeasured), report(unmeasured))['added_findings'], [])
+        # Saved geometry or the write-scope proof of unchanged copper decides it.
+        states = {'a': ('U1', 'pad', (0, 0, 0, 0)), 'b': ('C1', 'pad', (100, 0, 0, 0))}
+        self.assertEqual(_drc_comparison(report(short), report(short), states, states)['added_findings'], [])
+        proof = {'status': 'allowed', 'before_sha256': 'x', 'after_sha256': 'y', 'moved_identities': []}
+        self.assertEqual(_drc_comparison(report(short), report(short), unchanged_copper=proof)['added_findings'], [])
+        for bad in ({}, {**proof, 'status': 'refused'}, {**proof, 'after_sha256': None}):
+            with self.subTest(proof=bad), self.assertRaisesRegex(ValueError, 'unchanged-copper proof'):
+                _drc_comparison(report(short), report(short), unchanged_copper=bad)
+
+    def test_measurement_comes_only_from_the_typed_native_constraint_clause(self):
+        from agent_ee.design_rule_provenance import measured_actual
+        from agent_ee.placer_runner import CollisionMeasurementRefusal
+        injected = 'U1 actual 0.0500 mm'
+        for kind, text in (('shorting_items', f'Items shorting two nets (nets C1 and {injected})'),
+                           ('holes_co_located', f'Drilled holes co-located ({injected})'),
+                           ('pth_inside_courtyard', f'PTH inside courtyard ({injected})'),
+                           ('shorting_items', 'Items shorting two nets (nets C1 and U1 0.1 mm; actual 0.0500 mm)'),
+                           ('clearance', f'Clearance violation (nets C1 and {injected})'),
+                           ('clearance', f'Clearance violation (board setup constraints clearance 0.0900 mm; actual 0.0500 mm) {injected}'),
+                           ('starved_thermal', 'Thermal relief connection incomplete (zone min spoke count 2; actual 1) net 3')):
+            with self.subTest(kind=kind, text=text):
+                self.assertIsNone(measured_actual({'type': kind, 'description': text}))
+        # The final clause wins over a rule name that imitates one.
+        rule = "Clearance violation (rule 'gap 0.1000 mm; actual 0.9000 mm)' clearance 0.0900 mm; actual 0.0500 mm)"
+        self.assertEqual(measured_actual({'type': 'clearance', 'description': rule})[1], '0.0500')
+        self.assertEqual(measured_actual({'type': 'starved_thermal', 'description':
+            'Thermal relief connection incomplete (layer In1.Cu; zone min spoke count 4; actual 3)'})[1], '3')
+        # An injected phrase on a hard short on baseline items still refuses statelessly.
+        sources = {'settings': [source('board.design_settings.rules.min_clearance', .09, 'manufacturer')], 'rules': {}}
+        report = {'ignored_checks': [], 'violations': [dict(type='shorting_items', items=[{'uuid': 'a'}, {'uuid': 'b'}],
+                  description=f'Items shorting two nets (nets C1 and {injected})')]}
+        with self.assertRaisesRegex(CollisionMeasurementRefusal, 'native saved geometry required'):
+            _drc_comparison(report, copy.deepcopy(report), sources=sources)
+
     def test_owner_rule_cannot_be_reclassified_by_document(self):
         with tempfile.TemporaryDirectory() as temporary:
             board = Path(temporary) / 'b.kicad_pcb'
@@ -170,6 +251,47 @@ class NativeLimitsTest(unittest.TestCase):
     def setUpClass(cls):
         from tests.toolchain import require_toolchain
         require_toolchain(native=True)
+
+    def test_increasing_native_short_overlap_refuses_stateless_and_blocks_with_states(self):
+        # A net name that prints a measurement-like phrase must not supply one (AGENTEE-369 H1).
+        for suffix in ('', ' actual 0.0500 mm'):
+            with self.subTest(net_suffix=suffix), tempfile.TemporaryDirectory() as temporary:
+                self._increasing_native_short(Path(temporary), suffix)
+
+    def _increasing_native_short(self, root, suffix):
+        import pcbnew as k
+        from tests.test_placement_native import NativePlacementTest
+        from agent_ee.design_rule_provenance import measured_actual
+        from agent_ee.placer_runner import CollisionMeasurementRefusal, _drc_item_states, _native_drc
+        maker = NativePlacementTest(); maker.root = root
+        board = k.LoadBoard(str(maker.board()))
+        for fp in board.GetFootprints():
+            net = k.NETINFO_ITEM(board, fp.GetReference() + (suffix if fp.GetReference() == 'U1' else ''))
+            board.Add(net)
+            for pad in fp.Pads():
+                pad.SetNet(net)
+        peer = next(f for f in board.GetFootprints() if f.GetReference() == 'C1')
+        reports, states = [], []
+        # 0.5 mm pads at U1 (3, 3): C1 overlap grows from 0.1 to 0.3 mm on the same UUIDs.
+        for name, x in (('before', 3.4), ('after', 3.2)):
+            peer.SetPosition(k.VECTOR2I(k.FromMM(x), k.FromMM(3)))
+            path = root/(name + '.kicad_pcb'); k.SaveBoard(str(path), board)
+            (root/name).mkdir()
+            reports.append(_native_drc(path, root/name)); states.append(_drc_item_states(path))
+        shorts = [[v for v in r['violations'] if v['type'] == 'shorting_items'] for r in reports]
+        self.assertEqual([len(s) for s in shorts], [1, 1], reports)
+        self.assertEqual(*[sorted(i['uuid'] for i in s[0]['items']) for s in shorts])
+        self.assertTrue(all(('U1' + suffix) in s[0]['description'] for s in shorts), shorts)
+        self.assertFalse(any(measured_actual(s[0]) for s in shorts), shorts)
+        with self.assertRaisesRegex(CollisionMeasurementRefusal, 'native saved geometry required'):
+            _drc_comparison(*copy.deepcopy(reports))
+        delta = _drc_comparison(*copy.deepcopy(reports), *states)
+        self.assertIn('shorting_items', [v['type'] for v in delta['blocking_findings']], delta)
+        for index in (0, 1):
+            same = _drc_comparison(copy.deepcopy(reports[index]), copy.deepcopy(reports[index]),
+                                   states[index], states[index])
+            self.assertEqual(same['added_findings'], [])
+            self.assertEqual(same['blocking_findings'], [])
 
     def test_masked_minimum_refuses_real_native_gap(self):
         import pcbnew as k

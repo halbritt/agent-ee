@@ -1733,11 +1733,20 @@ before executing either command, covering bwrap versions that canonicalize fd
 sources to pathnames. Directory
 sources containing hard links into live `src` refuse with `live_package_source:<at>`
 (AGENTEE-349), including persistent links planted after inventory, by re-inventorying
-the held descriptor before launches and after execution. Before/after identity of
+the held descriptor before launches and after execution, and links planted and
+removed during a run, detected by live entries' status-change times (AGENTEE-357).
+Before/after identity of
 declared mounts reads through held descriptors; post-run source replacement or
 observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and
 upward-escaping mount symlinks retain link identity without reading host targets;
-an executable through such a link has an unknown digest and is unadoptable. Only
+an executable through such a link has an unknown digest and is unadoptable, and a
+declared `source` through one refuses as `source_link_escape:<source>`, including
+from the same resolution in either strict run observation, leaving no receipt directory
+(owner access is restored on each directory held by a no-follow `O_PATH` descriptor before it
+is read, iteratively at any depth, even after the tool made directories unwritable; an
+unremovable directory raises typed `cleanup_failed:<receipt dir>` over the refusal). The
+executable is resolved and hashed through component-wise no-follow opens below
+the held descriptor. Only
 fd-form receipts carry the mount-guard observation; historical path-form replay
 retains its lower assurance. Directory sources containing submounts are
 conservatively refused, including same-device
@@ -2015,8 +2024,21 @@ Baseline comparisons include enforcement changes and the transition to copper
 outside the outline. The same native item identities cannot hide a newly hard
 finding; identical pre-existing findings retain their baseline treatment. Non-collision
 numeric findings include absolute geometry in their baseline identity. Collision
-comparisons without saved geometry retain item-pair identity across wording changes;
-native publication still compares the saved item geometry. Copper
+comparisons without saved geometry retain item-pair identity across wording changes
+but bind it to the printed measured value: a worsened (or otherwise changed) actual
+on the same items is a new finding, never baseline. A measurement comes only
+from a numeric constraint type's final KiCad clause (`<limit> mm; actual <value> mm)`,
+or `min spoke count N; actual M)` for thermal spokes); text in net names, rule
+names or item descriptions never supplies one, and shorts, co-located holes, PTH
+courtyard intrusion and other structural types are always unmeasured. An unmeasured collision
+(a native short, co-located holes, PTH courtyard intrusion, or a clearance without that clause) on
+items that also collide in the baseline, where either finding is hard, refuses with `CollisionMeasurementRefusal`
+(unknown) instead of matching by item pair: only native saved geometry, or the
+routed-artwork producer's silk-only write-scope proof bound to the digests of
+both DRC'd boards (copper unchanged), can decide it. Unmeasured collisions
+without a baseline counterpart remain new; advisory-only pairs keep item-pair
+identity. Native publication still compares
+the saved item geometry. Copper
 outside the board material always refuses placement/plane publication, including
 pre-existing witnesses.
 

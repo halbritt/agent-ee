@@ -148,6 +148,10 @@ At 45° the union of a rotated square box and a round box differs from a
 rotated local centre. The centre-anchored 0805 control `R1` keeps its native
 position text.
 
+The generator is deterministic; see
+[fab-export](fab-export.md#fixture-and-tests) for what
+`tests/test_fixture_generators.py` checks.
+
 ## Policy
 
 ```json
