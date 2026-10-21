@@ -34,6 +34,99 @@ def board():
     return b
 
 
+def output_loop():
+    facts, doc = board(), declaration(limit=20*MM)
+    ind = copy.deepcopy(facts['footprints'][0])
+    ind['ref'] = ind['uuid'] = 'L1'
+    for pad in ind['pads']:
+        pad['uuid'] = 'L1'+pad['number']
+    ind = transform(ind, [10*MM, 6*MM], 0)
+    ind['pads'][0]['net'] = 'SW'
+    ind['pads'][1]['net'] = 'VCC'
+    facts['footprints'][0]['pads'][0]['net'] = 'SW'
+    facts['footprints'].append(ind)
+    row = doc['obligations'][0]
+    row['supply']['from'] = endpoint('L1', '2', 'VCC')
+    row['switch'] = dict(**{'from': endpoint('U1', '1', 'SW'),
+                           'to': endpoint('L1', '1', 'SW')},
+                         max_distance_nm=20*MM, citation='Owned output-loop switch limit.')
+    return facts, doc
+
+
+class OutputLoopTests(unittest.TestCase):
+    def test_distinct_sources_with_equal_pad_numbers_and_coupled_constraints(self):
+        facts, doc = output_loop()
+        self.assertEqual(locality.grade(facts, doc)['status'], 'pass')
+        for role in ('supply', 'return', 'switch'):
+            with self.subTest(role=role):
+                changed = copy.deepcopy(facts)
+                pair = doc['obligations'][0][role]
+                ref = pair['from']['reference']
+                fp = next(f for f in changed['footprints'] if f['ref'] == ref)
+                pad = next(p for p in fp['pads'] if p['number'] == pair['from']['pad'])
+                pad['position_nm'][0] += 100*MM
+                result = locality.grade(changed, doc)
+                self.assertEqual([d['role'] for d in result['defects']], [role])
+                # Every endpoint order blocks the same proven violation.
+                for proposed in changed['footprints']:
+                    if proposed['ref'] in {pair[k]['reference'] for k in ('from', 'to')}:
+                        peers = [f for f in changed['footprints'] if f is not proposed]
+                        blockers, cost = locality.constraint(peers, proposed, doc)
+                        self.assertEqual(blockers, {pair[k]['reference'] for k in ('from', 'to')})
+                        self.assertGreater(cost, 1)
+
+    def test_packer_guides_all_three_footprints_in_each_order(self):
+        import itertools
+        facts, doc = output_loop()
+        for role in locality.roles(doc['obligations'][0]):
+            doc['obligations'][0][role]['max_distance_nm'] = 4*MM
+        self.assertEqual(locality.grade(facts, doc)['status'], 'defect')
+        for priority in itertools.permutations(['U1', 'L1', 'C1']):
+            with self.subTest(priority=priority):
+                policy = request(priority_refs=list(priority), electrical_locality=doc)
+                plan = pack(facts, policy)
+                self.assertEqual(plan['status'], 'planned', plan)
+                self.assertEqual(plan['locality_grading']['status'], 'pass')
+                self.assertEqual({m['role'] for m in plan['locality_grading']['measured']},
+                                 {'supply', 'return', 'switch'})
+                self.assertEqual(plan, pack(facts, policy))
+
+    def test_uuid_selection_and_unknown_boundaries_preserve_known_defects(self):
+        for mutation in ('duplicate', 'uuid', 'net', 'declared_net', 'limit', 'citation'):
+            with self.subTest(mutation=mutation):
+                facts, doc = output_loop()
+                row = doc['obligations'][0]
+                ground = facts['footprints'][0]['pads'][1]
+                ground['uuid'] = '00000000-0000-4000-8000-000000000010'
+                other = copy.deepcopy(ground)
+                other['uuid'] = '00000000-0000-4000-8000-000000000011'
+                facts['footprints'][0]['pads'].append(other)
+                row['return']['from']['uuid'] = ground['uuid']
+                self.assertEqual(locality.grade(facts, doc)['status'], 'pass')
+                if mutation == 'duplicate': row['return']['from'].pop('uuid')
+                elif mutation == 'uuid': row['return']['from']['uuid'] = other['uuid'][:-1]+'2'
+                elif mutation == 'net': ground['net'] = 'OTHER'
+                elif mutation == 'declared_net': row['return']['to']['net'] = 'OTHER'
+                else: row['return'].pop('max_distance_nm' if mutation == 'limit' else 'citation')
+                self.assertEqual(locality.grade(facts, doc)['status'], 'unknown')
+                plan = pack(facts, request(electrical_locality=doc))
+                self.assertEqual((plan['outcome'], plan['placements']), ('unknown', []))
+                row['supply']['max_distance_nm'] = 0
+                result = locality.grade(facts, doc)
+                self.assertEqual(result['status'], 'defect')
+                self.assertEqual([d['role'] for d in result['defects']], ['supply'])
+
+    def test_capacitor_and_switch_identity_boundaries(self):
+        for mutation in ('capacitor', 'cap_pad', 'switch_ic'):
+            facts, doc = output_loop()
+            row = doc['obligations'][0]
+            if mutation == 'capacitor': row['return']['to']['reference'] = 'C2'
+            elif mutation == 'cap_pad': row['return']['to']['pad'] = '1'
+            else: row['switch']['from']['reference'] = 'L1'
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                locality.validate(doc)
+
+
 class LocalityTests(unittest.TestCase):
     def test_grade_exact_boundary_and_one_nanometre(self):
         b, doc = board(), declaration()
@@ -233,6 +326,32 @@ class NativeLocalityTests(unittest.TestCase):
             self.assertIn('project/locality.json', baseline['files'])
             self.assertEqual(result['details']['locality'], {'path': 'project/locality.json',
                              'sha256': baseline['files']['project/locality.json']})
+
+    def test_registered_captured_native_distinct_source_loop(self):
+        from test_placement_gates_native import NativePlacementGates, DRC_STAGE, DRC_FULL, placement
+        from agent_ee.placement_probe import extract
+        helper = NativePlacementGates()
+        helper.setUp()
+        self.addCleanup(helper.doCleanups)
+        source = helper.source()
+        facts = extract(source / 'project/rc_filter.kicad_pcb')
+        fps = {f['ref']: f for f in facts['footprints']}
+        # Owned RC topology exercises the buck loop's three-reference contract.
+        cap = fps['C1']
+        supply = next(p for p in cap['pads'] if 'GND' not in p['net'])
+        ground = next(p for p in cap['pads'] if 'GND' in p['net'])
+        def pair(ref, target):
+            pad = next(p for p in fps[ref]['pads'] if p['net'] == target['net'])
+            return dict(**{'from': {**endpoint(ref, pad['number'], pad['net']), 'uuid': pad['uuid']},
+                           'to': {**endpoint('C1', target['number'], target['net']), 'uuid': target['uuid']}},
+                        max_distance_nm=100*MM, citation='Owned native three-reference loop requirement.')
+        doc = dict(schema=locality.SCHEMA, obligations=[dict(id='output-loop', metric='pad-centre-to-centre',
+                   supply=pair('R1', supply), **{'return': pair('J1', ground)})])
+        (source / 'project/locality.json').write_text(json.dumps(doc))
+        spec = placement('loop', locality.CRITERION, locality='project/locality.json')
+        run, results = helper.run_scope(source, [DRC_STAGE, spec, DRC_FULL])
+        self.assertEqual((results['loop']['execution'], results['loop']['outcome']), ('ok', 'pass'), results['loop'])
+        self.assertIn('work/loop/placement-judgment.json', results['loop']['evidence'])
 
     def test_native_guided_save_reload(self):
         from test_placer_native import NativePlacerTest

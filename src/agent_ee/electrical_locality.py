@@ -46,11 +46,12 @@ def validate(document):
             if 'citation' in pair and (not isinstance(pair['citation'], str) or not pair['citation'].strip()):
                 raise ValueError('locality citation must be nonempty text')
         supply, ground = obligation['supply'], obligation['return']
-        if any(supply[k]['reference'] != ground[k]['reference'] for k in ('from', 'to')):
-            raise ValueError('supply and return must name the same IC and capacitor references')
-        if any(supply[k]['pad'] == ground[k]['pad'] for k in ('from', 'to')):
+        if supply['to']['reference'] != ground['to']['reference']:
+            raise ValueError('supply and return must name the same capacitor reference')
+        if any(supply[k]['reference'] == ground[k]['reference']
+               and supply[k]['pad'] == ground[k]['pad'] for k in ('from', 'to')):
             raise ValueError('supply and return must select distinct physical pads')
-        if 'switch' in obligation and obligation['switch']['from']['reference'] != supply['from']['reference']:
+        if 'switch' in obligation and obligation['switch']['from']['reference'] != ground['from']['reference']:
             raise ValueError('switch pair must start at the declared IC')
     return document
 

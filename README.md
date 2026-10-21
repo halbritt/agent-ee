@@ -104,8 +104,9 @@ graphics and required markings.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against cited limits. Captured pad UUIDs select
-multi-pad pins, and coordinator packing binds to the check's immutable locality
-file. Origin-group distance supplies no electrical acceptance.
+multi-pad pins. Buck output loops may pair a supply leg from the inductor with
+a return leg from the IC PGND. Coordinator packing binds to the check's
+immutable locality file. Origin-group distance supplies no electrical acceptance.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
