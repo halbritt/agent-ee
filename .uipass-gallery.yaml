@@ -1,0 +1,27 @@
+schema_version: 1
+app:
+  serve: [/usr/bin/python3, scripts/serve_render_gallery_fixture.py, --port, "{port}"]
+  ready_path: /
+timeouts:
+  startup: 120
+  case: 40
+  total: 240
+viewports:
+  desktop: {width: 1440, height: 1000}
+  phone: {width: 390, height: 844}
+surfaces:
+  gallery:
+    states:
+      latest:
+        route: /
+        ready: 'section:first-of-type img[alt="top native 3D view"]'
+      coverage:
+        route: /
+        actions:
+          - {type: click, selector: 'section:first-of-type summary'}
+        ready: 'section:first-of-type details[open]'
+      interactive:
+        route: /
+        actions:
+          - {type: click, selector: 'section:first-of-type .button'}
+        ready: '#render-status[data-ready="true"]'

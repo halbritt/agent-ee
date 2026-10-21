@@ -125,3 +125,7 @@ records this as `reproducibility.status: not_verified` with a reason: native ray
 tracing has no bound seed in this invocation and SVG metadata can vary. Rendering
 is offline; project-local models can be used, but no stock models are downloaded.
 An image with unresolved model coverage is incomplete visual coverage.
+
+For recurring delivery at a stable private browser URL, use the
+[persistent render gallery](render-gallery.md), which retains candidate history
+and reuses the interactive viewer.
