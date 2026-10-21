@@ -1794,5 +1794,9 @@ remain jointly graded and constrained; missing loop bounds stay unknown. See
 for declaration semantics, owned regressions and read-only pod measurements.
 
 Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
+The per-rotation cap of 256 distinct locality origins refuses with
+`packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
+`locality target budget exhausted`; it never truncates targets. Runner heartbeats
+go to stderr, preserving the single JSON summary on `board_build` stdout.
 Heartbeat and partial search results are diagnostics with no acceptance authority;
 the full independent locality check still grades every declared role.

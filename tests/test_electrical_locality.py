@@ -1,6 +1,7 @@
 """Owned pad identities, coupled limits, pack guidance and captured native checks."""
 import copy
 import json
+import random
 import unittest
 
 from agent_ee import electrical_locality as locality
@@ -415,8 +416,8 @@ class NativeLocalityTests(unittest.TestCase):
         request_path.write_text(json.dumps(helper.config))
         result_path = helper.scratch / 'result.json'
         destination = helper.scratch / 'proposal'
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
+        output, diagnostics = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(diagnostics):
             code = main([str(helper.source), str(helper.netlist), '--request', str(request_path),
                          '--destination', str(destination), '--result', str(result_path)])
         self.assertEqual(code, 1)
@@ -425,7 +426,8 @@ class NativeLocalityTests(unittest.TestCase):
                          ('packing_budget_exhausted', 'unknown', []))
         self.assertTrue(result['search']['partial']['placements'])
         self.assertFalse(destination.exists())
-        events = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(output.getvalue(), '')
+        events = [json.loads(line) for line in diagnostics.getvalue().splitlines()]
         self.assertTrue(events)
         self.assertTrue(all(e['event'] == 'placement_heartbeat' for e in events))
         self.assertEqual(helper.source.read_bytes(), helper.saved)
@@ -453,6 +455,78 @@ class LocalityIndexTests(unittest.TestCase):
         candidate = state.prepare(transform(movable, [0, 0], 0))
         self.assertEqual(candidate.constraint([MM, 2*MM]), locality.constraint(
             [moved], transform(movable, [MM, 2*MM], 0), doc))
+
+    def test_seeded_index_differential_over_random_push_pop_and_output_loops(self):
+        from test_placement import rectangle
+        rng = random.Random(9332)
+        comparisons = pushes = pops = loops = 0
+        rotations = set()
+        # Adapted from the AGENTEE-332 review differential, with original
+        # generated geometry and independent legacy constraint/target oracles.
+        for case in range(300):
+            footprints = {}
+            for i in range(rng.randint(3, 8)):
+                ref = 'P' + str(i)
+                x, y = rng.randint(1, 14), rng.randint(1, 14)
+                w, h = rng.choice(((2, 2), (3, 2), (2, 4), (1, 1)))
+                fp = part(ref, x, y, shape=rectangle(x, y, w, h))
+                fp['pads'] = [dict(
+                    uuid=f'{ref}-{k}', number=str(k), net=net,
+                    position_nm=[x*MM + rng.randint(0, w*MM), y*MM + rng.randint(0, h*MM)],
+                    size_nm=[100000, 100000], shape=1, attribute='smd', layers=['F.Cu'], rotation_deg=0,
+                    copper_centroid_offset_nm=[[rng.randint(-50, 50), rng.choice((1, 3, 7))],
+                                               [rng.randint(-50, 50), rng.choice((1, 2, 9))]])
+                    for k, net in ((1, 'VCC'), (2, 'GND'), (3, 'SW'))]
+                footprints[ref] = fp
+            refs = list(footprints)
+            doc = {'schema': locality.SCHEMA, 'obligations': []}
+            for j in range(rng.randint(1, 5)):
+                ic, cap, inductor = rng.sample(refs, 3)
+                obligation = declaration(ic=ic, cap=cap, limit=rng.choice((2, 4, 6, 9, 15))*MM)['obligations'][0]
+                obligation['id'] = f'o{j}'
+                if rng.random() < .5:
+                    loops += 1
+                    obligation['supply']['from'] = endpoint(inductor, '1', 'VCC')
+                    obligation['switch'] = dict(
+                        **{'from': endpoint(ic, '3', 'SW'), 'to': endpoint(inductor, '3', 'SW')},
+                        max_distance_nm=6*MM, citation='Owned seeded output-loop limit.')
+                doc['obligations'].append(obligation)
+            index, placed = locality.PlacementIndex(doc), []
+            for step in range(25):
+                free = [ref for ref in refs if ref not in {fp['ref'] for fp in placed}]
+                if placed and (not free or rng.random() < .4):
+                    index.pop(placed.pop()['ref'])
+                    pops += 1
+                else:
+                    fp = transform(footprints[rng.choice(free)],
+                                   [rng.randint(0, 20*MM), rng.randint(0, 20*MM)],
+                                   rng.choice((0, 90, 180, 270)))
+                    placed.append(fp)
+                    index.push(fp)
+                    pushes += 1
+                for ref in refs:
+                    if ref in {fp['ref'] for fp in placed}:
+                        continue
+                    rotation = rng.choice((0, 90, 180, 270))
+                    rotations.add(rotation)
+                    origin = transform(footprints[ref], [0, 0], rotation)
+                    evaluator = index.prepare(origin)
+                    with self.subTest(case=case, step=step, ref=ref, rotation=rotation):
+                        for _ in range(3):
+                            position = [rng.randint(-5*MM, 25*MM), rng.randint(-5*MM, 25*MM)]
+                            self.assertEqual(evaluator.constraint(position), locality.constraint(
+                                placed, transform(footprints[ref], position, rotation), doc))
+                            comparisons += 1
+                        expected = sorted(set(map(tuple, locality.targets(placed, origin, doc))))
+                        self.assertEqual(evaluator.targets(), expected)
+            while placed:
+                index.pop(placed.pop()['ref'])
+            self.assertEqual(index.positions, {})
+        self.assertGreater(comparisons, 30_000)
+        self.assertGreater(pushes, 3000)
+        self.assertGreater(pops, 2000)
+        self.assertGreater(loops, 300)
+        self.assertEqual(rotations, {0, 90, 180, 270})
 
     def test_uuid_selected_repeated_number_is_indexed_without_aliasing(self):
         b, doc = board(), declaration()
@@ -520,17 +594,20 @@ class LocalityIndexTests(unittest.TestCase):
         self.assertEqual(len(b['footprints']), 331)
         self.assertEqual(len(doc['obligations']), 15)
         started = time.monotonic()
-        state = locality.PlacementIndex(doc)
-        for fp in b['footprints']:
-            state.push(fp)
-        candidate = state.prepare(transform(b['footprints'][1], [0,0], 0))
+        with patch.object(locality, 'resolve', wraps=locality.resolve) as resolver:
+            state = locality.PlacementIndex(doc)
+            for fp in b['footprints']:
+                state.push(fp)
+            candidate = state.prepare(transform(b['footprints'][1], [0,0], 0))
+        self.assertLessEqual(resolver.call_count, 34)
+        self.assertEqual(len(candidate.pairs), 2)
         expected = locality.constraint(b['footprints'], b['footprints'][1], doc)
         with patch.object(locality, 'resolve', side_effect=AssertionError('per-candidate pad scan')):
             for _ in range(5000):
                 self.assertEqual(candidate.constraint(b['footprints'][1]['position_nm']), expected)
             for fp in b['footprints'][16:]:
                 self.assertEqual(state.prepare(fp).pairs, [])
-        self.assertLess(time.monotonic()-started, 5.0, '331-footprint incremental locality benchmark')
+        self.assertLess(time.monotonic()-started, 120.0, '331-footprint incremental locality safety ceiling')
 
     def test_pod_scale_guided_pack_331_footprints_with_wall_time_bound(self):
         import time
@@ -555,11 +632,15 @@ class LocalityIndexTests(unittest.TestCase):
         policy = request(fixed_refs=[f['ref'] for f in footprints if f['ref'] != 'P29'],
                          electrical_locality=doc)
         started = time.monotonic()
-        with patch.object(locality, 'resolve', wraps=locality.resolve) as resolver:
+        with patch.object(locality, 'resolve', wraps=locality.resolve) as resolver, \
+             patch.object(locality.CandidateLocality, 'constraint', autospec=True,
+                          side_effect=locality.CandidateLocality.constraint) as evaluator:
             result = pack(b, policy)
         elapsed = time.monotonic()-started
         self.assertEqual(result['status'], 'planned', result)
         self.assertEqual(len(result['placements']), 331)
         self.assertEqual(result['locality_grading']['status'], 'pass')
         self.assertLess(resolver.call_count, 400, 'resolution must scale with state updates, not candidates')
-        self.assertLess(elapsed, 20.0, '331-footprint guided packing benchmark')
+        self.assertLessEqual(evaluator.call_count, 3000, 'bounded candidate locality work')
+        self.assertLessEqual(result['steps_used'], 16, 'bounded exact candidate tests')
+        self.assertLess(elapsed, 180.0, '331-footprint guided packing safety ceiling')
