@@ -1018,9 +1018,22 @@ the fixed pose, on each of the pad's outer copper sides) must:
   stays exempt from its own.
 
 Unlike the search gate, no courtyard discharges a box here. A declared
-courtyard overhang (`fixed_overhangs`) admits the courtyard only, and seed
-fixed pairs carried under `carry_seed_fixed_pairs` (AGENTEE-376) cover spacing,
-never outline or keep-out copper.
+courtyard overhang (`fixed_overhangs`) admits the courtyard across its edges,
+never copper beyond the outline, and seed fixed pairs carried under
+`carry_seed_fixed_pairs` (AGENTEE-376) cover spacing, never outline or keep-out
+copper.
+
+Coordinator ruling 371c: a declared `fixed_overhangs` exit edge (AGENTEE-212,
+for example an edge-launch SMA) waives S for that reference's own copper on
+that edge only. The copper may be flush with the declared edge, never past it
+(`outside_outline` still refuses). Keep-outs still bind, and every other edge,
+and every other reference's copper on the declared edge, still needs S. Each
+exempted box is a reported input fact in the planned result (and in a Stage-B
+arrangement record) under `fixed_overhang_copper`: `kind:
+fixed_overhang_copper`, `reference`, `pad`, `copper_bounds_nm`, `setback_nm`,
+`edge` (the declared edge name), `outline_distance_nm` (floored), and
+`declaration` (the reference, the declared edge and its envelope source). The
+key is absent when nothing was exempted.
 
 Any such box makes the result `status: fixed_input_copper`, `outcome: defect`,
 `steps_used: 0`, no placements, and `findings`: one row per box and violation,

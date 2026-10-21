@@ -704,7 +704,7 @@ def _copper_escapes(candidate, outline, obstacles, placed=()):
     return ('rule_area', hit) if hit else None
 
 
-def fixed_input_copper(placed, outline, obstacles, labels):
+def fixed_input_copper(placed, outline, obstacles, labels, overhangs=(), carried=None):
     """Typed refusal for fixed parts whose copper is an input defect (AGENTEE-371, ruling 371a), or None.
 
     A fixed footprint is the designer's pose and is never moved. Each native
@@ -716,10 +716,22 @@ def fixed_input_copper(placed, outline, obstacles, labels):
     or a carried seed pair never admits copper off the board. Determinate
     findings are a defect; with none, a copper box under an unknown S is typed
     unknown. Returns {'outcome', 'reason', 'findings'} or None.
+
+    Ruling 371c: a reference's declared ``fixed_overhangs`` exit edges (the
+    validated policy declarations) are exempt from S for that reference's
+    copper only; the outline itself and keep-outs still bind there, and every
+    other edge still needs S. Each exempted box is appended to ``carried`` as
+    a reported input fact naming the edge, its distance and the declaration.
     """
     findings, unproven = [], []
+    declared = {}
+    for declaration in overhangs:
+        for edge in declaration['edges']:
+            side = frozenset((tuple(edge['start_nm']), tuple(edge['end_nm'])))
+            declared.setdefault(declaration['reference'], {})[side] = (edge, declaration)
     for fp in placed:
         setback = fp.get('_packing_copper_setback')
+        exits = declared.get(fp['ref'], {})
         peers = [(o, name) for peer in placed if peer is not fp
                  for o, name in zip(peer.get('packing_keepouts', []), labels.get(peer['ref'], []))]
         for pad in fp['pads']:
@@ -735,9 +747,22 @@ def fixed_input_copper(placed, outline, obstacles, labels):
             if not _fits(shape, outline):
                 findings.append({**row, 'violation': 'outside_outline', 'outline': 'board outline'})
             elif setback is not None and not _fits(shape, outline, setback):
-                d2 = min(segment_distance2(a, b, c, d) for a, b in edges(poly) for c, d in edges(outline))
-                findings.append({**row, 'violation': 'within_setback', 'outline': 'board outline',
-                                 'outline_distance_nm': math.isqrt(math.floor(d2))})
+                gaps = [(frozenset((tuple(c), tuple(d))), min(segment_distance2(a, b, c, d) for a, b in edges(poly)))
+                        for c, d in edges(outline)]
+                near = [(side, d2) for side, d2 in gaps if d2 < setback * setback]
+                binding = [d2 for side, d2 in near if side not in exits]
+                if binding or not near:
+                    findings.append({**row, 'violation': 'within_setback', 'outline': 'board outline',
+                                     'outline_distance_nm': math.isqrt(math.floor(min(
+                                         binding or [d2 for _, d2 in gaps])))})
+                elif carried is not None:
+                    for side, d2 in near:
+                        edge, declaration = exits[side]
+                        carried.append({**row, 'kind': 'fixed_overhang_copper', 'edge': edge['name'],
+                                        'outline_distance_nm': math.isqrt(math.floor(d2)),
+                                        'declaration': {'reference': declaration['reference'],
+                                                        'edge': copy.deepcopy(edge),
+                                                        'source': copy.deepcopy(declaration['source'])}})
             elif setback is None:
                 unproven.append(row)
             for side in on:
@@ -1919,6 +1944,9 @@ def _pack(capture, policy, *, seed=None, **options):
     if 'carried' in state:
         # Seed fixed pairs closer than the unsourced gap: reported input facts, never refusals.
         result['carried_fixed_pairs'] = state['carried']
+    if state.get('overhang_copper') and result['status'] == 'planned':
+        # Fixed copper within S of its declared exit edge: reported input facts (ruling 371c).
+        result['fixed_overhang_copper'] = state['overhang_copper']
     return result
 
 
@@ -1976,8 +2004,10 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, r
     # Owner-posed fixed parts stand as in the seed (default: the capture itself). Block members
     # that arrangement re-posed and fixes for residual packing were gated there (AGENTEE-366).
     seeds = {f['ref']: f for f in (capture if seed is None else seed)['footprints']}
+    state['overhang_copper'] = []
     refusal = fixed_input_copper([fp for fp in placed if _unchanged(fp, seeds.get(fp['ref']))],
-                                 outline, obstacles, labels)
+                                 outline, obstacles, labels, policy.get('fixed_overhangs', []),
+                                 state['overhang_copper'])
     if refusal is not None:
         status = 'fixed_input_copper' if refusal['outcome'] == 'defect' else 'unsupported_geometry'
         return {**_failure(capture, policy, status, refusal['outcome'], 0, refusal['reason'], margin_nm),

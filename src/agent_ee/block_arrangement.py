@@ -1121,10 +1121,14 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
         return failure('fixed_conflict', str(exc))
     placed = [fp for fp in placed if fp['ref'] not in members]
     # A fixed part's copper off the board or in a keep-out is an input defect (AGENTEE-371).
-    refusal = placer.fixed_input_copper(placed, outline, keepouts, labels)
+    exempt = []
+    refusal = placer.fixed_input_copper(placed, outline, keepouts, labels, effective.get('fixed_overhangs', []), exempt)
     if refusal is not None:
         status = 'fixed_input_copper' if refusal['outcome'] == 'defect' else 'unsupported_geometry'
         return {**failure(status, refusal['reason']), 'outcome': refusal['outcome'], 'findings': refusal['findings']}
+    if exempt:
+        # Copper within S of its reference's declared exit edge: reported input facts (ruling 371c).
+        record['fixed_overhang_copper'] = exempt
     missing = placer.copper_setback_missing(fp for fp in work['footprints'] if fp['ref'] not in fixed)
     if missing:
         return failure('unsupported_geometry', missing)

@@ -50,6 +50,11 @@ def random_cluster_case(rng):
     fixed = ['U1'] if rng.random() < 0.7 else []
     footprints[0] = transform(footprints[0],
         [rng.randint(0, width-3)*MM, rng.randint(0, height-3)*MM], rng.choice([0, 90]))
+    # Ruling 371b: the hub's pad 1 sits on its courtyard edge (y, or x when turned 90); on a
+    # fixed hub at that board edge it moves 0.1 mm inward so its copper stays S inside.
+    axis = 1 if footprints[0]['rotation_deg'] == 0 else 0
+    if fixed and footprints[0]['position_nm'][axis] == 0:
+        footprints[0]['pads'][0]['position_nm'][axis] += MM//10
     source['footprints'] = footprints
     obstacles = []
     if rng.random() < 0.4:
@@ -168,6 +173,8 @@ class ClusterTests(unittest.TestCase):
     def test_individually_feasible_members_have_no_joint_fixed_geometry_candidate(self):
         source, doc = cluster_board(limit=3*MM)
         source['footprints'][0] = transform(source['footprints'][0], [0, 0], 0)
+        # Ruling 371b: pad 1 moves 0.1 mm off the courtyard edge so the fixed IC's copper stays S inside.
+        source['footprints'][0]['pads'][0]['position_nm'][1] += MM//10
         policy = request(electrical_locality=doc, obstacles=[
             dict(side='F', polygons=[rectangle(0, 2.5, 20, 17.5)])])
         # Each capacitor can occupy the one slot beside the fixed IC, but the
@@ -414,6 +421,9 @@ class ClusterTests(unittest.TestCase):
         # their frozen plans put C3's pad 1 copper at y=-50000..50000 nm, off the board.
         # (1, 1) was re-pinned again by ruling 366f: the structural setback S = max_error_nm + 50
         # (5050 nm on this fixture) moves every placement +S in y; verdict and steps are unchanged.
+        # (2, 6) and (2, 7) fix U1 on the board edge; ruling 371b moves its pad 1 0.1 mm inward
+        # (random_cluster_case). Verdict and placements are unchanged; steps 13 -> 17 and 16 -> 20,
+        # the same on the pre-371 placer (de12cca), so purely the fixture move.
         copper_gated = {(1, 1), (2, 1)}
         expected = {1: [{'outcome': 'unknown',
               'placements': [],
@@ -740,7 +750,7 @@ class ClusterTests(unittest.TestCase):
                               'rotation_deg': 0,
                               'uuid': 'U1'}],
               'status': 'planned',
-              'steps_used': 13},
+              'steps_used': 17},
              {'outcome': 'info',
               'placements': [{'fixed': False,
                               'position_nm': [2500000, 0],
@@ -783,7 +793,7 @@ class ClusterTests(unittest.TestCase):
                               'rotation_deg': 0,
                               'uuid': 'U1'}],
               'status': 'planned',
-              'steps_used': 16}]}
+              'steps_used': 20}]}
         movable_cases = planned = 0
         for seed, rows in expected.items():
             rng = random.Random(seed)

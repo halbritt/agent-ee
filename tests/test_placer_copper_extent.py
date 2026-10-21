@@ -704,6 +704,61 @@ class FixedInputCopperTest(unittest.TestCase):
         self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
         self.assertEqual(plan['findings'], [self.finding('outside_outline', outline='board outline')])
 
+    def test_declared_exit_edge_alone_is_exempt_from_the_setback(self):
+        # Coordinator ruling 371c: a declared fixed_overhangs exit edge (AGENTEE-212, e.g. an
+        # edge-launch connector) waives S for that reference's copper on that edge only.
+        far = 10 * MM
+        source = {'envelope_id': 'original EE371 fixture', 'envelope_sha256': 'b' * 64,
+                  'pointer': '/fixed_footprints/0'}
+
+        def declared(ref, name, start, end, outward):
+            return [{'reference': ref, 'edges': [{'name': name, 'start_nm': start, 'end_nm': end,
+                                                  'outward': outward, 'max_nm': MM}], 'source': source}]
+
+        def left(x, ref='C1', top=-far):
+            return declared(ref, 'left', [x, far], [x, top], 'x-')
+
+        for d in (0, SETBACK - 1, SETBACK):
+            with self.subTest(distance=d):
+                x = BBOX[0] - d
+                plan = self.fixed(self.nm_rectangle(x, -far, far, far), fixed_overhangs=left(x))
+                self.assertEqual((plan['status'], plan['outcome']), ('planned', 'info'), plan)
+                self.assertEqual(plan['placements'][0]['position_nm'], [0, 0])
+                if d == SETBACK:
+                    self.assertNotIn('fixed_overhang_copper', plan)
+                    continue
+                self.assertEqual(plan['fixed_overhang_copper'], [{
+                    'kind': 'fixed_overhang_copper', 'reference': 'C1', 'pad': '1', 'copper_bounds_nm': BBOX,
+                    'setback_nm': SETBACK, 'edge': 'left', 'outline_distance_nm': d,
+                    'declaration': {'reference': 'C1', 'edge': left(x)[0]['edges'][0], 'source': source}}])
+        flush = BBOX[0]
+        # The same flush copper on an undeclared edge still needs S.
+        plan = self.fixed(self.nm_rectangle(flush, -far, far, far),
+                          fixed_overhangs=declared('C1', 'right', [far, -far], [far, far], 'x+'))
+        self.assertEqual((plan['status'], plan['outcome'], plan['placements']), ('fixed_input_copper', 'defect', []))
+        self.assertEqual(plan['findings'], [self.finding('within_setback', outline='board outline',
+                                                         outline_distance_nm=0)])
+        # A declared edge never admits copper beyond the outline: 1 nm outside refuses.
+        plan = self.fixed(self.nm_rectangle(flush + 1, -far, far, far), fixed_overhangs=left(flush + 1))
+        self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+        self.assertEqual(plan['findings'], [self.finding('outside_outline', outline='board outline')])
+        # Every other edge still binds: the top edge S - 1 from the copper refuses with that distance.
+        top = BBOX[1] - (SETBACK - 1)
+        plan = self.fixed(self.nm_rectangle(flush, top, far, far), fixed_overhangs=left(flush, top=top))
+        self.assertEqual(plan['findings'], [self.finding('within_setback', outline='board outline',
+                                                         outline_distance_nm=SETBACK - 1)])
+        # Keep-outs still bind on the declared edge.
+        strip = {'uuid': 'strip', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+                 'outline': {'status': 'proven', 'polygons': [self.nm_rectangle(flush, -far, -3 * MM, far)]}}
+        plan = self.fixed(self.nm_rectangle(flush, -far, far, far), [strip], fixed_overhangs=left(flush))
+        self.assertEqual(plan['findings'], [self.finding('in_keepout', side='F', keepout='rule area strip')])
+        # Another reference's declaration of the same edge exempts only that reference's copper.
+        capture_ = board([offset_part(), part('U1', 5, 5)], self.nm_rectangle(flush, -far, far, far))
+        plan = pack(capture_, request(fixed_refs=['C1', 'U1'], fixed_overhangs=left(flush, 'U1')))
+        self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan)
+        self.assertEqual(plan['findings'], [self.finding('within_setback', outline='board outline',
+                                                         outline_distance_nm=0)])
+
     def test_seeded_board_4_reports_its_fixed_part_copper(self):
         # Coordinator ruling 371a: the only pin this changes. P0 pad 2's land reaches
         # y = 48165155/3 nm (boxed outward to 16055052) on the 16 mm board.
