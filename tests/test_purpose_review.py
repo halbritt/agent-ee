@@ -394,6 +394,9 @@ class PurposeIntegrityRunTests(unittest.TestCase):
         self.reviews = self.fixture('setUp')
         self.reviews.setUp()
         self.addCleanup(self.reviews.doCleanups)
+        # Scheduling is not under test here; a loaded host must not turn a scripted role into a timeout.
+        for definition in (*self.reviews.profile['reviewers'], self.reviews.profile['adjudicator']):
+            definition['timeout_s'] = 120
         self.reviews.configure_coordinator_scope()
         self.reviews.scope['skip_visuals'] = True
         self.reviews.settings = {role: {'sleep': 0, 'fail': False} for role in ('circuit', 'physical')}
@@ -428,10 +431,10 @@ class PurposeIntegrityRunTests(unittest.TestCase):
                                          'run_id': packet['run_id'], 'decisions': decisions}
 
         with patch('agent_ee.reviewers.dispatch', side_effect=dispatch):
-            run_review(self.reviews.root / 'scope.json', run, 240, output_stream=io.StringIO())
+            run_review(self.reviews.root / 'scope.json', run, 600, output_stream=io.StringIO())
         result = read_json(run / 'result.json')
         self.assertNotIn('error', result)
-        self.assertEqual(result['state'], 'complete')
+        self.assertEqual(result['state'], 'complete', (result['review_executions'], result['limitations']))
         return run, result
 
     def refused(self, run, original, mutate, message):
