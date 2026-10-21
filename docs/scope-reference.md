@@ -35,6 +35,7 @@ specific to the original workstation; adapt them before using it elsewhere.
 | `packet_artifacts` | List, default `[]` | Required generated evidence paths, relative to the run |
 | `block_provenance` | Optional captured input-relative path | [Block provenance](blocks.md#review-input-block-provenance-agentee-355) of an arranged placement, bound to `board` and carried whole in the packet; requires `block_plan` |
 | `block_plan` | Captured input-relative path, required with `block_provenance` | The complete `placement-plan.json` the artifact was made from; `plan_sha256` must name its bytes and the artifact's roster must equal it |
+| `reserved_area` | Optional captured input-relative path | The saved board's [advisory reserve cost](placer.md#advisory-reserve-cost-agentee-380): an `agent-ee.reserved-area/1` document, or a `placement-judgment.json`/`placement-result.json` carrying one. Its `board_sha256` must be the captured `board`; carried whole in the packet as `reserved_area: {path, sha256, record}`. Works without `block_provenance`; with it, both records must be equal (AGENTEE-384) |
 | `packet_max_bytes` | Integer, default 240000 | Total artifact-text budget, allowed range 1024–1000000 |
 | `review_profile` | Explicit profile object; alternatively pass `--profile FILE` | Harness/model/effort/timeout for every reviewer and adjudicator |
 

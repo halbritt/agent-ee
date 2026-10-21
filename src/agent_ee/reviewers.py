@@ -106,6 +106,13 @@ def build_packet(run_dir, checks, run_id):
         # Every placed block's identity, provenance class and enforcement, outside the text budget.
         from .block_arrangement import review_input
         packet["block_provenance"] = review_input(run_dir, m)
+    if "reserved_area" in scope:
+        # Any saved-board scope, with or without block provenance: advisory reserve costs.
+        from .reserved_area import review_input as reserve_input
+        packet["reserved_area"] = reserve_input(run_dir, m)
+        carried = packet.get("block_provenance", {}).get("record", {}).get("reserved_area")
+        if carried is not None and carried != packet["reserved_area"]["record"]:
+            raise ValueError("reserved_area differs from the block provenance reserved area")
     packet["evidence_access"] = {"candidate": "/candidate/<path>",
         "checks": "/evidence/checks/<id>.json", "artifacts": "/evidence/work/<check>/<path>",
         "navigation": "/evidence/work/.navigation/index.json",

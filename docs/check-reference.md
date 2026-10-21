@@ -2194,7 +2194,13 @@ attempts remain visible; if no attempt validates and any attempt is unknown,
 the alternative stays unknown with an incomplete search. Numeric-looking zone
 names never waive structural native findings. Standalone geometric poses stay
 hypothetical and unverified. The optimum is limited to the declared finite pose
-set. Fixed and rigid-block alternatives remain unsearched.
+set. A cheaper pose for an owner-fixed part is a `decision_required` record
+naming the fixed declaration's source, the candidate pose and the saving; the
+fixed part stays in place on the proposal. Rigid blocks are moved only whole,
+with member relative poses kept, and validated natively the same way
+(AGENTEE-384). A scope's optional `reserved_area` key carries the saved-board
+record to reviewers without block provenance; the offline arrangement CLI
+records a typed unknown instead of a measurement.
 
 ## Access direction in placement containment (AGENTEE-379)
 

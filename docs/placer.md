@@ -1506,8 +1506,15 @@ After grading the saved proposal, `placer_runner` adds `reserved_area` to
 placements also carry the same board-bound record in `block-provenance.json`;
 the existing sealed block review input carries its findings outside the packet
 text budget. Existing artifacts without this optional field remain readable.
-The offline arrangement CLI has no fabrication inventory and does not emit this
-saved-board measurement.
+The offline arrangement CLI writes no native board and has no fabrication
+inventory. Its `--provenance` artifact therefore carries a typed
+`reserved_area` record with `status: unknown`, `limitation:
+offline_unsaved_plan`, no sides and no findings, never a zero cost.
+`--runner-section FILE` writes the `placer_runner` `blocks` request section from
+the same allocation, arrangement and candidate files; the runner then measures
+the saved board (AGENTEE-384). Any scope, with or without block provenance, can
+carry the saved-board record to reviewers with the scope key `reserved_area`
+(see [scope reference](scope-reference.md)).
 
 `agent-ee.reserved-area/1` names each side and owner: declared obstacle id (or its
 stable policy index), footprint reference for owned rule areas, board rule-area
@@ -1554,10 +1561,36 @@ cheaper attempt was unknown, `search_complete` is false: the selected pose is
 validated, but the least cost among all legal poses in the set is unresolved.
 Standalone geometry diagnostics without native validation remain
 `geometry_qualified_native_unverified`, labelled `hypothetical, unverified`, and
-never rank as legal. Fixed owners and rigid block members are explicitly
-`not_searched`; zero costs are `already_zero`. A movable courtyard's excess is
-invariant under full containment, so it reports `no_cheaper_contained_pose`
-without running the pose diagnostic. If no cheaper attempt validates and any
+never rank as legal. Zero costs are `already_zero`. A courtyard's excess is
+invariant under full containment, so without a declared envelope band it reports
+`no_cheaper_contained_pose` without running the pose diagnostic.
+
+**Owner-fixed parts (AGENTEE-384).** A fixed owner (`fixed_refs` or a native
+lock) is never moved, on the proposal or silently anywhere else. Its pose
+diagnostic runs under the fixed contract: no edge margin, and courtyard overhang
+only inside its declared `fixed_overhangs` envelope band (the band's outer
+extents are added to the snapped positions). A cheaper pose is validated
+natively on a scratch copy exactly like a movable one, then reported as
+`status: decision_required` with `validation_status` (`native_validated` or
+`geometry_qualified_native_unverified`), `applied: false`, and a
+`decision_required` record: the named decision (`change owner-fixed pose`),
+reference, `fixed_source` (`declared_by`: `policy fixed_refs` and/or `native
+footprint lock`; the policy's `constraint_provenance.fixed` entry or the
+unknown-class default; and the overhang envelope declaration if any), current
+and candidate pose, saving and qualification. Without a saving the record keeps
+`none_found` or `unknown` and names the fixed source.
+
+**Rigid blocks (AGENTEE-384).** A member of an arranged block is never moved
+alone. The diagnostic moves the whole block: quarter turns about its anchor at
+the current anchor origin and at the four outline-box edges of the union of
+every member courtyard. Every member follows the anchor with its internal
+relative pose kept. All members are checked against the same packing, locality,
+group and hard block predicates, and native validation unprotects exactly the
+block's members on the scratch copy. The record adds `rigid_block` (block id,
+anchor, references) and, with a saving, `moves` (each member's pose); witnesses
+list the moved members. A block with an owner-fixed member stays `not_searched`.
+Block members are never fixed overhang owners, so no overhang band applies to
+them. If no cheaper attempt validates and any
 attempt is unknown, the alternative is `unknown`, labelled
 `hypothetical, unverified`, with `search_complete: false` and all attempts retained.
 `none_found` means only that this finite set found no saving and no native

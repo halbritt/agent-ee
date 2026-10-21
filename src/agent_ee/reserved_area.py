@@ -2,12 +2,19 @@
 import copy
 from fractions import Fraction
 
-from .placement import area2, edges, qualified_polygons, simple_polygon
+from .placement import area2, edges, overhang_bands, qualified_polygons, simple_polygon
 
 SCHEMA = 'agent-ee.reserved-area/1'
 # Computational coverage guards, not physical limits or acceptance thresholds.
 MAX_EDGE_PAIRS = 2_000_000
 ADVISORY_FRACTION = Fraction(1, 20)
+
+
+def unmeasured(board_sha256, limitation, reason):
+    """A typed record for a producer that has no saved board to measure; never zero."""
+    return {'schema': SCHEMA, 'board_sha256': board_sha256,
+            'authority': 'advisory; does not change packing, score or verdict',
+            'status': 'unknown', 'limitation': limitation, 'reason': reason, 'sides': {}, 'findings': []}
 
 
 def _ratio(value):
@@ -174,16 +181,42 @@ def report(facts, policy, fabrication):
     return result
 
 
-def _poses(fp, outline, margin):
+DOMAIN = 'quarter turns at current origin and four outline-box edges'
+BLOCK_DOMAIN = 'whole-block quarter turns about the anchor at its current origin and four outline-box edges'
+
+
+def _rigid(members, anchor, position, angle):
+    """Every member's pose when the anchor moves to (position, angle); relative poses are kept."""
+    from .placer import rotate
+    turns = int((angle - anchor['rotation_deg']) / 90)  # As placer.transform counts turns.
+    moves = {}
+    for fp in members:
+        offset = rotate([fp['position_nm'][0] - anchor['position_nm'][0],
+                         fp['position_nm'][1] - anchor['position_nm'][1]], turns)
+        moves[fp['ref']] = ((position[0] + offset[0], position[1] + offset[1]),
+                            angle if fp is anchor else (fp['rotation_deg'] + angle - anchor['rotation_deg']) % 360)
+    return moves
+
+
+def _poses(members, anchor, outline, margin, extents=(), rigid=False):
+    """Anchor poses: quarter turns, then outline-box edges and declared band extents."""
     from . import placer
     xs, ys = [p[0] for p in outline], [p[1] for p in outline]
-    for angle in (0, 90, 180, 270):
-        bounds = placer.boxes(placer.transform(fp, [0, 0], angle))[fp['side']]
-        positions = {tuple(fp['position_nm'])}
-        for x in (min(xs)-bounds[0]+margin, max(xs)-bounds[2]-margin):
-            positions.add((x, fp['position_nm'][1]))
-        for y in (min(ys)-bounds[1]+margin, max(ys)-bounds[3]-margin):
-            positions.add((fp['position_nm'][0], y))
+    limits = [(min(xs)+margin, min(ys)+margin, max(xs)-margin, max(ys)-margin)]
+    limits += [placer._box([region]) for region in extents]
+    for quarter in range(4):
+        angle = (anchor['rotation_deg'] + 90*quarter) % 360 if rigid else 90*quarter
+        moved = _rigid(members, anchor, anchor['position_nm'], angle)
+        # A single part snaps its own-side courtyard; a rigid block snaps every member courtyard.
+        polygons = [p for fp in members
+                    for side, c in placer.transform(fp, list(moved[fp['ref']][0]),
+                                                    moved[fp['ref']][1])['courtyards'].items()
+                    if rigid or side == fp['side'] for p in c['polygons']]
+        x0, y0, x1, y1 = placer._box(polygons)
+        x, y = anchor['position_nm']
+        positions = {(x, y)}
+        for left, top, right, bottom in limits:
+            positions |= {(x+left-x0, y), (x+right-x1, y), (x, y+top-y0), (x, y+bottom-y1)}
         for position in sorted(positions):
             yield position, angle
 
@@ -195,19 +228,32 @@ def _move_contours(fp, contours, position, angle):
     return transform(proxy, list(position), angle)['courtyards']
 
 
-def _candidate_cost(facts, policy, fabrication, plan, fp, pose):
+def _candidate_cost(facts, policy, fabrication, plan, moves):
+    """Measured rows of the moved owners, or None when a placement predicate refuses.
+
+    ``moves`` maps each moved reference to its (position, rotation). A fixed owner
+    keeps its own contract: no edge margin, and only its declared envelope band.
+    """
     from . import placer
-    position, angle = pose
-    candidate = placer.transform(fp, list(position), angle)
     outline = qualified_polygons(facts['outline'])[0]
-    if not placer._fits(candidate, outline, placer._edge_margin_nm(policy)):
-        return None
+    fixed = placer._fixed_refs(facts, policy)
+    bands = overhang_bands(policy.get('fixed_overhangs', []), outline)
+    footprints = {f['ref']: f for f in facts['footprints']}
+    candidates = {}
+    for ref, (position, angle) in moves.items():
+        candidate = placer.transform(footprints[ref], list(position), angle)
+        if not (placer._fits(candidate, outline, 0, bands.get(ref, ())) if ref in fixed else
+                placer._fits(candidate, outline, placer._edge_margin_nm(policy))):
+            return None
+        candidates[ref] = candidate
     proposed = copy.deepcopy(facts)
-    proposed['footprints'] = [candidate if f['ref'] == fp['ref'] else f for f in proposed['footprints']]
+    proposed['footprints'] = [candidates.get(f['ref'], f) for f in proposed['footprints']]
+    owners = {footprints[ref]['uuid']: ref for ref in moves}
     # Zone polygons are absolute board coordinates in the native inventory.
     for area in proposed.get('rule_areas', []):
-        if area['owner'] == fp['uuid']:
-            area['outline'] = _move_contours(fp, {'zone': area['outline']}, position, angle)['zone']
+        if area['owner'] in owners:
+            ref = owners[area['owner']]
+            area['outline'] = _move_contours(footprints[ref], {'zone': area['outline']}, *moves[ref])['zone']
     check_policy = {**policy, 'fixed_refs': [f['ref'] for f in facts['footprints']]}
     # No search or clock budget is added: every part is fixed for grading.
     check_policy.pop('search_timeout_s', None)
@@ -218,19 +264,20 @@ def _candidate_cost(facts, policy, fabrication, plan, fp, pose):
         if any(r['enforcement'] == 'hard' and r['status'] != 'pass'
                for r in saved_rules(proposed, plan, policy)):
             return None
-    moved_fab = {fp['ref']: _move_contours(fp, fabrication.get(fp['ref'], {}), position, angle)}
-    selected = {**proposed, 'footprints': [candidate],
-                'rule_areas': [a for a in proposed.get('rule_areas', []) if a['owner'] == fp['uuid']]}
+    moved_fab = {ref: _move_contours(footprints[ref], fabrication.get(ref, {}), *moves[ref]) for ref in moves}
+    selected = {**proposed, 'footprints': [candidates[ref] for ref in moves],
+                'rule_areas': [a for a in proposed.get('rule_areas', []) if a['owner'] in owners]}
     measured = report(selected, {**policy, 'obstacles': []}, moved_fab)
-    return {(r['side'], r['kind'], r.get('id')): r for side in measured['sides'].values()
+    return {(r['side'], r['kind'], r.get('id'), r['owner']): r for side in measured['sides'].values()
             for r in side['owners'] if r['status'] == 'measured'}
 
 
-def _cheapest(row, trials, native_validator=None):
+def _cheapest(row, trials, native_validator=None, domain=DOMAIN):
+    """``native_validator(position, angle)`` validates one anchor pose natively."""
+    key = (row['side'], row['kind'], row.get('id'), row['owner'])
     choices = [(Fraction(*match['area_mm2']), position, angle)
                for (position, angle), measured in trials if measured is not None
-               for match in [measured.get((row['side'], row['kind'], row.get('id')))]
-               if match is not None]
+               for match in [measured.get(key)] if match is not None]
     attempts = []
     eligible = []
     for area, position, angle in sorted(choices):
@@ -239,7 +286,7 @@ def _cheapest(row, trials, native_validator=None):
         if native_validator is None:
             eligible.append((area, position, angle))
             break
-        validation = native_validator(row['owner'], position, angle)
+        validation = native_validator(position, angle)
         attempts.append({'position_nm': list(position), 'rotation_deg': angle, 'validation': validation})
         if validation['status'] == 'validated':
             eligible.append((area, position, angle))
@@ -253,31 +300,68 @@ def _cheapest(row, trials, native_validator=None):
                     a['validation']['status'] == 'unknown' for a in attempts),
                 'position_nm': list(best[1]), 'rotation_deg': best[2], 'area_mm2': _ratio(best[0]),
                 'saving_mm2': _ratio(Fraction(*row['area_mm2'])-best[0]), 'tested': len(trials),
-                'domain': 'quarter turns at current origin and four outline-box edges'}
+                'domain': domain}
     if any(a['validation']['status'] == 'unknown' for a in attempts):
         return {'status': 'unknown', 'qualification': 'hypothetical, unverified', 'search_complete': False,
-                'tested': len(trials), 'native_attempts': attempts,
-                'domain': 'quarter turns at current origin and four outline-box edges',
+                'tested': len(trials), 'native_attempts': attempts, 'domain': domain,
                 'reason': 'a cheaper pose could not be natively validated; minimum unresolved'}
     return {'status': 'none_found', 'tested': len(trials), 'native_attempts': attempts,
-            'search_complete': native_validator is not None,
-            'domain': 'quarter turns at current origin and four outline-box edges',
+            'search_complete': native_validator is not None, 'domain': domain,
             'reason': 'finite diagnostic set; not a continuous optimality proof'}
 
 
-def alternatives(facts, policy, fabrication, costs, plan, native_validator=None):
-    """Cheapest geometry-qualified single-part pose in a finite diagnostic set.
+def _anchor(block, members):
+    return block.get('anchor', members[0])
 
-    Other parts stay put. Fixed poses and rigid block members are not relaxed.
-    Without a native validator, poses are hypothetical and unverified. With one,
-    cost-ordered poses must pass saved-board DRC and preservation before selection.
-    Only the supplied advisory cost record is mutated; design facts are borrowed.
+
+def _fixed_source(fp, policy):
+    """Where the owner's fixed pose is declared; the envelope band it may use, if any."""
+    from .placer import UNDECLARED
+    declared = [name for name, present in (('policy fixed_refs', fp['ref'] in policy['fixed_refs']),
+                                           ('native footprint lock', fp.get('locked'))) if present]
+    source = {'declared_by': declared,
+              'provenance': copy.deepcopy(policy.get('constraint_provenance', {}).get('fixed', {})
+                                          .get(fp['ref'], UNDECLARED))}
+    overhang = next((o for o in policy.get('fixed_overhangs', []) if o['reference'] == fp['ref']), None)
+    if overhang is not None:
+        source['overhang_envelope'] = copy.deepcopy(overhang)
+    return source
+
+
+def _owner_decision(alternative, fp, policy):
+    """A cheaper pose for a fixed owner is a named owner decision, never applied here."""
+    source = _fixed_source(fp, policy)
+    record = {**alternative, 'fixed_source': source, 'applied': False,
+              'enforcement': 'owner-fixed pose kept on the proposal; changing it needs the named owner decision'}
+    if 'saving_mm2' not in alternative:
+        return record
+    return {**record, 'status': 'decision_required', 'validation_status': alternative['status'],
+            'decision_required': {
+                'decision': 'change owner-fixed pose', 'reference': fp['ref'], 'fixed_source': source,
+                'current_position_nm': list(fp['position_nm']), 'current_rotation_deg': fp['rotation_deg'],
+                'candidate_position_nm': alternative['position_nm'],
+                'candidate_rotation_deg': alternative['rotation_deg'],
+                'saving_mm2': alternative['saving_mm2'], 'qualification': alternative['qualification']}}
+
+
+def alternatives(facts, policy, fabrication, costs, plan, native_validator=None):
+    """Cheapest geometry-qualified pose of an owner, or of its whole rigid block, in a finite set.
+
+    Other parts stay put. A rigid block moves as one: every member follows its anchor
+    with internal relative poses kept. A fixed owner is never moved: a cheaper pose
+    becomes a ``decision_required`` record naming its fixed declaration. A fixed
+    owner may use only its declared envelope band, without an edge margin.
+    ``native_validator(moves)`` takes {reference: (position, rotation)}. Without one,
+    poses are hypothetical and unverified. With one, cost-ordered poses must pass
+    saved-board DRC and preservation before selection. Only the supplied advisory
+    cost record is mutated; design facts are borrowed.
     """
     from . import placer
     outline = qualified_polygons(facts['outline'])[0]
     fixed = placer._fixed_refs(facts, policy)
-    block_members = {ref for block in plan.get('block_arrangement', {}).get('blocks', [])
-                     for ref in block['references']}
+    bands = overhang_bands(policy.get('fixed_overhangs', []), outline)
+    blocks = {ref: block for block in plan.get('block_arrangement', {}).get('blocks', [])
+              for ref in block['references']}
     footprints = {f['ref']: f for f in facts['footprints']}
     trials = {}
     for side in costs['sides'].values():
@@ -285,21 +369,70 @@ def alternatives(facts, policy, fabrication, costs, plan, native_validator=None)
             ref = row['owner']
             if row['status'] != 'measured' or row['kind'] == 'declared_obstacle' or ref not in footprints:
                 continue
+            block = blocks.get(ref)
+            members = block['references'] if block else [ref]
             if Fraction(*row['area_mm2']) == 0:
                 row['alternative'] = {'status': 'already_zero', 'reason': 'no cheaper nonnegative area'}
-            elif ref in fixed or ref in block_members:
+            elif block and set(members) & fixed:
                 row['alternative'] = {'status': 'not_searched',
-                                      'reason': 'fixed owner pose' if ref in fixed else 'rigid block member'}
-            elif row['kind'] == 'courtyard_excess':
+                                      'reason': 'rigid block with an owner-fixed member'}
+            elif row['kind'] == 'courtyard_excess' and not bands.get(ref):
                 # Every pose in this domain keeps the whole courtyard inside.
                 # Its rigid courtyard-minus-body area is invariant, and cannot
-                # be smaller than an already clipped current reserve.
+                # be smaller than an already clipped current reserve. Only a
+                # fixed owner's declared envelope band admits a partly outside pose.
                 row['alternative'] = {'status': 'no_cheaper_contained_pose',
                                       'reason': 'rigid courtyard-minus-body area is invariant under full containment'}
             else:
-                if ref not in trials:
-                    fp = footprints[ref]
-                    trials[ref] = [(pose, _candidate_cost(facts, policy, fabrication, plan, fp, pose))
-                                   for pose in _poses(fp, outline, placer._edge_margin_nm(policy))]
-                row['alternative'] = _cheapest(row, trials[ref], native_validator)
+                mover = ('block', block['block']) if block else ('part', ref)
+                if mover not in trials:
+                    anchor = footprints[_anchor(block, members) if block else ref]
+                    parts = [footprints[r] for r in members]
+                    expand = (lambda pose, parts=parts, anchor=anchor: _rigid(parts, anchor, *pose))
+                    margin = 0 if ref in fixed else placer._edge_margin_nm(policy)
+                    poses = _poses(parts, anchor, outline, margin, bands.get(ref, ()), rigid=bool(block))
+                    trials[mover] = (expand, [(pose, _candidate_cost(facts, policy, fabrication, plan, expand(pose)))
+                                              for pose in poses])
+                expand, tried = trials[mover]
+                validate = None if native_validator is None else (
+                    lambda position, angle, expand=expand: native_validator(expand((position, angle))))
+                alternative = _cheapest(row, tried, validate, BLOCK_DOMAIN if block else DOMAIN)
+                if block:
+                    alternative['rigid_block'] = {'block': block['block'], 'anchor': _anchor(block, members),
+                                                  'references': list(members)}
+                    if 'position_nm' in alternative:
+                        moves = expand((tuple(alternative['position_nm']), alternative['rotation_deg']))
+                        alternative['moves'] = [{'reference': r, 'position_nm': list(moves[r][0]),
+                                                 'rotation_deg': moves[r][1]} for r in members]
+                elif ref in fixed:
+                    alternative = _owner_decision(alternative, footprints[ref], policy)
+                row['alternative'] = alternative
     return costs
+
+
+def review_input(run_dir, manifest):
+    """The scope's saved-board reserve record, read from the sealed capture and bound to its board.
+
+    ``scope.reserved_area`` names a captured ``agent-ee.reserved-area/1`` document, or a
+    ``placement-judgment.json``/``placement-result.json`` carrying one. A missing,
+    uncaptured, changed, malformed or other-board record raises, so the packet is not
+    built and the review stays incomplete; it is never silently dropped.
+    """
+    import hashlib
+    from pathlib import Path
+    from .catalog import strict_json
+    scope = manifest['scope']
+    rel, board = scope['reserved_area'], scope['board']
+    if not isinstance(rel, str) or rel not in manifest['files']:
+        raise ValueError(f'reserved_area {rel!r} is not a captured input')
+    raw = (Path(run_dir) / 'inputs' / rel).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != manifest['files'][rel]:
+        raise ValueError('captured reserved_area changed; evidence is stale')
+    document = strict_json(raw)
+    record = document if isinstance(document, dict) and document.get('schema') == SCHEMA else (
+        document.get('reserved_area') if isinstance(document, dict) else None)
+    if not isinstance(record, dict) or record.get('schema') != SCHEMA:
+        raise ValueError(f'reserved_area {rel!r} carries no {SCHEMA} record')
+    if record.get('board_sha256') != manifest['files'].get(board):
+        raise ValueError(f"reserved area describes board {record.get('board_sha256')}, not the captured {board}")
+    return {'path': 'inputs/' + rel, 'sha256': manifest['files'][rel], 'record': record}

@@ -91,7 +91,7 @@ class AreaTests(unittest.TestCase):
 
     def test_geometry_only_no_saving_is_not_a_complete_native_search(self):
         row = {'side': 'B', 'kind': 'rule_area', 'id': 'lane', 'owner': 'J3', 'area_mm2': [2, 1]}
-        trials = [(((0, 0), 0), {('B', 'rule_area', 'lane'): {'area_mm2': [2, 1]}})]
+        trials = [(((0, 0), 0), {('B', 'rule_area', 'lane', 'J3'): {'area_mm2': [2, 1]}})]
         alternative = reserve._cheapest(row, trials)
         self.assertEqual(alternative['status'], 'none_found')
         self.assertIs(alternative['search_complete'], False)
@@ -106,6 +106,57 @@ class AreaTests(unittest.TestCase):
         row = costs['sides']['F']['owners'][0]
         self.assertEqual(row['area_mm2'], [3, 1])
         self.assertEqual(row['alternative']['status'], 'no_cheaper_contained_pose')
+
+    def test_fixed_owner_overhang_alternative_stays_inside_its_declared_band(self):
+        from agent_ee import placer
+        from agent_ee.placement import overhang_bands
+        facts = capture([part('U1', 5, 5)])
+        fab = {'U1': {'F': proven([rectangle(5, 5, 1, 2)])}}
+        def band(max_nm):
+            return [{'reference': 'U1', 'source': {'envelope_id': 'ee384-fixture', 'envelope_sha256': 'b'*64,
+                                                   'pointer': '/fixed/U1'},
+                     'edges': [{'name': 'left', 'start_nm': [0, 20*MM], 'end_nm': [0, 0],
+                                'outward': 'x-', 'max_nm': max_nm}]}]
+        outline = rectangle(0, 0, 20, 20)
+        savings = []
+        for max_nm in (MM, MM // 2):
+            policy = request(gap_nm=0, fixed_overhangs=band(max_nm))
+            costs = reserve.report(facts, policy, fab)
+            unchanged = copy.deepcopy(facts)
+            reserve.alternatives(facts, policy, fab, costs, {})
+            self.assertEqual(facts, unchanged)
+            row = costs['sides']['F']['owners'][0]
+            self.assertEqual((row['kind'], row['area_mm2']), ('courtyard_excess', [2, 1]))
+            decision = row['alternative']
+            self.assertEqual(decision['status'], 'decision_required', decision)
+            self.assertEqual(decision['fixed_source']['overhang_envelope'], policy['fixed_overhangs'][0])
+            request_ = decision['decision_required']
+            candidate = placer.transform(facts['footprints'][0], request_['candidate_position_nm'],
+                                         request_['candidate_rotation_deg'])
+            # The candidate leaves the board only inside the declared envelope band.
+            self.assertFalse(placer._fits(candidate, outline))
+            self.assertTrue(placer._fits(candidate, outline, 0,
+                                         overhang_bands(policy['fixed_overhangs'], outline)['U1']))
+            savings.append(request_['saving_mm2'])
+        self.assertEqual(savings, [[2, 1], [1, 1]])
+        # Without a declared band, a contained fixed courtyard has no cheaper pose.
+        policy = request(gap_nm=0)
+        costs = reserve.report(facts, policy, fab)
+        reserve.alternatives(facts, policy, fab, costs, {})
+        self.assertEqual(costs['sides']['F']['owners'][0]['alternative']['status'], 'no_cheaper_contained_pose')
+
+    def test_rigid_block_member_fixed_elsewhere_is_not_searched(self):
+        facts = capture([part('U1', 2, 2), part('C1', 8, 8)])
+        policy = request(gap_nm=0, obstacles=[], fixed_refs=['U1'])
+        fab = {'U1': {'F': proven([rectangle(2, 2, 1, 1)])}, 'C1': {'F': proven([rectangle(8, 8, 1, 1)])}}
+        facts['rule_areas'] = [{'uuid': 'lane', 'name': 'lane', 'owner': 'C1', 'layers': ['F.Cu'],
+                                'forbid': {'footprints': True}, 'outline': proven([rectangle(10, 8, 4, 2)])}]
+        costs = reserve.report(facts, policy, fab)
+        reserve.alternatives(facts, policy, fab, costs, {'placements': [], 'block_arrangement': {
+            'arrangement': {}, 'blocks': [{'block': 'b', 'anchor': 'C1', 'references': ['C1', 'U1']}]}})
+        lane = next(r for r in costs['sides']['F']['owners'] if r['kind'] == 'rule_area')
+        self.assertEqual(lane['alternative'], {'status': 'not_searched',
+                                               'reason': 'rigid block with an owner-fixed member'})
 
     def test_unknown_fab_curves_and_outline_do_not_become_zero(self):
         facts = capture([part('U1', 2, 2)])
@@ -177,15 +228,26 @@ class NativeAreaTests(unittest.TestCase):
             repeated = reserve.report(facts, policy, fab)
             reserve.alternatives(facts, policy, fab, repeated, {})
             self.assertEqual(report, repeated)
+            # AGENTEE-384: a fixed owner is never moved; its saving is a named owner decision.
             fixed = reserve.report(facts, policy, fab)
             reserve.alternatives(facts, {**policy, 'fixed_refs': ['J3']}, fab, fixed, {})
-            self.assertTrue(all(r['alternative']['reason'] == 'fixed owner pose'
-                                for r in fixed['sides']['B']['owners']))
+            self.assertEqual(facts, unchanged)
+            decision = next(r for r in fixed['sides']['B']['owners'] if r['kind'] == 'rule_area')['alternative']
+            self.assertEqual(decision['status'], 'decision_required')
+            self.assertEqual(decision['validation_status'], 'geometry_qualified_native_unverified')
+            self.assertIs(decision['applied'], False)
+            self.assertEqual(decision['decision_required']['saving_mm2'], [600, 1])
+            self.assertEqual(decision['decision_required']['current_position_nm'], [45*MM, 32*MM])
+            self.assertEqual(decision['fixed_source']['declared_by'], ['policy fixed_refs'])
+            # A rigid block moves as one: here the block is J3 alone.
             rigid = reserve.report(facts, policy, fab)
             reserve.alternatives(facts, policy, fab, rigid,
-                                 {'block_arrangement': {'blocks': [{'references': ['J3']}]}})
-            self.assertTrue(all(r['alternative']['reason'] == 'rigid block member'
-                                for r in rigid['sides']['B']['owners']))
+                                 {'placements': [{'ref': 'J3', 'fixed': False}], 'block_arrangement': {
+                                     'arrangement': {}, 'blocks': [{'block': 'card', 'references': ['J3']}]}})
+            moved = next(r for r in rigid['sides']['B']['owners'] if r['kind'] == 'rule_area')['alternative']
+            self.assertEqual(moved['status'], 'geometry_qualified_native_unverified')
+            self.assertEqual(moved['rigid_block'], {'block': 'card', 'anchor': 'J3', 'references': ['J3']})
+            self.assertEqual(moved['saving_mm2'], [600, 1])
             # Native saved second board, rather than a transformed fact masquerading as one.
             fp.SetPosition(k.VECTOR2I(0, 32*MM)); k.SaveBoard(str(path), board)
             edge = reserve.report(extract(path), policy, reserve.fabrication_outlines(path))
@@ -247,6 +309,96 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
         artifact['reserved_area']['board_sha256'] = '0'*64
         with self.assertRaisesRegex(ValueError, 'saved board'):
             validate_provenance(artifact)
+
+    def generic_scope(self, document, board_text='(kicad_pcb (version 20260206) (generator "owned"))\n'):
+        """A scope without block provenance that declares a captured reserve record."""
+        import json
+        from agent_ee.candidate import capture as capture_candidate
+        from agent_ee.cli import validate_scope
+        root = Path(tempfile.mkdtemp(prefix='agent-ee-reserve-review-', dir=self.dir))
+        source = root / 'source'
+        source.mkdir()
+        (source / 'pod.kicad_sch').write_text('(kicad_sch (version 20260206))\n')
+        (source / 'pod.kicad_pcb').write_text(board_text)
+        (source / 'placement-judgment.json').write_text(json.dumps(document, sort_keys=True))
+        scope = {'schema': 'agent-ee.scope/1', 'name': 'placed', 'scope': 'Saved placement review',
+                 'schematic': 'project/pod.kicad_sch', 'board': 'project/pod.kicad_pcb',
+                 'reserved_area': 'project/placement-judgment.json',
+                 'checks': [{'id': 'drc', 'kind': 'drc'}], 'inputs': [{'path': 'source', 'at': 'project'}],
+                 'review_profile': json.loads((provenance_tests.ROOT / 'profiles/claude.json').read_text())}
+        validate_scope(scope)
+        (root / 'scope.json').write_text(json.dumps(scope))
+        run = root / 'run'
+        run.mkdir()
+        return run, capture_candidate(root / 'scope.json', run), source
+
+    def test_generic_scope_without_block_provenance_carries_bound_reserve(self):
+        import hashlib
+        from agent_ee.reviewers import build_packet
+        board_text = '(kicad_pcb (version 20260206) (generator "owned"))\n'
+        facts = capture([])
+        facts['board_sha256'] = hashlib.sha256(board_text.encode()).hexdigest()
+        costs = reserve.report(facts, request(obstacles=[
+            {'id': 'large-lane', 'side': 'B', 'polygons': [rectangle(0, 0, 20, 10)]}]), {})
+        run, manifest, _ = self.generic_scope({'schema': 'agent-ee.placement-judgment/1',
+                                               'reserved_area': costs})
+        packet = build_packet(run, [], 'ee384')
+        self.assertNotIn('block_provenance', packet)
+        carried = packet['reserved_area']
+        self.assertEqual(carried['record'], costs)
+        self.assertEqual(carried['path'], 'inputs/project/placement-judgment.json')
+        self.assertEqual(carried['sha256'], manifest['files']['project/placement-judgment.json'])
+        self.assertEqual(carried['record']['findings'][0]['reserve']['owner'], 'large-lane')
+        # A bare reserve document is accepted too; another board's record never is.
+        run, _, _ = self.generic_scope(costs)
+        self.assertEqual(build_packet(run, [], 'ee384')['reserved_area']['record'], costs)
+        other = {**costs, 'board_sha256': '0'*64}
+        run, _, _ = self.generic_scope({'reserved_area': other})
+        with self.assertRaisesRegex(ValueError, 'not the captured'):
+            build_packet(run, [], 'ee384')
+        run, _, _ = self.generic_scope({'schema': 'agent-ee.placement-judgment/1'})
+        with self.assertRaisesRegex(ValueError, 'carries no'):
+            build_packet(run, [], 'ee384')
+        # A record changed after capture is stale evidence, never carried.
+        run, _, source = self.generic_scope(costs)
+        (run / 'inputs' / 'project' / 'placement-judgment.json').write_text('{}')
+        with self.assertRaisesRegex(ValueError, 'stale'):
+            build_packet(run, [], 'ee384')
+
+    def test_offline_cli_reserve_is_a_typed_unknown_and_names_the_runner_section(self):
+        import json
+        from agent_ee import block_arrangement as arrangement, blocks
+        from test_block_arrangement import plan_policy
+        from test_blocks import PARTS, board, native_xml
+        root = self.dir / 'offline'
+        root.mkdir()
+        two = native_xml(PARTS)
+        (root / 'design.xml').write_bytes(two)
+        target = board(PARTS)
+        target['outline']['polygons'] = [rectangle(0, 0, 60, 40)]
+        (root / 'probe.json').write_text(json.dumps(target))
+        (root / 'policy.json').write_text(json.dumps(self.policy))
+        (root / 'arrangement.json').write_text(json.dumps(plan_policy()))
+        inv, names, sha = self.inventory(two)
+        derivation = blocks.derive(inv, names, target, inventory_sha256=sha)
+        paths = []
+        for name in ('Power', 'Sensor'):
+            (root / f'{name}.json').write_text(json.dumps(
+                blocks.pack_block(target, inv, derivation, name, self.policy)['candidate']))
+            paths += ['--candidate', str(root / f'{name}.json')]
+        self.assertEqual(arrangement.main([
+            '--probe', str(root / 'probe.json'), '--netlist', str(root / 'design.xml'),
+            '--policy', str(root / 'policy.json'), '--arrangement', str(root / 'arrangement.json'),
+            '--out', str(root / 'plan.json'), '--provenance', str(root / 'provenance.json'),
+            '--runner-section', str(root / 'section.json')] + paths), 0)
+        written = arrangement.validate_provenance(json.loads((root / 'provenance.json').read_text()))
+        unknown = written['reserved_area']
+        self.assertEqual((unknown['status'], unknown['limitation']), ('unknown', 'offline_unsaved_plan'))
+        self.assertEqual((unknown['sides'], unknown['findings']), ({}, []))
+        self.assertNotIn('union_area_mm2', json.dumps(unknown))
+        self.assertIn('--runner-section', unknown['reason'])
+        self.assertEqual(json.loads((root / 'section.json').read_text()), arrangement.request_section(
+            None, root / 'arrangement.json', [root / 'Power.json', root / 'Sensor.json']))
 
 
 class NativeAlternativeTests(unittest.TestCase):
@@ -482,6 +634,138 @@ class NativeAlternativeTests(unittest.TestCase):
             (output.parent / 'placement-judgment.json').read_text())['reserved_area'])
         witness = lane['alternative']['native_attempts'][-1]['validation']
         self.assertTrue((output.parent / witness['directory'] / 'validation.json').is_file())
+
+    def test_fixed_owner_native_decision_record_never_moves_the_proposal(self):
+        import json
+        import pcbnew as k
+        from agent_ee.placement_probe import extract
+        from agent_ee.placer import pack
+        from agent_ee.placer_runner import _evaluate_proposal
+        from agent_ee.storage import read_json
+        original = self.source.read_bytes()
+        self.policy = request(gap_nm=0, fixed_refs=['J3'])
+        lane, _ = self.run_alternatives('fixed')
+        record = lane['alternative']
+        self.assertEqual(record['status'], 'decision_required', record)
+        self.assertEqual(record['validation_status'], 'native_validated')
+        self.assertEqual(record['qualification'], 'legal under captured rules')
+        self.assertIs(record['applied'], False)
+        decision = record['decision_required']
+        self.assertEqual((decision['reference'], decision['saving_mm2']), ('J3', [600, 1]))
+        self.assertEqual(decision['fixed_source']['declared_by'], ['policy fixed_refs'])
+        self.assertEqual(decision['fixed_source']['provenance']['class'], 'unknown')
+        self.assertEqual(decision['current_position_nm'], [45*MM, 32*MM])
+        self.assertEqual([decision['candidate_position_nm'], decision['candidate_rotation_deg']],
+                         [record['position_nm'], record['rotation_deg']])
+        witness = record['native_attempts'][-1]['validation']
+        self.assertEqual(witness['moves'], [{'reference': 'J3', 'position_nm': record['position_nm'],
+                                             'rotation_deg': record['rotation_deg']}])
+        self.assertEqual(read_json(self.root / witness['directory'] / 'placement-write-scope.json')['status'],
+                         'allowed')
+        self.assertEqual(self.source.read_bytes(), original)
+        # The saved proposal keeps the fixed pose and carries the decision record.
+        facts = extract(self.source)
+        plan = pack(facts, self.policy)
+        self.assertEqual(plan['status'], 'planned')
+        plan['policy'] = self.policy
+        self.assertTrue(plan['placements'][0]['fixed'])
+        output = self.root / 'proposal' / 'candidate.kicad_pcb'
+        output.parent.mkdir()
+        netlist = b'<export><components><comp ref="J3"/></components><nets/></export>'
+        result = _evaluate_proposal(k.LoadBoard(str(self.source)), output, plan, netlist, facts, self.source)
+        saved = next(r for r in result['reserved_area']['sides']['B']['owners']
+                     if r['kind'] == 'rule_area' and r['owner'] == 'J3')
+        self.assertEqual(saved['alternative']['status'], 'decision_required', saved)
+        self.assertEqual(saved['area_mm2'], [600, 1])
+        self.assertEqual(extract(output)['footprints'][0]['position_nm'], [45*MM, 32*MM])
+        self.assertEqual(result['reserved_area'], json.loads(
+            (output.parent / 'placement-judgment.json').read_text())['reserved_area'])
+
+    def add_member(self):
+        import pcbnew as k
+        board = k.LoadBoard(str(self.source))
+        fp = k.FOOTPRINT(board); fp.SetReference('R1'); board.Add(fp)
+        fp.Reference().SetVisible(False); fp.Value().SetVisible(False)
+        fp.Flip(k.VECTOR2I(0, 0), False)
+        for layer, outline in ((k.B_CrtYd, rectangle(0, -1, 1, 2)), (k.B_Fab, rectangle(0, -1, 1, 1))):
+            for a, b in zip(outline, outline[1:]+outline[:1]):
+                shape = k.PCB_SHAPE(fp); shape.SetShape(k.SHAPE_T_SEGMENT); shape.SetLayer(layer)
+                shape.SetWidth(50000); shape.SetStart(k.VECTOR2I(*a)); shape.SetEnd(k.VECTOR2I(*b)); fp.Add(shape)
+        pad = k.PAD(fp); pad.SetNumber('1'); pad.SetAttribute(k.PAD_ATTRIB_SMD)
+        pad.SetShape(k.PAD_SHAPE_RECT); pad.SetSize(k.VECTOR2I(400000, 400000))
+        layers = k.LSET(); layers.AddLayer(k.B_Cu); pad.SetLayerSet(layers)
+        pad.SetPosition(k.VECTOR2I(MM // 2, 0)); fp.Add(pad)
+        fp.SetPosition(k.VECTOR2I(48*MM, 34*MM))
+        self.assertTrue(k.SaveBoard(str(self.source), board))
+
+    def test_rigid_block_moves_whole_block_natively_with_relative_poses_kept(self):
+        from agent_ee.placement_probe import extract
+        from agent_ee.placer import rotate
+        from agent_ee.reserved_area_native import NativeAlternatives
+        from agent_ee.storage import read_json
+        self.add_member()
+        original = self.source.read_bytes()
+        facts = extract(self.source); fab = reserve.fabrication_outlines(self.source)
+        by_ref = {f['ref']: f for f in facts['footprints']}
+        plan = {'placements': [{'ref': f['ref'], 'uuid': f['uuid'], 'fixed': False} for f in facts['footprints']],
+                'block_arrangement': {'arrangement': {}, 'blocks': [
+                    {'block': 'card', 'anchor': 'J3', 'references': ['J3', 'R1']}]}}
+        costs = reserve.report(facts, self.policy, fab)
+        validator = NativeAlternatives(self.source, self.root / 'rigid', facts, self.policy, plan)
+        reserve.alternatives(facts, self.policy, fab, costs, plan, validator)
+        lane = next(r for r in costs['sides']['B']['owners'] if r['kind'] == 'rule_area')
+        alternative = lane['alternative']
+        self.assertEqual(alternative['status'], 'native_validated', alternative)
+        self.assertEqual(alternative['saving_mm2'], [600, 1])
+        self.assertEqual(alternative['rigid_block'], {'block': 'card', 'anchor': 'J3', 'references': ['J3', 'R1']})
+        moves = {m['reference']: m for m in alternative['moves']}
+        self.assertEqual(moves['J3']['position_nm'], alternative['position_nm'])
+        turns = int((alternative['rotation_deg'] - by_ref['J3']['rotation_deg']) / 90)
+        offset = [by_ref['R1']['position_nm'][i] - by_ref['J3']['position_nm'][i] for i in (0, 1)]
+        self.assertEqual([moves['R1']['position_nm'][i] - moves['J3']['position_nm'][i] for i in (0, 1)],
+                         rotate(offset, turns))
+        self.assertEqual((moves['R1']['rotation_deg'] - moves['J3']['rotation_deg']) % 360,
+                         (by_ref['R1']['rotation_deg'] - by_ref['J3']['rotation_deg']) % 360)
+        # The retained native scratch board moved both members exactly as recorded.
+        witness = alternative['native_attempts'][-1]['validation']
+        self.assertEqual(witness['moves'], sorted(alternative['moves'], key=lambda m: m['reference']))
+        saved = {f['ref']: f for f in extract(self.root / witness['directory'] / 'candidate.kicad_pcb')['footprints']}
+        for ref, move in moves.items():
+            self.assertEqual(saved[ref]['position_nm'], move['position_nm'])
+        scope = read_json(self.root / witness['directory'] / 'placement-write-scope.json')
+        self.assertEqual(scope['status'], 'allowed')
+        self.assertEqual(self.source.read_bytes(), original)
+        # A member's contained courtyard excess is invariant under the rigid move.
+        member = next(r for r in costs['sides']['B']['owners'] if r['owner'] == 'R1')
+        self.assertEqual(member['area_mm2'], [1, 1])
+        self.assertEqual(member['alternative']['status'], 'no_cheaper_contained_pose')
+
+    def test_rigid_block_move_rejected_natively_never_moves_one_member_alone(self):
+        import pcbnew as k
+        from agent_ee.placement_probe import extract
+        from agent_ee.reserved_area_native import NativeAlternatives
+        self.add_member()
+        # A captured custom rule refuses every pad, so every whole-block pose is rejected natively.
+        self.source.with_suffix('.kicad_dru').write_bytes(b'''(version 1)
+(rule "Owned fixture pad exclusion"
+  (condition "A.Type == 'Pad'")
+  (constraint disallow pad))
+''')
+        facts = extract(self.source); fab = reserve.fabrication_outlines(self.source)
+        plan = {'placements': [{'ref': f['ref'], 'uuid': f['uuid'], 'fixed': False} for f in facts['footprints']],
+                'block_arrangement': {'arrangement': {}, 'blocks': [
+                    {'block': 'card', 'anchor': 'J3', 'references': ['J3', 'R1']}]}}
+        costs = reserve.report(facts, self.policy, fab)
+        validator = NativeAlternatives(self.source, self.root / 'rigid-rejected', facts, self.policy, plan)
+        reserve.alternatives(facts, self.policy, fab, costs, plan, validator)
+        lane = next(r for r in costs['sides']['B']['owners'] if r['kind'] == 'rule_area')
+        alternative = lane['alternative']
+        self.assertEqual(alternative['status'], 'none_found', alternative)
+        self.assertIs(alternative['search_complete'], True)
+        self.assertNotIn('moves', alternative)
+        for attempt in alternative['native_attempts']:
+            self.assertEqual(attempt['validation']['status'], 'rejected')
+            self.assertEqual([m['reference'] for m in attempt['validation']['moves']], ['J3', 'R1'])
 
     def test_unknown_cheaper_attempt_keeps_minimum_unresolved(self):
         from unittest.mock import patch
