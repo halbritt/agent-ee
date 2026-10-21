@@ -198,11 +198,14 @@ def _kicad_model_defaults(env):
     return ({'KICAD10_3DMODEL_DIR': str(directory)} if directory.is_dir() else {}), identity
 
 
-def inspect_models(board: Path, env: dict) -> dict:
+def inspect_models(board: Path, env: dict, *, kicad_defaults: dict | None = None) -> dict:
     """Inventory every footprint, using supplied environment and project text vars.
 
     Supplied variables override project text variables and qualified native
     defaults. The CLI identity and each reference's sources are recorded.
+    An explicit kicad_defaults mapping bypasses native default discovery; an
+    empty mapping represents absent defaults. Injected defaults have no CLI
+    identity and retain kicad-default provenance.
     KIPRJMOD defaults to the
     board directory. Relative filenames are relative to that board directory.
     Embedded models and custom KiCad aliases remain explicitly unresolved.
@@ -212,7 +215,8 @@ def inspect_models(board: Path, env: dict) -> dict:
     raw = board.read_bytes()
     document = _parse_board(raw.decode("utf-8"))
     project_variables, project = _project_variables(board)
-    defaults, identity = _kicad_model_defaults(env)
+    defaults, identity = (_kicad_model_defaults(env) if kicad_defaults is None
+                          else (kicad_defaults, None))
     variables = {**defaults, **project_variables, **env}
     sources = {**dict.fromkeys(defaults, 'kicad-default'),
                **dict.fromkeys(project_variables, 'project'), **dict.fromkeys(env, 'env')}

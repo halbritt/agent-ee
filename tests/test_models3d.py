@@ -136,12 +136,41 @@ class ModelInventoryTests(unittest.TestCase):
 
     def test_real_board_inventory_has_exact_references_and_missing_variables(self):
         board = Path(__file__).parents[1] / "fixtures/rc/control/rc_filter.kicad_pcb"
-        inventory = inspect_models(board, {})
+        inventory = inspect_models(board, {}, kicad_defaults={})
         self.assertEqual({footprint["reference"] for footprint in inventory["footprints"]}, {"C1", "R1", "J1"})
         self.assertEqual(inventory["summary"]["models"], 3)
         self.assertEqual(inventory["summary"]["unresolved"], 3)
         for footprint in inventory["footprints"]:
             self.assertIn("${KICAD10_3DMODEL_DIR}/", footprint["models"][0]["path"])
+
+    def test_real_board_inventory_resolves_injected_stock_defaults(self):
+        board = Path(__file__).parents[1] / "fixtures/rc/control/rc_filter.kicad_pcb"
+        absent = inspect_models(board, {}, kicad_defaults={})
+        library = self.root / 'stock'
+        for footprint in absent['footprints']:
+            relative = footprint['models'][0]['path'].removeprefix('${KICAD10_3DMODEL_DIR}/')
+            model = library / relative
+            model.parent.mkdir(parents=True, exist_ok=True)
+            model.write_bytes(b'original inventory fixture for ' + relative.encode())
+        with patch('agent_ee.models3d._kicad_model_defaults',
+                   side_effect=AssertionError('injected defaults must bypass host discovery')):
+            inventory = inspect_models(board, {}, kicad_defaults={'KICAD10_3DMODEL_DIR': str(library)})
+            self.assertEqual(inspect_models(board, {}, kicad_defaults={}), absent)
+            overridden = inspect_models(board, {'KICAD10_3DMODEL_DIR': str(self.root / 'absent')},
+                                        kicad_defaults={'KICAD10_3DMODEL_DIR': str(library)})
+            self.assertEqual(overridden['summary']['missing'], 3)
+            for footprint in overridden['footprints']:
+                self.assertEqual(footprint['models'][0]['resolution_source'], 'env')
+                self.assertNotIn('sha256', footprint['models'][0])
+        self.assertIsNone(inventory['kicad_default'])
+        self.assertEqual(inventory['summary']['resolved'], 3)
+        self.assertEqual(inventory['summary']['unresolved'], 0)
+        self.assertEqual(inventory['summary']['missing'], 0)
+        for footprint in inventory['footprints']:
+            model = footprint['models'][0]
+            self.assertEqual(model['resolution_source'], 'kicad-default')
+            self.assertEqual(model['variable_sources'], {'KICAD10_3DMODEL_DIR': 'kicad-default'})
+            self.assertEqual(model['sha256'], hashlib.sha256(Path(model['resolved_path']).read_bytes()).hexdigest())
 
 
 class ModelClosureTests(unittest.TestCase):

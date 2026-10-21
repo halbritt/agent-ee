@@ -62,6 +62,14 @@ An explicit environment path whose file is absent stays missing; inventory never
 tries another filename or substitutes STEP for WRL. Every resolved file carries
 its SHA-256 and size. Availability still does not prove native model loading;
 review render logs alongside the images.
+
+For isolated inventory fixtures, `inspect_models(board, env, kicad_defaults=...)`
+accepts an explicit variable mapping: `{}` means absent stock defaults, while a
+mapping to a temporary model directory exercises file resolution with
+`kicad-default` provenance. This bypasses host discovery and leaves the CLI
+identity null. Omitting the argument keeps native discovery; supplied environment
+values still take precedence.
+
 To use a separate stock-model cache, supply its root directory:
 
 ```sh
