@@ -887,7 +887,7 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 plan, files, inputs, envelope_rel, parts_rel, document, qualification, sch, pcb)
             validate_scope(scope)
             protected |= extra
-        from .design_rule_provenance import import_constraints, inventory, bind_project
+        from .design_rule_provenance import import_constraints, inventory, bind_project, require_owner_rule_classes
         constraint_record = {'settings': inventory(project)}
         if constraint_rel is not None:
             project, constraint_record = import_constraints(
@@ -932,6 +932,7 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 template_rules(raw, allow_generated=True)
                 owner_forms = rule_forms(raw, native=True)
                 owner_names = {str(n[1]) for n in owner_forms[1:] if len(n) > 1 and n[0] == 'rule'}
+                require_owner_rule_classes(constraint_record, PurePosixPath(owner_rules).name, owner_names)
                 # An adopted owner rule keeps its authority when its name also
                 # occurs in the generated prefix; native owner clauses stay last.
                 for name in owner_names:
@@ -957,6 +958,10 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
                 constraint_record['owner_rules'] = dict(path=owner_copy, sha256=files[owner_rules])
                 protected.discard(owner_rules)
                 scope['requirements'] = sorted({*scope.get('requirements', []), owner_copy, owner_rules})
+        if owner_rules in files and owner_copy is None:
+            owner_names = {str(n[1]) for n in rule_forms(read_captured(inputs, owner_rules), native=True)
+                           if len(n) > 1 and n[0] == 'rule'}
+            require_owner_rule_classes(constraint_record, PurePosixPath(owner_rules).name, owner_names)
         bind_project(project, constraint_record)
         plans = sheet_plan(document, sch)
         generated = {path for path, _ in plans.values()} | {pcb}

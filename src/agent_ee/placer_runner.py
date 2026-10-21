@@ -23,7 +23,7 @@ from .storage import digest, read_json, write_json
 from .design_rule_provenance import classify_finding, finding_sources, numeric_finding, require_evaluated_limits
 
 
-DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard'))
+DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard', 'holes_co_located'))
 DRC_MASK = 'solder_mask_bridge'
 DRC_COURTYARDS = frozenset(('courtyards_overlap', 'malformed_courtyard', 'missing_courtyard'))
 
@@ -212,15 +212,21 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
                 any(not isinstance(i, dict) or not isinstance(i.get('uuid'), str) or not i['uuid'] for i in items)):
             raise ValueError('native DRC finding lacks item identities')
         identities = tuple(sorted(i['uuid'] for i in items))
+        provenance = finding['constraint_provenance']
+        # An existing advisory cannot hide a new sourced violation on the same
+        # items; crossing the outline is new even below an already violated floor.
+        identity = (finding['type'], identities, provenance['enforcement'],
+                    finding['type'] == 'copper_edge_clearance' and
+                    provenance['reason'] == 'Structural invariant; numeric provenance does not relax it')
         if states is None or finding['type'] not in DRC_COLLISIONS | {'solder_mask_bridge'}:
-            return finding['type'], identities
+            return identity
         try:
             geometry = [states[uuid] for uuid in identities]
         except KeyError as exc:
             raise ValueError('native collision item geometry unavailable') from exc
         # Local pad geometry proves a rigid intra-footprint violation unchanged.
         intra = len({state[0] for state in geometry}) == 1
-        return finding['type'], identities, tuple(state[:2] if intra else state for state in geometry)
+        return (*identity, tuple(state[:2] if intra else state for state in geometry))
 
     for report in (before, after):
         for finding in report['violations']:

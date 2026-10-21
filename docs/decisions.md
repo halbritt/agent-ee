@@ -543,3 +543,11 @@ sourced width requirement remains a defect. The pinned 2026-10-19 JLCPCB via
 profile declares no copper-to-edge limit, so the scaffold campaign's unsourced
 edge findings are advisory; final unconnected items still prevent acceptance.
 The provisioned J1 drawing is a read-only test input and is not retained here.
+
+AGENTEE-331 continuation (coordinator rulings H1/H2/G1/G2/G3/G6): compare actual
+native measurements against all applicable sourced minima, rather than relying
+on the largest limit printed by KiCad. Co-located drills and copper beyond the
+outline are structural engineering findings. Reject declarations that demote
+owner rules. Plane production and the row stand-in share provenance grading.
+G4 (verified reference authority) and G5 (native geometry defaults) remain
+follow-up work; importing a class and citation does not validate their authority.

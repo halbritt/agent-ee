@@ -1689,12 +1689,21 @@ release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
 
 The fab, `rung1_campaign`, `rung1_qualified`, `rung1_stages`, pod scaffold/constraint, envelope-content, schematic emission/annotation, `add_planes` and `binding_fill` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file. `tests.test_tool_source` discovers source-mount constructors across `src/agent_ee` and exercises every discovered builder against an original source fixture. It also proves prune-after-verified-reuse retention and exclusion of a concurrent prune during a real sandboxed step.
 
-AGENTEE-327 host validation refuses mounts equal to or containing the package
-`src` tree, including resolved parent and symlink aliases, with
+AGENTEE-327/329 host validation refuses mounts equal to, containing, or inside the
+package `src` tree, including resolved parent and symlink aliases, with
 `live_package_source:<at>` before execution. Retained receipt replay stays
 host-independent. `tests.test_stage_receipts.StepDeclarationTests` covers refusal
 and snapshot admission; `tests.test_tool_source` validates all registered step
-builders against this runtime guard.
+builders against this runtime guard. AGENTEE-329 also refuses bind aliases of
+`src`, its ancestors and descendants by device/inode (including ancestors of
+the mount source). It binds opened, identity-checked descriptors using bwrap
+`--ro-bind-fd` and verifies the actual mounted identities inside the sandbox
+before executing either command, covering bwrap versions that canonicalize fd
+sources to pathnames. Directory
+sources containing submounts are conservatively refused, including same-device
+bind mounts. The three qualified canonical routing helper files and the
+mount-namespace authority limit are recorded in
+[stage receipts](stage-receipts.md#python-tool-source-snapshots).
 
 Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
 an `acquisitions` map with acquisition method and redirect provenance, including
@@ -1788,6 +1797,11 @@ Multi-member components use [joint cluster search](placer.md#joint-locality-clus
 after per-part search fails, with tightest-limit-first peers and only the remaining
 step/time budget. Joint refusals retain the legacy typed failure and cluster
 diagnostics in `search.joint_cluster_attempt`; only regraded completions replace it.
+AGENTEE-347 regressions exercise complete-proposal locality rejection on both
+engines and public `pack()`, whole-result legacy preservation under the cluster
+guard (including `locality_clusters`, excluding only `joint_cluster_attempt`),
+and a seeded 22-case differential including an independently regraded joint
+completion (seed 2, case 55).
 The per-rotation cap of 256 distinct locality origins refuses with
 `packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
 `locality target budget exhausted`; it never truncates targets. Runner heartbeats
@@ -1845,3 +1859,27 @@ Post-placement artwork reruns bind the same source inventory to every native
 comparison. Classified baseline and final findings retain their citations across
 native saves; advisory numeric additions remain reported without becoming
 relocation regressions. The existing carried silk legibility contract is unchanged.
+
+The actual numeric measurement is checked against every applicable sourced
+minimum, so a larger default cannot mask a violated manufacturer floor.
+`constraint_provenance.limits` lists the violated sourced settings, and the
+strictest supplies the finding class. Co-located drilled holes and copper beyond
+the board outline are structural engineering findings and always grade.
+Owner custom rules cannot be demoted by a constraint declaration; such an input
+raises `OwnerRuleReclassification`. Plane production and the board-build row
+stand-in apply the same numeric-advisory policy and retain classified findings.
+`tests.test_provenance_limits` covers masked native gaps, co-located holes,
+negative edge clearance, owner-rule declarations and both producer paths.
+
+Baseline comparisons include enforcement changes and the transition to copper
+outside the outline. The same native item identities cannot hide a newly hard
+finding; identical pre-existing findings retain their baseline treatment.
+
+Explicitly ignoring `holes_co_located` refuses grading as unavailable structural
+coverage, even when the project has only default numeric hole limits.
+
+`starved_thermal` uses dimensionless counts, with exact comparisons. Default
+spoke-count findings remain advisory. Unconditional captured owner count minima
+retain native file/hash/rule citations and gate against the reported actual
+count, independently of the printed minimum. Missing measurements and ambiguous
+conditional/layer-scoped sourced count findings refuse as unavailable coverage.

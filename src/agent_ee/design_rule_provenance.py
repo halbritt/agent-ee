@@ -117,7 +117,7 @@ def _record(setting, value, spec, path, locator, key):
 
 # This binding travels with the immutable project into each native staging area.
 PROJECT_KEY = 'agent_ee_constraint_provenance'
-STRUCTURAL = frozenset(('shorting_items', 'pth_inside_courtyard', 'solder_mask_bridge'))
+STRUCTURAL = frozenset(('shorting_items', 'pth_inside_courtyard', 'solder_mask_bridge', 'holes_co_located'))
 NUMERIC_FIELDS = {
     'clearance': ('min_clearance', 'clearance'),
     'track_width': ('min_track_width', 'track_width'),
@@ -125,7 +125,6 @@ NUMERIC_FIELDS = {
     'via_diameter': ('min_via_diameter', 'via_diameter'),
     'annular_width': ('min_via_annular_width',),
     'hole_clearance': ('min_hole_clearance',),
-    'holes_co_located': ('min_hole_to_hole',),
     'hole_to_hole': ('min_hole_to_hole',),
     'copper_edge_clearance': ('min_copper_edge_clearance',),
     'silk_overlap': ('min_silk_clearance',),
@@ -133,12 +132,54 @@ NUMERIC_FIELDS = {
     'silk_edge_clearance': ('min_silk_clearance',),
     'text_height': ('min_text_height',),
     'text_thickness': ('min_text_thickness',),
+    'starved_thermal': ('min_resolved_spokes',),
 }
 
 
 def bind_project(project, record):
     """Bind emitted settings to their receipt without introducing a second schema."""
     project[PROJECT_KEY] = copy.deepcopy(record)
+
+
+class OwnerRuleReclassification(ValueError):
+    """A constraint declaration attempted to demote a captured owner rule."""
+
+
+def require_owner_rule_classes(record, filename, owner_names):
+    for spec in (record.get('document') or {}).get('custom_rules', {}).get(filename, []):
+        if spec['rule'] in owner_names and spec['class'] != 'owner':
+            raise OwnerRuleReclassification('owner rule cannot be reclassified: ' + spec['rule'])
+
+
+def _spoke_rule_settings(nodes, rules):
+    """Native count reports omit rule names; qualify unconditional integer minima."""
+    settings, conditional = [], []
+    for node in nodes:
+        if not isinstance(node, list) or len(node) < 2 or node[0] != 'rule':
+            continue
+        name = str(node[1])
+        source = rules[name]
+        hard = (isinstance(source.get('class'), str) and source['class'] in CLASSES - {'default'}
+                and isinstance(source.get('citation'), dict) and source['citation'].get('path'))
+        for constraint in node[2:]:
+            if (not isinstance(constraint, list) or len(constraint) < 2 or
+                    [str(c).lower() for c in constraint[:2]] != ['constraint', 'thermal_spoke_count']):
+                continue
+            if any(isinstance(c, list) and c and str(c[0]).lower() in ('condition', 'layer') for c in node[2:]):
+                if hard:
+                    conditional.append(name)
+                continue
+            if not hard:
+                settings = []
+                continue
+            minima = [c for c in constraint[2:] if isinstance(c, list) and c and str(c[0]).lower() == 'min']
+            if (len(minima) != 1 or len(minima[0]) != 2 or not str(minima[0][1]).isdigit()):
+                raise ValueError('unsupported native thermal-spoke integer minimum: ' + name)
+            # Native custom-rule precedence is last rule first.
+            settings = [{**copy.deepcopy(source),
+                         'setting': 'native_rules.' + name + '.min_resolved_spokes',
+                         'value': int(minima[0][1]), 'enforcement': 'hard'}]
+    return settings, conditional
 
 
 def finding_sources(board, findings=()):
@@ -183,29 +224,29 @@ def finding_sources(board, findings=()):
         if item['citation'] is not None:
             item['citation'].setdefault('sha256', record.get('sha256'))
     rules, rule_constraints, ignored_rules = {}, {}, []
+    native_rules = []
     path = board.with_suffix('.kicad_dru')
     if path.is_file():
         raw = path.read_bytes()
         template_rules(raw, allow_generated=True)
-        for node in rule_forms(raw, native=True):
+        native_rules = rule_forms(raw, native=True)
+        for node in native_rules:
             if isinstance(node, list) and len(node) > 1 and node[0] == 'rule':
                 name = str(node[1])
-                rule_constraints[name] = [str(c[1]) for c in node[2:]
-                                          if isinstance(c, list) and len(c) > 1 and c[0] == 'constraint']
-                if any(isinstance(c, list) and len(c) > 1 and c[0] == 'severity'
+                rule_constraints[name] = [str(c[1]).lower() for c in node[2:]
+                                          if isinstance(c, list) and len(c) > 1 and str(c[0]).lower() == 'constraint']
+                if any(isinstance(c, list) and len(c) > 1 and str(c[0]).lower() == 'severity'
                        and str(c[1]).lower() == 'ignore' for c in node[2:]):
                     ignored_rules.append(name)
                 owner = record.get('owner_rules', {'path': str(path), 'sha256': digest(path)})
                 rules[name] = {'class': 'owner', 'citation': {**owner, 'rule': name}}
-        declared = (document or {}).get('custom_rules', {}).get(path.name, [])
-        for spec in declared:
-            if spec['rule'] in rules:
-                rules[spec['rule']] = {'class': spec['class'], 'citation': {
-                    'path': record.get('path'), 'sha256': record.get('sha256'),
-                    'rule': spec['rule'], 'basis': spec['basis']}}
+        generated = record.get('generated_rules', {})
+        require_owner_rule_classes(record, path.name, rules.keys() - generated.keys())
         for name, source in record.get('generated_rules', {}).items():
             if name in rules:
                 rules[name] = source
+    spoke_settings, conditional_spokes = _spoke_rule_settings(native_rules, rules)
+    settings.extend(spoke_settings)
     from .net_binding import board_item_nets, board_net_names, literal_project_classes
     needed = {item['uuid'] for finding in findings
               if set(NUMERIC_FIELDS.get(finding.get('type'), ())) & set(NET_FIELDS.values())
@@ -218,7 +259,8 @@ def finding_sources(board, findings=()):
         classes = literal_project_classes(project, board_net_names(raw) | {''})
         item_classes = {key: classes.get(item_nets[key]) for key in sorted(needed) if key in item_nets}
     return {'settings': settings, 'rules': rules, 'item_classes': item_classes,
-            'rule_constraints': rule_constraints, 'ignored_rules': ignored_rules}
+            'rule_constraints': rule_constraints, 'ignored_rules': ignored_rules,
+            'conditional_spoke_rules': conditional_spokes}
 
 
 def classify_finding(finding, sources=None):
@@ -229,11 +271,20 @@ def classify_finding(finding, sources=None):
     kind = finding.get('type', 'unknown')
     source = {'class': 'default', 'citation': None}
     reason = 'No unambiguous captured source for the native limit'
-    if kind in STRUCTURAL:
+    actual_pattern = (r'actual ([0-9]+)(?=[); ]|$)' if kind == 'starved_thermal' else
+                      r'actual (-?[0-9]+(?:\.[0-9]+)?) mm')
+    limit_pattern = (r'min spoke count ([0-9]+); actual' if kind == 'starved_thermal' else
+                     r' ([0-9]+(?:\.[0-9]+)?) mm; actual')
+    actual = re.search(actual_pattern, finding.get('description', ''))
+    if kind == 'starved_thermal' and (not actual or not re.search(limit_pattern, finding.get('description', ''))):
+        raise ValueError('native thermal-spoke finding lacks a qualified count measurement')
+    outside = kind == 'copper_edge_clearance' and actual and Decimal(actual[1]) < 0
+    if kind in STRUCTURAL or outside:
         source = {'class': 'engineering', 'citation': {
             'path': 'docs/placer.md', 'locator': 'native DRC publication gate',
             'basis': 'Coordinator decisions AGENTEE-318/325 and AGENTEE-331: '
-                     'shorts, PTH courtyard intrusion and introduced inter-footprint mask bridges'}}
+                     'shorts, co-located drills, copper beyond the outline, PTH courtyard intrusion '
+                     'and introduced inter-footprint mask bridges'}}
         reason = 'Structural invariant; numeric provenance does not relax it'
     elif kind in ('courtyards_overlap', 'missing_courtyard', 'malformed_courtyard'):
         source = {'class': 'engineering', 'citation': {
@@ -260,12 +311,12 @@ def classify_finding(finding, sources=None):
                 else:
                     classes = {sources.get('item_classes', {}).get(item.get('uuid'))
                                for item in finding.get('items', [])} - {None}
-                    candidates = [s for s in candidates if s['setting'].startswith('board.') or
+                    candidates = [s for s in candidates if s['setting'].startswith(('board.', 'native_rules.')) or
                                   any(s['setting'].rsplit('.', 1)[0] == 'net_settings.classes.' + cls
                                       for cls in classes)]
             # KiCad prints four decimal places. Do not attach a citation for a
             # different value just because the finding category is the same.
-            limit = re.search(r' ([0-9]+(?:\.[0-9]+)?) mm; actual', description)
+            limit = re.search(limit_pattern, description)
             if limit:
                 candidates = [s for s in candidates if
                     abs(Decimal(str(s['value'])) - Decimal(limit[1])) < Decimal('0.00005')]
@@ -279,6 +330,37 @@ def classify_finding(finding, sources=None):
                 source['limits'] = [{key: s[key] for key in ('setting', 'value', 'class', 'citation')}
                                     for s in selected]
                 reason = 'Native limit matched applicable emitted constraints'
+    if kind in NUMERIC_FIELDS and actual and not outside:
+        # KiCad names the effective limit, which can be an advisory default.
+        # Evaluate the measured value against all applicable sourced minima.
+        description = finding.get('description', '')
+        netclass = re.search(r"\(netclass '(.*?)' ", description)
+        classes = {sources.get('item_classes', {}).get(item.get('uuid'))
+                   for item in finding.get('items', [])} - {None}
+        if netclass:
+            classes.add(netclass[1])
+        violated = [s for s in sources['settings'] if
+                    s['setting'].rsplit('.', 1)[-1] in NUMERIC_FIELDS[kind] and
+                    type(s['value']) in (int, float) and
+                    s['class'] in CLASSES - {'default'} and s['citation'] and
+                    (s['setting'].startswith(('board.', 'native_rules.')) or any(
+                        s['setting'].rsplit('.', 1)[0] == 'net_settings.classes.' + cls for cls in classes)) and
+                    Decimal(actual[1]) < Decimal(str(s['value'])) - (Decimal(0) if kind == 'starved_thermal' else Decimal('0.00005'))]
+        # Include the sourced limit KiCad named, including a generated custom
+        # rule, so a weaker board minimum cannot replace a stricter source.
+        if isinstance(source.get('class'), str) and source['class'] in CLASSES - {'default'} and source['citation']:
+            named = re.search(r"\(rule '(.*?)' ", description)
+            printed = re.search(limit_pattern, description)
+            if named and printed:
+                violated.append(dict(setting='custom_rules.' + named[1], value=float(printed[1]),
+                                     **{key: source[key] for key in ('class', 'citation')}))
+        if violated:
+            priority = ('owner', 'manufacturer', 'datasheet', 'engineering')
+            violated.sort(key=lambda s: (-s['value'], priority.index(s['class']), s['setting']))
+            source = {key: violated[0][key] for key in ('class', 'citation')}
+            source['limits'] = [{key: s[key] for key in ('setting', 'value', 'class', 'citation')}
+                                for s in violated]
+            reason = 'Actual value violates applicable sourced constraints'
     if (not isinstance(source.get('class'), str) or source['class'] not in CLASSES or
             (source['class'] != 'default' and
              (not isinstance(source.get('citation'), dict) or not source['citation'].get('path')))):
@@ -329,6 +411,7 @@ def advisory_numeric(finding):
 
 
 NATIVE_CONSTRAINT_TYPES = {**{kind: kind for kind in NUMERIC_FIELDS},
+    'starved_thermal': 'thermal_spoke_count',
     'drill_out_of_range': 'hole_size', 'copper_edge_clearance': 'edge_clearance',
     'silk_overlap': 'silk_clearance', 'silk_over_copper': 'silk_clearance',
     'silk_edge_clearance': 'silk_clearance'}
@@ -336,6 +419,10 @@ NATIVE_CONSTRAINT_TYPES = {**{kind: kind for kind in NUMERIC_FIELDS},
 
 def require_evaluated_limits(report, sources):
     """An ignored sourced numeric limit is unavailable evaluation, never a pass."""
+    if sources.get('conditional_spoke_rules') and any(
+            v.get('type') == 'starved_thermal' for v in report.get('violations', [])):
+        raise ValueError('conditional sourced thermal-spoke provenance unavailable: ' + str(
+            {name: sources['rules'].get(name) for name in sources['conditional_spoke_rules']}))
     numeric = set(NATIVE_CONSTRAINT_TYPES.values())
     for name in sources.get('ignored_rules', []):
         source = sources['rules'][name]
@@ -345,6 +432,8 @@ def require_evaluated_limits(report, sources):
                              + name + ': ' + str(source))
     for ignored in report.get('ignored_checks', []):
         key = ignored.get('key')
+        if key == 'holes_co_located':
+            raise ValueError('native DRC evaluation explicitly ignored for structural ' + key)
         fields = NUMERIC_FIELDS.get(key, ())
         hard = [s for s in sources['settings'] if s['setting'].rsplit('.', 1)[-1] in fields
                 and s['class'] in CLASSES - {'default'} and s['citation']]

@@ -59,6 +59,13 @@ def random_cluster_case(rng):
     return source, policy
 
 
+def without_joint_diagnostics(result):
+    """Only the joint attempt is additive; preserve legacy cluster membership."""
+    result = copy.deepcopy(result)
+    result.get('search', {}).pop('joint_cluster_attempt', None)
+    return result
+
+
 def cluster_board(limit=5*MM):
     source = board()
     cap = copy.deepcopy(source['footprints'][1])
@@ -202,12 +209,13 @@ class ClusterTests(unittest.TestCase):
         source, policy = three_cap_case()
         policy['step_budget'] = 2000
         original = copy.deepcopy((source, policy))
-        legacy = _pack(source, policy, heartbeat=None, joint=False)
         with patch('agent_ee.placer.CLUSTER_STEP_BUDGET', 1):
+            legacy = _pack(source, policy, heartbeat=None, joint=False)
             plan = pack(source, policy)
             guarded = joint_pack(source, policy)
         self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
                          (legacy['status'], 'unknown', []))
+        self.assertEqual(without_joint_diagnostics(plan), without_joint_diagnostics(legacy))
         attempt = plan['search']['joint_cluster_attempt']
         self.assertEqual(attempt['status'], 'locality_cluster_exhausted')
         self.assertEqual(attempt['blocking_cluster']['obligations'], ['C1', 'C2', 'C3'])
@@ -215,6 +223,94 @@ class ClusterTests(unittest.TestCase):
         self.assertEqual(guarded['placements'], [])
         self.assertEqual((source, policy), original)
         self.assertEqual(pack(source, policy)['status'], 'planned')
+
+    def test_complete_proposal_locality_defect_is_rejected_on_both_paths(self):
+        # AGENTEE-347: deliberately let the search accept and prefer far corners.
+        # Keep the independent grader real: even the joint axis projections admit
+        # square corners outside the declared circular distance limit.
+        source, doc = cluster_board(limit=3*MM)
+        policy = request(electrical_locality=doc)
+        original = copy.deepcopy((source, policy))
+        for path in ('legacy', 'joint', 'public'):
+            with self.subTest(path=path):
+                run = pack if path == 'public' else (
+                    lambda source, policy: _pack(source, policy, heartbeat=None, joint=path == 'joint'))
+                self.assertEqual(run(source, policy)['status'],
+                                 'planned')
+                with patch.object(electrical_locality.CandidateLocality, 'constraint',
+                                  side_effect=lambda position: (set(), -sum(position))):
+                    result = run(source, policy)
+                self.assertEqual((result['status'], result['outcome'], result['placements']),
+                                 ('judge_rejected', 'unknown', []))
+                if path == 'public':
+                    self.assertEqual(result['search']['joint_cluster_attempt']['status'],
+                                     'judge_rejected')
+                self.assertEqual(result['reason'], 'complete proposal failed pad locality')
+                self.assertEqual(result['locality_grading']['status'], 'defect')
+                self.assertTrue(result['locality_grading']['defects'])
+                self.assertEqual(result['locality_grading']['unknown'], [])
+                self.assertLess(result['steps_used'], 20)
+                self.assertEqual((source, policy), original)
+
+    def test_seeded_legacy_first_differential_preserves_whole_results(self):
+        # Representative subset of the original review differential (AGENTEE-347),
+        # using the retained per-part engine rather than loading historical code.
+        cases = []
+        for seed in (1, 7, 335):
+            rng = random.Random(seed)
+            for i in range(8):
+                source, policy = random_cluster_case(rng)
+                # These slow finite refusals duplicate the other failure cases.
+                if (seed, i) not in ((1, 6), (7, 0), (7, 5)):
+                    cases.append((f'{seed}:{i}', source, policy))
+        # Seed 2, case 55 from the reviewer's 280-case differential completes
+        # jointly; keep it instead of duplicating the hand-written budget test.
+        rng = random.Random(2)
+        for _ in range(56):
+            source, policy = random_cluster_case(rng)
+        cases.append(('2:55', source, policy))
+        counts = dict(legacy_plan=0, both_fail=0, joint_completion=0)
+        movable = 0
+        for label, source, policy in cases:
+            with self.subTest(case=label):
+                movable += not policy['fixed_refs']
+                original = copy.deepcopy((source, policy))
+                legacy = _pack(source, policy, heartbeat=None, joint=False)
+                result = pack(source, policy)
+                self.assertEqual(result, pack(source, policy))
+                self.assertEqual((source, policy), original)
+                self.assertLessEqual(result['steps_used'], policy['step_budget'])
+                if label == '2:55':
+                    self.assertEqual(legacy['status'], 'packing_search_exhausted')
+                    self.assertEqual(result['status'], 'planned')
+                attempt = result.get('search', {}).get('joint_cluster_attempt')
+                if attempt:
+                    self.assertLessEqual(result['steps_used'] + attempt['steps_used'],
+                                         policy['step_budget'])
+                if legacy['status'] == 'planned':
+                    counts['legacy_plan'] += 1
+                    self.assertEqual(result, legacy)
+                    self.assertIsNone(attempt)
+                elif result['status'] == 'planned':
+                    counts['joint_completion'] += 1
+                    self.assertEqual(result['search'].get('legacy_attempt'),
+                                     dict(status=legacy['status'], steps_used=legacy['steps_used']))
+                    self.assertGreater(result['steps_used'], legacy['steps_used'])
+                    self.assertEqual(result['locality_grading']['status'], 'pass')
+                    poses = {p['ref']: p for p in result['placements']}
+                    saved = {**source, 'footprints': [transform(fp,
+                        poses[fp['ref']]['position_nm'], poses[fp['ref']]['rotation_deg'])
+                        for fp in source['footprints']]}
+                    self.assertEqual(electrical_locality.grade(
+                        saved, policy['electrical_locality'])['status'], 'pass')
+                else:
+                    counts['both_fail'] += 1
+                    self.assertEqual(without_joint_diagnostics(result),
+                                     without_joint_diagnostics(legacy))
+                    self.assertEqual(result['placements'], [])
+        self.assertGreater(movable, 0)
+        for category, count in counts.items():
+            self.assertGreater(count, 0, category)
 
     def test_joint_completion_uses_only_remaining_steps_and_regrades(self):
         source, policy = three_cap_case()

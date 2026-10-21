@@ -202,7 +202,7 @@ class FindingSourceTest(unittest.TestCase):
             self.assertEqual(result['enforcement'], 'advisory' if cls == 'default' else 'hard')
             self.assertEqual(result['citation']['path'], 'constraints.json')
             sources['settings'][0]['value'] = 1.1
-            self.assertEqual(classify_finding(finding, sources)['constraint_provenance']['class'], 'default')
+            self.assertEqual(classify_finding(finding, sources)['constraint_provenance']['class'], cls)
         for kind in ('silk_overlap', 'silk_over_copper', 'text_thickness', 'new_native_category'):
             result = classify_finding({'type': kind})['constraint_provenance']
             self.assertEqual((result['class'], result['enforcement'], result['citation']),

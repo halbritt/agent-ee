@@ -3563,7 +3563,8 @@
     {
       "paths": [
         "src/agent_ee/design_rule_provenance.py",
-        "tests/test_design_rule_provenance.py"
+        "tests/test_design_rule_provenance.py",
+        "tests/test_provenance_limits.py"
       ],
       "kind": "owned-source",
       "origins": [

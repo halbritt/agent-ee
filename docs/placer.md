@@ -539,6 +539,16 @@ routed or schematic-parity result. Schematic parity of the stock RC board
 belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
 
 
+## Block candidates (AGENTEE-339)
+
+[Blocks](blocks.md) derive placement blocks from the sealed schematic hierarchy
+or an engineer allocation file. Each block is packed alone with this search,
+around a fixed anchor on a synthetic plane, into a rigid
+`agent-ee.block-candidate/2`. Its own pad obligations and groups apply, and
+boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
+unchanged. Arrangement admits a candidate only after `blocks.admit` re-grades it
+from the board.
+
 ## Pod-scale qualification (AGENTEE-181)
 
 Run the original fixture qualification on the host, using a fresh destination:
@@ -694,9 +704,11 @@ even when both items collided in the baseline. A rigid intra-footprint finding
 with unchanged local geometry remains a baseline finding. Missing native item
 geometry refuses comparison. A native item KIID shared across different
 footprints also refuses comparison, including case aliases normalized by KiCad;
-it cannot establish an intra-footprint baseline. Other categories retain UUID-based reporting.
-Any added `shorting_items` or `pth_inside_courtyard` refuses publication with an
-engineering citation to AGENTEE-318/325. Numeric findings, including `clearance`,
+it cannot establish an intra-footprint baseline. Other categories retain UUID-based reporting. Enforcement changes and a new
+outline crossing count as new findings on otherwise identical item UUIDs.
+Any added `shorting_items`, `pth_inside_courtyard` or `holes_co_located` refuses
+publication with an engineering citation to AGENTEE-318/325/331. Negative
+copper-edge clearance is also structural, regardless of the numeric edge limit. Numeric findings, including `clearance`,
 resolve against the [declared sources](scaffold.md#declared-design-rule-sources-agentee-331):
 owner, manufacturer, datasheet and engineering limits block; default or unresolved
 limits remain visible advisories. Captured owner rules cite the immutable file,
@@ -704,7 +716,7 @@ SHA-256 and rule name. The comparison retains classified baseline and candidate
 findings, including silk and text findings, and retains failures with the candidate. An introduced
 `solder_mask_bridge` between different footprints also blocks publication;
 baseline and intra-footprint mask bridges remain non-blocking and reported.
-Ignoring any of these four categories, a failed tool, missing output,
+Ignoring a required collision or mask category, a failed tool, missing output,
 incomplete severity coverage or changed evaluation settings also refuses publication. Existing
 courtyard and write-scope gates remain in force. Rule-level `(severity ignore)`
 in `.kicad_dru` never appears in native `ignored_checks`, so the gate refuses
@@ -1060,10 +1072,21 @@ nonlead backtracking, switch peers, movable hubs, exact regrading, cumulative
 step guards and cleanup. Public contract tests cover unchanged legacy plans,
 shared remaining steps and absolute deadlines. A seeded differential freezes
 16 original multi-member cases from the pre-cluster placer, including movable
-hubs, and checks every legacy plan's verdict, placements and steps. Refusal
-bounds use candidate counts, not wall time. The locality-index suite adds exact
-limit and placed-state scan bounds for both paths; a joint evaluation bound
-catches removal of projection pruning.
+hubs, and checks every legacy plan's verdict, placements and steps. AGENTEE-347
+adds a 22-case deterministic differential against the retained per-part engine:
+legacy plans and failures keep whole-result equality (apart from
+`search.joint_cluster_attempt` on failures; legacy `locality_clusters` stays equal),
+repeated runs are identical, total steps stay within budget, and seed 2 case 55
+completes jointly and passes an independent locality regrade. Three redundant
+slow refusal cases are omitted. The cluster-guard regression compares the whole
+legacy result, including steps and
+search records. Fault injection into the search predicate makes complete proposals
+fail the real locality grade on both internal paths and public `pack()`,
+requiring `judge_rejected` with empty placements. The public joint-attempt
+diagnostic must also report `judge_rejected`. Refusal bounds use candidate counts,
+not wall time. The locality-index suite adds exact limit and placed-state scan
+bounds for both paths; a joint evaluation bound catches removal of projection
+pruning.
 
 The real pod remains diagnostic. Fail-fast completion of that run is outside
 AGENTEE-335 after the legacy-first ruling; block-level placement (AGENTEE-339/340)

@@ -674,12 +674,19 @@ Physical copper/drill exclusions and native owner custom rules still apply.
 Unbound standalone packing probes preserve their previous reservations.
 
 Native DRC reports retain every finding. Numeric findings resolve against the
-reported rule name or the inventory's applicable setting and printed value.
+reported rule name and the inventory's applicable settings. The measured actual
+value is compared against every applicable sourced minimum, even when KiCad
+names a larger default limit. The strictest violated sourced minimum supplies
+the finding's class and citation; all violated sourced settings are retained in
+`constraint_provenance.limits`. Four-decimal native values use the same
+0.00005 mm comparison tolerance as printed-limit matching.
 Class-specific limits use native conductor UUID/net facts and the existing exact-name
 assignment contract. Legacy ambiguous identities or general/composite class patterns
 remain unresolved. Ambiguous or absent provenance is `default` and advisory. Captured owner custom
-rules default to class `owner`, citing the file, SHA-256 and rule name; an exact
-custom-rule declaration supplies its declared class and citation instead.
+rules have class `owner`, citing the file, SHA-256 and rule name. A declaration
+that assigns another class to an owner rule raises `OwnerRuleReclassification`
+before scaffold publication or native grading. An owner-class declaration cannot
+replace the captured owner-file citation.
 Generated net rules require an exact declaration to acquire hard authority.
 Unclassified generated rules remain advisory, including when composed with owner
 rules. The native gate's structural invariants retain engineering citations from
@@ -697,8 +704,11 @@ Native rule files use KiCad's `#` comment syntax; semicolon comments are refused
 The document's `solder_mask_min_width` is retained as a manufacturing obligation;
 it is not an invented board-setup field. The native candidate comparison includes
 classified baseline and candidate findings, including silk and text violations.
-Only sourced added numeric violations and the existing structural invariants
-block publication. The captured DRC check also retains raw counts and reports,
+Only sourced added numeric violations and the structural invariants
+block publication. Co-located drilled holes and negative copper-edge clearance
+(copper beyond the outline) are structural engineering findings, independent
+of numeric defaults. Explicitly ignoring the co-located-drill check refuses
+evaluation as unavailable structural coverage. The captured DRC check also retains raw counts and reports,
 with classified evidence in `drc-constraints.json`; unsourced numeric violations
 alone do not fail it. Tool failures, malformed output, parity, connectivity and
 non-numeric defects keep their existing treatment. Ignoring a sourced numeric
@@ -714,3 +724,30 @@ Advisory numeric findings remain in the comparison and cannot alone refuse
 publication after relocation; sourced numeric and structural regressions still
 refuse. The artwork pass's carried legibility defects retain their separate
 [downstream gate](silk-artwork.md#placement-feasibility-and-fab-legibility-agentee-333).
+
+Plane production and the experimental board-build row stand-in also classify
+native findings against the captured sources. Plane receipts retain raw native
+DRC plus `drc/constraints.json` and `drc.classified_findings`; only numeric
+advisories leave the planned-zone refusal set. A sourced or structural finding
+refuses even at native warning/exclusion severity. Structural findings, malformed
+metadata and isolated-copper policy refusals remain. Board-build parity records
+retain `violations` and `classified_findings`, with `graded_violations` counting
+only graded findings; the row stand-in uses that count for its clean flag.
+Board-build carries the template provenance binding alongside its imported
+board rules and net classes.
+
+The router and native zone filler still consume template defaults when choosing
+geometry. Classification changes no saved native rule value; resolving that
+geometry policy and reconciling class authority with verified references are
+separate follow-up work (AGENTEE-331 rulings G4/G5).
+
+Thermal-spoke counts are dimensionless numeric limits. A native
+`starved_thermal` finding with an unsourced minimum remains advisory. KiCad's
+count report omits custom-rule names, so the source reader also inventories
+unconditional integer `thermal_spoke_count` minima from captured owner rules.
+It compares the measured count against that source even if the report prints a
+different default. Count comparisons are exact; the millimetre rounding tolerance
+does not apply. Missing count measurements refuse evaluation. Conditional or
+layer-scoped sourced count rules cannot be attributed from these native reports;
+when a count finding is present, their cited source is retained and evaluation
+refuses as unavailable coverage. This is distinct from an unsourced default.

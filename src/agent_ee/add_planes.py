@@ -10,6 +10,7 @@ from . import benchmark, stage_receipts
 from .catalog import strict_json
 from .executor import execute
 from .tool_source import snapshot
+from .design_rule_provenance import advisory_numeric, classify_finding, finding_sources, require_evaluated_limits
 from .storage import digest, identity, read_json, write_json
 
 SCHEMA = 'agent-ee.plane-plan/1'
@@ -128,7 +129,7 @@ def _verify_inputs(candidate, board, plan, generated, out):
     return root
 
 
-def _planned_zone_errors(checks, planned, always_ids=()):
+def _planned_zone_errors(checks, planned, always_ids=(), sources=None):
     """Classify only complete, attributed native records; unknown is a refusal."""
     if not isinstance(checks, dict):
         raise ValueError('native plane DRC report is malformed')
@@ -149,8 +150,6 @@ def _planned_zone_errors(checks, planned, always_ids=()):
             raise ValueError('native plane DRC violation metadata is malformed')
         items = violation['items']
         isolated_always = violation['type'] == 'isolated_copper' and bool(always_ids)
-        if (violation['severity'] == 'error' or isolated_always) and not items:
-            raise ValueError('native plane DRC violation has no item attribution')
         for item in items:
             if not isinstance(item, dict) or not isinstance(item.get('uuid'), str):
                 raise ValueError('native plane DRC item attribution is malformed')
@@ -160,9 +159,14 @@ def _planned_zone_errors(checks, planned, always_ids=()):
                 valid = False
             if not valid:
                 raise ValueError('native plane DRC item attribution is malformed')
-        if ((violation['severity'] == 'error' and any(item['uuid'] in planned for item in items)) or
+        classified = classify_finding(dict(violation), sources)
+        hard = classified['constraint_provenance']['enforcement'] == 'hard'
+        if (violation['severity'] == 'error' or hard or isolated_always) and not items:
+            raise ValueError('native plane DRC violation has no item attribution')
+        if (((violation['severity'] == 'error' or hard) and any(item['uuid'] in planned for item in items)) or
                 (isolated_always and any(item['uuid'] in always_ids for item in items))):
-            errors.append(violation)
+            if not advisory_numeric(classified):
+                errors.append(violation)
     return errors
 
 
@@ -191,13 +195,19 @@ def generate(candidate, board, plan_path, out):
         checks = read_json(out/'drc/report.json')
         planned = zone_ids(plan)
         always_ids = {uid for uid, spec in zip(planned, plan['zones']) if spec['island_removal']=='always'}
-        zone_errors = _planned_zone_errors(checks, planned, always_ids)
+        _planned_zone_errors(checks, planned, always_ids)
+        sources = finding_sources(verified/board, checks['violations'])
+        require_evaluated_limits(checks, sources)
+        zone_errors = _planned_zone_errors(checks, planned, always_ids, sources)
+        classified = [classify_finding(dict(v), sources) for v in checks['violations']]
+        write_json(out/'drc/constraints.json', {'sources': sources, 'violations': classified})
         report.update(pcbnew_version=facts['pcbnew_version'], zones=facts['zones'],
                       drc=dict(violations=len(checks['violations']), planned_zone_errors=zone_errors,
+                               classified_findings=classified,
                                report_sha256=digest(out/'drc/report.json')))
         if zone_errors:
             refused_ids = sorted({item['uuid'] for violation in zone_errors for item in violation['items']
-                                  if item['uuid'] in (planned if violation['severity']=='error' else always_ids)})
+                                  if item['uuid'] in planned})
             raise ValueError('native DRC found an error involving planned zones: ' + ', '.join(refused_ids))
         if (candidate/board).read_bytes() != original or digest(candidate/plan_path) != report['plan_sha256']:
             raise ValueError('captured plane inputs changed during production')
