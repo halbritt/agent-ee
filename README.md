@@ -114,12 +114,14 @@ Fab-family kinds gate carry regardless of stage, and campaign acceptance refuses
 open carry. Receipt-backed closure survives only proven masked-track edits
 whose exempt spans match the KiCad writer grammar, preserving raw
 artwork/obstruction bytes and all captured project/rule paths
-and bytes (AGENTEE-344). Bench-feedback acceptance also refuses open carry.
+and bytes (AGENTEE-344). Masked-track edits on nets containing `#` or `;`
+reopen closure even with KiCad-written quoted net names (AGENTEE-360).
+Bench-feedback acceptance also refuses open carry.
 The [post-routing artwork producer](docs/silk-artwork.md#post-routing-artwork-producer-agentee-350)
 repairs routed-board silk through a receipted translation-only step, proves that
 all non-silk geometry is unchanged, and enables identity-bound carry closure.
-Closure consumes sealed native containment evidence, including footprint-owned
-board cutouts, without rerunning the tool during campaign replay.
+Closure consumes sealed native containment evidence, including board-owned and footprint-owned
+straight slots and cutouts (AGENTEE-362), without rerunning the tool during campaign replay.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against sourced limits.
@@ -131,8 +133,9 @@ multi-pad pins. Explicit `buck-output-loop` declarations bind the supply source
 and switch target to the inductor, the return source and switch source to the
 IC, and return pads to a declared net distinct from supply. Switch nets must
 differ from supply and return. Distinct-source supply/return net sets must be
-disjoint even without a kind. Direct placement-index construction re-validates
-these declarations and snapshots the validated document before indexing it.
+disjoint even without a kind. Direct placement-index construction copies these
+declarations, requires exact built-in JSON types, validates the snapshot, and
+exposes read-only indexed pairs and endpoints.
 Coordinator packing binds to the check's immutable locality file. Origin-group
 distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)
@@ -143,11 +146,14 @@ remaining budget. Joint refusals retain named cluster diagnostics.
 [Placement blocks](docs/blocks.md) come from the sealed child sheets or a hashed
 engineer allocation file. Each block is packed alone into a rigid, versioned block
 candidate, with relative poses, an obligation grade, a courtyard witness,
-per-side outlines and source hashes. Candidates are search-derived and advisory.
+per-side outlines and source hashes. A compaction pass re-packs each block on
+shrinking outlines and keeps the smallest box with the same obligations.
+Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
-refuses any mismatch.
+refuses any mismatch. Land-pattern and courtyard hashes use canonical contour rings,
+so they do not depend on the captured board rotation (AGENTEE-370).
 The [block library](docs/block-library.md) keeps versioned known-good blocks in
 `blocks/` with provenance receipts. Its entries come from KiCad board regions,
 scale-verified datasheet figures and project clusters. A lookup returns each block
@@ -159,10 +165,14 @@ every use is admitted by `blocks.admit` on the target.
 [Block arrangement](docs/blocks.md#stage-b-arrangement-agentee-340) places the
 admitted candidates as rigid macros, then packs the residual parts with the
 placer, with block members fixed. The search uses deterministic conflict-directed
-backjumping with typed exhaustion. Block rules (keep-outs, opposite-side
+backjumping with typed exhaustion. Candidate origins align to block members as
+well as block outlines, and the blocked regions are cached per placed block, so
+a backjump recomputes only what moved. Block rules (keep-outs, opposite-side
 shadows, no block over a fixed part, thermal spread) are hard only with a
 citation. Boundary roles are bound to their board nets. The complete plan goes
-through the writer's native gate.
+through the writer's native gate. The writer publishes each placed block's
+provenance class and enforcement as review input, which a scope's
+`block_provenance` carries to every initial reviewer.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
@@ -750,8 +760,12 @@ and mounting holes written by the scaffold are fixed references, and their
 exact courtyards are obstacles (AGENTEE-179). Circular probe courtyards are
 bounded exactly within a declared 5 um tolerance. A fixed courtyard may leave the
 outline only across envelope-declared edges and distances. Declared group
-regions and anchor distances are enforced and graded by `placement-groups/1`, and
-parts without courtyards are refused by name
+regions and anchor distances are enforced and graded by `placement-groups/1`.
+[Unsourced obstacle, region and saved-board limits](docs/placer.md#obstacle-and-group-sources-agentee-361)
+never establish a defect: capacity proofs that need them are unknown, and
+saved-board edge and group checks report them as `info` advisories. Authored
+fixtures and captured geometry retain their sourced verdicts.
+Parts without courtyards are refused by name
 ([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). Every placer
 result past the fixed reservations records the board's capacity at the packing
 gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound

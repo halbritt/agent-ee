@@ -1124,7 +1124,13 @@ is another writer request mode (`blocks`). It adds no check kind. The saved
 board is judged, graded for groups and pad locality, and DRC-gated as every
 placer plan is. In addition, the hard block rules are re-graded from the saved
 bytes (`judgment.block_rules`). A failed hard rule refuses publication;
-advisory rows are reported only.
+advisory rows are reported only. AGENTEE-355 changes only the search
+([compaction](blocks.md#compaction-agentee-355), member-aligned origins and the
+ranking cache); it adds no check kind and changes no gate. The writer also
+publishes `block-provenance.json`; a scope's `block_provenance` binds it to the
+captured board and carries it to every initial reviewer
+([review input](blocks.md#review-input-block-provenance-agentee-355)). It is
+review input, not a check result, and an advisory block confers no acceptance.
 
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
@@ -1147,7 +1153,16 @@ The [owned-zone write scope](placement-adapter.md#placement-write-scope)
 The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned
 footprint-forbidding polygons as exclusions for peer courtyards.
 AGENTEE-212 adds `placement-groups/1` (declared group regions and anchor
-distances) and an optional `envelope` on `outline-containment/1` that grades
+distances). AGENTEE-361 classifies group regions and distance limits, and the
+`edge-clearance/1` courtyard minimum. Unsourced limits are advisory, as in
+`electrical-locality/1`: each measurement against one is an `advisories` entry
+(`kind: unsourced_limit`, source class, measurement, `exceeded`), never a gate
+finding. When only exceeded advisories remain, the check ends `execution: ok`,
+`outcome: info`. Satisfied advisories (`exceeded: false`) keep `pass`. Real coverage gaps such as `courtyard_approximation` stay
+unknown. Sourced violations and structural courtyard-outside-board defects
+retain their verdicts. See
+[constraint source records](placer.md#obstacle-and-group-sources-agentee-361).
+AGENTEE-212 also adds an optional `envelope` on `outline-containment/1` that grades
 envelope-declared fixed-courtyard overhangs. Curved courtyards are judged on
 exact outer and inner bounds: pass on the outer, defect only on the inner;
 a result only between them is `courtyard_approximation` (unknown), even where
@@ -1797,9 +1812,12 @@ earlier same-candidate native DRC, and `locality` naming a captured
 `agent-ee.electrical-locality/1` document. Its immutable input and capability
 predicate are respectively that path and `placement:electrical-locality/1`.
 See the [declaration, verdicts and separate packer constraint](placer.md#pad-level-electrical-locality-agentee-322).
-Supply and return are mandatory and switch/inductor pairs optional. The native
-copper-land centroid metric preserves proved defects alongside unknowns;
-missing limits stay unknown; hard enforcement also requires a citation. Optional captured pad `uuid` selectors
+Locality documents and copied index snapshots require exact built-in JSON types;
+subclasses and other Python objects refuse before schema or net-binding checks
+(AGENTEE-356). Supply and return are mandatory and switch/inductor pairs
+optional. The native copper-land centroid metric preserves proved defects
+alongside unknowns; missing limits stay unknown; hard enforcement also requires
+a citation. Optional captured pad `uuid` selectors
 must also match the declared reference, number and net; unselected duplicate
 pad numbers refuse. Native copper offsets participate in the distance, and
 unqualified centroid geometry stays unknown. Coordinator packing derives its
@@ -1837,10 +1855,13 @@ Return endpoints use the declared return net, distinct from supply. AGENTEE-341
 requires both switch endpoint nets to differ from return and both supply endpoint
 nets. Distinct-source obligations require disjoint supply/return endpoint net
 sets even without a kind. Inconsistent bindings refuse validation, including
-direct `PlacementIndex` construction, which re-validates its document before
-indexing (AGENTEE-341), then indexes a deep copy of the validated document.
+direct `PlacementIndex` construction (AGENTEE-341). It deep-copies the document
+first, copies its exact JSON values into fresh owned containers, validates that
+snapshot, then indexes it (AGENTEE-356). Cyclic containers raise the typed JSON
+`ValueError`. Its public pairs and endpoint maps are read-only at every level,
+including endpoint fields.
 Later caller mutations cannot alter its endpoint identities or cached keys
-(AGENTEE-352). Untyped
+(AGENTEE-352/356). Untyped
 same-source obligations retain their existing verdicts; disjoint untyped nets
 alone do not establish component roles or detect swapped supply/return roles.
 Both legs remain jointly graded and constrained; missing bounds stay unknown. See
@@ -1902,6 +1923,14 @@ project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
 
+Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
+or `A;B`) never receive the exemption, even when KiCad writes the net name as a
+quoted string. Such edits reopen closure and require a fresh receipt. This is a
+conservative liveness bound of the writer grammar (AGENTEE-360).
+Nested-list children of a segment or arc refuse comparison with `ValueError`;
+the coordinator retains the carried defect instead of letting an untyped error
+escape.
+
 ## Post-routing silk repair (AGENTEE-350)
 
 The [routed artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
@@ -1913,8 +1942,9 @@ reuse the placement evidence envelope. Identity-bound closure can then remove
 carried defects only when each marking is visible, unchanged in style and
 silk layer, and wholly inside the qualified outline. Off-board and straddling
 marks remain open even if native DRC is silent. Footprint-owned Edge.Cuts
-participate in outline qualification; slots and cutouts cannot establish
-containment. Both producers seal a board-bound native containment witness in
+participate in outline qualification. Straight slots and cutouts qualify as holes
+inside one outer contour (AGENTEE-362); markings must lie wholly outside them.
+Touching, crossing, nested or unsupported contours establish no containment. Both producers seal a board-bound native containment witness in
 the placement report. Closure and campaign replay read it without rerunning
 pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
 unavailable evidence keep their refusal. Cached-text translations and boards
@@ -1946,3 +1976,12 @@ a proof surviving without it retains its verdict. The audit table distinguishes
 search radii, captured keepout geometry and computational guards. The low-level
 packing provenance object accepts a value-bound `min_courtyard_edge_mm` source
 with `value_nm`, class, enforcement and citation; check registration is unchanged.
+
+AGENTEE-365 closes two source paths for the
+[obstacle and group sources](placer.md#obstacle-and-group-sources-agentee-361).
+The placement adapter and pod driver refuse per-obstacle `provenance` and
+per-group `constraint_provenance` in the caller's packing policy, as they
+already refuse a policy-level `constraint_provenance`. Hard block-arrangement
+keep-outs and `no_stacking` shadows carry their rule's citation as
+`arrangement_rule`/`hard`, so a residual capacity proof that rests on one
+reports `defect` instead of `unknown`. No check registration changes.

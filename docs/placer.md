@@ -152,8 +152,9 @@ against a captured manufacturer requirement, including a captured JLCPCB SMT
 assembly record; those requirements remain hard. A caller must qualify that
 source before calling this geometry API: a citation string is not independently
 authenticated by the placer. The coordinator placement adapter continues to
-refuse policy-supplied `constraint_provenance`; envelope provenance still comes
-only from captured envelopes. This change adds no manufacturer capture pipeline
+refuse policy-supplied `constraint_provenance`, per-obstacle `provenance` and
+per-group `constraint_provenance`; envelope provenance still comes only from
+captured envelopes. This change adds no manufacturer capture pipeline
 or automatic promotion of an agent-chosen number.
 Neither a successful packing plan nor this spacing default establishes native
 DRC or assembly clearance acceptance.
@@ -428,14 +429,67 @@ The policy/capacity audit found these numeric constraints:
 | --- | --- | --- |
 | `min_courtyard_edge_mm` | Unknown/soft without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board proofs are unknown. |
 | `gap_nm` (including pod 0.25 mm) | Unknown/advisory without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board and region proofs are unknown (AGENTEE-338). |
-| Native rule areas and footprint keepouts | Captured geometry, unknown provenance; no numeric padding is added | Structural polygon exclusion; no invented keepout-padding limit exists. |
-| `groups[].max_distance_nm` | Explicit caller declaration, provenance unknown; no default radius | Search predicate and saved-board group grade; unused by all capacity proofs. An unplaceable group is search exhaustion/unknown. The independent group criterion retains its existing verdicts. |
-| Group region polygons, outline, fixed geometry and declared obstacles | Captured/declared geometry; envelope outline/fixed classes retained, otherwise unknown legacy geometry | Structural capacity bounds remain as before; this change adds no geometry provenance mechanism. |
+| Native rule areas and footprint keepouts | Captured board geometry, board/hard; no numeric padding is added | Structural polygon exclusion. |
+| `groups[].max_distance_nm` | Unknown/soft unless its group declares a sourced hard value | Search predicate; saved-board violations without a source are advisory `info` (AGENTEE-361). Unused by capacity proofs. |
+| Group region polygons and policy obstacles | Unknown/soft without a source; sourced geometry is hard | Advisory-dependent proofs are unknown and name the geometry in binding constraints (AGENTEE-361). |
+| Outline and fixed geometry | Envelope classes retained, otherwise unknown legacy hard geometry | Existing structural capacity verdicts remain. |
 | Step budget, search timeout and geometry work guards | Computational bounds, no engineering authority | Exhaustion/refusal is unknown, never a capacity defect. |
 
 The placer has no other numeric edge-margin, reserved-gap, keepout-padding or
 group-radius default that can establish a capacity defect. Electrical locality
 uses its existing per-pair sourced/advisory contract, separately from capacity.
+
+### Obstacle and group sources (AGENTEE-361)
+
+Each policy obstacle may declare `provenance: {class, enforcement, citation}`.
+The accepted geometry classes are `fixture_author`, `board`, `datasheet`,
+`manufacturer` and `arrangement_rule`; enforcement must be `hard` and the
+citation nonempty. Without that record an obstacle is `unknown`/`soft`. Native
+captured rule areas and footprint keepouts remain `board`/`hard` exclusions.
+
+Only a direct caller of this geometry API supplies these records (AGENTEE-365).
+The coordinator placement adapter and the pod driver refuse a packing policy
+whose obstacles carry `provenance` or whose groups carry `constraint_provenance`,
+exactly as they refuse a policy-level `constraint_provenance`: the packing
+policy is caller-authored, so it may state geometry but not qualify it. A
+sourced keep-out reaches the board from a captured envelope as a native rule
+area, graded `board`/`hard`; caller-declared obstacles, regions and distances
+stay advisory. Block arrangement passes the cited source of each hard keep-out
+and `no_stacking` shadow to the residual pack as an `arrangement_rule`/`hard`
+record, so a residual capacity proof resting on one is a defect that names it
+(see [blocks](blocks.md#residual-packing-and-the-complete-plan)).
+
+Each group may declare `constraint_provenance` keyed by `region` and/or
+`max_distance_nm`, only for constraints that group actually has. A region uses
+the geometry source record above; a distance uses the existing numeric record
+(`fixture_author` or `manufacturer`, `hard`, nonempty `citation`, integer
+`value_nm` equal to `max_distance_nm`). For example:
+
+```json
+{"id": "filter", "references": ["C1"],
+ "anchor": {"reference": "U1"}, "max_distance_nm": 1000000,
+ "constraint_provenance": {"max_distance_nm": {
+   "class": "fixture_author", "enforcement": "hard", "value_nm": 1000000,
+   "citation": "Original fixture: C1 origin within 1 mm of U1"}}}
+```
+
+A region capacity proof records every participating region, including nested
+regions, as `group <id> region` in `binding_constraints`. Policy obstacles keep
+their original `obstacle <index>` names. A proof that needs an unsourced region
+or obstacle reports `packing_infeasible`/`unknown`, empty placements and
+`owner_confirmation` naming it. Proofs retry without advisory geometry, then
+without unsourced numeric limits; an independent sourced region or board
+capacity defect takes precedence over an advisory proof. The capacity diagnostic
+retains the original requested geometry and limits.
+
+Search still reserves the declared geometry and group radii; search failure
+remains unknown. Saved-board grading reports unsourced region and radius
+limits as `unsourced_limit` advisories with the original `advisory_kind`,
+measured values, source class and `exceeded`. The status is `info` when only
+exceeded advisories remain; satisfied ones keep `pass`. Sourced defects survive alongside them. Because search enforces the
+groups, a plan or saved board is accepted only when no advisory is exceeded
+(`placement_groups.satisfied`). These source records follow the existing caller qualification contract;
+authenticating declared citations remains AGENTEE-348.
 
 ### Board capacity (AGENTEE-249)
 
@@ -531,8 +585,9 @@ of them is soft (an assumed or owner-weakened limit), the proof stays in the
 record, but the outcome is `unknown` instead of `defect`. The result then has
 `owner_confirmation` (the soft constraints), and the reason names them. A proof
 bound only by hard or undeclared limits keeps `defect`, except that an unsourced
-gap is advisory under AGENTEE-338 and an unsourced margin is soft under
-AGENTEE-358. A zero-gap proof does not bind that gap; a zero-margin proof does
+gap is advisory under AGENTEE-338, an unsourced margin is soft under
+AGENTEE-358, and unsourced policy obstacles and group regions are soft under
+AGENTEE-361. A zero-gap proof does not bind that gap; a zero-margin proof does
 not bind the margin. Owned tests are in
 `tests/test_constraint_provenance.py`.
 
@@ -602,7 +657,9 @@ snapshot and available plan, saved probe/judgment and raw native DRC diagnostics
 The requested destination remains absent. The source
 and netlist hashes are rechecked before publication. Generated
 `placement-result.json`, `placement-probe.json`, native DRC JSON and native DRC
-console/execution records describe the disposable proposal. Transformed pure
+console/execution records describe the disposable proposal. A `blocks` request
+also publishes `block-provenance.json`, the reviewers' record of each placed
+block's provenance ([blocks.md](blocks.md#review-input-block-provenance-agentee-355)). Transformed pure
 plan judgments are marked `transformed-proposal-not-native`; the final judgment
 binds to the actual saved candidate hash. Standalone outputs remain unsealed.
 
@@ -649,7 +706,8 @@ belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
 [Blocks](blocks.md) derive placement blocks from the sealed schematic hierarchy
 or an engineer allocation file. Each block is packed alone with this search,
 around a fixed anchor on a synthetic plane, into a rigid
-`agent-ee.block-candidate/2`. Its own pad obligations and groups apply, and
+`agent-ee.block-candidate/2`, then re-packed on shrinking outlines to the least
+box area ([compaction](blocks.md#compaction-agentee-355), AGENTEE-355). Its own pad obligations and groups apply, and
 boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
 unchanged. [Arrangement](blocks.md#stage-b-arrangement-agentee-340) admits a
 candidate only after `blocks.admit` (or a mapped match and re-grade) checks it
@@ -1164,11 +1222,19 @@ captured declaration.
 
 After the independent initial locality grade qualifies identities and copper
 centroids, packing caches selected pad positions per footprint. Direct
-`PlacementIndex(document)` construction re-validates the declaration before
-building caches, including role bindings, disjoint nets and canonical UUIDs
-(AGENTEE-341). After validation it deep-copies the document and builds the index
-from that snapshot, so later edits to the caller's nested dictionaries cannot
-change indexed endpoints or bypass validation (AGENTEE-352).
+`PlacementIndex(document)` deep-copies the declaration, then builds a fresh
+exact-type JSON snapshot owned by the index. Before building caches it validates
+role bindings, disjoint nets and canonical UUIDs in that snapshot
+(AGENTEE-341/352/356).
+Validation covers values produced by copying; subclasses left by copying and
+cyclic containers refuse with `locality document must contain only JSON values`.
+References retained by a copy hook cannot change the owned snapshot after validation.
+Direct `validate()` and `grade()` apply the same exact-type check, including
+object keys, before schema and net-disjointness checks. Later caller edits cannot
+change indexed values. Its public `pairs` and `endpoints` properties expose
+mapping proxies, tuple pair sequences and read-only endpoint fields; callers cannot mutate the indexed declarations.
+Copying does not promise an atomic view of concurrent edits: an invalid
+snapshot refuses, and only the validated snapshot supplies the index.
 It still requires independently qualified native geometry. Search push/pop
 updates this index, including backjumps. Each rotation resolves only its incident
 roles with placed peers once; candidate costs translate those exact centroids
