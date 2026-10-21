@@ -602,7 +602,9 @@ snapshot and available plan, saved probe/judgment and raw native DRC diagnostics
 The requested destination remains absent. The source
 and netlist hashes are rechecked before publication. Generated
 `placement-result.json`, `placement-probe.json`, native DRC JSON and native DRC
-console/execution records describe the disposable proposal. Transformed pure
+console/execution records describe the disposable proposal. A `blocks` request
+also publishes `block-provenance.json`, the reviewers' record of each placed
+block's provenance ([blocks.md](blocks.md#review-input-block-provenance-agentee-355)). Transformed pure
 plan judgments are marked `transformed-proposal-not-native`; the final judgment
 binds to the actual saved candidate hash. Standalone outputs remain unsealed.
 
@@ -649,7 +651,8 @@ belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
 [Blocks](blocks.md) derive placement blocks from the sealed schematic hierarchy
 or an engineer allocation file. Each block is packed alone with this search,
 around a fixed anchor on a synthetic plane, into a rigid
-`agent-ee.block-candidate/2`. Its own pad obligations and groups apply, and
+`agent-ee.block-candidate/2`, then re-packed on shrinking outlines to the least
+box area ([compaction](blocks.md#compaction-agentee-355), AGENTEE-355). Its own pad obligations and groups apply, and
 boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
 unchanged. [Arrangement](blocks.md#stage-b-arrangement-agentee-340) admits a
 candidate only after `blocks.admit` (or a mapped match and re-grade) checks it
@@ -1164,11 +1167,19 @@ captured declaration.
 
 After the independent initial locality grade qualifies identities and copper
 centroids, packing caches selected pad positions per footprint. Direct
-`PlacementIndex(document)` construction re-validates the declaration before
-building caches, including role bindings, disjoint nets and canonical UUIDs
-(AGENTEE-341). After validation it deep-copies the document and builds the index
-from that snapshot, so later edits to the caller's nested dictionaries cannot
-change indexed endpoints or bypass validation (AGENTEE-352).
+`PlacementIndex(document)` deep-copies the declaration, then builds a fresh
+exact-type JSON snapshot owned by the index. Before building caches it validates
+role bindings, disjoint nets and canonical UUIDs in that snapshot
+(AGENTEE-341/352/356).
+Validation covers values produced by copying; subclasses left by copying and
+cyclic containers refuse with `locality document must contain only JSON values`.
+References retained by a copy hook cannot change the owned snapshot after validation.
+Direct `validate()` and `grade()` apply the same exact-type check, including
+object keys, before schema and net-disjointness checks. Later caller edits cannot
+change indexed values. Its public `pairs` and `endpoints` properties expose
+mapping proxies, tuple pair sequences and read-only endpoint fields; callers cannot mutate the indexed declarations.
+Copying does not promise an atomic view of concurrent edits: an invalid
+snapshot refuses, and only the validated snapshot supplies the index.
 It still requires independently qualified native geometry. Search push/pop
 updates this index, including backjumps. Each rotation resolves only its incident
 roles with placed peers once; candidate costs translate those exact centroids

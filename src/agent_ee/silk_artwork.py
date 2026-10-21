@@ -45,6 +45,45 @@ def _obstacle_boxes(field, items, identities=None):
         yield box
 
 
+def _outline_with_holes(board):
+    """One straight outer ring and disjoint strictly internal cutout rings."""
+    import pcbnew as k
+    from .placement_probe import primitive, prove_contours
+    from .board_envelope import strictly_inside, intersects
+    from .placement import edges
+    shapes = [s for s in board.GetDrawings() if s.GetLayer() == k.Edge_Cuts]
+    for fp in board.GetFootprints():
+        shapes.extend(s for s in fp.GraphicalItems() if s.GetLayer() == k.Edge_Cuts)
+    record = prove_contours([primitive(s) for s in shapes], 'outline_missing',
+                            'outline_unproven', separate_contours=True)
+    if record['status'] != 'proven':
+        return None
+    rings = record['polygons']
+    # Boundary contact, crossing, multiple islands and nested holes are ambiguous.
+    if any(intersects(a, b, c, d) for i, left in enumerate(rings)
+           for right in rings[i+1:] for a, b in edges(left) for c, d in edges(right)):
+        return None
+    outers = [p for p in rings if all(q is p or strictly_inside(q[0], p) for q in rings)]
+    if len(outers) != 1:
+        return None
+    outer = outers[0]
+    holes = [p for p in rings if p is not outer]
+    if any(strictly_inside(p[0], q) or strictly_inside(q[0], p)
+           for i, p in enumerate(holes) for q in holes[i+1:]):
+        return None
+    return outer, holes
+
+
+def _box_contained(corners, outline):
+    from .board_envelope import inside, intersects, segment_inside
+    from .placement import edges
+    outer, holes = outline
+    return (all(segment_inside(a, b, outer) for a, b in edges(corners)) and
+            not any(inside(corners[0], hole) or inside(hole[0], corners) or
+                    any(intersects(a, b, c, d) for a, b in edges(corners) for c, d in edges(hole))
+                    for hole in holes))
+
+
 def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False):
     """Translate owned fields and opted-in graphics within 10 mm, deterministically.
 
@@ -54,8 +93,6 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
     diagnostics, never permission to hide or reshape a marking.
     """
     import pcbnew as k
-    from .board_envelope import segment_inside
-    from .placement_probe import primitive, prove_contours
 
     targets = {i['uuid'] for v in findings if v['type'] in SILK_CONFLICTS for i in v['items']}
     fields, obstacles = {}, []
@@ -77,10 +114,7 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
                     item.GetLayer() in (k.F_SilkS, k.B_SilkS)):
                 fp = item.GetParentFootprint()
                 fields[item.m_Uuid.AsString()] = (fp.GetReference() if fp else '', item)
-    edges = [s for s in board.GetDrawings() if s.GetLayer() == k.Edge_Cuts]
-    for fp in board.GetFootprints():
-        edges.extend(s for s in fp.GraphicalItems() if s.GetLayer() == k.Edge_Cuts)
-    outline = prove_contours([primitive(s) for s in edges], 'outline_missing', 'outline_unproven')
+    outline = _outline_with_holes(board)
     settings = board.GetDesignSettings()
     margin = max(200000, settings.m_SilkClearance)
     # KiCad 10 can omit custom-field UUIDs from silk reports, citing only the
@@ -102,7 +136,7 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
         parent = field.GetParentFootprint()
         if parent and parent.m_Uuid.AsString() in flipped_footprints:
             reason = 'footprint_side_flipped'
-        elif outline['status'] != 'proven' or len(outline['polygons']) != 1:
+        elif outline is None:
             reason = 'outline_unqualified'
         elif is_field and (min(field.GetTextSize().x, field.GetTextSize().y) < settings.m_MinSilkTextHeight or
                            field.GetEffectiveTextPenWidth() < settings.m_MinSilkTextThickness):
@@ -131,8 +165,7 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
             box.Inflate(margin)
             corners = [(box.GetLeft(), box.GetTop()), (box.GetRight(), box.GetTop()),
                        (box.GetRight(), box.GetBottom()), (box.GetLeft(), box.GetBottom())]
-            if (all(segment_inside(a, b, outline['polygons'][0])
-                    for a, b in zip(corners, corners[1:] + corners[:1])) and
+            if (_box_contained(corners, outline) and
                     not any(box.Intersects(other) for other in boxes)):
                 if dx or dy:
                     (moved if is_field else moved_graphics).append(dict(
@@ -150,20 +183,15 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
 
 
 def contained_markings(board):
-    """Visible silk whose full native bounds fit one proven straight outline.
+    """Visible silk whose full native bounds fit a proven straight outline with holes.
 
     Checking all box edges also rejects boxes crossing a concavity even when
-    their corners are inside. Unsupported/multiple contours establish no closure.
+    their corners are inside. Ambiguous or unsupported contours establish no closure.
     Run in the native tool process, never import pcbnew into the coordinator.
     """
     import pcbnew as k
-    from .board_envelope import segment_inside
-    from .placement_probe import primitive, prove_contours
-    edges = [s for s in board.GetDrawings() if s.GetLayer() == k.Edge_Cuts]
-    for fp in board.GetFootprints():
-        edges.extend(s for s in fp.GraphicalItems() if s.GetLayer() == k.Edge_Cuts)
-    outline = prove_contours([primitive(s) for s in edges], 'outline_missing', 'outline_unproven')
-    if outline['status'] != 'proven' or len(outline['polygons']) != 1:
+    outline = _outline_with_holes(board)
+    if outline is None:
         return []
     items = list(board.GetDrawings())
     for fp in board.GetFootprints():
@@ -181,8 +209,7 @@ def contained_markings(board):
         box = item.GetBoundingBox()
         corners = [(box.GetLeft(), box.GetTop()), (box.GetRight(), box.GetTop()),
                    (box.GetRight(), box.GetBottom()), (box.GetLeft(), box.GetBottom())]
-        if all(segment_inside(a, b, outline['polygons'][0])
-               for a, b in zip(corners, corners[1:] + corners[:1])):
+        if _box_contained(corners, outline):
             contained.append(item.m_Uuid.AsString())
     return sorted(contained)
 

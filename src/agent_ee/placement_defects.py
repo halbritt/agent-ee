@@ -329,6 +329,8 @@ def same_artwork(before, after):
         # Raw bytes, not decoded atoms: the shared parser's escape decoding differs from KiCad's.
         for node, source in zip(root, raw):
             if isinstance(node, list) and node and node[0] in ('segment', 'arc'):
+                if any(isinstance(n, list) and n and isinstance(n[0], list) for n in node[1:]):
+                    raise ValueError('artwork comparison refuses nested-list track child')
                 allowed = {'start', 'end', 'mid', 'width', 'layer', 'net', 'uuid', 'locked'}
                 layers = children(node, 'layer')
                 if (len(layers) == 1 and len(layers[0]) == 2 and

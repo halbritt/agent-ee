@@ -97,6 +97,10 @@ def build_packet(run_dir, checks, run_id):
     # Explicit RF applicability and exact source binding; the RF reviewer echoes binding_sha256.
     packet["rf_review"] = decide_run(run_dir, m)
     packet["rf_native_evidence"] = native_evidence(checks, packet["rf_review"])
+    if "block_provenance" in scope:
+        # Every placed block's identity, provenance class and enforcement, outside the text budget.
+        from .block_arrangement import review_input
+        packet["block_provenance"] = review_input(run_dir, m)
     packet["evidence_access"] = {"candidate": "/candidate/<path>",
         "checks": "/evidence/checks/<id>.json", "artifacts": "/evidence/work/<check>/<path>",
         "navigation": "/evidence/work/.navigation/index.json",
