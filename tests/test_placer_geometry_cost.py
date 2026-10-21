@@ -63,14 +63,23 @@ def seeded_board(seed):
         if len(ic['pads']) > 1 and len(cap['pads']) > 1:
             ic['pads'][1]['net'] = cap['pads'][1]['net'] = 'GND'
             limit = rng.choice((5, 8, 12)) * MM
-            policy['electrical_locality'] = {'schema': 'agent-ee.electrical-locality/1', 'obligations': [{
+            text = f'Original seeded fixture author: supply and return limits are {limit} nm.'
+            provenance = {'class': 'owner', 'basis': 'Authored seeded test requirement',
+                          'decision_reference': {'path': 'fixture-decisions/geometry-cost.txt',
+                              'sha256': hashlib.sha256(text.encode()).hexdigest(),
+                              'locator': 'supply and return limits', 'quote': text,
+                              'owner': 'Original fixture author'}}
+            policy['electrical_locality'] = {'schema': 'agent-ee.electrical-locality/1',
+                'source_records': {'fixture-decisions/geometry-cost.txt': text}, 'obligations': [{
                 'id': 'o1', 'metric': 'pad-centre-to-centre',
                 'supply': {'from': {'reference': ic['ref'], 'pad': '1', 'net': 'VCC'},
                            'to': {'reference': cap['ref'], 'pad': '1', 'net': 'VCC'},
-                           'max_distance_nm': limit, 'citation': 'Owned seeded fixture limit.'},
+                           'max_distance_nm': limit, 'citation': 'Owned seeded fixture limit.',
+                           'provenance': copy.deepcopy(provenance)},
                 'return': {'from': {'reference': ic['ref'], 'pad': '2', 'net': 'GND'},
                            'to': {'reference': cap['ref'], 'pad': '2', 'net': 'GND'},
-                           'max_distance_nm': limit, 'citation': 'Owned seeded fixture limit.'}}]}
+                           'max_distance_nm': limit, 'citation': 'Owned seeded fixture limit.',
+                           'provenance': copy.deepcopy(provenance)}}]}
     return board, policy
 
 
@@ -291,6 +300,50 @@ class FitsPrefilterTests(unittest.TestCase):
 
 
 class SeededPackDifferentialTests(unittest.TestCase):
+    def test_advisory_scan_neither_prunes_axes_nor_adds_movable_peer_conflicts(self):
+        from agent_ee.placer import _Search
+        from test_electrical_locality import board, declaration
+        facts, doc = board(), declaration(limit=1)
+        doc.pop('source_records')
+        for role in ('supply', 'return'):
+            doc['obligations'][0][role].pop('provenance')
+        hub, cap = facts['footprints']
+        # Opposite sides exclude geometric blockers, isolating locality conflicts.
+        hub['side'] = 'B'
+        hub['courtyards'] = {'B': hub['courtyards']['F']}
+        for pad in hub['pads']:
+            pad['layers'] = ['B.Cu']
+        search = _Search(facts, [], [], [],
+                         placement.simple_polygon(facts['outline']['polygons'][0]),
+                         0, request(electrical_locality=doc), {})
+        search.push(hub)  # A movable peer, so a spurious conflict cannot be filtered as fixed.
+        search.cluster_active, search.cluster_start_steps = True, 0
+        conflicts = set()
+        self.assertIsNotNone(next(search.scan(cap, conflicts), None))
+        self.assertEqual(conflicts, set())
+
+    def test_advisory_joint_cluster_matches_full_exact_ranking(self):
+        from unittest.mock import patch
+        from agent_ee import electrical_locality
+        from test_placer_clusters import joint_pack, random_cluster_case
+        board, policy = random_cluster_case(random.Random(1))
+        doc = policy['electrical_locality']
+        doc.pop('source_records')
+        for obligation in doc['obligations']:
+            for role in electrical_locality.roles(obligation):
+                obligation[role].pop('provenance')
+                obligation[role]['max_distance_nm'] = 1
+        before = copy.deepcopy((board, policy))
+        lazy = joint_pack(board, policy)
+        self.assertEqual(lazy['status'], 'planned', lazy)
+        self.assertEqual(lazy['locality_grading']['status'], 'info')
+        self.assertTrue(lazy['locality_grading']['advisories'])
+        self.assertTrue(all(a['exceeded'] for a in lazy['locality_grading']['advisories']))
+        with patch('agent_ee.placer._ranked', lambda bounds, exact: iter(sorted(map(exact, bounds)))):
+            eager = joint_pack(board, policy)
+        self.assertEqual(lazy, eager)
+        self.assertEqual((board, policy), before)
+
     def test_seeded_boards_pack_to_the_pinned_ac662ff_plans(self):
         statuses = set()
         for seed, pinned in PINNED.items():

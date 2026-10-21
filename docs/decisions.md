@@ -526,3 +526,14 @@ Cluster guards count steps; there is no default wall-clock cluster guard.
 Real-pod fail-fast is no longer this item's criterion; block-level placement is
 the pod path. See [joint locality clusters](placer.md#joint-locality-clusters-agentee-335)
 for the budget and diagnostic contract.
+
+## Locality numeric authority (AGENTEE-337, owner 2026-10-21)
+
+Numeric locality maxima require a component numeric/scale derivation or an
+explicit owner-recorded decision reference. Agent-selected D-PL-1-style limits
+and prose-only datasheet citations are advisory, including legacy declarations.
+They may rank placements but cannot reject a proposal by distance. Manufacturing
+spacing is a minimum and cannot establish an electrical maximum. Captured JLCPCB
+PCB-clearance facts and native geometry can prove a manufacturer bound
+infeasible below a necessary copper floor; assembly pad envelopes are advisory; the exact whole-footprint minimum remains an implementation gap.
+See [locality provenance](placer.md#locality-provenance-agentee-337).
