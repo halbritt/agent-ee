@@ -318,7 +318,14 @@ placement, preserving graphics and required markings while recording remaining
 added silk overlap/copper findings as open defects in published proposals
 (AGENTEE-333). Adopted helper receipt evidence follows successor candidates;
 downstream fab/verification gates and package release refuse open carry.
-Placement feasibility does not establish fab legibility.
+Placement feasibility does not establish fab legibility. AGENTEE-344 extends
+carry refusal to fab-family kinds in every stage and to campaign acceptance.
+Closed markings retain receipt-backed closure across proven masked-track edits.
+The [post-routing artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
+repairs silk through a scope-proven receipt and enables identity-bound closure
+after routing. Final saved-board containment witnesses are sealed in producer
+reports and reused on replay; footprint-owned cutouts cannot close carry.
+Lineage enforcement after out-of-campaign re-scoping remains open.
 Its local reports do not replace the
 coordinator checks.
 

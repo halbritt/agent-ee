@@ -8,6 +8,7 @@ DRC without a later adopted placement receipt.
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from .candidate import safe_relative
@@ -21,7 +22,12 @@ DRC = 'placement/placed/native-drc.json'
 ARTWORK = 'placement/placed/placement-silkscreen.json'
 EXECUTION = 'placement/placed/native-drc-execution.json'
 FILES = (REPORT, BOARD, DRC, EXECUTION)
-GATED_KINDS = frozenset({'fab_export', 'fab_package', 'cpl_rotation', 'fab_consistency', 'jlc_dfm'})
+GATED_KINDS = frozenset({
+    'fab_export', 'fab_package', 'cpl_rotation', 'fab_consistency', 'jlc_dfm',
+    'fab_roundtrip', 'fab_profile', 'dfm_geometry', 'dfa_dft', 'assembly_readiness',
+    'jlc_cost_estimate', 'drc', 'part_binding', 'package_consistency', 'parts_subset',
+    'land_pattern', 'catalog', 'part_selection',
+})
 
 
 def validate_campaign(scope):
@@ -34,29 +40,39 @@ def adopted(root, state, number):
     from .placement_adapter import STEP, qualify_receipt
     from .stage_done import _receipts
     from .stage_receipts import validate_receipt
-    if str(number) not in state.get('placement_records', {}):
-        return None
     work = Path(root) / 'implementations' / str(number)
     found = None
+    from . import routed_artwork
     for k, sha, receipt in _receipts(root, state, str(number)):
-        if receipt['spec']['step'] != STEP or receipt['status'] != 'completed':
+        artwork = receipt['spec']['step'] == routed_artwork.STEP
+        if not artwork and str(number) not in state.get('placement_records', {}):
             continue
-        record_path = work / 'placement-adapter.json'
-        if digest(record_path) != state.get('placement_records', {}).get(str(number)):
-            raise ValueError('placement defect carry lacks its anchored adapter record')
-        record = read_json(record_path)
+        if receipt['spec']['step'] not in (STEP, routed_artwork.STEP) or receipt['status'] != 'completed':
+            continue
         link = read_json(work / 'stage-receipts.json')['receipts'][k - 1]
         path = work / link['path']
         source = read_json(Path(state['history'][number - 1]['run']) / 'candidate.json')
         receipt = validate_receipt(path.parent, binding={'implementation': number,
             'source_candidate_id': source['candidate_id'], 'receipt_index': k})
-        if digest(path) != sha or record['status'] != 'proposed':
-            raise ValueError('placement defect carry receipt is not an adopted proposal')
-        qualified = qualify_receipt(path.parent, receipt, record['board'], record['protected'])
-        if (record['helper']['receipt_sha256'] != sha or
-                record['helper']['result_sha256'] != qualified['result_sha256']):
-            raise ValueError('placement defect carry differs from its qualified helper')
+        if digest(path) != sha:
+            raise ValueError('carried helper receipt differs from anchored receipt')
+        if artwork:
+            routed_artwork.qualify_receipt(path.parent, receipt, source['scope']['board'],
+                                           state['launch_environment']['policy_files'])
+        else:
+            record_path = work / 'placement-adapter.json'
+            if digest(record_path) != state.get('placement_records', {}).get(str(number)):
+                raise ValueError('placement defect carry lacks its anchored adapter record')
+            record = read_json(record_path)
+            if record['status'] != 'proposed':
+                raise ValueError('placement defect carry receipt is not an adopted proposal')
+            qualified = qualify_receipt(path.parent, receipt, record['board'], record['protected'])
+            if (record['helper']['receipt_sha256'] != sha or
+                    record['helper']['result_sha256'] != qualified['result_sha256']):
+                raise ValueError('placement defect carry differs from its qualified helper')
         names = [*FILES, *([ARTWORK] if ARTWORK in receipt['artifacts'] else [])]
+        if artwork:
+            names.append(routed_artwork.SOURCE)
         data = {'receipt.json': path.read_bytes()}
         for name in names:
             artifact = path.parent / 'run' / name
@@ -143,8 +159,13 @@ def _bundle(manifest, inputs, link):
             receipt.get('identity') != identity({k: v for k, v in receipt.items() if k != 'identity'})):
         raise ValueError('carried placement receipt identity or status invalid')
     prefix = str(Path(link['receipt']).parent)
+    from . import routed_artwork
+    artwork = receipt['spec']['step'] == routed_artwork.STEP
     loaded = {}
-    for name in [*FILES, *([ARTWORK] if ARTWORK in receipt['artifacts'] else [])]:
+    names = [*FILES, *([ARTWORK] if ARTWORK in receipt['artifacts'] else [])]
+    if artwork:
+        names.append(routed_artwork.SOURCE)
+    for name in names:
         loaded[name] = _read(manifest, inputs, f'{prefix}/{name}', receipt['artifacts'].get(name))
         if receipt['artifacts'].get(name) is None:
             raise ValueError('carried placement receipt lacks required artifact')
@@ -157,6 +178,11 @@ def _bundle(manifest, inputs, link):
             report.get('open_defects') != report.get('native_drc_comparison', {}).get('open_defects') or
             (report.get('open_defects') and (report.get('outcome'), report.get('verdict')) != ('defect', 'defect'))):
         raise ValueError('carried placement result is not bound to its receipt')
+    if artwork:
+        proof = routed_artwork.write_scope(loaded[routed_artwork.SOURCE].read_bytes(), loaded[BOARD].read_bytes())
+        if (report.get('producer') != routed_artwork.STEP or report.get('write_scope') != proof or
+                digest(loaded[routed_artwork.SOURCE]) != receipt['inputs'].get(board)):
+            raise ValueError('carried artwork scope differs from its receipt')
     drc, execution = read_json(loaded[DRC]), read_json(loaded[EXECUTION])
     if (execution.get('execution') != 'ok' or execution.get('exit_code') != 0 or
             set(drc.get('included_severities', [])) != {'error', 'warning', 'exclusion'} or
@@ -166,11 +192,30 @@ def _bundle(manifest, inputs, link):
     return report, loaded, drc
 
 
-def _identities(path):
+class _SavedIdentities(dict):
+    """Saved identities with the receipt's board-bound native containment witness."""
+    def __init__(self, path, witness):
+        super().__init__()
+        self.board_bytes = Path(path).read_bytes()
+        self._contained = set()
+        if not isinstance(witness, dict) or set(witness) != {'board_sha256', 'markings'}:
+            return
+        markings = witness['markings']
+        if (witness['board_sha256'] == hashlib.sha256(self.board_bytes).hexdigest() and
+                isinstance(markings, list) and all(isinstance(u, str) and u for u in markings) and
+                len(markings) == len(set(markings))):
+            self._contained = set(markings)
+
+    def contained(self):
+        # Replay consumes sealed evidence only; missing/invalid witnesses close nothing.
+        return self._contained
+
+
+def _identities(path, witness=None):
     """Saved native item identities and marking content, using the shared parser."""
     from .symbol_library import children, parse_sexpr
-    root = parse_sexpr(Path(path).read_bytes())
-    result = {}
+    result = _SavedIdentities(path, witness)
+    root = parse_sexpr(result.board_bytes)
     def visit(node, owner):
         uid = children(node, 'uuid')
         if uid:
@@ -203,6 +248,109 @@ def _items(defect):
     return {defect['uuid']}
 
 
+# This recognizes only the lexical form of writer-produced track spans. Structural
+# parsing and bounds remain the shared S-expression reader's responsibility.
+_WRITER_TOKEN = re.compile(r'(?:[ \t\n]+|\r\n|[()]|[A-Za-z0-9_.+-]+(?=[ \t\r\n()]|$)|'
+                           r'"[^"\\#;\x00-\x1f\x7f-\x9f]*"(?=[ \t\r\n()]|$))')
+
+
+def _writer_track_span(source):
+    depth, pos = 0, 0
+    while pos < len(source):
+        token = _WRITER_TOKEN.match(source, pos)
+        if token is None:
+            return False
+        value = token.group()
+        if value == '(':
+            depth += 1
+        elif value == ')':
+            depth -= 1
+            if depth < 0 or (depth == 0 and token.end() != len(source)):
+                return False
+        pos = token.end()
+    return depth == 0
+
+
+def same_artwork(before, after):
+    """Prove identical markings and obstructions except masked board copper tracks.
+
+    Unknown track children (including solder-mask exposure) stay in the comparison.
+    Vias, zones, footprint transforms, pads, mask, setup and every artwork token
+    must remain identical. No electrical or routing verdict follows from this.
+    """
+    from .symbol_library import children, parse_sexpr
+    def spans(text):
+        # Byte spans of the root's direct children; quoted strings skip escaped characters.
+        result, depth, start, pos, line_start = [], 0, None, 0, True
+        while pos < len(text):
+            char = text[pos]
+            # KiCad's lexer skips a line whose first non-blank (space, tab, CR, NUL) byte is '#'.
+            if char == '\n':
+                line_start = True
+            elif char not in ' \t\r\0':
+                if line_start and char == '#':
+                    raise ValueError('artwork comparison refuses comment syntax')
+                line_start = False
+            if char == '"':
+                begin = pos
+                pos += 1
+                while text[pos] != '"':
+                    pos += 2 if text[pos] == '\\' else 1
+                if depth == 1:
+                    result.append(text[begin:pos + 1])
+            elif char == ';':
+                raise ValueError('artwork comparison refuses comment syntax')
+            elif char == '(':
+                depth += 1
+                if depth == 2:
+                    start = pos
+            elif char == ')':
+                if depth == 2:
+                    result.append(text[start:pos + 1])
+                depth -= 1
+            elif not char.isspace() and depth == 1:
+                end = pos
+                while end < len(text) and not text[end].isspace() and text[end] not in '();"':
+                    end += 1
+                result.append(text[pos:end])
+                pos = end - 1
+            pos += 1
+        return result
+    def subject(path):
+        data = Path(path).read_bytes()
+        root = parse_sexpr(data)
+        if root[0] != 'kicad_pcb':
+            raise ValueError('artwork comparison requires a saved board')
+        text = data.decode('utf-8')
+        raw = spans(text)
+        if len(raw) != len(root):
+            raise ValueError('artwork comparison could not align saved-board nodes')
+        kept = []
+        # Raw bytes, not decoded atoms: the shared parser's escape decoding differs from KiCad's.
+        for node, source in zip(root, raw):
+            if isinstance(node, list) and node and node[0] in ('segment', 'arc'):
+                allowed = {'start', 'end', 'mid', 'width', 'layer', 'net', 'uuid', 'locked'}
+                layers = children(node, 'layer')
+                if (len(layers) == 1 and len(layers[0]) == 2 and
+                        layers[0][1] in ('F.Cu', 'B.Cu', *(f'In{i}.Cu' for i in range(1, 31))) and
+                        all(isinstance(n, list) and n and n[0] in allowed for n in node[1:]) and
+                        _writer_track_span(source)):
+                    continue
+            kept.append(source.encode('utf-8'))
+        return kept
+    return subject(before) == subject(after)
+
+
+def acceptance(run, diagnostic):
+    """Campaign acceptance is a gate even when no downstream check was declared."""
+    if diagnostic['state'] != 'criteria_satisfied':
+        return diagnostic
+    run = Path(run)
+    if open_defects(read_json(run / 'candidate.json'), run / 'inputs'):
+        return {'state': 'escalated', 'reason': 'open_placement_defects'}
+    return diagnostic
+
+
 def open_defects(manifest, inputs):
     """Reconstruct open carry; only later receipted current artwork can close it."""
     index = f'{DIRECTORY}/index.json'
@@ -218,13 +366,33 @@ def open_defects(manifest, inputs):
     active = []
     for link in links:
         report, loaded, drc = _bundle(manifest, inputs, link)
-        identities = _identities(loaded[BOARD])
+        identities = _identities(loaded[BOARD], report.get('containment'))
         moved = {m['uuid'] for m in read_json(loaded[ARTWORK]).get('moved_fields', [])} if ARTWORK in loaded else set()
         conflicts = {i['uuid'] for v in drc['violations'] if v['type'].startswith('silk_') for i in v['items']}
         diagnostics = {d['uuid'] for d in report['open_defects'] if 'uuid' in d}
-        current = report['board_sha256'] == manifest['files'].get(manifest['scope']['board'])
+        board = manifest['scope']['board']
+        current = report['board_sha256'] == manifest['files'].get(board)
+        if not current:
+            # A dishonest candidate digest must not turn a known defect into unknown.
+            path = Path(inputs) / str(safe_relative(board))
+            try:
+                if path.is_file() and not path.is_symlink() and digest(path) == manifest['files'].get(board):
+                    current = same_artwork(loaded[BOARD], path)
+            except (OSError, ValueError):
+                # An unprovable edit cannot downgrade a known carried defect.
+                current = False
+        receipt = read_json(_read(manifest, inputs, link['receipt'], link['sha256']))
+        # Bind a conservative superset of DRC's project/rule inputs, including
+        # non-board stems. Added, removed or changed settings invalidate closure.
+        def rules(files):
+            return {p: sha for p, sha in files.items()
+                    if not p.startswith(DIRECTORY + '/') and
+                    Path(p).suffix in ('.kicad_pro', '.kicad_dru')}
+        current = current and rules(receipt['inputs']) == rules(manifest['files'])
         active = [(d, source, original) for d, source, original in active
-                  if not _closes(d, original, identities, conflicts | diagnostics, moved, current)]
+                  if not _closes(d, original, identities, conflicts | diagnostics, moved, current,
+                                 report.get('producer') == 'agent-ee-routed-artwork' and
+                                 receipt.get('spec', {}).get('step') == 'agent-ee-routed-artwork')]
         for defect in report['open_defects']:
             _items(defect)
             active.append((defect, link, identities))
@@ -239,13 +407,27 @@ def open_defects(manifest, inputs):
     return defects
 
 
-def _closes(defect, original, current, conflicts, moved, current_board):
+def _closes(defect, original, current, conflicts, moved, current_board, graphic_translation=False):
     ids = _items(defect)
     markings = {u for u in ids & current.keys() if current[u][1][0] == 'property' or
                 current[u][1][0].startswith(('fp_', 'gr_'))}
+    def same(u):
+        if current[u][:2] == original[u][:2]:
+            # Text angle lives in the position node; only its x/y may move.
+            return ([at[3:] for at in current[u][2]] ==
+                    [at[3:] for at in original[u][2]])
+        from .routed_artwork import GRAPHICS, translated_content
+        from .symbol_library import children
+        old_owner, old, _ = original[u]
+        new_owner, new, _ = current[u]
+        return (graphic_translation and old_owner == new_owner and old[0] == new[0] and old[0] in GRAPHICS and
+                old[0] not in ('fp_text', 'gr_text') and
+                children(old, 'layer') in ([['layer', 'F.SilkS']], [['layer', 'B.SilkS']]) and
+                translated_content(old) == translated_content(new))
     return (current_board and ids <= current.keys() and ids <= original.keys() and
-            all(current[u][:2] == original[u][:2] for u in ids) and
+            all(same(u) for u in ids) and
             bool(markings) and not (markings & conflicts) and
+            (callable(getattr(current, 'contained', None)) and markings <= current.contained()) and
             ('native' in defect or all(u in moved or current[u][2] != original[u][2] for u in ids)))
 
 
