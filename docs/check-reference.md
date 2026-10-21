@@ -1789,8 +1789,10 @@ after per-part search fails, with tightest-limit-first peers and only the remain
 step/time budget. Joint refusals retain the legacy typed failure and cluster
 diagnostics in `search.joint_cluster_attempt`; only regraded completions replace it.
 AGENTEE-347 regressions exercise complete-proposal locality rejection on both
-engines, whole-result legacy preservation under the cluster guard, and a seeded
-25-case differential with independently regraded joint completions.
+engines and public `pack()`, whole-result legacy preservation under the cluster
+guard (including `locality_clusters`, excluding only `joint_cluster_attempt`),
+and a seeded 22-case differential including an independently regraded joint
+completion (seed 2, case 55).
 The per-rotation cap of 256 distinct locality origins refuses with
 `packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
 `locality target budget exhausted`; it never truncates targets. Runner heartbeats

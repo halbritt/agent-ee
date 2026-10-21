@@ -1066,16 +1066,20 @@ step guards and cleanup. Public contract tests cover unchanged legacy plans,
 shared remaining steps and absolute deadlines. A seeded differential freezes
 16 original multi-member cases from the pre-cluster placer, including movable
 hubs, and checks every legacy plan's verdict, placements and steps. AGENTEE-347
-adds a 25-case deterministic differential against the retained per-part engine:
-legacy plans and failures keep whole-result equality (apart from additive joint
-diagnostics on failures), repeated runs are identical, total steps stay within
-budget, and new joint completions pass an independent locality regrade. The
-cluster-guard regression compares the whole legacy result, including steps and
+adds a 22-case deterministic differential against the retained per-part engine:
+legacy plans and failures keep whole-result equality (apart from
+`search.joint_cluster_attempt` on failures; legacy `locality_clusters` stays equal),
+repeated runs are identical, total steps stay within budget, and seed 2 case 55
+completes jointly and passes an independent locality regrade. Three redundant
+slow refusal cases are omitted. The cluster-guard regression compares the whole
+legacy result, including steps and
 search records. Fault injection into the search predicate makes complete proposals
-fail the real locality grade on both paths and requires `judge_rejected` with
-empty placements. Refusal bounds use candidate counts, not wall time. The locality-index suite adds exact
-limit and placed-state scan bounds for both paths; a joint evaluation bound
-catches removal of projection pruning.
+fail the real locality grade on both internal paths and public `pack()`,
+requiring `judge_rejected` with empty placements. The public joint-attempt
+diagnostic must also report `judge_rejected`. Refusal bounds use candidate counts,
+not wall time. The locality-index suite adds exact limit and placed-state scan
+bounds for both paths; a joint evaluation bound catches removal of projection
+pruning.
 
 The real pod remains diagnostic. Fail-fast completion of that run is outside
 AGENTEE-335 after the legacy-first ruling; block-level placement (AGENTEE-339/340)
