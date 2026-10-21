@@ -1771,6 +1771,18 @@ sha256}` (AGENTEE-328). The engineer declares limits and citation locators;
 the check never supplies a manufacturer radius or verifies cited prose.
 Origin-group success supplies no electrical-locality acceptance.
 
+AGENTEE-330 permits different `supply.from` and `return.from` references,
+retaining the same capacitor destination and exact pad/net/UUID validation.
+AGENTEE-334 adds `kind: buck-output-loop` with explicit `ic`, `inductor`, and
+`return_net` declarations. Supply starts at that inductor; return starts at
+that IC. Optional switch starts at the IC and ends at the same inductor.
+Return endpoints use the declared return net, distinct from supply. Inconsistent
+bindings refuse validation. Untyped obligations keep their generic pair
+semantics and existing verdicts. Both legs remain jointly graded and constrained;
+missing bounds stay unknown. See
+[buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
+for the schema, retained owned evidence and committed pod packet locator.
+
 ## Post-placement silk publication gate (AGENTEE-320)
 
 The [artwork pass](silk-artwork.md) uses native field bounds to search for
@@ -1785,10 +1797,3 @@ Side-flipped footprints' fields remain unchanged with typed conflicts. Source
 project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
-
-AGENTEE-330 permits different `supply.from` and `return.from` references for
-buck output loops, retaining the same capacitor destination and exact pad/net/
-UUID validation. Optional `switch.from` names the return-source IC. Both roles
-remain jointly graded and constrained; missing loop bounds stay unknown. See
-[buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
-for declaration semantics, owned regressions and read-only pod measurements.

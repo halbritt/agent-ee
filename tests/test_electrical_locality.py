@@ -53,6 +53,102 @@ def output_loop():
     return facts, doc
 
 
+def bound_output_loop():
+    facts, doc = output_loop()
+    doc['obligations'][0].update(kind='buck-output-loop', ic='U1', inductor='L1', return_net='GND')
+    return facts, doc
+
+
+class BoundOutputLoopTests(unittest.TestCase):
+    def test_owned_evidence_and_optional_switch(self):
+        facts, doc = bound_output_loop()
+        original = copy.deepcopy(doc)
+        result = locality.grade(facts, doc)
+        self.assertEqual(result['status'], 'pass')
+        self.assertEqual([r['distance_squared_nm'] for r in result['measured']],
+                         [89*MM**2, 162*MM**2, 16*MM**2])
+        self.assertEqual([r['citation'] for r in result['measured']],
+                         [doc['obligations'][0][r]['citation'] for r in ('supply', 'return', 'switch')])
+        self.assertEqual(result['declaration'], original)
+        self.assertEqual(doc, original)
+        doc['obligations'][0].pop('switch')
+        self.assertEqual(locality.grade(facts, doc)['status'], 'pass')
+
+    def test_bound_loop_guidance_and_defect_precedence(self):
+        import itertools
+        for priority in itertools.permutations(['U1', 'L1', 'C1']):
+            facts, doc = bound_output_loop()
+            for role in locality.roles(doc['obligations'][0]):
+                doc['obligations'][0][role]['max_distance_nm'] = 4*MM
+            plan = pack(facts, request(priority_refs=list(priority), electrical_locality=doc))
+            self.assertEqual(plan['status'], 'planned', plan)
+            self.assertEqual(plan['locality_grading']['status'], 'pass')
+        facts, doc = bound_output_loop()
+        doc['obligations'][0]['supply'].pop('citation')
+        self.assertEqual(locality.grade(facts, doc)['status'], 'unknown')
+        doc['obligations'][0]['return']['max_distance_nm'] = 0
+        result = locality.grade(facts, doc)
+        self.assertEqual(result['status'], 'defect')
+        self.assertEqual([d['role'] for d in result['defects']], ['return'])
+
+    def test_role_binding_refuses_unrelated_rail_member_probe_c(self):
+        facts, doc = bound_output_loop()
+        unrelated = copy.deepcopy(facts['footprints'][-1])
+        unrelated['ref'] = unrelated['uuid'] = 'R9'
+        for pad in unrelated['pads']:
+            pad['uuid'] = 'R9'+pad['number']
+        facts['footprints'].append(unrelated)
+        row = doc['obligations'][0]
+        row['supply']['from']['reference'] = 'R9'
+        # R9 really has a nearby VCC pad: geometry and shared net alone pass.
+        legacy = copy.deepcopy(doc)
+        for key in ('kind', 'ic', 'inductor', 'return_net'):
+            legacy['obligations'][0].pop(key)
+        self.assertEqual(locality.grade(facts, legacy)['status'], 'pass')
+        with self.assertRaisesRegex(ValueError, 'supply must start at the declared inductor'):
+            locality.grade(facts, doc)
+        with self.assertRaises(ValueError):
+            pack(facts, request(electrical_locality=doc))
+
+    def test_switch_rule_itself_with_three_distinct_references(self):
+        for role, expected in (('from', 'declared IC'), ('to', 'declared inductor')):
+            facts, doc = bound_output_loop()
+            pair = doc['obligations'][0]['switch']
+            pair[role]['reference'] = 'R9'
+            self.assertNotEqual(pair['from']['reference'], pair['to']['reference'])
+            with self.subTest(role=role), self.assertRaisesRegex(ValueError, expected):
+                locality.validate(doc)
+
+    def test_loop_schema_and_net_boundaries(self):
+        for mutation in ('ic', 'inductor', 'return_net', 'kind', 'same_net', 'swapped',
+                         'return_to', 'return_ic', 'same_sources'):
+            facts, doc = bound_output_loop()
+            row = doc['obligations'][0]
+            if mutation in ('ic', 'inductor', 'return_net'):
+                row.pop(mutation)
+            elif mutation == 'kind': row['kind'] = 'unknown-loop'
+            elif mutation == 'same_net':
+                for end in ('from', 'to'): row['supply'][end]['net'] = 'GND'
+            elif mutation == 'swapped':
+                for end in ('from', 'to'):
+                    row['supply'][end]['net'], row['return'][end]['net'] = 'GND', 'VCC'
+            elif mutation == 'return_to': row['return']['to']['net'] = 'VCC'
+            elif mutation == 'return_ic': row['return']['from']['reference'] = 'R9'
+            else: row['inductor'] = 'U1'
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                locality.validate(doc)
+        for key in ('ic', 'inductor', 'return_net'):
+            for value in ('', ' ', None, 1, []):
+                facts, doc = bound_output_loop()
+                doc['obligations'][0][key] = value
+                with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                    locality.validate(doc)
+        # Role metadata cannot silently be ignored on an untyped declaration.
+        facts, doc = bound_output_loop()
+        doc['obligations'][0].pop('kind')
+        with self.assertRaises(ValueError): locality.validate(doc)
+
+
 class OutputLoopTests(unittest.TestCase):
     def test_distinct_sources_with_equal_pad_numbers_and_coupled_constraints(self):
         facts, doc = output_loop()
@@ -327,7 +423,10 @@ class NativeLocalityTests(unittest.TestCase):
             self.assertEqual(result['details']['locality'], {'path': 'project/locality.json',
                              'sha256': baseline['files']['project/locality.json']})
 
-    def test_registered_captured_native_distinct_source_loop(self):
+    def test_registered_captured_native_bound_output_loop(self):
+        self.test_registered_captured_native_distinct_source_loop(bound=True)
+
+    def test_registered_captured_native_distinct_source_loop(self, bound=False):
         from test_placement_gates_native import NativePlacementGates, DRC_STAGE, DRC_FULL, placement
         from agent_ee.placement_probe import extract
         helper = NativePlacementGates()
@@ -347,6 +446,9 @@ class NativeLocalityTests(unittest.TestCase):
                         max_distance_nm=100*MM, citation='Owned native three-reference loop requirement.')
         doc = dict(schema=locality.SCHEMA, obligations=[dict(id='output-loop', metric='pad-centre-to-centre',
                    supply=pair('R1', supply), **{'return': pair('J1', ground)})])
+        if bound:
+            doc['obligations'][0].update(kind='buck-output-loop', ic='J1', inductor='R1',
+                                         return_net=ground['net'])
         (source / 'project/locality.json').write_text(json.dumps(doc))
         spec = placement('loop', locality.CRITERION, locality='project/locality.json')
         run, results = helper.run_scope(source, [DRC_STAGE, spec, DRC_FULL])
