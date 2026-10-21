@@ -1897,6 +1897,30 @@ project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
 
+## Post-routing silk repair (AGENTEE-350)
+
+The [routed artwork producer](silk-artwork.md#post-routing-artwork-producer-agentee-350)
+is a verification-stage implementation step. It preserves every non-silk token
+and permits only declared field positions and rigid translations of supported
+silk graphics. Its receipt binds the source board, output board, tool source pin,
+geometry proof and complete native DRC. Coordinator carry capture and replay
+reuse the placement evidence envelope. Identity-bound closure can then remove
+carried defects only when each marking is visible, unchanged in style and
+silk layer, and wholly inside the qualified outline. Off-board and straddling
+marks remain open even if native DRC is silent. Footprint-owned Edge.Cuts
+participate in outline qualification; slots and cutouts cannot establish
+containment. Both producers seal a board-bound native containment witness in
+the placement report. Closure and campaign replay read it without rerunning
+pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
+unavailable evidence keep their refusal. Cached-text translations and boards
+containing backslashes refuse the producer's scope proof.
+This adds no check registration or verdict waiver. The initial placer continues
+to refuse routed boards. The native campaign regression proves downstream
+refusal before the repair and passing verification geometry and native fab export after closure.
+The closure-currency regression preserves closure after masked-track edits on a
+board with a proven outline and retains the defect on the same board without
+an outline.
+
 ## Declared placer obstacles (AGENTEE-338)
 
 The [placer obstacle policy](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)

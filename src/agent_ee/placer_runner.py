@@ -394,7 +394,9 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed its declared electrical locality')
     if any(r['enforcement'] == 'hard' and r['status'] != 'pass' for r in judgment.get('block_rules', [])):
         raise ValueError('saved-board placement failed a hard block arrangement rule')
+    from .silk_artwork import containment_witness
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
+            'containment': containment_witness(output),
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),
             'status': 'placed', 'outcome': 'defect' if comparison['open_defects'] else 'info',
             'verdict': 'defect' if comparison['open_defects'] else 'info',

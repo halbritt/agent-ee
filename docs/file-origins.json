@@ -2321,6 +2321,16 @@
     },
     {
       "paths": [
+        "tests/test_routed_artwork.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-350 regression code. Minimal board/graphic S-expressions and geometry are authored here to test identity, translation and damage boundaries. Existing native fixtures are imported or referenced, not embedded as copied design text in these files."
+    },
+    {
+      "paths": [
         "tests/test_placement_adapter.py"
       ],
       "kind": "owned-source",

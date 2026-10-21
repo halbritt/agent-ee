@@ -122,7 +122,21 @@ A board edit or a clean DRC delta alone does not close carry. Closure requires a
 later receipted placement result for the current board, complete native DRC with
 no remaining silk finding on the same identities, and preserved item ownership,
 marking content, layer and style. Missing, hidden or relabeled fields do not
-close a defect. An unsupported side-flip diagnostic also requires positive
+close a defect. Every closed field/graphic must also be visible silk wholly
+inside the single proven straight board outline. Both producers measure native
+bounding boxes from the final saved board in their networkless tool process,
+checking every box edge against the qualified outline. The outline includes
+board drawings and footprint-owned Edge.Cuts, as in placement qualification.
+Slots, cutouts and multiple contours conservatively establish no containment.
+Entirely off-board, edge-straddling and cutout markings stay typed open defects
+even when DRC is silent. The sealed placement result retains `containment`,
+with the saved `board_sha256` and the native `markings` UUID list. Closure and
+campaign replay consume that receipt-bound witness without launching pcbnew.
+Missing, malformed or board-mismatched witnesses close nothing; historical
+receipts lacking the witness retain their open defects until a fresh receipt.
+Unqualified outlines cannot close carry.
+This applies to both placement and routed-artwork receipts. An unsupported
+side-flip diagnostic also requires positive
 artwork movement of that field, either recorded by the later artwork pass or
 visible in its saved position. The original side-flip case stays open even when
 another field moves and native `added_after` is empty. A later board may retain
@@ -159,6 +173,72 @@ The existing BOM-variant fab regression retains its original pass expectation.
 The out-of-campaign lineage gap remains open: a design re-scoped without both
 `placement_provenance` and `placement-evidence/` cannot be distinguished from an
 uncarried design. Exporters must retain the lineage. This implementation does
-not add a persistent board marker or an owner evidence store. A receipted
-post-routing artwork producer and a campaign test that closes the defect after
-routing also remain outstanding.
+not add a persistent board marker or an owner evidence store. The post-routing producer below closes the routed-board producer gap.
+
+
+## Post-routing artwork producer (AGENTEE-350)
+
+`agent_ee.routed_artwork.step(tool_dir, board)` creates a read-only source
+snapshot and an ordinary `implementation_steps` declaration, defaulting to the
+verification stage. Declare it alongside the routing step when verification
+must repair carried silk. The coordinator executes it through the existing
+networkless stage sandbox. It accepts routed boards, including tracks, vias and
+zones, while the initial placer retains its unrouted-only contract.
+
+The producer reuses the native field search and can also translate conflicting
+silk lines, arcs, rectangles, circles, polygons and graphic text owned by the
+board or a footprint. It preserves UUID, ownership, shape, content, style,
+visibility, side and angle. Only Reference/Value and declared custom fields
+may move. The same finite search and obstacle bounds apply; a graphic that
+cannot move remains an open defect. Translating a required polarity or pin-1
+mark can affect its meaning relative to its component. This producer establishes
+geometric clearance only; a circuit/physical reviewer must assess the marking's
+meaning before release.
+
+Every changed saved node must be either a permitted silk field position or a
+supported silk graphic translated rigidly. The shared S-expression parser
+compares all other tokens exactly, including copper, mask, courtyards, pads,
+footprint poses, zones, tracks, vias, setup and unknown attributes. Numeric
+coordinates are normalized only within permitted graphic translations. Any
+other token change refuses publication. Changed text or fields carrying a
+`render_cache` refuse because this producer does not regenerate and compare the
+cache. A backslash anywhere in either board also refuses the scope proof,
+including unchanged strings and non-silk content. This conservative scope limit
+can refuse legitimate boards: the shared parser decodes escapes, so decoded
+token equality cannot establish the saved spelling KiCad renders. Project and custom-rule bytes
+are copied unchanged for native DRC. Missing reports, ignored silk coverage and
+new non-silk native findings refuse the producer; remaining silk conflicts stay
+open. Uncarried baseline findings retain their existing check verdicts.
+
+The receipt uses the existing placement evidence envelope and adds
+`producer: agent-ee-routed-artwork`, the scope proof and the original routed
+board artifact. Carry adoption authenticates the entire tool snapshot against
+the campaign package pin, verifies the exact launcher invocation and recomputes
+the proof from retained receipt inputs and output. The coordinator captures this
+bundle under `placement-evidence`, appending its ordered provenance link.
+Closure requires the same native field/graphic identities, retained ownership
+and marking style/content, current board and rule bytes, and complete native DRC
+without remaining silk findings on those identities. Graphics may differ only
+by the authenticated translation. A raw edit or unreceipted DRC cannot close carry.
+
+`tests.test_routed_artwork` exercises front/back fields, footprint/board graphics,
+tracks/vias/zones preservation, non-silk and marking-damage refusals, source-pin
+and output binding, missing output, exhausted searches, ignored silk coverage
+and a nonroot read-only host sandbox.
+`tests.test_placement_defects` runs placement, the pinned native router,
+verification/fab refusal, receipted graphic repair, closure, passing verification
+geometry and native fab export (Gerbers, drill, BOM and CPL), followed by campaign
+replay. A passing export does not authorize fabrication.
+Its closure-currency fixture uses a closed Edge.Cuts rectangle and a canonical
+native field UUID: closure survives a masked-track edit, while the same receipt
+chain on a board without an outline keeps the defect open, with or without that
+track edit. AGENTEE-344d's closure escape tests use that same outlined fixture
+and canonical field UUID, keeping positive controls live alongside escape and
+writer-grammar refusals. Native regressions cover footprint-owned cutouts as
+well as board-owned cutouts and an in-board positive control.
+
+The producer restores the source `.kicad_dru` bytes but does not authenticate a
+writer-editable custom rule file against an earlier placement receipt. A writer
+can relax a numeric silk constraint before this step without using severity
+`ignore`; this remains a recorded limitation (AGENTEE-350 review G5). The
+containment requirement is independent of custom silk constraints.
