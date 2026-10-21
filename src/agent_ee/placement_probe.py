@@ -461,6 +461,8 @@ def extract(board_path):
         outline.update(status='outline_unproven', reason='multiple board contours unsupported')
     return {'schema': 'agent-ee.placement-probe/1', 'board_sha256': hashlib.sha256(before).hexdigest(),
             'pcbnew_version': pcbnew.Version(), 'outline': outline,
+            # ERROR_OUTSIDE arc inflation of polygonised pads; the placer's copper setback (AGENTEE-366e).
+            'max_error_nm': int(board.GetDesignSettings().m_MaxError),
             'markings': sorted(markings, key=lambda m: (m['uuid'], m['owner_ref'] or '')),
             'rule_areas': sorted(areas, key=lambda a: (a['owner'], a['uuid'])),
             'footprints': sorted(footprints, key=lambda f: (f['ref'], f['uuid']))}

@@ -864,10 +864,30 @@ capture only:
   that point. The land is its size rectangle with corners cut or rounded
   inward, so the box contains it.
 
-A copper box that lies in a courtyard polygon of the part adds nothing: that
+A copper box that lies in a courtyard polygon of the part at the setback S
+(the box grown by S on every side fits the courtyard) adds nothing: that
 courtyard's own outline test already covers it. Each remaining box must lie in
-the board outline (closed set, without `min_courtyard_edge_mm`, which stays a
-courtyard margin). On each outer copper side (`F.Cu`, `B.Cu`, `*.Cu`), boxes
+the board outline at least S from every outline edge (`min_courtyard_edge_mm`
+stays a courtyard margin and does not apply to copper).
+
+The setback S is structural, not an engineering clearance (coordinator ruling
+366e). The AGENTEE-331 publication gate polygonises pads with `ERROR_OUTSIDE`
+at the board's `m_MaxError` (`copper_outside_outline`), and reports edge
+clearance to 4 decimals, so a gap under 50 nm cannot be told from a crossing
+(`copper_edge_clearance`, structural). Flush copper is therefore refused there,
+and S = `max_error_nm` + 50 nm. `placement_probe` reads `max_error_nm` from the
+saved board's design settings into the placement facts. A copper-aligned plan
+records `search.copper_aligned.copper_setback` (`setback_nm`, `max_error_nm`,
+`report_window_nm` and the source). A capture without `max_error_nm` has no
+default. When a movable part's copper leaves its courtyards (and, in block
+arrangement, any non-fixed member's copper), the search returns
+`unsupported_geometry`, `outcome=unknown` ("copper setback unknown"). A
+targeted plan reports `missing coverage: <ref>: copper setback unknown`. A
+malformed value (negative, or not an integer) is also `unsupported_geometry`.
+Without the fact, the in-courtyard exemption uses closed containment. That only
+matters for hand-built records, because native extraction always records the
+value. Edge-clearance limits keep their AGENTEE-331 provenance grading,
+unchanged. On each outer copper side (`F.Cu`, `B.Cu`, `*.Cu`), boxes
 outside that side's courtyards must avoid footprint-forbidding keep-outs on
 that side. Board keep-outs, placed owners' keep-outs and a moving owner's
 keep-out against placed peers' copper are all checked; an owner stays exempt
@@ -879,7 +899,8 @@ cluster pass) keeps the courtyard-derived candidate positions unchanged. Only
 when those fail and some movable part has copper outside all its courtyards
 does `pack` run a copper-aligned pass. That pass uses the remaining step budget
 and the same absolute deadline, and aligns escaping copper boxes to the outline
-as courtyard boxes are, so the fit can be flush with the board edge. A plan from
+as courtyard boxes are, held off it by S, so the fit can sit exactly S from the
+board edge. A plan from
 it records `search.legacy_attempt` (the first pass alone, as for joint
 completions) and `search.copper_aligned.prior_steps_used` (legacy plus joint
 steps); its `steps_used` is the total. A failed aligned pass returns the earlier
@@ -889,8 +910,9 @@ plan is never replaced. A plan changes only where the courtyard-only
 search would have put copper off the board or into a keep-out.
 
 The gate applies to the packing search, to Stage-B block arrangement (each
-member's copper, so a member at the block edge cannot overhang; block candidate
-positions are unchanged) and to targeted plans (`target copper outside outline
+member's copper, so a member at the block edge cannot overhang; a block whose
+members have copper outside their courtyards also gets outline-aligned axes at
+S for that copper, other blocks keep their candidate positions) and to targeted plans (`target copper outside outline
 or in keep-out`). A part whose copper lies in its courtyards caches nothing, and
 its candidates, steps and plan are those of the courtyard-only search.
 Rejections count against the existing step budget only; no wall-clock limit is

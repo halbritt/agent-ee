@@ -347,6 +347,8 @@ def _shift(fp, dx, dy):
             out[key + '_box'] = None if box is None else (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
     if '_packing_copper' in fp:
         out['_packing_copper'] = placer._shift_copper(fp['_packing_copper'], dx, dy)
+    if '_packing_copper_setback' in fp:
+        out['_packing_copper_setback'] = fp['_packing_copper_setback']
     return out
 
 
@@ -760,6 +762,15 @@ class _Arrangement:
             touch = {a[2] + self.gap - m[0] for side, m in left for other, a in anchors if other == side}
             touch |= {a[0] - self.gap - m[2] for side, m in right for other, a in anchors if other == side}
             xs = sorted(set(xs) | {x for x in touch if lo_x <= bx0 + x and bx1 + x <= hi_x})
+            # Member copper outside its courtyards aligns to the outline, held off it by the
+            # structural setback (AGENTEE-366e); a block without such copper keeps its axes.
+            copper = [(fp['_packing_copper_setback'], placer._box([poly])) for fp in members
+                      for poly in fp.get('_packing_copper', {}).get('outline', ())]
+            if copper:
+                xs = sorted(set(xs) | {x for s, (c0, _, c1, _) in copper for p in self.outline
+                                       for x in (p[0] + s - c0, p[0] - s - c1) if lo_x <= bx0 + x and bx1 + x <= hi_x})
+                ys = sorted(set(ys) | {y for s, (_, c0, _, c1) in copper for p in self.outline
+                                       for y in (p[1] + s - c0, p[1] - s - c1) if lo_y <= by0 + y and by1 + y <= hi_y})
             entries = own['entries'] + [e for placed in self.placed_blocks for e in self.entries(
                 bid, rotation, placed['block'])]
             # One term per net shared with placed parts: the block's pad centroid on that net.
@@ -1082,6 +1093,9 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     except ValueError as exc:
         return failure('fixed_conflict', str(exc))
     placed = [fp for fp in placed if fp['ref'] not in members]
+    missing = placer.copper_setback_missing(fp for fp in work['footprints'] if fp['ref'] not in fixed)
+    if missing:
+        return failure('unsupported_geometry', missing)
     search = _Arrangement(work, effective, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat)
     # Blocks with drilled pads or a hard opposite-side shadow constrain both sides: place them first.
     through = {bid for bid, entry in admitted.items() if any(

@@ -20,6 +20,10 @@ from test_placer import request
 # side by a different amount, so each quarter turn needs a different inset.
 REACH = {'left': 3_500_000, 'top': 3_500_000, 'right': 2_500_000, 'bottom': 2_600_000}
 BBOX = [-REACH['left'], -REACH['top'], REACH['right'], REACH['bottom']]
+# KiCad's default board m_MaxError; the structural copper setback is it plus the
+# 50 nm AGENTEE-331 reporting window (coordinator ruling 366e).
+MAX_ERROR = 5_000
+SETBACK = MAX_ERROR + 50
 
 
 def custom_pad(side='F', bbox=BBOX):
@@ -39,9 +43,11 @@ def offset_part(side='F', rotation=0, pads=None):
     return fp
 
 
-def board(parts, outline=None):
+def board(parts, outline=None, max_error=MAX_ERROR):
     out = capture(parts, outline or rectangle(0, 0, 20, 20))
     out['pcbnew_version'] = '10.0.7'
+    if max_error is not None:
+        out['max_error_nm'] = max_error
     return out
 
 
@@ -152,8 +158,8 @@ class CopperExtentTest(unittest.TestCase):
                     box = copper(fp, fp['pads'][0])
                     self.assertTrue(outline[0] <= box[0] and outline[1] <= box[1]
                                     and box[2] <= outline[2] and box[3] <= outline[3], box)
-                    # Copper bounds align to the outline: the first fit is flush, not merely inset.
-                    self.assertEqual((box[0], box[1]), (0, 0), box)
+                    # Copper bounds align to the outline at the setback, not merely somewhere inside.
+                    self.assertEqual((box[0], box[1]), (SETBACK, SETBACK), box)
                     self.assertEqual(plan['judgment']['verdict'], 'pass')
                     # Courtyard-only gating puts the same copper off the board.
                     legacy = self.pack(capture_, request(fixed_refs=[]), mutant=True)
@@ -177,7 +183,7 @@ class CopperExtentTest(unittest.TestCase):
                     self.assertEqual(plan['status'], 'planned', plan)
                     box = extent(placed(capture_, plan))
                     self.assertTrue(0 <= box[0] and 0 <= box[1] and box[2] <= 20 * MM and box[3] <= 4 * MM, box)
-                    self.assertEqual(box[0], 0, box)
+                    self.assertEqual(box[0], SETBACK, box)
                     legacy = self.pack(capture_, request(fixed_refs=[]), mutant=True)
                     box = extent(placed(capture_, legacy))
                     self.assertFalse(0 <= box[0] and 0 <= box[1] and box[2] <= 20 * MM and box[3] <= 4 * MM, box)
@@ -289,7 +295,7 @@ class CopperExtentTest(unittest.TestCase):
                 self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
                                  ('unsupported_geometry', 'unknown', []), plan)
                 self.assertEqual(self.pack(capture_, request(fixed_refs=[]), mutant=True)['status'], 'planned')
-        # With the native land offset proven, the land is gated and flush with the outline at every turn.
+        # With the native land offset proven, the land is gated and set back from the outline at every turn.
         for side in ('F', 'B'):
             for rotation in (0, 90, 180, 270):
                 with self.subTest(side=side, rotation=rotation):
@@ -313,8 +319,64 @@ class CopperExtentTest(unittest.TestCase):
                         box = tuple(f(b[i] for b in boxes) for f, i in ((min, 0), (min, 1), (max, 2), (max, 3)))
                         self.assertEqual(0 <= box[0] and 0 <= box[1] and box[2] <= 20 * MM and box[3] <= 20 * MM,
                                          contained, (mutant, box))
-                        if contained:  # copper bounds align to the outline: flush, not merely inset
-                            self.assertEqual(box[:2], (0, 0), box)
+                        if contained:  # copper bounds align to the outline at the setback
+                            self.assertEqual(box[:2], (SETBACK, SETBACK), box)
+
+    def test_copper_setback_is_board_max_error_plus_the_report_window(self):
+        # Coordinator ruling 366e: S = m_MaxError + 50 nm, derived from the facts, never defaulted.
+        self.assertEqual(placer.copper_setback({'max_error_nm': 5_000}), 5_050)
+        self.assertEqual(placer.copper_setback({'max_error_nm': 0}), 50)
+        self.assertIsNone(placer.copper_setback({}))
+        for bad in (-1, 5000.0, '5000', True, None):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, 'max_error_nm'):
+                placer.copper_setback({'max_error_nm': bad})
+        # Exact boundary on the gate: copper S inside the outline passes, S - 1 nm is refused.
+        fp = offset_part()
+        fp['_packing_copper_setback'] = SETBACK
+        placer._cache_copper_extent(fp)
+        outline = rectangle(0, 0, 20, 20)
+        for x, escaped in ((REACH['left'] + SETBACK, None), (REACH['left'] + SETBACK - 1, ('outline', set()))):
+            with self.subTest(x=x):
+                moved = placer._translate(fp, [x, 10 * MM])
+                self.assertEqual(placer._copper_escapes(moved, outline, []), escaped)
+        unknown = {**fp, '_packing_copper_setback': None}
+        self.assertEqual(placer._copper_escapes(unknown, outline, []), ('setback_unknown', set()))
+
+    def test_missing_or_malformed_board_setback_is_typed_unknown(self):
+        for max_error in (None, -5, 'x'):
+            with self.subTest(max_error=max_error):
+                capture_ = board([offset_part()], max_error=max_error)
+                plan = self.pack(capture_, request(fixed_refs=[]))
+                self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                                 ('unsupported_geometry', 'unknown', []), plan)
+                self.assertIn('max_error_nm', plan['reason'])
+        # Copper inside its courtyard needs no setback fact: the courtyard-only search, unchanged.
+        pads = [{'uuid': 'C1-1', 'number': '1', 'net': '', 'position_nm': [0, 0], 'shape': 1, 'rotation_deg': 0,
+                 'size_nm': [600_000, 400_000], 'layers': ['F.Cu'], 'copper_centroid_offset_nm': [[0, 1], [0, 1]]}]
+        plan = self.pack(board([offset_part(pads=pads)], max_error=None), request(fixed_refs=[]))
+        self.assertEqual(plan['status'], 'planned', plan)
+
+    def test_copper_within_the_setback_of_its_courtyard_edge_is_gated(self):
+        # The land ends 1 nm inside the courtyard's left edge: closed containment would exempt it,
+        # but with the courtyard flush to the outline the copper would sit 1 nm from it.
+        pads = [{'uuid': 'C1-1', 'number': '1', 'net': '', 'position_nm': [0, 0], 'shape': 1, 'rotation_deg': 0,
+                 'size_nm': [1_000_000, 800_000], 'layers': ['F.Cu'],
+                 'copper_centroid_offset_nm': [[-1_499_999, 1], [0, 1]]}]
+        fp = offset_part(pads=pads)
+        fp['_packing_copper_setback'] = SETBACK
+        placer._cache_copper_extent(fp)
+        self.assertEqual(len(fp['_packing_copper']['outline']), 1)
+        self.assertEqual(fp['_packing_copper']['sides'], {})  # keep-outs still use closed containment
+        capture_ = board([offset_part(pads=pads)])
+        plan = self.pack(capture_, request(fixed_refs=[]))
+        self.assertEqual(plan['status'], 'planned', plan)
+        self.assertGreaterEqual(extent(placed(capture_, plan))[0], SETBACK)
+
+    def test_copper_aligned_plan_records_the_setback_and_its_sources(self):
+        plan = self.pack(board([offset_part()]), request(fixed_refs=[]))
+        record = plan['search']['copper_aligned']['copper_setback']
+        self.assertEqual((record['setback_nm'], record['max_error_nm'], record['report_window_nm']),
+                         (SETBACK, MAX_ERROR, 50))
 
     def test_copper_box_by_shape_turn_and_record(self):
         fp = {'ref': 'C1'}
@@ -410,7 +472,7 @@ class TargetedPlanCopperTest(unittest.TestCase):
     def test_row_target_with_copper_off_the_board_is_blocked(self):
         from agent_ee import placement_plans
         from test_placement_plans import board as plan_board, row
-        facts = plan_board()
+        facts = {**plan_board(), 'max_error_nm': MAX_ERROR}
         c1 = next(f for f in facts['footprints'] if f['ref'] == 'C1')
         # C1's courtyard spans y in [2, 4] mm; its custom copper reaches y = 1 mm, then y = -1 mm.
         for top, blocked in ((MM, False), (-MM, True)):
@@ -423,6 +485,13 @@ class TargetedPlanCopperTest(unittest.TestCase):
                 with patch.object(placement_plans, '_copper_escapes', lambda *a, **k: None):
                     self.assertEqual(placement_plans.plan(copy.deepcopy(facts), request(), row())['status'],
                                      'planned')
+        # Without the board setback fact the copper that leaves the courtyard is unproven, not on board.
+        del facts['max_error_nm']
+        c1['pads'] = [{**custom_pad(bbox=[12_500_000, MM, 13_500_000, 3 * MM]), 'net': 'VCC',
+                       'position_nm': c1['position_nm'][:]}]
+        result = placement_plans.plan(copy.deepcopy(facts), request(), row())
+        self.assertEqual((result['status'], result['outcome']), ('blocked', 'unknown'), result)
+        self.assertIn('missing coverage: C1: copper setback unknown (no board max_error_nm)', result['reasons'])
 
 
 class BlockArrangementCopperTest(unittest.TestCase):
@@ -436,6 +505,7 @@ class BlockArrangementCopperTest(unittest.TestCase):
         class Case(ArrangementFixture, unittest.TestCase):
             def setUp(inner):
                 Fixture.setUp(inner)
+                inner.board['max_error_nm'] = MAX_ERROR
                 u1 = next(f for f in inner.board['footprints'] if f['ref'] == 'U1')
                 # U1's courtyard starts at x = 3 mm; its custom copper reaches x = 2 mm.
                 u1['pads'][0].update(custom_pad(bbox=[2_000_000, 3_300_000, 3_700_000, 3_700_000]),
@@ -470,6 +540,15 @@ class BlockArrangementCopperTest(unittest.TestCase):
                 fp = placed(board_, plan, 'U1')
                 box = extent(fp)
                 self.assertEqual(0 <= box[0] and 0 <= box[1] and box[2] <= x1 and box[3] <= y1, inside, box)
+                if inside:
+                    self.assertTrue(SETBACK <= box[0] and SETBACK <= box[1]
+                                    and box[2] <= x1 - SETBACK and box[3] <= y1 - SETBACK, box)
+
+    def test_member_copper_without_board_setback_is_typed_unknown(self):
+        del self.case.board['max_error_nm']
+        plan = self.case.arrange()
+        self.assertEqual((plan['status'], plan['outcome']), ('unsupported_geometry', 'unknown'), plan)
+        self.assertIn('copper setback unknown', plan['reason'])
 
 
 
@@ -497,6 +576,13 @@ class NativeBoard:
             'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
             'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'writable_root': str(self.scratch)}}
         return place_candidate(source, self.netlist, self.scratch / name, config)
+
+    def setback(self, source, facts):
+        """S from the saved board's own m_MaxError, which the facts must carry exactly (ruling 366e)."""
+        import pcbnew as k
+        max_error = int(k.LoadBoard(str(source)).GetDesignSettings().m_MaxError)
+        self.assertEqual(facts['max_error_nm'], max_error)
+        return max_error + 50
 
 
 
@@ -575,17 +661,22 @@ class NativeOffsetCustomPadTest(NativeBoard, unittest.TestCase):
             for rotation in (0, 90, 180, 270):
                 with self.subTest(back=back, rotation=rotation):
                     source = self.source(rotation, back)
-                    pad = extract(source)['footprints'][0]['pads'][0]
+                    facts = extract(source)
+                    setback = self.setback(source, facts)
+                    pad = facts['footprints'][0]['pads'][0]
                     self.assertEqual(pad['custom_geometry']['status'], 'proven', pad)
                     self.assertEqual(pad['layers'][0], ('B' if back else 'F') + '.Cu')
                     name = f'placed-{back}-{rotation}'
                     report = self.place(source, name)
-                    self.assertEqual((report['status'], report['outcome']), ('placed', 'info'), report)
+                    # The native publication gate (AGENTEE-331 copper containment and edge clearance) accepts it.
+                    self.assertEqual((report['status'], report['outcome'], report['open_defects']),
+                                     ('placed', 'info', []), report)
                     self.assertEqual(report['judgment']['verdict'], 'pass')
                     box = self.saved_copper(name)
                     self.assertTrue(0 <= box[0] and 0 <= box[1] and box[2] <= 20 * MM and box[3] <= 20 * MM, box)
-                    # The saved native copper extent is flush with the outline corner.
-                    self.assertEqual(box[:2], (0, 0))
+                    # The saved native copper extent sits the structural setback from the outline corner.
+                    self.assertTrue(setback <= box[0] <= setback + 1 and setback <= box[1] <= setback + 1,
+                                    (box, setback))
                     # Courtyard-only gating publishes the same copper off the board, with no open defect.
                     patches = courtyard_only()
                     for p in patches:
@@ -683,7 +774,9 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
             for rotation in (0, 90, 180, 270):
                 with self.subTest(name, back=back, rotation=rotation):
                     source = self.stock_source(name, rotation, back, configure, reach)
-                    pads = extract(source)['footprints'][0]['pads']
+                    facts = extract(source)
+                    setback = self.setback(source, facts)
+                    pads = facts['footprints'][0]['pads']
                     for pad in pads:
                         # The extraction contract _copper_box relies on: a centroid or its reason, never neither.
                         self.assertEqual(('copper_centroid_offset_nm' in pad) + ('copper_centroid_reason' in pad), 1)
@@ -691,11 +784,14 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
                         check_facts(pad)
                     tag = f'{name}-{back}-{rotation}'
                     report = self.place(source, tag)
-                    self.assertEqual((report['status'], report['outcome']), ('placed', 'info'), report)
+                    # The native publication gate (AGENTEE-331 copper containment and edge clearance) accepts it.
+                    self.assertEqual((report['status'], report['outcome'], report['open_defects']),
+                                     ('placed', 'info', []), report)
                     x0, y0, x1, y1 = self.saved_lands(tag)
                     self.assertTrue(0 <= x0 and 0 <= y0 and x1 <= 20 * MM and y1 <= 20 * MM, (x0, y0, x1, y1))
-                    # Flush with the outline corner to within the native polygon error (1 nm).
-                    self.assertLessEqual(max(x0, y0), 1, (x0, y0))
+                    # The structural setback from the outline corner, within the native polygon error (1 nm).
+                    self.assertTrue(setback <= x0 <= setback + 1 and setback <= y0 <= setback + 1,
+                                    (x0, y0, setback))
                     # The superseded bound publishes the same board with copper off it, no open defect.
                     patches = mutant()
                     for p in patches:

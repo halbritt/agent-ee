@@ -180,7 +180,10 @@ def plan(capture, policy, spec):
             if (_near(fp, exact, policy['gap_nm']) or _keepout_blocked(fp, peers, obstacles)
                     or any(_hole_conflict(fp, peer) for peer in peers)):
                 reasons.append(f'{ref}: target conflicts with obstacle or gap')
-            if _copper_escapes(fp, outline, keepouts, peers) is not None:
+            escaped = _copper_escapes(fp, outline, keepouts, peers)
+            if escaped is not None and escaped[0] == 'setback_unknown':
+                reasons.append(f'missing coverage: {ref}: copper setback unknown (no board max_error_nm)')
+            elif escaped is not None:
                 reasons.append(f'{ref}: target copper outside outline or in keep-out')
     for escape in record.get('escape_targets', []):
         if not inside(escape['position_nm'], outline):

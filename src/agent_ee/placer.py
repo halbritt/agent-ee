@@ -36,6 +36,9 @@ from .symbol_library import LibraryError, nanometres
 # TRAPEZOID (3) is unqualified; CUSTOM (6) requires per-pad native evidence.
 PAD_SHAPES = {0: 'circle', 1: 'rect', 2: 'oval', 4: 'roundrect', 5: 'chamfered_rect'}
 PAD_SHAPE_PCBNEW_MAJOR = '10'
+# AGENTEE-331 reports edge clearance to 4 decimals of a millimetre: below 50 nm
+# touching cannot be told from crossing (design_rule_provenance), a structural defect.
+COPPER_REPORT_WINDOW_NM = 50
 
 
 def rotate(point, quarter_turns):
@@ -53,9 +56,12 @@ def _copy_footprint(fp):
     deep; the leaves it leaves unchanged are shared with the source, which the
     search, judge, graders and writer only read. The ephemeral box caches are
     rebuilt by _cache_pad_reservations. The result equals copy.deepcopy(fp) with
-    the cache keys removed (AGENTEE-332: deepcopy dominated per-candidate cost).
+    the cache keys removed (AGENTEE-332: deepcopy dominated per-candidate cost);
+    the derived copper setback is a board fact, not a cache, and is kept.
     """
     placed = {key: value for key, value in fp.items() if not key.startswith('_packing_')}
+    if '_packing_copper_setback' in fp:
+        placed['_packing_copper_setback'] = fp['_packing_copper_setback']
     placed['courtyards'] = {side: dict(courtyard) for side, courtyard in fp['courtyards'].items()}
     if 'packing_keepouts' in fp:
         placed['packing_keepouts'] = [dict(keepout) for keepout in fp['packing_keepouts']]
@@ -299,6 +305,7 @@ def _qualified(capture):
     missing = sorted(fp['ref'] for fp in capture['footprints'] if fp['side'] not in fp['courtyards'])
     if missing:
         raise ValueError(f"mounting-side courtyard missing: {', '.join(missing)}")
+    setback = copper_setback(capture)
     def drilled(p):
         return p.get('attribute') in ('PTH', 'NPTH') or any(p.get('drill_size_nm', []))
 
@@ -363,6 +370,7 @@ def _qualified(capture):
                                  f"{pad.get('shape')!r} not qualified for packing")
             if type(pad.get('rotation_deg')) not in (int, float) or pad['rotation_deg'] % 90:
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: pad rotation must be a quarter turn")
+        fp['_packing_copper_setback'] = setback
         _cache_pad_reservations(fp)
         _cache_copper_extent(fp)
     # A hole excludes every peer's courtyard and copper: a peer without a native
@@ -570,16 +578,60 @@ def _copper_sides(pad):
     return sides, any(l.endswith('.Cu') for l in layers)
 
 
+def copper_setback(capture):
+    """Structural copper-to-outline setback S in nm, or None when the facts lack it (AGENTEE-366e).
+
+    S = the saved board's m_MaxError (the ERROR_OUTSIDE arc inflation KiCad
+    applies when it polygonises pads; placement_probe records it as
+    ``max_error_nm``) plus the AGENTEE-331 reporting window. It is a derived
+    structural tolerance, not an engineering clearance: copper closer than S to
+    the outline is reported by the native publication gate as touching it.
+    """
+    if 'max_error_nm' not in capture:
+        return None
+    value = capture['max_error_nm']
+    if type(value) is not int or value < 0:
+        raise ValueError('board max_error_nm must be a nonnegative integer')
+    return value + COPPER_REPORT_WINDOW_NM
+
+
+def copper_setback_record(capture):
+    """The setback and its sources, for a plan's search record."""
+    setback = copper_setback(capture)
+    return {'setback_nm': setback, 'max_error_nm': setback - COPPER_REPORT_WINDOW_NM,
+            'report_window_nm': COPPER_REPORT_WINDOW_NM,
+            'source': 'saved board m_MaxError (ERROR_OUTSIDE) plus the AGENTEE-331 edge-clearance reporting window'}
+
+
+def copper_setback_missing(footprints):
+    """Typed-unknown reason when a part's copper leaves its courtyards and the board setback is unknown."""
+    refs = sorted(fp['ref'] for fp in footprints
+                  if fp.get('_packing_copper', {}).get('outline') and fp.get('_packing_copper_setback') is None)
+    if refs:
+        return (f"copper setback unknown: the placement facts carry no board max_error_nm (m_MaxError) "
+                f"and copper of {', '.join(refs)} leaves its courtyard")
+    return None
+
+
+def _inflate(poly, by):
+    x0, y0, x1, y1 = _box([poly])
+    return [(x0 - by, y0 - by), (x1 + by, y0 - by), (x1 + by, y1 + by), (x0 - by, y1 + by)]
+
+
 def _cache_copper_extent(fp):
     """Ephemeral copper boxes that leave the courtyards (AGENTEE-366).
 
     ``outline`` holds every copper box that lies in no courtyard polygon of the
-    part: a box inside one is inside the outline whenever that courtyard is.
+    part at the copper setback S (the box grown by S fits the courtyard): such a
+    box is at least S inside the outline whenever that courtyard is inside it.
+    Without a known S the test is closed containment, and any box it leaves
+    makes the search typed unknown (copper_setback_missing).
     ``sides`` holds, per outer copper side, the boxes outside that side's
     courtyards, for that side's footprint keep-outs. A part whose copper lies in
     its courtyards caches nothing, and its search is the courtyard-only one.
     """
     fp.pop('_packing_copper', None)
+    setback = fp.get('_packing_copper_setback') or 0
     polygons = [(side, p) for side, c in fp['courtyards'].items() for p in c['polygons']]
     outline, sides = [], {}
     for pad in fp['pads']:
@@ -590,7 +642,8 @@ def _cache_copper_extent(fp):
         x0, y0, x1, y1 = box
         poly = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
         inside = {side for side, p in polygons if _fits({'courtyards': {'': {'polygons': [poly]}}}, p)}
-        if not inside:
+        grown = [_inflate(poly, setback)] if setback else [poly]
+        if not any(_fits({'courtyards': {'': {'polygons': grown}}}, p) for _, p in polygons):
             outline.append(poly)
         for side in on:
             if side not in inside:
@@ -609,14 +662,20 @@ def _shift_copper(copper, dx, dy):
 def _copper_escapes(candidate, outline, obstacles, placed=()):
     """'outline' or 'rule_area' when copper outside the courtyards leaves the board or enters a keep-out.
 
-    The owner of a keep-out stays exempt from it; a placed peer's copper is
+    Copper must stay the structural setback S inside the outline
+    (copper_setback); with S unknown, such copper is never admitted
+    ('setback_unknown'). The owner of a keep-out stays exempt from it; a placed peer's copper is
     checked against the candidate's own keep-outs, and the candidate's copper
     against every placed owner's. Returns (reason, blocking refs) or None.
     """
     copper = candidate.get('_packing_copper')
     if copper is not None:
-        if copper['outline'] and not _fits({'courtyards': {'': {'polygons': copper['outline']}}}, outline):
-            return 'outline', set()
+        if copper['outline']:
+            setback = candidate.get('_packing_copper_setback')
+            if setback is None:
+                return 'setback_unknown', set()
+            if not _fits({'courtyards': {'': {'polygons': copper['outline']}}}, outline, setback):
+                return 'outline', set()
         if _in_keepouts({'courtyards': copper['sides']}, obstacles):
             return 'rule_area', set()
     own = candidate.get('packing_keepouts', [])
@@ -666,8 +725,10 @@ def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(
                max(b[2] for b in bounds), max(b[3] for b in bounds))]
     bounds.extend(b for _, b in _keepout_boxes(at_origin.get('packing_keepouts', [])))
     if copper_axes:
-        # Copper outside every courtyard aligns to the outline as a courtyard does (AGENTEE-366).
-        bounds.extend(_box([p]) for p in at_origin.get('_packing_copper', {}).get('outline', []))
+        # Copper outside every courtyard aligns to the outline as a courtyard does (AGENTEE-366),
+        # held off it by the structural setback S (copper_setback).
+        setback = at_origin.get('_packing_copper_setback') or 0
+        bounds.extend(_box([_inflate(p, setback)]) for p in at_origin.get('_packing_copper', {}).get('outline', []))
     xs, ys = set(), set()
     for x0, y0, x1, y1 in bounds:
         xs.update(p[0] + margin_nm - x0 for p in outline)
@@ -1415,6 +1476,7 @@ class _Search:
         self.cluster_active = None
         self.cluster_start_steps = None
         self.copper_axes = False
+        self.copper_setback = copper_setback(capture)
         self.cluster_work = {}
         # Anchor distance is symmetric: it binds whichever of the pair is placed second.
         self.anchored = {}
@@ -1441,6 +1503,7 @@ class _Search:
         key = (fp['ref'], rotation)
         if key not in self.origins:
             self.origins[key] = transform(fp, [0, 0], rotation)
+            self.origins[key]['_packing_copper_setback'] = self.copper_setback
             _cache_copper_extent(self.origins[key])
         return self.origins[key]
 
@@ -1665,7 +1728,7 @@ def pack(capture, policy, *, heartbeat=None):
         return result
     aligned['steps_used'] += used
     aligned['search']['legacy_attempt'] = runtime['legacy']
-    aligned['search']['copper_aligned'] = {'prior_steps_used': used}
+    aligned['search']['copper_aligned'] = {'prior_steps_used': used, 'copper_setback': copper_setback_record(capture)}
     return aligned
 
 
@@ -1790,6 +1853,9 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
             return board_failure
     if region_failure is not None:
         return region_failure
+    missing = copper_setback_missing(fp for fp in capture['footprints'] if fp['ref'] not in fixed)
+    if missing:
+        return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, missing, margin_nm)
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
     search.copper_axes = copper_axes
     if runtime is not None:
