@@ -19,14 +19,15 @@ parts bound to an anchor point are placed first.
 """
 import bisect
 import copy
+import heapq
 from decimal import Decimal
 from fractions import Fraction
 import math
 import time
 
 from . import electrical_locality, placement_groups
-from .placement import (area2, convex, courtyard_bounds, cross, edges, intersection_area, judge, overhang_bands,
-                        qualified_polygons, validate_capture)
+from .placement import (area2, boxes_meet, convex, courtyard_bounds, cross, edges, intersection_area, judge,
+                        overhang_bands, qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
 from .symbol_library import LibraryError, nanometres
 
@@ -44,13 +45,29 @@ def rotate(point, quarter_turns):
     return [x, y]
 
 
-def transform(fp, position, rotation):
-    placed = copy.deepcopy(fp)
-    origin = fp['position_nm']
-    turns = int((rotation-fp['rotation_deg']) / 90)
-    def move(p):
-        x, y = rotate([p[0]-origin[0], p[1]-origin[1]], turns)
-        return [x+position[0], y+position[1]]
+def _copy_footprint(fp):
+    """A structural copy of a footprint record for transform() to write into.
+
+    Every container transform() rewrites (courtyards, keepouts, packing pad
+    geometry entries, pads and a proven custom-pad geometry) is copied one level
+    deep; the leaves it leaves unchanged are shared with the source, which the
+    search, judge, graders and writer only read. The ephemeral box caches are
+    rebuilt by _cache_pad_reservations. The result equals copy.deepcopy(fp) with
+    the cache keys removed (AGENTEE-332: deepcopy dominated per-candidate cost).
+    """
+    placed = {key: value for key, value in fp.items() if not key.startswith('_packing_')}
+    placed['courtyards'] = {side: dict(courtyard) for side, courtyard in fp['courtyards'].items()}
+    if 'packing_keepouts' in fp:
+        placed['packing_keepouts'] = [dict(keepout) for keepout in fp['packing_keepouts']]
+    geometry = fp.get('packing_pad_geometry')
+    if isinstance(geometry, dict):
+        placed['packing_pad_geometry'] = {**geometry, **{kind: [dict(entry) for entry in geometry[kind]]
+                                                         for kind in ('copper', 'holes') if kind in geometry}}
+    placed['pads'] = [dict(pad) for pad in fp['pads']]
+    return placed
+
+
+def _move_geometry(placed, move):
     for courtyard in placed['courtyards'].values():
         for key in ('polygons', 'inner_polygons'):
             if key in courtyard:
@@ -60,15 +77,25 @@ def transform(fp, position, rotation):
     for kind in ('copper', 'holes'):
         for entry in placed.get('packing_pad_geometry', {}).get(kind, []):
             entry['polygons'] = [[move(p) for p in poly] for poly in entry['polygons']]
+
+
+def transform(fp, position, rotation):
+    placed = _copy_footprint(fp)
+    origin = fp['position_nm']
+    turns = int((rotation-fp['rotation_deg']) / 90)
+    def move(p):
+        x, y = rotate([p[0]-origin[0], p[1]-origin[1]], turns)
+        return [x+position[0], y+position[1]]
+    _move_geometry(placed, move)
     for pad in placed['pads']:
         custom = pad.get('custom_geometry', {})
         if not isinstance(custom, dict):
             raise ValueError('custom_geometry must be an object')
         if custom.get('status') == 'proven':
-            box = pad['custom_geometry']['bbox_nm']
+            box = custom['bbox_nm']
             corners = [move([x, y]) for x in (box[0], box[2]) for y in (box[1], box[3])]
-            pad['custom_geometry']['bbox_nm'] = [min(p[0] for p in corners), min(p[1] for p in corners),
-                                                 max(p[0] for p in corners), max(p[1] for p in corners)]
+            pad['custom_geometry'] = {**custom, 'bbox_nm': [min(p[0] for p in corners), min(p[1] for p in corners),
+                                                            max(p[0] for p in corners), max(p[1] for p in corners)]}
         if 'copper_centroid_offset_nm' in pad:
             offset = rotate([Fraction(*v) for v in pad['copper_centroid_offset_nm']], turns)
             pad['copper_centroid_offset_nm'] = [[v.numerator, v.denominator] for v in offset]
@@ -79,12 +106,37 @@ def transform(fp, position, rotation):
     return placed
 
 
+def _translate(at_origin, position):
+    """transform(fp, position, rotation) computed from transform(fp, [0, 0], rotation).
+
+    Identical output: every moved point is its rotated point plus the position,
+    a translated box is the box of the translated corners, and pad rotations and
+    centroid offsets are already rotated. No rotation pass runs per candidate.
+    """
+    dx, dy = position
+    def move(p):
+        return [p[0]+dx, p[1]+dy]
+    placed = _copy_footprint(at_origin)
+    _move_geometry(placed, move)
+    for pad in placed['pads']:
+        custom = pad.get('custom_geometry', {})
+        if custom.get('status') == 'proven':
+            box = custom['bbox_nm']
+            pad['custom_geometry'] = {**custom, 'bbox_nm': [box[0]+dx, box[1]+dy, box[2]+dx, box[3]+dy]}
+        pad['position_nm'] = move(pad['position_nm'])
+    placed['position_nm'] = list(position)
+    _cache_pad_reservations(placed)
+    return placed
+
+
+def _box(polygons):
+    xs = [p[0] for poly in polygons for p in poly]
+    ys = [p[1] for poly in polygons for p in poly]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def boxes(fp):
-    return {side: (min(p[0] for poly in courtyard['polygons'] for p in poly),
-                   min(p[1] for poly in courtyard['polygons'] for p in poly),
-                   max(p[0] for poly in courtyard['polygons'] for p in poly),
-                   max(p[1] for poly in courtyard['polygons'] for p in poly))
-            for side, courtyard in fp['courtyards'].items()}
+    return {side: _box(courtyard['polygons']) for side, courtyard in fp['courtyards'].items()}
 
 
 def _edge_margin_nm(policy):
@@ -224,6 +276,9 @@ def _qualified(capture):
     has_holes = any(isinstance(p, dict) and drilled(p)
                     for f in capture['footprints'] for p in f['pads'])
     for fp in capture['footprints']:
+        # Reservation caches are derived here from qualified inventories only, never taken from input.
+        for key in [key for key in fp if key.startswith('_packing_')]:
+            del fp[key]
         geometry = fp.get('packing_pad_geometry')
         if geometry is not None:
             if not isinstance(geometry, dict) or geometry.get('status') != 'proven':
@@ -280,6 +335,11 @@ def _qualified(capture):
             if type(pad.get('rotation_deg')) not in (int, float) or pad['rotation_deg'] % 90:
                 raise ValueError(f"{fp['ref']} pad {pad.get('number')!r}: pad rotation must be a quarter turn")
         _cache_pad_reservations(fp)
+    # A hole excludes every peer's courtyard and copper: a peer without a native
+    # target inventory leaves the exclusion unproven, which is unknown, not clear.
+    geometries = [fp.get('packing_pad_geometry') for fp in capture['footprints']]
+    if any(g is not None and g['holes'] for g in geometries) and any(g is None for g in geometries):
+        raise ValueError('native packing target reservations missing')
     return outline[0]
 
 
@@ -320,8 +380,26 @@ def _keepout_boxes(obstacles):
             boxes({'courtyards': {obstacle['side']: obstacle}}).items()]
 
 
+def _overlaps(left, right):
+    """intersection_area(left, right) > 0, exactly, for qualified polygons.
+
+    Boxes that do not overlap with positive area share no area. Two convex
+    counter-clockwise polygons share positive area exactly when neither has an
+    edge with every vertex of the other on or right of it (a separating edge
+    line exists for convex polygons with disjoint interiors, and a shared
+    boundary alone puts the other polygon on the edge's closed right side).
+    Any other pair keeps the exact rational clipping.
+    """
+    if not boxes_meet([left], [right]):
+        return False
+    if convex(left) and convex(right):
+        return not any(all(cross(a, b, v) <= 0 for v in other)
+                       for own, other in ((left, right), (right, left)) for a, b in edges(own))
+    return intersection_area(left, right) > 0
+
+
 def _in_keepouts(fp, obstacles):
-    return any(intersection_area(c, p) > 0
+    return any(_overlaps(c, p)
                for obstacle in obstacles
                for c in fp['courtyards'].get(obstacle['side'], {}).get('polygons', [])
                for p in obstacle['polygons'])
@@ -375,11 +453,14 @@ def _cache_pad_reservations(fp):
         return
 
     def inventory(polygons):
-        return [(boxes({'courtyards': {'F': {'polygons': [p]}}})['F'], p) for p in polygons]
+        return [(_box([p]), p) for p in polygons]
 
     fp['_packing_holes'] = inventory(p for e in geometry['holes'] for p in e['polygons'])
     fp['_packing_targets'] = inventory([p for c in fp['courtyards'].values() for p in c['polygons']] +
                                        [p for e in geometry['copper'] for p in e['polygons']])
+    # Union boxes: two inventories whose unions do not meet have no meeting pair.
+    for key in ('_packing_holes', '_packing_targets'):
+        fp[key + '_box'] = _box([[(x0, y0), (x1, y1)] for (x0, y0, x1, y1), _ in fp[key]]) if fp[key] else None
 
 
 def _hole_conflict(candidate, peer):
@@ -388,31 +469,52 @@ def _hole_conflict(candidate, peer):
         holes = owner.get('_packing_holes', [])
         if not holes:
             continue
+        # Qualification proves every peer's target inventory; a missing one fails loudly here.
+        (x0, y0, x1, y1), targets = owner['_packing_holes_box'], other['_packing_targets_box']
+        if targets is None or x1 <= targets[0] or targets[2] <= x0 or y1 <= targets[1] or targets[3] <= y0:
+            continue
         for (x0, y0, x1, y1), polygon in holes:
             for (a0, b0, a1, b1), target in other['_packing_targets']:
                 if x1 <= a0 or a1 <= x0 or y1 <= b0 or b1 <= y0:
                     continue
-                if intersection_area(polygon, target) > 0:
+                if _overlaps(polygon, target):
                     return True
     return False
 
 
 def _fits(candidate, outline, margin_nm=0, band=()):
     # A band is a declared overhang across outline edges; its regions share no area with the board.
+    # Without a band, a courtyard lies in a convex counter-clockwise outline exactly
+    # when every vertex is on or left of every outline edge (closed sets, exact
+    # integers): the same answer as the area test, without clipping.
+    vertex_test = not band and convex(outline)
     for courtyard in candidate['courtyards'].values():
         for p in courtyard['polygons']:
-            inside = intersection_area(p, outline) + sum(intersection_area(p, r) for r in band)
-            if inside != Fraction(abs(area2(p)), 2):
-                return False
-            if margin_nm > 0 and min(segment_distance2(a, b, c, d)
-                                     for a, b in edges(p) for c, d in edges(outline)) < margin_nm * margin_nm:
-                return False
+            if vertex_test:
+                if any(cross(a, b, v) < 0 for a, b in edges(outline) for v in p):
+                    return False
+            else:
+                inside = intersection_area(p, outline) + sum(intersection_area(p, r) for r in band)
+                if inside != Fraction(abs(area2(p)), 2):
+                    return False
+            if margin_nm > 0:
+                # An outline edge whose box is at least the margin from the
+                # courtyard box in x or y is at least the margin from every courtyard
+                # point; only the remaining edges can decide the exact test.
+                x0, y0, x1, y1 = _box([p])
+                near = [(c, d) for c, d in edges(outline)
+                        if min(c[0], d[0]) - margin_nm < x1 and x0 < max(c[0], d[0]) + margin_nm
+                        and min(c[1], d[1]) - margin_nm < y1 and y0 < max(c[1], d[1]) + margin_nm]
+                if near and min(segment_distance2(a, b, c, d)
+                                for a, b in edges(p) for c, d in near) < margin_nm * margin_nm:
+                    return False
     return True
 
 
-def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(), window=None):
+def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(), window=None, at_origin=None):
     """Sorted candidate origin x and y values; every pairing is a candidate position."""
-    at_origin = transform(fp, [0, 0], rotation)
+    if at_origin is None:
+        at_origin = transform(fp, [0, 0], rotation)
     bounds = list(boxes(at_origin).values())
     bounds = [(min(b[0] for b in bounds), min(b[1] for b in bounds),
                max(b[2] for b in bounds), max(b[3] for b in bounds))]
@@ -560,6 +662,43 @@ def _wire_cost(pads, peers):
         if net in peers:
             cost += min(abs(x-a) + abs(y-b) for a, b in peers[net])
     return cost
+
+
+def _wire_bounds(signal, peers, xs, ys):
+    """Lower bounds on _wire_cost split by axis, one value per candidate axis value.
+
+    ``signal`` holds the at-origin signal pads of one rotation. A pad's nearest
+    same-net peer is at least as far as the nearest peer x coordinate plus the
+    nearest peer y coordinate (each a minimum over all peers), so the sum over
+    pads bounds the cost from below and separates into a function of x and a
+    function of y, found by bisection in the sorted peer coordinates (AGENTEE-332).
+    """
+    along_x = [(ox, sorted({a for a, _ in peers[net]})) for net, ox, _ in signal if net in peers]
+    along_y = [(oy, sorted({b for _, b in peers[net]})) for net, _, oy in signal if net in peers]
+    def nearest(value, coordinates):
+        i = bisect.bisect_left(coordinates, value)
+        return min(abs(value-c) for c in coordinates[max(0, i-1):i+1])
+    def bound(values, spans):
+        return {v: sum(nearest(o+v, coordinates) for o, coordinates in spans) for v in values}
+    return bound(xs, along_x), bound(ys, along_y)
+
+
+def _ranked(bounds, exact):
+    """Keys in exact order, resolving each exact key only when its entry may be next.
+
+    Every bound compares at most equal to its exact key and no two entries share
+    a key (candidate x, y and rotation are part of it), so a popped exact key
+    precedes every remaining entry, whose exact key is at least its own bound.
+    The sequence equals sorted(map(exact, bounds)).
+    """
+    heap = [(key, False) for key in bounds]
+    heapq.heapify(heap)
+    while heap:
+        key, resolved = heapq.heappop(heap)
+        if resolved:
+            yield key
+        else:
+            heapq.heappush(heap, (exact(key), True))
 
 
 def _margin_mm(margin_nm):
@@ -1080,6 +1219,7 @@ class _Search:
         self.solid = [(o['side'], slab) for o in exact for poly in o['polygons'] for slab in _slabs(poly) or ()]
         self.gap, self.budget, self.grounds = policy['gap_nm'], policy['step_budget'], policy['ground_nets']
         self.members, self.steps, self.placed, self.reserved = members, 0, [], []
+        self.origins = {}
         self.positions, self.peers = {}, {}
         self.cluster_active = None
         self.cluster_start_steps = None
@@ -1103,6 +1243,13 @@ class _Search:
             raise _SearchTimedOut
         if self.cluster_active is not None and self.steps - self.cluster_start_steps >= CLUSTER_STEP_BUDGET:
             raise _ClusterExhausted
+
+    def at_origin(self, fp, rotation):
+        """The part at origin per rotation, once per search: candidates are translations of it."""
+        key = (fp['ref'], rotation)
+        if key not in self.origins:
+            self.origins[key] = transform(fp, [0, 0], rotation)
+        return self.origins[key]
 
     def ties(self, ref):
         """(partner, point, max distance) for every anchor relation whose other end is placed.
@@ -1167,8 +1314,9 @@ class _Search:
         if (not _fits(proposed, self.outline, self.margin_nm) or _near(proposed, self.exact, self.gap) or
                 _in_keepouts(proposed, self.obstacles)):
             return set()
-        hit = [fp['ref'] for fp in self.placed if _in_keepouts(proposed, fp.get('packing_keepouts', [])) or
-               _in_keepouts(fp, proposed.get('packing_keepouts', []))]
+        own = proposed.get('packing_keepouts', [])
+        hit = [fp['ref'] for fp in self.placed if (fp.get('packing_keepouts') and
+               _in_keepouts(proposed, fp['packing_keepouts'])) or (own and _in_keepouts(fp, own))]
         if hit:
             return set(hit) - self.fixed
         if group is not None and 'region' in group and not placement_groups.admits(
@@ -1200,12 +1348,12 @@ class _Search:
         window = _window(self.outline, self.margin_nm, group, ties)
         ranked, evaluators = [], {}
         for rotation in (0, 90, 180, 270):
-            at_origin = transform(fp, [0, 0], rotation)
+            at_origin = self.at_origin(fp, rotation)
             evaluator = self.locality.prepare(at_origin) if participating else None
             evaluators[rotation] = evaluator
             local_targets = evaluator.targets() if evaluator is not None else []
             xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm,
-                                     targets + local_targets, window)
+                                     targets + local_targets, window, at_origin)
             if self.cluster_active is not None and evaluator is not None:
                 # Intersections of axis projections of the exact pad discs are
                 # necessary only; the full coupled predicates still judge every point.
@@ -1218,6 +1366,9 @@ class _Search:
                           for side, c in at_origin['courtyards'].items()
                           if all(_slabs(poly) is not None for poly in c['polygons'])}
             doomed = set()
+            # Bound keys enter the ranking; the exact wire cost is resolved lazily
+            # by _ranked, in the same order as sorting every exact key.
+            bound_x, bound_y = _wire_bounds(_pad_nets(fp, (0, 0), rotation, self.grounds), self.peers, xs, ys)
             for x, y in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid,
                                     self.gap, conflicts, doomed, self.checkpoint):
                 self.checkpoint()
@@ -1225,17 +1376,20 @@ class _Search:
                 if self.cluster_active is not None and hit:
                     conflicts.update(hit - self.fixed - {fp['ref']})
                     continue
-                ranked.append((local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
-                               x, y, rotation, (x, y) in doomed))
-        ranked.sort()
-        for _, _, x, y, rotation, doomed in ranked:
+                ranked.append((local_cost, bound_x[x] + bound_y[y], x, y, rotation, (x, y) in doomed))
+        def exact(key):
+            self.checkpoint()  # Each exact cost is checked as promptly as when generation computed it.
+            local_cost, _, x, y, rotation, doomed = key
+            return (local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
+                    x, y, rotation, doomed)
+        for _, _, x, y, rotation, doomed in _ranked(ranked, exact):
             self.checkpoint()
             if self.steps == self.budget:
                 raise _BudgetExhausted
             self.steps += 1
             if doomed:
                 continue  # Nearer than the gap to a fixed courtyard or obstacle: the exact test rejects it.
-            proposed = transform(fp, [x, y], rotation)
+            proposed = _translate(self.at_origin(fp, rotation), (x, y))
             hit = self.blockers(proposed, group, ties, evaluators[rotation])
             if hit is None:
                 yield proposed

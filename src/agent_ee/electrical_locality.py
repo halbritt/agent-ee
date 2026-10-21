@@ -3,6 +3,7 @@
 Limits and citations are supplied by the engineer, never inferred from a net name.
 Distances use native copper-land centroids, not anchors, routed length or loop inductance.
 """
+from copy import deepcopy
 from fractions import Fraction
 import math
 from uuid import UUID
@@ -203,6 +204,7 @@ class PlacementIndex:
     """
     def __init__(self, document):
         validate(document)
+        document = deepcopy(document)
         self.pairs = {}
         self.endpoints = {}
         self.positions = {}
