@@ -963,7 +963,10 @@ After the independent initial locality grade qualifies identities and copper
 centroids, packing caches selected pad positions per footprint. Direct
 `PlacementIndex(document)` construction re-validates the declaration before
 building caches, including role bindings, disjoint nets and canonical UUIDs
-(AGENTEE-341). It still requires independently qualified native geometry. Search push/pop
+(AGENTEE-341). After validation it deep-copies the document and builds the index
+from that snapshot, so later edits to the caller's nested dictionaries cannot
+change indexed endpoints or bypass validation (AGENTEE-352).
+It still requires independently qualified native geometry. Search push/pop
 updates this index, including backjumps. Each rotation resolves only its incident
 roles with placed peers once; candidate costs translate those exact centroids
 without copying footprint geometry or scanning other footprints. Footprints with
