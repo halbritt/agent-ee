@@ -333,8 +333,7 @@ def _fixed_source(fp, policy):
 def _owner_decision(alternative, fp, policy):
     """A cheaper pose for a fixed owner is a named owner decision, never applied here."""
     source = _fixed_source(fp, policy)
-    record = {**alternative, 'fixed_source': source, 'applied': False,
-              'enforcement': 'owner-fixed pose kept on the proposal; changing it needs the named owner decision'}
+    record = {**alternative, 'fixed_source': source, 'applied': False, 'enforcement': FIXED_ENFORCEMENT}
     if 'saving_mm2' not in alternative:
         return record
     return {**record, 'status': 'decision_required', 'validation_status': alternative['status'],
@@ -419,12 +418,6 @@ def _valid_ratio(value, label):
         raise ValueError(f'{label} must be an exact non-negative ratio [numerator, positive denominator]')
 
 
-def _valid_status(holder, label):
-    if not isinstance(holder, dict) or holder.get('status') not in STATUSES:
-        raise ValueError(f'{label} status must be one of {", ".join(STATUSES)}')
-    return holder['status']
-
-
 KINDS = ('declared_obstacle', 'rule_area', 'courtyard_excess')
 QUALIFICATION = {'validated': 'legal under captured rules', 'unknown': 'hypothetical, unverified',
                  'rejected': 'not legal'}
@@ -432,84 +425,261 @@ QUALIFICATION = {'validated': 'legal under captured rules', 'unknown': 'hypothet
 UNSEARCHED = ('already_zero', 'not_searched', 'no_cheaper_contained_pose')
 SAVINGS = {'native_validated': 'legal under captured rules',
            'geometry_qualified_native_unverified': 'hypothetical, unverified'}
+FIXED_ENFORCEMENT = 'owner-fixed pose kept on the proposal; changing it needs the named owner decision'
+FIXED_DECLARATIONS = ('policy fixed_refs', 'native footprint lock')
 
 
-def _valid_pose(holder, label):
-    position, angle = holder.get('position_nm'), holder.get('rotation_deg')
-    if (not isinstance(position, list) or len(position) != 2
-            or any(isinstance(v, bool) or not isinstance(v, int) for v in position)):
-        raise ValueError(f'{label} position_nm must be two integer nanometres')
-    if isinstance(angle, bool) or not isinstance(angle, (int, float)) or angle != angle or abs(angle) == float('inf'):
-        raise ValueError(f'{label} rotation_deg must be a finite number')
-    return position, angle
+def _text(value, label):
+    if not isinstance(value, str):
+        raise ValueError(f'{label} must be text')
 
 
-def _valid_attempts(alternative, label):
-    """Each native attempt has a pose and a known validation status with its fixed qualification."""
-    attempts = alternative.get('native_attempts', [])
-    if not isinstance(attempts, list):
-        raise ValueError(f'{label} native_attempts must be a list')
-    for attempt in attempts:
-        if not isinstance(attempt, dict):
-            raise ValueError(f'{label} native attempt must be a record')
-        _valid_pose(attempt, f'{label} native attempt')
-        validation = attempt.get('validation')
-        status = validation.get('status') if isinstance(validation, dict) else None
-        if status not in QUALIFICATION or validation.get('qualification') != QUALIFICATION[status]:
+def _count(value, label):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f'{label} must be a non-negative integer count')
+
+
+def _flag(value, label):
+    if not isinstance(value, bool):
+        raise ValueError(f'{label} must be a boolean')
+
+
+def _sha(value, label):
+    if not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value):
+        raise ValueError(f'{label} must be a lowercase SHA-256')
+
+
+def _position(value, label):
+    if (not isinstance(value, list) or len(value) != 2
+            or any(isinstance(v, bool) or not isinstance(v, int) for v in value)):
+        raise ValueError(f'{label} must be two integer nanometres')
+
+
+def _angle(value, label):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value or abs(value) == float('inf'):
+        raise ValueError(f'{label} must be a finite number')
+
+
+def _texts(value, label):
+    if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
+        raise ValueError(f'{label} must be a list of text')
+
+
+def _object(value, label):
+    if not isinstance(value, dict):
+        raise ValueError(f'{label} must be a record')
+
+
+def _list(value, label):
+    if not isinstance(value, list):
+        raise ValueError(f'{label} must be a list')
+
+
+# The type of every field any reserve record may carry. Content rules follow in each validator.
+FIELD_TYPES = {
+    'schema': _text, 'authority': _text, 'board_sha256': _sha, 'status': _text, 'reason': _text,
+    'limitation': _text, 'threshold': _object, 'sides': _object, 'findings': _list,
+    'board_area_mm2': _valid_ratio, 'fraction': _valid_ratio, 'enforcement': _text, 'provenance': _object,
+    'owners': _list, 'union_area_mm2': _valid_ratio, 'side_fraction': _valid_ratio, 'area_mm2': _valid_ratio,
+    'saving_mm2': _valid_ratio, 'owner': _text, 'kind': _text, 'side': _text, 'id': _text, 'name': _text,
+    'alternative': _object, 'reserve': _object, 'qualification': _text, 'tested': _count,
+    'search_complete': _flag, 'domain': _text, 'native_attempts': _list, 'position_nm': _position,
+    'rotation_deg': _angle, 'rigid_block': _object, 'moves': _list, 'validation': _object,
+    'validation_status': _text, 'applied': _flag, 'fixed_source': _object, 'decision_required': _object,
+    'block': _text, 'anchor': _text, 'references': _texts, 'reference': _text, 'decision': _text,
+    'declared_by': _texts, 'overhang_envelope': _object, 'current_position_nm': _position,
+    'current_rotation_deg': _angle, 'candidate_position_nm': _position, 'candidate_rotation_deg': _angle,
+    'source_sha256': _sha, 'rules': _object, 'directory': _text, 'witness': _text,
+    'write_scope': _object, 'write_scope_sha256': _sha, 'blocking_types': _texts, 'advisory_types': _texts,
+}
+
+
+def _closed(record, required, optional, label, types=None):
+    """Refuse a record missing a required field or carrying any other field; type every field."""
+    if not isinstance(record, dict):
+        raise ValueError(f'{label} must be a record')
+    missing, extra = set(required) - set(record), set(record) - set(required) - set(optional)
+    if missing or extra:
+        raise ValueError(f'{label} fields do not match its status: '
+                         + '; '.join(part for part in (
+                             'missing ' + ', '.join(sorted(missing)) if missing else '',
+                             'not allowed ' + ', '.join(sorted(extra)) if extra else '') if part))
+    types = {**FIELD_TYPES, **(types or {})}
+    for key, value in record.items():
+        types[key](value, f'{label} {key}')
+
+
+# Closed per-status allow-lists: (required, optional) fields of each record kind.
+RECORD_FIELDS = {
+    'measured': ({'schema', 'board_sha256', 'authority', 'status', 'threshold', 'sides', 'findings',
+                  'board_area_mm2'}, set()),
+    'unknown': ({'schema', 'board_sha256', 'authority', 'status', 'sides', 'findings'},
+                {'threshold', 'board_area_mm2', 'reason', 'limitation'}),
+}
+THRESHOLD_FIELDS = ({'fraction', 'enforcement', 'provenance'}, set())
+SIDE_FIELDS = {'measured': ({'status', 'owners', 'union_area_mm2', 'side_fraction'}, set()),
+               'unknown': ({'status', 'owners', 'reason'}, set())}
+OWNER_FIELDS = {'measured': ({'owner', 'kind', 'side', 'status', 'area_mm2', 'side_fraction'}, {'alternative'}),
+                'unknown': ({'owner', 'kind', 'side', 'status', 'reason'}, set())}
+FINDING_FIELDS = ({'kind', 'enforcement', 'reserve'}, set())
+_SEARCH = {'status', 'reason', 'tested', 'native_attempts', 'search_complete', 'domain'}
+_POSE = {'status', 'qualification', 'native_attempts', 'search_complete', 'position_nm', 'rotation_deg',
+         'area_mm2', 'saving_mm2', 'tested', 'domain'}
+# A fixed owner's search without a saving keeps its fixed declaration (never with a rigid block).
+_FIXED = {'fixed_source', 'applied', 'enforcement'}
+ALTERNATIVE_FIELDS = {
+    **{status: ({'status', 'reason'}, set()) for status in UNSEARCHED},
+    'none_found': (_SEARCH, {'rigid_block'} | _FIXED),
+    'unknown': (_SEARCH | {'qualification'}, {'rigid_block'} | _FIXED),
+    **{status: (_POSE, {'rigid_block', 'moves'}) for status in SAVINGS},
+    'decision_required': (_POSE | _FIXED | {'validation_status', 'decision_required'}, set()),
+}
+ATTEMPT_FIELDS = ({'position_nm', 'rotation_deg', 'validation'}, set())
+# Native witness summaries (reserved_area_native): status and its fixed qualification are
+# required; digests, paths and finding types are optional typed witness fields.
+_WITNESS = {'source_sha256', 'rules', 'directory', 'moves', 'reason', 'witness', 'board_sha256',
+            'write_scope_sha256', 'blocking_types', 'advisory_types'}
+VALIDATION_FIELDS = {'validated': ({'status', 'qualification'}, _WITNESS),
+                     'unknown': ({'status', 'qualification'}, _WITNESS),
+                     'rejected': ({'status', 'qualification'}, _WITNESS | {'write_scope'})}
+MOVE_FIELDS = ({'reference', 'position_nm', 'rotation_deg'}, set())
+RIGID_FIELDS = ({'block', 'anchor', 'references'}, set())
+FIXED_SOURCE_FIELDS = ({'declared_by', 'provenance'}, {'overhang_envelope'})
+DECISION_FIELDS = ({'decision', 'reference', 'fixed_source', 'current_position_nm', 'current_rotation_deg',
+                    'candidate_position_nm', 'candidate_rotation_deg', 'saving_mm2', 'qualification'}, set())
+
+
+def _by_status(record, table, label):
+    status = record.get('status') if isinstance(record, dict) else None
+    if not isinstance(status, str) or status not in table:
+        raise ValueError(f'{label} status must be one of {", ".join(table)}')
+    _closed(record, *table[status], label)
+    return status
+
+
+def _valid_move(move, label):
+    _closed(move, *MOVE_FIELDS, label)
+    return move['reference'], move['position_nm'], move['rotation_deg']
+
+
+def _valid_attempts(alternative, anchor, members, label):
+    """Each native attempt has a pose and a known validation status with its fixed qualification.
+
+    A witness's moves, when present, cover the moved members with the anchor at the attempted pose.
+    """
+    statuses = []
+    for attempt in alternative['native_attempts']:
+        _closed(attempt, *ATTEMPT_FIELDS, f'{label} native attempt')
+        validation = attempt['validation']
+        status = validation.get('status')
+        if not isinstance(status, str) or status not in QUALIFICATION or validation.get('qualification') != QUALIFICATION[status]:
             raise ValueError(f'{label} native attempt validation must be validated, rejected or unknown '
                              'with its fixed qualification')
-    return [a['validation']['status'] for a in attempts]
+        _closed(validation, *VALIDATION_FIELDS[status], f'{label} native attempt validation')
+        if 'rules' in validation:
+            rules = validation['rules']
+            if set(rules) != {'.kicad_pro', '.kicad_dru'}:
+                raise ValueError(f'{label} native attempt rules must name .kicad_pro and .kicad_dru')
+            for suffix, value in rules.items():
+                if value is not None:
+                    _sha(value, f'{label} native attempt rules {suffix}')
+        if status == 'validated' and validation.get('blocking_types', []):
+            raise ValueError(f'{label} validated native attempt has blocking findings')
+        if 'moves' in validation:
+            moves = {}
+            for move in validation['moves']:
+                reference, position, angle = _valid_move(move, f'{label} native attempt move')
+                moves[reference] = (position, angle)
+            if (set(moves) != set(members)
+                    or moves[anchor] != (attempt['position_nm'], attempt['rotation_deg'])):
+                raise ValueError(f'{label} native attempt witness moves disagree with the attempted pose')
+        statuses.append(status)
+    return statuses
 
 
 def _valid_alternative(alternative, row, label):
-    """Refuse an alternative whose status, measurements, qualification or witness disagree.
+    """Refuse an alternative outside its status's closed allow-list, or internally inconsistent.
 
-    ``native_validated`` needs its selected pose to be the one validated attempt, after
-    only rejected or unknown cheaper attempts; an unknown attempt makes ``search_complete``
-    false. Unknown-only attempts are never a validated or complete search.
+    Every field is allowed, required and typed by status before any status rule runs.
+    Unsearched, unknown and none_found records carry no selected pose, no saving and no
+    legal qualification. ``native_validated`` needs its selected pose to be the one
+    validated attempt, after only rejected or unknown cheaper attempts; an unknown attempt
+    makes ``search_complete`` false. Unknown-only attempts are never validated or complete.
     """
-    if not isinstance(alternative, dict) or not isinstance(alternative.get('status'), str):
-        raise ValueError(f'{label} must be a record with a status')
+    status = _by_status(alternative, ALTERNATIVE_FIELDS, label)
     if row.get('status') != 'measured':
         raise ValueError(f'{label} belongs to an unmeasured owner')
-    status = alternative['status']
-    if status == 'decision_required':
-        return _valid_decision(alternative, row, label)
+    if status == 'already_zero' and Fraction(*row['area_mm2']) != 0:
+        raise ValueError(f'{label} already_zero but the owner area is not zero')
     if status in UNSEARCHED:
-        if not isinstance(alternative.get('reason'), str):
-            raise ValueError(f'{label} {status} must name its reason')
-        if status == 'already_zero' and Fraction(*row['area_mm2']) != 0:
-            raise ValueError(f'{label} already_zero but the owner area is not zero')
-        if 'saving_mm2' in alternative or 'native_attempts' in alternative:
-            raise ValueError(f'{label} {status} carries no pose search')
         return
-    if status not in SAVINGS and status not in ('unknown', 'none_found'):
-        raise ValueError(f'{label} status {status!r} is not a known alternative status')
-    statuses = _valid_attempts(alternative, label)
-    complete = alternative.get('search_complete')
-    tested = alternative.get('tested')
-    if not isinstance(complete, bool) or isinstance(tested, bool) or not isinstance(tested, int) or tested < 0:
-        raise ValueError(f'{label} needs a boolean search_complete and a non-negative tested count')
-    if not isinstance(alternative.get('domain'), str):
-        raise ValueError(f'{label} must name its pose domain')
+    if status == 'decision_required' and alternative['validation_status'] not in SAVINGS:
+        raise ValueError(f'{label} decision_required needs a saving validation_status and applied false')
+    if 'qualification' in alternative:
+        expected = (SAVINGS.get(alternative['validation_status']) if status == 'decision_required'
+                    else SAVINGS.get(status, QUALIFICATION['unknown']))
+        if alternative['qualification'] != expected:
+            raise ValueError(f'{label} {status} must be qualified {expected!r}')
+    fixed = set(alternative) & _FIXED
+    if fixed and fixed != _FIXED:
+        raise ValueError(f'{label} fixed declaration needs fixed_source, applied and enforcement')
+    if fixed:
+        if 'rigid_block' in alternative:
+            raise ValueError(f'{label} a fixed owner is never searched within a rigid block')
+        if alternative['applied'] is not False or alternative['enforcement'] != FIXED_ENFORCEMENT:
+            raise ValueError(f'{label} owner-fixed record must have applied false and enforcement {FIXED_ENFORCEMENT!r}')
+        source = alternative['fixed_source']
+        _closed(source, *FIXED_SOURCE_FIELDS, f'{label} fixed_source')
+        if not source['declared_by'] or any(d not in FIXED_DECLARATIONS for d in source['declared_by']):
+            raise ValueError(f'{label} fixed_source declared_by must name {" or ".join(FIXED_DECLARATIONS)}')
+        if (not isinstance(source['provenance'].get('class'), str)
+                or source['provenance'].get('enforcement') not in ('hard', 'soft')):
+            raise ValueError(f'{label} fixed_source provenance needs a class and a hard/soft enforcement')
+    block = alternative.get('rigid_block')
+    if block is not None:
+        _closed(block, *RIGID_FIELDS, f'{label} rigid_block')
+        if (not block['references'] or len(set(block['references'])) != len(block['references'])
+                or block['anchor'] not in block['references'] or row['owner'] not in block['references']):
+            raise ValueError(f'{label} rigid_block must name its anchor and owner among distinct references')
+        anchor, members = block['anchor'], block['references']
+    else:
+        anchor, members = row['owner'], [row['owner']]
+    if alternative['domain'] != (BLOCK_DOMAIN if block is not None else DOMAIN):
+        raise ValueError(f'{label} domain must be the declared {"rigid block" if block else "single part"} pose set')
+    statuses = _valid_attempts(alternative, anchor, members, label)
+    complete = alternative['search_complete']
+    if status == 'decision_required':
+        return _valid_decision(alternative, row, statuses, label)
     if status not in SAVINGS:
-        if 'saving_mm2' in alternative or 'validated' in statuses:
+        if 'validated' in statuses:
             raise ValueError(f'{label} {status} carries no saving and no validated attempt')
-        if status == 'unknown' and ('unknown' not in statuses or complete
-                                    or alternative.get('qualification') != QUALIFICATION['unknown']):
+        if status == 'unknown' and ('unknown' not in statuses or complete):
             raise ValueError(f'{label} unknown needs an unknown native attempt, an incomplete search '
                              'and hypothetical qualification')
         if status == 'none_found' and 'unknown' in statuses:
             raise ValueError(f'{label} none_found cannot follow an unknown native attempt')
+        if status == 'none_found' and statuses and not complete:
+            raise ValueError(f'{label} none_found after native attempts is a complete search')
         return
-    if alternative.get('qualification') != SAVINGS[status]:
-        raise ValueError(f'{label} {status} must be qualified {SAVINGS[status]!r}')
-    _valid_pose(alternative, label)
-    _valid_ratio(alternative.get('area_mm2'), f'{label} area_mm2')
-    _valid_ratio(alternative.get('saving_mm2'), f'{label} saving_mm2')
+    _valid_saving(alternative, row, statuses, status, label)
+    if block is not None:
+        if 'moves' not in alternative:
+            raise ValueError(f'{label} rigid block moves must cover every member')
+        moves = [_valid_move(m, f'{label} rigid block move') for m in alternative['moves']]
+        if [m[0] for m in moves] != members or next(
+                (p, a) for r, p, a in moves if r == anchor) != (alternative['position_nm'],
+                                                                alternative['rotation_deg']):
+            raise ValueError(f'{label} rigid block moves must cover every member with the anchor at the selected pose')
+    elif 'moves' in alternative:
+        raise ValueError(f'{label} moves belong only to a rigid block alternative')
+
+
+def _valid_saving(alternative, row, statuses, status, label):
+    """A selected pose's saving and, for native_validated, its validated witness."""
     saving = Fraction(*alternative['saving_mm2'])
     if saving <= 0 or Fraction(*alternative['area_mm2']) + saving != Fraction(*row['area_mm2']):
         raise ValueError(f'{label} saving_mm2 must be positive and equal the owner area less the alternative area')
+    complete = alternative['search_complete']
     if status == 'geometry_qualified_native_unverified':
         if statuses or complete:
             raise ValueError(f'{label} geometry-only alternative has no native attempt and no complete search')
@@ -519,118 +689,96 @@ def _valid_alternative(alternative, row, label):
         raise ValueError(f'{label} native_validated needs its selected pose to be the validated native attempt')
     elif complete != ('unknown' not in statuses):
         raise ValueError(f'{label} search_complete must be false exactly when a native attempt is unknown')
-    if 'rigid_block' in alternative:
-        block = alternative['rigid_block']
-        if (not isinstance(block, dict) or not isinstance(block.get('references'), list)
-                or block.get('anchor') not in block['references']):
-            raise ValueError(f'{label} rigid_block must name its anchor among its references')
-        moves = alternative.get('moves')
-        if not isinstance(moves, list) or [m.get('reference') if isinstance(m, dict) else None
-                                           for m in moves] != block['references']:
-            raise ValueError(f'{label} rigid block moves must cover every member')
-        for move in moves:
-            _valid_pose(move, f'{label} rigid block move')
 
 
-def _valid_decision(record, row, label):
+def _valid_decision(record, row, statuses, label):
     """A fixed owner's cheaper pose is a named, unapplied decision consistent with its validation."""
-    validation = record.get('validation_status')
-    if validation not in SAVINGS or record.get('applied') is not False:
-        raise ValueError(f'{label} decision_required needs a saving validation_status and applied false')
-    _valid_alternative({**record, 'status': validation}, row, label)
-    decision = record.get('decision_required')
-    if not isinstance(decision, dict) or not isinstance(record.get('fixed_source'), dict):
-        raise ValueError(f'{label} decision_required must carry the decision and fixed source')
-    expected = {'decision': 'change owner-fixed pose', 'reference': row.get('owner'),
+    _valid_saving(record, row, statuses, record['validation_status'], label)
+    decision = record['decision_required']
+    _closed(decision, *DECISION_FIELDS, f'{label} decision_required')
+    expected = {'decision': 'change owner-fixed pose', 'reference': row['owner'],
                 'fixed_source': record['fixed_source'],
                 'candidate_position_nm': record['position_nm'], 'candidate_rotation_deg': record['rotation_deg'],
                 'saving_mm2': record['saving_mm2'], 'qualification': record['qualification']}
-    if any(decision.get(k) != v for k, v in expected.items()):
+    if any(decision[k] != v for k, v in expected.items()):
         raise ValueError(f'{label} decision_required disagrees with its alternative: '
-                         + ', '.join(sorted(k for k, v in expected.items() if decision.get(k) != v)))
-    _valid_pose({'position_nm': decision.get('current_position_nm'),
-                 'rotation_deg': decision.get('current_rotation_deg')}, f'{label} decision current pose')
+                         + ', '.join(sorted(k for k, v in expected.items() if decision[k] != v)))
 
 
 def _valid_owner(row, side, label):
-    """One reserve owner, wherever it is shown: its identity, status, measurements and alternative."""
-    status = _valid_status(row, label)
-    if not isinstance(row.get('owner'), str):
-        raise ValueError(f'{label} must name its owner')
-    if 'side' in row and row['side'] != side:
-        raise ValueError(f'{label} side {row["side"]!r} is not side {side}')
-    if 'kind' in row and row['kind'] not in KINDS:
+    """One reserve owner, wherever it is shown: its identity, status, measurements and alternative.
+
+    A rule-area owner also names its rule-area id and name once measured.
+    """
+    if not isinstance(row, dict) or row.get('kind') not in KINDS:
         raise ValueError(f'{label} kind must be one of {", ".join(KINDS)}')
-    if status == 'measured':
-        _valid_ratio(row.get('area_mm2'), f'{label} area_mm2')
-        _valid_ratio(row.get('side_fraction'), f'{label} side_fraction')
-    elif any(k in row for k in ('area_mm2', 'side_fraction')):
-        raise ValueError(f'{label} is unknown but carries a measurement')
+    if not isinstance(row.get('status'), str) or row['status'] not in OWNER_FIELDS:
+        raise ValueError(f'{label} status must be one of {", ".join(OWNER_FIELDS)}')
+    required, optional = OWNER_FIELDS[row['status']]
+    if row['kind'] == 'rule_area':
+        required, optional = ((required | {'id', 'name'}, optional) if row['status'] == 'measured'
+                              else (required, optional | {'id', 'name'}))
+    _closed(row, required, optional, label)
+    if row['side'] != side:
+        raise ValueError(f'{label} side {row["side"]!r} is not side {side}')
     if 'alternative' in row:
         _valid_alternative(row['alternative'], row, f'{label} alternative')
-    return status
+    return row['status']
 
 
 def validate(record):
-    """Refuse a reserve record that is malformed, not advisory, or measured without every measurement.
+    """Refuse a reserve record outside its closed allow-lists, not advisory, or incompletely measured.
 
-    Typed unknowns pass as unknown. ``measured`` needs both board sides measured with
-    exact ratios, and a side is measured only when each of its owners is; an unknown
-    side or owner can never sit under a measured total. Every nested record a reviewer
-    sees is validated: each owner's alternative or owner decision, and each finding's
-    reserve, which must equal its side's owner row. Shared by every packet ingress.
+    Every record kind (the record, its threshold, sides, owners, findings, alternatives,
+    owner decisions, rigid blocks and native attempts) has a closed per-status set of
+    required and optional fields, each typed; any other field, a missing one or a wrong
+    type refuses before any status rule. Typed unknowns pass as unknown. ``measured``
+    needs both board sides measured with exact ratios, and a side is measured only when
+    each of its owners is. Each finding's reserve must equal its side's owner row.
+    Shared by every packet ingress.
     """
     if not isinstance(record, dict) or record.get('schema') != SCHEMA:
         raise ValueError(f'reserved area must be a {SCHEMA} record')
     if record.get('authority') != AUTHORITY:
         raise ValueError(f'reserved area authority must be exactly {AUTHORITY!r}')
-    digest = record.get('board_sha256')
-    if not isinstance(digest, str) or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
-        raise ValueError('reserved area board_sha256 must be a lowercase SHA-256')
-    status = _valid_status(record, 'reserved area')
-    threshold = record.get('threshold', {'enforcement': 'advisory'})
-    if not isinstance(threshold, dict) or threshold.get('enforcement') != 'advisory':
-        raise ValueError('reserved area threshold must be advisory')
-    if 'fraction' in threshold:
-        _valid_ratio(threshold['fraction'], 'reserved area threshold')
-    findings, sides = record.get('findings'), record.get('sides')
-    if not isinstance(findings, list) or any(
-            not isinstance(f, dict) or f.get('enforcement') != 'advisory' for f in findings):
+    _sha(record.get('board_sha256'), 'reserved area board_sha256')
+    status = _by_status(record, RECORD_FIELDS, 'reserved area')
+    if 'threshold' in record:
+        threshold = record['threshold']
+        if threshold.get('enforcement') != 'advisory':
+            raise ValueError('reserved area threshold must be advisory')
+        _closed(threshold, *THRESHOLD_FIELDS, 'reserved area threshold', {'provenance': _text})
+    findings, sides = record['findings'], record['sides']
+    if any(not isinstance(f, dict) or f.get('enforcement') != 'advisory' for f in findings):
         raise ValueError('reserved area findings must be a list of advisory findings')
-    if not isinstance(sides, dict) or not set(sides) <= {'F', 'B'}:
+    if not set(sides) <= {'F', 'B'}:
         raise ValueError('reserved area sides must map board sides F/B')
     rows = {}
     for side, measured in sides.items():
         label = f'reserved area side {side}'
-        side_status = _valid_status(measured, label)
-        owners = measured.get('owners')
-        if not isinstance(owners, list):
-            raise ValueError(f'{label} owners must be a list')
-        for row in owners:
+        side_status = _by_status(measured, SIDE_FIELDS, label)
+        for row in measured['owners']:
             if not isinstance(row, dict):
                 raise ValueError(f'{label} owner must be a record')
             if _valid_owner(row, side, f'{label} owner') != 'measured' and side_status == 'measured':
                 raise ValueError(f'{label} is measured but an owner is unknown')
-            rows.setdefault((side, row.get('kind'), row.get('id'), row['owner']), []).append(row)
-        if side_status == 'measured':
-            _valid_ratio(measured.get('union_area_mm2'), f'{label} union_area_mm2')
-            _valid_ratio(measured.get('side_fraction'), f'{label} side_fraction')
+            rows.setdefault((side, row['kind'], row.get('id'), row['owner']), []).append(row)
     for finding in findings:
         reserve = finding.get('reserve')
         if finding.get('kind') != 'large_reserve' or not isinstance(reserve, dict):
             raise ValueError('reserved area finding must be a large_reserve finding naming its reserve')
+        _closed(finding, *FINDING_FIELDS, 'reserved area finding')
         side = reserve.get('side')
-        if side not in sides:
+        if not isinstance(side, str) or side not in sides:
             raise ValueError('reserved area finding reserve names no measured board side')
         if _valid_owner(reserve, side, 'reserved area finding reserve') != 'measured':
             raise ValueError('reserved area finding reserve must be measured')
         # Full equality, so two owners sharing a key cannot lend each other a measurement.
-        if reserve not in rows.get((side, reserve.get('kind'), reserve.get('id'), reserve['owner']), []):
+        if reserve not in rows.get((side, reserve['kind'], reserve.get('id'), reserve['owner']), []):
             raise ValueError('reserved area finding reserve disagrees with its side owner (side, owner, kind, id)')
     if status == 'measured':
         if set(sides) != {'F', 'B'} or any(s['status'] != 'measured' for s in sides.values()):
             raise ValueError('reserved area is measured only when both sides are measured')
-        _valid_ratio(record.get('board_area_mm2'), 'reserved area board_area_mm2')
     return record
 
 

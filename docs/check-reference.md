@@ -2211,9 +2211,19 @@ record to reviewers without block provenance; the offline arrangement CLI
 records a typed unknown instead of a measurement. Both packet ingress paths
 validate the record first: the exact advisory authority, a known status, exact
 non-negative ratios, and `measured` only when both sides and all their owners
-are measured. Nested evidence is validated too: every finding's `reserve` must be
+are measured. Every record kind (the record, its threshold, sides, owners,
+findings, alternatives, owner decisions, fixed sources, rigid blocks, moves,
+native attempts and their validation witnesses) has a closed, per-status
+allow-list of required and optional fields, each typed. An extra or missing
+field, a wrong type, or a qualification incompatible with the status refuses the
+record before any status rule runs (AGENTEE-384). `already_zero`, `not_searched`,
+`no_cheaper_contained_pose`, `none_found` and `unknown` alternatives never carry
+a selected pose, a measurement, a saving or a legal qualification; `unknown` is
+qualified `hypothetical, unverified`. `legal under captured rules` is accepted
+only on a `native_validated` alternative (or decision) whose selected pose is a
+successful native attempt. Every finding's `reserve` must be
 a valid measured owner equal to its side's owner row (side, owner, kind, id and
-all fields); every alternative and owner decision needs a known status, exact
+all fields); every alternative and owner decision with a saving needs exact
 measurements with a positive saving equal to the owner area less the alternative
 area, and the qualification of its status. `native_validated` needs its selected
 pose to be the one `validated` native attempt, and `search_complete` is false

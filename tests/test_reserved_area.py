@@ -17,6 +17,76 @@ def validated(costs):
     return reserve.validate(json.loads(json.dumps(costs)))
 
 
+# Copied declarations and witnesses whose contents are typed elsewhere, not by the reserve validator.
+OPAQUE = ('provenance', 'overhang_envelope', 'write_scope')
+
+
+def single_field_mutations(record):
+    """Every single-field mutation of a valid reserve record, each of which must be refused.
+
+    An extra field on each nested record; wrongly typed values (scalar and container) for
+    each field and list element; an inexact, negative or zero-denominator value for each ratio. An owner row
+    shown again as a finding's reserve is mutated in both copies, so the allow-list
+    itself (not the copies' disagreement) must refuse.
+    """
+    import json
+    def wrong(value):
+        return 7 if isinstance(value, str) else 'x'
+    def unhashable(value):
+        return {} if isinstance(value, list) else []
+    def walk(value, path):
+        """(label, path of the mutated holder, mutation of that holder)."""
+        if isinstance(value, dict):
+            yield path + ('<extra>',), path, lambda holder: holder.__setitem__('unexpected', 1)
+            items = value.items()
+        elif isinstance(value, list):
+            items = enumerate(value)
+        else:
+            return
+        for key, item in items:
+            for kind in (wrong, unhashable):
+                yield (path + (key, kind.__name__), path,
+                       lambda holder, key=key, item=item, kind=kind: holder.__setitem__(key, kind(item)))
+            if (isinstance(item, list) and len(item) == 2 and all(type(v) is int for v in item)
+                    and isinstance(key, str) and (key.endswith('_mm2') or key.endswith('fraction'))):
+                for bad in ([-1, 1], [1, 0], [1.0, 1]):
+                    yield (path + (key, str(bad)), path,
+                           lambda holder, key=key, bad=bad: holder.__setitem__(key, bad))
+            if key not in OPAQUE:
+                yield from walk(item, path + (key,))
+    def at(holder, path):
+        for key in path:
+            holder = holder[key]
+        return holder
+    copies = {}
+    for i, finding in enumerate(record['findings']):
+        side = finding['reserve']['side']
+        for j, row in enumerate(record['sides'][side]['owners']):
+            if row == finding['reserve']:
+                copies[('sides', side, 'owners', j)] = ('findings', i, 'reserve')
+    for label, holder, mutate in walk(record, ()):
+        mutated = json.loads(json.dumps(record))
+        mutate(at(mutated, holder))
+        shown = copies.get(holder[:4])
+        if shown is not None:
+            mutate(at(mutated, shown + holder[4:]))
+        yield '/'.join(map(str, label)), mutated
+
+
+def assert_closed(test, record):
+    """``record`` is accepted, and every single-field mutation of it is refused."""
+    import json
+    validated(record)
+    count = 0
+    for label, mutated in single_field_mutations(json.loads(json.dumps(record))):
+        count += 1
+        with test.subTest(mutation=label):
+            with test.assertRaises(ValueError):
+                reserve.validate(mutated)
+    test.assertGreater(count, 0)
+    return count
+
+
 def proven(polygons):
     return {'status': 'proven', 'polygons': polygons}
 
@@ -37,6 +107,7 @@ class AreaTests(unittest.TestCase):
         self.assertEqual(rows[0]['side_fraction'], [3, 200])
         self.assertEqual((facts, policy, fab), original)
         self.assertEqual(report, reserve.report(facts, policy, fab))
+        assert_closed(self, report)
 
     def test_overlaps_between_kinds_not_double_counted(self):
         facts = capture([part('U1', 0, 0)])
@@ -78,6 +149,7 @@ class AreaTests(unittest.TestCase):
         self.assertEqual(report['status'], 'unknown')
         self.assertIn('work guard', report['sides']['F']['owners'][0]['reason'])
         self.assertNotIn('area_mm2', report['sides']['F']['owners'][0])
+        assert_closed(self, report)
 
     def test_cheaper_pose_cannot_leave_a_sourced_region(self):
         facts = capture([part('J3', 8, 8, 'B')])
@@ -94,6 +166,7 @@ class AreaTests(unittest.TestCase):
         lane = next(r for r in costs['sides']['B']['owners'] if r['kind'] == 'rule_area')
         self.assertEqual(lane['alternative']['status'], 'none_found')
         self.assertEqual(lane['area_mm2'], [16, 1])
+        assert_closed(self, costs)
 
     def test_geometry_only_no_saving_is_not_a_complete_native_search(self):
         row = {'side': 'B', 'kind': 'rule_area', 'id': 'lane', 'owner': 'J3', 'area_mm2': [2, 1]}
@@ -112,6 +185,7 @@ class AreaTests(unittest.TestCase):
         row = costs['sides']['F']['owners'][0]
         self.assertEqual(row['area_mm2'], [3, 1])
         self.assertEqual(row['alternative']['status'], 'no_cheaper_contained_pose')
+        assert_closed(self, costs)
 
     def test_fixed_owner_overhang_alternative_stays_inside_its_declared_band(self):
         from agent_ee import placer
@@ -144,6 +218,7 @@ class AreaTests(unittest.TestCase):
             self.assertTrue(placer._fits(candidate, outline, 0,
                                          overhang_bands(policy['fixed_overhangs'], outline)['U1']))
             savings.append(request_['saving_mm2'])
+            assert_closed(self, costs)
         self.assertEqual(savings, [[2, 1], [1, 1]])
         # Without a declared band, a contained fixed courtyard has no cheaper pose.
         policy = request(gap_nm=0)
@@ -163,6 +238,7 @@ class AreaTests(unittest.TestCase):
         lane = next(r for r in costs['sides']['F']['owners'] if r['kind'] == 'rule_area')
         self.assertEqual(lane['alternative'], {'status': 'not_searched',
                                                'reason': 'rigid block with an owner-fixed member'})
+        assert_closed(self, costs)
 
     def test_unknown_fab_curves_and_outline_do_not_become_zero(self):
         facts = capture([part('U1', 2, 2)])
@@ -173,8 +249,11 @@ class AreaTests(unittest.TestCase):
         facts['footprints'][0]['courtyards']['F']['inner_polygons'] = [rectangle(2, 2, 1, 1)]
         report = reserve.report(facts, request(), {'U1': {'F': proven([rectangle(2, 2, 1, 1)])}})
         self.assertIn('bounded', report['sides']['F']['owners'][0]['reason'])
+        assert_closed(self, report)
         facts['outline'] = {'status': 'unsupported'}
         self.assertEqual(reserve.report(facts, request(), {})['status'], 'unknown')
+        assert_closed(self, reserve.report(facts, request(), {}))
+        assert_closed(self, reserve.unmeasured('a'*64, 'offline_unsaved_plan', 'no saved board'))
 
     def test_threshold_is_strictly_above_five_percent_and_advisory(self):
         facts = capture([])
@@ -185,6 +264,7 @@ class AreaTests(unittest.TestCase):
         self.assertEqual(report['findings'][0]['reserve']['owner'], 'lane')
         self.assertEqual(report['findings'][0]['enforcement'], 'advisory')
         self.assertEqual(report['threshold']['provenance'], 'AGENTEE-380 suggestion; unsourced')
+        assert_closed(self, report)
 
 
 class NativeAreaTests(unittest.TestCase):
@@ -234,6 +314,7 @@ class NativeAreaTests(unittest.TestCase):
             repeated = reserve.report(facts, policy, fab)
             reserve.alternatives(facts, policy, fab, repeated, {})
             self.assertEqual(report, repeated)
+            assert_closed(self, report)
             # AGENTEE-384: a fixed owner is never moved; its saving is a named owner decision.
             fixed = reserve.report(facts, policy, fab)
             reserve.alternatives(facts, {**policy, 'fixed_refs': ['J3']}, fab, fixed, {})
@@ -245,6 +326,7 @@ class NativeAreaTests(unittest.TestCase):
             self.assertEqual(decision['decision_required']['saving_mm2'], [600, 1])
             self.assertEqual(decision['decision_required']['current_position_nm'], [45*MM, 32*MM])
             self.assertEqual(decision['fixed_source']['declared_by'], ['policy fixed_refs'])
+            assert_closed(self, fixed)
             # A rigid block moves as one: here the block is J3 alone.
             rigid = reserve.report(facts, policy, fab)
             reserve.alternatives(facts, policy, fab, rigid,
@@ -254,6 +336,7 @@ class NativeAreaTests(unittest.TestCase):
             self.assertEqual(moved['status'], 'geometry_qualified_native_unverified')
             self.assertEqual(moved['rigid_block'], {'block': 'card', 'anchor': 'J3', 'references': ['J3']})
             self.assertEqual(moved['saving_mm2'], [600, 1])
+            assert_closed(self, rigid)
             # Native saved second board, rather than a transformed fact masquerading as one.
             fp.SetPosition(k.VECTOR2I(0, 32*MM)); k.SaveBoard(str(path), board)
             edge = reserve.report(extract(path), policy, reserve.fabrication_outlines(path))
@@ -416,10 +499,15 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
         unknown = reserve.unmeasured(facts['board_sha256'], 'offline_unsaved_plan', 'no saved board')
         run, _, _ = self.generic_scope(unknown, board_text)
         self.assertEqual(build_packet(run, [], 'ee384')['reserved_area']['record']['status'], 'unknown')
-        r = copy.deepcopy(valid); r['sides']['F']['owners'] = [{'owner': 'X', 'status': 'unknown', 'reason': 'r'}]
+        r = copy.deepcopy(valid); r['sides']['F']['owners'] = [
+            {'owner': 'X', 'kind': 'declared_obstacle', 'side': 'F', 'status': 'unknown', 'reason': 'r'}]
         with self.assertRaisesRegex(ValueError, 'owner is unknown'):
             reserve.validate(r)
         r['sides']['F'].update(status='unknown', reason='unmeasured owners'); r['status'] = 'unknown'
+        with self.assertRaisesRegex(ValueError, 'not allowed side_fraction, union_area_mm2'):
+            reserve.validate(r)
+        for key in ('union_area_mm2', 'side_fraction'):
+            r['sides']['F'].pop(key)
         self.assertIs(reserve.validate(r), r)
 
     def assert_both_ingress_paths(self, record, reason=None):
@@ -450,6 +538,7 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
 
     def test_nested_reserve_evidence_is_validated_before_reviewers(self):
         import hashlib, json
+        from agent_ee import placer
         board_text = '(kicad_pcb (version 20260206) (generator "owned"))\n'
         facts = capture([])
         facts['board_sha256'] = hashlib.sha256(board_text.encode()).hexdigest()
@@ -467,12 +556,12 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
                      'native_attempts': [attempt('unknown', 1), attempt('validated')], 'search_complete': False,
                      'position_nm': [0, 0], 'rotation_deg': 0, 'area_mm2': [0, 1], 'saving_mm2': area,
                      'tested': 4, 'domain': reserve.DOMAIN}
+        fixed_source = {'declared_by': ['policy fixed_refs'], 'provenance': placer.UNDECLARED}
         decision = {**validated, 'status': 'decision_required', 'validation_status': 'native_validated',
-                    'applied': False, 'fixed_source': {'declared_by': ['policy fixed_refs']},
-                    'enforcement': 'owner-fixed pose kept on the proposal',
+                    'applied': False, 'fixed_source': fixed_source, 'enforcement': reserve.FIXED_ENFORCEMENT,
                     'decision_required': {
                         'decision': 'change owner-fixed pose', 'reference': 'lane',
-                        'fixed_source': {'declared_by': ['policy fixed_refs']},
+                        'fixed_source': fixed_source,
                         'current_position_nm': [5, 5], 'current_rotation_deg': 0,
                         'candidate_position_nm': [0, 0], 'candidate_rotation_deg': 0,
                         'saving_mm2': area, 'qualification': 'legal under captured rules'}}
@@ -505,7 +594,7 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
         variants['probe native validated valid saving, unknown witness'] = (
             with_alternative({**probe, 'saving_mm2': [1, 1]}, finding=False), 'alternative')
         r = copy.deepcopy(valid); r['findings'][0]['reserve'].update(status='unknown', area_mm2=[1, 0])
-        variants['finding reserve contradicts measured owner'] = (r, 'carries a measurement')
+        variants['finding reserve contradicts measured owner'] = (r, 'missing reason; not allowed area_mm2')
         # The same defects with side and finding copies kept equal, so the nested validator itself refuses.
         variants['native validated negative saving'] = (
             with_alternative({**validated, 'saving_mm2': [-1, 1]}), 'non-negative')
@@ -538,10 +627,10 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
         variants['geometry-only alternative with native attempts'] = (
             with_alternative({**geometry, 'native_attempts': [attempt('validated')]}), 'geometry-only')
         variants['unknown alternative status word'] = (
-            with_alternative({**validated, 'status': 'legal'}), 'known alternative status')
+            with_alternative({**validated, 'status': 'legal'}), 'alternative status must be one of')
         variants['unknown alternative carrying a saving'] = (
             with_alternative({**validated, 'status': 'unknown', 'qualification': 'hypothetical, unverified'}),
-            'carries no saving')
+            'not allowed area_mm2, position_nm, rotation_deg, saving_mm2')
         variants['unknown alternative with only rejected attempts'] = (
             with_alternative({'status': 'unknown', 'qualification': 'hypothetical, unverified',
                               'search_complete': False, 'tested': 2, 'domain': reserve.DOMAIN,
@@ -562,10 +651,10 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
             with_alternative({**decision, 'native_attempts': [attempt('unknown')]}), 'validated native attempt')
         r = with_alternative(validated)
         r['sides']['F']['owners'][0]['status'] = 'unknown'
-        variants['alternative on an unmeasured owner'] = (r, 'carries a measurement|unmeasured owner|owner is unknown')
+        variants['alternative on an unmeasured owner'] = (r, 'not allowed alternative, area_mm2, side_fraction')
         for key, value, reason in (('owner', 'other', 'disagrees with its side owner'),
-                                   ('kind', 'rule_area', 'disagrees with its side owner'),
-                                   ('id', 'zone', 'disagrees with its side owner'),
+                                   ('kind', 'rule_area', 'missing id, name'),
+                                   ('id', 'zone', 'not allowed id'),
                                    ('side', 'B', 'disagrees with its side owner'),
                                    ('kind', 'pass', 'kind must be one of')):
             r = copy.deepcopy(valid); r['findings'][0]['reserve'][key] = value
@@ -577,6 +666,53 @@ class PacketCostTests(provenance_tests.ProvenanceFixture, unittest.TestCase):
         for label, (record, reason) in variants.items():
             with self.subTest(label):
                 self.assert_both_ingress_paths(record, reason)
+
+    def test_closed_allow_list_refuses_review_probe_variants_on_both_paths(self):
+        """Third-review probe: unsearched, none_found and unknown alternatives carry no
+        selected-pose measurement and no legal qualification, on either packet path."""
+        import hashlib, json
+        board_text = '(kicad_pcb (version 20260206) (generator "owned"))\n'
+        facts = capture([])
+        facts['board_sha256'] = hashlib.sha256(board_text.encode()).hexdigest()
+        valid = json.loads(json.dumps(reserve.report(facts, request(obstacles=[
+            {'id': 'lane', 'side': 'F', 'polygons': [rectangle(0, 0, 20, 10)]}]), {})))
+
+        def with_alternative(alternative):
+            record = copy.deepcopy(valid)
+            record['sides']['F']['owners'][0]['alternative'] = copy.deepcopy(alternative)
+            record['findings'][0]['reserve']['alternative'] = copy.deepcopy(alternative)
+            return record
+
+        unknown_attempt = {'position_nm': [0, 0], 'rotation_deg': 0,
+                           'validation': {'status': 'unknown', 'qualification': reserve.QUALIFICATION['unknown']}}
+        bases = {status: {'status': status, 'reason': 'fixture'}
+                 for status in ('not_searched', 'no_cheaper_contained_pose')}
+        bases['none_found'] = {'status': 'none_found', 'reason': 'fixture', 'tested': 1, 'search_complete': False,
+                               'domain': reserve.DOMAIN, 'native_attempts': []}
+        bases['unknown'] = {'status': 'unknown', 'reason': 'fixture', 'tested': 1, 'search_complete': False,
+                            'domain': reserve.DOMAIN, 'native_attempts': [unknown_attempt],
+                            'qualification': 'hypothetical, unverified'}
+        for status, base in bases.items():
+            with self.subTest(accepted=status):
+                self.assert_both_ingress_paths(with_alternative(base))
+                assert_closed(self, with_alternative(base))
+            with self.subTest(status=status, defect='malformed area'):
+                self.assert_both_ingress_paths(with_alternative({**base, 'area_mm2': [-1, 0]}),
+                                               'not allowed area_mm2')
+            if status != 'unknown':
+                with self.subTest(status=status, defect='legal qualification without validation'):
+                    self.assert_both_ingress_paths(
+                        with_alternative({**base, 'qualification': 'legal under captured rules'}),
+                        'not allowed qualification')
+        legal_unknown = {**bases['unknown'], 'qualification': 'legal under captured rules'}
+        with self.subTest(status='unknown', defect='legal qualification'):
+            self.assert_both_ingress_paths(with_alternative(legal_unknown), "qualified 'hypothetical, unverified'")
+        for status in bases:
+            for key, value in (('saving_mm2', [1, 1]), ('position_nm', [0, 0]), ('rotation_deg', 0),
+                               ('decision_required', {})):
+                with self.subTest(status=status, smuggled=key):
+                    self.assert_both_ingress_paths(with_alternative({**bases[status], key: value}),
+                                                   f'not allowed {key}')
 
     def test_uncaptured_scope_board_never_binds_a_reserve(self):
         import json
@@ -681,7 +817,7 @@ class NativeAlternativeTests(unittest.TestCase):
         costs = reserve.report(facts, self.policy, fab)
         validator = NativeAlternatives(self.source, self.root / name, facts, self.policy, {})
         reserve.alternatives(facts, self.policy, fab, costs, {}, validator)
-        validated(costs)
+        assert_closed(self, costs)
         return next(r for r in costs['sides']['B']['owners']
                     if r['kind'] == 'rule_area' and r['owner'] == 'J3'), validator
 
@@ -860,7 +996,7 @@ class NativeAlternativeTests(unittest.TestCase):
         output.parent.mkdir()
         netlist = b'<export><components><comp ref="J3"/></components><nets/></export>'
         result = _evaluate_proposal(k.LoadBoard(str(self.source)), output, plan, netlist, facts, self.source)
-        validated(result['reserved_area'])
+        assert_closed(self, result['reserved_area'])
         lane = next(r for r in result['reserved_area']['sides']['B']['owners']
                     if r['kind'] == 'rule_area' and r['owner'] == 'J3')
         self.assertEqual(lane['alternative']['status'], 'native_validated', lane)
@@ -911,7 +1047,7 @@ class NativeAlternativeTests(unittest.TestCase):
         output.parent.mkdir()
         netlist = b'<export><components><comp ref="J3"/></components><nets/></export>'
         result = _evaluate_proposal(k.LoadBoard(str(self.source)), output, plan, netlist, facts, self.source)
-        validated(result['reserved_area'])
+        assert_closed(self, result['reserved_area'])
         saved = next(r for r in result['reserved_area']['sides']['B']['owners']
                      if r['kind'] == 'rule_area' and r['owner'] == 'J3')
         self.assertEqual(saved['alternative']['status'], 'decision_required', saved)
@@ -952,7 +1088,7 @@ class NativeAlternativeTests(unittest.TestCase):
         costs = reserve.report(facts, self.policy, fab)
         validator = NativeAlternatives(self.source, self.root / 'rigid', facts, self.policy, plan)
         reserve.alternatives(facts, self.policy, fab, costs, plan, validator)
-        validated(costs)
+        assert_closed(self, costs)
         lane = next(r for r in costs['sides']['B']['owners'] if r['kind'] == 'rule_area')
         alternative = lane['alternative']
         self.assertEqual(alternative['status'], 'native_validated', alternative)
@@ -998,7 +1134,7 @@ class NativeAlternativeTests(unittest.TestCase):
         costs = reserve.report(facts, self.policy, fab)
         validator = NativeAlternatives(self.source, self.root / 'rigid-rejected', facts, self.policy, plan)
         reserve.alternatives(facts, self.policy, fab, costs, plan, validator)
-        validated(costs)
+        assert_closed(self, costs)
         lane = next(r for r in costs['sides']['B']['owners'] if r['kind'] == 'rule_area')
         alternative = lane['alternative']
         self.assertEqual(alternative['status'], 'none_found', alternative)
