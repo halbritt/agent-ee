@@ -1788,6 +1788,9 @@ Multi-member components use [joint cluster search](placer.md#joint-locality-clus
 after per-part search fails, with tightest-limit-first peers and only the remaining
 step/time budget. Joint refusals retain the legacy typed failure and cluster
 diagnostics in `search.joint_cluster_attempt`; only regraded completions replace it.
+AGENTEE-347 regressions exercise complete-proposal locality rejection on both
+engines, whole-result legacy preservation under the cluster guard, and a seeded
+25-case differential with independently regraded joint completions.
 The per-rotation cap of 256 distinct locality origins refuses with
 `packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
 `locality target budget exhausted`; it never truncates targets. Runner heartbeats
