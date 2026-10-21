@@ -1,0 +1,962 @@
+"""Two-level placement, stage B (AGENTEE-340): rigid blocks arranged as macros, then residual packing.
+
+Every derived block needs one admitted ``agent-ee.block-candidate/2`` (search-derived
+or a cited library layout alike). Each block moves as one rigid macro: four quarter
+turns, its captured side, the board outline, edge margin, fixed parts, obstacles,
+rule areas and drilled-pad reservations of the unchanged placer. Block-level rules
+(declared keep-outs, opposite-side shadows, no block over a fixed part, a thermal
+spread limit) are hard only with a citation; unsourced ones are advisory and are
+graded and reported, never used to prune. The search is a deterministic ranked first
+fit with conflict-directed backjumping over the blocks, with typed exhaustion. The
+residual parts are then packed by ``placer.pack`` with every block member fixed, and
+the complete plan is graded as one board. See docs/blocks.md.
+"""
+import argparse
+import bisect
+import copy
+import hashlib
+import json
+import math
+import sys
+import time
+from pathlib import Path
+
+from . import blocks, electrical_locality, placement_groups, placer
+from .catalog import strict_json
+from .footprint_library import digest
+from .native_netlist import read_native_inventory, read_sheet_names
+from .placement import intersection_area, overhang_bands, qualified_polygons
+
+POLICY = 'agent-ee.block-arrangement/1'
+STRATEGY = 'ranked-first-fit-conflict-backjump/1'
+TERMS = ('pad-locality', 'inter-block-wire', 'thermal-spread')
+DEFAULT_OBJECTIVE = {'terms': list(TERMS), 'provenance': {
+    'enforcement': 'advisory', 'reason': 'default lexicographic order; no sourced objective weights'}}
+POLICY_KEYS = frozenset(('schema', 'step_budget', 'search_timeout_s', 'priority_blocks', 'objective', 'thermal',
+                         'keepouts', 'no_stacking', 'no_block_over_fixed'))
+
+
+def _provenance(value, label):
+    """``hard`` needs a citation; anything unsourced is ``advisory`` (AGENTEE-331/337)."""
+    blocks._keys(value, {'enforcement'}, {'citation', 'reason'}, label=label + ' provenance')
+    for key in ('citation', 'reason'):
+        if key in value:
+            blocks._text(value[key], f'{label} {key}')
+    if value['enforcement'] == 'hard' and 'citation' not in value:
+        raise ValueError(f'{label}: a hard rule needs a citation; an unsourced rule is advisory')
+    if value['enforcement'] not in ('hard', 'advisory'):
+        raise ValueError(f'{label}: enforcement must be hard or advisory')
+    return value['enforcement']
+
+
+def _refs(value, label, known):
+    refs = blocks._texts(value, label)
+    unknown = sorted(set(refs) - known)
+    if unknown:
+        raise ValueError(f"{label}: unknown references {', '.join(unknown)}")
+    return refs
+
+
+def validate_policy(document, block_ids, refs):
+    """The arrangement policy; raises ValueError. Returns it with defaults filled in."""
+    if not isinstance(document, dict) or document.get('schema') != POLICY:
+        raise ValueError(f'expected {POLICY}')
+    blocks._keys(document, {'schema', 'step_budget'}, POLICY_KEYS - {'schema', 'step_budget'},
+                 label='arrangement policy')
+    if type(document['step_budget']) is not int or not 1 <= document['step_budget'] <= 1_000_000:
+        raise ValueError('arrangement step budget must be 1..1000000')
+    timeout = document.get('search_timeout_s')
+    if 'search_timeout_s' in document and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                                           or not 0 < timeout <= 86400):
+        raise ValueError('search_timeout_s must be positive and at most 86400 seconds')
+    priority = blocks._texts(document.get('priority_blocks', []), 'priority blocks')
+    if set(priority) - set(block_ids):
+        raise ValueError('priority blocks must be derived block ids')
+    objective = document.get('objective', DEFAULT_OBJECTIVE)
+    blocks._keys(objective, {'terms', 'provenance'}, label='objective')
+    terms = blocks._texts(objective['terms'], 'objective terms')
+    if not terms or set(terms) - set(TERMS):
+        raise ValueError('objective terms must be a nonempty order of ' + ', '.join(TERMS))
+    _provenance(objective['provenance'], 'objective')
+    if 'thermal' in document:
+        thermal = blocks._keys(document['thermal'], {'sources', 'provenance'}, {'min_distance_nm'}, label='thermal')
+        if len(_refs(thermal['sources'], 'thermal sources', refs)) < 2:
+            raise ValueError('thermal spread needs at least two sources')
+        if 'min_distance_nm' in thermal and (type(thermal['min_distance_nm']) is not int
+                                             or thermal['min_distance_nm'] <= 0):
+            raise ValueError('thermal min_distance_nm must be a positive integer')
+        _provenance(thermal['provenance'], 'thermal')
+    ids = set()
+    for keepout in document.get('keepouts', []):
+        blocks._keys(keepout, {'id', 'side', 'polygons', 'provenance'}, label='keep-out')
+        blocks._text(keepout['id'], 'keep-out id')
+        if keepout['id'] in ids:
+            raise ValueError(f"duplicate keep-out id {keepout['id']}")
+        ids.add(keepout['id'])
+        if keepout['side'] not in ('F', 'B'):
+            raise ValueError('keep-out side must be F or B')
+        qualified_polygons({'status': 'proven', 'polygons': keepout['polygons']})
+        _provenance(keepout['provenance'], 'keep-out ' + keepout['id'])
+    if 'no_stacking' in document:
+        rule = blocks._keys(document['no_stacking'], {'references', 'margin_nm', 'provenance'}, label='no_stacking')
+        if not _refs(rule['references'], 'no_stacking references', refs):
+            raise ValueError('no_stacking needs references')
+        if type(rule['margin_nm']) is not int or rule['margin_nm'] < 0:
+            raise ValueError('no_stacking margin_nm must be a nonnegative integer')
+        _provenance(rule['provenance'], 'no_stacking')
+    if 'no_block_over_fixed' in document:
+        rule = blocks._keys(document['no_block_over_fixed'], {'exempt_blocks', 'provenance'},
+                            label='no_block_over_fixed')
+        if set(blocks._texts(rule['exempt_blocks'], 'exempt blocks')) - set(block_ids):
+            raise ValueError('exempt blocks must be derived block ids')
+        _provenance(rule['provenance'], 'no_block_over_fixed')
+    return {**document, 'objective': objective, 'priority_blocks': priority}
+
+
+def _hard(rule):
+    return rule is not None and rule['provenance']['enforcement'] == 'hard'
+
+
+def bind_boundary(document, capture, mapping=None, declared=None):
+    """Each candidate net role bound to the board net its pins land on.
+
+    A boundary role must reach a footprint outside the block. On the candidate's own
+    board the recorded net name must be the board net; a mapped (library) candidate
+    must declare the target net of every boundary role in ``declared``. Returns
+    ``{'roles': [...], 'problems': [...]}``.
+    """
+    rows = {r['reference']: r for r in document['members']}
+    mapping = {r: r for r in rows} if mapping is None else mapping
+    identity = all(k == v for k, v in mapping.items())
+    board = {fp['ref']: fp for fp in capture['footprints']}
+    members = set(mapping.values())
+    outside = {}
+    for fp in capture['footprints']:
+        if fp['ref'] not in members:
+            for pad in fp['pads']:
+                if pad.get('net'):
+                    outside.setdefault(pad['net'], set()).add(fp['ref'])
+    roles, problems = {}, []
+    for ref in sorted(rows, key=blocks._natural):
+        nets = blocks._pad_nets(board[mapping[ref]])
+        for pin in rows[ref]['pins']:
+            if pin['role'] is None:
+                continue
+            net = nets.get(pin['pad'], '')
+            record = roles.setdefault(pin['role'], {'role': pin['role'], 'net': net, 'boundary': pin['boundary'],
+                                                    'recorded_net': pin['net']})
+            if record['net'] != net:
+                problems.append({'kind': 'net_role_split', 'role': pin['role'], 'nets': sorted({record['net'], net})})
+    declared = {} if declared is None else declared
+    if not isinstance(declared, dict) or any(not isinstance(v, str) for v in declared.values()):
+        raise ValueError('boundary_nets must map roles to net names')
+    unknown = sorted(set(declared) - {r for r, v in roles.items() if v['boundary']})
+    if unknown:
+        problems.append({'kind': 'boundary_unknown_role', 'roles': unknown})
+    out = []
+    for role in sorted(roles, key=lambda r: int(r[1:])):
+        record = roles[role]
+        reached = sorted(outside.get(record['net'], ()), key=blocks._natural)
+        if record['boundary'] != bool(reached):
+            problems.append({'kind': 'boundary_flag', 'role': role, 'net': record['net'], 'outside': reached})
+        if record['boundary']:
+            expected = declared.get(role, record['recorded_net'] if identity else None)
+            if expected is None:
+                problems.append({'kind': 'boundary_undeclared', 'role': role, 'net': record['net']})
+            elif expected != record['net']:
+                problems.append({'kind': 'boundary_net_mismatch', 'role': role, 'expected': expected,
+                                 'actual': record['net']})
+        out.append({'role': role, 'net': record['net'], 'boundary': record['boundary'], 'outside': reached})
+    return {'roles': out, 'problems': problems}
+
+
+def admit_entry(entry, capture, inventory, derivation, policy):
+    """Admit one arrangement input: ``{'candidate', optional 'mapping', 'boundary_nets'}``.
+
+    Without a mapping this is ``blocks.admit`` on the candidate's own board. With one
+    (a library or reused layout), identity is ``blocks.match`` with the mapping, the
+    mapped members must be one derived block with the same anchor, and the frame
+    poses are re-graded with the target board's own footprints and isolated policy.
+    Either way every boundary role is bound to its board net.
+    """
+    blocks._keys(entry, {'candidate'}, {'mapping', 'boundary_nets'}, label='arrangement candidate')
+    document = entry['candidate']
+    mapping = entry.get('mapping')
+    if mapping is None:
+        admission = blocks.admit(document, capture, inventory, derivation, policy)
+        if admission['status'] != 'admitted':
+            return None, admission['problems']
+        block = next(b for b in derivation['blocks'] if b['id'] == document['block_id'])
+    else:
+        result = blocks.match(document, capture, inventory, mapping)
+        if result['status'] != 'match':
+            return None, [{'kind': 'identity', 'mismatches': result['mismatches']}]
+        found = [b for b in derivation['blocks'] if set(b['references']) == set(mapping.values())]
+        if len(found) != 1:
+            return None, [{'kind': 'block_members', 'actual': sorted(mapping.values(), key=blocks._natural)}]
+        block = found[0]
+        anchor, sub, _, _ = blocks._isolate(capture, policy, block)
+        if mapping[document['frame']['anchor']] != anchor:
+            return None, [{'kind': 'frame_anchor', 'expected': anchor,
+                           'actual': mapping[document['frame']['anchor']]}]
+        board = {fp['ref']: fp for fp in capture['footprints']}
+        framed = [placer.transform(board[mapping[r['reference']]], r['pose']['position_nm'], r['pose']['rotation_deg'])
+                  for r in sorted(document['members'], key=lambda r: blocks._natural(mapping[r['reference']]))]
+        _, grade, witness = blocks._evidence(capture, framed, sub)
+        failed = [k for k, g in grade.items() if g and g['status'] != 'pass'] + (
+            ['witness'] if witness['status'] != 'pass' else [])
+        if failed:
+            return None, [{'kind': 'evidence_failed', 'evidence': failed}]
+    binding = bind_boundary(document, capture, mapping, entry.get('boundary_nets'))
+    if binding['problems']:
+        return None, binding['problems']
+    mapping = mapping or {r['reference']: r['reference'] for r in document['members']}
+    poses = {mapping[r['reference']]: r['pose'] for r in document['members']}
+    return {'block': block['id'], 'anchor': mapping[document['frame']['anchor']], 'poses': poses,
+            'mapping': mapping, 'binding': binding['roles'], 'candidate_sha256': digest(document),
+            'provenance': document['provenance'], 'deferred': document['deferred']}, []
+
+
+def _opposite(side):
+    return 'B' if side == 'F' else 'F'
+
+
+def _shadow(fp, margin):
+    """The mounting-side courtyard box, grown by the margin, on the opposite side."""
+    x0, y0, x1, y1 = placer.boxes(fp)[fp['side']]
+    x0, y0, x1, y1 = x0 - margin, y0 - margin, x1 + margin, y1 + margin
+    return {'side': _opposite(fp['side']), 'polygons': [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]}
+
+
+def _overlaps(fp, entries):
+    """Positive-area overlap of a courtyard with an exact entry on the same side."""
+    for side, courtyard in fp['courtyards'].items():
+        for entry in entries:
+            if entry['side'] == side and any(intersection_area(c, p) > 0 for c in courtyard['polygons']
+                                             for p in entry['polygons']):
+                return True
+    return False
+
+
+def _through(fp, entries):
+    """Positive-area overlap of a mounting-side courtyard with entries on the opposite side."""
+    side = fp['side']
+    return _overlaps({'courtyards': {side: fp['courtyards'][side]}},
+                     [dict(e, side=side) for e in entries if e['side'] == _opposite(side)])
+
+
+def _strip(fp):
+    return {k: v for k, v in fp.items() if not k.startswith('_')}
+
+
+def _macro(block_id, members):
+    """One rigid footprint-like object from the members at their frame poses."""
+    courtyards, keepouts, copper, holes, geometry = {}, [], [], [], False
+    for fp in members:
+        for side, courtyard in fp['courtyards'].items():
+            courtyards.setdefault(side, {'status': 'proven', 'polygons': []})['polygons'].extend(
+                copy.deepcopy(courtyard['polygons']))
+        keepouts += copy.deepcopy(fp.get('packing_keepouts', []))
+        if 'packing_pad_geometry' in fp:
+            geometry = True
+            copper += copy.deepcopy(fp['packing_pad_geometry']['copper'])
+            holes += copy.deepcopy(fp['packing_pad_geometry']['holes'])
+    macro = {'ref': block_id, 'side': members[0]['side'], 'position_nm': [0, 0], 'rotation_deg': 0,
+             'courtyards': courtyards, 'packing_keepouts': keepouts, 'pads': []}
+    if geometry:
+        macro['packing_pad_geometry'] = {'status': 'proven', 'copper': copper, 'holes': holes}
+    return placer.transform(macro, [0, 0], 0)
+
+
+def _shift(fp, dx, dy):
+    """A rotated-at-origin macro or member translated rigidly, with its reservation caches.
+
+    The same coordinates as ``placer.transform`` at the translated origin, without
+    copying pads or pad geometry; the search only reads courtyards, keep-outs and caches.
+    """
+    def move(poly):
+        return [[x + dx, y + dy] for x, y in poly]
+
+    def boxed(entries):
+        return [((x0 + dx, y0 + dy, x1 + dx, y1 + dy), move(poly)) for (x0, y0, x1, y1), poly in entries]
+    out = {'ref': fp['ref'], 'side': fp['side'], 'rotation_deg': fp['rotation_deg'],
+           'position_nm': [fp['position_nm'][0] + dx, fp['position_nm'][1] + dy],
+           'courtyards': {side: {'status': 'proven', 'polygons': [move(poly) for poly in c['polygons']]}
+                          for side, c in fp['courtyards'].items()},
+           'packing_keepouts': [{'side': k['side'], 'polygons': [move(poly) for poly in k['polygons']]}
+                                for k in fp.get('packing_keepouts', [])], 'pads': []}
+    for key in ('_packing_holes', '_packing_targets'):
+        if key in fp:
+            out[key] = boxed(fp[key])
+    return out
+
+
+def _reach(fp):
+    """Box of every drilled-pad reservation and target; disjoint reaches cannot conflict."""
+    entries = fp.get('_packing_holes', []) + fp.get('_packing_targets', [])
+    if not entries:
+        return None
+    return (min(b[0] for b, _ in entries), min(b[1] for b, _ in entries),
+            max(b[2] for b, _ in entries), max(b[3] for b, _ in entries))
+
+
+def _apart(a, b):
+    return a is None or b is None or a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
+
+
+def _indexed(entries):
+    """Per side: boxes sorted by left edge, their left edges and the widest box."""
+    out = {}
+    for side, box, owner in entries:
+        out.setdefault(side, []).append((box, owner))
+    return {side: (sorted(rows), [b[0] for b, _ in sorted(rows)], max(b[2] - b[0] for b, _ in rows))
+            for side, rows in out.items()}
+
+
+def _sweep(boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed, checkpoint):
+    """Positions where every member box clears every reserved member box by the gap.
+
+    ``placer._unreserved`` for a candidate made of many boxes: a reserved box that a
+    member box meets in x blocks the open y interval (b0 - gap - y1, b1 + gap - y0),
+    and its owner joins ``conflicts``. A rectilinear member slab overlapping a solid
+    slab of a fixed courtyard or obstacle blocks the position; one nearer than the
+    gap marks it ``doomed`` (the exact obstacle test would reject it).
+    """
+    reserved, solid = _indexed(reserved), _indexed([(side, box, None) for side, box in solid])
+
+    def near(index, side, lo, hi, reach):
+        rows, lefts, width = index.get(side, ((), (), 0))
+        for k in range(bisect.bisect_right(lefts, lo - reach - width), bisect.bisect_left(lefts, hi + reach)):
+            box, owner = rows[k]
+            if box[2] + reach > lo:
+                yield box, owner
+    for x in xs:
+        checkpoint()
+        blocked, close = [], []
+        for side, (x0, y0, x1, y1) in boxes:
+            for (a0, b0, a1, b1), owner in near(reserved, side, x0 + x, x1 + x, gap):
+                if not (x1 + x + gap <= a0 or a1 + gap <= x0 + x):
+                    i, j = bisect.bisect_right(ys, b0 - gap - y1), bisect.bisect_left(ys, b1 + gap - y0)
+                    if i < j:
+                        blocked.append((i, j))
+                        conflicts.add(owner)
+        for side, (r0, s0, r1, s1) in rectangles:
+            for (a0, b0, a1, b1), _ in near(solid, side, r0 + x, r1 + x, gap):
+                if not (r1 + x <= a0 or a1 <= r0 + x):
+                    i, j = bisect.bisect_right(ys, b0 - s1), bisect.bisect_left(ys, b1 - s0)
+                    if i < j:
+                        blocked.append((i, j))
+                dx = max(0, a0 - r1 - x, r0 + x - a1)
+                if gap and dx < gap:
+                    reach = math.isqrt(gap * gap - dx * dx - 1)
+                    i, j = bisect.bisect_left(ys, b0 - s1 - reach), bisect.bisect_right(ys, b1 - s0 + reach)
+                    if i < j:
+                        close.append((i, j))
+        close = {k for i, j in close for k in range(i, j)}
+        free, start = [], 0
+        for i, j in sorted(blocked):
+            free.extend(range(start, i))
+            start = max(start, j)
+        free.extend(range(start, len(ys)))
+        for k in free:
+            if k in close:
+                doomed.add((x, ys[k]))
+            yield x, ys[k]
+
+
+class _Stopped(Exception):
+    def __init__(self, status, reason):
+        super().__init__(reason)
+        self.status, self.reason = status, reason
+
+
+class _Arrangement:
+    """Ranked macro candidates over the current partial arrangement."""
+
+    def __init__(self, work, policy, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat):
+        self.policy, self.arrangement, self.heartbeat = policy, arrangement, heartbeat
+        self.outline, self.keepouts = outline, keepouts
+        self.margin = placer._edge_margin_nm(policy)
+        self.gap, self.grounds = policy['gap_nm'], set(policy['ground_nets'])
+        self.budget, self.steps = arrangement['step_budget'], 0
+        self.current, self.backjumps = None, 0
+        self.started = time.monotonic()
+        self.deadline = (self.started + arrangement['search_timeout_s'] if 'search_timeout_s' in arrangement
+                         else None)
+        self.last_heartbeat = self.started
+        self.by_ref = {fp['ref']: fp for fp in work['footprints']}
+        self.fixed = fixed
+        self.fixed_fps = placed
+        self.exact = exact
+        self.solid = [(o['side'], slab) for o in exact for poly in o['polygons'] for slab in placer._slabs(poly) or ()]
+        self.owner = {ref: a['block'] for a in admitted.values() for ref in a['poses']}
+        self.frames, self.macros, self.rotated = {}, {}, {}
+        for bid, entry in admitted.items():
+            members = [placer.transform(self.by_ref[r], entry['poses'][r]['position_nm'],
+                                        entry['poses'][r]['rotation_deg'])
+                       for r in sorted(entry['poses'], key=blocks._natural)]
+            self.frames[bid] = members
+            self.macros[bid] = _macro(bid, members)
+        groups = placement_groups.validate(policy['groups']) if 'groups' in policy else []
+        self.groups = placement_groups.membership(groups)
+        self.anchored = {}
+        for ref, group in self.groups.items():
+            if 'reference' in group.get('anchor', {}):
+                self.anchored.setdefault(group['anchor']['reference'], []).append((ref, group))
+        self.locality = (electrical_locality.PlacementIndex(policy['electrical_locality'])
+                         if 'electrical_locality' in policy else None)
+        stacking = arrangement.get('no_stacking')
+        self.stacking = set(stacking['references']) if _hard(stacking) else set()
+        self.stack_margin = stacking['margin_nm'] if stacking else 0
+        over = arrangement.get('no_block_over_fixed')
+        self.over_fixed = (set(admitted) - set(over['exempt_blocks'])) if _hard(over) else set()
+        self.fixed_courtyards = [placer._exact(side, c['polygons']) for fp in placed
+                                 for side, c in sorted(fp['courtyards'].items())]
+        thermal = arrangement.get('thermal')
+        self.sources = set(thermal['sources']) if thermal else set()
+        self.thermal_min = (thermal['min_distance_nm'] if _hard(thermal) and 'min_distance_nm' in thermal else None)
+        self.terms = arrangement['objective']['terms']
+        # Partial state.
+        self.placed_blocks, self.placed_fps, self.reserved = [], list(placed), []
+        self.member_exact, self.shadow_exact = [], []
+        self.positions = {fp['ref']: fp['position_nm'] for fp in placed}
+        self.peers, self.reach = {}, {}
+        for fp in placed:
+            self._push_fp(fp)
+
+    def checkpoint(self):
+        now = time.monotonic()
+        if self.heartbeat is not None and now - self.last_heartbeat >= 5:
+            self.heartbeat({'status': 'arranging', 'steps_used': self.steps, 'blocks_placed': len(self.placed_blocks),
+                            'block': self.current, 'backjumps': self.backjumps, 'elapsed_s': now - self.started})
+            self.last_heartbeat = now
+        if self.deadline is not None and now >= self.deadline:
+            raise _Stopped('arrangement_budget_exhausted', 'wall-time arrangement budget exhausted')
+
+    def _push_fp(self, fp):
+        self.reach[fp['ref']] = _reach(fp)
+        if self.locality is not None:
+            self.locality.push(fp)
+        self.positions[fp['ref']] = fp['position_nm']
+        for pad in fp['pads']:
+            if pad.get('net'):
+                self.peers.setdefault(pad['net'], []).append(tuple(pad['position_nm']))
+
+    def members_at(self, bid, position, rotation):
+        turns = rotation // 90
+        return [placer.transform(fp, [position[0] + p[0], position[1] + p[1]], (fp['rotation_deg'] + rotation) % 360)
+                for fp in self.frames[bid] for p in [placer.rotate(fp['position_nm'], turns)]]
+
+    def push(self, bid, position, rotation, proposed):
+        members = self.members_at(bid, position, rotation)
+        self.placed_blocks.append({'block': bid, 'position_nm': list(position), 'rotation_deg': rotation,
+                                   'members': members})
+        for fp in members:
+            self.reserved.extend((side, box, bid) for side, box in sorted(placer.boxes(fp).items()))
+            self.placed_fps.append(fp)
+            self._push_fp(fp)
+            self.member_exact.extend((bid, placer._exact(side, c['polygons'])) for side, c in sorted(fp['courtyards'].items()))
+            if fp['ref'] in self.stacking:
+                shadow = _shadow(fp, self.stack_margin)
+                self.shadow_exact.append((bid, placer._exact(shadow['side'], shadow['polygons'])))
+
+    def pop(self):
+        record = self.placed_blocks.pop()
+        bid = record['block']
+        self.reserved = [r for r in self.reserved if r[2] != bid]
+        self.member_exact = [e for e in self.member_exact if e[0] != bid]
+        self.shadow_exact = [e for e in self.shadow_exact if e[0] != bid]
+        for fp in reversed(record['members']):
+            self.placed_fps.pop()
+            if self.locality is not None:
+                self.locality.pop(fp['ref'])
+            del self.positions[fp['ref']]
+            for pad in reversed(fp['pads']):
+                if pad.get('net'):
+                    self.peers[pad['net']].pop()
+                    if not self.peers[pad['net']]:
+                        del self.peers[pad['net']]
+
+    def _locality(self, members):
+        """Cross-block pairs whose peer is placed, as one translated evaluator."""
+        if self.locality is None:
+            return electrical_locality.CandidateLocality([])
+        pairs = []
+        for fp in members:
+            for own, peer, limit in self.locality.pairs.get(fp['ref'], ()):
+                if peer['reference'] in self.positions:
+                    offset = electrical_locality.resolve([fp], own)
+                    target = self.locality.positions[peer['reference']][self.locality.key(peer)]
+                    pairs.append((offset, target, limit, {fp['ref'], peer['reference']}))
+        return electrical_locality.CandidateLocality(pairs)
+
+    def _group_targets(self, members):
+        points = []
+        for fp in members:
+            group = self.groups.get(fp['ref'])
+            if group is None:
+                continue
+            point = placement_groups.anchor_point(group, self.positions) if 'anchor' in group else None
+            if point is not None:
+                ox, oy = fp['position_nm']
+                d = group['max_distance_nm']
+                points += [(point[0] - ox + dx, point[1] - oy + dy) for dx, dy in ((0, 0), (-d, 0), (d, 0),
+                                                                                   (0, -d), (0, d))]
+            for poly in group.get('region', {}).get('polygons', []):
+                points += [(p[0] - fp['position_nm'][0], p[1] - fp['position_nm'][1]) for p in poly]
+        return points
+
+    def ranked(self, bid, conflicts):
+        """Admissible-by-box candidates in rank order; box blockers join ``conflicts``."""
+        self.checkpoint()
+        macro = self.macros[bid]
+        anchors = [(side, box) for side, box, _ in self.reserved] + [(o['side'], o['box']) for o in self.exact]
+        anchors += self.solid
+        anchors += placer._keepout_boxes(self.keepouts + [a for f in self.placed_fps for a in f.get('packing_keepouts', [])])
+        window = placer._window(self.outline, self.margin, None, ())
+        ranked = []
+        for rotation in (0, 90, 180, 270):
+            members = self.members_at(bid, [0, 0], rotation)
+            at_origin = placer.transform(macro, [0, 0], rotation)
+            self.rotated[bid, rotation] = at_origin, members
+            member_boxes = [(side, box) for fp in members for side, box in sorted(placer.boxes(fp).items())]
+            slabs = [(side, slab) for fp in members for side, c in sorted(fp['courtyards'].items())
+                     for poly in c['polygons'] for slab in placer._slabs(poly) or ()]
+            evaluator = self._locality(members)
+            targets = evaluator.targets() + self._group_targets(members)
+            xs, ys = placer._candidate_axes(macro, rotation, self.outline, anchors, self.gap, self.margin,
+                                            targets, window)
+            pads = [(pad['net'], *pad['position_nm']) for fp in members for pad in fp['pads']
+                    if pad.get('net') and pad['net'] not in self.grounds and pad['net'] in self.peers]
+            sources = [fp['position_nm'] for fp in members if fp['ref'] in self.sources]
+            placed_refs = sorted(r for r in self.sources if r in self.positions)
+            placed_sources = [self.positions[r] for r in placed_refs]
+            doomed = set()
+            limit2 = None if self.thermal_min is None else self.thermal_min ** 2
+            for x, y in _sweep(member_boxes, slabs, xs, ys, self.reserved, self.solid, self.gap, conflicts, doomed,
+                               self.checkpoint):
+                # Exact and cheap: a violating position is dropped here, its blockers recorded.
+                hit, local_cost = evaluator.constraint((x, y))
+                if hit:
+                    conflicts.update({self.owner.get(r) for r in hit} - {None, bid})
+                    continue
+                if limit2 is not None:
+                    near = {r for (sx, sy) in sources for r in placed_refs
+                            if (sx + x - self.positions[r][0]) ** 2 + (sy + y - self.positions[r][1]) ** 2 < limit2}
+                    if near:
+                        conflicts.update({self.owner.get(r) for r in near} - {None, bid})
+                        continue
+                values = {'inter-block-wire': placer._wire_cost([(n, px + x, py + y) for n, px, py in pads],
+                                                                self.peers),
+                          'thermal-spread': -min((((sx + x - a) ** 2 + (sy + y - b) ** 2) for sx, sy in sources
+                                                  for a, b in placed_sources), default=0)}
+                values['pad-locality'] = local_cost
+                ranked.append((*(values[t] for t in self.terms), x, y, rotation, (x, y) in doomed))
+            self.checkpoint()
+        ranked.sort()
+        return ranked
+
+    def blockers(self, bid, proposed, members):
+        """None when every hard predicate admits the macro, else the blocks that blocked it."""
+        hits, reach = set(), _reach(proposed)
+        for fp in self.placed_fps:
+            if not _apart(reach, self.reach[fp['ref']]) and placer._hole_conflict(proposed, fp):
+                hits.add(self.owner.get(fp['ref']))
+        if hits:
+            return hits - {None}
+        if (not placer._fits(proposed, self.outline, self.margin) or placer._near(proposed, self.exact, self.gap)
+                or placer._in_keepouts(proposed, self.keepouts)):
+            return set()
+        hits = {self.owner.get(fp['ref']) for fp in self.placed_fps
+                if placer._in_keepouts(proposed, fp.get('packing_keepouts', []))
+                or placer._in_keepouts(fp, proposed.get('packing_keepouts', []))}
+        if hits:
+            return hits - {None}
+        hits = {owner for owner, entry in self.shadow_exact if placer._near(proposed, [entry], self.gap)}
+        for fp in members:
+            if fp['ref'] in self.stacking:
+                shadow = _shadow(fp, self.stack_margin)
+                own = {'courtyards': {shadow['side']: {'polygons': shadow['polygons']}}}
+                if placer._near(own, self.fixed_courtyards, self.gap):
+                    return set()
+                hits |= {owner for owner, entry in self.member_exact if placer._near(own, [entry], self.gap)}
+        if hits:
+            return hits
+        if bid in self.over_fixed and any(_through(fp, self.fixed_courtyards) for fp in members):
+            return set()
+        positions = dict(self.positions, **{fp['ref']: fp['position_nm'] for fp in members})
+        for fp in members:
+            group = self.groups.get(fp['ref'])
+            if group is not None:
+                if 'region' in group and not placement_groups.admits(fp, {'region': group['region']}, {}):
+                    return set()
+                point = placement_groups.anchor_point(group, positions) if 'anchor' in group else None
+                if point is not None and placement_groups.distance2(fp['position_nm'], point) > \
+                        group['max_distance_nm'] ** 2:
+                    return {self.owner.get(group['anchor'].get('reference'))} - {None, bid}
+            for ref, g in self.anchored.get(fp['ref'], ()):
+                if ref in self.positions and placement_groups.distance2(
+                        self.positions[ref], fp['position_nm']) > g['max_distance_nm'] ** 2:
+                    return {self.owner.get(ref)} - {None}
+        return None
+
+    def candidates(self, bid, conflicts):
+        """Proposed macros in rank order; rejections add their blocking blocks to ``conflicts``."""
+        for *_, x, y, rotation, doomed in self.ranked(bid, conflicts):
+            self.checkpoint()
+            if self.steps == self.budget:
+                raise _Stopped('arrangement_budget_exhausted', 'deterministic arrangement candidate budget exhausted')
+            self.steps += 1
+            if doomed:
+                continue
+            at_origin, members = self.rotated[bid, rotation]
+            proposed = _shift(at_origin, x, y)
+            members = [_shift(fp, x, y) for fp in members]
+            hit = self.blockers(bid, proposed, members)
+            if hit is None:
+                yield [x, y], rotation, proposed
+            else:
+                conflicts |= hit
+
+
+def _order(admitted, by_ref, fixed, priority, grounds):
+    """Declared priorities, then the block sharing most signal nets with what is placed."""
+    nets = {bid: {p['net'] for r in a['poses'] for p in by_ref[r]['pads']
+                  if p.get('net') and p['net'] not in grounds} for bid, a in admitted.items()}
+    area = {bid: sum((b[2] - b[0]) * (b[3] - b[1]) for r in a['poses']
+                     for b in placer.boxes(by_ref[r]).values()) for bid, a in admitted.items()}
+    reached = {p['net'] for r in fixed for p in by_ref[r]['pads'] if p.get('net') and p['net'] not in grounds}
+    order = list(priority)
+    for bid in order:
+        reached |= nets[bid]
+    while len(order) < len(admitted):
+        bid = min((b for b in admitted if b not in order),
+                  key=lambda b: (-len(nets[b] & reached), -area[b], blocks._natural(b)))
+        order.append(bid)
+        reached |= nets[bid]
+    return order
+
+
+def _net_counts(admitted, by_ref, fixed, grounds):
+    """Shared signal nets between every pair of blocks and fixed parts: the block-level wire graph."""
+    owner = {r: a['block'] for a in admitted.values() for r in a['poses']}
+    owner.update({r: r for r in fixed})
+    touch = {}
+    for ref, unit in owner.items():
+        for pad in by_ref[ref]['pads']:
+            if pad.get('net') and pad['net'] not in grounds:
+                touch.setdefault(pad['net'], set()).add(unit)
+    counts = {}
+    for units in touch.values():
+        for a in units:
+            for b in units:
+                if blocks._natural(a) < blocks._natural(b):
+                    counts[(a, b)] = counts.get((a, b), 0) + 1
+    return [{'between': list(k), 'nets': v} for k, v in sorted(counts.items(), key=lambda kv: (
+        blocks._natural(kv[0][0]), blocks._natural(kv[0][1])))]
+
+
+def grade_rules(capture, arrangement, block_refs, fixed):
+    """Block-level rules on a complete placement: every rule graded, hard and advisory.
+
+    ``block_refs`` maps each block member to its block. Returns rows with
+    ``status`` ``pass`` or ``defect``; a hard defect fails the plan, an advisory one
+    is reported only.
+    """
+    fps = {fp['ref']: fp for fp in capture['footprints']}
+    rows = []
+
+    def row(rule, enforcement, findings, **extra):
+        rows.append({'rule': rule, 'enforcement': enforcement, 'status': 'defect' if findings else 'pass',
+                     'findings': findings, **extra})
+    for keepout in arrangement.get('keepouts', []):
+        entry = {'side': keepout['side'], 'polygons': keepout['polygons']}
+        found = sorted((r for r, fp in fps.items() if _overlaps(fp, [entry])), key=blocks._natural)
+        row('keepout', keepout['provenance']['enforcement'], found, id=keepout['id'])
+    stacking = arrangement.get('no_stacking')
+    if stacking:
+        found = []
+        for ref in stacking['references']:
+            shadow = _shadow(fps[ref], stacking['margin_nm'])
+            found += [[ref, r] for r, fp in sorted(fps.items(), key=lambda kv: blocks._natural(kv[0]))
+                      if r != ref and _overlaps(fp, [shadow])]
+        row('no_stacking', stacking['provenance']['enforcement'], found)
+    over = arrangement.get('no_block_over_fixed')
+    if over:
+        found = []
+        for ref, bid in sorted(block_refs.items(), key=lambda kv: blocks._natural(kv[0])):
+            if bid in over['exempt_blocks']:
+                continue
+            found += [[bid, ref, f] for f in sorted(fixed, key=blocks._natural) if _through(fps[ref], [
+                {'side': side, 'polygons': c['polygons']} for side, c in fps[f]['courtyards'].items()])]
+        row('no_block_over_fixed', over['provenance']['enforcement'], found)
+    thermal = arrangement.get('thermal')
+    if thermal:
+        pairs = []
+        for i, a in enumerate(thermal['sources']):
+            for b in thermal['sources'][i + 1:]:
+                pairs.append({'refs': [a, b], 'distance_mm': math.sqrt(placement_groups.distance2(
+                    fps[a]['position_nm'], fps[b]['position_nm'])) / 10 ** 6})
+        limit = thermal.get('min_distance_nm')
+        found = [p['refs'] for p in pairs if limit is not None and p['distance_mm'] * 10 ** 6 < limit]
+        row('thermal_spread', thermal['provenance']['enforcement'], found, pairs=pairs,
+            min_distance_mm=min(p['distance_mm'] for p in pairs))
+    return rows
+
+
+def saved_rules(facts, plan, policy):
+    """Re-grade the block rules of an arranged plan on the native saved board."""
+    record = plan['block_arrangement']
+    members = {r: b['block'] for b in record['blocks'] for r in b['references']}
+    fixed = {p['ref'] for p in plan['placements'] if p['fixed']} | placer._fixed_refs(facts, policy)
+    return grade_rules(facts, record['arrangement'], members, fixed)
+
+
+def _deferred_grading(plan, admitted):
+    """Each block's deferred obligation and group, as graded on the complete plan."""
+    locality = plan.get('locality_grading') or {'measured': [], 'defects': [], 'unknown': []}
+    groups = plan.get('group_grading') or {'measured': [], 'defects': [], 'unknown': []}
+    out = []
+    for bid in sorted(admitted, key=blocks._natural):
+        deferred = admitted[bid]['deferred']
+        for oid in deferred['obligations']:
+            measured = [m for m in locality['measured'] if m['obligation'] == oid]
+            bad = [d for d in locality['defects'] + locality['unknown'] if d.get('obligation') == oid]
+            out.append({'block': bid, 'kind': 'obligation', 'id': oid, 'measured': len(measured),
+                        'status': 'pass' if measured and not bad else 'defect' if bad else 'unknown'})
+        for gid in deferred['groups']:
+            measured = [m for m in groups.get('measured', []) if m.get('group') == gid]
+            bad = [d for d in groups.get('defects', []) + groups.get('unknown', []) if d.get('group') == gid]
+            out.append({'block': bid, 'kind': 'group', 'id': gid, 'measured': len(measured),
+                        'status': 'pass' if measured and not bad else 'defect' if bad else 'unknown'})
+    return out
+
+
+def arrange(capture, inventory, derivation, policy, arrangement, entries, *, heartbeat=None, effective_policy=None):
+    """Arrange every derived block, pack the residual parts, grade the complete plan.
+
+    ``policy`` is the captured packing policy the candidates were packed and are
+    admitted against; ``effective_policy`` (default ``policy``) may add board
+    obstacles, such as the runner's IMU marking reservations. Returns a complete
+    ``agent-ee.packing-plan/1`` with a ``block_arrangement`` record, or a typed
+    failure; no search-derived arrangement is ever reported as a pass.
+    """
+    effective = policy if effective_policy is None else effective_policy
+    refs = {fp['ref'] for fp in capture['footprints']}
+    placer._validate_policy(policy, refs)
+    placer._validate_policy(effective, refs)
+    if derivation['board_sha256'] != capture['board_sha256']:
+        raise ValueError('derivation belongs to another board capture')
+    block_ids = [b['id'] for b in derivation['blocks']]
+    arrangement = validate_policy(arrangement, block_ids, refs)
+    margin_nm = placer._edge_margin_nm(effective)
+    record = {'schema': POLICY, 'strategy': STRATEGY, 'arrangement': arrangement,
+              'derivation_sha256': digest(derivation), 'policy_sha256': digest(policy)}
+
+    def failure(status, reason, steps=0, **extra):
+        return {**placer._failure(capture, effective, status, 'unknown', steps, reason, margin_nm),
+                'block_arrangement': {**record, **extra}}
+    if not isinstance(entries, list):
+        raise ValueError('arrangement candidates must be a list')
+    admitted, problems = {}, []
+    for index, entry in enumerate(entries):
+        result, found = admit_entry(entry, capture, inventory, derivation, policy)
+        if found:
+            problems.append({'candidate': index, 'block': entry['candidate'].get('block_id'), 'problems': found})
+        elif result['block'] in admitted:
+            problems.append({'candidate': index, 'block': result['block'], 'problems': [{'kind': 'duplicate_block'}]})
+        else:
+            admitted[result['block']] = result
+    missing = [b for b in block_ids if b not in admitted]
+    if missing and not problems:
+        problems.append({'kind': 'block_candidate_missing', 'blocks': missing})
+    if problems:
+        return failure('arrangement_refused', 'block candidates not admitted for arrangement', problems=problems)
+    record['blocks'] = [{'block': b, 'provenance': admitted[b]['provenance'],
+                         'candidate_sha256': admitted[b]['candidate_sha256'], 'anchor': admitted[b]['anchor'],
+                         'references': sorted(admitted[b]['poses'], key=blocks._natural),
+                         'boundary': admitted[b]['binding'],
+                         'deferred': admitted[b]['deferred']} for b in block_ids]
+    locality = effective.get('electrical_locality')
+    if locality and electrical_locality.grade(capture, locality)['unknown']:
+        return failure('electrical_locality_unavailable', 'pad locality needs unambiguous native pads, limits and citations')
+    work = copy.deepcopy(capture)
+    try:
+        outline = placer._qualified(work)
+        keepouts = placer._keepouts(work)
+        bands = overhang_bands(effective.get('fixed_overhangs', []), outline)
+    except ValueError as exc:
+        return failure('unsupported_geometry', str(exc))
+    by_ref = {fp['ref']: fp for fp in work['footprints']}
+    fixed = placer._fixed_refs(work, effective)
+    members = {r for a in admitted.values() for r in a['poses']}
+    movable = refs - fixed - members
+    groups = placement_groups.validate(effective['groups']) if 'groups' in effective else []
+    stranded = sorted(g['id'] for g in groups if g.get('anchor', {}).get('reference') in movable
+                      and set(g['references']) & members)
+    if stranded:
+        return failure('arrangement_refused', 'block members anchored to a residual movable part',
+                       problems=[{'kind': 'group_anchor_residual', 'groups': stranded}])
+    # Hard keep-outs and fixed parts' shadows are stationary obstacles; so is every board obstacle.
+    obstacles = list(effective['obstacles'])
+    obstacles += [{'side': k['side'], 'polygons': k['polygons'], 'source': 'block-arrangement keep-out ' + k['id']}
+                  for k in arrangement.get('keepouts', []) if _hard(k)]
+    stacking = arrangement.get('no_stacking')
+    if _hard(stacking):
+        obstacles += [dict(_shadow(by_ref[r], stacking['margin_nm']), source='block-arrangement shadow ' + r)
+                      for r in stacking['references'] if r in fixed]
+        for bid, entry in admitted.items():
+            frame = [placer.transform(by_ref[r], entry['poses'][r]['position_nm'], entry['poses'][r]['rotation_deg'])
+                     for r in entry['poses']]
+            for fp in frame:
+                if fp['ref'] in stacking['references']:
+                    shadow = _shadow(fp, stacking['margin_nm'])
+                    inside = sorted((o['ref'] for o in frame if o is not fp and placer._near(
+                        o, [placer._exact(shadow['side'], shadow['polygons'])], effective['gap_nm'])),
+                        key=blocks._natural)
+                    if inside:
+                        return failure('arrangement_refused', f'block {bid} stacks parts in the shadow of {fp["ref"]}',
+                                       problems=[{'kind': 'block_internal_stacking', 'block': bid,
+                                                  'reference': fp['ref'], 'inside': inside}])
+    try:
+        _, placed, exact = placer._initial_reservations(work, {**effective, 'obstacles': obstacles}, outline,
+                                                        keepouts, bands, {})
+    except ValueError as exc:
+        return failure('fixed_conflict', str(exc))
+    placed = [fp for fp in placed if fp['ref'] not in members]
+    search = _Arrangement(work, effective, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat)
+    order = _order(admitted, by_ref, fixed, arrangement['priority_blocks'], set(effective['ground_nets']))
+    record.update(order=order, inter_block_nets=_net_counts(admitted, by_ref, fixed, set(effective['ground_nets'])),
+                  objective=arrangement['objective'])
+    if heartbeat is not None:
+        heartbeat({'status': 'arranging', 'steps_used': 0, 'blocks_placed': 0})
+    levels, backjumps, peak = [], 0, 0
+
+    def stopped(status, reason, unplaced=None):
+        partial = [{'block': p['block'], 'position_nm': p['position_nm'], 'rotation_deg': p['rotation_deg']}
+                   for p in search.placed_blocks]
+        return failure(status, reason, search.steps, search={
+            'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget, 'backjumps': backjumps,
+            'placed_peak': peak, **({'unplaced': unplaced} if unplaced else {}),
+            'partial': {'authority': 'diagnostic-only-unvalidated-partial-arrangement', 'blocks': partial}})
+    try:
+        while len(search.placed_blocks) < len(order):
+            i = len(search.placed_blocks)
+            if len(levels) == i:
+                conflicts = set()
+                levels.append({'block': order[i], 'conflicts': conflicts,
+                               'candidates': search.candidates(order[i], conflicts)})
+            level = levels[i]
+            search.current = level['block']
+            found = next(level['candidates'], None)
+            if found is not None:
+                search.push(level['block'], found[0], found[1], found[2])
+                peak = max(peak, len(search.placed_blocks))
+                continue
+            index = {p['block']: k for k, p in enumerate(search.placed_blocks)}
+            culprits = sorted({index[b] for b in level['conflicts'] if b in index}, reverse=True)
+            if not culprits:
+                return stopped('arrangement_search_exhausted',
+                               f"no candidate for block {level['block']} in the finite search; infeasibility unproved",
+                               level['block'])
+            j = culprits[0]
+            backjumps += 1
+            search.backjumps = backjumps
+            while len(search.placed_blocks) > j:
+                search.pop()
+            levels[j]['conflicts'] |= level['conflicts'] - {levels[j]['block']}
+            del levels[j + 1:]
+    except _Stopped as stop:
+        return stopped(stop.status, stop.reason, order[len(search.placed_blocks)])
+    except electrical_locality.TargetBudgetExhausted:
+        return stopped('arrangement_budget_exhausted', 'locality target budget exhausted',
+                       order[len(search.placed_blocks)])
+    elapsed = time.monotonic() - search.started
+    poses = {fp['ref']: fp for p in search.placed_blocks for fp in p['members']}
+    record['search'] = {'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget,
+                        'backjumps': backjumps, 'elapsed_s': elapsed}
+    record['arranged'] = [{'block': p['block'], 'position_nm': p['position_nm'], 'rotation_deg': p['rotation_deg']}
+                          for p in search.placed_blocks]
+    # Residual packing: the unchanged placer with every block member fixed at its arranged pose.
+    residual_capture = copy.deepcopy(capture)
+    residual_capture['footprints'] = [
+        _strip(placer.transform(fp, poses[fp['ref']]['position_nm'], poses[fp['ref']]['rotation_deg']))
+        if fp['ref'] in poses else fp for fp in residual_capture['footprints']]
+    residual_policy = {**copy.deepcopy(effective), 'obstacles': obstacles + [
+        dict(_shadow(poses[r], stacking['margin_nm']), source='block-arrangement shadow ' + r)
+        for r in (stacking['references'] if _hard(stacking) else ()) if r in poses]}
+    residual_policy['fixed_refs'] = sorted(set(effective['fixed_refs']) | members, key=blocks._natural)
+    record['residual'] = {'references': sorted(movable, key=blocks._natural), 'policy_sha256': digest(residual_policy),
+                          'obstacles': residual_policy['obstacles'][len(effective['obstacles']):]}
+    plan = placer.pack(residual_capture, residual_policy, heartbeat=heartbeat)
+    if plan['status'] != 'planned':
+        return {**plan, 'block_arrangement': record}
+    plan['placements'] = [{**p, 'fixed': p['ref'] in fixed} for p in plan['placements']]
+    complete = {**capture, 'footprints': [
+        placer.transform(fp, *next(([p['position_nm'], p['rotation_deg']] for p in plan['placements']
+                                    if p['ref'] == fp['ref'])))
+        for fp in copy.deepcopy(capture['footprints'])]}
+    rows = grade_rules(complete, arrangement, {r: search.owner[r] for r in members}, fixed)
+    record['rules'] = rows
+    record['deferred_grading'] = _deferred_grading(plan, admitted)
+    record['residual']['steps_used'] = plan['steps_used']
+    plan['steps_used'] += search.steps
+    plan['policy'] = copy.deepcopy(effective)
+    plan['block_arrangement'] = record
+    failed = [r for r in rows if r['enforcement'] == 'hard' and r['status'] != 'pass']
+    if failed or any(d['status'] != 'pass' for d in record['deferred_grading']):
+        return failure('judge_rejected', 'complete plan failed a hard block rule or a deferred obligation',
+                       plan['steps_used'])
+    return plan
+
+
+def load_entries(paths):
+    return [{'candidate': strict_json(Path(p).read_bytes())} for p in paths]
+
+
+def request_section(allocation, arrangement, candidates):
+    """The ``blocks`` section of a placer_runner request from file paths."""
+    return {'allocation_text': None if allocation is None else Path(allocation).read_bytes().decode('utf-8'),
+            'arrangement': strict_json(Path(arrangement).read_bytes()),
+            'candidates': [{'candidate': strict_json(Path(p).read_bytes())} for p in candidates]}
+
+
+def plan_from_request(facts, section, policy, effective, netlist, heartbeat=None):
+    """placer_runner entry: derive from the captured netlist, admit, arrange, pack."""
+    blocks._keys(section, {'arrangement', 'candidates'}, {'allocation_text'}, label='blocks request')
+    raw = Path(netlist).read_bytes()
+    allocation = section.get('allocation_text')
+    if allocation is not None and not isinstance(allocation, str):
+        raise ValueError('allocation_text must be the allocation file text')
+    derivation = blocks.derive(read_native_inventory(netlist), read_sheet_names(netlist), facts,
+                               inventory_sha256=hashlib.sha256(raw).hexdigest(),
+                               allocation_raw=None if allocation is None else allocation.encode('utf-8'))
+    return arrange(facts, read_native_inventory(netlist), derivation, policy, section['arrangement'],
+                   section['candidates'], heartbeat=heartbeat, effective_policy=effective)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('--probe', required=True, type=Path, help='native placement-probe.json')
+    parser.add_argument('--netlist', required=True, type=Path, help='captured native XML export')
+    parser.add_argument('--allocation', type=Path, help=f'{blocks.ALLOCATION} JSON')
+    parser.add_argument('--policy', required=True, type=Path, help='agent-ee.packing-policy/1')
+    parser.add_argument('--arrangement', required=True, type=Path, help=f'{POLICY} JSON')
+    parser.add_argument('--candidate', required=True, type=Path, action='append', help='admitted block candidate')
+    parser.add_argument('--out', required=True, type=Path, help='new output JSON file')
+    args = parser.parse_args(argv)
+    try:
+        capture, inventory, derivation = blocks._load(args)
+        result = arrange(capture, inventory, derivation, strict_json(args.policy.read_bytes()),
+                         strict_json(args.arrangement.read_bytes()), load_entries(args.candidate),
+                         heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True))
+        blocks._write(args.out, result)
+    except (OSError, ValueError) as exc:
+        print(json.dumps({'status': 'refused', 'reason': str(exc)}))
+        return 1
+    print(json.dumps({'status': result['status'], 'out': str(args.out)}))
+    return 0 if result['status'] == 'planned' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

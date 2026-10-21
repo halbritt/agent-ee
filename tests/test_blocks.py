@@ -340,6 +340,17 @@ class PackingTests(Fixture, unittest.TestCase):
         self.assertEqual(result['status'], 'packed', result.get('reason'))
         self.assertEqual(result['candidate']['block_policy']['priority_refs'], ['C1', 'L1', 'C3'])
 
+    def test_board_priority_on_the_anchor_is_dropped(self):
+        # AGENTEE-340: the pod's GNSS anchor U3 is a board priority. The anchor is fixed in
+        # the block frame, so the candidate validator's "anchor not prioritized" rule holds.
+        derived = self.derive()
+        result = self.pack(derived, priority_refs=['U1', 'L1'])
+        self.assertEqual(result['status'], 'packed', result.get('reason'))
+        self.assertEqual(result['candidate']['block_policy']['priority_refs'][0], 'L1')
+        self.assertNotIn('U1', result['candidate']['block_policy']['priority_refs'])
+        self.assertEqual(blocks.admit(result['candidate'], self.board, self.inv, derived,
+                                      policy(priority_refs=['U1', 'L1']))['status'], 'admitted')
+
     def test_witness_gap_boundary(self):
         def at(x):
             return placer.transform(footprint('B', 0, 0, 'Owned:C0805', {}), [x, 0], 0)

@@ -1111,6 +1111,13 @@ stale cluster `seed_only` flag, and reserves `IMU_AXES` markings in both the
 pre-lease preview and leased targeted plan. Native regressions cover both
 `targeted` and `targeted_plans` refusal on a reserved label and unmarked controls.
 
+[Block arrangement](blocks.md#stage-b-arrangement-agentee-340) (AGENTEE-340)
+is another writer request mode (`blocks`). It adds no check kind. The saved
+board is judged, graded for groups and pad locality, and DRC-gated as every
+placer plan is. In addition, the hard block rules are re-graded from the saved
+bytes (`judgment.block_rules`). A failed hard rule refuses publication;
+advisory rows are reported only.
+
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,

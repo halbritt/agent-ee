@@ -123,6 +123,13 @@ A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
 refuses any mismatch.
+[Block arrangement](docs/blocks.md#stage-b-arrangement-agentee-340) places the
+admitted candidates as rigid macros, then packs the residual parts with the
+placer, with block members fixed. The search uses deterministic conflict-directed
+backjumping with typed exhaustion. Block rules (keep-outs, opposite-side
+shadows, no block over a fixed part, thermal spread) are hard only with a
+citation. Boundary roles are bound to their board nets. The complete plan goes
+through the writer's native gate.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

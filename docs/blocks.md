@@ -1,10 +1,11 @@
-# Two-level placement, stage A: blocks (AGENTEE-339)
+# Two-level placement: blocks (AGENTEE-339) and arrangement (AGENTEE-340)
 
 `agent_ee.blocks` derives placement blocks from the sealed schematic hierarchy
-and packs each block in isolation into a rigid block candidate. Stage B
-(AGENTEE-340) arranges candidates and packs the residual parts. The block
-library (AGENTEE-342) catalogues and imports cited candidates. This module
-writes no board. The complete board plan must still pass native save/reload,
+and packs each block in isolation into a rigid block candidate (stage A).
+[Stage B](#stage-b-arrangement-agentee-340) (`agent_ee.block_arrangement`)
+arranges the candidates as rigid macros and packs the residual parts. The block
+library (AGENTEE-342) catalogues and imports cited candidates. Neither module
+writes a board; the native writer does. The complete board plan must still pass native save/reload,
 the [locality grade](placer.md#pad-level-electrical-locality-agentee-322) and the
 [native publication gate](placer.md#through-hole-reservations-and-native-publication-gate-agentee-318).
 
@@ -123,7 +124,8 @@ members are copied into an isolated capture.
   `search_timeout_s` and in-block `priority_refs`. It also keeps
   footprint-owned rule areas of its members. It keeps groups whose members and
   anchor reference are all in the block, without a region, and
-  `electrical_locality` obligations whose endpoints all lie in the block. Board
+  `electrical_locality` obligations whose endpoints all lie in the block. The
+  anchor is fixed in the block frame, so a board priority on it is dropped. Board
   regions, point anchors, obstacles, board rule areas, the edge margin, and
   groups or obligations that cross the block boundary are deferred to
   arrangement. Their ids and counts are recorded in `deferred`. A block
@@ -280,6 +282,190 @@ mismatch gives `status: refused`:
 
 Net names never identify a role. Two instances of one buck on different rails
 match when every pin lands on the corresponding net.
+
+## Stage B: arrangement (AGENTEE-340)
+
+`block_arrangement.arrange(capture, inventory, derivation, policy, arrangement, entries)`
+places every derived block as one rigid macro. It then packs the residual parts
+with the unchanged placer, with every block member fixed, and grades the
+complete plan as one board. It writes no board. Through `placer_runner`, the
+plan is saved and reloaded, judged, graded and gated by native DRC, as every
+placer plan is.
+
+```sh
+PYTHONPATH=src python3 -m agent_ee.block_arrangement --probe build/placement-probe.json \
+  --netlist build/design.xml --allocation design/blocks.json --policy design/packing.json \
+  --arrangement design/arrangement.json --candidate build/buck-5v.candidate.json \
+  --candidate build/sensor.candidate.json --out build/arranged-plan.json
+```
+
+The CLI prints one JSON status line, and heartbeats go to stderr. The exit code
+is 0 only for `planned`. An existing `--out` is refused. The CLI takes
+same-board candidates. Mapped (library) entries are passed through the API or
+the [runner request](#runner-request).
+
+### Inputs and admission
+
+`entries` holds one record per derived block:
+`{"candidate": <agent-ee.block-candidate/2>, "mapping": {...}, "boundary_nets": {...}}`.
+`mapping` and `boundary_nets` are optional. A missing block, a duplicate block or
+an unadmitted candidate gives `arrangement_refused`, `outcome=unknown`, with each
+problem listed. Library candidates and search-derived candidates are both rigid
+macros. The plan records each block's provenance class and citation.
+
+- **Same board, no mapping.** `blocks.admit` must admit the candidate.
+- **Mapped (a library or reused layout).** `blocks.match` with the mapping must
+  match. The mapped references must be exactly one derived block, with the same
+  anchor. Their frame poses are then re-graded with the target board's own
+  footprints and isolated policy (locality, groups and the courtyard witness).
+- **Boundary nets.** Matching compares net roles, but not which outside net a
+  boundary role lands on (the 339 review gap). Arrangement binds every role to
+  the board net its pins land on. A boundary role must reach a footprint outside
+  the block, and an internal role must not. On the candidate's own board, the
+  recorded net name must be the board net. A mapped candidate must declare the
+  target net of every boundary role in `boundary_nets`. The problem kinds are
+  `boundary_net_mismatch`, `boundary_undeclared`, `boundary_unknown_role`,
+  `boundary_flag` and `net_role_split`. The plan records each block's binding
+  with the outside references.
+
+`policy` is the captured packing policy that the candidates were packed and are
+admitted against. `effective_policy` may only add board obstacles, for example
+the writer's `IMU_AXES` reservations. Arrangement enforces those obstacles.
+A group that ties a block member to a residual movable anchor refuses
+(`group_anchor_residual`): the member is fixed before that anchor is placed.
+
+### Arrangement policy
+
+`agent-ee.block-arrangement/1`:
+
+```json
+{"schema": "agent-ee.block-arrangement/1", "step_budget": 200000,
+ "priority_blocks": ["buck-5v"],
+ "objective": {"terms": ["pad-locality", "inter-block-wire", "thermal-spread"],
+               "provenance": {"enforcement": "advisory", "reason": "default order"}},
+ "thermal": {"sources": ["U5", "U7"], "min_distance_nm": 15000000,
+             "provenance": {"enforcement": "advisory", "reason": "no sourced limit"}},
+ "keepouts": [{"id": "imu", "side": "F", "polygons": [[[0, 0], [4000000, 0], [4000000, 4000000], [0, 4000000]]],
+               "provenance": {"enforcement": "hard", "citation": "IMU datasheet section 9"}}],
+ "no_stacking": {"references": ["L1", "L2"], "margin_nm": 500000,
+                 "provenance": {"enforcement": "hard", "citation": "owner rule D-1"}},
+ "no_block_over_fixed": {"exempt_blocks": ["storage"],
+                         "provenance": {"enforcement": "hard", "citation": "owner rule D-2"}}}
+```
+
+Only `schema` and `step_budget` (1 to 1 000 000) are required. Unknown fields
+refuse. `search_timeout_s` is opt-in (0 to 86 400 s). Without it there is no
+wall clock: the step budget is the only limit.
+
+Every rule carries a provenance record. `hard` needs a `citation`. An unsourced
+rule or number is `advisory` (AGENTEE-331/337): the search never uses it to
+prune, and the complete plan grades and reports it. A hard rule that has no
+citation is refused.
+
+| Rule | Hard effect | Graded on the complete plan |
+| --- | --- | --- |
+| `keepouts` | A stationary obstacle for blocks and residual parts, kept clear by the packing gap | Footprints whose courtyard overlaps the area |
+| `no_stacking` | Each listed part's mounting-side courtyard box, grown by `margin_nm`, is a shadow on the opposite side. Nothing there may come within the gap of it | `[part, intruder]` pairs |
+| `no_block_over_fixed` | A non-exempt block member's courtyard may not overlap a fixed part's courtyard on the other side | `[block, member, fixed]` |
+| `thermal` | With `min_distance_nm`, sources (footprint origins) in different blocks keep that distance | Pairwise source distances and the minimum |
+
+A block whose own members lie in its own shadow refuses
+(`block_internal_stacking`). The writer re-grades the rules on the native saved
+board (`judgment.block_rules`). A failed hard rule there refuses publication.
+
+### Search
+
+Each block becomes one footprint-like macro: the members' courtyards on each
+side, their pads, footprint-owned keep-outs and drilled-pad reservations, at
+their frame poses. The block keeps its captured side; a stage-A candidate is
+side-preserving, so it is not mirrored. The placer's own predicates apply
+unchanged: outline containment with `min_courtyard_edge_mm`; exact polygon
+clearance by the gap from fixed parts, obstacles and keep-outs; rule areas;
+symmetric through-hole reservations; group regions and anchor distances; and
+cross-block pad obligations whose peer is already placed. Fixed parts keep
+their envelope overhang bands. Each member of a placed block reserves its own
+courtyard box, inflated by the gap, as the placer reserves a movable part. A
+block's bounding box is not reserved, so sparse blocks can interleave. On the
+pod, stage-A block boxes total 3590 mm² (F) and 3212 mm² (B) of a 5850 mm²
+side, so whole-block boxes did not fit.
+
+Blocks are ordered by `priority_blocks`. After those, the next block is the one
+that shares the most non-ground nets with the fixed parts and the blocks
+already ordered (ties: larger courtyard area, then id). For each block,
+candidate origins align to the outline, placed boxes, exact obstacles, group
+points and obligation targets, in four quarter turns. The objective terms rank
+the candidates lexicographically, in the declared order, then by position and
+rotation; there are no weights:
+
+- `pad-locality`: the exact cross-block obligation cost (squared distance over
+  squared limit), as the placer ranks it;
+- `inter-block-wire`: the integer Manhattan distance from each signal pad to the
+  nearest placed pad on its net. This is the block-level wire cost; a block
+  pair sharing more nets adds more terms;
+- `thermal-spread`: the negated smallest squared distance to a placed source.
+
+A hard thermal limit and the obligation limits are exact, so a violating
+position is dropped while ranking and its blocking blocks are recorded. The
+first admissible candidate is taken. Every candidate given to the exact
+predicates costs one step. A block with no admissible candidate backjumps to
+the latest placed block among the recorded blockers, which then tries its next
+candidate (conflict-directed backjumping). Results:
+
+| `status` | `outcome` | Meaning |
+| --- | --- | --- |
+| `planned` | `info` | Complete plan; see below |
+| `arrangement_search_exhausted` | `unknown` | A block has no candidate, and no placed block blocked it. Infeasibility is unproved: the candidate set is finite |
+| `arrangement_budget_exhausted` | `unknown` | Step budget, opt-in wall time, or the locality target budget |
+| `arrangement_refused`, `electrical_locality_unavailable`, `unsupported_geometry`, `fixed_conflict` | `unknown` | Inputs |
+| `judge_rejected` | `unknown` | The complete plan failed a hard rule or a deferred obligation |
+
+Failures carry `search.partial` with the arranged blocks. Its authority is
+`diagnostic-only-unvalidated-partial-arrangement`. Placements are empty.
+
+### Residual packing and the complete plan
+
+The residual parts are packed by `placer.pack` (`ranked-first-fit-backjump/1`,
+legacy-first). Block members are fixed at their arranged poses, and the hard
+keep-outs and shadows are obstacles. A residual failure is the placer's own
+typed result, with the arrangement record attached. The placer judges the
+complete proposal and grades every group and pad obligation of the board policy.
+That includes each block's deferred cross-block obligations.
+
+The plan is an ordinary `agent-ee.packing-plan/1`. Only the board's fixed parts
+are marked `fixed`, so the writer moves block members. `policy` is the
+effective board policy. `steps_used` adds the arrangement steps to the residual
+steps. `block_arrangement` records:
+
+- the validated arrangement policy, `derivation_sha256` and `policy_sha256`;
+- per block: provenance, `candidate_sha256`, anchor, references, boundary binding
+  and deferred record;
+- `order` and `inter_block_nets`, which counts shared non-ground nets per pair of
+  blocks or fixed parts;
+- `search` (`steps_used`, `step_budget`, `backjumps`, `elapsed_s`) and `arranged`
+  block poses;
+- `residual`: references, the residual policy hash, the added obstacles and
+  steps;
+- `rules`: every block rule graded with its enforcement;
+- `deferred_grading`: every deferred obligation and group of every block, with
+  its status on the complete plan. A deferred obligation that is not measured is
+  `unknown`, which fails the plan.
+
+### Runner request
+
+A `placer_runner` request with a `blocks` section uses arrangement instead of
+`pack`:
+
+```json
+{"policy": {"schema": "agent-ee.packing-policy/1"}, "authorization": {},
+ "blocks": {"allocation_text": null, "arrangement": {"schema": "agent-ee.block-arrangement/1", "step_budget": 200000},
+            "candidates": [{"candidate": {}}]}}
+```
+
+The runner derives the blocks from the captured netlist it already binds.
+`allocation_text` is the allocation file's UTF-8 text, so its hash is the file
+hash. Combining `blocks` with `targeted` or `targeted_plans` is refused.
+`block_arrangement.request_section(allocation, arrangement, candidates)` builds
+the section from files.
 
 ## Real-pod diagnostic
 
