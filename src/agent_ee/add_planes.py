@@ -193,18 +193,24 @@ def generate(candidate, board, plan_path, out):
         if drc['execution'] != 'ok' or drc['exit_code'] != 0:
             raise ValueError('native plane DRC execution failed')
         checks = read_json(out/'drc/report.json')
+        from .outline_containment import sandboxed
+        containment = sandboxed(verified, board, out/'containment')
         planned = zone_ids(plan)
         always_ids = {uid for uid, spec in zip(planned, plan['zones']) if spec['island_removal']=='always'}
         _planned_zone_errors(checks, planned, always_ids)
+        native_count = len(checks['violations'])
+        checks['violations'].extend(containment)
         sources = finding_sources(verified/board, checks['violations'])
         require_evaluated_limits(checks, sources)
         zone_errors = _planned_zone_errors(checks, planned, always_ids, sources)
         classified = [classify_finding(dict(v), sources) for v in checks['violations']]
         write_json(out/'drc/constraints.json', {'sources': sources, 'violations': classified})
         report.update(pcbnew_version=facts['pcbnew_version'], zones=facts['zones'],
-                      drc=dict(violations=len(checks['violations']), planned_zone_errors=zone_errors,
+                      drc=dict(violations=native_count, planned_zone_errors=zone_errors,
                                classified_findings=classified,
                                report_sha256=digest(out/'drc/report.json')))
+        if containment:
+            raise ValueError('saved copper outside board outline')
         if zone_errors:
             refused_ids = sorted({item['uuid'] for violation in zone_errors for item in violation['items']
                                   if item['uuid'] in planned})

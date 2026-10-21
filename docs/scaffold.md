@@ -679,7 +679,12 @@ value is compared against every applicable sourced minimum, even when KiCad
 names a larger default limit. The strictest violated sourced minimum supplies
 the finding's class and citation; all violated sourced settings are retained in
 `constraint_provenance.limits`. Four-decimal native values use the same
-0.00005 mm comparison tolerance as printed-limit matching.
+0.00005 mm (50 nm) comparison tolerance as printed-limit matching. A measured
+sourced-limit deficit below this resolution cannot be established from the
+rounded report alone. For copper-to-edge findings, a printed actual below
+0.00005 mm is conservatively structural (engineering/hard): KiCad prints
+`0.0000 mm` for touching or crossing copper, rather than a signed penetration.
+This print-resolution rule does not replace geometric containment.
 Class-specific limits use native conductor UUID/net facts and the existing exact-name
 assignment contract. Legacy ambiguous identities or general/composite class patterns
 remain unresolved. Ambiguous or absent provenance is `default` and advisory. Captured owner custom
@@ -705,8 +710,8 @@ The document's `solder_mask_min_width` is retained as a manufacturing obligation
 it is not an invented board-setup field. The native candidate comparison includes
 classified baseline and candidate findings, including silk and text violations.
 Only sourced added numeric violations and the structural invariants
-block publication. Co-located drilled holes and negative copper-edge clearance
-(copper beyond the outline) are structural engineering findings, independent
+block publication. Co-located drilled holes and touching/crossing copper-edge findings
+(printed actual below 50 nm) are structural engineering findings, independent
 of numeric defaults. Explicitly ignoring the co-located-drill check refuses
 evaluation as unavailable structural coverage. The captured DRC check also retains raw counts and reports,
 with classified evidence in `drc-constraints.json`; unsourced numeric violations
@@ -751,3 +756,23 @@ does not apply. Missing count measurements refuse evaluation. Conditional or
 layer-scoped sourced count rules cannot be attributed from these native reports;
 when a count finding is present, their cited source is retained and evaluation
 refuses as unavailable coverage. This is distinct from an unsourced default.
+
+A separate native child subtracts the closed board-material polygon, including
+cutouts, from each saved effective copper polygon on every enabled copper layer.
+It evaluates flashed pads/vias, tracks/arcs, saved zone fills, board and footprint
+copper graphics and text; unfilled zone requests and rule areas are not copper.
+KiCad's outside polygon approximation uses the saved project's native maximum
+error. Bounding-box corners do not determine containment. Missing, open or
+self-intersecting outlines refuse this measurement; a child crash or missing
+output cannot pass. Placement, captured DRC, plane production and board-build
+parity retain `copper-containment.json` and classify `copper_outside_outline`
+witnesses as engineering/hard. Placement and plane publication refuse any such
+saved copper, including a pre-existing violation that native DRC omitted. Raw
+native reports and their hashes remain unchanged.
+
+Sublayout reuse stages the top project's `.kicad_pro`, `.kicad_prl` and
+`.kicad_dru` alongside both DRC boards and uses the same source classifier and
+containment probe. Numeric advisories remain reported in each group's delta;
+only graded new findings make that group defective. Non-collision numeric
+baseline identities include absolute saved geometry, so moving an item closer
+to a sourced edge or hole limit cannot hide behind the same native UUID.

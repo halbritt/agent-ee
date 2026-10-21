@@ -553,10 +553,22 @@ def parity_drc(board, scratch):
         classified = [classify_finding(dict(v), sources) for v in report['violations']]
     except (OSError, ValueError) as exc:
         raise ToolFailure(f'native DRC constraint provenance: {exc}') from exc
+    from .outline_containment import run
+    coverage = None
+    try:
+        containment = run(copy, scratch)
+    except ValueError as exc:
+        if not (any(not advisory_numeric(v) for v in classified) or
+                report['schematic_parity'] or report['unconnected_items']):
+            raise ToolFailure('native copper containment: ' + str(exc)) from exc
+        coverage = dict(execution='unavailable', outcome='unknown', reason=str(exc))
+    else:
+        classified.extend(classify_finding(v, sources) for v in containment)
     types = {}
     for item in report['violations']:
         types[item.get('type')] = types.get(item.get('type'), 0) + 1
-    return {'argv': argv, 'exit_code': completed.returncode, 'report': report_path,
+    return {**({'containment': coverage} if coverage else {}),
+            'argv': argv, 'exit_code': completed.returncode, 'report': report_path,
             'report_sha256': digest(report_path), 'kicad_version': report.get('kicad_version'),
             'schematic_parity': len(report['schematic_parity']),
             'parity_items': [{'type': i.get('type'), 'description': i.get('description')}

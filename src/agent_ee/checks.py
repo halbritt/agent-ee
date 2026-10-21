@@ -410,10 +410,6 @@ def check_drc(ctx):
         classified = [classify_finding(dict(finding), sources) for finding in v]
     except (OSError, ValueError) as exc:
         raise CheckError('malformed', f'DRC constraint provenance: {exc}') from exc
-    write_json(ctx.work / 'drc-constraints.json', {'sources': sources, 'violations': classified})
-    ctx.evidence('drc-constraints.json')
-    ctx.result['details']['constraint_classes'] = count_by(
-        [finding['constraint_provenance'] for finding in classified], 'class')
     try:
         require_evaluated_limits(report, sources)
     except ValueError as exc:
@@ -429,6 +425,28 @@ def check_drc(ctx):
                 advisories.append(item)
                 continue
         graded.append(item)
+    from .outline_containment import sandboxed
+    containment = []
+    try:
+        containment = sandboxed(ctx.inputs, ctx.scope['board'], ctx.work / 'containment')
+    except (OSError, ValueError) as exc:
+        ctx.result['details']['containment'] = dict(execution='unavailable', outcome='unknown', reason=str(exc))
+        ctx.result['limitations'].append('Copper containment unavailable: ' + str(exc))
+        # Missing supplemental geometry cannot erase a defect proved by native DRC.
+        known_defect = any(not projection or not item['raw_locator'].startswith('/unconnected_items/')
+                           for item in graded)
+        if not known_defect:
+            raise CheckError('malformed', 'DRC copper containment: ' + str(exc)) from exc
+    finally:
+        ctx.evidence('containment/copper-containment.json', 'containment/execution.json',
+                     'containment/console.log')
+    structural = [classify_finding(f, sources) for f in containment]
+    graded.extend(structural)
+    classified.extend(structural)
+    write_json(ctx.work / 'drc-constraints.json', {'sources': sources, 'violations': classified})
+    ctx.evidence('drc-constraints.json')
+    ctx.result['details']['constraint_classes'] = count_by(
+        [finding['constraint_provenance'] for finding in classified], 'class')
     ctx.result['details'].update(advisory_findings_count=len(advisories), graded_unwaived=len(graded))
     ctx.result["execution"] = "ok"
     if projection:
@@ -437,7 +455,7 @@ def check_drc(ctx):
         ctx.result["limitations"].append(
             f"{projection}: unconnected items are retained in drc.json but not graded; "
             "a later full DRC with connectivity remains required")
-        failing = any(not i['raw_locator'].startswith('/unconnected_items/') for i in graded)
+        failing = any(not i.get('raw_locator', '').startswith('/unconnected_items/') for i in graded)
     else:
         failing = graded
     if failing:
@@ -459,6 +477,8 @@ def check_drc(ctx):
     ctx.result['summary'] += f"; {len(ctx.result['details']['waived'])} waived"
     if advisories:
         ctx.result['summary'] += f'; {len(advisories)} numeric advisory finding(s) retained'
+    if structural:
+        ctx.result['summary'] += f'; {len(structural)} structural copper containment finding(s)'
 
 
 def parse_xml_netlist(path):

@@ -94,7 +94,7 @@ class ProvenanceLimitsTest(unittest.TestCase):
                     require_evaluated_limits({'ignored_checks': [{'key': 'holes_co_located'}]}, sources)
 
     def test_copper_outside_outline_is_structural(self):
-        for actual, expected in ((-.2, 'engineering'), (0, 'default'), (.2, 'default')):
+        for actual, expected in ((-.2, 'engineering'), (0, 'engineering'), (.2, 'default')):
             finding = dict(type='copper_edge_clearance', description=
                 f'Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual {actual:.4f} mm)',
                 items=[{'uuid': 'pad'}])

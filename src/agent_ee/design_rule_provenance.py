@@ -117,7 +117,7 @@ def _record(setting, value, spec, path, locator, key):
 
 # This binding travels with the immutable project into each native staging area.
 PROJECT_KEY = 'agent_ee_constraint_provenance'
-STRUCTURAL = frozenset(('shorting_items', 'pth_inside_courtyard', 'solder_mask_bridge', 'holes_co_located'))
+STRUCTURAL = frozenset(('shorting_items', 'pth_inside_courtyard', 'solder_mask_bridge', 'holes_co_located', 'copper_outside_outline'))
 NUMERIC_FIELDS = {
     'clearance': ('min_clearance', 'clearance'),
     'track_width': ('min_track_width', 'track_width'),
@@ -278,7 +278,8 @@ def classify_finding(finding, sources=None):
     actual = re.search(actual_pattern, finding.get('description', ''))
     if kind == 'starved_thermal' and (not actual or not re.search(limit_pattern, finding.get('description', ''))):
         raise ValueError('native thermal-spoke finding lacks a qualified count measurement')
-    outside = kind == 'copper_edge_clearance' and actual and Decimal(actual[1]) < 0
+    # Four-decimal reports cannot distinguish touching/crossing from a gap below 50 nm.
+    outside = kind == 'copper_edge_clearance' and actual and Decimal(actual[1]) < Decimal('0.00005')
     if kind in STRUCTURAL or outside:
         source = {'class': 'engineering', 'citation': {
             'path': 'docs/placer.md', 'locator': 'native DRC publication gate',

@@ -167,6 +167,8 @@ def _native_drc(board, scratch):
     if any(not isinstance(v, dict) or not isinstance(v.get('type'), str) for v in violations):
         raise ValueError('native DRC contains malformed violations')
     require_evaluated_limits(report, finding_sources(board))
+    from .outline_containment import run
+    report['violations'].extend(run(board, scratch))
     # Excluded courtyard findings still prevent a placed result.
     return report
 
@@ -193,6 +195,16 @@ def _drc_item_states(path):
                 # A KIID shared across footprints would merge their states.
                 raise ValueError('native collision item identities ambiguous')
             states[uuid] = (owner, geometry, pose)
+    from .sublayout_probe import facts
+    for item in facts(board)['items']:
+        if not item['supported']:
+            continue
+        uid = item['uuid']
+        if uid in states:
+            raise ValueError('native collision item identities ambiguous')
+        # Native facts ignore serialization whitespace and retain absolute
+        # conductor/drawing geometry, layers and widths.
+        states[uid] = (uid, json.dumps(item, sort_keys=True), ())
     return states
 
 
@@ -200,7 +212,7 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
     """Preserve rigid intra-footprint findings; moved cross-footprint collisions are new.
 
     Native geometry is supplied by the publication path, never by the caller's
-    placement plan. Non-collision reporting retains its existing identity rule.
+    placement plan. Numeric findings bind to absolute saved geometry, including single-item findings.
     """
     if (before['ignored_checks'] != after['ignored_checks'] or
             before.get('included_severities') != after.get('included_severities')):
@@ -218,14 +230,19 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
         identity = (finding['type'], identities, provenance['enforcement'],
                     finding['type'] == 'copper_edge_clearance' and
                     provenance['reason'] == 'Structural invariant; numeric provenance does not relax it')
-        if states is None or finding['type'] not in DRC_COLLISIONS | {'solder_mask_bridge'}:
+        if states is None:
+            if numeric_finding(finding):
+                return (*identity, finding.get('description'), json.dumps(items, sort_keys=True))
+            return identity
+        if finding['type'] not in DRC_COLLISIONS | {'solder_mask_bridge'} and not numeric_finding(finding):
             return identity
         try:
             geometry = [states[uuid] for uuid in identities]
         except KeyError as exc:
             raise ValueError('native collision item geometry unavailable') from exc
         # Local pad geometry proves a rigid intra-footprint violation unchanged.
-        intra = len({state[0] for state in geometry}) == 1
+        intra = (finding['type'] in DRC_COLLISIONS | {'solder_mask_bridge'} and
+                 len({state[0] for state in geometry}) == 1)
         return (*identity, tuple(state[:2] if intra else state for state in geometry))
 
     for report in (before, after):
@@ -240,7 +257,7 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
             added.append(finding)
             remaining[identity] -= 1
     return {'added_findings': added,
-            'blocking_findings': [v for v in added if
+            'blocking_findings': [v for v in after['violations'] if v['type'] == 'copper_outside_outline'] + [v for v in added if
                 v['constraint_provenance']['enforcement'] == 'hard' and
                 (v['type'] in DRC_COLLISIONS | {DRC_MASK} or numeric_finding(v)) and
                 (v['type'] != DRC_MASK or after_states is None or

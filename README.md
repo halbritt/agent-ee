@@ -941,3 +941,8 @@ keeps unsourced numeric defaults advisory across placement, captured DRC, plane
 production and the experimental row stand-in. Measurements below a sourced floor
 still refuse when KiCad prints a larger default. Co-located drills and copper
 outside the board outline remain structural defects.
+
+Native design-rule grading also checks saved effective copper containment against
+the board outline, including cutouts. Crossing and wholly outside copper remain
+structural engineering defects regardless of advisory edge-clearance defaults;
+see [design-rule provenance](docs/check-reference.md#design-rule-provenance-agentee-331).

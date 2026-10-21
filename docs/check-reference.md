@@ -1876,11 +1876,23 @@ Owner custom rules cannot be demoted by a constraint declaration; such an input
 raises `OwnerRuleReclassification`. Plane production and the board-build row
 stand-in apply the same numeric-advisory policy and retain classified findings.
 `tests.test_provenance_limits` covers masked native gaps, co-located holes,
-negative edge clearance, owner-rule declarations and both producer paths.
+zero/negative printed edge clearance, owner-rule declarations and both producer
+paths. `tests.test_outline_containment` exercises saved copper polygon subtraction,
+crossing and wholly outside pads/tracks, concave outlines and cutouts, round
+copper whose bounding-box corners are outside, saved zone fills, captured DRC,
+parity, plane refusal, and sublayout source preservation. The independent
+`containment/copper-containment.json` witnesses are engineering/hard and are
+included in `drc-constraints.json`, without rewriting the native report.
+Four-decimal millimetre reports have a 50 nm comparison limit; printed copper-edge
+actuals below it are structural. The saved polygon check also detects wholly
+outside copper that native edge DRC may omit.
 
 Baseline comparisons include enforcement changes and the transition to copper
 outside the outline. The same native item identities cannot hide a newly hard
-finding; identical pre-existing findings retain their baseline treatment.
+finding; identical pre-existing findings retain their baseline treatment. Non-collision
+numeric findings include absolute geometry in their baseline identity. Copper
+outside the board material always refuses placement/plane publication, including
+pre-existing witnesses.
 
 Explicitly ignoring `holes_co_located` refuses grading as unavailable structural
 coverage, even when the project has only default numeric hole limits.
@@ -1890,3 +1902,9 @@ spoke-count findings remain advisory. Unconditional captured owner count minima
 retain native file/hash/rule citations and gate against the reported actual
 count, independently of the printed minimum. Missing measurements and ambiguous
 conditional/layer-scoped sourced count findings refuse as unavailable coverage.
+
+When the supplemental containment child is unavailable, its coverage remains
+unknown and its failed execution is retained. A defect already proved by native
+DRC retains its defect verdict; an otherwise passing DRC cannot pass without
+containment coverage. Supplemental structural witnesses retain their class and citation in the
+classified evidence cited by the collected coordinator finding.
