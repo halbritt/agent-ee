@@ -843,7 +843,7 @@ def _validate_candidate(document):
     if search['step_budget'] != sub['step_budget'] or search['steps_used'] > search['step_budget']:
         raise ValueError('search steps must lie within the block policy budget')
     if 'compaction' in search:
-        _compaction(search['compaction'], outline)
+        _compaction(search['compaction'])
     sources = _keys(document['sources'], set(SOURCE_KEYS), label='candidate sources')
     for key in SOURCE_KEYS:
         if not (key == 'allocation_sha256' and sources[key] is None):
@@ -851,16 +851,16 @@ def _validate_candidate(document):
     return document
 
 
-def _compaction(record, outline):
-    """The stage-A compaction record; its area must be the stored outline's own box area."""
+def _compaction(record):
+    """The stage-A compaction record (a search log). ``admit`` binds its area to the board outline."""
     _keys(record, {'objective', 'first_box_area_nm2', 'box_area_nm2', 'step_cap', 'trials', 'steps_total'},
           label='compaction')
     if record['objective'] != COMPACTION:
         raise ValueError(f'compaction objective must be {COMPACTION}')
     for key in ('first_box_area_nm2', 'box_area_nm2', 'step_cap', 'steps_total'):
         _count(record[key], 'compaction ' + key)
-    if record['box_area_nm2'] != _box_area(outline) or record['box_area_nm2'] > record['first_box_area_nm2']:
-        raise ValueError("compaction area must be the outline's box area and at most the first run's")
+    if record['box_area_nm2'] > record['first_box_area_nm2']:
+        raise ValueError("compaction area must be at most the first run's")
     limit = COMPACT_TRIALS * len(COMPACT_FAMILIES)
     if not isinstance(record['trials'], list) or len(record['trials']) > limit:
         raise ValueError(f'compaction trials must be a list of at most {limit}')
@@ -923,6 +923,9 @@ def admit(document, capture, inventory, derivation, policy):
     for name, value in (('outline', outline), ('grade', grade), ('witness', witness)):
         if _plain(value) != document[name]:
             problems.append({'kind': 'stale_evidence', 'evidence': name})
+    compaction = document['search'].get('compaction')
+    if compaction is not None and compaction['box_area_nm2'] != _box_area(_plain(outline)):
+        problems.append({'kind': 'stale_evidence', 'evidence': 'compaction'})
     failed = [k for k, g in grade.items() if g and g['status'] != 'pass'] + (
         ['witness'] if witness['status'] != 'pass' else [])
     if failed:

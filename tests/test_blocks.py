@@ -434,7 +434,6 @@ class CompactionTests(Fixture, unittest.TestCase):
         cand = self.chain()['candidate']
         cases = (
             (lambda r: r.update(objective='other/1'), 'compaction objective'),
-            (lambda r: r.update(box_area_nm2=r['box_area_nm2'] - 1), "outline's box area"),
             (lambda r: r.update(first_box_area_nm2=r['box_area_nm2'] - 1), "at most the first run's"),
             (lambda r: r['trials'][0].update(family='spiral'), 'trial family'),
             (lambda r: r['trials'][0].update(steps_used=r['step_cap'] + 1), 'within the step cap'),
@@ -448,6 +447,12 @@ class CompactionTests(Fixture, unittest.TestCase):
             mutate(doc['search']['compaction'])
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 blocks.validate_candidate(doc)
+        # Admission binds the recorded area to the board's own outline.
+        doc = copy.deepcopy(cand)
+        doc['search']['compaction']['box_area_nm2'] -= 1
+        blocks.validate_candidate(doc)
+        self.assertEqual(blocks.admit(doc, self.board, self.inv, self.derived, self.chain_policy)['problems'],
+                         [{'kind': 'stale_evidence', 'evidence': 'compaction'}])
 
 
 class CandidateSchemaTests(Fixture, unittest.TestCase):

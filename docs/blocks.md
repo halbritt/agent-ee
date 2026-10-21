@@ -159,8 +159,9 @@ synthetic plane, so `synthetic_plane_reached` and every refusal are unchanged.
 The candidate's `search` gains `compaction`:
 `{objective: "outline-bisection-min-box-area/1", first_box_area_nm2, box_area_nm2,
 step_cap, trials: [{family, parameter, status, steps_used, box_area_nm2?}], steps_total}`.
-`validate_candidate` checks that record: the stored area is the outline's own box
-area and at most the first run's, and every trial is within the cap. The
+`validate_candidate` checks that record's structure: the area is at most the first
+run's, and every trial is within the cap. `admit` binds the area to the board's
+own outline (`stale_evidence` with evidence `compaction`). The
 candidate's `steps_used` is the selected run's. `pack --no-compact` (and
 `compact=False`) keeps the first run.
 
@@ -232,7 +233,7 @@ returns `{"status": "admitted" | "refused", "problems": [...]}`. Problem kinds:
 | `block_policy_mismatch` | The isolated policy recomputed from the board policy equals `block_policy` |
 | `deferred_mismatch` | The recomputed deferred record equals `deferred`, so a boundary obligation or group cannot be dropped |
 | `identity` | `match` with the identity mapping succeeds, which binds each `pad_geometry_sha256` to the board |
-| `stale_evidence` | The board's own footprints at the frame poses reproduce `outline`, `grade` and `witness` exactly, including drilled-pad reservations |
+| `stale_evidence` | The board's own footprints at the frame poses reproduce `outline`, `grade` and `witness` exactly, including drilled-pad reservations; a `compaction` record's area equals that outline's box area |
 | `evidence_failed` | That re-grade and witness pass |
 
 Identity matching and grading stay separate. `match` compares identity only,
@@ -640,7 +641,8 @@ It covers:
   tolerance boundaries;
 - compaction (AGENTEE-355): an authored resistor chain shrinks from 81.375 to
   56.25 mm² with the same block policy, witness and admission, deterministically;
-  an internal group still passes; each malformed compaction record refuses;
+  an internal group still passes; each malformed compaction record refuses, and
+  admission refuses a recorded area that differs from the board outline's;
 - the CLI, with and without `--no-compact`.
 
 A native test derives the two blocks of the [block-first](block-first.md)
