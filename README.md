@@ -110,6 +110,12 @@ IC, and return pads to a declared net distinct from supply. Coordinator packing
 binds to the check's immutable locality file. Origin-group distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)
 caches selected pads and retains typed partial diagnostics on its optional search deadline.
+[Placement blocks](docs/blocks.md) come from the sealed child sheets or a hashed
+engineer allocation file. Each block is packed alone into a rigid, versioned block
+candidate, with relative poses, an obligation grade, a courtyard witness,
+per-side outlines and source hashes. Candidates are search-derived and advisory.
+Matching by footprint, land-pattern hash, pin roles and declared value tolerance
+refuses any mismatch.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

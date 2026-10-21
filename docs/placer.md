@@ -539,6 +539,15 @@ routed or schematic-parity result. Schematic parity of the stock RC board
 belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
 
 
+## Block candidates (AGENTEE-339)
+
+[Blocks](blocks.md) derive placement blocks from the sealed schematic hierarchy
+or an engineer allocation file. Each block is packed alone with this search,
+around a fixed anchor on a synthetic plane, into a rigid
+`agent-ee.block-candidate/1`. Its own pad obligations and groups apply, and
+boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
+unchanged.
+
 ## Pod-scale qualification (AGENTEE-181)
 
 Run the original fixture qualification on the host, using a fresh destination:
