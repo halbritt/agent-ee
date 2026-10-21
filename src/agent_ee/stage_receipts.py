@@ -940,48 +940,93 @@ def _status(spec, execution, violations):
     return 'completed' if execution['exit_code'] == 0 else 'partial'
 
 
-def _owner_access(parent, name):
-    """Give the owner rwx on directory ``name`` below ``parent`` and every directory beneath it.
+def _held_directory(parent, name):
+    """Open directory ``name`` below ``parent`` for reading, first giving the owner rwx on it.
 
-    Links are never followed: each directory is opened without following links and must be the
-    object just inspected, so a link inside the tree never reaches a host directory.
+    The directory is acquired without following links before its mode is touched, and the mode is
+    changed on that held object, never by name, so a name swapped for a link never reaches a host
+    directory. Raises OSError for anything that is not, or is no longer, that directory.
     """
-    before = os.stat(name, dir_fd=parent, follow_symlinks=False)
-    if not stat.S_ISDIR(before.st_mode):
-        return
-    if before.st_mode & stat.S_IRWXU != stat.S_IRWXU:
-        os.chmod(name, stat.S_IMODE(before.st_mode) | stat.S_IRWXU, dir_fd=parent)
-    fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+    path = os.open(name, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+    try:
+        held = os.fstat(path)
+        if held.st_mode & stat.S_IRWXU != stat.S_IRWXU:
+            # An O_PATH descriptor cannot be fchmod'ed; its /proc magic link names the held object.
+            os.chmod(f'/proc/self/fd/{path}', stat.S_IMODE(held.st_mode) | stat.S_IRWXU)
+        fd = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC, dir_fd=path)
+    finally:
+        os.close(path)
+    opened = os.fstat(fd)
+    if (opened.st_dev, opened.st_ino) != (held.st_dev, held.st_ino):
+        os.close(fd)
+        raise OSError(errno.ESTALE, 'directory replaced during cleanup', name)
+    return fd
+
+
+def _empty_directory(fd):
+    """Unlink every non-directory entry of the held directory ``fd``; return its subdirectory names."""
+    with os.scandir(fd) as entries:
+        listed = [(entry.name, entry.is_dir(follow_symlinks=False)) for entry in entries]
+    for name, is_dir in listed:
+        if not is_dir:
+            os.unlink(name, dir_fd=fd)
+    return [name for name, is_dir in listed if is_dir]
+
+
+def _remove_tree(parent, name):
+    """Remove directory ``name`` below ``parent`` and everything beneath it, without following links.
+
+    The walk is iterative and holds one directory at a time, so tool-created nesting is bounded
+    by neither the interpreter's recursion limit nor the descriptor limit. Each return to a parent
+    goes through ``..`` of the held child and must reach the parent object held before.
+    """
+    fd = _held_directory(parent, name)
     try:
         held = os.fstat(fd)
-        if (held.st_dev, held.st_ino) != (before.st_dev, before.st_ino):
-            raise OSError(errno.ESTALE, 'directory replaced during cleanup', name)
-        with os.scandir(fd) as entries:
-            names = [entry.name for entry in entries if entry.is_dir(follow_symlinks=False)]
-        for child in names:
-            _owner_access(fd, child)
+        frames = [(name, (held.st_dev, held.st_ino), _empty_directory(fd))]
+        while True:
+            pending = frames[-1][2]
+            if pending:
+                child = pending.pop()
+                child_fd = _held_directory(fd, child)
+                os.close(fd)
+                fd = child_fd
+                held = os.fstat(fd)
+                frames.append((child, (held.st_dev, held.st_ino), _empty_directory(fd)))
+                continue
+            child = frames.pop()[0]
+            if not frames:
+                break
+            up = os.open('..', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC, dir_fd=fd)
+            os.close(fd)
+            fd = up
+            held = os.fstat(fd)
+            if (held.st_dev, held.st_ino) != frames[-1][1]:
+                raise OSError(errno.ESTALE, 'directory moved during cleanup', child)
+            os.rmdir(child, dir_fd=fd)
     finally:
         os.close(fd)
+    os.rmdir(name, dir_fd=parent)
 
 
 def _discard(receipt_dir, refusal):
     """Remove a refused run's receipt directory, or raise ReceiptCleanupError naming it.
 
     The tool may have left directories unwritable or unsearchable, so owner access is restored
-    first. A directory that cannot be removed is reported, never silently left unlabelled.
+    on each held directory before it is read. A directory that cannot be removed is reported,
+    never silently left unlabelled.
     """
     receipt_dir = Path(receipt_dir)
     try:
         parent = os.open(receipt_dir.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
         try:
-            _owner_access(parent, receipt_dir.name)
+            _remove_tree(parent, receipt_dir.name)
         finally:
             os.close(parent)
-        shutil.rmtree(receipt_dir)
-    except FileNotFoundError:
-        pass
     except OSError as exc:
-        raise ReceiptCleanupError(receipt_dir, refusal) from exc
+        # Only an already absent receipt directory is a completed cleanup.
+        if not isinstance(exc, FileNotFoundError) or os.path.lexists(receipt_dir):
+            raise ReceiptCleanupError(receipt_dir, refusal) from exc
     if os.path.lexists(receipt_dir):
         raise ReceiptCleanupError(receipt_dir, refusal)
 

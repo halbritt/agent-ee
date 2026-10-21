@@ -1742,8 +1742,9 @@ upward-escaping mount symlinks retain link identity without reading host targets
 an executable through such a link has an unknown digest and is unadoptable, and a
 declared `source` through one refuses as `source_link_escape:<source>`, including
 from the same resolution in either strict run observation, leaving no receipt directory
-(owner access is restored link-safely first, even after the tool made directories unwritable;
-an unremovable directory raises typed `cleanup_failed:<receipt dir>` over the refusal). The
+(owner access is restored on each directory held by a no-follow `O_PATH` descriptor before it
+is read, iteratively at any depth, even after the tool made directories unwritable; an
+unremovable directory raises typed `cleanup_failed:<receipt dir>` over the refusal). The
 executable is resolved and hashed through component-wise no-follow opens below
 the held descriptor. Only
 fd-form receipts carry the mount-guard observation; historical path-form replay

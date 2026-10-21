@@ -192,13 +192,20 @@ in a strict mode in which the very resolution that would record the link-only
 identity raises the refusal instead, so a source that escapes only while an
 observation runs, and is restored before every recheck, is still refused. The
 receipt directory is removed in either window, nothing is adopted, and no new
-receipt can carry a link-only source identity. Before removal the coordinator
-restores owner access to every directory in the receipt tree, opening each
-without following links, so a tool that leaves `/work` or a nested directory
-unwritable, or a read-only design subdirectory, cannot keep the directory alive
-and no host directory reached through a link is touched. If removal still fails,
-the refusal becomes typed `cleanup_failed:<receipt dir>`, chained to the original
-refusal (kept as `refusal`); a refused run never leaves an unlabelled directory. Relative links that stay inside the mount retain
+receipt can carry a link-only source identity. Removal walks the receipt tree
+iteratively, holding one directory at a time: each directory is first acquired
+with `O_PATH | O_DIRECTORY | O_NOFOLLOW`, then owner rwx is set on that held
+object through its `/proc/self/fd` magic link, and only then is it reopened for
+reading. A tool that leaves `/work` or a nested directory unwritable or
+unsearchable, or a read-only design subdirectory, cannot keep the directory
+alive; a host writer that swaps a name for a link after acquisition cannot
+redirect the chmod to a host directory; and tool-created nesting deeper than the
+interpreter's recursion limit is removed. Returning to a parent goes through
+`..` of the held child and must reach the parent object held before. If
+removal still fails (including a swapped name or moved directory), the refusal
+becomes typed `cleanup_failed:<receipt dir>`, chained to the cleanup failure,
+with the original refusal object kept as `refusal`; a refused run never leaves
+an unlabelled directory. Relative links that stay inside the mount retain
 their ordinary executable digest. The executable and a nested source root are
 resolved one component at a time with `O_PATH | O_NOFOLLOW` opens relative to
 the held mount descriptor; a link is expanded only from the object just opened,
