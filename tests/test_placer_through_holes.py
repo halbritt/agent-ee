@@ -277,7 +277,8 @@ class DrcComparisonTest(unittest.TestCase):
         after = self.report('clearance', 'clearance', 'shorting_items', 'pth_inside_courtyard',
                             'silk_overlap', 'silk_over_copper')
         delta = _drc_comparison(before, after)
-        self.assertEqual(len(delta['blocking_findings']), 3)
+        self.assertEqual(len(delta['blocking_findings']), 2)
+        self.assertEqual([v['type'] for v in delta['advisory_findings']].count('clearance'), 2)
         self.assertEqual(len(delta['silkscreen_findings']), 2)
         self.assertEqual(delta['added_by_type']['clearance'], 1)
         # Location/wording changes are not a new physical item pair.

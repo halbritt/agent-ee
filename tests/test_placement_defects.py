@@ -1278,6 +1278,51 @@ class ClosureEscapeTests(unittest.TestCase):
                 self.assertEqual(len(defects), 1)
                 self.assertEqual(defects[0]['verdict'], 'defect')
 
+    def test_nested_list_value_of_allowed_track_child_refuses_comparison(self):
+        from tests.test_placement_adapter import TEXT
+        evil = ('(gr_text EVIL (at 20 20 0) (layer F.SilkS) (uuid g) '
+                '(effects (font (size 1 1) (thickness 0.15))))')
+        tracks = {
+            'start-head': '(segment (layer "F.Cu") (start (1) 2) (end 3 4) (width 0.2) (net 0) (uuid "t"))',
+            'start-text': ('(segment (start ' + evil + ' 2) (end 3 4) (width 0.2) '
+                           '(layer "F.Cu") (net 0) (uuid "t"))'),
+            'start-tail': ('(segment (start 1 2 ' + evil + ') (end 3 4) (width 0.2) '
+                           '(layer "F.Cu") (net 0) (uuid "t"))'),
+            'arc-mid': ('(arc (start 1 2) (mid 2 (3)) (end 3 4) (width 0.2) '
+                        '(layer "F.Cu") (net 0) (uuid "t"))'),
+            'locked': '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (locked (yes)) (net 0) (uuid "t"))',
+            'net': '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net (0)) (uuid "t"))',
+            'uuid': '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid ("t")))',
+            'width': '(segment (start 1 2) (end 3 4) (width (0.2)) (layer "F.Cu") (net 0) (uuid "t"))',
+            'layer': '(segment (start 1 2) (end 3 4) (width 0.2) (layer ("F.Cu")) (net 0) (uuid "t"))',
+            'silk-layer': '(segment (start (1) 2) (end 3 4) (width 0.2) (layer "F.SilkS") (net 0) (uuid "t"))',
+        }
+        for name, track in tracks.items():
+            edit = lambda text, track=track: text.rstrip()[:-1] + track + ')'
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as temporary:
+                before, after = (Path(temporary) / n for n in ('before', 'after'))
+                before.write_text(TEXT)
+                after.write_text(edit(TEXT))
+                with self.assertRaisesRegex(ValueError, 'nested-list track child value'):
+                    placement_defects.same_artwork(before, after)
+                with self.assertRaisesRegex(ValueError, 'nested-list track child value'):
+                    placement_defects.same_artwork(after, after)
+                defects = self.run_closure(edit)
+                self.assertEqual(len(defects), 1)
+                self.assertEqual(defects[0]['verdict'], 'defect')
+
+    def test_nested_list_in_unknown_track_child_stays_in_exact_comparison(self):
+        from tests.test_placement_adapter import TEXT
+        track = ('(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) '
+                 '(unknown (x 1)) (uuid "t"))')
+        with tempfile.TemporaryDirectory() as temporary:
+            before, after, moved = (Path(temporary) / n for n in ('before', 'after', 'moved'))
+            before.write_text(TEXT.rstrip()[:-1] + track + ')')
+            after.write_text(TEXT.rstrip()[:-1] + track + ')')
+            moved.write_text(TEXT.rstrip()[:-1] + track.replace('3 4', '5 6') + ')')
+            self.assertTrue(placement_defects.same_artwork(before, after))
+            self.assertFalse(placement_defects.same_artwork(before, moved))
+
     def test_net_name_comment_characters_reopen_closure(self):
         for name, count in (('CS_N', 0), ('CS#', 1), ('A;B', 1)):
             track = ('(segment (start 1 2) (end 3 4) (width 0.2) '

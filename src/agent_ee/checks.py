@@ -405,8 +405,50 @@ def check_drc(ctx):
         "by_type": count_by(v + u + p, "type"),
         "ignored_checks": [c.get("key") for c in report.get("ignored_checks", [])],
     })
+    from .design_rule_provenance import advisory_numeric, classify_finding, finding_sources, require_evaluated_limits
+    try:
+        sources = finding_sources(ctx.inputs / ctx.scope['board'], v)
+        classified = [classify_finding(dict(finding), sources) for finding in v]
+    except (OSError, ValueError) as exc:
+        raise CheckError('malformed', f'DRC constraint provenance: {exc}') from exc
+    try:
+        require_evaluated_limits(report, sources)
+    except ValueError as exc:
+        raise CheckError('malformed', str(exc)) from exc
     from .violation_waivers import classify
     unwaived = classify(ctx, report)
+    graded = []
+    advisories = []
+    for item in unwaived:
+        if item['raw_locator'].startswith('/violations/'):
+            item = classify_finding(item, sources)
+            if advisory_numeric(item):
+                advisories.append(item)
+                continue
+        graded.append(item)
+    from .outline_containment import sandboxed
+    containment = []
+    try:
+        containment = sandboxed(ctx.inputs, ctx.scope['board'], ctx.work / 'containment')
+    except (OSError, ValueError) as exc:
+        ctx.result['details']['containment'] = dict(execution='unavailable', outcome='unknown', reason=str(exc))
+        ctx.result['limitations'].append('Copper containment unavailable: ' + str(exc))
+        # Missing supplemental geometry cannot erase a defect proved by native DRC.
+        known_defect = any(not projection or not item['raw_locator'].startswith('/unconnected_items/')
+                           for item in graded)
+        if not known_defect:
+            raise CheckError('malformed', 'DRC copper containment: ' + str(exc)) from exc
+    finally:
+        ctx.evidence('containment/copper-containment.json', 'containment/execution.json',
+                     'containment/console.log')
+    structural = [classify_finding(f, sources) for f in containment]
+    graded.extend(structural)
+    classified.extend(structural)
+    write_json(ctx.work / 'drc-constraints.json', {'sources': sources, 'violations': classified})
+    ctx.evidence('drc-constraints.json')
+    ctx.result['details']['constraint_classes'] = count_by(
+        [finding['constraint_provenance'] for finding in classified], 'class')
+    ctx.result['details'].update(advisory_findings_count=len(advisories), graded_unwaived=len(graded))
     ctx.result["execution"] = "ok"
     if projection:
         ctx.result["details"].update(projection=projection, graded=list(DRC_PROJECTIONS[projection]),
@@ -414,14 +456,15 @@ def check_drc(ctx):
         ctx.result["limitations"].append(
             f"{projection}: unconnected items are retained in drc.json but not graded; "
             "a later full DRC with connectivity remains required")
-        # Silk conflicts that are exactly an open carried placement defect advance to
-        # routing as carried; later gates refuse the carry until it closes.
-        from .placement_defects import blocking, projection_record
+        # Preserve 331 graded advisories/structural findings and 346 receipt-backed carry.
+        from .placement_defects import projection_record
         carried = projection_record(ctx, unwaived)
-        failing = blocking(unwaived, carried)
+        failing = [i for i in graded
+                   if not i.get('raw_locator', '').startswith('/unconnected_items/')
+                   and i.get('raw_locator') not in carried]
     else:
         carried = set()
-        failing = unwaived
+        failing = graded
     if failing:
         ctx.result["outcome"] = "defect"
         ctx.result["summary"] = (f"DRC with schematic parity reported {len(v)} violation(s), "
@@ -435,10 +478,18 @@ def check_drc(ctx):
     else:
         ctx.result["outcome"] = "pass"
         ctx.result["summary"] = "DRC with schematic parity reported zero unwaived issues on the saved board"
+    if advisories and not failing:
+        ctx.result['summary'] = (f'DRC with schematic parity reported {len(advisories)} advisory numeric '
+                                 'violation(s) and zero unwaived graded issues'
+                                 + (f'; {projection} retains unconnected items ungraded' if projection else ''))
     if carried:
         ctx.result["summary"] += (f"; {len(carried)} silk finding(s) graded as carried open placement "
                                   "defects, refused downstream until closed")
     ctx.result['summary'] += f"; {len(ctx.result['details']['waived'])} waived"
+    if advisories:
+        ctx.result['summary'] += f'; {len(advisories)} numeric advisory finding(s) retained'
+    if structural:
+        ctx.result['summary'] += f'; {len(structural)} structural copper containment finding(s)'
 
 
 def parse_xml_netlist(path):

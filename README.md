@@ -152,7 +152,8 @@ Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
-refuses any mismatch.
+refuses any mismatch. Land-pattern and courtyard hashes use canonical contour rings,
+so they do not depend on the captured board rotation (AGENTEE-370).
 The [block library](docs/block-library.md) keeps versioned known-good blocks in
 `blocks/` with provenance receipts. Its entries come from KiCad board regions,
 scale-verified datasheet figures and project clusters. A lookup returns each block
@@ -256,7 +257,10 @@ scope. It preserves project rules, checks and baseline sources, pre-creates chil
 sheets and leaves native execution to the ordinary review/campaign workflow. Its
 stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
 rules from the envelope, its fab profile and the parts manifest instead, and
-refuses incomplete inputs. Optional captured net constraints add per-net classes,
+refuses incomplete inputs. An optional [constraint-source import](docs/scaffold.md#declared-design-rule-sources-agentee-331)
+records design-rule classes and citations. Native DRC retains unsourced numeric
+findings as advisories while sourced limits and structural gates remain hard.
+Optional captured net constraints add per-net classes,
 assignments, width rules and a Default completeness check. Stage-three preparation
 writes declared holes, keepouts, locked fixed footprints and the IMU marking through
 a campaign pre-receipt. Its [packed-board silkscreen policy](docs/scaffold.md#packed-board-silkscreen-policy-agentee-276)
@@ -758,8 +762,12 @@ and mounting holes written by the scaffold are fixed references, and their
 exact courtyards are obstacles (AGENTEE-179). Circular probe courtyards are
 bounded exactly within a declared 5 um tolerance. A fixed courtyard may leave the
 outline only across envelope-declared edges and distances. Declared group
-regions and anchor distances are enforced and graded by `placement-groups/1`, and
-parts without courtyards are refused by name
+regions and anchor distances are enforced and graded by `placement-groups/1`.
+[Unsourced obstacle, region and saved-board limits](docs/placer.md#obstacle-and-group-sources-agentee-361)
+never establish a defect: capacity proofs that need them are unknown, and
+saved-board edge and group checks report them as `info` advisories. Authored
+fixtures and captured geometry retain their sourced verdicts.
+Parts without courtyards are refused by name
 ([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). Every placer
 result past the fixed reservations records the board's capacity at the packing
 gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound
@@ -982,3 +990,14 @@ and refuses unresolved overlaps before publication, without changing electrical
 check verdicts.
 
 Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Runtime validation refuses mounts of live package source directories, their ancestors or unqualified source files, including symlink and bind aliases (AGENTEE-327/329). Validated tool mounts pass opened descriptors and verify mounted identities inside the sandbox before execution to prevent rename races; directory sources containing submounts are refused. Refused fab receipts retain their violations and diagnostic paths.
+
+[Design-rule provenance](docs/scaffold.md#declared-design-rule-sources-agentee-331)
+keeps unsourced numeric defaults advisory across placement, captured DRC, plane
+production and the experimental row stand-in. Measurements below a sourced floor
+still refuse when KiCad prints a larger default. Co-located drills and copper
+outside the board outline remain structural defects.
+
+Native design-rule grading also checks saved effective copper containment against
+the board outline, including cutouts. Crossing and wholly outside copper remain
+structural engineering defects regardless of advisory edge-clearance defaults;
+see [design-rule provenance](docs/check-reference.md#design-rule-provenance-agentee-331).

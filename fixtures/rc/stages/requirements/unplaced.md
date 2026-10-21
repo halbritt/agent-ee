@@ -13,7 +13,7 @@ anchors are R1=(20,15), C1=(30,15), J1=(5,10) mm. The seed changes only C1 to
 
 - **R-erc**: Native ERC has no issues. Expected initial outcome: `pass`.
 - **R-netlist**: Native XML exports the three-component RC network. Expected initial outcome: `info`.
-- **R-drc-placement**: Native placement violations and schematic parity have no issues; unrouted connectivity is ungraded. Expected initial outcome: `pass`.
+- **R-drc-placement**: Saved copper outside the outline is a structural placement defect; unrouted connectivity is ungraded. Expected initial outcome: `defect`.
 - **R-courtyard**: Mounting-side courtyards do not overlap. Expected initial outcome: `pass`.
 - **R-containment**: Every courtyard is wholly inside the board outline. Expected initial outcome: `defect`.
 - **R-drc-final**: Native DRC including connectivity and schematic parity has no issues. Expected initial outcome: `defect`.
