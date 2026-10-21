@@ -86,6 +86,8 @@ def build_packet(run_dir, checks, run_id):
         "scope": scope.get("scope", scope["name"]), "criteria": scope.get("checks", []),
         "declared_limitations": scope.get("limitations", []), "checks": checks,
         "artifacts": [], "packet_limits": []}
+    from .candidate_visuals import packet_visuals
+    packet['candidate_visuals'] = packet_visuals(run_dir, m)
     from .design_rule_provenance import finding_sources
     board = scope.get('board')
     if board and (run_dir / 'inputs' / board).is_file():

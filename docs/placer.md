@@ -1455,3 +1455,11 @@ On the pod inputs, a 20,000-step guided budget, the
 full 200,000-step guided run, the 10-obligation run and the unguided run
 produce identical results before and after (see the AGENTEE-332 performance
 report for the measured times).
+
+## Candidate inspection images (AGENTEE-382)
+
+Successful saved proposals include [candidate inspection images](pcb-renders.md#candidate-inspection-images-agentee-382)
+in `visuals/` beside `placement-result.json`. The result carries their paths and
+hashes. This is visual review input and preserves the existing placement verdict,
+including carried silk defects. Requests can explicitly set `skip_visuals: true`
+for fixtures; rendering failures retain unavailable coverage and native logs.
