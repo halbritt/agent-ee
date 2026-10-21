@@ -1841,9 +1841,9 @@ snapshot, then indexes it (AGENTEE-356). Cyclic containers raise the typed JSON
 `ValueError`. Containers nested deeper than 64 levels refuse with `locality
 document nesting exceeds 64 levels` at the index (checked before copying,
 including subclass storage), `validate()` and `grade()`, never `RecursionError`.
-`validate()` returns its fresh validated snapshot; `grade()` grades and reports
-(`declaration`) only that snapshot and never rereads the caller's document
-(AGENTEE-363). Its public pairs and endpoint maps are read-only at every level,
+`validate()` checks a fresh snapshot (and still returns the caller's object);
+`grade()` grades and reports (`declaration`) only its own validated snapshot and
+never rereads the caller's document (AGENTEE-363). Its public pairs and endpoint maps are read-only at every level,
 including endpoint fields.
 Later caller mutations cannot alter its endpoint identities or cached keys
 (AGENTEE-352/356). Untyped

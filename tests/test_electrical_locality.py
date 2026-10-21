@@ -685,12 +685,12 @@ class LocalityIndexTests(unittest.TestCase):
         mutations = {'tighten': tighten, 'unbind': unbind, 'clear': lambda d: d['obligations'].clear(),
                      'records': lambda d: d.update(source_records={'x': 1}),
                      'metric': lambda d: d['obligations'][0].update(metric='other')}
-        for name, mutate in mutations.items():  # AGENTEE-363 A: mutation after validate() returns.
+        for name, mutate in mutations.items():  # AGENTEE-363 A: mutation after validation returns.
             facts, doc = bound_output_loop()
             fired = []
 
             def after_validate(frame, event, arg):  # Stands in for a thread switch.
-                if event == 'return' and frame.f_code is locality.validate.__code__ and not fired:
+                if event == 'return' and frame.f_code is locality._validated.__code__ and not fired:
                     fired.append(name)
                     mutate(doc)
 
@@ -706,13 +706,16 @@ class LocalityIndexTests(unittest.TestCase):
                 self.assertIsNot(result['declaration'], doc)
                 self.assertNotEqual(result['declaration'], doc)
 
-    def test_validate_returns_fresh_snapshot_and_grade_reports_it(self):
+    def test_grade_reports_fresh_validated_snapshot(self):
         facts, doc = bound_output_loop()
-        snapshot = locality.validate(doc)
+        snapshot = locality._validated(doc)
         self.assertEqual(snapshot, doc)
         self.assertIsNot(snapshot, doc)
         self.assertIsNot(snapshot['obligations'][0], doc['obligations'][0])
+        self.assertIs(locality.validate(doc), doc)  # Public contract unchanged.
         declaration = locality.grade(facts, doc)['declaration']
+        self.assertIsNot(declaration, doc)
+        self.assertIsNot(declaration['obligations'][0], doc['obligations'][0])
         doc['obligations'][0]['supply']['max_distance_nm'] = 0
         self.assertEqual(declaration, snapshot)
 

@@ -77,7 +77,13 @@ def _plain_json(value):
 
 
 def validate(document):
-    """Validate a fresh exact-type snapshot and return it; the caller's object is not reread."""
+    """Validate a fresh exact-type snapshot; returns the caller's object unchanged."""
+    _validated(document)
+    return document
+
+
+def _validated(document):
+    """Validate and return a fresh exact-type snapshot; the caller's object is not reread."""
     document = _plain_json(document)
     if (not isinstance(document, dict) or set(document) - {'schema', 'obligations', 'source_records'}
             or not {'schema', 'obligations'} <= document.keys()
@@ -193,7 +199,7 @@ def grade(probe, document):
 
     Grades and reports only the validated snapshot, never the caller's document.
     """
-    document = validate(document)
+    document = _validated(document)
     measured, defects, unknown, advisories = [], [], [], []
     disk_cache = {}
     for obligation in document['obligations']:
@@ -298,7 +304,8 @@ class PlacementIndex:
     """
     def __init__(self, document):
         _bounded_depth(document)
-        document = validate(_plain_json(deepcopy(document)))
+        document = _plain_json(deepcopy(document))
+        validate(document)
         pairs = {}
         endpoints = {}
         self.positions = {}
