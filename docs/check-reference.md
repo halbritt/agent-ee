@@ -1696,12 +1696,21 @@ release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
 
 The fab, `rung1_campaign`, `rung1_qualified`, `rung1_stages`, pod scaffold/constraint, envelope-content, schematic emission/annotation, `add_planes` and `binding_fill` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file. `tests.test_tool_source` discovers source-mount constructors across `src/agent_ee` and exercises every discovered builder against an original source fixture. It also proves prune-after-verified-reuse retention and exclusion of a concurrent prune during a real sandboxed step.
 
-AGENTEE-327 host validation refuses mounts equal to or containing the package
-`src` tree, including resolved parent and symlink aliases, with
+AGENTEE-327/329 host validation refuses mounts equal to, containing, or inside the
+package `src` tree, including resolved parent and symlink aliases, with
 `live_package_source:<at>` before execution. Retained receipt replay stays
 host-independent. `tests.test_stage_receipts.StepDeclarationTests` covers refusal
 and snapshot admission; `tests.test_tool_source` validates all registered step
-builders against this runtime guard.
+builders against this runtime guard. AGENTEE-329 also refuses bind aliases of
+`src`, its ancestors and descendants by device/inode (including ancestors of
+the mount source). It binds opened, identity-checked descriptors using bwrap
+`--ro-bind-fd` and verifies the actual mounted identities inside the sandbox
+before executing either command, covering bwrap versions that canonicalize fd
+sources to pathnames. Directory
+sources containing submounts are conservatively refused, including same-device
+bind mounts. The three qualified canonical routing helper files and the
+mount-namespace authority limit are recorded in
+[stage receipts](stage-receipts.md#python-tool-source-snapshots).
 
 Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
 an `acquisitions` map with acquisition method and redirect provenance, including
@@ -1783,10 +1792,17 @@ retaining the same capacitor destination and exact pad/net/UUID validation.
 AGENTEE-334 adds `kind: buck-output-loop` with explicit `ic`, `inductor`, and
 `return_net` declarations. Supply starts at that inductor; return starts at
 that IC. Optional switch starts at the IC and ends at the same inductor.
-Return endpoints use the declared return net, distinct from supply. Inconsistent
-bindings refuse validation. Untyped obligations keep their generic pair
-semantics and existing verdicts. Both legs remain jointly graded and constrained;
-missing bounds stay unknown. See
+Return endpoints use the declared return net, distinct from supply. AGENTEE-341
+requires both switch endpoint nets to differ from return and both supply endpoint
+nets. Distinct-source obligations require disjoint supply/return endpoint net
+sets even without a kind. Inconsistent bindings refuse validation, including
+direct `PlacementIndex` construction, which re-validates its document before
+indexing (AGENTEE-341), then indexes a deep copy of the validated document.
+Later caller mutations cannot alter its endpoint identities or cached keys
+(AGENTEE-352). Untyped
+same-source obligations retain their existing verdicts; disjoint untyped nets
+alone do not establish component roles or detect swapped supply/return roles.
+Both legs remain jointly graded and constrained; missing bounds stay unknown. See
 [buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
 for the schema, retained owned evidence and committed pod packet locator.
 
@@ -1796,8 +1812,10 @@ after per-part search fails, with tightest-limit-first peers and only the remain
 step/time budget. Joint refusals retain the legacy typed failure and cluster
 diagnostics in `search.joint_cluster_attempt`; only regraded completions replace it.
 AGENTEE-347 regressions exercise complete-proposal locality rejection on both
-engines, whole-result legacy preservation under the cluster guard, and a seeded
-25-case differential with independently regraded joint completions.
+engines and public `pack()`, whole-result legacy preservation under the cluster
+guard (including `locality_clusters`, excluding only `joint_cluster_attempt`),
+and a seeded 22-case differential including an independently regraded joint
+completion (seed 2, case 55).
 The per-rotation cap of 256 distinct locality origins refuses with
 `packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
 `locality target budget exhausted`; it never truncates targets. Runner heartbeats

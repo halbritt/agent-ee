@@ -60,10 +60,9 @@ def random_cluster_case(rng):
 
 
 def without_joint_diagnostics(result):
-    """Only these two additive diagnostics may differ from a legacy result."""
+    """Only the joint attempt is additive; preserve legacy cluster membership."""
     result = copy.deepcopy(result)
-    for key in ('locality_clusters', 'joint_cluster_attempt'):
-        result.get('search', {}).pop(key, None)
+    result.get('search', {}).pop('joint_cluster_attempt', None)
     return result
 
 
@@ -210,8 +209,8 @@ class ClusterTests(unittest.TestCase):
         source, policy = three_cap_case()
         policy['step_budget'] = 2000
         original = copy.deepcopy((source, policy))
-        legacy = _pack(source, policy, heartbeat=None, joint=False)
         with patch('agent_ee.placer.CLUSTER_STEP_BUDGET', 1):
+            legacy = _pack(source, policy, heartbeat=None, joint=False)
             plan = pack(source, policy)
             guarded = joint_pack(source, policy)
         self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
@@ -232,15 +231,20 @@ class ClusterTests(unittest.TestCase):
         source, doc = cluster_board(limit=3*MM)
         policy = request(electrical_locality=doc)
         original = copy.deepcopy((source, policy))
-        for joint in (False, True):
-            with self.subTest(joint=joint):
-                self.assertEqual(_pack(source, policy, heartbeat=None, joint=joint)['status'],
+        for path in ('legacy', 'joint', 'public'):
+            with self.subTest(path=path):
+                run = pack if path == 'public' else (
+                    lambda source, policy: _pack(source, policy, heartbeat=None, joint=path == 'joint'))
+                self.assertEqual(run(source, policy)['status'],
                                  'planned')
                 with patch.object(electrical_locality.CandidateLocality, 'constraint',
                                   side_effect=lambda position: (set(), -sum(position))):
-                    result = _pack(source, policy, heartbeat=None, joint=joint)
+                    result = run(source, policy)
                 self.assertEqual((result['status'], result['outcome'], result['placements']),
                                  ('judge_rejected', 'unknown', []))
+                if path == 'public':
+                    self.assertEqual(result['search']['joint_cluster_attempt']['status'],
+                                     'judge_rejected')
                 self.assertEqual(result['reason'], 'complete proposal failed pad locality')
                 self.assertEqual(result['locality_grading']['status'], 'defect')
                 self.assertTrue(result['locality_grading']['defects'])
@@ -254,10 +258,17 @@ class ClusterTests(unittest.TestCase):
         cases = []
         for seed in (1, 7, 335):
             rng = random.Random(seed)
-            cases.extend((f'{seed}:{i}', *random_cluster_case(rng)) for i in range(8))
-        source, policy = three_cap_case()
-        policy['step_budget'] = 2000
-        cases.append(('joint-completion', source, policy))
+            for i in range(8):
+                source, policy = random_cluster_case(rng)
+                # These slow finite refusals duplicate the other failure cases.
+                if (seed, i) not in ((1, 6), (7, 0), (7, 5)):
+                    cases.append((f'{seed}:{i}', source, policy))
+        # Seed 2, case 55 from the reviewer's 280-case differential completes
+        # jointly; keep it instead of duplicating the hand-written budget test.
+        rng = random.Random(2)
+        for _ in range(56):
+            source, policy = random_cluster_case(rng)
+        cases.append(('2:55', source, policy))
         counts = dict(legacy_plan=0, both_fail=0, joint_completion=0)
         movable = 0
         for label, source, policy in cases:
@@ -269,6 +280,9 @@ class ClusterTests(unittest.TestCase):
                 self.assertEqual(result, pack(source, policy))
                 self.assertEqual((source, policy), original)
                 self.assertLessEqual(result['steps_used'], policy['step_budget'])
+                if label == '2:55':
+                    self.assertEqual(legacy['status'], 'packing_search_exhausted')
+                    self.assertEqual(result['status'], 'planned')
                 attempt = result.get('search', {}).get('joint_cluster_attempt')
                 if attempt:
                     self.assertLessEqual(result['steps_used'] + attempt['steps_used'],
