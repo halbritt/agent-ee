@@ -64,6 +64,15 @@ def _refs(value, label, known):
     return refs
 
 
+def _derived_blocks(ids, block_ids, label):
+    """Refuse ids that are not derived blocks, naming them and the derived ids."""
+    unknown = sorted(set(ids) - set(block_ids), key=blocks._natural)
+    if unknown:
+        derived = sorted(set(block_ids), key=blocks._natural)
+        raise ValueError(f"{label} must be derived block ids: unknown {', '.join(map(repr, unknown))}; "
+                         f"derived {', '.join(map(repr, derived)) or 'none'}")
+
+
 def validate_policy(document, block_ids, refs):
     """The arrangement policy; raises ValueError. Returns it with defaults filled in."""
     if not isinstance(document, dict) or document.get('schema') != POLICY:
@@ -77,8 +86,7 @@ def validate_policy(document, block_ids, refs):
                                            or not 0 < timeout <= 86400):
         raise ValueError('search_timeout_s must be positive and at most 86400 seconds')
     priority = blocks._texts(document.get('priority_blocks', []), 'priority blocks')
-    if set(priority) - set(block_ids):
-        raise ValueError('priority blocks must be derived block ids')
+    _derived_blocks(priority, block_ids, 'priority blocks')
     objective = document.get('objective', DEFAULT_OBJECTIVE)
     blocks._keys(objective, {'terms', 'provenance'}, label='objective')
     terms = blocks._texts(objective['terms'], 'objective terms')
@@ -114,8 +122,7 @@ def validate_policy(document, block_ids, refs):
     if 'no_block_over_fixed' in document:
         rule = blocks._keys(document['no_block_over_fixed'], {'exempt_blocks', 'provenance'},
                             label='no_block_over_fixed')
-        if set(blocks._texts(rule['exempt_blocks'], 'exempt blocks')) - set(block_ids):
-            raise ValueError('exempt blocks must be derived block ids')
+        _derived_blocks(blocks._texts(rule['exempt_blocks'], 'exempt blocks'), block_ids, 'exempt blocks')
         _provenance(rule['provenance'], 'no_block_over_fixed')
     return {**document, 'objective': objective, 'priority_blocks': priority}
 

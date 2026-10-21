@@ -363,6 +363,31 @@ Limits:
   an earlier iteration is still an ordinary footprint transform, and fresh DRC
   grades the copper they leave behind.
 
+### Numeric token spellings (AGENTEE-372)
+
+pcbnew rewrites number spellings on save: a hand-edited courtyard endpoint
+`29.0` comes back as `29`, and `0.50` as `0.5`. The write-scope comparison
+therefore reads the numeric arguments of geometry and size children (`start`,
+`end`, `mid`, `center`, `xy`, `xyz`, `at`, `size`, `width`, `thickness`,
+`drill`, `offset`, `radius`, `angle`, the pad ratio, margin, clearance and
+thermal settings, and `min_thickness`) as exact decimals, with no Decimal
+context: `29.0`, `29` and `2.9E+1` are equal; `29.001` and
+`1.000…0001` are not. This applies to keyed footprint children, unkeyed ones
+such as the 3D model, side-flipped graphics, zone settings and board items.
+Only plain numeric tokens qualify (the same grammar as angles); `0.05x` or an
+overlong token stays an exact token.
+
+Every other token stays exact. The shared parser drops quoting, so a pad number,
+field value, net name or setting such as `pad_to_mask_clearance` keeps exact
+text comparison: `"1"` and `"1.0"` are different pad numbers. The source bytes,
+board digests, scope schemas and transform identities are unchanged.
+
+A refused keyed child under a translation names its first differing token and
+both spellings, for example `fp_line a4 changed beyond the footprint transform
+(first differing token fp_line/end/1: "29.0" -> "29.001")`, where `end/1` is
+the first `end` argument. Under a turn or a flip the first difference may be a
+correctly transformed token, so no token is named there.
+
 ### Property font resave default (AGENTEE-147)
 
 For translations, quarter turns and qualified side flips (AGENTEE-313), an omitted

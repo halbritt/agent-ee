@@ -353,6 +353,22 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 self.arrange(rules)
 
+    def test_unknown_block_ids_are_named_with_the_derived_ids(self):
+        """AGENTEE-372: the refusal names each unknown id and lists the derived block ids."""
+        derived = ', '.join(repr(b['id']) for b in self.derivation['blocks'])
+        self.assertEqual(derived, "'Power', 'Sensor'")
+        for rules, label in ((plan_policy(priority_blocks=['Sensor', 'Nope', 'Also']), 'priority blocks'),
+                             (plan_policy(no_block_over_fixed={'exempt_blocks': ['Nope', 'Power', 'Also'],
+                                                               'provenance': {'enforcement': 'advisory'}}),
+                              'exempt blocks')):
+            with self.subTest(label), self.assertRaises(ValueError) as caught:
+                self.arrange(rules)
+            self.assertEqual(str(caught.exception),
+                             f"{label} must be derived block ids: unknown 'Also', 'Nope'; derived {derived}")
+        with self.assertRaises(ValueError) as caught:
+            arrangement.validate_policy(plan_policy(priority_blocks=['Nope']), [], [])
+        self.assertEqual(str(caught.exception), "priority blocks must be derived block ids: unknown 'Nope'; derived none")
+
     def test_effective_policy_only_adds_board_obstacles(self):
         """Sol review H1: the effective policy may add board obstacles, never drop or relax one."""
         corner = {'side': 'F', 'polygons': [rectangle(0, 0, 1, 1)], 'source': 'captured corner'}
