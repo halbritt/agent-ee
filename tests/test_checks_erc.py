@@ -8,6 +8,7 @@ import unittest
 from uuid import UUID
 
 from agent_ee import candidate, checks, executor
+from agent_ee import design_rule_provenance as provenance
 from agent_ee.baseline import freeze_evidence, load_baseline, verify_evidence
 from agent_ee.capabilities import convert_scope
 from agent_ee.campaign import check_proposal, mutable_inputs
@@ -51,9 +52,17 @@ def fixture(root, kind='erc'):
         project = root / 'project'
         shutil.copytree(scope['inputs'][0]['path'], project)
         scope['inputs'][0]['path'] = str(project)
+        # A default limit is advisory (AGENTEE-331), so the fixture declares its own
+        # sourced track-width minimum; its native violations then stay hard defects.
+        limits = project / 'drc-waiver-limits.json'
+        write_json(limits, {'schema': provenance.SCHEMA, 'board_setup_rules': {'min_track_width': {
+            'value_mm': 0.9, 'class': 'owner',
+            'basis': 'Synthetic test fixture: authored track-width minimum for the native DRC waiver '
+                     'contract; not a real design rule'}}})
         pro = project / 'rc_filter.kicad_pro'
-        data = read_json(pro)
-        data['board']['design_settings']['rules']['min_track_width'] = 0.9
+        data, record = provenance.import_constraints(read_json(pro), limits.read_bytes(),
+                                                     'project/' + limits.name, digest(limits))
+        provenance.bind_project(data, record)
         write_json(pro, data)
     return scope
 

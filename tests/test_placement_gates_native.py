@@ -24,6 +24,8 @@ from agent_ee.baseline import freeze_evidence, validate_witnesses, verify_eviden
 from agent_ee.placement_check import gate_findings
 from agent_ee.placement_predicates import board_axis, connector_edge, envelope_declarations, native_rotation
 from agent_ee.placement_probe import extract
+from tests.test_placer import authored_source
+from agent_ee.placement_predicates import exact_nm
 
 REPO = Path(__file__).resolve().parents[1]
 MM = 1_000_000
@@ -36,6 +38,10 @@ BOARD = 'project/rc_filter.kicad_pcb'
 
 
 def placement(cid, criterion, drc='drc-placement', **params):
+    if criterion == 'edge-clearance/1' and 'constraint_provenance' not in params:
+        params['constraint_provenance'] = {'min_courtyard_edge_mm': authored_source(
+            'tests/test_placement_gates_native.py: authored saved-board edge minimum',
+            exact_nm(params['min_courtyard_edge_mm'], 'min_courtyard_edge_mm'))}
     return {'id': cid, 'kind': 'placement', 'params': {'criterion': criterion, 'drc_check': drc, **params}}
 
 
@@ -254,6 +260,20 @@ class NativePlacementGates(unittest.TestCase):
         self.assertEqual(results['edge-over']['details']['gate_findings'],
                          [{'check_id': 'edge-over', 'entity': 'C1', 'kind': 'courtyard_edge_clearance'}])
         self.assertNotIn('gate_findings', results['edge-exact']['details'])
+
+    def test_unsourced_saved_board_edge_limit_never_emits_gate_finding(self):
+        run, results = self.run_scope(self.source(move={'C1': (114.05, 100)}), [
+            DRC_STAGE, placement('edge-advisory', 'edge-clearance/1',
+                                 min_courtyard_edge_mm='0.250001', constraint_provenance={}),
+            placement('edge-sourced', 'edge-clearance/1', min_courtyard_edge_mm='0.250001'), DRC_FULL])
+        self.assertStatus(results['edge-advisory'], 'ok', 'info')
+        advisory = results['edge-advisory']['details']
+        self.assertEqual((advisory['defects'], advisory['unknown']), ([], []))
+        self.assertEqual(advisory['advisories'][0]['kind'], 'unsourced_limit')
+        self.assertNotIn('gate_findings', advisory)
+        self.assertStatus(results['edge-sourced'], 'ok', 'defect')
+        self.assertEqual(results['edge-sourced']['details']['gate_findings'],
+                         [{'check_id': 'edge-sourced', 'entity': 'C1', 'kind': 'courtyard_edge_clearance'}])
 
     def test_ratsnest_byte_identical_oracle_and_declared_maxima(self):
         source = self.source()

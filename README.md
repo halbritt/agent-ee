@@ -114,12 +114,14 @@ Fab-family kinds gate carry regardless of stage, and campaign acceptance refuses
 open carry. Receipt-backed closure survives only proven masked-track edits
 whose exempt spans match the KiCad writer grammar, preserving raw
 artwork/obstruction bytes and all captured project/rule paths
-and bytes (AGENTEE-344). Bench-feedback acceptance also refuses open carry.
+and bytes (AGENTEE-344). Masked-track edits on nets containing `#` or `;`
+reopen closure even with KiCad-written quoted net names (AGENTEE-360).
+Bench-feedback acceptance also refuses open carry.
 The [post-routing artwork producer](docs/silk-artwork.md#post-routing-artwork-producer-agentee-350)
 repairs routed-board silk through a receipted translation-only step, proves that
 all non-silk geometry is unchanged, and enables identity-bound carry closure.
-Closure consumes sealed native containment evidence, including footprint-owned
-board cutouts, without rerunning the tool during campaign replay.
+Closure consumes sealed native containment evidence, including board-owned and footprint-owned
+straight slots and cutouts (AGENTEE-362), without rerunning the tool during campaign replay.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against sourced limits.
@@ -144,11 +146,14 @@ remaining budget. Joint refusals retain named cluster diagnostics.
 [Placement blocks](docs/blocks.md) come from the sealed child sheets or a hashed
 engineer allocation file. Each block is packed alone into a rigid, versioned block
 candidate, with relative poses, an obligation grade, a courtyard witness,
-per-side outlines and source hashes. Candidates are search-derived and advisory.
+per-side outlines and source hashes. A compaction pass re-packs each block on
+shrinking outlines and keeps the smallest box with the same obligations.
+Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
-refuses any mismatch.
+refuses any mismatch. Land-pattern and courtyard hashes use canonical contour rings,
+so they do not depend on the captured board rotation (AGENTEE-370).
 The [block library](docs/block-library.md) keeps versioned known-good blocks in
 `blocks/` with provenance receipts. Its entries come from KiCad board regions,
 scale-verified datasheet figures and project clusters. A lookup returns each block
@@ -160,10 +165,14 @@ every use is admitted by `blocks.admit` on the target.
 [Block arrangement](docs/blocks.md#stage-b-arrangement-agentee-340) places the
 admitted candidates as rigid macros, then packs the residual parts with the
 placer, with block members fixed. The search uses deterministic conflict-directed
-backjumping with typed exhaustion. Block rules (keep-outs, opposite-side
+backjumping with typed exhaustion. Candidate origins align to block members as
+well as block outlines, and the blocked regions are cached per placed block, so
+a backjump recomputes only what moved. Block rules (keep-outs, opposite-side
 shadows, no block over a fixed part, thermal spread) are hard only with a
 citation. Boundary roles are bound to their board nets. The complete plan goes
-through the writer's native gate.
+through the writer's native gate. The writer publishes each placed block's
+provenance class and enforcement as review input, which a scope's
+`block_provenance` carries to every initial reviewer.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
@@ -248,7 +257,10 @@ scope. It preserves project rules, checks and baseline sources, pre-creates chil
 sheets and leaves native execution to the ordinary review/campaign workflow. Its
 stage-two producer derives the checks, mappings, stage policy and `.kicad_pro`
 rules from the envelope, its fab profile and the parts manifest instead, and
-refuses incomplete inputs. Optional captured net constraints add per-net classes,
+refuses incomplete inputs. An optional [constraint-source import](docs/scaffold.md#declared-design-rule-sources-agentee-331)
+records design-rule classes and citations. Native DRC retains unsourced numeric
+findings as advisories while sourced limits and structural gates remain hard.
+Optional captured net constraints add per-net classes,
 assignments, width rules and a Default completeness check. Stage-three preparation
 writes declared holes, keepouts, locked fixed footprints and the IMU marking through
 a campaign pre-receipt. Its [packed-board silkscreen policy](docs/scaffold.md#packed-board-silkscreen-policy-agentee-276)
@@ -750,8 +762,12 @@ and mounting holes written by the scaffold are fixed references, and their
 exact courtyards are obstacles (AGENTEE-179). Circular probe courtyards are
 bounded exactly within a declared 5 um tolerance. A fixed courtyard may leave the
 outline only across envelope-declared edges and distances. Declared group
-regions and anchor distances are enforced and graded by `placement-groups/1`, and
-parts without courtyards are refused by name
+regions and anchor distances are enforced and graded by `placement-groups/1`.
+[Unsourced obstacle, region and saved-board limits](docs/placer.md#obstacle-and-group-sources-agentee-361)
+never establish a defect: capacity proofs that need them are unknown, and
+saved-board edge and group checks report them as `info` advisories. Authored
+fixtures and captured geometry retain their sourced verdicts.
+Parts without courtyards are refused by name
 ([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). Every placer
 result past the fixed reservations records the board's capacity at the packing
 gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound
@@ -974,3 +990,14 @@ and refuses unresolved overlaps before publication, without changing electrical
 check verdicts.
 
 Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Runtime validation refuses mounts of live package source directories, their ancestors or unqualified source files, including symlink and bind aliases (AGENTEE-327/329). Validated tool mounts pass opened descriptors and verify mounted identities inside the sandbox before execution to prevent rename races; directory sources containing submounts are refused. Refused fab receipts retain their violations and diagnostic paths.
+
+[Design-rule provenance](docs/scaffold.md#declared-design-rule-sources-agentee-331)
+keeps unsourced numeric defaults advisory across placement, captured DRC, plane
+production and the experimental row stand-in. Measurements below a sourced floor
+still refuse when KiCad prints a larger default. Co-located drills and copper
+outside the board outline remain structural defects.
+
+Native design-rule grading also checks saved effective copper containment against
+the board outline, including cutouts. Crossing and wholly outside copper remain
+structural engineering defects regardless of advisory edge-clearance defaults;
+see [design-rule provenance](docs/check-reference.md#design-rule-provenance-agentee-331).

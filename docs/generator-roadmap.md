@@ -508,3 +508,10 @@ source claims; selection receipts name unknown-attribute exclusions. This shares
 the catalog replay already consumed by `parts/1` and complements AGENTEE-164's
 exact named-IC records. It does not add parametric claims to named records or
 select an actual pod regulator without captured rows and declared constraints.
+
+AGENTEE-331 binds declared numeric rule provenance into scaffold receipts and
+immutable projects. Native publication gates and captured DRC retain unsourced
+numeric findings as advisories; sourced limits and structural defects still gate.
+Generated per-net rules compose with immutable owner rules without inheriting
+owner authority. Review packets retain the classifications and citations.
+See [constraint sources](scaffold.md#declared-design-rule-sources-agentee-331).

@@ -289,6 +289,35 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
             pod.build(self.plan_path,self.root/'refused')
         self.assertFalse((self.root/'refused').exists())
 
+    def test_caller_supplied_obstacle_and_group_sources_refused_before_output(self):
+        # AGENTEE-365: the pod driver refuses caller sources exactly as the adapter binding does.
+        self.use_placement_adapter()
+        valid=read_json(self.source/'policy.json')
+        source={'class':'board','enforcement':'hard','citation':'Original fixture: caller claim'}
+        square=[[[0,0],[1000000,0],[1000000,1000000],[0,1000000]]]
+        obstacle={'side':'F','polygons':square}
+        group={'id':'g','references':['R1','C1'],'region':{'polygons':square}}
+        cases=[({**valid,'constraint_provenance':{}},
+                'constraint_provenance comes only from a captured envelope, never from the packing policy'),
+               ({**valid,'obstacles':[{**obstacle,'provenance':source}]},
+                'obstacle provenance is never accepted from the packing policy; '
+                'a sourced keep-out comes from a captured envelope as a native rule area'),
+               ({**valid,'groups':[{**group,'constraint_provenance':{'region':source}}]},
+                'group constraint_provenance is never accepted from the packing policy; '
+                'caller-declared regions and distances stay advisory')]
+        for policy,reason in cases:
+            with self.subTest(reason=reason):
+                write_json(self.source/'policy.json',policy)
+                with self.assertRaises(ValueError) as caught:
+                    pod.build(self.plan_path,self.root/'refused')
+                self.assertEqual(str(caught.exception),'invalid pod placement policy policy.json: '+reason)
+                self.assertFalse((self.root/'refused').exists())
+        # The same unsourced geometry is a valid pod policy.
+        write_json(self.source/'policy.json',{**valid,'obstacles':[obstacle],'groups':[group]})
+        with mock.patch('agent_ee.campaign.run_campaign',side_effect=AssertionError('inference forbidden')):
+            receipt=self.build()
+        self.assertEqual(receipt['validation']['placement_adapter']['policy'],'policy.json')
+
     def use_envelope_content(self, fixed=False, **content):
         # Original synthetic mechanics: board-only holes and a rule area, no part placement.
         envelope=copy.deepcopy(self.envelope)

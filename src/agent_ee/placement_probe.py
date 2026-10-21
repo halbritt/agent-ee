@@ -64,8 +64,11 @@ def marking(item, owner_ref=None):
             'font': item.GetFontName() or None}
 
 
-def prove_contours(primitives, missing, unproven, curves_allowed=False):
+def prove_contours(primitives, missing, unproven, curves_allowed=False, *, separate_contours=False):
     """Every primitive must belong to an exact-endpoint degree-two closed ring.
+
+    ``separate_contours`` validates each ring independently; callers must then
+    qualify their mutual topology before using them as an outline with holes.
 
     With ``curves_allowed`` (courtyards only), circles are whole contours and arcs
     are ring edges; the record then carries outer ``polygons`` (a superset of the
@@ -144,7 +147,11 @@ def prove_contours(primitives, missing, unproven, curves_allowed=False):
         outer.append(ring_out)
         inner.append(ring_in)
     try:
-        qualified_polygons({'status': 'proven', 'polygons': outer})
+        if separate_contours and len(outer) > 64:
+            raise ValueError('excessive polygons')
+        groups = [[p] for p in outer] if separate_contours else [outer]
+        for group in groups:
+            qualified_polygons({'status': 'proven', 'polygons': group})
         if inner != outer:
             within = qualified_polygons({'status': 'proven', 'polygons': inner})
             bounds = qualified_polygons({'status': 'proven', 'polygons': outer})
@@ -236,7 +243,7 @@ def _qualify_custom_pad(pad, node):
     return {'status': 'proven', **geometry, 'bbox_nm': box_nm(pad.GetBoundingBox())}
 
 
-def _packing_pad_geometry(board, fp):
+def _packing_pad_geometry(board, fp, own_clearances=None):
     """Native outward bounds; drill/copper reservations are not courtyards."""
     import pcbnew
     settings = board.GetDesignSettings()
@@ -259,7 +266,8 @@ def _packing_pad_geometry(board, fp):
             if not pad.IsOnLayer(layer):
                 continue
             poly = pcbnew.SHAPE_POLY_SET()
-            own_clearance = pad.GetOwnClearance(layer)
+            own_clearance = (pad.GetOwnClearance(layer) if own_clearances is None
+                             else own_clearances[pad.m_Uuid.AsString()])
             # The drill reservation already contributes the board minimum. Peer
             # copper supplies only its excess, so their Minkowski margins cover
             # the peer's larger native netclass/local clearance without doubling
@@ -354,6 +362,12 @@ def extract(board_path):
     path = Path(board_path)
     before = path.read_bytes()
     board = pcbnew.LoadBoard(str(path))
+    project = path.with_suffix('.kicad_pro')
+    from .design_rule_provenance import PROJECT_KEY, finding_sources, packing_clearances
+    from .catalog import strict_json
+    project = strict_json(project.read_bytes()) if project.is_file() else {}
+    own_clearances = (packing_clearances(board, finding_sources(path), project)
+                      if PROJECT_KEY in project else None)
     has_holes = any(p.HasHole() or p.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH)
                     for f in board.GetFootprints() for p in f.Pads())
     outline_shapes = [s for s in board.GetDrawings() if s.GetLayer() == pcbnew.Edge_Cuts]
@@ -403,7 +417,8 @@ def extract(board_path):
                            'pads': sorted(pads, key=lambda p: (p['number'], p['uuid']))})
         if has_holes:
             try:
-                footprints[-1]['packing_pad_geometry'] = {'status': 'proven', **_packing_pad_geometry(board, fp)}
+                footprints[-1]['packing_pad_geometry'] = {
+                    'status': 'proven', **_packing_pad_geometry(board, fp, own_clearances)}
             except ValueError as exc:
                 footprints[-1]['packing_pad_geometry'] = {'status': 'unsupported', 'reason': str(exc)}
     if path.read_bytes() != before:

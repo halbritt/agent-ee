@@ -53,6 +53,109 @@ class SilkArtworkTest(unittest.TestCase):
         k.SaveBoard(str(path), b)
         return path
 
+    def test_native_outline_holes_relocate_and_contain(self):
+        import pcbnew as k
+        from agent_ee.silk_artwork import contained_markings
+        from agent_ee import placement_defects as pd
+        for footprint_owned in (False, True):
+            for narrow in (False, True):
+                with self.subTest(footprint_owned=footprint_owned, narrow=narrow):
+                    board = k.BOARD()
+                    fp = k.FOOTPRINT(board)
+                    board.Add(fp)
+                    fp.SetReference('R1')
+                    fp.Value().SetVisible(False)
+                    field = fp.Reference()
+                    field.SetLayer(k.F_SilkS)
+                    field.SetTextSize(k.VECTOR2I(1000000, 1000000))
+                    field.SetTextThickness(150000)
+                    def rect(owner, x0, y0, x1, y1):
+                        points = [(x0,y0), (x1,y0), (x1,y1), (x0,y1)]
+                        for a, b in zip(points, points[1:] + points[:1]):
+                            edge = k.PCB_SHAPE(owner)
+                            edge.SetShape(k.SHAPE_T_SEGMENT)
+                            edge.SetLayer(k.Edge_Cuts)
+                            edge.SetWidth(50000)
+                            edge.SetStart(k.VECTOR2I(*a))
+                            edge.SetEnd(k.VECTOR2I(*b))
+                            owner.Add(edge)
+                    rect(board, 0, 0, 30000000, 30000000)
+                    owner = fp if footprint_owned else board
+                    rect(owner, 14000000, 10000000,
+                         14500000 if narrow else 18000000, 20000000)
+                    uid = field.m_Uuid.AsString()
+                    for label, x, y, expected in (
+                            ('inside', 5000000, 5000000, True),
+                            ('cutout', 14250000, 15000000, False),
+                            ('straddle', 14000000, 15000000, False),
+                            ('offboard', -5000000, 5000000, False)):
+                        field.SetPosition(k.VECTOR2I(x, y))
+                        self.assertEqual(uid in contained_markings(board), expected, label)
+                    field.SetPosition(k.VECTOR2I(14000000, 15000000))
+                    path = self.root / 'holes.kicad_pcb'
+                    k.SaveBoard(str(path), board)
+                    original = pd._identities(path)
+                    defect = dict(type='placement_silkscreen_conflict', status='open',
+                                  verdict='defect', native=dict(items=[dict(uuid=uid)]))
+                    report = relocate(board, [dict(type='silk_overlap', items=[dict(uuid=uid)])])
+                    self.assertEqual(report['search_diagnostics'], [])
+                    self.assertEqual(len(report['moved_fields']), 1)
+                    k.SaveBoard(str(path), board)
+                    from agent_ee.silk_artwork import containment_witness
+                    current = pd._identities(path, containment_witness(path))
+                    self.assertIn(uid, current.contained())
+                    self.assertTrue(pd._closes(defect, original, current, set(), set(), True))
+
+    def test_outline_topology_and_box_hole_boundaries(self):
+        import pcbnew as k
+        from agent_ee.silk_artwork import _outline_with_holes, _box_contained
+        from agent_ee.placement_probe import primitive, prove_contours
+        for case, rectangles, qualified in (
+                ('two_holes', [(0,0,30,30), (5,5,8,8), (20,20,22,22)], True),
+                ('islands', [(0,0,10,10), (20,20,30,30)], False),
+                ('touching', [(0,0,30,30), (0,5,8,8)], False),
+                ('crossing', [(0,0,30,30), (28,5,32,8)], False),
+                ('nested_holes', [(0,0,30,30), (5,5,20,20), (8,8,10,10)], False),
+                ('overlapping_holes', [(0,0,30,30), (5,5,10,10), (8,8,12,12)], False)):
+            with self.subTest(case=case):
+                board = k.BOARD()
+                for x0, y0, x1, y1 in rectangles:
+                    shape = k.PCB_SHAPE(board)
+                    shape.SetShape(k.SHAPE_T_RECT)
+                    shape.SetLayer(k.Edge_Cuts)
+                    shape.SetStart(k.VECTOR2I(x0, y0))
+                    shape.SetEnd(k.VECTOR2I(x1, y1))
+                    board.Add(shape)
+                outline = _outline_with_holes(board)
+                self.assertEqual(outline is not None, qualified)
+                # The default parser must retain its placement verdict boundary.
+                legacy = prove_contours([primitive(s) for s in board.GetDrawings()], 'missing', 'unknown')
+                self.assertEqual(legacy['status'], 'proven' if case == 'islands' else 'unknown')
+                if qualified:
+                    for box, expected in (
+                            ([(1,1),(3,1),(3,3),(1,3)], True),
+                            ([(4,4),(9,4),(9,9),(4,9)], False),  # encloses whole hole
+                            ([(4,5),(5,5),(5,6),(4,6)], False),  # touches hole
+                            ([(6,6),(7,6),(7,7),(6,7)], False),
+                            ([(4,6),(9,6),(9,7),(4,7)], False)):
+                        self.assertEqual(_box_contained(box, outline), expected)
+                shape = k.PCB_SHAPE(board)
+                shape.SetShape(k.SHAPE_T_SEGMENT)
+                shape.SetLayer(k.Edge_Cuts)
+                shape.SetStart(k.VECTOR2I(40,40))
+                shape.SetEnd(k.VECTOR2I(41,41))
+                board.Add(shape)
+                self.assertIsNone(_outline_with_holes(board))
+
+    def test_independent_contours_keep_resource_limit(self):
+        from agent_ee.placement_probe import prove_contours
+        rings = [dict(kind='polygon', points=[[i*3,0],[i*3+1,0],[i*3+1,1],[i*3,1]])
+                 for i in range(65)]
+        self.assertEqual(prove_contours(rings, 'missing', 'unknown', separate_contours=True)['status'],
+                         'unknown')
+        self.assertEqual(prove_contours(rings[:64], 'missing', 'unknown', separate_contours=True)['status'],
+                         'proven')
+
     def test_artwork_save_preserves_moved_baseline_collision_refusal(self):
         import pcbnew as k
         import test_placer_through_holes as pth_fixture
@@ -193,6 +296,54 @@ class SilkArtworkTest(unittest.TestCase):
             for path in (source.with_suffix(suffix), out.with_suffix(suffix),
                          (out.parent / 'baseline' / out.name).with_suffix(suffix)):
                 self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected)
+
+    def test_artwork_comparisons_retain_bound_numeric_sources(self):
+        from agent_ee.design_rule_provenance import bind_project, import_constraints
+        from agent_ee.storage import json_bytes, write_json
+        import pcbnew as k
+        original = self.board()
+        board = k.LoadBoard(str(original))
+        text = k.PCB_TEXT(board)
+        text.SetText('Original undersized board marking')
+        text.SetLayer(k.F_SilkS)
+        text.SetTextSize(k.VECTOR2I(500000, 500000))
+        text.SetTextThickness(100000)
+        text.SetPosition(k.VECTOR2I(5000000, 8000000))
+        board.Add(text)
+        k.SaveBoard(str(original), board)
+        for cls in ('default', 'owner', 'manufacturer', 'datasheet', 'engineering'):
+            with self.subTest(provenance=cls):
+                root = self.root / cls
+                root.mkdir()
+                source = root / original.name
+                source.write_bytes(original.read_bytes())
+                declared = {'schema': 'fome-mc.constraint-provenance/1',
+                            'board_setup_rules': {'min_text_height': {
+                                'value_mm': 0.8, 'class': cls, 'basis': 'Original artwork test limit'}}}
+                project, record = import_constraints({'board': {'design_settings': {
+                    'rules': {'min_text_height': 0.8}}}}, json_bytes(declared),
+                    'original-limits.json', 'original-test-source')
+                bind_project(project, record)
+                write_json(source.with_suffix('.kicad_pro'), project)
+                # output() uses self.root for its unique proposal directory.
+                self.root = root
+                try:
+                    out = self.output(source)
+                finally:
+                    self.root = root.parent
+                _, delta = _proposal_drc(source, out)
+                artwork = json.loads((out.parent / 'placement-silkscreen.json').read_text())
+                self.assertTrue(artwork['moved_fields'])
+                for findings in (delta['baseline_findings'], delta['candidate_findings']):
+                    heights = [v for v in findings if v['type'] == 'text_height']
+                    self.assertTrue(heights, delta)
+                    for finding in heights:
+                        provenance = finding['constraint_provenance']
+                        self.assertEqual(provenance['class'], cls)
+                        self.assertEqual(provenance['enforcement'],
+                                         'advisory' if cls == 'default' else 'hard')
+                        self.assertEqual(provenance['citation']['path'], 'original-limits.json')
+                self.assertEqual(delta['blocking_findings'], [])
 
     def test_ignored_silk_edge_clearance_refuses_native_coverage(self):
         source = self.board()

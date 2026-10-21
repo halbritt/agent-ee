@@ -450,10 +450,23 @@ class ProducerTests(ProducerFixture, unittest.TestCase):
         self.limits[9] = ('min_clearance_mm', 0.3, 'preferred')
         self.write()
         after = self.build('b')
-        # No DRC-enforced value moves with the preferred tier; only the input-derived root UUID differs.
+        # No DRC-enforced value moves with the preferred tier. UUIDs and captured
+        # source hashes change because the profile's bytes changed.
         before, now = (read_json(self.root / name / 'inputs/project/design.kicad_pro') for name in ('a', 'b'))
         self.assertNotEqual(before.pop('sheets'), now.pop('sheets'))
         self.assertNotEqual(before['schematic'].pop('top_level_sheets'), now['schematic'].pop('top_level_sheets'))
+        from agent_ee.design_rule_provenance import PROJECT_KEY
+        bindings = [before.pop(PROJECT_KEY), now.pop(PROJECT_KEY)]
+        self.assertNotEqual(*bindings)
+        for name, binding in zip(('a', 'b'), bindings):
+            for setting in binding['settings'] + binding['derived_settings']:
+                citation = setting['citation']
+                if citation is None:
+                    self.assertEqual(setting['class'], 'default')
+                    continue
+                self.assertEqual(citation.pop('sha256'),
+                                 digest(self.root / name / 'inputs' / citation['path']))
+        self.assertEqual(*bindings)
         self.assertEqual(before, now)
         self.assertEqual(after['derivation']['router_targets'][0]['value'], 0.3)
 

@@ -21,7 +21,7 @@ for PCB field geometry. Candidate offsets use a 0.25 mm grid within 10 mm of the
 field's post-placement anchor, ordered by squared displacement then coordinates.
 The existing qualified outline parser requires the entire text box, grown by
 at least 0.2 mm or the native silk clearance, to remain inside one straight
-board contour. Same-side native silk and mask geometry, visible fields, and
+board contour, outside all qualified internal slots and cutouts. Same-side native silk and mask geometry, visible fields, and
 surface pad copper/mask bounds reserve space. Other footprints' same-side
 courtyard bounding boxes also reserve their entire interiors, so moved labels
 cannot end up beneath another assembled component. The owning courtyard is
@@ -123,11 +123,16 @@ later receipted placement result for the current board, complete native DRC with
 no remaining silk finding on the same identities, and preserved item ownership,
 marking content, layer and style. Missing, hidden or relabeled fields do not
 close a defect. Every closed field/graphic must also be visible silk wholly
-inside the single proven straight board outline. Both producers measure native
+inside the proven straight board outline and outside every internal slot/cutout. Both producers measure native
 bounding boxes from the final saved board in their networkless tool process,
 checking every box edge against the qualified outline. The outline includes
 board drawings and footprint-owned Edge.Cuts, as in placement qualification.
-Slots, cutouts and multiple contours conservatively establish no containment.
+AGENTEE-362 qualifies one outer ring with disjoint, strictly internal straight
+cutout rings. Touching/crossing contours, nested cutouts, multiple board islands,
+open rings and unsupported curves establish no containment. Bounding boxes may
+neither cross nor touch a cutout boundary, nor enclose an entire cutout.
+The same qualification gates relocation, including its clearance margin.
+Placement outline grading retains its existing single-contour contract.
 Entirely off-board, edge-straddling and cutout markings stay typed open defects
 even when DRC is silent. The sealed placement result retains `containment`,
 with the saved `board_sha256` and the native `markings` UUID list. Closure and
@@ -154,6 +159,19 @@ CRLF separate tokens. Semicolons and hashes anywhere in the span, mid-token quot
 other whitespace and unknown track children (including mask exposure) receive
 no exemption: their raw bytes remain in the comparison and reopen closure when
 changed. This also retains printable hashes and semicolons inside quoted strings.
+
+Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
+or `A;B`) never receive the exemption, even when KiCad writes the net name as a
+quoted string. Such edits reopen closure and require a fresh receipt. This is a
+conservative liveness bound of the writer grammar (AGENTEE-360).
+A segment or arc refuses comparison with `ValueError` when a child is
+list-headed (for example `((x))`) or when a value of a `start`, `end`, `mid`,
+`width`, `layer`, `net`, `uuid` or `locked` child is a nested list (for example
+`(start (1) 2)`), on any layer. Nested lists inside unknown track children are
+not refused: those children stay in the exact comparison. The coordinator
+retains the carried defect instead of letting an untyped error escape
+(AGENTEE-364).
+
 Whitespace inside retained nodes is significant; whitespace between root children is not.
 Footprint transforms, marking positions/content/ownership, pads, mask, vias,
 zones and setup must remain unchanged. Closure binds the complete captured
@@ -203,7 +221,12 @@ coordinates are normalized only within permitted graphic translations. Any
 other token change refuses publication. Changed text or fields carrying a
 `render_cache` refuse because this producer does not regenerate and compare the
 cache. A backslash anywhere in either board also refuses the scope proof,
-including unchanged strings and non-silk content. This conservative scope limit
+including unchanged strings and non-silk content. A changed list-headed node,
+a property whose name is a nested list, a nameless property of a changed
+footprint, an empty `()` child of a changed silk graphic, a nested-list `uuid`
+value or a
+malformed movable-field declaration refuses with `ValueError`, never an untyped
+error or a silent skip (AGENTEE-364). This conservative scope limit
 can refuse legitimate boards: the shared parser decodes escapes, so decoded
 token equality cannot establish the saved spelling KiCad renders. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
@@ -242,3 +265,9 @@ writer-editable custom rule file against an earlier placement receipt. A writer
 can relax a numeric silk constraint before this step without using severity
 `ignore`; this remains a recorded limitation (AGENTEE-350 review G5). The
 containment requirement is independent of custom silk constraints.
+
+`tests.test_silk_artwork` also qualifies board-owned and footprint-owned slots
+and cutouts with native saved-board identities: relocation permits receipt-bound
+closure after repair, while in-cutout, slot-straddling and off-board marks refuse.
+Topology probes preserve the default placement parser contract and reject
+ambiguous contour relationships and boxes surrounding entire holes (AGENTEE-362).

@@ -21,7 +21,7 @@ class LibraryError(ValueError):
     pass
 
 
-def parse_sexpr(data):
+def parse_sexpr(data, *, comment_chars=";"):
     """Parse one bounded, complete S-expression without a format-specific root."""
     if not isinstance(data, bytes) or len(data) > BYTE_LIMIT:
         raise LibraryError('library must be bytes, at most 32 MiB')
@@ -38,7 +38,7 @@ def parse_sexpr(data):
         if char.isspace():
             pos += 1
             continue
-        if char == ';':
+        if char in comment_chars:
             end = text.find('\n', pos)
             pos = len(text) if end < 0 else end + 1
             continue
@@ -77,7 +77,8 @@ def parse_sexpr(data):
                 atom = ''.join(chars)
             else:
                 end = pos
-                while end < len(text) and not text[end].isspace() and text[end] not in '();"':
+                while (end < len(text) and not text[end].isspace() and
+                       text[end] not in '();"' and text[end] not in comment_chars):
                     end += 1
                 if end == pos:
                     raise LibraryError('invalid token')

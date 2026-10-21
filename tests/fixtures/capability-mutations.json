@@ -5,7 +5,7 @@
   "cases": {
     "control": {"violated_requirements": [], "unknown_checks": [], "outcome": "criteria_satisfied"},
     "wrong_rc": {"violated_requirements": ["R-response"], "unknown_checks": [], "outcome": "defects_or_unresolved"},
-    "thin_track": {"violated_requirements": ["R-native", "R-width"], "unknown_checks": [], "outcome": "defects_or_unresolved"},
+    "thin_track": {"violated_requirements": ["R-width"], "unknown_checks": [], "outcome": "defects_or_unresolved"},
     "thin_arc": {"violated_requirements": ["R-native", "R-width"], "unknown_checks": [], "outcome": "defects_or_unresolved"},
     "rule_defect": {"violated_requirements": ["R-native"], "unknown_checks": [], "outcome": "defects_or_unresolved"},
     "unsupported_value": {"violated_requirements": [], "unknown_checks": ["rc-step"], "outcome": "incomplete"},
