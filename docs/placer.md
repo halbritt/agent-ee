@@ -788,8 +788,9 @@ shared footprint. The supply source may differ from the return source
 (AGENTEE-330): a buck output loop declares inductor pad 2 → capacitor positive
 as `supply` and IC PGND → capacitor negative as `return`. Pad numbers may be equal
 on different source references; reference, pad number, net and any captured UUID
-still identify each endpoint exactly. Each pair
-must name the same net at both ends. A buck may additionally declare `switch`
+still identify each endpoint exactly. For distinct source references, the supply
+and return endpoint net sets must be disjoint, even without a `kind`
+(AGENTEE-341). Each pair must name the same net at both ends. A buck may additionally declare `switch`
 with the identical pair structure: `from` selects the return-source IC switch
 pad and `to` selects its inductor pad. Shared rail membership never assigns a capacitor to
 an IC. Select the explicit `buck-output-loop` kind below to bind component and
@@ -908,6 +909,9 @@ native pads and carry their own limits and citations. For this kind,
 `ic`, and these two references must differ. When present, `switch.from.reference`
 must equal `ic` and `switch.to.reference` must equal `inductor`. Both return
 endpoints must use `return_net`; neither supply endpoint may use that net.
+Neither switch endpoint may use `return_net` or either supply endpoint net
+(AGENTEE-341). A switch leg on the output rail therefore refuses even when its
+native pads and distance would otherwise pass.
 Net names and reference prefixes never infer these roles. A declaration of IC
 and inductor identity is supplied by the engineer; this check does not establish
 the component's device type from a library or datasheet.
@@ -918,12 +922,14 @@ refuse validation before grading or packing. Per-pair native identity, centroid,
 limit and citation failures retain their existing unknown/defect precedence.
 Omit the switch pair when no cited switch limit has been declared.
 
-Untyped obligations retain their existing generic pair semantics, including
-same-source input decoupling with a switch leg and previously admitted distinct
-sources. They do not assert this loop-role contract. This compatibility rule
-preserves existing verdicts; new output-loop declarations must select the kind
-explicitly. Check, pack constraints, candidate targets and saved-proposal grading
-then use all declared pairs. Distances bound individual legs, not a summed
+Untyped same-source obligations retain their existing verdicts, including
+input decoupling with a switch leg. Untyped distinct-source obligations require
+disjoint supply/return net sets but do not assert the loop-role contract.
+Disjoint nets alone cannot identify an unrelated source on the same rail or
+detect a supply/return swap: explicit role binding is required for those cases.
+New output-loop declarations must select the kind explicitly. Check, pack
+constraints, candidate targets and saved-proposal grading then use all declared
+pairs. Distances bound individual legs, not a summed
 perimeter, routed path or inductance.
 
 The retained original fixture is `bound_output_loop()` in
@@ -954,7 +960,10 @@ captured declaration.
 ## Incremental locality search and diagnostics (AGENTEE-332)
 
 After the independent initial locality grade qualifies identities and copper
-centroids, packing caches selected pad positions per footprint. Search push/pop
+centroids, packing caches selected pad positions per footprint. Direct
+`PlacementIndex(document)` construction re-validates the declaration before
+building caches, including role bindings, disjoint nets and canonical UUIDs
+(AGENTEE-341). It still requires independently qualified native geometry. Search push/pop
 updates this index, including backjumps. Each rotation resolves only its incident
 roles with placed peers once; candidate costs translate those exact centroids
 without copying footprint geometry or scanning other footprints. Footprints with
