@@ -151,6 +151,18 @@ def _hard(rule):
     return rule is not None and rule['provenance']['enforcement'] == 'hard'
 
 
+def _obstacle(rule, shape, source):
+    """A hard rule's stationary obstacle, carrying the rule's cited source to the placer.
+
+    Capacity proofs that rest on it are then defects of a sourced rule, not unknowns
+    about unsourced geometry (AGENTEE-365). Only hard rules, which need a citation,
+    become obstacles.
+    """
+    return {'side': shape['side'], 'polygons': shape['polygons'], 'source': source,
+            'provenance': {'class': 'arrangement_rule', 'enforcement': 'hard',
+                           'citation': rule['provenance']['citation']}}
+
+
 def bind_boundary(document, capture, mapping=None, declared=None):
     """Each candidate net role bound to the board net its pins land on.
 
@@ -1034,11 +1046,11 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
                        problems=[{'kind': 'group_anchor_residual', 'groups': stranded}])
     # Hard keep-outs and fixed parts' shadows are stationary obstacles; so is every board obstacle.
     obstacles = list(effective['obstacles'])
-    obstacles += [{'side': k['side'], 'polygons': k['polygons'], 'source': 'block-arrangement keep-out ' + k['id']}
+    obstacles += [_obstacle(k, k, 'block-arrangement keep-out ' + k['id'])
                   for k in arrangement.get('keepouts', []) if _hard(k)]
     stacking = arrangement.get('no_stacking')
     if _hard(stacking):
-        obstacles += [dict(_shadow(by_ref[r], stacking['margin_nm']), source='block-arrangement shadow ' + r)
+        obstacles += [_obstacle(stacking, _shadow(by_ref[r], stacking['margin_nm']), 'block-arrangement shadow ' + r)
                       for r in stacking['references'] if r in fixed]
         for bid, entry in admitted.items():
             frame = [placer.transform(by_ref[r], entry['poses'][r]['position_nm'], entry['poses'][r]['rotation_deg'])
@@ -1125,7 +1137,7 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
         _strip(placer.transform(fp, poses[fp['ref']]['position_nm'], poses[fp['ref']]['rotation_deg']))
         if fp['ref'] in poses else fp for fp in residual_capture['footprints']]
     residual_policy = {**copy.deepcopy(effective), 'obstacles': obstacles + [
-        dict(_shadow(poses[r], stacking['margin_nm']), source='block-arrangement shadow ' + r)
+        _obstacle(stacking, _shadow(poses[r], stacking['margin_nm']), 'block-arrangement shadow ' + r)
         for r in (stacking['references'] if _hard(stacking) else ()) if r in poses]}
     residual_policy['fixed_refs'] = sorted(set(effective['fixed_refs']) | members, key=blocks._natural)
     record['residual'] = {'references': sorted(movable, key=blocks._natural), 'policy_sha256': digest(residual_policy),

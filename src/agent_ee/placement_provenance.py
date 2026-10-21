@@ -11,8 +11,9 @@ GEOMETRY = object()
 def sourced(entry, label, value_nm=GEOMETRY):
     """Validate a declared source, including exact numeric binding when applicable."""
     keys = {'class', 'enforcement', 'citation'} | ({'value_nm'} if value_nm is not GEOMETRY else set())
+    # arrangement_rule: a cited hard block-arrangement keep-out or shadow (AGENTEE-365).
     classes = ('fixture_author', 'manufacturer') if value_nm is not GEOMETRY else (
-        'fixture_author', 'manufacturer', 'datasheet', 'board')
+        'fixture_author', 'manufacturer', 'datasheet', 'board', 'arrangement_rule')
     if (not isinstance(entry, dict) or set(entry) != keys or entry.get('class') not in classes
             or entry.get('enforcement') != 'hard'
             or not isinstance(entry.get('citation'), str) or not entry['citation'].strip()

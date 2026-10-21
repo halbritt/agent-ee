@@ -152,8 +152,9 @@ against a captured manufacturer requirement, including a captured JLCPCB SMT
 assembly record; those requirements remain hard. A caller must qualify that
 source before calling this geometry API: a citation string is not independently
 authenticated by the placer. The coordinator placement adapter continues to
-refuse policy-supplied `constraint_provenance`; envelope provenance still comes
-only from captured envelopes. This change adds no manufacturer capture pipeline
+refuse policy-supplied `constraint_provenance`, per-obstacle `provenance` and
+per-group `constraint_provenance`; envelope provenance still comes only from
+captured envelopes. This change adds no manufacturer capture pipeline
 or automatic promotion of an agent-chosen number.
 Neither a successful packing plan nor this spacing default establishes native
 DRC or assembly clearance acceptance.
@@ -441,10 +442,22 @@ uses its existing per-pair sourced/advisory contract, separately from capacity.
 ### Obstacle and group sources (AGENTEE-361)
 
 Each policy obstacle may declare `provenance: {class, enforcement, citation}`.
-The accepted geometry classes are `fixture_author`, `board`, `datasheet` and
-`manufacturer`; enforcement must be `hard` and the citation nonempty. Without
-that record an obstacle is `unknown`/`soft`. Native captured rule areas and
-footprint keepouts remain `board`/`hard` exclusions.
+The accepted geometry classes are `fixture_author`, `board`, `datasheet`,
+`manufacturer` and `arrangement_rule`; enforcement must be `hard` and the
+citation nonempty. Without that record an obstacle is `unknown`/`soft`. Native
+captured rule areas and footprint keepouts remain `board`/`hard` exclusions.
+
+Only a direct caller of this geometry API supplies these records (AGENTEE-365).
+The coordinator placement adapter and the pod driver refuse a packing policy
+whose obstacles carry `provenance` or whose groups carry `constraint_provenance`,
+exactly as they refuse a policy-level `constraint_provenance`: the packing
+policy is caller-authored, so it may state geometry but not qualify it. A
+sourced keep-out reaches the board from a captured envelope as a native rule
+area, graded `board`/`hard`; caller-declared obstacles, regions and distances
+stay advisory. Block arrangement passes the cited source of each hard keep-out
+and `no_stacking` shadow to the residual pack as an `arrangement_rule`/`hard`
+record, so a residual capacity proof resting on one is a defect that names it
+(see [blocks](blocks.md#residual-packing-and-the-complete-plan)).
 
 Each group may declare `constraint_provenance` keyed by `region` and/or
 `max_distance_nm`, only for constraints that group actually has. A region uses

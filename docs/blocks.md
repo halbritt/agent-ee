@@ -518,7 +518,11 @@ Failures carry `search.partial` with the arranged blocks. Its authority is
 
 The residual parts are packed by `placer.pack` (`ranked-first-fit-backjump/1`,
 legacy-first). Block members are fixed at their arranged poses, and the hard
-keep-outs and shadows are obstacles. A residual failure is the placer's own
+keep-outs and shadows are obstacles. Each carries its rule's citation as
+`provenance: {class: arrangement_rule, enforcement: hard, citation}`, so a
+residual capacity proof that rests on a hard rule is a `defect` naming that
+obstacle, not an unknown about unsourced geometry (AGENTEE-365). Advisory rules
+are never obstacles. A residual failure is the placer's own
 typed result, with the arrangement record attached. The placer judges the
 complete proposal and grades every group and pad obligation of the board policy.
 That includes each block's deferred cross-block obligations.
