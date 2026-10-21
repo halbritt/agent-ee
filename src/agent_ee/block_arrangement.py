@@ -1205,7 +1205,7 @@ def _roster(plan):
     return rows
 
 
-def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256):
+def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256, reserved_area=None):
     """The review input of a complete arranged plan: every placed block's identity, class and enforcement.
 
     ``plan_sha256`` is the SHA-256 of the written placement-plan.json bytes, which the
@@ -1223,6 +1223,8 @@ def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256):
                 'plan_sha256': plan_sha256, 'blocks': rows,
                 'rules': [{k: r[k] for k in ('rule', 'id', 'enforcement', 'status') if k in r}
                           for r in (record['rules'] if rules is None else rules)]}
+    if reserved_area is not None:
+        document['reserved_area'] = reserved_area
     return validate_provenance(document)
 
 
@@ -1261,13 +1263,18 @@ def _sha256(value, label):
 def validate_provenance(document):
     """Refuse a block provenance artifact whose classes, enforcement or identities are inconsistent."""
     blocks._keys(document, {'schema', 'authority', 'source_sha256', 'board_sha256', 'derivation_sha256',
-                            'policy_sha256', 'plan_sha256', 'blocks', 'rules'}, label='block provenance')
+                            'policy_sha256', 'plan_sha256', 'blocks', 'rules'}, {'reserved_area'}, label='block provenance')
     if document['schema'] != PROVENANCE_ARTIFACT or document['authority'] != PROVENANCE_AUTHORITY:
         raise ValueError(f'block provenance must be {PROVENANCE_ARTIFACT} with its fixed authority statement')
     for key in ('source_sha256', 'board_sha256', 'derivation_sha256', 'policy_sha256', 'plan_sha256'):
         _sha256(document[key], key)
     if not isinstance(document['blocks'], list) or not document['blocks']:
         raise ValueError('block provenance names no placed block')
+    if 'reserved_area' in document:
+        reserve = document['reserved_area']
+        if (not isinstance(reserve, dict) or reserve.get('schema') != 'agent-ee.reserved-area/1'
+                or reserve.get('board_sha256') != document['board_sha256']):
+            raise ValueError('reserved area must name the provenance saved board')
     seen, references = set(), set()
     for row in document['blocks']:
         blocks._keys(row, {'block', 'references', 'anchor', 'candidate_sha256', 'class', 'enforcement', 'citation',

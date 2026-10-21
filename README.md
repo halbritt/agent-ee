@@ -102,6 +102,12 @@ or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
 
+Saved proposals report [advisory reserve costs](docs/placer.md#advisory-reserve-cost-agentee-380)
+per side and owner, including keepouts and courtyard excess over fabrication
+bodies. Large reserves enter arranged-block review packets. Cheaper poses are
+reported as legal only after native DRC and preservation checks on scratch copies; unvalidated poses remain hypothetical. The search
+covers a declared finite pose set.
+
 Declared [placer obstacles](docs/placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
 reserve the exact union of touching or overlapping polygons. The pod's 0.25 mm
 packing gap is an agent-chosen advisory default. Its supplied value remains a

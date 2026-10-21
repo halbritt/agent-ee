@@ -1498,3 +1498,74 @@ On the pod inputs, a 20,000-step guided budget, the
 full 200,000-step guided run, the 10-obligation run and the unguided run
 produce identical results before and after (see the AGENTEE-332 performance
 report for the measured times).
+
+## Advisory reserve cost (AGENTEE-380)
+
+After grading the saved proposal, `placer_runner` adds `reserved_area` to
+`placement-result.json`, its `judgment`, and `placement-judgment.json`. Arranged
+placements also carry the same board-bound record in `block-provenance.json`;
+the existing sealed block review input carries its findings outside the packet
+text budget. Existing artifacts without this optional field remain readable.
+The offline arrangement CLI has no fabrication inventory and does not emit this
+saved-board measurement.
+
+`agent-ee.reserved-area/1` names each side and owner: declared obstacle id (or its
+stable policy index), footprint reference for owned rule areas, board rule-area
+UUID, and reference for courtyard excess. Rule-area UUIDs distinguish multiple
+areas belonging to the same owner. Access lanes represented by native rule areas
+are included. Captured arrangement keepouts are included alongside packing-policy
+obstacles. Every area is clipped to the board outline. Courtyard excess subtracts
+only that part's fabrication outline on the same side; fabrication text labels
+are excluded from the body contours. The side total is the union of these
+reserves; owner rows can overlap and must not be summed.
+Areas in mm² and fractions of the board are exact `[numerator, denominator]`
+rationals. Straight simple polygons, including concave and overlapping polygons,
+use exact rational integration. Missing, open or unsupported fabrication contours,
+curved courtyards and unsupported outlines stay explicitly unknown, as does a
+side total with any unmeasured owner. A deterministic 2,000,000 edge-pair work
+guard limits measurement coverage and reports unknown on exhaustion.
+
+A reserve **above** 1/20 of a side becomes a `large_reserve` advisory finding.
+This suggested 5% threshold has no physical source; it never prunes a pose,
+blocks publication, changes the packing search, score or verdict, or establishes
+a design defect.
+
+The diagnostic examines quarter turns at the current origin and four
+outline-box edges, with other parts held still. It checks the existing packing,
+locality, group and hard block predicates. Saved proposals try cheaper poses in
+area, position and rotation order on retained scratch copies under
+`reserve-alternatives/`. Each attempt saves the board, reloads it, checks pad
+preservation, runs the existing write-scope witness with all other footprints
+protected, regrades the saved geometry, and runs native DRC under the captured
+project and custom-rule bytes. Baseline DRC is retained under the same rules.
+No artwork repair changes an alternative. Numeric limits without a source remain
+advisory only for native numeric constraint types; a rule-area or zone name
+cannot make a structural finding numeric. Courtyard findings always reject the
+pose, as do other native findings. Ignored placement checks,
+missing reports and tool failures remain unknown. Ignored checks for track centering, tuning geometry, footprint filters and
+footprint component types are outside this placement diagnostic. Attempt
+witnesses include board, rule, DRC and write-scope digests. The report
+uses stable summaries and witness paths relative to the proposal directory; raw
+DRC hashes stay in `validation.json` because native DRC embeds execution dates.
+
+`native_validated` names the cheapest validated legal saving in this declared
+finite set. `native_attempts` retains rejected and unknown cheaper poses. If a
+cheaper attempt was unknown, `search_complete` is false: the selected pose is
+validated, but the least cost among all legal poses in the set is unresolved.
+Standalone geometry diagnostics without native validation remain
+`geometry_qualified_native_unverified`, labelled `hypothetical, unverified`, and
+never rank as legal. Fixed owners and rigid block members are explicitly
+`not_searched`; zero costs are `already_zero`. A movable courtyard's excess is
+invariant under full containment, so it reports `no_cheaper_contained_pose`
+without running the pose diagnostic. If no cheaper attempt validates and any
+attempt is unknown, the alternative is `unknown`, labelled
+`hypothetical, unverified`, with `search_complete: false` and all attempts retained.
+`none_found` means only that this finite set found no saving and no native
+attempt was unknown. Its `search_complete` is true when a native validator was
+supplied, false for geometry-only diagnostics. No global minimum or
+impossibility is claimed.
+
+The original native card-lane regression measures 600 mm² on B inboard, validates
+a 0 mm² edge alternative, and rejects a geometrically cheapest pose with a native
+pad keepout violation before reporting the next legal pose. This owned synthetic
+fixture is not qualification of the actual pod iteration-7 and 8k boards.
