@@ -1741,7 +1741,9 @@ observation lookup failure raises typed `mount_source_changed:<at>`. Absolute an
 upward-escaping mount symlinks retain link identity without reading host targets;
 an executable through such a link has an unknown digest and is unadoptable, and a
 declared `source` through one refuses as `source_link_escape:<source>`, including
-from the same resolution in either strict run observation, leaving no receipt directory. The
+from the same resolution in either strict run observation, leaving no receipt directory
+(owner access is restored link-safely first, even after the tool made directories unwritable;
+an unremovable directory raises typed `cleanup_failed:<receipt dir>` over the refusal). The
 executable is resolved and hashed through component-wise no-follow opens below
 the held descriptor. Only
 fd-form receipts carry the mount-guard observation; historical path-form replay

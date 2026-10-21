@@ -104,6 +104,15 @@ class EscapingSourceError(ValueError):
         super().__init__(self.violation)
 
 
+class ReceiptCleanupError(ValueError):
+    """A refused run's receipt directory could not be removed; ``refusal`` is why it was refused."""
+
+    def __init__(self, path, refusal):
+        self.violation = 'cleanup_failed:' + str(path)
+        self.path, self.refusal = str(path), refusal
+        super().__init__(f'{self.violation} (after {refusal!r})')
+
+
 def _live_source_identities():
     package_source = Path(__file__).resolve(strict=True).parents[1]
     identities = set()
@@ -931,6 +940,52 @@ def _status(spec, execution, violations):
     return 'completed' if execution['exit_code'] == 0 else 'partial'
 
 
+def _owner_access(parent, name):
+    """Give the owner rwx on directory ``name`` below ``parent`` and every directory beneath it.
+
+    Links are never followed: each directory is opened without following links and must be the
+    object just inspected, so a link inside the tree never reaches a host directory.
+    """
+    before = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    if not stat.S_ISDIR(before.st_mode):
+        return
+    if before.st_mode & stat.S_IRWXU != stat.S_IRWXU:
+        os.chmod(name, stat.S_IMODE(before.st_mode) | stat.S_IRWXU, dir_fd=parent)
+    fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+    try:
+        held = os.fstat(fd)
+        if (held.st_dev, held.st_ino) != (before.st_dev, before.st_ino):
+            raise OSError(errno.ESTALE, 'directory replaced during cleanup', name)
+        with os.scandir(fd) as entries:
+            names = [entry.name for entry in entries if entry.is_dir(follow_symlinks=False)]
+        for child in names:
+            _owner_access(fd, child)
+    finally:
+        os.close(fd)
+
+
+def _discard(receipt_dir, refusal):
+    """Remove a refused run's receipt directory, or raise ReceiptCleanupError naming it.
+
+    The tool may have left directories unwritable or unsearchable, so owner access is restored
+    first. A directory that cannot be removed is reported, never silently left unlabelled.
+    """
+    receipt_dir = Path(receipt_dir)
+    try:
+        parent = os.open(receipt_dir.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            _owner_access(parent, receipt_dir.name)
+        finally:
+            os.close(parent)
+        shutil.rmtree(receipt_dir)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise ReceiptCleanupError(receipt_dir, refusal) from exc
+    if os.path.lexists(receipt_dir):
+        raise ReceiptCleanupError(receipt_dir, refusal)
+
+
 def run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=None):
     """Execute one declared step on a copy of design; never modifies design itself."""
     from .tool_source import hold_snapshots
@@ -978,9 +1033,9 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
         with _strict_source():
             tool = observe_tool(runtime_spec)
         _recheck_mounts(runtime_spec, mount_identities, live)
-    except BaseException:
+    except BaseException as exc:
         # Nothing was executed or observed; a partial copy is not evidence.
-        shutil.rmtree(receipt_dir, ignore_errors=True)
+        _discard(receipt_dir, exc)
         raise
     try:
         if spec['version_argv'] is not None:
@@ -1007,9 +1062,9 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
         _recheck_mounts(runtime_spec, mount_identities, live)
         with _strict_source():
             tool_after = observe_tool(runtime_spec)
-    except EscapingSourceError:
+    except EscapingSourceError as exc:
         # An escaped source never yields a receipt; what the tool left behind is not evidence.
-        shutil.rmtree(receipt_dir, ignore_errors=True)
+        _discard(receipt_dir, exc)
         raise
     outputs = _outputs(spec, run)
     violations = _violations(spec, inputs, receipt_dir, tool, tool_after,

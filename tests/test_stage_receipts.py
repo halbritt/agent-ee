@@ -76,6 +76,10 @@ raise SystemExit(int(sys.argv[2]) if len(sys.argv) > 2 else 0)
 '''
 
 
+def stat_mode(path):
+    return os.lstat(path).st_mode & 0o7777
+
+
 def step(mode='edit', *extra, **overrides):
     spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': 'test-helper',
             'argv': ['/usr/bin/python3', '/tool/step.py', mode, *extra],
@@ -711,6 +715,86 @@ assert not (outer / 'receipt').exists()
                 self.assertEqual(sorted(p.name for p in design.iterdir()), ['board.txt'])
                 self.assertEqual((design / 'board.txt').read_text(), 'design')
                 self.assertTrue((tool / 'lib/module.py').is_file())
+
+    @toolchain_test
+    def test_escaped_source_cleanup_removes_tool_and_design_unwritable_directories(self):
+        # The tool leaves /work and a nested directory unwritable and unsearchable, and the design
+        # carries a read-only subdirectory that copytree preserves; the refusal must still leave
+        # no receipt directory, and restoring access never follows a link out of the tree.
+        tool = Path(self.tool)
+        (tool / 'lib').mkdir()
+        (tool / 'lib/module.py').write_text('mounted source')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        (outside / 'module.py').write_text('host-only source')
+        host = Path(self.tmp.name) / 'host-dir'
+        host.mkdir()
+        host.chmod(0o500)
+        self.addCleanup(host.chmod, 0o700)
+        design = Path(self.tmp.name) / 'design'
+        (design / 'frozen/deeper').mkdir(parents=True)
+        (design / 'board.txt').write_text('design')
+        (design / 'frozen/deeper/part.txt').write_text('part')
+        (design / 'frozen/deeper').chmod(0o500)
+        (design / 'frozen').chmod(0o500)
+        self.addCleanup((design / 'frozen/deeper').chmod, 0o700)
+        self.addCleanup((design / 'frozen').chmod, 0o700)
+        script = ('echo artifact > /work/listing; mkdir -p /work/nested/inner; '
+                  'echo x > /work/nested/inner/file; ln -s %s /work/host-link; '
+                  'chmod 000 /work/nested/inner; chmod 500 /work/nested; chmod 500 /work' % host)
+        spec = self.spec(argv=['/usr/bin/sh', '-c', script], source='/tool/lib',
+                         version_argv=None, writes={}, artifacts=['listing'])
+        real_observe = stage_receipts.observe_tool
+        for window in ('before launch', 'after execution'):
+            with self.subTest(window=window):
+                calls = []
+
+                def observe(value):
+                    calls.append(True)
+                    if (len(calls) == 1) != (window == 'before launch'):
+                        return real_observe(value)
+                    (tool / 'lib').rename(tool / 'held-lib')
+                    (tool / 'lib').symlink_to(outside)
+                    try:
+                        return real_observe(value)
+                    finally:
+                        (tool / 'lib').unlink()
+                        (tool / 'held-lib').rename(tool / 'lib')
+
+                receipt_dir = Path(self.tmp.name) / ('unwritable-' + window.replace(' ', '-'))
+                with patch.object(stage_receipts, 'observe_tool', observe):
+                    with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
+                        run_step(receipt_dir, design, spec, {})
+                self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
+                self.assertFalse(os.path.lexists(receipt_dir))
+                with self.assertRaises((OSError, ValueError)):
+                    stage_receipts.validate_receipt(receipt_dir)
+                self.assertFalse((receipt_dir / 'receipt.json').exists())
+                self.assertEqual(stat_mode(host), 0o500)
+                self.assertEqual(stat_mode(design / 'frozen'), 0o500)
+                self.assertEqual((design / 'frozen/deeper/part.txt').read_text(), 'part')
+
+    def test_unremovable_refused_receipt_directory_is_a_typed_cleanup_failure(self):
+        receipt_dir = Path(self.tmp.name) / 'refused'
+        (receipt_dir / 'run/nested').mkdir(parents=True)
+        (receipt_dir / 'run/nested').chmod(0o000)
+        (receipt_dir / 'run').chmod(0o500)
+        refusal = stage_receipts.EscapingSourceError('/tool/lib')
+
+        def failing(path, *args, **kwargs):
+            raise PermissionError(13, 'Permission denied', str(path))
+
+        with patch.object(stage_receipts.shutil, 'rmtree', failing):
+            with self.assertRaises(stage_receipts.ReceiptCleanupError) as failure:
+                stage_receipts._discard(receipt_dir, refusal)
+        self.assertEqual(failure.exception.violation, 'cleanup_failed:' + str(receipt_dir))
+        self.assertIs(failure.exception.refusal, refusal)
+        self.assertIn('source_link_escape:/tool/lib', str(failure.exception))
+        # Owner access was restored before the failed removal, so the leftover is inspectable.
+        self.assertEqual(stat_mode(receipt_dir / 'run') & 0o700, 0o700)
+        self.assertEqual(stat_mode(receipt_dir / 'run/nested') & 0o700, 0o700)
+        stage_receipts._discard(receipt_dir, refusal)
+        self.assertFalse(os.path.lexists(receipt_dir))
 
     def test_executable_digest_never_follows_a_component_swapped_after_resolution(self):
         tool = Path(self.tool)

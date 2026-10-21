@@ -192,7 +192,13 @@ in a strict mode in which the very resolution that would record the link-only
 identity raises the refusal instead, so a source that escapes only while an
 observation runs, and is restored before every recheck, is still refused. The
 receipt directory is removed in either window, nothing is adopted, and no new
-receipt can carry a link-only source identity. Relative links that stay inside the mount retain
+receipt can carry a link-only source identity. Before removal the coordinator
+restores owner access to every directory in the receipt tree, opening each
+without following links, so a tool that leaves `/work` or a nested directory
+unwritable, or a read-only design subdirectory, cannot keep the directory alive
+and no host directory reached through a link is touched. If removal still fails,
+the refusal becomes typed `cleanup_failed:<receipt dir>`, chained to the original
+refusal (kept as `refusal`); a refused run never leaves an unlabelled directory. Relative links that stay inside the mount retain
 their ordinary executable digest. The executable and a nested source root are
 resolved one component at a time with `O_PATH | O_NOFOLLOW` opens relative to
 the held mount descriptor; a link is expanded only from the object just opened,
