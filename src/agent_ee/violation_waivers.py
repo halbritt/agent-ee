@@ -170,6 +170,16 @@ def _classify(ctx, report, *, locations_trusted):
         ctx.evidence('waivers.json')
         ctx.result['details']['waivers_source'] = dict(path=path, sha256=ctx.manifest['files'][path],
                                                        approval=record['approval'])
+    waived, unwaived = partition(kind, ctx.scope, record, report, locations_trusted=locations_trusted)
+    from .checks import count_by
+    ctx.result['details'].update(waived=waived, unwaived=len(unwaived),
+                                 waived_by_severity=count_by(waived, 'severity'),
+                                 unwaived_by_severity=count_by(unwaived, 'severity'))
+    return unwaived
+
+
+def partition(kind, scope, record, report, *, locations_trusted=True):
+    """Split native items into exact waived and unwaived lists, each with its raw locator."""
     entries = record['waivers'] if record else []
     waived, unwaived = [], []
     groups = ([(f'/sheets/{i}/violations', s['violations'], s) for i, s in enumerate(report['sheets'])]
@@ -177,7 +187,7 @@ def _classify(ctx, report, *, locations_trusted):
                                     for c in ('violations', 'unconnected_items', 'schematic_parity')])
     for category, violations, sheet in groups:
         for index, violation in enumerate(violations):
-            key = violation_key(kind, ctx.scope['schematic' if kind == 'erc' else 'board'],
+            key = violation_key(kind, scope['schematic' if kind == 'erc' else 'board'],
                                 'violations' if kind == 'erc' else category[1:], report, violation, sheet)
             match = next((e for e in entries if key and all(e[k] == v for k, v in key.items())), None)
             if not locations_trusted:
@@ -187,8 +197,15 @@ def _classify(ctx, report, *, locations_trusted):
                 waived.append(dict(item, status='waived', reason=match['reason'], owner=match['owner']))
             else:
                 unwaived.append(item)
-    from .checks import count_by
-    ctx.result['details'].update(waived=waived, unwaived=len(unwaived),
-                                 waived_by_severity=count_by(waived, 'severity'),
-                                 unwaived_by_severity=count_by(unwaived, 'severity'))
-    return unwaived
+    return waived, unwaived
+
+
+def replay_unwaived(spec, scope, manifest, inputs, report):
+    """Reclassify a retained native report from the captured immutable waiver input."""
+    path = input_path(spec.get('params', {}), scope, manifest['files'], inputs)
+    record = None
+    if path:
+        if digest(Path(inputs) / path) != manifest['files'][path]:
+            raise ValueError('captured waiver file changed')
+        record = load(Path(inputs) / path)
+    return partition(spec['kind'], scope, record, report)[1]

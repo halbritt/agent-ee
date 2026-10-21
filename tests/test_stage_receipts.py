@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import tempfile
+import sys
 import threading
 import time
 import unittest
@@ -74,6 +75,10 @@ if mode == "out":
 board.write_text("placed board " + Path("/candidate/project/board.txt").read_text())
 raise SystemExit(int(sys.argv[2]) if len(sys.argv) > 2 else 0)
 '''
+
+
+def stat_mode(path):
+    return os.lstat(path).st_mode & 0o7777
 
 
 def step(mode='edit', *extra, **overrides):
@@ -545,6 +550,466 @@ assert not (outer / 'receipt').exists()
         with live_inventory, self.assertRaises(stage_receipts.LivePackageSourceError):
             run_step(receipt_dir, design, spec, {})
         self.assertFalse(receipt_dir.exists())
+
+    def _live_state_stand_in(self):
+        # The same CI-safe stand-in, also joined to the ctime inventory a run compares.
+        stand_in, live_inventory = self._live_stand_in()
+        real = stage_receipts._live_source_state
+
+        def state():
+            observed = stand_in.lstat()
+            return {**real(), (observed.st_dev, observed.st_ino): observed.st_ctime_ns}
+
+        return stand_in, live_inventory, patch.object(stage_receipts, '_live_source_state', state)
+
+    @toolchain_test
+    def test_transient_hardlink_during_run_refused(self):
+        stand_in, live_inventory, live_state = self._live_state_stand_in()
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        late = Path(self.tool) / 'late.py'
+        real_execute = stage_receipts.execute
+        for window in ('version', 'run'):
+            with self.subTest(window=window):
+                receipt_dir = Path(self.tmp.name) / ('receipt-' + window)
+                spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
+                                 version_argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
+                                 writes={}, artifacts=['listing'])
+
+                def execute(*args, **kwargs):
+                    # Present only while the tool runs; removed before any post-run inventory.
+                    if Path(args[1]).name != window:
+                        return real_execute(*args, **kwargs)
+                    os.link(stand_in, late)
+                    try:
+                        return real_execute(*args, **kwargs)
+                    finally:
+                        late.unlink()
+
+                with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+                    with self.assertRaises(stage_receipts.LivePackageSourceError) as failure:
+                        run_step(receipt_dir, design, spec, {})
+                self.assertEqual(failure.exception.violation, 'live_package_source:/tool')
+                self.assertIn('late.py', (receipt_dir / window / 'listing').read_text().split())
+                self.assertFalse((receipt_dir / 'receipt.json').exists())
+        # Without the transient link the identical step completes and replays.
+        with live_inventory, live_state:
+            receipt = run_step(Path(self.tmp.name) / 'receipt-clean', design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertEqual(validate_receipt(Path(self.tmp.name) / 'receipt-clean'), receipt)
+
+    @toolchain_test
+    def test_live_status_change_is_ignored_without_directory_mounts(self):
+        stand_in, live_inventory, live_state = self._live_state_stand_in()
+        program = Path(self.tool) / 'program.py'
+        program.write_text('print("single file tool")')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /single > /work/listing'], source=None,
+                         version_argv=None, writes={}, artifacts=['listing'],
+                         mounts=[{'source': str(program), 'at': '/single'}])
+        real_execute = stage_receipts.execute
+
+        def execute(*args, **kwargs):
+            stand_in.chmod(0o600)  # a live status change no file mount can expose
+            return real_execute(*args, **kwargs)
+
+        with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+            receipt = run_step(Path(self.tmp.name) / 'receipt', design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+
+    @toolchain_test
+    def test_escaping_source_root_is_refused_never_adoptable(self):
+        tool = Path(self.tool)
+        outside = tool.with_name('outside')
+        (outside / 'lib').mkdir(parents=True)
+        (outside / 'lib/module.py').write_text('host-only source')
+        (tool / 'usr').symlink_to(outside)
+        (tool / 'sub').mkdir()
+        (tool / 'sub/up').symlink_to('../../outside')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        for source in ('/tool/usr/lib', '/tool/sub/up/lib'):
+            with self.subTest(source=source):
+                receipt_dir = Path(self.tmp.name) / ('receipt' + source.replace('/', '-'))
+                spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'], source=source,
+                                 version_argv=None, writes={}, artifacts=['listing'])
+                with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
+                    run_step(receipt_dir, design, spec, {})
+                self.assertEqual(failure.exception.violation, 'source_link_escape:' + source)
+                self.assertFalse(receipt_dir.exists())
+
+    @toolchain_test
+    def test_source_root_swapped_to_escaping_link_during_run_refused(self):
+        tool = Path(self.tool)
+        (tool / 'lib').mkdir()
+        (tool / 'lib/module.py').write_text('mounted source')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        (outside / 'module.py').write_text('mounted source')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        spec = self.spec(argv=['/usr/bin/true'], source='/tool/lib', version_argv=None,
+                         writes={}, artifacts=['listing'])
+        real_execute = stage_receipts.execute
+
+        def execute(*args, **kwargs):
+            record = real_execute(*args, **kwargs)
+            (tool / 'lib').rename(tool / 'held-lib')
+            (tool / 'lib').symlink_to(outside)
+            return record
+
+        with patch.object(stage_receipts, 'execute', execute):
+            with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
+                run_step(receipt_dir, design, spec, {})
+        self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
+        self.assertFalse((receipt_dir / 'receipt.json').exists())
+
+    @toolchain_test
+    def test_source_escaping_only_during_identity_observation_is_refused(self):
+        # The host swaps the source root only while a run observes identities and restores it
+        # before every mount recheck, so only the observation's own resolution can see it.
+        tool = Path(self.tool)
+        (tool / 'lib').mkdir()
+        (tool / 'lib/module.py').write_text('mounted source')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        (outside / 'module.py').write_text('host-only source')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        (design / 'board.txt').write_text('design')
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'echo artifact > /work/listing'],
+                         source='/tool/lib', version_argv=None, writes={}, artifacts=['listing'])
+        real_observe = stage_receipts.observe_tool
+        for window in ('before launch', 'after execution'):
+            with self.subTest(window=window):
+                calls, launched = [], []
+                real_execute = stage_receipts.execute
+
+                def execute(*args, **kwargs):
+                    launched.append(True)
+                    return real_execute(*args, **kwargs)
+
+                def observe(value):
+                    calls.append(True)
+                    if (len(calls) == 1) != (window == 'before launch'):
+                        return real_observe(value)
+                    (tool / 'lib').rename(tool / 'held-lib')
+                    (tool / 'lib').symlink_to(outside)
+                    try:
+                        return real_observe(value)
+                    finally:
+                        (tool / 'lib').unlink()
+                        (tool / 'held-lib').rename(tool / 'lib')
+
+                receipt_dir = Path(self.tmp.name) / ('receipt-' + window.replace(' ', '-'))
+                with patch.object(stage_receipts, 'observe_tool', observe), \
+                        patch.object(stage_receipts, 'execute', execute):
+                    with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
+                        run_step(receipt_dir, design, spec, {})
+                self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
+                self.assertEqual(launched, [] if window == 'before launch' else [True])
+                self.assertFalse(receipt_dir.exists())
+                with self.assertRaises((OSError, ValueError)):
+                    stage_receipts.validate_receipt(receipt_dir)
+                self.assertEqual(sorted(p.name for p in design.iterdir()), ['board.txt'])
+                self.assertEqual((design / 'board.txt').read_text(), 'design')
+                self.assertTrue((tool / 'lib/module.py').is_file())
+
+    @toolchain_test
+    def test_escaped_source_cleanup_removes_tool_and_design_unwritable_directories(self):
+        # The tool leaves /work and a nested directory unwritable and unsearchable, and the design
+        # carries a read-only subdirectory that copytree preserves; the refusal must still leave
+        # no receipt directory, and restoring access never follows a link out of the tree.
+        tool = Path(self.tool)
+        (tool / 'lib').mkdir()
+        (tool / 'lib/module.py').write_text('mounted source')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        (outside / 'module.py').write_text('host-only source')
+        host = Path(self.tmp.name) / 'host-dir'
+        host.mkdir()
+        host.chmod(0o500)
+        self.addCleanup(host.chmod, 0o700)
+        design = Path(self.tmp.name) / 'design'
+        (design / 'frozen/deeper').mkdir(parents=True)
+        (design / 'board.txt').write_text('design')
+        (design / 'frozen/deeper/part.txt').write_text('part')
+        (design / 'frozen/deeper').chmod(0o500)
+        (design / 'frozen').chmod(0o500)
+        self.addCleanup((design / 'frozen/deeper').chmod, 0o700)
+        self.addCleanup((design / 'frozen').chmod, 0o700)
+        script = ('echo artifact > /work/listing; mkdir -p /work/nested/inner; '
+                  'echo x > /work/nested/inner/file; ln -s %s /work/host-link; '
+                  'chmod 000 /work/nested/inner; chmod 500 /work/nested; chmod 500 /work' % host)
+        spec = self.spec(argv=['/usr/bin/sh', '-c', script], source='/tool/lib',
+                         version_argv=None, writes={}, artifacts=['listing'])
+        real_observe = stage_receipts.observe_tool
+        for window in ('before launch', 'after execution'):
+            with self.subTest(window=window):
+                calls = []
+
+                def observe(value):
+                    calls.append(True)
+                    if (len(calls) == 1) != (window == 'before launch'):
+                        return real_observe(value)
+                    (tool / 'lib').rename(tool / 'held-lib')
+                    (tool / 'lib').symlink_to(outside)
+                    try:
+                        return real_observe(value)
+                    finally:
+                        (tool / 'lib').unlink()
+                        (tool / 'held-lib').rename(tool / 'lib')
+
+                receipt_dir = Path(self.tmp.name) / ('unwritable-' + window.replace(' ', '-'))
+                with patch.object(stage_receipts, 'observe_tool', observe):
+                    with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
+                        run_step(receipt_dir, design, spec, {})
+                self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
+                self.assertFalse(os.path.lexists(receipt_dir))
+                with self.assertRaises((OSError, ValueError)):
+                    stage_receipts.validate_receipt(receipt_dir)
+                self.assertFalse((receipt_dir / 'receipt.json').exists())
+                self.assertEqual(stat_mode(host), 0o500)
+                self.assertEqual(stat_mode(design / 'frozen'), 0o500)
+                self.assertEqual((design / 'frozen/deeper/part.txt').read_text(), 'part')
+
+    def test_unremovable_refused_receipt_directory_is_a_typed_cleanup_failure(self):
+        receipt_dir = Path(self.tmp.name) / 'refused'
+        (receipt_dir / 'run/nested').mkdir(parents=True)
+        (receipt_dir / 'run/nested').chmod(0o000)
+        (receipt_dir / 'run').chmod(0o500)
+        refusal = stage_receipts.EscapingSourceError('/tool/lib')
+
+        def failing(path, *args, **kwargs):
+            raise PermissionError(13, 'Permission denied', str(path))
+
+        with patch.object(stage_receipts.os, 'rmdir', failing):
+            with self.assertRaises(stage_receipts.ReceiptCleanupError) as failure:
+                stage_receipts._discard(receipt_dir, refusal)
+        self.assertEqual(failure.exception.violation, 'cleanup_failed:' + str(receipt_dir))
+        self.assertIs(failure.exception.refusal, refusal)
+        self.assertIsInstance(failure.exception.__cause__, PermissionError)
+        self.assertIn('source_link_escape:/tool/lib', str(failure.exception))
+        # Owner access was restored before the failed removal, so the leftover is inspectable.
+        self.assertEqual(stat_mode(receipt_dir / 'run') & 0o700, 0o700)
+        self.assertEqual(stat_mode(receipt_dir / 'run/nested') & 0o700, 0o700)
+        stage_receipts._discard(receipt_dir, refusal)
+        self.assertFalse(os.path.lexists(receipt_dir))
+
+    def _outward_host_directory(self):
+        host = Path(self.tmp.name) / 'host-dir'
+        host.mkdir()
+        (host / 'keep.txt').write_text('host')
+        host.chmod(0o500)
+        self.addCleanup(host.chmod, 0o700)
+        return host
+
+    @contextlib.contextmanager
+    def _swap_at_first_chmod(self, victim, host, swapped):
+        # A host writer replaces ``victim`` with a link to ``host`` once cleanup has begun, just
+        # before cleanup's first real chmod syscall runs.
+        real_chmod, real_remove = os.chmod, stage_receipts._remove_tree
+        cleaning = []
+
+        def remove(*args, **kwargs):
+            cleaning.append(True)
+            return real_remove(*args, **kwargs)
+
+        def chmod(path, *args, **kwargs):
+            if cleaning and not swapped:
+                victim.rename(victim.with_name(victim.name + '-held'))
+                victim.symlink_to(host)
+                swapped.append(True)
+            return real_chmod(path, *args, **kwargs)
+        with patch.object(stage_receipts, '_remove_tree', remove), \
+                patch.object(stage_receipts.os, 'chmod', chmod):
+            yield
+
+    @toolchain_test
+    def test_cleanup_chmod_never_reaches_a_directory_swapped_in_after_acquisition(self):
+        # The tool leaves /work mode 500 and the source escapes after execution; while cleanup
+        # restores access, a host writer swaps run/ for a link to a host directory. The chmod acts
+        # on the held directory, so the host directory keeps its mode and the swap is reported.
+        tool = Path(self.tool)
+        (tool / 'lib').mkdir()
+        (tool / 'lib/module.py').write_text('mounted source')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        host = self._outward_host_directory()
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        (design / 'board.txt').write_text('design')
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'echo artifact > /work/listing; chmod 500 /work'],
+                         source='/tool/lib', version_argv=None, writes={}, artifacts=['listing'])
+        real_observe = stage_receipts.observe_tool
+        calls = []
+
+        def observe(value):
+            calls.append(True)
+            if len(calls) == 1:
+                return real_observe(value)
+            (tool / 'lib').rename(tool / 'held-lib')
+            (tool / 'lib').symlink_to(outside)
+            try:
+                return real_observe(value)
+            finally:
+                (tool / 'lib').unlink()
+                (tool / 'held-lib').rename(tool / 'lib')
+
+        receipt_dir = Path(self.tmp.name) / 'swapped'
+        swapped = []
+        with patch.object(stage_receipts, 'observe_tool', observe), \
+                self._swap_at_first_chmod(receipt_dir / 'run', host, swapped):
+            with self.assertRaises(stage_receipts.ReceiptCleanupError) as failure:
+                run_step(receipt_dir, design, spec, {})
+        self.assertEqual(swapped, [True])
+        self.assertEqual(failure.exception.violation, 'cleanup_failed:' + str(receipt_dir))
+        self.assertIsInstance(failure.exception.refusal, stage_receipts.EscapingSourceError)
+        self.assertEqual(failure.exception.refusal.violation, 'source_link_escape:/tool/lib')
+        self.assertIsInstance(failure.exception.__cause__, OSError)
+        self.assertEqual(stat_mode(host), 0o500)
+        self.assertEqual(sorted(p.name for p in host.iterdir()), ['keep.txt'])
+        self.assertFalse((receipt_dir / 'receipt.json').exists())
+        # The held directory itself was emptied; removing it by name then met the swapped-in link.
+        self.assertTrue((receipt_dir / 'run').is_symlink())
+        self.assertEqual(list((receipt_dir / 'run-held').iterdir()), [])
+        (receipt_dir / 'run').unlink()
+        stage_receipts._discard(receipt_dir, failure.exception.refusal)
+        self.assertFalse(os.path.lexists(receipt_dir))
+
+    def test_cleanup_never_changes_a_linked_or_swapped_receipt_root(self):
+        host = self._outward_host_directory()
+        refusal = stage_receipts.EscapingSourceError('/tool/lib')
+        linked = Path(self.tmp.name) / 'linked'
+        linked.symlink_to(host)
+        with self.assertRaises(stage_receipts.ReceiptCleanupError) as failure:
+            stage_receipts._discard(linked, refusal)
+        self.assertIs(failure.exception.refusal, refusal)
+        self.assertIsInstance(failure.exception.__cause__, NotADirectoryError)
+        self.assertEqual(stat_mode(host), 0o500)
+
+        receipt_dir = Path(self.tmp.name) / 'refused'
+        (receipt_dir / 'run').mkdir(parents=True)
+        (receipt_dir / 'run/file').write_text('x')
+        receipt_dir.chmod(0o500)
+        swapped = []
+        with self._swap_at_first_chmod(receipt_dir, host, swapped):
+            with self.assertRaises(stage_receipts.ReceiptCleanupError) as failure:
+                stage_receipts._discard(receipt_dir, refusal)
+        self.assertEqual(swapped, [True])
+        self.assertIs(failure.exception.refusal, refusal)
+        self.assertEqual(stat_mode(host), 0o500)
+        self.assertEqual(sorted(p.name for p in host.iterdir()), ['keep.txt'])
+        self.assertEqual(list(receipt_dir.with_name('refused-held').iterdir()), [])
+
+    def test_cleanup_removes_nesting_deeper_than_the_recursion_and_descriptor_limits(self):
+        # Every level is left unwritable and unsearchable, deepest first, as a tool could leave it.
+        import resource
+        depth = max(sys.getrecursionlimit(), resource.getrlimit(resource.RLIMIT_NOFILE)[0]) + 100
+        depth = min(depth, 5000)
+        receipt_dir = Path(self.tmp.name) / 'deep'
+        receipt_dir.mkdir()
+        # Build and lock through descriptors, one held at a time, so no path exceeds PATH_MAX.
+        fd = os.open(receipt_dir, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for _ in range(depth):
+                os.mkdir('d', dir_fd=fd)
+                child = os.open('d', os.O_RDONLY | os.O_DIRECTORY, dir_fd=fd)
+                os.close(fd)
+                fd = child
+            for level in range(depth):
+                parent = os.open('..', os.O_RDONLY | os.O_DIRECTORY, dir_fd=fd)
+                os.chmod('d', 0o000 if level == 0 else 0o500, dir_fd=parent)
+                os.close(fd)
+                fd = parent
+        finally:
+            os.close(fd)
+        stage_receipts._discard(receipt_dir, stage_receipts.EscapingSourceError('/tool/lib'))
+        self.assertFalse(os.path.lexists(receipt_dir))
+
+    @toolchain_test
+    def test_escaped_source_cleanup_removes_deep_tool_created_nesting(self):
+        tool = Path(self.tool)
+        (tool / 'lib').mkdir()
+        (tool / 'lib/module.py').write_text('mounted source')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        (design / 'board.txt').write_text('design')
+        script = ('echo artifact > /work/listing; cd /work; '
+                  'i=0; while [ $i -lt 1200 ]; do mkdir d && cd d || exit 1; i=$((i+1)); done; chmod 500 .')
+        spec = self.spec(argv=['/usr/bin/sh', '-c', script], source='/tool/lib',
+                         version_argv=None, writes={}, artifacts=['listing'])
+        real_observe = stage_receipts.observe_tool
+        calls = []
+
+        def observe(value):
+            calls.append(True)
+            if len(calls) == 1:
+                return real_observe(value)
+            (tool / 'lib').rename(tool / 'held-lib')
+            (tool / 'lib').symlink_to(outside)
+            try:
+                return real_observe(value)
+            finally:
+                (tool / 'lib').unlink()
+                (tool / 'held-lib').rename(tool / 'lib')
+
+        receipt_dir = Path(self.tmp.name) / 'deep-run'
+        executions = []
+        real_execute = stage_receipts.execute
+
+        def execute(*args, **kwargs):
+            record = real_execute(*args, **kwargs)
+            executions.append(record)
+            return record
+
+        with patch.object(stage_receipts, 'observe_tool', observe), \
+                patch.object(stage_receipts, 'execute', execute):
+            with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
+                run_step(receipt_dir, design, spec, {})
+        self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
+        self.assertEqual([record['exit_code'] for record in executions], [0])
+        self.assertFalse(os.path.lexists(receipt_dir))
+
+    def test_executable_digest_never_follows_a_component_swapped_after_resolution(self):
+        tool = Path(self.tool)
+        (tool / 'bin').mkdir()
+        (tool / 'bin/program').write_text('mounted bytes')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        (outside / 'program').write_text('host-only bytes')
+        expected = digest(tool / 'bin/program')
+        spec = self.spec(argv=['/tool/bin/program'])
+        runtime, identities = stage_receipts._resolved_mounts(spec)
+        real_held = stage_receipts._held_digest
+
+        def swapping(descriptor):
+            # Replace the resolved component by an absolute link before any bytes are read.
+            (tool / 'bin').rename(tool / 'held-bin')
+            (tool / 'bin').symlink_to(outside)
+            try:
+                return real_held(descriptor)
+            finally:
+                (tool / 'bin').unlink()
+                (tool / 'held-bin').rename(tool / 'bin')
+
+        with stage_receipts._opened_mounts(runtime, identities) as mounts:
+            runtime['mounts'] = [{**m, 'descriptor': fd}
+                                 for m, (fd, _) in zip(runtime['mounts'], mounts)]
+            with patch.object(stage_receipts, '_held_digest', swapping):
+                observed = stage_receipts.observe_tool(runtime)
+            self.assertEqual(observed['executable']['sha256'], expected)
+            (tool / 'bin').rename(tool / 'held-bin')
+            (tool / 'bin').symlink_to(outside)
+            self.assertIsNone(stage_receipts.observe_tool(runtime)['executable']['sha256'])
+            (tool / 'bin').unlink()
+            (tool / 'bin').mkdir()
+            os.mkfifo(tool / 'bin/program')
+            self.assertIsNone(stage_receipts.observe_tool(runtime)['executable']['sha256'])
 
     def test_held_file_and_nested_executable_observations_survive_aba(self):
         tool = Path(self.tool)

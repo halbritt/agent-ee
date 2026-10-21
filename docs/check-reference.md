@@ -402,6 +402,11 @@ later full `drc` check exists, so connectivity is still graded before
 acceptance. Any other projection value is unsupported. The
 [placement checks](placement.md#placement-check-kind) consume either DRC result.
 
+Under open [carried placement defects](#carried-silk-in-the-placement-projection-agentee-346)
+the projection grades instead of refusing. A native `silk_overlap` or
+`silk_over_copper` violation whose type and complete item-UUID set equal an
+open carried defect is graded as carried rather than as a violation.
+
 The [original RC stage fixtures](rc-stage-fixtures.md) exercise this boundary:
 placed-unrouted retains native unconnected items and passes the placement
 projection; seeded-placement has a native R1/C1 courtyard overlap. Both remain
@@ -1739,11 +1744,20 @@ before executing either command, covering bwrap versions that canonicalize fd
 sources to pathnames. Directory
 sources containing hard links into live `src` refuse with `live_package_source:<at>`
 (AGENTEE-349), including persistent links planted after inventory, by re-inventorying
-the held descriptor before launches and after execution. Before/after identity of
+the held descriptor before launches and after execution, and links planted and
+removed during a run, detected by live entries' status-change times (AGENTEE-357).
+Before/after identity of
 declared mounts reads through held descriptors; post-run source replacement or
 observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and
 upward-escaping mount symlinks retain link identity without reading host targets;
-an executable through such a link has an unknown digest and is unadoptable. Only
+an executable through such a link has an unknown digest and is unadoptable, and a
+declared `source` through one refuses as `source_link_escape:<source>`, including
+from the same resolution in either strict run observation, leaving no receipt directory
+(owner access is restored on each directory held by a no-follow `O_PATH` descriptor before it
+is read, iteratively at any depth, even after the tool made directories unwritable; an
+unremovable directory raises typed `cleanup_failed:<receipt dir>` over the refusal). The
+executable is resolved and hashed through component-wise no-follow opens below
+the held descriptor. Only
 fd-form receipts carry the mount-guard observation; historical path-form replay
 retains its lower assurance. Directory sources containing submounts are
 conservatively refused, including same-device
@@ -1860,7 +1874,18 @@ sets even without a kind. Inconsistent bindings refuse validation, including
 direct `PlacementIndex` construction (AGENTEE-341). It deep-copies the document
 first, copies its exact JSON values into fresh owned containers, validates that
 snapshot, then indexes it (AGENTEE-356). Cyclic containers raise the typed JSON
-`ValueError`. Its public pairs and endpoint maps are read-only at every level,
+`ValueError`. Containers nested deeper than 64 levels refuse with `locality
+document nesting exceeds 64 levels` at the index (checked before copying,
+including subclass storage), `validate()` and `grade()`, never `RecursionError`.
+If the copy itself recurses too deeply (a deep value inserted concurrently after
+the pre-walk, or a deep non-JSON tuple), the index raises the same depth error.
+The captured locality file is decoded by `electrical_locality.load_json`, so
+decoder recursion on deeply nested JSON text refuses with that error too: the
+check reports `malformed` (`electrical locality refused: ...`) and
+`placement_adapter.bind_locality` raises it as a `ValueError` (AGENTEE-363).
+`validate()` checks a fresh snapshot (and still returns the caller's object);
+`grade()` grades and reports (`declaration`) only its own validated snapshot and
+never rereads the caller's document (AGENTEE-363). Its public pairs and endpoint maps are read-only at every level,
 including endpoint fields.
 Later caller mutations cannot alter its endpoint identities or cached keys
 (AGENTEE-352/356). Untyped
@@ -1903,7 +1928,9 @@ helper receipts and artwork under `placement-evidence`, with ordered
 stages and the coordinator ruling's 18 fab-family kinds refuse open carry with typed field/graphic
 identities and source receipts, regardless of declared stage (AGENTEE-344).
 This includes DRC, fab profile, DFM geometry, DFA/DFT, assembly readiness, cost,
-roundtrip, parts/catalog/binding and land-pattern gates. Campaign acceptance
+roundtrip, parts/catalog/binding and land-pattern gates. The placement-stage DRC
+projection instead grades exactly carried silk as carried and advances to
+routing ([AGENTEE-346](#carried-silk-in-the-placement-projection-agentee-346)). Campaign acceptance
 refuses open carry even without a declared downstream gate, including bench-feedback
 epoch completion. A clean receipted
 closure can survive masked copper track edits only when retained root nodes have
@@ -2002,8 +2029,21 @@ Baseline comparisons include enforcement changes and the transition to copper
 outside the outline. The same native item identities cannot hide a newly hard
 finding; identical pre-existing findings retain their baseline treatment. Non-collision
 numeric findings include absolute geometry in their baseline identity. Collision
-comparisons without saved geometry retain item-pair identity across wording changes;
-native publication still compares the saved item geometry. Copper
+comparisons without saved geometry retain item-pair identity across wording changes
+but bind it to the printed measured value: a worsened (or otherwise changed) actual
+on the same items is a new finding, never baseline. A measurement comes only
+from a numeric constraint type's final KiCad clause (`<limit> mm; actual <value> mm)`,
+or `min spoke count N; actual M)` for thermal spokes); text in net names, rule
+names or item descriptions never supplies one, and shorts, co-located holes, PTH
+courtyard intrusion and other structural types are always unmeasured. An unmeasured collision
+(a native short, co-located holes, PTH courtyard intrusion, or a clearance without that clause) on
+items that also collide in the baseline, where either finding is hard, refuses with `CollisionMeasurementRefusal`
+(unknown) instead of matching by item pair: only native saved geometry, or the
+routed-artwork producer's silk-only write-scope proof bound to the digests of
+both DRC'd boards (copper unchanged), can decide it. Unmeasured collisions
+without a baseline counterpart remain new; advisory-only pairs keep item-pair
+identity. Native publication still compares
+the saved item geometry. Copper
 outside the board material always refuses placement/plane publication, including
 pre-existing witnesses.
 
@@ -2021,6 +2061,68 @@ unknown and its failed execution is retained. A defect already proved by native
 DRC retains its defect verdict; an otherwise passing DRC cannot pass without
 containment coverage. Supplemental structural witnesses retain their class and citation in the
 classified evidence cited by the collected coordinator finding.
+
+## Carried silk in the placement projection (AGENTEE-346)
+
+The DRC `placement-stage/1` projection is the one DRC exempt from the
+carried-defect refusal. Exemption requires a placement-stage or unstaged
+declaration; schematic, routing, verification, fab and release declarations
+still refuse. Under the
+AGENTEE-333 ruling it runs and grades instead. Each unwaived native
+`silk_overlap` or `silk_over_copper` violation whose type and complete item-UUID
+set equal an open carried `placement_silkscreen_conflict` is graded as carried.
+It does not block, so the campaign advances to routing. The result keeps
+`details.open_defects` (every open carry, including side-flip diagnostics) and
+`details.carried_findings` (raw locators). A limitation and a summary clause
+state the carry, and `placement-defects.json` is the witness. Nothing passes
+silently: the full `drc`, every verification/fab/release check, campaign
+acceptance and release extraction still refuse until a receipted closure
+(AGENTEE-344/350).
+
+These findings keep their grading and still block:
+
+- collision, clearance, courtyard and mask violations;
+- schematic parity;
+- uncarried or partially matching silk conflicts;
+- [structural copper containment](#design-rule-provenance-agentee-331) findings
+  such as `copper_outside_outline`, whatever silk is carried.
+
+Composition with AGENTEE-331 provenance (coordinator ruling 346c) is one policy,
+`checks.grade_drc`, shared by the check and its seal replay. In the projection,
+overlap-type silk conflicts are graded only by receipt-backed carry: an
+unsourced default `min_silk_clearance` never turns an uncarried overlap into an
+advisory pass. Numeric silk limits such as `silk_edge_clearance` are never
+carried. They follow 331 provenance: advisory under an unsourced or default
+limit, hard under a sourced one. The full `drc` keeps its released 331 grading.
+Carried silk and numeric advisories are not a native defect, so when the
+containment child is unavailable such a projection is `malformed`, never a pass.
+
+Unconnected items stay ungraded. Missing or tampered carry evidence makes the
+projection `malformed`/`unknown`, never a pass. The projection consumes a
+receipted closure under the same AGENTEE-351 contract as the full gate: at
+execution it recomputes native DRC on the captured board in the tool sandbox
+and retains `placement-lineage.json` with its `placement-lineage/` report; at
+replay it validates that retained witness, tool-free. Without that native
+evidence a would-be closure still refuses. At freeze and at replay the
+evidence seal reconstructs the verdict, whether or not the candidate captured
+placement lineage, so a no-lineage projection cannot seal a pass over
+structural containment or uncarried silk either. It reclassifies the check's own
+`drc.json` against the captured immutable waiver input and derives the
+receipt-backed carry, recomputes the numeric provenance from the captured
+board inputs and reads the retained `containment/copper-containment.json` and
+its execution record. Any graded finding outside that carry, including a
+structural containment finding, must yield `defect`. A retained pass that
+records containment as unavailable is refused. A retained outcome that differs is refused. The
+retained `carried_findings` must equal the reconstructed carry exactly, so a
+subset or an empty list cannot hide a carried finding. Open carry and the
+witness are reconstructed too. A result that omits the carry is refused. There is no registration or capability change.
+`test_placement_projection_carries_silk_to_routing_and_full_drc_refuses` runs
+native placement and routing. In that run the projection passes with the carried
+silk, and the earliest failing stage becomes routing. There the full DRC and
+the verification check refuse the carry.
+`test_projection_consumes_a_natively_closed_carry_and_seals` and
+`NoLineageProjectionSealTests` are the native regressions for the closed-carry
+and no-lineage seal paths.
 
 ## Post-routing silk repair (AGENTEE-350)
 

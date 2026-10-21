@@ -359,7 +359,7 @@ def _policy(inputs, bound, manifest):
 
 def bind_locality(policy, manifest, inputs, mutable_inputs):
     """Bind pack guidance to the one immutable locality file graded in this scope."""
-    from .electrical_locality import CRITERION, validate
+    from .electrical_locality import CRITERION, load_json, validate
     paths = {check['params']['locality'] for check in manifest['scope'].get('checks', [])
              if check.get('kind') == 'placement' and check.get('params', {}).get('criterion') == CRITERION}
     if not paths:
@@ -378,7 +378,7 @@ def bind_locality(policy, manifest, inputs, mutable_inputs):
     sha256 = hashlib.sha256(data).hexdigest()
     if sha256 != manifest['files'][rel]:
         raise ValueError('captured electrical locality changed')
-    document = validate(json.loads(data))
+    document = validate(load_json(data))
     if 'electrical_locality' in policy and validate(policy['electrical_locality']) != document:
         raise ValueError('packing electrical locality differs from captured coordinator obligations')
     source = {'path': rel, 'sha256': sha256}

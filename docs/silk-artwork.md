@@ -119,6 +119,14 @@ extraction refuses open carry too. Missing, changed or malformed evidence cannot
 produce a pass. Candidates without carry retain their existing fab behavior,
 including uncarried baseline silk findings.
 
+The one exception is a `drc` declaring `projection: "placement-stage/1"` with a
+placement-stage or unstaged declaration (AGENTEE-346); a schematic, routing,
+verification, fab or release declaration is not exempt and still refuses. It
+grades instead of refusing. A native silk conflict that is exactly an open carried defect is
+graded as carried, not as a violation, so the campaign advances to routing.
+There the full `drc` and later gates refuse until closure. See the
+[check reference](check-reference.md#carried-silk-in-the-placement-projection-agentee-346).
+
 A board edit or a clean DRC delta alone does not close carry. Closure requires a
 later receipted placement result for the current board, complete native DRC with
 no remaining silk finding on the same identities, and preserved item ownership,
@@ -352,7 +360,10 @@ can refuse legitimate boards: the shared parser decodes escapes, so decoded
 token equality cannot establish the saved spelling KiCad renders. Project and custom-rule bytes
 are copied unchanged for native DRC. Missing reports, ignored silk coverage and
 new non-silk native findings refuse the producer; remaining silk conflicts stay
-open. Uncarried baseline findings retain their existing check verdicts.
+open. The native DRC comparison has no saved geometry states; the scope proof,
+whose digests must equal both DRC'd boards, is its witness that copper is
+unchanged, so unmeasured pre-existing collisions keep baseline treatment
+(AGENTEE-369). Without that proof such a comparison refuses. Uncarried baseline findings retain their existing check verdicts.
 
 The receipt uses the existing placement evidence envelope and adds
 `producer: agent-ee-routed-artwork`, the scope proof and the original routed

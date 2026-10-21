@@ -1,15 +1,29 @@
 {
-  "candidate_id": "ba2a6d691277a395e1bea76f6cc8a1d18739f789f62f479cca83399ff8c60028",
+  "candidate_id": "bc6db45a8f7e4260333171631fad16bef3e503f91a0cf3d917fc499239bb045f",
   "details": {
     "by_severity": {},
     "by_type": {},
+    "erc_coordinates": {
+      "coordinate_units": "mm",
+      "regime": "native",
+      "report_kicad_version": "10.0.7",
+      "scale": 1,
+      "status": "trusted",
+      "version": "10.0.7"
+    },
     "ignored_checks": [
       "single_global_label",
       "four_way_junction",
       "simulation_model_issue",
       "footprint_filter"
     ],
+    "kicad_cli": {
+      "path": "/usr/bin/kicad-cli",
+      "sha256": "0dd2a47a1cb8642513d623152a1815c493c4909a879db1bae95b5ac13caaaa61",
+      "version": "10.0.7"
+    },
     "kicad_version": "10.0.7",
+    "locations": [],
     "schematic_files": [
       "project/rc_stage.kicad_sch"
     ],
@@ -29,12 +43,20 @@
         "/candidate/project/rc_stage.kicad_sch"
       ],
       "console_sha256": "67c75b73c86f2f9702b5ee86944c9d22dc3498cee45860692aca8e3be349cbcf",
-      "duration_s": 4.173,
+      "duration_s": 1.684,
       "exit_code": 0
     },
-    "violations": 0
+    "unwaived": 0,
+    "unwaived_by_severity": {},
+    "violations": 0,
+    "waived": [],
+    "waived_by_severity": {}
   },
   "evidence": [
+    "work/erc/kicad-version/execution.json",
+    "work/erc/kicad-version/console.log",
+    "work/erc/kicad-version/stdout.log",
+    "work/erc/kicad-version/stderr.log",
     "work/erc/execution.json",
     "work/erc/console.log",
     "work/erc/erc.json"
@@ -46,5 +68,5 @@
     "stock template tables not captured: sym-lib-table, fp-lib-table"
   ],
   "outcome": "pass",
-  "summary": "ERC ran on 1 sheet instance(s) with zero violations"
+  "summary": "ERC ran on 1 sheet instance(s) with zero unwaived violations; 0 waived"
 }

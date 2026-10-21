@@ -1,6 +1,7 @@
 {
-  "candidate_id": "80a8b3a0414942769e340486c1dfb5dbaf55dfa38b966a0b38706d9bfaa2eeb8",
+  "candidate_id": "7706d173fe69820d3a84a5be89b6d513956422b4a4826291c964e483e2ee6fd8",
   "details": {
+    "advisory_findings_count": 3,
     "board_sha256": "9b52f28140b98224119266e98bc4946e691c1083904d1a87bc8dc92f444aacc4",
     "by_severity": {
       "error": 8,
@@ -13,10 +14,15 @@
       "silk_over_copper": 2,
       "unconnected_items": 4
     },
+    "constraint_classes": {
+      "default": 3,
+      "engineering": 7
+    },
     "graded": [
       "violations",
       "schematic_parity"
     ],
+    "graded_unwaived": 11,
     "ignored_checks": [
       "missing_courtyard",
       "track_not_centered_on_via",
@@ -43,19 +49,30 @@
         "/candidate/project/rc_stage.kicad_pcb"
       ],
       "console_sha256": "0af4e53c7715c420c0407a18be7843f5605bc089cc76969a3ce9884f596e0809",
-      "duration_s": 5.92,
+      "duration_s": 1.181,
       "exit_code": 0
     },
     "unconnected_items": 4,
     "ungraded": {
       "unconnected_items": 4
     },
-    "violations": 7
+    "unwaived": 11,
+    "unwaived_by_severity": {
+      "error": 8,
+      "warning": 3
+    },
+    "violations": 7,
+    "waived": [],
+    "waived_by_severity": {}
   },
   "evidence": [
     "work/drc-placement/execution.json",
     "work/drc-placement/console.log",
-    "work/drc-placement/drc.json"
+    "work/drc-placement/drc.json",
+    "work/drc-placement/containment/copper-containment.json",
+    "work/drc-placement/containment/execution.json",
+    "work/drc-placement/containment/console.log",
+    "work/drc-placement/drc-constraints.json"
   ],
   "execution": "ok",
   "id": "drc-placement",
@@ -66,5 +83,5 @@
     "placement-stage/1: unconnected items are retained in drc.json but not graded; a later full DRC with connectivity remains required"
   ],
   "outcome": "defect",
-  "summary": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only"
+  "summary": "DRC with schematic parity reported 7 violation(s), 4 unconnected item(s), 0 parity issue(s); placement-stage/1 grades violations and parity only; 0 waived; 3 numeric advisory finding(s) retained; 3 structural copper containment finding(s)"
 }
