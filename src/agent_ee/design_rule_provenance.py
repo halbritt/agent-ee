@@ -264,10 +264,19 @@ def finding_sources(board, findings=()):
 
 
 def measured_actual(finding):
-    """Match KiCad's printed measured value in a native finding, or None."""
+    """Match KiCad's printed measured value in a native finding, or None.
+
+    Only numeric constraint types carry a measurement, and only in the final
+    '<limit>; actual <value>)' clause KiCad appends; net names, rule names and
+    item text earlier in the description never supply one. Shorts, co-located
+    holes, PTH courtyard intrusion and every other structural type stay unmeasured.
+    """
     import re
-    pattern = (r'actual ([0-9]+)(?=[); ]|$)' if finding.get('type') == 'starved_thermal' else
-               r'actual (-?[0-9]+(?:\.[0-9]+)?) mm')
+    kind = finding.get('type')
+    if kind not in NUMERIC_FIELDS:
+        return None
+    pattern = (r'min spoke count [0-9]+; actual ([0-9]+)\)$' if kind == 'starved_thermal' else
+               r' [0-9]+(?:\.[0-9]+)? mm; actual (-?[0-9]+(?:\.[0-9]+)?) mm\)$')
     return re.search(pattern, finding.get('description', ''))
 
 
