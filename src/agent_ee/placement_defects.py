@@ -432,7 +432,55 @@ def _closes(defect, original, current, conflicts, moved, current_board, graphic_
 
 
 def gated(spec):
+    if placement_projection(spec):
+        return False
     return spec.get('stage') in ('verification', 'fab', 'release') or spec.get('kind') in GATED_KINDS
+
+
+def placement_projection(spec):
+    """The placement-stage DRC projection grades carry instead of refusing it (AGENTEE-346)."""
+    params = spec.get('params')
+    return (spec.get('kind') == 'drc' and isinstance(params, dict) and
+            params.get('projection') == 'placement-stage/1' and
+            spec.get('stage') not in ('verification', 'fab', 'release'))
+
+
+def _carried_identity(violation):
+    from .silk_artwork import SILK_CONFLICTS
+    items = violation.get('items') if isinstance(violation, dict) else None
+    if (violation.get('type') not in SILK_CONFLICTS or not isinstance(items, list) or not items or
+            any(not isinstance(i, dict) or not isinstance(i.get('uuid'), str) or not i['uuid'] for i in items)):
+        return None
+    return violation['type'], tuple(sorted(i['uuid'] for i in items))
+
+
+def carried_silk(defects, unwaived):
+    """Raw locators of unwaived native silk conflicts that are exactly an open carried defect."""
+    carried = {_carried_identity(d['native']) for d in defects if isinstance(d.get('native'), dict)}
+    carried.discard(None)
+    return sorted(i['raw_locator'] for i in unwaived if i['raw_locator'].startswith('/violations/') and
+                  _carried_identity(i) in carried)
+
+
+def projection_record(ctx, unwaived):
+    """Open carry for the placement projection; its silk conflicts grade as carried, not violations."""
+    from .checks import CheckError
+    try:
+        defects = open_defects(ctx.manifest, ctx.inputs)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CheckError('malformed', f'carried placement evidence refused: {exc}') from exc
+    if not defects:
+        return []
+    carried = carried_silk(defects, unwaived)
+    witness = dict(gate_record(ctx.cid, ctx.manifest['candidate_id'], defects), carried_findings=carried)
+    write_json(ctx.work / 'placement-defects.json', witness)
+    ctx.evidence('placement-defects.json')
+    ctx.result['details'].update(open_defects=defects, carried_findings=carried)
+    ctx.result['limitations'].append(
+        f'{len(defects)} carried open placement silkscreen defect(s); {len(carried)} matching native '
+        'silk finding(s) graded as carried, not stage-blocking; verification, fab and release refuse '
+        'until a receipted closure')
+    return carried
 
 
 def before_check(ctx):
@@ -476,6 +524,8 @@ def verify_gate(run, check, manifest):
             p.startswith(DIRECTORY + '/') for p in manifest.get('files', {})):
         return
     spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
+    if placement_projection(spec):
+        return verify_projection(run, check, manifest)
     if not gated(spec):
         return
     defects = open_defects(manifest, Path(run) / 'inputs')
@@ -490,3 +540,24 @@ def verify_gate(run, check, manifest):
     path = Path(run) / 'work' / check['id'] / 'placement-defects.json'
     if read_json(path) != expected:
         raise ValueError('carried placement gate witness changed')
+
+
+def verify_projection(run, check, manifest):
+    """Reconstruct carried grading: only exact open-defect silk identities may be carried."""
+    defects = open_defects(manifest, Path(run) / 'inputs')
+    details = check.get('details', {})
+    if not defects:
+        if 'open_defects' in details or 'carried_findings' in details:
+            raise ValueError('carried placement grading without open defects')
+        return
+    if check['execution'] != 'ok' or details.get('reason') in ('stage_blocked', 'stage_not_reached'):
+        return
+    witness = read_json(Path(run) / 'work' / check['id'] / 'placement-defects.json')
+    report = read_json(Path(run) / 'work' / check['id'] / 'drc.json')
+    located = [dict(v, raw_locator=f'/violations/{i}') for i, v in enumerate(report['violations'])]
+    carried = details.get('carried_findings')
+    if (details.get('open_defects') != defects or not isinstance(carried, list) or
+            not set(carried) <= set(carried_silk(defects, located)) or
+            witness != dict(gate_record(check['id'], manifest['candidate_id'], defects),
+                            carried_findings=carried)):
+        raise ValueError('placement projection carried grading differs from open carry')

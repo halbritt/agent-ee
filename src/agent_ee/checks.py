@@ -17,7 +17,8 @@ Check kinds and parameters:
   `--schematic-parity` on the as-saved board and detects kicad-cli's silent
   parity skip. `projection: "placement-stage/1"` grades violations and parity
   only; the raw report and unconnected count are retained ungraded, and a
-  later full DRC must be declared; `netlist`
+  later full DRC must be declared. Silk conflicts that are exactly an open
+  carried placement defect grade as carried, not blocking (AGENTEE-346); `netlist`
   exports the native XML netlist, verifies the sheet hierarchy is complete
   (a missing sheet file means the netlist cannot be complete), and derives
   `connectivity.json` with per-component DNP, libsource and sheet/UUID
@@ -413,8 +414,14 @@ def check_drc(ctx):
         ctx.result["limitations"].append(
             f"{projection}: unconnected items are retained in drc.json but not graded; "
             "a later full DRC with connectivity remains required")
-        failing = any(not i['raw_locator'].startswith('/unconnected_items/') for i in unwaived)
+        # Silk conflicts that are exactly an open carried placement defect advance to
+        # routing as carried; later gates refuse the carry until it closes.
+        from .placement_defects import projection_record
+        carried = set(projection_record(ctx, unwaived))
+        failing = any(not i['raw_locator'].startswith('/unconnected_items/') and
+                      i['raw_locator'] not in carried for i in unwaived)
     else:
+        carried = set()
         failing = unwaived
     if failing:
         ctx.result["outcome"] = "defect"
@@ -423,11 +430,15 @@ def check_drc(ctx):
                                  + (f"; {projection} grades violations and parity only" if projection else ""))
     elif projection:
         ctx.result["outcome"] = "pass"
-        ctx.result["summary"] = (f"{projection} DRC with schematic parity reported zero unwaived violations and "
+        ctx.result["summary"] = (f"{projection} DRC with schematic parity reported zero unwaived "
+                                 + ("uncarried " if carried else "") + "violations and "
                                  f"unwaived parity issues; {len(u)} unconnected item(s) retained ungraded")
     else:
         ctx.result["outcome"] = "pass"
         ctx.result["summary"] = "DRC with schematic parity reported zero unwaived issues on the saved board"
+    if carried:
+        ctx.result["summary"] += (f"; {len(carried)} silk finding(s) graded as carried open placement "
+                                  "defects, refused downstream until closed")
     ctx.result['summary'] += f"; {len(ctx.result['details']['waived'])} waived"
 
 
