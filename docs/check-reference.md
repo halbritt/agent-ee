@@ -1947,7 +1947,9 @@ outside copper that native edge DRC may omit.
 Baseline comparisons include enforcement changes and the transition to copper
 outside the outline. The same native item identities cannot hide a newly hard
 finding; identical pre-existing findings retain their baseline treatment. Non-collision
-numeric findings include absolute geometry in their baseline identity. Copper
+numeric findings include absolute geometry in their baseline identity. Collision
+comparisons without saved geometry retain item-pair identity across wording changes;
+native publication still compares the saved item geometry. Copper
 outside the board material always refuses placement/plane publication, including
 pre-existing witnesses.
 

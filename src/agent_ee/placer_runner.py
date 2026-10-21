@@ -231,7 +231,7 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
                     finding['type'] == 'copper_edge_clearance' and
                     provenance['reason'] == 'Structural invariant; numeric provenance does not relax it')
         if states is None:
-            if numeric_finding(finding):
+            if numeric_finding(finding) and finding['type'] not in DRC_COLLISIONS:
                 return (*identity, finding.get('description'), json.dumps(items, sort_keys=True))
             return identity
         if finding['type'] not in DRC_COLLISIONS | {'solder_mask_bridge'} and not numeric_finding(finding):
