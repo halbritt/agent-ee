@@ -692,6 +692,9 @@ def adjudicate(findings, decisions, run_dir):
         f.setdefault("status", f.get("disposition", "unresolved"))
         f.setdefault("disposition", f["status"])
         f.setdefault("events", [])
+        from .purpose_review import check_finding
+        # A purpose tag on a downgraded defect or correctness claim is refused, never granted (AGENTEE-385).
+        check_finding(fid, f)
         by_id[fid] = f
 
     seen_decision_ids = set()
@@ -897,7 +900,7 @@ def adjudicate(findings, decisions, run_dir):
         if raw_item.get("authority") == "advisory":
             event["authority"] = "advisory"
             target_finding["authority"] = "advisory"
-        if target_finding.get("dimension") == "purpose_review":
+        if "dimension" in target_finding:
             # AGENTEE-385: purpose savings are advisory; recorded so a deferral stays visible
             # without holding the run outcome.
             event["purpose_status"] = "advisory"

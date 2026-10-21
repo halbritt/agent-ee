@@ -232,6 +232,8 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
         expected, stored = decide_run(run, manifest), result.get("rf_review")
         if (stored is None and expected["required"]) or (stored is not None and stored != expected):
             raise ValueError("stored RF review decision differs from the captured candidate's RF sources")
+    from .purpose_review import verify_records as verify_purpose
+    verify_purpose(run, result)
     if result.get("outcome") != outcome(result):
         raise ValueError("stored result contradicts its execution and finding records")
     if result["state"] == "complete":
@@ -275,8 +277,8 @@ def outcome(result):
     if any(c["outcome"] == "defect" for c in result.get("checks", [])):
         return "defects_or_unresolved"
     # An adjudicated purpose deferral is advisory (AGENTEE-385): savings cannot block acceptance.
-    statuses = [finding_status(f) for f in result.get("findings", [])
-                if not (f.get("purpose_status") == "advisory" and finding_status(f) == "deferred")]
+    from .purpose_review import advisory_deferral
+    statuses = [finding_status(f) for f in result.get("findings", []) if not advisory_deferral(f)]
     if any(s in ("accepted", "unresolved", "deferred") for s in statuses):
         return "defects_or_unresolved"
     return "criteria_satisfied"
@@ -389,9 +391,12 @@ def recover_records(run, result):
     result["findings"] = collect_findings(result["reviews"], result["checks"])
     for finding in result["findings"]:
         old = previous.get(finding["id"], {})
-        for key in ("status", "disposition", "reason", "disposition_reason", "decision", "events", "duplicate_of", "duplicates"):
+        for key in ("status", "disposition", "reason", "disposition_reason", "decision", "events", "duplicate_of", "duplicates",
+                    "purpose_status"):
             if key in old:
                 finding[key] = old[key]
+    from .purpose_review import record_coverage
+    record_coverage(result)
 
 
 def validate_scope(scope):

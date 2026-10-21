@@ -43,7 +43,11 @@ Reviewers explain justified constraints and reserves in `coverage`, with each
 purpose entry beginning `purpose_review:`. Supported waste observations use the
 existing `findings` array beside correctness findings, with `assessment: concern`,
 `severity: info` or `minor`, and the optional `dimension: purpose_review`. A
-finding with that dimension and any other assessment or severity is refused. The `reasoning` states
+finding with that dimension and any other assessment or severity is refused, as
+is one carrying a `downgraded_from` marker: a defect the validator downgraded for
+empty evidence stays correctness uncertainty even if it is relabelled and
+revalidated. Review validation, finding collection and adjudication apply the same
+rule. The `reasoning` states
 the change, saving in mm² or a named routability measure, calculation or basis,
 and uncertainty. An unquantifiable saving stays unknown with the missing
 measurement named. Renders supplement structured citations to captured text
@@ -64,14 +68,31 @@ purpose finding stays visible but does not hold the run outcome at
 adjudicated exactly as before. A deferred correctness concern still holds the
 outcome, and a check defect still fails the run. No finding without the
 dimension may be marked a duplicate of a purpose finding, so a correctness
-concern cannot become advisory that way.
+concern cannot become advisory that way. The outcome sets aside only a deferred
+finding that has the dimension and the advisory status, is a reviewer concern of
+severity `info` or `minor`, and has no downgrade marker.
+
+`verify` does not trust these fields in `result.json`.
+`purpose_review.verify_records` re-derives them from the retained initial reviews
+(`reviews/<role>.json`) and adjudication event files (`events/*adjudication*.json`).
+A finding is a purpose finding only when its retained review marked it and that
+mark passes the rule above. Its advisory status exists only when a retained
+adjudication record decided it. Its decision events must match those decisions in
+disposition, reason, duplicate target and status, in record order. A
+`dimension`, `purpose_status` or event status on any other finding is refused,
+and so is a changed severity, assessment or downgrade marker on a purpose finding.
 
 Each initial review records purpose coverage in `result.json`
 `purpose_coverage`. A role is `addressed` when it has a `purpose_review:`
 coverage or limitation entry or a purpose finding. Otherwise it is `unknown`,
 and the run adds a `purpose coverage unknown` limitation for it. That limitation
 records an unassessed dimension; it is not a pass, and it does not block
-acceptance. The record shows that the reviewer marked the dimension, not that
+acceptance. `verify` recomputes these records from the retained initial reviews
+and refuses a result whose `purpose_coverage` is missing, changed or marked
+`addressed` without a retained basis, or that omits a required unknown
+limitation. Captured scope limitations remain a verified prefix of
+`limitations`. A run recovered after an interruption records the same coverage
+from its retained reviews. The record shows that the reviewer marked the dimension, not that
 its purpose reasoning is sound. Existing check defects remain defects, and
 the baseline witness and evidence-seal contracts are unchanged. Initial reviewer
 independence and the single design writer are unchanged. There is no new review
@@ -84,7 +105,12 @@ or a validator that guarantees every reviewer follows the brief.
 independent prompt delivery with custom lenses, missing/link/peer image handling,
 retention of an advisory saving beside an accepted correctness defect, per-side
 render coverage, advisory status for deferred purpose findings, and recorded
-purpose coverage.
+purpose coverage. `PurposeDowngradeTests` reproduces the two-validation
+downgrade relabelling and shows it refused. `PurposeIntegrityRunTests` runs
+two full scripted reviews with native netlist execution and real adjudication
+records. It then shows `verify` refusing forged status, dimension, severity,
+assessment, downgrade and event edits, and coverage deletion or forged `addressed`
+status.
 Its original illustrative card-reserve declarations compare an inboard 600 mm²
 reserve with an edge alternative. They are not the pod iteration-7/8k designs and
 do not establish that a live model catches that real example. A sealed review of

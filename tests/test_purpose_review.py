@@ -1,4 +1,5 @@
 """Purpose navigation and advisory retention, without simulated model judgment."""
+import io
 import json
 import shutil
 import time
@@ -10,6 +11,7 @@ from agent_ee.findings import adjudicate, collect_findings, validate_review
 from agent_ee.reviewers import adjudicator_call, build_packet, initial_reviews
 from agent_ee.storage import digest, identity, read_json, write_json
 from tests import test_findings as fixture
+from tests.toolchain import toolchain_test
 
 
 class PurposeReviewTests(unittest.TestCase):
@@ -337,3 +339,191 @@ class PurposeFollowupTests(unittest.TestCase):
             adjudicator_call(self.run_dir, packet, [], [], time.monotonic() + 30)
         self.assertIn('advisory purpose status', prompts[0])
         self.assertIn('no correctness finding may be duplicated', prompts[0])
+
+
+class PurposeDowngradeTests(unittest.TestCase):
+    """AGENTEE-385 H2: a validator-downgraded defect never becomes an advisory purpose finding."""
+    setUp = PurposeFollowupTests.setUp
+    _review = PurposeFollowupTests._review
+    packet = PurposeFollowupTests.packet
+    purpose_finding = PurposeFollowupTests.purpose_finding
+    validated = PurposeFollowupTests.validated
+
+    def test_two_validation_downgrade_cannot_acquire_purpose_status(self):
+        from agent_ee.cli import outcome
+        raw = self.purpose_finding(assessment='defect', evidence=[], title='Connector enclosure clearance unknown',
+                                   mechanism='Mating connector collides with enclosure; functional fit is uncertain')
+        raw.pop('dimension')
+        downgraded = self.validated([raw])['findings'][0]
+        self.assertEqual((downgraded['assessment'], downgraded['downgraded_from']), ('concern', 'defect'))
+        relabelled = {**downgraded, 'dimension': 'purpose_review'}
+        with self.assertRaisesRegex(ValueError, 'downgraded defect'):
+            self.validated([relabelled])
+        with self.assertRaisesRegex(ValueError, 'downgraded defect'):
+            collect_findings([self._review(findings=[relabelled])], [])
+        # A forged collected projection is refused at adjudication, before any status is granted.
+        [finding] = collect_findings([self._review(findings=[downgraded])], [])
+        decisions = {'schema': 'agent-ee.decisions/2', 'candidate_id': self.candidate_id, 'run_id': self.run_id,
+                     'decisions': [{'finding_id': finding['id'], 'disposition': 'deferred',
+                                    'reason': 'Need measurement', 'evidence': []}]}
+        with self.assertRaisesRegex(ValueError, 'downgraded defect'):
+            adjudicate([{**finding, 'dimension': 'purpose_review'}], decisions, self.run_dir)
+        [kept] = adjudicate([finding], decisions, self.run_dir)
+        self.assertNotIn('purpose_status', kept)
+        result = {'state': 'complete', 'adjudicated': True,
+                  'checks': [{'id': 'erc', 'execution': 'ok', 'outcome': 'pass', 'summary': 'clean'}],
+                  'review_executions': [{'execution': 'ok'}, {'execution': 'ok'}], 'reviews': [{}, {}]}
+        self.assertEqual(outcome({**result, 'findings': [kept]}), 'defects_or_unresolved')
+        forged = {**kept, 'dimension': 'purpose_review', 'purpose_status': 'advisory'}
+        self.assertEqual(outcome({**result, 'findings': [forged]}), 'defects_or_unresolved')
+        for key, value in (('severity', 'major'), ('assessment', 'defect'), ('source', 'check')):
+            with self.subTest(key=key):
+                self.assertEqual(outcome({**result, 'findings': [{**forged, key: value}]}),
+                                 'defects_or_unresolved')
+
+
+class PurposeIntegrityRunTests(unittest.TestCase):
+    """AGENTEE-385 H1/H3: verify() re-derives purpose status and coverage from retained records."""
+
+    @classmethod
+    def setUpClass(cls):
+        from test_concurrent_reviews import ConcurrentReviewTests
+        cls.fixture = ConcurrentReviewTests
+
+    def setUp(self):
+        self.reviews = self.fixture('setUp')
+        self.reviews.setUp()
+        self.addCleanup(self.reviews.doCleanups)
+        self.reviews.configure_coordinator_scope()
+        self.reviews.scope['skip_visuals'] = True
+        self.reviews.settings = {role: {'sleep': 0, 'fail': False} for role in ('circuit', 'physical')}
+
+    def full_run(self, name, *, correctness):
+        from test_concurrent_reviews import HARNESS
+        from agent_ee.cli import run_review
+        purpose = {'id': 'edge-move', 'title': 'Edge alternative', 'location': 'J1', 'condition': 'Placement',
+                   'mechanism': 'Edge pose could free the inboard reserve', 'severity': 'info',
+                   'assessment': 'concern', 'evidence': [], 'dimension': 'purpose_review',
+                   'reasoning': 'Estimated saving unknown; needs enclosure measurement'}
+        concern = {'id': 'correctness', 'title': 'Connector clearance uncertain', 'location': 'J1',
+                   'condition': 'Mating', 'mechanism': 'Possible collision', 'severity': 'minor',
+                   'assessment': 'concern', 'evidence': [], 'reasoning': 'Needs mechanical evidence'}
+        addition = (f'\nif role == "physical":\n    response["findings"] = [{purpose!r}]\n'
+                    + (f'if role == "circuit":\n    response["findings"] = [{concern!r}]\n' if correctness else ''))
+        (self.reviews.root / 'source/harness.py').write_text(HARNESS.replace(
+            'print(json.dumps(response), flush=True)', addition + 'print(json.dumps(response), flush=True)'))
+        write_json(self.reviews.root / 'scope.json', self.reviews.scope)
+        run = self.reviews.root / name
+
+        def dispatch(*args, **kwargs):
+            if args[1] != 'adjudicator':
+                return self.reviews.harness(*args, **kwargs)
+            packet = read_json(run / 'packet.json')
+            decisions = [{'finding_id': 'physical/edge-move', 'disposition': 'deferred',
+                          'reason': 'Saving needs enclosure measurement', 'evidence': []}]
+            if correctness:
+                decisions.append({'finding_id': 'circuit/correctness', 'disposition': 'deferred',
+                                  'reason': 'Need mechanical measurement', 'evidence': []})
+            return {'execution': 'ok'}, {'schema': 'agent-ee.decisions/2', 'candidate_id': packet['candidate_id'],
+                                         'run_id': packet['run_id'], 'decisions': decisions}
+
+        with patch('agent_ee.reviewers.dispatch', side_effect=dispatch):
+            run_review(self.reviews.root / 'scope.json', run, 240, output_stream=io.StringIO())
+        result = read_json(run / 'result.json')
+        self.assertNotIn('error', result)
+        self.assertEqual(result['state'], 'complete')
+        return run, result
+
+    def refused(self, run, original, mutate, message):
+        import copy
+        from agent_ee.cli import outcome, verify
+        tampered = copy.deepcopy(original)
+        mutate(tampered)
+        tampered['outcome'] = outcome(tampered)
+        write_json(run / 'result.json', tampered)
+        try:
+            with self.assertRaisesRegex(ValueError, message):
+                verify(run)
+        finally:
+            write_json(run / 'result.json', original)
+        return tampered['outcome']
+
+    @toolchain_test
+    def test_tampered_purpose_projection_and_coverage_are_refused(self):
+        from agent_ee.cli import verify
+        run, result = self.full_run('advisory', correctness=False)
+        verified = verify(run)
+        by_id = {f['id']: f for f in verified['findings']}
+        self.assertEqual(by_id['physical/edge-move']['purpose_status'], 'advisory')
+        self.assertEqual(verified['outcome'], 'criteria_satisfied')
+        self.assertEqual([(r['role'], r['status']) for r in verified['purpose_coverage']],
+                         [('circuit', 'unknown'), ('physical', 'addressed')])
+        [unknown] = [text for text in verified['limitations'] if 'purpose coverage unknown' in text]
+        self.assertTrue(unknown.startswith('circuit:'))
+
+        def index(value, fid):
+            return next(i for i, f in enumerate(value['findings']) if f['id'] == fid)
+
+        def purpose(mutate_finding):
+            def mutate(value):
+                mutate_finding(value['findings'][index(value, 'physical/edge-move')])
+            return mutate
+
+        differs = 'purpose finding projection differs'
+        for label, mutate in (
+                ('major tag', purpose(lambda f: f.update(severity='major'))),
+                ('defect tag', purpose(lambda f: f.update(assessment='defect'))),
+                ('downgrade marker', purpose(lambda f: f.update(downgraded_from='defect'))),
+                ('status removed', purpose(lambda f: f.pop('purpose_status'))),
+                ('forged extra event', purpose(lambda f: f['events'].append({**f['events'][-1], 'seq': 2}))),
+                ('forged event reason', purpose(lambda f: f['events'][-1].update(reason='Forged'))),
+                ('event status removed', purpose(lambda f: f['events'][-1].pop('purpose_status'))),
+                ('forged disposition', purpose(lambda f: f.update(disposition='noted', status='noted')))):
+            with self.subTest(label):
+                self.refused(run, result, mutate, differs)
+
+        def drop_coverage(value):
+            value['purpose_coverage'] = []
+            value['limitations'] = [text for text in value['limitations'] if 'purpose coverage unknown' not in text]
+
+        def forge_addressed(value):
+            value['purpose_coverage'][0]['status'] = 'addressed'
+            value['limitations'] = [text for text in value['limitations'] if 'purpose coverage unknown' not in text]
+
+        for label, mutate, message in (
+                ('coverage deleted', drop_coverage, 'purpose coverage differs'),
+                ('coverage key removed', lambda value: value.pop('purpose_coverage'), 'purpose coverage differs'),
+                ('forged addressed', forge_addressed, 'purpose coverage differs'),
+                ('unknown limitation removed', lambda value: value.update(limitations=[
+                    text for text in value['limitations'] if 'purpose coverage unknown' not in text]),
+                 'omits a purpose coverage unknown limitation')):
+            with self.subTest(label):
+                self.refused(run, result, mutate, message)
+        # The restored result still verifies.
+        self.assertEqual(verify(run)['outcome'], 'criteria_satisfied')
+
+        # A correctness deferral holds the outcome; no projection edit can grant it purpose status.
+        run2, held = self.full_run('held', correctness=True)
+        self.assertEqual(verify(run2)['outcome'], 'defects_or_unresolved')
+
+        def correctness(**fields):
+            def mutate(value):
+                value['findings'][index(value, 'circuit/correctness')].update(fields)
+            return mutate
+
+        def forge_event(value):
+            finding = value['findings'][index(value, 'circuit/correctness')]
+            finding['events'][-1]['purpose_status'] = 'advisory'
+            finding.update(purpose_status='advisory', dimension='purpose_review', decision=finding['events'][-1])
+
+        not_granted = 'purpose status not granted'
+        for label, mutate, message in (
+                ('purpose_status only', correctness(purpose_status='advisory'), not_granted),
+                ('missing retained dimension', correctness(purpose_status='advisory', dimension='purpose_review'),
+                 not_granted),
+                ('info severity tag', correctness(purpose_status='advisory', dimension='purpose_review',
+                                                  severity='info'), not_granted),
+                ('forged correctness event', forge_event, not_granted)):
+            with self.subTest(label):
+                self.refused(run2, held, mutate, message)
+        self.assertEqual(verify(run2)['outcome'], 'defects_or_unresolved')
