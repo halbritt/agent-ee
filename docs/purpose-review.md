@@ -88,9 +88,11 @@ coverage or limitation entry or a purpose finding. Otherwise it is `unknown`,
 and the run adds a `purpose coverage unknown` limitation for it. That limitation
 records an unassessed dimension; it is not a pass, and it does not block
 acceptance. `verify` recomputes these records from the retained initial reviews
-and refuses a result whose `purpose_coverage` is missing, changed or marked
-`addressed` without a retained basis, or that omits a required unknown
-limitation. Captured scope limitations remain a verified prefix of
+and refuses a result whose `purpose_coverage` is changed or marked `addressed`
+without a retained basis, or that omits a required unknown limitation. A
+complete run without the record is refused. An incomplete run cannot be
+accepted. Before `adjudicate` can complete one, it records the coverage again
+from the retained reviews. Captured scope limitations remain a verified prefix of
 `limitations`. A run recovered after an interruption records the same coverage
 from its retained reviews. The record shows that the reviewer marked the dimension, not that
 its purpose reasoning is sound. Existing check defects remain defects, and
