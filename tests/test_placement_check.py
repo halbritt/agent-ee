@@ -377,5 +377,34 @@ b.Remove(t)""", overrides=dict(marker_ref='AXES1'))
                 parameters(dict(params,**changes))
 
 
+class LocalityIngressTests(unittest.TestCase):
+    def test_deeply_nested_captured_locality_is_malformed_not_recursion_error(self):
+        """AGENTEE-363b: decoder recursion at the captured-locality ingress is a typed refusal."""
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agent_ee import placement_check
+        from agent_ee.checks import CheckError
+        from agent_ee.electrical_locality import DEPTH_ERROR
+
+        with tempfile.TemporaryDirectory() as tmp:
+            inputs = Path(tmp)
+            (inputs / 'locality.json').write_text('[' * 10_000 + '0' + ']' * 10_000)
+
+            def native(*args, **kwargs):
+                raise AssertionError('refusal must precede native board probing')
+            ctx = SimpleNamespace(
+                params=dict(criterion='electrical-locality/1', drc_check='drc', locality='locality.json'),
+                inputs=inputs, manifest=dict(files={'locality.json': digest(inputs / 'locality.json')}),
+                execute=native, candidate_path=native)
+            # Only the prerequisite native DRC result is substituted; parsing runs for real.
+            with patch.object(placement_check, 'prerequisite_drc', return_value=({}, {})), \
+                    self.assertRaises(CheckError) as raised:
+                placement_check.check_placement(ctx)
+        self.assertEqual(raised.exception.execution, 'malformed')
+        self.assertEqual(str(raised.exception), f'electrical locality refused: {DEPTH_ERROR}')
+
+
 if __name__=='__main__':
     unittest.main()

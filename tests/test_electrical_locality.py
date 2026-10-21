@@ -781,6 +781,89 @@ class LocalityIndexTests(unittest.TestCase):
                         ValueError, '^locality document must contain only JSON values$'):
                     operation(doc)
 
+    def test_index_copy_recursion_after_prewalk_is_typed_depth_error(self):
+        """AGENTEE-363b: the pre-walk cannot bound what deepcopy later traverses."""
+        import sys
+        import threading
+
+        deep = 'x'
+        for _ in range(2000):
+            deep = [deep]
+
+        def insert(doc):
+            doc['obligations'][0]['supply']['provenance']['extra'] = deep
+
+        def run_with_prewalk_boundary(doc, on_return):
+            def boundary(frame, event, arg):
+                if event == 'return' and frame.f_code is locality._bounded_depth.__code__:
+                    on_return()
+            previous = sys.getprofile()
+            sys.setprofile(boundary)
+            try:
+                with self.assertRaisesRegex(ValueError, f'^{locality.DEPTH_ERROR}$'):
+                    locality.PlacementIndex(doc)
+            finally:
+                sys.setprofile(previous)
+
+        # Deterministic same-thread insertion between the pre-walk and the copy.
+        _, doc = bound_output_loop()
+        inserted = []
+        run_with_prewalk_boundary(doc, lambda: inserted.append(insert(doc)))
+        self.assertEqual(len(inserted), 1)
+
+        # The same window, mutated by a real second thread.
+        _, doc = bound_output_loop()
+        ready, done, errors = threading.Event(), threading.Event(), []
+
+        def mutate():
+            if not ready.wait(5):
+                errors.append('no pre-walk boundary')
+                return
+            insert(doc)
+            done.set()
+
+        def handoff():
+            ready.set()
+            if not done.wait(5):
+                errors.append('mutator did not finish')
+
+        thread = threading.Thread(target=mutate)
+        thread.start()
+        try:
+            run_with_prewalk_boundary(doc, handoff)
+        finally:
+            ready.set()
+            thread.join(6)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+
+        # A deep non-JSON tuple is invisible to the pre-walk but traversed by deepcopy.
+        nested = 'x'
+        for _ in range(2000):
+            nested = (nested,)
+        facts, doc = bound_output_loop()
+        doc['obligations'][0]['supply']['provenance']['extra'] = nested
+        with self.assertRaisesRegex(ValueError, f'^{locality.DEPTH_ERROR}$'):
+            locality.PlacementIndex(doc)
+        for name, operation in (('validate', locality.validate),
+                                ('grade', lambda d: locality.grade(facts, d))):
+            with self.subTest(operation=name), self.assertRaisesRegex(
+                    ValueError, '^locality document must contain only JSON values$'):
+                operation(doc)
+
+    def test_load_json_refuses_decoder_recursion_with_typed_depth_error(self):
+        for opener, closer in (('[', ']'), ('{"k":', '}')):
+            text = opener * 10_000 + '0' + closer * 10_000
+            with self.subTest(opener=opener), self.assertRaisesRegex(ValueError, f'^{locality.DEPTH_ERROR}$'):
+                locality.load_json(text)
+            with self.subTest(opener=opener, encoded=True), \
+                    self.assertRaisesRegex(ValueError, f'^{locality.DEPTH_ERROR}$'):
+                locality.load_json(text.encode())
+        _, doc = bound_output_loop()
+        self.assertEqual(locality.load_json(json.dumps(doc)), doc)
+        with self.assertRaises(json.JSONDecodeError):  # Ordinary malformed text keeps its decoder error.
+            locality.load_json('{')
+
     def test_cyclic_documents_raise_typed_json_error_at_every_entry_point(self):
         for cycle in ('dict', 'list', 'mixed'):
             facts, doc = bound_output_loop()

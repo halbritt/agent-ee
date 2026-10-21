@@ -5,6 +5,7 @@ Distances use native copper-land centroids, not anchors, routed length or loop i
 """
 from copy import deepcopy
 from fractions import Fraction
+import json
 import math
 from types import MappingProxyType
 from uuid import UUID
@@ -43,6 +44,14 @@ def _bounded_depth(value):
             ancestors.remove(identity)
 
     visit(value, 0)
+
+
+def load_json(text):
+    """Decode captured locality JSON; decoder recursion on deep nesting is a typed refusal."""
+    try:
+        return json.loads(text)
+    except RecursionError as exc:
+        raise ValueError(DEPTH_ERROR) from exc
 
 
 def _plain_json(value):
@@ -304,7 +313,12 @@ class PlacementIndex:
     """
     def __init__(self, document):
         _bounded_depth(document)
-        document = _plain_json(deepcopy(document))
+        try:
+            copied = deepcopy(document)
+        except RecursionError as exc:
+            # The pre-walk cannot see a concurrent insertion or a deep non-JSON container.
+            raise ValueError(DEPTH_ERROR) from exc
+        document = _plain_json(copied)
         validate(document)
         pairs = {}
         endpoints = {}
