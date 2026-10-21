@@ -6,6 +6,7 @@ and full-scan formulations) and plan digests pinned from the ac662ff packer.
 import copy
 import hashlib
 import json
+import os
 import random
 import unittest
 from fractions import Fraction
@@ -387,3 +388,45 @@ class OverlapTests(unittest.TestCase):
         self.assertGreater(verdicts[True], 300)
         self.assertGreater(verdicts[False], 300)
         self.assertGreater(convex_pairs, 1000)
+
+
+class PodScaleQualificationBenchmark(unittest.TestCase):
+    """Deterministic work bounds for qualification at pod scale, with a safety ceiling.
+
+    AGENT_EE_SKIP_BENCHMARKS=1 skips it where CI time is short; the bounds are
+    counts, so a pass does not depend on the host's speed.
+    """
+    @unittest.skipIf(os.environ.get('AGENT_EE_SKIP_BENCHMARKS') == '1', 'AGENT_EE_SKIP_BENCHMARKS=1')
+    def test_331_footprints_with_1986_native_96_gons_qualify_with_bounded_pair_tests(self):
+        import math
+        import time
+        from unittest.mock import patch
+        from agent_ee.placer import _qualified
+        from test_placement import part
+        footprints = []
+        for i in range(331):
+            x, y = (i % 20) * 4, (i // 20) * 4
+            fp = part('P' + str(i), x, y, shape=rectangle(x, y, 3, 3))
+            fp['pads'], copper = [], []
+            for k in range(6):
+                cx, cy = x*MM + 500000 + (k % 3) * 1000000, y*MM + 700000 + (k // 3) * 1600000
+                fp['pads'].append({'uuid': f'P{i}-{k}', 'number': str(k+1), 'net': 'N', 'position_nm': [cx, cy],
+                                   'size_nm': [600000, 600000], 'shape': 4, 'attribute': 'smd', 'layers': ['F.Cu'],
+                                   'rotation_deg': 0})
+                copper.append({'layers': ['F.Cu'], 'polygons': [[
+                    [cx + int(300000*math.cos(2*math.pi*t/96)), cy + int(300000*math.sin(2*math.pi*t/96))]
+                    for t in range(96)]]})
+            fp['packing_pad_geometry'] = {'status': 'proven', 'holes': [], 'copper': copper}
+            footprints.append(fp)
+        board = capture(footprints, rectangle(0, 0, 84, 72))
+        board['pcbnew_version'] = '10.0.7'
+        polygons, vertices = 331 * 6, 96
+        started = time.monotonic()
+        with patch.object(placement, 'intersects', wraps=placement.intersects) as pair_tests:
+            outline = _qualified(copy.deepcopy(board))
+        elapsed = time.monotonic() - started
+        self.assertEqual(outline, [(0, 0), (84*MM, 0), (84*MM, 72*MM), (0, 72*MM)])
+        # The pairwise formulation ran vertices*(vertices-3)/2 tests per polygon (8,865,504 here);
+        # the sweep tests only pairs whose edge boxes overlap: none for a regular polygon.
+        self.assertLess(pair_tests.call_count, polygons * vertices, pair_tests.call_count)
+        self.assertLess(elapsed, 90.0, 'pod-scale qualification safety ceiling')

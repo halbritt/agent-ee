@@ -1025,7 +1025,9 @@ Each change below keeps every answer; none relaxes a predicate or changes a rank
   x, y and rotation make keys unique. The sequence equals sorting every exact
   key, so steps, tie breaks and the chosen candidate are unchanged.
 
-`tests.test_placer_geometry_cost` holds the proof: seeded differentials of the
+`tests.test_placer_geometry_cost` also holds a pod-scale qualification benchmark
+(331 footprints, 1,986 native-style 96-gons) bounded by pair-test counts, with a
+safety ceiling; `AGENT_EE_SKIP_BENCHMARKS=1` skips it. It holds the proof: seeded differentials of the
 transform, translation, sweep and margin prefilter against the previous
 formulations, the lazy order against full sorting, and 40 seeded owned boards
 whose plan digests (status, steps, search record and placements) are pinned
