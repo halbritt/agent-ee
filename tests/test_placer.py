@@ -19,6 +19,20 @@ def authored_gap(policy, citation):
         'class': 'fixture_author', 'enforcement': 'hard', 'value_nm': policy['gap_nm'], 'citation': citation}}}
 
 
+def authored_source(citation, value_nm=None):
+    record = {'class': 'fixture_author', 'enforcement': 'hard', 'citation': citation}
+    if value_nm is not None:
+        record['value_nm'] = value_nm
+    return record
+
+
+def authored_groups(groups, citation):
+    return [{**g, 'constraint_provenance': {
+        **({'region': authored_source(citation)} if 'region' in g else {}),
+        **({'max_distance_nm': authored_source(citation, g['max_distance_nm'])} if 'anchor' in g else {})}}
+        for g in groups]
+
+
 class PlacerTest(unittest.TestCase):
     def keepout_board(self, *, owner='U1', layers=('F.Cu', 'B.Cu'), shape=None):
         from test_placement import rectangle
@@ -317,7 +331,8 @@ class PlacerTest(unittest.TestCase):
                  unmargined_by_ref[fp['ref']]['position_nm'][1] / MM)
             for fp in board['footprints']
         ], rectangle(0, 0, 20, 20))
-        self.assertEqual(edge_clearance(unmargined_placed, margin_nm)['status'], 'defect')
+        self.assertEqual(edge_clearance(unmargined_placed, margin_nm, {'min_courtyard_edge_mm':
+            authored_source('tests/test_placer.py: authored edge margin', margin_nm)})['status'], 'defect')
 
         plan = pack(board, request(fixed_refs=[], min_courtyard_edge_mm=margin_mm))
         self.assertEqual(plan['status'], 'planned')

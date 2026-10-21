@@ -50,6 +50,12 @@ COMPACT_RESOLUTION_NM = 100_000
 # Search effort, not a design limit: a trial may use at most max(floor, factor x first-run steps).
 COMPACT_STEP_FLOOR = 10_000
 COMPACT_STEP_FACTOR = 10
+# Stage-A recovery (AGENTEE-359): a temporary anchor-proximity group for members that
+# reached the synthetic plane. Search effort, not a design limit: the group is removed
+# before grading, and each trial runs under the block step budget.
+RECOVERY = 'anchor-proximity-retry/1'
+RECOVERY_GROUP = 'stage-a-anchor-proximity'
+RECOVERY_TRIALS = 6
 MEMBER_KEYS = frozenset(('reference', 'fpid', 'side', 'value', 'pose', 'pad_geometry_sha256', 'courtyard_sha256',
                          'courtyard', 'pins'))
 
@@ -193,14 +199,62 @@ def derive(inventory, sheet_names, capture, *, inventory_sha256, allocation_raw=
             'residual': [{'reference': r, 'reason': residual[r]} for r in sorted(residual, key=_natural)]}
 
 
+def canonical_ring(ring):
+    """One closed vertex ring, independent of where it starts and which way it runs.
+
+    A captured contour of the same shape starts at a different vertex, and may run
+    the other way, at every board rotation (AGENTEE-370). The canonical ring runs
+    with a nonnegative shoelace sum in board coordinates and starts at its
+    lexicographically smallest rotation; a zero-area ring takes the smaller of both
+    directions. Only the vertex order changes, never a vertex.
+    """
+    points = [list(p) for p in ring]
+    if not points:
+        return points
+    n = len(points)
+    twice = sum(points[i][0] * points[(i + 1) % n][1] - points[(i + 1) % n][0] * points[i][1] for i in range(n))
+    runs = [points[::-1]] if twice < 0 else [points] + ([points[::-1]] if twice == 0 else [])
+    return min(run[i:] + run[:i] for run in runs for i in range(n))
+
+
+def _rings(polygons):
+    """A polygon list as a set of canonical rings: neither order is geometry."""
+    return sorted(canonical_ring(ring) for ring in polygons)
+
+
+def _local_pad(pad):
+    pad = {k: v for k, v in pad.items() if k not in INSTANCE_PAD_KEYS}
+    custom = pad.get('custom_geometry')
+    if isinstance(custom, dict) and isinstance(custom.get('merged_polygons_nm'), list):
+        pad['custom_geometry'] = {**custom, 'merged_polygons_nm': _rings(custom['merged_polygons_nm'])}
+    return pad
+
+
 def _local(fp):
-    """Footprint-local geometry at the origin, rotation 0, on its captured side."""
+    """Footprint-local geometry at the origin, rotation 0, on its captured side, pose-independent.
+
+    Pads are sorted and every courtyard and custom-pad contour is a set of
+    canonical rings, so the same land pattern and courtyard hash alike at every
+    quarter-turn (AGENTEE-370).
+    """
     local = placer.transform(fp, [0, 0], 0)
-    pads = sorted((canonical(_number({k: v for k, v in p.items() if k not in INSTANCE_PAD_KEYS}))
-                   for p in local['pads']))
-    courtyards = {side: {k: c[k] for k in ('status', 'polygons', 'inner_polygons', 'approximation') if k in c}
+    pads = sorted(canonical(_number(_local_pad(p))) for p in local['pads'])
+    courtyards = {side: {k: (_rings(c[k]) if k in ('polygons', 'inner_polygons') else c[k])
+                         for k in ('status', 'polygons', 'inner_polygons', 'approximation') if k in c}
                   for side, c in sorted(local['courtyards'].items())}
     return {'side': fp['side'], 'pads': [json.loads(p) for p in pads]}, {'side': fp['side'], 'courtyards': courtyards}
+
+
+def frame_member(fp, position, rotation):
+    """placer.transform of a footprint whose courtyards carry their canonical local rings.
+
+    The framed courtyards are exactly what ``_framed`` rebuilds from a member's
+    stored record, so an outline does not depend on the captured vertex order.
+    """
+    local = placer.transform(fp, [0, 0], 0)
+    local['courtyards'] = {side: {**local['courtyards'][side], **record}
+                           for side, record in _local(fp)[1]['courtyards'].items()}
+    return placer.transform(local, position, rotation)
 
 
 def pad_geometry_sha256(fp):
@@ -432,33 +486,121 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
     board = {fp['ref']: fp for fp in capture['footprints']}
     members = sorted(block['references'], key=_natural)
     anchor, sub, deferred, areas = _isolate(capture, policy, block)
-    # A synthetic square that any chain of the members fits inside, centred on the
-    # fixed anchor: the plane is unbounded for the search unless a member reaches it.
-    reach = _extent(board[anchor]) + sum(2 * _extent(board[r]) + sub['gap_nm'] for r in members if r != anchor)
-    reach += sub['gap_nm'] + 1
-    ax, ay = board[anchor]['position_nm']
-    plan = placer.pack(_isolated(capture, board, members, areas, (ax - reach, ay - reach, ax + reach, ay + reach)),
-                       sub, heartbeat=heartbeat)
+    plane = _plane(board, members, anchor, sub)
+    plan = placer.pack(_isolated(capture, board, members, areas, plane), sub, heartbeat=heartbeat)
     base = {'schema': CANDIDATE, 'block_id': block_id, 'block_policy': sub, 'deferred': deferred}
     if plan['status'] != 'planned':
         return {**base, 'status': plan['status'], 'outcome': plan['outcome'], 'reason': plan.get('reason'),
                 'plan': plan}
-    poses = {p['ref']: p for p in plan['placements']}
-    touching = sorted((r for r in members for box in placer.boxes(
-        placer.transform(board[r], poses[r]['position_nm'], poses[r]['rotation_deg'])).values()
-        if box[0] <= ax - reach or box[1] <= ay - reach or box[2] >= ax + reach or box[3] >= ay + reach),
-        key=_natural)
+    touching = _touching(board, members, plan, plane)
+    recovery = None
     if touching:
-        return {**base, 'status': 'synthetic_plane_reached', 'outcome': 'unknown',
-                'reason': 'members reached the synthetic plane edge: ' + ', '.join(touching), 'plan': plan}
+        recovery, recovered = _recover(capture, board, members, anchor, sub, areas, plane, touching, heartbeat)
+        if recovered is None:
+            return {**base, 'status': 'synthetic_plane_reached', 'outcome': 'unknown',
+                    'reason': 'members reached the synthetic plane edge: ' + ', '.join(touching), 'plan': plan,
+                    'recovery': recovery}
+        plan = recovered
+    poses = {p['ref']: p for p in plan['placements']}
     result = candidate(capture, inventory, derivation, block, anchor, poses, policy, sub, deferred, plan)
     if result['status'] == 'packed' and compact:
         result = _compact(capture, inventory, derivation, block, anchor, policy, sub, deferred, areas, result,
                           heartbeat)
+    if recovery is not None:
+        # The search log of how the first plan was obtained, kept on whichever run compaction selects.
+        result['search']['recovery'] = recovery
     if result['status'] == 'packed':
         validate_candidate(result)
     return {'status': result['status'], 'outcome': 'info' if result['status'] == 'packed' else 'unknown',
             'candidate': result}
+
+
+def _plane(board, members, anchor, sub):
+    """A synthetic square that any chain of the members fits inside, centred on the fixed
+    anchor: the plane is unbounded for the search unless a member reaches it."""
+    reach = _extent(board[anchor]) + sum(2 * _extent(board[r]) + sub['gap_nm'] for r in members if r != anchor)
+    reach += sub['gap_nm'] + 1
+    ax, ay = board[anchor]['position_nm']
+    return ax - reach, ay - reach, ax + reach, ay + reach
+
+
+def _recovery_start(plane):
+    """The first recovery trial's distance: half the synthetic plane's half-side."""
+    return (plane[2] - plane[0]) // 4
+
+
+def _recovery_eligible(board, ref, grouped):
+    """A stranded member the retry may group: in no declared group, on at least two nets."""
+    return ref not in grouped and len(set(_pad_nets(board[ref]).values()) - {''}) >= 2
+
+
+def _touching(board, members, plan, plane):
+    """Members of a planned block whose courtyard boxes reach the synthetic plane's edge."""
+    poses = {p['ref']: p for p in plan['placements']}
+    x0, y0, x1, y1 = plane
+    return sorted((r for r in members if any(
+        box[0] <= x0 or box[1] <= y0 or box[2] >= x1 or box[3] >= y1 for box in placer.boxes(
+            placer.transform(board[r], poses[r]['position_nm'], poses[r]['rotation_deg'])).values())),
+        key=_natural)
+
+
+def _recover(capture, board, members, anchor, sub, areas, plane, touching, heartbeat):
+    """Retry a plane-reaching first plan with a temporary anchor-proximity group (AGENTEE-359).
+
+    The placer's wire cost ignores ground nets and parts outside the block, so a member
+    tied to the rest of the block only through a plane net or a fixed part ranks by
+    position alone and runs to the synthetic plane's corner. Each trial reruns the
+    unchanged placer on the same synthetic plane with the same isolated policy plus one
+    group, ``RECOVERY_GROUP``, holding the stranded members within ``max_distance_nm`` of
+    the anchor's origin. The first trial uses half the plane's half-side. A trial whose
+    plan still reaches the plane adds those members to the group, or halves the
+    distance when no new member reached it. Any other placer outcome ends the retry. At
+    most ``RECOVERY_TRIALS`` trials run, each under the block step budget; there is no
+    wall clock beyond the policy's own ``search_timeout_s``.
+
+    A member is eligible only if it is in no declared group and its numbered pads carry
+    at least two distinct nets: a part shorted to a single net (or with no net) has no
+    connection that places it near the anchor, so it stays ``synthetic_plane_reached``.
+    The group never reaches the candidate: ``pack_block`` grades and witnesses the
+    recovered poses against the unchanged block policy. Returns ``(record, plan)``,
+    with ``plan`` None when nothing was recovered.
+    """
+    declared = sub.get('groups', [])
+    grouped = {r for g in declared for r in g['references']}
+    anchored = {r for g in declared if 'anchor' in g for r in g['references']}
+    distance = _recovery_start(plane)
+    record = {'method': RECOVERY, 'stranded': touching, 'trials': [], 'steps_total': 0}
+    if anchor in anchored or any(g['id'] == RECOVERY_GROUP for g in declared):
+        return {**record, 'status': 'not_applicable', 'reason': f'the anchor {anchor} cannot lead a new group'}, None
+    stranded = list(touching)
+    isolated = _isolated(capture, board, members, areas, plane)
+    for _ in range(RECOVERY_TRIALS):
+        ineligible = [r for r in stranded if not _recovery_eligible(board, r, grouped)]
+        if ineligible:
+            return {**record, 'status': 'not_applicable',
+                    'reason': 'in a declared group or on fewer than two nets: ' + ', '.join(ineligible)}, None
+        group = {'id': RECOVERY_GROUP, 'references': stranded, 'anchor': {'reference': anchor},
+                 'max_distance_nm': distance}
+        plan = placer.pack(isolated, {**sub, 'groups': declared + [group]}, heartbeat=heartbeat)
+        record['steps_total'] += plan['steps_used']
+        row = {'references': stranded, 'max_distance_nm': distance, 'status': plan['status'],
+               'steps_used': plan['steps_used']}
+        record['trials'].append(row)
+        if plan['status'] != 'planned':
+            return {**record, 'status': 'exhausted', 'reason': f"trial plan {plan['status']}"}, None
+        reached = _touching(board, members, plan, plane)
+        if not reached:
+            row['status'] = 'recovered'
+            return {**record, 'status': 'recovered', 'references': stranded, 'max_distance_nm': distance}, plan
+        row['status'] = 'synthetic_plane_reached'
+        more = [r for r in reached if r not in stranded]
+        if more:
+            stranded = sorted(stranded + more, key=_natural)
+        else:
+            distance //= 2
+        if distance <= 0:
+            break
+    return {**record, 'status': 'exhausted', 'reason': f'no trial within {RECOVERY_TRIALS} left the synthetic plane'}, None
 
 
 def _compact(capture, inventory, derivation, block, anchor, policy, sub, deferred, areas, first, heartbeat):
@@ -567,15 +709,14 @@ def candidate(capture, inventory, derivation, block, anchor, poses, policy, sub,
     roles = net_roles(capture, inventory, [anchor] + [r for r in members if r != anchor])
     for ref in members:
         position, rotation = _frame_pose(poses[ref], origin, turns)
-        fp = placer.transform(board[ref], position, rotation)
-        framed.append(fp)
+        pads, courtyard = _local(board[ref])
+        framed.append(frame_member(board[ref], position, rotation))
         component = inventory['components'][ref]
         rows.append({'reference': ref, 'fpid': board[ref]['fpid'], 'side': board[ref]['side'],
                      'value': {'text': component['value'], 'rule': 'exact'},
                      'pose': {'position_nm': position, 'rotation_deg': rotation},
-                     'pad_geometry_sha256': pad_geometry_sha256(board[ref]),
-                     'courtyard_sha256': courtyard_sha256(board[ref]),
-                     'courtyard': _local(board[ref])[1]['courtyards'], 'pins': roles[ref]})
+                     'pad_geometry_sha256': digest(pads), 'courtyard_sha256': digest(courtyard),
+                     'courtyard': courtyard['courtyards'], 'pins': roles[ref]})
     outline, grade, witness = _evidence(capture, framed, sub)
     status = ('refused' if witness['status'] != 'pass' or any(g and not _grade_usable(k, g) for k, g in grade.items())
               else 'packed')
@@ -639,6 +780,9 @@ def _framed(row):
         raise ValueError(f"{row['reference']}: courtyard record needs its mounting side")
     for record in row['courtyard'].values():
         courtyard_bounds(record)
+        if any(key in record and record[key] != _rings(record[key]) for key in ('polygons', 'inner_polygons')):
+            raise ValueError(f"{row['reference']}: identity_version: courtyard record is not in canonical ring order; "
+                             'a candidate from before AGENTEE-370 hashed a pose-dependent identity, pack it again')
     local = {'ref': row['reference'], 'side': row['side'], 'position_nm': [0, 0], 'rotation_deg': 0,
              'courtyards': copy.deepcopy(row['courtyard']), 'pads': []}
     return placer.transform(local, row['pose']['position_nm'], row['pose']['rotation_deg'])
@@ -691,6 +835,9 @@ def _block_policy(sub, refs, anchor):
 
 
 def _grade_usable(kind, record):
+    if kind == 'groups':
+        # Satisfied unsourced limits grade pass; a stored info group grade is never usable.
+        return record.get('status') == 'pass' and not placement_groups.violations(record)
     return record.get('status') in (('pass', 'info') if kind == 'electrical_locality' else ('pass',))
 
 
@@ -853,8 +1000,8 @@ def _validate_candidate(document):
         o['id'] for o in sub.get('electrical_locality', {}).get('obligations', [])}
     if internal & (set(deferred['groups']) | set(deferred['obligations'])):
         raise ValueError('an internal obligation cannot also be deferred')
-    search = _keys(document['search'], {'strategy', 'steps_used', 'step_budget'}, {'backjumps', 'compaction'},
-                   label='search record')
+    search = _keys(document['search'], {'strategy', 'steps_used', 'step_budget'},
+                   {'backjumps', 'compaction', 'recovery'}, label='search record')
     _text(search['strategy'], 'search strategy')
     for key in ('steps_used', 'step_budget', 'backjumps'):
         if key in search:
@@ -863,6 +1010,8 @@ def _validate_candidate(document):
         raise ValueError('search steps must lie within the block policy budget')
     if 'compaction' in search:
         _compaction(search['compaction'])
+    if 'recovery' in search:
+        _recovery(search['recovery'], sub, set(refs) - {frame['anchor']})
     sources = _keys(document['sources'], set(SOURCE_KEYS), label='candidate sources')
     for key in SOURCE_KEYS:
         if not (key == 'allocation_sha256' and sources[key] is None):
@@ -895,6 +1044,69 @@ def _compaction(record):
         _text(row['status'], 'compaction trial status')
         if ('box_area_nm2' in row) != (row['status'] == 'packed'):
             raise ValueError('a compaction trial records its box area exactly when it packed')
+
+
+def _recovery(record, sub, refs):
+    """The stage-A recovery record (a search log), checked trial by trial against ``_recover``.
+
+    Every trial names distinct movable members in natural order and a positive integer
+    distance; every trial but the last reached the synthetic plane and the last one
+    recovered. The first trial groups exactly the stranded members; each later trial
+    either grows the group at the same distance or keeps the group at half the
+    distance. ``admit`` binds the first distance and member eligibility to the board.
+    """
+    _keys(record, {'method', 'status', 'stranded', 'references', 'max_distance_nm', 'trials', 'steps_total'},
+          label='recovery')
+    if record['method'] != RECOVERY or record['status'] != 'recovered':
+        raise ValueError(f'recovery must be a recovered {RECOVERY} record')
+    grouped = {r for g in sub.get('groups', []) for r in g['references']}
+    if any(g['id'] == RECOVERY_GROUP for g in sub.get('groups', [])):
+        raise ValueError('the recovery group never reaches the block policy')
+
+    def members(value, label):
+        if (not isinstance(value, list) or not value or not all(isinstance(r, str) for r in value)
+                or len(set(value)) != len(value) or not set(value) <= refs
+                or value != sorted(value, key=_natural)):
+            raise ValueError(f'recovery {label} must be distinct movable block members in natural order')
+        if set(value) & grouped:
+            raise ValueError(f'recovery {label} cannot include a declared group member')
+
+    def distance(value, label):
+        if type(value) is not int or value <= 0:
+            raise ValueError(f'recovery {label} must be a positive integer')
+    for key in ('stranded', 'references'):
+        members(record[key], key)
+    distance(record['max_distance_nm'], 'max_distance_nm')
+    _count(record['steps_total'], 'recovery steps_total')
+    if not isinstance(record['trials'], list) or not 0 < len(record['trials']) <= RECOVERY_TRIALS:
+        raise ValueError(f'recovery trials must be a list of 1 to {RECOVERY_TRIALS}')
+    previous = None
+    for i, row in enumerate(record['trials']):
+        _keys(row, {'references', 'max_distance_nm', 'status', 'steps_used'}, label='recovery trial')
+        members(row['references'], 'trial references')
+        distance(row['max_distance_nm'], 'trial max_distance_nm')
+        _count(row['steps_used'], 'recovery trial steps_used')
+        if row['steps_used'] > sub['step_budget']:
+            raise ValueError('a recovery trial stays within the block step budget')
+        if row['status'] != ('recovered' if i == len(record['trials']) - 1 else 'synthetic_plane_reached'):
+            raise ValueError('every recovery trial but the last reached the synthetic plane; the last is recovered')
+        if previous is None:
+            if row['references'] != record['stranded']:
+                raise ValueError('the first recovery trial groups exactly the stranded members')
+        elif set(row['references']) > set(previous['references']):
+            if row['max_distance_nm'] != previous['max_distance_nm']:
+                raise ValueError('a recovery trial that grows the group keeps its distance')
+        elif row['references'] == previous['references']:
+            if row['max_distance_nm'] != previous['max_distance_nm'] // 2:
+                raise ValueError('a recovery trial that keeps the group halves its distance')
+        else:
+            raise ValueError("a recovery trial keeps every member of the previous trial's group")
+        previous = row
+    last = record['trials'][-1]
+    if (last['references'], last['max_distance_nm']) != (record['references'], record['max_distance_nm']):
+        raise ValueError('the recovery record names its last trial')
+    if record['steps_total'] != sum(row['steps_used'] for row in record['trials']):
+        raise ValueError('recovery steps_total is the sum of its trials')
 
 
 def admit(document, capture, inventory, derivation, policy):
@@ -936,12 +1148,21 @@ def admit(document, capture, inventory, derivation, policy):
         problems.append({'kind': 'identity', 'mismatches': identity['mismatches']})
     if problems:
         return {'status': 'refused', 'problems': problems}
-    framed = [placer.transform(board[r], rows[r]['pose']['position_nm'], rows[r]['pose']['rotation_deg'])
+    framed = [frame_member(board[r], rows[r]['pose']['position_nm'], rows[r]['pose']['rotation_deg'])
               for r in sorted(rows, key=_natural)]
     outline, grade, witness = _evidence(capture, framed, sub)
     for name, value in (('outline', outline), ('grade', grade), ('witness', witness)):
         if _plain(value) != document[name]:
             problems.append({'kind': 'stale_evidence', 'evidence': name})
+    recovery = document['search'].get('recovery')
+    if recovery is not None:
+        members = sorted(block['references'], key=_natural)
+        grouped = {r for g in sub.get('groups', []) for r in g['references']}
+        start = _recovery_start(_plane(board, members, anchor, sub))
+        ineligible = [r for r in recovery['references'] if not _recovery_eligible(board, r, grouped)]
+        if recovery['trials'][0]['max_distance_nm'] != start or ineligible:
+            problems.append({'kind': 'recovery_mismatch', 'start_distance_nm': start,
+                             'actual': recovery['trials'][0]['max_distance_nm'], 'ineligible': ineligible})
     compaction = document['search'].get('compaction')
     if compaction is not None and compaction['box_area_nm2'] != _box_area(_plain(outline)):
         problems.append({'kind': 'stale_evidence', 'evidence': 'compaction'})

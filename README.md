@@ -148,11 +148,15 @@ engineer allocation file. Each block is packed alone into a rigid, versioned blo
 candidate, with relative poses, an obligation grade, a courtyard witness,
 per-side outlines and source hashes. A compaction pass re-packs each block on
 shrinking outlines and keeps the smallest box with the same obligations.
+If the first plan strands a member tied in only through a plane net,
+[recovery](docs/blocks.md#recovery-agentee-359) retries with a bounded
+temporary anchor-proximity group, then grades on the unchanged policy.
 Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
-refuses any mismatch.
+refuses any mismatch. Land-pattern and courtyard hashes use canonical contour rings,
+so they do not depend on the captured board rotation (AGENTEE-370).
 The [block library](docs/block-library.md) keeps versioned known-good blocks in
 `blocks/` with provenance receipts. Its entries come from KiCad board regions,
 scale-verified datasheet figures and project clusters. A lookup returns each block
@@ -761,8 +765,12 @@ and mounting holes written by the scaffold are fixed references, and their
 exact courtyards are obstacles (AGENTEE-179). Circular probe courtyards are
 bounded exactly within a declared 5 um tolerance. A fixed courtyard may leave the
 outline only across envelope-declared edges and distances. Declared group
-regions and anchor distances are enforced and graded by `placement-groups/1`, and
-parts without courtyards are refused by name
+regions and anchor distances are enforced and graded by `placement-groups/1`.
+[Unsourced obstacle, region and saved-board limits](docs/placer.md#obstacle-and-group-sources-agentee-361)
+never establish a defect: capacity proofs that need them are unknown, and
+saved-board edge and group checks report them as `info` advisories. Authored
+fixtures and captured geometry retain their sourced verdicts.
+Parts without courtyards are refused by name
 ([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). Every placer
 result past the fixed reservations records the board's capacity at the packing
 gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound

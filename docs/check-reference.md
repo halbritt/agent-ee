@@ -1126,7 +1126,8 @@ placer plan is. In addition, the hard block rules are re-graded from the saved
 bytes (`judgment.block_rules`). A failed hard rule refuses publication;
 advisory rows are reported only. AGENTEE-355 changes only the search
 ([compaction](blocks.md#compaction-agentee-355), member-aligned origins and the
-ranking cache); it adds no check kind and changes no gate. The writer also
+ranking cache); it adds no check kind and changes no gate. AGENTEE-359 stage-A
+[recovery](blocks.md#recovery-agentee-359) is search only, too. The writer also
 publishes `block-provenance.json`; a scope's `block_provenance` binds it to the
 captured board and carries it to every initial reviewer
 ([review input](blocks.md#review-input-block-provenance-agentee-355)). It is
@@ -1153,7 +1154,16 @@ The [owned-zone write scope](placement-adapter.md#placement-write-scope)
 The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned
 footprint-forbidding polygons as exclusions for peer courtyards.
 AGENTEE-212 adds `placement-groups/1` (declared group regions and anchor
-distances) and an optional `envelope` on `outline-containment/1` that grades
+distances). AGENTEE-361 classifies group regions and distance limits, and the
+`edge-clearance/1` courtyard minimum. Unsourced limits are advisory, as in
+`electrical-locality/1`: each measurement against one is an `advisories` entry
+(`kind: unsourced_limit`, source class, measurement, `exceeded`), never a gate
+finding. When only exceeded advisories remain, the check ends `execution: ok`,
+`outcome: info`. Satisfied advisories (`exceeded: false`) keep `pass`. Real coverage gaps such as `courtyard_approximation` stay
+unknown. Sourced violations and structural courtyard-outside-board defects
+retain their verdicts. See
+[constraint source records](placer.md#obstacle-and-group-sources-agentee-361).
+AGENTEE-212 also adds an optional `envelope` on `outline-containment/1` that grades
 envelope-declared fixed-courtyard overhangs. Curved courtyards are judged on
 exact outer and inner bounds: pass on the outer, defect only on the inner;
 a result only between them is `courtyard_approximation` (unknown), even where
@@ -1913,9 +1923,13 @@ Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
 or `A;B`) never receive the exemption, even when KiCad writes the net name as a
 quoted string. Such edits reopen closure and require a fresh receipt. This is a
 conservative liveness bound of the writer grammar (AGENTEE-360).
-Nested-list children of a segment or arc refuse comparison with `ValueError`;
-the coordinator retains the carried defect instead of letting an untyped error
-escape.
+A segment or arc refuses comparison with `ValueError` when a child is
+list-headed (for example `((x))`) or when a value of a `start`, `end`, `mid`,
+`width`, `layer`, `net`, `uuid` or `locked` child is a nested list (for example
+`(start (1) 2)`), on any layer. Nested lists inside unknown track children are
+not refused: those children stay in the exact comparison. The coordinator
+retains the carried defect instead of letting an untyped error escape
+(AGENTEE-364).
 
 ## Design-rule provenance (AGENTEE-331)
 
@@ -2035,3 +2049,12 @@ a proof surviving without it retains its verdict. The audit table distinguishes
 search radii, captured keepout geometry and computational guards. The low-level
 packing provenance object accepts a value-bound `min_courtyard_edge_mm` source
 with `value_nm`, class, enforcement and citation; check registration is unchanged.
+
+AGENTEE-365 closes two source paths for the
+[obstacle and group sources](placer.md#obstacle-and-group-sources-agentee-361).
+The placement adapter and pod driver refuse per-obstacle `provenance` and
+per-group `constraint_provenance` in the caller's packing policy, as they
+already refuse a policy-level `constraint_provenance`. Hard block-arrangement
+keep-outs and `no_stacking` shadows carry their rule's citation as
+`arrangement_rule`/`hard`, so a residual capacity proof that rests on one
+reports `defect` instead of `unknown`. No check registration changes.

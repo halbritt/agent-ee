@@ -10,6 +10,8 @@ has not been fabricated or tested. Only numeric records and source identities ar
 written; no fome-mc file is copied.
 
     PYTHONPATH=src python3 scripts/import_pod_blocks.py --repository ~/git/fome-mc --root .
+
+--root appends version VERSION of each entry; a catalogued version is never rewritten.
     PYTHONPATH=src python3 scripts/import_pod_blocks.py --repository ~/git/fome-mc --check
 """
 import argparse
@@ -37,6 +39,9 @@ REQUEST = ITERATION + 'inputs/request.json'
 # bytes are tracked as revised-native/native.xml.
 NATIVE = 'telemetry-pod/expansion/revised-native/native.xml'
 LOCALITY = 'telemetry-pod/expansion/electrical-locality/pad-obligations/electrical-locality.json'
+# Version 1 hashed courtyards in captured vertex order (agent-ee.block-library-entry/1,
+# retired by AGENTEE-370); version 2 is the same import at the pose-independent identity.
+VERSION = 2
 # (cluster anchor, entry id, part)
 ENTRIES = (('U5', 'pod-lmr36520-dda-u5', 'LMR36520-DDA'), ('U7', 'pod-lmr36520-dda-u7', 'LMR36520-DDA'),
            ('U15', 'pod-tps62162-dsg-u15', 'TPS62162-DSG'), ('U26', 'pod-lm2903-soic8-u26', 'LM2903-SOIC8'))
@@ -52,7 +57,8 @@ def read(repository, path):
     return _git(repository, 'cat-file', 'blob', f'{COMMIT}:{path}')
 
 
-def entries(repository, scratch):
+def inputs(repository, scratch):
+    """(cluster poses, capture, inventory, sheet names, inventory sha256, policy) from the pinned objects."""
     from agent_ee.placement_probe import extract
     scratch = Path(scratch)
     (scratch / 'seed.kicad_pcb').write_bytes(gzip.decompress(read(repository, SEED)))
@@ -63,9 +69,13 @@ def entries(repository, scratch):
     sha = hashlib.sha256((scratch / 'native.xml').read_bytes()).hexdigest()
     policy = json.loads(read(repository, REQUEST))['policy']
     policy['electrical_locality'] = json.loads(read(repository, LOCALITY))
-    raw = read(repository, CLUSTERS)
+    return read(repository, CLUSTERS), capture, inventory, names, sha, policy
+
+
+def entries(repository, scratch):
+    raw, capture, inventory, names, sha, policy = inputs(repository, scratch)
     return [block_library.import_project_cluster(
-        raw, anchor, capture, inventory, names, sha, policy, block_id=block_id, version=1, part=part,
+        raw, anchor, capture, inventory, names, sha, policy, block_id=block_id, version=VERSION, part=part,
         citation=citation(anchor), repository=REPOSITORY, commit=COMMIT, path=CLUSTERS)
         for anchor, block_id, part in ENTRIES]
 
