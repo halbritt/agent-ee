@@ -284,8 +284,11 @@ class PackingTests(Fixture, unittest.TestCase):
         frame = {m['reference']: m['pose'] for m in rotated['candidate']['members']}
         self.assertEqual(frame['U1'], {'position_nm': [0, 0], 'rotation_deg': 0})
         self.assertEqual(rotated['candidate']['grade']['electrical_locality']['status'], 'pass')
-        self.assertEqual(rotated['candidate']['members'][0]['pad_geometry_sha256'],
-                         result['members'][0]['pad_geometry_sha256'])
+        # The anchor's land and courtyard hashes are rotation-normalized.
+        def hashes(cand):
+            row = next(m for m in cand['members'] if m['reference'] == 'U1')
+            return row['pad_geometry_sha256'], row['courtyard_sha256']
+        self.assertEqual(hashes(rotated['candidate']), hashes(result))
 
     def test_unavailable_obligations_and_fixed_members_refuse(self):
         doc = obligations()
