@@ -1854,7 +1854,18 @@ sets even without a kind. Inconsistent bindings refuse validation, including
 direct `PlacementIndex` construction (AGENTEE-341). It deep-copies the document
 first, copies its exact JSON values into fresh owned containers, validates that
 snapshot, then indexes it (AGENTEE-356). Cyclic containers raise the typed JSON
-`ValueError`. Its public pairs and endpoint maps are read-only at every level,
+`ValueError`. Containers nested deeper than 64 levels refuse with `locality
+document nesting exceeds 64 levels` at the index (checked before copying,
+including subclass storage), `validate()` and `grade()`, never `RecursionError`.
+If the copy itself recurses too deeply (a deep value inserted concurrently after
+the pre-walk, or a deep non-JSON tuple), the index raises the same depth error.
+The captured locality file is decoded by `electrical_locality.load_json`, so
+decoder recursion on deeply nested JSON text refuses with that error too: the
+check reports `malformed` (`electrical locality refused: ...`) and
+`placement_adapter.bind_locality` raises it as a `ValueError` (AGENTEE-363).
+`validate()` checks a fresh snapshot (and still returns the caller's object);
+`grade()` grades and reports (`declaration`) only its own validated snapshot and
+never rereads the caller's document (AGENTEE-363). Its public pairs and endpoint maps are read-only at every level,
 including endpoint fields.
 Later caller mutations cannot alter its endpoint identities or cached keys
 (AGENTEE-352/356). Untyped
