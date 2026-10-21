@@ -1126,7 +1126,8 @@ placer plan is. In addition, the hard block rules are re-graded from the saved
 bytes (`judgment.block_rules`). A failed hard rule refuses publication;
 advisory rows are reported only. AGENTEE-355 changes only the search
 ([compaction](blocks.md#compaction-agentee-355), member-aligned origins and the
-ranking cache); it adds no check kind and changes no gate. The writer also
+ranking cache); it adds no check kind and changes no gate. AGENTEE-359 stage-A
+[recovery](blocks.md#recovery-agentee-359) is search only, too. The writer also
 publishes `block-provenance.json`; a scope's `block_provenance` binds it to the
 captured board and carries it to every initial reviewer
 ([review input](blocks.md#review-input-block-provenance-agentee-355)). It is

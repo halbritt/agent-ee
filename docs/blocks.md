@@ -112,10 +112,11 @@ members are copied into an isolated capture.
 - **Synthetic plane.** The outline is a square centred on the anchor. Its
   half-side is the anchor's extent plus, for every other member, twice its
   extent (courtyards and pad reservations) and the gap. Any chain of the members
-  fits inside. A member that touches the square's edge gives
-  `synthetic_plane_reached`, `outcome=unknown`, with no candidate. This happens,
-  for example, with a member whose only nets are ground nets: the placer's wire
-  cost ignores ground nets.
+  fits inside. A first plan in which a member touches the square's edge goes to
+  [recovery](#recovery-agentee-359). If recovery does not obtain a plan, the
+  result is `synthetic_plane_reached`, `outcome=unknown`, with no candidate.
+  This happens, for example, with a member whose only nets are ground nets: the
+  placer's wire cost ignores ground nets.
 - **Order.** Declared priorities come first. Then members are ordered
   breadth-first over shared non-ground nets from the anchor, so each member
   is placed after a same-net neighbour.
@@ -130,6 +131,50 @@ members are copied into an isolated capture.
   groups or obligations that cross the block boundary are deferred to
   arrangement. Their ids and counts are recorded in `deferred`. A block
   member in `fixed_refs` or `fixed_overhangs` refuses.
+
+### Recovery (AGENTEE-359)
+
+The placer's wire cost ignores ground nets and parts outside the block. A member
+whose only tie to the rest of the block is a plane net, or whose other net goes
+to a fixed or out-of-block part, therefore ranks by position alone. On the pod,
+C18 (`PRE_6V3`, `GND`) and R33 (`MCU_BOOT46`, `GND`) went to the synthetic
+plane's corner, although a same-member block exists.
+
+The first run is unchanged. Only when its plan reaches the synthetic plane,
+`pack_block` retries with a temporary anchor-proximity group:
+
+- The group (`stage-a-anchor-proximity`) holds the members that reached the
+  plane within `max_distance_nm` of the anchor's origin. Every other part of
+  the isolated policy, and the synthetic plane itself, is unchanged.
+- The first trial uses half the plane's half-side. If a trial's plan still
+  reaches the plane, the members that reached it join the group. If no new
+  member reached it, the distance is halved instead.
+- At most six trials run (`RECOVERY_TRIALS`), each under the block step budget.
+  There is no wall clock beyond the policy's own `search_timeout_s`. Any other
+  placer outcome (budget, infeasible or refused) ends the retry.
+- A member is eligible only if it is in no declared group and its numbered
+  pads carry at least two distinct nets. A part shorted to one net has no
+  connection that places it near the anchor. If the anchor itself is an
+  anchored group member, recovery does not apply.
+
+The group never reaches the candidate. The recovered poses are graded and
+witnessed against the unchanged block policy, as for any first run, and
+`block_policy` is the unchanged isolated policy. A synthetic-plane boundary is
+never a feasibility result: when the retry ends without a plan inside the
+plane, the result stays `synthetic_plane_reached`, `outcome=unknown`. It then
+carries a `recovery` record with `status` `not_applicable` or `exhausted`, a
+`reason` and the trials. The distances are search effort, not design limits.
+
+A recovered candidate's `search` gains `recovery`:
+`{method: "anchor-proximity-retry/1", status: "recovered", stranded,
+references, max_distance_nm, trials: [{references, max_distance_nm, status,
+steps_used}], steps_total}`. `validate_candidate` checks it. `stranded` and
+`references` are distinct non-anchor members, and `references` keeps every
+stranded member. There are at most six trials, each within the block budget.
+Exactly the last trial is `recovered` and names the record's references and
+distance, and `steps_total` is the trials' sum. No `stage-a-anchor-proximity`
+group may appear in `block_policy`. Compaction then runs on the recovered
+candidate as usual. The record stays on whichever run compaction selects.
 
 ### Compaction (AGENTEE-355)
 
@@ -154,8 +199,9 @@ is deterministic. Each trial may use at most the larger of 10 000 steps and ten
 times the first run's steps, and never more than the block budget. This cap is
 search effort, not a design limit.
 
-Compaction runs only after the first run has packed without reaching the
-synthetic plane, so `synthetic_plane_reached` and every refusal are unchanged.
+Compaction runs only after the first run, or [recovery](#recovery-agentee-359),
+has packed without reaching the synthetic plane, so `synthetic_plane_reached`
+and every refusal are unchanged.
 The candidate's `search` gains `compaction`:
 `{objective: "outline-bisection-min-box-area/1", first_box_area_nm2, box_area_nm2,
 step_cap, trials: [{family, parameter, status, steps_used, box_area_nm2?}], steps_total}`.
@@ -190,7 +236,7 @@ refuse, and a `/1` document is refused. Only `status: packed` is usable.
 | `witness` | `exact-courtyard-separation/1`: `gap_nm`, `pairs_checked`, per-side `minimum` exact squared distance `[numerator, denominator]`, `below_gap`, `drilled_pad_conflicts`, `status` |
 | `placer_judgment` | Verdict and basis of the placer's full-polygon judge |
 | `deferred` | Boundary groups and obligations by id; counts of obstacles and board rule areas |
-| `search` | `strategy`, `backjumps`, `steps_used`, `step_budget`; optional `compaction` ([AGENTEE-355](#compaction-agentee-355)) |
+| `search` | `strategy`, `backjumps`, `steps_used`, `step_budget`; optional `compaction` ([AGENTEE-355](#compaction-agentee-355)) and `recovery` ([AGENTEE-359](#recovery-agentee-359)) |
 | `block_policy` | The exact isolated packing policy |
 | `sources` | `board_sha256`, `inventory_sha256`, `allocation_sha256` (`null` without an allocation file), `derivation_sha256`, `policy_sha256` |
 
@@ -826,6 +872,12 @@ It covers:
   56.25 mm² with the same block policy, witness and admission, deterministically;
   an internal group still passes; each malformed compaction record refuses, and
   admission refuses a recorded area that differs from the board outline's;
+- recovery (AGENTEE-359): a member tied to the block only through the ground
+  plane is recovered, graded on the unchanged policy, admitted and
+  deterministic, and compaction keeps its record. A first plan inside the plane
+  runs no recovery. A declared-group member and a single-net member stay
+  `synthetic_plane_reached`. Exhaustion is bounded at six trials with halving
+  distances and stays unknown. Each malformed recovery record refuses;
 - the CLI, with and without `--no-compact`.
 
 A native test derives the two blocks of the [block-first](block-first.md)

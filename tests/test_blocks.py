@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -451,6 +452,110 @@ class PackingTests(Fixture, unittest.TestCase):
         self.assertEqual((result['status'], result['outcome']), ('synthetic_plane_reached', 'unknown'))
         self.assertIn('C9', result['reason'])
         self.assertNotIn('candidate', result)
+
+
+
+class RecoveryTests(Fixture, unittest.TestCase):
+    """Stage-A recovery of members that reach the anchor only through plane nets (AGENTEE-359)."""
+
+    def stranded(self, nets, **changes):
+        # C9's VX leaves the block (to a fixed part, say); its only in-block tie is the GND plane.
+        parts = PARTS + (('C9', '/s1/', 'C', 'Owned:C0805', '1uF', nets),)
+        self.board = board(parts)
+        raw = native_xml(parts)
+        self.inv = self.inventory(raw)[0]
+        self.derived = self.derive(raw=raw)
+        self.stranded_policy = policy(**changes)
+        return blocks.pack_block(self.board, self.inv, self.derived, 'Power', self.stranded_policy, compact=False)
+
+    def test_plane_only_member_is_recovered_and_graded_on_the_unchanged_policy(self):
+        result = self.stranded({'1': 'VX', '2': 'GND'})
+        self.assertEqual((result['status'], result['outcome']), ('packed', 'info'), result.get('reason'))
+        cand = result['candidate']
+        recovery = cand['search']['recovery']
+        self.assertEqual((recovery['method'], recovery['status'], recovery['stranded']),
+                         (blocks.RECOVERY, 'recovered', ['C9']))
+        self.assertEqual(recovery['trials'][-1]['status'], 'recovered')
+        self.assertLessEqual(len(recovery['trials']), blocks.RECOVERY_TRIALS)
+        # The temporary group is removed before grading: the policy and grades are the original ones.
+        self.assertNotIn('groups', cand['block_policy'])
+        self.assertIsNone(cand['grade']['groups'])
+        self.assertEqual(cand['grade']['electrical_locality']['status'], 'pass')
+        self.assertEqual(cand['witness']['status'], 'pass')
+        pose = next(m['pose'] for m in cand['members'] if m['reference'] == 'C9')
+        self.assertLessEqual(pose['position_nm'][0] ** 2 + pose['position_nm'][1] ** 2,
+                             recovery['max_distance_nm'] ** 2)
+        blocks.validate_candidate(cand)
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, self.derived, self.stranded_policy)['status'],
+                         'admitted')
+        # Deterministic, and compaction keeps the recovery log on the run it selects.
+        self.assertEqual(self.stranded({'1': 'VX', '2': 'GND'}), result)
+        compacted = blocks.pack_block(self.board, self.inv, self.derived, 'Power', self.stranded_policy)
+        self.assertEqual(compacted['status'], 'packed')
+        self.assertEqual(compacted['candidate']['search']['recovery'], recovery)
+        self.assertIn('compaction', compacted['candidate']['search'])
+
+    def test_a_first_plan_inside_the_plane_runs_no_recovery(self):
+        result = blocks.pack_block(self.board, self.inventory()[0], self.derive(), 'Power', policy(), compact=False)
+        self.assertEqual(result['status'], 'packed')
+        self.assertNotIn('recovery', result['candidate']['search'])
+
+    def test_declared_group_member_stays_unknown(self):
+        group = {'id': 'owner', 'references': ['C9'], 'anchor': {'reference': 'U1'}, 'max_distance_nm': 10 ** 9}
+        result = self.stranded({'1': 'VX', '2': 'GND'}, groups=[group])
+        self.assertEqual((result['status'], result['outcome']), ('synthetic_plane_reached', 'unknown'))
+        self.assertNotIn('candidate', result)
+        self.assertEqual(result['recovery']['status'], 'not_applicable')
+        self.assertIn('C9', result['recovery']['reason'])
+
+    def test_single_net_member_is_not_recovered(self):
+        result = self.stranded({'1': 'GND', '2': 'GND'})
+        self.assertEqual((result['status'], result['outcome']), ('synthetic_plane_reached', 'unknown'))
+        self.assertEqual((result['recovery']['status'], result['recovery']['trials']), ('not_applicable', []))
+
+    def test_exhaustion_is_bounded_and_unknown(self):
+        real = blocks._touching
+        calls = []
+
+        def always(board, members, plan, plane):
+            calls.append(plan)
+            return real(board, members, plan, plane) if len(calls) == 1 else ['C9']
+        with mock.patch.object(blocks, '_touching', always):
+            result = self.stranded({'1': 'VX', '2': 'GND'})
+        self.assertEqual((result['status'], result['outcome']), ('synthetic_plane_reached', 'unknown'))
+        self.assertNotIn('candidate', result)
+        trials = result['recovery']['trials']
+        self.assertEqual((result['recovery']['status'], len(trials)), ('exhausted', blocks.RECOVERY_TRIALS))
+        distances = [t['max_distance_nm'] for t in trials]
+        self.assertEqual(distances, [distances[0] >> i for i in range(blocks.RECOVERY_TRIALS)])
+        self.assertTrue(all(t['status'] == 'synthetic_plane_reached' for t in trials))
+        self.assertTrue(all(t['steps_used'] <= self.stranded_policy['step_budget'] for t in trials))
+
+    def test_recovery_record_is_validated(self):
+        cand = self.stranded({'1': 'VX', '2': 'GND'})['candidate']
+
+        def refuses(change, text):
+            bad = copy.deepcopy(cand)
+            change(bad)
+            with self.assertRaisesRegex(ValueError, text):
+                blocks.validate_candidate(bad)
+        record = cand['search']['recovery']
+        refuses(lambda c: c['search']['recovery'].update(status='exhausted'), 'recovered')
+        refuses(lambda c: c['search']['recovery'].update(steps_total=record['steps_total'] + 1), 'sum of its trials')
+        refuses(lambda c: c['search']['recovery'].update(stranded=['U1']), 'movable block members')
+        refuses(lambda c: c['search']['recovery'].update(max_distance_nm=record['max_distance_nm'] + 1),
+                'last trial')
+        refuses(lambda c: c['search']['recovery'].update(
+            trials=[dict(record['trials'][-1], status='synthetic_plane_reached')] * blocks.RECOVERY_TRIALS
+            + record['trials']), 'list of 1 to')
+        refuses(lambda c: c['search']['recovery']['trials'][-1].update(
+            steps_used=cand['block_policy']['step_budget'] + 1), 'step budget')
+        refuses(lambda c: c['search']['recovery'].pop('stranded'), 'missing stranded')
+
+        def leaked(c):
+            c['block_policy']['groups'] = [{'id': blocks.RECOVERY_GROUP, 'references': ['C9'],
+                                            'anchor': {'reference': 'U1'}, 'max_distance_nm': 1}]
+        refuses(leaked, 'never reaches the block policy|block grade groups')
 
 
 # A buck anchor driving a seven-resistor chain: the first run strings it out (AGENTEE-355).

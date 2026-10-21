@@ -50,6 +50,12 @@ COMPACT_RESOLUTION_NM = 100_000
 # Search effort, not a design limit: a trial may use at most max(floor, factor x first-run steps).
 COMPACT_STEP_FLOOR = 10_000
 COMPACT_STEP_FACTOR = 10
+# Stage-A recovery (AGENTEE-359): a temporary anchor-proximity group for members that
+# reached the synthetic plane. Search effort, not a design limit: the group is removed
+# before grading, and each trial runs under the block step budget.
+RECOVERY = 'anchor-proximity-retry/1'
+RECOVERY_GROUP = 'stage-a-anchor-proximity'
+RECOVERY_TRIALS = 6
 MEMBER_KEYS = frozenset(('reference', 'fpid', 'side', 'value', 'pose', 'pad_geometry_sha256', 'courtyard_sha256',
                          'courtyard', 'pins'))
 
@@ -443,22 +449,98 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
     if plan['status'] != 'planned':
         return {**base, 'status': plan['status'], 'outcome': plan['outcome'], 'reason': plan.get('reason'),
                 'plan': plan}
-    poses = {p['ref']: p for p in plan['placements']}
-    touching = sorted((r for r in members for box in placer.boxes(
-        placer.transform(board[r], poses[r]['position_nm'], poses[r]['rotation_deg'])).values()
-        if box[0] <= ax - reach or box[1] <= ay - reach or box[2] >= ax + reach or box[3] >= ay + reach),
-        key=_natural)
+    plane = (ax - reach, ay - reach, ax + reach, ay + reach)
+    touching = _touching(board, members, plan, plane)
+    recovery = None
     if touching:
-        return {**base, 'status': 'synthetic_plane_reached', 'outcome': 'unknown',
-                'reason': 'members reached the synthetic plane edge: ' + ', '.join(touching), 'plan': plan}
+        recovery, recovered = _recover(capture, board, members, anchor, sub, areas, plane, touching, heartbeat)
+        if recovered is None:
+            return {**base, 'status': 'synthetic_plane_reached', 'outcome': 'unknown',
+                    'reason': 'members reached the synthetic plane edge: ' + ', '.join(touching), 'plan': plan,
+                    'recovery': recovery}
+        plan = recovered
+    poses = {p['ref']: p for p in plan['placements']}
     result = candidate(capture, inventory, derivation, block, anchor, poses, policy, sub, deferred, plan)
     if result['status'] == 'packed' and compact:
         result = _compact(capture, inventory, derivation, block, anchor, policy, sub, deferred, areas, result,
                           heartbeat)
+    if recovery is not None:
+        # The search log of how the first plan was obtained, kept on whichever run compaction selects.
+        result['search']['recovery'] = recovery
     if result['status'] == 'packed':
         validate_candidate(result)
     return {'status': result['status'], 'outcome': 'info' if result['status'] == 'packed' else 'unknown',
             'candidate': result}
+
+
+def _touching(board, members, plan, plane):
+    """Members of a planned block whose courtyard boxes reach the synthetic plane's edge."""
+    poses = {p['ref']: p for p in plan['placements']}
+    x0, y0, x1, y1 = plane
+    return sorted((r for r in members if any(
+        box[0] <= x0 or box[1] <= y0 or box[2] >= x1 or box[3] >= y1 for box in placer.boxes(
+            placer.transform(board[r], poses[r]['position_nm'], poses[r]['rotation_deg'])).values())),
+        key=_natural)
+
+
+def _recover(capture, board, members, anchor, sub, areas, plane, touching, heartbeat):
+    """Retry a plane-reaching first plan with a temporary anchor-proximity group (AGENTEE-359).
+
+    The placer's wire cost ignores ground nets and parts outside the block, so a member
+    tied to the rest of the block only through a plane net or a fixed part ranks by
+    position alone and runs to the synthetic plane's corner. Each trial reruns the
+    unchanged placer on the same synthetic plane with the same isolated policy plus one
+    group, ``RECOVERY_GROUP``, holding the stranded members within ``max_distance_nm`` of
+    the anchor's origin. The first trial uses half the plane's half-side. A trial whose
+    plan still reaches the plane adds those members to the group, or halves the
+    distance when no new member reached it. Any other placer outcome ends the retry. At
+    most ``RECOVERY_TRIALS`` trials run, each under the block step budget; there is no
+    wall clock beyond the policy's own ``search_timeout_s``.
+
+    A member is eligible only if it is in no declared group and its numbered pads carry
+    at least two distinct nets: a part shorted to a single net (or with no net) has no
+    connection that places it near the anchor, so it stays ``synthetic_plane_reached``.
+    The group never reaches the candidate: ``pack_block`` grades and witnesses the
+    recovered poses against the unchanged block policy. Returns ``(record, plan)``,
+    with ``plan`` None when nothing was recovered.
+    """
+    declared = sub.get('groups', [])
+    grouped = {r for g in declared for r in g['references']}
+    anchored = {r for g in declared if 'anchor' in g for r in g['references']}
+    x0, y0, x1, y1 = plane
+    distance = (x1 - x0) // 4
+    record = {'method': RECOVERY, 'stranded': touching, 'trials': [], 'steps_total': 0}
+    if anchor in anchored or any(g['id'] == RECOVERY_GROUP for g in declared):
+        return {**record, 'status': 'not_applicable', 'reason': f'the anchor {anchor} cannot lead a new group'}, None
+    stranded = list(touching)
+    isolated = _isolated(capture, board, members, areas, plane)
+    for _ in range(RECOVERY_TRIALS):
+        ineligible = [r for r in stranded if r in grouped or len(set(_pad_nets(board[r]).values()) - {''}) < 2]
+        if ineligible:
+            return {**record, 'status': 'not_applicable',
+                    'reason': 'in a declared group or on fewer than two nets: ' + ', '.join(ineligible)}, None
+        group = {'id': RECOVERY_GROUP, 'references': stranded, 'anchor': {'reference': anchor},
+                 'max_distance_nm': distance}
+        plan = placer.pack(isolated, {**sub, 'groups': declared + [group]}, heartbeat=heartbeat)
+        record['steps_total'] += plan['steps_used']
+        row = {'references': stranded, 'max_distance_nm': distance, 'status': plan['status'],
+               'steps_used': plan['steps_used']}
+        record['trials'].append(row)
+        if plan['status'] != 'planned':
+            return {**record, 'status': 'exhausted', 'reason': f"trial plan {plan['status']}"}, None
+        reached = _touching(board, members, plan, plane)
+        if not reached:
+            row['status'] = 'recovered'
+            return {**record, 'status': 'recovered', 'references': stranded, 'max_distance_nm': distance}, plan
+        row['status'] = 'synthetic_plane_reached'
+        more = [r for r in reached if r not in stranded]
+        if more:
+            stranded = sorted(stranded + more, key=_natural)
+        else:
+            distance //= 2
+        if distance <= 0:
+            break
+    return {**record, 'status': 'exhausted', 'reason': f'no trial within {RECOVERY_TRIALS} left the synthetic plane'}, None
 
 
 def _compact(capture, inventory, derivation, block, anchor, policy, sub, deferred, areas, first, heartbeat):
@@ -853,8 +935,8 @@ def _validate_candidate(document):
         o['id'] for o in sub.get('electrical_locality', {}).get('obligations', [])}
     if internal & (set(deferred['groups']) | set(deferred['obligations'])):
         raise ValueError('an internal obligation cannot also be deferred')
-    search = _keys(document['search'], {'strategy', 'steps_used', 'step_budget'}, {'backjumps', 'compaction'},
-                   label='search record')
+    search = _keys(document['search'], {'strategy', 'steps_used', 'step_budget'},
+                   {'backjumps', 'compaction', 'recovery'}, label='search record')
     _text(search['strategy'], 'search strategy')
     for key in ('steps_used', 'step_budget', 'backjumps'):
         if key in search:
@@ -863,6 +945,8 @@ def _validate_candidate(document):
         raise ValueError('search steps must lie within the block policy budget')
     if 'compaction' in search:
         _compaction(search['compaction'])
+    if 'recovery' in search:
+        _recovery(search['recovery'], sub, set(refs) - {frame['anchor']})
     sources = _keys(document['sources'], set(SOURCE_KEYS), label='candidate sources')
     for key in SOURCE_KEYS:
         if not (key == 'allocation_sha256' and sources[key] is None):
@@ -895,6 +979,39 @@ def _compaction(record):
         _text(row['status'], 'compaction trial status')
         if ('box_area_nm2' in row) != (row['status'] == 'packed'):
             raise ValueError('a compaction trial records its box area exactly when it packed')
+
+
+def _recovery(record, sub, refs):
+    """The stage-A recovery record (a search log): bounded trials, the last one recovered."""
+    _keys(record, {'method', 'status', 'stranded', 'references', 'max_distance_nm', 'trials', 'steps_total'},
+          label='recovery')
+    if record['method'] != RECOVERY or record['status'] != 'recovered':
+        raise ValueError(f'recovery must be a recovered {RECOVERY} record')
+    if any(g['id'] == RECOVERY_GROUP for g in sub.get('groups', [])):
+        raise ValueError('the recovery group never reaches the block policy')
+    for key in ('stranded', 'references'):
+        if (not isinstance(record[key], list) or not record[key] or len(set(map(str, record[key]))) != len(record[key])
+                or not set(record[key]) <= refs):
+            raise ValueError(f'recovery {key} must be distinct movable block members')
+    if not set(record['stranded']) <= set(record['references']):
+        raise ValueError('recovery references keep every stranded member')
+    if type(record['max_distance_nm']) is not int or record['max_distance_nm'] <= 0:
+        raise ValueError('recovery max_distance_nm must be a positive integer')
+    _count(record['steps_total'], 'recovery steps_total')
+    if not isinstance(record['trials'], list) or not 0 < len(record['trials']) <= RECOVERY_TRIALS:
+        raise ValueError(f'recovery trials must be a list of 1 to {RECOVERY_TRIALS}')
+    for i, row in enumerate(record['trials']):
+        _keys(row, {'references', 'max_distance_nm', 'status', 'steps_used'}, label='recovery trial')
+        _count(row['steps_used'], 'recovery trial steps_used')
+        if row['steps_used'] > sub['step_budget']:
+            raise ValueError('a recovery trial stays within the block step budget')
+        if (row['status'] == 'recovered') != (i == len(record['trials']) - 1):
+            raise ValueError('exactly the last recovery trial is recovered')
+    last = record['trials'][-1]
+    if (last['references'], last['max_distance_nm']) != (record['references'], record['max_distance_nm']):
+        raise ValueError('the recovery record names its last trial')
+    if record['steps_total'] != sum(row['steps_used'] for row in record['trials']):
+        raise ValueError('recovery steps_total is the sum of its trials')
 
 
 def admit(document, capture, inventory, derivation, policy):
