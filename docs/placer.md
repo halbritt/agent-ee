@@ -709,7 +709,8 @@ reported separately in `silkscreen_findings`; they are not shorts. The
 [post-placement artwork pass](silk-artwork.md) relocates permitted fields and
 carries remaining `silk_overlap` or `silk_over_copper` as open defects in a
 published proposal (AGENTEE-333). Fab legibility remains a separate obligation;
-the downstream carried-defect gate is not yet implemented.
+the [downstream carried-defect gate](silk-artwork.md#placement-feasibility-and-fab-legibility-agentee-333)
+refuses while any carried defect remains open.
 
 `tests.test_placer_through_holes` supplies original native PTH/NPTH, slot,
 shape, rotation, opposite-side and settings fixtures, plus DRC regression,

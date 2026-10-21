@@ -215,6 +215,8 @@ def verify_gate(run, check, manifest, baseline):
     """Reconstruct special gate verdicts from immutable declarations and captured facts."""
     from pathlib import Path
     from .storage import read_json
+    from .placement_defects import verify_gate as verify_placement_gate
+    verify_placement_gate(run, check, manifest)
     reason = check.get('details', {}).get('reason')
     if reason not in ('stage_not_reached', 'stage_blocked'):
         return

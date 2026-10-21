@@ -286,6 +286,8 @@ def _implement_once(root, previous, definition, state, deadline, *, retry=None):
     from .layer_policy_lineage import proposal_scope as layer_policy_scope
     # A routing turn's pre-routing layer policy derivation is captured the same way.
     scope = layer_policy_scope(scope, work, state, config)
+    from .placement_defects import proposal_scope as placement_evidence_scope
+    scope = placement_evidence_scope(scope, work, root, state)
     path = work / "proposal.scope.json"
     write_json(path, scope)
     return path
@@ -477,6 +479,8 @@ def run_campaign(config_path, out):
     for spec in steps:
         validate_step(spec)
     from .stage_receipts import validate_pre_receipts, validate_pre_receipt_chain, import_pre_receipts
+    from .placement_defects import validate_campaign as validate_placement_provenance
+    validate_placement_provenance(scope)
     pre_receipts = validate_pre_receipts(config.get('pre_receipts', []))
     validate_pre_receipt_chain(config_path.parent, pre_receipts)
     if 'routing_adapter' in config:
@@ -547,6 +551,8 @@ def record_iteration(root, state, run, config):
     verify_candidate(root, state, config, len(state["history"]) + 1, manifest)
     from .layer_policy_lineage import verify_candidate as verify_layer_policy_provenance
     verify_layer_policy_provenance(root, state, config, len(state["history"]) + 1, manifest)
+    from .placement_defects import verify_candidate as verify_placement_provenance
+    verify_placement_provenance(root, state, len(state["history"]) + 1, manifest)
     if "baseline" not in state:
         state["baseline"] = baseline
         state["mutable_inputs"] = mutable_inputs(manifest, baseline)
@@ -787,6 +793,10 @@ def verify_campaign_records(root, *, observations=None):
     plans = verify_campaign_plans(root, state, config)
     from .stage_receipts import verify_campaign_receipts
     verify_campaign_receipts(root, state, steps=config.get("implementation_steps", []), plans=plans)
+    from .placement_defects import verify_candidate as verify_placement_provenance
+    for number, stored in enumerate(state['history'], 1):
+        manifest = read_json(Path(stored['run']) / 'candidate.json')
+        verify_placement_provenance(root, state, number, manifest)
     verify_writer_records(root, state, config)
     from .intent_retry import verify as verify_intent_retries
     verify_intent_retries(root, state, config)
@@ -922,6 +932,14 @@ def verify_campaign_plans(root, state, config):
                 if read_json(proposal / "candidate.json").get("scope_path") != str(work / "proposal.scope.json"):
                     raise ValueError("next campaign run was not captured from this placement proposal")
                 captured = proposal / "inputs"
+                proposal_manifest = read_json(proposal / 'candidate.json')
+                from .placement_defects import DIRECTORY, delivered_view
+                if any(p.startswith(DIRECTORY + '/') for p in proposal_manifest['files']):
+                    from .placement_adapter import _files
+                    delivered = _files(design)
+                    if delivered_view(proposal_manifest['files'], delivered) != delivered:
+                        raise ValueError('next campaign capture differs from the placement proposal')
+                    captured = design
             verify_record(work, source / "inputs", captured, manifest, *args, **pinned)
         else:
             if complete or number != len(history) or state["state"] != "incomplete":

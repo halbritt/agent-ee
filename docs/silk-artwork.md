@@ -81,7 +81,7 @@ with 16 typed open defects. These bounded searches can leave resolvable conflict
 remains reported in the DRC comparison and retains its existing grading. The
 artwork pass refuses any additional edge-clearance regression it introduces.
 
-## Placement feasibility and fab legibility (AGENTEE-333, partial)
+## Placement feasibility and fab legibility (AGENTEE-333)
 
 Publication preserves unresolved findings in `native_drc_comparison.open_defects`
 and the top-level placement receipt `open_defects`. Each record has
@@ -92,15 +92,38 @@ without these defects retains informational outcome; it proves no fab acceptance
 Collision, clearance, PTH courtyard, inter-footprint mask, courtyard, write-scope
 and artwork regression refusals remain unchanged. No baseline defect is waived.
 
-The required downstream fab/verification/release refusal for carried defects is
-**not implemented**. A blanket native-silk fab guard would also reject existing
-uncarried baseline silk defects. The existing
-`tests.test_fab_export.NativeBomVariantTests.test_registered_variant_reaches_only_the_bom_export_and_is_sealed`
-expects pass on such a board; the trial guard returned defect on 13 conflicts.
-The verdict-preservation rule requires stopping rather than changing that test.
-A subsequent change must bind the carried placement receipt through the existing
-sealed receipt/candidate lifecycle and distinguish carried open defects from
-uncarried baseline findings. Unsupported side-flip diagnostics must also remain
-accounted for when another field's relocation clears the native collision.
-Until that guard is implemented and tested, AGENTEE-333 is incomplete and this
-publication change must not be treated as release-ready.
+The coordinator captures adopted placement helper receipts and their sealed result,
+saved board, native DRC/execution and optional artwork report in the reserved
+`placement-evidence` directory. The derived successor scope carries ordered
+`placement_provenance` links; `placement-evidence/index.json` retains the same
+order for nested fab-stage exports. Neither directory nor declaration can be
+supplied in a campaign's initial sealed scope. Every successor inherits the
+bytes unchanged; campaign verification recomputes the owed capture from anchored
+stage receipts and the qualified adapter record. The writer cannot remove or
+edit this evidence, and routing or other implementation steps retain it.
+
+Checks in verification/fab stages and `fab_export`, `fab_package`,
+`fab_consistency`, `cpl_rotation` and `jlc_dfm` refuse while carried defects remain
+open. Each typed `placement_silkscreen_conflict` finding names its native
+field/graphic UUID, available description/reference and source receipt. The
+check retains a candidate-bound `placement-defects.json` witness. Sealing
+reconstructs the refusal from captured receipt artifacts; fab package artifact
+extraction refuses open carry too. Missing, changed or malformed evidence cannot
+produce a pass. Candidates without carry retain their existing fab behavior,
+including uncarried baseline silk findings.
+
+A board edit or a clean DRC delta alone does not close carry. Closure requires a
+later receipted placement result for the current board, complete native DRC with
+no remaining silk finding on the same identities, and preserved item ownership,
+marking content, layer and style. Missing, hidden or relabeled fields do not
+close a defect. An unsupported side-flip diagnostic also requires positive
+artwork movement of that field, either recorded by the later artwork pass or
+visible in its saved position. The original side-flip case stays open even when
+another field moves and native `added_after` is empty. A new current native
+result remains necessary after further board changes; this guard supplies no
+waiver or electrical acceptance.
+
+`tests.test_placement_defects` exercises actual native helper publication,
+adoption, coordinator capture, successor binding and downstream refusal, plus
+missing/stale/tampered carry, side-flip closure boundaries and verdict isolation.
+The existing BOM-variant fab regression retains its original pass expectation.

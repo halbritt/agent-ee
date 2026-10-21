@@ -1781,8 +1781,13 @@ unchanged. Fresh native DRC against the immutable baseline records added
 `placement_silkscreen_conflict` open defects, each with `verdict: defect` and
 `status: open`, in both `native_drc_comparison.open_defects` and the placement
 receipt `open_defects`. Their receipt outcome/verdict is `defect`. This separates
-placement feasibility from fab legibility. The downstream carried-defect guard
-remains unimplemented (AGENTEE-333); no fab acceptance follows from publication. Explicitly
+placement feasibility from fab legibility. The coordinator captures validated
+helper receipts and artwork under `placement-evidence`, with ordered
+`placement_provenance` links in successor scopes (AGENTEE-333). Verification/fab
+stages and fab export, package, consistency, CPL and JLC DFM checks refuse open
+carry with typed field/graphic identities and source receipts. The evidence seal
+reconstructs these refusals; release artifact extraction also refuses open carry.
+Uncarried baseline findings retain their existing verdicts. Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.
 Side-flipped footprints' fields remain unchanged with typed conflicts. Source

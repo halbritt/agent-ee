@@ -101,7 +101,8 @@ across footprints and custom rules with ignored severity refuse publication.
 The [artwork pass](docs/silk-artwork.md) relocates permitted silk fields and
 publishes silk-only conflicts as open defects in the placement receipt, preserving
 graphics and required markings. This establishes placement feasibility only;
-AGENTEE-333 remains incomplete until downstream gates consume carried defects.
+downstream fab, verification and release gates refuse carried open defects,
+naming their native fields/graphics and source receipts (AGENTEE-333).
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against cited limits. Captured pad UUIDs select
