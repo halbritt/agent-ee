@@ -491,6 +491,42 @@ U1/U2/U4 acceptance at 85 degC cannot suppress a rating or thermal defect. See
 [assembly readiness](assembly-readiness.md#digikey-operating-temperature) for
 the immutable owner and thermal file formats.
 
+
+## Copper locality and captured policy binding (AGENTEE-328)
+
+Electrical locality measures copper-land centroids before drill subtraction.
+A pad anchor can be remote from its copper, so the native probe supplies an
+exact rational centroid displacement from the anchor. Symmetric stock shapes
+use native shape centres; qualified straight asymmetric copper uses area
+moments. Unsupported centroid geometry remains unknown. Packing transforms
+these displacements and the saved-board check measures the native board again.
+
+A repeated pin number can name several physical lands. Optional captured pad
+UUIDs select one land while retaining reference, number and net validation;
+unselected ambiguity still refuses. Separate obligations express all-land
+requirements without an implicit minimum-distance aggregation.
+
+The coordinator adapter derives packing obligations from the locality check's
+immutable captured file and records its raw hash. It refuses divergent inline
+obligations or bindings. The coordinator check records the same file identity
+independently. Standalone packing remains diagnostic proposal generation.
+
+## Locality cluster search preserves legacy plans (AGENTEE-335)
+
+The coordinator's legacy-first ruling preserves every plan found by per-part
+search, including its placements and counted steps. Joint cluster search runs
+only after a legacy failure, with remaining candidate steps and the original
+absolute opt-in search deadline. Only an independently regraded completion can
+replace that failure. Otherwise the legacy typed failure remains authoritative
+and the joint attempt is diagnostic.
+
+The joint finite candidate set is not a superset of the per-part set, so it
+cannot justify discarding a legacy completion or claiming physical infeasibility.
+Cluster guards count steps; there is no default wall-clock cluster guard.
+Real-pod fail-fast is no longer this item's criterion; block-level placement is
+the pod path. See [joint locality clusters](placer.md#joint-locality-clusters-agentee-335)
+for the budget and diagnostic contract.
+
 ## Design-rule authority (AGENTEE-331, 2026-10-20)
 
 The owner rejected arbitrary scaffold specifications becoming hard limits.
@@ -500,3 +536,10 @@ The coordinator's ruling preserves owner custom rules as owner authority and
 AGENTEE-318/325 structural invariants as engineering authority. Native crashes,
 missing reports and ignored evaluations remain failures. Captured constraint
 sources and owner rule bytes remain immutable. See [constraint sources](scaffold.md#declared-design-rule-sources-agentee-331).
+
+The AGENTEE-331 continuation applies the coordinator's named oracle rulings:
+the native thin-track default remains visible advisory while the independently
+sourced width requirement remains a defect. The pinned 2026-10-19 JLCPCB via
+profile declares no copper-to-edge limit, so the scaffold campaign's unsourced
+edge findings are advisory; final unconnected items still prevent acceptance.
+The provisioned J1 drawing is a read-only test input and is not retained here.

@@ -558,14 +558,24 @@ class ScaffoldCampaignTest(PlacementCampaignFixture):
         self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
 
     def test_helper_edge_clearance_gap_is_graded_as_a_defect_and_never_accepted(self):
-        # Without the band the placer packs pads closer to the edge than the board's copper clearance.
+        # AGENTEE-331 ruling (b): the pinned via-only JLC profile has no edge limit.
+        profile = read_json(REPO / 'fixtures/fab-profiles/jlcpcb-standard-2026-10-19/profile.json')
+        self.assertFalse(any('edge' in limit.get('key', '') for limit in profile['limits']))
         status, state = self.campaign(self.declaration(fixed=[]))
-        self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'regression'), state)
-        self.assertEqual([h['stage_failures']['placement'] for h in state['history']], [['outline'], ['drc-placement']])
+        self.assertEqual((status, state['state'], state['reason']), (1, 'escalated', 'repeated_design'), state)
+        self.assertEqual([h['stage_failures']['placement'] for h in state['history']], [['outline'], [], []])
         self.assertEqual(read_json(self.out / 'implementations/1/placement-adapter.json')['status'], 'proposed')
-        self.assertEqual(self.outcomes(2)['drc-placement'], 'defect')
+        self.assertEqual(self.outcomes(2)['drc-placement'], 'pass')
         drc = read_json(self.out / 'runs/2/work/drc-placement/drc.json')
         self.assertEqual({v['type'] for v in drc['violations']}, {'copper_edge_clearance'})
+        classified = read_json(self.out / 'runs/2/work/drc-placement/drc-constraints.json')
+        self.assertTrue(classified['violations'])
+        self.assertTrue(all(v['constraint_provenance']['class'] == 'default' and
+                            v['constraint_provenance']['enforcement'] == 'advisory'
+                            for v in classified['violations']), classified)
+        # Numeric advice supplies no acceptance: final connectivity still fails.
+        self.assertTrue(drc['unconnected_items'])
+        self.assertEqual(self.outcomes(2)['drc-final'], 'defect')
         self.assertEqual(verify_campaign(self.out)['state'], 'escalated')
 
     def test_writer_only_scaffold_placement_is_captured_and_graded(self):

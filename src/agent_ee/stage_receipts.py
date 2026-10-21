@@ -1047,6 +1047,8 @@ def verify_campaign_receipts(root, state, steps=None, plans=None):
                 from .layer_policy_lineage import delivered_view as layer_policy_view
                 # So is the coordinator capture of a pre-routing layer policy derivation (AGENTEE-260).
                 captured = layer_policy_view(config, captured, delivered)
+                from .placement_defects import delivered_view as placement_view
+                captured = placement_view(captured, delivered)
         expected = steps if plans is None else plans[name]
         verify_implementation(work, anchor, number, source['candidate_id'], captured=captured, steps=expected,
                               complete=plans is not None and (work / 'proposal.scope.json').exists())

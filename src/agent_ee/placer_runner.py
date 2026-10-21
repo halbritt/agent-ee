@@ -8,6 +8,7 @@ import re
 import shutil
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
@@ -17,6 +18,7 @@ from .placement import judge
 from .placement_probe import extract, custom_pad_geometry, primitive
 from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
+from .silk_artwork import SILK_CONFLICTS, relocate
 from .storage import digest, read_json, write_json
 from .design_rule_provenance import classify_finding, finding_sources, numeric_finding, require_evaluated_limits
 
@@ -158,6 +160,7 @@ def _native_drc(board, scratch):
         raise ValueError('native placement DRC did not evaluate all severities')
     if any(not isinstance(check, dict) or not isinstance(check.get('key'), str)
            or check['key'] in DRC_COLLISIONS | {DRC_MASK} | {'courtyards_overlap', 'courtyard_overlap'}
+           or check['key'].startswith('silk_')
            for check in report['ignored_checks']):
         raise ValueError('native placement DRC evaluation unavailable or explicitly ignored')
     violations = report['violations']
@@ -251,10 +254,12 @@ def _proposal_drc(source, output):
     baseline_dir.mkdir()
     baseline = baseline_dir / output.name
     shutil.copyfile(source, baseline)
+    project_payloads = {}
     for suffix in ('.kicad_pro', '.kicad_dru'):
         settings = source.with_suffix(suffix)
-        if settings.is_file():
-            payload = settings.read_bytes()
+        project_payloads[suffix] = settings.read_bytes() if settings.is_file() else None
+        payload = project_payloads[suffix]
+        if payload is not None:
             # Rule-level ignores never reach the report's ignored_checks.
             if suffix == '.kicad_dru' and re.search(rb'\(\s*severity\s+"?ignore\b', payload, re.I):
                 raise ValueError('native placement DRC evaluation explicitly ignored by a custom rule')
@@ -262,11 +267,60 @@ def _proposal_drc(source, output):
             output.with_suffix(suffix).write_bytes(payload)
     before = _native_drc(baseline, baseline_dir)
     after = _native_drc(output, scratch)
-    comparison = _drc_comparison(before, after, _drc_item_states(baseline), _drc_item_states(output),
-                                 finding_sources(source, before['violations'] + after['violations']))
+    baseline_states = _drc_item_states(baseline)
+    placed_states = _drc_item_states(output)
+    sources = finding_sources(source, before['violations'] + after['violations'])
+    comparison = _drc_comparison(before, after, baseline_states, placed_states, sources)
+    artwork_regressions = []
+    flipped_conflicts = []
+    if any(v['type'] in SILK_CONFLICTS for v in comparison['silkscreen_findings']):
+        import pcbnew
+        # Retain the exact pre-relocation native observation as well as the gate.
+        shutil.copyfile(scratch / 'native-drc.json', scratch / 'pre-artwork-drc.json')
+        board = pcbnew.LoadBoard(str(output))
+        source_board = pcbnew.LoadBoard(str(source))
+        source_sides = {fp.m_Uuid.AsString(): fp.GetLayer() for fp in source_board.GetFootprints()}
+        flipped = {fp.m_Uuid.AsString() for fp in board.GetFootprints()
+                   if source_sides.get(fp.m_Uuid.AsString()) != fp.GetLayer()}
+        artwork = relocate(board, comparison['silkscreen_findings'], flipped)
+        if not pcbnew.SaveBoard(str(output), board):
+            raise ValueError('native artwork save failed')
+        # SaveBoard materialises project defaults; DRC must use original rule bytes.
+        for suffix, payload in project_payloads.items():
+            target = output.with_suffix(suffix)
+            if payload is None:
+                target.unlink(missing_ok=True)
+            else:
+                target.write_bytes(payload)
+        pre_artwork = after
+        after = _native_drc(output, scratch)
+        artwork_states = _drc_item_states(output)
+        sources = finding_sources(source, before['violations'] + pre_artwork['violations'] + after['violations'])
+        artwork_delta = _drc_comparison(pre_artwork, after, placed_states, artwork_states, sources)
+        artwork_regressions = [v for v in artwork_delta['added_findings']
+                               if v['type'] not in SILK_CONFLICTS and
+                               not (numeric_finding(v) and v['constraint_provenance']['enforcement'] == 'advisory')]
+        final = _drc_comparison(before, after, baseline_states, artwork_states, sources)
+        flipped_conflicts = [dict(type='placement_silkscreen_conflict', **d)
+                             for d in artwork['search_diagnostics']
+                             if d['reason'] == 'footprint_side_flipped']
+        artwork.update(schema='agent-ee.placement-silkscreen/1',
+                       added_before=comparison['added_by_type'], added_after=final['added_by_type'],
+                       regressions=artwork_regressions,
+                       findings=[dict(type='placement_silkscreen_conflict', native=v)
+                                 for v in final['silkscreen_findings'] if v['type'] in SILK_CONFLICTS] +
+                                flipped_conflicts)
+        write_json(scratch / 'placement-silkscreen.json', artwork)
+        comparison = final
+    comparison['open_defects'] = [
+        dict(type='placement_silkscreen_conflict', status='open', verdict='defect', native=v)
+        for v in comparison['silkscreen_findings'] if v['type'] in SILK_CONFLICTS] + [
+        dict(d, status='open', verdict='defect') for d in flipped_conflicts]
     write_json(scratch / 'native-drc-comparison.json', comparison)
     if comparison['blocking_findings']:
         raise ValueError(f"saved-board placement introduced native DRC collisions: {comparison['added_by_type']}")
+    if artwork_regressions:
+        raise ValueError('silkscreen relocation introduced other native DRC findings')
     return [v for v in after['violations'] if v['type'] in DRC_COURTYARDS], comparison
 
 
@@ -327,9 +381,9 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
     _apply_plan(board, plan, output)
     if _pad_inventory(pcbnew.LoadBoard(str(output))) != pads:
         raise ValueError('native saved board changed footprint pad geometry')
-    # Stage the immutable source rules before probing the saved board, so its
-    # margins use the same provenance as the planning probe.
     overlaps, comparison = _proposal_drc(source, output)
+    if _pad_inventory(pcbnew.LoadBoard(str(output))) != pads:
+        raise ValueError('native saved board changed footprint pad geometry')
     saved, judgment = _saved_judgment(output, plan)
     initial_custom = {p['uuid']: p['custom_geometry']['primitives'] for f in initial_facts['footprints']
                       for p in f['pads'] if p.get('custom_geometry', {}).get('status') == 'proven'}
@@ -351,7 +405,9 @@ def _evaluate_proposal(board, output, plan, netlist_bytes, initial_facts, source
         raise ValueError('saved-board placement failed its declared electrical locality')
     return {'schema': 'agent-ee.placed-candidate/1', 'source_sha256': plan['board_sha256'],
             'board_sha256': digest(output), 'netlist_sha256': hashlib.sha256(netlist_bytes).hexdigest(),
-            'status': 'placed', 'outcome': 'info', 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],
+            'status': 'placed', 'outcome': 'defect' if comparison['open_defects'] else 'info',
+            'verdict': 'defect' if comparison['open_defects'] else 'info',
+            'open_defects': comparison['open_defects'], 'min_courtyard_edge_mm': plan['min_courtyard_edge_mm'],
             'plan': plan, 'judgment': judgment,
             'native_courtyard_overlaps': overlaps, 'native_drc_comparison': comparison,
             'authority': 'disposable-unsealed-proposal'}
@@ -362,7 +418,7 @@ def _retain_failure(root, name, scratch, error):
     names = ('candidate.kicad_pcb', 'placement-plan.json', 'placement-probe.json',
              'placement-judgment.json', 'placement-write-scope.json', 'native-drc.json', 'native-drc.stdout.txt',
              'native-drc.stderr.txt', 'native-drc-execution.json', 'native-drc-comparison.json',
-             'candidate.kicad_pro', 'candidate.kicad_dru')
+             'candidate.kicad_pro', 'candidate.kicad_dru', 'pre-artwork-drc.json', 'placement-silkscreen.json')
     for name in names:
         path = scratch / name
         if path.is_file():
@@ -396,7 +452,8 @@ def _plan(facts, request, policy=None):
     if 'targeted_plans' in request:
         from .placement_plans import select
         return select(facts, policy, request['targeted_plans'])
-    return pack(facts, policy)
+    return pack(facts, policy, heartbeat=lambda record: print(
+        json.dumps({'event': 'placement_heartbeat', **record}, sort_keys=True), file=sys.stderr, flush=True))
 
 
 def place_candidate(source, netlist, destination, request):

@@ -1115,15 +1115,17 @@ def run_checks(run_dir, deadline, *, fab_context=None, stock_context=None):
         ctx.stock_context = stock_context
         func = CHECK_FUNCS.get(spec.get("kind"))
         try:
-            if ctx.remaining() < MIN_CHECK_SECONDS:
-                raise CheckError("interrupted", "run deadline exhausted before this check started")
-            if func is None:
-                raise CheckError("unsupported", f"unknown check kind {spec.get('kind')!r}")
-            from .stages import before_check
-            if before_check(ctx, results):
-                from .fab_stage import before_fab_check
-                before_fab_check(ctx)
-                func(ctx)
+            from .placement_defects import before_check as placement_defect_gate
+            if placement_defect_gate(ctx):
+                if ctx.remaining() < MIN_CHECK_SECONDS:
+                    raise CheckError("interrupted", "run deadline exhausted before this check started")
+                if func is None:
+                    raise CheckError("unsupported", f"unknown check kind {spec.get('kind')!r}")
+                from .stages import before_check
+                if before_check(ctx, results):
+                    from .fab_stage import before_fab_check
+                    before_fab_check(ctx)
+                    func(ctx)
             from .stages import validate_gate_findings
             try:
                 validate_gate_findings(ctx.result)

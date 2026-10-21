@@ -228,6 +228,11 @@ def artifact_record(run_dir, check):
     cpl_rotation check the CPL artifact is its corrected cpl.csv.
     """
     run_dir = Path(run_dir)
+    candidate_path = run_dir / 'candidate.json'
+    if candidate_path.is_file():
+        from .placement_defects import open_defects
+        if open_defects(read_json(candidate_path), run_dir / 'inputs'):
+            raise ValueError('fab release refused: carried open placement silkscreen defects')
     cid = check.get('id')
     if (check.get('kind') != 'fab_package' or check.get('execution') != 'ok'
             or check.get('outcome') != 'pass'):

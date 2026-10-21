@@ -305,7 +305,7 @@ captured sub-board onto the voted nets inside the group region (AGENTEE-129).
 | Keepouts and edge clearance | Native footprint-keepout DRC plus probe cross-check; exact courtyard-to-outline distance against explicit `min_courtyard_edge_mm` | Proved violation is a defect; unqualified geometry is unknown |
 | Connector on edge | Envelope declarations (AGENTEE-85) with the AGENTEE-64 predicate: edge, tolerance, insertion direction | Defect; outline not provably closed is unknown |
 | Connector facing, test-point access and coverage | [`dfa_dft`](dfa-dft.md) (AGENTEE-64): declared insertion direction against the nearest saved edge; declared test points against same-side courtyards; declared probe points on every rail and acceptance-measured net, with `bringup_plan.json` | Defect; undeclared values, unproven courtyards and corners are unknown |
-| [Pad electrical locality](placer.md#pad-level-electrical-locality-agentee-322) | Declared supply, return and optional switch/inductor pad identities and cited limits; native pad centres | `electrical-locality/1`: defect/unknown/pass; a distinct packer constraint guides candidates and gates saved proposals (AGENTEE-322) |
+| [Pad electrical locality](placer.md#pad-level-electrical-locality-agentee-322) | Declared supply, return and optional switch/inductor pad identities, including output loops from inductor supply pads and IC PGND pads; captured UUID selectors and cited limits; native copper-land centroids | `electrical-locality/1`: defect/unknown/pass; a distinct packer constraint guides candidates and gates saved proposals, bound to the captured locality hash (AGENTEE-322/328/330) |
 | Routability | A captured kicad-route `result.json`: `routing.blocked_by` and `kicad-route blocked` | Information only; never a pass |
 
 Unconnected items are expected before routing and are not graded by
@@ -313,6 +313,14 @@ Unconnected items are expected before routing and are not graded by
 and pad centres. Placement checks reuse the preceding native DRC report;
 they do not run a second DRC. The [placement reference](placement.md#native-qualification)
 maps the ticket's acceptance criteria to executable tests.
+The disposable producer also runs a [silk artwork pass](silk-artwork.md) after
+placement, preserving graphics and required markings while recording remaining
+added silk overlap/copper findings as open defects in published proposals
+(AGENTEE-333). Adopted helper receipt evidence follows successor candidates;
+downstream fab/verification gates and package release refuse open carry.
+Placement feasibility does not establish fab legibility.
+Its local reports do not replace the
+coordinator checks.
 
 The fab profile's `min_edge_clearance_mm` is a copper-to-edge limit. It does
 not supply a courtyard-to-edge minimum. Binding a sourced fabrication limit

@@ -22,6 +22,7 @@ import copy
 from decimal import Decimal
 from fractions import Fraction
 import math
+import time
 
 from . import electrical_locality, placement_groups
 from .placement import (area2, convex, courtyard_bounds, cross, edges, intersection_area, judge, overhang_bands,
@@ -68,6 +69,9 @@ def transform(fp, position, rotation):
             corners = [move([x, y]) for x in (box[0], box[2]) for y in (box[1], box[3])]
             pad['custom_geometry']['bbox_nm'] = [min(p[0] for p in corners), min(p[1] for p in corners),
                                                  max(p[0] for p in corners), max(p[1] for p in corners)]
+        if 'copper_centroid_offset_nm' in pad:
+            offset = rotate([Fraction(*v) for v in pad['copper_centroid_offset_nm']], turns)
+            pad['copper_centroid_offset_nm'] = [[v.numerator, v.denominator] for v in offset]
         pad['position_nm'] = move(pad['position_nm'])
         pad['rotation_deg'] = (pad['rotation_deg'] + rotation-fp['rotation_deg']) % 360
     placed.update(position_nm=list(position), rotation_deg=rotation)
@@ -106,6 +110,10 @@ def _validate_policy(policy, refs):
     if type(policy.get('gap_nm')) is not int or policy['gap_nm'] < 0:
         raise ValueError('gap must be nonnegative integer nanometres')
     _edge_margin_nm(policy)
+    timeout = policy.get('search_timeout_s')
+    if 'search_timeout_s' in policy and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                                       or not 0 < timeout <= 86400):
+        raise ValueError('search_timeout_s must be positive and at most 86400 seconds')
     if type(policy.get('capacity_proof', False)) is not bool:
         raise ValueError('capacity_proof must be a boolean')
     for name in ('fixed_refs', 'priority_refs', 'ground_nets'):
@@ -443,7 +451,7 @@ def _slabs(polygon):
     return out
 
 
-def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed=None):
+def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts, doomed=None, checkpoint=None):
     """Positions whose courtyard boxes clear every same-side reserved box by the gap.
 
     The reservation test applied as a sweep: for each x, a reserved box that the
@@ -462,6 +470,8 @@ def _unreserved(side_boxes, rectangles, xs, ys, reserved, solid, gap, conflicts,
     caller still counts it as a step and rejects it without the polygon test.
     """
     for x in xs:
+        if checkpoint is not None:
+            checkpoint()
         blocked, near = [], []
         for side, (x0, y0, x1, y1) in side_boxes.items():
             for other, (a0, b0, a1, b1), ref in reserved:
@@ -984,6 +994,57 @@ class _BudgetExhausted(Exception):
     pass
 
 
+class _SearchTimedOut(Exception):
+    pass
+
+
+class _ClusterExhausted(Exception):
+    pass
+
+
+# A failed joint search is unknown coverage, never a geometric proof. This
+# deterministic work guard prevents a single cluster consuming the board budget.
+CLUSTER_STEP_BUDGET = 4096
+
+
+def _locality_clusters(index, queue, fixed, document):
+    """Connected multi-member obligations, with the hub before tightest peers.
+
+    Two-footprint obligations retain their established independent search. Each
+    endpoint belongs to exactly one connected component, including shared
+    inductors and peers connected by return/switch roles.
+    """
+    if index is None:
+        return []
+    order = {fp['ref']: i for i, fp in enumerate(queue)}
+    remaining, clusters = set(index.pairs), []
+    while remaining:
+        pending, refs = [min(remaining)], set()
+        while pending:
+            ref = pending.pop()
+            if ref in refs:
+                continue
+            refs.add(ref)
+            pending.extend(peer['reference'] for _, peer, _ in index.pairs[ref]
+                           if peer['reference'] not in refs)
+        remaining -= refs
+        movable = refs - fixed
+        if len(refs) < 3 or not movable:
+            continue
+        hub = min(refs, key=lambda ref: (-len({peer['reference'] for _, peer, _ in index.pairs[ref]}),
+                                        order.get(ref, -1), ref))
+        tightness = lambda ref: min(limit for _, _, limit in index.pairs[ref])
+        unit = tuple(sorted(movable, key=lambda ref: (ref != hub, tightness(ref), order[ref], ref)))
+        clusters.append({'references': list(unit), 'all_references': [hub] + sorted(refs - {hub}),
+                         'strategy': 'joint-tightest-first/1',
+                         'step_budget': CLUSTER_STEP_BUDGET,
+                         'obligations': sorted({obligation['id']
+                             for obligation in document['obligations']
+                             if any(obligation[role]['from']['reference'] in refs
+                                    for role in electrical_locality.roles(obligation))})})
+    return sorted(clusters, key=lambda cluster: min(order[ref] for ref in cluster['references']))
+
+
 class _Search:
     """Candidate scans over the current partial placement (AGENTEE-212).
 
@@ -993,7 +1054,14 @@ class _Search:
     predicates. A rejection records which placed movable parts blocked it, so a
     failed part names the parts a backjump may move.
     """
-    def __init__(self, capture, placed, exact, obstacles, outline, margin_nm, policy, members):
+    def __init__(self, capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat=None):
+        self.started = (time.monotonic() if heartbeat is not None or 'search_timeout_s' in policy else None)
+        self.deadline = (self.started + policy['search_timeout_s']
+                         if 'search_timeout_s' in policy else None)
+        self.heartbeat, self.last_heartbeat = heartbeat, self.started
+        self.locality = (electrical_locality.PlacementIndex(policy['electrical_locality'])
+                         if 'electrical_locality' in policy else None)
+        self.best = []
         self.policy = policy
         self.fps = {fp['ref']: fp for fp in capture['footprints']}
         self.fixed = {fp['ref'] for fp in placed}
@@ -1002,6 +1070,9 @@ class _Search:
         self.gap, self.budget, self.grounds = policy['gap_nm'], policy['step_budget'], policy['ground_nets']
         self.members, self.steps, self.placed, self.reserved = members, 0, [], []
         self.positions, self.peers = {}, {}
+        self.cluster_active = None
+        self.cluster_start_steps = None
+        self.cluster_work = {}
         # Anchor distance is symmetric: it binds whichever of the pair is placed second.
         self.anchored = {}
         for ref, group in members.items():
@@ -1009,6 +1080,18 @@ class _Search:
                 self.anchored.setdefault(group['anchor']['reference'], []).append((ref, group['max_distance_nm']))
         for fp in placed:
             self.push(fp)
+
+    def checkpoint(self):
+        now = time.monotonic() if self.started is not None else None
+        if self.heartbeat is not None and now - self.last_heartbeat >= 5:
+            self.heartbeat({'status': 'packing', 'steps_used': self.steps,
+                            'placed_count': len(self.placed), 'placed_peak': len(self.best),
+                            'elapsed_s': now - self.started})
+            self.last_heartbeat = now
+        if self.deadline is not None and now >= self.deadline:
+            raise _SearchTimedOut
+        if self.cluster_active is not None and self.steps - self.cluster_start_steps >= CLUSTER_STEP_BUDGET:
+            raise _ClusterExhausted
 
     def ties(self, ref):
         """(partner, point, max distance) for every anchor relation whose other end is placed.
@@ -1035,6 +1118,10 @@ class _Search:
 
     def push(self, fp):
         self.placed.append(fp)
+        if self.locality is not None:
+            self.locality.push(fp)
+        if len(self.placed) > len(self.best):
+            self.best = list(self.placed)
         self.positions[fp['ref']] = fp['position_nm']
         if fp['ref'] not in self.fixed:
             self.reserved.extend((side, box, fp['ref']) for side, box in boxes(fp).items())
@@ -1044,6 +1131,8 @@ class _Search:
 
     def pop(self):
         fp = self.placed.pop()
+        if self.locality is not None:
+            self.locality.pop(fp['ref'])
         del self.positions[fp['ref']]
         while self.reserved and self.reserved[-1][2] == fp['ref']:
             self.reserved.pop()
@@ -1053,7 +1142,7 @@ class _Search:
                 if not self.peers[pad['net']]:
                     del self.peers[pad['net']]
 
-    def blockers(self, proposed, group, ties):
+    def blockers(self, proposed, group, ties, candidate_locality=None):
         """None when every predicate admits the candidate, else the movable parts that blocked it."""
         hit = {ref for side, (x0, y0, x1, y1) in boxes(proposed).items()
                for other, (a0, b0, a1, b1), ref in self.reserved
@@ -1076,8 +1165,11 @@ class _Search:
             return set()
         if any(placement_groups.distance2(proposed['position_nm'], point) > d*d for _, point, d in ties):
             return set()
-        if 'electrical_locality' in self.policy:
-            hit, _ = electrical_locality.constraint(self.placed, proposed, self.policy['electrical_locality'])
+        if (candidate_locality is None and self.locality is not None
+                and proposed['ref'] in self.locality.pairs):
+            candidate_locality = self.locality.prepare(transform(proposed, [0, 0], proposed['rotation_deg']))
+        if candidate_locality is not None:
+            hit, _ = candidate_locality.constraint(proposed['position_nm'])
             if hit:
                 return hit - self.fixed - {proposed['ref']}
         return None
@@ -1085,7 +1177,8 @@ class _Search:
     def scan(self, fp, conflicts):
         """Admissible candidates in rank order; rejections add their blockers to ``conflicts``."""
         group = self.members.get(fp['ref'])
-        locality = self.policy.get('electrical_locality')
+        participating = self.locality is not None and fp['ref'] in self.locality.pairs
+        self.checkpoint()
         anchors = [(side, box) for side, box, _ in self.reserved] + [(o['side'], o['box']) for o in self.exact]
         # A concave fixed courtyard's box can lie far from its edges; its slabs carry them.
         anchors += self.solid
@@ -1094,31 +1187,45 @@ class _Search:
         targets = [] if group is None else [p for poly in group.get('region', {}).get('polygons', []) for p in poly]
         targets += [point for _, point, _ in ties]
         window = _window(self.outline, self.margin_nm, group, ties)
-        ranked = []
+        ranked, evaluators = [], {}
         for rotation in (0, 90, 180, 270):
             at_origin = transform(fp, [0, 0], rotation)
-            local_targets = electrical_locality.targets(self.placed, at_origin, locality) if locality else []
+            evaluator = self.locality.prepare(at_origin) if participating else None
+            evaluators[rotation] = evaluator
+            local_targets = evaluator.targets() if evaluator is not None else []
             xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm,
                                      targets + local_targets, window)
+            if self.cluster_active is not None and evaluator is not None:
+                # Intersections of axis projections of the exact pad discs are
+                # necessary only; the full coupled predicates still judge every point.
+                for offset, target, limit, _ in evaluator.pairs:
+                    xs = [x for x in xs if abs(x + offset[0] - target[0]) <= limit]
+                    ys = [y for y in ys if abs(y + offset[1] - target[1]) <= limit]
+                conflicts.update(ref for _, _, _, involved in evaluator.pairs
+                                 for ref in involved if ref not in self.fixed and ref != fp['ref'])
             rectangles = {side: [r for poly in c['polygons'] for r in _slabs(poly)]
                           for side, c in at_origin['courtyards'].items()
                           if all(_slabs(poly) is not None for poly in c['polygons'])}
             doomed = set()
             for x, y in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid,
-                                    self.gap, conflicts, doomed):
-                local_cost = electrical_locality.constraint(
-                    self.placed, transform(fp, [x, y], rotation), locality)[1] if locality else 0
+                                    self.gap, conflicts, doomed, self.checkpoint):
+                self.checkpoint()
+                hit, local_cost = evaluator.constraint((x, y)) if evaluator is not None else (set(), 0)
+                if self.cluster_active is not None and hit:
+                    conflicts.update(hit - self.fixed - {fp['ref']})
+                    continue
                 ranked.append((local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
                                x, y, rotation, (x, y) in doomed))
         ranked.sort()
         for _, _, x, y, rotation, doomed in ranked:
+            self.checkpoint()
             if self.steps == self.budget:
                 raise _BudgetExhausted
             self.steps += 1
             if doomed:
                 continue  # Nearer than the gap to a fixed courtyard or obstacle: the exact test rejects it.
             proposed = transform(fp, [x, y], rotation)
-            hit = self.blockers(proposed, group, ties)
+            hit = self.blockers(proposed, group, ties, evaluators[rotation])
             if hit is None:
                 yield proposed
             else:
@@ -1143,9 +1250,67 @@ class _Search:
                 return done, None
         return None, conflicts - set(unit)
 
+    def place_cluster(self, unit):
+        """Backtrack every member's candidates against a single partial state."""
+        conflicts, done = set(), []
+        spent_steps = self.cluster_work.get(unit, 0)
+        self.cluster_start_steps = self.steps - spent_steps
+        self.cluster_active = True
 
-def pack(capture, policy):
-    """Return a complete deterministic plan or typed failure; never mutate inputs."""
+        def visit(index):
+            if index == len(unit):
+                return list(done)
+            for proposed in self.scan(self.fps[unit[index]], conflicts):
+                self.push(proposed)
+                done.append(proposed)
+                try:
+                    found = visit(index + 1)
+                    if found is not None:
+                        return found
+                finally:
+                    done.pop()
+                    self.pop()
+            return None
+
+        try:
+            # Bound recursion independently of the candidate guard.
+            if len(unit) > 64:
+                raise _ClusterExhausted
+            self.checkpoint()
+            return visit(0), conflicts - set(unit)
+        finally:
+            self.cluster_work[unit] = self.steps - self.cluster_start_steps
+            self.cluster_active = self.cluster_start_steps = None
+
+
+def pack(capture, policy, *, heartbeat=None):
+    """Preserve legacy plans; try joint clusters only with the remaining budget."""
+    runtime = {}
+    legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime)
+    if legacy['status'] == 'planned' or not legacy.get('search', {}).get('locality_clusters'):
+        return legacy
+    previous = runtime['search']
+    remaining = policy['step_budget'] - previous.steps
+    if remaining == 0:
+        legacy['search']['joint_cluster_attempt'] = {
+            'status': 'not_attempted', 'reason': 'no remaining deterministic candidate budget', 'steps_used': 0}
+        return legacy
+    joint = _pack(capture, policy, heartbeat=heartbeat, joint=True,
+                  remaining_steps=remaining, deadline=previous.deadline)
+    if joint['status'] != 'planned':
+        legacy['search']['joint_cluster_attempt'] = {
+            'status': joint['status'], 'steps_used': joint['steps_used'], 'reason': joint['reason'],
+            **joint.get('search', {})}
+        return legacy
+    # _pack independently grades every complete proposal before returning planned.
+    joint['steps_used'] += previous.steps
+    joint['search']['legacy_attempt'] = {'status': legacy['status'], 'steps_used': previous.steps}
+    return joint
+
+
+def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=None, deadline=None):
+    if heartbeat is not None:
+        heartbeat({'status': 'qualifying', 'steps_used': 0, 'placed_count': 0})
     capture = copy.deepcopy(capture)
     validate_capture(capture)
     _validate_policy(policy, {f['ref'] for f in capture['footprints']})
@@ -1222,19 +1387,52 @@ def pack(capture, policy):
                            + (f" usable by {proof['square_nm']} nm squares" if proof['square_nm'] else ''), margin_nm)
         return _soft_proof({**failure, 'proof': proof, 'capacity': capacity},
                            _binding_constraints(policy, margin_nm, proof['blocked_by']))
-    search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members)
-    units = [(fp['ref'],) for fp in queue]
+    search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat)
+    if runtime is not None:
+        runtime['search'] = search
+    if remaining_steps is not None:
+        search.budget = remaining_steps
+        search.deadline = deadline  # Absolute legacy search deadline; qualification never resets it.
+    clusters = _locality_clusters(search.locality, queue, fixed, locality)
+    cluster_by_ref = {ref: cluster for cluster in clusters for ref in cluster['references']} if joint else {}
+    units = []
+    for fp in queue:
+        unit = tuple(cluster_by_ref.get(fp['ref'], {}).get('references', (fp['ref'],)))
+        if unit not in units:
+            units.append(unit)
     stack, seen, backjumps, failures, peak = [], {tuple(units)}, 0, {}, 0
     def stopped(status, reason, unplaced=None):
         failure = _failure(capture, policy, status, 'unknown', search.steps, reason, margin_nm)
         record = search.record(backjumps, unplaced)
+        if clusters:
+            record['locality_clusters'] = clusters
+        if unplaced in cluster_by_ref:
+            record['blocking_cluster'] = {**cluster_by_ref[unplaced],
+                                         'references': cluster_by_ref[unplaced]['all_references']}
         if unplaced is not None:
             record['placed_peak'] = peak  # Diagnostic only: a plan is complete or empty.
+        if status in ('packing_search_exhausted', 'packing_budget_exhausted', 'locality_cluster_exhausted'):
+            record['termination'] = status.removeprefix('packing_')
+            record['partial'] = {'authority': 'diagnostic-only-unvalidated-partial-placement',
+                                 'placements': [{'ref': f['ref'], 'uuid': f['uuid'],
+                                     'position_nm': f['position_nm'], 'rotation_deg': f['rotation_deg']}
+                                    for f in sorted(search.best, key=lambda f: f['ref'])]}
         return {**failure, 'search': record, 'capacity': capacity}
+    if heartbeat is not None:
+        heartbeat({'status': 'packing', 'steps_used': 0, 'placed_count': len(placed)})
     while len(stack) < len(units):
         unit = units[len(stack)]
         try:
-            fps, conflicts = search.place_unit(unit)
+            fps, conflicts = (search.place_cluster(unit) if unit[0] in cluster_by_ref
+                              else search.place_unit(unit))
+        except _ClusterExhausted:
+            return stopped('locality_cluster_exhausted',
+                           f'joint locality cluster {cluster_by_ref[unit[0]]["obligations"]} exceeded its work guard; '
+                           'infeasibility unproved', unit[0])
+        except electrical_locality.TargetBudgetExhausted:
+            return stopped('packing_budget_exhausted', 'locality target budget exhausted', unit[0])
+        except _SearchTimedOut:
+            return stopped('packing_budget_exhausted', 'wall-time search budget exhausted', unit[0])
         except _BudgetExhausted:
             return stopped('packing_budget_exhausted', 'deterministic candidate budget exhausted', unit[0])
         if fps is not None:
@@ -1251,13 +1449,13 @@ def pack(capture, policy):
         index = {fp['ref']: k for k, done in enumerate(stack) for fp in done}
         culprits = sorted({index[ref] for ref in conflicts if ref in index}, reverse=True)
         if not culprits:
-            return stopped('packing_search_exhausted',
+            return stopped('locality_cluster_exhausted' if unit[0] in cluster_by_ref else 'packing_search_exhausted',
                            f'no candidate for {unit[0]} in the finite search; infeasibility unproved', unit[0])
         i = len(stack)
         anchor = members.get(unit[0], {}).get('anchor', {}).get('reference')
         failures[unit[0]] = failures.get(unit[0], 0) + 1
         for k in culprits[min(2 ** (failures[unit[0]] - 1), len(culprits)) - 1:]:
-            if len(unit) == 1 and anchor in units[k]:
+            if len(unit) == 1 and anchor in units[k] and units[k][0] not in cluster_by_ref:
                 reordered = units[:k] + [unit + units[k]] + units[k+1:i] + units[i+1:]
             else:
                 reordered = units[:k] + [unit] + units[k:i] + units[i+1:]
@@ -1266,7 +1464,7 @@ def pack(capture, policy):
         else:
             return stopped('packing_search_exhausted',
                            f'every backjump for {unit[0]} revisits a part order; infeasibility unproved', unit[0])
-        if backjumps == policy['step_budget']:
+        if backjumps == search.budget:
             return stopped('packing_budget_exhausted', 'deterministic backjump budget exhausted', unit[0])
         seen.add(tuple(reordered))
         units, backjumps = reordered, backjumps + 1
@@ -1292,7 +1490,10 @@ def pack(capture, policy):
                    for f in capture['footprints'] for p in f['pads'] if p['shape'] == 6]
     if custom_pads:
         extra['qualified_custom_pads'] = custom_pads
-    return {**extra, 'search': search.record(backjumps), 'capacity': capacity, 'schema': 'agent-ee.packing-plan/1',
+    search_record = search.record(backjumps)
+    if clusters:
+        search_record['locality_clusters'] = clusters
+    return {**extra, 'search': search_record, 'capacity': capacity, 'schema': 'agent-ee.packing-plan/1',
             'board_sha256': capture['board_sha256'], 'status': 'planned', 'outcome': 'info', 'authority': 'standalone-unsealed-plan',
             'steps_used': steps, 'step_budget': policy['step_budget'],
             'min_courtyard_edge_mm': _margin_mm(margin_nm),

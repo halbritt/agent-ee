@@ -68,12 +68,20 @@ class J1CourtyardTests(unittest.TestCase):
                                     self.decision if decision is None else decision)
 
     def test_explicit_input_root_keeps_all_four_source_bindings(self):
+        drawing = json.loads(self.decision)['sources']['drawing']['path']
+        supplied = os.environ.get('AGENT_EE_J1_DRAWING')
+        drawing_source = (Path(supplied) if supplied else
+                          Path(os.environ['AGENT_EE_POD_INPUTS']) / drawing)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for rel, raw in self.inputs.items():
                 path = root / rel
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(raw)
+                if rel == drawing:
+                    path.symlink_to(drawing_source.resolve())
+                else:
+                    path.write_bytes(raw)
+            self.assertTrue((root / drawing).is_symlink())
             env = {'AGENT_EE_POD_INPUTS': str(root)}
             self.assertEqual(load_sources(self.decision, env), self.inputs)
             geometry = json.loads(self.decision)['sources']['geometry']['path']

@@ -706,3 +706,11 @@ evaluation is unavailable coverage and refuses; existing ignored-category and
 rule-level ignore refusals remain. Review packets include the
 source inventory and budgeted classified native evidence; reviewer and adjudicator prompts
 require each blocking limit's class and citation.
+
+The post-placement artwork pass uses the same captured source inventory for its
+pre-artwork, relocation and final native comparisons. Saving the artwork cannot
+promote materialized defaults or drop a sourced limit's class and citation.
+Advisory numeric findings remain in the comparison and cannot alone refuse
+publication after relocation; sourced numeric and structural regressions still
+refuse. The artwork pass's carried legibility defects retain their separate
+[downstream gate](silk-artwork.md#placement-feasibility-and-fab-legibility-agentee-333).
