@@ -1011,6 +1011,11 @@ Each change below keeps every answer; none relaxes a predicate or changes a rank
 - Hole/copper reservations carry union boxes, so `_hole_conflict` skips a pair
   of parts whose inventories cannot meet, and keepout tests run only against
   placed parts that own a keepout (an empty keepout list never blocks).
+- `_overlaps` answers "positive shared area" exactly: boxes that do not
+  overlap share none; two convex counter-clockwise polygons share positive area
+  exactly when neither has an edge with every vertex of the other on or right
+  of it (integer cross products, no clipping); every other pair keeps the exact
+  rational clipping. Hole reservations and keepouts use it.
 - Candidates enter the ranking with a lower bound on their wire cost (for each
   signal pad, the distance to the nearest peer x coordinate plus the distance
   to the nearest peer y coordinate on its net, which separates by axis and is

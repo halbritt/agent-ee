@@ -353,3 +353,37 @@ class LazyRankingTests(unittest.TestCase):
                     cases += 1
         self.assertGreater(exact_hits, 0)
         self.assertGreater(cases, 10000)
+
+
+class OverlapTests(unittest.TestCase):
+    def test_separating_edge_test_matches_clipping_for_convex_and_concave_pairs(self):
+        import math
+        from agent_ee.placer import _overlaps
+        rng = random.Random(7332)
+        verdicts = {True: 0, False: 0}
+        convex_pairs = 0
+        def shape():
+            kind = rng.random()
+            x, y = rng.randint(0, 10), rng.randint(0, 10)
+            if kind < .4:
+                return rectangle(x, y, rng.randint(1, 4), rng.randint(1, 4))
+            if kind < .7:  # a 24-gon approximating a circle, like a native drill reservation
+                r = rng.randint(1, 3)
+                return [[x*MM + int(r*MM*math.cos(2*math.pi*k/24)), y*MM + int(r*MM*math.sin(2*math.pi*k/24))]
+                        for k in range(24)]
+            w, h = rng.randint(2, 4), rng.randint(2, 4)
+            return polygon([(x, y), (x+w, y), (x+w, y+1), (x+1, y+1), (x+1, y+h), (x, y+h)])  # concave
+        for case in range(3000):
+            a, b = placement.simple_polygon(shape()), placement.simple_polygon(shape())
+            if rng.random() < .3:  # shift to touch or barely overlap an edge of the first shape
+                dx = rng.choice((-1, 0, 1))
+                box_a, box_b = placement.box([a]), placement.box([b])
+                b = [(p[0] + box_a[2] - box_b[0] + dx, p[1]) for p in b]
+            expected = intersection_area(a, b) > 0
+            self.assertEqual(_overlaps(a, b), expected, (a, b))
+            self.assertEqual(_overlaps(b, a), expected)
+            verdicts[expected] += 1
+            convex_pairs += placement.convex(a) and placement.convex(b)
+        self.assertGreater(verdicts[True], 300)
+        self.assertGreater(verdicts[False], 300)
+        self.assertGreater(convex_pairs, 1000)

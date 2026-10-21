@@ -361,10 +361,26 @@ def _keepout_boxes(obstacles):
             boxes({'courtyards': {obstacle['side']: obstacle}}).items()]
 
 
+def _overlaps(left, right):
+    """intersection_area(left, right) > 0, exactly, for qualified polygons.
+
+    Boxes that do not overlap with positive area share no area. Two convex
+    counter-clockwise polygons share positive area exactly when neither has an
+    edge with every vertex of the other on or right of it (a separating edge
+    line exists for convex polygons with disjoint interiors, and a shared
+    boundary alone puts the other polygon on the edge's closed right side).
+    Any other pair keeps the exact rational clipping.
+    """
+    if not boxes_meet([left], [right]):
+        return False
+    if convex(left) and convex(right):
+        return not any(all(cross(a, b, v) <= 0 for v in other)
+                       for own, other in ((left, right), (right, left)) for a, b in edges(own))
+    return intersection_area(left, right) > 0
+
+
 def _in_keepouts(fp, obstacles):
-    # Boxes that do not overlap with positive area cannot share area; only
-    # overlapping pairs reach the exact clipping test.
-    return any(boxes_meet([c], [p]) and intersection_area(c, p) > 0
+    return any(_overlaps(c, p)
                for obstacle in obstacles
                for c in fp['courtyards'].get(obstacle['side'], {}).get('polygons', [])
                for p in obstacle['polygons'])
@@ -441,7 +457,7 @@ def _hole_conflict(candidate, peer):
             for (a0, b0, a1, b1), target in other['_packing_targets']:
                 if x1 <= a0 or a1 <= x0 or y1 <= b0 or b1 <= y0:
                     continue
-                if intersection_area(polygon, target) > 0:
+                if _overlaps(polygon, target):
                     return True
     return False
 
