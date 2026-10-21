@@ -128,6 +128,21 @@ A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
 refuses any mismatch.
+The [block library](docs/block-library.md) keeps versioned known-good blocks in
+`blocks/` with provenance receipts. Its entries come from KiCad board regions,
+scale-verified datasheet figures and project clusters. A lookup returns each block
+with its provenance class. Project clusters, including the four telemetry pod
+regulator clusters, are search-derived and advisory. Hard classes are disabled
+(`authority_unavailable`) until a verified owner authority exists (AGENTEE-348), and
+every use is admitted by `blocks.admit` on the target.
+
+[Block arrangement](docs/blocks.md#stage-b-arrangement-agentee-340) places the
+admitted candidates as rigid macros, then packs the residual parts with the
+placer, with block members fixed. The search uses deterministic conflict-directed
+backjumping with typed exhaustion. Block rules (keep-outs, opposite-side
+shadows, no block over a fixed part, thermal spread) are hard only with a
+citation. Boundary roles are bound to their board nets. The complete plan goes
+through the writer's native gate.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
@@ -274,6 +289,9 @@ symbol placement, fields, UUIDs and reference bindings across those turns,
 with explicit change reports and refusal of conflicting native edits.
 [Stage receipts](docs/stage-receipts.md) support artifact-only steps,
 such as fab export, with an empty write scope and retained artifact hashes.
+New receipts bind tool identity observations to held mount descriptors and refuse
+hard links into live package source (AGENTEE-349); historical path-form replay
+retains its documented lower assurance.
 An artifact-only step is unadoptable if any declared artifact entry lacks a hash.
 With a declared fab step in the stage order, the fab checks require its sealed
 package and compare it with fresh sandbox exports before passing.

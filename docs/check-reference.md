@@ -82,6 +82,14 @@ revalidates them as one ordered custody chain; `verify-campaign` refuses changed
 reordered or unbound imports.
 They do not replace fresh checks or the declared-stage done binding.
 
+The [placement campaign cancellation regression](placement-adapter.md) holds a
+real sandboxed helper at its readiness marker until interruption (AGENTEE-345).
+It temporarily installs Python's default SIGINT handler so background runners
+that inherit ignored SIGINT still deliver the interrupt, then restores the prior
+handler on cleanup. A 120 s helper deadline bounds a missing readiness marker.
+It requires cancelled receipts, process cleanup and no next candidate. This test
+synchronization change adds no check kind and changes no candidate verdict.
+
 Test refusal diagnostics (AGENTEE-326) use an absolute
 `AGENT_EE_REFUSED_RECEIPTS` override, the writable repository build directory,
 or private per-user temporary storage. Retention errors preserve the original
@@ -1111,6 +1119,13 @@ stale cluster `seed_only` flag, and reserves `IMU_AXES` markings in both the
 pre-lease preview and leased targeted plan. Native regressions cover both
 `targeted` and `targeted_plans` refusal on a reserved label and unmarked controls.
 
+[Block arrangement](blocks.md#stage-b-arrangement-agentee-340) (AGENTEE-340)
+is another writer request mode (`blocks`). It adds no check kind. The saved
+board is judged, graded for groups and pad locality, and DRC-gated as every
+placer plan is. In addition, the hard block rules are re-graded from the saved
+bytes (`judgment.block_rules`). A failed hard rule refuses publication;
+advisory rows are reported only.
+
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
@@ -1700,7 +1715,16 @@ the mount source). It binds opened, identity-checked descriptors using bwrap
 `--ro-bind-fd` and verifies the actual mounted identities inside the sandbox
 before executing either command, covering bwrap versions that canonicalize fd
 sources to pathnames. Directory
-sources containing submounts are conservatively refused, including same-device
+sources containing hard links into live `src` refuse with `live_package_source:<at>`
+(AGENTEE-349), including persistent links planted after inventory, by re-inventorying
+the held descriptor before launches and after execution. Before/after identity of
+declared mounts reads through held descriptors; post-run source replacement or
+observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and
+upward-escaping mount symlinks retain link identity without reading host targets;
+an executable through such a link has an unknown digest and is unadoptable. Only
+fd-form receipts carry the mount-guard observation; historical path-form replay
+retains its lower assurance. Directory sources containing submounts are
+conservatively refused, including same-device
 bind mounts. The three qualified canonical routing helper files and the
 mount-namespace authority limit are recorded in
 [stage receipts](stage-receipts.md#python-tool-source-snapshots).

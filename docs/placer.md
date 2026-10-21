@@ -546,8 +546,12 @@ or an engineer allocation file. Each block is packed alone with this search,
 around a fixed anchor on a synthetic plane, into a rigid
 `agent-ee.block-candidate/2`. Its own pad obligations and groups apply, and
 boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
-unchanged. Arrangement admits a candidate only after `blocks.admit` re-grades it
-from the board.
+unchanged. [Arrangement](blocks.md#stage-b-arrangement-agentee-340) admits a
+candidate only after `blocks.admit` (or a mapped match and re-grade) checks it
+against the board. Arrangement places the blocks as rigid macros with this
+module's predicates, then packs the residual parts with `pack`, with block
+members fixed. A writer request with a `blocks` section takes that path
+through the same save, reload, grade and native DRC gate.
 
 ## Pod-scale qualification (AGENTEE-181)
 
