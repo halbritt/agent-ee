@@ -131,8 +131,9 @@ multi-pad pins. Explicit `buck-output-loop` declarations bind the supply source
 and switch target to the inductor, the return source and switch source to the
 IC, and return pads to a declared net distinct from supply. Switch nets must
 differ from supply and return. Distinct-source supply/return net sets must be
-disjoint even without a kind. Direct placement-index construction re-validates
-these declarations and snapshots the validated document before indexing it.
+disjoint even without a kind. Direct placement-index construction copies these
+declarations, requires exact built-in JSON types, validates the snapshot, and
+exposes read-only indexed pairs and endpoints.
 Coordinator packing binds to the check's immutable locality file. Origin-group
 distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)
