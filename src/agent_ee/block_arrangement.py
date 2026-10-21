@@ -1152,17 +1152,29 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     return plan
 
 
-def provenance_artifact(plan, board_sha256=None, rules=None, plan_sha256=None):
-    """The review input of a complete arranged plan: every placed block's identity, class and enforcement.
+def _roster(plan):
+    """Every placed block's provenance row from a complete arranged plan; raises on an incomplete roster.
 
-    ``board_sha256`` names the board the reviewers see (the runner's saved board;
-    default the plan's source board) and ``rules`` the block rules graded on it
-    (default the plan's). The artifact confers no authority: a search-derived block
-    stays advisory and is judged by the reviewers as a proposal.
+    The provenance records, the arranged poses and the plan's block members must name
+    the same blocks exactly once, so no placed block can be dropped from review.
     """
-    record = plan.get('block_arrangement') or {}
-    if plan.get('status') != 'planned' or 'arranged' not in record:
+    record = plan.get('block_arrangement') if isinstance(plan, dict) else None
+    if not isinstance(record, dict) or plan.get('status') != 'planned' or 'arranged' not in record:
         raise ValueError('a block provenance artifact needs a complete arranged plan')
+    ids = [b.get('block') if isinstance(b, dict) else None for b in record.get('blocks', [])]
+    placed = [a.get('block') if isinstance(a, dict) else None for a in record['arranged']]
+    if (not ids or any(not isinstance(b, str) or not b.strip() for b in ids + placed)
+            or len(set(ids)) != len(ids) or len(set(placed)) != len(placed)):
+        raise ValueError('arranged plan block identities must be distinct nonempty strings')
+    if set(ids) != set(placed):
+        raise ValueError('arranged plan provenance records and arranged poses name different blocks: '
+                         + ', '.join(sorted(set(ids) ^ set(placed))))
+    # Block members are the placed references that are neither fixed nor residual.
+    members = ({p['ref'] for p in plan['placements'] if not p['fixed']}
+               - set(record['residual']['references']))
+    listed = [r for b in record['blocks'] for r in b['references']]
+    if len(listed) != len(set(listed)) or set(listed) != members:
+        raise ValueError('arranged plan provenance records do not cover exactly the placed block members')
     poses = {a['block']: a for a in record['arranged']}
     rows = []
     for block in record['blocks']:
@@ -1174,13 +1186,55 @@ def provenance_artifact(plan, board_sha256=None, rules=None, plan_sha256=None):
                      'reuse': 'mapped' if 'mapping' in block else 'own-board',
                      **({'mapping': block['mapping']} if 'mapping' in block else {}),
                      'position_nm': pose['position_nm'], 'rotation_deg': pose['rotation_deg']})
+    return rows
+
+
+def provenance_artifact(plan, board_sha256=None, rules=None, *, plan_sha256):
+    """The review input of a complete arranged plan: every placed block's identity, class and enforcement.
+
+    ``plan_sha256`` is the SHA-256 of the written placement-plan.json bytes, which the
+    reviewers receive beside the artifact. ``board_sha256`` names the board the
+    reviewers see (the runner's saved board; default the plan's source board) and
+    ``rules`` the block rules graded on it (default the plan's). The artifact confers
+    no authority: a search-derived block stays advisory and is judged by the
+    reviewers as a proposal.
+    """
+    rows = _roster(plan)
+    record = plan['block_arrangement']
     document = {'schema': PROVENANCE_ARTIFACT, 'authority': PROVENANCE_AUTHORITY,
                 'source_sha256': plan['board_sha256'], 'board_sha256': board_sha256 or plan['board_sha256'],
                 'derivation_sha256': record['derivation_sha256'], 'policy_sha256': record['policy_sha256'],
-                **({'plan_sha256': plan_sha256} if plan_sha256 else {}), 'blocks': rows,
+                'plan_sha256': plan_sha256, 'blocks': rows,
                 'rules': [{k: r[k] for k in ('rule', 'id', 'enforcement', 'status') if k in r}
                           for r in (record['rules'] if rules is None else rules)]}
     return validate_provenance(document)
+
+
+def check_roster(document, plan):
+    """Refuse a provenance artifact whose roster differs from its complete arranged plan.
+
+    Every block, its references, anchor, candidate hash, class, enforcement, citation,
+    mapping and pose must equal the plan's, and every rule keeps the plan's enforcement.
+    """
+    expected = {r['block']: r for r in _roster(plan)}
+    for key, value in (('source_sha256', plan['board_sha256']),
+                       ('derivation_sha256', plan['block_arrangement']['derivation_sha256']),
+                       ('policy_sha256', plan['block_arrangement']['policy_sha256'])):
+        if document[key] != value:
+            raise ValueError(f"block provenance {key} is not the placement plan's")
+    found = {r['block']: r for r in document['blocks']}
+    if set(found) != set(expected):
+        raise ValueError('block provenance roster differs from the placement plan: '
+                         + ', '.join(sorted(set(found) ^ set(expected))))
+    for bid, row in expected.items():
+        if found[bid] != row:
+            fields = sorted(k for k in row.keys() | found[bid].keys() if row.get(k) != found[bid].get(k))
+            raise ValueError(f'block provenance row {bid!r} differs from the placement plan: ' + ', '.join(fields))
+    enforcement = {(r['rule'], r.get('id')): r['enforcement'] for r in plan['block_arrangement']['rules']}
+    for rule in document['rules']:
+        if enforcement.get((rule['rule'], rule.get('id'))) != rule['enforcement']:
+            raise ValueError(f"block provenance rule {rule['rule']!r} is not graded with the plan's enforcement")
+    return document
 
 
 def _sha256(value, label):
@@ -1191,12 +1245,11 @@ def _sha256(value, label):
 def validate_provenance(document):
     """Refuse a block provenance artifact whose classes, enforcement or identities are inconsistent."""
     blocks._keys(document, {'schema', 'authority', 'source_sha256', 'board_sha256', 'derivation_sha256',
-                            'policy_sha256', 'blocks', 'rules'}, {'plan_sha256'}, label='block provenance')
+                            'policy_sha256', 'plan_sha256', 'blocks', 'rules'}, label='block provenance')
     if document['schema'] != PROVENANCE_ARTIFACT or document['authority'] != PROVENANCE_AUTHORITY:
         raise ValueError(f'block provenance must be {PROVENANCE_ARTIFACT} with its fixed authority statement')
     for key in ('source_sha256', 'board_sha256', 'derivation_sha256', 'policy_sha256', 'plan_sha256'):
-        if key in document:
-            _sha256(document[key], key)
+        _sha256(document[key], key)
     if not isinstance(document['blocks'], list) or not document['blocks']:
         raise ValueError('block provenance names no placed block')
     seen, references = set(), set()
@@ -1205,13 +1258,19 @@ def validate_provenance(document):
                            'reuse', 'position_nm', 'rotation_deg'}, {'method', 'source', 'mapping'},
                      label='block provenance row')
         label = f"block provenance row {row['block']!r}"
-        if not isinstance(row['block'], str) or row['block'] in seen:
-            raise ValueError(f'{label}: block ids must be distinct strings')
+        if not isinstance(row['block'], str) or not row['block'].strip() or row['block'] in seen:
+            raise ValueError(f'{label}: block ids must be distinct nonempty strings')
         seen.add(row['block'])
         if (not isinstance(row['references'], list) or not row['references']
                 or row['anchor'] not in row['references'] or references & set(row['references'])):
             raise ValueError(f'{label}: references must be nonempty, disjoint and contain the anchor')
+        if any(not isinstance(r, str) or not r for r in row['references']):
+            raise ValueError(f'{label}: references must be nonempty text')
         references |= set(row['references'])
+        position = row['position_nm']
+        if (not isinstance(position, list) or len(position) != 2 or any(type(v) is not int for v in position)
+                or type(row['rotation_deg']) is not int or row['rotation_deg'] not in (0, 90, 180, 270)):
+            raise ValueError(f'{label}: pose needs integer position_nm [x, y] and a rotation of 0, 90, 180 or 270')
         _sha256(row['candidate_sha256'], label + ' candidate_sha256')
         # Fail closed: an unknown class, or a class whose enforcement was relabelled, refuses.
         if row['class'] not in blocks.PROVENANCE or row['enforcement'] != blocks.PROVENANCE[row['class']]:
@@ -1231,22 +1290,32 @@ def validate_provenance(document):
 
 
 def review_input(run_dir, manifest):
-    """The scope's declared block provenance, read from the sealed capture and bound to its board.
+    """The scope's declared block provenance, read from the sealed capture and bound to its board and plan.
 
-    A missing, uncaptured, malformed or other-board artifact raises, so the packet is not
-    built and the review stays incomplete; it is never silently dropped.
+    The scope also declares the complete placement-plan.json the artifact was made from
+    (``block_plan``); ``plan_sha256`` must identify those captured bytes and the
+    artifact's whole roster must equal the plan's. A missing, uncaptured, malformed,
+    partial, other-plan or other-board artifact raises, so the packet is not built and
+    the review stays incomplete; it is never silently dropped.
     """
     scope = manifest['scope']
-    rel, board = scope['block_provenance'], scope['board']
-    if not isinstance(rel, str) or rel not in manifest['files']:
-        raise ValueError(f'block_provenance {rel!r} is not a captured input')
-    path = Path(run_dir) / 'inputs' / rel
-    if hashlib.sha256(path.read_bytes()).hexdigest() != manifest['files'][rel]:
-        raise ValueError('captured block provenance changed; evidence is stale')
-    document = validate_provenance(strict_json(path.read_bytes()))
+    rel, plan_rel, board = scope['block_provenance'], scope.get('block_plan'), scope['board']
+    captured = {}
+    for key, value in (('block_provenance', rel), ('block_plan', plan_rel)):
+        if not isinstance(value, str) or value not in manifest['files']:
+            raise ValueError(f'{key} {value!r} is not a captured input')
+        raw = (Path(run_dir) / 'inputs' / value).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != manifest['files'][value]:
+            raise ValueError(f'captured {key} changed; evidence is stale')
+        captured[key] = raw
+    document = validate_provenance(strict_json(captured['block_provenance']))
     if document['board_sha256'] != manifest['files'].get(board):
         raise ValueError(f'block provenance describes board {document["board_sha256"]}, not the captured {board}')
-    return {'path': 'inputs/' + rel, 'sha256': manifest['files'][rel], 'record': document}
+    if document['plan_sha256'] != manifest['files'][plan_rel]:
+        raise ValueError(f'block provenance describes plan {document["plan_sha256"]}, not the captured {plan_rel}')
+    check_roster(document, strict_json(captured['block_plan']))
+    return {'path': 'inputs/' + rel, 'sha256': manifest['files'][rel], 'record': document,
+            'plan': {'path': 'inputs/' + plan_rel, 'sha256': manifest['files'][plan_rel]}}
 
 
 def load_entries(paths):
@@ -1292,7 +1361,8 @@ def main(argv=None):
                          heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True))
         blocks._write(args.out, result)
         if args.provenance is not None and result['status'] == 'planned':
-            blocks._write(args.provenance, provenance_artifact(result))
+            blocks._write(args.provenance, provenance_artifact(
+                result, plan_sha256=hashlib.sha256(args.out.read_bytes()).hexdigest()))
     except (OSError, ValueError) as exc:
         print(json.dumps({'status': 'refused', 'reason': str(exc)}))
         return 1

@@ -54,6 +54,18 @@ class ProvenanceFixture(LibraryFixture):
         self.plan = arrangement.arrange(self.target, self.target_inv, self.target_derivation, self.policy,
                                         plan_policy(), entries)
         self.assertEqual(self.plan['status'], 'planned', self.plan.get('reason'))
+        self.plan_bytes = self.written(self.plan)
+
+    def written(self, plan):
+        """placement-plan.json bytes as a writer publishes them."""
+        path = Path(tempfile.mkdtemp(prefix='agent-ee-provenance-plan-', dir=self.dir)) / 'placement-plan.json'
+        blocks._write(path, plan)
+        return path.read_bytes()
+
+    def artifact(self, plan=None, board_sha256=None, rules=None):
+        plan_bytes = self.plan_bytes if plan is None else self.written(plan)
+        return arrangement.provenance_artifact(self.plan if plan is None else plan, board_sha256, rules,
+                                               plan_sha256=hashlib.sha256(plan_bytes).hexdigest())
 
     def expected(self):
         """Each placed block's identity, class and enforcement, from its own admitted candidate."""
@@ -67,7 +79,7 @@ class ProvenanceFixture(LibraryFixture):
 
 class ArtifactTests(ProvenanceFixture, unittest.TestCase):
     def test_every_placed_block_with_library_mapping(self):
-        artifact = arrangement.provenance_artifact(self.plan)
+        artifact = self.artifact()
         rows = {r['block']: r for r in artifact['blocks']}
         self.assertEqual(set(rows), {b['id'] for b in self.target_derivation['blocks']})
         for bid, expected in self.expected().items():
@@ -90,15 +102,43 @@ class ArtifactTests(ProvenanceFixture, unittest.TestCase):
         record = {b['block']: b for b in self.plan['block_arrangement']['blocks']}
         self.assertEqual(record['Power2']['mapping'], MAPPING)
         self.assertNotIn('mapping', record['Power'])
-        self.assertEqual(arrangement.provenance_artifact(copy.deepcopy(self.plan)), artifact)
+        self.assertEqual(artifact['plan_sha256'], hashlib.sha256(self.plan_bytes).hexdigest())
+        self.assertEqual(self.artifact(copy.deepcopy(self.plan)), artifact)
+        # The roster check accepts the artifact against its own plan, read back from the written bytes.
+        self.assertIs(arrangement.check_roster(artifact, json.loads(self.plan_bytes)), artifact)
+
+    def test_an_incomplete_plan_roster_refuses(self):
+        """A plan whose provenance records omit or repeat an arranged block makes no artifact."""
+        def edited(change):
+            value = copy.deepcopy(self.plan)
+            change(value['block_arrangement'])
+            return value
+        drop = lambda record, key: record.update({key: [b for b in record[key] if b['block'] != 'Power2']})
+        cases = {
+            # The library-mapped block removed from the records; the placement itself is unchanged.
+            'mapped record dropped': (lambda r: drop(r, 'blocks'), 'different blocks: Power2'),
+            'mapped pose dropped': (lambda r: drop(r, 'arranged'), 'different blocks: Power2'),
+            # Dropped from both, its members are still placed as block members.
+            'mapped block dropped': (lambda r: (drop(r, 'blocks'), drop(r, 'arranged')), 'placed block members'),
+            'duplicate record': (lambda r: r['blocks'].append(copy.deepcopy(r['blocks'][0])), 'distinct'),
+            'duplicate pose': (lambda r: r['arranged'].append(copy.deepcopy(r['arranged'][0])), 'distinct'),
+            'blank id': (lambda r: (r['blocks'][0].update(block=' '), r['arranged'][0].update(block=' ')),
+                         'nonempty'),
+            'reference lost': (lambda r: r['blocks'][0]['references'].pop(), 'placed block members'),
+        }
+        for name, (change, message) in cases.items():
+            with self.subTest(name), self.assertRaisesRegex(ValueError, message):
+                self.artifact(edited(change))
+        with self.assertRaisesRegex(TypeError, 'plan_sha256'):
+            arrangement.provenance_artifact(self.plan)
 
     def test_refusals_fail_closed(self):
-        artifact = arrangement.provenance_artifact(self.plan)
+        artifact = self.artifact()
         failed = arrangement.arrange(self.target, self.target_inv, self.target_derivation, self.policy,
                                      plan_policy(), [{'candidate': c} for c in self.own.values()])
         self.assertEqual(failed['status'], 'arrangement_refused')
         with self.assertRaisesRegex(ValueError, 'complete arranged plan'):
-            arrangement.provenance_artifact(failed)
+            arrangement.provenance_artifact(failed, plan_sha256='0' * 64)
 
         def edited(change):
             value = copy.deepcopy(artifact)
@@ -119,6 +159,16 @@ class ArtifactTests(ProvenanceFixture, unittest.TestCase):
             'extra key': lambda v: v['blocks'][0].update(accepted=True),
             'bad board hash': lambda v: v.update(board_sha256='0' * 63),
             'rule status': lambda v: v.update(rules=[{'rule': 'keepout', 'enforcement': 'hard', 'status': 'unknown'}]),
+            'blank id': lambda v: v['blocks'][0].update(block=''),
+            'space id': lambda v: v['blocks'][0].update(block=' '),
+            'id not text': lambda v: v['blocks'][0].update(block=7),
+            'unknown pose': lambda v: v['blocks'][0].update(position_nm='unknown', rotation_deg=None),
+            'short position': lambda v: v['blocks'][0].update(position_nm=[1]),
+            'float position': lambda v: v['blocks'][0].update(position_nm=[1.5, 2]),
+            'odd rotation': lambda v: v['blocks'][0].update(rotation_deg=45),
+            'bool rotation': lambda v: v['blocks'][0].update(rotation_deg=True),
+            'blank reference': lambda v: v['blocks'][0]['references'].append(''),
+            'no plan hash': lambda v: v.pop('plan_sha256'),
         }
         # A sourced hard class is valid only with its hard enforcement; relabelling it advisory refuses too.
         for name, change in cases.items():
@@ -160,21 +210,25 @@ class ArtifactTests(ProvenanceFixture, unittest.TestCase):
         written = arrangement.validate_provenance(json.loads((root / 'provenance.json').read_text()))
         self.assertEqual([r['block'] for r in written['blocks']], ['Power', 'Sensor'])
         self.assertEqual(written['board_sha256'], plan['board_sha256'])
+        self.assertEqual(written['plan_sha256'], hashlib.sha256((root / 'plan.json').read_bytes()).hexdigest())
+        arrangement.check_roster(written, plan)
 
 
 class ReviewInputTests(ProvenanceFixture, unittest.TestCase):
     """The artifact is a sealed candidate input; build_packet binds it and every initial reviewer receives it."""
 
-    def scope(self, artifact, board_text='(kicad_pcb (version 20260206) (generator "owned"))\n', **changes):
+    def scope(self, artifact, board_text='(kicad_pcb (version 20260206) (generator "owned"))\n', plan_bytes=None,
+              **changes):
         root = Path(tempfile.mkdtemp(prefix='agent-ee-provenance-review-', dir=self.dir))
         source = root / 'source'
         source.mkdir()
         (source / 'pod.kicad_sch').write_text('(kicad_sch (version 20260206))\n')
         (source / 'pod.kicad_pcb').write_text(board_text)
         (source / 'block-provenance.json').write_text(json.dumps(artifact, sort_keys=True))
+        (source / 'placement-plan.json').write_bytes(self.plan_bytes if plan_bytes is None else plan_bytes)
         scope = {'schema': 'agent-ee.scope/1', 'name': 'arranged-blocks', 'scope': 'Arranged block placement review',
                  'schematic': 'project/pod.kicad_sch', 'board': 'project/pod.kicad_pcb',
-                 'block_provenance': 'project/block-provenance.json',
+                 'block_provenance': 'project/block-provenance.json', 'block_plan': 'project/placement-plan.json',
                  'checks': [{'id': 'drc', 'kind': 'drc'}], 'inputs': [{'path': 'source', 'at': 'project'}],
                  'review_profile': json.loads((ROOT / 'profiles/claude.json').read_text())}
         scope.update(changes)
@@ -187,9 +241,7 @@ class ReviewInputTests(ProvenanceFixture, unittest.TestCase):
         return run, manifest, source
 
     def bound(self, board_text='(kicad_pcb (version 20260206) (generator "owned"))\n'):
-        return arrangement.provenance_artifact(
-            self.plan, hashlib.sha256(board_text.encode()).hexdigest(),
-            plan_sha256=blocks.digest(self.plan['block_arrangement']))
+        return self.artifact(board_sha256=hashlib.sha256(board_text.encode()).hexdigest())
 
     def test_every_initial_reviewer_receives_every_block(self):
         artifact = self.bound()
@@ -199,6 +251,9 @@ class ReviewInputTests(ProvenanceFixture, unittest.TestCase):
         self.assertEqual(carried['path'], 'inputs/project/block-provenance.json')
         self.assertEqual(carried['sha256'], manifest['files']['project/block-provenance.json'])
         self.assertEqual(carried['record'], artifact)
+        self.assertEqual(carried['plan'], {'path': 'inputs/project/placement-plan.json',
+                                           'sha256': manifest['files']['project/placement-plan.json']})
+        self.assertEqual(carried['plan']['sha256'], artifact['plan_sha256'])
         # The sealed input is part of candidate identity and of the reviewers' citation inventory.
         self.assertIn('project/block-provenance.json', manifest['files'])
         self.assertIn('inputs/project/block-provenance.json', [f['path'] for f in packet['citation_files']])
@@ -251,12 +306,72 @@ class ReviewInputTests(ProvenanceFixture, unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'does not carry enforcement'):
             build_packet(run, [], 'run-355')
         for bad in ('', ['project/block-provenance.json'], '../escape.json'):
-            with self.subTest(bad), self.assertRaises(ValueError):
+            for key in ('block_provenance', 'block_plan'):
+                with self.subTest(bad=bad, key=key), self.assertRaises(ValueError):
+                    validate_scope({'name': 'n', 'scope': 's', 'schematic': 'a.kicad_sch', 'board': 'a.kicad_pcb',
+                                    'block_provenance': 'p.json', 'block_plan': 'plan.json', key: bad,
+                                    'checks': [{'id': 'drc', 'kind': 'drc'}]})
+        for alone in ({'block_provenance': 'p.json'}, {'block_plan': 'plan.json'}):
+            with self.subTest(alone), self.assertRaisesRegex(ValueError, 'declared together'):
                 validate_scope({'name': 'n', 'scope': 's', 'schematic': 'a.kicad_sch', 'board': 'a.kicad_pcb',
-                                'block_provenance': bad, 'checks': [{'id': 'drc', 'kind': 'drc'}]})
+                                **alone, 'checks': [{'id': 'drc', 'kind': 'drc'}]})
         # Without the declaration the packet carries no block provenance at all.
-        run, _, _ = self.scope(artifact, block_provenance=None)
+        run, _, _ = self.scope(artifact, block_provenance=None, block_plan=None)
         self.assertNotIn('block_provenance', build_packet(run, [], 'run-355'))
+
+    def test_the_packet_is_not_built_from_a_partial_or_relabelled_roster(self):
+        """The artifact's roster is checked against the captured complete plan before packet build."""
+        artifact = self.bound()
+        power2 = next(i for i, r in enumerate(artifact['blocks']) if r['block'] == 'Power2')
+
+        def edited(change):
+            value = copy.deepcopy(artifact)
+            change(value)
+            return arrangement.validate_provenance(value)
+        cases = {
+            # The library-mapped row removed before capture: still a well-formed artifact.
+            'mapped row dropped': (lambda v: v['blocks'].pop(power2), 'roster differs from the placement plan'),
+            'hard relabel': (lambda v: v['blocks'][0].update({'class': 'qualified-owner-board', 'enforcement': 'hard'}),
+                             'differs from the placement plan: class, enforcement'),
+            'pose moved': (lambda v: v['blocks'][0].update(rotation_deg=(v['blocks'][0]['rotation_deg'] + 90) % 360),
+                           'differs from the placement plan: rotation_deg'),
+            'candidate swapped': (lambda v: v['blocks'][0].update(candidate_sha256='0' * 64), 'candidate_sha256'),
+            'references reordered': (lambda v: v['blocks'][power2]['references'].reverse(), 'references'),
+            'mapping swapped': (lambda v: v['blocks'][power2]['mapping'].update(C1='C13', C3='C11'), 'mapping'),
+            'citation edited': (lambda v: v['blocks'][0].update(citation='owner layout'), 'citation'),
+            'other derivation': (lambda v: v.update(derivation_sha256='0' * 64), 'derivation_sha256'),
+            # The fixture's plan grades no block rule; a hard rule cannot be added to its review input.
+            'rule added': (lambda v: v['rules'].append({'rule': 'no_stacking', 'enforcement': 'hard',
+                                                        'status': 'pass'}), "plan's enforcement"),
+        }
+        self.assertEqual(artifact['rules'], [])
+        for name, (change, message) in cases.items():
+            with self.subTest(name):
+                run, _, _ = self.scope(edited(change))
+                with self.assertRaisesRegex(ValueError, message):
+                    build_packet(run, [], 'run-355')
+                self.assertFalse((run / 'packet.json').exists())
+        # The captured plan must be the one the artifact names, and complete.
+        partial = copy.deepcopy(self.plan)
+        partial['block_arrangement']['blocks'] = [b for b in partial['block_arrangement']['blocks']
+                                                  if b['block'] != 'Power2']
+        plan_bytes = self.written(partial)
+        run, _, _ = self.scope(artifact, plan_bytes=plan_bytes)
+        with self.assertRaisesRegex(ValueError, 'describes plan'):
+            build_packet(run, [], 'run-355')
+        rebound = dict(copy.deepcopy(artifact), plan_sha256=hashlib.sha256(plan_bytes).hexdigest())
+        rebound['blocks'].pop(power2)
+        run, _, _ = self.scope(rebound, plan_bytes=plan_bytes)
+        with self.assertRaisesRegex(ValueError, 'different blocks: Power2'):
+            build_packet(run, [], 'run-355')
+        run, _, _ = self.scope(artifact, block_plan='project/missing.json')
+        with self.assertRaisesRegex(ValueError, 'block_plan .* not a captured input'):
+            build_packet(run, [], 'run-355')
+        run, _, _ = self.scope(artifact)
+        plan_path = run / 'inputs/project/placement-plan.json'
+        plan_path.write_bytes(plan_path.read_bytes() + b' ')
+        with self.assertRaisesRegex(ValueError, 'captured block_plan changed'):
+            build_packet(run, [], 'run-355')
 
 
 if __name__ == '__main__':

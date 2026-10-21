@@ -512,7 +512,7 @@ def place_candidate(source, netlist, destination, request):
                     from .block_arrangement import provenance_artifact
                     write_json(scratch / 'block-provenance.json', provenance_artifact(
                         plan, report['board_sha256'], report['judgment']['block_rules'],
-                        digest(scratch / 'placement-plan.json')))
+                        plan_sha256=digest(scratch / 'placement-plan.json')))
                     report['block_provenance_sha256'] = digest(scratch / 'block-provenance.json')
                 if digest(source) != source_hash or netlist.read_bytes() != netlist_bytes:
                     raise ValueError('captured placement inputs changed during execution')

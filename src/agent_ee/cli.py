@@ -397,10 +397,13 @@ def validate_scope(scope):
     for field in ("requirements", "packet_inputs", "packet_artifacts"):
         for rel in scope.get(field, []):
             safe_relative(rel)
-    if "block_provenance" in scope:
-        if not isinstance(scope["block_provenance"], str) or not scope["block_provenance"]:
-            raise ValueError("block_provenance must be a captured input-relative path")
-        safe_relative(scope["block_provenance"])
+    if ("block_provenance" in scope) != ("block_plan" in scope):
+        raise ValueError("block_provenance and its block_plan are declared together")
+    for field in ("block_provenance", "block_plan"):
+        if field in scope:
+            if not isinstance(scope[field], str) or not scope[field]:
+                raise ValueError(f"{field} must be a captured input-relative path")
+            safe_relative(scope[field])
     limit = scope.get("packet_max_bytes", 240_000)
     if not isinstance(limit, int) or not 1024 <= limit <= 1_000_000:
         raise ValueError("packet_max_bytes must be an integer between 1024 and 1000000")

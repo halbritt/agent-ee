@@ -556,7 +556,8 @@ Every placed arranged plan also publishes `block-provenance.json`
 | `position_nm`, `rotation_deg` | The arranged anchor pose |
 
 The top level binds the artifact: `source_sha256` (seed board), `board_sha256`
-(the saved candidate board), `plan_sha256` (`placement-plan.json`),
+(the saved candidate board), the required `plan_sha256` (SHA-256 of the
+written `placement-plan.json` bytes),
 `derivation_sha256`, `policy_sha256`, and `rules` (each block rule's
 enforcement and status on the saved board). `authority` is a fixed statement: the
 artifact is review input only, and an advisory block confers no acceptance.
@@ -565,29 +566,49 @@ The placement plan records the search's wall `elapsed_s`, so `plan_sha256`, and
 with it the artifact's bytes, differ between otherwise identical runs; every
 other field is deterministic.
 The `arrange` CLI writes the same artifact for a planned result with
-`--provenance FILE`; its `board_sha256` is the plan's source board.
+`--provenance FILE`; its `board_sha256` is the plan's source board and its
+`plan_sha256` the hash of the `--out` file.
+
+The producer refuses an incomplete roster: the plan's provenance records
+(`block_arrangement.blocks`) and arranged poses (`block_arrangement.arranged`)
+must name the same nonempty, distinct block ids, and the records' references
+must be exactly the placed members (placements neither fixed nor residual).
 
 `validate_provenance` fails closed. It refuses a class that is unknown or whose
 enforcement is not its class's (`search-derived` must be `advisory`), a mapped
 row without its mapping or an own-board row with one, a mapping that does not
-cover exactly the placed references, shared references, an empty block list,
-an edited authority statement and any unknown key.
+cover exactly the placed references, shared references, a blank block id, a
+pose that is not an integer `[x, y]` with a rotation of 0, 90, 180 or 270, an
+empty block list, a missing `plan_sha256`, an edited authority statement and
+any unknown key. A consistent hard pair (`qualified-owner-board`/`hard`) is a
+valid row; whether a block actually carries it is decided against its plan by
+`check_roster`.
 
-**Reaching the reviewers.** The coordinator captures the saved board and
-`block-provenance.json` as candidate inputs and names the artifact in the scope:
+**Reaching the reviewers.** The coordinator captures the saved board,
+`block-provenance.json` and the complete `placement-plan.json` from the same
+placement as candidate inputs, and names the artifact and its plan in the scope
+(the two keys are declared together):
 
 ```json
-{"board": "pod/candidate.kicad_pcb", "block_provenance": "pod/block-provenance.json"}
+{"board": "pod/candidate.kicad_pcb", "block_provenance": "pod/block-provenance.json",
+ "block_plan": "pod/placement-plan.json"}
 ```
 
 The captured bytes are part of candidate identity. `reviewers.build_packet`
-reads them through `block_arrangement.review_input`, which checks the captured
-digest, validates the artifact and requires its `board_sha256` to be the
-captured `board`. The packet then carries `block_provenance: {path, sha256,
-record}` outside the text budget, so no row is clipped. Every initial reviewer
-receives the same packet; no reviewer sees another's judgment. A declared
-artifact that is not captured, was changed, is malformed or describes another
-board raises, so no packet is built and the review stays incomplete. Without the
+reads them through `block_arrangement.review_input`, which checks both captured
+digests, validates the artifact, and requires its `board_sha256` to be the
+captured `board` and its `plan_sha256` to be the captured plan's bytes. It then
+runs `check_roster`: the plan must pass the producer's completeness checks, the
+artifact's `source_sha256`, `derivation_sha256` and `policy_sha256` must be the
+plan's, every row (block, references, anchor, candidate hash, class,
+enforcement, citation, method, source, reuse, mapping and pose) must equal the
+row derived from the plan, no block may be added or omitted, and each rule keeps
+the plan's enforcement. The packet then carries `block_provenance: {path,
+sha256, record, plan: {path, sha256}}` outside the text budget, so no row is
+clipped. Every initial reviewer receives the same packet; no reviewer sees
+another's judgment. A declared artifact or plan that is not captured, was
+changed, is malformed, omits or relabels a block, or describes another board or
+plan raises, so no packet is built and the review stays incomplete. Without the
 declaration the packet has no `block_provenance`.
 
 ### Real-pod diagnostic (stage B)
