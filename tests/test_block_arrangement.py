@@ -718,6 +718,8 @@ class NativeArrangementTests(unittest.TestCase):
             self.assertEqual(artifact['source_sha256'], request['authorization']['source_sha256'])
             self.assertEqual(artifact['plan_sha256'],
                              hashlib.sha256((scratch / 'arranged/placement-plan.json').read_bytes()).hexdigest())
+            # Its whole roster equals the published complete plan's.
+            arrangement.check_roster(artifact, json.loads((scratch / 'arranged/placement-plan.json').read_text()))
             self.assertEqual([(r['block'], r['candidate_sha256'], r['class'], r['enforcement'], r['reuse'])
                               for r in artifact['blocks']],
                              [(e['candidate']['block_id'], blocks.digest(e['candidate']), 'search-derived',
