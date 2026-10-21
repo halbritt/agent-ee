@@ -4,6 +4,7 @@ Original fixtures: a part whose pad copper reaches beyond its courtyard must
 not be placed with that copper off the board or inside a footprint keep-out.
 """
 import copy
+from fractions import Fraction
 import hashlib
 from pathlib import Path
 import tempfile
@@ -63,6 +64,67 @@ def courtyard_only():
     """The pre-AGENTEE-366 search: no copper gate and no copper alignment."""
     return [patch.object(placer, '_copper_escapes', lambda *a, **k: None),
             patch.object(placer, '_cache_copper_extent', lambda fp: fp.pop('_packing_copper', None))]
+
+
+def _axis_box(poly):
+    xs, ys = sorted({p[0] for p in poly}), sorted({p[1] for p in poly})
+    if len(poly) != 4 or len(xs) != 2 or len(ys) != 2:
+        raise ValueError(f'not an axis-aligned rectangle: {poly}')
+    return xs[0], ys[0], xs[1], ys[1]
+
+
+def copper_violations(capture_, placements):
+    """Pad copper of a plan off the board or in a board copper keep-out.
+
+    Independent of the placer's gate (_copper_box, _cache_copper_extent,
+    _copper_escapes): each pad land is moved with its own quarter turn and
+    boxed here from size_nm and copper_centroid_offset_nm (stock shapes 0, 1,
+    2 and 4), together with every packing_pad_geometry copper polygon, and the
+    exact rational box is compared with the rectangular outline and with every
+    board rule area forbidding footprints on that pad's outer copper layer.
+    Returns (ref, item, box, reason) rows; empty means contained.
+    """
+    poses = {p['ref']: p for p in placements}
+    ox0, oy0, ox1, oy1 = _axis_box(capture_['outline']['polygons'][0])
+    keepouts = [(layer[0], _axis_box(poly)) for area in capture_.get('rule_areas', [])
+                if area.get('owner', 'board') == 'board' and area['forbid'].get('footprints')
+                for layer in area['layers'] if layer in ('F.Cu', 'B.Cu') for poly in area['outline']['polygons']]
+    rows = []
+    for fp in capture_['footprints']:
+        pose = poses.get(fp['ref'], {'position_nm': fp['position_nm'], 'rotation_deg': fp['rotation_deg']})
+        turns = (pose['rotation_deg'] - fp['rotation_deg']) // 90 % 4
+
+        def turn(x, y):
+            for _ in range(turns):
+                x, y = y, -x  # KiCad positive rotation in board coordinates (y down).
+            return x, y
+
+        def move(point):
+            x, y = turn(point[0] - fp['position_nm'][0], point[1] - fp['position_nm'][1])
+            return x + pose['position_nm'][0], y + pose['position_nm'][1]
+
+        items = []
+        for pad in fp['pads']:
+            if pad['shape'] not in (0, 1, 2, 4):
+                raise ValueError(f"{fp['ref']} pad {pad['number']}: shape {pad['shape']} outside this check")
+            cx, cy = move(pad['position_nm'])
+            dx, dy = turn(*(Fraction(*v) for v in pad['copper_centroid_offset_nm']))
+            w, h = pad['size_nm'] if (pad['rotation_deg'] + 90*turns) % 180 == 0 else pad['size_nm'][::-1]
+            box = (cx + dx - Fraction(w, 2), cy + dy - Fraction(h, 2), cx + dx + Fraction(w, 2), cy + dy + Fraction(h, 2))
+            items.append((f"pad {pad['number']}", pad['layers'], box))
+        for entry in fp.get('packing_pad_geometry', {}).get('copper', []):
+            for poly in entry['polygons']:
+                moved = [move(p) for p in poly]
+                items.append(('pad geometry', entry['layers'],
+                              (min(p[0] for p in moved), min(p[1] for p in moved),
+                               max(p[0] for p in moved), max(p[1] for p in moved))))
+        for item, layers, (x0, y0, x1, y1) in items:
+            if x0 < ox0 or y0 < oy0 or x1 > ox1 or y1 > oy1:
+                rows.append((fp['ref'], item, (x0, y0, x1, y1), 'outline'))
+            for side, (kx0, ky0, kx1, ky1) in keepouts:
+                if side + '.Cu' in layers and x0 < kx1 and kx0 < x1 and y0 < ky1 and ky0 < y1:
+                    rows.append((fp['ref'], item, (x0, y0, x1, y1), 'keep-out'))
+    return rows
 
 
 class CopperExtentTest(unittest.TestCase):
@@ -224,6 +286,58 @@ class CopperExtentTest(unittest.TestCase):
         self.assertEqual(placer._copper_sides({'layers': ['*.Cu', '*.Mask']}), (('F', 'B'), True))
         self.assertEqual(placer._copper_sides({'layers': ['In1.Cu']}), ((), True))
 
+
+
+class IndependentCopperCheckTest(unittest.TestCase):
+    """The containment check used by the AGENTEE-366 re-pinned plans is itself sound."""
+
+    def test_moved_lands_agree_with_transform(self):
+        from test_placer_geometry_cost import seeded_board
+        capture_, _ = seeded_board(38)
+        capture_['outline']['polygons'] = [rectangle(-100, -100, 1, 1)]  # every land is reported
+        for rotation in (0, 90, 180, 270):
+            poses = [{'ref': fp['ref'], 'position_nm': [7*MM, 5*MM], 'rotation_deg': rotation}
+                     for fp in capture_['footprints']]
+            rows = {(ref, item): box for ref, item, box, _ in copper_violations(capture_, poses)}
+            for fp in capture_['footprints']:
+                moved = transform(fp, [7*MM, 5*MM], rotation)
+                for pad in moved['pads']:
+                    with self.subTest(rotation=rotation, ref=fp['ref'], pad=pad['number']):
+                        x0, y0, x1, y1 = rows[fp['ref'], 'pad ' + pad['number']]
+                        cx, cy = (p + Fraction(*v) for p, v in zip(pad['position_nm'], pad['copper_centroid_offset_nm']))
+                        self.assertEqual(((x0 + x1) / 2, (y0 + y1) / 2), (cx, cy))
+                        w, h = pad['size_nm'] if pad['rotation_deg'] % 180 == 0 else pad['size_nm'][::-1]
+                        self.assertEqual((x1 - x0, y1 - y0), (w, h))
+
+    def test_superseded_frozen_plans_are_the_courtyard_only_plans_and_leave_the_board(self):
+        import contextlib
+        import random
+        from test_placer_clusters import random_cluster_case
+        from test_placer_geometry_cost import plan_digest, seeded_board
+        # Pins before the AGENTEE-366 re-pin, and the land the independent check flags in each.
+        seeds = {0: ('1240485c5331c844', ('P9', 'pad 3', 'keep-out')),
+                 3: ('f259a365458fe810', ('P2', 'pad 2', 'outline')),
+                 23: ('d811cb743ff8ea89', ('P9', 'pad 2', 'outline')),
+                 38: ('604b78d8b5e25ab8', ('P3', 'pad 1', 'outline'))}
+        clusters = {1: 431, 2: 474}
+        with contextlib.ExitStack() as stack:
+            for mutant in courtyard_only():
+                stack.enter_context(mutant)
+            for seed, (digest, flagged) in seeds.items():
+                with self.subTest(seed=seed):
+                    capture_, policy = seeded_board(seed)
+                    old = pack(capture_, policy)
+                    self.assertEqual(plan_digest(old), digest)
+                    self.assertIn(flagged, {(r, i, why) for r, i, _, why in copper_violations(capture_, old['placements'])})
+            for seed, steps in clusters.items():
+                with self.subTest(cluster_seed=seed):
+                    rng = random.Random(seed)
+                    random_cluster_case(rng)
+                    capture_, policy = random_cluster_case(rng)
+                    old = pack(capture_, policy)
+                    self.assertEqual((old['status'], old['steps_used']), ('planned', steps))
+                    self.assertIn(('C3', 'pad 1', (950000, -50000, 1050000, 50000), 'outline'),
+                                  copper_violations(capture_, old['placements']))
 
 
 class TargetedPlanCopperTest(unittest.TestCase):

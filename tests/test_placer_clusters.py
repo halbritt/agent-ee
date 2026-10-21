@@ -9,6 +9,7 @@ from agent_ee.placer import _pack, pack, transform
 from test_electrical_locality import FIXTURE_SOURCES, board, declaration
 from test_placement import MM, part, rectangle
 from test_placer import request
+from test_placer_copper_extent import copper_violations
 
 
 def clone(fp, ref):
@@ -407,38 +408,41 @@ class ClusterTests(unittest.TestCase):
 
     def test_seeded_legacy_plans_preserve_verdict_placements_and_steps(self):
         # Frozen per-part outputs from ee40bb3579bb00843c34ca9b5dfe60c4f4b8fb52; seeded original multi-member fixtures.
+        # (seed, case) in copper_gated were re-pinned by AGENTEE-366 (coordinator ruling):
+        # their frozen plans put C3's pad 1 copper at y=-50000..50000 nm, off the board.
+        copper_gated = {(1, 1), (2, 1)}
         expected = {1: [{'outcome': 'unknown',
               'placements': [],
               'status': 'packing_budget_exhausted',
               'steps_used': 200},
              {'outcome': 'info',
               'placements': [{'fixed': False,
-                              'position_nm': [2500000, 2500000],
+                              'position_nm': [2500000, 2550000],
                               'ref': 'C1',
                               'rotation_deg': 0,
                               'uuid': 'C1'},
                              {'fixed': False,
-                              'position_nm': [0, 2500000],
+                              'position_nm': [0, 2550000],
                               'ref': 'C2',
                               'rotation_deg': 0,
                               'uuid': 'C2'},
                              {'fixed': False,
-                              'position_nm': [0, 0],
+                              'position_nm': [0, 50000],
                               'ref': 'C3',
                               'rotation_deg': 0,
                               'uuid': 'C3'},
                              {'fixed': False,
-                              'position_nm': [5000000, 2000000],
+                              'position_nm': [5000000, 2050000],
                               'ref': 'C4',
                               'rotation_deg': 90,
                               'uuid': 'C4'},
                              {'fixed': False,
-                              'position_nm': [2500000, 2000000],
+                              'position_nm': [2500000, 2050000],
                               'ref': 'U1',
                               'rotation_deg': 90,
                               'uuid': 'U1'}],
               'status': 'planned',
-              'steps_used': 431},
+              'steps_used': 3738},
              {'outcome': 'info',
               'placements': [{'fixed': False,
                               'position_nm': [14000000, 12500000],
@@ -610,47 +614,47 @@ class ClusterTests(unittest.TestCase):
               'steps_used': 12},
              {'outcome': 'info',
               'placements': [{'fixed': False,
-                              'position_nm': [0, 2500000],
+                              'position_nm': [2000000, 7500000],
                               'ref': 'C1',
-                              'rotation_deg': 0,
+                              'rotation_deg': 180,
                               'uuid': 'C1'},
                              {'fixed': False,
-                              'position_nm': [2500000, 3000000],
+                              'position_nm': [4500000, 6500000],
                               'ref': 'C2',
-                              'rotation_deg': 0,
+                              'rotation_deg': 180,
                               'uuid': 'C2'},
                              {'fixed': False,
-                              'position_nm': [0, 0],
+                              'position_nm': [0, 8000000],
                               'ref': 'C3',
                               'rotation_deg': 0,
                               'uuid': 'C3'},
                              {'fixed': False,
-                              'position_nm': [0, 5000000],
+                              'position_nm': [0, 0],
                               'ref': 'R0',
                               'rotation_deg': 0,
                               'uuid': 'R0'},
                              {'fixed': False,
-                              'position_nm': [0, 7500000],
+                              'position_nm': [0, 2500000],
                               'ref': 'R1',
                               'rotation_deg': 0,
                               'uuid': 'R1'},
                              {'fixed': False,
-                              'position_nm': [2500000, 5500000],
+                              'position_nm': [2500000, 0],
                               'ref': 'R2',
                               'rotation_deg': 0,
                               'uuid': 'R2'},
                              {'fixed': False,
-                              'position_nm': [2500000, 8000000],
+                              'position_nm': [5000000, 0],
                               'ref': 'R3',
                               'rotation_deg': 0,
                               'uuid': 'R3'},
                              {'fixed': False,
-                              'position_nm': [2500000, 2500000],
+                              'position_nm': [2500000, 9000000],
                               'ref': 'U1',
                               'rotation_deg': 90,
                               'uuid': 'U1'}],
               'status': 'planned',
-              'steps_used': 474},
+              'steps_used': 473},
              {'outcome': 'info',
               'placements': [{'fixed': False,
                               'position_nm': [0, 2500000],
@@ -790,6 +794,8 @@ class ClusterTests(unittest.TestCase):
                         planned += 1
                         for key in ('status', 'outcome', 'steps_used', 'placements'):
                             self.assertEqual(result[key], legacy[key], key)
+                        if (seed, i) in copper_gated:
+                            self.assertEqual(copper_violations(source, result['placements']), [])
                     if result['status'] == 'planned':
                         self.assertEqual(result['locality_grading']['status'], 'pass')
                         poses = {p['ref']: p for p in result['placements']}

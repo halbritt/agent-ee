@@ -837,8 +837,24 @@ changes for seeds 0, 3, 23 and 38 only: the pinned plan puts 0.2 mm lands up to
 results remain `planned`. Likewise, in `tests.test_placer_clusters`
 `test_seeded_legacy_plans_preserve_verdict_placements_and_steps`, the frozen
 plans for seed 1 case 1 and seed 2 case 1 put C3's copper 0.05 mm off the board.
-Gated, both stay `planned`/`info`, with other placements and step counts. These
-pins are left for an integrator ruling.
+Gated, both stay `planned`/`info`, with other placements and step counts. By
+coordinator ruling these six pins were re-pinned to the gated results, and only
+these six. Each re-pinned plan is also checked by `copper_violations` in
+`tests/test_placer_copper_extent.py`. That check is independent of the placer's
+gate: it boxes every moved land from its own record and compares it with the
+outline and the board copper keep-outs.
+`IndependentCopperCheckTest` reproduces each superseded pin with the
+courtyard-only search and shows the check flags it.
+
+A failed copper-aligned pass is not reported in the result. Any added field,
+including one outside `search`, breaks the whole-result legacy-first identity
+pinned by `test_cluster_guard_is_unknown_and_cleans_up_partial_state` and
+`test_seeded_legacy_first_differential_preserves_whole_results` (cases 1:3 and
+1:5). The steps it spends are therefore not visible in the failure record.
+
+A fixed part's copper is taken as given. In seed 4, fixed `P0` has a land
+0.055 mm past the board edge in the input itself, and the plan reports it
+unchanged.
 
 Boundaries. Malformed `size_nm`, `copper_centroid_offset_nm` or `layers`
 return `unsupported_geometry`, `outcome=unknown`. A pad record without the

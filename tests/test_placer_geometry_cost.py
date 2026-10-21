@@ -17,6 +17,7 @@ from agent_ee.placement_predicates import segment_distance2
 from agent_ee.placer import _fits, pack, transform
 from test_placement import MM, capture, polygon, rectangle
 from test_placer import request
+from test_placer_copper_extent import copper_violations
 
 
 def seeded_board(seed):
@@ -89,11 +90,13 @@ def plan_digest(result):
 
 
 # Digests of pack(*seeded_board(seed)) computed with the ac662ff packer (before this change).
+# Seeds in COPPER_GATED were re-pinned by AGENTEE-366 (coordinator ruling): their ac662ff
+# plans put pad copper off the board or in the board F.Cu keep-out.
 PINNED = {
-    0: '1240485c5331c844',
+    0: 'd4f80f98aa3a1a0c',
     1: '0d5aa4f15a941cc0',
     2: 'ae08e933892b1e88',
-    3: 'f259a365458fe810',
+    3: 'fa3fa6268bd1e59b',
     4: '09b23360d8a95cc5',
     5: '3c46df6fd9305d1a',
     6: 'd313f75a3cfdbd56',
@@ -113,7 +116,7 @@ PINNED = {
     20: 'a60a301148bd0d50',
     21: '866791f48730197e',
     22: '95ccca70a8e1aab2',
-    23: 'd811cb743ff8ea89',
+    23: 'a4775eb9502b93d9',
     24: 'aa3fd93efc95a660',
     25: '8ca216b473944963',
     26: '1077b78a42c5b39a',
@@ -128,9 +131,10 @@ PINNED = {
     35: '3e1e3826b8410485',
     36: 'a8ca538f90429ba5',
     37: '29de9f60e3175c54',
-    38: '604b78d8b5e25ab8',
+    38: 'f15cdc5daa4d3922',
     39: '9bf5febe723a0055',
 }
+COPPER_GATED = {0, 3, 23, 38}
 
 
 def oracle_transform(fp, position, rotation):
@@ -352,6 +356,9 @@ class SeededPackDifferentialTests(unittest.TestCase):
             statuses.add(result['status'])
             with self.subTest(seed=seed, status=result['status']):
                 self.assertEqual(plan_digest(result), pinned)
+                if seed in COPPER_GATED:
+                    self.assertEqual((result['status'], result['outcome']), ('planned', 'info'))
+                    self.assertEqual(copper_violations(board, result['placements']), [])
         self.assertIn('planned', statuses)
 
 
