@@ -52,6 +52,9 @@ def validate(document):
         if any(supply[k]['reference'] == ground[k]['reference']
                and supply[k]['pad'] == ground[k]['pad'] for k in ('from', 'to')):
             raise ValueError('supply and return must select distinct physical pads')
+        if (supply['from']['reference'] != ground['from']['reference']
+                and {supply[k]['net'] for k in ('from', 'to')} & {ground[k]['net'] for k in ('from', 'to')}):
+            raise ValueError('distinct-source supply and return nets must differ')
         loop_fields = {'kind', 'ic', 'inductor', 'return_net'}
         if loop_fields & obligation.keys():
             if (not loop_fields <= obligation.keys() or obligation['kind'] != 'buck-output-loop'
@@ -71,6 +74,9 @@ def validate(document):
             if ('switch' in obligation
                     and obligation['switch']['to']['reference'] != obligation['inductor']):
                 raise ValueError('loop switch must end at the declared inductor')
+            if ('switch' in obligation and {obligation['switch'][k]['net'] for k in ('from', 'to')}
+                    & ({supply[k]['net'] for k in ('from', 'to')} | {obligation['return_net']})):
+                raise ValueError('loop switch nets must differ from supply and return')
         if 'switch' in obligation and obligation['switch']['from']['reference'] != ground['from']['reference']:
             raise ValueError('switch pair must start at the declared IC')
     return document
@@ -196,6 +202,7 @@ class PlacementIndex:
     that footprint. Candidate evaluators contain only incident, placed pairs.
     """
     def __init__(self, document):
+        validate(document)
         self.pairs = {}
         self.endpoints = {}
         self.positions = {}
