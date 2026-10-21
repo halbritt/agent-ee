@@ -604,12 +604,12 @@ def copper_setback_record(capture):
 
 
 def copper_setback_missing(footprints):
-    """Typed-unknown reason when a part's copper leaves its courtyards and the board setback is unknown."""
+    """Typed-unknown reason when a part has bounded copper and the board setback is unknown."""
     refs = sorted(fp['ref'] for fp in footprints
                   if fp.get('_packing_copper', {}).get('outline') and fp.get('_packing_copper_setback') is None)
     if refs:
-        return (f"copper setback unknown: the placement facts carry no board max_error_nm (m_MaxError) "
-                f"and copper of {', '.join(refs)} leaves its courtyard")
+        return (f"copper setback unknown: the placement facts carry no board max_error_nm (m_MaxError), "
+                f"so the copper of {', '.join(refs)} is not proven to stay the setback inside the outline")
     return None
 
 
@@ -624,14 +624,16 @@ def _cache_copper_extent(fp):
     ``outline`` holds every copper box that lies in no courtyard polygon of the
     part at the copper setback S (the box grown by S fits the courtyard): such a
     box is at least S inside the outline whenever that courtyard is inside it.
-    Without a known S the test is closed containment, and any box it leaves
-    makes the search typed unknown (copper_setback_missing).
+    Without a known S no courtyard discharges it: every box is kept, and the
+    search is typed unknown (copper_setback_missing). A hand-built record with
+    no native land facts has no box (_copper_box) and caches nothing.
     ``sides`` holds, per outer copper side, the boxes outside that side's
-    courtyards, for that side's footprint keep-outs. A part whose copper lies in
-    its courtyards caches nothing, and its search is the courtyard-only one.
+    courtyards, for that side's footprint keep-outs. With S known, a part whose
+    copper lies in its courtyards caches nothing, and its search is the
+    courtyard-only one.
     """
     fp.pop('_packing_copper', None)
-    setback = fp.get('_packing_copper_setback') or 0
+    setback = fp.get('_packing_copper_setback')
     polygons = [(side, p) for side, c in fp['courtyards'].items() for p in c['polygons']]
     outline, sides = [], {}
     for pad in fp['pads']:
@@ -642,8 +644,8 @@ def _cache_copper_extent(fp):
         x0, y0, x1, y1 = box
         poly = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
         inside = {side for side, p in polygons if _fits({'courtyards': {'': {'polygons': [poly]}}}, p)}
-        grown = [_inflate(poly, setback)] if setback else [poly]
-        if not any(_fits({'courtyards': {'': {'polygons': grown}}}, p) for _, p in polygons):
+        if setback is None or not any(_fits({'courtyards': {'': {'polygons': [_inflate(poly, setback)]}}}, p)
+                                      for _, p in polygons):
             outline.append(poly)
         for side in on:
             if side not in inside:

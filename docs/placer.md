@@ -879,15 +879,18 @@ and S = `max_error_nm` + 50 nm. `placement_probe` reads `max_error_nm` from the
 saved board's design settings into the placement facts. A copper-aligned plan
 records `search.copper_aligned.copper_setback` (`setback_nm`, `max_error_nm`,
 `report_window_nm` and the source). A capture without `max_error_nm` has no
-default. When a movable part's copper leaves its courtyards (and, in block
-arrangement, any non-fixed member's copper), the search returns
-`unsupported_geometry`, `outcome=unknown` ("copper setback unknown"). A
+default, and no courtyard can then discharge S: every copper box of the part is
+kept as unproven, even one inside its courtyard. When a movable part (and, in
+block arrangement, any non-fixed member) has such copper, the search returns
+`unsupported_geometry`, `outcome=unknown` ("copper setback unknown: the
+placement facts carry no board max_error_nm"). A
 targeted plan reports `missing coverage: <ref>: copper setback unknown`. A
 malformed value (negative, or not an integer) is also `unsupported_geometry`.
 Block packing (`blocks.pack_block`) copies `max_error_nm` into the isolated
-capture when the board has it, so the same setback applies there. Without the fact, the in-courtyard exemption uses closed containment. That only
-matters for hand-built records, because native extraction always records the
-value. Edge-clearance limits keep their AGENTEE-331 provenance grading,
+capture when the board has it, so the same setback applies there. Native
+extraction always records the value, so a missing fact means edited or
+hand-built facts. A hand-built pad record with no native land fact has no copper
+box (ruling 366d, below) and keeps the courtyard-only search without the fact. Edge-clearance limits keep their AGENTEE-331 provenance grading,
 unchanged. On each outer copper side (`F.Cu`, `B.Cu`, `*.Cu`), boxes
 outside that side's courtyards must avoid footprint-forbidding keep-outs on
 that side. Board keep-outs, placed owners' keep-outs and a moving owner's

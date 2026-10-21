@@ -1781,7 +1781,7 @@ outline and out of same-side footprint keep-outs during packing, block
 arrangement and targeted plans. That copper is also held a structural setback
 of the board `m_MaxError` plus 50 nm inside the outline, so it composes with the
 AGENTEE-331 publication gate. The setback is typed unknown when the facts lack
-`max_error_nm`. Parts whose copper lies in their courtyards plan as before. This adds no registered check or acceptance predicate.
+`max_error_nm`, for in-courtyard copper as well. With the fact present, parts whose copper lies in their courtyards plan as before. This adds no registered check or acceptance predicate.
 
 ## Copper feature consumers (AGENTEE-315)
 

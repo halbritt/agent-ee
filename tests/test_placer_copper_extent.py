@@ -353,10 +353,18 @@ class CopperExtentTest(unittest.TestCase):
                 self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
                                  ('unsupported_geometry', 'unknown', []), plan)
                 self.assertIn('max_error_nm', plan['reason'])
-        # Copper inside its courtyard needs no setback fact: the courtyard-only search, unchanged.
+        # Copper inside its courtyard is unproven too: with S unknown, no courtyard can show it
+        # stays S inside the outline (AGENTEE-366 review H1; ruling 366e: no silent default).
         pads = [{'uuid': 'C1-1', 'number': '1', 'net': '', 'position_nm': [0, 0], 'shape': 1, 'rotation_deg': 0,
                  'size_nm': [600_000, 400_000], 'layers': ['F.Cu'], 'copper_centroid_offset_nm': [[0, 1], [0, 1]]}]
         plan = self.pack(board([offset_part(pads=pads)], max_error=None), request(fixed_refs=[]))
+        self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                         ('unsupported_geometry', 'unknown', []), plan)
+        self.assertIn('max_error_nm', plan['reason'])
+        # A hand-built record without any native land fact (ruling 366d) has no copper box:
+        # the courtyard-only search, unchanged.
+        legacy = [{k: v for k, v in pads[0].items() if k != 'copper_centroid_offset_nm'}]
+        plan = self.pack(board([offset_part(pads=legacy)], max_error=None), request(fixed_refs=[]))
         self.assertEqual(plan['status'], 'planned', plan)
 
     def test_copper_within_the_setback_of_its_courtyard_edge_is_gated(self):
@@ -374,6 +382,18 @@ class CopperExtentTest(unittest.TestCase):
         plan = self.pack(capture_, request(fixed_refs=[]))
         self.assertEqual(plan['status'], 'planned', plan)
         self.assertGreaterEqual(extent(placed(capture_, plan))[0], SETBACK)
+        # Without the board's max_error_nm, closed containment never discharges S (review H1):
+        # the box is kept as unproven and the search is typed unknown.
+        fp = offset_part(pads=pads)
+        fp['_packing_copper_setback'] = None
+        placer._cache_copper_extent(fp)
+        self.assertEqual(len(fp['_packing_copper']['outline']), 1)
+        capture_ = board([offset_part(pads=pads)], max_error=None)
+        plan = self.pack(capture_, request(fixed_refs=[]))
+        self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                         ('unsupported_geometry', 'unknown', []), plan)
+        self.assertIn('copper setback unknown: the placement facts carry no board max_error_nm', plan['reason'])
+        self.assertNotIn('leaves its courtyard', plan['reason'])
 
     def test_copper_aligned_plan_records_the_setback_and_its_sources(self):
         plan = self.pack(board([offset_part()]), request(fixed_refs=[]))
@@ -830,6 +850,40 @@ class NativeStockLandTest(NativeBoard, unittest.TestCase):
             self.assertIn('copper_land_offset_nm', pad)
         # Before H1, a land without a centroid was no constraint: courtyard-only gating.
         self.boundary('rounded-chamfer', configure, 4 * MM, check_facts, courtyard_only)
+
+    def test_missing_board_setback_refuses_copper_near_its_courtyard_edge(self):
+        # Native circles 1 nm inside the courtyard edges (AGENTEE-366 review H1): only the
+        # board's max_error_nm is withheld, and the planner and the writer return typed unknown.
+        from agent_ee import placer_runner
+        from agent_ee.placement_probe import extract
+
+        def configure(k, pad):
+            pad.SetShape(k.F_Cu, k.PAD_SHAPE_CIRCLE)
+            pad.SetSize(k.F_Cu, k.VECTOR2I(1_000_000, 1_000_000))
+        source = self.stock_source('near-courtyard', 0, False, configure, 1_499_999)
+        facts = extract(source)
+        setback = self.setback(source, facts)
+        missing = copy.deepcopy(facts)
+        del missing['max_error_nm']
+        plan = pack(missing, request(fixed_refs=[]))
+        self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
+                         ('unsupported_geometry', 'unknown', []), plan)
+        self.assertIn('no board max_error_nm', plan['reason'])
+
+        def without_setback(path):
+            result = extract(path)
+            del result['max_error_nm']
+            return result
+        with patch.object(placer_runner, 'extract', without_setback):
+            report = self.place(source, 'missing-fact')
+        self.assertEqual((report['status'], report['outcome']), ('unsupported_geometry', 'unknown'), report)
+        self.assertFalse((self.scratch / 'missing-fact').exists())
+        # The extracted fact: the same part publishes with its copper the setback inside the outline.
+        report = self.place(source, 'known-fact')
+        self.assertEqual((report['status'], report['outcome'], report['open_defects']), ('placed', 'info', []), report)
+        x0, y0, x1, y1 = self.saved_lands(self.scratch / 'known-fact' / 'candidate.kicad_pcb')
+        self.assertTrue(setback <= x0 and setback <= y0 and x1 <= 20 * MM - setback and y1 <= 20 * MM - setback,
+                        (x0, y0, x1, y1, setback))
 
     def test_unequal_size_circle_is_bounded_by_its_x_diameter(self):
         def configure(k, pad):
