@@ -1922,9 +1922,13 @@ Masked-track edits on nets whose names contain `#` or `;` (for example `CS#`
 or `A;B`) never receive the exemption, even when KiCad writes the net name as a
 quoted string. Such edits reopen closure and require a fresh receipt. This is a
 conservative liveness bound of the writer grammar (AGENTEE-360).
-Nested-list children of a segment or arc refuse comparison with `ValueError`;
-the coordinator retains the carried defect instead of letting an untyped error
-escape.
+A segment or arc refuses comparison with `ValueError` when a child is
+list-headed (for example `((x))`) or when a value of a `start`, `end`, `mid`,
+`width`, `layer`, `net`, `uuid` or `locked` child is a nested list (for example
+`(start (1) 2)`), on any layer. Nested lists inside unknown track children are
+not refused: those children stay in the exact comparison. The coordinator
+retains the carried defect instead of letting an untyped error escape
+(AGENTEE-364).
 
 ## Design-rule provenance (AGENTEE-331)
 

@@ -332,6 +332,10 @@ def same_artwork(before, after):
                 if any(isinstance(n, list) and n and isinstance(n[0], list) for n in node[1:]):
                     raise ValueError('artwork comparison refuses nested-list track child')
                 allowed = {'start', 'end', 'mid', 'width', 'layer', 'net', 'uuid', 'locked'}
+                # KiCad refuses such boards; an exempt span must never hide a nested value.
+                if any(isinstance(n, list) and n and n[0] in allowed and
+                       any(isinstance(v, list) for v in n[1:]) for n in node[1:]):
+                    raise ValueError('artwork comparison refuses nested-list track child value')
                 layers = children(node, 'layer')
                 if (len(layers) == 1 and len(layers[0]) == 2 and
                         layers[0][1] in ('F.Cu', 'B.Cu', *(f'In{i}.Cu' for i in range(1, 31))) and
