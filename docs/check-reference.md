@@ -1,5 +1,10 @@
 # Native and engineering checks
 
+The [purpose review](purpose-review.md) asks independent reviewers to justify
+constraints, reserves, empty fields and interface poses using captured geometry
+and renders. It adds an advisory packet dimension, not a check kind or acceptance
+limit; estimated savings remain concerns beside correctness findings.
+
 The [pinned fome-mc wideband fixture](fome-wbo1.md) exercises native ERC,
 netlist export, `hardware_interface` and fresh `block_provenance`. Its coverage
 ledger keeps upstream parity, active behavior, parts and heater geometry unknown;

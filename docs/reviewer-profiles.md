@@ -45,7 +45,10 @@ mandatory (a `lens` only adds emphasis) and it returns a structured
 complete without it. [`profiles/pod-review.json`](../profiles/pod-review.json)
 adds it for the telemetry pod; see [budget implications](rf-review.md#profiles-pod-wiring-and-budget). Roles must be distinct safe lowercase IDs; `adjudicator` is reserved.
 At least two reviewers are required. Optional reviewer `lens` replaces its
-built-in circuit/physical lens. Harness, native model, effort and timeout are
+built-in circuit/physical lens. The [placement purpose brief](purpose-review.md)
+remains mandatory for every initial role even with a custom lens; supported
+area and routability suggestions remain advisory beside correctness findings.
+Harness, native model, effort and timeout are
 required for every reviewer and adjudicator. Timeouts are finite 1–3600 seconds,
 further bounded by the run deadline. Supported effort values are low/medium/high/
 max for Claude, and low/medium/high/xhigh/max for Codex and Agy. Agy's model suffix
