@@ -1689,12 +1689,21 @@ release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
 
 The fab, `rung1_campaign`, `rung1_qualified`, `rung1_stages`, pod scaffold/constraint, envelope-content, schematic emission/annotation, `add_planes` and `binding_fill` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file. `tests.test_tool_source` discovers source-mount constructors across `src/agent_ee` and exercises every discovered builder against an original source fixture. It also proves prune-after-verified-reuse retention and exclusion of a concurrent prune during a real sandboxed step.
 
-AGENTEE-327 host validation refuses mounts equal to or containing the package
-`src` tree, including resolved parent and symlink aliases, with
+AGENTEE-327/329 host validation refuses mounts equal to, containing, or inside the
+package `src` tree, including resolved parent and symlink aliases, with
 `live_package_source:<at>` before execution. Retained receipt replay stays
 host-independent. `tests.test_stage_receipts.StepDeclarationTests` covers refusal
 and snapshot admission; `tests.test_tool_source` validates all registered step
-builders against this runtime guard.
+builders against this runtime guard. AGENTEE-329 also refuses bind aliases of
+`src`, its ancestors and descendants by device/inode (including ancestors of
+the mount source). It binds opened, identity-checked descriptors using bwrap
+`--ro-bind-fd` and verifies the actual mounted identities inside the sandbox
+before executing either command, covering bwrap versions that canonicalize fd
+sources to pathnames. Directory
+sources containing submounts are conservatively refused, including same-device
+bind mounts. The three qualified canonical routing helper files and the
+mount-namespace authority limit are recorded in
+[stage receipts](stage-receipts.md#python-tool-source-snapshots).
 
 Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain
 an `acquisitions` map with acquisition method and redirect provenance, including
@@ -1761,48 +1770,82 @@ predicate are respectively that path and `placement:electrical-locality/1`.
 See the [declaration, verdicts and separate packer constraint](placer.md#pad-level-electrical-locality-agentee-322).
 Supply and return are mandatory and switch/inductor pairs optional. The native
 copper-land centroid metric preserves proved defects alongside unknowns;
-missing limits or citations stay unknown. Optional captured pad `uuid` selectors
+missing limits stay unknown; hard enforcement also requires a citation. Optional captured pad `uuid` selectors
 must also match the declared reference, number and net; unselected duplicate
 pad numbers refuse. Native copper offsets participate in the distance, and
 unqualified centroid geometry stays unknown. Coordinator packing derives its
 obligations from the same immutable locality file, recording its raw hash in
 `electrical_locality_binding`; the check judgment records `locality: {path,
 sha256}` (AGENTEE-328). The engineer declares limits and citation locators;
-the check never supplies a manufacturer radius or verifies cited prose.
+the check never infers an electrical maximum from manufacturer spacing or prose.
 Origin-group success supplies no electrical-locality acceptance.
 AGENTEE-337 adds [numeric provenance and manufacturing floors](placer.md#locality-provenance-agentee-337):
 legacy or unsourced bounds report defect-level `unsourced` advisories with `info`
 when no hard defect/unknown exists; these never block publication. Datasheet
 numeric/scale derivations and owner decision references retain hard constraints.
 Captured JLCPCB different-net PCB clearance computes a necessary copper floor and
-refuses an explicit manufacturer bound below it as `locality_infeasible`.
+refuses hard sourced or explicit manufacturer bounds below it as `locality_infeasible`.
 Assembly package spacing produces advisory estimates only, because native lands
 do not establish physical body/lead extents. The exact
 whole-footprint manufacturing minimum remains unqualified; unknown package
 combinations never inherit an invented value.
+
+AGENTEE-337 locality info summaries report total and exceeded advisory counts.
+Joint-cluster bounds prune only with hard provenance. Missing advisory citations
+and geometry-unknown manufacturer floors stay advisory; absent numeric maxima
+and captured manufacturer-record integrity failures retain unknown coverage.
+A sourced bound below the necessary copper floor is `locality_infeasible`.
+The block candidate admission gap is recorded in [locality provenance](placer.md#locality-provenance-agentee-337).
+
+AGENTEE-330 permits different `supply.from` and `return.from` references,
+retaining the same capacitor destination and exact pad/net/UUID validation.
+AGENTEE-334 adds `kind: buck-output-loop` with explicit `ic`, `inductor`, and
+`return_net` declarations. Supply starts at that inductor; return starts at
+that IC. Optional switch starts at the IC and ends at the same inductor.
+Return endpoints use the declared return net, distinct from supply. Inconsistent
+bindings refuse validation. Untyped obligations keep their generic pair
+semantics and existing verdicts. Both legs remain jointly graded and constrained;
+missing bounds stay unknown. See
+[buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
+for the schema, retained owned evidence and committed pod packet locator.
+
+Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
+Multi-member components use [joint cluster search](placer.md#joint-locality-clusters-agentee-335)
+after per-part search fails, with tightest-limit-first peers and only the remaining
+step/time budget. Joint refusals retain the legacy typed failure and cluster
+diagnostics in `search.joint_cluster_attempt`; only regraded completions replace it.
+AGENTEE-347 regressions exercise complete-proposal locality rejection on both
+engines and public `pack()`, whole-result legacy preservation under the cluster
+guard (including `locality_clusters`, excluding only `joint_cluster_attempt`),
+and a seeded 22-case differential including an independently regraded joint
+completion (seed 2, case 55).
+The per-rotation cap of 256 distinct locality origins refuses with
+`packing_budget_exhausted`, `outcome=unknown`, empty placements and reason
+`locality target budget exhausted`; it never truncates targets. Runner heartbeats
+go to stderr, preserving the single JSON summary on `board_build` stdout.
+Heartbeat and partial search results are diagnostics with no acceptance authority;
+the full independent locality check still grades every declared role.
 
 ## Post-placement silk publication gate (AGENTEE-320)
 
 The [artwork pass](silk-artwork.md) uses native field bounds to search for
 position-only Reference/Value relocations after placement. Extra custom fields
 need a footprint declaration. Every other text property and all graphics remain
-unchanged. Fresh native DRC against the immutable baseline gates publication on
-added `silk_overlap` and `silk_over_copper`; unresolved conflicts retain typed
-`placement_silkscreen_conflict` diagnostics with the native items. Explicitly
+unchanged. Fresh native DRC against the immutable baseline records added
+`silk_overlap` and `silk_over_copper`. Silk-only proposals publish with typed
+`placement_silkscreen_conflict` open defects, each with `verdict: defect` and
+`status: open`, in both `native_drc_comparison.open_defects` and the placement
+receipt `open_defects`. Their receipt outcome/verdict is `defect`. This separates
+placement feasibility from fab legibility. The coordinator captures validated
+helper receipts and artwork under `placement-evidence`, with ordered
+`placement_provenance` links in successor scopes (AGENTEE-333). Verification/fab
+stages and fab export, package, consistency, CPL and JLC DFM checks refuse open
+carry with typed field/graphic identities and source receipts. The evidence seal
+reconstructs these refusals; release artifact extraction also refuses open carry.
+Uncarried baseline findings retain their existing verdicts. Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.
 Side-flipped footprints' fields remain unchanged with typed conflicts. Source
 project/rule bytes are restored after the native save. Placement-added
 `silk_edge_clearance` remains reported with its existing grading. This
 producer gate does not alter registered DRC verdicts or waive baseline defects.
-
-AGENTEE-330 permits different `supply.from` and `return.from` references for
-buck output loops, retaining the same capacitor destination and exact pad/net/
-UUID validation. Optional `switch.from` names the return-source IC. Both roles
-remain jointly graded and constrained; missing loop bounds stay unknown. See
-[buck output-capacitor loops](placer.md#buck-output-capacitor-loops-agentee-330)
-for declaration semantics, owned regressions and read-only pod measurements.
-
-Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
-Heartbeat and partial search results are diagnostics with no acceptance authority;
-the full independent locality check still grades every declared role.

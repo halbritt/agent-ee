@@ -51,6 +51,75 @@ class LocalityProvenanceTests(unittest.TestCase):
             self.assertEqual(plan['status'], 'planned', plan)
             self.assertEqual(plan['locality_grading']['status'], 'info')
 
+    def test_owner_label_variants_stay_advisory(self):
+        facts, doc = board(), declaration(limit=MM)
+        doc['source_records'] = {**doc['source_records'], source()['path']: source()['quote']}
+        for owner in ('Design Owner', 'DESIGN_OWNER', 'designowner', 'design-owner'):
+            with self.subTest(owner=owner):
+                for role in ('supply', 'return'):
+                    doc['obligations'][0][role]['provenance'] = {
+                        'class': 'owner', 'basis': 'self assertion',
+                        'decision_reference': {**source(), 'owner': owner}}
+                self.assertEqual(locality.grade(facts, doc)['status'], 'info')
+
+    def test_uncited_advisory_plans_but_missing_maximum_stays_unknown(self):
+        facts, doc = board(), declaration(limit=0)
+        for role in ('supply', 'return'):
+            pair = doc['obligations'][0][role]
+            pair.pop('provenance')
+            pair.pop('citation')
+        result = locality.grade(facts, doc)
+        self.assertEqual(result['status'], 'info')
+        self.assertTrue(all(a['exceeded'] for a in result['advisories']))
+        self.assertEqual(pack(facts, request(electrical_locality=doc))['status'], 'planned')
+        doc['obligations'][0]['supply'].pop('max_distance_nm')
+        result = locality.grade(facts, doc)
+        self.assertEqual(result['status'], 'unknown')
+        self.assertEqual(len(result['unknown']), 1)
+
+    def test_geometry_unknown_manufacturer_is_advisory(self):
+        facts, doc = board(), declaration(limit=0)
+        for fp in facts['footprints']:
+            for pad in fp['pads']:
+                pad['shape'] = 3  # Trapezoid centroid known; copper floor unsupported.
+        for role in ('supply', 'return'):
+            doc['obligations'][0][role]['provenance'] = {
+                'class': 'manufacturer', 'basis': 'agent manufacturing label'}
+        result = locality.grade(facts, doc)
+        self.assertEqual(result['status'], 'info')
+        self.assertTrue(all(a['manufacturing_floor']['status'] == 'unknown'
+                            and a['exceeded'] and not a['below_floor'] for a in result['advisories']))
+        self.assertFalse(locality.constraint(facts['footprints'], facts['footprints'][1], doc)[0])
+
+    def test_sourced_infeasibility_and_advisory_below_floor(self):
+        for kind in ('owner', 'datasheet', 'default'):
+            with self.subTest(kind=kind):
+                facts, doc = board(), declaration(limit=1000)
+                facts['footprints'][0]['pads'][0]['size_nm'] = [1500000, 1500000]
+                facts['footprints'][1]['pads'][1]['size_nm'] = [1500000, 1500000]
+                text = 'Original numeric requirement: 1000 nm'
+                doc['source_records'] = {**doc['source_records'], source(text)['path']: text}
+                for role in ('supply', 'return'):
+                    pair = doc['obligations'][0][role]
+                    if kind == 'owner':
+                        pair['provenance'] = {'class': 'owner', 'basis': 'fixture requirement',
+                            'decision_reference': {**source(text), 'owner': 'fixture author'}}
+                    elif kind == 'datasheet':
+                        pair['provenance'] = {'class': 'datasheet', 'basis': 'fixture number',
+                            'derivation': {'kind': 'numeric', 'value_nm': 1000, 'source': source(text)}}
+                    else:
+                        pair.pop('provenance')
+                result = locality.grade(facts, doc)
+                self.assertTrue(all(m['manufacturing_floor']['floor_nm'] == 650000
+                                    for m in result['measured']))
+                if kind == 'default':
+                    self.assertEqual(result['status'], 'info')
+                    self.assertTrue(all(a['below_floor'] for a in result['advisories']))
+                else:
+                    self.assertEqual([d['kind'] for d in result['defects']], ['locality_infeasible'] * 2)
+                    refusal = pack(facts, request(electrical_locality=doc))
+                    self.assertEqual((refusal['status'], refusal['outcome']), ('locality_infeasible', 'defect'))
+
     def test_numeric_datasheet_and_owner_decision_block(self):
         for kind in ('datasheet', 'owner'):
             facts, doc = board(), declaration(limit=MM)

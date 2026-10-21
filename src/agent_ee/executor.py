@@ -2,6 +2,7 @@
 
 import contextlib
 import hashlib
+import json
 import os
 import secrets
 import signal
@@ -19,9 +20,33 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 RECORDS = ("stdout.log", "stderr.log", "console.log", "execution.json")
 # Tools resolve on this fixed PATH inside the sandbox; /usr is the host's, read-only.
 SANDBOX_PATH = "/usr/local/bin:/usr/bin:/bin"
+# Some bwrap versions canonicalize even fd sources to pathnames. Verify the
+# mounted objects before exec; only this prelude can emit the first output line.
+MOUNT_GUARD_OK = b'agent-ee: mount identities verified\n'
+MOUNT_GUARD = '''import ctypes, json, os, signal, sys
+for path, device, inode in json.loads(sys.argv[1]):
+    observed = os.stat(path, follow_symlinks=False)
+    if (observed.st_dev, observed.st_ino) != (device, inode):
+        print('mount_source_changed:' + path, file=sys.stderr)
+        raise SystemExit(125)
+os.write(1, b'agent-ee: mount identities verified\\n')
+for name in ('SIGPIPE', 'SIGXFZ', 'SIGXFSZ'):
+    number = getattr(signal, name, None)
+    if number is not None:
+        signal.signal(number, signal.SIG_DFL)
+arguments = [os.fsencode(value) for value in sys.argv[3:]]
+native_argv = (ctypes.c_char_p * (len(arguments) + 1))(*arguments, None)
+launch = ctypes.CDLL(None, use_errno=True).execvp
+launch.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_char_p)]
+launch.restype = ctypes.c_int
+launch(arguments[0], native_argv)
+error = ctypes.get_errno()
+raise OSError(error, os.strerror(error), sys.argv[3])
+'''
+MOUNT_GUARD_PREFIX = ['/usr/bin/python3', '-I', '-B', '-c', MOUNT_GUARD]
 
 
-def sandbox_argv(inputs, work, argv, *, network=False, extra_ro=()):
+def sandbox_argv(inputs, work, argv, *, network=False, extra_ro=(), mount_identities=None):
     # A small filesystem view also hides other reviewers' scratch and the source
     # checkout. No host home, /run sockets or host /tmp are exposed.
     command = ["bwrap", "--die-with-parent", "--new-session", "--unshare-pid",
@@ -49,9 +74,46 @@ def sandbox_argv(inputs, work, argv, *, network=False, extra_ro=()):
     if network and Path("/etc/resolv.conf").exists():
         resolver = str(Path("/etc/resolv.conf").resolve())
         command += ["--dir", str(Path(resolver).parent), "--ro-bind", resolver, resolver]
+    bindings = []
     for source, dest in extra_ro:
-        command += ["--ro-bind", str(Path(source).resolve()), dest]
+        if isinstance(source, int):
+            command += ["--ro-bind-fd", str(source), dest]
+            if mount_identities is None:
+                observed = os.fstat(source)
+                expected = observed.st_dev, observed.st_ino
+            else:
+                expected = mount_identities[dest]
+            bindings.append([dest, *expected])
+        else:
+            command += ["--ro-bind", str(Path(source).resolve()), dest]
+    if bindings:
+        argv = [*MOUNT_GUARD_PREFIX, json.dumps(bindings, separators=(',', ':')), '--', *argv]
     return command + ["--", *map(str, argv)]
+
+
+def sandbox_invocation(command):
+    """Return declared argv and fd identities from the exact retained prelude."""
+    if not isinstance(command, list) or '--' not in command:
+        raise ValueError('malformed sandbox argv')
+    end = command.index('--')
+    options, argv = command[:end], command[end + 1:]
+    if argv[:5] != MOUNT_GUARD_PREFIX:
+        if '--ro-bind-fd' in options:
+            raise ValueError('fd mounts lack the exact sandbox identity guard')
+        return argv, None
+    if len(argv) < 8 or argv[6] != '--':
+        raise ValueError('fd mounts lack the exact sandbox identity guard')
+    try:
+        bindings = json.loads(argv[5])
+    except (TypeError, ValueError) as exc:
+        raise ValueError('malformed sandbox mount identities') from exc
+    if (not isinstance(bindings, list) or not bindings or
+            any(not isinstance(item, list) or len(item) != 3 or not isinstance(item[0], str) or
+                any(type(number) is not int or number < 0 for number in item[1:])
+                for item in bindings) or
+            len({item[0] for item in bindings}) != len(bindings)):
+        raise ValueError('malformed sandbox mount identities')
+    return argv[7:], {path: (device, inode) for path, device, inode in bindings}
 
 
 class Cancellation:
@@ -168,6 +230,7 @@ def held_interrupt():
 
 
 def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro, cancellation):
+    extra_ro = tuple(extra_ro)
     command = sandbox_argv(inputs, work, argv, network=network, extra_ro=extra_ro)
     record = {"argv": list(map(str, argv)), "sandbox_argv": command,
               "timeout_s": timeout, "execution": "not_run", "exit_code": None}
@@ -189,7 +252,9 @@ def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro
                     proc = None
                 else:
                     proc = subprocess.Popen(command, stdin=input_stream, stdout=subprocess.PIPE,
-                                            stderr=subprocess.PIPE, start_new_session=True)
+                                            stderr=subprocess.PIPE, start_new_session=True,
+                                            pass_fds=tuple(source for source, _ in extra_ro
+                                                           if isinstance(source, int)))
         if proc is None and interrupt:
             raise KeyboardInterrupt
         if proc is not None:
@@ -226,6 +291,10 @@ def _execute(inputs, work, directory, argv, *, timeout, stdin, network, extra_ro
     except FileNotFoundError as exc:
         record["execution"] = "unavailable"
         output = str(exc).encode()
+    if any(isinstance(source, int) for source, _ in extra_ro):
+        record['mount_guard'] = output.startswith(MOUNT_GUARD_OK)
+        if record['mount_guard']:
+            output = output[len(MOUNT_GUARD_OK):]
     record["duration_s"] = round(time.monotonic() - start, 3)
     console = output + stderr
     record["console_sha256"] = hashlib.sha256(console).hexdigest()

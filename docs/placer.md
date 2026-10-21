@@ -28,7 +28,7 @@ board with native DRC. The [rung-1 policy](rung1-qualified.md#placement-policy)
 uses 1.5 mm to preserve space for J1's reference text outside its courtyard;
 using the copper-edge rule as the courtyard margin alone clipped that text.
 
-The placer sorts explicit priorities first, then descending pad count, then
+The initial per-part search sorts explicit priorities first, then descending pad count, then
 reference (parts bound to a declared anchor point, then declared group anchors
 and their members, are ordered first; see [search](#bounded-search-agentee-212)
 and [crowded clusters](#crowded-clusters-agentee-212)). It tries four quarter-turn rotations at deterministic positions
@@ -539,6 +539,16 @@ routed or schematic-parity result. Schematic parity of the stock RC board
 belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
 
 
+## Block candidates (AGENTEE-339)
+
+[Blocks](blocks.md) derive placement blocks from the sealed schematic hierarchy
+or an engineer allocation file. Each block is packed alone with this search,
+around a fixed anchor on a synthetic plane, into a rigid
+`agent-ee.block-candidate/2`. Its own pad obligations and groups apply, and
+boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
+unchanged. Arrangement admits a candidate only after `blocks.admit` re-grades it
+from the board.
+
 ## Pod-scale qualification (AGENTEE-181)
 
 Run the original fixture qualification on the host, using a fresh destination:
@@ -708,7 +718,10 @@ refusal also applies to ignores scoped to unrelated categories; it does not
 evaluate custom-rule conditions. Added `silk_*` findings are
 reported separately in `silkscreen_findings`; they are not shorts. The
 [post-placement artwork pass](silk-artwork.md) relocates permitted fields and
-refuses publication while added `silk_overlap` or `silk_over_copper` remain.
+carries remaining `silk_overlap` or `silk_over_copper` as open defects in a
+published proposal (AGENTEE-333). Fab legibility remains a separate obligation;
+the [downstream carried-defect gate](silk-artwork.md#placement-feasibility-and-fab-legibility-agentee-333)
+refuses while any carried defect remains open.
 
 `tests.test_placer_through_holes` supplies original native PTH/NPTH, slot,
 shape, rotation, opposite-side and settings fixtures, plus DRC regression,
@@ -779,7 +792,8 @@ still identify each endpoint exactly. Each pair
 must name the same net at both ends. A buck may additionally declare `switch`
 with the identical pair structure: `from` selects the return-source IC switch
 pad and `to` selects its inductor pad. Shared rail membership never assigns a capacitor to
-an IC. Multiple selected supply/return pins require separate obligations.
+an IC. Select the explicit `buck-output-loop` kind below to bind component and
+return-net roles. Multiple selected supply/return pins require separate obligations.
 
 An endpoint may add `uuid` with the canonical native pad UUID from the captured
 `placement-probe.json`. The UUID must occur exactly once across the board and
@@ -849,10 +863,10 @@ selection, and coordinator policy/hash binding with refusal boundaries.
 Every pair may add `provenance`, an object with `class` and a nonempty `basis`.
 Classes use the AGENTEE-331 vocabulary: `datasheet`, `manufacturer`, `owner`,
 `engineering`, `default`. Missing, unknown, prose-only or invalid derivations
-produce `advisories` with `kind: unsourced`, `severity: defect`, and an `exceeded`
-flag. Advisory-only results are `info`; they never become coordinator gate
-findings or hard pack constraints. Geometry/identity failures and absent limits
-or citations retain their existing unknown coverage. Hard defects retain priority
+produce `advisories` with `kind: unsourced`, `severity: defect`, and `exceeded`
+and `below_floor` flags. Advisory-only results are `info`; they never become coordinator gate
+findings or hard pack constraints. Geometry/identity failures and absent limits retain unknown coverage.
+A citation is required only for hard enforcement. Hard defects retain priority
 when another pair is advisory or unknown.
 
 The document may include `source_records`, mapping relative source paths to
@@ -875,7 +889,8 @@ the product exactly. This is a declared measurement with a recorded scale;
 it does not automatically interpret a PDF image.
 
 For `owner`, `decision_reference` carries the same verified source reference
-plus a nonempty `owner` identity. An agent identity or `design-owner` label is
+plus a nonempty `owner` identity. An agent identity or a case-insensitive
+`design-owner`, `design_owner`, `design owner` or `designowner` label is
 not admitted. An owner label without the recorded decision stays advisory.
 This checks the retained decision reference, not authenticated authorship.
 Original tests use explicit fixture-author decisions to retain their numerical
@@ -901,10 +916,13 @@ lower bound even when other copper is unsupported; it never proves completeness.
 Pad-pair products over 4096 and unsupported selected lands have unknown floors.
 Disk identities are resolved once per footprint in each independent grade.
 
-For explicit `manufacturer` provenance, a bound below this known PCB floor
+For hard sourced or explicit `manufacturer` provenance, a bound below this known PCB floor
 returns a typed `locality_infeasible` defect naming the obligation, role and
 references; packing refuses it before search. Unsourced bounds remain advisory
-even below that floor. Existing owner/datasheet distance verdicts are unchanged.
+even below that floor, with `below_floor: true`. An unavailable geometric floor
+also stays advisory for manufacturer labels; captured-record integrity failures
+remain unknown. Hard bounds below the necessary floor are typed infeasibility
+defects (coordinator ruling G3).
 A manufacturer minimum supplies no electrical maximum, so exceeding a larger
 agent-selected maximum remains advisory.
 
@@ -920,6 +938,14 @@ floor, including zero, is not an assembly or whole-footprint pass.
 
 `tests.test_locality_provenance` covers legacy/agent advisories, source derivation,
 source/decision refusals, soft index constraints and computed infeasibility.
+Joint-cluster axis pruning and conflict sets use hard pairs only; advisory pairs
+may influence ordering but never exclude candidates. The registered check
+summary reports both the advisory count and the exceeded-advisory count.
+
+The composed block candidate path still requires a passing locality grade,
+so `blocks.pack_block` currently refuses advisory-only grades. Its unsourced
+fixtures also assert hard behavior. This integration gap needs a coordinator
+verdict-preservation ruling before those expectations can change.
 
 ### Read-only pod diagnostic
 
@@ -960,48 +986,61 @@ gate refuses a gap that satisfies the board minimum.
 
 ### Buck output-capacitor loops (AGENTEE-330)
 
-Use the existing `supply` and `return` roles together; no new role or schema is
-needed. For example, an owned fixture may replace the example supply source with
-`{"reference": "L1", "pad": "2", "net": "VCC"}` while keeping the return
-source at U1 PGND. Optional `switch.from` stays at that IC, rather than moving to
-the inductor. The same captured UUID selector works on all endpoints. Check,
-constraint cost, candidate targets and saved-proposal grading use all declared
-pairs, including when the three footprints are placed in different orders.
-A loop obligation specifies paired distance bounds, not a summed perimeter,
-routed path or inductance measurement.
+AGENTEE-334 adds an explicit role binding to the existing
+`agent-ee.electrical-locality/1` document. Add these fields to an obligation:
 
-The read-only D-PL-1 pod diagnostic at fome-mc
-`00a6b0316b871171bda5654a8436162aaa83a914` now supports seven
-output-loop declarations on its frozen board. Fresh native copper-centroid
-measurements are below, verbatim in mm. Supply is L1/L2/L4 pad 2 to capacitor
-pad 1; return is U5/U7/U15 PGND pad 1 to capacitor pad 2. Every endpoint was
-selected by its captured UUID, reference, pad and net.
+```json
+{"kind": "buck-output-loop", "ic": "U1", "inductor": "L1", "return_net": "GND"}
+```
 
-| IC / capacitor | Supply mm | Return mm | Declared supply / return bound mm |
-| --- | ---: | ---: | --- |
-| U5 / C6 | 5.561025085359713 | 13.77350082586123 | absent / absent |
-| U5 / C7 | 18.029556289604024 | 13.43448268449515 | absent / absent |
-| U7 / C13 | 8.82704508881653 | 13.746538655239725 | absent / absent |
-| U7 / C14 | 9.91641190148937 | 10.520495473122926 | absent / absent |
-| U7 / C15 | 13.284491898450614 | 13.96913830556488 | absent / absent |
-| U15 / C68 | 3.303240832879129 | 6.5517650293642244 | absent / 5.0 |
-| U15 / C69 | 5.525273748874349 | 6.894833210455493 | absent / 7.0 |
+The existing `supply`, `return`, and optional `switch` pairs still select exact
+native pads and carry their own limits and citations. For this kind,
+`supply.from.reference` must equal `inductor`, `return.from.reference` must equal
+`ic`, and these two references must differ. When present, `switch.from.reference`
+must equal `ic` and `switch.to.reference` must equal `inductor`. Both return
+endpoints must use `return_net`; neither supply endpoint may use that net.
+Net names and reference prefixes never infer these roles. A declaration of IC
+and inductor identity is supplied by the engineer; this check does not establish
+the component's device type from a library or datasheet.
 
-The locators are LMR36520 §8.5.1 item 8 and TPS6216x-Q1 §11.1 items 4–5.
-D-PL-1 supplies only the two unchanged U15 return bounds for these endpoints;
-its VOS-to-capacitor bounds do not transfer to inductor-to-capacitor pairs.
-All 14 pairs resolve and measure. Twelve remain unknown for missing bounds;
-C68 return is a proved defect and C69 return passes. The combined verdict is
-`defect`, preserving that determinate violation alongside unknown coverage.
-The declarations, native probe and raw measurements remain in worker scratch;
-no pod design was adopted or published. Missing bounds must be declared by the
-engineer before guided placement can run.
+Role metadata requires the complete four-field binding above. Unknown kinds,
+missing role identities, swapped supply/return nets and unrelated rail members
+refuse validation before grading or packing. Per-pair native identity, centroid,
+limit and citation failures retain their existing unknown/defect precedence.
+Omit the switch pair when no cited switch limit has been declared.
 
-`OutputLoopTests` covers distinct sources, equal pad numbers on different
-footprints, coupled failures in both endpoint orders, all six packing orders,
-UUID-selected repeated PGND pads, net failures, absent limits/citations and
-defect precedence. The native captured-check regression uses an original RC
-three-reference topology with UUID-selected endpoints.
+Untyped obligations retain their existing generic pair semantics, including
+same-source input decoupling with a switch leg and previously admitted distinct
+sources. They do not assert this loop-role contract. This compatibility rule
+preserves existing verdicts; new output-loop declarations must select the kind
+explicitly. Check, pack constraints, candidate targets and saved-proposal grading
+then use all declared pairs. Distances bound individual legs, not a summed
+perimeter, routed path or inductance.
+
+The retained original fixture is `bound_output_loop()` in
+`tests/test_electrical_locality.py`. Its U1/L1/C1 pad identities, citations and
+limits are authored test requirements; it contains no third-party design data.
+`BoundOutputLoopTests.test_owned_evidence_and_optional_switch` reproduces exact
+squared distances of 89, 162 and 16 mm² for supply, return and switch, retains
+each citation and the full declaration in the result, and exercises omission of
+the switch leg. Other tests refuse R9 on VCC, independently exercise both switch
+bindings with distinct endpoints, and guide all six placement orders. Existing
+generic-pair regressions retain their verdict expectations.
+A captured native check also exercises explicitly bound roles on the owned RC
+stand-in; its R1/J1 roles are fixture declarations, not a claim about RC hardware.
+
+The read-only pod D-PL-1 packet is committed in fome-mc at
+`fc73b20f2dd91f26b3eb3a7319e5b0895d0a8be9`, under
+`telemetry-pod/expansion/electrical-locality/pad-obligations/`.
+`electrical-locality.json` retains 15 generic obligations / 33 pairs;
+`frozen-79cc1310-measurements.json` retains their diagnostic measurements and
+`README.md` gives the declarations and source locators. These existing untyped
+obligations remain valid. The packet does not declare the seven additional
+inductor-to-output-capacitor loops previously reported here from disposable
+scratch. Those measurements are withdrawn as retained evidence; the owned fixture
+above is the reproducible output-loop evidence. No pod design is copied,
+modified or adopted, and pod output-loop bounds still require an engineer's
+captured declaration.
 
 ## Incremental locality search and diagnostics (AGENTEE-332)
 
@@ -1017,7 +1056,9 @@ Locality targets are deduplicated and capped at 256 distinct origins per rotatio
 Exceeding that cap returns `packing_budget_exhausted`, `outcome=unknown`; it never
 truncates constraints or searches a silently reduced target set. Below the cap,
 candidate axes, exact rational costs, tie breaks and deterministic placements are
-preserved.
+preserved. This is a fail-closed refusal, with reason `locality target budget exhausted`
+and empty `placements`, rather than a geometric infeasibility proof. Raising or
+tiling the cap requires qualification against a real hub-IC case.
 
 Optional `policy.search_timeout_s` is a positive wall-time search budget of at
 most 86,400 seconds.
@@ -1026,13 +1067,14 @@ run during candidate generation, empty reservation sweeps and candidate testing;
 individual geometry operations and sorting are not interrupted. Set this budget
 below the enclosing executor deadline, leaving time for qualification and result
 serialization. An external process kill cannot guarantee a retained partial result.
-Omitting it keeps the deterministic step-only stopping rule.
+Omitting it keeps deterministic step-only stopping, including joint clusters.
 
 `pack(..., heartbeat=callback)` emits qualification/search progress, including
 steps and placed counts; search heartbeats are emitted at five-second intervals
 when checkpoints execute. The standalone runner prints these as flushed JSON
-`placement_heartbeat` events. Its ordinary result file retains a normal typed
-failure after a cooperative timeout.
+`placement_heartbeat` events on stderr; `board_build` stdout remains one final
+JSON summary that can be parsed as a single document. Its ordinary result file
+retains a normal typed failure after a cooperative timeout.
 
 Search, step, target and wall-time exhaustion retain `search.termination` as
 `search_exhausted` or `budget_exhausted`. The normal `placements` field remains
@@ -1044,11 +1086,92 @@ and unknown geometry verdicts retain their existing meaning.
 
 `tests.test_electrical_locality.LocalityIndexTests` compares indexed and original
 costs/targets with rotations, fractional copper centroids, UUID-selected repeated
-numbers and backtracking. Its 331-footprint, 15-obligation index benchmark checks
-5,000 candidate evaluations against a five-second bound and forbids per-candidate
-pad resolution. A second full packing benchmark has 331 footprints, 15
-obligations and one constrained movable peer among 330 placed parts, with a
-20-second bound and fewer than 400 pad resolutions across qualification, search
-and final grading. These isolate locality scaling; courtyard qualification,
+numbers and backtracking. A committed seed-9332 differential exercises 300 generated
+cases with random LIFO push/pop states, rotations, fractional copper centroids and
+output loops with distinct supply and return sources, comparing exact constraints
+and target sets against the legacy functions. Its 331-footprint, 15-obligation index
+benchmark limits setup to 34 pad resolutions, checks 5,000 two-pair candidate
+evaluations and forbids per-candidate pad resolution. A second full packing benchmark
+has 331 footprints, 15 obligations and one constrained movable peer among 330 placed
+parts, with fewer than 400 pad resolutions, at most 3,000 locality evaluations and
+16 exact candidate tests across qualification, search and final grading. Generous
+120-second and 180-second safety ceilings supplement these deterministic bounds.
+These isolate locality scaling; courtyard qualification,
 capacity proofs, broad backtracking and native saved-board gates still have
 independent costs.
+
+## Joint locality clusters (AGENTEE-335)
+
+Packing first runs the unchanged per-part search. Every previously planned
+input keeps exactly its placements and counted steps. Only a failure with a
+multi-member locality component can trigger joint search. Existing determinate
+geometry/capacity proofs retain their verdicts and do not trigger it.
+
+In that second search, connected locality components with at least three
+footprints are packed as a unit. The highest-degree footprint is the hub
+(ties use the existing queue order and reference); a movable hub goes first. Other movable endpoints follow
+in ascending order of their tightest incident pad-distance limit, with the
+existing queue order and reference breaking ties. Fixed endpoints stay fixed.
+Supply, return and switch roles all contribute, so a shared inductor stays with
+its IC and capacitors. Two-footprint components and unguided placements retain
+their existing ordering, candidates and verdicts.
+
+Each unit searches joint transforms around its placed members. If a later
+member cannot fit, search revisits every earlier member's alternatives,
+including nonlead members. Necessary axis projections prune impossible sourced
+pad distances before candidate ranking; advisory bounds remain soft. The exact
+predicates and independent complete-plan grade enforce hard locality limits. Origin
+group distances, fixed geometry, gaps and other placement constraints remain
+enforced. A backjump moves the whole cluster without splitting its membership.
+
+Each joint cluster has a cumulative guard of 4,096 tested candidates across
+backjumps and a maximum of 64 movable members to bound recursion. There is no
+default wall-clock cluster guard. These limits describe search coverage, not
+physical infeasibility. Finite joint exhaustion also does not establish that a
+continuous placement is impossible.
+
+Both attempts share `policy.step_budget`: joint search receives only the
+candidates remaining after the legacy attempt. If none remain, it is recorded
+as `not_attempted`. A joint completion reports the sum of both attempts in
+`steps_used` and records `search.legacy_attempt`. The original policy remains
+bound to the plan. The joint attempt uses the legacy search's absolute opt-in
+`search_timeout_s` deadline, including time spent requalifying the second
+attempt; the deadline is never restarted. Qualification precedes the initial
+search deadline. Individual geometry calls and sorts are cooperative and are
+not interrupted. Heartbeats may read the clock for progress only; they never
+change a step-only verdict.
+
+Only an independently regraded joint completion replaces the legacy result.
+Otherwise the original typed failure, steps, partial diagnostics, and empty
+`placements` remain authoritative. `search.joint_cluster_attempt` records the
+second attempt's status, steps, termination and any `blocking_cluster` naming
+references and obligations. A cluster guard or finite refusal appears there as
+`locality_cluster_exhausted`, never as a feasibility proof. Cluster membership
+and tightest-first order are available in `search.locality_clusters` even when
+legacy search succeeds; this describes the optional strategy, not a claim that
+it ran. Partials have diagnostic-only authority and cannot enter a board writer.
+
+`tests.test_placer_clusters` covers the joint engine's tightest-first order,
+nonlead backtracking, switch peers, movable hubs, exact regrading, cumulative
+step guards and cleanup. Public contract tests cover unchanged legacy plans,
+shared remaining steps and absolute deadlines. A seeded differential freezes
+16 original multi-member cases from the pre-cluster placer, including movable
+hubs, and checks every legacy plan's verdict, placements and steps. AGENTEE-347
+adds a 22-case deterministic differential against the retained per-part engine:
+legacy plans and failures keep whole-result equality (apart from
+`search.joint_cluster_attempt` on failures; legacy `locality_clusters` stays equal),
+repeated runs are identical, total steps stay within budget, and seed 2 case 55
+completes jointly and passes an independent locality regrade. Three redundant
+slow refusal cases are omitted. The cluster-guard regression compares the whole
+legacy result, including steps and
+search records. Fault injection into the search predicate makes complete proposals
+fail the real locality grade on both internal paths and public `pack()`,
+requiring `judge_rejected` with empty placements. The public joint-attempt
+diagnostic must also report `judge_rejected`. Refusal bounds use candidate counts,
+not wall time. The locality-index suite adds exact limit and placed-state scan
+bounds for both paths; a joint evaluation bound catches removal of projection
+pruning.
+
+The real pod remains diagnostic. Fail-fast completion of that run is outside
+AGENTEE-335 after the legacy-first ruling; block-level placement (AGENTEE-339/340)
+is its path. No refusal publishes a board or establishes physical impossibility.

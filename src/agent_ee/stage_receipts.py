@@ -6,6 +6,7 @@ are never receipts. A receipt never makes a check pass: acceptance still comes o
 from fresh sealed checks of the captured proposal.
 """
 
+import contextlib
 import hashlib
 import json
 import math
@@ -17,7 +18,7 @@ import time
 import uuid
 from pathlib import Path, PurePosixPath
 
-from .executor import execute
+from .executor import execute, sandbox_invocation
 from .storage import digest, digest_fd, identity, read_json, write_json
 
 STEP_SCHEMA = 'agent-ee.stage-step/1'
@@ -37,6 +38,8 @@ REPORT_DEPTH = 64
 TREE_DEPTH = 128
 # Every lookup below a run root opens one component at a time and never follows a link.
 NOFOLLOW = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
+# routing_adapter._step mounts these standalone helpers individually.
+QUALIFIED_LIVE_HELPERS = frozenset({'kicad_route_attempt.py', 'net_binding.py', 'symbol_library.py'})
 VERSION_TIMEOUT_S = 30
 STEP_KEYS = {'schema', 'stage', 'step', 'argv', 'mounts', 'version_argv', 'source',
              'backend_report', 'writes', 'artifacts', 'adoptable_exits', 'timeout_s', 'inputs'}
@@ -83,6 +86,142 @@ class LivePackageSourceError(ValueError):
         super().__init__(self.violation)
 
 
+def _mount_identity(path):
+    observed = path.stat()
+    return observed.st_dev, observed.st_ino
+
+
+def _validated_mount_source(source, at, *, source_identity=None):
+    resolved = Path(source).resolve(strict=True)
+    package_source = Path(__file__).resolve(strict=True).parents[1]
+    package = package_source / 'agent_ee'
+    # Only the canonical, individually mounted routing helpers are qualified.
+    if resolved.parent == package and resolved.name in QUALIFIED_LIVE_HELPERS:
+        observed = resolved.stat()
+        if (stat.S_ISREG(observed.st_mode) and
+                (source_identity is None or (observed.st_dev, observed.st_ino) == source_identity)):
+            return str(resolved)
+    live_ancestors = {package_source, *package_source.parents}
+    if resolved in live_ancestors or package_source in resolved.parents:
+        raise LivePackageSourceError(at)
+    source_identity = source_identity if source_identity is not None else _mount_identity(resolved)
+    if source_identity in {_mount_identity(p) for p in live_ancestors}:
+        raise LivePackageSourceError(at)
+    # Source ancestors catch paths below a bind alias. Compare only with the
+    # live tree here: common ancestors such as / must not reject unrelated tools.
+    source_identities = {source_identity, *(_mount_identity(p) for p in resolved.parents)}
+
+    def walk_error(exc):
+        raise exc
+
+    for root, directories, files in os.walk(package_source, onerror=walk_error):
+        for path in [Path(root), *(Path(root) / name for name in directories + files)]:
+            # Do not follow tree symlinks out into unrelated system directories.
+            observed = path.lstat()
+            if (observed.st_dev, observed.st_ino) in source_identities:
+                raise LivePackageSourceError(at)
+    if resolved.is_dir():
+        _refuse_submounts(resolved, at)
+    return str(resolved)
+
+
+def _refuse_submounts(source, at):
+    # Builders need plain tool trees, never recursive host mount hierarchies.
+    # mountinfo catches same-device bind mounts which st_dev cannot distinguish.
+    for line in Path('/proc/self/mountinfo').read_text().splitlines():
+        fields = line.split()
+        if len(fields) < 10 or '-' not in fields[6:]:
+            raise ValueError('malformed host mountinfo')
+        mountpoint = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), fields[4])
+        if mountpoint != str(source) and _under(mountpoint, str(source)):
+            raise ValueError('mount_source_submount:' + at)
+
+
+def _resolved_mounts(spec):
+    mounts, identities = [], []
+    for mount in spec['mounts']:
+        try:
+            resolved = Path(mount['source']).resolve(strict=True)
+            observed = resolved.lstat()
+            expected = observed.st_dev, observed.st_ino
+            source = _validated_mount_source(str(resolved), mount['at'], source_identity=expected)
+            if source != str(resolved) or not (stat.S_ISDIR(observed.st_mode) or
+                                               stat.S_ISREG(observed.st_mode)):
+                raise ValueError('mount_source_changed:' + mount['at'])
+        except FileNotFoundError as exc:
+            raise ValueError('mount source does not exist: ' + mount['source']) from exc
+        except OSError as exc:
+            raise ValueError('mount_source_changed:' + mount['at']) from exc
+        mounts.append({'source': source, 'at': mount['at']})
+        identities.append(expected)
+    return {**spec, 'mounts': mounts}, identities
+
+
+def _fd_mount_id(descriptor):
+    values = [line.partition(':')[2].strip()
+              for line in Path(f'/proc/self/fdinfo/{descriptor}').read_text().splitlines()
+              if line.startswith('mnt_id:')]
+    if len(values) != 1 or not values[0].isdecimal():
+        raise ValueError('missing or malformed host mount id')
+    return int(values[0])
+
+
+def _refuse_fd_submounts(descriptor, at):
+    # Anchor the inventory to the opened object, not a spelling which a rename
+    # can redirect while mountinfo is read. Mount IDs distinguish same-device binds.
+    expected = _fd_mount_id(descriptor)
+
+    def walk_error(exc):
+        raise exc
+
+    for _, directories, files, directory in os.fwalk('.', dir_fd=descriptor, onerror=walk_error,
+                                                     follow_symlinks=False):
+        if _fd_mount_id(directory) != expected:
+            raise ValueError('mount_source_submount:' + at)
+        for name in directories + files:
+            child = os.open(name, os.O_PATH | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=directory)
+            try:
+                if _fd_mount_id(child) != expected:
+                    raise ValueError('mount_source_submount:' + at)
+            finally:
+                os.close(child)
+
+
+@contextlib.contextmanager
+def _opened_mounts(spec, identities):
+    with contextlib.ExitStack() as stack:
+        mounts = []
+        for mount, expected in zip(spec['mounts'], identities):
+            try:
+                flags = os.O_PATH | os.O_CLOEXEC | os.O_NOFOLLOW
+                if Path(mount['source']).is_dir():
+                    flags |= os.O_DIRECTORY
+                descriptor = os.open(mount['source'], flags)
+                stack.callback(os.close, descriptor)
+                observed = os.fstat(descriptor)
+                if ((observed.st_dev, observed.st_ino) != expected or
+                        not (stat.S_ISDIR(observed.st_mode) or stat.S_ISREG(observed.st_mode))):
+                    raise ValueError('mount_source_changed:' + mount['at'])
+                if stat.S_ISDIR(observed.st_mode):
+                    _refuse_fd_submounts(descriptor, mount['at'])
+            except OSError as exc:
+                raise ValueError('mount_source_changed:' + mount['at']) from exc
+            mounts.append((descriptor, mount['at']))
+        yield mounts
+
+
+def _recheck_mounts(spec, identities):
+    for mount, expected in zip(spec['mounts'], identities):
+        source = Path(mount['source'])
+        try:
+            if (str(source.resolve(strict=True)) != mount['source'] or
+                    _mount_identity(source) != expected):
+                raise ValueError('mount_source_changed:' + mount['at'])
+            _validated_mount_source(mount['source'], mount['at'], source_identity=expected)
+        except OSError as exc:
+            raise ValueError('mount_source_changed:' + mount['at']) from exc
+
+
 def validate_step(spec, *, host=True):
     """Return the normalized step declaration; host=True also checks mount sources."""
     if not isinstance(spec, dict) or spec.get('schema') != STEP_SCHEMA:
@@ -113,10 +252,7 @@ def validate_step(spec, *, host=True):
         if host:
             if not Path(source).exists():
                 raise ValueError(f'mount source does not exist: {source}')
-            resolved = Path(source).resolve(strict=True)
-            package_source = Path(__file__).resolve(strict=True).parents[1]
-            if resolved == package_source or resolved in package_source.parents:
-                raise LivePackageSourceError(at)
+            _validated_mount_source(source, at)
         normalized_mounts.append({'source': source, 'at': at})
 
     def tool_path(value, label):
@@ -353,7 +489,7 @@ def sandbox_profile(sandbox_argv):
     profile, index = [], 0
     while index < len(options):
         token = options[index]
-        if token in ('--bind', '--ro-bind') and index + 2 < len(options):
+        if token in ('--bind', '--ro-bind', '--ro-bind-fd') and index + 2 < len(options):
             source, dest = options[index + 1], options[index + 2]
             profile += [token, source if source == dest else '<host>', dest]
             index += 3
@@ -521,6 +657,8 @@ def _violations(spec, inputs, receipt_dir, tool, tool_after, executions):
     # A tool can plant an entry where the executor later writes its own records, which the
     # executor moves aside and reports, or leave /work unwritable so that it cannot write them.
     for name in ('version', 'run'):
+        if executions.get(name) is not None and executions[name].get('mount_guard') is False:
+            violations.append('mount_guard_failed:' + name)
         work = Path(receipt_dir) / name
         records = _records(work)
         displaced = executions[name].get('displaced_records', {}) if executions[name] else {}
@@ -578,7 +716,15 @@ def run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=
 
 
 def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation=None):
-    spec = validate_step(spec)
+    spec = validate_step(spec, host=False)
+    runtime_spec, mount_identities = _resolved_mounts(spec)
+    with _opened_mounts(runtime_spec, mount_identities) as mounts:
+        return _run_bound_step(receipt_dir, design, spec, binding, runtime_spec,
+                               mount_identities, mounts, deadline=deadline, cancellation=cancellation)
+
+
+def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_identities, mounts,
+                    *, deadline=None, cancellation=None):
     if not isinstance(binding, dict):
         raise ValueError('stage receipt binding must be an object')
     timeout = spec['timeout_s']
@@ -599,17 +745,18 @@ def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation
         shutil.copytree(design, receipt_dir / 'inputs')
         inputs = _strict_tree(receipt_dir / 'inputs')
         shutil.copytree(receipt_dir / 'inputs', run / 'design')
-        tool = observe_tool(spec)
+        tool = observe_tool(runtime_spec)
+        _recheck_mounts(runtime_spec, mount_identities)
     except BaseException:
         # Nothing was executed or observed; a partial copy is not evidence.
         shutil.rmtree(receipt_dir, ignore_errors=True)
         raise
-    mounts = [(m['source'], m['at']) for m in spec['mounts']]
     try:
         if spec['version_argv'] is not None:
             version_record = execute(receipt_dir / 'inputs', receipt_dir / 'version', spec['version_argv'],
                                      timeout=max(.001, min(VERSION_TIMEOUT_S, timeout)), network=False,
                                      extra_ro=mounts, cancellation=cancellation)
+        _recheck_mounts(runtime_spec, mount_identities)
         # An exhausted budget is recorded as the step's own observed timeout.
         execution = execute(receipt_dir / 'inputs', run, spec['argv'],
                             timeout=max(.001, timeout - (time.monotonic() - start)), network=False,
@@ -625,7 +772,7 @@ def _run_step(receipt_dir, design, spec, binding, *, deadline=None, cancellation
         # The executor could not keep its records, for example because the tool left /work
         # unwritable. No record on disk is trusted; the receipt is kept and the error re-raised.
         failure = exc
-    tool_after = observe_tool(spec)
+    tool_after = observe_tool(runtime_spec)
     outputs = _outputs(spec, run)
     violations = _violations(spec, inputs, receipt_dir, tool, tool_after,
                              {'run': execution, 'version': version_record})
@@ -682,9 +829,11 @@ def _execution_record(record, work, argv):
     if not isinstance(displaced, dict) or not set(displaced) <= set(RECORD_FILES):
         raise ValueError('malformed stage receipt displaced executor records')
     sandbox = record.get('sandbox_argv')
-    if (not isinstance(sandbox, list) or '--' not in sandbox or sandbox[sandbox.index('--') + 1:] != argv or
+    if (not isinstance(sandbox, list) or '--' not in sandbox or sandbox_invocation(sandbox)[0] != argv or
             '--unshare-net' not in sandbox[:sandbox.index('--')]):
         raise ValueError('stage receipt sandbox lacks the exact argv or network isolation')
+    if sandbox_invocation(sandbox)[1] is not None and type(record.get('mount_guard')) is not bool:
+        raise ValueError('stage receipt lacks a coordinator mount guard observation')
     options = sandbox[:sandbox.index('--')]
     pairs = {tuple(options[i:i + 3]) for i in range(len(options) - 2)}
     if (not any(p[0] == '--ro-bind' and p[2] == '/candidate' for p in pairs) or
@@ -1047,6 +1196,8 @@ def verify_campaign_receipts(root, state, steps=None, plans=None):
                 from .layer_policy_lineage import delivered_view as layer_policy_view
                 # So is the coordinator capture of a pre-routing layer policy derivation (AGENTEE-260).
                 captured = layer_policy_view(config, captured, delivered)
+                from .placement_defects import delivered_view as placement_view
+                captured = placement_view(captured, delivered)
         expected = steps if plans is None else plans[name]
         verify_implementation(work, anchor, number, source['candidate_id'], captured=captured, steps=expected,
                               complete=plans is not None and (work / 'proposal.scope.json').exists())

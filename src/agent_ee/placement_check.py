@@ -282,7 +282,8 @@ def check_placement(ctx):
         raise CheckError('unsupported', f'{criterion} coverage incomplete: {len(result["unknown"])} unknown item(s)')
     if status == 'info' and criterion == electrical_locality.CRITERION:
         ctx.result.update(execution='ok', outcome='info',
-                          summary=f"{criterion}: {len(result['advisories'])} advisory locality bound(s)")
+                          summary=f"{criterion}: {len(result['advisories'])} advisory locality bound(s), "
+                                  f"{sum(a['exceeded'] for a in result['advisories'])} exceeded")
         return
     if status == 'info':
         ctx.result.update(execution='ok', outcome='info',

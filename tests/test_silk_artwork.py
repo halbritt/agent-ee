@@ -138,8 +138,10 @@ class SilkArtworkTest(unittest.TestCase):
             fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
         k.SaveBoard(str(out), board)
         original = out.read_bytes()
-        with self.assertRaisesRegex(ValueError, 'unresolved native silkscreen'):
-            _proposal_drc(source, out)
+        _, delta = _proposal_drc(source, out)
+        self.assertTrue(delta['open_defects'])
+        self.assertTrue(all(f['verdict'] == 'defect' and f['status'] == 'open'
+                            for f in delta['open_defects']))
         art = json.loads((out.parent / 'placement-silkscreen.json').read_text())
         self.assertEqual(art['moved_fields'], [])
         self.assertEqual(len(art['search_diagnostics']), 2)
@@ -149,7 +151,7 @@ class SilkArtworkTest(unittest.TestCase):
         self.assertTrue(all(f['type'] == 'placement_silkscreen_conflict' for f in art['findings']))
         self.assertEqual(out.read_bytes(), original)
 
-    def test_flipped_conflict_refuses_even_if_other_field_moves_clear(self):
+    def test_flipped_conflict_is_carried_even_if_other_field_moves_clear(self):
         import pcbnew as k
         source = self.board()
         board = k.LoadBoard(str(source))
@@ -163,8 +165,10 @@ class SilkArtworkTest(unittest.TestCase):
                 fp.Flip(fp.GetPosition(), k.FLIP_DIRECTION_TOP_BOTTOM)
             fp.Reference().SetPosition(k.VECTOR2I(9000000, 4000000))
         k.SaveBoard(str(out), board)
-        with self.assertRaisesRegex(ValueError, 'unresolved native silkscreen'):
-            _proposal_drc(source, out)
+        _, delta = _proposal_drc(source, out)
+        self.assertTrue(delta['open_defects'])
+        self.assertTrue(all(f['verdict'] == 'defect' and f['status'] == 'open'
+                            for f in delta['open_defects']))
         art = json.loads((out.parent / 'placement-silkscreen.json').read_text())
         self.assertEqual([m['reference'] for m in art['moved_fields']], ['C1'])
         self.assertEqual(art['added_after'], {})
@@ -249,8 +253,10 @@ class SilkArtworkTest(unittest.TestCase):
             shape.SetEnd(k.VECTOR2I(7000000, 12000000))
         k.SaveBoard(str(out), b)
         pre = out.read_bytes()
-        with self.assertRaisesRegex(ValueError, 'unresolved native silkscreen'):
-            _proposal_drc(source, out)
+        _, delta = _proposal_drc(source, out)
+        self.assertTrue(delta['open_defects'])
+        self.assertTrue(all(f['verdict'] == 'defect' and f['status'] == 'open'
+                            for f in delta['open_defects']))
         evidence = json.loads((out.parent / 'placement-silkscreen.json').read_text())
         self.assertTrue(evidence['findings'])
         self.assertTrue(all(f['type'] == 'placement_silkscreen_conflict' for f in evidence['findings']))
@@ -350,8 +356,10 @@ assert write_scope(before,p.read_bytes())['status']=='allowed'
             fp.GetField('Label').SetPosition(next(iter(fp.Pads())).GetPosition())
         k.SaveBoard(str(out), b)
         before = out.read_bytes()
-        with self.assertRaisesRegex(ValueError, 'unresolved native silkscreen'):
-            _proposal_drc(source, out)
+        _, delta = _proposal_drc(source, out)
+        self.assertTrue(delta['open_defects'])
+        self.assertTrue(all(f['verdict'] == 'defect' and f['status'] == 'open'
+                            for f in delta['open_defects']))
         evidence = json.loads((out.parent / 'placement-silkscreen.json').read_text())
         self.assertEqual([f['reference'] for f in evidence['moved_fields'] if f['field'] == 'Label'],
                          [prints[0].GetReference()])

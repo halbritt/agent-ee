@@ -68,7 +68,7 @@ def classify(pair, records=None):
         decision = provenance.get('decision_reference')
         if (verified_reference(decision, records) and isinstance(decision.get('owner'), str)
                 and decision['owner'].strip() and not re.search(
-                    r'\bagent(?:[- _]?\d+)?\b|design-owner', decision['owner'], re.I)):
+                    r'\bagent(?:[- _]?\d+)?\b|design[-_ ]?owner', decision['owner'], re.I)):
             return {**result, 'enforcement': 'hard', 'reason': 'explicit owner decision reference'}
     if result['class'] == 'datasheet':
         derivation = provenance.get('derivation', {})
@@ -134,7 +134,7 @@ def footprint_disks(footprints, fp, selected):
             endpoint = {'reference': fp['ref'], 'pad': pad['number'], 'net': pad['net']}
             if pad.get('uuid'):
                 endpoint['uuid'] = pad['uuid']
-            position = selected[1] if pad is selected[0] else resolve(footprints, endpoint)
+            position = selected[1] if pad is selected[0] else resolve([fp], endpoint)
         except ValueError:
             continue  # A subset can prove a lower bound, never completeness.
         disks.append((pad, position, radius))
@@ -179,8 +179,13 @@ def floor(footprints, pair, centers=None, disk_cache=None):
             centers = [resolve(footprints, pair[k]) for k in ('from', 'to')]
         if disk_cache is None:
             disk_cache = {}
+        by_ref = disk_cache.get(('by_ref',))
+        if by_ref is None:
+            by_ref = disk_cache[('by_ref',)] = {}
+            for f in footprints:
+                by_ref.setdefault(f['ref'], []).append(f)
         for endpoint in (pair['from'], pair['to']):
-            fps = [f for f in footprints if f['ref'] == endpoint['reference']]
+            fps = by_ref.get(endpoint['reference'], [])
             if len(fps) != 1:
                 raise ValueError('floor needs unique native footprints')
             fp = fps[0]

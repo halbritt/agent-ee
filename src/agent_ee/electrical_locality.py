@@ -25,7 +25,8 @@ def validate(document):
         raise ValueError('locality source_records must map source paths to captured UTF-8 text')
     ids = set()
     for obligation in document['obligations']:
-        if (not isinstance(obligation, dict) or set(obligation) - {'id', 'metric', 'supply', 'return', 'switch'}
+        if (not isinstance(obligation, dict) or set(obligation) - {
+                'id', 'metric', 'supply', 'return', 'switch', 'kind', 'ic', 'inductor', 'return_net'}
                 or not {'id', 'metric', 'supply', 'return'} <= obligation.keys()):
             raise ValueError('locality obligation needs id, metric, supply and return; optional switch')
         oid = obligation['id']
@@ -60,6 +61,25 @@ def validate(document):
         if any(supply[k]['reference'] == ground[k]['reference']
                and supply[k]['pad'] == ground[k]['pad'] for k in ('from', 'to')):
             raise ValueError('supply and return must select distinct physical pads')
+        loop_fields = {'kind', 'ic', 'inductor', 'return_net'}
+        if loop_fields & obligation.keys():
+            if (not loop_fields <= obligation.keys() or obligation['kind'] != 'buck-output-loop'
+                    or any(not isinstance(obligation[k], str) or not obligation[k].strip()
+                           for k in ('ic', 'inductor', 'return_net'))):
+                raise ValueError('buck-output-loop needs explicit kind, ic, inductor and return_net')
+            if obligation['ic'] == obligation['inductor']:
+                raise ValueError('loop IC and inductor must be distinct footprints')
+            if supply['from']['reference'] != obligation['inductor']:
+                raise ValueError('loop supply must start at the declared inductor')
+            if ground['from']['reference'] != obligation['ic']:
+                raise ValueError('loop return must start at the declared IC')
+            if any(ground[k]['net'] != obligation['return_net'] for k in ('from', 'to')):
+                raise ValueError('loop return must use the declared return_net')
+            if any(supply[k]['net'] == obligation['return_net'] for k in ('from', 'to')):
+                raise ValueError('loop supply and return nets must differ')
+            if ('switch' in obligation
+                    and obligation['switch']['to']['reference'] != obligation['inductor']):
+                raise ValueError('loop switch must end at the declared inductor')
         if 'switch' in obligation and obligation['switch']['from']['reference'] != ground['from']['reference']:
             raise ValueError('switch pair must start at the declared IC')
     return document
@@ -121,21 +141,22 @@ def grade(probe, document):
                 record['constraint_provenance'] = locality_provenance.classify(pair, document.get('source_records'))
                 record['manufacturing_floor'] = locality_provenance.floor(probe['footprints'], pair, (a, b), disk_cache)
                 measured.append(record)
-                if 'max_distance_nm' not in pair or 'citation' not in pair:
-                    raise ValueError('declared numeric limit and citation required')
                 authority = record['constraint_provenance']
                 floor = record['manufacturing_floor']
-                if authority['enforcement'] == 'feasibility' and floor['status'] != 'known':
+                if 'max_distance_nm' not in pair or ('citation' not in pair and authority['enforcement'] == 'hard'):
+                    raise ValueError('declared numeric limit and citation required')
+                if (authority['enforcement'] == 'feasibility' and floor['status'] != 'known'
+                        and floor['reason'].startswith('captured JLCPCB numeric record')):
                     raise ValueError('manufacturer floor unavailable: ' + floor['reason'])
-                if (authority['enforcement'] == 'feasibility' and floor['status'] == 'known'
-                        and pair['max_distance_nm'] < floor['floor_nm']):
+                below = floor['status'] == 'known' and pair['max_distance_nm'] < floor['floor_nm']
+                if authority['enforcement'] in ('hard', 'feasibility') and below:
                     defects.append({'kind': 'locality_infeasible', **record})
                 elif authority['enforcement'] == 'hard':
                     if squared > pair['max_distance_nm']**2:
                         defects.append({'kind': 'electrical_locality_distance', **record})
                 else:
                     advisories.append({'kind': 'unsourced', 'severity': 'defect', **record,
-                                       'exceeded': squared > pair['max_distance_nm']**2})
+                                       'exceeded': squared > pair['max_distance_nm']**2, 'below_floor': below})
             except ValueError as exc:
                 unknown.append({'kind': 'electrical_locality_unavailable', **record, 'reason': str(exc)})
     return {'criterion': CRITERION, 'status': 'defect' if defects else 'unknown' if unknown else 'info' if advisories else 'pass',
