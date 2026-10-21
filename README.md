@@ -78,6 +78,9 @@ requirements, checks and models.
    the same candidate, requirements and check evidence. They cannot read each
    other's initial judgments. The two calls run concurrently in separate
    contexts and workspaces; adjudication waits for both to settle.
+   Each also reviews [placement purpose](docs/purpose-review.md): justified
+   constraints and reserves, usable access and the best area or routability
+   improvement. Supported savings remain advisory beside correctness findings.
 5. **Adjudicate centrally.** Findings get explicit dispositions. New reviewer
    and adjudicator citations include [validated document locations](docs/result-reference.md#structured-citations).
    Packets list evidence formats and locator kinds, and citation resubmissions
