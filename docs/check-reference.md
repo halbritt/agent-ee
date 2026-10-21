@@ -1772,5 +1772,7 @@ the check never supplies a manufacturer radius or verifies cited prose.
 Origin-group success supplies no electrical-locality acceptance.
 
 Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
+Multi-member components use [joint cluster search](placer.md#joint-locality-clusters-agentee-335)
+with tightest-limit-first peers and a named typed unknown on cluster exhaustion.
 Heartbeat and partial search results are diagnostics with no acceptance authority;
 the full independent locality check still grades every declared role.

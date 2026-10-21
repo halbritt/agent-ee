@@ -105,6 +105,9 @@ multi-pad pins, and coordinator packing binds to the check's immutable locality
 file. Origin-group distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)
 caches selected pads and retains typed partial diagnostics on its optional search deadline.
+[Joint locality clusters](docs/placer.md#joint-locality-clusters-agentee-335)
+pack capacitors and switch peers together, tightest limit first, and name the
+blocking cluster when bounded search cannot finish.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

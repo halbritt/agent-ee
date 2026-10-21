@@ -28,7 +28,8 @@ board with native DRC. The [rung-1 policy](rung1-qualified.md#placement-policy)
 uses 1.5 mm to preserve space for J1's reference text outside its courtyard;
 using the copper-edge rule as the courtyard margin alone clipped that text.
 
-The placer sorts explicit priorities first, then descending pad count, then
+Outside [joint locality clusters](#joint-locality-clusters-agentee-335),
+the placer sorts explicit priorities first, then descending pad count, then
 reference (parts bound to a declared anchor point, then declared group anchors
 and their members, are ordered first; see [search](#bounded-search-agentee-212)
 and [crowded clusters](#crowded-clusters-agentee-212)). It tries four quarter-turn rotations at deterministic positions
@@ -885,7 +886,7 @@ Locality targets are deduplicated and capped at 256 distinct origins per rotatio
 Exceeding that cap returns `packing_budget_exhausted`, `outcome=unknown`; it never
 truncates constraints or searches a silently reduced target set. Below the cap,
 candidate axes, exact rational costs, tie breaks and deterministic placements are
-preserved.
+preserved outside the joint locality clusters below.
 
 Optional `policy.search_timeout_s` is a positive wall-time search budget of at
 most 86,400 seconds.
@@ -894,7 +895,8 @@ run during candidate generation, empty reservation sweeps and candidate testing;
 individual geometry operations and sorting are not interrupted. Set this budget
 below the enclosing executor deadline, leaving time for qualification and result
 serialization. An external process kill cannot guarantee a retained partial result.
-Omitting it keeps the deterministic step-only stopping rule.
+Omitting it keeps the deterministic step-only stopping rule outside the
+multi-member locality clusters described below.
 
 `pack(..., heartbeat=callback)` emits qualification/search progress, including
 steps and placed counts; search heartbeats are emitted at five-second intervals
@@ -920,3 +922,41 @@ obligations and one constrained movable peer among 330 placed parts, with a
 and final grading. These isolate locality scaling; courtyard qualification,
 capacity proofs, broad backtracking and native saved-board gates still have
 independent costs.
+
+## Joint locality clusters (AGENTEE-335)
+
+Connected locality components with at least three footprints are packed as a
+unit. The highest-degree footprint is the hub (ties use the existing queue
+order and reference); a movable hub goes first. Other movable endpoints follow
+in ascending order of their tightest incident pad-distance limit, with the
+existing queue order and reference breaking ties. Fixed endpoints stay fixed.
+Supply, return and switch roles all contribute, so a shared inductor stays with
+its IC and capacitors. Two-footprint components and unguided placements retain
+their existing ordering, candidates and verdicts.
+
+Each unit searches joint transforms around its placed members. If a later
+member cannot fit, search revisits every earlier member's alternatives,
+including nonlead members. Necessary axis projections prune impossible pad
+distances before candidate ranking; the existing exact predicates and the
+independent complete-plan grade still enforce every declared limit. Origin
+group distances, fixed geometry, gaps and other placement constraints remain
+enforced. A backjump moves the whole cluster without splitting its membership.
+
+A cluster has cumulative guards of 4,096 tested candidates and five seconds
+across backjumps, plus a maximum of 64 movable members to bound recursion.
+These are search limits, not evidence of physical infeasibility. A guard or
+finite joint search with no external movable blocker returns
+`locality_cluster_exhausted`, `outcome=unknown`, empty `placements`, and
+`search.blocking_cluster` naming all references and obligation IDs. Partial
+placements retain diagnostic-only authority. `search.locality_clusters` records
+member order, strategy and guards. Geometry qualification and capacity proofs
+precede these cooperative search guards; individual geometry calls and sorts
+are not interrupted. An enclosing deadline can still expire first.
+
+`tests.test_placer_clusters` contains original fixtures for tightest-first
+ordering, a 50-step success where independent search exhausts, a three-capacitor
+case requiring a nonlead alternative, and fixed-geometry infeasibility within
+three seconds. It also covers switch peers, movable hubs, determinism and guard
+cleanup. Existing AGENTEE-332 replay cases retain their placements and verdicts.
+Real pod runs remain diagnostics; a cluster refusal publishes no board and
+does not establish that the design is impossible.
