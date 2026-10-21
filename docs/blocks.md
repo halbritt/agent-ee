@@ -461,8 +461,8 @@ and a reserved box, the open set of origins where the two come within the gap.
 A placed block's drilled-pad reservation (an inscribed square) blocks any
 member courtyard that would overlap it on either side. Its owner is recorded as
 a blocker. Only parts with pad geometry count, as in `placer._hole_conflict`.
-On the pod, this channel cut drilled-pad rejections at the exact predicate from
-4341 to 48 in a 300 s window. The rectangles are cached as the incremental
+On the pod with the default objective, drilled-pad rejections at the exact
+predicate fell from 4341 (340 search, 300 s) to 48 (240 s). The rectangles are cached as the incremental
 ranking cache: a block's rotated geometry and its rectangles against fixed parts
 are computed once, and its rectangles against each placed block are kept per
 (block, rotation, placed block, pose). After a backjump, only the blocks that
@@ -576,7 +576,128 @@ box, so interleaving two sparse blocks is found only by chance. Conflict-directe
 backjumping recovers from local dead ends, but each backjump re-ranks the next
 block, which takes seconds per block on the pod. Compact intra-block packing (a
 stage-A objective), member-aligned candidate axes, or a cited library layout
-for the regulator blocks (AGENTEE-342) are the next levers.
+for the regulator blocks (AGENTEE-342) are the next levers. AGENTEE-355 added the
+first two; see [the microSD diagnostic](#real-pod-diagnostic-on-the-microsd-source-agentee-355).
+
+### Real-pod diagnostic on the microSD source (AGENTEE-355)
+
+A read-only scratch diagnostic; nothing was adopted or written to fome-mc. Inputs
+at fome-mc `8c42f2e`, each checked with `sha256sum -c` against the fome-mc
+SHA256SUMS files:
+
+- `placement-seed-microsd/base-seed.kicad_pcb` (uncompressed `05da3eb6…`, 309
+  footprints: 162 F, 147 B);
+- `storage-microsd/native.xml` (`7791d443…`);
+- `blocks/allocation.json` (`c4f45f65…`, 20 blocks);
+- `electrical-locality/pad-obligations/electrical-locality.json` (12 obligations).
+
+The packing policy is iteration 3's (0.25 mm gap, 0.5 mm edge margin), with these
+changes:
+
+- fixed refs are the allocation's fixed residual (H1–H4, J1, J2, U1, U2);
+- only the five IMU-isolation obstacles are kept;
+- groups and overhangs that name removed parts are dropped.
+
+The arrangement policy cites iteration 2's inductor shadows (L1, L2, +0.5 mm) and
+its no-cluster-over-a-fixed-part rule (pre-6v3, buck-3v3, wheel-input) as hard.
+Thermal spread (U5, U7; 15 mm) is advisory.
+
+**Allocation.** As given, the allocation does not derive. `supervision` lists
+C73, C74, R58, R59 and U17, and `diagnostic` lists C113 and R140–R143. The
+microSD source removed all ten parts. With them dropped (scratch variant v1),
+`derive` gives 20 blocks, 295 members and 14 residual. Stage A then gives
+`synthetic_plane_reached` for buck-3v3 (C18) and mcu (R33), as in AGENTEE-340, so
+arrangement cannot start. Variant v2 also moves C18 and R33 to the residual set:
+20 blocks, 293 members and 16 residual.
+
+**Stage A (v2).** All 20 blocks pack, and compaction changes the outline boxes:
+
+| | F box total | B box total | Wall time |
+| --- | --- | --- | --- |
+| First run | 3590 mm² | 2893 mm² | 6.6 s |
+| Compacted | 2575 mm² | 1701 mm² | 220 s on 10 processes (980 s CPU) |
+
+The slowest block is diagnostic at 216 s. Examples: wheel-input 53.0 × 13.6 →
+19.2 × 19.2 mm, diagnostic 32.3 × 33.9 → 21.1 × 21.0 mm, thermistor 28.1 × 16.9
+→ 14.8 × 15.3 mm. Storage (J3 and its passives) does not shrink. The compacted
+blocks fill 68–100 % of their boxes with gap-grown member courtyards.
+
+**Stage B (v2).** Each row is `block_arrangement.arrange` with `search_timeout_s`
+1800 s unless noted. Blocks are counted at the search peak.
+
+| Stage A | Stage B code | Order, objective | Outcome | Wall (arrangement) | Steps, backjumps |
+| --- | --- | --- | --- | --- | --- |
+| First run | 340 | default, default | `arrangement_budget_exhausted`, 6/20, unplaced diagnostic | 1825 s | 16386, 525; 9466 drilled-pad rejections |
+| Compacted | 340 | default, default | 13/20, unplaced gnss (stopped at 731 s) | – | 6261, 1842 |
+| Compacted | 355 | default, default | `arrangement_budget_exhausted`, 13/20, unplaced gnss | 1815 s | 3001, 2777 |
+| Compacted | 355 | largest box first, default | `arrangement_budget_exhausted`, 18/20, unplaced sensor-power-tire | 1815 s | 3595, 2084 |
+| Compacted | 355 | default, `["pad-locality"]` | `planned` | 116 s (15 s) | 131, 0; 18 drilled-pad rejections |
+| Compacted | 355 | largest first, `["pad-locality"]` | `planned` | 116 s (9 s) | 91, 0; 32 drilled-pad rejections |
+| Compacted | 340 + winding fix | default, `["pad-locality"]` | `planned` | 142 s (34 s) | 1502, 0; 1363 drilled-pad rejections |
+| Compacted | 340 + winding fix | largest first, `["pad-locality"]` | `planned` | 116 s (23 s) | 148, 0; 95 drilled-pad rejections |
+| First run | 355 | default, `["pad-locality"]` | `arrangement_budget_exhausted`, 16/20, unplaced power-entry | 1828 s | 17073, 16253 |
+| First run | 355 | largest first, `["pad-locality"]` | `arrangement_budget_exhausted`, 14/20, unplaced supervision | 1827 s | 7221, 1636 |
+
+With `["pad-locality"]` alone, positions rank by obligation cost and then by
+position, so the arrangement fills from the left. The default puts
+`inter-block-wire` second, which spreads blocks around their placed peers and
+fragments the front side. Two repeated runs of the default order with
+`["pad-locality"]` gave identical plans.
+
+In this ablation, completion comes from compaction together with the
+position-first objective. Without compaction, neither search completes in 30
+minutes under any of these orders. The AGENTEE-340 search also completes on the
+compacted candidates once its grading crash is fixed. The 355 search changes
+reduce work, not reach:
+
+- arrangement steps fall from 1502 to 131;
+- drilled-pad rejections fall from 1363 to 18;
+- with the default objective, backjumps run about four times faster (profiled:
+  160 in 300 s for the 340 search, 504 in 240 s for the 355 search).
+
+**Complete pod through the writer.** `placer_runner.place_candidate` with a
+`blocks` request: the same derivation, candidates and policy, and the
+iteration-3 `candidate.kicad_pro` beside the seed. Both position-first
+configurations are `placed`:
+
+| Order | Wall time | Steps (arrangement + residual) | Saved board SHA-256 |
+| --- | --- | --- | --- |
+| Largest first | 119 s | 91 + 46 | `9d690702…2951` |
+| Default | 125 s | 131 + 105 | `85593c40…0d69` |
+
+Both runs have the same grades:
+
+- judgment `pass`, with no native courtyard overlaps;
+- groups `pass`;
+- locality `pass`: 26 pairs measured, largest ratio 0.945 (`u7-input-hf-C10`
+  supply);
+- hard `no_stacking` and `no_block_over_fixed` `pass` on the saved board; thermal
+  spread (advisory) `pass`;
+- no blocking DRC findings. Only silk is added against the seed (the D-PCB-8 silk
+  policy was not applied).
+
+Native DRC with the cited `design-rules/board-setup.kicad_pro`:
+
+| Item | Seed | Each saved board |
+| --- | --- | --- |
+| Courtyard | 5 | 0 |
+| Hole (`npth_inside_courtyard`) | 1 | 0 |
+| Copper-edge | 0 | 0 |
+| Clearance | 18 | 18 |
+| Drill | 44 | 44 |
+| Library | 199 | 199 |
+
+The 18 clearance items are the same pad pairs inside U2 (LGA-14) and U16, U18
+and U19 (DSE0006A) in the seed. They are land-pattern spacing, not placement.
+
+For comparison, agent-499's hand-anchored iterations 2 and 3 placed the eMMC
+source in 1429 s and 866 s, with clearance, courtyard, hole and copper-edge at 0
+on the cited project. The 2026-10-21 microSD source has no hand iteration at
+`8c42f2e`.
+
+The stage-B plan here is search-derived and advisory, like every block in it.
+No pod acceptance is claimed. Routing, the silk policy and review remain the pod
+lane's.
 
 ## Real-pod diagnostic (stage A)
 
