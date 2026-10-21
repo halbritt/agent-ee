@@ -116,6 +116,27 @@ b.Add(t); assert k.SaveBoard(sys.argv[1], b)
         self.assertEqual(self.source.read_bytes(), source)
         self.assertFalse((self.scratch / 'marked').exists())
 
+    def test_touching_obstacle_union_survives_native_save_and_regrade(self):
+        from agent_ee.placement import intersection_area
+        from agent_ee.placement_probe import extract
+        from test_placement import rectangle
+        ring = [rectangle(1, 1, 5, 0.5), rectangle(1, 5.5, 5, 0.5),
+                rectangle(1, 1.5, 0.5, 4), rectangle(5.5, 1.5, 0.5, 4)]
+        self.config['policy']['obstacles'] = [{'side': 'F', 'polygons': ring}]
+        destination = self.scratch / 'obstacle-union'
+        report = place_candidate(self.source, self.netlist, destination, self.config)
+        self.assertEqual(report['status'], 'placed', report)
+        self.assertEqual(report['judgment']['verdict'], 'pass')
+        self.assertEqual(report['native_courtyard_overlaps'], [])
+        saved = extract(destination / 'candidate.kicad_pcb')
+        for fp in saved['footprints']:
+            for poly in fp['courtyards']['F']['polygons']:
+                for obstacle in ring:
+                    self.assertEqual(intersection_area(poly, obstacle), 0, fp['ref'])
+        fixed = next(f for f in saved['footprints'] if f['ref'] == 'U1')
+        self.assertEqual(fixed['position_nm'], [3000000, 3000000])
+        self.assertEqual(self.source.read_bytes(), self.saved)
+
     def test_actual_saved_placements_repeat_and_preserve_static_and_source(self):
         first = place_candidate(self.source, self.netlist, self.scratch / 'one', self.config)
         second = place_candidate(self.source, self.netlist, self.scratch / 'two', self.config)

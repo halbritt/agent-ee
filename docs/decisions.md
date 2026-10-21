@@ -551,3 +551,31 @@ outline are structural engineering findings. Reject declarations that demote
 owner rules. Plane production and the row stand-in share provenance grading.
 G4 (verified reference authority) and G5 (native geometry defaults) remain
 follow-up work; importing a class and citation does not validate their authority.
+
+The coordinator's 2026-10-21 ruling preserves the group-copper campaign's
+initial structural findings: its unplaced copper fails both `drc-placement` and
+`outline`. Reusing the module must still pass fresh DRC and every later campaign
+assertion, including `criteria_satisfied`; containment witnesses stay visible.
+
+## Unsourced packing gaps (2026-10-21, AGENTEE-338)
+
+The coordinator's AGENTEE-338 ruling applies the owner's requirement that limits
+be validated against a specification. The pod's 0.25 mm packing gap came from
+agent-491's policy, without a captured assembly requirement. It remains an
+advisory search reservation. A capacity proof that depends on that unsourced gap
+reports unknown and names the gap for confirmation. A zero-gap structural proof
+keeps its defect verdict. Original fixtures retain explicit fixture-author gap
+requirements; qualified captured manufacturer requirements remain hard. The
+[placer reference](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
+describes the source entry and its caller-qualification boundary.
+
+## Locality numeric authority (AGENTEE-337, owner 2026-10-21)
+
+Numeric locality maxima require a component numeric/scale derivation or an
+explicit owner-recorded decision reference. Agent-selected D-PL-1-style limits
+and prose-only datasheet citations are advisory, including legacy declarations.
+They may rank placements but cannot reject a proposal by distance. Manufacturing
+spacing is a minimum and cannot establish an electrical maximum. Captured JLCPCB
+PCB-clearance facts and native geometry can prove a manufacturer bound
+infeasible below a necessary copper floor; assembly pad envelopes are advisory; the exact whole-footprint minimum remains an implementation gap.
+See [locality provenance](placer.md#locality-provenance-agentee-337).

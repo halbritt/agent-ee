@@ -82,6 +82,14 @@ revalidates them as one ordered custody chain; `verify-campaign` refuses changed
 reordered or unbound imports.
 They do not replace fresh checks or the declared-stage done binding.
 
+The [placement campaign cancellation regression](placement-adapter.md) holds a
+real sandboxed helper at its readiness marker until interruption (AGENTEE-345).
+It temporarily installs Python's default SIGINT handler so background runners
+that inherit ignored SIGINT still deliver the interrupt, then restores the prior
+handler on cleanup. A 120 s helper deadline bounds a missing readiness marker.
+It requires cancelled receipts, process cleanup and no next candidate. This test
+synchronization change adds no check kind and changes no candidate verdict.
+
 Test refusal diagnostics (AGENTEE-326) use an absolute
 `AGENT_EE_REFUSED_RECEIPTS` override, the writable repository build directory,
 or private per-user temporary storage. Retention errors preserve the original
@@ -1111,6 +1119,13 @@ stale cluster `seed_only` flag, and reserves `IMU_AXES` markings in both the
 pre-lease preview and leased targeted plan. Native regressions cover both
 `targeted` and `targeted_plans` refusal on a reserved label and unmarked controls.
 
+[Block arrangement](blocks.md#stage-b-arrangement-agentee-340) (AGENTEE-340)
+is another writer request mode (`blocks`). It adds no check kind. The saved
+board is judged, graded for groups and pad locality, and DRC-gated as every
+placer plan is. In addition, the hard block rules are re-graded from the saved
+bytes (`judgment.block_rules`). A failed hard rule refuses publication;
+advisory rows are reported only.
+
 `placement` evaluates one declared criterion per check against the saved-board
 probe and the raw report of an earlier `drc` check; it never runs DRC itself.
 See [placement checks](placement.md#placement-check-kind) for parameters,
@@ -1700,7 +1715,16 @@ the mount source). It binds opened, identity-checked descriptors using bwrap
 `--ro-bind-fd` and verifies the actual mounted identities inside the sandbox
 before executing either command, covering bwrap versions that canonicalize fd
 sources to pathnames. Directory
-sources containing submounts are conservatively refused, including same-device
+sources containing hard links into live `src` refuse with `live_package_source:<at>`
+(AGENTEE-349), including persistent links planted after inventory, by re-inventorying
+the held descriptor before launches and after execution. Before/after identity of
+declared mounts reads through held descriptors; post-run source replacement or
+observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and
+upward-escaping mount symlinks retain link identity without reading host targets;
+an executable through such a link has an unknown digest and is unadoptable. Only
+fd-form receipts carry the mount-guard observation; historical path-form replay
+retains its lower assurance. Directory sources containing submounts are
+conservatively refused, including same-device
 bind mounts. The three qualified canonical routing helper files and the
 mount-namespace authority limit are recorded in
 [stage receipts](stage-receipts.md#python-tool-source-snapshots).
@@ -1770,15 +1794,34 @@ predicate are respectively that path and `placement:electrical-locality/1`.
 See the [declaration, verdicts and separate packer constraint](placer.md#pad-level-electrical-locality-agentee-322).
 Supply and return are mandatory and switch/inductor pairs optional. The native
 copper-land centroid metric preserves proved defects alongside unknowns;
-missing limits or citations stay unknown. Optional captured pad `uuid` selectors
+missing limits stay unknown; hard enforcement also requires a citation. Optional captured pad `uuid` selectors
 must also match the declared reference, number and net; unselected duplicate
 pad numbers refuse. Native copper offsets participate in the distance, and
 unqualified centroid geometry stays unknown. Coordinator packing derives its
 obligations from the same immutable locality file, recording its raw hash in
 `electrical_locality_binding`; the check judgment records `locality: {path,
 sha256}` (AGENTEE-328). The engineer declares limits and citation locators;
-the check never supplies a manufacturer radius or verifies cited prose.
+the check never infers an electrical maximum from manufacturer spacing or prose.
 Origin-group success supplies no electrical-locality acceptance.
+AGENTEE-337 adds [numeric provenance and manufacturing floors](placer.md#locality-provenance-agentee-337):
+legacy or unsourced bounds report defect-level `unsourced` advisories with `info`
+when no hard defect/unknown exists; these never block publication. Datasheet
+numeric/scale derivations and owner decision references retain hard constraints.
+Captured JLCPCB different-net PCB clearance computes a necessary copper floor and
+refuses hard sourced or explicit manufacturer bounds below it as `locality_infeasible`.
+Assembly package spacing produces advisory estimates only, because native lands
+do not establish physical body/lead extents. The exact
+whole-footprint manufacturing minimum remains unqualified; unknown package
+combinations never inherit an invented value.
+
+AGENTEE-337 locality info summaries report total and exceeded advisory counts.
+Joint-cluster bounds prune only with hard provenance. Missing advisory citations
+and geometry-unknown manufacturer floors stay advisory; absent numeric maxima
+and captured manufacturer-record integrity failures retain unknown coverage.
+A sourced bound below the necessary copper floor is `locality_infeasible`.
+Block candidates preserve source records and accept truthful advisory `info`
+through production, validation and independent admission regrading; hard defects
+and unknown coverage still refuse. See [blocks](blocks.md).
 
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.
@@ -1908,3 +1951,16 @@ unknown and its failed execution is retained. A defect already proved by native
 DRC retains its defect verdict; an otherwise passing DRC cannot pass without
 containment coverage. Supplemental structural witnesses retain their class and citation in the
 classified evidence cited by the collected coordinator finding.
+
+## Declared placer obstacles (AGENTEE-338)
+
+The [placer obstacle policy](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
+accepts touching and overlapping declared polygons as their exact same-side union.
+The policy still refuses invalid individual polygons. The pod's 0.25 mm reserved gap is an
+agent-chosen advisory default, currently enforced against fixed courtyards and
+obstacles; it has no captured assembly-rule authority. A capacity proof that
+binds an unsourced gap is typed unknown and names `gap_nm` for owner confirmation.
+Proofs independent of that gap retain their verdicts; authored fixture requirements
+carry explicit fixture-author provenance. Qualified manufacturer gap requirements
+remain hard. There is no registered-check change; the existing packing policy's
+constraint provenance gains an optional value-bound `gap_nm` source entry.

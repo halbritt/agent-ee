@@ -87,11 +87,20 @@ def board(parts=PARTS):
     return b
 
 
+FIXTURE_DECISION = 'Original fixture author: EE339 parameters define numerical locality requirements.'
+FIXTURE_SOURCES = {'fixture-decisions/EE339.txt': FIXTURE_DECISION}
+
+
 def obligations(limit=6 * MM):
     def pair(a, b, net, cite='Owned fixture requirement EE339: authored test limit.'):
         return {'from': dict(zip(('reference', 'pad', 'net'), a + (net,))),
-                'to': dict(zip(('reference', 'pad', 'net'), b + (net,))), 'max_distance_nm': limit, 'citation': cite}
-    return {'schema': electrical_locality.SCHEMA, 'obligations': [
+                'to': dict(zip(('reference', 'pad', 'net'), b + (net,))), 'max_distance_nm': limit, 'citation': cite,
+                'provenance': {'class': 'owner', 'basis': 'Explicit original fixture requirement',
+                    'decision_reference': {'path': 'fixture-decisions/EE339.txt',
+                        'sha256': hashlib.sha256(FIXTURE_DECISION.encode()).hexdigest(),
+                        'locator': 'EE339 test parameter contract', 'quote': FIXTURE_DECISION,
+                        'owner': 'Original fixture author'}}}
+    return {'schema': electrical_locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': [
         {'id': 'input-C1', 'metric': 'pad-centre-to-centre', 'supply': pair(('U1', '1'), ('C1', '1'), 'VIN'),
          'return': pair(('U1', '2'), ('C1', '2'), 'GND')},
         {'id': 'output-C3', 'metric': 'pad-centre-to-centre', 'kind': 'buck-output-loop', 'ic': 'U1',
@@ -315,6 +324,76 @@ class PackingTests(Fixture, unittest.TestCase):
         self.assertEqual(result['outcome'], 'unknown')
         self.assertNotEqual(result['status'], 'packed')
 
+    def test_advisory_only_packs_roundtrips_and_admits(self):
+        doc = obligations(limit=100000)
+        doc.pop('source_records')
+        del doc['obligations'][0]['supply']['citation']
+        pol = policy(electrical_locality=doc)
+        derived = self.derive()
+        result = self.pack(electrical_locality=doc)
+        self.assertEqual(result['status'], 'packed', result)
+        cand = json.loads(json.dumps(result['candidate']))
+        blocks.validate_candidate(cand)
+        grade = cand['grade']['electrical_locality']
+        self.assertEqual(grade['status'], 'info')
+        self.assertEqual(len(grade['advisories']), 5)
+        self.assertTrue(all(r['exceeded'] for r in grade['advisories']))
+        self.assertTrue(all('below_floor' in r for r in grade['advisories']))
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, derived, pol),
+                         {'status': 'admitted', 'problems': []})
+        for change in (lambda g: g.update(status='pass'),
+                       lambda g: g['advisories'].pop(),
+                       lambda g: g['advisories'][0].update(exceeded=False)):
+            forged = copy.deepcopy(cand)
+            change(forged['grade']['electrical_locality'])
+            with self.assertRaisesRegex(ValueError, 'every advisory'):
+                blocks.validate_candidate(forged)
+
+    def test_advisory_below_manufacturing_floor_is_retained(self):
+        # Original, non-overlapping lands at 0.5 mm pitch establish a positive
+        # necessary copper floor while the authored courtyards stay unchanged.
+        for fp in self.board['footprints']:
+            for i, pad in enumerate(fp['pads']):
+                pad['position_nm'] = [fp['position_nm'][0] + i * 500000, fp['position_nm'][1]]
+        doc = obligations(limit=1)
+        doc.pop('source_records')
+        pol = policy(electrical_locality=doc)
+        result = self.pack(electrical_locality=doc)
+        self.assertEqual(result['status'], 'packed', result)
+        cand = json.loads(json.dumps(result['candidate']))
+        self.assertTrue(any(r['below_floor'] for r in cand['grade']['electrical_locality']['advisories']))
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, self.derive(), pol),
+                         {'status': 'admitted', 'problems': []})
+        row = next(r for r in cand['grade']['electrical_locality']['advisories'] if r['below_floor'])
+        row['below_floor'] = False
+        with self.assertRaisesRegex(ValueError, 'every advisory'):
+            blocks.validate_candidate(cand)
+
+    def test_mixed_hard_advisory_roundtrip_and_admission(self):
+        doc = obligations()
+        soft = doc['obligations'][0]['supply']
+        soft.pop('provenance')
+        soft['max_distance_nm'] = 1
+        pol = policy(electrical_locality=doc)
+        result = self.pack(electrical_locality=doc)
+        self.assertEqual(result['status'], 'packed', result)
+        cand = json.loads(json.dumps(result['candidate']))
+        internal = cand['block_policy']['electrical_locality']
+        self.assertEqual(internal['source_records'], doc['source_records'])
+        self.assertEqual(internal['obligations'], doc['obligations'][:2])
+        grade = cand['grade']['electrical_locality']
+        self.assertEqual(grade['status'], 'info')
+        self.assertEqual(len(grade['advisories']), 1)
+        self.assertTrue(grade['advisories'][0]['exceeded'])
+        for row in grade['measured']:
+            if row['constraint_provenance']['enforcement'] == 'hard':
+                self.assertLessEqual(blocks._squared(row, 'distance'), row['max_distance_nm'] ** 2)
+        self.assertEqual(blocks.admit(cand, self.board, self.inv, self.derive(), pol),
+                         {'status': 'admitted', 'problems': []})
+        # The same impossible bound still refuses when it has the authored source.
+        doc['obligations'][0]['supply'] = obligations(limit=1)['obligations'][0]['supply']
+        self.assertNotEqual(self.pack(electrical_locality=doc)['status'], 'packed')
+
     def test_groups_are_internal_or_deferred(self):
         groups = [{'id': 'near', 'references': ['C1'], 'anchor': {'reference': 'U1'}, 'max_distance_nm': 4 * MM},
                   {'id': 'board', 'references': ['C3'], 'anchor': {'point_nm': [10 * MM, 10 * MM]}, 'max_distance_nm': 5 * MM},
@@ -339,6 +418,17 @@ class PackingTests(Fixture, unittest.TestCase):
                                    policy(electrical_locality=None))
         self.assertEqual(result['status'], 'packed', result.get('reason'))
         self.assertEqual(result['candidate']['block_policy']['priority_refs'], ['C1', 'L1', 'C3'])
+
+    def test_board_priority_on_the_anchor_is_dropped(self):
+        # AGENTEE-340: the pod's GNSS anchor U3 is a board priority. The anchor is fixed in
+        # the block frame, so the candidate validator's "anchor not prioritized" rule holds.
+        derived = self.derive()
+        result = self.pack(derived, priority_refs=['U1', 'L1'])
+        self.assertEqual(result['status'], 'packed', result.get('reason'))
+        self.assertEqual(result['candidate']['block_policy']['priority_refs'][0], 'L1')
+        self.assertNotIn('U1', result['candidate']['block_policy']['priority_refs'])
+        self.assertEqual(blocks.admit(result['candidate'], self.board, self.inv, derived,
+                                      policy(priority_refs=['U1', 'L1']))['status'], 'admitted')
 
     def test_witness_gap_boundary(self):
         def at(x):

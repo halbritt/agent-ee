@@ -1,0 +1,146 @@
+{
+ "copper": null,
+ "id": "pod-lm2903-soic8-u26",
+ "layout": {
+  "anchor": "U26",
+  "members": [
+   {
+    "courtyard_sha256": "cd2ff71ee00236aab998fa137a5a7b768451c324f97041d1f1b15eb276e1f18f",
+    "fpid": "Capacitor_SMD:C_0603_1608Metric",
+    "pad_geometry_sha256": "0c696c0904fd786d348c2604f907e859aeef2c6d4e3408c47a79a6f85ab1b614",
+    "pin_functions_sha256": "f926cef3c361c46ec385ea710847bda8565ffcb62f93e55176bb840a7eaa7f70",
+    "pins": {
+     "1": [
+      "n8",
+      true
+     ],
+     "2": [
+      "n4",
+      true
+     ]
+    },
+    "pose": {
+     "position_nm": [
+      1250000,
+      -3750000
+     ],
+     "rotation_deg": 180
+    },
+    "reference": "C97",
+    "side": "F",
+    "value": {
+     "rule": "exact",
+     "text": "100nF 50V X7R"
+    }
+   },
+   {
+    "courtyard_sha256": "8c9dbaac57b556c33b50cbca77170b8daa293edd329dd3c514ef06d45e161ed6",
+    "fpid": "Capacitor_SMD:C_0805_2012Metric",
+    "pad_geometry_sha256": "80bed122979444e2bd6392260e894a1e34d98ea2918e620f3f224438c687da68",
+    "pin_functions_sha256": "f926cef3c361c46ec385ea710847bda8565ffcb62f93e55176bb840a7eaa7f70",
+    "pins": {
+     "1": [
+      "n8",
+      true
+     ],
+     "2": [
+      "n4",
+      true
+     ]
+    },
+    "pose": {
+     "position_nm": [
+      5000000,
+      -500000
+     ],
+     "rotation_deg": 270
+    },
+    "reference": "C98",
+    "side": "F",
+    "value": {
+     "rule": "exact",
+     "text": "1uF 50V X7R"
+    }
+   },
+   {
+    "courtyard_sha256": "12acff2cf47a1c3fb5020188ffc4a44f85e0df59385dd33c418e13b789ba23dd",
+    "fpid": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "pad_geometry_sha256": "eefd5cce19af04f02b44c6b63db9719e6c5bc84a147c4ea6f4647289160dd488",
+    "pin_functions_sha256": "29a863d89db19a9b5e747e048020df9b52909eb1e6061e26503843b46ed9c866",
+    "pins": {
+     "1": [
+      "n1",
+      true
+     ],
+     "2": [
+      "n2",
+      true
+     ],
+     "3": [
+      "n3",
+      true
+     ],
+     "4": [
+      "n4",
+      true
+     ],
+     "5": [
+      "n5",
+      true
+     ],
+     "6": [
+      "n6",
+      true
+     ],
+     "7": [
+      "n7",
+      true
+     ],
+     "8": [
+      "n8",
+      true
+     ]
+    },
+    "pose": {
+     "position_nm": [
+      0,
+      0
+     ],
+     "rotation_deg": 0
+    },
+    "reference": "U26",
+    "side": "F",
+    "value": {
+     "rule": "exact",
+     "text": "LM2903BQDRQ1"
+    }
+   }
+  ]
+ },
+ "part": "LM2903-SOIC8",
+ "provenance": {
+  "citation": "fome-mc 7a8baa137bb5072016c49b5b57c1e38bf0634cff telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json cluster U26: hand-placed by the pod lane against agent-chosen D-PL-1 locality bounds; the pod has not been fabricated or tested. Imported as search-derived, advisory (owner ruling 2026-10-21).",
+  "class": "search-derived",
+  "enforcement": "advisory",
+  "label": "search-derived (advisory): project cluster U26 from telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json@7a8baa137bb5"
+ },
+ "receipt": {
+  "candidate_sha256": "897a6dfc625a348d76924f74c02cd11ae7628b31ba01783f8a2d4689d70d8b7d",
+  "import": "project-cluster/1",
+  "importer": "agent_ee.block_library/1",
+  "inputs": {
+   "board_sha256": "6507431735f169c87270bec673c53b1110ef8e4983eddd4d17cc5b91a73985ad",
+   "inventory_sha256": "a56455fafe7662588d796dff7cabd07dd730c8e88d66ccb161f3a70694f0d74e",
+   "policy_sha256": "a292b8cac35b793d5423465c9e7c12a4e7d268ab297e7d2ea632509cf055bce1"
+  },
+  "source": {
+   "commit": "7a8baa137bb5072016c49b5b57c1e38bf0634cff",
+   "locator": "https://github.com/halbritt/fome-mc telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json",
+   "path": "telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json",
+   "repository": "https://github.com/halbritt/fome-mc",
+   "sha256": "51a8bc84837f32390dddceff559d5a6b5b032ef0ea185413e47ff60307d4a8ce"
+  }
+ },
+ "schema": "agent-ee.block-library-entry/1",
+ "version": 1
+}

@@ -562,7 +562,7 @@ class SublayoutCampaignTest(unittest.TestCase):
         self.assertEqual((status, state['state']), (0, 'criteria_satisfied'), state)
         first = state['history'][0]
         self.assertEqual((first['earliest_failing_stage'], first['stage_failures']['placement']),
-                         ('placement', ['outline']))
+                         ('placement', ['drc-placement', 'outline']))
         self.assertEqual(self.outcomes(1)['outline'], 'defect')
         # Fresh captured checks of the next candidate grade the reused copper, including full DRC.
         self.assertEqual(self.outcomes(2), {'drc-placement': 'pass', 'courtyard': 'pass', 'outline': 'pass',

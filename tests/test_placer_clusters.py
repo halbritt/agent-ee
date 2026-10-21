@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from agent_ee import electrical_locality
 from agent_ee.placer import _pack, pack, transform
-from test_electrical_locality import board, declaration
+from test_electrical_locality import FIXTURE_SOURCES, board, declaration
 from test_placement import MM, part, rectangle
 from test_placer import request
 
@@ -25,7 +25,7 @@ def random_cluster_case(rng):
     hub, capacitor = source['footprints']
     count = rng.randint(2, 4)
     footprints = [hub] + [clone(capacitor, f'C{i}') for i in range(1, count + 1)]
-    doc = {'schema': electrical_locality.SCHEMA, 'obligations': []}
+    doc = {'schema': electrical_locality.SCHEMA, 'source_records': FIXTURE_SOURCES, 'obligations': []}
 
     def limit():
         return rng.choice([int(rng.uniform(1.5, 8)*MM), 3*MM, 4*MM, 2*MM + 500000])
@@ -102,6 +102,20 @@ def joint_pack(source, policy):
 
 
 class ClusterTests(unittest.TestCase):
+    def test_advisory_only_joint_cluster_does_not_prune(self):
+        # P1 seed 1/case 0: hard axis pruning exhausts this advisory-only case.
+        source, policy = random_cluster_case(random.Random(1))
+        doc = policy['electrical_locality']
+        doc.pop('source_records')
+        for obligation in doc['obligations']:
+            for role in electrical_locality.roles(obligation):
+                obligation[role].pop('provenance')
+                obligation[role]['max_distance_nm'] = 1
+        result = joint_pack(source, policy)
+        self.assertEqual(result['status'], 'planned', result)
+        self.assertEqual(result['locality_grading']['status'], 'info')
+        self.assertTrue(all(a['exceeded'] for a in result['locality_grading']['advisories']))
+
     def test_tightest_member_precedes_loose_priority_and_is_deterministic(self):
         source, doc = cluster_board()
         for role in ('supply', 'return'):

@@ -1,0 +1,208 @@
+{
+ "copper": null,
+ "id": "pod-tps62162-dsg-u15",
+ "layout": {
+  "anchor": "U15",
+  "members": [
+   {
+    "courtyard_sha256": "c9fd075a14797cd55900c2fec49e723b59f7b6b5b526eee5e0a8792415f60144",
+    "fpid": "Capacitor_SMD:C_1210_3225Metric",
+    "pad_geometry_sha256": "7d1e79478ce23ee3d765b6c8dbb6b98096b03795d464d5de6e96e4cd8db5b347",
+    "pin_functions_sha256": "f926cef3c361c46ec385ea710847bda8565ffcb62f93e55176bb840a7eaa7f70",
+    "pins": {
+     "1": [
+      "n3",
+      true
+     ],
+     "2": [
+      "n1",
+      true
+     ]
+    },
+    "pose": {
+     "position_nm": [
+      0,
+      4000000
+     ],
+     "rotation_deg": 270
+    },
+    "reference": "C68",
+    "side": "B",
+    "value": {
+     "rule": "exact",
+     "text": "22 uF/25 V"
+    }
+   },
+   {
+    "courtyard_sha256": "8cc0143cb34f1c96c64ef4160477ed81df57d5c3dceff892c5bb42478e1cbd99",
+    "fpid": "Capacitor_SMD:C_1210_3225Metric",
+    "pad_geometry_sha256": "7d1e79478ce23ee3d765b6c8dbb6b98096b03795d464d5de6e96e4cd8db5b347",
+    "pin_functions_sha256": "f926cef3c361c46ec385ea710847bda8565ffcb62f93e55176bb840a7eaa7f70",
+    "pins": {
+     "1": [
+      "n3",
+      true
+     ],
+     "2": [
+      "n1",
+      true
+     ]
+    },
+    "pose": {
+     "position_nm": [
+      -750000,
+      -3750000
+     ],
+     "rotation_deg": 180
+    },
+    "reference": "C69",
+    "side": "B",
+    "value": {
+     "rule": "exact",
+     "text": "22 uF/25 V"
+    }
+   },
+   {
+    "courtyard_sha256": "c9fd075a14797cd55900c2fec49e723b59f7b6b5b526eee5e0a8792415f60144",
+    "fpid": "Capacitor_SMD:C_1210_3225Metric",
+    "pad_geometry_sha256": "7d1e79478ce23ee3d765b6c8dbb6b98096b03795d464d5de6e96e4cd8db5b347",
+    "pin_functions_sha256": "f926cef3c361c46ec385ea710847bda8565ffcb62f93e55176bb840a7eaa7f70",
+    "pins": {
+     "1": [
+      "n2",
+      true
+     ],
+     "2": [
+      "n1",
+      true
+     ]
+    },
+    "pose": {
+     "position_nm": [
+      -3500000,
+      500000
+     ],
+     "rotation_deg": 270
+    },
+    "reference": "C70",
+    "side": "B",
+    "value": {
+     "rule": "exact",
+     "text": "22 uF/25 V"
+    }
+   },
+   {
+    "courtyard_sha256": "a294aed4d649c55add86705f304216b0112b996d09bac7909b7ba41334a457a2",
+    "fpid": "PodStoragePower:SRP4020TA",
+    "pad_geometry_sha256": "ddba3470818cfded7330503f9afdaa66a079c2b1ae42c795f97451c604cd045e",
+    "pin_functions_sha256": "00e5956f55d9a6d462956d5f61d0a86ff7937119f01107eab759edd69e630d80",
+    "pins": {
+     "1": [
+      "n4",
+      false
+     ],
+     "2": [
+      "n3",
+      true
+     ]
+    },
+    "pose": {
+     "position_nm": [
+      4750000,
+      250000
+     ],
+     "rotation_deg": 0
+    },
+    "reference": "L4",
+    "side": "B",
+    "value": {
+     "rule": "exact",
+     "text": "2.2 uH"
+    }
+   },
+   {
+    "courtyard_sha256": "b6777f3a50704247e816701acb5f7e063117fdbaac129f655af072684df8c956",
+    "fpid": "Package_SON:Texas_DSG0008A_WSON-8-1EP_2x2mm_P0.5mm_EP0.9x1.6mm",
+    "pad_geometry_sha256": "6f3feaec9f579ef43939474c21b043f2648717f09a5ce5cc17c54101c6a2a195",
+    "pin_functions_sha256": "a1d051b5640e32594acb72a123dc7a04ea0b312aa0c2a04954e8cd5c3b7a7305",
+    "pins": {
+     "1": [
+      "n1",
+      true
+     ],
+     "2": [
+      "n2",
+      true
+     ],
+     "3": [
+      "n2",
+      true
+     ],
+     "4": [
+      "n1",
+      true
+     ],
+     "5": [
+      "n1",
+      true
+     ],
+     "6": [
+      "n3",
+      true
+     ],
+     "7": [
+      "n4",
+      false
+     ],
+     "8": [
+      "n5",
+      false
+     ],
+     "9": [
+      "n1",
+      true
+     ]
+    },
+    "pose": {
+     "position_nm": [
+      0,
+      0
+     ],
+     "rotation_deg": 0
+    },
+    "reference": "U15",
+    "side": "B",
+    "value": {
+     "rule": "exact",
+     "text": "TPS62162QDSGRQ1"
+    }
+   }
+  ]
+ },
+ "part": "TPS62162-DSG",
+ "provenance": {
+  "citation": "fome-mc 7a8baa137bb5072016c49b5b57c1e38bf0634cff telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json cluster U15: hand-placed by the pod lane against agent-chosen D-PL-1 locality bounds; the pod has not been fabricated or tested. Imported as search-derived, advisory (owner ruling 2026-10-21).",
+  "class": "search-derived",
+  "enforcement": "advisory",
+  "label": "search-derived (advisory): project cluster U15 from telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json@7a8baa137bb5"
+ },
+ "receipt": {
+  "candidate_sha256": "8a325d3c0172f4604bd5742350e0cfded766aa3b2e992d66388d28ed1fcbcf5c",
+  "import": "project-cluster/1",
+  "importer": "agent_ee.block_library/1",
+  "inputs": {
+   "board_sha256": "6507431735f169c87270bec673c53b1110ef8e4983eddd4d17cc5b91a73985ad",
+   "inventory_sha256": "a56455fafe7662588d796dff7cabd07dd730c8e88d66ccb161f3a70694f0d74e",
+   "policy_sha256": "23898338a0197098b24c950a05d0d946355891aa652bbaffb51970b5db5dd77a"
+  },
+  "source": {
+   "commit": "7a8baa137bb5072016c49b5b57c1e38bf0634cff",
+   "locator": "https://github.com/halbritt/fome-mc telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json",
+   "path": "telemetry-pod/expansion/placement-candidate/iteration-3/inputs/cluster-poses.json",
+   "repository": "https://github.com/halbritt/fome-mc",
+   "sha256": "51a8bc84837f32390dddceff559d5a6b5b032ef0ea185413e47ff60307d4a8ce"
+  }
+ },
+ "schema": "agent-ee.block-library-entry/1",
+ "version": 1
+}
