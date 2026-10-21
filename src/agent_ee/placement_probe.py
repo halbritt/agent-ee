@@ -425,6 +425,11 @@ def extract(board_path):
                            'locked': bool(fp.IsLocked()), 'position_nm': vector_nm(fp.GetPosition()),
                            'rotation_deg': fp.GetOrientationDegrees(), 'courtyards': courtyards,
                            'pads': sorted(pads, key=lambda p: (p['number'], p['uuid']))})
+        from .access_direction import DECLARATION
+        declarations = [f.GetText() for f in fp.GetFields() if f.GetName() == DECLARATION]
+        if declarations:
+            # Keep invalid bytes visible so independent judgment reports unknown.
+            footprints[-1]['access_direction'] = declarations[0] if len(declarations) == 1 else None
         if has_holes:
             try:
                 footprints[-1]['packing_pad_geometry'] = {

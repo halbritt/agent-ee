@@ -1455,3 +1455,11 @@ On the pod inputs, a 20,000-step guided budget, the
 full 200,000-step guided run, the 10-obligation run and the unguided run
 produce identical results before and after (see the AGENTEE-332 performance
 report for the measured times).
+
+## Footprint access lanes (AGENTEE-379)
+
+A native [access-direction declaration](access-direction.md) binds an outward
+vector and clearance envelope to a socket, connector or antenna. Sourced
+declarations constrain movable parts and rigid block members to outline edges;
+uncited declarations remain reported advisories. The saved-board polygon judge
+replays the rule and retains its lane and overhang measurements.

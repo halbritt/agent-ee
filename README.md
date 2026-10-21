@@ -1013,3 +1013,8 @@ Native design-rule grading also checks saved effective copper containment agains
 the board outline, including cutouts. Crossing and wholly outside copper remain
 structural engineering defects regardless of advisory edge-clearance defaults;
 see [design-rule provenance](docs/check-reference.md#design-rule-provenance-agentee-331).
+
+Native [footprint access declarations](docs/access-direction.md) constrain sourced
+socket, connector and antenna lanes to outward board edges during placement,
+block arrangement and saved-board judgment. Uncited lanes remain advisories
+(AGENTEE-379).

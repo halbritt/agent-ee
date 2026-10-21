@@ -450,7 +450,10 @@ def _isolated(capture, board, members, areas, box):
     return {'schema': capture['schema'], 'board_sha256': capture['board_sha256'],
             'pcbnew_version': capture.get('pcbnew_version'),
             'outline': {'status': 'proven', 'polygons': [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]},
-            'footprints': [copy.deepcopy(board[r]) for r in members], 'rule_areas': copy.deepcopy(areas)}
+            # Access is relative to the final board edge, never to this artificial block box.
+            # Stage B reuses the declaration from the hash-bound original board.
+            'footprints': [{k: copy.deepcopy(v) for k, v in board[r].items() if k != 'access_direction'}
+                           for r in members], 'rule_areas': copy.deepcopy(areas)}
 
 
 def _box_area(outline):

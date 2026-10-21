@@ -25,9 +25,9 @@ from fractions import Fraction
 import math
 import time
 
-from . import electrical_locality, placement_groups, placement_provenance
+from . import access_direction, electrical_locality, placement_groups, placement_provenance
 from .placement import (area2, boxes_meet, convex, courtyard_bounds, cross, edges, intersection_area, judge,
-                        overhang_bands, qualified_polygons, validate_capture)
+                        on_segment, overhang_bands, qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
 from .symbol_library import LibraryError, nanometres
 
@@ -372,6 +372,9 @@ def _keepouts(capture):
     owners = {fp['uuid']: fp for fp in capture['footprints']}
     for fp in owners.values():
         fp['packing_keepouts'] = []
+        if access_direction.hard(fp):
+            _, _, _, lane = access_direction.geometry(fp)
+            fp['packing_keepouts'].append({'side': fp['side'], 'polygons': lane})
     obstacles = []
     areas = capture.get('rule_areas', [])
     if not isinstance(areas, list):
@@ -507,6 +510,14 @@ def _hole_conflict(candidate, peer):
 
 
 def _fits(candidate, outline, margin_nm=0, band=()):
+    exit_edges = []
+    if 'access_direction' in candidate:
+        access = access_direction.evaluate(candidate, outline)
+        if access['status'] not in ('pass', 'info'):
+            return False
+        if not band and access['provenance']['enforcement'] == 'hard':
+            band = access['lane_polygons_nm']
+            exit_edges = access['overhang']['edges']
     # A band is a declared overhang across outline edges; its regions share no area with the board.
     # Without a band, a courtyard lies in a convex counter-clockwise outline exactly
     # when every vertex is on or left of every outline edge (closed sets, exact
@@ -527,7 +538,9 @@ def _fits(candidate, outline, margin_nm=0, band=()):
                 # point; only the remaining edges can decide the exact test.
                 x0, y0, x1, y1 = _box([p])
                 near = [(c, d) for c, d in edges(outline)
-                        if min(c[0], d[0]) - margin_nm < x1 and x0 < max(c[0], d[0]) + margin_nm
+                        if not any(on_segment(c, d, e['start_nm']) and on_segment(c, d, e['end_nm'])
+                                   for e in exit_edges)
+                        and min(c[0], d[0]) - margin_nm < x1 and x0 < max(c[0], d[0]) + margin_nm
                         and min(c[1], d[1]) - margin_nm < y1 and y0 < max(c[1], d[1]) + margin_nm]
                 if near and min(segment_distance2(a, b, c, d)
                                 for a, b in edges(p) for c, d in near) < margin_nm * margin_nm:
@@ -558,12 +571,16 @@ def _candidate_axes(fp, rotation, outline, reserved, gap, margin_nm=0, targets=(
         for p in targets:
             xs.update((p[0]-x0, p[0]-x1, p[0]))
             ys.update((p[1]-y0, p[1]-y1, p[1]))
+    access_x, access_y = access_direction.axes(at_origin, outline)
+    xs.update(access_x)
+    ys.update(access_y)
     if window is not None:
         # Origin limits from necessary conditions only (see _window): nothing admissible is dropped.
         x0, y0, x1, y1 = bounds[0]
         lo_x, lo_y, hi_x, hi_y = window['box']
-        xs = {x for x in xs if lo_x <= x0+x and x1+x <= hi_x}
-        ys = {y for y in ys if lo_y <= y0+y and y1+y <= hi_y}
+        if not access_direction.overhangs_courtyard(at_origin):
+            xs = {x for x in xs if lo_x <= x0+x and x1+x <= hi_x}
+            ys = {y for y in ys if lo_y <= y0+y and y1+y <= hi_y}
         if 'origin' in window:
             ox0, oy0, ox1, oy1 = window['origin']
             xs = {x for x in xs if ox0 <= x <= ox1}
@@ -747,11 +764,11 @@ def _inner(courtyard):
 
 def _area_impossibility(capture, outline, bands):
     # Inner bounds only: an outer curve bound overstates area. A fixed part with a
-    # declared overhang counts only its area on the board; every other courtyard,
-    # fixed or movable, must lie wholly inside the outline.
+    # declared overhang counts its captured onboard area. A cited access lane
+    # supplies a rigid-invariant lower bound for a movable overhang instead.
     board_area = Fraction(abs(area2(outline)), 2)
     for side in ('F', 'B'):
-        area = sum(intersection_area(p, outline) if fp['ref'] in bands else Fraction(abs(area2(p)), 2)
+        area = sum(intersection_area(p, outline) if fp['ref'] in bands else access_direction.minimum_inside_area(fp, [p])
                    for fp in capture['footprints'] if side in fp['courtyards']
                    for p in _inner(fp['courtyards'][side]))
         if area > board_area:
@@ -788,10 +805,10 @@ def _extent(points):
 def _part_impossibility(capture, outline, bands):
     # Every courtyard of a part, on either side, must lie inside the one outline,
     # whatever rigid motion is chosen; this proof is not limited to quarter turns.
-    # A fixed part with a declared overhang need not fit the outline.
+    # Fixed envelope overhangs and cited access lanes invalidate whole-part extents.
     board = _extent(outline)
     for fp in sorted(capture['footprints'], key=lambda f: f['ref']):
-        if fp['ref'] in bands:
+        if fp['ref'] in bands or access_direction.overhangs_courtyard(fp):
             continue
         part = _extent([p for courtyard in fp['courtyards'].values()
                         for poly in _inner(courtyard) for p in poly])
@@ -881,6 +898,10 @@ def _region_impossibility(capture, outline, groups, fixed, placed, obstacles, po
         contained = [g for g, q in regions if q == region or (len(region) == 1 and all(
             _inside(p, region[0]) for p in q))]
         refs = sorted({ref for g in contained for ref in g['references']} - fixed)
+        if not all(_inside(q, outline) for q in region):
+            # Only these parts may use the portion of a declared region outside
+            # the board; omitting them leaves a valid lower bound for the rest.
+            refs = [ref for ref in refs if not access_direction.overhangs_courtyard(by_ref[ref])]
         board_area = sum(intersection_area(q, outline) for q in region)
         for side in ('F', 'B'):
             courtyards = [_inner(by_ref[ref]['courtyards'][side]) for ref in refs if side in by_ref[ref]['courtyards']]
@@ -1092,7 +1113,8 @@ def _board_capacity(capture, outline, fixed, policy, margin_nm, *, sourced_only=
         parts = [(fp['ref'], min(_square_size(p) for p in _inner(fp['courtyards'][side])),
                   _grown_area_low(_inner(fp['courtyards'][side]), Fraction(r2, 2)))
                  for fp in sorted(capture['footprints'], key=lambda f: f['ref'])
-                 if fp['ref'] not in fixed and side in fp['courtyards']]
+                 if fp['ref'] not in fixed and side in fp['courtyards']
+                 and not access_direction.overhangs_courtyard(fp)]
         if not parts:
             continue
         rows = []
@@ -1142,6 +1164,10 @@ def _capacity_proof(capture, outline, fixed, policy, margin_nm):
     """Keep diagnostic inputs, but prefer proofs independent of advisory constraints."""
     sides = _board_capacity(capture, outline, fixed, policy, margin_nm)
     capacity = _capacity_diagnostic(sides, policy, margin_nm)
+    omitted = sorted(fp['ref'] for fp in capture['footprints']
+                     if fp['ref'] not in fixed and access_direction.overhangs_courtyard(fp))
+    if omitted:
+        capacity['excluded_access_overhang_refs'] = omitted
     # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
     proof = _capacity_impossibility(sides, policy) if policy.get('capacity_proof') else None
     if proof:
@@ -1185,8 +1211,10 @@ def _initial_reservations(capture, policy, outline, obstacles, bands, groups):
     exact = [_exact(o['side'], _obstacle_polygons(o['polygons']))
              for o in policy['obstacles']]
     for i, fp in enumerate(placed):
+        if not access_direction.admits(fp, outline):
+            raise ValueError(f"fixed placement {fp['ref']}: access direction requires an outward edge and an outside lane")
         # Fixed footprints (such as edge-mounted connectors) are exempt from min_courtyard_edge_mm.
-        # Only an envelope-bound overhang band lets a fixed courtyard leave the outline.
+        # Envelope bands and cited access lanes bound permitted courtyard overhang.
         if (not _fits(fp, outline, 0, bands.get(fp['ref'], ())) or _near(fp, exact, policy['gap_nm'])
                 or _keepout_blocked(fp, placed[:i], obstacles)):
             raise ValueError(f"fixed placement {fp['ref']} conflicts with outline, obstacle, keepout or reserved gap")
@@ -1563,6 +1591,9 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
     members = placement_groups.membership(groups)
     try:
         outline = _qualified(capture)
+        for fp in capture['footprints']:
+            if access_direction.hard(fp):
+                access_direction.geometry(fp)
         obstacles = _keepouts(capture)
         bands = overhang_bands(policy.get('fixed_overhangs', []), outline)
     except ValueError as exc:
@@ -1699,7 +1730,9 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
         culprits = sorted({index[ref] for ref in conflicts if ref in index}, reverse=True)
         if not culprits:
             return stopped('locality_cluster_exhausted' if unit[0] in cluster_by_ref else 'packing_search_exhausted',
-                           f'no candidate for {unit[0]} in the finite search; infeasibility unproved', unit[0])
+                           f'no candidate for {unit[0]} in the finite search; infeasibility unproved'
+                           + ('; access direction requires an outward edge and an outside lane'
+                              if access_direction.hard(by_ref[unit[0]]) else ''), unit[0])
         i = len(stack)
         anchor = members.get(unit[0], {}).get('anchor', {}).get('reference')
         failures[unit[0]] = failures.get(unit[0], 0) + 1
