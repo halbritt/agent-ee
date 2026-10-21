@@ -1585,27 +1585,26 @@ def pack(capture, policy, *, heartbeat=None):
     if result['status'] == 'planned' or not runtime.get('copper_escapes'):
         return result
     # AGENTEE-366: every pass gates copper; only a failed search adds the copper
-    # alignment axes, so an earlier admissible plan is never replaced.
+    # alignment axes, so an earlier admissible plan is never replaced. A failed
+    # aligned pass leaves the earlier (legacy or joint-annotated) result unchanged.
     used = runtime['steps']
     remaining = policy['step_budget'] - used
     if remaining == 0:
-        result['search']['copper_aligned_attempt'] = {
-            'status': 'not_attempted', 'reason': 'no remaining deterministic candidate budget', 'steps_used': 0}
         return result
     aligned = _pack(capture, policy, heartbeat=heartbeat, joint=False, remaining_steps=remaining,
                     deadline=runtime['search'].deadline, copper_axes=True)
     if aligned['status'] != 'planned':
-        result['search']['copper_aligned_attempt'] = {
-            'status': aligned['status'], 'steps_used': aligned['steps_used'], 'reason': aligned['reason']}
         return result
     aligned['steps_used'] += used
-    aligned['search']['legacy_attempt'] = {'status': result['status'], 'steps_used': used}
+    aligned['search']['legacy_attempt'] = runtime['legacy']
+    aligned['search']['copper_aligned'] = {'prior_steps_used': used}
     return aligned
 
 
 def _pack_joint(capture, policy, heartbeat, runtime):
     legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime)
     runtime['steps'] = runtime['search'].steps if 'search' in runtime else 0
+    runtime['legacy'] = {'status': legacy['status'], 'steps_used': runtime['steps']}
     if legacy['status'] == 'planned' or not legacy.get('search', {}).get('locality_clusters'):
         return legacy
     previous = runtime['search']

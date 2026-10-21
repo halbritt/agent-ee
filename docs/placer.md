@@ -815,9 +815,12 @@ when those fail and some movable part has copper outside all its courtyards
 does `pack` run a copper-aligned pass. That pass uses the remaining step budget
 and the same absolute deadline, and aligns escaping copper boxes to the outline
 as courtyard boxes are, so the fit can be flush with the board edge. A plan from
-it records `search.legacy_attempt`; its failure is recorded as
-`search.copper_aligned_attempt` on the earlier result. An earlier admissible
-plan is therefore never replaced. A plan changes only where the courtyard-only
+it records `search.legacy_attempt` (the first pass alone, as for joint
+completions) and `search.copper_aligned.prior_steps_used` (legacy plus joint
+steps); its `steps_used` is the total. A failed aligned pass returns the earlier
+result unchanged, so a failure record is byte-identical to the legacy-first
+result (the `tests.test_placer_clusters` differential). An earlier admissible
+plan is never replaced. A plan changes only where the courtyard-only
 search would have put copper off the board or into a keep-out.
 
 The gate applies to the packing search, to Stage-B block arrangement (each
@@ -831,7 +834,11 @@ added. Fixed parts are not regated, because their pose is the designer's.
 The pinned seeded differential `tests.test_placer_geometry_cost` (ac662ff plans)
 changes for seeds 0, 3, 23 and 38 only: the pinned plan puts 0.2 mm lands up to
 0.073 mm off the board (3, 23, 38) or into a board keep-out (0). The gated
-results remain `planned`. The pins are left for an integrator ruling.
+results remain `planned`. Likewise, in `tests.test_placer_clusters`
+`test_seeded_legacy_plans_preserve_verdict_placements_and_steps`, the frozen
+plans for seed 1 case 1 and seed 2 case 1 put C3's copper 0.05 mm off the board.
+Gated, both stay `planned`/`info`, with other placements and step counts. These
+pins are left for an integrator ruling.
 
 Boundaries. Malformed `size_nm`, `copper_centroid_offset_nm` or `layers`
 return `unsupported_geometry`, `outcome=unknown`. A pad record without the
