@@ -602,7 +602,9 @@ snapshot and available plan, saved probe/judgment and raw native DRC diagnostics
 The requested destination remains absent. The source
 and netlist hashes are rechecked before publication. Generated
 `placement-result.json`, `placement-probe.json`, native DRC JSON and native DRC
-console/execution records describe the disposable proposal. Transformed pure
+console/execution records describe the disposable proposal. A `blocks` request
+also publishes `block-provenance.json`, the reviewers' record of each placed
+block's provenance ([blocks.md](blocks.md#review-input-block-provenance-agentee-355)). Transformed pure
 plan judgments are marked `transformed-proposal-not-native`; the final judgment
 binds to the actual saved candidate hash. Standalone outputs remain unsealed.
 
@@ -649,7 +651,8 @@ belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
 [Blocks](blocks.md) derive placement blocks from the sealed schematic hierarchy
 or an engineer allocation file. Each block is packed alone with this search,
 around a fixed anchor on a synthetic plane, into a rigid
-`agent-ee.block-candidate/2`. Its own pad obligations and groups apply, and
+`agent-ee.block-candidate/2`, then re-packed on shrinking outlines to the least
+box area ([compaction](blocks.md#compaction-agentee-355), AGENTEE-355). Its own pad obligations and groups apply, and
 boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
 unchanged. [Arrangement](blocks.md#stage-b-arrangement-agentee-340) admits a
 candidate only after `blocks.admit` (or a mapped match and re-grade) checks it

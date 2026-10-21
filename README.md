@@ -120,8 +120,8 @@ Bench-feedback acceptance also refuses open carry.
 The [post-routing artwork producer](docs/silk-artwork.md#post-routing-artwork-producer-agentee-350)
 repairs routed-board silk through a receipted translation-only step, proves that
 all non-silk geometry is unchanged, and enables identity-bound carry closure.
-Closure consumes sealed native containment evidence, including footprint-owned
-board cutouts, without rerunning the tool during campaign replay.
+Closure consumes sealed native containment evidence, including board-owned and footprint-owned
+straight slots and cutouts (AGENTEE-362), without rerunning the tool during campaign replay.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against sourced limits.
@@ -146,7 +146,9 @@ remaining budget. Joint refusals retain named cluster diagnostics.
 [Placement blocks](docs/blocks.md) come from the sealed child sheets or a hashed
 engineer allocation file. Each block is packed alone into a rigid, versioned block
 candidate, with relative poses, an obligation grade, a courtyard witness,
-per-side outlines and source hashes. Candidates are search-derived and advisory.
+per-side outlines and source hashes. A compaction pass re-packs each block on
+shrinking outlines and keeps the smallest box with the same obligations.
+Candidates are search-derived and advisory.
 A candidate with missing, failed or stale evidence refuses: admission binds its
 sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
@@ -162,10 +164,14 @@ every use is admitted by `blocks.admit` on the target.
 [Block arrangement](docs/blocks.md#stage-b-arrangement-agentee-340) places the
 admitted candidates as rigid macros, then packs the residual parts with the
 placer, with block members fixed. The search uses deterministic conflict-directed
-backjumping with typed exhaustion. Block rules (keep-outs, opposite-side
+backjumping with typed exhaustion. Candidate origins align to block members as
+well as block outlines, and the blocked regions are cached per placed block, so
+a backjump recomputes only what moved. Block rules (keep-outs, opposite-side
 shadows, no block over a fixed part, thermal spread) are hard only with a
 citation. Boundary roles are bound to their board nets. The complete plan goes
-through the writer's native gate.
+through the writer's native gate. The writer publishes each placed block's
+provenance class and enforcement as review input, which a scope's
+`block_provenance` carries to every initial reviewer.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

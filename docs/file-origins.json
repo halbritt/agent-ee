@@ -3607,6 +3607,16 @@
     },
     {
       "paths": [
+        "tests/test_block_provenance.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-355 provenance consumer tests. Minimal KiCad board and schematic text literals authored here stand in for captured review inputs; no third-party design or text was copied."
+    },
+    {
+      "paths": [
         "src/agent_ee/design_rule_provenance.py",
         "tests/test_design_rule_provenance.py",
         "tests/test_provenance_limits.py"
