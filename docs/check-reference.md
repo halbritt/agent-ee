@@ -2211,7 +2211,15 @@ record to reviewers without block provenance; the offline arrangement CLI
 records a typed unknown instead of a measurement. Both packet ingress paths
 validate the record first: the exact advisory authority, a known status, exact
 non-negative ratios, and `measured` only when both sides and all their owners
-are measured. The scope `board` must be captured and the record's
+are measured. Nested evidence is validated too: every finding's `reserve` must be
+a valid measured owner equal to its side's owner row (side, owner, kind, id and
+all fields); every alternative and owner decision needs a known status, exact
+measurements with a positive saving equal to the owner area less the alternative
+area, and the qualification of its status. `native_validated` needs its selected
+pose to be the one `validated` native attempt, and `search_complete` is false
+exactly when an attempt was unknown; unknown-only attempts are never published
+as validated. A `decision_required` record must be unapplied and agree with its
+alternative's pose, saving and qualification. The scope `board` must be captured and the record's
 `board_sha256` must equal its digest; a malformed or unbound record refuses the
 packet.
 

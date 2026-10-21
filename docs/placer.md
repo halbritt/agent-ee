@@ -1707,6 +1707,8 @@ DRC hashes stay in `validation.json` because native DRC embeds execution dates.
 finite set. `native_attempts` retains rejected and unknown cheaper poses. If a
 cheaper attempt was unknown, `search_complete` is false: the selected pose is
 validated, but the least cost among all legal poses in the set is unresolved.
+Packet ingress refuses any alternative inconsistent with these rules
+([reserve ingress validation](check-reference.md)).
 Standalone geometry diagnostics without native validation remain
 `geometry_qualified_native_unverified`, labelled `hypothetical, unverified`, and
 never rank as legal. Zero costs are `already_zero`. A courtyard's excess is
