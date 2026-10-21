@@ -183,8 +183,11 @@ immutable packing policy. Null declarations are refused by `validate_plan`.
 `validate_configuration` validates the policy JSON with the existing packer's
 schema and value validator before output creation or campaign iteration 1;
 references are checked against the declared placement subjects because the
-scaffold is initially empty. Policy-supplied `fixed_overhangs` are refused:
-those allowances come only from captured envelopes. Invalid policies report
+scaffold is initially empty. Policy-supplied `fixed_overhangs` and
+`constraint_provenance` are refused: those allowances and sources come only
+from captured envelopes. So are per-obstacle `provenance` and per-group
+`constraint_provenance` (AGENTEE-365), through the adapter's shared
+`refuse_policy_sources`; the same unsourced geometry remains a valid policy. Invalid policies report
 `invalid pod placement policy PATH: REASON`; valid declarations retain their
 existing configuration and receipt format.
 

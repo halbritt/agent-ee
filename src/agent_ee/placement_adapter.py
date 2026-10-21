@@ -364,6 +364,30 @@ def bind_locality(policy, manifest, inputs, mutable_inputs):
     return source
 
 
+def refuse_policy_sources(policy):
+    """Refuse constraint sources and overhangs that a packing policy supplies itself.
+
+    The packing policy is caller-authored, so it can only state geometry. Outline and
+    fixed-part classes and overhangs come from a validated captured envelope, and an
+    envelope keep-out reaches the board as a native rule area graded board/hard. A
+    per-obstacle ``provenance`` or a per-group ``constraint_provenance`` would let a
+    caller qualify its own obstacles and regions, so either is refused rather than
+    accepted as a source; the unsourced geometry stays advisory (AGENTEE-361/365).
+    """
+    if 'fixed_overhangs' in policy:
+        raise ValueError('fixed_overhangs come only from a captured envelope, never from the packing policy')
+    if 'constraint_provenance' in policy:
+        raise ValueError('constraint_provenance comes only from a captured envelope, never from the packing policy')
+    for name, key, reason in (
+            ('obstacles', 'provenance', 'obstacle provenance is never accepted from the packing policy; '
+             'a sourced keep-out comes from a captured envelope as a native rule area'),
+            ('groups', 'constraint_provenance', 'group constraint_provenance is never accepted from the packing policy; '
+             'caller-declared regions and distances stay advisory')):
+        items = policy.get(name)
+        if isinstance(items, list) and any(isinstance(item, dict) and key in item for item in items):
+            raise ValueError(reason)
+
+
 def binding(declaration, manifest, inputs, mutable_inputs):
     """Coordinator binding of the declaration to one captured candidate's immutable inputs.
 
@@ -378,10 +402,7 @@ def binding(declaration, manifest, inputs, mutable_inputs):
     board = inputs / bound['board']
     if board.is_symlink() or not board.is_file() or digest(board) != manifest['files'][bound['board']]:
         raise ValueError('captured placement board changed')
-    if 'fixed_overhangs' in policy:
-        raise ValueError('fixed_overhangs come only from a captured envelope, never from the packing policy')
-    if 'constraint_provenance' in policy:
-        raise ValueError('constraint_provenance comes only from a captured envelope, never from the packing policy')
+    refuse_policy_sources(policy)
     provenance = combined_provenance(envelopes)
     if provenance:
         policy['constraint_provenance'] = provenance

@@ -1970,3 +1970,12 @@ a proof surviving without it retains its verdict. The audit table distinguishes
 search radii, captured keepout geometry and computational guards. The low-level
 packing provenance object accepts a value-bound `min_courtyard_edge_mm` source
 with `value_nm`, class, enforcement and citation; check registration is unchanged.
+
+AGENTEE-365 closes two source paths for the
+[obstacle and group sources](placer.md#obstacle-and-group-sources-agentee-361).
+The placement adapter and pod driver refuse per-obstacle `provenance` and
+per-group `constraint_provenance` in the caller's packing policy, as they
+already refuse a policy-level `constraint_provenance`. Hard block-arrangement
+keep-outs and `no_stacking` shadows carry their rule's citation as
+`arrangement_rule`/`hard`, so a residual capacity proof that rests on one
+reports `defect` instead of `unknown`. No check registration changes.
