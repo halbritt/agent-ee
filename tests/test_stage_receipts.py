@@ -546,6 +546,157 @@ assert not (outer / 'receipt').exists()
             run_step(receipt_dir, design, spec, {})
         self.assertFalse(receipt_dir.exists())
 
+    def _live_state_stand_in(self):
+        # The same CI-safe stand-in, also joined to the ctime inventory a run compares.
+        stand_in, live_inventory = self._live_stand_in()
+        real = stage_receipts._live_source_state
+
+        def state():
+            observed = stand_in.lstat()
+            return {**real(), (observed.st_dev, observed.st_ino): observed.st_ctime_ns}
+
+        return stand_in, live_inventory, patch.object(stage_receipts, '_live_source_state', state)
+
+    @toolchain_test
+    def test_transient_hardlink_during_run_refused(self):
+        stand_in, live_inventory, live_state = self._live_state_stand_in()
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        late = Path(self.tool) / 'late.py'
+        real_execute = stage_receipts.execute
+        for window in ('version', 'run'):
+            with self.subTest(window=window):
+                receipt_dir = Path(self.tmp.name) / ('receipt-' + window)
+                spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
+                                 version_argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
+                                 writes={}, artifacts=['listing'])
+
+                def execute(*args, **kwargs):
+                    # Present only while the tool runs; removed before any post-run inventory.
+                    if Path(args[1]).name != window:
+                        return real_execute(*args, **kwargs)
+                    os.link(stand_in, late)
+                    try:
+                        return real_execute(*args, **kwargs)
+                    finally:
+                        late.unlink()
+
+                with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+                    with self.assertRaises(stage_receipts.LivePackageSourceError) as failure:
+                        run_step(receipt_dir, design, spec, {})
+                self.assertEqual(failure.exception.violation, 'live_package_source:/tool')
+                self.assertIn('late.py', (receipt_dir / window / 'listing').read_text().split())
+                self.assertFalse((receipt_dir / 'receipt.json').exists())
+        # Without the transient link the identical step completes and replays.
+        with live_inventory, live_state:
+            receipt = run_step(Path(self.tmp.name) / 'receipt-clean', design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertEqual(validate_receipt(Path(self.tmp.name) / 'receipt-clean'), receipt)
+
+    @toolchain_test
+    def test_live_status_change_is_ignored_without_directory_mounts(self):
+        stand_in, live_inventory, live_state = self._live_state_stand_in()
+        program = Path(self.tool) / 'program.py'
+        program.write_text('print("single file tool")')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /single > /work/listing'], source=None,
+                         version_argv=None, writes={}, artifacts=['listing'],
+                         mounts=[{'source': str(program), 'at': '/single'}])
+        real_execute = stage_receipts.execute
+
+        def execute(*args, **kwargs):
+            stand_in.chmod(0o600)  # a live status change no file mount can expose
+            return real_execute(*args, **kwargs)
+
+        with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+            receipt = run_step(Path(self.tmp.name) / 'receipt', design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+
+    @toolchain_test
+    def test_escaping_source_root_is_refused_never_adoptable(self):
+        tool = Path(self.tool)
+        outside = tool.with_name('outside')
+        (outside / 'lib').mkdir(parents=True)
+        (outside / 'lib/module.py').write_text('host-only source')
+        (tool / 'usr').symlink_to(outside)
+        (tool / 'sub').mkdir()
+        (tool / 'sub/up').symlink_to('../../outside')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        for source in ('/tool/usr/lib', '/tool/sub/up/lib'):
+            with self.subTest(source=source):
+                receipt_dir = Path(self.tmp.name) / ('receipt' + source.replace('/', '-'))
+                spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'], source=source,
+                                 version_argv=None, writes={}, artifacts=['listing'])
+                with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
+                    run_step(receipt_dir, design, spec, {})
+                self.assertEqual(failure.exception.violation, 'source_link_escape:' + source)
+                self.assertFalse(receipt_dir.exists())
+
+    @toolchain_test
+    def test_source_root_swapped_to_escaping_link_during_run_refused(self):
+        tool = Path(self.tool)
+        (tool / 'lib').mkdir()
+        (tool / 'lib/module.py').write_text('mounted source')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        (outside / 'module.py').write_text('mounted source')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        receipt_dir = Path(self.tmp.name) / 'receipt'
+        spec = self.spec(argv=['/usr/bin/true'], source='/tool/lib', version_argv=None,
+                         writes={}, artifacts=['listing'])
+        real_execute = stage_receipts.execute
+
+        def execute(*args, **kwargs):
+            record = real_execute(*args, **kwargs)
+            (tool / 'lib').rename(tool / 'held-lib')
+            (tool / 'lib').symlink_to(outside)
+            return record
+
+        with patch.object(stage_receipts, 'execute', execute):
+            with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
+                run_step(receipt_dir, design, spec, {})
+        self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
+        self.assertFalse((receipt_dir / 'receipt.json').exists())
+
+    def test_executable_digest_never_follows_a_component_swapped_after_resolution(self):
+        tool = Path(self.tool)
+        (tool / 'bin').mkdir()
+        (tool / 'bin/program').write_text('mounted bytes')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        (outside / 'program').write_text('host-only bytes')
+        expected = digest(tool / 'bin/program')
+        spec = self.spec(argv=['/tool/bin/program'])
+        runtime, identities = stage_receipts._resolved_mounts(spec)
+        real_held = stage_receipts._held_digest
+
+        def swapping(descriptor):
+            # Replace the resolved component by an absolute link before any bytes are read.
+            (tool / 'bin').rename(tool / 'held-bin')
+            (tool / 'bin').symlink_to(outside)
+            try:
+                return real_held(descriptor)
+            finally:
+                (tool / 'bin').unlink()
+                (tool / 'held-bin').rename(tool / 'bin')
+
+        with stage_receipts._opened_mounts(runtime, identities) as mounts:
+            runtime['mounts'] = [{**m, 'descriptor': fd}
+                                 for m, (fd, _) in zip(runtime['mounts'], mounts)]
+            with patch.object(stage_receipts, '_held_digest', swapping):
+                observed = stage_receipts.observe_tool(runtime)
+            self.assertEqual(observed['executable']['sha256'], expected)
+            (tool / 'bin').rename(tool / 'held-bin')
+            (tool / 'bin').symlink_to(outside)
+            self.assertIsNone(stage_receipts.observe_tool(runtime)['executable']['sha256'])
+            (tool / 'bin').unlink()
+            (tool / 'bin').mkdir()
+            os.mkfifo(tool / 'bin/program')
+            self.assertIsNone(stage_receipts.observe_tool(runtime)['executable']['sha256'])
+
     def test_held_file_and_nested_executable_observations_survive_aba(self):
         tool = Path(self.tool)
         nested = tool / 'nested'

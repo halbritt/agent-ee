@@ -1717,11 +1717,16 @@ before executing either command, covering bwrap versions that canonicalize fd
 sources to pathnames. Directory
 sources containing hard links into live `src` refuse with `live_package_source:<at>`
 (AGENTEE-349), including persistent links planted after inventory, by re-inventorying
-the held descriptor before launches and after execution. Before/after identity of
+the held descriptor before launches and after execution, and links planted and
+removed during a run, detected by live entries' status-change times (AGENTEE-357).
+Before/after identity of
 declared mounts reads through held descriptors; post-run source replacement or
 observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and
 upward-escaping mount symlinks retain link identity without reading host targets;
-an executable through such a link has an unknown digest and is unadoptable. Only
+an executable through such a link has an unknown digest and is unadoptable, and a
+declared `source` through one refuses as `source_link_escape:<source>`. The
+executable is resolved and hashed through component-wise no-follow opens below
+the held descriptor. Only
 fd-form receipts carry the mount-guard observation; historical path-form replay
 retains its lower assurance. Directory sources containing submounts are
 conservatively refused, including same-device
