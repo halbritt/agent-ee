@@ -480,7 +480,10 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
             if rel not in m["files"]:
                 raise ValueError(f"declared native/requirement input was not captured: {rel}")
         from .candidate_visuals import capture_visuals
+        imaging_started = time.monotonic()
         m = capture_visuals(run)
+        # Advisory imaging has its own executor guard, outside the review budget.
+        deadline += time.monotonic() - imaging_started
         result.update(candidate_id=m["candidate_id"], name=m["scope"]["name"], scope=m["scope"]["scope"],
                       limitations=m["scope"].get("limitations", []),
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],

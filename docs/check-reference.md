@@ -2209,7 +2209,9 @@ This adds no check kind or independent acceptance authority.
 ## Candidate inspection images (AGENTEE-382)
 
 [Candidate imaging](pcb-renders.md#candidate-inspection-images-agentee-382) runs
-after saved placement and during coordinator capture. It is not a registered
+after saved placement and during coordinator capture, with its own 180-second
+executor guard. Imaging elapsed time is excluded from the check/reviewer
+`max_seconds` budget. It is not a registered
 acceptance check. Review packets carry board-bound top/bottom PNG and copper,
 silk and courtyard SVG paths and hashes, including every enabled inner layer.
 Skipped or failed imaging remains explicit missing coverage and leaves every

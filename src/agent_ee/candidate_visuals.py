@@ -82,7 +82,11 @@ def packet_visuals(run_dir, manifest):
     for image in report['images']:
         rel = safe_relative(image['path'])
         path = root / rel
-        if any(p.is_symlink() for p in (path, *path.parents)) or digest(path) != image['sha256']:
+        try:
+            changed = any(p.is_symlink() for p in (path, *path.parents)) or digest(path) != image['sha256']
+        except OSError as exc:
+            raise ValueError('candidate visual image changed') from exc
+        if changed:
             raise ValueError('candidate visual image changed')
     return report
 
@@ -122,7 +126,9 @@ def native(board, root):
               'model_coverage': renders['model_coverage'], 'warnings': renders['warnings'],
               'reproducibility': {'status': 'not_verified', 'reason':
                   'No repeated-render comparison was performed for this capture. Native ray tracing '
-                  'is invoked without a bound random seed; SVG metadata can vary. '
+                  'is invoked without a bound random seed. An AGENTEE-382 reviewer repeat on KiCad 10.0.7 '
+                  'measured PNG ray-trace pixel noise (about 0.67% of raw pixel bytes) and '
+                  'SVG <title> creation timestamp changes. SVG metadata is not normalized. '
                   'Exact image bytes are hashed, but byte determinism is unqualified.'}}
     for image in renders['images']:
         report['images'].append({**image, 'layers': None, 'path': 'renders/' + image['path']})
