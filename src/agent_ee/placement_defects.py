@@ -685,8 +685,15 @@ def carried_silk(defects, unwaived):
 def projection_record(ctx, unwaived):
     """Open carry for the placement projection; its silk conflicts grade as carried, not violations."""
     from .checks import CheckError
+    cache = []
+
+    def native():
+        # The full gate's closure contract (AGENTEE-351): native DRC on the captured board.
+        if not cache:
+            cache.append(_recompute(ctx))
+        return cache[0]
     try:
-        defects = open_defects(ctx.manifest, ctx.inputs)
+        defects = open_defects(ctx.manifest, ctx.inputs, native)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise CheckError('malformed', f'carried placement evidence refused: {exc}') from exc
     if not defects:
@@ -751,6 +758,9 @@ def lineage(manifest):
 
 def verify_gate(run, check, manifest):
     """Reconstruct refusals from captured artifacts before sealing or releasing evidence."""
+    if placement_projection(next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])):
+        # Structural containment and parity are reconstructed with or without lineage.
+        return verify_projection(run, check, manifest)
     if not lineage(manifest):
         if (check.get('execution') == 'ok' and
                 gated(next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])) and
@@ -762,8 +772,6 @@ def verify_gate(run, check, manifest):
             release_defects(run, check, manifest)
         return
     spec = next(c for c in manifest['scope']['checks'] if c['id'] == check['id'])
-    if placement_projection(spec):
-        return verify_projection(run, check, manifest)
     if not gated(spec):
         return
     defects = open_defects(manifest, Path(run) / 'inputs', lambda: _recorded(run, check['id'], manifest))
@@ -799,7 +807,7 @@ def release_defects(run, check, manifest):
 def verify_projection(run, check, manifest):
     """Reconstruct the projection verdict with the runtime policy (checks.grade_drc): raw DRC,
     captured waivers, numeric provenance, retained structural containment and receipt-backed carry."""
-    defects = open_defects(manifest, Path(run) / 'inputs')
+    defects = open_defects(manifest, Path(run) / 'inputs', lambda: _recorded(run, check['id'], manifest))
     details = check.get('details', {})
     if not defects and ('open_defects' in details or 'carried_findings' in details):
         raise ValueError('carried placement grading without open defects')

@@ -2070,8 +2070,15 @@ Carried silk and numeric advisories are not a native defect, so when the
 containment child is unavailable such a projection is `malformed`, never a pass.
 
 Unconnected items stay ungraded. Missing or tampered carry evidence makes the
-projection `malformed`/`unknown`, never a pass. At freeze and at replay the
-evidence seal reconstructs the verdict. It reclassifies the check's own
+projection `malformed`/`unknown`, never a pass. The projection consumes a
+receipted closure under the same AGENTEE-351 contract as the full gate: at
+execution it recomputes native DRC on the captured board in the tool sandbox
+and retains `placement-lineage.json` with its `placement-lineage/` report; at
+replay it validates that retained witness, tool-free. Without that native
+evidence a would-be closure still refuses. At freeze and at replay the
+evidence seal reconstructs the verdict, whether or not the candidate captured
+placement lineage, so a no-lineage projection cannot seal a pass over
+structural containment or uncarried silk either. It reclassifies the check's own
 `drc.json` against the captured immutable waiver input and derives the
 receipt-backed carry, recomputes the numeric provenance from the captured
 board inputs and reads the retained `containment/copper-containment.json` and
@@ -2085,6 +2092,9 @@ witness are reconstructed too. A result that omits the carry is refused. There i
 native placement and routing. In that run the projection passes with the carried
 silk, and the earliest failing stage becomes routing. There the full DRC and
 the verification check refuse the carry.
+`test_projection_consumes_a_natively_closed_carry_and_seals` and
+`NoLineageProjectionSealTests` are the native regressions for the closed-carry
+and no-lineage seal paths.
 
 ## Post-routing silk repair (AGENTEE-350)
 

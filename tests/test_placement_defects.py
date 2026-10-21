@@ -653,6 +653,69 @@ class NativePlacementCarryTests(unittest.TestCase):
         with self.assertRaisesRegex(CheckError, 'custom DRC rule ignores'):
             placement_defects.before_check(Ctx(run, manifest, spec, time.monotonic() + 300))
 
+    def closure_projection(self, name, *, honest):
+        """A receipted closure lineage that still declares the placement projection, audited."""
+        from agent_ee.candidate import capture
+        run, _ = self.closure(name, honest=honest)
+        root = run.parent
+        requirement = root / 'requirements.md'
+        requirement.write_text('A natively closed carry must keep the placement projection usable.\n')
+        scope = read_json(root / 'scope.json')
+        scope['schema'] = 'agent-ee.scope/2'
+        scope['inputs'].append({'path': str(requirement), 'at': 'requirements.md'})
+        scope['checks'] = [{'id': 'drc-placement', 'kind': 'drc', 'params': {'projection': 'placement-stage/1'}},
+                           {'id': 'drc', 'kind': 'drc'}]
+        scope['baseline'] = {'requirements': [{'id': 'R-native', 'statement': requirement.read_text().strip(),
+            'source': {'path': 'requirements.md', 'locator': 'R-native'}, 'checks': ['drc-placement', 'drc']}],
+            'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}
+        write_json(root / 'audited.scope.json', scope)
+        audited = root / 'audited'
+        audited.mkdir()
+        return audited, capture(root / 'audited.scope.json', audited)
+
+    def test_projection_consumes_a_natively_closed_carry_and_seals(self):
+        """Ruling 346d H1: the projection verifies closure natively, like the full gate."""
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        run, manifest = self.closure_projection('projection-closed', honest=True)
+        self.assertTrue(placement_defects.lineage(manifest))
+        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+            placement_defects.open_defects(manifest, run / 'inputs')
+        projection, full = run_checks(run, time.monotonic() + 300)
+        self.assertEqual(projection['execution'], 'ok', projection['summary'])
+        self.assertEqual(full['execution'], 'ok', full['summary'])
+        self.assertNotIn('open_defects', projection['details'])
+        self.assertNotIn('reason', full['details'])
+        self.assertIn(f'work/drc-placement/{placement_defects.WITNESS}', projection['evidence'])
+        self.assertEqual(placement_defects.open_defects(
+            manifest, run / 'inputs', lambda: placement_defects._recorded(run, 'drc-placement', manifest)), [])
+        report = read_json(run / 'work/drc-placement/drc.json')
+        self.assertFalse(any(v['type'].startswith('silk_') for v in report['violations']), report)
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        # Replay is tool-free and binds the retained native witness.
+        witness = run / 'work/drc-placement' / placement_defects.WITNESS
+        original = read_json(witness)
+        changed = dict(original, silk_findings=[['silk_overlap', ['forged']]])
+        write_json(witness, changed)
+        with self.assertRaisesRegex(ValueError, 'witness missing or changed'):
+            placement_defects.verify_gate(run, projection, manifest)
+        with self.assertRaisesRegex(ValueError, 'witness missing or changed'):
+            verify_evidence(run, [projection, full], required=True)
+        write_json(witness, original)
+        verify_evidence(run, [projection, full], required=True)
+
+        # A self-consistent imported false closure still refuses (AGENTEE-351 unchanged).
+        run, manifest = self.closure_projection('projection-forged', honest=False)
+        projection, full = run_checks(run, time.monotonic() + 300)
+        for check in (projection, full):
+            self.assertEqual((check['execution'], check['outcome']), ('malformed', 'unknown'))
+            self.assertIn('differs from native DRC', check['summary'])
+        forged = dict(projection, execution='ok', outcome='pass', details={})
+        with self.assertRaisesRegex(ValueError, 'differs from native DRC|witness missing or changed|'
+                                                'without native placement lineage verification'):
+            placement_defects.verify_gate(run, forged, manifest)
+
     def test_fabricated_stamp_and_imported_lineage_cannot_waive_release_witness(self):
         """H1: a self-asserted stamp and a self-hashed imported closure cannot release a
         natively silk-conflicted board; only a clean sealed native witness can."""
@@ -1175,6 +1238,123 @@ class NativePlacementCarryTests(unittest.TestCase):
             self.assertEqual(read_json(campaign / 'tradeoff.json'),
                              {'state': 'escalated', 'reason': 'open_placement_defects'})
             self.assertEqual(read_json(campaign / 'history/1.json'), result)
+
+
+class NoLineageProjectionSealTests(unittest.TestCase):
+    """Ruling 346d H2: a declared projection reconstructs its verdict without placement lineage."""
+
+    @classmethod
+    def setUpClass(cls):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def design(self, name, *shapes):
+        """Owned RC control plus (layer, start, end) segments; library comparison ignored only."""
+        import pcbnew as k
+        from agent_ee.candidate import capture
+        root = self.root / name
+        design = root / 'design'
+        shutil.copytree(Path(__file__).resolve().parents[1] / 'fixtures/rc/control', design)
+        path = design / 'rc_filter.kicad_pcb'
+        board = k.LoadBoard(str(path))
+        for layer, start, end in shapes:
+            segment = k.PCB_SHAPE(board)
+            segment.SetShape(k.SHAPE_T_SEGMENT)
+            segment.SetLayer(getattr(k, layer))
+            segment.SetStart(k.VECTOR2I(*start))
+            segment.SetEnd(k.VECTOR2I(*end))
+            segment.SetWidth(200000)
+            board.Add(segment)
+        k.SaveBoard(str(path), board, True)
+        project = read_json(design / 'rc_filter.kicad_pro')
+        project['board']['design_settings']['rule_severities'] = {
+            'lib_footprint_issues': 'ignore', 'lib_footprint_mismatch': 'ignore'}
+        write_json(design / 'rc_filter.kicad_pro', project)
+        requirement = root / 'requirements.md'
+        requirement.write_text('Native structural containment must block retained projection passes.\n')
+        scope = {'schema': 'agent-ee.scope/2', 'name': name, 'board': 'project/rc_filter.kicad_pcb',
+                 'schematic': 'project/rc_filter.kicad_sch',
+                 'inputs': [{'path': str(design), 'at': 'project'}, {'path': str(requirement), 'at': 'requirements.md'}],
+                 'checks': [{'id': 'projection', 'kind': 'drc', 'params': {'projection': 'placement-stage/1'}},
+                            {'id': 'full', 'kind': 'drc'}],
+                 'baseline': {'requirements': [{'id': 'R-native', 'statement': requirement.read_text().strip(),
+                     'source': {'path': 'requirements.md', 'locator': 'R-native'}, 'checks': ['projection', 'full']}],
+                     'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}}
+        write_json(root / 'scope.json', scope)
+        run = root / 'run'
+        run.mkdir()
+        manifest = capture(root / 'scope.json', run)
+        self.assertFalse(placement_defects.lineage(manifest))
+        self.assertIsNone(placement_defects._board_stamp(manifest, run / 'inputs'))
+        return run, manifest
+
+    def assert_forgeries_refused(self, run, manifest, projection, full, forgeries):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        for name, check in forgeries:
+            with self.subTest(forgery=name):
+                write_json(run / 'checks/projection.json', check)
+                with self.assertRaisesRegex(ValueError, 'verdict differs|containment'):
+                    placement_defects.verify_gate(run, check, manifest)
+                with self.assertRaisesRegex(ValueError, 'verdict differs|containment'):
+                    freeze_evidence(run, [check, full])
+                with self.assertRaisesRegex(ValueError, 'verdict differs|containment'):
+                    verify_evidence(run, [check, full], required=True)
+        write_json(run / 'checks/projection.json', projection)
+        verify_evidence(run, [projection, full], required=True)
+
+    def test_clean_pass_seals_and_forged_pass_over_structural_containment_refuses(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        run, manifest = self.design('clean')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'pass'), projection['summary'])
+        self.assertEqual(read_json(run / 'work/projection/containment/copper-containment.json'), [])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        # Containment removed from a clean pass is never assumed.
+        containment = run / 'work/projection/containment/copper-containment.json'
+        retained = containment.read_bytes()
+        containment.unlink()
+        with self.assertRaises((OSError, ValueError)):
+            placement_defects.verify_gate(run, projection, manifest)
+        containment.write_bytes(retained)
+
+        # Owned B.Cu segment wholly outside the ~96..116 mm outline: only containment reports it.
+        run, manifest = self.design('structural', ('B_Cu', (80000000, 80000000), (82000000, 80000000)))
+        projection, full = run_checks(run, time.monotonic() + 180)
+        containment = read_json(run / 'work/projection/containment/copper-containment.json')
+        self.assertEqual([(f['type'], f['layers']) for f in containment], [('copper_outside_outline', ['B.Cu'])])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'), projection['summary'])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        forged = dict(projection, outcome='pass')
+        unavailable = copy.deepcopy(forged)
+        unavailable['details']['containment'] = dict(execution='unavailable', outcome='unknown', reason='forged')
+        self.assert_forgeries_refused(run, manifest, projection, full,
+                                      (('pass', forged), ('pass with containment unavailable', unavailable)))
+        # The native structural artifact itself was never altered.
+        self.assertEqual(read_json(run / 'work/projection/containment/copper-containment.json'), containment)
+
+    def test_forged_pass_over_uncarried_silk_refuses_without_lineage(self):
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        # Owned silk segment across R1's pads; without lineage no silk finding is carried.
+        run, manifest = self.design('silk', ('F_SilkS', (104000000, 100000000), (106000000, 100000000)))
+        projection, full = run_checks(run, time.monotonic() + 180)
+        report = read_json(run / 'work/projection/drc.json')
+        self.assertTrue(any(v['type'].startswith('silk_') for v in report['violations']), report)
+        self.assertNotIn('carried_findings', projection['details'])
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'defect'), projection['summary'])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        self.assert_forgeries_refused(run, manifest, projection, full,
+                                      (('pass', dict(projection, outcome='pass')),))
 
 
 class ContainedIdentities(dict):
