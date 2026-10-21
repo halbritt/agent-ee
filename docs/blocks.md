@@ -14,6 +14,9 @@ PYTHONPATH=src python3 -m agent_ee.blocks derive --probe build/placement-probe.j
 PYTHONPATH=src python3 -m agent_ee.blocks pack --probe build/placement-probe.json \
   --netlist build/design.xml --allocation design/blocks.json --policy design/packing.json \
   --block buck-5v --out build/buck-5v.candidate.json
+PYTHONPATH=src python3 -m agent_ee.blocks admit --probe build/placement-probe.json \
+  --netlist build/design.xml --allocation design/blocks.json --policy design/packing.json \
+  --candidate build/buck-5v.candidate.json --out build/buck-5v.admission.json
 PYTHONPATH=src python3 -m agent_ee.blocks match --probe build/placement-probe.json \
   --netlist build/design.xml --candidate build/buck-5v.candidate.json \
   --mapping design/buck-12v.mapping.json --out build/buck-12v.match.json
@@ -21,7 +24,7 @@ PYTHONPATH=src python3 -m agent_ee.blocks match --probe build/placement-probe.js
 
 Each command writes a new file (an existing `--out` is refused). It prints one
 JSON status line on stdout; `pack` heartbeats go to stderr. The exit code is 0
-for `derived`, `packed` or `match` and 1 otherwise. A refused input prints
+for `derived`, `packed`, `admitted` or `match` and 1 otherwise. A refused input prints
 `{"status": "refused", "reason": ...}` and writes nothing.
 
 ## Inputs
@@ -67,7 +70,8 @@ Fields other than these are refused, and every block needs `sheets` or
 `references`. The following refuse, naming the parts or sheets involved:
 
 - a footprint claimed twice (by two blocks, twice within one block, or by a
-  block and `residual`);
+  block and `residual`). Within one block, a nested sheet listed beside its
+  parent sheet, or a reference inside a listed sheet, counts as a second claim;
 - a child-sheet component that is neither allocated nor declared residual;
 - an unknown reference, sheet or residual entry, or a listed sheet with no
   on-board footprints;
@@ -79,7 +83,9 @@ In both modes, every on-board XML component must have one board footprint
 with the same footprint identifier. A board footprint absent from the export is
 residual (`board-only`) only when none of its pads has a net. Locked footprints
 cannot be rigid-block members, so they must be allocated to the residual set.
-Fixed parts belong to arrangement.
+Fixed parts belong to arrangement. Run `derive` on the pre-placement seed. A
+board whose block members are already locked at cluster poses (for example a
+hand-anchored placement candidate) refuses.
 
 `derive` returns `agent-ee.block-derivation/1`:
 
@@ -132,16 +138,17 @@ as a pass.
 
 ## Block candidate schema
 
-`agent-ee.block-candidate/1` is the contract for AGENTEE-340 and AGENTEE-342.
-`blocks.validate_candidate` checks its structure. Only `status: packed` is
-usable.
+`agent-ee.block-candidate/2` is the contract for AGENTEE-340 and AGENTEE-342.
+Version 2 replaces `/1`, which accepted missing or failed evidence. It adds each
+member's `courtyard` record, and every field below is required. Unknown fields
+refuse, and a `/1` document is refused. Only `status: packed` is usable.
 
 | Field | Content |
 | --- | --- |
 | `block_id`, `status` | Block id; `packed`, or `refused` when a re-grade or witness fails |
 | `provenance` | `class`, `enforcement`, `citation`, optional `method`; reference classes add `source: {locator, sha256}` |
 | `frame` | `{convention: "anchor-origin-quarter-turn/1", anchor}` |
-| `members[]` | `reference`, `fpid`, `side`, `value`, `pose`, `pad_geometry_sha256`, `courtyard_sha256`, `pins[]` |
+| `members[]` | `reference`, `fpid`, `side`, `value`, `pose`, `pad_geometry_sha256`, `courtyard_sha256`, `courtyard` (the footprint-local courtyard record that `courtyard_sha256` hashes), `pins[]` |
 | `outline` | Per side: `box_nm` `[x0, y0, x1, y1]` and the framed outer `courtyards` polygons |
 | `grade` | Independent re-grade in the frame: `electrical_locality` and `groups` (each `null` when nothing is internal) |
 | `witness` | `exact-courtyard-separation/1`: `gap_nm`, `pairs_checked`, per-side `minimum` exact squared distance `[numerator, denominator]`, `below_gap`, `drilled_pad_conflicts`, `status` |
@@ -149,7 +156,55 @@ usable.
 | `deferred` | Boundary groups and obligations by id; counts of obstacles and board rule areas |
 | `search` | `strategy`, `backjumps`, `steps_used`, `step_budget` |
 | `block_policy` | The exact isolated packing policy |
-| `sources` | `board_sha256`, `inventory_sha256`, `allocation_sha256`, `derivation_sha256`, `policy_sha256` |
+| `sources` | `board_sha256`, `inventory_sha256`, `allocation_sha256` (`null` without an allocation file), `derivation_sha256`, `policy_sha256` |
+
+### Validation and admission
+
+`validate_candidate(document)` needs no board. It raises `ValueError` unless:
+
+- every documented field and nested record is present and well typed, with no
+  unknown fields; a malformed nested value is a typed refusal, not a crash;
+- each member has one pin record per pad; one role names one net with one
+  `boundary` flag, and one net has one role;
+- `grade.electrical_locality` and `grade.groups` are `null` exactly when the
+  block policy has no internal obligations or groups. Otherwise they pass with
+  no defects or unknowns, declare the block policy, measure every internal pair
+  or group member once, and each exact squared distance is within its limit;
+- the witness is `exact-courtyard-separation/1` at the block policy gap, with
+  status `pass`, no pair below the gap, no drilled-pad conflict, and exact
+  rational minima (`[numerator, denominator]`, positive denominator) at least
+  the gap squared;
+- the placer judgment passes, the search stayed within the block budget, and
+  the block policy fixes only the anchor and holds only internal obligations
+  and anchored groups;
+- `deferred` lists unique group and obligation ids disjoint from the internal
+  ones, with nonnegative counts;
+- every source is a SHA-256; `allocation_sha256` may be `null`.
+
+It also recomputes pose-dependent courtyard evidence. Each member's `courtyard`
+record must hash to its `courtyard_sha256`; placed at the member's pose, the
+records must reproduce the stored `outline` and witness exactly. A moved pose,
+an empty box or an edited polygon therefore refuses.
+
+`admit(candidate, probe, inventory, derivation, policy)` admits a candidate onto
+the board it was packed from. Stage B must call it before using a candidate. It
+returns `{"status": "admitted" | "refused", "problems": [...]}`. Problem kinds:
+
+| Kind | Rule |
+| --- | --- |
+| `source_mismatch` | Every `sources` hash equals the supplied board, inventory, allocation, derivation and policy |
+| `block_unknown`, `block_members`, `frame_anchor` | The derivation has the block, with the same members and anchor |
+| `block_policy_mismatch` | The isolated policy recomputed from the board policy equals `block_policy` |
+| `deferred_mismatch` | The recomputed deferred record equals `deferred`, so a boundary obligation or group cannot be dropped |
+| `identity` | `match` with the identity mapping succeeds, which binds each `pad_geometry_sha256` to the board |
+| `stale_evidence` | The board's own footprints at the frame poses reproduce `outline`, `grade` and `witness` exactly, including drilled-pad reservations |
+| `evidence_failed` | That re-grade and witness pass |
+
+Identity matching and grading stay separate. `match` compares identity only,
+and the graders are the registered checks' own. A candidate from another board
+or policy is refused by `admit`. Reusing it there takes `match` with a mapping
+plus a re-grade on the target board, which is arrangement (AGENTEE-340) and
+library (AGENTEE-342) work.
 
 **Frame.** The anchor's origin is `(0, 0)` and its rotation is 0. A member pose
 is its footprint origin and its rotation relative to the anchor, in integer
@@ -194,9 +249,15 @@ Layout provenance uses AGENTEE-331's class / citation / enforcement record:
 arrangement may re-pack or replace them, and they never become a reference
 layout. A `hard` class means arrangement must keep the block rigid. Importing
 such a layout, and verifying its citation and source, is AGENTEE-342.
-`validate_candidate` only checks that the record is present and well formed. It
-does not verify the cited document. Unsourced numeric limits stay advisory,
-following AGENTEE-331/337.
+`validate_candidate` only checks that the record is present and well formed; a
+`search-derived` record has no `source`. It does not verify the cited document.
+
+Unsourced numeric limits are meant to stay advisory, following AGENTEE-331/337.
+That is not implemented yet: the intra-block search still enforces every
+locality limit in the block policy as hard, so an unsourced bound that is too
+tight gives `packing_search_exhausted` rather than a candidate. Carrying each
+pair's class and enforcement into `blocks._locality` waits for AGENTEE-337's
+bound-provenance contract.
 
 ## Matching
 
@@ -274,6 +335,11 @@ It covers:
 - frame rigidity under anchor rotation and determinism;
 - fail-closed locality, fixed-member and synthetic-plane cases;
 - every provenance class and the structural refusals;
+- each missing, unknown, failed, malformed or pose-stale evidence field
+  (review H1), through both `validate_candidate` and `match`;
+- admission: source, policy and deferred binding, a dropped boundary
+  obligation, a moved member with a self-consistent outline and witness, and
+  a changed land pattern;
 - matching of a second instance, with each mismatch kind and the inclusive
   tolerance boundaries;
 - the CLI.

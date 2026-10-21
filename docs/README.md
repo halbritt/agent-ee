@@ -134,7 +134,7 @@ conduction model, explicit material contracts and independent owned oracles.
 - [JLCPCB CPL rotation](cpl-rotation.md) — pad-box midpoints, versioned rotation policy and pin-1 frame verification against captured supplier footprints.
 - [JLCPCB cost estimate](jlc-cost-estimate.md) — informational fab and assembly cost from a captured, versioned pricing table; unknown part classes stay unknown.
 - [Placement geometry and checks](placement.md) and [initial placement](placer.md) — saved-board polygon judge, the registered one-criterion `placement` check over a prior native DRC, and an isolated proposal writer; the placement writer is integrated with staged campaigns.
-- [Placement blocks](blocks.md) — blocks from the sealed hierarchy or an allocation file, packed alone into rigid `agent-ee.block-candidate/1` records with provenance and matching rules (two-level placement stage A).
+- [Placement blocks](blocks.md) — blocks from the sealed hierarchy or an allocation file, packed alone into rigid `agent-ee.block-candidate/2` records with provenance, admission and matching rules (two-level placement stage A).
 - [Assembly and test access](dfa-dft.md) — declared connector orientation, test-point probe access and coverage, and the derived `bringup_plan.json`.
 - [Design intent](design-intent.md) and [decision capture](design-dialog.md) — source-preserving preparation with explicit unresolved inputs; neither supplies engineering acceptance.
 - [Spec capture](spec-record.md) — markdown requirements spec (headings, pipe tables, bullet and numbered lists) to `agent-ee.spec-record/1` with declared-code IDs and byte-exact locators; malformed or unsupported markdown is refused with its byte offset.

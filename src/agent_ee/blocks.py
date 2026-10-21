@@ -4,7 +4,7 @@ A block is a top-level child sheet of the captured native netlist, or the explic
 grouping of a hashed engineer allocation file. Each footprint is in exactly one
 block or the residual set; ambiguity refuses. A block is packed by the unchanged
 placer on a synthetic plane around a fixed anchor, and the result is a rigid
-``agent-ee.block-candidate/1``: relative quarter-turn poses, an independent pad
+``agent-ee.block-candidate/2``: relative quarter-turn poses, an independent pad
 obligation grade, a courtyard witness, per-side outlines and source hashes.
 Stage B (AGENTEE-340) arranges candidates; the block library (AGENTEE-342)
 imports cited ones. A search-derived candidate is advisory, never a reference
@@ -28,7 +28,7 @@ from .topology_rules import quantity
 
 ALLOCATION = 'agent-ee.block-allocation/1'
 DERIVATION = 'agent-ee.block-derivation/1'
-CANDIDATE = 'agent-ee.block-candidate/1'
+CANDIDATE = 'agent-ee.block-candidate/2'
 FRAME = 'anchor-origin-quarter-turn/1'
 # Layout authority classes, aligned with the AGENTEE-331 class/citation/enforcement record.
 # Only a cited manufacturer or qualified owner layout may be a hard reference.
@@ -38,6 +38,12 @@ SEARCH_CITATION = ('agent-ee.blocks intra-block search over the captured board; 
                    'no manufacturer or owner layout authority')
 # Pad facts that identify an instance or its board connection, not its land geometry.
 INSTANCE_PAD_KEYS = frozenset(('uuid', 'net', 'copper_centroid_reason'))
+WITNESS = 'exact-courtyard-separation/1'
+SOURCE_KEYS = ('board_sha256', 'inventory_sha256', 'allocation_sha256', 'derivation_sha256', 'policy_sha256')
+CANDIDATE_KEYS = frozenset(('schema', 'block_id', 'status', 'provenance', 'frame', 'members', 'outline', 'grade',
+                            'witness', 'placer_judgment', 'deferred', 'search', 'block_policy', 'sources'))
+MEMBER_KEYS = frozenset(('reference', 'fpid', 'side', 'value', 'pose', 'pad_geometry_sha256', 'courtyard_sha256',
+                         'courtyard', 'pins'))
 
 
 def _natural(text):
@@ -139,6 +145,9 @@ def derive(inventory, sheet_names, capture, *, inventory_sha256, allocation_raw=
                 inside = {r for r, c in parts.items() if c['sheet'].startswith(path)}
                 if not inside:
                     raise ValueError(f'block {bid}: sheet {sheet} has no on-board footprints')
+                if inside & members:
+                    raise ValueError(f"block {bid}: {', '.join(sorted(inside & members, key=_natural))} "
+                                     f'is allocated twice by overlapping sheets')
                 members |= inside
                 sheets.append(path)
             for ref in entry.get('references', []):
@@ -257,18 +266,44 @@ def _filter_policy(policy, block):
             deferred['groups'].append(group['id'])
     if groups:
         sub['groups'] = groups
-    document = policy.get('electrical_locality')
-    if document:
-        internal = []
-        for obligation in document['obligations']:
-            refs = {obligation[r][k]['reference'] for r in electrical_locality.roles(obligation) for k in ('from', 'to')}
-            if refs <= members:
-                internal.append(copy.deepcopy(obligation))
-            elif refs & members:
-                deferred['obligations'].append(obligation['id'])
-        if internal:
-            sub['electrical_locality'] = {'schema': electrical_locality.SCHEMA, 'obligations': internal}
+    internal, deferred['obligations'] = _locality(policy.get('electrical_locality'), members)
+    if internal:
+        sub['electrical_locality'] = internal
     return sub, deferred
+
+
+def _locality(document, members):
+    """Pad obligations wholly inside the block, and the ids of those crossing its boundary.
+
+    Every obligation touching a member is either internal (constrains and grades the
+    block) or deferred to arrangement; none is dropped.
+    """
+    if not document:
+        return None, []
+    internal, deferred = [], []
+    for obligation in document['obligations']:
+        refs = {obligation[r][k]['reference'] for r in electrical_locality.roles(obligation) for k in ('from', 'to')}
+        if refs <= members:
+            internal.append(copy.deepcopy(obligation))
+        elif refs & members:
+            deferred.append(obligation['id'])
+    return ({'schema': electrical_locality.SCHEMA, 'obligations': internal} if internal else None), deferred
+
+
+def _isolate(capture, policy, block):
+    """The block's anchor, isolated packing policy, deferred record and own rule areas."""
+    placer._validate_policy(policy, {fp['ref'] for fp in capture['footprints']})
+    board = {fp['ref']: fp for fp in capture['footprints']}
+    members = sorted(block['references'], key=_natural)
+    anchor = anchor_of(block, board)
+    sub, deferred = _filter_policy(policy, block)
+    sub['fixed_refs'] = [anchor]
+    sub['priority_refs'] = connected_order(board, members, anchor, sub['priority_refs'], sub['ground_nets'])
+    uuids = {board[r]['uuid'] for r in members}
+    areas = [a for a in capture.get('rule_areas', []) if isinstance(a, dict) and a.get('owner') in uuids]
+    deferred['board_rule_areas'] = sum(1 for a in capture.get('rule_areas', [])
+                                       if isinstance(a, dict) and a.get('owner') == 'board')
+    return anchor, sub, deferred, areas
 
 
 def _extent(fp):
@@ -312,7 +347,7 @@ def _witness(placed, gap_nm):
     def encode(p):
         s = p['squared']
         return {'refs': p['refs'], 'distance_squared_nm2': [s.numerator, s.denominator]}
-    return {'method': 'exact-courtyard-separation/1', 'gap_nm': gap_nm, 'pairs_checked': len(pairs),
+    return {'method': WITNESS, 'gap_nm': gap_nm, 'pairs_checked': len(pairs),
             'status': 'pass' if not short and not holes else 'defect',
             'minimum': {side: encode(p) for side, p in sorted(minimum.items())},
             'below_gap': [dict(encode(p), side=p['side']) for p in short], 'drilled_pad_conflicts': holes}
@@ -352,17 +387,9 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
     block = blocks[0]
     if derivation['board_sha256'] != capture['board_sha256']:
         raise ValueError('derivation belongs to another board capture')
-    placer._validate_policy(policy, {fp['ref'] for fp in capture['footprints']})
     board = {fp['ref']: fp for fp in capture['footprints']}
     members = sorted(block['references'], key=_natural)
-    anchor = anchor_of(block, board)
-    sub, deferred = _filter_policy(policy, block)
-    sub['fixed_refs'] = [anchor]
-    sub['priority_refs'] = connected_order(board, members, anchor, sub['priority_refs'], sub['ground_nets'])
-    uuids = {board[r]['uuid'] for r in members}
-    areas = [a for a in capture.get('rule_areas', []) if isinstance(a, dict) and a.get('owner') in uuids]
-    deferred['board_rule_areas'] = sum(1 for a in capture.get('rule_areas', [])
-                                       if isinstance(a, dict) and a.get('owner') == 'board')
+    anchor, sub, deferred, areas = _isolate(capture, policy, block)
     # A synthetic square that any chain of the members fits inside, centred on the
     # fixed anchor: the plane is unbounded for the search unless a member reaches it.
     reach = _extent(board[anchor]) + sum(2 * _extent(board[r]) + sub['gap_nm'] for r in members if r != anchor)
@@ -387,6 +414,8 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
         return {**base, 'status': 'synthetic_plane_reached', 'outcome': 'unknown',
                 'reason': 'members reached the synthetic plane edge: ' + ', '.join(touching), 'plan': plan}
     result = candidate(capture, inventory, derivation, block, anchor, poses, policy, sub, deferred, plan)
+    if result['status'] == 'packed':
+        validate_candidate(result)
     return {'status': result['status'], 'outcome': 'info' if result['status'] == 'packed' else 'unknown',
             'candidate': result}
 
@@ -394,6 +423,30 @@ def pack_block(capture, inventory, derivation, block_id, policy, *, heartbeat=No
 def _frame_pose(pose, origin, turns):
     x, y = placer.rotate([pose['position_nm'][0] - origin[0], pose['position_nm'][1] - origin[1]], -turns)
     return [x, y], int(pose['rotation_deg'] - turns * 90) % 360
+
+
+def _outline(framed):
+    outline = {}
+    for fp in framed:
+        for side, courtyard in fp['courtyards'].items():
+            outline.setdefault(side, []).extend(courtyard_bounds(courtyard)[0])
+    return {side: {'box_nm': list(placer.boxes({'courtyards': {side: {'polygons': polys}}})[side]),
+                   'courtyards': [[list(p) for p in poly] for poly in polys]}
+            for side, polys in sorted(outline.items())}
+
+
+def _evidence(capture, framed, sub):
+    """Pose-dependent evidence of the framed members: outline, independent grades, witness."""
+    framed_capture = {**capture, 'footprints': framed}
+    grade = {'electrical_locality': (electrical_locality.grade(framed_capture, sub['electrical_locality'])
+                                     if 'electrical_locality' in sub else None),
+             'groups': placement_groups.grade(framed_capture, sub['groups']) if 'groups' in sub else None}
+    return _outline(framed), grade, _witness(framed, sub['gap_nm'])
+
+
+def _plain(value):
+    """The JSON form of a value, as a candidate file stores it."""
+    return json.loads(json.dumps(value, default=lambda v: [v.numerator, v.denominator]))
 
 
 def candidate(capture, inventory, derivation, block, anchor, poses, policy, sub, deferred, plan):
@@ -411,19 +464,9 @@ def candidate(capture, inventory, derivation, block, anchor, poses, policy, sub,
                      'value': {'text': component['value'], 'rule': 'exact'},
                      'pose': {'position_nm': position, 'rotation_deg': rotation},
                      'pad_geometry_sha256': pad_geometry_sha256(board[ref]),
-                     'courtyard_sha256': courtyard_sha256(board[ref]), 'pins': roles[ref]})
-    outline = {}
-    for fp in framed:
-        for side, courtyard in fp['courtyards'].items():
-            outline.setdefault(side, []).extend(courtyard_bounds(courtyard)[0])
-    outline = {side: {'box_nm': list(placer.boxes({'courtyards': {side: {'polygons': polys}}})[side]),
-                      'courtyards': [[list(p) for p in poly] for poly in polys]}
-               for side, polys in sorted(outline.items())}
-    framed_capture = {**capture, 'footprints': framed}
-    grade = {'electrical_locality': (electrical_locality.grade(framed_capture, sub['electrical_locality'])
-                                     if 'electrical_locality' in sub else None),
-             'groups': placement_groups.grade(framed_capture, sub['groups']) if 'groups' in sub else None}
-    witness = _witness(framed, sub['gap_nm'])
+                     'courtyard_sha256': courtyard_sha256(board[ref]),
+                     'courtyard': _local(board[ref])[1]['courtyards'], 'pins': roles[ref]})
+    outline, grade, witness = _evidence(capture, framed, sub)
     status = ('refused' if witness['status'] != 'pass' or any(g and g['status'] != 'pass' for g in grade.values())
               else 'packed')
     return {'schema': CANDIDATE, 'block_id': block['id'], 'status': status,
@@ -446,58 +489,306 @@ def _hex(value, label):
         raise ValueError(f'{label} must be a lowercase SHA-256')
 
 
+def _keys(value, required, optional=(), label='record'):
+    if not isinstance(value, dict):
+        raise ValueError(f'{label} must be an object')
+    missing, extra = set(required) - value.keys(), value.keys() - set(required) - set(optional)
+    if missing or extra:
+        raise ValueError(f'{label} needs ' + ', '.join(sorted(required)) + (
+            f"; missing {', '.join(sorted(missing))}" if missing else '') + (
+            f"; unknown {', '.join(sorted(extra))}" if extra else ''))
+    return value
+
+
+def _count(value, label):
+    if type(value) is not int or value < 0:
+        raise ValueError(f'{label} must be a nonnegative integer')
+    return value
+
+
+def _ratio(value, label):
+    if (not isinstance(value, list) or len(value) != 2 or any(type(v) is not int for v in value)
+            or value[0] < 0 or value[1] <= 0):
+        raise ValueError(f'{label} must be an exact [numerator, denominator] with a positive denominator')
+    return Fraction(*value)
+
+
+def _squared(record, label):
+    value = record.get('distance_squared_nm')
+    if type(value) is int and value >= 0:
+        return Fraction(value)
+    _keys(value, {'numerator', 'denominator'}, label=label)
+    return _ratio([value['numerator'], value['denominator']], label)
+
+
+def _framed(row):
+    """A member's own courtyard record at its frame pose; the record is bound by its hash."""
+    if digest({'side': row['side'], 'courtyards': row['courtyard']}) != row['courtyard_sha256']:
+        raise ValueError(f"{row['reference']}: courtyard record differs from its courtyard_sha256")
+    if not isinstance(row['courtyard'], dict) or row['side'] not in row['courtyard'] or set(row['courtyard']) - {'F', 'B'}:
+        raise ValueError(f"{row['reference']}: courtyard record needs its mounting side")
+    for record in row['courtyard'].values():
+        courtyard_bounds(record)
+    local = {'ref': row['reference'], 'side': row['side'], 'position_nm': [0, 0], 'rotation_deg': 0,
+             'courtyards': copy.deepcopy(row['courtyard']), 'pads': []}
+    return placer.transform(local, row['pose']['position_nm'], row['pose']['rotation_deg'])
+
+
+def _pins(rows):
+    nets, roles = {}, {}
+    for row in rows:
+        if not isinstance(row['pins'], list):
+            raise ValueError('member pins must list functions and net roles')
+        pads = set()
+        for pin in row['pins']:
+            label = f"{row['reference']} pin"
+            role = pin.get('role') if isinstance(pin, dict) else None
+            _keys(pin, {'pad', 'function', 'role'} | ({'boundary', 'net'} if role is not None else set()), label=label)
+            _text(pin['pad'], label + ' pad')
+            if pin['pad'] in pads:
+                raise ValueError(f"{row['reference']}: pin {pin['pad']} is listed twice")
+            pads.add(pin['pad'])
+            if pin['function'] is not None:
+                _keys(pin['function'], {'name', 'electrical_type'}, label=label + ' function')
+                if not all(isinstance(v, str) for v in pin['function'].values()):
+                    raise ValueError(f'{label} function must be text')
+            if role is None:
+                continue
+            if not isinstance(role, str) or not role.startswith('n') or not role[1:].isdigit():
+                raise ValueError(f'{label} role must be n1, n2, ... or null')
+            if type(pin['boundary']) is not bool:
+                raise ValueError(f'{label} boundary must be a boolean')
+            _text(pin['net'], label + ' net')
+            if roles.setdefault(role, (pin['net'], pin['boundary'])) != (pin['net'], pin['boundary']):
+                raise ValueError(f'net role {role} must name one net with one boundary flag')
+            if nets.setdefault(pin['net'], role) != role:
+                raise ValueError(f"net {pin['net']} must have one role")
+
+
+def _block_policy(sub, refs, anchor):
+    _keys(sub, {'schema', 'step_budget', 'gap_nm', 'priority_refs', 'ground_nets', 'obstacles', 'fixed_refs'},
+          {'search_timeout_s', 'groups', 'electrical_locality'}, label='block policy')
+    placer._validate_policy(sub, set(refs))
+    if sub['fixed_refs'] != [anchor] or sub['obstacles'] or anchor in sub['priority_refs']:
+        raise ValueError('block policy fixes exactly the anchor and has no obstacles')
+    if 'groups' in sub:
+        if not sub['groups'] or any('region' in g or 'reference' not in g['anchor'] for g in sub['groups']):
+            raise ValueError('block policy groups must be nonempty and anchored on a member')
+    if 'electrical_locality' in sub:
+        internal, crossing = _locality(sub['electrical_locality'], set(refs))
+        if internal != sub['electrical_locality'] or crossing:
+            raise ValueError('block policy obligations must be nonempty and lie wholly inside the block')
+
+
+def _grade(grade, sub, refs):
+    _keys(grade, {'electrical_locality', 'groups'}, label='block grade')
+    for key in ('electrical_locality', 'groups'):
+        if key not in sub:
+            if grade[key] is not None:
+                raise ValueError(f'block grade {key} must be null without internal {key}')
+            continue
+        record = grade[key]
+        if (not isinstance(record, dict) or record.get('status') != 'pass' or record.get('defects') != []
+                or record.get('unknown') != [] or not isinstance(record.get('measured'), list)):
+            raise ValueError(f'block grade {key} must pass with no defects or unknowns')
+    if 'electrical_locality' in sub:
+        record, document = grade['electrical_locality'], sub['electrical_locality']
+        if record.get('declaration') != document:
+            raise ValueError('locality grade must declare the block policy obligations')
+        pairs = {(o['id'], role): o[role] for o in document['obligations'] for role in electrical_locality.roles(o)}
+        seen = set()
+        for row in record['measured']:
+            key = (row.get('obligation'), row.get('role')) if isinstance(row, dict) else None
+            if key not in pairs or key in seen:
+                raise ValueError(f'locality grade measures an unknown or repeated pair {key}')
+            seen.add(key)
+            if _squared(row, 'locality distance') > pairs[key]['max_distance_nm'] ** 2:
+                raise ValueError(f'locality pair {key} exceeds its limit')
+        if seen != set(pairs):
+            raise ValueError('locality grade must measure every internal pair')
+    if 'groups' in sub:
+        record = grade['groups']
+        if record.get('groups') != sub['groups']:
+            raise ValueError('group grade must declare the block policy groups')
+        want = sorted((g['id'], r) for g in sub['groups'] for r in g['references'])
+        if sorted((m.get('group'), m.get('ref')) for m in record['measured'] if isinstance(m, dict)) != want:
+            raise ValueError('group grade must measure every internal group member')
+
+
+def _witness_record(witness, sub, refs, sides):
+    _keys(witness, {'method', 'gap_nm', 'pairs_checked', 'status', 'minimum', 'below_gap', 'drilled_pad_conflicts'},
+          label='block witness')
+    if witness['method'] != WITNESS or witness['gap_nm'] != sub['gap_nm']:
+        raise ValueError(f'block witness must be {WITNESS} at the block policy gap')
+    _count(witness['pairs_checked'], 'witness pairs_checked')
+    if witness['status'] != 'pass' or witness['below_gap'] != [] or witness['drilled_pad_conflicts'] != []:
+        raise ValueError('block witness must pass with no pair below the gap and no drilled-pad conflict')
+    if not isinstance(witness['minimum'], dict) or set(witness['minimum']) - sides:
+        raise ValueError('witness minimum must be given per outline side')
+    for side, record in witness['minimum'].items():
+        _keys(record, {'refs', 'distance_squared_nm2'}, label='witness minimum')
+        if (not isinstance(record['refs'], list) or len(record['refs']) != 2 or len(set(record['refs'])) != 2
+                or not set(record['refs']) <= refs):
+            raise ValueError('witness minimum names two distinct members')
+        if _ratio(record['distance_squared_nm2'], 'witness distance') < sub['gap_nm'] ** 2:
+            raise ValueError('witness minimum lies below the gap')
+
+
 def validate_candidate(document):
-    """Structural contract for stage B and the block library; raises ValueError."""
+    """The usable-candidate contract for stage B and the block library; raises ValueError.
+
+    Every documented field is required and typed, every stored status must pass, and
+    the outline and courtyard witness are recomputed from the members' own hashed
+    courtyard records at their poses. Board-dependent evidence (lands, locality,
+    drilled pads, deferred obligations) is bound by ``admit``.
+    """
+    try:
+        return _validate_candidate(document)
+    except (TypeError, KeyError, AttributeError, IndexError) as exc:
+        raise ValueError(f'malformed block candidate: {type(exc).__name__}: {exc}') from None
+
+
+def _validate_candidate(document):
     if not isinstance(document, dict) or document.get('schema') != CANDIDATE:
         raise ValueError(f'expected {CANDIDATE}')
-    required = {'schema', 'block_id', 'status', 'provenance', 'frame', 'members', 'outline', 'sources'}
-    if not required <= document.keys():
-        raise ValueError('block candidate needs ' + ', '.join(sorted(required - document.keys())))
+    _keys(document, CANDIDATE_KEYS, label='block candidate')
     _text(document['block_id'], 'block id')
     if document['status'] != 'packed':
         raise ValueError('only a packed block candidate is usable')
-    provenance = document['provenance']
-    if (not isinstance(provenance, dict) or provenance.get('class') not in PROVENANCE
-            or provenance.get('enforcement') != PROVENANCE[provenance['class']]):
+    provenance = _keys(document['provenance'], {'class', 'enforcement', 'citation'}, {'method', 'source'},
+                       label='block provenance')
+    if provenance['class'] not in PROVENANCE or provenance['enforcement'] != PROVENANCE[provenance['class']]:
         raise ValueError('block provenance needs a known class and its enforcement')
-    _text(provenance.get('citation'), 'block provenance citation')
-    if provenance['class'] != 'search-derived':
+    _text(provenance['citation'], 'block provenance citation')
+    if 'method' in provenance:
+        _text(provenance['method'], 'block provenance method')
+    if provenance['class'] == 'search-derived':
+        if 'source' in provenance:
+            raise ValueError('a search-derived candidate has no reference source')
+    else:
         source = provenance.get('source')
         if not isinstance(source, dict) or set(source) != {'locator', 'sha256'}:
             raise ValueError('a reference layout needs its captured source locator and sha256')
         _text(source['locator'], 'source locator')
         _hex(source['sha256'], 'source sha256')
-    if document['frame'] != {'convention': FRAME, 'anchor': document['frame'].get('anchor')}:
+    frame = document['frame']
+    if not isinstance(frame, dict) or frame != {'convention': FRAME, 'anchor': frame.get('anchor')}:
         raise ValueError(f'block frame must be {FRAME} with an anchor')
     rows = document['members']
-    refs = [r.get('reference') for r in rows] if isinstance(rows, list) else []
-    if not refs or len(refs) != len(set(refs)) or document['frame']['anchor'] not in refs:
+    refs = [r.get('reference') if isinstance(r, dict) else None for r in rows] if isinstance(rows, list) else []
+    if not refs or len(refs) != len(set(refs)) or frame['anchor'] not in refs:
         raise ValueError('block members need unique references including the anchor')
     for row in rows:
+        _keys(row, MEMBER_KEYS, label='block member')
         _text(row['reference'], 'member reference')
-        _text(row.get('fpid'), 'member fpid')
-        if row.get('side') not in ('F', 'B'):
+        _text(row['fpid'], 'member fpid')
+        if row['side'] not in ('F', 'B'):
             raise ValueError('member side must be F or B')
         for key in ('pad_geometry_sha256', 'courtyard_sha256'):
-            _hex(row.get(key), key)
-        pose = row.get('pose')
+            _hex(row[key], key)
+        pose = row['pose']
         if (not isinstance(pose, dict) or set(pose) != {'position_nm', 'rotation_deg'}
                 or not isinstance(pose['position_nm'], list) or len(pose['position_nm']) != 2
                 or any(type(v) is not int for v in pose['position_nm'])
                 or type(pose['rotation_deg']) is not int or pose['rotation_deg'] not in (0, 90, 180, 270)):
             raise ValueError('member pose needs integer nanometres and a quarter-turn rotation')
-        if row['reference'] == document['frame']['anchor'] and pose != {'position_nm': [0, 0], 'rotation_deg': 0}:
+        if row['reference'] == frame['anchor'] and pose != {'position_nm': [0, 0], 'rotation_deg': 0}:
             raise ValueError('the anchor defines the block frame at the origin, rotation 0')
-        _value_rule(row.get('value'))
-        if not isinstance(row.get('pins'), list):
-            raise ValueError('member pins must list functions and net roles')
-    if not isinstance(document['outline'], dict) or not document['outline'] or set(document['outline']) - {'F', 'B'}:
+        _value_rule(row['value'])
+    _pins(rows)
+    sub = document['block_policy']
+    _block_policy(sub, refs, frame['anchor'])
+    framed = [_framed(row) for row in rows]
+    outline = document['outline']
+    if not isinstance(outline, dict) or not outline or set(outline) - {'F', 'B'}:
         raise ValueError('block outline must be given per side')
-    for side in document['outline'].values():
+    for side in outline.values():
+        _keys(side, {'box_nm', 'courtyards'}, label='outline side')
         qualified_polygons({'status': 'proven', 'polygons': side['courtyards']})
-    sources = document['sources']
-    _hex(sources.get('board_sha256'), 'board sha256')
+    if _plain(_outline(framed)) != outline:
+        raise ValueError("block outline differs from the members' framed courtyards")
+    _witness_record(document['witness'], sub, set(refs), set(outline))
+    if _plain(_witness(framed, sub['gap_nm'])) != document['witness']:
+        raise ValueError("block witness differs from the members' framed courtyard separations")
+    _grade(document['grade'], sub, refs)
+    judgment = _keys(document['placer_judgment'], {'verdict', 'basis'}, label='placer judgment')
+    if judgment['verdict'] != 'pass':
+        raise ValueError('placer judgment must pass')
+    _text(judgment['basis'], 'placer judgment basis')
+    deferred = _keys(document['deferred'], {'groups', 'obligations', 'obstacles', 'board_rule_areas'},
+                     label='deferred record')
+    _texts(deferred['groups'], 'deferred groups')
+    _texts(deferred['obligations'], 'deferred obligations')
+    _count(deferred['obstacles'], 'deferred obstacles')
+    _count(deferred['board_rule_areas'], 'deferred board rule areas')
+    internal = {g['id'] for g in sub.get('groups', [])} | {
+        o['id'] for o in sub.get('electrical_locality', {}).get('obligations', [])}
+    if internal & (set(deferred['groups']) | set(deferred['obligations'])):
+        raise ValueError('an internal obligation cannot also be deferred')
+    search = _keys(document['search'], {'strategy', 'steps_used', 'step_budget'}, {'backjumps'}, label='search record')
+    _text(search['strategy'], 'search strategy')
+    for key in ('steps_used', 'step_budget', 'backjumps'):
+        if key in search:
+            _count(search[key], 'search ' + key)
+    if search['step_budget'] != sub['step_budget'] or search['steps_used'] > search['step_budget']:
+        raise ValueError('search steps must lie within the block policy budget')
+    sources = _keys(document['sources'], set(SOURCE_KEYS), label='candidate sources')
+    for key in SOURCE_KEYS:
+        if not (key == 'allocation_sha256' and sources[key] is None):
+            _hex(sources[key], key.replace('_sha256', ' sha256'))
     return document
+
+
+def admit(document, capture, inventory, derivation, policy):
+    """Admit a candidate for arrangement on the board it was packed from.
+
+    Binds every source hash, recomputes the isolated policy and the deferred record
+    from the board policy (a boundary obligation cannot disappear), requires an
+    identity ``match`` and re-grades every member at its frame pose from the board's
+    own footprints. Returns ``{'status': 'admitted' | 'refused', 'problems': [...]}``.
+    """
+    validate_candidate(document)
+    if derivation['board_sha256'] != capture['board_sha256']:
+        raise ValueError('derivation belongs to another board capture')
+    expected = {'board_sha256': capture['board_sha256'], 'inventory_sha256': derivation['inventory_sha256'],
+                'allocation_sha256': derivation['allocation_sha256'], 'derivation_sha256': digest(derivation),
+                'policy_sha256': digest(policy)}
+    problems = [{'kind': 'source_mismatch', 'source': key, 'expected': expected[key], 'actual': document['sources'][key]}
+                for key in SOURCE_KEYS if document['sources'][key] != expected[key]]
+    found = [b for b in derivation['blocks'] if b['id'] == document['block_id']]
+    if not problems and len(found) != 1:
+        problems.append({'kind': 'block_unknown', 'block': document['block_id']})
+    if problems:
+        return {'status': 'refused', 'problems': problems}
+    block, board = found[0], {fp['ref']: fp for fp in capture['footprints']}
+    rows = {r['reference']: r for r in document['members']}
+    if set(rows) != set(block['references']):
+        problems.append({'kind': 'block_members', 'expected': sorted(block['references'], key=_natural),
+                         'actual': sorted(rows, key=_natural)})
+        return {'status': 'refused', 'problems': problems}
+    anchor, sub, deferred, _ = _isolate(capture, policy, block)
+    if anchor != document['frame']['anchor']:
+        problems.append({'kind': 'frame_anchor', 'expected': anchor, 'actual': document['frame']['anchor']})
+    if _plain(sub) != document['block_policy']:
+        problems.append({'kind': 'block_policy_mismatch'})
+    if deferred != document['deferred']:
+        problems.append({'kind': 'deferred_mismatch', 'expected': deferred, 'actual': document['deferred']})
+    identity = match(document, capture, inventory)
+    if identity['status'] != 'match':
+        problems.append({'kind': 'identity', 'mismatches': identity['mismatches']})
+    if problems:
+        return {'status': 'refused', 'problems': problems}
+    framed = [placer.transform(board[r], rows[r]['pose']['position_nm'], rows[r]['pose']['rotation_deg'])
+              for r in sorted(rows, key=_natural)]
+    outline, grade, witness = _evidence(capture, framed, sub)
+    for name, value in (('outline', outline), ('grade', grade), ('witness', witness)):
+        if _plain(value) != document[name]:
+            problems.append({'kind': 'stale_evidence', 'evidence': name})
+    failed = [k for k, g in grade.items() if g and g['status'] != 'pass'] + (
+        ['witness'] if witness['status'] != 'pass' else [])
+    if failed:
+        problems.append({'kind': 'evidence_failed', 'evidence': failed})
+    return {'status': 'refused' if problems else 'admitted', 'problems': problems}
 
 
 def _value_rule(value):
@@ -614,17 +905,19 @@ def _write(path, value):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest='command', required=True)
-    for name in ('derive', 'pack', 'match'):
+    for name in ('derive', 'pack', 'match', 'admit'):
         command = sub.add_parser(name)
         command.add_argument('--probe', required=True, type=Path, help='native placement-probe.json')
         command.add_argument('--netlist', required=True, type=Path, help='captured native XML export')
         command.add_argument('--allocation', type=Path, help=f'{ALLOCATION} JSON')
         command.add_argument('--out', required=True, type=Path, help='new output JSON file')
-        if name == 'pack':
+        if name in ('pack', 'admit'):
             command.add_argument('--policy', required=True, type=Path, help='agent-ee.packing-policy/1')
+        if name == 'pack':
             command.add_argument('--block', required=True)
-        if name == 'match':
+        if name in ('match', 'admit'):
             command.add_argument('--candidate', required=True, type=Path)
+        if name == 'match':
             command.add_argument('--mapping', type=Path, help='JSON object: candidate reference -> target reference')
     args = parser.parse_args(argv)
     try:
@@ -637,6 +930,10 @@ def main(argv=None):
                                 heartbeat=lambda event: print(json.dumps(event), file=sys.stderr, flush=True))
             result = result.get('candidate', result)
             ok = result['status'] == 'packed'
+        elif args.command == 'admit':
+            result = admit(strict_json(args.candidate.read_bytes()), capture, inventory, derivation,
+                           strict_json(args.policy.read_bytes()))
+            ok = result['status'] == 'admitted'
         else:
             mapping = strict_json(args.mapping.read_bytes()) if args.mapping else None
             result = match(strict_json(args.candidate.read_bytes()), capture, inventory, mapping)

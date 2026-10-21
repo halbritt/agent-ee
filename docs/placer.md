@@ -544,9 +544,10 @@ belongs to the rung 1 board build (AGENTEE-96), which consumes this placer.
 [Blocks](blocks.md) derive placement blocks from the sealed schematic hierarchy
 or an engineer allocation file. Each block is packed alone with this search,
 around a fixed anchor on a synthetic plane, into a rigid
-`agent-ee.block-candidate/1`. Its own pad obligations and groups apply, and
+`agent-ee.block-candidate/2`. Its own pad obligations and groups apply, and
 boundary constraints are deferred to arrangement (AGENTEE-340). Search logic is
-unchanged.
+unchanged. Arrangement admits a candidate only after `blocks.admit` re-grades it
+from the board.
 
 ## Pod-scale qualification (AGENTEE-181)
 

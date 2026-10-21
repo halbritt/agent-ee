@@ -114,6 +114,8 @@ caches selected pads and retains typed partial diagnostics on its optional searc
 engineer allocation file. Each block is packed alone into a rigid, versioned block
 candidate, with relative poses, an obligation grade, a courtyard witness,
 per-side outlines and source hashes. Candidates are search-derived and advisory.
+A candidate with missing, failed or stale evidence refuses: admission binds its
+sources and policy and re-grades every member from the board.
 Matching by footprint, land-pattern hash, pin roles and declared value tolerance
 refuses any mismatch.
 

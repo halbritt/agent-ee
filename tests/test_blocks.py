@@ -177,6 +177,8 @@ class DerivationTests(Fixture, unittest.TestCase):
             (allocation(dict(power, extra=1)), 'allocated block needs id'),
             (allocation(power, sensor, residual=['Q1']), 'residual Q1 is not a board footprint'),
             (allocation(power, sensor, {'id': 'x', 'references': ['H1']}), 'H1 is not an on-board native component'),
+            (allocation(power, {'id': 's', 'sheets': ['/Sensor/', '/Sensor/Filter/']}),
+             'R1 is allocated twice by overlapping sheets'),
             ({'schema': blocks.ALLOCATION, 'blocks': []}, 'nonempty blocks'),
         )
         for document, message in cases:
@@ -400,12 +402,119 @@ class CandidateSchemaTests(Fixture, unittest.TestCase):
             (lambda d: d['members'][other].update(value={'text': '1uF', 'rule': 'tolerance'}), 'citation'),
             (lambda d: d.update(status='refused'), 'only a packed block candidate'),
             (lambda d: d['frame'].update(convention='other'), 'block frame must be'),
-            (lambda d: d.pop('outline'), 'needs outline'),
-            (lambda d: d.update(schema='agent-ee.block-candidate/0'), 'expected agent-ee.block-candidate/1'),
+            (lambda d: d.pop('outline'), 'missing outline'),
+            (lambda d: d.update(schema='agent-ee.block-candidate/1'), 'expected agent-ee.block-candidate/2'),
         )
         for change, message in cases:
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 blocks.validate_candidate(broken(change))
+
+
+    def test_missing_failed_or_stale_evidence_refuses(self):
+        """Review H1: every evidence field is required, typed and must pass; poses bind the witness."""
+        anchor = next(i for i, m in enumerate(self.cand['members']) if m['reference'] == 'U1')
+        other = next(i for i, m in enumerate(self.cand['members']) if m['reference'] == 'C1')
+        def pin(d, **changes):
+            d['members'][anchor]['pins'][0].update(changes)
+        cases = [(lambda d, k=key: d.pop(k), 'missing ' + key)
+                 for key in ('grade', 'witness', 'deferred', 'block_policy', 'placer_judgment', 'search', 'sources')]
+        cases += [
+            (lambda d: d.update(sources={'board_sha256': d['sources']['board_sha256']}), 'missing allocation_sha256'),
+            (lambda d: d['sources'].update(policy_sha256=None), 'policy sha256'),
+            (lambda d: d.update(extra=1), 'unknown extra'),
+            (lambda d: d['members'][other].pop('courtyard'), 'missing courtyard'),
+            (lambda d: d['witness'].update(status='defect'), 'witness must pass'),
+            (lambda d: d['witness'].update(status='unknown'), 'witness must pass'),
+            (lambda d: d['witness'].update(drilled_pad_conflicts=[['U1', 'C1']]), 'witness must pass'),
+            (lambda d: d['witness']['minimum']['F'].update(distance_squared_nm2=[1, 0]), 'positive denominator'),
+            (lambda d: d['witness']['minimum']['F'].update(distance_squared_nm2=[1.5, 1]), 'exact'),
+            (lambda d: d['witness']['minimum']['F'].update(distance_squared_nm2=[1, 1]), 'below the gap'),
+            (lambda d: d['witness'].update(pairs_checked=1), 'witness differs'),
+            (lambda d: d['witness'].update(gap_nm=0), 'block policy gap'),
+            (lambda d: d['grade']['electrical_locality'].update(status='defect'), 'must pass'),
+            (lambda d: d['grade']['electrical_locality'].update(status='unknown'), 'must pass'),
+            (lambda d: d['grade']['electrical_locality']['unknown'].append({'kind': 'x'}), 'no defects or unknowns'),
+            (lambda d: d['grade']['electrical_locality']['measured'].pop(), 'measure every internal pair'),
+            (lambda d: d['grade']['electrical_locality']['measured'][0].update(distance_squared_nm=10 ** 15),
+             'exceeds its limit'),
+            (lambda d: d['grade'].update(electrical_locality=None), 'must pass'),
+            (lambda d: d['grade'].update(groups={'status': 'pass'}), 'must be null'),
+            (lambda d: d.update(grade=[]), 'block grade must be an object'),
+            (lambda d: d['placer_judgment'].update(verdict='defect'), 'placer judgment must pass'),
+            (lambda d: d['deferred'].update(obligations='cross-C2'), 'deferred obligations'),
+            (lambda d: d['deferred'].update(obligations=['cross-C2', 'input-C1']), 'cannot also be deferred'),
+            (lambda d: d['deferred'].pop('obligations'), 'missing obligations'),
+            (lambda d: d['deferred'].update(obstacles=-1), 'nonnegative'),
+            (lambda d: d['search'].update(steps_used=10 ** 6), 'within the block policy budget'),
+            (lambda d: d['block_policy'].update(fixed_refs=[]), 'fixes exactly the anchor'),
+            (lambda d: d['block_policy']['electrical_locality']['obligations'].append(obligations()['obligations'][2]),
+             'wholly inside the block'),
+            (lambda d: [m['pose'].update(position_nm=[0, 0]) for m in d['members']], 'outline differs'),
+            (lambda d: d['members'][other]['pose'].update(rotation_deg=(d['members'][other]['pose']['rotation_deg']
+                                                                         + 90) % 360), 'differs'),
+            (lambda d: d['outline']['F'].update(box_nm=[0, 0, 0, 0]), 'outline differs'),
+            (lambda d: d['outline']['F']['courtyards'].pop(), 'outline differs'),
+            (lambda d: d['members'][other]['courtyard']['F']['polygons'][0].reverse(), 'courtyard_sha256'),
+            (lambda d: d['members'][anchor]['pins'].append(copy.deepcopy(d['members'][anchor]['pins'][0])),
+             'listed twice'),
+            (lambda d: pin(d, role='n9'), 'one role'),
+            (lambda d: pin(d, boundary='yes'), 'boolean'),
+            (lambda d: pin(d, function='VIN'), 'function must be an object'),
+            (lambda d: pin(d, extra=1), 'unknown extra'),
+            (lambda d: d['members'][anchor].update(pins='none'), 'member pins'),
+            (lambda d: d['provenance'].update(source={'locator': 'x', 'sha256': 'c' * 64}), 'no reference source'),
+            (lambda d: d['provenance'].update(note='x'), 'unknown note'),
+        ]
+        for change, message in cases:
+            doc = copy.deepcopy(self.cand)
+            change(doc)
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                blocks.validate_candidate(doc)
+            with self.subTest(message=message, via='match'), self.assertRaises(ValueError):
+                blocks.match(doc, self.board, self.inv)
+        # A plain JSON round trip and a null allocation hash stay valid.
+        blocks.validate_candidate(json.loads(json.dumps(self.cand)))
+        self.assertIsNone(self.cand['sources']['allocation_sha256'])
+
+    def test_admission_binds_sources_policy_and_board_evidence(self):
+        derived, board_policy = self.derive(), policy()
+        self.assertEqual(blocks.admit(self.cand, self.board, self.inv, derived, board_policy),
+                         {'status': 'admitted', 'problems': []})
+        def kinds(doc, capture=None, pol=None):
+            result = blocks.admit(doc, capture or self.board, self.inv, derived, pol or board_policy)
+            self.assertEqual(result['status'], 'refused')
+            return sorted({p['kind'] for p in result['problems']})
+        # The boundary obligation cannot be dropped from the record, and an internal
+        # obligation cannot be removed from the policy and grade together.
+        doc = copy.deepcopy(self.cand)
+        doc['deferred']['obligations'] = []
+        blocks.validate_candidate(doc)
+        self.assertEqual(kinds(doc), ['deferred_mismatch'])
+        doc = copy.deepcopy(self.cand)
+        doc['block_policy']['electrical_locality']['obligations'].pop(0)
+        grade = doc['grade']['electrical_locality']
+        grade['declaration'] = doc['block_policy']['electrical_locality']
+        grade['measured'] = [m for m in grade['measured'] if m['obligation'] != 'input-C1']
+        blocks.validate_candidate(doc)
+        self.assertEqual(kinds(doc), ['block_policy_mismatch'])
+        # A moved member with a self-consistent outline and witness keeps stale grades.
+        doc = copy.deepcopy(self.cand)
+        row = next(m for m in doc['members'] if m['reference'] == 'C1')
+        row['pose']['position_nm'][0] += 20 * 10 ** 6
+        framed = [blocks._framed(r) for r in doc['members']]
+        doc['outline'] = blocks._plain(blocks._outline(framed))
+        doc['witness'] = blocks._plain(blocks._witness(framed, doc['witness']['gap_nm']))
+        blocks.validate_candidate(doc)
+        self.assertEqual(kinds(doc), ['evidence_failed', 'stale_evidence'])
+        # Sources bind the board, its policy and derivation.
+        self.assertEqual(kinds(self.cand, pol=policy(gap_nm=300000)), ['source_mismatch'])
+        doc = copy.deepcopy(self.cand)
+        doc['sources']['derivation_sha256'] = 'e' * 64
+        self.assertEqual(kinds(doc), ['source_mismatch'])
+        # Land geometry is bound through identity matching, kept separate from grading.
+        changed = copy.deepcopy(self.board)
+        next(f for f in changed['footprints'] if f['ref'] == 'C1')['pads'][0]['size_nm'] = [500000, 400000]
+        self.assertEqual(kinds(self.cand, capture=changed), ['identity'])
 
 
 class MatchingTests(Fixture, unittest.TestCase):
@@ -547,6 +656,14 @@ class CliTests(Fixture, unittest.TestCase):
         blocks.validate_candidate(cand)
         done = self.run_cli('match', *common, '--candidate', self.dir / 'power.json', '--out', self.dir / 'match.json')
         self.assertEqual(done.returncode, 0, done.stderr)
+        done = self.run_cli('admit', *common, '--policy', self.dir / 'policy.json', '--candidate', self.dir / 'power.json',
+                            '--out', self.dir / 'admit.json')
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads((self.dir / 'admit.json').read_text()), {'status': 'admitted', 'problems': []})
+        (self.dir / 'other.json').write_text(json.dumps(policy(gap_nm=300000)))
+        done = self.run_cli('admit', *common, '--policy', self.dir / 'other.json', '--candidate', self.dir / 'power.json',
+                            '--out', self.dir / 'refused.json')
+        self.assertEqual((done.returncode, json.loads(done.stdout)['status']), (1, 'refused'))
         done = self.run_cli('derive', *common, '--out', self.dir / 'derived.json')
         self.assertEqual(done.returncode, 1)
         (self.dir / 'bad.json').write_text(json.dumps(allocation({'id': 'p', 'sheets': ['/Power/']})))
