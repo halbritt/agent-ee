@@ -121,7 +121,8 @@ The [post-routing artwork producer](docs/silk-artwork.md#post-routing-artwork-pr
 repairs routed-board silk through a receipted translation-only step, proves that
 all non-silk geometry is unchanged, and enables identity-bound carry closure.
 Closure consumes sealed native containment evidence, including board-owned and footprint-owned
-straight slots and cutouts (AGENTEE-362), without rerunning the tool during campaign replay.
+straight slots and cutouts (AGENTEE-362) and conservatively bounded round holes, arc-ended
+slots and rounded cutouts (AGENTEE-368), without rerunning the tool during campaign replay.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against sourced limits.

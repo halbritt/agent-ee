@@ -1930,7 +1930,10 @@ silk layer, and wholly inside the qualified outline. Off-board and straddling
 marks remain open even if native DRC is silent. Footprint-owned Edge.Cuts
 participate in outline qualification. Straight slots and cutouts qualify as holes
 inside one outer contour (AGENTEE-362); markings must lie wholly outside them.
-Touching, crossing, nested or unsupported contours establish no containment. Both producers seal a board-bound native containment witness in
+Circles, arcs and rounded rectangles qualify through exact conservative bounds
+(AGENTEE-368): superset polygons for holes, a subset polygon for the outer
+contour. Touching, crossing, nested or unsupported contours establish no containment.
+NPTH drills and pad slots are not outline holes; native DRC alone judges silk over them. Both producers seal a board-bound native containment witness in
 the placement report. Closure and campaign replay read it without rerunning
 pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
 unavailable evidence keep their refusal. Cached-text translations and boards
