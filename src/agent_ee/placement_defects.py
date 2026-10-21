@@ -436,7 +436,9 @@ def acceptance(run, diagnostic):
         for spec in manifest['scope'].get('checks', []):
             if gated(spec) and (run / 'work' / str(safe_relative(spec['id'])) / WITNESS).is_file():
                 return _recorded(run, spec['id'], manifest)
-        raise ValueError('placement carry closure is unverifiable without native DRC on the captured board')
+        # Fail closed: acceptance never closes carry on unverified evidence.
+        raise ValueError('placement carry closure at campaign acceptance is unverifiable: no gated check '
+                         'sealed native DRC on the captured board')
     if open_defects(manifest, run / 'inputs', native):
         return {'state': 'escalated', 'reason': 'open_placement_defects'}
     return diagnostic

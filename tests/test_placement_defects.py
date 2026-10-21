@@ -18,6 +18,11 @@ def native_containment(board):
     return containment_witness(board)
 
 
+def complete_drc():
+    # A native report that evaluated every severity and ignored no silk check.
+    return {'violations': [], 'ignored_checks': [], 'included_severities': ['error', 'warning', 'exclusion']}
+
+
 def outlined_closure_text():
     from tests.test_placement_adapter import TEXT
     # TEXT's overlapping Edge.Cuts lines cannot prove containment. Give this
@@ -521,8 +526,10 @@ class NativePlacementCarryTests(unittest.TestCase):
             original = design / Path(links[0]['receipt']).parent
             if honest:
                 native = pcbnew.LoadBoard(str(board))
+                # Clear the silk graphics while staying inside the 30 mm outline, so the
+                # AGENTEE-350 containment witness can still contain the moved markings.
                 for fp in native.GetFootprints():
-                    fp.Move(pcbnew.VECTOR2I(0, pcbnew.FromMM(40)))
+                    fp.Move(pcbnew.VECTOR2I(pcbnew.FromMM(18), 0))
                 self.assertTrue(pcbnew.SaveBoard(str(board), native))
             bundle = design / placement_defects.DIRECTORY / f'imported-{name}'
             shutil.copytree(original, bundle)
@@ -540,10 +547,23 @@ class NativePlacementCarryTests(unittest.TestCase):
                 write_json(drc, report)
             result = read_json(bundle / placement_defects.REPORT)
             result.update(board_sha256=digest(board), open_defects=[], outcome='pass', verdict='pass')
+            if honest:
+                # A real closure under AGENTEE-350 binds containment to the moved board.
+                from agent_ee.silk_artwork import containment_witness
+                result['containment'] = containment_witness(board)
             result['native_drc_comparison']['open_defects'] = []
             write_json(bundle / placement_defects.REPORT, result)
+            if rules is not None:
+                board.with_suffix('.kicad_dru').write_text(rules)
             receipt = read_json(bundle / 'receipt.json')
             receipt['outputs'][board_rel] = digest(board)
+            if honest:
+                # An honest receipt binds the DRC project/rule inputs it ran with (AGENTEE-344).
+                for path in design.rglob('*'):
+                    rel = path.relative_to(design).as_posix()
+                    if (path.suffix in ('.kicad_pro', '.kicad_dru') and
+                            not rel.startswith(placement_defects.DIRECTORY + '/')):
+                        receipt['inputs'][rel] = digest(path)
             for artifact in (*placement_defects.FILES, placement_defects.ARTWORK):
                 if artifact in receipt['artifacts']:
                     receipt['artifacts'][artifact] = digest(bundle / artifact)
@@ -552,8 +572,6 @@ class NativePlacementCarryTests(unittest.TestCase):
             links.append({'receipt': f'{placement_defects.DIRECTORY}/imported-{name}/receipt.json',
                           'sha256': digest(bundle / 'receipt.json')})
             write_json(index, links)
-            if rules is not None:
-                board.with_suffix('.kicad_dru').write_text(rules)
         return self.rescope(f'closure-{name}', lineage=True, edit=append)
 
     def test_imported_closure_must_match_native_drc_on_the_captured_board(self):
@@ -984,19 +1002,25 @@ class DurableClosureTests(unittest.TestCase):
                 links.append(link)
                 bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects,
                                  'containment': native_containment(board)},
-                                {placement_defects.BOARD: board}, {'violations': []})
+                                {placement_defects.BOARD: board}, complete_drc())
             index = 'placement-evidence/index.json'
             write_json(inputs / index, links)
             files[index] = digest(inputs / index)
             manifest = {'scope': {'board': current.name, placement_defects.DECLARATION: links},
                         'files': files}
+            # Native DRC on the captured board is the closing bundle's captured report.
+            native = lambda: placement_defects.silk_findings(bundles[links[-1]['receipt']][2])
             with patch.object(placement_defects, '_bundle', side_effect=lambda m, i, link: bundles[link['receipt']]):
                 manifest['files'][current.name] = digest(current)
-                self.assertEqual(placement_defects.open_defects(manifest, inputs), [])
+                self.assertEqual(placement_defects.open_defects(manifest, inputs, native), [])
+                with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+                    placement_defects.open_defects(manifest, inputs)
                 track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t"))'
                 current.write_text(fixed.read_text().rstrip()[:-1] + track + ')')
                 manifest['files'][current.name] = digest(current)
-                self.assertEqual(placement_defects.open_defects(manifest, inputs), [])
+                self.assertEqual(placement_defects.open_defects(manifest, inputs, native), [])
+                with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+                    placement_defects.open_defects(manifest, inputs)
                 for old_token, new_token in (('(at 0 -2.5 0)', '(at 0 -1.5 0)'),
                                              ('(at 10 10)', '(at 11 10)'),
                                              ('(size 0.5 0.5)', '(size 0.6 0.5)')):
@@ -1224,7 +1248,10 @@ class PlacementRoutingCarryTests(unittest.TestCase):
             self.assertEqual(refused_check['details']['reason'], 'open_placement_defects')
         fixed = fixture.out / 'runs/4'
         fixed_manifest = read_json(fixed / 'candidate.json')
-        self.assertEqual(placement_defects.open_defects(fixed_manifest, fixed / 'inputs'), [])
+        recorded = lambda: placement_defects._recorded(fixed, 'fab', fixed_manifest)
+        self.assertEqual(placement_defects.open_defects(fixed_manifest, fixed / 'inputs', recorded), [])
+        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+            placement_defects.open_defects(fixed_manifest, fixed / 'inputs')
         self.assertEqual(len(fixed_manifest['scope'][placement_defects.DECLARATION]), 2)
         for check_id in ('verify', 'fab', 'routed'):
             self.assertEqual(read_json(fixed / f'checks/{check_id}.json')['outcome'], 'pass')
@@ -1245,10 +1272,11 @@ class PlacementRoutingCarryTests(unittest.TestCase):
 
 class ClosureEscapeTests(unittest.TestCase):
     def run_closure(self, edit=lambda text: text, *, receipt_rules=None, current_rules=None,
-                    witness_edit=lambda witness: witness):
+                    witness_edit=lambda witness: witness, native=False, call=None):
         TEXT, field_uuid = outlined_closure_text()
         with tempfile.TemporaryDirectory() as temporary:
-            inputs = Path(temporary)
+            inputs = Path(temporary) / 'inputs'
+            inputs.mkdir()
             old, fixed, current = (inputs / n for n in ('old.kicad_pcb', 'fixed.kicad_pcb', 'board.kicad_pcb'))
             old.write_text(TEXT)
             fixed.write_text(TEXT.replace('(at 0 -1.5 0)', '(at 0 -2.5 0)'))
@@ -1264,7 +1292,7 @@ class ClosureEscapeTests(unittest.TestCase):
                 links.append(link)
                 bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects,
                                  'containment': witness_edit(native_containment(board))},
-                                {placement_defects.BOARD: board}, {'violations': []})
+                                {placement_defects.BOARD: board}, complete_drc())
             write_json(inputs / 'placement-evidence/index.json', links)
             files['placement-evidence/index.json'] = digest(inputs / 'placement-evidence/index.json')
             manifest = {'scope': {'board': current.name, placement_defects.DECLARATION: links}, 'files': files}
@@ -1272,10 +1300,43 @@ class ClosureEscapeTests(unittest.TestCase):
             current.write_text(edit(fixed.read_text()))
             manifest['files'][current.name] = digest(current)
             with patch.object(placement_defects, '_bundle', side_effect=lambda m, i, link: bundles[link['receipt']]):
+                if call:
+                    return call(manifest, inputs)
+                if native:
+                    # Native DRC on the captured board is the closing bundle's captured report.
+                    return placement_defects.open_defects(manifest, inputs, lambda: placement_defects.silk_findings(
+                        bundles[links[-1]['receipt']][2]))
                 return placement_defects.open_defects(manifest, inputs)
 
+    def assert_closure_needs_native(self, *args, **kwargs):
+        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+            self.run_closure(*args, **kwargs)
+
     def test_control_identical_board_closes(self):
-        self.assertEqual(self.run_closure(lambda t: t), [])
+        self.assertEqual(self.run_closure(lambda t: t, native=True), [])
+        self.assert_closure_needs_native(lambda t: t)
+
+    def test_acceptance_without_a_sealed_native_witness_fails_closed(self):
+        # Carry that would close at acceptance needs a gated check's sealed native DRC witness.
+        satisfied = {'state': 'criteria_satisfied', 'reason': 'all_criteria_satisfied'}
+        for checks in ([], [{'id': 'netlist', 'kind': 'netlist', 'stage': 'placement'}],
+                       [{'id': 'fab', 'kind': 'fab_export', 'stage': 'fab'}]):
+            def accept(manifest, inputs, diagnostic=satisfied):
+                manifest['scope']['checks'] = checks
+                write_json(inputs.parent / 'candidate.json', manifest)
+                return placement_defects.acceptance(inputs.parent, dict(diagnostic))
+            with self.subTest(checks=[c['id'] for c in checks]):
+                with self.assertRaisesRegex(ValueError, 'acceptance is unverifiable: no gated check sealed native DRC'):
+                    self.run_closure(call=accept)
+                pending = {'state': 'repair', 'reason': 'criteria_failed'}
+                self.assertEqual(self.run_closure(call=lambda m, i: accept(m, i, pending)), pending)
+        # Open carry escalates without any native evidence.
+        def open_carry(manifest, inputs):
+            manifest['scope']['checks'] = []
+            write_json(inputs.parent / 'candidate.json', manifest)
+            return placement_defects.acceptance(inputs.parent, dict(satisfied))
+        self.assertEqual(self.run_closure(lambda t: t.replace('"R1"', '"R\\1"'), call=open_carry),
+                         {'state': 'escalated', 'reason': 'open_placement_defects'})
 
     def test_missing_malformed_or_mismatched_witness_retains_known_defect(self):
         for witness in (None, {}, [], {'board_sha256': 'wrong', 'markings': ['field']},
@@ -1318,7 +1379,8 @@ class ClosureEscapeTests(unittest.TestCase):
     def test_nonstem_rule_addition_removal_and_change_reopen_closure(self):
         for name in ('other.kicad_pro', 'nested/settings.kicad_dru'):
             sealed = {name: 'a' * 64}
-            self.assertEqual(self.run_closure(receipt_rules=sealed, current_rules=sealed), [])
+            self.assertEqual(self.run_closure(receipt_rules=sealed, current_rules=sealed, native=True), [])
+            self.assert_closure_needs_native(receipt_rules=sealed, current_rules=sealed)
             for before, after in (({}, sealed), (sealed, {}), (sealed, {name: 'b' * 64})):
                 with self.subTest(name=name, before=before, after=after):
                     self.assertEqual(len(self.run_closure(receipt_rules=before, current_rules=after)), 1)
@@ -1386,7 +1448,8 @@ class ClosureEscapeTests(unittest.TestCase):
         for valid in (track, track.replace(' ', '\t'), track.replace(' ', '\r\n'),
                       track.replace('"t"', 't_1.+-')):
             with self.subTest(valid=repr(valid)):
-                self.assertEqual(self.run_closure(lambda t: t.rstrip()[:-1] + valid + ')'), [])
+                self.assertEqual(self.run_closure(lambda t: t.rstrip()[:-1] + valid + ')', native=True), [])
+                self.assert_closure_needs_native(lambda t: t.rstrip()[:-1] + valid + ')')
         for invalid in (track.replace('"t"', 't/1'), track.replace('"t"', 't:1'),
                         track.replace('"t"', 't#1'), track.replace('"t"', 't;1'),
                         track.replace('"t"', '"t#1"'), track.replace('"t"', '"t;1"'),
@@ -1428,4 +1491,7 @@ class ClosureEscapeTests(unittest.TestCase):
             track = ('(segment (start 1 2) (end 3 4) (width 0.2) '
                      '(layer "F.Cu") (net "' + name + '") (uuid "t"))')
             with self.subTest(name=name):
-                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + track + ')')), count)
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + track + ')',
+                                                      native=count == 0)), count)
+                if count == 0:
+                    self.assert_closure_needs_native(lambda t: t.rstrip()[:-1] + track + ')')
