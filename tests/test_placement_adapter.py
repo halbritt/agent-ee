@@ -512,6 +512,30 @@ class WriteScopeTest(unittest.TestCase):
                           pa.write_scope(TEXT.encode(), boundary)['violations'][0])
             self.assertEqual(pa.write_scope(TEXT.encode(), rotated(90, x='12.' + '0' * 60 + '1'))['status'], 'allowed')
 
+    def test_flip_mirror_comparison_is_exact_under_any_decimal_context(self):
+        # Negation for the mirror comparison never rounds: a coordinate changed in any digit is refused,
+        # at the default precision and under a narrow context alike.
+        tiny = '0' * 40 + '1'
+        graphic = flipped().replace(b'(start 1 1) (end 1 -1)', f'(start 1 1) (end 1 -1.{tiny})'.encode())
+        text = flipped().replace(b'(at 0 1.5 180)', f'(at 0 1.5{tiny} 180)'.encode())
+        coarse = flipped().replace(b'(start 1 1) (end 1 -1)', b'(start 1 1) (end 1 -1.01)')
+        coarse_text = flipped().replace(b'(at 0 1.5 180)', b'(at 0 1.51 180)')
+        for name, after, precision, fragment in (
+                ('graphic endpoint, default precision', graphic, None, 'fp_line a4'),
+                ('Reference text y, default precision', text, None, 'property a1'),
+                ('graphic endpoint, precision 2', coarse, 2, 'fp_line a4'),
+                ('Reference text y, precision 2', coarse_text, 2, 'property a1')):
+            with self.subTest(name), decimal.localcontext() as context:
+                if precision is not None:
+                    context.prec = precision
+                self.assertNotEqual(after, flipped())
+                self.assertRefused(after, f'{fragment} changed beyond the footprint transform')
+        # The exact flip itself stays allowed under the narrow context.
+        with decimal.localcontext() as context:
+            context.prec = 1
+            report = pa.write_scope(TEXT.encode(), flipped(), [FP_J])
+            self.assertEqual(report['status'], 'allowed', report['violations'])
+
     def test_exact_side_flip_is_a_transform_and_partial_flips_are_refused(self):
         report = pa.write_scope(TEXT.encode(), flipped(), [FP_J])
         self.assertEqual(report['status'], 'allowed', report['violations'])

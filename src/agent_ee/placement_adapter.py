@@ -771,8 +771,9 @@ def _same_number(a, b):
 
 
 def _opposite_number(a, b):
+    # copy_negate is exact; unary minus would round to the current Decimal context.
     return isinstance(a, str) and isinstance(b, str) and _number(a) is not None and _number(b) is not None and \
-        _number(a) == -_number(b)
+        _number(a) == _number(b).copy_negate()
 
 
 def _uses(node, tags):
@@ -804,7 +805,7 @@ def _mirrored(before, after, rule):
 def _mirrored_at(before, after):
     """(before angle, after angle) when the local x/y are mirrored exactly, else None."""
     b_at, a_at = _at(before), _at(after)
-    if b_at is None or a_at is None or b_at[3] or a_at[3] or b_at[0] != a_at[0] or b_at[1] != -a_at[1]:
+    if b_at is None or a_at is None or b_at[3] or a_at[3] or b_at[0] != a_at[0] or b_at[1] != a_at[1].copy_negate():
         return None
     return b_at[2], a_at[2]
 

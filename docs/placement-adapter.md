@@ -414,7 +414,10 @@ are swapped and points mirrored only at their known positions (a graphic's
 `layer` and own points, a text's `layer`, a pad's `layers`); an unknown
 subtree must be identical and must hold no point, `at` or layer tag, so
 `(unknown (xy 1 0))` refuses during a flip whether it is respelled `1.0`,
-mirrored, changed or left as it was.
+mirrored, changed or left as it was. The mirror negates a coordinate exactly,
+without any Decimal context, so a y changed in any digit (`-1` to
+`-1.00000000000000000000000000000000000000001`, or `-1.01` under a two-digit
+context) refuses as changed beyond the footprint transform.
 
 A refused keyed child under a translation names its first differing token and
 both spellings, for example `fp_line a4 changed beyond the footprint transform
