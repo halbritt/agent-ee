@@ -243,7 +243,7 @@ def check_placement(ctx):
         declarations = _groups(ctx)
     elif criterion == 'electrical-locality/1':
         try:
-            declarations = electrical_locality.validate(json.loads(_captured(ctx, ctx.params['locality'])))
+            declarations = electrical_locality.validate(electrical_locality.load_json(_captured(ctx, ctx.params['locality'])))
         except (ValueError, UnicodeDecodeError) as exc:
             raise CheckError('malformed', f'electrical locality refused: {exc}') from exc
     board = ctx.candidate_path(ctx.scope['board'])

@@ -97,6 +97,12 @@ class LocalityBindingTests(unittest.TestCase):
         self.assertEqual(request['policy']['electrical_locality'], self.doc)
 
 
+    def test_deeply_nested_captured_file_is_typed_depth_refusal(self):
+        (self.root/self.rel).write_text('[' * 10_000 + '0' + ']' * 10_000)
+        self.manifest['files'][self.rel] = digest(self.root/self.rel)
+        with self.assertRaisesRegex(ValueError, f'^{locality.DEPTH_ERROR}$'):
+            self.bind()
+
     def test_mismatched_mutable_missing_changed_linked_and_ungraded_refuse(self):
         for mode in ('mismatch', 'mutable', 'missing', 'changed', 'symlink', 'ungraded', 'spoofed', 'two_files', 'float_limit'):
             with self.subTest(mode=mode):
