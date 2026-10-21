@@ -24,7 +24,11 @@ from .executor import execute, sandbox_invocation
 from .storage import digest, digest_fd, identity, read_json, write_json
 
 STEP_SCHEMA = 'agent-ee.stage-step/1'
-RECEIPT_SCHEMA = 'agent-ee.stage-receipt/1'
+# /2 receipts are produced only by strict source observation (AGENTEE-357). A /1 receipt still
+# replays unless its recorded source identity could be a link-only one (AGENTEE-374).
+RECEIPT_SCHEMA = 'agent-ee.stage-receipt/2'
+LEGACY_RECEIPT_SCHEMA = 'agent-ee.stage-receipt/1'
+RECEIPT_SCHEMAS = (LEGACY_RECEIPT_SCHEMA, RECEIPT_SCHEMA)
 INDEX_SCHEMA = 'agent-ee.stage-receipt-index/1'
 STAGES = ('scaffold', 'parts', 'schematic', 'placement', 'routing', 'verification', 'fab')
 ADOPTABLE = ('completed', 'partial')
@@ -43,6 +47,10 @@ NOFOLLOW = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
 # routing_adapter._step mounts these standalone helpers individually.
 QUALIFIED_LIVE_HELPERS = frozenset({'kicad_route_attempt.py', 'net_binding.py', 'symbol_library.py'})
 VERSION_TIMEOUT_S = 30
+# Linux CLOCK_REALTIME_COARSE, the clock that stamps file status changes; not exported by time.
+CLOCK_REALTIME_COARSE = 5
+# Longest wait for the coarse clock to pass every live status time before a launch.
+STATUS_FENCE_S = 2.5
 STEP_KEYS = {'schema', 'stage', 'step', 'argv', 'mounts', 'version_argv', 'source',
              'backend_report', 'writes', 'artifacts', 'adoptable_exits', 'timeout_s', 'inputs'}
 RECEIPT_KEYS = {'schema', 'receipt_id', 'binding', 'spec', 'spec_sha256', 'argv', 'tool', 'tool_after',
@@ -104,6 +112,14 @@ class EscapingSourceError(ValueError):
         super().__init__(self.violation)
 
 
+class LegacySourceIdentityError(ValueError):
+    """A /1 receipt records a source identity replay cannot tell from an escaped link-only one."""
+
+    def __init__(self, source):
+        self.violation = 'legacy_source_identity:' + source
+        super().__init__(self.violation)
+
+
 class ReceiptCleanupError(ValueError):
     """A refused run's receipt directory could not be removed; ``refusal`` is why it was refused."""
 
@@ -113,17 +129,87 @@ class ReceiptCleanupError(ValueError):
         super().__init__(f'{self.violation} (after {refusal!r})')
 
 
-def _live_source_identities():
+def _reopened(descriptor, flags=0):
+    """A readable descriptor for the object an O_PATH descriptor holds, never a new lookup of its name."""
+    return os.open(f'/proc/self/fd/{descriptor}', os.O_RDONLY | os.O_CLOEXEC | flags)
+
+
+def _held_walk(directory, *, vanished=False):
+    """Yield (relative path, directory descriptor, name, status) for every entry below a directory.
+
+    Consumes the readable ``directory`` descriptor. Every entry is looked up as one component
+    of the directory object just listed, without following a link, and a subdirectory is
+    entered only through the object opened from that listing, which must be the entry
+    observed, so a component swapped for a link or another directory can never redirect the
+    walk. The yielded directory descriptor stays valid until the walk resumes. Lookup errors
+    propagate; vanished=True skips an entry removed after listing.
+    """
+    stack = []
+    try:
+        stack.append(('', directory, iter(sorted(os.listdir(directory)))))
+    finally:
+        if not stack:
+            os.close(directory)
+    try:
+        while stack:
+            prefix, current, names = stack[-1]
+            name = next(names, None)
+            if name is None:
+                os.close(current)
+                stack.pop()
+                continue
+            try:
+                observed = os.stat(name, dir_fd=current, follow_symlinks=False)
+            except FileNotFoundError:
+                if vanished:
+                    continue
+                raise
+            yield prefix + name, current, name, observed
+            if stat.S_ISDIR(observed.st_mode):
+                try:
+                    child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                    dir_fd=current)
+                except FileNotFoundError:
+                    if vanished:
+                        continue
+                    raise
+                try:
+                    opened = os.fstat(child)
+                    if (opened.st_dev, opened.st_ino) != (observed.st_dev, observed.st_ino):
+                        raise OSError(errno.ESTALE, 'directory replaced during walk', prefix + name)
+                    names = iter(sorted(os.listdir(child)))
+                except BaseException:
+                    os.close(child)
+                    raise
+                stack.append((prefix + name + '/', child, names))
+    finally:
+        for _, current, _ in stack:
+            os.close(current)
+
+
+def _entry_digest(directory, name):
+    """Digest of the regular file ``name`` in a held directory, opened without following a link."""
+    entry = os.open(name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
+    try:
+        if not stat.S_ISREG(os.fstat(entry).st_mode):
+            raise OSError(errno.ESTALE, 'entry replaced during walk', name)
+        # The held object's magic link reaches that same file, never a new lookup of its name.
+        return digest(f'/proc/self/fd/{entry}')
+    finally:
+        os.close(entry)
+
+
+def _live_root():
     package_source = Path(__file__).resolve(strict=True).parents[1]
-    identities = set()
+    return os.open(package_source, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
 
-    def walk_error(exc):
-        raise exc
 
-    for root, directories, files in os.walk(package_source, onerror=walk_error):
-        for path in [Path(root), *(Path(root) / name for name in directories + files)]:
-            observed = path.lstat()
-            identities.add((observed.st_dev, observed.st_ino))
+def _live_source_identities():
+    directory = _live_root()
+    observed = os.fstat(directory)
+    identities = {(observed.st_dev, observed.st_ino)}
+    for _, _, _, observed in _held_walk(directory):
+        identities.add((observed.st_dev, observed.st_ino))
     return identities
 
 
@@ -131,23 +217,29 @@ def _live_source_state():
     """Status-change time of every live non-directory entry, by device and inode.
 
     Only files can gain hard links. An entry that vanishes during the walk, such as a
-    replaced bytecode file, has no name left to compare and is skipped."""
-    package_source = Path(__file__).resolve(strict=True).parents[1]
+    replaced bytecode file, is absent here; a later comparison refuses a baseline entry
+    that is absent, never treating it as unchanged."""
     state = {}
-
-    def walk_error(exc):
-        if not isinstance(exc, FileNotFoundError):
-            raise exc
-
-    for root, directories, files in os.walk(package_source, onerror=walk_error):
-        for name in directories + files:
-            try:
-                observed = (Path(root) / name).lstat()
-            except FileNotFoundError:
-                continue
-            if not stat.S_ISDIR(observed.st_mode):
-                state[observed.st_dev, observed.st_ino] = observed.st_ctime_ns
+    for _, _, _, observed in _held_walk(_live_root(), vanished=True):
+        if not stat.S_ISDIR(observed.st_mode):
+            state[observed.st_dev, observed.st_ino] = observed.st_ctime_ns
     return state
+
+
+def _await_status_fence(state, at):
+    """Wait until the stamping clock is in a later whole second than every baseline status time.
+
+    Any later status change, such as a link or unlink, is then stamped strictly after its
+    baseline time on every filesystem whose timestamp granularity divides one second, so a
+    link operation in the baseline's own tick cannot leave the time unchanged."""
+    second = 1_000_000_000
+    fence = (max(state.values(), default=0) // second + 1) * second
+    limit = time.monotonic() + STATUS_FENCE_S
+    while time.clock_gettime_ns(CLOCK_REALTIME_COARSE) < fence:
+        if time.monotonic() > limit:
+            # A status time in the future cannot be fenced; refuse rather than compare it.
+            raise LivePackageSourceError(at)
+        time.sleep(.005)
 
 
 def _mount_identity(path):
@@ -229,24 +321,16 @@ def _refuse_fd_submounts(descriptor, at):
     # can redirect while mountinfo is read. Mount IDs distinguish same-device binds.
     expected = _fd_mount_id(descriptor)
     live_identities = _live_source_identities()
-
-    def walk_error(exc):
-        raise exc
-
-    for _, directories, files, directory in os.fwalk('.', dir_fd=descriptor, onerror=walk_error,
-                                                     follow_symlinks=False):
-        if _fd_mount_id(directory) != expected:
-            raise ValueError('mount_source_submount:' + at)
-        for name in directories + files:
-            child = os.open(name, os.O_PATH | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=directory)
-            try:
-                if _fd_mount_id(child) != expected:
-                    raise ValueError('mount_source_submount:' + at)
-                observed = os.fstat(child)
-                if (observed.st_dev, observed.st_ino) in live_identities:
-                    raise LivePackageSourceError(at)
-            finally:
-                os.close(child)
+    for _, directory, name, _ in _held_walk(_reopened(descriptor, os.O_DIRECTORY)):
+        child = os.open(name, os.O_PATH | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=directory)
+        try:
+            if _fd_mount_id(child) != expected:
+                raise ValueError('mount_source_submount:' + at)
+            observed = os.fstat(child)
+            if (observed.st_dev, observed.st_ino) in live_identities:
+                raise LivePackageSourceError(at)
+        finally:
+            os.close(child)
 
 
 @contextlib.contextmanager
@@ -279,7 +363,12 @@ def _directory_mounts(spec):
 
 def _live_baseline(spec):
     """Live source status before launch, or None when no directory mount could carry a link."""
-    return _live_source_state() if _directory_mounts(spec) else None
+    directories = _directory_mounts(spec)
+    if not directories:
+        return None
+    state = _live_source_state()
+    _await_status_fence(state, ','.join(directories))
+    return state
 
 
 def _recheck_mounts(spec, identities, live=None):
@@ -297,13 +386,15 @@ def _recheck_mounts(spec, identities, live=None):
             raise MountSourceChangedError(mount['at']) from exc
     # Linking or unlinking a name for a live file always updates its ctime, which an
     # unprivileged process cannot restore, so a link planted and removed mid-run is seen.
+    # The baseline fence keeps that update out of the baseline's own tick, and a baseline
+    # entry no longer found (for example unlinked and replaced) is never unchanged.
     if live is not None:
         at = ','.join(_directory_mounts(spec))
         try:
             current = _live_source_state()
         except OSError as exc:
             raise LivePackageSourceError(at) from exc
-        if any(current.get(key, ctime) != ctime for key, ctime in live.items()):
+        if any(current.get(key) != ctime for key, ctime in live.items()):
             raise LivePackageSourceError(at)
     source = spec.get('source')
     if source is not None:
@@ -524,27 +615,37 @@ def _strict_tree(root):
 
 
 def _identity_tree(source, *, descriptor=None):
-    """Identity of a read-only tool mount: file bytes and link targets."""
+    """Identity of a read-only tool mount: file bytes and link targets.
+
+    The tree is walked relative to the held root object (``descriptor``, or the named
+    root opened once), never by a pathname below it."""
     source = Path(source)
     name = source.name
     if descriptor is not None:
-        source = Path(f'/proc/self/fd/{descriptor}')
-    if source.is_file() and (descriptor is not None or not source.is_symlink()):
-        entries = {name: digest(source)}
+        held = os.dup(descriptor)
+        top = True
     else:
-        entries = {}
-        def walk_error(exc):
-            raise exc
-
-        for current, dirs, names in os.walk(source, followlinks=False, onerror=walk_error):
-            base = Path(current)
-            for name in [*dirs, *names]:
-                path = base / name
-                rel = path.relative_to(source).as_posix()
-                if path.is_symlink():
-                    entries[rel] = 'link:' + os.readlink(path)
-                elif path.is_file():
-                    entries[rel] = digest(path)
+        held = os.open(source, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC)
+        top = not stat.S_ISLNK(os.fstat(held).st_mode)
+        if not top:
+            # A named root may itself be a link to a directory; nothing below it is followed.
+            os.close(held)
+            held = os.open(source, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        mode = os.fstat(held).st_mode
+        if stat.S_ISREG(mode) and top:
+            entries = {name: digest(f'/proc/self/fd/{held}')}
+        elif stat.S_ISDIR(mode):
+            entries = {}
+            for rel, directory, entry, observed in _held_walk(_reopened(held, os.O_DIRECTORY)):
+                if stat.S_ISLNK(observed.st_mode):
+                    entries[rel] = 'link:' + os.readlink(entry, dir_fd=directory)
+                elif stat.S_ISREG(observed.st_mode):
+                    entries[rel] = _entry_digest(directory, entry)
+        else:
+            raise NotADirectoryError(errno.ENOTDIR, 'tool tree is not a directory', str(source))
+    finally:
+        os.close(held)
     return {'sha256': identity(entries), 'files': len(entries)}
 
 
@@ -1184,11 +1285,33 @@ def _execution_record(record, work, argv):
             raise ValueError('stage receipt execution artifacts changed')
 
 
+def legacy_source_refusal(receipt):
+    """Refuse a /1 receipt whose source identity replay cannot distinguish from a link-only one.
+
+    Before AGENTEE-357 a run recorded an escaped declared source as a one-entry link
+    identity whose target is not retained, which is indistinguishable from a one-file
+    source tree. A /1 receipt with a nested source (not a mount root) and a one-entry
+    source identity in either observation is refused with a typed reason; it is never
+    rewritten or reinterpreted. /2 receipts come only from strict source observation."""
+    if not isinstance(receipt, dict) or receipt.get('schema') != LEGACY_RECEIPT_SCHEMA:
+        return
+    spec = receipt.get('spec')
+    if not isinstance(spec, dict) or not isinstance(spec.get('source'), str):
+        return
+    mounts = spec.get('mounts')
+    if isinstance(mounts, list) and any(isinstance(m, dict) and m.get('at') == spec['source'] for m in mounts):
+        return
+    observed = [value.get('source_tree') for value in (receipt.get('tool'), receipt.get('tool_after'))
+                if isinstance(value, dict)]
+    if any(not isinstance(tree, dict) or tree.get('files') == 1 for tree in observed) or len(observed) != 2:
+        raise LegacySourceIdentityError(spec['source'])
+
+
 def validate_receipt(receipt_dir, *, binding=None):
     """Recompute every derivable receipt field from retained coordinator records."""
     receipt_dir = Path(receipt_dir)
     receipt = read_json(receipt_dir / 'receipt.json')
-    if not isinstance(receipt, dict) or receipt.get('schema') != RECEIPT_SCHEMA or set(receipt) != RECEIPT_KEYS:
+    if not isinstance(receipt, dict) or receipt.get('schema') not in RECEIPT_SCHEMAS or set(receipt) != RECEIPT_KEYS:
         raise ValueError('malformed stage receipt')
     if identity({k: v for k, v in receipt.items() if k != 'identity'}) != receipt['identity']:
         raise ValueError('stage receipt identity mismatch')
@@ -1229,6 +1352,7 @@ def validate_receipt(receipt_dir, *, binding=None):
                 [m.get('at') for m in value['mounts']] != [m['at'] for m in spec['mounts']] or
                 (value['source_tree'] is None) != (spec['source'] is None)):
             raise ValueError('malformed stage receipt tool identity')
+    legacy_source_refusal(receipt)
     if tool['reported_version'] != _reported_version(spec, version_record, receipt_dir / 'version'):
         raise ValueError('stage receipt reported version differs from retained probe')
     if tool['backend'] != _backend(spec, run):

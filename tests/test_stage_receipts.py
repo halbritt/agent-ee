@@ -4,6 +4,7 @@ The step tool here is an original test program, not a scaffold, placer or router
 tests qualify the receipt and campaign seam; they do not establish any rung-1 tool.
 """
 import contextlib
+import errno
 import hashlib
 import io
 import json
@@ -619,6 +620,161 @@ assert not (outer / 'receipt').exists()
         self.assertEqual(receipt['status'], 'completed')
 
     @toolchain_test
+    def test_live_entry_missing_from_later_inventory_refused(self):
+        # AGENTEE-374: a baseline inode whose name is replaced during the run is never unchanged.
+        stand_in, live_inventory, live_state = self._live_state_stand_in()
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        real_execute = stage_receipts.execute
+        for window in ('version', 'run'):
+            with self.subTest(window=window):
+                receipt_dir = Path(self.tmp.name) / ('receipt-' + window)
+                spec = self.spec(argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
+                                 version_argv=['/usr/bin/sh', '-c', 'ls /tool > /work/listing'],
+                                 writes={}, artifacts=['listing'])
+                baseline = stand_in.lstat()
+
+                def execute(*args, **kwargs):
+                    record = real_execute(*args, **kwargs)
+                    if Path(args[1]).name == window:
+                        # A fresh inode under the same name; the baseline inode has no name left.
+                        replacement = stand_in.with_name('replacement.py')
+                        replacement.write_text('live')
+                        replacement.replace(stand_in)
+                    return record
+
+                with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+                    with self.assertRaises(stage_receipts.LivePackageSourceError) as failure:
+                        run_step(receipt_dir, design, spec, {})
+                self.assertNotEqual(stand_in.lstat().st_ino, baseline.st_ino)
+                self.assertEqual(failure.exception.violation, 'live_package_source:/tool')
+                self.assertFalse((receipt_dir / 'receipt.json').exists())
+
+    def test_live_status_fence_waits_past_the_baseline_tick(self):
+        clock = stage_receipts.CLOCK_REALTIME_COARSE
+        probe = Path(self.tmp.name) / 'probe'
+        probe.write_text('live')
+        baseline = probe.lstat().st_ctime_ns
+        stage_receipts._await_status_fence({(0, 0): baseline}, '/tool')
+        self.assertGreaterEqual(time.clock_gettime_ns(clock), (baseline // 10**9 + 1) * 10**9)
+        # A link operation right after the fence is stamped after the baseline, even when the
+        # baseline was stamped in the same tick as the fence's own start.
+        os.link(probe, probe.with_name('linked'))
+        os.unlink(probe.with_name('linked'))
+        self.assertGreater(probe.lstat().st_ctime_ns, baseline)
+        future = time.clock_gettime_ns(clock) + 3600 * 10**9
+        with patch.object(stage_receipts, 'STATUS_FENCE_S', .05):
+            with self.assertRaises(stage_receipts.LivePackageSourceError) as failure:
+                stage_receipts._await_status_fence({(0, 0): future}, '/tool')
+        self.assertEqual(failure.exception.violation, 'live_package_source:/tool')
+
+    @toolchain_test
+    def test_run_launches_only_after_the_live_status_fence(self):
+        stand_in, live_inventory, live_state = self._live_state_stand_in()
+        stand_in.write_text('changed now')  # a baseline status time in the current tick
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'echo done > /work/listing'], writes={},
+                         artifacts=['listing'], version_argv=None)
+        real_execute, launched = stage_receipts.execute, []
+
+        def execute(*args, **kwargs):
+            launched.append(time.clock_gettime_ns(stage_receipts.CLOCK_REALTIME_COARSE))
+            return real_execute(*args, **kwargs)
+
+        with live_inventory, live_state, patch.object(stage_receipts, 'execute', execute):
+            receipt = run_step(Path(self.tmp.name) / 'receipt', design, spec, {})
+        self.assertEqual(receipt['status'], 'completed')
+        self.assertGreaterEqual(launched[0], (stand_in.lstat().st_ctime_ns // 10**9 + 1) * 10**9)
+
+    def _held_tree(self):
+        tool = Path(self.tool)
+        (tool / 'a.txt').write_text('mounted top')
+        (tool / 'sub').mkdir()
+        (tool / 'sub/module.py').write_text('mounted source')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        (outside / 'module.py').write_text('host-only source')
+        runtime, identities = stage_receipts._resolved_mounts(self.spec(source='/tool'))
+        return tool, outside, runtime, identities
+
+    def test_identity_walk_never_follows_a_component_swapped_for_a_link(self):
+        # AGENTEE-374: the walk below the held root is descriptor-relative, so a directory
+        # swapped for a link to a host tree after the root is listed is recorded, never entered.
+        tool, outside, runtime, identities = self._held_tree()
+        real_digest = stage_receipts._entry_digest
+
+        def swapping_digest(directory, name):
+            if name == 'a.txt' and (tool / 'sub').is_dir() and not (tool / 'sub').is_symlink():
+                (tool / 'sub').rename(tool.with_name('held-sub'))
+                (tool / 'sub').symlink_to(outside)
+            return real_digest(directory, name)
+
+        with stage_receipts._opened_mounts(runtime, identities) as mounts:
+            runtime['mounts'] = [{**m, 'descriptor': fd} for m, (fd, _) in zip(runtime['mounts'], mounts)]
+            with patch.object(stage_receipts, '_entry_digest', swapping_digest):
+                observed = stage_receipts.observe_tool(runtime)
+        entries = {'a.txt': digest(tool / 'a.txt'), 'sub': 'link:' + str(outside)}
+        self.assertEqual(observed['mounts'][0], {'at': '/tool', 'sha256': identity(entries), 'files': 2})
+        self.assertEqual(observed['source_tree'], {'path': '/tool', 'sha256': identity(entries), 'files': 2})
+
+    def test_identity_walk_refuses_a_directory_replaced_after_listing(self):
+        real_stat = os.stat
+        for replacement, error in (('directory', errno.ESTALE), ('link', errno.ENOTDIR)):
+            with self.subTest(replacement=replacement):
+                shutil.rmtree(self.tool)
+                for name in ('outside', 'held-sub'):
+                    shutil.rmtree(Path(self.tool).with_name(name), ignore_errors=True)
+                Path(self.tool).mkdir()
+                tool, outside, runtime, identities = self._held_tree()
+                swapped = []
+
+                def swapping_stat(path, *args, **kwargs):
+                    observed = real_stat(path, *args, **kwargs)
+                    if path == 'sub' and kwargs.get('dir_fd') is not None and not swapped:
+                        # Same name, between the entry's lookup and its descent.
+                        swapped.append(True)
+                        (tool / 'sub').rename(tool.with_name('held-sub'))
+                        if replacement == 'directory':
+                            outside.rename(tool / 'sub')
+                        else:
+                            (tool / 'sub').symlink_to(outside)
+                    return observed
+
+                with stage_receipts._opened_mounts(runtime, identities) as mounts:
+                    runtime['mounts'] = [{**m, 'descriptor': fd}
+                                         for m, (fd, _) in zip(runtime['mounts'], mounts)]
+                    with patch.object(os, 'stat', swapping_stat):
+                        with self.assertRaises(stage_receipts.MountSourceChangedError) as failure:
+                            stage_receipts.observe_tool(runtime)
+                self.assertEqual(swapped, [True])
+                self.assertEqual(failure.exception.violation, 'mount_source_changed:/tool')
+                self.assertEqual(failure.exception.__cause__.errno, error)
+
+    def test_identity_walk_matches_the_recorded_identity_form(self):
+        # Descriptor-relative walks keep the identity a receipt records (files, links, no specials).
+        tool = Path(self.tool)
+        (tool / 'deep/er').mkdir(parents=True)
+        (tool / 'deep/er/file.txt').write_text('deep')
+        (tool / 'top.txt').write_text('top')
+        (tool / 'link').symlink_to('top.txt')
+        (tool / 'dirlink').symlink_to('deep')
+        os.mkfifo(tool / 'deep/fifo')
+        entries = {'deep/er/file.txt': digest(tool / 'deep/er/file.txt'), 'top.txt': digest(tool / 'top.txt'),
+                   'link': 'link:top.txt', 'dirlink': 'link:deep'}
+        expected = {'sha256': identity(entries), 'files': 4}
+        self.assertEqual(stage_receipts.tree_identity(tool), expected)
+        held = os.open(tool, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            self.assertEqual(stage_receipts._identity_tree(tool, descriptor=held), expected)
+        finally:
+            os.close(held)
+        self.assertEqual(stage_receipts.tree_identity(tool / 'top.txt'),
+                         {'sha256': identity({'top.txt': digest(tool / 'top.txt')}), 'files': 1})
+        with self.assertRaises(NotADirectoryError):
+            stage_receipts.tree_identity(tool / 'link')
+
+    @toolchain_test
     def test_escaping_source_root_is_refused_never_adoptable(self):
         tool = Path(self.tool)
         outside = tool.with_name('outside')
@@ -1108,7 +1264,7 @@ assert not (outer / 'receipt').exists()
         entry.write_text('tool bytes')
         receipt_dir = Path(self.tmp.name) / 'receipt'
         spec = self.spec(argv=['/usr/bin/true'], writes={}, artifacts=['listing'], version_argv=None)
-        real_execute, real_digest = stage_receipts.execute, stage_receipts.digest
+        real_execute, real_digest = stage_receipts.execute, stage_receipts._entry_digest
         executed = False
 
         def execute(*args, **kwargs):
@@ -1117,13 +1273,14 @@ assert not (outer / 'receipt').exists()
             executed = True
             return record
 
-        def deleting_digest(path):
-            if executed and Path(path).name == 'entry':
+        # Tree walks digest an entry of its held directory (AGENTEE-374).
+        def deleting_digest(directory, name):
+            if executed and name == 'entry':
                 entry.unlink()
-            return real_digest(path)
+            return real_digest(directory, name)
 
         with patch.object(stage_receipts, 'execute', execute), \
-                patch.object(stage_receipts, 'digest', deleting_digest):
+                patch.object(stage_receipts, '_entry_digest', deleting_digest):
             with self.assertRaises(stage_receipts.MountSourceChangedError) as failure:
                 run_step(receipt_dir, design, spec, {})
         self.assertEqual(failure.exception.violation, 'mount_source_changed:/tool')
@@ -1136,14 +1293,14 @@ assert not (outer / 'receipt').exists()
         (other / 'unreadable').write_text('bytes')
         spec = self.spec(mounts=[{'source': self.tool, 'at': '/tool'},
                                  {'source': str(other), 'at': '/other'}])
-        real_digest = stage_receipts.digest
+        real_digest = stage_receipts._entry_digest
 
-        def unreadable_digest(path):
-            if Path(path).name == 'unreadable':
+        def unreadable_digest(directory, name):
+            if name == 'unreadable':
                 raise PermissionError('entry became unreadable')
-            return real_digest(path)
+            return real_digest(directory, name)
 
-        with patch.object(stage_receipts, 'digest', unreadable_digest):
+        with patch.object(stage_receipts, '_entry_digest', unreadable_digest):
             with self.assertRaises(stage_receipts.MountSourceChangedError) as failure:
                 stage_receipts.observe_tool(spec)
         self.assertEqual(failure.exception.violation, 'mount_source_changed:/other')
@@ -1442,6 +1599,68 @@ class StepFixture(unittest.TestCase):
 
 
 class StepExecutionTests(StepFixture):
+    def _as_schema(self, path, schema, **fields):
+        # A retained receipt as an earlier implementation would have written it.
+        copy = self.root / 'historical' / f'{path.name}-{len(fields)}-{schema.rsplit("/", 1)[1]}'
+        shutil.copytree(path, copy, symlinks=True)
+        receipt = {**read_json(path / 'receipt.json'), **fields, 'schema': schema}
+        receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
+        write_json(copy / 'receipt.json', receipt)
+        return copy, receipt
+
+    @toolchain_test
+    def test_legacy_receipt_with_possible_link_only_source_identity_is_refused_on_replay(self):
+        # AGENTEE-374: a /1 receipt cannot show whether a one-entry nested source identity was
+        # an escaped link recorded without its target, so replay refuses it, typed, unrewritten.
+        (self.tool / 'lib').mkdir()
+        (self.tool / 'lib/module.py').write_text('mounted source')
+        path, receipt = self.run_step(self.spec(source='/tool/lib'))
+        self.assertEqual((receipt['schema'], receipt['status']), ('agent-ee.stage-receipt/2', 'completed'))
+        self.assertEqual(receipt['tool']['source_tree']['files'], 1)
+        self.assertEqual(validate_receipt(path), receipt)
+        legacy = 'agent-ee.stage-receipt/1'
+        link_only = {'path': '/tool/lib', 'sha256': identity({'lib': 'link:/opt/host-lib'}), 'files': 1}
+        cases = {'escaped link-only': {'tool': {**receipt['tool'], 'source_tree': link_only},
+                                       'tool_after': {**receipt['tool_after'], 'source_tree': link_only}},
+                 'one-file tree': {}}
+        before = stage_receipts.file_tree(self.design)
+        for name, fields in cases.items():
+            with self.subTest(case=name):
+                historical, stored = self._as_schema(path, legacy, **fields)
+                self.assertEqual(stored['status'], 'completed')
+                with self.assertRaises(stage_receipts.LegacySourceIdentityError) as failure:
+                    validate_receipt(historical)
+                self.assertEqual(failure.exception.violation, 'legacy_source_identity:/tool/lib')
+                with self.assertRaises(stage_receipts.LegacySourceIdentityError):
+                    adopt(historical, stored, self.design)
+                self.assertEqual(stage_receipts.file_tree(self.design), before)
+                self.assertEqual(read_json(historical / 'receipt.json'), stored)
+        # The same /2 receipt still replays and adopts.
+        adopt(path, receipt, self.design)
+        self.assertEqual(stage_receipts.file_tree(self.design)[0], stage_receipts.after_tree(receipt))
+
+    @toolchain_test
+    def test_legacy_receipts_outside_the_ambiguous_source_class_still_replay(self):
+        (self.tool / 'lib').mkdir()
+        (self.tool / 'lib/module.py').write_text('mounted source')
+        (self.tool / 'lib/other.py').write_text('second module')
+        for source in ('/tool', '/tool/lib', None):
+            with self.subTest(source=source):
+                path, receipt = self.run_step(self.spec(source=source))
+                self.assertEqual(receipt['status'], 'completed')
+                historical, stored = self._as_schema(path, 'agent-ee.stage-receipt/1')
+                self.assertEqual(validate_receipt(historical), stored)
+        # A one-entry identity at a mount root was never a link-only record.
+        (self.tool / 'step.py').rename(self.root / 'step.py')
+        single = self.root / 'single'
+        single.mkdir()
+        (self.root / 'step.py').rename(single / 'step.py')
+        spec = {**self.spec(source='/tool'), 'mounts': [{'source': str(single), 'at': '/tool'}]}
+        path, receipt = self.run_step(spec)
+        self.assertEqual((receipt['status'], receipt['tool']['source_tree']['files']), ('completed', 1))
+        historical, stored = self._as_schema(path, 'agent-ee.stage-receipt/1')
+        self.assertEqual(validate_receipt(historical), stored)
+
     @toolchain_test
     def test_artifact_only_step_hashes_artifacts_and_adopts_without_writing_design(self):
         spec = self.spec('plant', json.dumps({'files': {
