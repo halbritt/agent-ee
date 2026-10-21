@@ -200,6 +200,16 @@ def _sheets(root):
     return sheets
 
 
+def read_sheet_names(path):
+    """Native sheet occurrence path (UUIDs) -> exported sheet name path, e.g. '/Power/'."""
+    root = _parse(path)
+    sheets = _sheets(root)
+    names = [text(s.get('name')) for s in root.findall('./design/sheet')]
+    if len(names) != len(set(names)):
+        raise ValueError('ambiguous native sheet names')
+    return dict(zip(sheets, names))
+
+
 def read_native_instances(path):
     """Identity projection of the shared XML reader, without pin/topology policy.
 

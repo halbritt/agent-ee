@@ -211,7 +211,7 @@ def verify_campaign_receipt(receipt_dir, *, expected=None, binding=None, locatio
 
     location is the directory the receipt was executed in, when it was copied afterwards
     (an imported via-budget pilot); the sandbox command still names that directory."""
-    from .executor import sandbox_argv
+    from .executor import sandbox_argv, sandbox_invocation
     from .stage_receipts import ADOPTABLE, file_tree, validate_receipt
 
     receipt_dir = Path(receipt_dir)
@@ -226,9 +226,26 @@ def verify_campaign_receipt(receipt_dir, *, expected=None, binding=None, locatio
     execution = receipt['execution']
     if execution is not None:
         origin = Path(location) if location is not None else receipt_dir
+        actual = execution['sandbox_argv']
+        _, mount_identities = sandbox_invocation(actual)
+        mounts = [(m['source'], m['at']) for m in spec['mounts']]
+        options = actual[:actual.index('--')]
+        fd_mounts = []
+        for index, token in enumerate(options):
+            if token == '--ro-bind-fd':
+                if (index + 2 >= len(options) or not options[index + 1].isdecimal() or
+                        int(options[index + 1]) < 3):
+                    raise ValueError('campaign routing sandbox has an invalid mount descriptor')
+                fd_mounts.append((int(options[index + 1]), options[index + 2]))
+        if fd_mounts:
+            if ([dest for _, dest in fd_mounts] != [dest for _, dest in mounts] or
+                    len({fd for fd, _ in fd_mounts}) != len(fd_mounts) or
+                    mount_identities is None or set(mount_identities) != {dest for _, dest in mounts}):
+                raise ValueError('campaign routing sandbox differs from the declared read-only mounts')
+            mounts = fd_mounts
         expected = sandbox_argv(origin / 'inputs', origin / 'run', spec['argv'], network=False,
-                                extra_ro=[(m['source'], m['at']) for m in spec['mounts']])
-        if execution['sandbox_argv'] != expected:
+                                extra_ro=mounts, mount_identities=mount_identities)
+        if actual != expected:
             raise ValueError('campaign routing sandbox differs from the declared read-only mounts')
     # A killed or crashed adapter can leave no report. Its failed receipt remains provenance,
     # but supplies no routing coverage and can never authorize an output.

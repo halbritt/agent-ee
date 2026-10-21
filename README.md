@@ -111,10 +111,24 @@ guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against cited limits. Captured pad UUIDs select
 multi-pad pins. Explicit `buck-output-loop` declarations bind the supply source
 and switch target to the inductor, the return source and switch source to the
-IC, and return pads to a declared net distinct from supply. Coordinator packing
+IC, and return pads to a declared net distinct from supply. Switch nets must
+differ from supply and return. Distinct-source supply/return net sets must be
+disjoint even without a kind. Direct placement-index construction re-validates
+these declarations. Coordinator packing
 binds to the check's immutable locality file. Origin-group distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)
 caches selected pads and retains typed partial diagnostics on its optional search deadline.
+[Joint locality clusters](docs/placer.md#joint-locality-clusters-agentee-335)
+preserve per-part plans, then try capacitors and switch peers together with the
+remaining budget. Joint refusals retain named cluster diagnostics.
+[Placement blocks](docs/blocks.md) come from the sealed child sheets or a hashed
+engineer allocation file. Each block is packed alone into a rigid, versioned block
+candidate, with relative poses, an obligation grade, a courtyard witness,
+per-side outlines and source hashes. Candidates are search-derived and advisory.
+A candidate with missing, failed or stale evidence refuses: admission binds its
+sources and policy and re-grades every member from the board.
+Matching by footprint, land-pattern hash, pin roles and declared value tolerance
+refuses any mismatch.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
@@ -919,4 +933,4 @@ label/text overlaps. Opt-in `--native-text-work` emission uses measured bounds
 and refuses unresolved overlaps before publication, without changing electrical
 check verdicts.
 
-Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Runtime validation refuses mounts exposing the live package source tree, including resolved parent and symlink aliases (AGENTEE-327). Refused fab receipts retain their violations and diagnostic paths.
+Fab exports, campaign/qualified/stage-ordered rung-one steps, pod scaffold/constraint and envelope-content steps, schematic emission/annotation, plane preparation and binding fill mount [content-addressed source snapshots](docs/stage-receipts.md#python-tool-source-snapshots), isolating host import caches while preserving full mounted-file identity checks. Runtime validation refuses mounts of live package source directories, their ancestors or unqualified source files, including symlink and bind aliases (AGENTEE-327/329). Validated tool mounts pass opened descriptors and verify mounted identities inside the sandbox before execution to prevent rename races; directory sources containing submounts are refused. Refused fab receipts retain their violations and diagnostic paths.
