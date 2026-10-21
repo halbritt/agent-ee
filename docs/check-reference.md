@@ -1854,7 +1854,18 @@ sets even without a kind. Inconsistent bindings refuse validation, including
 direct `PlacementIndex` construction (AGENTEE-341). It deep-copies the document
 first, copies its exact JSON values into fresh owned containers, validates that
 snapshot, then indexes it (AGENTEE-356). Cyclic containers raise the typed JSON
-`ValueError`. Its public pairs and endpoint maps are read-only at every level,
+`ValueError`. Containers nested deeper than 64 levels refuse with `locality
+document nesting exceeds 64 levels` at the index (checked before copying,
+including subclass storage), `validate()` and `grade()`, never `RecursionError`.
+If the copy itself recurses too deeply (a deep value inserted concurrently after
+the pre-walk, or a deep non-JSON tuple), the index raises the same depth error.
+The captured locality file is decoded by `electrical_locality.load_json`, so
+decoder recursion on deeply nested JSON text refuses with that error too: the
+check reports `malformed` (`electrical locality refused: ...`) and
+`placement_adapter.bind_locality` raises it as a `ValueError` (AGENTEE-363).
+`validate()` checks a fresh snapshot (and still returns the caller's object);
+`grade()` grades and reports (`declaration`) only its own validated snapshot and
+never rereads the caller's document (AGENTEE-363). Its public pairs and endpoint maps are read-only at every level,
 including endpoint fields.
 Later caller mutations cannot alter its endpoint identities or cached keys
 (AGENTEE-352/356). Untyped
@@ -1911,7 +1922,21 @@ in a track span prevent exemption. Other track spans remain in
 the raw-byte comparison, including mid-token quotes and multiline strings;
 vias, zones and unknown track attributes still require fresh receipt evidence.
 The evidence seal reconstructs these refusals; release artifact extraction also refuses open carry.
-Uncarried baseline findings retain their existing verdicts. Explicitly
+Uncarried baseline findings retain their existing verdicts. A board published
+with open carry has a [title block lineage stamp](silk-artwork.md#board-lineage-stamp-agentee-351)
+(AGENTEE-351). The same gates refuse it as unknown when the candidate has no
+`placement-evidence` binding every stamp digest, for example after a re-scope
+outside the campaign. Captured evidence closes carry only when its claimed
+`silk_*` findings equal native DRC recomputed on the captured board in the
+sandbox. A mismatch, or a verification that cannot run, is unknown. The seal and
+release extraction recheck the witness `work/<check>/placement-lineage.json`.
+At release artifact extraction, every board requires a sealed native DRC
+witness showing no `silk_*` conflicts and no open carry. Until AGENTEE-348
+authenticates imported lineage and stamps, neither waives this witness; open
+carry still refuses first with its own typed message. `fab_package`, sealed release verification and campaign completion refuse
+missing or unverifiable evidence as unknown. Standalone checks retain their
+verdicts; there is no scheduler verdict rewrite. See the
+[release contract](silk-artwork.md#board-lineage-stamp-agentee-351). Explicitly
 ignored `silk_*` categories and missing tool coverage refuse publication. Other
 footprints' same-side courtyard interiors reserve space for assembled bodies.
 Side-flipped footprints' fields remain unchanged with typed conflicts. Source
@@ -2024,7 +2049,10 @@ silk layer, and wholly inside the qualified outline. Off-board and straddling
 marks remain open even if native DRC is silent. Footprint-owned Edge.Cuts
 participate in outline qualification. Straight slots and cutouts qualify as holes
 inside one outer contour (AGENTEE-362); markings must lie wholly outside them.
-Touching, crossing, nested or unsupported contours establish no containment. Both producers seal a board-bound native containment witness in
+Circles, arcs and rounded rectangles qualify through exact conservative bounds
+(AGENTEE-368): superset polygons for holes, a subset polygon for the outer
+contour. Touching, crossing, nested or unsupported contours establish no containment.
+NPTH drills and pad slots are not outline holes; native DRC alone judges silk over them. Both producers seal a board-bound native containment witness in
 the placement report. Closure and campaign replay read it without rerunning
 pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
 unavailable evidence keep their refusal. Cached-text translations and boards

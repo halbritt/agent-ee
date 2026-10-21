@@ -334,7 +334,7 @@ def _policy(inputs, bound, manifest):
 
 def bind_locality(policy, manifest, inputs, mutable_inputs):
     """Bind pack guidance to the one immutable locality file graded in this scope."""
-    from .electrical_locality import CRITERION, validate
+    from .electrical_locality import CRITERION, load_json, validate
     paths = {check['params']['locality'] for check in manifest['scope'].get('checks', [])
              if check.get('kind') == 'placement' and check.get('params', {}).get('criterion') == CRITERION}
     if not paths:
@@ -353,7 +353,7 @@ def bind_locality(policy, manifest, inputs, mutable_inputs):
     sha256 = hashlib.sha256(data).hexdigest()
     if sha256 != manifest['files'][rel]:
         raise ValueError('captured electrical locality changed')
-    document = validate(json.loads(data))
+    document = validate(load_json(data))
     if 'electrical_locality' in policy and validate(policy['electrical_locality']) != document:
         raise ValueError('packing electrical locality differs from captured coordinator obligations')
     source = {'path': rel, 'sha256': sha256}
@@ -995,6 +995,14 @@ def write_scope(before, after, protected=(), groups=None):
     else:
         others = [[n for n in root[1:] if not (isinstance(n, list) and n and n[0] == 'footprint')]
                   for root in roots]
+        from .placement_defects import stamp_violations, unstamped
+        try:
+            (others[0], stamped), (others[1], restamped) = unstamped(others[0]), unstamped(others[1])
+        except ValueError as exc:
+            violations.append(str(exc))
+        else:
+            # The writer records carry lineage on the board (AGENTEE-351); nothing else in the title block.
+            violations += stamp_violations(stamped, restamped)
         if admitted:
             known = {_uuid(n) for n in others[0] if isinstance(n, list)}
             seen, kept = set(), []

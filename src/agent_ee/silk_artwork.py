@@ -45,29 +45,76 @@ def _obstacle_boxes(field, items, identities=None):
         yield box
 
 
-def _outline_with_holes(board):
-    """One straight outer ring and disjoint strictly internal cutout rings."""
+def _edge_primitives(shape):
+    """Placement primitives, with a native rounded rectangle as exact segments and arcs.
+
+    Each corner arc is cited by an exact rational point on its circle, so the
+    shared curve bounds apply. Rotated or over-rounded rectangles stay unsupported.
+    """
     import pcbnew as k
-    from .placement_probe import primitive, prove_contours
+    from fractions import Fraction
+    from .placement_probe import primitive, vector_nm
+    record = primitive(shape)
+    r = record.get('corner_radius_nm')
+    if r is None or record.get('native_shape') != int(k.SHAPE_T_RECT):
+        return [record]
+    corners = sorted({tuple(vector_nm(p)) for p in shape.GetRectCorners()})
+    if len(corners) != 4:
+        return [record]
+    (x0, y0), _, _, (x1, y1) = corners
+    if corners != [(x0, y0), (x0, y1), (x1, y0), (x1, y1)] or not 0 < 2 * r < min(x1 - x0, y1 - y0):
+        return [record]
+    uid = record['uuid']
+    parts = [dict(uuid=uid, native_class='PCB_SHAPE', kind='segment', start=list(a), end=list(b))
+             for a, b in (((x0+r, y0), (x1-r, y0)), ((x1, y0+r), (x1, y1-r)),
+                          ((x1-r, y1), (x0+r, y1)), ((x0, y1-r), (x0, y0+r)))]
+    for cx, cy, sx, sy in ((x0+r, y0+r, -1, -1), (x1-r, y0+r, 1, -1),
+                           (x1-r, y1-r, 1, 1), (x0+r, y1-r, -1, 1)):
+        parts.append(dict(uuid=uid, native_class='PCB_SHAPE', kind='arc', start=[cx + sx*r, cy],
+                          mid=[cx + sx*Fraction(3*r, 5), cy + sy*Fraction(4*r, 5)], end=[cx, cy + sy*r]))
+    return parts
+
+
+def _outline_with_holes(board):
+    """One outer ring and disjoint strictly internal cutout rings, as straight bounds.
+
+    Circles and arcs (also rounded rectangles) are bounded exactly as courtyards
+    are (AGENTEE-212): the outer ring uses its inner (subset) polygon and every
+    hole its outer (superset) polygon, so the qualified region is a subset of the
+    true board. Curves without an exact bound leave the outline unqualified.
+    """
+    import pcbnew as k
+    from .placement_probe import prove_contours
     from .board_envelope import strictly_inside, intersects
     from .placement import edges
     shapes = [s for s in board.GetDrawings() if s.GetLayer() == k.Edge_Cuts]
     for fp in board.GetFootprints():
         shapes.extend(s for s in fp.GraphicalItems() if s.GetLayer() == k.Edge_Cuts)
-    record = prove_contours([primitive(s) for s in shapes], 'outline_missing',
-                            'outline_unproven', separate_contours=True)
+    record = prove_contours([p for s in shapes for p in _edge_primitives(s)], 'outline_missing',
+                            'outline_unproven', curves_allowed=True, separate_contours=True)
     if record['status'] != 'proven':
         return None
-    rings = record['polygons']
+    supersets = record['polygons']
+    subsets = record.get('inner_polygons', supersets)
+
+    def disjoint(rings):
+        return not any(intersects(a, b, c, d) for i, left in enumerate(rings)
+                       for right in rings[i+1:] for a, b in edges(left) for c, d in edges(right))
+
     # Boundary contact, crossing, multiple islands and nested holes are ambiguous.
-    if any(intersects(a, b, c, d) for i, left in enumerate(rings)
-           for right in rings[i+1:] for a, b in edges(left) for c, d in edges(right)):
+    if not disjoint(supersets):
         return None
-    outers = [p for p in rings if all(q is p or strictly_inside(q[0], p) for q in rings)]
+    outers = [i for i, p in enumerate(supersets)
+              if all(q is p or strictly_inside(q[0], p) for q in supersets)]
+    # Exactly one ring may enclose all others. Two or more is impossible for
+    # disjoint rings, and none means separate islands: either way, no outline.
     if len(outers) != 1:
         return None
-    outer = outers[0]
-    holes = [p for p in rings if p is not outer]
+    outer = subsets[outers[0]]
+    holes = [p for i, p in enumerate(supersets) if i != outers[0]]
+    # The subset outer ring must still strictly enclose every superset hole.
+    if not disjoint([outer] + holes) or not all(strictly_inside(h[0], outer) for h in holes):
+        return None
     if any(strictly_inside(p[0], q) or strictly_inside(q[0], p)
            for i, p in enumerate(holes) for q in holes[i+1:]):
         return None
@@ -78,9 +125,22 @@ def _box_contained(corners, outline):
     from .board_envelope import inside, intersects, segment_inside
     from .placement import edges
     outer, holes = outline
-    return (all(segment_inside(a, b, outer) for a, b in edges(corners)) and
-            not any(inside(corners[0], hole) or inside(hole[0], corners) or
-                    any(intersects(a, b, c, d) for a, b in edges(corners) for c, d in edges(hole))
+    xs, ys = [p[0] for p in corners], [p[1] for p in corners]
+
+    def apart(hole):
+        # Exact separation of closed bounding boxes: no contact, crossing or enclosure.
+        return (max(p[0] for p in hole) < min(xs) or min(p[0] for p in hole) > max(xs) or
+                max(p[1] for p in hole) < min(ys) or min(p[1] for p in hole) > max(ys))
+    if any(min(a[0], b[0]) <= max(xs) and max(a[0], b[0]) >= min(xs) and
+           min(a[1], b[1]) <= max(ys) and max(a[1], b[1]) >= min(ys) for a, b in edges(outer)):
+        within = all(segment_inside(a, b, outer) for a, b in edges(corners))
+    else:
+        # No outer edge reaches the closed box, so one corner decides the whole box.
+        within = inside(corners[0], outer)
+    return (within and
+            not any(not apart(hole) and (
+                inside(corners[0], hole) or inside(hole[0], corners) or
+                any(intersects(a, b, c, d) for a, b in edges(corners) for c, d in edges(hole)))
                     for hole in holes))
 
 

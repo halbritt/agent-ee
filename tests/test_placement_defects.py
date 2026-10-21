@@ -2,6 +2,7 @@
 import contextlib
 import copy
 from pathlib import Path
+import re
 import shutil
 import time
 import tempfile
@@ -15,6 +16,11 @@ from agent_ee.storage import digest, read_json, write_json
 def native_containment(board):
     from agent_ee.silk_artwork import containment_witness
     return containment_witness(board)
+
+
+def complete_drc():
+    # A native report that evaluated every severity and ignored no silk check.
+    return {'violations': [], 'ignored_checks': [], 'included_severities': ['error', 'warning', 'exclusion']}
 
 
 def outlined_closure_text():
@@ -100,6 +106,85 @@ class PlacementDefectContractTests(unittest.TestCase):
             after.write_text(text.replace('(at 4 5)', '(at 5 6)'))
             self.assertTrue(placement_defects._closes(defect, placement_defects._identities(before),
                 placement_defects._identities(after, native_containment(after)), set(), set(), True, graphic_translation=True))
+
+
+def stamped(data, *digests, block=''):
+    """Saved board bytes with a title block lineage stamp, as the placement writer records it."""
+    line = ' '.join([placement_defects.STAMP, *digests])
+    head, rest = data.split(b'\n', 1)
+    return head + f'\n (title_block {block}(comment 9 "{line}"))\n'.encode() + rest
+
+
+class BoardLineageStampContractTests(unittest.TestCase):
+    """AGENTEE-351: the board bytes name their carry lineage; re-scoping cannot drop it."""
+    def setUp(self):
+        from test_placement_adapter import TEXT
+        self.board = TEXT.encode()
+        self.a, self.b = 'a' * 64, 'b' * 64
+
+    def test_stamp_reads_only_a_well_formed_title_block_comment(self):
+        self.assertIsNone(placement_defects.stamp(self.board))
+        self.assertEqual(placement_defects.stamp(stamped(self.board, self.a, self.b)), [self.a, self.b])
+        self.assertEqual(placement_defects.stamp(stamped(self.board, self.a, block='(title "T") ')), [self.a])
+        # The shared parser reads the stamp, so an escaped marker is still the stamp.
+        escaped = stamped(self.board, self.a).replace(b'lineage/1', b'lineage\\/1')
+        self.assertNotIn(placement_defects.STAMP.encode(), escaped)
+        self.assertEqual(placement_defects.stamp(escaped), [self.a])
+        # Marker text outside comment 9 is user text, not lineage; native verification covers such boards.
+        for data in (self.board.replace(b'(uuid "e2")', f'(uuid "e2")) (gr_text "{placement_defects.STAMP} {self.a}"'.encode(), 1),
+                     stamped(self.board, block=f'(title "{placement_defects.STAMP} {self.a}") ').replace(
+                         f'(comment 9 "{placement_defects.STAMP}")'.encode(), b'')):
+            with self.subTest(data=data[:200]):
+                self.assertIsNone(placement_defects.stamp(data))
+        # Bytes that are not one kicad_pcb expression have no stamp unless they name the marker.
+        self.assertIsNone(placement_defects.stamp(b'not a board'))
+        for data in (stamped(self.board), stamped(self.board, 'A' * 64), stamped(self.board, self.a, self.a),
+                     stamped(self.board, 'a' * 63), stamped(stamped(self.board, self.a), self.b),
+                     stamped(self.board, self.a) + b')', escaped + b'(trailing)',
+                     b'(other_root ' + stamped(self.board, self.a) + b')'):
+            with self.subTest(data=data[:200]), self.assertRaisesRegex(ValueError, 'lineage stamp'):
+                placement_defects.stamp(data)
+
+    def test_write_scope_admits_extension_and_refuses_drop_or_rewrite(self):
+        from agent_ee import placement_adapter as pa
+        one, two = stamped(self.board, self.a), stamped(self.board, self.a, self.b)
+        for before, after in ((self.board, one), (one, one), (one, two)):
+            with self.subTest(before=before[:120], after=after[:120]):
+                self.assertEqual(pa.write_scope(before, after)['status'], 'allowed')
+        for before, after in ((one, self.board), (two, one), (one, stamped(self.board, self.b)),
+                              (self.board, stamped(self.board, self.a, block='(title "T") '))):
+            with self.subTest(before=before[:120], after=after[:120]):
+                self.assertEqual(pa.write_scope(before, after)['status'], 'refused')
+
+    def test_stamped_board_without_lineage_refuses_release_as_unknown(self):
+        import tempfile
+        from agent_ee.checks import CheckError, Ctx
+        from agent_ee.fab_package import artifact_record
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / 'inputs').mkdir()
+            spec = {'id': 'fab', 'kind': 'fab_export'}
+            manifest = {'candidate_id': 'c' * 64, 'scope': {'board': 'b.kicad_pcb', 'checks': [spec]},
+                        'files': {'b.kicad_pcb': 'f' * 64}}
+            (run / 'inputs/b.kicad_pcb').write_bytes(self.board)
+            self.assertEqual(placement_defects.open_defects(manifest, run / 'inputs'), [])
+            (run / 'inputs/b.kicad_pcb').write_bytes(stamped(self.board, self.a))
+            with self.assertRaisesRegex(ValueError, 'lineage'):
+                placement_defects.open_defects(manifest, run / 'inputs')
+            ctx = Ctx(run, manifest, spec, time.monotonic() + 60)
+            with self.assertRaisesRegex(CheckError, 'lineage'):
+                placement_defects.before_check(ctx)
+            write_json(run / 'candidate.json', manifest)
+            with self.assertRaisesRegex(ValueError, 'lineage'):
+                artifact_record(run, {'id': 'package', 'kind': 'fab_package', 'execution': 'ok', 'outcome': 'pass'})
+            placement_defects.verify_gate(run, {'id': 'fab', 'execution': 'malformed', 'outcome': 'unknown'}, manifest)
+            with self.assertRaisesRegex(ValueError, 'without its placement lineage'):
+                placement_defects.verify_gate(run, {'id': 'fab', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+            # Ungated checks keep their verdicts.
+            ungated = {'id': 'erc', 'kind': 'erc'}
+            manifest['scope']['checks'].append(ungated)
+            self.assertTrue(placement_defects.before_check(Ctx(run, manifest, ungated, time.monotonic() + 60)))
+            placement_defects.verify_gate(run, {'id': 'erc', 'execution': 'ok', 'outcome': 'pass'}, manifest)
 
 
 class NativePlacementCarryTests(unittest.TestCase):
@@ -289,6 +374,9 @@ class NativePlacementCarryTests(unittest.TestCase):
         result = read_json(work / record['helper']['receipt'] / pa.RESULT)
         self.assertEqual(result['open_defects'], [])
         self.assertEqual(result['native_drc_comparison']['added_by_type'], {})
+        # A clean later result keeps the source board's lineage stamp (AGENTEE-351).
+        self.assertEqual(placement_defects.stamp((design / self.manifest['scope']['board']).read_bytes()),
+                         placement_defects.stamp((self.candidate_run / 'inputs' / self.manifest['scope']['board']).read_bytes()))
         scope = copy.deepcopy(self.scope)
         scope['inputs'] = [{'path': str(p), 'at': p.name} for p in design.iterdir()]
         scope = placement_defects.proposal_scope(scope, work, helper.root, state)
@@ -334,6 +422,324 @@ class NativePlacementCarryTests(unittest.TestCase):
         freeze_evidence(run, checks)
         verify_evidence(run, checks, required=True)
 
+
+    def test_native_writer_stamps_its_carry_digest_on_drc_checked_bytes(self):
+        from agent_ee import placement_adapter as pa
+        board = self.candidate_run / 'inputs' / self.manifest['scope']['board']
+        self.assertIsNone(placement_defects.stamp((self.helper.source / self.manifest['scope']['board']).read_bytes()))
+        self.assertEqual(placement_defects.stamp(board.read_bytes()),
+                         [placement_defects.carry_digest(self.result['open_defects'])])
+        self.assertEqual(self.result['board_sha256'], digest(board))
+        reversed_scope = pa.write_scope(board.read_bytes(), (self.helper.source / self.manifest['scope']['board']).read_bytes())
+        self.assertIn('placement lineage stamp removed or rewritten', reversed_scope['violations'])
+        self.assertEqual(self.result['write_scope']['status'], 'allowed')
+
+    def rescope(self, name, *, lineage, edit=None):
+        """Release a delivered candidate's files under a fresh, out-of-campaign scope.
+
+        `edit(design)` changes the delivered files before the fresh capture."""
+        from agent_ee.candidate import capture
+        root = self.helper.root / name
+        design = root / 'design'
+        shutil.copytree(self.candidate_run / 'inputs', design,
+                        ignore=None if lineage else shutil.ignore_patterns(placement_defects.DIRECTORY))
+        if edit is not None:
+            edit(design)
+        scope = {'schema': 'agent-ee.scope/1', 'board': self.manifest['scope']['board'],
+                 'schematic': self.manifest['scope']['schematic'],
+                 'inputs': [{'path': str(p), 'at': p.name} for p in design.iterdir()],
+                 'checks': copy.deepcopy(self.manifest['scope']['checks'])}
+        write_json(root / 'scope.json', scope)
+        run = root / 'run'
+        run.mkdir()
+        return run, capture(root / 'scope.json', run)
+
+    def test_rescoped_release_without_lineage_refuses_as_unknown(self):
+        from agent_ee.checks import run_checks
+        from agent_ee.fab_package import artifact_record
+        run, manifest = self.rescope('rescoped-bare', lineage=False)
+        self.assertFalse(placement_defects.lineage(manifest))
+        check = run_checks(run, time.monotonic() + 60)[0]
+        self.assertEqual((check['execution'], check['outcome']), ('malformed', 'unknown'))
+        self.assertIn('placement lineage stamp', check['summary'])
+        self.assertFalse((run / 'work/fab/fab/manifest.json').exists())
+        placement_defects.verify_gate(run, check, manifest)
+        with self.assertRaisesRegex(ValueError, 'without its placement lineage'):
+            placement_defects.verify_gate(run, {**check, 'execution': 'ok', 'outcome': 'pass'}, manifest)
+        with self.assertRaisesRegex(ValueError, 'lineage'):
+            artifact_record(run, {'id': 'package', 'kind': 'fab_package', 'execution': 'ok', 'outcome': 'pass'})
+
+    def test_stripped_or_never_stamped_carried_board_cannot_pass_release(self):
+        """H1: without lineage, only native DRC on the captured board can admit a release."""
+        import pcbnew
+        from agent_ee.checks import Ctx
+        from agent_ee.fab_package import artifact_record
+        board_rel = self.manifest['scope']['board']
+
+        def native_strip(design):
+            # An actor outside agent-ee clears the stamp with the native editor API.
+            board = pcbnew.LoadBoard(str(design / board_rel))
+            block = board.GetTitleBlock()
+            block.SetComment(int(placement_defects.STAMP_COMMENT) - 1, '')
+            board.SetTitleBlock(block)
+            self.assertTrue(pcbnew.SaveBoard(str(design / board_rel), board))
+
+        def never_stamped(design):
+            # A carried board published before the stamp contract: the same bytes, no comment 9.
+            data = (design / board_rel).read_bytes()
+            line = re.search(rb'\n\s*\(comment 9 "agent-ee\.placement-lineage/1 [0-9a-f ]+"\)', data)
+            (design / board_rel).write_bytes(data.replace(line.group(0), b''))
+        for name, edit in (('stripped', native_strip), ('never-stamped', never_stamped)):
+            with self.subTest(name=name):
+                run, manifest = self.rescope(f'rescoped-{name}', lineage=False, edit=edit)
+                self.assertIsNone(placement_defects.stamp((run / 'inputs' / board_rel).read_bytes()))
+                self.assertEqual(placement_defects.open_defects(manifest, run / 'inputs'), [])
+                spec = manifest['scope']['checks'][0]
+                ctx = Ctx(run, manifest, spec, time.monotonic() + 300)
+                self.assertTrue(placement_defects.before_check(ctx))
+                # The standalone check is unchanged; the release boundary captures native evidence.
+                placement_defects.prepare_release(ctx)
+                witness = read_json(run / 'work' / spec['id'] / placement_defects.WITNESS)
+                self.assertEqual(witness['board_sha256'], manifest['files'][board_rel])
+                self.assertTrue(witness['silk_findings'])
+                with self.assertRaisesRegex(ValueError, 'silkscreen conflict.*no placement lineage'):
+                    artifact_record(run, {'id': spec['id'], 'kind': 'fab_package',
+                                          'execution': 'ok', 'outcome': 'pass'})
+                with self.assertRaisesRegex(ValueError, 'without native placement lineage verification'):
+                    artifact_record(run, {'id': 'package', 'kind': 'fab_package',
+                                          'execution': 'ok', 'outcome': 'pass'})
+
+    def closure(self, name, *, honest, rules=None):
+        """Re-scope with an appended imported placement bundle that claims the carry closed.
+
+        The honest bundle moves the footprints off the silk graphics and records native DRC
+        of those bytes; the forged one keeps the board and deletes the silk findings."""
+        import pcbnew
+        from agent_ee.placer_runner import _native_drc
+        from agent_ee.storage import identity
+        board_rel = self.manifest['scope']['board']
+
+        def append(design):
+            board = design / board_rel
+            index = design / placement_defects.DIRECTORY / 'index.json'
+            links = read_json(index)
+            original = design / Path(links[0]['receipt']).parent
+            if honest:
+                native = pcbnew.LoadBoard(str(board))
+                # Clear the silk graphics while staying inside the 30 mm outline, so the
+                # AGENTEE-350 containment witness can still contain the moved markings.
+                for fp in native.GetFootprints():
+                    fp.Move(pcbnew.VECTOR2I(pcbnew.FromMM(18), 0))
+                self.assertTrue(pcbnew.SaveBoard(str(board), native))
+            bundle = design / placement_defects.DIRECTORY / f'imported-{name}'
+            shutil.copytree(original, bundle)
+            shutil.copyfile(board, bundle / placement_defects.BOARD)
+            drc = bundle / placement_defects.DRC
+            if honest:
+                scratch = design.parent / 'native-drc'
+                scratch.mkdir()
+                _native_drc(board, scratch)
+                shutil.copyfile(scratch / 'native-drc.json', drc)
+                shutil.copyfile(scratch / 'native-drc-execution.json', bundle / placement_defects.EXECUTION)
+            else:
+                report = read_json(drc)
+                report['violations'] = [v for v in report['violations'] if not v['type'].startswith('silk_')]
+                write_json(drc, report)
+            result = read_json(bundle / placement_defects.REPORT)
+            result.update(board_sha256=digest(board), open_defects=[], outcome='pass', verdict='pass')
+            if honest:
+                # A real closure under AGENTEE-350 binds containment to the moved board.
+                from agent_ee.silk_artwork import containment_witness
+                result['containment'] = containment_witness(board)
+            result['native_drc_comparison']['open_defects'] = []
+            write_json(bundle / placement_defects.REPORT, result)
+            if rules is not None:
+                board.with_suffix('.kicad_dru').write_text(rules)
+            receipt = read_json(bundle / 'receipt.json')
+            receipt['outputs'][board_rel] = digest(board)
+            if honest:
+                # An honest receipt binds the DRC project/rule inputs it ran with (AGENTEE-344).
+                for path in design.rglob('*'):
+                    rel = path.relative_to(design).as_posix()
+                    if (path.suffix in ('.kicad_pro', '.kicad_dru') and
+                            not rel.startswith(placement_defects.DIRECTORY + '/')):
+                        receipt['inputs'][rel] = digest(path)
+            for artifact in (*placement_defects.FILES, placement_defects.ARTWORK):
+                if artifact in receipt['artifacts']:
+                    receipt['artifacts'][artifact] = digest(bundle / artifact)
+            receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
+            write_json(bundle / 'receipt.json', receipt)
+            links.append({'receipt': f'{placement_defects.DIRECTORY}/imported-{name}/receipt.json',
+                          'sha256': digest(bundle / 'receipt.json')})
+            write_json(index, links)
+        return self.rescope(f'closure-{name}', lineage=True, edit=append)
+
+    def test_imported_closure_must_match_native_drc_on_the_captured_board(self):
+        """H2: self-consistent imported evidence cannot close carry; native recomputation can."""
+        from agent_ee.checks import CheckError, Ctx, run_checks
+        from agent_ee.fab_package import artifact_record
+        run, manifest = self.closure('forged', honest=False)
+        spec = manifest['scope']['checks'][0]
+        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+            placement_defects.open_defects(manifest, run / 'inputs')
+        with self.assertRaisesRegex(CheckError, 'differs from native DRC'):
+            placement_defects.before_check(Ctx(run, manifest, spec, time.monotonic() + 300))
+        forged = {'id': spec['id'], 'kind': 'fab_package', 'execution': 'ok', 'outcome': 'pass'}
+        with self.assertRaisesRegex(ValueError, 'differs from native DRC'):
+            placement_defects.verify_gate(run, forged, manifest)
+        with self.assertRaisesRegex(ValueError, 'differs from native DRC'):
+            artifact_record(run, forged)
+        check = run_checks(run, time.monotonic() + 300)[0]
+        self.assertEqual((check['execution'], check['outcome']), ('malformed', 'unknown'))
+        self.assertFalse((run / 'work/fab/fab/manifest.json').exists())
+        # Honest closure, independently reproduced in the sandbox, still closes the carry.
+        run, manifest = self.closure('honest', honest=True)
+        self.assertTrue(placement_defects.stamp((run / 'inputs' / manifest['scope']['board']).read_bytes()))
+        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+            placement_defects.open_defects(manifest, run / 'inputs')
+        self.assertTrue(placement_defects.before_check(Ctx(run, manifest, spec, time.monotonic() + 300)))
+        placement_defects.verify_gate(run, forged, manifest)
+        with self.assertRaisesRegex(ValueError, 'manifest is absent'):
+            artifact_record(run, forged)
+        witness = run / 'work' / spec['id'] / placement_defects.WITNESS
+        changed = read_json(witness)
+        changed['silk_findings'] = [['silk_overlap', ['forged']]]
+        write_json(witness, changed)
+        with self.assertRaisesRegex(ValueError, 'witness missing or changed'):
+            placement_defects.verify_gate(run, forged, manifest)
+        unverified = {**manifest, 'scope': {**manifest['scope'], 'checks': [
+            *manifest['scope']['checks'], {'id': 'package', 'kind': 'fab_package'}]}}
+        with self.assertRaisesRegex(ValueError, 'without native placement lineage verification'):
+            placement_defects.verify_gate(run, {**forged, 'id': 'package'}, unverified)
+        with self.assertRaisesRegex(ValueError, 'without native placement lineage verification'):
+            artifact_record(run, {**forged, 'id': 'package'})
+        # Native verification that cannot run, or cannot be trusted, leaves the closure unknown.
+        with self.assertRaises(CheckError) as caught:
+            placement_defects.before_check(Ctx(run, manifest, spec, time.monotonic() - 1))
+        self.assertEqual(caught.exception.execution, 'interrupted')
+        run, manifest = self.closure('ignored', honest=True, rules='(version 1)\n(rule quiet (severity ignore))\n')
+        with self.assertRaisesRegex(CheckError, 'custom DRC rule ignores'):
+            placement_defects.before_check(Ctx(run, manifest, spec, time.monotonic() + 300))
+
+    def test_fabricated_stamp_and_imported_lineage_cannot_waive_release_witness(self):
+        """H1: a self-asserted stamp and a self-hashed imported closure cannot release a
+        natively silk-conflicted board; only a clean sealed native witness can."""
+        from agent_ee.fab_package import artifact_record
+        from agent_ee.placer_runner import _native_drc
+        from agent_ee.storage import identity
+        from test_fab_package import FIXTURE, NativeRun, generation_scope
+        runner = NativeRun()
+        runner.setUp()
+        self.addCleanup(runner.doCleanups)
+        source = runner.root / 'attack'
+        shutil.copytree(FIXTURE, source)
+        board = source / 'fab.kicad_pcb'
+        board.write_text(board.read_text().replace('(at 0 -2 0)', '(at 0 0 0)', 1))
+        (runner.root / 'drc-before').mkdir()
+        silk = placement_defects.silk_findings(_native_drc(board, runner.root / 'drc-before'))
+        self.assertTrue(silk)
+        conflicted = {u for finding in silk for u in finding[1]}
+        prop = next(u for u, (_, node, _) in sorted(placement_defects._identities(board).items())
+                    if node[0] == 'property' and u not in conflicted)
+        evidence = self.candidate_run / 'inputs' / placement_defects.DIRECTORY
+        template = self.candidate_run / 'inputs' / Path(read_json(evidence / 'index.json')[0]['receipt']).parent
+        fake = copy.deepcopy(read_json(template / placement_defects.REPORT)['open_defects'][0])
+        self.assertIn('native', fake)
+        fake['native']['items'] = [{'description': 'fabricated', 'uuid': prop}]
+        # The attacker writes its own stamp text; it names only the fabricated carry.
+        board.write_text(board.read_text().replace('(paper "A4")', '(paper "A4")\n\t(title_block\n\t\t(comment 9 "'
+                         f'{placement_defects.STAMP} {placement_defects.carry_digest([fake])}")\n\t)', 1))
+        (runner.root / 'drc-stamped').mkdir()
+        self.assertEqual(placement_defects.silk_findings(_native_drc(board, runner.root / 'drc-stamped')), silk)
+        scope = generation_scope('agent-ee.scope/3')
+        scope['inputs'][0]['path'] = str(source)
+        board_rel = scope['board']
+        imported = runner.root / 'evidence'
+
+        def bundle(name, defects):
+            # Self-hashed receipts: one opens the fabricated carry, the next closes it with
+            # honest native DRC of the conflicted board and a self-asserted containment.
+            target = imported / name
+            shutil.copytree(template, target)
+            shutil.copyfile(board, target / placement_defects.BOARD)
+            shutil.copyfile(runner.root / 'drc-stamped/native-drc.json', target / placement_defects.DRC)
+            shutil.copyfile(runner.root / 'drc-stamped/native-drc-execution.json', target / placement_defects.EXECUTION)
+            report = read_json(target / placement_defects.REPORT)
+            report.update(board_sha256=digest(board), source_sha256=digest(board), open_defects=defects,
+                          containment={'board_sha256': digest(board), 'markings': [prop]})
+            report['native_drc_comparison']['open_defects'] = defects
+            if not defects:
+                report.update(outcome='pass', verdict='pass')
+            write_json(target / placement_defects.REPORT, report)
+            receipt = read_json(target / 'receipt.json')
+            receipt['inputs'] = receipt['outputs'] = {board_rel: digest(board)}
+            for artifact in (*placement_defects.FILES, placement_defects.ARTWORK):
+                if artifact in receipt['artifacts']:
+                    receipt['artifacts'][artifact] = digest(target / artifact)
+            receipt['identity'] = identity({k: v for k, v in receipt.items() if k != 'identity'})
+            write_json(target / 'receipt.json', receipt)
+            return {'receipt': f'{placement_defects.DIRECTORY}/{name}/receipt.json',
+                    'sha256': digest(target / 'receipt.json')}
+        imported.mkdir()
+        write_json(imported / 'index.json', [bundle('fabricated', [fake]), bundle('closure', [])])
+        scope['inputs'].append({'path': str(imported), 'at': placement_defects.DIRECTORY})
+        result = runner.run_case(scope=scope)
+        self.assertEqual((result['execution'], result['outcome']), ('malformed', 'unknown'))
+        self.assertIn('silkscreen conflict', result['summary'])
+        self.assertNotIn('artifacts', result['details'])
+        run = runner.run_dir
+        manifest = read_json(run / 'candidate.json')
+        # The forgery is self-consistent: lineage and stamp are present and bound, and the
+        # sealed native witness agrees with the closure, so no carry remains open.
+        self.assertTrue(placement_defects.lineage(manifest))
+        self.assertTrue(placement_defects._board_stamp(manifest, run / 'inputs'))
+        recorded = placement_defects._recorded(run, result['id'], manifest)
+        self.assertEqual(recorded, silk)
+        self.assertEqual(placement_defects.open_defects(manifest, run / 'inputs', lambda: recorded), [])
+        passed = {**result, 'execution': 'ok', 'outcome': 'pass'}
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict.*not yet authenticated'):
+            placement_defects.release_defects(run, passed, manifest)
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            artifact_record(run, passed)
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            placement_defects.verify_gate(run, passed, manifest)
+
+    def test_rescoped_release_with_lineage_keeps_open_carry(self):
+        from agent_ee.checks import run_checks
+        run, manifest = self.rescope('rescoped-lineage', lineage=True)
+        self.assertNotIn(placement_defects.DECLARATION, manifest['scope'])
+        defects = placement_defects.open_defects(manifest, run / 'inputs')
+        self.assertEqual(defects, placement_defects.open_defects(self.manifest, self.candidate_run / 'inputs'))
+        check = run_checks(run, time.monotonic() + 60)[0]
+        self.assertEqual((check['execution'], check['outcome'], check['details']['reason']),
+                         ('ok', 'defect', 'open_placement_defects'))
+        placement_defects.verify_gate(run, check, manifest)
+
+    def test_stamp_unbound_to_captured_lineage_refuses(self):
+        board = self.candidate_run / 'inputs' / self.manifest['scope']['board']
+        original = board.read_bytes()
+        digest_value = placement_defects.carry_digest(self.result['open_defects'])
+        try:
+            for data in (original.replace(digest_value.encode(), b'0' * 64),
+                         original.replace(digest_value.encode(), (digest_value + ' ' + '0' * 64).encode())):
+                board.write_bytes(data)
+                with self.subTest(data=data[:0]), self.assertRaisesRegex(ValueError, 'not bound'):
+                    placement_defects.open_defects(self.manifest, self.candidate_run / 'inputs')
+        finally:
+            board.write_bytes(original)
+
+    def test_campaign_successor_cannot_drop_board_stamp(self):
+        helper = self.helper
+        state = {**helper.state, 'history': [*helper.state['history'], {'run': str(self.candidate_run)}]}
+        manifest = copy.deepcopy(self.manifest)
+        manifest['scope_path'] = 'not-an-implementation-proposal'
+        placement_defects.verify_candidate(helper.root, state, 3, manifest, self.candidate_run / 'inputs')
+        successor = helper.root / 'runs/stripped/inputs'
+        shutil.copytree(self.candidate_run / 'inputs', successor)
+        board = successor / manifest['scope']['board']
+        board.write_bytes(board.read_bytes().replace(placement_defects.STAMP.encode(), b'erased'))
+        with self.assertRaisesRegex(ValueError, 'placement lineage stamp'):
+            placement_defects.verify_candidate(helper.root, state, 3, manifest, successor)
 
     def test_forged_retained_pass_is_refused_by_freeze_evidence(self):
         from agent_ee.baseline import freeze_evidence
@@ -509,6 +915,127 @@ class ClosureContractTests(unittest.TestCase):
         self.assertFalse(placement_defects._closes(defect, original, original, {'field'}, set(), True))
 
 
+class CleanProvenanceTests(unittest.TestCase):
+    """Clean provenance is required only at the release artifact boundary."""
+    @classmethod
+    def setUpClass(cls):
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+
+    def setUp(self):
+        import tempfile
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+
+    def capture(self, fixture, name, *, rules=None):
+        from agent_ee.candidate import capture
+        root = Path(__file__).resolve().parents[1] / 'fixtures' / fixture
+        design = self.tmp / 'design'
+        shutil.rmtree(design, ignore_errors=True)
+        shutil.rmtree(self.tmp / 'run', ignore_errors=True)
+        shutil.copytree(root, design)
+        if rules is not None:
+            (design / f'{name}.kicad_dru').write_text(rules)
+        scope = {'schema': 'agent-ee.scope/1', 'board': f'project/{name}.kicad_pcb',
+                 'schematic': f'project/{name}.kicad_sch', 'inputs': [{'path': str(design), 'at': 'project'}],
+                 'checks': [{'id': 'release', 'kind': 'fab_package'}, {'id': 'erc', 'kind': 'erc'},
+                            {'id': 'export', 'kind': 'fab_export'}]}
+        write_json(self.tmp / 'scope.json', scope)
+        run = self.tmp / 'run'
+        run.mkdir()
+        return run, capture(self.tmp / 'scope.json', run)
+
+    def admitted(self, run, manifest, index, outcome='pass', seconds=300):
+        """Run the placement gate, then judge a check that reached `outcome`."""
+        from agent_ee.checks import Ctx
+        ctx = Ctx(run, manifest, manifest['scope']['checks'][index], time.monotonic() + seconds)
+        self.assertTrue(placement_defects.before_check(ctx))
+        ctx.result.update(execution='ok', outcome=outcome)
+        if index == 0:
+            placement_defects.prepare_release(ctx)
+            placement_defects.release_defects(run, ctx.result, manifest)
+        return ctx
+
+    def test_clean_board_without_lineage_passes_on_native_evidence(self):
+        run, manifest = self.capture('rc/control', 'rc_filter')
+        for index in (0, 2):
+            self.admitted(run, manifest, index)
+        witness = read_json(run / 'work/release' / placement_defects.WITNESS)
+        self.assertEqual((witness['board_sha256'], witness['silk_findings']),
+                         (manifest['files']['project/rc_filter.kicad_pcb'], []))
+        passed = {'id': 'release', 'execution': 'ok', 'outcome': 'pass'}
+        placement_defects.verify_gate(run, passed, manifest)
+        self.assertEqual(placement_defects.release_defects(run, passed, manifest), [])
+        # Ungated checks neither run nor need the verification.
+        self.admitted(run, manifest, 1)
+        self.assertFalse((run / 'work/erc' / placement_defects.WITNESS).exists())
+        placement_defects.verify_gate(run, {'id': 'erc', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+        board = run / 'inputs/project/rc_filter.kicad_pcb'
+        original_board = board.read_bytes()
+        board.write_bytes(original_board + b'\n')
+        with self.assertRaisesRegex(ValueError, 'missing or changed'):
+            placement_defects.release_defects(run, passed, manifest)
+        with self.assertRaisesRegex(ValueError, 'missing or changed'):
+            placement_defects.verify_gate(run, passed, manifest)
+        board.write_bytes(original_board)
+        report = run / 'work/release' / placement_defects.VERIFICATION / 'native-drc.json'
+        original = report.read_bytes()
+        for mutation in ('report', 'board', 'missing'):
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'verification'):
+                if mutation == 'report':
+                    report.write_bytes(original + b' ')
+                    placement_defects.verify_gate(run, passed, manifest)
+                elif mutation == 'board':
+                    changed = copy.deepcopy(manifest)
+                    changed['files']['project/rc_filter.kicad_pcb'] = '0' * 64
+                    placement_defects.verify_gate(run, passed, changed)
+                else:
+                    placement_defects.verify_gate(run, {**passed, 'id': 'export-missing'},
+                        {**manifest, 'scope': {**manifest['scope'], 'checks': [
+                            *manifest['scope']['checks'], {'id': 'export-missing', 'kind': 'fab_package'}]}})
+            report.write_bytes(original)
+
+    def test_unlineaged_board_with_silk_conflicts_cannot_pass(self):
+        run, manifest = self.capture('rc/stages/seeded-placement', 'rc_stage')
+        self.assertIsNone(placement_defects.stamp((run / 'inputs/project/rc_stage.kicad_pcb').read_bytes()))
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            self.admitted(run, manifest, 0)
+        # Ordinary fab export keeps its verdict and needs no provenance witness.
+        self.admitted(run, manifest, 2)
+        self.assertFalse((run / 'work/export' / placement_defects.WITNESS).exists())
+        placement_defects.verify_gate(run, {'id': 'export', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            placement_defects.verify_gate(run, {'id': 'release', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+        for kept in ({'execution': 'ok', 'outcome': 'defect'}, {'execution': 'malformed', 'outcome': 'unknown'}):
+            placement_defects.verify_gate(run, {'id': 'release', **kept}, manifest)
+
+    def test_empty_imported_index_does_not_replace_clean_native_provenance(self):
+        run, manifest = self.capture('rc/stages/seeded-placement', 'rc_stage')
+        index = 'placement-evidence/index.json'
+        write_json(run / 'inputs' / index, [])
+        manifest['files'][index] = digest(run / 'inputs' / index)
+        manifest['scope'][placement_defects.DECLARATION] = []
+        self.assertTrue(placement_defects.lineage(manifest))
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            self.admitted(run, manifest, 0)
+        with self.assertRaisesRegex(ValueError, 'silkscreen conflict'):
+            placement_defects.verify_gate(run, {'id': 'release', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+
+    def test_unverifiable_native_evidence_cannot_pass(self):
+        from agent_ee.checks import CheckError
+        run, manifest = self.capture('rc/control', 'rc_filter', rules='(version 1)\n(rule quiet (severity ignore))\n')
+        with self.assertRaisesRegex(ValueError, 'custom DRC rule ignores'):
+            self.admitted(run, manifest, 0)
+        run, manifest = self.capture('rc/control', 'rc_filter')
+        with self.assertRaises(CheckError) as caught:
+            self.admitted(run, manifest, 0, seconds=-1)
+        self.assertEqual(caught.exception.execution, 'interrupted')
+        board = run / 'inputs/project/rc_filter.kicad_pcb'
+        board.write_bytes(board.read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'board missing or changed'):
+            self.admitted(run, manifest, 0)
+
+
 class DurableClosureTests(unittest.TestCase):
     def test_only_masked_track_changes_preserve_artwork_and_obstructions(self):
         from tests.test_placement_adapter import TEXT
@@ -558,19 +1085,25 @@ class DurableClosureTests(unittest.TestCase):
                 links.append(link)
                 bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects,
                                  'containment': native_containment(board)},
-                                {placement_defects.BOARD: board}, {'violations': []})
+                                {placement_defects.BOARD: board}, complete_drc())
             index = 'placement-evidence/index.json'
             write_json(inputs / index, links)
             files[index] = digest(inputs / index)
             manifest = {'scope': {'board': current.name, placement_defects.DECLARATION: links},
                         'files': files}
+            # Native DRC on the captured board is the closing bundle's captured report.
+            native = lambda: placement_defects.silk_findings(bundles[links[-1]['receipt']][2])
             with patch.object(placement_defects, '_bundle', side_effect=lambda m, i, link: bundles[link['receipt']]):
                 manifest['files'][current.name] = digest(current)
-                self.assertEqual(placement_defects.open_defects(manifest, inputs), [])
+                self.assertEqual(placement_defects.open_defects(manifest, inputs, native), [])
+                with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+                    placement_defects.open_defects(manifest, inputs)
                 track = '(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net 0) (uuid "t"))'
                 current.write_text(fixed.read_text().rstrip()[:-1] + track + ')')
                 manifest['files'][current.name] = digest(current)
-                self.assertEqual(placement_defects.open_defects(manifest, inputs), [])
+                self.assertEqual(placement_defects.open_defects(manifest, inputs, native), [])
+                with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+                    placement_defects.open_defects(manifest, inputs)
                 for old_token, new_token in (('(at 0 -2.5 0)', '(at 0 -1.5 0)'),
                                              ('(at 10 10)', '(at 11 10)'),
                                              ('(size 0.5 0.5)', '(size 0.6 0.5)')):
@@ -798,7 +1331,10 @@ class PlacementRoutingCarryTests(unittest.TestCase):
             self.assertEqual(refused_check['details']['reason'], 'open_placement_defects')
         fixed = fixture.out / 'runs/4'
         fixed_manifest = read_json(fixed / 'candidate.json')
-        self.assertEqual(placement_defects.open_defects(fixed_manifest, fixed / 'inputs'), [])
+        recorded = lambda: placement_defects._recorded(fixed, 'fab', fixed_manifest)
+        self.assertEqual(placement_defects.open_defects(fixed_manifest, fixed / 'inputs', recorded), [])
+        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+            placement_defects.open_defects(fixed_manifest, fixed / 'inputs')
         self.assertEqual(len(fixed_manifest['scope'][placement_defects.DECLARATION]), 2)
         for check_id in ('verify', 'fab', 'routed'):
             self.assertEqual(read_json(fixed / f'checks/{check_id}.json')['outcome'], 'pass')
@@ -819,10 +1355,11 @@ class PlacementRoutingCarryTests(unittest.TestCase):
 
 class ClosureEscapeTests(unittest.TestCase):
     def run_closure(self, edit=lambda text: text, *, receipt_rules=None, current_rules=None,
-                    witness_edit=lambda witness: witness):
+                    witness_edit=lambda witness: witness, native=False, call=None):
         TEXT, field_uuid = outlined_closure_text()
         with tempfile.TemporaryDirectory() as temporary:
-            inputs = Path(temporary)
+            inputs = Path(temporary) / 'inputs'
+            inputs.mkdir()
             old, fixed, current = (inputs / n for n in ('old.kicad_pcb', 'fixed.kicad_pcb', 'board.kicad_pcb'))
             old.write_text(TEXT)
             fixed.write_text(TEXT.replace('(at 0 -1.5 0)', '(at 0 -2.5 0)'))
@@ -838,7 +1375,7 @@ class ClosureEscapeTests(unittest.TestCase):
                 links.append(link)
                 bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects,
                                  'containment': witness_edit(native_containment(board))},
-                                {placement_defects.BOARD: board}, {'violations': []})
+                                {placement_defects.BOARD: board}, complete_drc())
             write_json(inputs / 'placement-evidence/index.json', links)
             files['placement-evidence/index.json'] = digest(inputs / 'placement-evidence/index.json')
             manifest = {'scope': {'board': current.name, placement_defects.DECLARATION: links}, 'files': files}
@@ -846,10 +1383,43 @@ class ClosureEscapeTests(unittest.TestCase):
             current.write_text(edit(fixed.read_text()))
             manifest['files'][current.name] = digest(current)
             with patch.object(placement_defects, '_bundle', side_effect=lambda m, i, link: bundles[link['receipt']]):
+                if call:
+                    return call(manifest, inputs)
+                if native:
+                    # Native DRC on the captured board is the closing bundle's captured report.
+                    return placement_defects.open_defects(manifest, inputs, lambda: placement_defects.silk_findings(
+                        bundles[links[-1]['receipt']][2]))
                 return placement_defects.open_defects(manifest, inputs)
 
+    def assert_closure_needs_native(self, *args, **kwargs):
+        with self.assertRaisesRegex(ValueError, 'unverifiable without native DRC'):
+            self.run_closure(*args, **kwargs)
+
     def test_control_identical_board_closes(self):
-        self.assertEqual(self.run_closure(lambda t: t), [])
+        self.assertEqual(self.run_closure(lambda t: t, native=True), [])
+        self.assert_closure_needs_native(lambda t: t)
+
+    def test_acceptance_without_a_sealed_native_witness_fails_closed(self):
+        # Carry that would close at acceptance needs a gated check's sealed native DRC witness.
+        satisfied = {'state': 'criteria_satisfied', 'reason': 'all_criteria_satisfied'}
+        for checks in ([], [{'id': 'netlist', 'kind': 'netlist', 'stage': 'placement'}],
+                       [{'id': 'fab', 'kind': 'fab_export', 'stage': 'fab'}]):
+            def accept(manifest, inputs, diagnostic=satisfied):
+                manifest['scope']['checks'] = checks
+                write_json(inputs.parent / 'candidate.json', manifest)
+                return placement_defects.acceptance(inputs.parent, dict(diagnostic))
+            with self.subTest(checks=[c['id'] for c in checks]):
+                with self.assertRaisesRegex(ValueError, 'acceptance is unverifiable: no gated check sealed native DRC'):
+                    self.run_closure(call=accept)
+                pending = {'state': 'repair', 'reason': 'criteria_failed'}
+                self.assertEqual(self.run_closure(call=lambda m, i: accept(m, i, pending)), pending)
+        # Open carry escalates without any native evidence.
+        def open_carry(manifest, inputs):
+            manifest['scope']['checks'] = []
+            write_json(inputs.parent / 'candidate.json', manifest)
+            return placement_defects.acceptance(inputs.parent, dict(satisfied))
+        self.assertEqual(self.run_closure(lambda t: t.replace('"R1"', '"R\\1"'), call=open_carry),
+                         {'state': 'escalated', 'reason': 'open_placement_defects'})
 
     def test_missing_malformed_or_mismatched_witness_retains_known_defect(self):
         for witness in (None, {}, [], {'board_sha256': 'wrong', 'markings': ['field']},
@@ -892,7 +1462,8 @@ class ClosureEscapeTests(unittest.TestCase):
     def test_nonstem_rule_addition_removal_and_change_reopen_closure(self):
         for name in ('other.kicad_pro', 'nested/settings.kicad_dru'):
             sealed = {name: 'a' * 64}
-            self.assertEqual(self.run_closure(receipt_rules=sealed, current_rules=sealed), [])
+            self.assertEqual(self.run_closure(receipt_rules=sealed, current_rules=sealed, native=True), [])
+            self.assert_closure_needs_native(receipt_rules=sealed, current_rules=sealed)
             for before, after in (({}, sealed), (sealed, {}), (sealed, {name: 'b' * 64})):
                 with self.subTest(name=name, before=before, after=after):
                     self.assertEqual(len(self.run_closure(receipt_rules=before, current_rules=after)), 1)
@@ -960,7 +1531,8 @@ class ClosureEscapeTests(unittest.TestCase):
         for valid in (track, track.replace(' ', '\t'), track.replace(' ', '\r\n'),
                       track.replace('"t"', 't_1.+-')):
             with self.subTest(valid=repr(valid)):
-                self.assertEqual(self.run_closure(lambda t: t.rstrip()[:-1] + valid + ')'), [])
+                self.assertEqual(self.run_closure(lambda t: t.rstrip()[:-1] + valid + ')', native=True), [])
+                self.assert_closure_needs_native(lambda t: t.rstrip()[:-1] + valid + ')')
         for invalid in (track.replace('"t"', 't/1'), track.replace('"t"', 't:1'),
                         track.replace('"t"', 't#1'), track.replace('"t"', 't;1'),
                         track.replace('"t"', '"t#1"'), track.replace('"t"', '"t;1"'),
@@ -1047,4 +1619,7 @@ class ClosureEscapeTests(unittest.TestCase):
             track = ('(segment (start 1 2) (end 3 4) (width 0.2) '
                      '(layer "F.Cu") (net "' + name + '") (uuid "t"))')
             with self.subTest(name=name):
-                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + track + ')')), count)
+                self.assertEqual(len(self.run_closure(lambda t: t.rstrip()[:-1] + track + ')',
+                                                      native=count == 0)), count)
+                if count == 0:
+                    self.assert_closure_needs_native(lambda t: t.rstrip()[:-1] + track + ')')

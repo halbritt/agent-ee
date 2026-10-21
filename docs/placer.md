@@ -1244,7 +1244,13 @@ Validation covers values produced by copying; subclasses left by copying and
 cyclic containers refuse with `locality document must contain only JSON values`.
 References retained by a copy hook cannot change the owned snapshot after validation.
 Direct `validate()` and `grade()` apply the same exact-type check, including
-object keys, before schema and net-disjointness checks. Later caller edits cannot
+object keys, before schema and net-disjointness checks. Both check a fresh
+snapshot; `grade()` measures and reports only its validated snapshot, so
+caller edits after validation cannot change its verdict or `declaration`.
+Nesting deeper than 64 levels refuses with `locality document nesting exceeds 64
+levels` at all three entry points instead of `RecursionError` (AGENTEE-363), including when the index's
+copy recurses on a value inserted after its pre-walk or on a deep non-JSON tuple. Binding a deeply nested
+captured locality file refuses with the same error. Later caller edits cannot
 change indexed values. Its public `pairs` and `endpoints` properties expose
 mapping proxies, tuple pair sequences and read-only endpoint fields; callers cannot mutate the indexed declarations.
 Copying does not promise an atomic view of concurrent edits: an invalid

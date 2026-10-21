@@ -2512,7 +2512,7 @@
       "origins": [
         "AE"
       ],
-      "reviewed": "Original regression test that fails the strict suite when any tracked file carries git merge-conflict markers; no fixtures, no KiCad text."
+      "reviewed": "Original regression test that fails the strict suite when any tracked file carries git merge-conflict markers or is a merge leftover (.orig, .rej, mergetool BASE/LOCAL/REMOTE/BACKUP copies); its refusal tests build original temporary trees, no fixtures, no KiCad text."
     },
     {
       "paths": [
@@ -3626,6 +3626,16 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-331 declared constraint-source import and original synthetic/native tests. Reuses the design lane schema as an interface; no third-party design or library bytes are retained."
+    },
+    {
+      "paths": [
+        "docs/research/2026-10-21-routability-brief/PCB Placement and Routing Research - Google Docs.pdf"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Owner-supplied research report (Google Docs PDF export) for agent-ee, imported unchanged by agent-509 on owner instruction on 2026-10-21, with its Markdown twin in the same folder. Classified by the integrator from the owner's statement, not by a content review. docs/research/README.md marks it as a research input pending source verification, not a specification."
     }
   ]
 }

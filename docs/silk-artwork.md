@@ -20,8 +20,9 @@ the schematic SVG parser is specific to schematic plotting and is not reused
 for PCB field geometry. Candidate offsets use a 0.25 mm grid within 10 mm of the
 field's post-placement anchor, ordered by squared displacement then coordinates.
 The existing qualified outline parser requires the entire text box, grown by
-at least 0.2 mm or the native silk clearance, to remain inside one straight
-board contour, outside all qualified internal slots and cutouts. Same-side native silk and mask geometry, visible fields, and
+at least 0.2 mm or the native silk clearance, to remain inside one qualified
+board contour, outside all qualified internal slots and cutouts (curved
+contours use the conservative bounds below). Same-side native silk and mask geometry, visible fields, and
 surface pad copper/mask bounds reserve space. Other footprints' same-side
 courtyard bounding boxes also reserve their entire interiors, so moved labels
 cannot end up beneath another assembled component. The owning courtyard is
@@ -123,14 +124,40 @@ later receipted placement result for the current board, complete native DRC with
 no remaining silk finding on the same identities, and preserved item ownership,
 marking content, layer and style. Missing, hidden or relabeled fields do not
 close a defect. Every closed field/graphic must also be visible silk wholly
-inside the proven straight board outline and outside every internal slot/cutout. Both producers measure native
+inside the proven board outline and outside every internal slot/cutout. Both producers measure native
 bounding boxes from the final saved board in their networkless tool process,
 checking every box edge against the qualified outline. The outline includes
 board drawings and footprint-owned Edge.Cuts, as in placement qualification.
 AGENTEE-362 qualifies one outer ring with disjoint, strictly internal straight
-cutout rings. Touching/crossing contours, nested cutouts, multiple board islands,
-open rings and unsupported curves establish no containment. Bounding boxes may
-neither cross nor touch a cutout boundary, nor enclose an entire cutout.
+cutout rings. AGENTEE-368 extends this to curved Edge.Cuts: circles (round
+mounting holes), arcs (oblong slots, curved board edges) and native rounded
+rectangles. Each curved ring is replaced by the exact integer polygons proven
+for courtyards ([AGENTEE-212](placement.md#circular-and-arc-courtyards-agentee-212), `courtyard_curves`, within
+5 um): a cutout uses its circumscribed superset polygon, the outer ring its
+inscribed subset polygon, so the qualified region lies inside the true board.
+A rounded-rectangle corner arc is cited by an exact rational point on its
+circle; rotated or over-rounded rectangles stay unsupported. Topology is
+checked on these bounds: the subset outer ring must still strictly enclose
+every superset cutout, so a cutout closer to a curved edge, or to another
+cutout, than the bounds can separate leaves the outline unqualified.
+Touching/crossing contours, nested cutouts, multiple board islands, open rings,
+curves below twice the tolerance and polygons with arcs establish no
+containment. Bounding boxes may neither cross nor touch a cutout bound, nor
+enclose an entire cutout. The 5 um tolerance is the maximum error of the
+circumscribed hole bound, not a uniform exclusion band: a mark tangent to a
+round hole, or near a polygon vertex of its bound, refuses even though it does
+not touch the true circle, while a mark between two bound vertices may qualify
+closer than 5 um, because it still lies outside the bound.
+
+Containment models only Edge.Cuts. Non-plated drills (for example an NPTH
+mounting-hole footprint) and plated or oval pad slots are not holes in this
+outline model: a marking over such a drill is neither excluded by the
+containment witness nor relocated around the hole itself. Relocation still
+reserves the pad's copper/mask bounds where the pad has them, and native
+saved-board DRC remains the authority on silk over those features
+(AGENTEE-368 G2). The fome-mc telemetry pod (published allocation, fome-mc
+3d7ff5f) uses NPTH mounting-hole footprints on a straight 90 x 65 mm outline,
+which qualified before and after AGENTEE-368.
 The same qualification gates relocation, including its clearance margin.
 Placement outline grading retains its existing single-contour contract.
 Entirely off-board, edge-straddling and cutout markings stay typed open defects
@@ -183,15 +210,109 @@ outside that subset require a fresh receipt; a track comparison supplies no
 electrical or routing acceptance (AGENTEE-344). If the equivalence proof cannot
 read or parse the later board, the carried defect stays open.
 
+### Board lineage stamp (AGENTEE-351)
+
+Carry in `placement-evidence` follows a campaign's candidate lineage. A delivered
+board copied into a new scope without that directory would lose it, so the board
+bytes name their own lineage. When a published result has open defects, the
+placement writer sets title block comment 9 to
+`agent-ee.placement-lineage/1 <digest>...`. Each digest is `carry_digest` of one
+result's open defects: the SHA-256 identity of their sorted native item UUID
+sets. A later result with open defects appends its digest; a result without open
+defects keeps the source stamp. The writer then reruns native DRC on the stamped
+bytes and refuses unless the comparison is unchanged, so `native-drc.json` and
+`board_sha256` describe the stamped board. It refuses as well when comment 9 holds
+other text. Placement write scope admits only a stamp that adds or extends this
+comment. Dropping or rewriting a digest, or editing any other title block field,
+is a violation. Campaign verification also refuses a successor candidate whose
+board drops or rewrites its predecessor's stamp, whichever step wrote it.
+
+A gated check (verification, fab and release stages, and the 18 fab-family
+kinds in `GATED_KINDS`, see the [check reference](check-reference.md)) on a stamped board refuses as
+unknown, with execution `malformed`, when the candidate captured no
+`placement-evidence` or that evidence binds no stamp digest.
+
+Captured evidence closes carry only when native DRC reproduces it. Imported
+bundles have self-recomputed hashes and receipt identities, so self-consistency
+proves nothing. When a bundle on the captured board's hash would close a carried
+defect, the gated check first recomputes native DRC on the captured board bytes
+in the tool sandbox (`kicad-cli pcb drc --severity-all`). The run is kept under
+`work/<check>/placement-lineage/`, and the witness
+`work/<check>/placement-lineage.json` binds the board hash, the argv, the report
+digest and the report's `silk_*` findings. The check refuses as unknown when
+those findings differ from the bundle's claimed `silk_*` findings, or when the
+verification cannot run or cannot be trusted. That covers a missing or changed
+board, a tool failure, a `.kicad_dru` rule that sets `severity ignore`, and a
+report that ignores a `silk_*` check; an exhausted deadline is `interrupted`.
+An honest closure that native DRC reproduces still closes carry. Open carry with
+no closure keeps its determinate `defect` verdict and needs no native run, so an
+expired budget still reports the known carried defects. The evidence seal and
+release artifact extraction re-verify closures from the check's sealed witness.
+They recheck its board hash, argv, execution record and report digest, and
+recompute the findings from the report. A closure with a missing or changed
+witness is refused.
+
+To release a re-scoped design, include the delivered `placement-evidence`
+directory as an input at `placement-evidence`. Its `index.json` then supplies
+the ordered links, and open carry gates the release exactly as it does in the
+campaign. This happens even after carry closes, because the stamp stays on the
+board. The stamp is a lineage record in the design file, not an owner evidence
+store. Owner-authenticated imported evidence awaits AGENTEE-348.
+
+The stamp is read only with the shared S-expression parser, so an escaped marker
+is still the stamp. Marker text outside title block comment 9 is user text.
+KiCad 10.0.7 keeps board-level properties in the project's text variables:
+`pcbnew.SaveBoard` drops a `(property ...)` node from the saved `.kicad_pcb`.
+The board file therefore has no dedicated non-user field. The stamp stays in
+comment 9, and a placement result with open defects refuses publication when
+comment 9 holds other text.
+
+Release admission also covers boards whose stamp was stripped outside agent-ee
+and boards published before the stamp contract. `fab_package` captures a native
+DRC witness on the captured board bytes before extracting release artifacts.
+Release requires no open carry and no `silk_*` finding at any severity, for
+every board. A stamp and an imported index are both self-asserted until
+AGENTEE-348 authenticates them, so neither waives the witness: a fabricated
+stamp with a self-hashed imported closure still refuses a natively
+silk-conflicted board. Open carry refuses first with its own typed message.
+An empty imported index does not establish ancestry. Missing, changed or incomplete native evidence refuses as typed
+unknown (`malformed`, or `interrupted` on deadline exhaustion). The package's
+sealed witness is rechecked by `verify_gate`, artifact extraction and campaign
+completion; a forged passing package cannot bypass it. The stamp therefore is
+not an indicator of which boards need release verification: all of them do.
+In-campaign releases of boards with uncarried baseline `silk_*` findings are
+refused too.
+
+This clean-provenance rule applies only at the release artifact boundary.
+Standalone `fab_export`, `cpl_rotation`, `fab_consistency` and other checks keep
+their verdicts, including determinate defects and unknown coverage. The check
+scheduler has no post-check verdict rewrite. The owned successful-release
+controls have their reference text relocated away from pads; their asserted
+outcomes are unchanged. Native evidence is produced by the existing networkless
+executor; this creates no owner evidence store.
+
+Two limits remain. Stamp digests name the defects' native item UUID sets, not board bytes, so
+replayed evidence on an unrelated board is accepted as open carry rather than
+refused as foreign. That outcome is conservative: replay cannot close
+carry, because closure requires the bundle's board hash to equal the captured
+board and native DRC to agree. Side-flip diagnostics have no native DRC finding.
+Native recomputation therefore checks only the `silk_*` part of a claimed
+closure. A side-flip closure still relies on the bundle board's field positions
+and on its artwork record.
+
 `tests.test_placement_defects` exercises actual native helper publication,
 adoption, coordinator capture, successor binding and downstream refusal, plus
 missing/stale/tampered carry, side-flip closure boundaries and verdict isolation.
 The existing BOM-variant fab regression retains its original pass expectation.
-
-The out-of-campaign lineage gap remains open: a design re-scoped without both
-`placement_provenance` and `placement-evidence/` cannot be distinguished from an
-uncarried design. Exporters must retain the lineage. This implementation does
-not add a persistent board marker or an owner evidence store. The post-routing producer below closes the routed-board producer gap.
+Its stamp tests cover native stamping on the DRC-checked bytes, the write-scope
+extension/drop boundary, escaped and misplaced marker text, and re-scoped release
+with and without lineage. They also cover an unbound stamp and a campaign
+successor that drops the stamp. Further tests cover forged and honest imported
+closures at the check, seal and artifact boundaries, a missing or changed
+witness, and verification that is out of time or ignored by a custom rule.
+Release regressions cover stripped and legacy unstamped boards, clean native
+provenance, empty imported indexes, sealed-witness tampering and standalone
+fab-export verdict preservation.
 
 
 ## Post-routing artwork producer (AGENTEE-350)
@@ -274,3 +395,8 @@ and cutouts with native saved-board identities: relocation permits receipt-bound
 closure after repair, while in-cutout, slot-straddling and off-board marks refuse.
 Topology probes preserve the default placement parser contract and reject
 ambiguous contour relationships and boxes surrounding entire holes (AGENTEE-362).
+AGENTEE-368 probes round holes, arc-ended slots, rounded rectangles and a
+circular board with tangent, straddling, in-hole, within-tolerance and cleared
+boxes, plus native board- and footprint-owned round holes. `tests.test_routed_artwork`
+moves both carried labels of a routed board around a straight slot and a round
+hole placed over their hole-free destinations, then closes the carry.

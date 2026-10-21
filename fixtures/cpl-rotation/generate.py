@@ -138,6 +138,9 @@ def make_board(path):
         fp.SetOrientationDegrees(angle)
         if side == 'B':
             fp.Flip(fp.GetPosition(), p.FLIP_DIRECTION_TOP_BOTTOM)
+        # Keep both sides' reference text clear of the synthetic header pads.
+        offset = (-4, 0) if ref.startswith('JB') else (0, -4)
+        fp.Reference().SetFPRelativePosition(p.VECTOR2I(nm(offset[0]), nm(offset[1])))
     corners = ((0, 0), (100, 0), (100, 60), (0, 60))
     for a, b in zip(corners, corners[1:] + corners[:1]):
         edge = p.PCB_SHAPE(board)

@@ -378,7 +378,42 @@ def _proposal_drc(source, output):
         raise ValueError(f"saved-board placement introduced native DRC collisions: {comparison['added_by_type']}")
     if artwork_regressions:
         raise ValueError('silkscreen relocation introduced other native DRC findings')
+    if comparison['open_defects']:
+        after = _stamp_lineage(output, project_payloads, comparison, before, baseline_states)
     return [v for v in after['violations'] if v['type'] in DRC_COURTYARDS], comparison
+
+
+def _stamp_lineage(output, project_payloads, comparison, before, baseline_states):
+    """Record this result's carry digest in the saved board's title block (AGENTEE-351).
+
+    A published board with open defects names them in its own bytes, so a copy released
+    outside the campaign must bring its placement evidence. Native DRC is repeated on the
+    stamped bytes and must reproduce the same comparison.
+    """
+    import pcbnew
+    from .placement_defects import STAMP, STAMP_COMMENT, carry_digest, stamp
+    digests = stamp(output.read_bytes()) or []
+    board = pcbnew.LoadBoard(str(output))
+    block = board.GetTitleBlock()
+    slot = int(STAMP_COMMENT) - 1
+    if block.GetComment(slot) and not digests:
+        raise ValueError(f'title block comment {STAMP_COMMENT} is occupied; placement lineage cannot be recorded')
+    value = carry_digest(comparison['open_defects'])
+    block.SetComment(slot, ' '.join([STAMP, *digests, *([value] if value not in digests else [])]))
+    board.SetTitleBlock(block)
+    if not pcbnew.SaveBoard(str(output), board):
+        raise ValueError('native lineage stamp save failed')
+    for suffix, payload in project_payloads.items():
+        target = output.with_suffix(suffix)
+        if payload is None:
+            target.unlink(missing_ok=True)
+        else:
+            target.write_bytes(payload)
+    after = _native_drc(output, output.parent)
+    restamped = _drc_comparison(before, after, baseline_states, _drc_item_states(output))
+    if {k: v for k, v in comparison.items() if k != 'open_defects'} != restamped:
+        raise ValueError('native DRC changed after recording the placement lineage stamp')
+    return after
 
 
 def _apply_plan(board, plan, output):
