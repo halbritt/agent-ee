@@ -1739,7 +1739,8 @@ declared mounts reads through held descriptors; post-run source replacement or
 observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and
 upward-escaping mount symlinks retain link identity without reading host targets;
 an executable through such a link has an unknown digest and is unadoptable, and a
-declared `source` through one refuses as `source_link_escape:<source>`. The
+declared `source` through one refuses as `source_link_escape:<source>`, including
+from the same resolution in either strict run observation, leaving no receipt directory. The
 executable is resolved and hashed through component-wise no-follow opens below
 the held descriptor. Only
 fd-form receipts carry the mount-guard observation; historical path-form replay

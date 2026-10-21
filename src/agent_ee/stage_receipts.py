@@ -7,6 +7,7 @@ from fresh sealed checks of the captured proposal.
 """
 
 import contextlib
+import contextvars
 import errno
 import hashlib
 import json
@@ -638,6 +639,20 @@ def _mount_observation(spec, sandbox_path):
         raise MountSourceChangedError(mount['at']) from exc
 
 
+# A run observes its source strictly: the resolution that would record an escaped link-only
+# identity refuses instead, so no new receipt can carry one. Standalone observation records it.
+_STRICT_SOURCE = contextvars.ContextVar('strict_source', default=False)
+
+
+@contextlib.contextmanager
+def _strict_source():
+    token = _STRICT_SOURCE.set(True)
+    try:
+        yield
+    finally:
+        _STRICT_SOURCE.reset(token)
+
+
 def observe_tool(spec):
     """Coordinator-side tool identity; missing pieces are recorded as null."""
     host = _host_path(spec, spec['argv'][0])
@@ -673,7 +688,9 @@ def observe_tool(spec):
             else:
                 state, value = _beneath(_mount_of(spec, spec['source']), spec['source'])
                 if state == 'escaped':
-                    # Recorded, never digested; a run refuses it as source_link_escape.
+                    if _STRICT_SOURCE.get():
+                        raise EscapingSourceError(spec['source'])
+                    # Recorded, never digested; a run's strict observation refuses it above.
                     observation = {'sha256': identity({root.name: 'link:' + value}), 'files': 1}
                 elif state == 'missing':
                     observation = {'sha256': None, 'files': 0}
@@ -958,7 +975,8 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
         inputs = _strict_tree(receipt_dir / 'inputs')
         shutil.copytree(receipt_dir / 'inputs', run / 'design')
         live = _live_baseline(runtime_spec)
-        tool = observe_tool(runtime_spec)
+        with _strict_source():
+            tool = observe_tool(runtime_spec)
         _recheck_mounts(runtime_spec, mount_identities, live)
     except BaseException:
         # Nothing was executed or observed; a partial copy is not evidence.
@@ -985,8 +1003,14 @@ def _run_bound_step(receipt_dir, design, spec, binding, runtime_spec, mount_iden
         # The executor could not keep its records, for example because the tool left /work
         # unwritable. No record on disk is trusted; the receipt is kept and the error re-raised.
         failure = exc
-    _recheck_mounts(runtime_spec, mount_identities, live)
-    tool_after = observe_tool(runtime_spec)
+    try:
+        _recheck_mounts(runtime_spec, mount_identities, live)
+        with _strict_source():
+            tool_after = observe_tool(runtime_spec)
+    except EscapingSourceError:
+        # An escaped source never yields a receipt; what the tool left behind is not evidence.
+        shutil.rmtree(receipt_dir, ignore_errors=True)
+        raise
     outputs = _outputs(spec, run)
     violations = _violations(spec, inputs, receipt_dir, tool, tool_after,
                              {'run': execution, 'version': version_record})

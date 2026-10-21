@@ -661,6 +661,57 @@ assert not (outer / 'receipt').exists()
         self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
         self.assertFalse((receipt_dir / 'receipt.json').exists())
 
+    @toolchain_test
+    def test_source_escaping_only_during_identity_observation_is_refused(self):
+        # The host swaps the source root only while a run observes identities and restores it
+        # before every mount recheck, so only the observation's own resolution can see it.
+        tool = Path(self.tool)
+        (tool / 'lib').mkdir()
+        (tool / 'lib/module.py').write_text('mounted source')
+        outside = tool.with_name('outside')
+        outside.mkdir()
+        (outside / 'module.py').write_text('host-only source')
+        design = Path(self.tmp.name) / 'design'
+        design.mkdir()
+        (design / 'board.txt').write_text('design')
+        spec = self.spec(argv=['/usr/bin/sh', '-c', 'echo artifact > /work/listing'],
+                         source='/tool/lib', version_argv=None, writes={}, artifacts=['listing'])
+        real_observe = stage_receipts.observe_tool
+        for window in ('before launch', 'after execution'):
+            with self.subTest(window=window):
+                calls, launched = [], []
+                real_execute = stage_receipts.execute
+
+                def execute(*args, **kwargs):
+                    launched.append(True)
+                    return real_execute(*args, **kwargs)
+
+                def observe(value):
+                    calls.append(True)
+                    if (len(calls) == 1) != (window == 'before launch'):
+                        return real_observe(value)
+                    (tool / 'lib').rename(tool / 'held-lib')
+                    (tool / 'lib').symlink_to(outside)
+                    try:
+                        return real_observe(value)
+                    finally:
+                        (tool / 'lib').unlink()
+                        (tool / 'held-lib').rename(tool / 'lib')
+
+                receipt_dir = Path(self.tmp.name) / ('receipt-' + window.replace(' ', '-'))
+                with patch.object(stage_receipts, 'observe_tool', observe), \
+                        patch.object(stage_receipts, 'execute', execute):
+                    with self.assertRaises(stage_receipts.EscapingSourceError) as failure:
+                        run_step(receipt_dir, design, spec, {})
+                self.assertEqual(failure.exception.violation, 'source_link_escape:/tool/lib')
+                self.assertEqual(launched, [] if window == 'before launch' else [True])
+                self.assertFalse(receipt_dir.exists())
+                with self.assertRaises((OSError, ValueError)):
+                    stage_receipts.validate_receipt(receipt_dir)
+                self.assertEqual(sorted(p.name for p in design.iterdir()), ['board.txt'])
+                self.assertEqual((design / 'board.txt').read_text(), 'design')
+                self.assertTrue((tool / 'lib/module.py').is_file())
+
     def test_executable_digest_never_follows_a_component_swapped_after_resolution(self):
         tool = Path(self.tool)
         (tool / 'bin').mkdir()

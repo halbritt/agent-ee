@@ -185,17 +185,29 @@ including entry deletion during the post-run walk; no completed receipt is writt
 Absolute symlinks and relative symlinks that escape above a mount root are recorded
 as `link:` targets in tree identity, without digesting their host targets. If the
 executable resolves through such a link, its digest is unknown and the receipt
-is unadoptable. An escaped declared `source` records link identity only, and
-`run_step` refuses it as `source_link_escape:<source>` before launch, between
-launches and after the run (AGENTEE-357), so no new receipt can carry a
-link-only source identity. Relative links that stay inside the mount retain
+is unadoptable. Standalone `observe_tool` records an escaped declared `source`
+as link identity only. `run_step` refuses it as `source_link_escape:<source>` before launch, between
+launches and after the run (AGENTEE-357). Both of its identity observations run
+in a strict mode in which the very resolution that would record the link-only
+identity raises the refusal instead, so a source that escapes only while an
+observation runs, and is restored before every recheck, is still refused. The
+receipt directory is removed in either window, nothing is adopted, and no new
+receipt can carry a link-only source identity. Relative links that stay inside the mount retain
 their ordinary executable digest. The executable and a nested source root are
 resolved one component at a time with `O_PATH | O_NOFOLLOW` opens relative to
 the held mount descriptor; a link is expanded only from the object just opened,
 and the bytes hashed are read from that resolved object. A component swapped
 for an absolute link after resolution therefore cannot make the coordinator
 digest a host file. The walk inside a mount or source tree identity still
-lists and digests by path below the held descriptor. This
+lists and digests by path below the held descriptor. Three bounds remain
+(AGENTEE-357 review residuals; behavior unchanged): historical receipts that
+already carry an escaped link-only source identity still validate and adopt
+under replay, because replay never re-resolves the source; the status-change
+comparison treats a baseline entry absent from the later live inventory as
+unchanged and cannot see a link planted and removed without a visible timestamp
+change (same tick); and the walks of mount
+and source tree identities below the held root descriptor still resolve entries
+by pathname, keeping the documented component-swap bound for those walks. This
 observation does not emulate cross-mount sandbox symlink resolution. Transient
 in-place edits of tool bytes between observations remain outside the guard. This
 guard requires Linux `/proc/self/mountinfo`, `/proc/self/fdinfo`, `O_PATH`, and bwrap support for
