@@ -538,3 +538,14 @@ keeps its defect verdict. Original fixtures retain explicit fixture-author gap
 requirements; qualified captured manufacturer requirements remain hard. The
 [placer reference](placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
 describes the source entry and its caller-qualification boundary.
+
+## Unsourced courtyard margins (2026-10-21, AGENTEE-358)
+
+Apply the AGENTEE-338 advisory rule to `min_courtyard_edge_mm`: a capacity proof
+depending on an unsourced margin reports unknown and names it. Retry without
+unsourced margin/gap limits to preserve independent structural defects. Authored
+fixture requirements receive explicit fixture-author provenance. Search keeps
+its reservations, and native saved-board checks retain their authority.
+The [policy audit](placer.md#unsourced-policy-limits-agentee-358) records the
+remaining numeric limits and their effects; gap-source authentication remains
+AGENTEE-348.

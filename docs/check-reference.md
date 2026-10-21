@@ -1876,3 +1876,11 @@ Proofs independent of that gap retain their verdicts; authored fixture requireme
 carry explicit fixture-author provenance. Qualified manufacturer gap requirements
 remain hard. There is no registered-check change; the existing packing policy's
 constraint provenance gains an optional value-bound `gap_nm` source entry.
+
+The [unsourced policy-limit rule](placer.md#unsourced-policy-limits-agentee-358)
+(AGENTEE-358) also makes an unsourced courtyard edge margin advisory for capacity
+proofs. A dependent proof reports unknown and names `min_courtyard_edge_mm`;
+a proof surviving without it retains its verdict. The audit table distinguishes
+search radii, captured keepout geometry and computational guards. The low-level
+packing provenance object accepts a value-bound `min_courtyard_edge_mm` source
+with `value_nm`, class, enforcement and citation; check registration is unchanged.
