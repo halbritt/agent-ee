@@ -2,8 +2,9 @@
 
 `agent_ee.blocks` derives placement blocks from the sealed schematic hierarchy
 and packs each block in isolation into a rigid block candidate. Stage B
-(AGENTEE-340) arranges candidates and packs the residual parts. The block
-library (AGENTEE-342) catalogues and imports cited candidates. This module
+(AGENTEE-340) arranges candidates and packs the residual parts. The
+[block library](block-library.md) (AGENTEE-342) catalogues and imports cited
+layouts and rebuilds them as candidates. This module
 writes no board. The complete board plan must still pass native save/reload,
 the [locality grade](placer.md#pad-level-electrical-locality-agentee-322) and the
 [native publication gate](placer.md#through-hole-reservations-and-native-publication-gate-agentee-318).
@@ -203,8 +204,9 @@ returns `{"status": "admitted" | "refused", "problems": [...]}`. Problem kinds:
 Identity matching and grading stay separate. `match` compares identity only,
 and the graders are the registered checks' own. A candidate from another board
 or policy is refused by `admit`. Reusing it there takes `match` with a mapping
-plus a re-grade on the target board, which is arrangement (AGENTEE-340) and
-library (AGENTEE-342) work.
+plus a re-grade on the target board. The
+[block library](block-library.md#materialization) does that for catalogued
+entries; arranging them is AGENTEE-340.
 
 **Frame.** The anchor's origin is `(0, 0)` and its rotation is 0. A member pose
 is its footprint origin and its rotation relative to the anchor, in integer
@@ -247,8 +249,9 @@ Layout provenance uses AGENTEE-331's class / citation / enforcement record:
 
 `pack_block` emits only `search-derived` candidates. Their poses are a proposal:
 arrangement may re-pack or replace them, and they never become a reference
-layout. A `hard` class means arrangement must keep the block rigid. Importing
-such a layout, and verifying its citation and source, is AGENTEE-342.
+layout. A `hard` class means arrangement must keep the block rigid. The
+[block library](block-library.md#import-paths) imports such layouts and binds
+their source hashes.
 `validate_candidate` only checks that the record is present and well formed; a
 `search-derived` record has no `source`. It does not verify the cited document.
 
