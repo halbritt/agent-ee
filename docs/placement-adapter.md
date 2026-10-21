@@ -197,12 +197,14 @@ allowed:
 - a footprint rotation delta of 0, 90, 180 or 270 degrees, modulo 360;
 - the same delta, modulo 360, added to the `at` angle of that footprint's `pad`,
   `property` and `fp_text` children. Their local x/y and every other token must
-  stay equal, except for the property font default below. KiCad 10.0.7 stores
+  stay equal, except for the property font default and permitted silk positions below. KiCad 10.0.7 stores
   those angles as footprint plus local angle, and
   the native tests check actual pcbnew output;
 - a reordering of a footprint's UUID-keyed children, which KiCad re-sorts
   graphics into on save;
 - a front/back side flip, as described in the next section;
+- position-only relocation of permitted visible silk fields, as described below
+  (AGENTEE-320);
 - a footprint-owned straight zone polygon moving rigidly with its owner, as
   described below (AGENTEE-178).
 
@@ -216,7 +218,8 @@ Every other change is refused with a specific violation:
 - a rotation delta that is not a quarter turn;
 - any `at` token change or side flip of a protected footprint;
 - a pad position, size, net, number or UUID change;
-- a field, model, schematic path or graphic change;
+- a field change beyond the permitted position-only silk relocation, or a
+  model, schematic path or graphic change;
 - a lock-state change;
 - an owned-zone edit beyond the exact owner transform, including a changed
   vertex, layer inventory, rule flag or other zone setting.
@@ -666,3 +669,16 @@ with the probe's `ValueError` when present, so native debug and SWIG shutdown
 messages do not obscure the refusal. The complete console remains in the probe's
 temporary executor work directory while that probe runs; its bounded diagnostic
 is included in the returned scope violation.
+
+## Post-placement silk field positions (AGENTEE-320)
+
+The write scope admits position-only relocation of Reference/Value fields on
+silkscreen, including fixed footprints' fields. Explicitly named custom fields
+use the [footprint declaration](silk-artwork.md). All other saved field tokens
+remain governed by the ordinary rigid transform; a relocation cannot hide a
+field, change its angle or side, shrink it or edit footprint graphics. The
+producer runs native baseline/candidate DRC before publication. Proofs with
+silk relocations use `agent-ee.placement-transforms/4` and list
+`silkscreen_relocations` by footprint and field UUID; other proofs retain `/3`,
+so historical transforms keep their identity. Write scope
+alone establishes permitted mutation, not readable artwork or a passing DRC.

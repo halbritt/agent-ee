@@ -98,16 +98,21 @@ proposals that introduce native DRC shorts, clearance, PTH courtyard findings
 or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
+The [artwork pass](docs/silk-artwork.md) relocates permitted silk fields and
+refuses proposals with added native silk overlap or copper conflicts, preserving
+graphics and required markings.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against cited limits. Captured pad UUIDs select
-multi-pad pins, and coordinator packing binds to the check's immutable locality
-file. Origin-group distance supplies no electrical acceptance.
+multi-pad pins. Explicit `buck-output-loop` declarations bind the supply source
+and switch target to the inductor, the return source and switch source to the
+IC, and return pads to a declared net distinct from supply. Coordinator packing
+binds to the check's immutable locality file. Origin-group distance supplies no electrical acceptance.
 [Incremental locality search](docs/placer.md#incremental-locality-search-and-diagnostics-agentee-332)
 caches selected pads and retains typed partial diagnostics on its optional search deadline.
 [Joint locality clusters](docs/placer.md#joint-locality-clusters-agentee-335)
-pack capacitors and switch peers together, tightest limit first, and name the
-blocking cluster when bounded search cannot finish.
+preserve per-part plans, then try capacitors and switch peers together with the
+remaining budget. Joint refusals retain named cluster diagnostics.
 
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.

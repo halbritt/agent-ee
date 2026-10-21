@@ -1,14 +1,62 @@
 """Original fixtures for joint pad-locality cluster packing (AGENTEE-335)."""
 import copy
-import time
+import random
 import unittest
 from unittest.mock import patch
 
 from agent_ee import electrical_locality
-from agent_ee.placer import pack, transform
+from agent_ee.placer import _pack, pack, transform
 from test_electrical_locality import board, declaration
 from test_placement import MM, part, rectangle
 from test_placer import request
+
+
+def clone(fp, ref):
+    copied = copy.deepcopy(fp)
+    copied['ref'] = copied['uuid'] = ref
+    for pad in copied['pads']:
+        pad['uuid'] = ref + '-' + pad['number']
+    return copied
+
+
+def random_cluster_case(rng):
+    """Original seeded geometry shared with the reviewer's random differential."""
+    source = board()
+    hub, capacitor = source['footprints']
+    count = rng.randint(2, 4)
+    footprints = [hub] + [clone(capacitor, f'C{i}') for i in range(1, count + 1)]
+    doc = {'schema': electrical_locality.SCHEMA, 'obligations': []}
+
+    def limit():
+        return rng.choice([int(rng.uniform(1.5, 8)*MM), 3*MM, 4*MM, 2*MM + 500000])
+
+    for i in range(1, count + 1):
+        obligation = declaration(cap=f'C{i}', limit=limit())['obligations'][0]
+        if rng.random() < 0.3:
+            obligation['return']['max_distance_nm'] = limit()
+        doc['obligations'].append(obligation)
+    if rng.random() < 0.35:
+        footprints.append(clone(capacitor, 'L1'))
+        switch = copy.deepcopy(doc['obligations'][0]['supply'])
+        switch['to']['reference'] = 'L1'
+        switch['max_distance_nm'] = limit()
+        doc['obligations'][0]['switch'] = switch
+    for i in range(rng.randint(0, 4)):
+        footprints.append(part(f'R{i}', 15, 15))
+    width, height = rng.choice([(20, 20), (12, 10), (10, 8), (14, 6), (9, 9)])
+    source['outline']['polygons'] = [rectangle(0, 0, width, height)]
+    fixed = ['U1'] if rng.random() < 0.7 else []
+    footprints[0] = transform(footprints[0],
+        [rng.randint(0, width-3)*MM, rng.randint(0, height-3)*MM], rng.choice([0, 90]))
+    source['footprints'] = footprints
+    obstacles = []
+    if rng.random() < 0.4:
+        x, y = rng.uniform(0, width-2), rng.uniform(0, height-2)
+        obstacles.append(dict(side='F', polygons=[rectangle(x, y, rng.uniform(1, 4), rng.uniform(1, 4))]))
+    priorities = rng.sample([fp['ref'] for fp in footprints[1:]], rng.randint(0, 2))
+    policy = request(electrical_locality=doc, fixed_refs=fixed, priority_refs=priorities,
+                     obstacles=obstacles, step_budget=rng.choice([200, 2000, 20000]))
+    return source, policy
 
 
 def cluster_board(limit=5*MM):
@@ -41,6 +89,11 @@ def three_cap_case():
     return source, policy
 
 
+def joint_pack(source, policy):
+    """Exercise the joint engine separately from the public legacy-first contract."""
+    return _pack(source, policy, heartbeat=None, joint=True)
+
+
 class ClusterTests(unittest.TestCase):
     def test_tightest_member_precedes_loose_priority_and_is_deterministic(self):
         source, doc = cluster_board()
@@ -48,10 +101,10 @@ class ClusterTests(unittest.TestCase):
             doc['obligations'][1][role]['max_distance_nm'] = 3*MM
         policy = request(electrical_locality=doc, priority_refs=['C1'])
         before = copy.deepcopy((source, policy))
-        plan = pack(source, policy)
+        plan = joint_pack(source, policy)
         self.assertEqual(plan['status'], 'planned', plan)
         self.assertEqual(plan['search']['locality_clusters'][0]['references'], ['C2', 'C1'])
-        self.assertEqual(plan, pack(source, policy))
+        self.assertEqual(plan, joint_pack(source, policy))
         self.assertEqual((source, policy), before)
         self.assertEqual(plan['locality_grading']['status'], 'pass')
 
@@ -62,16 +115,14 @@ class ClusterTests(unittest.TestCase):
         for index, limit in enumerate((4*MM, 3*MM)):
             for role in ('supply', 'return'):
                 doc['obligations'][index][role]['max_distance_nm'] = limit
-        plan = pack(source, request(electrical_locality=doc, priority_refs=['C1'], step_budget=50))
+        plan = joint_pack(source, request(electrical_locality=doc, priority_refs=['C1'], step_budget=50))
         self.assertEqual(plan['status'], 'planned', plan)
         self.assertLess(plan['steps_used'], 50)
         self.assertEqual(plan['locality_grading']['status'], 'pass')
 
-    def test_infeasible_fixed_cluster_is_named_unknown_within_seconds(self):
+    def test_finite_fixed_cluster_search_is_named_unknown_with_bounded_steps(self):
         source, doc = cluster_board(limit=0)
-        start = time.monotonic()
-        plan = pack(source, request(electrical_locality=doc, step_budget=1000000))
-        self.assertLess(time.monotonic()-start, 3)
+        plan = joint_pack(source, request(electrical_locality=doc, step_budget=1000000))
         self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
                          ('locality_cluster_exhausted', 'unknown', []))
         self.assertEqual(plan['search']['blocking_cluster']['obligations'], ['C1', 'C2'])
@@ -81,7 +132,7 @@ class ClusterTests(unittest.TestCase):
     def test_joint_search_revisits_a_nonlead_member_instead_of_exhausting(self):
         source, policy = three_cap_case()
         doc = policy['electrical_locality']
-        plan = pack(source, policy)
+        plan = joint_pack(source, policy)
         self.assertEqual(plan['status'], 'planned', plan)
         self.assertLess(plan['steps_used'], 20)
         self.assertEqual(plan['locality_grading']['status'], 'pass')
@@ -101,9 +152,7 @@ class ClusterTests(unittest.TestCase):
             one = {**source, 'footprints': source['footprints'][:1] + [source['footprints'][i]]}
             single = {**policy, 'electrical_locality': {**doc, 'obligations': [doc['obligations'][i-1]]}}
             self.assertEqual(pack(one, single)['status'], 'planned')
-        started = time.monotonic()
-        plan = pack(source, policy)
-        self.assertLess(time.monotonic()-started, 3)
+        plan = joint_pack(source, policy)
         self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
                          ('locality_cluster_exhausted', 'unknown', []))
         self.assertEqual(plan['search']['blocking_cluster']['obligations'], ['C1', 'C2'])
@@ -118,14 +167,14 @@ class ClusterTests(unittest.TestCase):
             pad['position_nm'] = [MM, MM]
         source['footprints'].append(blocker)
         policy.update(priority_refs=['X'], step_budget=10000)
-        plan = pack(source, policy)
+        plan = joint_pack(source, policy)
         self.assertEqual(plan['status'], 'planned', plan)
         self.assertEqual(plan['search']['backjumps'], 1)
         self.assertEqual(plan['search']['locality_clusters'][0]['references'], ['C1', 'C2', 'C3'])
         # Each attempt alone uses fewer than 40 candidates; their combined work
         # exceeds 40. Resetting the cluster guard on backjump would publish a plan.
         with patch('agent_ee.placer.CLUSTER_STEP_BUDGET', 40):
-            bounded = pack(source, policy)
+            bounded = joint_pack(source, policy)
         self.assertEqual((bounded['status'], bounded['outcome'], bounded['placements']),
                          ('locality_cluster_exhausted', 'unknown', []))
         self.assertEqual(bounded['search']['backjumps'], 1)
@@ -142,7 +191,7 @@ class ClusterTests(unittest.TestCase):
         switch = copy.deepcopy(doc['obligations'][0]['supply'])
         switch['to']['reference'] = 'L1'
         doc['obligations'][0]['switch'] = switch
-        plan = pack(source, request(fixed_refs=[], electrical_locality=doc))
+        plan = joint_pack(source, request(fixed_refs=[], electrical_locality=doc))
         self.assertEqual(plan['status'], 'planned', plan)
         unit, = plan['search']['locality_clusters']
         self.assertEqual(unit['references'], ['U1', 'C1', 'C2', 'L1'])
@@ -150,16 +199,499 @@ class ClusterTests(unittest.TestCase):
         self.assertIn('switch', {m['role'] for m in plan['locality_grading']['measured']})
 
     def test_cluster_guard_is_unknown_and_cleans_up_partial_state(self):
-        source, doc = cluster_board()
-        original = copy.deepcopy(source)
+        source, policy = three_cap_case()
+        policy['step_budget'] = 2000
+        original = copy.deepcopy((source, policy))
+        legacy = _pack(source, policy, heartbeat=None, joint=False)
         with patch('agent_ee.placer.CLUSTER_STEP_BUDGET', 1):
-            plan = pack(source, request(electrical_locality=doc))
+            plan = pack(source, policy)
+            guarded = joint_pack(source, policy)
         self.assertEqual((plan['status'], plan['outcome'], plan['placements']),
-                         ('locality_cluster_exhausted', 'unknown', []))
-        self.assertEqual(plan['search']['blocking_cluster']['obligations'], ['C1', 'C2'])
-        self.assertEqual(plan['search']['termination'], 'locality_cluster_exhausted')
-        self.assertEqual(source, original)
-        self.assertEqual(pack(source, request(electrical_locality=doc))['status'], 'planned')
+                         (legacy['status'], 'unknown', []))
+        attempt = plan['search']['joint_cluster_attempt']
+        self.assertEqual(attempt['status'], 'locality_cluster_exhausted')
+        self.assertEqual(attempt['blocking_cluster']['obligations'], ['C1', 'C2', 'C3'])
+        self.assertEqual(attempt['termination'], 'locality_cluster_exhausted')
+        self.assertEqual(guarded['placements'], [])
+        self.assertEqual((source, policy), original)
+        self.assertEqual(pack(source, policy)['status'], 'planned')
+
+    def test_joint_completion_uses_only_remaining_steps_and_regrades(self):
+        source, policy = three_cap_case()
+        policy['step_budget'] = 2000
+        legacy = _pack(source, policy, heartbeat=None, joint=False)
+        joint = joint_pack(source, policy)
+        with patch('agent_ee.placer.time.monotonic', side_effect=AssertionError('clock')):
+            result = pack(source, policy)
+        self.assertEqual(legacy['status'], 'packing_search_exhausted')
+        self.assertEqual(result['status'], 'planned')
+        self.assertEqual(result['steps_used'], legacy['steps_used'] + joint['steps_used'])
+        self.assertLessEqual(result['steps_used'], policy['step_budget'])
+        self.assertEqual(result['locality_grading']['status'], 'pass')
+        for budget in (500, legacy['steps_used'] + 1):
+            bounded_policy = {**policy, 'step_budget': budget}
+            bounded = pack(source, bounded_policy)
+            attempt = bounded['search']['joint_cluster_attempt']
+            self.assertEqual(bounded['placements'], [])
+            self.assertLessEqual(bounded['steps_used'] + attempt['steps_used'], budget)
+            self.assertEqual(attempt['status'], 'not_attempted' if budget == 500
+                             else 'packing_budget_exhausted')
+
+    def test_legacy_plan_does_not_attempt_joint_search_or_read_clock(self):
+        source, doc = cluster_board()
+        policy = request(electrical_locality=doc)
+        legacy = _pack(source, policy, heartbeat=None, joint=False)
+        with patch('agent_ee.placer._Search.place_cluster', side_effect=AssertionError('joint search')), \
+                patch('agent_ee.placer.time.monotonic', side_effect=AssertionError('clock')):
+            result = pack(source, policy)
+        self.assertEqual(result, legacy)
+        self.assertNotIn('joint_cluster_attempt', result['search'])
+
+    def test_joint_attempt_inherits_absolute_opt_in_deadline(self):
+        source, policy = three_cap_case()
+        policy.update(step_budget=2000, search_timeout_s=60)
+        from agent_ee import placer
+        original = placer._Search.__init__
+        searches = []
+
+        def remember(search, *args, **kwargs):
+            original(search, *args, **kwargs)
+            searches.append(search)
+
+        with patch.object(placer._Search, '__init__', remember):
+            result = pack(source, policy)
+        self.assertEqual(result['status'], 'planned')
+        self.assertEqual(len(searches), 2)
+        self.assertEqual(searches[1].deadline, searches[0].deadline)
+        self.assertLess(searches[1].budget, searches[0].budget)
+
+    def test_expired_opt_in_deadline_keeps_legacy_failure(self):
+        from agent_ee import placer
+        source, policy = three_cap_case()
+        policy.update(step_budget=2000, search_timeout_s=60)
+        original = placer._Search.__init__
+        attempts = []
+
+        def initialize(search, *args, **kwargs):
+            attempts.append(search)
+            original(search, *args, **kwargs)
+
+        with patch.object(placer._Search, '__init__', initialize), \
+                patch.object(placer.time, 'monotonic', side_effect=lambda: 100 if len(attempts) == 2 else 0):
+            result = pack(source, policy)
+        self.assertEqual((result['status'], result['outcome'], result['placements']),
+                         ('packing_search_exhausted', 'unknown', []))
+        diagnostic = result['search']['joint_cluster_attempt']
+        self.assertEqual(diagnostic['status'], 'packing_budget_exhausted')
+        self.assertEqual(diagnostic['steps_used'], 0)
+        self.assertEqual(attempts[1].deadline, 60)
+
+    def test_projection_pruning_bounds_joint_candidate_evaluations(self):
+        source, policy = three_cap_case()
+        with patch.object(electrical_locality.CandidateLocality, 'constraint',
+                          autospec=True, side_effect=electrical_locality.CandidateLocality.constraint) as evaluate:
+            result = joint_pack(source, policy)
+        self.assertEqual(result['status'], 'planned')
+        self.assertLessEqual(evaluate.call_count, 300)
+
+
+    def test_seeded_legacy_plans_preserve_verdict_placements_and_steps(self):
+        # Frozen per-part outputs from ee40bb3579bb00843c34ca9b5dfe60c4f4b8fb52; seeded original multi-member fixtures.
+        expected = {1: [{'outcome': 'unknown',
+              'placements': [],
+              'status': 'packing_budget_exhausted',
+              'steps_used': 200},
+             {'outcome': 'info',
+              'placements': [{'fixed': False,
+                              'position_nm': [2500000, 2500000],
+                              'ref': 'C1',
+                              'rotation_deg': 0,
+                              'uuid': 'C1'},
+                             {'fixed': False,
+                              'position_nm': [0, 2500000],
+                              'ref': 'C2',
+                              'rotation_deg': 0,
+                              'uuid': 'C2'},
+                             {'fixed': False,
+                              'position_nm': [0, 0],
+                              'ref': 'C3',
+                              'rotation_deg': 0,
+                              'uuid': 'C3'},
+                             {'fixed': False,
+                              'position_nm': [5000000, 2000000],
+                              'ref': 'C4',
+                              'rotation_deg': 90,
+                              'uuid': 'C4'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 2000000],
+                              'ref': 'U1',
+                              'rotation_deg': 90,
+                              'uuid': 'U1'}],
+              'status': 'planned',
+              'steps_used': 431},
+             {'outcome': 'info',
+              'placements': [{'fixed': False,
+                              'position_nm': [14000000, 12500000],
+                              'ref': 'C1',
+                              'rotation_deg': 180,
+                              'uuid': 'C1'},
+                             {'fixed': False,
+                              'position_nm': [11500000, 12000000],
+                              'ref': 'C2',
+                              'rotation_deg': 270,
+                              'uuid': 'C2'},
+                             {'fixed': False,
+                              'position_nm': [12000000, 15500000],
+                              'ref': 'C3',
+                              'rotation_deg': 0,
+                              'uuid': 'C3'},
+                             {'fixed': False,
+                              'position_nm': [0, 2500000],
+                              'ref': 'R0',
+                              'rotation_deg': 0,
+                              'uuid': 'R0'},
+                             {'fixed': False,
+                              'position_nm': [0, 0],
+                              'ref': 'R1',
+                              'rotation_deg': 0,
+                              'uuid': 'R1'},
+                             {'fixed': False,
+                              'position_nm': [0, 5000000],
+                              'ref': 'R2',
+                              'rotation_deg': 0,
+                              'uuid': 'R2'},
+                             {'fixed': False,
+                              'position_nm': [0, 7500000],
+                              'ref': 'R3',
+                              'rotation_deg': 0,
+                              'uuid': 'R3'},
+                             {'fixed': True,
+                              'position_nm': [12000000, 13000000],
+                              'ref': 'U1',
+                              'rotation_deg': 0,
+                              'uuid': 'U1'}],
+              'status': 'planned',
+              'steps_used': 19},
+             {'outcome': 'unknown',
+              'placements': [],
+              'status': 'packing_search_exhausted',
+              'steps_used': 502},
+             {'outcome': 'info',
+              'placements': [{'fixed': False,
+                              'position_nm': [9500000, 13000000],
+                              'ref': 'C1',
+                              'rotation_deg': 270,
+                              'uuid': 'C1'},
+                             {'fixed': False,
+                              'position_nm': [12000000, 13500000],
+                              'ref': 'C2',
+                              'rotation_deg': 180,
+                              'uuid': 'C2'},
+                             {'fixed': False,
+                              'position_nm': [12500000, 15000000],
+                              'ref': 'C3',
+                              'rotation_deg': 90,
+                              'uuid': 'C3'},
+                             {'fixed': False,
+                              'position_nm': [10000000, 16500000],
+                              'ref': 'C4',
+                              'rotation_deg': 0,
+                              'uuid': 'C4'},
+                             {'fixed': False,
+                              'position_nm': [0, 0],
+                              'ref': 'R0',
+                              'rotation_deg': 0,
+                              'uuid': 'R0'},
+                             {'fixed': False,
+                              'position_nm': [0, 2500000],
+                              'ref': 'R1',
+                              'rotation_deg': 0,
+                              'uuid': 'R1'},
+                             {'fixed': True,
+                              'position_nm': [10000000, 14000000],
+                              'ref': 'U1',
+                              'rotation_deg': 0,
+                              'uuid': 'U1'}],
+              'status': 'planned',
+              'steps_used': 18},
+             {'outcome': 'unknown',
+              'placements': [],
+              'status': 'packing_search_exhausted',
+              'steps_used': 735},
+             {'outcome': 'unknown',
+              'placements': [],
+              'status': 'packing_search_exhausted',
+              'steps_used': 1761},
+             {'outcome': 'info',
+              'placements': [{'fixed': False,
+                              'position_nm': [0, 2500000],
+                              'ref': 'C1',
+                              'rotation_deg': 0,
+                              'uuid': 'C1'},
+                             {'fixed': False,
+                              'position_nm': [0, 5000000],
+                              'ref': 'C2',
+                              'rotation_deg': 0,
+                              'uuid': 'C2'},
+                             {'fixed': False,
+                              'position_nm': [0, 7500000],
+                              'ref': 'C3',
+                              'rotation_deg': 0,
+                              'uuid': 'C3'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 2500000],
+                              'ref': 'C4',
+                              'rotation_deg': 0,
+                              'uuid': 'C4'},
+                             {'fixed': False,
+                              'position_nm': [5000000, 6500000],
+                              'ref': 'L1',
+                              'rotation_deg': 90,
+                              'uuid': 'L1'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 0],
+                              'ref': 'R0',
+                              'rotation_deg': 0,
+                              'uuid': 'R0'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 8000000],
+                              'ref': 'R1',
+                              'rotation_deg': 0,
+                              'uuid': 'R1'},
+                             {'fixed': False,
+                              'position_nm': [5000000, 0],
+                              'ref': 'R2',
+                              'rotation_deg': 0,
+                              'uuid': 'R2'},
+                             {'fixed': False,
+                              'position_nm': [0, 0],
+                              'ref': 'R3',
+                              'rotation_deg': 0,
+                              'uuid': 'R3'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 5500000],
+                              'ref': 'U1',
+                              'rotation_deg': 0,
+                              'uuid': 'U1'}],
+              'status': 'planned',
+              'steps_used': 894}],
+         2: [{'outcome': 'info',
+              'placements': [{'fixed': False,
+                              'position_nm': [10500000, 0],
+                              'ref': 'C1',
+                              'rotation_deg': 270,
+                              'uuid': 'C1'},
+                             {'fixed': False,
+                              'position_nm': [11000000, 2500000],
+                              'ref': 'C2',
+                              'rotation_deg': 0,
+                              'uuid': 'C2'},
+                             {'fixed': False,
+                              'position_nm': [0, 0],
+                              'ref': 'R0',
+                              'rotation_deg': 0,
+                              'uuid': 'R0'},
+                             {'fixed': True,
+                              'position_nm': [11000000, 2000000],
+                              'ref': 'U1',
+                              'rotation_deg': 90,
+                              'uuid': 'U1'}],
+              'status': 'planned',
+              'steps_used': 12},
+             {'outcome': 'info',
+              'placements': [{'fixed': False,
+                              'position_nm': [0, 2500000],
+                              'ref': 'C1',
+                              'rotation_deg': 0,
+                              'uuid': 'C1'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 3000000],
+                              'ref': 'C2',
+                              'rotation_deg': 0,
+                              'uuid': 'C2'},
+                             {'fixed': False,
+                              'position_nm': [0, 0],
+                              'ref': 'C3',
+                              'rotation_deg': 0,
+                              'uuid': 'C3'},
+                             {'fixed': False,
+                              'position_nm': [0, 5000000],
+                              'ref': 'R0',
+                              'rotation_deg': 0,
+                              'uuid': 'R0'},
+                             {'fixed': False,
+                              'position_nm': [0, 7500000],
+                              'ref': 'R1',
+                              'rotation_deg': 0,
+                              'uuid': 'R1'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 5500000],
+                              'ref': 'R2',
+                              'rotation_deg': 0,
+                              'uuid': 'R2'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 8000000],
+                              'ref': 'R3',
+                              'rotation_deg': 0,
+                              'uuid': 'R3'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 2500000],
+                              'ref': 'U1',
+                              'rotation_deg': 90,
+                              'uuid': 'U1'}],
+              'status': 'planned',
+              'steps_used': 474},
+             {'outcome': 'info',
+              'placements': [{'fixed': False,
+                              'position_nm': [0, 2500000],
+                              'ref': 'C1',
+                              'rotation_deg': 0,
+                              'uuid': 'C1'},
+                             {'fixed': False,
+                              'position_nm': [1500000, 5000000],
+                              'ref': 'C2',
+                              'rotation_deg': 0,
+                              'uuid': 'C2'},
+                             {'fixed': False,
+                              'position_nm': [0, 0],
+                              'ref': 'R0',
+                              'rotation_deg': 0,
+                              'uuid': 'R0'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 0],
+                              'ref': 'R1',
+                              'rotation_deg': 0,
+                              'uuid': 'R1'},
+                             {'fixed': False,
+                              'position_nm': [4000000, 5000000],
+                              'ref': 'R2',
+                              'rotation_deg': 0,
+                              'uuid': 'R2'},
+                             {'fixed': False,
+                              'position_nm': [5000000, 0],
+                              'ref': 'R3',
+                              'rotation_deg': 0,
+                              'uuid': 'R3'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 4500000],
+                              'ref': 'U1',
+                              'rotation_deg': 90,
+                              'uuid': 'U1'}],
+              'status': 'planned',
+              'steps_used': 221},
+             {'outcome': 'unknown', 'placements': [], 'status': 'fixed_conflict', 'steps_used': 0},
+             {'outcome': 'unknown',
+              'placements': [],
+              'status': 'packing_budget_exhausted',
+              'steps_used': 200},
+             {'outcome': 'unknown', 'placements': [], 'status': 'fixed_conflict', 'steps_used': 0},
+             {'outcome': 'info',
+              'placements': [{'fixed': False,
+                              'position_nm': [3500000, 0],
+                              'ref': 'C1',
+                              'rotation_deg': 270,
+                              'uuid': 'C1'},
+                             {'fixed': False,
+                              'position_nm': [6500000, 2000000],
+                              'ref': 'C2',
+                              'rotation_deg': 90,
+                              'uuid': 'C2'},
+                             {'fixed': False,
+                              'position_nm': [0, 2500000],
+                              'ref': 'R0',
+                              'rotation_deg': 0,
+                              'uuid': 'R0'},
+                             {'fixed': False,
+                              'position_nm': [2500000, 2500000],
+                              'ref': 'R1',
+                              'rotation_deg': 0,
+                              'uuid': 'R1'},
+                             {'fixed': False,
+                              'position_nm': [3983496, 5000000],
+                              'ref': 'R2',
+                              'rotation_deg': 0,
+                              'uuid': 'R2'},
+                             {'fixed': False,
+                              'position_nm': [3983496, 7500000],
+                              'ref': 'R3',
+                              'rotation_deg': 0,
+                              'uuid': 'R3'},
+                             {'fixed': True,
+                              'position_nm': [4000000, 0],
+                              'ref': 'U1',
+                              'rotation_deg': 0,
+                              'uuid': 'U1'}],
+              'status': 'planned',
+              'steps_used': 13},
+             {'outcome': 'info',
+              'placements': [{'fixed': False,
+                              'position_nm': [2500000, 0],
+                              'ref': 'C1',
+                              'rotation_deg': 270,
+                              'uuid': 'C1'},
+                             {'fixed': False,
+                              'position_nm': [5500000, 2000000],
+                              'ref': 'C2',
+                              'rotation_deg': 90,
+                              'uuid': 'C2'},
+                             {'fixed': False,
+                              'position_nm': [3000000, 2500000],
+                              'ref': 'L1',
+                              'rotation_deg': 0,
+                              'uuid': 'L1'},
+                             {'fixed': False,
+                              'position_nm': [0, 2500000],
+                              'ref': 'R0',
+                              'rotation_deg': 0,
+                              'uuid': 'R0'},
+                             {'fixed': False,
+                              'position_nm': [0, 5000000],
+                              'ref': 'R1',
+                              'rotation_deg': 0,
+                              'uuid': 'R1'},
+                             {'fixed': False,
+                              'position_nm': [0, 7500000],
+                              'ref': 'R2',
+                              'rotation_deg': 0,
+                              'uuid': 'R2'},
+                             {'fixed': False,
+                              'position_nm': [0, 10000000],
+                              'ref': 'R3',
+                              'rotation_deg': 0,
+                              'uuid': 'R3'},
+                             {'fixed': True,
+                              'position_nm': [3000000, 0],
+                              'ref': 'U1',
+                              'rotation_deg': 0,
+                              'uuid': 'U1'}],
+              'status': 'planned',
+              'steps_used': 16}]}
+        movable_cases = planned = 0
+        for seed, rows in expected.items():
+            rng = random.Random(seed)
+            for i, legacy in enumerate(rows):
+                source, policy = random_cluster_case(rng)
+                movable_cases += not policy['fixed_refs']
+                original = copy.deepcopy((source, policy))
+                with self.subTest(seed=seed, case=i, fixed=policy['fixed_refs']):
+                    result = pack(source, policy)
+                    self.assertEqual((source, policy), original)
+                    if legacy['status'] == 'planned':
+                        planned += 1
+                        for key in ('status', 'outcome', 'steps_used', 'placements'):
+                            self.assertEqual(result[key], legacy[key], key)
+                    if result['status'] == 'planned':
+                        self.assertEqual(result['locality_grading']['status'], 'pass')
+                        poses = {p['ref']: p for p in result['placements']}
+                        transformed = {**source, 'footprints': [transform(fp,
+                            poses[fp['ref']]['position_nm'], poses[fp['ref']]['rotation_deg'])
+                            for fp in source['footprints']]}
+                        self.assertEqual(electrical_locality.grade(
+                            transformed, policy['electrical_locality'])['status'], 'pass')
+                    else:
+                        self.assertEqual(result['placements'], [])
+        self.assertGreater(movable_cases, 0)
+        self.assertGreater(planned, 0)
 
 
 if __name__ == '__main__':

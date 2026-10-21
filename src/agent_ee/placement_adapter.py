@@ -68,7 +68,8 @@ TRANSFORMS = ('translations, quarter-turn rotations (0, 90, 180 or 270 degrees) 
               'flips as pcbnew saves them (native-qualified custom-pad footprints including arcs, or '
               'stock footprints without arcs; chamfered, trapezoid and offset-drill pads and '
               'vertically justified text remain unsupported); owned straight zone polygons follow '
-              'the owner rigidly, with every other zone setting preserved')
+              'the owner rigidly, with every other zone setting preserved; permitted visible silk fields may '
+              'change position only, preserving all other marking properties')
 HALF_TURN = 180 * 10 ** MAX_PLACES
 # Side flips, qualified against KiCad 10.0.7 FOOTPRINT::Flip in both directions from every
 # quarter turn: footprint-local points are saved mirrored in y, front/back layers swap, the
@@ -593,6 +594,24 @@ def _child_follows(before, after, rotation):
             _turn(a_at[2] - b_at[2] - rotation) == 0)
 
 
+def _silk_field_follows(before, after, rotation, names):
+    """Position-only silk relocation; retain every other saved field token."""
+    if (before[0] != 'property' or len(before) < 3 or before[1] not in names or
+            before[:3] != after[:3] or
+            children(before, 'layer') not in ([['layer', 'F.SilkS']], [['layer', 'B.SilkS']])):
+        return False
+    if any(n[1:] in ([], ['yes']) for n in children(before, 'hide') +
+           [n for e in children(before, 'effects') for n in children(e, 'hide')]):
+        return False
+    b_at, a_at = _at(before), _at(after)
+    if b_at is None or a_at is None:
+        return False
+    # Reuse the ordinary rigid-field validator with only the position restored.
+    adjusted = [(['at', *children(before, 'at')[0][1:3], *c[3:]]
+                 if isinstance(c, list) and c[:1] == ['at'] else c) for c in after]
+    return _child_follows(before, adjusted, rotation)
+
+
 def _field_follows(before, after):
     """A reused group member's Reference or Value field may take the sub-board's position, angle,
     layer and visibility; the fresh pcbnew read then requires exactly the planned values."""
@@ -773,7 +792,7 @@ def _zone_follows(before, after, b_at, a_at, flipped, layer_flips):
     return polygons > 0
 
 
-def _footprint(key, before, after, protected, violations, fields=False, zone_layer_flips=None, native_flips=None):
+def _footprint(key, before, after, protected, violations, fields=False, zone_layer_flips=None, native_flips=None, silk_moves=None):
     label = f'footprint {key} ({_reference(before) or "no reference"})'
     count = len(violations)
     if [t for t in before[1:] if isinstance(t, str)] != [t for t in after[1:] if isinstance(t, str)]:
@@ -815,6 +834,15 @@ def _footprint(key, before, after, protected, violations, fields=False, zone_lay
         keyed.append(items)
     for item in sorted(keyed[0].keys() ^ keyed[1].keys()):
         violations.append(f'{label}: {"removed" if item in keyed[0] else "added"} {item[0]} {item[1]}')
+    from .silk_artwork import DECLARATION, movable_names
+    declarations = [p[2] for p in children(before, 'property') if len(p) >= 3 and p[1] == DECLARATION]
+    try:
+        silk_names = movable_names(declarations[0] if len(declarations) == 1 else None)
+        if len(declarations) > 1:
+            raise ValueError('duplicate movable silkscreen declaration')
+    except ValueError as exc:
+        violations.append(f'{label}: {exc}')
+        silk_names = frozenset()
     for item in sorted(keyed[0].keys() & keyed[1].keys()):
         b_child, a_child = keyed[0][item], keyed[1][item]
         if flipped and (native_flips or {}).get(item) == a_child:
@@ -822,6 +850,10 @@ def _footprint(key, before, after, protected, violations, fields=False, zone_lay
         if fields and _field_follows(b_child, a_child):
             continue
         try:
+            if silk_moves is not None and not flipped and _silk_field_follows(b_child, a_child, rotation, silk_names):
+                if _at(b_child)[:2] != _at(a_child)[:2] and silk_moves is not None:
+                    silk_moves.append({'footprint': key, 'field': item[1], 'name': b_child[1]})
+                continue
             if b_child[0] == 'zone':
                 if _zone_follows(b_child, a_child, b_at, a_at, flipped, zone_layer_flips or FLIP_LAYERS):
                     continue
@@ -915,7 +947,7 @@ def _native_custom_flips(before, after, selected):
 
 
 def write_scope(before, after, protected=(), groups=None):
-    """Compare complete saved boards; only movable footprint transforms are allowed.
+    """Compare saved boards for rigid footprint transforms and permitted silk field positions.
 
     `groups` are admissible sub-layout plans (AGENTEE-129). A board-level node is then also
     allowed when it is new and carries the UUID and kind of one planned copy or group node;
@@ -933,6 +965,7 @@ def write_scope(before, after, protected=(), groups=None):
               'after_sha256': hashlib.sha256(after).hexdigest(), 'protected': protected,
               'transforms': [], 'violations': []}
     violations = report['violations']
+    silk_moves = []
     try:
         roots = _board(before), _board(after)
         prints = footprints(roots[0]), footprints(roots[1])
@@ -975,11 +1008,15 @@ def write_scope(before, after, protected=(), groups=None):
             except (ValueError, OSError) as exc:
                 violations.append(f'native custom-pad side flip: {exc}')
         zone_layer_flips = _zone_layer_flips(roots[0])
+        # A silk relocation cannot absorb edits beside unadmitted board copper.
+        admitted_silk_moves = silk_moves if not violations else None
         for key in sorted(prints[0].keys() & prints[1].keys()):
             moved = _footprint(key, prints[0][key], prints[1][key], protected, violations, key in members,
-                               zone_layer_flips, native_flips.get(key))
+                               zone_layer_flips, native_flips.get(key), admitted_silk_moves)
             if moved:
                 report['transforms'].append(moved)
+    if silk_moves:
+        report.update(family='agent-ee.placement-transforms/4', silkscreen_relocations=silk_moves)
     if groups is not None:
         report['reused_groups'] = sorted(present)
     report['status'] = 'refused' if violations else 'allowed'

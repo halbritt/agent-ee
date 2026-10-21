@@ -18,7 +18,8 @@ def validate(document):
         raise ValueError(f'expected {SCHEMA} with nonempty obligations')
     ids = set()
     for obligation in document['obligations']:
-        if (not isinstance(obligation, dict) or set(obligation) - {'id', 'metric', 'supply', 'return', 'switch'}
+        if (not isinstance(obligation, dict) or set(obligation) - {
+                'id', 'metric', 'supply', 'return', 'switch', 'kind', 'ic', 'inductor', 'return_net'}
                 or not {'id', 'metric', 'supply', 'return'} <= obligation.keys()):
             raise ValueError('locality obligation needs id, metric, supply and return; optional switch')
         oid = obligation['id']
@@ -46,11 +47,31 @@ def validate(document):
             if 'citation' in pair and (not isinstance(pair['citation'], str) or not pair['citation'].strip()):
                 raise ValueError('locality citation must be nonempty text')
         supply, ground = obligation['supply'], obligation['return']
-        if any(supply[k]['reference'] != ground[k]['reference'] for k in ('from', 'to')):
-            raise ValueError('supply and return must name the same IC and capacitor references')
-        if any(supply[k]['pad'] == ground[k]['pad'] for k in ('from', 'to')):
+        if supply['to']['reference'] != ground['to']['reference']:
+            raise ValueError('supply and return must name the same capacitor reference')
+        if any(supply[k]['reference'] == ground[k]['reference']
+               and supply[k]['pad'] == ground[k]['pad'] for k in ('from', 'to')):
             raise ValueError('supply and return must select distinct physical pads')
-        if 'switch' in obligation and obligation['switch']['from']['reference'] != supply['from']['reference']:
+        loop_fields = {'kind', 'ic', 'inductor', 'return_net'}
+        if loop_fields & obligation.keys():
+            if (not loop_fields <= obligation.keys() or obligation['kind'] != 'buck-output-loop'
+                    or any(not isinstance(obligation[k], str) or not obligation[k].strip()
+                           for k in ('ic', 'inductor', 'return_net'))):
+                raise ValueError('buck-output-loop needs explicit kind, ic, inductor and return_net')
+            if obligation['ic'] == obligation['inductor']:
+                raise ValueError('loop IC and inductor must be distinct footprints')
+            if supply['from']['reference'] != obligation['inductor']:
+                raise ValueError('loop supply must start at the declared inductor')
+            if ground['from']['reference'] != obligation['ic']:
+                raise ValueError('loop return must start at the declared IC')
+            if any(ground[k]['net'] != obligation['return_net'] for k in ('from', 'to')):
+                raise ValueError('loop return must use the declared return_net')
+            if any(supply[k]['net'] == obligation['return_net'] for k in ('from', 'to')):
+                raise ValueError('loop supply and return nets must differ')
+            if ('switch' in obligation
+                    and obligation['switch']['to']['reference'] != obligation['inductor']):
+                raise ValueError('loop switch must end at the declared inductor')
+        if 'switch' in obligation and obligation['switch']['from']['reference'] != ground['from']['reference']:
             raise ValueError('switch pair must start at the declared IC')
     return document
 
