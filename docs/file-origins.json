@@ -2512,7 +2512,7 @@
       "origins": [
         "AE"
       ],
-      "reviewed": "Original regression test that fails the strict suite when any tracked file carries git merge-conflict markers; no fixtures, no KiCad text."
+      "reviewed": "Original regression test that fails the strict suite when any tracked file carries git merge-conflict markers or is a merge leftover (.orig, .rej, mergetool BASE/LOCAL/REMOTE/BACKUP copies); its refusal tests build original temporary trees, no fixtures, no KiCad text."
     },
     {
       "paths": [

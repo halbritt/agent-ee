@@ -434,6 +434,9 @@ image with `AGENT_EE_FOME_MC_CHECKOUT` unset:
   because the build context excludes it. Without `.git` it now scans every file
   of the copied tree; a checkout whose Git fails still fails. The host-side
   `check_conflict_markers.sh` step still checks the Git tree.
+  The module also refuses merge leftovers by file name (`.orig`, `.rej`, and
+  git mergetool's `BASE`, `LOCAL`, `REMOTE` and `BACKUP` copies) after a
+  composition merge committed stray `.orig` files (AGENTEE-377).
 
 The serial suite also took 53 of the job's 60 minutes. The runner now runs
 modules in parallel, each in its own process and temporary directory, and the
