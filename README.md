@@ -759,8 +759,12 @@ and mounting holes written by the scaffold are fixed references, and their
 exact courtyards are obstacles (AGENTEE-179). Circular probe courtyards are
 bounded exactly within a declared 5 um tolerance. A fixed courtyard may leave the
 outline only across envelope-declared edges and distances. Declared group
-regions and anchor distances are enforced and graded by `placement-groups/1`, and
-parts without courtyards are refused by name
+regions and anchor distances are enforced and graded by `placement-groups/1`.
+[Unsourced obstacle, region and saved-board limits](docs/placer.md#obstacle-and-group-sources-agentee-361)
+never establish a defect: capacity proofs that need them are unknown, and
+saved-board edge and group checks report them as `info` advisories. Authored
+fixtures and captured geometry retain their sourced verdicts.
+Parts without courtyards are refused by name
 ([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). Every placer
 result past the fixed reservations records the board's capacity at the packing
 gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound

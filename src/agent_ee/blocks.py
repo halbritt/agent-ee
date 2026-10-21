@@ -741,6 +741,9 @@ def _block_policy(sub, refs, anchor):
 
 
 def _grade_usable(kind, record):
+    if kind == 'groups':
+        # Satisfied unsourced limits grade pass; a stored info group grade is never usable.
+        return record.get('status') == 'pass' and not placement_groups.violations(record)
     return record.get('status') in (('pass', 'info') if kind == 'electrical_locality' else ('pass',))
 
 

@@ -428,14 +428,55 @@ The policy/capacity audit found these numeric constraints:
 | --- | --- | --- |
 | `min_courtyard_edge_mm` | Unknown/soft without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board proofs are unknown. |
 | `gap_nm` (including pod 0.25 mm) | Unknown/advisory without source; fixture-author or manufacturer/hard with caller-qualified source | Advisory-dependent board and region proofs are unknown (AGENTEE-338). |
-| Native rule areas and footprint keepouts | Captured geometry, unknown provenance; no numeric padding is added | Structural polygon exclusion; no invented keepout-padding limit exists. |
-| `groups[].max_distance_nm` | Explicit caller declaration, provenance unknown; no default radius | Search predicate and saved-board group grade; unused by all capacity proofs. An unplaceable group is search exhaustion/unknown. The independent group criterion retains its existing verdicts. |
-| Group region polygons, outline, fixed geometry and declared obstacles | Captured/declared geometry; envelope outline/fixed classes retained, otherwise unknown legacy geometry | Structural capacity bounds remain as before; this change adds no geometry provenance mechanism. |
+| Native rule areas and footprint keepouts | Captured board geometry, board/hard; no numeric padding is added | Structural polygon exclusion. |
+| `groups[].max_distance_nm` | Unknown/soft unless its group declares a sourced hard value | Search predicate; saved-board violations without a source are unknown. Unused by capacity proofs. |
+| Group region polygons and policy obstacles | Unknown/soft without a source; sourced geometry is hard | Advisory-dependent proofs are unknown and name the geometry in binding constraints (AGENTEE-361). |
+| Outline and fixed geometry | Envelope classes retained, otherwise unknown legacy hard geometry | Existing structural capacity verdicts remain. |
 | Step budget, search timeout and geometry work guards | Computational bounds, no engineering authority | Exhaustion/refusal is unknown, never a capacity defect. |
 
 The placer has no other numeric edge-margin, reserved-gap, keepout-padding or
 group-radius default that can establish a capacity defect. Electrical locality
 uses its existing per-pair sourced/advisory contract, separately from capacity.
+
+### Obstacle and group sources (AGENTEE-361)
+
+Each policy obstacle may declare `provenance: {class, enforcement, citation}`.
+The accepted geometry classes are `fixture_author`, `board`, `datasheet` and
+`manufacturer`; enforcement must be `hard` and the citation nonempty. Without
+that record an obstacle is `unknown`/`soft`. Native captured rule areas and
+footprint keepouts remain `board`/`hard` exclusions.
+
+Each group may declare `constraint_provenance` keyed by `region` and/or
+`max_distance_nm`, only for constraints that group actually has. A region uses
+the geometry source record above; a distance uses the existing numeric record
+(`fixture_author` or `manufacturer`, `hard`, nonempty `citation`, integer
+`value_nm` equal to `max_distance_nm`). For example:
+
+```json
+{"id": "filter", "references": ["C1"],
+ "anchor": {"reference": "U1"}, "max_distance_nm": 1000000,
+ "constraint_provenance": {"max_distance_nm": {
+   "class": "fixture_author", "enforcement": "hard", "value_nm": 1000000,
+   "citation": "Original fixture: C1 origin within 1 mm of U1"}}}
+```
+
+A region capacity proof records every participating region, including nested
+regions, as `group <id> region` in `binding_constraints`. Policy obstacles keep
+their original `obstacle <index>` names. A proof that needs an unsourced region
+or obstacle reports `packing_infeasible`/`unknown`, empty placements and
+`owner_confirmation` naming it. Proofs retry without advisory geometry, then
+without unsourced numeric limits; an independent sourced region or board
+capacity defect takes precedence over an advisory proof. The capacity diagnostic
+retains the original requested geometry and limits.
+
+Search still reserves the declared geometry and group radii; search failure
+remains unknown. Saved-board grading reports unsourced region and radius
+limits as `unsourced_limit` advisories with the original `advisory_kind`,
+measured values, source class and `exceeded`. The status is `info` when only
+exceeded advisories remain; satisfied ones keep `pass`. Sourced defects survive alongside them. Because search enforces the
+groups, a plan or saved board is accepted only when no advisory is exceeded
+(`placement_groups.satisfied`). These source records follow the existing caller qualification contract;
+authenticating declared citations remains AGENTEE-348.
 
 ### Board capacity (AGENTEE-249)
 
@@ -531,8 +572,9 @@ of them is soft (an assumed or owner-weakened limit), the proof stays in the
 record, but the outcome is `unknown` instead of `defect`. The result then has
 `owner_confirmation` (the soft constraints), and the reason names them. A proof
 bound only by hard or undeclared limits keeps `defect`, except that an unsourced
-gap is advisory under AGENTEE-338 and an unsourced margin is soft under
-AGENTEE-358. A zero-gap proof does not bind that gap; a zero-margin proof does
+gap is advisory under AGENTEE-338, an unsourced margin is soft under
+AGENTEE-358, and unsourced policy obstacles and group regions are soft under
+AGENTEE-361. A zero-gap proof does not bind that gap; a zero-margin proof does
 not bind the margin. Owned tests are in
 `tests/test_constraint_provenance.py`.
 
