@@ -71,6 +71,7 @@ requirements, checks and models.
    cannot stand in for missing acceptance coverage.
 2. **Capture one design candidate.** Inputs are copied and hashed. Every check
    and review refers to those exact bytes, including selected uncommitted files.
+   Coordinator reviews and placed proposals include [hashed inspection images](docs/pcb-renders.md#candidate-inspection-images-agentee-382) for visual review.
 3. **Produce tool evidence.** KiCad, ngspice and configured measurement tools
    generate retained reports, traces and metrics. A failed tool invocation is
    recorded as missing coverage, never as a passing design.
@@ -101,6 +102,9 @@ proposals that introduce native DRC shorts, clearance, PTH courtyard findings
 or inter-footprint solder-mask bridges. Collision comparisons include saved
 geometry and footprint transforms (AGENTEE-325). Shared native item identities
 across footprints and custom rules with ignored severity refuse publication.
+Candidates are gated on [copper extent](docs/placer.md#copper-extent-gate-agentee-366)
+as well as courtyard, so pad copper past a courtyard cannot be planned off the
+board or into a same-side footprint keep-out.
 
 Saved proposals report [advisory reserve costs](docs/placer.md#advisory-reserve-cost-agentee-380)
 per side and owner, including keepouts and courtyard excess over fabrication

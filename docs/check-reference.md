@@ -1785,6 +1785,14 @@ requires exact saved primitives, arc nodes and native merged-copper evidence;
 mutation or missing native output refuses admission. This changes transform
 admission only; check registration and placement grading remain unchanged.
 
+AGENTEE-366 gates [placer candidates on copper extent](placer.md#copper-extent-gate-agentee-366)
+as well as courtyard: pad copper beyond a part's courtyards must stay in the
+outline and out of same-side footprint keep-outs during packing, block
+arrangement and targeted plans. That copper is also held a structural setback
+of the board `m_MaxError` plus 50 nm inside the outline, so it composes with the
+AGENTEE-331 publication gate. The setback is typed unknown when the facts lack
+`max_error_nm`, for in-courtyard copper as well. With the fact present, parts whose copper lies in their courtyards plan as before. This adds no registered check or acceptance predicate.
+
 ## Copper feature consumers (AGENTEE-315)
 
 AGENTEE-315 cross-checks `fab_export` and `fab_package` copper declarations
@@ -2216,3 +2224,13 @@ sourced geometry remains unknown. Uncited declarations are reported advisories
 and never gate. The saved-board placement judge retains transformed lane
 measurements and the shared fixed-overhang edge-sweep geometry for review.
 This adds no check kind or independent acceptance authority.
+
+## Candidate inspection images (AGENTEE-382)
+
+[Candidate imaging](pcb-renders.md#candidate-inspection-images-agentee-382) runs
+after saved placement and during coordinator capture. It is not a registered
+acceptance check. Review packets carry board-bound top/bottom PNG and copper,
+silk and courtyard SVG paths and hashes, including every enabled inner layer.
+Skipped or failed imaging remains explicit missing coverage and leaves every
+existing check verdict unchanged. No image can establish geometric fit or waive
+a native defect.

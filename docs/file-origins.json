@@ -425,6 +425,17 @@
     },
     {
       "paths": [
+        "src/agent_ee/candidate_visuals.py",
+        "tests/test_candidate_visuals.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-382 candidate imaging orchestration and tests. Native fixtures derive only from the existing owned RC control and NativePlacerTest fixtures. No third-party design, model, library or vendor document bytes are added."
+    },
+    {
+      "paths": [
         "tests/test_placement_defects.py"
       ],
       "kind": "owned-source",

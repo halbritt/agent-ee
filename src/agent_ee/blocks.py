@@ -447,13 +447,17 @@ def anchor_of(block, board):
 def _isolated(capture, board, members, areas, box):
     """The isolated capture: the members on the rectangle ``box`` = [x0, y0, x1, y1] (board nm)."""
     x0, y0, x1, y1 = box
-    return {'schema': capture['schema'], 'board_sha256': capture['board_sha256'],
-            'pcbnew_version': capture.get('pcbnew_version'),
-            'outline': {'status': 'proven', 'polygons': [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]},
-            # Access is relative to the final board edge, never to this artificial block box.
-            # Stage B reuses the declaration from the hash-bound original board.
-            'footprints': [{k: copy.deepcopy(v) for k, v in board[r].items() if k != 'access_direction'}
-                           for r in members], 'rule_areas': copy.deepcopy(areas)}
+    isolated = {'schema': capture['schema'], 'board_sha256': capture['board_sha256'],
+                'pcbnew_version': capture.get('pcbnew_version'),
+                'outline': {'status': 'proven', 'polygons': [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]},
+                # Access is relative to the final board edge, never to this artificial block box.
+                # Stage B reuses the declaration from the hash-bound original board.
+                'footprints': [{k: copy.deepcopy(v) for k, v in board[r].items() if k != 'access_direction'}
+                               for r in members], 'rule_areas': copy.deepcopy(areas)}
+    # The board's own m_MaxError fixes the copper setback (AGENTEE-366e); absent stays absent (typed unknown).
+    if 'max_error_nm' in capture:
+        isolated['max_error_nm'] = capture['max_error_nm']
+    return isolated
 
 
 def _box_area(outline):
