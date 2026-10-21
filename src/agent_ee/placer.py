@@ -179,6 +179,8 @@ def _validate_policy(policy, refs):
         raise ValueError('search_timeout_s must be positive and at most 86400 seconds')
     if type(policy.get('capacity_proof', False)) is not bool:
         raise ValueError('capacity_proof must be a boolean')
+    if type(policy.get('carry_seed_fixed_pairs', False)) is not bool:
+        raise ValueError('carry_seed_fixed_pairs must be a boolean')
     for name in ('fixed_refs', 'priority_refs', 'ground_nets'):
         seq = policy.get(name)
         if not isinstance(seq, list) or any(not isinstance(s, str) or not s for s in seq) or len(set(seq)) != len(seq):
@@ -1178,22 +1180,76 @@ def _fixed_refs(capture, policy):
     return set(policy['fixed_refs']) | {f['ref'] for f in capture['footprints'] if f.get('locked')}
 
 
-def _initial_reservations(capture, policy, outline, obstacles, bands, groups):
-    """Fixed parts and declared obstacles become exact polygon obstacles, never boxes."""
+def _carries_seed_pairs(policy):
+    """Seed fixed pairs are carried only under an unsourced, agent-chosen gap (AGENTEE-338/376)."""
+    return (policy.get('carry_seed_fixed_pairs', False) and policy['gap_nm'] > 0
+            and 'gap_nm' not in policy.get('constraint_provenance', {}))
+
+
+def _unchanged(fp, seed):
+    """True when a fixed footprint stands exactly as in the seed: same pose and courtyards."""
+    def plain(value):  # Qualification turns vertex lists into tuples; compare values only.
+        if isinstance(value, dict):
+            return {k: plain(v) for k, v in value.items()}
+        return [plain(v) for v in value] if isinstance(value, (list, tuple)) else value
+    return seed is not None and all(plain(fp.get(k)) == plain(seed.get(k))
+                                    for k in ('position_nm', 'rotation_deg', 'courtyards'))
+
+
+def _spacing(fp, entry):
+    """Exact smallest edge distance squared between a courtyard and an obstacle on its side."""
+    return min(segment_distance2(a, b, d, e) for c in fp['courtyards'][entry['side']]['polygons']
+               for p in entry['polygons'] for a, b in edges(c) for d, e in edges(p))
+
+
+def _initial_reservations(capture, policy, outline, obstacles, bands, groups, carried=None, seed=None):
+    """Fixed parts and declared obstacles become exact polygon obstacles, never boxes.
+
+    With ``carry_seed_fixed_pairs`` and an unsourced gap, a fixed part unchanged from
+    ``seed`` (default: the capture itself) is held to the gap only against reservations
+    that are not themselves seed facts. Against another unchanged fixed part or an
+    unsourced declared obstacle only structural overlap refuses; each pair closer than
+    the gap is appended to ``carried`` with its measured spacing (AGENTEE-376).
+    """
     fixed = _fixed_refs(capture, policy)
     placed = [copy.deepcopy(f) for f in capture['footprints'] if f['ref'] in fixed]
     exact = [_exact(o['side'], _obstacle_polygons(o['polygons']))
              for o in policy['obstacles']]
+    carry = _carries_seed_pairs(policy)
+    seeds = {f['ref']: f for f in (capture if seed is None else seed)['footprints']} if carry else {}
+    # Per reservation: the carried-pair label when it is a seed fact, else None. A sourced
+    # (hard) obstacle, such as a block-arrangement keep-out or shadow, is never a seed fact.
+    origins = [{'kind': 'fixed_obstacle', 'obstacle': i, **({'source': o['source']} if 'source' in o else {})}
+               if carry and placement_provenance.classify(o, 'provenance', f'obstacle {i}')['enforcement'] == 'soft'
+               else None for i, o in enumerate(policy['obstacles'])]
+    gap = policy['gap_nm']
     for i, fp in enumerate(placed):
+        pre = carry and _unchanged(fp, seeds.get(fp['ref']))
+        held = [e for e, o in zip(exact, origins) if not (pre and o)]
+        facts = [(e, o) for e, o in zip(exact, origins) if pre and o]
         # Fixed footprints (such as edge-mounted connectors) are exempt from min_courtyard_edge_mm.
         # Only an envelope-bound overhang band lets a fixed courtyard leave the outline.
-        if (not _fits(fp, outline, 0, bands.get(fp['ref'], ())) or _near(fp, exact, policy['gap_nm'])
-                or _keepout_blocked(fp, placed[:i], obstacles)):
+        if (not _fits(fp, outline, 0, bands.get(fp['ref'], ())) or _near(fp, held, gap)
+                or _near(fp, [e for e, _ in facts], 0) or _keepout_blocked(fp, placed[:i], obstacles)):
             raise ValueError(f"fixed placement {fp['ref']} conflicts with outline, obstacle, keepout or reserved gap")
         for peer in placed[:i]:
             if _hole_conflict(fp, peer):
                 raise ValueError(f"fixed placement {fp['ref']} conflicts with {peer['ref']} native through-hole reservation")
-        exact.extend(_exact(side, c['polygons']) for side, c in sorted(fp['courtyards'].items()))
+        for entry, origin in facts:
+            if entry['side'] in fp['courtyards'] and _near(fp, [entry], gap):
+                d2 = _spacing(fp, entry)
+                pair = ({'kind': 'fixed_fixed', 'references': [origin['reference'], fp['ref']]}
+                        if origin['kind'] == 'fixed_fixed' else
+                        {**{k: v for k, v in origin.items() if k != 'kind'}, 'kind': 'fixed_obstacle',
+                         'reference': fp['ref']})
+                if carried is not None:
+                    carried.append({**pair, 'side': entry['side'], 'spacing_nm': math.isqrt(math.floor(d2)),
+                                    'distance_squared_nm2': _fraction(Fraction(d2)), 'gap_nm': gap,
+                                    'basis': 'unchanged-from-seed', 'authority': 'carried-input-fact',
+                                    'gap_enforcement': 'advisory'})
+        own = sorted(fp['courtyards'].items())
+        exact.extend(_exact(side, c['polygons']) for side, c in own)
+        origins.extend({'kind': 'fixed_fixed', 'reference': fp['ref']} if pre else None for _ in own)
     positions = {fp['ref']: fp['position_nm'] for fp in placed}
     for fp in placed:
         group = groups.get(fp['ref'])
@@ -1516,10 +1572,14 @@ class _Search:
             self.cluster_active = self.cluster_start_steps = None
 
 
-def pack(capture, policy, *, heartbeat=None):
-    """Preserve legacy plans; try joint clusters only with the remaining budget."""
+def pack(capture, policy, *, heartbeat=None, seed=None):
+    """Preserve legacy plans; try joint clusters only with the remaining budget.
+
+    ``seed`` is the capture a caller derived ``capture`` from; fixed parts it re-posed
+    are not seed facts for ``carry_seed_fixed_pairs`` (default: ``capture`` itself).
+    """
     runtime = {}
-    legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime)
+    legacy = _pack(capture, policy, heartbeat=heartbeat, joint=False, runtime=runtime, seed=seed)
     if legacy['status'] == 'planned' or not legacy.get('search', {}).get('locality_clusters'):
         return legacy
     previous = runtime['search']
@@ -1529,7 +1589,7 @@ def pack(capture, policy, *, heartbeat=None):
             'status': 'not_attempted', 'reason': 'no remaining deterministic candidate budget', 'steps_used': 0}
         return legacy
     joint = _pack(capture, policy, heartbeat=heartbeat, joint=True,
-                  remaining_steps=remaining, deadline=previous.deadline)
+                  remaining_steps=remaining, deadline=previous.deadline, seed=seed)
     if joint['status'] != 'planned':
         legacy['search']['joint_cluster_attempt'] = {
             'status': joint['status'], 'steps_used': joint['steps_used'], 'reason': joint['reason'],
@@ -1541,7 +1601,16 @@ def pack(capture, policy, *, heartbeat=None):
     return joint
 
 
-def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=None, deadline=None):
+def _pack(capture, policy, *, seed=None, **options):
+    state = {}
+    result = _pack_run(capture, policy, state=state, seed=seed, **options)
+    if 'carried' in state:
+        # Seed fixed pairs closer than the unsourced gap: reported input facts, never refusals.
+        result['carried_fixed_pairs'] = state['carried']
+    return result
+
+
+def _pack_run(capture, policy, *, heartbeat, joint, state, seed, runtime=None, remaining_steps=None, deadline=None):
     if heartbeat is not None:
         heartbeat({'status': 'qualifying', 'steps_used': 0, 'placed_count': 0})
     capture = copy.deepcopy(capture)
@@ -1581,8 +1650,11 @@ def _pack(capture, policy, *, heartbeat, joint, runtime=None, remaining_steps=No
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['ref']} courtyard {proof['kind'].replace('_', ' ')} exceeds the board's", margin_nm)
         return _soft_proof({**failure, 'proof': proof}, _binding_constraints({**policy, 'gap_nm': 0}, 0))
+    if _carries_seed_pairs(policy):
+        state['carried'] = []
     try:
-        fixed, placed, exact = _initial_reservations(capture, policy, outline, obstacles, bands, members)
+        fixed, placed, exact = _initial_reservations(capture, policy, outline, obstacles, bands, members,
+                                                     state.get('carried'), seed)
     except ValueError as exc:
         return _failure(capture, policy, 'fixed_conflict', 'unknown', 0, str(exc), margin_nm)
     if locality:

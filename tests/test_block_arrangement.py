@@ -296,6 +296,29 @@ class ArrangementTests(ArrangementFixture, unittest.TestCase):
         self.assertEqual(graded[0]['status'], 'defect')
         self.assertTrue(all(f[2] == 'J1' for f in graded[0]['findings']))
 
+    def test_seed_fixed_obstacle_pair_is_carried_through_arrangement_and_residual(self):
+        # AGENTEE-376: fixed H1 stands 0.1 mm from a declared, unsourced obstacle under the 0.25 mm gap.
+        near = {'side': 'F', 'polygons': [rectangle(42.1, 30, 1, 2)]}
+        refused = policy(obstacles=[near])
+        entries = [{'candidate': blocks.pack_block(self.board, self.inv, self.derivation, b['id'], refused)
+                    ['candidate']} for b in self.derivation['blocks']]
+        plan = self.arrange(entries=entries, pol=refused)
+        self.assertEqual((plan['status'], plan['outcome']), ('fixed_conflict', 'unknown'))
+        self.assertNotIn('carried_fixed_pairs', plan['block_arrangement'])
+        carried = policy(obstacles=[near], carry_seed_fixed_pairs=True)
+        entries = [{'candidate': blocks.pack_block(self.board, self.inv, self.derivation, b['id'], carried)
+                    ['candidate']} for b in self.derivation['blocks']]
+        plan = self.arrange(entries=entries, pol=carried)
+        self.assertEqual((plan['status'], plan['outcome']), ('planned', 'info'), plan.get('reason'))
+        expected = [{'kind': 'fixed_obstacle', 'reference': 'H1', 'obstacle': 0, 'side': 'F', 'spacing_nm': 100000,
+                     'distance_squared_nm2': [100000 ** 2, 1], 'gap_nm': 250000, 'basis': 'unchanged-from-seed',
+                     'authority': 'carried-input-fact', 'gap_enforcement': 'advisory'}]
+        # Stage B and the residual pass report the same seed fact; re-posed block members never appear.
+        self.assertEqual(plan['block_arrangement']['carried_fixed_pairs'], expected)
+        self.assertEqual(plan['carried_fixed_pairs'], expected)
+        self.assertEqual(plan['judgment']['verdict'], 'pass')
+        self.assertEqual(plan['policy'], carried)
+
     def test_hard_rule_obstacles_carry_their_source_into_residual_capacity_proofs(self):
         # AGENTEE-365: J1 is a residual back part; a hard rule covers the whole back side.
         back = copy.deepcopy(self.board)

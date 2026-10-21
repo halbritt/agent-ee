@@ -10,7 +10,8 @@ request also exposes net-cluster seeds and BGA escape plans for inspection.
 `priority_refs`, `ground_nets`, and `obstacles`, plus optional
 `min_courtyard_edge_mm` (default `0.0`), envelope-bound `fixed_overhangs`,
 declared `groups` ([AGENTEE-212](#real-pod-residuals-agentee-212)) and the boolean
-`capacity_proof` (default `false`, [AGENTEE-249](#board-capacity-agentee-249)). Obstacles declare `side` and
+`capacity_proof` (default `false`, [AGENTEE-249](#board-capacity-agentee-249)) and the boolean
+`carry_seed_fixed_pairs` (default `false`, [AGENTEE-376](#seed-fixed-pairs-under-an-unsourced-gap-agentee-376)). Obstacles declare `side` and
 closed straight `polygons` in integer nanometres. Locked footprints are fixed
 even when absent from `fixed_refs`; interface-owned fixed references must be
 supplied by the coordinator from captured owner intent. When
@@ -188,6 +189,48 @@ A second run takes the radio's antenna zone only from the explicit
 fixed parts and holes are exempt by reference, but they remain exact
 obstacles. No fastener head, standoff or IMU isolation distance is declared,
 so none is reserved.
+
+### Seed fixed pairs under an unsourced gap (AGENTEE-376)
+
+The placer cannot move a fixed part, so a reserved-gap shortfall between two
+fixed parts, or between a fixed part and a declared obstacle, that the seed
+already carries is not a placement decision. By default nothing changes: every
+such pair is still held to `gap_nm` and refuses as `fixed_conflict`, as in the
+AGENTEE-338 boundary above. A policy that sets `carry_seed_fixed_pairs: true`
+asks for those pairs to be reported instead:
+
+- **Which pairs.** A fixed part is a seed fact only when it is unchanged from
+  the seed: same `position_nm`, `rotation_deg` and courtyards. For
+  `placer.pack` the seed is the capture itself, unless the caller passes
+  `seed=`. Block arrangement passes its input capture for the residual pass, so
+  a block member that the run fixed at its arranged pose is never a seed fact.
+  An obstacle is a seed fact only when it is unsourced (no per-obstacle
+  `provenance`). Hard block-arrangement keep-outs and shadows carry
+  `arrangement_rule` provenance, so they are never seed facts. Board-derived
+  IMU/assembly marking reservations are unsourced, so they are.
+- **What is relaxed.** Only the reserved gap, and only between two seed facts.
+  Positive-area overlap still refuses (touching is admitted, as at `gap_nm: 0`).
+  So do the outline and overhang bands, rule-area keepouts, drilled-pad
+  reservations and group admission. A fixed part is held to the full gap
+  against every reservation that is not a seed fact.
+- **Sourced gaps are never relaxed.** With a qualified
+  `constraint_provenance.gap_nm` the flag has no effect and the pair refuses as
+  before. The carry applies only to the agent-chosen, advisory gap (AGENTEE-338).
+- **Movable parts.** The gap still governs every pair that involves a movable
+  part, including those against carried pairs.
+
+Each carried pair is listed in the result's `carried_fixed_pairs` (also in
+`block_arrangement.carried_fixed_pairs` for stage B), in capture order. Each
+entry has `kind` (`fixed_fixed` with `references` [earlier, later], or
+`fixed_obstacle` with `reference`, `obstacle` index and any `source`), `side`,
+`spacing_nm` (exact distance rounded down), `distance_squared_nm2`
+([numerator, denominator]), `gap_nm`, `basis: "unchanged-from-seed"`,
+`authority: "carried-input-fact"` and `gap_enforcement: "advisory"`. The key
+is present, possibly empty, whenever the carry was evaluated. On a refusal it
+lists the pairs carried before the refusing part. A carried pair is an input
+fact: it is not a placement defect, waiver or DRC acceptance. Native DRC and
+every registered check judge the saved board unchanged. A per-block or per-net
+routing-channel allowance is not part of this change (design note only).
 
 ### Real-pod residuals (AGENTEE-212)
 

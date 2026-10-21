@@ -511,6 +511,92 @@ class EnvelopeFixedTest(unittest.TestCase):
         self.assertIn('fixed placement H1 conflicts', plan['reason'])
 
 
+class SeedFixedPairsTest(unittest.TestCase):
+    """AGENTEE-376: seed fixed pairs closer than an unsourced gap are carried facts, never refusals."""
+    def obstacle(self, **extra):
+        from test_placement import rectangle
+        return {'side': 'F', 'polygons': [rectangle(2, 2, 2, 2)], **extra}
+
+    def carry(self, **changes):
+        return request(gap_nm=250000, carry_seed_fixed_pairs=True, **changes)
+
+    def test_fixed_obstacle_pair_is_carried_but_structural_overlap_refuses(self):
+        for x, spacing in ((4.249999, 249999), (4.15, 150000), (4, 0)):
+            report = pack(capture([part('U1', x, 2)]), self.carry(obstacles=[self.obstacle()]))
+            with self.subTest(x=x):
+                self.assertEqual((report['status'], report['outcome']), ('planned', 'info'), report)
+                pair, = report['carried_fixed_pairs']
+                self.assertEqual({k: pair[k] for k in ('kind', 'reference', 'obstacle', 'side', 'spacing_nm', 'gap_nm',
+                                                       'basis', 'authority', 'gap_enforcement')},
+                                 {'kind': 'fixed_obstacle', 'reference': 'U1', 'obstacle': 0, 'side': 'F',
+                                  'spacing_nm': spacing, 'gap_nm': 250000, 'basis': 'unchanged-from-seed',
+                                  'authority': 'carried-input-fact', 'gap_enforcement': 'advisory'})
+                self.assertEqual(pair['distance_squared_nm2'], [spacing ** 2, 1])
+        # Exactly at the gap is no shortfall, so nothing is carried; the key records the evaluation.
+        report = pack(capture([part('U1', 4.25, 2)]), self.carry(obstacles=[self.obstacle()]))
+        self.assertEqual((report['status'], report['carried_fixed_pairs']), ('planned', []))
+        # Positive-area overlap is structural and still refuses.
+        report = pack(capture([part('U1', 3.999999, 2)]), self.carry(obstacles=[self.obstacle()]))
+        self.assertEqual((report['status'], report['outcome'], report['placements']), ('fixed_conflict', 'unknown', []))
+        # Without the opt-in the gap refuses exactly as before.
+        report = pack(capture([part('U1', 4.249999, 2)]), request(gap_nm=250000, obstacles=[self.obstacle()]))
+        self.assertEqual(report['status'], 'fixed_conflict')
+        self.assertNotIn('carried_fixed_pairs', report)
+
+    def test_sourced_gap_or_sourced_obstacle_is_never_relaxed(self):
+        board = capture([part('U1', 4.249999, 2)])
+        report = pack(board, authored_gap(self.carry(obstacles=[self.obstacle()]), 'fixture requires 0.25 mm'))
+        self.assertEqual((report['status'], report['outcome']), ('fixed_conflict', 'unknown'))
+        self.assertNotIn('carried_fixed_pairs', report)
+        sourced = self.obstacle(provenance=authored_source('fixture keep-out'))
+        report = pack(board, self.carry(obstacles=[sourced]))
+        self.assertEqual((report['status'], report['outcome']), ('fixed_conflict', 'unknown'))
+        self.assertEqual(report['carried_fixed_pairs'], [])
+
+    def test_fixed_fixed_pair_is_carried_and_movable_parts_keep_the_gap(self):
+        from agent_ee.placement import edges
+        from agent_ee.placement_predicates import segment_distance2
+        # U1 and C1 are fixed 0.3 mm apart under a 0.5 mm gap; R1 must still keep 0.5 mm from both.
+        board = capture([part('U1', 2, 2), part('C1', 4.3, 2), part('R1', 10, 10)])
+        policy = request(fixed_refs=['U1', 'C1'], carry_seed_fixed_pairs=True)
+        self.assertEqual(pack(board, {**policy, 'carry_seed_fixed_pairs': False})['status'], 'fixed_conflict')
+        plan = pack(board, policy)
+        self.assertEqual((plan['status'], plan['outcome']), ('planned', 'info'), plan)
+        pair, = plan['carried_fixed_pairs']
+        self.assertEqual((pair['kind'], pair['references'], pair['spacing_nm']), ('fixed_fixed', ['U1', 'C1'], 300000))
+        self.assertEqual(plan['judgment']['verdict'], 'pass')
+        at = {p['ref']: p for p in plan['placements']}
+        self.assertEqual((at['U1']['fixed'], at['C1']['fixed'], at['R1']['fixed']), (True, True, False))
+        from agent_ee.placer import transform
+        moved = transform(board['footprints'][2], at['R1']['position_nm'], at['R1']['rotation_deg'])
+        for fixed in board['footprints'][:2]:
+            d2 = min(segment_distance2(a, b, c, d) for p in moved['courtyards']['F']['polygons']
+                     for q in fixed['courtyards']['F']['polygons'] for a, b in edges(p) for c, d in edges(q))
+            self.assertGreaterEqual(d2, 500000 ** 2)
+        # A slot narrower than gap + part + gap between the carried pair and a wall takes no movable part.
+        tight = capture([part('U1', 0, 0, shape=[[0, 0], [20000000, 0], [20000000, 2000000], [0, 2000000]]),
+                         part('C1', 0, 6.3, shape=[[0, 6300000], [20000000, 6300000], [20000000, 20000000],
+                                                    [0, 20000000]]),
+                         part('R1', 10, 10)])
+        report = pack(tight, request(fixed_refs=['U1', 'C1'], gap_nm=1_200_000, carry_seed_fixed_pairs=True))
+        self.assertEqual(report['status'], 'packing_search_exhausted', report)
+        self.assertEqual(report['carried_fixed_pairs'], [])
+        self.assertEqual(pack(tight, request(fixed_refs=['U1', 'C1'], gap_nm=1_100_000, carry_seed_fixed_pairs=True)
+                              )['status'], 'planned')
+
+    def test_reposed_fixed_part_is_not_a_seed_fact(self):
+        board = capture([part('U1', 2, 2), part('C1', 4.3, 2)])
+        policy = request(fixed_refs=['U1', 'C1'], carry_seed_fixed_pairs=True)
+        seed = capture([part('U1', 2, 2), part('C1', 8, 2)])
+        report = pack(board, policy, seed=seed)
+        self.assertEqual((report['status'], report['outcome']), ('fixed_conflict', 'unknown'))
+        self.assertIn('C1', report['reason'])
+        self.assertEqual(pack(board, policy, seed=board)['status'], 'planned')
+
+    def test_carry_flag_must_be_boolean(self):
+        with self.assertRaisesRegex(ValueError, 'carry_seed_fixed_pairs must be a boolean'):
+            pack(capture([part('U1', 2, 2)]), request(carry_seed_fixed_pairs='yes'))
+
 class BoardOnlyNetlistTest(unittest.TestCase):
     """AGENTEE-179: scaffold holes are board-only footprints absent from the native export."""
     XML = ('<export><components><comp ref="U1"/><comp ref="C1"/></components><nets>'
