@@ -511,6 +511,8 @@ def finish_campaign(out, request, terminal):
     result, manifest = read_json(target / 'result.json'), read_json(target / 'candidate.json')
     epoch = state.get('epoch', 0) + 1
     record, diagnostic = advance([], result, manifest, config['max_iterations'] - len(state['history']))
+    from .placement_defects import acceptance
+    diagnostic = acceptance(target, diagnostic)
     snapshot = root / 'history' / f"{len(state['history']) + 1}.json"
     record.update(run=str(target), result_sha256=terminal['result_sha256'], result_snapshot=str(snapshot),
                   epoch=epoch, calibration_id=manifest['files'][manifest['scope']['empirical']])

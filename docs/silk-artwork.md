@@ -104,12 +104,12 @@ edit this evidence, and routing or other implementation steps retain it.
 
 Checks in verification/fab/release stages and the fab-family kinds refuse while
 carried defects remain open, regardless of declared stage (AGENTEE-344). These
-include `fab_export`, `fab_package`, `fab_roundtrip`, `fab_consistency`,
+are exactly the coordinator ruling's 18 kinds: `fab_export`, `fab_package`, `fab_roundtrip`, `fab_consistency`,
 `cpl_rotation`, `jlc_dfm`, `fab_profile`, `dfm_geometry`, `dfa_dft`,
 `assembly_readiness`, `jlc_cost_estimate`, `drc`, `part_binding`,
 `package_consistency`, `parts_subset`, `land_pattern`, `catalog` and
 `part_selection`. Campaign acceptance also refuses open carry when no fab or
-verification check was declared. Each typed `placement_silkscreen_conflict`
+verification check was declared, including acceptance projected by a bench-feedback epoch. Each typed `placement_silkscreen_conflict`
 finding names its native field/graphic UUID, available description/reference
 and source receipt. The
 check retains a candidate-bound `placement-defects.json` witness. Sealing
@@ -126,10 +126,19 @@ close a defect. An unsupported side-flip diagnostic also requires positive
 artwork movement of that field, either recorded by the later artwork pass or
 visible in its saved position. The original side-flip case stays open even when
 another field moves and native `added_after` is empty. A later board may retain
-that closure across masked copper track/arc edits only when the shared saved-board parser proves every other token unchanged. Unknown
-track children, including mask-exposure attributes, remain in the comparison.
+that closure across masked copper track/arc edits only when the shared saved-board
+parser validates the structure and every other root-level node has identical raw
+source bytes. Decoded atoms cannot establish equivalence: KiCad's string escape
+decoding differs from the shared parser's. Comments (`;` outside quoted strings)
+refuse the proof. Tracks containing a backslash and unknown track children,
+including mask-exposure attributes, remain in the byte comparison. Whitespace
+inside retained nodes is significant; whitespace between root children is not.
 Footprint transforms, marking positions/content/ownership, pads, mask, vias,
-zones, setup, project and custom-rule bytes must remain unchanged. Changes
+zones and setup must remain unchanged. Closure binds the complete captured
+`.kicad_pro` and `.kicad_dru` path/digest inventories from the native DRC receipt
+and current candidate, rather than guessing a board-stem rule path. This is a
+conservative superset of the files native DRC loaded: even an unrelated captured
+rule file's addition, removal or change reopens carry. Changes
 outside that subset require a fresh receipt; a track comparison supplies no
 electrical or routing acceptance (AGENTEE-344). If the equivalence proof cannot
 read or parse the later board, the carried defect stays open.

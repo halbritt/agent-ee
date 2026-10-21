@@ -105,7 +105,8 @@ downstream fab, verification and release gates refuse carried open defects,
 naming their native fields/graphics and source receipts (AGENTEE-333).
 Fab-family kinds gate carry regardless of stage, and campaign acceptance refuses
 open carry. Receipt-backed closure survives only proven masked-track edits
-that preserve artwork and obstructions (AGENTEE-344).
+that preserve raw artwork/obstruction bytes and all captured project/rule paths
+and bytes (AGENTEE-344). Bench-feedback acceptance also refuses open carry.
 Declared [pad-level locality](docs/placer.md#pad-level-electrical-locality-agentee-322)
 guides packing and separately checks supply, return and switch/inductor pad
 copper-centroid distances against cited limits. Captured pad UUIDs select

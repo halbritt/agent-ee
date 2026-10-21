@@ -340,6 +340,43 @@ class NativePlacementCarryTests(unittest.TestCase):
         placement_defects.verify_gate(self.candidate_run, check, self.manifest)
 
 
+    def test_bench_epoch_projects_open_native_carry_before_publishing_terminal_state(self):
+        from agent_ee import bench_transactions as tx
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target, campaign, transaction = root / 'review', root / 'campaign', root / 'transaction'
+            shutil.copytree(self.candidate_run, target)
+            manifest = read_json(target / 'candidate.json')
+            # Isolate finish_campaign's state publication: reuse the real native
+            # carry, with a synthetic successful feedback result and epoch key.
+            manifest['scope']['empirical'] = 'placement-evidence/index.json'
+            write_json(target / 'candidate.json', manifest)
+            result = {'checks': [], 'outcome': 'criteria_satisfied', 'run_id': 'feedback-projection'}
+            write_json(target / 'result.json', result)
+            write_json(campaign / 'config.json', {'max_iterations': 3})
+            write_json(campaign / 'profile.json', {})
+            state = {'baseline': {}, 'history': [], 'state': 'repair'}
+            write_json(campaign / 'state.json', state)
+            request = {'review_out': str(target), 'campaign': {'root': str(campaign), 'state': state,
+                'config_sha256': digest(campaign / 'config.json'),
+                'profile_sha256': digest(campaign / 'profile.json')}}
+            terminal = {'out': str(target), 'result_sha256': digest(target / 'result.json')}
+            # Campaign replay and baseline qualification have independent native
+            # integration coverage; this probe observes the published projection.
+            with patch('agent_ee.campaign.verify_campaign'), patch(
+                    'agent_ee.rating_lineage.sealed_baseline', return_value={}):
+                tx.finish_campaign(transaction, request, terminal)
+            for path in (campaign / 'state.json', transaction / 'campaign-intent.json'):
+                published = read_json(path)
+                if path.name == 'campaign-intent.json':
+                    published = published['state']
+                self.assertEqual((published['state'], published['reason']),
+                                 ('escalated', 'open_placement_defects'))
+            self.assertEqual(read_json(campaign / 'tradeoff.json'),
+                             {'state': 'escalated', 'reason': 'open_placement_defects'})
+            self.assertEqual(read_json(campaign / 'history/1.json'), result)
+
+
 class ClosureContractTests(unittest.TestCase):
     def setUp(self):
         self.native = {'type': 'placement_silkscreen_conflict', 'status': 'open', 'verdict': 'defect',
@@ -594,3 +631,70 @@ class PlacementRoutingCarryTests(unittest.TestCase):
         self.assertEqual((status, state['state'], state['reason']),
                          (1, 'escalated', 'open_placement_defects'))
         self.assertEqual(campaign.verify_campaign(fixture.out)['state'], 'escalated')
+
+
+class ClosureEscapeTests(unittest.TestCase):
+    def run_closure(self, edit=lambda text: text, *, receipt_rules=None, current_rules=None):
+        from tests.test_placement_adapter import TEXT
+        with tempfile.TemporaryDirectory() as temporary:
+            inputs = Path(temporary)
+            old, fixed, current = (inputs / n for n in ('old.kicad_pcb', 'fixed.kicad_pcb', 'board.kicad_pcb'))
+            old.write_text(TEXT)
+            fixed.write_text(TEXT.replace('(at 0 -1.5 0)', '(at 0 -2.5 0)'))
+            links, bundles, files = [], {}, {}
+            defect = {'type': 'placement_silkscreen_conflict', 'status': 'open', 'verdict': 'defect',
+                      'native': {'items': [{'uuid': 'a1'}]}}
+            for number, board, defects in ((1, old, [defect]), (2, fixed, [])):
+                path = inputs / f'placement-evidence/{number}/receipt.json'
+                write_json(path, {'inputs': receipt_rules or {}})
+                rel = path.relative_to(inputs).as_posix()
+                files[rel] = digest(path)
+                link = {'receipt': rel, 'sha256': digest(path)}
+                links.append(link)
+                bundles[rel] = ({'board_sha256': digest(board), 'open_defects': defects},
+                                {placement_defects.BOARD: board}, {'violations': []})
+            write_json(inputs / 'placement-evidence/index.json', links)
+            files['placement-evidence/index.json'] = digest(inputs / 'placement-evidence/index.json')
+            manifest = {'scope': {'board': current.name, placement_defects.DECLARATION: links}, 'files': files}
+            manifest['files'].update(current_rules or {})
+            current.write_text(edit(fixed.read_text()))
+            manifest['files'][current.name] = digest(current)
+            with patch.object(placement_defects, '_bundle', side_effect=lambda m, i, link: bundles[link['receipt']]):
+                return placement_defects.open_defects(manifest, inputs)
+
+    def test_control_identical_board_closes(self):
+        self.assertEqual(self.run_closure(lambda t: t), [])
+
+    def test_octal_escape_relabels_closed_reference(self):
+        # KiCad's reader decodes "R\1" as 'R\x01'; the shared parser yields 'R1'.
+        self.assertEqual(len(self.run_closure(lambda t: t.replace('"R1"', '"R\\1"'))), 1)
+
+    def test_nul_escape_truncates_value(self):
+        # KiCad reads "\1\0k" as '\x01' (truncated); the shared parser yields '10k'.
+        self.assertEqual(len(self.run_closure(lambda t: t.replace('"10k"', '"\\1\\0k"'))), 1)
+
+    def test_escape_inside_layer_name(self):
+        # Unknown escape inside the marking's layer token.
+        self.assertEqual(len(self.run_closure(
+            lambda t: t.replace('(property "Reference" "R1" (at 0 -2.5 0) (layer "F.SilkS")',
+                                '(property "Reference" "R1" (at 0 -2.5 0) (layer "F.Silk\\S")'))), 1)
+
+
+
+    def test_comment_syntax_outside_strings_refuses_closure(self):
+        self.assertEqual(len(self.run_closure(lambda text: text.rstrip()[:-1] + '; comment\n)')), 1)
+
+    def test_escaped_track_is_retained(self):
+        track = r'(segment (start 1 2) (end 3 4) (width 0.2) (layer "F.Cu") (net "\1") (uuid "t"))'
+        self.assertEqual(len(self.run_closure(lambda text: text.rstrip()[:-1] + track + ')')), 1)
+
+    def test_unicode_and_semicolon_inside_string_are_byte_sensitive(self):
+        self.assertEqual(len(self.run_closure(lambda text: text.replace('"R1"', '"Rés;1"'))), 1)
+
+    def test_nonstem_rule_addition_removal_and_change_reopen_closure(self):
+        for name in ('other.kicad_pro', 'nested/settings.kicad_dru'):
+            sealed = {name: 'a' * 64}
+            self.assertEqual(self.run_closure(receipt_rules=sealed, current_rules=sealed), [])
+            for before, after in (({}, sealed), (sealed, {}), (sealed, {name: 'b' * 64})):
+                with self.subTest(name=name, before=before, after=after):
+                    self.assertEqual(len(self.run_closure(receipt_rules=before, current_rules=after)), 1)

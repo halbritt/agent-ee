@@ -216,20 +216,57 @@ def same_artwork(before, after):
     must remain identical. No electrical or routing verdict follows from this.
     """
     from .symbol_library import children, parse_sexpr
+    def spans(text):
+        # Byte spans of the root's direct children; quoted strings skip escaped characters.
+        result, depth, start, pos = [], 0, None, 0
+        while pos < len(text):
+            char = text[pos]
+            if char == '"':
+                begin = pos
+                pos += 1
+                while text[pos] != '"':
+                    pos += 2 if text[pos] == '\\' else 1
+                if depth == 1:
+                    result.append(text[begin:pos + 1])
+            elif char == ';':
+                raise ValueError('artwork comparison refuses comment syntax')
+            elif char == '(':
+                depth += 1
+                if depth == 2:
+                    start = pos
+            elif char == ')':
+                if depth == 2:
+                    result.append(text[start:pos + 1])
+                depth -= 1
+            elif not char.isspace() and depth == 1:
+                end = pos
+                while end < len(text) and not text[end].isspace() and text[end] not in '();"':
+                    end += 1
+                result.append(text[pos:end])
+                pos = end - 1
+            pos += 1
+        return result
     def subject(path):
-        root = parse_sexpr(Path(path).read_bytes())
+        data = Path(path).read_bytes()
+        root = parse_sexpr(data)
         if root[0] != 'kicad_pcb':
             raise ValueError('artwork comparison requires a saved board')
+        text = data.decode('utf-8')
+        raw = spans(text)
+        if len(raw) != len(root):
+            raise ValueError('artwork comparison could not align saved-board nodes')
         kept = []
-        for node in root:
+        # Raw bytes, not decoded atoms: the shared parser's escape decoding differs from KiCad's.
+        for node, source in zip(root, raw):
             if isinstance(node, list) and node and node[0] in ('segment', 'arc'):
                 allowed = {'start', 'end', 'mid', 'width', 'layer', 'net', 'uuid', 'locked'}
                 layers = children(node, 'layer')
                 if (len(layers) == 1 and len(layers[0]) == 2 and
                         layers[0][1] in ('F.Cu', 'B.Cu', *(f'In{i}.Cu' for i in range(1, 31))) and
-                        all(isinstance(n, list) and n and n[0] in allowed for n in node[1:])):
+                        all(isinstance(n, list) and n and n[0] in allowed for n in node[1:]) and
+                        '\\' not in source):
                     continue
-            kept.append(node)
+            kept.append(source.encode('utf-8'))
         return kept
     return subject(before) == subject(after)
 
@@ -275,9 +312,13 @@ def open_defects(manifest, inputs):
                 # An unprovable edit cannot downgrade a known carried defect.
                 current = False
         receipt = read_json(_read(manifest, inputs, link['receipt'], link['sha256']))
-        current = current and all(receipt['inputs'].get(str(Path(board).with_suffix(suffix))) ==
-                                  manifest['files'].get(str(Path(board).with_suffix(suffix)))
-                                  for suffix in ('.kicad_pro', '.kicad_dru'))
+        # Bind a conservative superset of DRC's project/rule inputs, including
+        # non-board stems. Added, removed or changed settings invalidate closure.
+        def rules(files):
+            return {p: sha for p, sha in files.items()
+                    if not p.startswith(DIRECTORY + '/') and
+                    Path(p).suffix in ('.kicad_pro', '.kicad_dru')}
+        current = current and rules(receipt['inputs']) == rules(manifest['files'])
         active = [(d, source, original) for d, source, original in active
                   if not _closes(d, original, identities, conflicts | diagnostics, moved, current)]
         for defect in report['open_defects']:
