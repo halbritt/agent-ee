@@ -1689,15 +1689,16 @@ release-policy credit. Live `datasheet-capture/1` validation remains unchanged.
 
 The fab, `rung1_campaign`, `rung1_qualified`, `rung1_stages`, pod scaffold/constraint, envelope-content, schematic emission/annotation, `add_planes` and `binding_fill` step builders use [content-addressed source snapshots](stage-receipts.md#python-tool-source-snapshots) to isolate host bytecode writes. Receipt identity and mutation refusal checks still cover every mounted file. `tests.test_tool_source` discovers source-mount constructors across `src/agent_ee` and exercises every discovered builder against an original source fixture. It also proves prune-after-verified-reuse retention and exclusion of a concurrent prune during a real sandboxed step.
 
-AGENTEE-327 host validation refuses mounts equal to or containing the package
-`src` tree, including resolved parent and symlink aliases, with
+AGENTEE-327/329 host validation refuses mounts equal to, containing, or inside the
+package `src` tree, including resolved parent and symlink aliases, with
 `live_package_source:<at>` before execution. Retained receipt replay stays
 host-independent. `tests.test_stage_receipts.StepDeclarationTests` covers refusal
 and snapshot admission; `tests.test_tool_source` validates all registered step
 builders against this runtime guard. AGENTEE-329 also refuses bind aliases of
-`src` and its ancestors by device/inode, binds the validated resolved path, and
-rechecks that identity before execution. Descendant admission and the remaining
-concurrent namespace limit are recorded in
+`src`, its ancestors and descendants by device/inode (including ancestors of
+the mount source), binds the validated resolved path, and rechecks that identity
+before execution. The three qualified canonical routing helper files and the
+remaining concurrent namespace limit are recorded in
 [stage receipts](stage-receipts.md#python-tool-source-snapshots).
 
 Acquired-PDF receipts from `datasheet_facts`, `pin_map` and `pin_contracts` retain

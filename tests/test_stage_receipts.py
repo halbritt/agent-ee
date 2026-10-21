@@ -129,12 +129,92 @@ class StepDeclarationTests(unittest.TestCase):
         cache = Path(self.tmp.name) / 'cache'
         with patch.dict(os.environ, AGENT_EE_TOOL_SOURCE_CACHE=str(cache)):
             captured = snapshot(Path(stage_receipts.__file__).resolve().parents[1])
-        for source in (captured, Path(self.tool), Path('/usr'),
-                       Path(stage_receipts.__file__).resolve().parent,
-                       Path(stage_receipts.__file__).resolve()):
+        for source in (captured, Path(self.tool), Path('/usr')):
             with self.subTest(source=source):
                 spec = self.spec(mounts=[{'source': str(source), 'at': '/tool'}])
                 self.assertEqual(validate_step(spec)['mounts'], spec['mounts'])
+
+        # AGENTEE-329 coordinator ruling: these former admissions now refuse.
+        for source in (Path(stage_receipts.__file__).resolve().parent,
+                       Path(stage_receipts.__file__).resolve()):
+            with self.subTest(source=source):
+                spec = self.spec(mounts=[{'source': str(source), 'at': '/tool'}])
+                with self.assertRaises(stage_receipts.LivePackageSourceError) as failure:
+                    validate_step(spec)
+                self.assertEqual(failure.exception.violation, 'live_package_source:/tool')
+
+    def test_only_qualified_live_helper_files_admitted(self):
+        from agent_ee import routing_adapter
+        helpers = [routing_adapter.ADAPTER_SOURCE,
+                   *(Path(m['source']) for m in routing_adapter.BINDING_MOUNTS)]
+        self.assertEqual({p.name for p in helpers},
+                         {'kicad_route_attempt.py', 'net_binding.py', 'symbol_library.py'})
+        for source in helpers:
+            with self.subTest(source=source):
+                spec = self.spec(mounts=[{'source': str(source), 'at': '/tool'}])
+                self.assertEqual(validate_step(spec)['mounts'], spec['mounts'])
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        for source in (live / 'agent_ee', live / 'agent_ee/data',
+                       live / 'agent_ee/storage.py'):
+            alias = Path(self.tmp.name) / 'descendant-link'
+            alias.symlink_to(source)
+            try:
+                with self.assertRaises(stage_receipts.LivePackageSourceError):
+                    validate_step(self.spec(mounts=[{'source': str(alias), 'at': '/tool'}]))
+            finally:
+                alias.unlink()
+
+    @toolchain_test
+    def test_bind_alias_descendants_and_source_ancestors_refused(self):
+        import subprocess
+        live = Path(stage_receipts.__file__).resolve().parents[1]
+        alias = Path(self.tmp.name) / 'bind-alias'
+        alias.mkdir()
+        code = """import os, sys
+from pathlib import Path
+from agent_ee.stage_receipts import validate_step, LivePackageSourceError
+alias, live, suffix = map(Path, sys.argv[1:])
+assert os.path.samefile(alias, live)
+for source in (alias, alias / suffix):
+    spec = {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': 'alias',
+            'argv': ['/usr/bin/true'], 'writes': {'a': 'design/a'},
+            'mounts': [{'source': str(source), 'at': '/tool'}]}
+    try:
+        validate_step(spec)
+    except LivePackageSourceError as exc:
+        assert exc.violation == 'live_package_source:/tool'
+    else:
+        raise AssertionError('live descendant bind alias admitted: ' + str(source))
+"""
+        for source, suffix in ((live, 'agent_ee/storage.py'),
+                               (live / 'agent_ee', 'storage.py'),
+                               (live / 'agent_ee/data', 'spice-templates.json')):
+            with self.subTest(source=source):
+                result = subprocess.run(
+                    ['bwrap', '--bind', '/', '/', '--ro-bind', str(source), str(alias),
+                     '--', '/usr/bin/python3', '-B', '-c', code,
+                     str(alias), str(source), suffix], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # Mask the source file with unrelated bytes: only its aliased parent
+        # identity reveals that this path still lies inside the live tree.
+        unrelated = Path(self.tool) / 'unrelated.py'
+        unrelated.write_text('original fixture')
+        result = subprocess.run(
+            ['bwrap', '--bind', '/', '/', '--ro-bind', str(live / 'agent_ee'), str(alias),
+             '--ro-bind', str(unrelated), str(alias / 'storage.py'),
+             '--', '/usr/bin/python3', '-B', '-c', code,
+             str(alias), str(live / 'agent_ee'), 'storage.py'],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # A file bind alias also cannot acquire the qualified helper exception.
+        helper = live / 'agent_ee/net_binding.py'
+        file_alias = Path(self.tmp.name) / 'helper-alias'
+        file_alias.touch()
+        result = subprocess.run(
+            ['bwrap', '--bind', '/', '/', '--ro-bind', str(helper), str(file_alias),
+             '--', '/usr/bin/python3', '-B', '-c', code,
+             str(file_alias), str(helper), '.'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @toolchain_test
     def test_symlink_swap_binds_the_validated_source(self):

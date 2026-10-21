@@ -37,6 +37,8 @@ REPORT_DEPTH = 64
 TREE_DEPTH = 128
 # Every lookup below a run root opens one component at a time and never follows a link.
 NOFOLLOW = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
+# routing_adapter._step mounts these standalone helpers individually.
+QUALIFIED_LIVE_HELPERS = frozenset({'kicad_route_attempt.py', 'net_binding.py', 'symbol_library.py'})
 VERSION_TIMEOUT_S = 30
 STEP_KEYS = {'schema', 'stage', 'step', 'argv', 'mounts', 'version_argv', 'source',
              'backend_report', 'writes', 'artifacts', 'adoptable_exits', 'timeout_s', 'inputs'}
@@ -91,12 +93,30 @@ def _mount_identity(path):
 def _validated_mount_source(source, at):
     resolved = Path(source).resolve(strict=True)
     package_source = Path(__file__).resolve(strict=True).parents[1]
-    # A bind of src or a containing directory has the same identity even when
-    # its spelling is outside the checkout. resolve() alone cannot detect it.
+    package = package_source / 'agent_ee'
+    # Only the canonical, individually mounted routing helpers are qualified.
+    if (resolved.parent == package and resolved.name in QUALIFIED_LIVE_HELPERS and
+            stat.S_ISREG(resolved.stat().st_mode)):
+        return str(resolved)
     live_ancestors = {package_source, *package_source.parents}
-    if (resolved in live_ancestors or
-            _mount_identity(resolved) in {_mount_identity(p) for p in live_ancestors}):
+    if resolved in live_ancestors or package_source in resolved.parents:
         raise LivePackageSourceError(at)
+    source_identity = _mount_identity(resolved)
+    if source_identity in {_mount_identity(p) for p in live_ancestors}:
+        raise LivePackageSourceError(at)
+    # Source ancestors catch paths below a bind alias. Compare only with the
+    # live tree here: common ancestors such as / must not reject unrelated tools.
+    source_identities = {source_identity, *(_mount_identity(p) for p in resolved.parents)}
+
+    def walk_error(exc):
+        raise exc
+
+    for root, directories, files in os.walk(package_source, onerror=walk_error):
+        for path in [Path(root), *(Path(root) / name for name in directories + files)]:
+            # Do not follow tree symlinks out into unrelated system directories.
+            observed = path.lstat()
+            if (observed.st_dev, observed.st_ino) in source_identities:
+                raise LivePackageSourceError(at)
     return str(resolved)
 
 
