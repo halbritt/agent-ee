@@ -567,9 +567,11 @@ tests show the following:
   and publicly verifiable. No default placement is substituted.
   The cancellation test's sandboxed launcher writes a readiness marker and
   blocks until interrupted; it cannot finish a fixed sleep before the coordinator
-  observes readiness under load (AGENTEE-345). The executor deadline bounds a
-  missing handshake. Assertions still require cancelled receipts, a reaped
-  helper and no next candidate.
+  observes readiness under load (AGENTEE-345). The test temporarily installs
+  Python's default SIGINT handler so the interrupt also works when a background
+  runner inherits ignored SIGINT, and restores the previous handler on cleanup.
+  Its 120 s helper deadline bounds a missing handshake. Assertions still require
+  cancelled receipts, a reaped helper and no next candidate.
 - The pinned placer packs the unchanged stock RC roundrect and circle pads
   (AGENTEE-109). The fresh courtyard check passes on the adopted board, whose
   native pad shapes and sizes equal the stock board's. Its only placement-stage

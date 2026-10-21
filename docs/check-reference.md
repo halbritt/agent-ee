@@ -84,6 +84,9 @@ They do not replace fresh checks or the declared-stage done binding.
 
 The [placement campaign cancellation regression](placement-adapter.md) holds a
 real sandboxed helper at its readiness marker until interruption (AGENTEE-345).
+It temporarily installs Python's default SIGINT handler so background runners
+that inherit ignored SIGINT still deliver the interrupt, then restores the prior
+handler on cleanup. A 120 s helper deadline bounds a missing readiness marker.
 It requires cancelled receipts, process cleanup and no next candidate. This test
 synchronization change adds no check kind and changes no candidate verdict.
 
