@@ -158,3 +158,86 @@ def targets(footprints, proposed, document):
                 d = pair['max_distance_nm']
                 points += [[x, y], [x-d, y], [x+d, y], [x, y-d], [x, y+d]]
     return points
+
+
+MAX_PLACEMENT_TARGETS = 256
+
+
+class TargetBudgetExhausted(Exception):
+    """Too many distinct locality origins; no candidate subset is silently used."""
+
+
+class PlacementIndex:
+    """Incremental locality state for a capture already qualified by grade().
+
+    The independent grader remains the identity/geometry authority. Only selected
+    pads are transformed/resolved on push; pop removes every cached position for
+    that footprint. Candidate evaluators contain only incident, placed pairs.
+    """
+    def __init__(self, document):
+        self.pairs = {}
+        self.endpoints = {}
+        self.positions = {}
+        for obligation in document['obligations']:
+            for role in roles(obligation):
+                pair = obligation[role]
+                for own, peer in ((pair['from'], pair['to']), (pair['to'], pair['from'])):
+                    ref = own['reference']
+                    self.pairs.setdefault(ref, []).append((own, peer, pair['max_distance_nm']))
+                    self.endpoints.setdefault(ref, {})[self.key(own)] = own
+
+    @staticmethod
+    def key(endpoint):
+        return (endpoint['reference'], endpoint['pad'], endpoint.get('uuid'), endpoint['net'])
+
+    def push(self, footprint):
+        ref = footprint['ref']
+        if ref in self.endpoints:
+            self.positions[ref] = {key: resolve([footprint], endpoint)
+                                   for key, endpoint in self.endpoints[ref].items()}
+
+    def pop(self, ref):
+        self.positions.pop(ref, None)
+
+    def prepare(self, at_origin):
+        """Resolve the candidate's selected pads once per rotation, before scanning."""
+        ref = at_origin['ref']
+        own_positions = {}
+        pairs = []
+        for own, peer, limit in self.pairs.get(ref, ()):
+            if peer['reference'] not in self.positions:
+                continue
+            key = self.key(own)
+            if key not in own_positions:
+                own_positions[key] = resolve([at_origin], own)
+            offset = own_positions[key]
+            target = self.positions[peer['reference']][self.key(peer)]
+            pairs.append((offset, target, limit, {ref, peer['reference']}))
+        return CandidateLocality(pairs)
+
+
+class CandidateLocality:
+    """Exact translated centroid cost; no board scan or geometry copy per point."""
+    def __init__(self, pairs):
+        self.pairs = pairs
+
+    def constraint(self, position):
+        blockers, cost = set(), Fraction(0)
+        for offset, target, limit, involved in self.pairs:
+            squared = sum((offset[i] + position[i] - target[i])**2 for i in (0, 1))
+            limit2 = limit**2
+            cost += Fraction(squared, max(1, limit2))
+            if squared > limit2:
+                blockers |= involved
+        return blockers, cost
+
+    def targets(self):
+        # At most five distinct origins per incident role with a placed peer;
+        # duplicates never add axes. No truncation of the original candidate set.
+        points = set()
+        for offset, target, limit, _ in self.pairs:
+            x, y = [round(target[i]-offset[i]) for i in (0, 1)]
+            points.update(((x, y), (x-limit, y), (x+limit, y), (x, y-limit), (x, y+limit)))
+            if len(points) > MAX_PLACEMENT_TARGETS:
+                raise TargetBudgetExhausted
+        return sorted(points)

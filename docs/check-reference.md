@@ -1770,3 +1770,7 @@ obligations from the same immutable locality file, recording its raw hash in
 sha256}` (AGENTEE-328). The engineer declares limits and citation locators;
 the check never supplies a manufacturer radius or verifies cited prose.
 Origin-group success supplies no electrical-locality acceptance.
+
+Packing uses an [incremental locality index and bounded targets](placer.md#incremental-locality-search-and-diagnostics-agentee-332).
+Heartbeat and partial search results are diagnostics with no acceptance authority;
+the full independent locality check still grades every declared role.
