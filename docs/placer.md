@@ -1004,6 +1004,13 @@ Each change below keeps every answer; none relaxes a predicate or changes a rank
 - `_fits` runs the edge-margin distance only against outline edges whose box is
   nearer than the margin to the courtyard box; every other edge is at least the
   margin away from every courtyard point.
+- Without an overhang band, `_fits` decides containment in a convex
+  counter-clockwise outline by the vertex test (every courtyard vertex on or
+  left of every outline edge), which equals the area test for closed polygons;
+  concave outlines and bands keep the exact clipping.
+- Hole/copper reservations carry union boxes, so `_hole_conflict` skips a pair
+  of parts whose inventories cannot meet, and keepout tests run only against
+  placed parts that own a keepout (an empty keepout list never blocks).
 - Candidates enter the ranking with a lower bound on their wire cost (each
   signal pad's distance to its net's peer x range plus y range, which separates
   by axis and is evaluated once per axis value). `_ranked` resolves the exact

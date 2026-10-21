@@ -55,7 +55,7 @@ def _copy_footprint(fp):
     rebuilt by _cache_pad_reservations. The result equals copy.deepcopy(fp) with
     the cache keys removed (AGENTEE-332: deepcopy dominated per-candidate cost).
     """
-    placed = {key: value for key, value in fp.items() if key not in ('_packing_holes', '_packing_targets')}
+    placed = {key: value for key, value in fp.items() if not key.startswith('_packing_')}
     placed['courtyards'] = {side: dict(courtyard) for side, courtyard in fp['courtyards'].items()}
     if 'packing_keepouts' in fp:
         placed['packing_keepouts'] = [dict(keepout) for keepout in fp['packing_keepouts']]
@@ -421,6 +421,9 @@ def _cache_pad_reservations(fp):
     fp['_packing_holes'] = inventory(p for e in geometry['holes'] for p in e['polygons'])
     fp['_packing_targets'] = inventory([p for c in fp['courtyards'].values() for p in c['polygons']] +
                                        [p for e in geometry['copper'] for p in e['polygons']])
+    # Union boxes: two inventories whose unions do not meet have no meeting pair.
+    for key in ('_packing_holes', '_packing_targets'):
+        fp[key + '_box'] = _box([[(x0, y0), (x1, y1)] for (x0, y0, x1, y1), _ in fp[key]]) if fp[key] else None
 
 
 def _hole_conflict(candidate, peer):
@@ -428,6 +431,9 @@ def _hole_conflict(candidate, peer):
     for owner, other in ((candidate, peer), (peer, candidate)):
         holes = owner.get('_packing_holes', [])
         if not holes:
+            continue
+        (x0, y0, x1, y1), targets = owner['_packing_holes_box'], other.get('_packing_targets_box')
+        if targets is None or x1 <= targets[0] or targets[2] <= x0 or y1 <= targets[1] or targets[3] <= y0:
             continue
         for (x0, y0, x1, y1), polygon in holes:
             for (a0, b0, a1, b1), target in other['_packing_targets']:
@@ -440,11 +446,19 @@ def _hole_conflict(candidate, peer):
 
 def _fits(candidate, outline, margin_nm=0, band=()):
     # A band is a declared overhang across outline edges; its regions share no area with the board.
+    # Without a band, a courtyard lies in a convex counter-clockwise outline exactly
+    # when every vertex is on or left of every outline edge (closed sets, exact
+    # integers): the same answer as the area test, without clipping.
+    vertex_test = not band and convex(outline)
     for courtyard in candidate['courtyards'].values():
         for p in courtyard['polygons']:
-            inside = intersection_area(p, outline) + sum(intersection_area(p, r) for r in band)
-            if inside != Fraction(abs(area2(p)), 2):
-                return False
+            if vertex_test:
+                if any(cross(a, b, v) < 0 for a, b in edges(outline) for v in p):
+                    return False
+            else:
+                inside = intersection_area(p, outline) + sum(intersection_area(p, r) for r in band)
+                if inside != Fraction(abs(area2(p)), 2):
+                    return False
             if margin_nm > 0:
                 # An outline edge whose box is at least the margin from the
                 # courtyard box in x or y is at least the margin from every courtyard
@@ -1208,8 +1222,9 @@ class _Search:
         if (not _fits(proposed, self.outline, self.margin_nm) or _near(proposed, self.exact, self.gap) or
                 _in_keepouts(proposed, self.obstacles)):
             return set()
-        hit = [fp['ref'] for fp in self.placed if _in_keepouts(proposed, fp.get('packing_keepouts', [])) or
-               _in_keepouts(fp, proposed.get('packing_keepouts', []))]
+        own = proposed.get('packing_keepouts', [])
+        hit = [fp['ref'] for fp in self.placed if (fp.get('packing_keepouts') and
+               _in_keepouts(proposed, fp['packing_keepouts'])) or (own and _in_keepouts(fp, own))]
         if hit:
             return set(hit) - self.fixed
         if group is not None and 'region' in group and not placement_groups.admits(
