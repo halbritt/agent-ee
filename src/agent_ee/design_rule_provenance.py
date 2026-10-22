@@ -116,6 +116,10 @@ def _record(setting, value, spec, path, locator, key):
 
 
 # This binding travels with the immutable project into each native staging area.
+# Known limit (AGENTEE-400): KiCad prints four decimals, so printed-limit matching
+# and sourced-deficit grading use this 50 nm tolerance. A violation smaller than
+# this grades as not violated. Documented in docs/check-reference.md.
+MATCH_TOLERANCE_MM = '0.00005'
 PROJECT_KEY = 'agent_ee_constraint_provenance'
 STRUCTURAL = frozenset(('shorting_items', 'pth_inside_courtyard', 'solder_mask_bridge', 'holes_co_located', 'copper_outside_outline'))
 NUMERIC_FIELDS = {
@@ -294,7 +298,7 @@ def classify_finding(finding, sources=None):
     if kind == 'starved_thermal' and (not actual or not re.search(limit_pattern, finding.get('description', ''))):
         raise ValueError('native thermal-spoke finding lacks a qualified count measurement')
     # Four-decimal reports cannot distinguish touching/crossing from a gap below 50 nm.
-    outside = kind == 'copper_edge_clearance' and actual and Decimal(actual[1]) < Decimal('0.00005')
+    outside = kind == 'copper_edge_clearance' and actual and Decimal(actual[1]) < Decimal(MATCH_TOLERANCE_MM)
     if kind in STRUCTURAL or outside:
         source = {'class': 'engineering', 'citation': {
             'path': 'docs/placer.md', 'locator': 'native DRC publication gate',
@@ -335,7 +339,7 @@ def classify_finding(finding, sources=None):
             limit = re.search(limit_pattern, description)
             if limit:
                 candidates = [s for s in candidates if
-                    abs(Decimal(str(s['value'])) - Decimal(limit[1])) < Decimal('0.00005')]
+                    abs(Decimal(str(s['value'])) - Decimal(limit[1])) < Decimal(MATCH_TOLERANCE_MM)]
             elif len(fields) > 1:
                 candidates = []
             hard = [s for s in candidates if s['class'] in CLASSES - {'default'} and s['citation']]
@@ -361,7 +365,7 @@ def classify_finding(finding, sources=None):
                     s['class'] in CLASSES - {'default'} and s['citation'] and
                     (s['setting'].startswith(('board.', 'native_rules.')) or any(
                         s['setting'].rsplit('.', 1)[0] == 'net_settings.classes.' + cls for cls in classes)) and
-                    Decimal(actual[1]) < Decimal(str(s['value'])) - (Decimal(0) if kind == 'starved_thermal' else Decimal('0.00005'))]
+                    Decimal(actual[1]) < Decimal(str(s['value'])) - (Decimal(0) if kind == 'starved_thermal' else Decimal(MATCH_TOLERANCE_MM))]
         # Include the sourced limit KiCad named, including a generated custom
         # rule, so a weaker board minimum cannot replace a stricter source.
         if isinstance(source.get('class'), str) and source['class'] in CLASSES - {'default'} and source['citation']:

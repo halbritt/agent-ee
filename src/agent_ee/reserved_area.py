@@ -491,6 +491,7 @@ FIELD_TYPES = {
     'current_rotation_deg': _angle, 'candidate_position_nm': _position, 'candidate_rotation_deg': _angle,
     'source_sha256': _sha, 'rules': _object, 'directory': _text, 'witness': _text,
     'write_scope': _object, 'write_scope_sha256': _sha, 'blocking_types': _texts, 'advisory_types': _texts,
+    'drc_content_sha256': _sha, 'baseline_drc_content_sha256': _sha,
 }
 
 
@@ -538,7 +539,8 @@ ATTEMPT_FIELDS = ({'position_nm', 'rotation_deg', 'validation'}, set())
 # Native witness summaries (reserved_area_native): status and its fixed qualification are
 # required; digests, paths and finding types are optional typed witness fields.
 _WITNESS = {'source_sha256', 'rules', 'directory', 'moves', 'reason', 'witness', 'board_sha256',
-            'write_scope_sha256', 'blocking_types', 'advisory_types'}
+            'write_scope_sha256', 'blocking_types', 'advisory_types', 'drc_content_sha256',
+            'baseline_drc_content_sha256'}
 VALIDATION_FIELDS = {'validated': ({'status', 'qualification'}, _WITNESS),
                      'unknown': ({'status', 'qualification'}, _WITNESS),
                      'rejected': ({'status', 'qualification'}, _WITNESS | {'write_scope'})}
@@ -812,3 +814,28 @@ def review_input(run_dir, manifest):
     if record['board_sha256'] != manifest['files'][board]:
         raise ValueError(f"reserved area describes board {record.get('board_sha256')}, not the captured {board}")
     return {'path': 'inputs/' + rel, 'sha256': manifest['files'][rel], 'record': record}
+
+
+def saved_report(output, facts, plan):
+    """Isolate all optional reserve diagnostics from the placement verdict.
+
+    Discard partial measurements on failure so no stale legal alternative or
+    apparent zero survives an unavailable advisory pipeline. Hard placement
+    checks run outside this boundary in the single writer.
+    """
+    try:
+        from .reserved_area_native import NativeAlternatives
+        fabrication = fabrication_outlines(output)
+        policy = {**plan['policy'], 'obstacles': [*plan['policy']['obstacles'],
+            *plan.get('block_arrangement', {}).get('arrangement', {}).get('keepouts', [])]}
+        costs = report(facts, policy, fabrication)
+        if costs.get('sides'):
+            alternatives(facts, plan['policy'], fabrication, costs, plan,
+                         NativeAlternatives(output, output.parent / 'reserve-alternatives',
+                                            facts, plan['policy'], plan))
+        return costs
+    except Exception as exc:
+        return {'schema': SCHEMA, 'board_sha256': facts['board_sha256'],
+                'authority': 'advisory; does not change packing, score or verdict',
+                'status': 'unknown', 'sides': {}, 'findings': [],
+                'reason': f'reserve diagnostics unavailable: {type(exc).__name__}: {exc}'}

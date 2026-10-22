@@ -1,11 +1,25 @@
 """Native witnesses for advisory reserve alternatives: one owner or one whole rigid block."""
 import hashlib
+import json
 from pathlib import Path
 import re
-import subprocess
 
-from .storage import digest, write_json
+from .storage import digest, read_json, write_json
 from .reserved_area import fabrication_outlines
+
+
+def drc_content_digest(path):
+    """Bind native report contents independently of run date and scratch path.
+
+    Sort native result lists because KiCad does not guarantee finding order.
+    Every field except the execution date and source filename remains bound.
+    """
+    report = read_json(path)
+    report.pop('date', None)
+    report.pop('source', None)
+    for key in ('violations', 'unconnected_items', 'ignored_checks', 'included_severities'):
+        report[key] = sorted(report[key], key=lambda row: json.dumps(row, sort_keys=True))
+    return hashlib.sha256(json.dumps(report, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 class NativeAlternatives:
@@ -48,8 +62,8 @@ class NativeAlternatives:
                               for ref, pose in moves.items()]}
         try:
             self._validate(moves, output, evidence)
-        except (ValueError, OSError, subprocess.SubprocessError) as exc:
-            evidence.update(status='unknown', reason=str(exc))
+        except Exception as exc:
+            evidence.update(status='unknown', reason=f'{type(exc).__name__}: {exc}')
         write_json(directory / 'validation.json', evidence)
         # Native DRC embeds its execution date. Keep raw-file digests in the
         # witness, not the deterministic advisory cost report.
@@ -66,7 +80,8 @@ class NativeAlternatives:
 
     def _validate(self, moves, output, evidence):
         import pcbnew
-        from .placer_runner import _apply_plan, _native_drc, _pad_inventory, DRC_COURTYARDS
+        from .placer_runner import (_apply_plan, _native_drc, _pad_inventory, DRC_COURTYARDS,
+                                   _drc_comparison, _drc_item_states)
         from .placement_adapter import write_scope
         from .placement_probe import extract
         from .reserved_area import _candidate_cost
@@ -138,8 +153,27 @@ class NativeAlternatives:
                     v['type'] in DRC_COURTYARDS or
                     not (v['type'] in NATIVE_CONSTRAINT_TYPES and numeric_finding(v) and
                          v['constraint_provenance']['enforcement'] == 'advisory')]
-        evidence.update(status='rejected' if blockers else 'validated',
-                        reason='native DRC findings' if blockers else 'native DRC and preservation passed',
+        # A retained defect elsewhere is no evidence that this pose introduced
+        # it. Stay unknown in that case; never certify a defective board legal.
+        # Structural identities in the shared comparison omit geometry, so also
+        # require every item's native state to be unchanged before attributing
+        # a blocker solely to the baseline.
+        introduced = blockers
+        if blockers:
+            before_states = _drc_item_states(self.root / 'baseline' / 'candidate.kicad_pcb')
+            after_states = _drc_item_states(output)
+            comparison = _drc_comparison(self.baseline, report, before_states, after_states, sources)
+            introduced = [v for v in blockers if v in comparison['added_findings'] or
+                          not v.get('items') or any(
+                              i['uuid'] not in before_states or i['uuid'] not in after_states or
+                              before_states[i['uuid']] != after_states[i['uuid']]
+                              for i in v['items'])]
+        baseline_only = bool(blockers) and not introduced
+        evidence.update(status='unknown' if baseline_only else 'rejected' if blockers else 'validated',
+                        reason=('unchanged baseline DRC findings; pose legality unverified' if baseline_only else
+                                'native DRC findings' if blockers else 'native DRC and preservation passed'),
+                        drc_content_sha256=drc_content_digest(output.parent / 'native-drc.json'),
+                        baseline_drc_content_sha256=drc_content_digest(self.root / 'baseline' / 'native-drc.json'),
                         board_sha256=digest(output), drc_sha256=digest(output.parent / 'native-drc.json'),
                         write_scope_sha256=digest(output.parent / 'placement-write-scope.json'),
                         blocking_types=sorted({v['type'] for v in blockers}),

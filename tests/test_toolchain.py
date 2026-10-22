@@ -36,6 +36,80 @@ class ToolchainPolicyTests(unittest.TestCase):
         self.assertNotIn('skipped=', result.stderr)
 
 
+class VisualEnvironmentTests(unittest.TestCase):
+    def probe(self, source, value=None):
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join([
+            str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[1] / 'src')]))
+        env.pop('AGENT_EE_SKIP_VISUALS', None)
+        if value is not None:
+            env['AGENT_EE_SKIP_VISUALS'] = value
+        result = subprocess.run([sys.executable, '-c', source], env=env,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip()
+
+    def test_shared_entries_default_to_skip_and_preserve_explicit_values(self):
+        for entry in ('toolchain', 'tests'):
+            for value in (None, '0', '1', 'false'):
+                with self.subTest(entry=entry, value=value):
+                    self.assertEqual(self.probe(
+                        f'import {entry}, os; print(os.environ["AGENT_EE_SKIP_VISUALS"])', value),
+                        '1' if value is None else value)
+
+    def test_default_produces_explicit_skip_without_native_execution(self):
+        self.probe("""
+import toolchain, tempfile
+from pathlib import Path
+from agent_ee.candidate_visuals import produce
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    board = root / 'board.kicad_pcb'
+    board.write_text('(invalid board: a renderer would fail)')
+    report = produce(board, root / 'visuals')
+    assert report['status'] == 'skipped', report
+    assert report['images'] == [], report
+    assert 'execution' not in report, report
+""")
+
+    def test_invalid_environment_remains_a_failure(self):
+        self.probe("""
+import toolchain, tempfile
+from pathlib import Path
+from agent_ee.candidate_visuals import produce
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    board = root / 'board.kicad_pcb'
+    board.write_text('(invalid)')
+    try:
+        produce(board, root / 'visuals')
+    except ValueError as exc:
+        assert str(exc) == 'AGENT_EE_SKIP_VISUALS must be 0 or 1', exc
+    else:
+        raise AssertionError('invalid flag accepted')
+    assert not (root / 'visuals').exists()
+""", 'false')
+
+    def test_imaging_modules_restore_environment_after_stopall(self):
+        self.probe("""
+import importlib, os, tests, unittest
+from unittest.mock import patch
+for previous in ('0', '1'):
+    os.environ['AGENT_EE_SKIP_VISUALS'] = previous
+    for name in ('test_candidate_visuals', 'test_render3d', 'test_schematic_render',
+                 'test_datasheet_footprint', 'test_purpose_review', 'test_schematic_text'):
+        module = importlib.import_module('tests.' + name)
+        module.setUpModule()
+        patch.stopall()  # Existing render3d tests use this per-test cleanup.
+        assert os.environ['AGENT_EE_SKIP_VISUALS'] == '0', name
+        unittest.doModuleCleanups()
+        assert os.environ['AGENT_EE_SKIP_VISUALS'] == previous, name
+""")
+
+    def test_production_import_preserves_unset_imaging_default(self):
+        self.probe('import agent_ee.candidate_visuals, os; '
+                   'assert "AGENT_EE_SKIP_VISUALS" not in os.environ')
+
+
 class GateBoundaryTests(unittest.TestCase):
     def test_available_prerequisites_preserve_assertion_failures(self):
         from unittest.mock import patch

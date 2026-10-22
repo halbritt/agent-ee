@@ -86,6 +86,28 @@ class JudgeTests(unittest.TestCase):
         self.assertGreaterEqual(outcome['result']['run'], 1)
         self.assertEqual(strict_suite.judge([outcome]), ([], []))
 
+    def test_child_initializes_defaults_for_a_module_without_toolchain_imports(self):
+        with tempfile.TemporaryDirectory(prefix='agent-ee-strict-visual-default-') as tmp:
+            root = Path(tmp)
+            tree = root / 'tree'
+            tests = tree / 'tests'
+            tests.mkdir(parents=True)
+            for name in ('__init__.py', 'toolchain.py'):
+                (tests / name).symlink_to(ROOT / 'tests' / name)
+            (tests / 'test_visual_default.py').write_text(textwrap.dedent("""
+                import os, unittest
+                class T(unittest.TestCase):
+                    def test_default(self):
+                        self.assertEqual(os.environ['AGENT_EE_SKIP_VISUALS'], '1')
+                """))
+            env = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
+            env.pop('AGENT_EE_SKIP_VISUALS', None)
+            with patch.dict(os.environ, env, clear=True), patch.object(strict_suite, 'ROOT', tree):
+                outcome = strict_suite.run_module('test_visual_default', root, 30)
+        self.assertEqual(outcome['exit'], 0, outcome['log'])
+        self.assertEqual(outcome['result']['run'], 1)
+        self.assertEqual(strict_suite.judge([outcome]), ([], []))
+
     def test_every_suite_module_is_selected(self):
         self.assertEqual(strict_suite.modules(), sorted(p.stem for p in (ROOT / 'tests').glob('test_*.py')))
         self.assertIn('test_strict_suite', strict_suite.modules())

@@ -551,6 +551,40 @@ def _lists(node, head):
     return [x for x in node[1:] if isinstance(x, list) and x and x[0] == head]
 
 
+def mechanical_inventory(data, components=None):
+    """Re-derive board-only mechanical references from captured native bytes.
+
+    No schematic path or assigned pad net is permitted. A net node other than
+    KiCad's explicit empty net is unqualified, including malformed net nodes.
+    """
+    from .symbol_library import parse_sexpr
+    root = parse_sexpr(data)
+    if root[0] != 'kicad_pcb':
+        raise ValueError('not a kicad_pcb file')
+    refs, problems = [], []
+    for fp in _lists(root, 'footprint'):
+        attrs = {a for node in _lists(fp, 'attr') for a in node[1:] if isinstance(a, str)}
+        if not {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'} <= attrs:
+            continue
+        names = [p[2] for p in _lists(fp, 'property') if len(p) > 2 and p[1] == 'Reference']
+        if len(names) != 1 or not isinstance(names[0], str):
+            problems.append('mechanical footprint needs exactly one reference')
+            continue
+        ref = names[0]
+        paths = _lists(fp, 'path')
+        if any(node != ['path', ''] for node in paths):
+            problems.append(f'mechanical footprint {ref} has a netlist path')
+        if components is not None and ref in components:
+            problems.append(f'mechanical footprint {ref} has a netlist component')
+        if any(net not in (['net', '0', ''], ['net', ''])
+               for pad in _lists(fp, 'pad') for net in _lists(pad, 'net')):
+            problems.append(f'mechanical footprint {ref} has a netted or unqualified pad')
+        refs.append(ref)
+    if len(set(refs)) != len(refs):
+        problems.append('duplicate mechanical footprint reference')
+    return sorted(set(refs), key=natural_key), problems
+
+
 def board_facts(data, probes=None, copper_features=()):
     """Layer table and footprint inventory of a captured board.
 
@@ -614,7 +648,10 @@ def board_facts(data, probes=None, copper_features=()):
         seen.add(ref)
         excluded = attrs & {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
         mechanical = excluded == {'board_only', 'exclude_from_bom', 'exclude_from_pos_files'}
-        if excluded and not dnp and ref not in probe_refs and not mechanical and ref not in copper_features:
+        # Full rule/netlist agreement is checked by assembly_exclusions before export.
+        marked = any(dict(fields) == {name: value} for name, value in ASSEMBLY_RULES.values())
+        if (excluded and not dnp and ref not in probe_refs and not mechanical
+                and not marked and ref not in copper_features):
             unsupported.append(f'populated footprint {ref} carries {sorted(excluded)}; '
                                'v1 refuses non-DNP exclusions')
     populated = sorted((f['ref'] for f in footprints if not f['dnp']), key=natural_key)
@@ -1172,7 +1209,13 @@ def check_fab_export(ctx):
                                      'scope_sha256': ctx.manifest.get('scope_sha256'), 'excluded': excluded}
     parts, disagreements, assembly_problems = assembled_parts(
         components, facts['footprints'], {e['designator'] for e in excluded}, copper_refs)
-    unsupported += copper_problems + part_problems + exclusion_problems + assembly_problems
+    try:
+        mechanical, mechanical_problems = mechanical_inventory((ctx.inputs / board_rel).read_bytes(), components)
+    except ValueError as exc:
+        raise _error('malformed', f'mechanical inventory unreadable: {exc}') from exc
+    details['mechanical'] = mechanical
+    facts['mechanical'] = mechanical
+    unsupported += copper_problems + part_problems + exclusion_problems + assembly_problems + mechanical_problems
     try:
         rows, flagged = bom_rows(parts)
     except ValueError as exc:
@@ -1416,6 +1459,8 @@ def _export(ctx, board, board_rel, board_sha, facts, layers, rows, flagged, fab,
                                         'exclusion_rule': rule},
         'generated_utc': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
+    if facts.get('mechanical'):
+        manifest['designators']['mechanical'] = facts['mechanical']
     if variant is not None:
         manifest['bom_variant'] = {key: variant[key] for key in
                                    ('name', 'project', 'registered', 'native_bom_sha256', 'binding_changes')}

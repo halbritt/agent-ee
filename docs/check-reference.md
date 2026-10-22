@@ -1,9 +1,19 @@
 # Native and engineering checks
 
+[Candidate model coverage](pcb-renders.md#proposal-project-model-closure-agentee-394)
+records environment/default resolution and hashed proposal-local model files.
+Missing model files remain explicit inspection gaps; coverage adds no check
+kind and does not change engineering verdicts.
+Inventory fixtures can inject explicit stock defaults independently of installed
+host models; ordinary candidate coverage keeps native default discovery.
+
 The [purpose review](purpose-review.md) asks independent reviewers to justify
 constraints, reserves, empty fields and interface poses using captured geometry
 and renders. It adds an advisory packet dimension, not a check kind or acceptance
-limit; estimated savings remain concerns beside correctness findings.
+limit; estimated savings remain concerns beside correctness findings. Purpose
+findings carry an advisory status that cannot hold the run outcome, and visual
+coverage is recorded per board side. `verify` re-derives that status and the
+per-role purpose coverage from the retained reviews and adjudication records.
 
 The [pinned fome-mc wideband fixture](fome-wbo1.md) exercises native ERC,
 netlist export, `hardware_interface` and fresh `block_provenance`. Its coverage
@@ -68,6 +78,12 @@ Emission success alone does not establish BOM/CPL agreement.
 The [file digest contract](result-reference.md) requires fresh byte reads for
 verification. Its stat-unchanged mmap regressions control metadata observations
 while retaining real mappings and hash reads (AGENTEE-294); they add no check kind.
+
+The [block library](block-library.md#materialization) refuses board-region
+materialization with `copper_unknown` and no candidate: placement checks cannot
+establish that recorded copper was applied. Region imports containing zones also
+refuse as unknown copper coverage (AGENTEE-403). These are producer refusals;
+no check kind, schema or existing check verdict is changed.
 
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
@@ -424,6 +440,15 @@ all-severity audit. The [donor baseline](../evidence/BASELINE.md) distinguishes
 these rule failures from independently established manufacturing failures.
 Native DRC coverage also depends on the project's configured checks and ignored
 rules; passing these checks is not full circuit function or fab qualification.
+
+Known limit (AGENTEE-400): native DRC prints four decimal places, and constraint
+provenance matches a printed limit and grades a measured deficit with a
+0.00005 mm (50 nm) tolerance. A sourced-limit violation smaller than 50 nm
+therefore grades as not violated, and a printed limit within 50 nm of a sourced
+value matches it. The report alone cannot resolve a smaller deficit. Copper-edge
+actuals below 0.00005 mm remain structural; this limit does not weaken that rule.
+It is a print-resolution limit, not a geometric proof, and the behaviour is
+unchanged. See [native finding resolution](scaffold.md#native-drc-match-tolerance-known-limit-agentee-400).
 
 The severities in force are the immutable project file's. ERC and DRC both record
 `details.by_severity`, `details.by_type` and `details.ignored_checks`, the keys
@@ -1159,6 +1184,14 @@ The [placement adapter's property resave rule](placement-adapter.md#property-fon
 admits KiCad's omitted 0.15 mm property-font thickness default during transform
 comparison, including qualified side flips (AGENTEE-313); it does not grade placement
 or relax field value, layer, visibility, size or justification checks.
+Its [numeric token rule](placement-adapter.md#numeric-token-spellings-agentee-372)
+(AGENTEE-372) compares numbers at identified argument slots of supported
+footprint-child grammar positions, per graphic kind, as exact decimals, so a resave of `29.0` as `29` is no change while `29.001`
+still refuses; names, values, pad numbers, unknown contexts and everything
+outside footprints (board setup, stackup, rules, board graphics) stay exact
+text; a side flip mirrors points and layers only at known positions and
+refuses unknown subtrees holding geometry; a refused child names its first
+differing token.
 The [owned-zone write scope](placement-adapter.md#placement-write-scope)
 (AGENTEE-178) admits rigid owner movement and refuses independent zone edits.
 The [placer](placer.md#footprint-owned-keepouts-agentee-178) uses owned
@@ -1388,7 +1421,13 @@ disagreement is recorded in `details.dnp_disagreements` and does not block the
 package. An optional declared `assembly_exclusion` rule
 (`JLCPCB_Assembly=not_assembled`) leaves populated parts that carry the marker
 in both the netlist and the board out of the BOM and CPL. The manifest lists
-them in `designators.excluded`. Optional `copper_features: ["JP1"]` admits
+them in `designators.excluded`, including netlisted test pads whose footprints
+carry native BOM/position exclusions. Native schematic exclusions remain
+refused. Board-only mechanical items require all three attributes (`board_only`,
+`exclude_from_bom`, `exclude_from_pos_files`), no netlist path or component and
+no assigned pad net. Their drills remain exported and their sorted references
+appear in `designators.mechanical` when nonempty. Consistency replays mechanical
+admission and checks any declared mechanical set. Optional `copper_features: ["JP1"]` admits
 explicitly declared surface copper features only after both native exclusions,
 qualified pad/graphic layers, no model and the copper field allow-list are
 verified. Only `Reference`, `Value`, `Footprint`, `Datasheet`, `Description` and
@@ -1744,7 +1783,13 @@ sources to pathnames. Directory
 sources containing hard links into live `src` refuse with `live_package_source:<at>`
 (AGENTEE-349), including persistent links planted after inventory, by re-inventorying
 the held descriptor before launches and after execution, and links planted and
-removed during a run, detected by live entries' status-change times (AGENTEE-357).
+removed during a run, detected by live entries' status-change times (AGENTEE-357),
+with a missing baseline entry refused and a whole-second clock fence before launch so a
+same-tick link cannot keep its time (AGENTEE-374). Mount, source and live tree walks are
+descriptor-relative; a component replaced mid-walk refuses as `mount_source_changed:<at>`.
+New receipts are `agent-ee.stage-receipt/2`; a `/1` receipt with a nested source whose
+identity has one entry (possibly an escaped link-only record), or a missing or non-integer count, refuses on replay as
+`legacy_source_identity:<source>` (AGENTEE-374).
 Before/after identity of
 declared mounts reads through held descriptors; post-run source replacement or
 observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and
@@ -1792,6 +1837,25 @@ arrangement and targeted plans. That copper is also held a structural setback
 of the board `m_MaxError` plus 50 nm inside the outline, so it composes with the
 AGENTEE-331 publication gate. The setback is typed unknown when the facts lack
 `max_error_nm`, for in-courtyard copper as well. With the fact present, parts whose copper lies in their courtyards plan as before. This adds no registered check or acceptance predicate.
+AGENTEE-418 adds [peer courtyards and pad keep-outs](placer.md#peer-courtyards-and-pad-keep-outs-agentee-418)
+to that gate. Copper outside a courtyard may not meet a peer's courtyard or
+such copper. Lands may not enter a rule area forbidding pads on one of their
+copper layers, inner layers included. A fixed land in one is an input defect
+(`in_pad_keepout`). A footprint keep-out on inner layers only binds no
+footprint, matching native DRC. This adds no registered check either.
+
+AGENTEE-371 reports [fixed parts' copper](placer.md#fixed-part-input-copper-agentee-371)
+outside the outline, within the setback of it, or in a keep-out as a typed
+input defect up front: `fixed_input_copper`, `outcome=defect`, with findings
+naming the part, pad, copper bounds and outline or keep-out. An unknown setback
+is `unsupported_geometry`, `outcome=unknown`. The fixed part is never moved.
+A reference's declared `fixed_overhangs` exit edge waives the setback for its
+own copper on that edge only (ruling 371c), reported as `fixed_overhang_copper`
+input facts; copper past the outline or in a keep-out still refuses. A
+failed copper-aligned pass is recorded as `search.copper_aligned_attempt`, a
+diagnostic only. Every fixed part is checked whatever the `seed` (ruling 371d);
+only an arranged block member at its exact admitted pose is excluded. This adds
+no registered check or acceptance predicate.
 
 ## Copper feature consumers (AGENTEE-315)
 
@@ -1853,6 +1917,10 @@ AGENTEE-337 adds [numeric provenance and manufacturing floors](placer.md#localit
 legacy or unsourced bounds report defect-level `unsourced` advisories with `info`
 when no hard defect/unknown exists; these never block publication. Datasheet
 numeric/scale derivations and owner decision references retain hard constraints.
+A well-formed reference to present source text with a SHA-256 mismatch instead
+reports `source_record_integrity` unknown, reason `source record sha256 mismatch`
+(AGENTEE-402 ruling 402a); packing and block admission refuse it. Absent records
+and malformed hashes remain advisory/unsourced, a known boundary.
 Captured JLCPCB different-net PCB clearance computes a necessary copper floor and
 refuses hard sourced or explicit manufacturer bounds below it as `locality_infeasible`.
 Assembly package spacing produces advisory estimates only, because native lands
@@ -1867,7 +1935,12 @@ and captured manufacturer-record integrity failures retain unknown coverage.
 A sourced bound below the necessary copper floor is `locality_infeasible`.
 Block candidates preserve source records and accept truthful advisory `info`
 through production, validation and independent admission regrading; hard defects
-and unknown coverage still refuse. See [blocks](blocks.md).
+and unknown coverage still refuse. Deferred block-locality rows retain those
+advisories and report `info` for above-bound advisory measurements
+(AGENTEE-402). See [blocks](blocks.md).
+AGENTEE-401 requires explicit floor and provenance records in every stored block
+locality measurement. Structural validation refuses missing or malformed records;
+board admission still independently regrades locality before consumers trust it.
 
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.
@@ -2025,7 +2098,10 @@ zero/negative printed edge clearance, owner-rule declarations and both producer
 paths. `tests.test_outline_containment` exercises saved copper polygon subtraction,
 crossing and wholly outside pads/tracks, concave outlines and cutouts, round
 copper whose bounding-box corners are outside, saved zone fills, captured DRC,
-parity, plane refusal, and sublayout source preservation. The independent
+parity, plane refusal, and sublayout source preservation.
+`tests.test_sublayout.SublayoutProvenanceTests` covers the sub-layout DRC delta
+(AGENTEE-399): project rules reach both runs, and new findings grade by class.
+The independent
 `containment/copper-containment.json` witnesses are engineering/hard and are
 included in `drc-constraints.json`, without rewriting the native report.
 Four-decimal millimetre reports have a 50 nm comparison limit; printed copper-edge
@@ -2113,7 +2189,15 @@ replay it validates that retained witness, tool-free. Without that native
 evidence a would-be closure still refuses. At freeze and at replay the
 evidence seal reconstructs the verdict, whether or not the candidate captured
 placement lineage, so a no-lineage projection cannot seal a pass over
-structural containment or uncarried silk either. It reclassifies the check's own
+structural containment or uncarried silk either. Before grading, the seal
+replays the runtime admissibility of the native report (AGENTEE-407,
+`checks.drc_admissible` and `checks.drc_net_binding`): a later full `drc`
+declaration, the project's net constraint binding, the retained `console.log`
+showing that schematic parity ran, constraint provenance for every native
+violation including waived ones, and no sourced numeric limit explicitly
+ignored. Where the check could only be `unsupported` or `malformed`, a retained
+`ok` verdict is refused, even beside genuine containment output for the same
+board. It reclassifies the check's own
 `drc.json` against the captured immutable waiver input and derives the
 receipt-backed carry, recomputes the numeric provenance from the captured
 board inputs and reads the retained `containment/copper-containment.json` and
@@ -2129,7 +2213,10 @@ silk, and the earliest failing stage becomes routing. There the full DRC and
 the verification check refuse the carry.
 `test_projection_consumes_a_natively_closed_carry_and_seals` and
 `NoLineageProjectionSealTests` are the native regressions for the closed-carry
-and no-lineage seal paths.
+and no-lineage seal paths; its
+`test_forged_ok_over_runtime_unknown_evaluation_refuses` and
+`test_seal_replays_the_runtime_parity_skip_refusal` cover the replayed
+admissibility.
 
 ## Post-routing silk repair (AGENTEE-350)
 
@@ -2151,7 +2238,7 @@ NPTH drills and pad slots are not outline holes; native DRC alone judges silk ov
 the placement report. Closure and campaign replay read it without rerunning
 pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
 unavailable evidence keep their refusal. Cached-text translations and boards
-containing backslashes refuse the producer's scope proof.
+containing backslashes refuse the producer's scope proof (test: `test_scope_refuses_backslashes_even_when_parser_erases_them` in `tests/test_routed_artwork.py`).
 This adds no check registration or verdict waiver. The initial placer continues
 to refuse routed boards. The native campaign regression proves downstream
 refusal before the repair and passing verification geometry and native fab export after closure.
@@ -2233,22 +2320,41 @@ alternative's pose, saving and qualification. The scope `board` must be captured
 `board_sha256` must equal its digest; a malformed or unbound record refuses the
 packet.
 
+AGENTEE-420 retains unchanged blocking baseline findings as unknown pose
+legality, using the shared native DRC comparison and saved item states. New or
+moved blockers still reject, even alongside baseline findings. Completed native
+attempts carry normalized candidate and baseline DRC content digests into the
+cost record; normalization is specified in the feature reference. Advisory
+measurement or search exceptions produce an explicit unknown record and cannot
+refuse placement. Hard publication gates keep their existing verdicts.
+
 ## Access direction in placement containment (AGENTEE-379)
 
 The existing `placement` check with `outline-containment/1` also grades native
 [footprint access declarations](access-direction.md). Sourced declarations with
 an inboard lane or an unexitable mouth are defects; malformed or unsupported
 sourced geometry remains unknown. Uncited declarations are reported advisories
-and never gate. The saved-board placement judge retains transformed lane
+and never gate. Only a hard `manufacturer` or `datasheet` lane with a declared
+`travel_nm` equal to its depth relaxes courtyard containment inside the lane
+(AGENTEE-419). Other sourced lanes still gate, and their outside courtyard area
+stays an `outside_outline` defect. The saved-board placement judge retains transformed lane
 measurements and the shared fixed-overhang edge-sweep geometry for review.
 This adds no check kind or independent acceptance authority.
 
 ## Candidate inspection images (AGENTEE-382)
 
 [Candidate imaging](pcb-renders.md#candidate-inspection-images-agentee-382) runs
-after saved placement and during coordinator capture. It is not a registered
+after saved placement and during coordinator capture, with its own 180-second
+executor guard. Imaging elapsed time is excluded from the check/reviewer
+`max_seconds` budget. It is not a registered
 acceptance check. Review packets carry board-bound top/bottom PNG and copper,
 silk and courtyard SVG paths and hashes, including every enabled inner layer.
 Skipped or failed imaging remains explicit missing coverage and leaves every
 existing check verdict unchanged. No image can establish geometric fit or waive
 a native defect.
+
+The shared test harness defaults incidental candidate imaging off with the
+strict `AGENT_EE_SKIP_VISUALS=1` flag. Candidate-visual and 3D-render test modules
+force `0` while they run, retaining native image/hash coverage. Production
+continues to render by default; this test setting neither skips tests nor
+changes a check verdict.

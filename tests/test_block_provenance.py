@@ -279,6 +279,10 @@ class ReviewInputTests(ProvenanceFixture, unittest.TestCase):
                 for bid, values in expected.items():
                     self.assertEqual({k: rows[bid][k] for k in values}, values)
                 self.assertEqual(rows['Power2']['mapping'], MAPPING)
+                # Every reviewer's packet cites each block's provenance class and citation (AGENTEE-421).
+                self.assertEqual({bid: (r['class'], r['citation']) for bid, r in rows.items()},
+                                 {bid: (v['class'], v['citation']) for bid, v in expected.items()})
+                self.assertTrue(all(r['class'] and r['citation'] for r in rows.values()))
                 self.assertEqual(rows['Power2']['method'], 'project-cluster/1')
                 self.assertEqual({r['enforcement'] for r in rows.values()}, {'advisory'})
                 # Independence: the same packet, and no peer's judgment or review.

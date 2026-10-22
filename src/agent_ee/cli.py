@@ -232,6 +232,8 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
         expected, stored = decide_run(run, manifest), result.get("rf_review")
         if (stored is None and expected["required"]) or (stored is not None and stored != expected):
             raise ValueError("stored RF review decision differs from the captured candidate's RF sources")
+    from .purpose_review import verify_records as verify_purpose
+    verify_purpose(run, result)
     if result.get("outcome") != outcome(result):
         raise ValueError("stored result contradicts its execution and finding records")
     if result["state"] == "complete":
@@ -274,7 +276,9 @@ def outcome(result):
     # A disposition cannot silently change a declared executable criterion.
     if any(c["outcome"] == "defect" for c in result.get("checks", [])):
         return "defects_or_unresolved"
-    statuses = [finding_status(f) for f in result.get("findings", [])]
+    # An adjudicated purpose deferral is advisory (AGENTEE-385): savings cannot block acceptance.
+    from .purpose_review import advisory_deferral
+    statuses = [finding_status(f) for f in result.get("findings", []) if not advisory_deferral(f)]
     if any(s in ("accepted", "unresolved", "deferred") for s in statuses):
         return "defects_or_unresolved"
     return "criteria_satisfied"
@@ -305,11 +309,15 @@ def render(run, result):
         lines += ["", f"{review['role']} coverage: " + "; ".join(review["coverage"])]
         for limitation in review["limitations"]:
             lines.append(f"- {limitation}")
+    for record in result.get("purpose_coverage", []):
+        lines.append(f"- {record['role']} purpose coverage: {record['status']}.")
     lines += ["", "## Findings and dispositions", ""]
     for f in result.get("findings", []):
         lines += [f"### {f['id']}: {f['title']}", "", f"Disposition: **{finding_status(f)}**.", "",
                   *(["Authority: advisory check; the defect is confirmed but witnesses no requirement.", ""]
                     if f.get("authority") == "advisory" else []),
+                  *(["Purpose status: advisory; an estimated saving that does not hold the run outcome.", ""]
+                    if f.get("purpose_status") == "advisory" else []),
                   f"Location: {f.get('location', '')}. Condition: {f.get('condition', '')}.", "",
                   f.get("mechanism", f.get("summary", "")), "", f.get("reasoning", "")]
         decision = f.get("decision", {})
@@ -383,9 +391,12 @@ def recover_records(run, result):
     result["findings"] = collect_findings(result["reviews"], result["checks"])
     for finding in result["findings"]:
         old = previous.get(finding["id"], {})
-        for key in ("status", "disposition", "reason", "disposition_reason", "decision", "events", "duplicate_of", "duplicates"):
+        for key in ("status", "disposition", "reason", "disposition_reason", "decision", "events", "duplicate_of", "duplicates",
+                    "purpose_status"):
             if key in old:
                 finding[key] = old[key]
+    from .purpose_review import record_coverage
+    record_coverage(result)
 
 
 def validate_scope(scope):
@@ -480,7 +491,10 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
             if rel not in m["files"]:
                 raise ValueError(f"declared native/requirement input was not captured: {rel}")
         from .candidate_visuals import capture_visuals
+        imaging_started = time.monotonic()
         m = capture_visuals(run)
+        # Advisory imaging has its own executor guard, outside the review budget.
+        deadline += time.monotonic() - imaging_started
         result.update(candidate_id=m["candidate_id"], name=m["scope"]["name"], scope=m["scope"]["scope"],
                       limitations=m["scope"].get("limitations", []),
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],
@@ -528,6 +542,8 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
             result["reviews"], result["review_executions"] = initial_reviews(run, packet, deadline, launch_context=launch_context,
                                                                              roles=review_roles)
             result["findings"] = collect_findings(result["reviews"], result["checks"])
+            from .purpose_review import record_coverage
+            record_coverage(result)
             save_result(run, result)
             from .preflight import verify_calls
             verify_calls(run, result, m)
@@ -600,6 +616,9 @@ def _apply_decisions(run, decisions_path):
     event = run / "events" / (str(uuid.uuid4()) + "-adjudication.json")
     write_json(event, {"at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "decisions": decisions})
     result.update(findings=updated, adjudicated=True)
+    if result["reviews"]:
+        from .purpose_review import record_coverage
+        record_coverage(result)
     if (len(result["reviews"]) >= 2 and all(c["execution"] == "ok" and c["outcome"] != "unknown"
             for c in result["checks"]) and all(r["execution"] == "ok" for r in result["review_executions"])
             and all(finding_status(f) != "unresolved" for f in updated)

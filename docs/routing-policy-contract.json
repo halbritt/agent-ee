@@ -88,7 +88,7 @@
       "router_input_fingerprint": "result.input.fingerprint over snapshot.json files",
       "rule_files_loaded": "result.input.rules_files / attempt.rules_files (names only: project, custom_rules, not_loaded)",
       "rule_floor": "result.settings.rule_floor_sha256 (always null through the adapter)",
-      "effective_netclass_per_net": "retained facts/reference-facts.json nets[].{netclass,track_width,clearance,via_diameter,via_drill}",
+      "effective_netclass_per_net": "retained facts/reference-facts.json nets[net_name].{netclass,track_width,clearance,via_diameter,via_drill}",
       "layer_stack": "retained facts/reference-facts.json copper_layers, stackup",
       "layer_policy": "report.request.layer_policy, result.settings.backend_args and pour_area_loss_pct",
       "tool_code": "report.tool.commit == PIN; identity_before/after.code (bin, src); PINNED_CODE inside the adapter bytes",
