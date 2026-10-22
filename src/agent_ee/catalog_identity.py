@@ -41,12 +41,20 @@ DECISIONS_SCHEMA = 'agent-ee.part-decisions/1'
 # Passive families are resolved parametrically from the verified generic tables;
 # validated by catalog_bouni.passive_boundary (decision in docs/decisions.md).
 GENERIC_FAMILIES = ('resistor', 'capacitor', 'inductor')
-# Subcategories inside a passive category whose identity is not established by
-# nominal value, tolerance and package (impedance, B-value, taper, turns ratio,
-# pin configuration). Such rows keep their identity rows: fail closed.
-NON_GENERIC_SUBCATEGORY_WORDS = ('ferrite', 'bead', 'common mode', 'transformer', 'potentiometer',
-                                 'variable', 'trimmer', 'thermistor', 'varistor', 'fuse', 'network',
-                                 'array', 'crystal', 'resonator')
+# Positive qualification: only these subcategories (casefolded, exact) of a passive
+# family are pruned as generic, because their identity is nominal value, tolerance and
+# package. Any other subcategory, including unknown, empty or unlisted ones, is
+# non-generic and keeps its identity rows (fail closed).
+QUALIFIED_SUBCATEGORIES = {
+    'resistor': ('chip resistor - surface mount', 'through hole resistors'),
+    'capacitor': ('mlcc', 'multilayer ceramic capacitors mlcc - smd/smt',
+                  'aluminum electrolytic capacitors - smd'),
+    'inductor': ('power inductors', 'inductors (smd)'),
+}
+# Defense in depth: a qualified listing is still vetoed when it names a non-value identity.
+NON_GENERIC_SUBCATEGORY_WORDS = ('ferrite', 'bead', 'common mode', 'common-mode', 'transformer',
+                                 'potentiometer', 'variable', 'trimmer', 'thermistor', 'varistor',
+                                 'fuse', 'network', 'array', 'crystal', 'resonator')
 TIERS = ('Basic', 'Preferred', 'Extended')
 COLUMNS = ('lcsc', 'mpn', 'mpn_key', 'mfr', 'package', 'category', 'subcategory', 'library_tier',
            'stock', 'present', 'last_seen', 'datasheet_url', 'provenance')
@@ -67,10 +75,16 @@ def mpn_key(mpn):
 
 
 def generic(category, subcategory, boundary):
-    """True only for a mapped family inside the validated passive boundary."""
-    if any(word in subcategory.lower() for word in NON_GENERIC_SUBCATEGORY_WORDS):
+    """True only for a positively qualified subcategory of a family inside the boundary.
+
+    Used identically at capture and at load. The family comes from the category (or
+    subcategory) map; the subcategory must be listed in QUALIFIED_SUBCATEGORIES.
+    """
+    family = CATEGORY_MAP.get(category) or CATEGORY_MAP.get(subcategory)
+    sub = subcategory.strip().lower()
+    if family not in boundary or sub not in QUALIFIED_SUBCATEGORIES.get(family, ()):
         return False
-    return (CATEGORY_MAP.get(category) or CATEGORY_MAP.get(subcategory)) in boundary
+    return not any(word in sub for word in NON_GENERIC_SUBCATEGORY_WORDS)
 
 
 def validate_source(manifest):

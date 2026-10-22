@@ -666,8 +666,9 @@ not captured as an interchangeable value, so they stay in the index. Unmapped
 families, such as crystals, fuses and ferrite beads, stay in the index too. The
 boundary fails closed: a family joins it only when its identity can be
 established from captured fields, and `catalog_bouni.passive_boundary` refuses
-anything outside the value-resolved set at capture and at load. Rows in an
-R/C/L category whose subcategory names a non-value identity (ferrite bead,
-common-mode filter, transformer, potentiometer, thermistor, varistor, fuse,
-network or array, crystal) are kept. Pruning yields unknown resolution, never a
-pass. See [the passive boundary](catalog-identity.md#passive-boundary-agentee-253).
+anything outside the value-resolved set at capture and at load. Within an
+R/C/L category a row is pruned only when its subcategory is positively listed in
+`QUALIFIED_SUBCATEGORIES`; unknown, empty and unlisted subcategories are kept, at
+capture and at load. Pruning a row removes it as a candidate, so only qualified
+rows are pruned; a retained row never turns an ambiguity into a resolution.
+See [the passive boundary](catalog-identity.md#passive-boundary-agentee-253).

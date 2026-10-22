@@ -45,11 +45,11 @@ The profile keeps every row except:
 - **Generic passives.** These are rows whose upstream category or subcategory
   maps to `resistor`, `capacitor` or `inductor` in the stocked importer's
   category map. They are resolved parametrically from `agent-ee.catalog/1` and
-  are counted in `pruned_rows.generic`. A row is kept anyway when its
-  subcategory names a part whose identity is not its nominal value, tolerance
-  and package (ferrite bead, common-mode filter, transformer, potentiometer,
-  variable or trimmer part, thermistor, varistor, fuse, network or array,
-  crystal, resonator). See [the passive boundary](#passive-boundary-agentee-253).
+  are counted in `pruned_rows.generic`. A row is pruned only when its
+  subcategory is positively qualified in `QUALIFIED_SUBCATEGORIES` (identity is
+  nominal value, tolerance and package). Every other subcategory, whether
+  unknown, empty or unlisted, is kept, as is any listing that
+  `NON_GENERIC_SUBCATEGORY_WORDS` vetoes. Capture and load use the same rule. See [the passive boundary](#passive-boundary-agentee-253).
 - **Stale rows.** These are rows whose UTC `fetched_at` date is before
   `stale_before`. They are counted in `pruned_rows.stale`.
 
@@ -251,8 +251,9 @@ A widened boundary (for example adding `diode`, `led` or `ferrite_bead`) is
 refused at both points, and a narrowed one is refused at load as an unsupported
 profile. Diodes, LEDs, connectors, regulators and every unmapped family
 (crystals, fuses, ferrite beads in their own category, ICs) stay in the index
-and resolve by MPN. Within R/C/L categories, the subcategory words listed in
-`NON_GENERIC_SUBCATEGORY_WORDS` keep a row in the index. The reasoning is in
+and resolve by MPN. Within R/C/L categories, only subcategories listed in
+`QUALIFIED_SUBCATEGORIES` are pruned; every unknown, empty or unlisted
+subcategory keeps its row (fail closed, no default pruning). The reasoning is in
 [decisions](decisions.md#catalog-identity-passive-boundary-agentee-253).
 
 ## Limits

@@ -20,8 +20,8 @@ from agent_ee.catalog import capture_catalog, load_catalog
 from unittest import mock
 
 from agent_ee import catalog_identity
-from agent_ee.catalog_bouni import KNOWN_FAMILIES, BouniRefusal
-from agent_ee.catalog_identity import (FORMAT, GENERIC_FAMILIES, capture_identity, load_identity_index, main,
+from agent_ee.catalog_bouni import KNOWN_FAMILIES, BouniRefusal, passive_boundary
+from agent_ee.catalog_identity import (FORMAT, GENERIC_FAMILIES, capture_identity, generic, load_identity_index, main,
                                        resolve_decisions)
 from agent_ee.part_selection import VALUE_ATTRIBUTES
 from agent_ee.catalog_jlcparts import COMPONENT_COLUMNS
@@ -166,6 +166,40 @@ class IdentityIndexTests(unittest.TestCase):
             for lcsc in ['C15', 'C17'] + [f'C{n}' for n in range(31, 41)]:
                 self.assertEqual(index.by_lcsc(lcsc)['lcsc'], lcsc)
 
+    def test_unqualified_passive_subfamilies_are_retained(self):
+        """Unknown, empty and unlisted R/C/L subcategories are non-generic (fail closed)."""
+        cases = ((50, 'Inductors, Coils, Chokes', 'Common-Mode Chokes'), (51, 'Inductors', 'Coupled Inductors'),
+                 (52, 'Resistors', 'Unqualified owned subfamily'), (53, 'Capacitors', ''),
+                 (54, 'Inductors', 'RF Baluns'))
+
+        def edit(connection):
+            for lcsc, category, sub in cases:
+                connection.execute('INSERT INTO jlc_components SELECT * FROM jlc_components WHERE lcsc=13')
+                connection.execute('UPDATE jlc_components SET lcsc=?, category=?, subcategory=?, mfr=? '
+                                   'WHERE rowid=(SELECT max(rowid) FROM jlc_components)',
+                                   (lcsc, category, sub, f'OWNED-ADVERSARY-{lcsc}'))
+        path, pin = self.capture(edit=edit)
+        with load_identity_index(path, pin) as index:
+            for lcsc, _, _ in cases:
+                self.assertEqual(index.by_lcsc(f'C{lcsc}')['lcsc'], f'C{lcsc}')
+        boundary = passive_boundary(GENERIC_FAMILIES)
+        self.assertTrue(generic('Inductors', 'Power Inductors', boundary))
+        self.assertFalse(generic('Inductors', 'Common-Mode Chokes', boundary))
+        self.assertFalse(generic('Capacitors', '', boundary))
+
+    def test_unqualified_subfamily_keeps_ambiguity(self):
+        def edit(connection):
+            for lcsc, sub, package in ((60, 'Common Mode Filters', 'OWNED-PKG-A'),
+                                       (61, 'Common-Mode Chokes', 'OWNED-PKG-B')):
+                connection.execute('INSERT INTO jlc_components SELECT * FROM jlc_components WHERE lcsc=13')
+                connection.execute('UPDATE jlc_components SET lcsc=?, category=?, subcategory=?, mfr=?, package=? '
+                                   'WHERE rowid=(SELECT max(rowid) FROM jlc_components)',
+                                   (lcsc, 'Inductors', sub, 'OWNED-COMMONMODE-A', package))
+        path, pin = self.capture(edit=edit)
+        with load_identity_index(path, pin) as index:
+            entry = resolve_decisions(index, decisions(('choke', 'OWNED-COMMONMODE-A', None)))['entries'][0]
+        self.assertEqual(entry['status'], 'ambiguous')
+
     def test_passive_boundary_is_enforced_at_capture_and_load(self):
         for families, reason in ((('resistor', 'capacitor', 'inductor', 'diode'), 'boundary_invalid'),
                                  (('resistor', 'ferrite_bead'), 'boundary_invalid'), ((), 'boundary_invalid')):
@@ -222,7 +256,7 @@ class IdentityIndexTests(unittest.TestCase):
     def test_forged_rows_fail_closed_after_repin(self):
         for name, sql, message in (
                 ('key', "UPDATE identity SET mpn_key='OTHER' WHERE lcsc='C13'", 'MPN key'),
-                ('generic', "UPDATE identity SET category='Resistors' WHERE lcsc='C13'", 'outside profile'),
+                ('generic', "UPDATE identity SET category='Capacitors', subcategory='MLCC' WHERE lcsc='C13'", 'outside profile'),
                 ('tier', "UPDATE identity SET library_tier='Gold' WHERE lcsc='C13'", 'outside profile'),
                 ('date', "UPDATE identity SET last_seen='2026-09-15' WHERE lcsc='C13'", 'snapshot window'),
                 ('stock', "UPDATE identity SET stock=-1 WHERE lcsc='C13'", 'stock/presence')):
