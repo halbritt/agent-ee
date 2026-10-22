@@ -29,6 +29,22 @@ PROJECT_RULES = {'min_trace_mm': 'min_track_width', 'min_clearance_mm': 'min_cle
 # so the joint condition is the intersection of per-term via offender UUIDs.
 CONJUNCTIVE = {'min_via_drill_mm', 'min_via_pad_mm'}
 SCHEMAS = ('agent-ee.fab-profile/1', 'agent-ee.fab-profile/2')
+# fab-profile/2 silkscreen (legend) minima. Each key keeps its own measured meaning
+# and is kept out of NATIVE, whose finding kinds guard scaffold templates. KiCad 10's
+# silk_clearance against a pad measures pad copper, not the mask aperture; a tented
+# pad reports silk_overlap instead and stays unknown. Text keys grade silk text only.
+SILK = {
+    'min_pad_to_silk_mm': ('silk_clearance', ['silk_over_copper', 'silk_overlap'], "B.Type == 'Pad'"),
+    'min_silk_text_height_mm': ('text_height', ['text_height'], "A.Layer == '?.Silkscreen'"),
+    'min_silk_line_width_mm': ('text_thickness', ['text_thickness'], "A.Layer == '?.Silkscreen'"),
+}
+# Sourced, but with no qualified measurement: the limit stays unknown, never pass.
+UNMEASURED = {
+    'min_silk_to_mask_mm': ('silk_to_mask_unmeasured',
+                            'no qualified silkscreen-to-solder-mask measurement: KiCad 10 silk_clearance '
+                            'measures pad copper, not mask apertures'),
+}
+ADVISORY_ROLES = ('recommended', 'guide_minimum')
 
 
 def date(text):
@@ -97,8 +113,12 @@ def validate_limit(limit, schema='agent-ee.fab-profile/1'):
             {'drill_options'} if schema == SCHEMAS[1] else set()):
         raise ValueError('unknown fabricator limit fields')
     key = limit.get('key')
-    if not isinstance(key, str) or key not in NATIVE.keys() | GEOMETRY:
+    silk = SILK.keys() | UNMEASURED.keys() if schema == SCHEMAS[1] else set()
+    if not isinstance(key, str) or key not in NATIVE.keys() | GEOMETRY | silk:
         raise ValueError('unsupported fabricator limit key')
+    if key in silk and limit.get('tier') != 'minimum':
+        # Recommendations are sourced advisories; they never grade or charge.
+        raise ValueError('silkscreen limits are minimum-tier only; record recommendations as advisories')
     if limit.get('tier') not in ('minimum', 'preferred'):
         raise ValueError('limit tier must be minimum or preferred')
     unit = 'count' if key == 'max_layers' else 'boolean' if key == 'supports_smt' else 'mm'
@@ -135,11 +155,54 @@ def validate_limit(limit, schema='agent-ee.fab-profile/1'):
 
 
 def native_rule(record, key, value):
-    constraint, violation, condition = NATIVE[key]
+    if key in SILK:
+        # Silk minima stage no board-wide project minimum: only the marked rule grades.
+        constraint, types, condition = SILK[key]
+        project = {}
+    else:
+        constraint, violation, condition = NATIVE[key]
+        types, project = [violation], {PROJECT_RULES[key]: value}
     rules = rule_text(record['marker'], condition, f'{constraint} (min {value:.12g}mm)')
-    record.update(rules=rules, rules_sha256=sha_text(rules), native_types=[violation],
-                  project_rules={PROJECT_RULES[key]: value})
+    record.update(rules=rules, rules_sha256=sha_text(rules), native_types=list(types),
+                  project_rules=project)
     return record
+
+
+def compile_advisories(advisories, files, inputs, as_of, dependencies):
+    """Sourced recommendations and guide values; never rules, predicates or charges."""
+    if not isinstance(advisories, list) or not advisories:
+        raise ValueError('advisories must be a nonempty list')
+    records, ids, roles = [], set(), set()
+    for advisory in advisories:
+        if (not isinstance(advisory, dict) or
+                set(advisory) != {'id', 'key', 'value', 'unit', 'role', 'source'} or
+                not isinstance(advisory['id'], str) or not ID.fullmatch(advisory['id'])):
+            raise ValueError('advisory needs exactly id/key/value/unit/role/source')
+        key, role = advisory['key'], advisory['role']
+        if not isinstance(key, str) or key not in NATIVE.keys() | SILK.keys() | UNMEASURED.keys():
+            raise ValueError('unsupported advisory key')
+        if role not in ADVISORY_ROLES:
+            raise ValueError('advisory role must be ' + ' or '.join(ADVISORY_ROLES))
+        if advisory['unit'] != 'mm':
+            raise ValueError('explicit physical unit mismatch')
+        if number(advisory['value'], key) <= 0:
+            raise ValueError('advisory value must be positive')
+        if advisory['id'] in ids or (key, role) in roles:
+            raise ValueError('duplicate advisory id or key/role')
+        ids.add(advisory['id']); roles.add((key, role))
+        record = {'id': advisory['id'], 'expected': copy.deepcopy(advisory), 'execution': 'unsupported'}
+        try:
+            source = advisory['source']
+            if isinstance(source, dict) and isinstance(source.get('path'), str):
+                captured_file(inputs, files, source['path'])
+                dependencies.add(source['path'])
+            verify_source(source, inputs, files, as_of)
+        except (ValueError, KeyError, OSError, UnicodeError) as exc:
+            record['reason'] = str(exc)
+        else:
+            record['execution'] = 'ready'
+        records.append(record)
+    return sorted(records, key=lambda r: r['id'])
 
 
 def compile_stackup(value, files, inputs, as_of):
@@ -172,7 +235,7 @@ def compile_stackup(value, files, inputs, as_of):
 def compile_profile(profile, files, inputs):
     required = {'schema', 'name', 'as_of', 'limits'}
     if (not isinstance(profile, dict) or not required <= profile.keys() or
-            set(profile) - required - ({'finished_thickness_tolerance', 'stackup'}
+            set(profile) - required - ({'finished_thickness_tolerance', 'stackup', 'advisories'}
                                       if profile.get('schema') == SCHEMAS[1] else set()) or
             profile['schema'] not in SCHEMAS or not isinstance(profile['name'], str)
             or not ID.fullmatch(profile['name']) or not isinstance(profile['limits'], list)
@@ -207,8 +270,11 @@ def compile_profile(profile, files, inputs):
                                             'marker': f'{record["marker"]}+{term["key"]}',
                                             'execution': 'ready'}, term['key'], term['value'])
                                for term in limit['all']]
-        elif key in NATIVE:
+        elif key in NATIVE or key in SILK:
             native_rule(record, key, limit['value'])
+        elif key in UNMEASURED:
+            code, reason = UNMEASURED[key]
+            record.update(execution='unsupported', code=code, reason=reason)
         else:
             record['geometry'] = key
         records.append(record)
@@ -232,6 +298,8 @@ def compile_profile(profile, files, inputs):
             record['execution'] = 'ready'
         # This is an envelope bound, not an isolated native DRC rule or predicate.
         metadata['finished_thickness_tolerance'] = record
+    if 'advisories' in profile:
+        metadata['advisories'] = compile_advisories(profile['advisories'], files, inputs, as_of, dependencies)
     if 'stackup' in profile:
         metadata['stackup'] = compile_stackup(profile['stackup'], files, inputs, as_of)
         source = profile['stackup']['source']
@@ -258,6 +326,9 @@ def capability(params, scope, files, inputs, cid):
     stackup = compiled.get('stackup')
     if stackup is not None and stackup['execution'] != 'ready':
         raise ValueError('stackup source not verified: ' + stackup['reason'])
+    unverified = [a for a in compiled.get('advisories', []) if a['execution'] != 'ready']
+    if unverified:
+        raise ValueError('advisory source not verified: ' + unverified[0]['reason'])
     validate_mappings(compiled['constraints'], scope, files, cid)
     return {'compiled': compiled,
             'immutable_inputs': sorted({params['fab_profile'], *compiled['immutable_inputs'],
@@ -373,7 +444,43 @@ def native_inventory(board_path):
                                  key=lambda h: h['uuid'])}
     if problem:
         inventory['outline_problem'] = {'reason': problem[0], 'locator_ids': problem[1]}
+    inventory['silk'] = silk_inventory(board)
     return inventory
+
+
+def silk_inventory(board):
+    """Every saved silkscreen item: text font/visibility, exact graphic stroke widths.
+
+    Text and stroked shapes are the qualified classes; anything else printed on a
+    silk layer (filled shapes, dimensions, tables, zones, pads) is listed as other.
+    """
+    import pcbnew as k
+    layers = {k.F_SilkS: 'F.SilkS', k.B_SilkS: 'B.SilkS'}
+    footprints = list(board.GetFootprints())
+    items = [*board.GetDrawings(), *board.Zones(),
+             *(i for fp in footprints for i in (*fp.GraphicalItems(), *fp.GetFields(), *fp.Zones(), *fp.Pads()))]
+    texts, graphics, other = [], [], []
+    for item in items:
+        on = [name for layer, name in layers.items() if item.IsOnLayer(layer)]
+        if not on:
+            continue
+        cls, uid = item.GetClass(), item.m_Uuid.AsString()
+        base = {'uuid': uid, 'class': cls, 'layers': on}
+        if cls in ('PCB_TEXT', 'PCB_FIELD', 'PCB_TEXTBOX'):
+            # KiCad's own stroke font has no font object; outline fonts name a face.
+            texts.append({**base, 'visible': bool(item.IsVisible()), 'stroke_font': item.GetFont() is None,
+                          'font_name': item.GetFontName(),
+                          'knockout': cls != 'PCB_TEXTBOX' and bool(item.IsKnockout()),
+                          'height_nm': int(item.GetTextHeight()), 'thickness_nm': int(item.GetTextThickness()),
+                          **({'border_width_nm': int(item.GetBorderWidth())}
+                             if cls == 'PCB_TEXTBOX' and item.IsBorderEnabled() else {})})
+        elif cls == 'PCB_SHAPE':
+            graphics.append({**base, 'shape': item.ShowShape(), 'width_nm': int(item.GetWidth()),
+                             'filled': bool(item.IsAnyFill())})
+        else:
+            other.append(base)
+    return {key: sorted(value, key=lambda i: i['uuid'])
+            for key, value in (('texts', texts), ('graphics', graphics), ('other', other))}
 
 
 def evaluate_geometry(constraint, inventory):
@@ -419,12 +526,69 @@ def offender_ids(record):
         i['uuid'] for f in record.get('native_findings', []) for i in f['items']}
 
 
+def qualify_silk(records, inventory):
+    """Grade silk minima only where the saved silk is what the native rule measures.
+
+    Unqualified saved silk keeps the record unknown; that takes precedence over a
+    proved violation, which stays visible as native_status and in the findings.
+    """
+    for record in records:
+        key = record['expected'].get('key')
+        if key not in SILK or record['execution'] != 'ok':
+            continue
+        silk = inventory.get('silk')
+        if silk is None:
+            record.update(native_status=record['status'], status='not_evaluated', execution='unsupported',
+                          code='silk_inventory_missing', reason='silkscreen inventory missing')
+            continue
+        texts = {t['uuid']: t for t in silk['texts']}
+        cited = {i['uuid'] for f in record['native_findings'] for i in f['items']}
+        refusals = []
+        if silk['other']:
+            refusals.append(('silk_item_unqualified', 'silkscreen items outside the qualified text and '
+                             'stroked-shape classes', silk['other']))
+        hidden = [texts[u] for u in sorted(cited & texts.keys()) if not texts[u]['visible']]
+        if hidden:
+            refusals.append(('hidden_silk_text', 'native rule graded hidden silkscreen text', hidden))
+        if key == 'min_pad_to_silk_mm':
+            tented = [f for f in record['native_findings'] if f['type'] == 'silk_overlap']
+            if tented:
+                refusals.append(('pad_to_silk_tented_pad', 'silk near a pad without a mask opening '
+                                 'on that side', tented))
+        else:
+            fonts = [t for t in silk['texts'] if t['visible'] and (not t['stroke_font'] or t['knockout'])]
+            if fonts:
+                refusals.append(('silk_text_unqualified', 'outline-font or knockout silkscreen text', fonts))
+        violations = []
+        if key == 'min_silk_line_width_mm':
+            # Native text_thickness grades characters; saved stroke widths grade the rest.
+            limit = Fraction(str(record['expected']['value'])) * 1_000_000
+            strokes = [*silk['graphics'], *({'uuid': t['uuid'], 'class': t['class'], 'layers': t['layers'],
+                                             'width_nm': t['border_width_nm'], 'filled': False}
+                                            for t in silk['texts'] if 'border_width_nm' in t)]
+            unmeasured = [g for g in strokes if g['filled'] or g['width_nm'] <= 0]
+            if unmeasured:
+                refusals.append(('silk_graphic_unmeasured', 'filled or zero-width silkscreen shapes '
+                                 'have no measured line width', unmeasured))
+            violations = [g for g in strokes if not g['filled'] and 0 < g['width_nm'] < limit]
+            if violations:
+                record.update(status='violation', silk_graphic_violations=violations,
+                              offender_ids=sorted(g['uuid'] for g in violations))
+        if refusals:
+            code, reason, offenders = refusals[0]
+            record.update(native_status=record['status'], status='not_evaluated', execution='unsupported',
+                          code=code, reason=reason, unqualified_silk=offenders,
+                          silk_refusals=[{'code': c, 'reason': r, 'items': i} for c, r, i in refusals])
+    return records
+
+
 def classify_preferred(records, inventory):
     """Only proved legal features can become extra charges, never defects.
 
     The native inventory is required: an edge clearance is satisfied only against
     one qualified outline, because absent or malformed Edge.Cuts prove nothing.
     """
+    qualify_silk(records, inventory)
     for record in records:
         options = record['expected'].get('drill_options')
         if options is None or record['execution'] != 'ok':

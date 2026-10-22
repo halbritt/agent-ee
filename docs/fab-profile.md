@@ -68,7 +68,8 @@ Supported minimum/preferred keys:
 | `supports_smt` | boolean | Presence of saved SMD pads |
 
 `agent-ee.fab-profile/2` accepts every `/1` limit unchanged and adds
-[conjunctive surcharge rules](#conjunctive-surcharge-rules-fab-profile2). A `/1`
+[conjunctive surcharge rules](#conjunctive-surcharge-rules-fab-profile2),
+[silkscreen minima and advisories](#silkscreen-limits-fab-profile2). A `/1`
 document keeps its exact `/1` contract and refuses a conjunctive rule.
 
 Assembly coverage is limited to the declared presence of SMD pads. It does not
@@ -365,6 +366,102 @@ NPTH (including an oblong slot) and mixed via/pad boards are unknown, with
 their pad UUIDs and sizes, while via grading and surcharges stay as on via-only
 boards. The compiler accepts the
 optional `/2` drill field; check kinds and predicate names are unchanged.
+
+## Silkscreen limits (fab-profile/2)
+
+A `/2` profile may state four silkscreen (legend) minima. Each key keeps its
+own meaning and source, and none is derived from another:
+
+| Key | Native measurement | Gate before grading |
+| --- | --- | --- |
+| `min_pad_to_silk_mm` | `silk_clearance` with condition `B.Type == 'Pad'`: KiCad reports `silk_over_copper` | A tented pad (no mask opening on that side) reports `silk_overlap` and is unknown |
+| `min_silk_text_height_mm` | `text_height` on `?.Silkscreen` | Visible outline-font or knockout text is unknown |
+| `min_silk_line_width_mm` | `text_thickness` on `?.Silkscreen`, plus every saved silk stroke width | Filled or zero-width shapes are unknown |
+| `min_silk_to_mask_mm` | None: always `code=silk_to_mask_unmeasured`, unknown | Not graded |
+
+KiCad 10 measures silk to pad copper, not to the mask aperture. A host probe
+measured the same `actual 0.1400 mm` with a 0.05 mm and a 0.3 mm pad mask
+margin. That reading supports pad-to-silk only. No qualified measurement exists
+for silkscreen-to-solder-mask clearance, so that limit stays unknown and the
+check is never pass while the profile states it. A board silk line exactly at
+the bound is legal: KiCad's `min` reports only distances strictly below it.
+Silk-to-silk spacing has no sourced limit and none is accepted:
+`min_silk_to_silk_mm` is an unsupported key.
+
+Silk keys are minimum tier only. Their rules stage no `.kicad_pro` board
+minimum, and the keys are kept out of the `NATIVE` table, so scaffold template
+guards are unchanged. A `/1` profile refuses them.
+
+The native inventory adds `silk`: every saved item on `F.SilkS`/`B.SilkS`, as
+`texts` (class, visibility, stroke font or font name, knockout, height,
+thickness, enabled textbox border width), `graphics` (shape, integer-nanometre
+stroke width, fill) and `other` (any other class, such as dimensions, tables,
+zones or pads on silk). Before a silk record is graded:
+
+- any `other` item makes every silk record unknown (`silk_item_unqualified`)
+- a native finding that cites hidden text is unknown (`hidden_silk_text`).
+  KiCad 10 skips hidden footprint fields, and board text has no saved visibility.
+- the text keys need KiCad's stroke font. On it, the nominal height is the
+  centreline cap height; the printed extent adds the stroke. Outline fonts and
+  knockout text are `silk_text_unqualified`.
+- line width compares every stroked shape and enabled textbox border with the
+  bound in exact nanometres. Offenders are in `offender_ids` and
+  `silk_graphic_violations`; `filled` (solid or hatched) or zero-width shapes are
+  `silk_graphic_unmeasured`.
+
+A refused record keeps its native result as `native_status`, its findings, the
+first `code`, `unqualified_silk` and every refusal in `silk_refusals`. As with
+drill tables, unknown takes precedence over a proved violation.
+
+Profile-level `advisories` (fab-profile/2) hold sourced values that never grade:
+each has exactly `id`, `key`, `value` (positive mm), `unit`, `role`
+(`recommended` or `guide_minimum`) and a `source` checked by the citation
+verifier. They compile to `advisories` metadata only. They produce no native rule,
+predicate, defect or extra charge. An unverified advisory refuses the descriptor.
+
+## Dated JLCPCB silkscreen profile
+
+[profile.json](../fixtures/fab-profiles/jlcpcb-silkscreen-2026-10-22/profile.json)
+is an explicitly selected `jlcpcb_silkscreen_2026-10-22` profile. It is separate
+from the via preset and the pod profile, so their bytes and hashes are unchanged.
+A candidate that needs both runs two `fab_profile` checks.
+
+| Limit | Value | Source |
+| --- | --- | --- |
+| `pad-to-silk` | 0.15 mm | [Capabilities](https://jlcpcb.com/capabilities/pcb-capabilities/), Legend, Pad To Silkscreen |
+| `silk-text-height` | 1.0 mm | Capabilities, Legend, Minimum text height |
+| `silk-line-width` | 0.15 mm | [Silkscreen guide](https://jlcpcb.com/blog/pcb-silkscreen), line width / text thickness, absolute minimum |
+| `silk-to-mask` | 0.15 mm | Silkscreen guide, silkscreen-to-solder-mask clearance, absolute minimum (unmeasured) |
+
+| Advisory | Value | Role |
+| --- | --- | --- |
+| `guide-text-height` | 0.8 mm | Guide's absolute character-height minimum. The capability table's 1.0 mm minimum grades |
+| `recommended-line-width` | 0.2 mm | Recommended only |
+| `recommended-silk-to-mask` | 0.25 mm | Recommended only |
+
+The capabilities table also says characters narrower than 0.15 mm are
+unidentifiable. That value is recorded on page 1. The graded line-width limit
+cites the guide, which names lines and text thickness. The guide's 0.15 mm
+pad-edge clipping buffer is recorded but not graded.
+
+[source-capture.json](../fixtures/fab-profiles/jlcpcb-silkscreen-2026-10-22/source-capture.json)
+records both host-captured URLs with UTC timestamps, HTTP status, raw response
+SHA-256 values, byte counts, locators and interpretation limits. The
+[numeric record](../fixtures/fab-profiles/jlcpcb-silkscreen-2026-10-22/jlcpcb-silkscreen.txt)
+holds numbers and names only. Page 1 is the capabilities table and page 2,
+after a form feed, is the guide. Raw vendor HTML remains in worker scratch,
+as for the via preset. Material, process and order-option applicability are
+not checked automatically. This is not complete DFM or supplier approval.
+
+`tests.test_silk_fab_profile` covers the preset contract: distinct page/quote
+bindings, advisory refusal and `/1` refusal. It refuses missing, changed,
+misquoted and wrong-page captures, and runs the qualification gates on unit
+records. Real sandboxed KiCad DRC covers: a compliant board (pass, or unknown
+with `silk-to-mask`), the exact 0.15 mm boundary, and a 0.14 mm pad gap with
+0.8 mm text, 0.1 mm thickness and a 0.1 mm line as a defect citing saved silk
+and pad UUIDs. It also covers mask-margin independence, back-side grading
+with opposite-side silk ignored, tented pads and outline fonts as unknown,
+hidden footprint fields and the saved silk inventory.
 
 ## Evidence and failure
 

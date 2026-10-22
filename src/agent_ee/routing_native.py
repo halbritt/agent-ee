@@ -318,7 +318,8 @@ def run_constraint(source, root, constraint, probe, directory=None):
     record = {k: constraint[k] for k in ('id', 'requirement', 'expected')}
     record.update(status='not_evaluated', execution='unsupported')
     if constraint['execution'] != 'ready':
-        return {**record, 'reason': constraint['reason']}
+        return {**record, 'reason': constraint['reason'],
+                **({'code': constraint['code']} if 'code' in constraint else {})}
     if 'geometry' in constraint:
         from .fab_profile import evaluate_geometry
         return evaluate_geometry(constraint, probe['fabrication'])
