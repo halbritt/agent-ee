@@ -1638,9 +1638,13 @@ def run_placement_iteration(work, design, source_inputs, manifest, state, declar
             receipt_dir = work / name
             record['helper'] = {'receipt': name, 'request_sha256': identity(request), 'status': None}
             ran = True
+            # Ordinary per-iteration placement never images its proposal (AGENTEE-458): the
+            # cleared sandbox environment receives the typed skip policy, which the helper's
+            # nested candidate imaging reads. Completed-iteration images are coordinator captures.
             receipt = receipts.run_step(receipt_dir, design, spec, {
                 'implementation': record['implementation'], 'source_candidate_id': manifest['candidate_id'],
-                'receipt_index': receipt_index}, deadline=deadline, cancellation=cancellation)
+                'receipt_index': receipt_index}, deadline=deadline, cancellation=cancellation,
+                skip_visuals=True)
             record['helper'].update(receipt_id=receipt['receipt_id'], status=receipt['status'],
                                     receipt_sha256=digest(receipt_dir / 'receipt.json'))
             record['helper'].update(qualify_receipt(receipt_dir, receipt, board, protected))
