@@ -30,14 +30,24 @@ hardware correctness benchmark.
 
 ## Restore a fresh checkout
 
-From the checkout, run:
+Most retained evidence bytes, including every archive, now live in the owner's
+private evidence store ([relocation](#evidence-relocation-agentee-20)). With the
+credentials file in place, fetch the archives and the recorded groups into a new
+directory and restore there:
 
 ```sh
-python3 scripts/evidence_archive.py restore rc-verified
-python3 scripts/evidence_archive.py restore donor-verified
+mkdir -p build/fetched-evidence
+for group in archives rc-verified donor-verified; do
+  python3 scripts/evidence_fetch.py fetch "$group" \
+    --base-url s3://agent-ee-evidence --destination build/fetched-evidence
+done
+python3 scripts/evidence_archive.py restore rc-verified --evidence build/fetched-evidence
+python3 scripts/evidence_archive.py restore donor-verified --evidence build/fetched-evidence
 ```
 
-The helper validates the archive checksum, member paths/types, destination links
+Without `--evidence`, restore reads this checkout's `evidence/archives/` and
+refuses with exit 3 (`refused (archive relocated)`) because the archive bytes are
+no longer tracked. The helper validates the archive checksum, member paths/types, destination links
 and existing files before extracting missing files. Identical existing files
 are left alone; changed ones cause refusal. It does not create live links or
 overwrite modified evidence. Archive checksums, lengths, implementation refs
@@ -53,13 +63,13 @@ fresh clone without restoration contains a complete hash-verifiable run tree.
 The original final records use Python policy from commit `30b2256`; later documentation
 commits preserve those module bytes. In the demonstrated runtime, these commands
 check retained candidate/evidence consistency without consulting the old source
-locations:
+locations. Run them on the groups fetched and restored above:
 
 ```sh
-./bin/agent-ee verify evidence/rc-verified/control --snapshot-only
-./bin/agent-ee verify evidence/rc-verified/seed --snapshot-only
-./bin/agent-ee verify evidence/rc-verified/repair --snapshot-only
-./bin/agent-ee verify evidence/donor-verified --snapshot-only
+./bin/agent-ee verify build/fetched-evidence/rc-verified/control --snapshot-only
+./bin/agent-ee verify build/fetched-evidence/rc-verified/seed --snapshot-only
+./bin/agent-ee verify build/fetched-evidence/rc-verified/repair --snapshot-only
+./bin/agent-ee verify build/fetched-evidence/donor-verified --snapshot-only
 ```
 
 They also require matching current runtime fingerprints, including resolved
@@ -159,12 +169,17 @@ implementation commit. `model-release` uses `5d01de9`. To check the archived
 release independently of newer code:
 
 ```sh
-python3 scripts/evidence_archive.py restore model-release
+mkdir -p build/fetched-release
+for group in archives model-release; do
+  python3 scripts/evidence_fetch.py fetch "$group" \
+    --base-url s3://agent-ee-evidence --destination build/fetched-release
+done
+python3 scripts/evidence_archive.py restore model-release --evidence build/fetched-release
 git worktree add --detach build/replay-release 5d01de9
 PYTHONPATH=build/replay-release/src python3 -m agent_ee.cli verify \
-  evidence/model-release/repair-demo/control --snapshot-only
+  build/fetched-release/model-release/repair-demo/control --snapshot-only
 PYTHONPATH=build/replay-release/src python3 -m agent_ee.cli verify \
-  evidence/model-release/baseline --snapshot-only
+  build/fetched-release/model-release/baseline --snapshot-only
 ```
 
 The worktree supplies matching policy code; archive restoration supplies recorded
@@ -231,68 +246,145 @@ full campaign plus referenced feedback and source trees at their recorded paths,
 or inspect relocated copies as historical records without claiming equivalent
 verification.
 
-## Evidence relocation preparation (AGENTEE-20)
+## Evidence relocation (AGENTEE-20)
 
-Relocation is prepared locally; retained evidence remains in this checkout.
-The owner has not created a destination store or approved third-party publication.
-No upload, evidence removal or history rewrite has occurred. The working tree
-therefore still exceeds the requested 20 MB limit. Even after a future removal
-commit, historical Git objects keep clone size large until a separately approved
-history rewrite (or another owner-chosen distribution strategy).
+### Destination
+
+On 2026-10-22 the owner approved a private bucket on the owner's own Garage S3
+service on the host `proximal` (single node, LUKS-backed storage). There is no
+third-party publication and no Git history rewrite. The bucket is
+`agent-ee-evidence`. It allows no anonymous or website access. Objects use the
+layout `GROUP/EXACT_RELATIVE_FILE_PATH`. Every file of all 20 groups in
+[files-manifest.json](../evidence/files-manifest.json) is in the bucket: 4,857
+objects, 325,214,213 bytes. Fetches use a read-only access key. Uploads use a
+separate key that the owner holds. The S3 API listens on `127.0.0.1:3900` on
+proximal. Hosts on the owner's tailnet reach it through a port 3900 forward on
+proximal's tailnet address. It is not reachable from the public internet.
+[relocation.json](../evidence/relocation.json) records the store, the relocated
+groups and the files that stay in the tree.
+
+### Credentials
+
+The fetch tool reads `~/.config/agent-ee/evidence-s3.env`. The
+`AGENT_EE_EVIDENCE_CREDENTIALS` variable or `--credentials FILE` selects another
+file. The file is outside every checkout. It must be a regular file with mode
+`0600` that holds `KEY=VALUE` lines:
+
+```text
+AWS_ACCESS_KEY_ID=<read-only key id from the owner>
+AWS_SECRET_ACCESS_KEY=<its secret>
+AWS_DEFAULT_REGION=garage
+AGENT_EE_EVIDENCE_S3_BUCKET=agent-ee-evidence
+AGENT_EE_EVIDENCE_S3_ENDPOINT=http://127.0.0.1:3900
+```
+
+On proximal the endpoint is the loopback origin shown. On another tailnet host,
+set it to `http://<proximal tailnet address>:3900`, or pass `--endpoint ORIGIN`
+for a single command. Ask the owner for the file. Never commit it or copy it into
+a checkout, image or evidence directory.
+
+### Fetch a group
+
+```sh
+mkdir -p build/fetched-evidence
+python3 scripts/evidence_fetch.py fetch model-comparison \
+  --base-url s3://agent-ee-evidence --destination build/fetched-evidence
+```
+
+`s3://` fetches sign each GET with AWS Signature Version 4, using only the
+Python standard library. A missing, unreadable, malformed or group- or
+other-accessible credentials file is a typed refusal: exit 3 and
+`evidence_fetch: refused (store unavailable): ...`. Nothing is written in that
+case. A missing or corrupt object fails the whole group, as described below.
+Nothing falls back to a partial or unverified group, and no check treats absent
+evidence as a pass.
+
+The owner uploads with the separate key. Each PUT carries the manifest SHA-256
+as its signed payload hash, so Garage rejects a body that changed in transit. An
+existing object is never replaced. It is accepted only when a GET returns the
+manifest bytes:
+
+```sh
+python3 scripts/evidence_fetch.py upload GROUP --evidence evidence \
+  --base-url s3://agent-ee-evidence --credentials ~/.config/agent-ee/evidence-s3-upload.env
+```
+
+### What stays in the tree
+
+The tree keeps these files. Each is byte-identical to the manifest, and
+`tests/test_evidence_relocation.py` checks this.
+
+- Whole groups: `model-selection`, `model-validation` and `verification`. These
+  are small human-readable records, about 157 KB together.
+- `fome-block-review-runs`, which is newer than the manifest. Tests read it.
+- In the other 17 groups, 38 files (4,182,003 bytes): the files that tests or
+  fixture tools read, the files linked from README/docs or the top-level
+  evidence summaries, and `archives/manifest.json`. The read files include the
+  connectivity and DRC records cited by `tests/test_findings.py`, the cached
+  upstream Rev C sheet used by `fixtures/fome-mc/wbo1/parity.py` and the netlist
+  used by `tests/test_netlist_parity.py`.
+
+The tree no longer tracks the other 4,753 files of those 17 groups. No test,
+gate or fixture tool reads them. Thus the release gate and the workers need
+neither the store nor the credentials to run the suite. Reports inside a
+relocated group can link to sibling files; fetch the group to follow those links.
+
+The file-origin check still classifies every relocated path. The paths come from
+the hash-pinned manifest. The facts that the check reads from bytes (content
+markers and the origins of captured candidate inputs) were recorded in
+`relocation.json` from a hash-verified fetch, together with a digest of the marker
+patterns and capture sources. If those patterns or sources change, the check
+fails until the facts are recorded again from a fresh fetch:
+
+```sh
+python3 scripts/check_origins.py --relocated-facts build/fetched-evidence
+```
+
+### Verification and size
+
+The [store fetch receipt](../evidence/fetch-garage-check-20261022.json) records
+two round trips on proximal: all 20 groups fetched from the bucket over loopback
+and over the tailnet forward. Every path, size and SHA-256 matched the manifest.
+For all 73 retained `agent-ee.result/1` runs, `agent-ee verify` gave the same
+exit, stdout, stderr and diagnostics in source and `--snapshot-only` modes as the
+[pre-relocation baseline](../evidence/verify-baseline-20261022.json). All 73 runs
+exit 2 both before and after relocation, because their expanded inputs are
+absent and their policy is older. This is recorded, not repaired. The
+[2026-10-17 baseline](../evidence/verify-baseline-20261017.json) and
+[local fetch receipt](../evidence/fetch-local-check-20261017.json) record the
+earlier preparation.
+
+The tracked tree fell from 358.7 MB to about 38 MB. This does not meet the
+20 MB criterion, because files outside `evidence/` (source, fixtures, docs and
+tests) now total about 30 MB. Clone size does not fall: Git history keeps every
+earlier evidence object until the owner decides on a separate history rewrite.
+
+### Fetch mechanics
 
 [files-manifest.json](../evidence/files-manifest.json) is the immutable Git-recorded
-per-file inventory of the existing 20 evidence directories: 4,857 files,
-325,214,213 bytes. Each exact group-relative path has its byte length and SHA-256.
-This includes the existing archives and their manifest as ordinary files; it
-neither expands those archives nor invents missing captured inputs. File modes,
-timestamps and empty directories are outside this byte inventory. Top-level
-human summaries and the new relocation metadata remain in main. Regenerating a
-manifest requires a new output path; the generator refuses to overwrite one:
+per-file inventory of the 20 groups in the store. Each exact group-relative
+path has its byte length and SHA-256. It includes the archives and their manifest
+as ordinary files. It neither expands those archives nor invents missing
+captured inputs. File modes, timestamps and empty directories are outside this
+byte inventory. Regenerating a manifest requires a new output path. The generator
+refuses to overwrite one:
 
 ```sh
 python3 scripts/evidence_fetch.py manifest --evidence evidence --out build/new-files-manifest.json
 ```
 
-[verify-baseline-20261017.json](../evidence/verify-baseline-20261017.json) records
-actual current-source and snapshot-only CLI verification for every existing
-retained `agent-ee.result/1` run, with exact commands, exits and diagnostics.
-All 73 runs currently exit 2 in both modes with `candidate snapshot changed;
-evidence is stale`: expanded inputs are absent. Independent diagnostics also
-record all 73 policy mismatches and one changed source scope; selected source
-file bytes match where checked. These diagnostics do not bypass the first CLI
-refusal or establish runtime compatibility. No evidence was changed to force a pass. Older archived inputs may require the archive
-restore step above, and historical acceptance still requires matching policy and
-runtime. The baseline is a relocation comparison receipt, not fresh acceptance.
-The [local fetch receipt](../evidence/fetch-local-check-20261017.json) records an
-all-group `file:` round trip: every path/size/hash matched, and all 73 runs
-produced identical exits/stdout/stderr in both modes. It does not validate a remote
-store or restore expanded inputs. Record a new baseline when the integrator
-changes policy or environment:
+Record a new verify baseline when the integrator changes policy or environment:
 
 ```sh
 /usr/bin/python3 scripts/evidence_verify_baseline.py --out build/new-verify-baseline.json
 ```
 
-After the owner creates and approves a store, an authorized operator must upload
-exact group/path bytes and independently check them against the committed
-manifest. The fetch command requires an explicit base URL and an existing output
-parent. Set `EVIDENCE_STORE_URL` to that real approved store; no store is configured
-or implied by this documentation:
-
-```sh
-mkdir -p build/fetched-evidence
-python3 scripts/evidence_fetch.py fetch rc-verified \
-  --manifest evidence/files-manifest.json --base-url "$EVIDENCE_STORE_URL" \
-  --destination build/fetched-evidence
-```
-
-The store layout is `BASE_URL/GROUP/EXACT_RELATIVE_FILE_PATH`; URL components are
-encoded without interpreting filenames as URL instructions. HTTPS, HTTP and local
-`file:` URLs are supported. HTTP and file fixtures exercise the machinery locally;
-no real remote store has been validated. Keep the manifest in a trusted checkout:
-its hashes establish identity relative to that manifest, not publisher authenticity
-or permission to publish. This explicit outer tool uses network access outside
-agent/tool sandboxes; sandbox network policy is unchanged.
+`https:`, `http:` and local `file:` base URLs remain supported without
+credentials. URL components are encoded without interpreting filenames as URL
+instructions. Keep the manifest in a trusted checkout. Its hashes establish
+identity relative to that manifest, not publisher authenticity or permission to
+publish. This explicit outer tool uses network access outside agent/tool
+sandboxes. Sandbox network policy is unchanged.
 
 On Linux with `/proc` and libc `renameat2`, fetch stages the whole named group in
 a private temporary directory beside the destination. Each streamed file is size
@@ -301,18 +393,11 @@ the group. Missing, truncated, oversized or corrupted files leave no final group
 Unsafe paths, file/directory conflicts and destination ancestor symlinks are
 refused. Every existing destination (including an empty directory, an identical
 prior fetch or a dangling link) is a conflict; choose a fresh output parent.
+Because relocated groups keep some files in `evidence/`, fetch into a directory
+such as `build/fetched-evidence`, not into `evidence/`.
 A concurrent creator also causes refusal without replacing its directory.
 Unsupported publication primitives fail rather than using an incremental fallback.
 A killed process can leave hidden `.evidence-fetch-*` staging directories. They
 are never complete groups. This is atomic visibility, not a power-loss durability
 or hostile-host guarantee; the owner must protect the destination parent from
 other processes running with the same privileges.
-
-Before removing any tracked evidence, fetch every approved group into a clean
-location, independently compare every path/size/hash and record verification with
-the same policy/runtime. Compare failures as well as successes with the baseline;
-absolute source/campaign paths and unavailable inputs can prevent portable replay.
-Do not repair those records or reinterpret a mismatch as a pass. Keep the readable
-summaries and update their links only when the actual approved relocation is known.
-Store creation, publication rights, upload, real post-fetch comparison, removal,
-the under-20-MB criterion and owner review remain outstanding.

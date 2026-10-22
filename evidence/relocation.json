@@ -1,0 +1,2835 @@
+{
+ "files_manifest": "files-manifest.json",
+ "files_manifest_sha256": "8bd1f2adfd0a0cee9ba813c01ed4b610d7dd9df07107b03a8d4976791736bfbe",
+ "origin_facts": {
+  "basis_sha256": "b4dec2544db622d4cacd2cfedf9b5c62458f70e635abf32e09a6bcd505dc7d33",
+  "captured_origins": {
+   "evidence/adjudicator-comparison/agy/calculation/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/agy/singleton/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/agy/stale-repair/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/agy/unsupported/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/claude/calculation/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/claude/singleton/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/claude/stale-repair/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/claude/unsupported/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/codex/calculation/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/codex/singleton/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/codex/stale-repair/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/adjudicator-comparison/codex/unsupported/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/donor-baseline-v2/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/donor-baseline/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/donor-final/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/donor-verified/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-baselines-expanded/agy/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-baselines-expanded/claude/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-baselines-expanded/codex/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-baselines-final/agy/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-baselines-final/claude/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-baselines-final/codex/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-baselines/agy/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-baselines/claude/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-baselines/codex/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/agy/mapping-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/limits-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/limits-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-2/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/population-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/population-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/shutdown-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/shutdown-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/verification-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/verification-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/width-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/claude/width-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/limits-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/limits-a-2/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-2/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-2/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-2/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/population-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/population-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/shutdown-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/shutdown-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/verification-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/verification-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/width-a-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-comparison/runs/codex/width-b-1/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-release/baseline/candidate.json": [
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "evidence/model-release/repair-demo/control/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-release/repair-demo/repair/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-release/repair-demo/seed/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-release/uncertainty/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-repair-final/control/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-repair-final/repair/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-repair-final/seed/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-repair/control/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-repair/repair/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/model-repair/seed/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/rc-demonstration/control/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/rc-demonstration/seed/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/rc-final/control/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/rc-final/seed/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/rc-verified/control/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/rc-verified/repair/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ],
+   "evidence/rc-verified/seed/candidate.json": [
+    "AE",
+    "T1",
+    "T6"
+   ]
+  },
+  "content_markers": {
+   "evidence/adjudicator-comparison/agy/calculation/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/agy/calculation/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/agy/singleton/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/agy/singleton/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/agy/stale-repair/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/agy/stale-repair/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/agy/unsupported/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/agy/unsupported/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/claude/calculation/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/claude/calculation/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/claude/singleton/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/claude/singleton/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/claude/stale-repair/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/claude/stale-repair/review-work/adjudicator/experiments/my_netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/claude/stale-repair/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/claude/unsupported/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/claude/unsupported/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/codex/calculation/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/codex/calculation/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/codex/singleton/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/codex/singleton/review-work/adjudicator/experiments/native-netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/codex/singleton/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/codex/stale-repair/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/codex/stale-repair/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/codex/unsupported/packet.json": [
+    "netlist export"
+   ],
+   "evidence/adjudicator-comparison/codex/unsupported/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/donor-baseline-v2/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline-v2/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline-v2/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline-v2/packet.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline-v2/result.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline-v2/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline-v2/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline-v2/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline-v2/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline/result.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-baseline/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/REPORT.md": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/events/0001-adjudication.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/packet.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/result.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/review-work/adjudicator/console.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/review-work/adjudicator/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/review-work/circuit/console.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/review-work/circuit/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/review-work/physical/console.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/review-work/physical/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/reviews/circuit.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/reviews/physical.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-final/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/REPORT.md": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/events/0001-adjudication.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/donor-verified/result.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/review-work/adjudicator/console.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/review-work/adjudicator/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/review-work/circuit/console.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/review-work/circuit/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/review-work/physical/console.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/review-work/physical/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/reviews/circuit.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/reviews/physical.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/donor-verified/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/donor-verified/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/analyze_circuit_out.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/analyze_module_interfaces.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/analyze_module_interfaces_out.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/dump_symbol_instances_out.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/fetch_and_analyze_refs.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/fetch_remaining_refs.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/inspect_checks_out.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/inspect_schematics_out.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/inspect_symbols.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/inspect_symbols_out.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/Keep_Alive.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/README.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/etb-9201.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/highside_quad.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/ign4.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/knock.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/lowside_quad.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/mcu.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/polygonus-Shortage-Version.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/polygonus.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/psu.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/quad_analog.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/quad_analog_pullup.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_polygonus/triggers.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_wideband/fw/can.cpp": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_wideband/fw/port.cpp": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_wideband/wideband_controller.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_wideband/wideband_controller.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/ref_wideband_controller.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/experiments/wideband_controller.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/review-work/circuit/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/agy/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/REPORT.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/events/07481490-d51b-4ee8-92aa-62db547687eb-adjudication.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/operator-decisions.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/adjudicator/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/adjudicator/experiments/adjudication-notes.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/adjudicator/experiments/fetch/psu_upstream.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/adjudicator/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/circuit/console.log": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/circuit/experiments/notes.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/circuit/experiments/polygonus/mcu.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/circuit/experiments/polygonus/psu.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/circuit/experiments/polygonus/root.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/circuit/experiments/rerun/drc_rerun.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/circuit/experiments/rerun/erc_rerun.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/circuit/experiments/rerun/erc_rerun2.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/circuit/stdout.log": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/physical/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/physical/experiments/physical-review-notes.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/review-work/physical/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/reviews/circuit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/reviews/physical.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/claude/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/REPORT.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/events/0001-adjudication.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/adjudicate.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/audit-console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/audit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/drill-command.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/drill-export.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/drill-report.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/experiments/netlist.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/adjudicator/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/experiments/checked-hashes.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/experiments/configured-erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/experiments/connectivity-audit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/experiments/fresh-design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/experiments/fresh-erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/experiments/inspect_native.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/experiments/native-summary.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/experiments/reproduced-erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/experiments/review-notes.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/circuit/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/experiments/controlled-drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/experiments/drill-export.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/experiments/drill-report.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/experiments/independent-drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/experiments/native_audit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/experiments/native_audit.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/experiments/plot_native.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/experiments/review-notes.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/review-work/physical/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/reviews/circuit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/reviews/physical.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-expanded/codex/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/circuit_details.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/erc_drc_filtered.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/extract_root_sch.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/github_trees.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/inspect_upstream.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/all_ref_symbols.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/parsed_refs.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus-Shortage-Version.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_Keep_Alive.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_README.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_full.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_ign4.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_ign4.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_lowside_quad.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_lowside_quad.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_mcu.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_mcu.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_psu.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_psu.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_triggers.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/polygonus_triggers.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/repo_files.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/upstream_nets.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_board_carrier.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_board_carrier.xml": [
+    "netlist export"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_controller.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_controller.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_f0_board.h": [
+    "rights notice",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_f0_port.cpp": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_f0_readme.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/refs/wideband_netlist.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/root_sch_placed.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/root_symbols_lines.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/experiments/schematics_summary.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/review-work/circuit/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/agy/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/review-work/circuit/console.log": [
+    "HTML document",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/review-work/circuit/experiments/max9924.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-baselines-final/claude/review-work/circuit/experiments/t.tmp": [
+    "HTML document"
+   ],
+   "evidence/model-baselines-final/claude/review-work/circuit/experiments/tja.tmp": [
+    "HTML document"
+   ],
+   "evidence/model-baselines-final/claude/review-work/circuit/experiments/vnl5090.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-baselines-final/claude/review-work/circuit/experiments/vnl5090.txt": [
+    "rights notice"
+   ],
+   "evidence/model-baselines-final/claude/review-work/circuit/stdout.log": [
+    "HTML document",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/claude/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/REPORT.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/events/f1e73177-15de-4e4c-9e63-d2fa96025233-adjudication.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/operator-decisions.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/README.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/audit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/audit.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/command-4.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/decisions.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/drill-export.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/drill-report.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/final_checks.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/final_commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/followup.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/followup_commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/fresh.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/module_mcu.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/LCSC.html": [
+    "HTML document"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/Polygonus_README.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/Polygonus_mcu.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/VNL5050.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/references/VNL5050.txt": [
+    "rights notice"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/retrieval.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/retrieve.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/run_native.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/experiments/web_sources.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/adjudicator/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/console.log": [
+    "HTML document",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/Polygonus_mcu.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/board_pin_audit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/component_pin_audit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/driver_analysis.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/fetch_modules.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/native_audit.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/native_hashes.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/native_locators.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/LCSC_C2680415_cn.html": [
+    "HTML document"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_README.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_export_V1.6_polygonus-Shortage-Version.pdf": [
+    "PDF header",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_mcu.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_polygonus-Shortage-Version.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_tree.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_triggers.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/Polygonus_v1.6.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/TJA1051.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/TJA1051.txt": [
+    "rights notice"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/TLE9201_actual.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/TLE9201_actual.txt": [
+    "rights notice"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/VNL5050_supplier.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/VNL5050_supplier.txt": [
+    "rights notice"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/modules_fetch_log.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_README.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_firmware_boards_f0_module_readme.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_hardware_board_module_wideband_controller.kicad_sch": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/references/wideband_tree.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/review_log.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/experiments/wideband_module.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/circuit/stdout.log": [
+    "HTML document",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/README.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/artifact-hashes.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/audit_records.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/command-3.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/command-4.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/drill-report.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/gerbers/Polygonus-Universal-Base-B_Cu.gbl": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/gerbers/Polygonus-Universal-Base-B_Mask.gbs": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/gerbers/Polygonus-Universal-Base-Edge_Cuts.gm1": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/gerbers/Polygonus-Universal-Base-F_Cu.gtl": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/gerbers/Polygonus-Universal-Base-F_Mask.gts": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/gerbers/Polygonus-Universal-Base-In2_Gnd_Cu.g2": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/gerbers/Polygonus-Universal-Base-In_Power_Cu.g1": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/gerbers/Polygonus-Universal-Base-job.gbrjob": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/independent-drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/input-hashes.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/measure_board.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/experiments/run_checks.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/review-work/physical/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/reviews/circuit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/reviews/physical.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines-final/codex/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/review-work/circuit/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/review-work/circuit/experiments/design_summary.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/review-work/circuit/experiments/xml_details.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/review-work/circuit/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/agy/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/claude/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/REPORT.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/events/0001-adjudication.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/experiments/adjudicate.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/experiments/audit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/experiments/commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/experiments/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/experiments/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/experiments/drill-separated.stdout": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/experiments/drill.stdout": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/experiments/drill_audit.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/experiments/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/adjudicator/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/experiments/check-records.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/experiments/connection-verification.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/experiments/independent-netlist.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/experiments/initial-inspection.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/experiments/native-locators.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/experiments/native-symbols.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/experiments/retrieval.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/experiments/review-log.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/experiments/verify_connections.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/circuit/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/REVIEW_NOTES.md": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/artifact_manifest.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/board_inspection.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/board_inspection.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/command_03.stdout": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/drill/Polygonus-Universal-Base-drill.rpt": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/independent_design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/independent_drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/inspect_board.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/native_excerpts.txt": [
+    "KiCad design text",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/recheck_with_stock.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/run_checks.py": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/stock_commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/stock_drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/experiments/verification_results.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/review-work/physical/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/reviews/circuit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/reviews/physical.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-baselines/codex/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-baselines/source-state.json": [
+    "third-party project name"
+   ],
+   "evidence/model-comparison/cases/limits-a/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/limits-a/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/limits-b/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/limits-b/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/mapping-a/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/mapping-a/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/mapping-b/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/mapping-b/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/population-a/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/population-a/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/population-b/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/population-b/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/shutdown-a/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/shutdown-a/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/shutdown-b/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/shutdown-b/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/verification-a/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/verification-a/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/verification-b/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/verification-b/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/width-a/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/width-a/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/width-b/native/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/cases/width-b/native/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/runs/agy/mapping-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/agy/mapping-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/limits-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/limits-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/limits-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/limits-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-1/review-work/circuit/experiments/my_design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-1/review-work/physical/experiments/my_netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-2/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-2/review-work/circuit/experiments/my_netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-2/review-work/physical/experiments/scratch_refill/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-a-2/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-b-1/review-work/circuit/experiments/my_netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-b-1/review-work/physical/experiments/my_netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/mapping-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/population-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/population-a-1/review-work/physical/experiments/scratch_project/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/runs/claude/population-a-1/review-work/physical/experiments/scratch_project/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/runs/claude/population-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/population-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/population-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/shutdown-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/shutdown-a-1/review-work/physical/experiments/scratch_board.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/runs/claude/shutdown-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/shutdown-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/shutdown-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/verification-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/verification-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/verification-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/verification-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/width-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/width-a-1/review-work/physical/experiments/scratch_refill.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/runs/claude/width-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/width-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/claude/width-b-1/review-work/physical/experiments/scratch_board.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/runs/claude/width-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-a-1/review-work/circuit/console.log": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-a-1/review-work/circuit/stdout.log": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-a-2/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-a-2/review-work/physical/experiments/fresh_design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-a-2/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-2/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-2/review-work/circuit/console.log": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-2/review-work/circuit/experiments/native_netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-2/review-work/circuit/experiments/review_log.txt": [
+    "KiCad design text"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-2/review-work/circuit/stdout.log": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-2/review-work/physical/experiments/native-netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/limits-b-2/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-1/review-work/circuit/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-1/review-work/physical/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-2/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-2/review-work/circuit/console.log": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-2/review-work/circuit/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-2/review-work/circuit/stdout.log": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-a-2/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-1/review-work/circuit/experiments/fresh.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-1/review-work/physical/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-2/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-2/review-work/circuit/experiments/fresh.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-2/review-work/physical/experiments/fresh_netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/mapping-b-2/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/population-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/population-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/population-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/population-b-1/review-work/circuit/experiments/fresh.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/population-b-1/review-work/physical/console.log": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/population-b-1/review-work/physical/experiments/fresh-netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/population-b-1/review-work/physical/stdout.log": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/population-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/shutdown-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/shutdown-a-1/review-work/circuit/experiments/independent.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/shutdown-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/shutdown-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/shutdown-b-1/review-work/circuit/experiments/independent.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/shutdown-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/verification-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/verification-a-1/review-work/circuit/experiments/native-export.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/verification-a-1/review-work/physical/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/verification-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/verification-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/verification-b-1/review-work/physical/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/verification-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/width-a-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/width-a-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/width-b-1/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-comparison/runs/codex/width-b-1/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-network-probes/codex-fixed/review-work/probe/console.log": [
+    "HTML document"
+   ],
+   "evidence/model-network-probes/codex-fixed/review-work/probe/experiments/integration-probe.json": [
+    "HTML document"
+   ],
+   "evidence/model-network-probes/codex-fixed/review-work/probe/experiments/kicad-cli-source-excerpt.txt": [
+    "HTML document"
+   ],
+   "evidence/model-network-probes/codex-fixed/review-work/probe/experiments/kicad-cli.html": [
+    "HTML document"
+   ],
+   "evidence/model-network-probes/codex-fixed/review-work/probe/stdout.log": [
+    "HTML document"
+   ],
+   "evidence/model-release/baseline/REPORT.md": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/candidate.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/checks/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/checks/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/checks/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/checks/netlist.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/events/2561c8e6-9c09-46d2-8d19-39c340f300fb-adjudication.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/operator-decisions.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/packet.json": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/result.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/audit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/audit.py": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/command-3.log": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/decisions.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/drills/Polygonus-Universal-Base-drill.rpt": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/review-notes.md": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/source-details.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/source-retrieval.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/experiments/verify.py": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/adjudicator/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/console.log": [
+    "rights notice",
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/artifact-hashes.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/audit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/audit.py": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/calculations-console.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/calculations.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/calculations.py": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/drv8825.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/drv8825.txt": [
+    "rights notice"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/independent-netlist.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/polygonus-readme.md": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/retrieval-extra.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/review-notes.md": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/tja1051.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/tja1051.txt": [
+    "rights notice"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/tle9201.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/experiments/tle9201.txt": [
+    "rights notice"
+   ],
+   "evidence/model-release/baseline/review-work/circuit/stdout.log": [
+    "rights notice",
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/console.log": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/command-3.log": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/commands.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/configured-drc-command.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/configured-drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/drill-report.txt": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/independent-drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/independent-netlist.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/physical-measurements.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/physical_probe.py": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/review-notes.md": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/experiments/run_checks.py": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/review-work/physical/stdout.log": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/reviews/circuit.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/reviews/physical.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/work/drc/drc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/work/drc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/work/erc/erc.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/work/erc/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/work/geometry/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/work/geometry/geometry.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/work/netlist/connectivity.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/work/netlist/design.xml": [
+    "netlist export",
+    "third-party project name"
+   ],
+   "evidence/model-release/baseline/work/netlist/execution.json": [
+    "third-party project name"
+   ],
+   "evidence/model-release/repair-demo/control/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/control/review-work/circuit/experiments/native.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/control/review-work/physical/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/control/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/disposable/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-release/repair-demo/disposable/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-release/repair-demo/repair/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/repair/review-work/circuit/experiments/fresh-netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/repair/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/seed/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/seed/review-work/adjudicator/experiments/native.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/seed/review-work/circuit/experiments/native.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/repair-demo/seed/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/uncertainty/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-release/uncertainty/review-work/adjudicator/experiments/native.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/uncertainty/review-work/circuit/experiments/independent.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/uncertainty/review-work/physical/experiments/independent_netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-release/uncertainty/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/control/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/control/review-work/circuit/experiments/fresh.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/control/review-work/physical/experiments/back.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-repair-final/control/review-work/physical/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/control/review-work/physical/experiments/front.pdf": [
+    "PDF header"
+   ],
+   "evidence/model-repair-final/control/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/disposable/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-repair-final/disposable/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-repair-final/repair/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/repair/review-work/circuit/experiments/native-export.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/repair/review-work/circuit/experiments/native-inspection.txt": [
+    "KiCad design text"
+   ],
+   "evidence/model-repair-final/repair/review-work/circuit/experiments/native-schematic-numbered.txt": [
+    "KiCad design text"
+   ],
+   "evidence/model-repair-final/repair/review-work/physical/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/repair/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/seed/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/seed/review-work/circuit/experiments/independent-netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/seed/review-work/physical/experiments/independent-netlist.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair-final/seed/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair/control/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-repair/control/review-work/circuit/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair/control/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair/disposable/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/model-repair/disposable/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/model-repair/repair/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-repair/repair/review-work/adjudicator/experiments/independent.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair/repair/review-work/circuit/experiments/independent.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair/repair/review-work/physical/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair/repair/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair/seed/packet.json": [
+    "netlist export"
+   ],
+   "evidence/model-repair/seed/review-work/circuit/experiments/native-export.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair/seed/review-work/physical/experiments/design.xml": [
+    "netlist export"
+   ],
+   "evidence/model-repair/seed/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/rc-demonstration/control/packet.json": [
+    "netlist export"
+   ],
+   "evidence/rc-demonstration/control/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/rc-demonstration/seed/packet.json": [
+    "netlist export"
+   ],
+   "evidence/rc-demonstration/seed/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/rc-final/control/packet.json": [
+    "netlist export"
+   ],
+   "evidence/rc-final/control/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/rc-final/seed/packet.json": [
+    "netlist export"
+   ],
+   "evidence/rc-final/seed/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/rc-verified/control/packet.json": [
+    "netlist export"
+   ],
+   "evidence/rc-verified/control/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/rc-verified/disposable/rc_filter.kicad_pcb": [
+    "KiCad design text"
+   ],
+   "evidence/rc-verified/disposable/rc_filter.kicad_sch": [
+    "KiCad design text"
+   ],
+   "evidence/rc-verified/repair/packet.json": [
+    "netlist export"
+   ],
+   "evidence/rc-verified/repair/work/netlist/design.xml": [
+    "netlist export"
+   ],
+   "evidence/rc-verified/seed/packet.json": [
+    "netlist export"
+   ],
+   "evidence/rc-verified/seed/work/netlist/design.xml": [
+    "netlist export"
+   ]
+  }
+ },
+ "relocated_groups": [
+  "adjudicator-comparison",
+  "archives",
+  "donor-baseline",
+  "donor-baseline-v2",
+  "donor-final",
+  "donor-verified",
+  "model-baselines",
+  "model-baselines-expanded",
+  "model-baselines-final",
+  "model-comparison",
+  "model-network-probes",
+  "model-release",
+  "model-repair",
+  "model-repair-final",
+  "rc-demonstration",
+  "rc-final",
+  "rc-verified"
+ ],
+ "relocated_on": "2026-10-22",
+ "retained_in_tree": {
+  "adjudicator-comparison": [
+   "agy/singleton/work/netlist/connectivity.json",
+   "codex/calculation/work/netlist/design.xml"
+  ],
+  "archives": [
+   "manifest.json"
+  ],
+  "donor-final": [
+   "REPORT.md",
+   "work/drc/drc.json"
+  ],
+  "donor-verified": [
+   "REPORT.md",
+   "result.json",
+   "work/drc/drc.json",
+   "work/erc/erc.json",
+   "work/geometry/geometry.json",
+   "work/netlist/connectivity.json"
+  ],
+  "model-baselines": [
+   "source-state.json"
+  ],
+  "model-baselines-expanded": [
+   "claude/work/drc/drc.json",
+   "claude/work/netlist/connectivity.json"
+  ],
+  "model-baselines-final": [
+   "codex/review-work/circuit/experiments/references/wideband_hardware_board_module_wideband_controller.kicad_sch"
+  ],
+  "model-release": [
+   "baseline/REPORT.md",
+   "baseline/adjudicator-execution.json",
+   "baseline/operator-decisions.json",
+   "baseline/result.json",
+   "repair-demo/control/REPORT.md",
+   "repair-demo/repair/REPORT.md",
+   "repair-demo/seed/REPORT.md",
+   "tests.log",
+   "uncertainty/REPORT.md"
+  ],
+  "rc-demonstration": [
+   "control/review-executions/physical.json"
+  ],
+  "rc-final": [
+   "control/work/netlist/design.xml",
+   "seed/REPORT.md"
+  ],
+  "rc-verified": [
+   "control/REPORT.md",
+   "control/result.json",
+   "control/work/geometry/geometry.json",
+   "repair.json",
+   "repair.patch",
+   "repair/REPORT.md",
+   "seed/REPORT.md",
+   "seed/events/60e80659-5497-4a79-b279-48bc872b6941-correction.json",
+   "seed/events/b88322f4-2b26-4e79-aaed-5a143da39678-correction.json",
+   "seed/work/rc-step/deck.cir",
+   "seed/work/rc-step/ngspice.log"
+  ]
+ },
+ "retained_reason": "Files that tests or fixture tools read, and files linked from README/docs or the top-level evidence summaries, stay tracked byte-identical to the manifest. Groups not listed in relocated_groups stay whole.",
+ "schema": "agent-ee.evidence-relocation/1",
+ "store": {
+  "access": "read-only key for fetches; uploads use a separate owner-held key; credentials are never committed",
+  "base_url": "s3://agent-ee-evidence",
+  "credentials_file": "~/.config/agent-ee/evidence-s3.env",
+  "endpoints": "http://127.0.0.1:3900 on proximal; proximal's tailnet address on port 3900 elsewhere on the owner's tailnet",
+  "object_layout": "GROUP/EXACT_RELATIVE_FILE_PATH (every file of all 20 manifest groups, 4857 objects)",
+  "service": "owner-operated Garage S3 (single node, LUKS-backed) on the owner's host proximal; private bucket with no anonymous or website access; path-style, region garage"
+ },
+ "work_item": "AGENTEE-20"
+}

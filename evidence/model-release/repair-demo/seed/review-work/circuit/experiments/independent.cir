@@ -1,9 +1,0 @@
-* Independent native-derived unloaded RC check
-R1 IN OUT 100k
-C1 OUT 0 100n
-VSTEP IN 0 PWL(0 0 1n 1)
-.options reltol=1e-7 abstol=1e-14
-.tran 1u 5m 0 1u
-.meas tran vout_1ms FIND v(OUT) AT=1m
-.meas tran vout_5ms FIND v(OUT) AT=5m
-.end

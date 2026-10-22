@@ -1,5 +1,0 @@
-geometry: 3 footprint(s), 6 track item(s), 1 zone(s)
-./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
-./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
-./kicad/include/properties/property.h(607): assert "m_choices.GetCount() > 0" failed in PROPERTY_ENUM(): No enum choices defined
-./kicad/pcbnew/pcb_track.cpp(387): assert ""false"" failed in GetWidth(): Warning: PCB_VIA::GetWidth called without a layer argument

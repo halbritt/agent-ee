@@ -1,8 +1,0 @@
-saved fill area mm2: 192.287
-via (113,100) inside saved fill: True
-spoke probes near J1.3 (any True => zone touches pad copper): [False, False, False, False, True]
-zone at J1.1 edge+0.1 (100.95,100): False
-zone at J1.2 edge+0.1 (100.95,102.54): False
-refilled area mm2: 192.287
-area delta mm2: 0.0000
-scratch unrouted after refill: 0

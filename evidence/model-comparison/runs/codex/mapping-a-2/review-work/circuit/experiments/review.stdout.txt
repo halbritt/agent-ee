@@ -1,6 +1,0 @@
-{
-  "native_export_matches_contract": true,
-  "supplied_export_matches_fresh": true,
-  "board_net_assignments_match_contract": true,
-  "physical_reachability_matches_contract": true
-}

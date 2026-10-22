@@ -1,2 +1,0 @@
-Exercise assumption: the fitted R1 has a continuous power limit of 0.1 W. External test equipment holds /IN at 12 V DC and clamps /OUT to 0 V indefinitely. Evaluate R1 under this condition only. The clamp is outside the board.
-Only the stated exercise criterion is being evaluated; do not impose unstated ratings or qualification requirements. Native rule violations remain separately reportable.

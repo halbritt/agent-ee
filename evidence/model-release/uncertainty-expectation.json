@@ -1,5 +1,0 @@
-{
-  "expected": "not criteria_satisfied",
-  "reason": "The requested ADC-connected settling cannot be established without ADC loading and timing. No confirmed circuit defect is implied, but the requested behavioral criterion remains unresolved.",
-  "source": "docs/model-evaluation-plan.md verification-adequacy pair, recorded before comparison"
-}

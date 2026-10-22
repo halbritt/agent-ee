@@ -105,12 +105,15 @@ is a bounded filename/pattern check, not proof of every possible secret's absenc
 Preserve raw evidence bytes rather than editing logs to make them look clean.
 
 The separate `scripts/evidence_fetch.py` outer tool requires an explicit store
-URL and a trusted per-file manifest. It checks sizes and hashes in private
+URL and a trusted per-file manifest. For the owner's private `s3://` evidence
+store, it reads credentials only from a mode-0600 file outside the checkout. It
+refuses with exit 3 when that file is absent or unsafe. Credentials are never
+committed, archived or passed into sandboxes. It checks sizes and hashes in private
 staging and atomically publishes a complete named directory without replacing
 any existing destination. It refuses destination ancestor symlinks and unsafe
 manifest paths. It does not grant sandbox network access, authenticate a publisher,
 scan all secrets, establish publication rights or protect against a hostile host.
-See the [relocation workflow](reproducing-evidence.md#evidence-relocation-preparation-agentee-20)
+See the [relocation workflow](reproducing-evidence.md#evidence-relocation-agentee-20)
 for Linux prerequisites, historical verification limitations and owner gates.
 
 ## Engineering trust boundary

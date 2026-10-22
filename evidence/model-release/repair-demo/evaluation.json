@@ -1,9 +1,0 @@
-{
-  "expectations": {
-    "control": "criteria_satisfied",
-    "repair": "criteria_satisfied",
-    "seed": "defects_or_unresolved"
-  },
-  "plan": "/home/halbritt/git/agent-ee/docs/evaluation-plan.md",
-  "sha256": "340a9401c39bc788efcdb9c18100c4e25eea1cf0e6a98251d035d216d2e8eb9d"
-}

@@ -1,4 +1,0 @@
-Direct branches (reference, ohms, DNP): [('R36', '120', True), ('R37', '120', True)]
-Populated conductance, S: 0
-Both 120-ohm branches hypothetically fitted, ohms: 60.0
-LS9/10 high-impedance driver, no receiver input current: V = 2.5 Rth = 500.0
