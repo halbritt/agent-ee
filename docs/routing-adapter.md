@@ -992,3 +992,23 @@ generation layout), `test_kicad_route_native`,
 `test_kicad_route_adapter`, `test_owned_router_pin` and the other modules listed in the
 [routing policy contract](routing-policy-contract.md).
 
+
+### Landed-image production validation (2026-10-22)
+
+The production-validation lane executed one coordinator routing step on the same
+`fixtures/rc/control` case as the generation positive, with requirements captured,
+through `routing_adapter.step` and `stage_receipts.run_step`. It used the existing
+image for landed agent-ee `854f4e023c56be32e834f194a68e7746f59a5b2f` without rebuilding.
+The selected manifest had `krt.generation: null` (the supported legacy layout),
+`owned-9cfc5d5e9369`, and the b5774496 source identity. The actual engine command
+selected `/opt/kicad-route/.venv-krt/bin/python` and the checkout's owned router.
+The receipt completed with exit 0 in 17.835 s; adapter replay returned `complete`
+and `eligible`, and native validation returned `PASS`. A controlled mismatched
+source generation was refused by the same step declaration before routing.
+
+The retained delivery is
+`/tmp/agent-ee-burndown-20261017/workers/ee450-prod-validate/`: its review/result
+records the image identity, exact commands, evidence hashes, and a corrected
+harness path assertion (no second routing attempt). This qualifies execution
+identity on the RC control; it does not demonstrate target-board improvement,
+repeatability, differential-pair acceptance, or close AGENTEE-442.
