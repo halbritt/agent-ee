@@ -89,6 +89,21 @@ LIMITATIONS = (
     ACTIVATION,
 )
 
+# Disposition of each S1 device/fixture control named by the Rev5 and 510 reviews. ``supported``
+# controls run in tests.test_physical_intent; ``unsupported`` ones state the missing evidence.
+FIXTURE_DISPOSITIONS = {
+    'tps25982': {'status': 'unsupported', 'reason': (
+        'no captured TPS25982 datasheet (TI SLVSEI3D) and no native TPS25982 symbol exist in this repository '
+        'or the pinned fome-mc store; capturing the third-party datasheet is an owner gate. Its invalid-pin '
+        'classes (a verified function on another pin, an unstated function, an unverified fact, a repeated '
+        'pad) run on the captured TPS7B4253 of pod U6/U12 and on the TJA1051 fixture')},
+    'phantom-l1': {'status': 'supported', 'tests': ('test_phantom_l1_is_refused_wherever_it_is_named',)},
+    'native-repeated-functions': {'status': 'supported', 'tests': (
+        'test_captured_pod_intent_compiles_to_the_reviewed_contracts',
+        'test_wrong_pins_on_the_captured_power_device_refuse')},
+    'child-sheet': {'status': 'supported', 'tests': ('test_child_sheet_membership_is_admitted_by_actual_derivation',)},
+}
+
 
 class IntentRefused(ValueError):
     """The intent cannot compile; nothing is published."""
@@ -124,10 +139,18 @@ def _unique(items, label):
         seen.add(item)
 
 
+def _locality_shape(document):
+    """electrical-locality/1 shape; a malformed declaration is a typed refusal, never a bare ValueError."""
+    try:
+        electrical_locality.validate(document)
+    except (ValueError, KeyError, TypeError) as exc:
+        _refuse(f'locality is not a valid {electrical_locality.SCHEMA} declaration: {exc}')
+
+
 def validate_plan(intent):
     """Shape of the authored document; source binding happens in compile_plan."""
     _keys(intent, ('schema', 'mode', 'sources', 'terminals'),
-          ('blocks', 'moves', 'locality', 'obligations', 'diagnostics'), 'physical intent')
+          ('blocks', 'residual', 'moves', 'locality', 'obligations', 'diagnostics'), 'physical intent')
     if intent['schema'] != SCHEMA:
         _refuse(f'expected {SCHEMA}')
     if intent['mode'] != 'manual':
@@ -165,6 +188,12 @@ def validate_plan(intent):
         _text(block['id'], 'block id')
         for ref in _list(block['references'], 'block references', nonempty=True):
             _text(ref, 'block reference')
+    if 'residual' in intent:
+        if not intent.get('blocks'):
+            _refuse('residual needs blocks: block-allocation/1 declares a residual set beside nonempty blocks')
+        for ref in _list(intent['residual'], 'residual', nonempty=True):
+            _text(ref, 'residual reference')
+        _unique(intent['residual'], 'residual reference')
     for move in _list(intent.get('moves', []), 'moves'):
         _keys(move, ('reference', 'allow'), (), 'move')
         _text(move['reference'], 'move reference')
@@ -173,7 +202,7 @@ def validate_plan(intent):
             _refuse(f'move allow must be distinct members of {sorted(MOVES)}')
     _unique([m['reference'] for m in intent.get('moves', [])], 'move reference')
     if intent.get('locality'):
-        electrical_locality.validate({'schema': electrical_locality.SCHEMA, 'obligations': intent['locality']})
+        _locality_shape({'schema': electrical_locality.SCHEMA, 'obligations': intent['locality']})
     for obligation in _list(intent.get('obligations', []), 'obligations'):
         _keys(obligation, ('id', 'kind', 'required', 'requirement', 'terminals', 'statement'),
               ('joins', 'forbidden_shared', 'proxy'), 'obligation')
@@ -207,6 +236,7 @@ def validate_plan(intent):
     # One receipt namespace: an assertion id never names two compiled or reported assertions.
     _unique([t['id'] for t in terminals] + [o['id'] for o in intent.get('locality') or []]
             + [f'block:{b["id"]}' for b in intent.get('blocks', [])]
+            + (['allocation:residual'] if 'residual' in intent else [])
             + [o['id'] for o in intent.get('obligations', [])] + [d['id'] for d in intent.get('diagnostics', [])],
             'assertion id')
     return intent
@@ -619,7 +649,7 @@ def _locality(intent, src, board):
     document = {'schema': electrical_locality.SCHEMA, 'obligations': authored}
     if src['records']:
         document['source_records'] = src['records']
-    electrical_locality.validate(document)
+    _locality_shape(document)
     obligations = json.loads(json_bytes(authored))
     qualification = []
     for obligation in obligations:
@@ -675,7 +705,7 @@ def _locality(intent, src, board):
                         'emits only executable pairs and invents no bound')
             qualification.append(entry)
     document['obligations'] = obligations
-    electrical_locality.validate(document)
+    _locality_shape(document)
     try:
         electrical_locality.PlacementIndex(document)  # the actual placement consumer admits the emitted contract
     except (KeyError, TypeError, ValueError) as exc:
@@ -699,7 +729,14 @@ def _allocation(intent, src, board, native):
         if 'anchor' in block and block['anchor'] not in block['references']:
             _refuse(f'block {block["id"]}: anchor must be a member')
     _unique([b['id'] for b in entries], 'block id')
-    document = {'schema': blocks.ALLOCATION, 'blocks': entries}
+    # The declared residual set (footprints placed outside every block) is authored membership too.
+    for ref in intent.get('residual', []):
+        if ref not in board:
+            _refuse(f'residual: native board has no footprint {ref}')
+        if ref in owner:
+            _refuse(f'conflicting membership: {ref} is in block {owner[ref]} and the residual set')
+    document = {'schema': blocks.ALLOCATION, 'blocks': entries,
+                **({'residual': intent['residual']} if 'residual' in intent else {})}
     # derive reads footprint identity, library ID, lock state and pad nets; all come from the
     # digest-bound native board. It enforces on-board membership, footprint agreement with the
     # netlist, child-sheet coverage and the locked-member refusal, independent of moves.
@@ -784,6 +821,8 @@ def compile_plan(run, intent, *, mode='manual'):
         artifacts[CONTRACTS['allocation']] = allocation
         bound += [(f'block:{b["id"]}', f'/{CONTRACTS["allocation"]}#/blocks/{i}')
                   for i, b in enumerate(allocation['blocks'])]
+        if 'residual' in allocation:
+            bound.append(('allocation:residual', f'/{CONTRACTS["allocation"]}#/residual'))
     pointers = {}
     for key, pointer in bound:
         if key in pointers:

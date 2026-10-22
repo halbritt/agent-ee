@@ -92,7 +92,8 @@ must exist in the run baseline; the compiler adds none.
 ## Locality, blocks and moves
 
 `locality` holds [`electrical-locality/1`](placer.md#pad-level-electrical-locality-agentee-322) obligations
-as authored. They are emitted unchanged except for owner provenance (below).
+as authored. A declaration that is not valid `electrical-locality/1` (for example, supply and
+return naming different capacitors) refuses with `IntentRefused`, never a bare `ValueError`. They are emitted unchanged except for owner provenance (below).
 locality/1 has no fact or function field, so the compiler adds no guessed IN/GND
 or role semantics to a supply/return pair. Every endpoint must carry its native pad `uuid`. The UUID,
 pad number and net must match the native board.
@@ -175,7 +176,10 @@ Requested enforcement never raises provenance. Other classes are compiled and
 reported as `advisory` or `feasibility` in `locality_qualification`.
 
 `blocks` compile to `block-allocation/1`. A reference in two blocks is
-`conflicting membership`. The allocation is then admitted by the actual
+`conflicting membership`. The optional `residual` list is the allocation's declared residual
+set: footprints placed outside every block, such as fixed anchors. It needs nonempty `blocks`.
+A residual reference that is also a block member is `conflicting membership`, and one that is
+not on the native board refuses. The receipt maps it to the assertion `allocation:residual`. The allocation is then admitted by the actual
 `blocks.derive`. It runs on the native netlist inventory and sheet names, and on
 a capture of the digest-bound native board (footprint reference, UUID, library
 ID, lock state and pad nets). The footprint UUID is the footprint's own single
@@ -248,18 +252,73 @@ current sources and requires byte equality and no extra files. Every refusal
 above therefore also refuses `verify_receipt` for a package that a laxer earlier
 compiler published.
 
-Compilation of the fixture takes well under the provisional 10-second budget,
-including the sandboxed pcbnew board load of native admission. The test asserts
-the bound. The budget excludes native netlist export and PDF extraction, which
-the review run has already done.
+Compilation takes well under the provisional 10-second budget, including the
+sandboxed pcbnew board load of native admission. The tests assert the bound for the
+fixture and the captured pod. The budget excludes native netlist export and PDF
+extraction, which the review run has already done.
+
+## Captured pod equivalence
+
+`PodEquivalenceTests` compiles the captured telemetry pod intent back to the
+reviewed iteration-7 contracts: 17 blocks and 12 locality obligations (26 pairs).
+Every input is read from the pinned objects of a local fome-mc store
+(`19522e37de01103a93fe171a09fe624d8aba6bad`, `AGENT_EE_FOME_MC_CHECKOUT`) into a
+temporary run, after a SHA-256 check. No pod file is copied into this repository.
+The run captures the microSD source schematic
+(`storage-microsd/project/`) and the iteration-7 seed board. It exports the native
+netlist and checks two authored GND facts against the captured TI TPS7B4253-Q1
+datasheet. The intent is the reviewed `inputs/allocation.json` (blocks and
+residual) and the pad obligations of `inputs/policy.json`, with each endpoint bound
+to its native pad UUID. It also declares the GND pins 3 and 6 of U6 and U12.
+
+The test establishes the following:
+
+- the emitted allocation equals the reviewed document. The actual `blocks.derive` in
+  the receipt reproduces the reviewed `inputs/derived.json` blocks, members, anchors
+  and residual reasons exactly (17 blocks, 53 residual);
+- the emitted obligations, without the added `uuid` fields, equal the reviewed
+  ones. All 26 pairs qualify `advisory` (they carry no provenance);
+- graded on the reviewed iteration-7 candidate board, the compiled and reviewed
+  locality contracts give identical squared distances. The compiled contract
+  reproduces every distance in `evidence/obligations-measured.json`, with all 26 pairs
+  within bound;
+- the repeated GND function compiles to `GND@3`/`GND@6` and evaluates `pass`
+  against the native netlist;
+- compilation, including native admission of the 309-footprint board, is under 10 s;
+- the package publishes and passes `verify_receipt`.
+
+Two mismatches are exact and reported, not hidden:
+
+- the compiled allocation is canonical JSON, so its SHA-256 differs from the
+  reviewed file's `30ff5334…`. `derive` over the reviewed bytes, on the same run,
+  returns the reviewed derivation unchanged;
+- the reviewed derivation's netlist (`inventory_sha256` `7791d443…`) is not committed
+  in fome-mc. The run re-exports the netlist from the committed source schematic, so
+  its digest differs, while its derivation is identical.
+
+On the same device, a verified GND fact proposed at NC pin 7, a GND fact claimed as
+`IN`, an unverified fact and a repeated pad all refuse.
+
+## Fixture dispositions
+
+`physical_intent.FIXTURE_DISPOSITIONS` records each device control named by the
+reviews. A test checks that every supported entry names existing tests:
+
+| Control | Disposition |
+| --- | --- |
+| phantom L1 | supported: L1 as terminal, locality endpoint, block or residual member, move or join pad refuses |
+| native repeated physical functions | supported: the captured TPS7B4253 GND pins 3 and 6 of pod U6/U12 |
+| child sheet | supported: an authored two-level hierarchy of the control fixture (U1 in `/can/`, C1 on the root sheet). A real KiCad export feeds the actual `derive`. Leaving U1 in neither a block nor the residual set refuses, before output and at `verify_receipt`. Declaring it residual or allocating it compiles, and `derive` on a pcbnew capture agrees |
+| TPS25982 | unsupported: no captured TPS25982 datasheet or native symbol exists here or in the pinned store; capturing the third-party datasheet is an owner gate. Its invalid-pin classes run on the TPS7B4253 and TJA1051 |
 
 ## Tests and limits
 
 `tests/test_physical_intent.py` captures the unchanged
 `fixtures/datasheet-pins/control.scope.json` and `swapped.scope.json`. It also
-captures two authored board edits of the control fixture: one adds a decoupling
-footprint C1 for locality, and one adds a locked U1 with a duplicated pad 7. It
-covers:
+captures three authored edits of the control fixture: one adds a decoupling
+footprint C1 for locality, one adds a locked U1 with a duplicated pad 7, and one
+moves U1 into a child sheet beside a root-sheet C1. `PodEquivalenceTests` builds the
+captured pod run above. Together they cover:
 
 - the positive deterministic package and its digest binding;
 - the pin-7-as-CANL rejection;
@@ -302,7 +361,9 @@ covers:
   hard in the actual `PlacementIndex`;
 - repeated physical functions (synthetic two-GND/two-VCC symbol through the
   real terminal join and topology evaluator), with wrong-pin, contradictory-pin
-  and alias-collision refusals;
+  and alias-collision refusals, and natively on the captured pod TPS7B4253;
+- child-sheet coverage, the declared residual set and phantom-L1 refusals;
+- captured pod 17-block/12-obligation equivalence and its compilation time;
 - assertion ID collisions (`u1-canl`, `block:can`, a diagnostic and an
   unsupported obligation) and the input snapshot;
 - Kelvin and current-loop visibility, diagnostics, manual and disabled modes,
@@ -310,8 +371,7 @@ covers:
 
 Not in this slice:
 
-- the captured pod 17-block/12-locality-obligation equivalence target;
-- the TPS25982 invalid-pin controls from the Rev5 review;
+- TPS25982 controls on that device (see the dispositions above);
 - the S2 architect producer;
 - any campaign, profile or placement-adapter binding.
 

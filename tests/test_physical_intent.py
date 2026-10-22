@@ -1,7 +1,11 @@
 """AGENTEE-388 S1: manual source-bound physical intent compiler on the TJA1051 pin-map fixture."""
 import copy
+import gzip
 import hashlib
+import json
+import os
 import shutil
+import subprocess
 import tempfile
 import time
 import unittest
@@ -14,7 +18,7 @@ from agent_ee.native_netlist import read_native_inventory, read_sheet_names
 from agent_ee.checks import run_checks
 from agent_ee.physical_intent import IntentRefused, compile_and_publish, compile_plan, verify_receipt
 from agent_ee.storage import digest, json_bytes, read_json, write_json
-from toolchain import require_toolchain
+from toolchain import fome_mc_store, require_toolchain
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'fixtures/datasheet-pins'
@@ -62,6 +66,34 @@ DATASHEET_TEXT = ''.join(f'Note {n}: place the capacitor {q} of the VCC pin.\n' 
 # Review ee388e-510-r1r5 H3: an authored unnetted mechanical footprint for footprint-identity boards.
 H1_PAD = '7d0c3a51-2b8e-4e62-9a0f-3f1d5c2b9a10'
 U1_UUID = '33863c18-80e0-4310-9450-9194c18489ae'
+# An authored two-level hierarchy of the control fixture: U1 moves unchanged into child sheet
+# ``can``; an authored root-sheet C1 with unconnected pins stays beside it.
+ROOT_SHEET, CAN_SHEET, CAN_FILE = ('031a9db2-1b24-5396-99ec-b70acb857120', '5b2f6c1e-9a4d-4c3b-8e2f-1d7a6c5b4e02',
+                                   '5b2f6c1e-9a4d-4c3b-8e2f-1d7a6c5b4e01')
+TOP_SHEET = f'''(kicad_sch (version 20250114) (generator "eeschema") (uuid "{ROOT_SHEET}") (paper "A4")
+  (lib_symbols (symbol "pins:C" (pin_numbers hide) (in_bom yes) (on_board yes)
+    (property "Reference" "C" (at 0 3 0) (effects (font (size 1 1))))
+    (property "Value" "C" (at 0 -3 0) (effects (font (size 1 1))))
+    (property "Footprint" "pins:C2" (at 0 0 0) (effects (font (size 1 1)) hide))
+    (symbol "C_1_1" (pin passive line (at -2.54 0 0) (length 1.27) (name "~" (effects (font (size 1 1))))
+      (number "1" (effects (font (size 1 1)))))
+      (pin passive line (at 2.54 0 180) (length 1.27) (name "~" (effects (font (size 1 1))))
+      (number "2" (effects (font (size 1 1))))))))
+  (no_connect (at 17.78 20.32) (uuid "5b2f6c1e-9a4d-4c3b-8e2f-1d7a6c5b4e04"))
+  (no_connect (at 22.86 20.32) (uuid "5b2f6c1e-9a4d-4c3b-8e2f-1d7a6c5b4e05"))
+  (symbol (lib_id "pins:C") (at 20.32 20.32 0) (unit 1) (in_bom yes) (on_board yes) (dnp no)
+    (uuid "5b2f6c1e-9a4d-4c3b-8e2f-1d7a6c5b4e03")
+    (property "Reference" "C1" (at 20.32 17 0) (effects (font (size 1 1))))
+    (property "Value" "C" (at 20.32 24 0) (effects (font (size 1 1))))
+    (property "Footprint" "pins:C2" (at 20.32 26 0) (effects (font (size 1 1)) hide))
+    (instances (project "pins" (path "/{ROOT_SHEET}" (reference "C1") (unit 1)))))
+  (sheet (at 60.96 30.48) (size 20.32 10.16) (stroke (width 0.1524) (type solid)) (fill (color 0 0 0 0.0000))
+    (uuid "{CAN_SHEET}")
+    (property "Sheetname" "can" (at 60.96 29.7684 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+    (property "Sheetfile" "can.kicad_sch" (at 60.96 41.2246 0) (effects (font (size 1.27 1.27)) (justify left top)))
+    (instances (project "pins" (path "/{ROOT_SHEET}" (page "2")))))
+  (sheet_instances (path "/" (page "1"))))
+'''
 
 
 def mechanical(uuid):
@@ -111,6 +143,14 @@ class PhysicalIntentTests(unittest.TestCase):
         defect = (board.replace('(layer "F.Cu")\n\t\t(uuid "33863c18', '(layer "F.Cu")\n\t\t(locked yes)\n\t\t(uuid "33863c18', 1)
                   .replace('\t\t(embedded_fonts no)', dup, 1))
         cls.defect = cls.board_run('defect', defect, {})
+        # Child-sheet fixture: U1 in sheet /can/, C1 on the root sheet, both on the board.
+        flat = (FIXTURE / 'control/pins.kicad_sch').read_text()
+        child = (flat.replace(f'(uuid "{ROOT_SHEET}")', f'(uuid "{CAN_FILE}")', 1)
+                 .replace(f'(path "/{ROOT_SHEET}" (reference "U1")', f'(path "/{ROOT_SHEET}/{CAN_SHEET}" (reference "U1")'))
+        hier = (board.replace(f'(path "/{ROOT_SHEET}/', f'(path "/{CAN_SHEET}/', 1)
+                .replace('\t(gr_rect', C1.replace('(net "VCC")', '(net "unconnected-(C1-Pad1)")')
+                         .replace('(net "GND")', '(net "unconnected-(C1-Pad2)")'), 1))
+        cls.hier = cls.board_run('hier', hier, {}, {'pins.kicad_sch': TOP_SHEET, 'can.kicad_sch': child})
 
     @classmethod
     def tearDownClass(cls):
@@ -131,11 +171,13 @@ class PhysicalIntentTests(unittest.TestCase):
         return cls.checked(FIXTURE / f'{name}.scope.json', name)
 
     @classmethod
-    def board_run(cls, name, board, records):
+    def board_run(cls, name, board, records, sheets=None):
         """The fixture with an authored board edit; native checks limited to netlist/facts/pin-map."""
         project = cls.root / f'{name}-src/project'
         shutil.copytree(FIXTURE / 'control', project)
         (project / 'pins.kicad_pcb').write_text(board)
+        for rel, text in (sheets or {}).items():
+            (project / rel).write_text(text)
         scope = read_json(FIXTURE / 'control.scope.json')
         scope['inputs'] = [{'path': str(project), 'at': 'project'}] + [
             {**i, 'path': str((FIXTURE / i['path']).resolve()) if not i['path'].startswith('/') else i['path']}
@@ -594,6 +636,74 @@ class PhysicalIntentTests(unittest.TestCase):
         self.assertEqual(derived['blocks'][0]['references'], ['U1'])
         self.assertIn('receipt.json', compile_plan(self.control, unlocked))
 
+    def test_child_sheet_membership_is_admitted_by_actual_derivation(self):
+        # Native hierarchy (review ee388h gap): U1 sits in child sheet /can/ of a real KiCad
+        # export; C1 is on the root sheet. A child-sheet component in neither a block nor the
+        # declared residual set is refused by the actual blocks.derive, before output.
+        netlist = self.hier / 'work/netlist/design.xml'
+        self.assertEqual({r: c['sheet'] for r, c in read_native_inventory(netlist)['components'].items()},
+                         {'C1': '/', 'U1': f'/{CAN_SHEET}/'})
+        self.assertEqual(read_sheet_names(netlist), {'/': '/', f'/{CAN_SHEET}/': '/can/'})
+        power = [{'id': 'power', 'references': ['C1']}]
+        self.refused(self.hier, self.intent(self.hier, blocks=power),
+                     'child-sheet components neither allocated to a block nor declared residual: U1')
+        self.stale_package(self.hier, self.intent(self.hier), self.intent(self.hier, blocks=power),
+                           'contracts/block-allocation.json', {'schema': blocks.ALLOCATION, 'blocks': power},
+                           'neither allocated to a block nor declared residual: U1')
+        # Declaring U1 residual, or allocating it to a block, compiles; derive agrees on pcbnew.
+        from agent_ee.placement_probe import extract
+        probe = extract(self.hier / 'inputs/project/pins.kicad_pcb')
+        for name, extra, expected_blocks, expected_residual in (
+                ('residual', {'blocks': power, 'residual': ['U1']}, [('power', ['C1'])],
+                 [{'reference': 'U1', 'reason': 'allocated-residual'}]),
+                ('block', {'blocks': [{'id': 'can', 'references': ['U1']}]}, [('can', ['U1'])],
+                 [{'reference': 'C1', 'reason': 'root-sheet'}])):
+            with self.subTest(name):
+                intent = self.intent(self.hier, **extra)
+                out = self.root / f'hier-{name}'
+                compile_and_publish(self.hier, intent, out)
+                receipt = verify_receipt(out, self.hier, intent)
+                raw = (out / 'contracts/block-allocation.json').read_bytes()
+                derived = blocks.derive(read_native_inventory(netlist), read_sheet_names(netlist), probe,
+                                        inventory_sha256=digest(netlist), allocation_raw=raw)
+                self.assertEqual({k: derived[k] for k in ('allocation_sha256', 'blocks', 'residual')},
+                                 receipt['allocation_derivation'])
+                self.assertEqual([(b['id'], b['references']) for b in derived['blocks']], expected_blocks)
+                self.assertEqual(derived['residual'], expected_residual)
+                if 'residual' in extra:
+                    self.assertEqual(read_json(out / 'contracts/block-allocation.json')['residual'], ['U1'])
+                    self.assertEqual(receipt['assertions']['allocation:residual'],
+                                     ['/contracts/block-allocation.json#/residual'])
+        # The residual set is membership: it cannot also hold a block member or a phantom.
+        self.refused(self.hier, self.intent(self.hier, blocks=[{'id': 'can', 'references': ['U1']}], residual=['U1']),
+                     'conflicting membership: U1 is in block can and the residual set')
+        self.refused(self.hier, self.intent(self.hier, residual=['U1']), 'residual needs blocks')
+        self.refused(self.hier, self.intent(self.hier, blocks=power, residual=['U1', 'U1']),
+                     'duplicate residual reference')
+        self.refused(self.hier, self.intent(self.hier, blocks=power, residual=['U1'],
+                                            terminals=[terminal('allocation:residual', '6', 'CANL', 'canl')]),
+                     'duplicate assertion id: allocation:residual')
+
+    def test_phantom_l1_is_refused_wherever_it_is_named(self):
+        # Rev5 phantom-L1 control: L1 is neither on the native board nor in the native netlist.
+        # Naming it as a terminal, locality endpoint, block or residual member, move or join refuses.
+        phantom = '7d0c3a51-2b8e-4e62-9a0f-3f1d5c2b9a1f'
+        self.refused(self.control, self.intent(terminals=[terminal('l1', '6', 'CANL', 'canl', reference='L1')]),
+                     'pin_map applicability does not bind fact canl to L1')
+        endpoint = self.locality(self.pair())
+        endpoint[0]['supply']['to'] = {'reference': 'L1', 'pad': '1', 'net': 'VCC', 'uuid': phantom}
+        endpoint[0]['return']['to'] = {'reference': 'L1', 'pad': '2', 'net': 'GND', 'uuid': phantom[:-1] + 'e'}
+        self.refused(self.local, self.intent(self.local, locality=endpoint), 'native board has no footprint L1')
+        self.refused(self.control, self.intent(blocks=[{'id': 'power', 'references': ['U1', 'L1']}]),
+                     'block power: native board has no footprint L1')
+        self.refused(self.control, self.intent(blocks=[{'id': 'can', 'references': ['U1']}], residual=['L1']),
+                     'residual: native board has no footprint L1')
+        self.refused(self.control, self.intent(moves=[{'reference': 'L1', 'allow': ['translate']}]),
+                     'move: native board has no footprint L1')
+        joined = {'id': 'kelvin', 'kind': 'kelvin', 'required': True, 'requirement': 'pins',
+                  'terminals': ['u1-canl'], 'joins': [phantom], 'statement': 'sense at L1'}
+        self.refused(self.control, self.intent(obligations=[joined]), 'stale join pad UUIDs')
+
     def noted(self, locator, value_nm, quote=None):
         quote = quote or f'Note {locator}: place the capacitor {DATASHEET_LINES[locator][0]} of the VCC pin.'
         return {'class': 'datasheet', 'basis': locator, 'derivation': {'kind': 'numeric', 'value_nm': value_nm, 'source': {
@@ -872,6 +982,19 @@ class PhysicalIntentTests(unittest.TestCase):
                  if p.name != 'physical_intent.py' and 'physical_intent' in p.read_text()]
         self.assertEqual(users, [], 'S1 must not be wired into a default, runtime, campaign or routing path')
 
+    def test_fixture_dispositions_are_typed_and_tested(self):
+        dispositions = physical_intent.FIXTURE_DISPOSITIONS
+        self.assertEqual(set(dispositions), {'tps25982', 'phantom-l1', 'native-repeated-functions', 'child-sheet'})
+        tests = {name for cls in (PhysicalIntentTests, PodEquivalenceTests) for name in dir(cls)
+                 if name.startswith('test_')}
+        for name, disposition in dispositions.items():
+            with self.subTest(name):
+                if disposition['status'] == 'supported':
+                    self.assertTrue(disposition['tests'] and set(disposition['tests']) <= tests)
+                else:
+                    self.assertEqual((disposition['status'], set(disposition)), ('unsupported', {'status', 'reason'}))
+                    self.assertIn('owner gate', disposition['reason'])
+
     def test_failed_publication_leaves_nothing(self):
         compiled = compile_plan(self.control, self.intent())
         compiled['contracts/zz-broken.json'] = {'value': float('nan')}
@@ -881,6 +1004,241 @@ class PhysicalIntentTests(unittest.TestCase):
         self.assertFalse(out.exists())
         self.assertEqual([p for p in self.root.iterdir() if p.name.startswith('.broken.')], [])
 
+
+
+# The captured pod (AGENTEE-388 S1 equivalence target): fome-mc main at the Rev5 inspection.
+# Every input is read from the pinned objects of a local fome-mc store into a temporary run;
+# no pod design file is copied into this repository.
+POD_COMMIT = '19522e37de01103a93fe171a09fe624d8aba6bad'
+POD_SOURCE = 'telemetry-pod/expansion/storage-microsd/project/'
+POD_ITERATION = 'telemetry-pod/expansion/placement-candidate/iteration-7/'
+POD_DATASHEET = ('telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-tracker/'
+                 'f0068c8d96247b629703e6eacc46990097dff6779f4204d95b88ed3118e22827.pdf')
+POD_DATASHEET_SHA256 = 'a045677f8bb2b173e62689f5a7998a3c4afb7b1b9949a1d0e82e67803771b37a'
+POD_FILES = {  # store path -> (run path, sha256 of the bytes; gzip members are hashed decompressed)
+    POD_SOURCE + 'telemetry-pod.kicad_sch': ('project/telemetry-pod.kicad_sch',
+                                             '4da27afc8d9cd7ff3d1fd8e23f855747072c050d25601b89fb3909b688e49f23'),
+    POD_SOURCE + 'telemetry-pod.kicad_pro': ('project/telemetry-pod.kicad_pro',
+                                             'f9f6eadeaef8268b4fd1b05dd8f134c069da687e40da598c54125a0d819ecd5e'),
+    POD_SOURCE + 'sym-lib-table': ('project/sym-lib-table',
+                                   '037d8481bbc29e3aabc4d521da024d4f7c5a1e9d3632a0506e39b3f941720856'),
+    POD_SOURCE + 'fp-lib-table': ('project/fp-lib-table',
+                                  '095b5688975942411897ddeec05831d72aa0f40cdee173ecfeb60d98dd9f579f'),
+    POD_ITERATION + 'inputs/seed.kicad_pcb.gz': ('project/telemetry-pod.kicad_pcb',
+                                                 '21bbf8efdfaf848f1a9494846a6fb1bdf31d19581daaf2c5fb601a26ffba8ecc'),
+    POD_DATASHEET: ('tps7b4253.pdf', POD_DATASHEET_SHA256),
+}
+POD_REVIEWED = {  # reviewed iteration-7 contracts, read for comparison only
+    'allocation': (POD_ITERATION + 'inputs/allocation.json',
+                   '30ff53342642fb31505df3531a34198bb43780dbc738771650314acacea31f25'),
+    'derived': (POD_ITERATION + 'inputs/derived.json', '03aa3baf855f2b04e6b16072b66f73bd648ab28569f3c8dc6408e5c3d897c29c'),
+    'policy': (POD_ITERATION + 'inputs/policy.json', '98dbdcd9c6f6634675306fdfff754938095489083a1dd53fe697c6b44a2693ea'),
+    'measured': (POD_ITERATION + 'evidence/obligations-measured.json', None),
+    'candidate': (POD_ITERATION + 'candidate.kicad_pcb.gz',
+                  '35f242c804038b7ec48740e6f894339e1c152fea95e6a15ddfe77b402030cba9'),
+}
+# Authored facts: the DDA (8-pin HSOIC) pinout of the captured TI TPS7B4253-Q1 datasheet names
+# GND at pins 3 and 6, a native repeated physical function on pod U6 and U12.
+POD_FACTS = [{'id': f'gnd-{pin}', 'part_number': 'TPS7B4253QDDARQ1', 'kind': 'pin_function', 'pin': pin,
+              'value': 'GND', 'unit': '', 'conditions': 'DDA PowerPAD 8-pin HSOIC',
+              'source': {'path': 'tps7b4253.pdf', 'sha256': POD_DATASHEET_SHA256, 'page': 3,
+                  'locator': f'Figure 4-1, DDA PowerPAD package, pin {pin}', 'quote': quote}}
+             for pin, quote in (('3', 'GND      3'), ('6', '6    GND'))]
+
+
+def pod_store():
+    home = Path.home() / 'git/fome-mc'
+    return fome_mc_store(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', str(home)), POD_COMMIT)
+
+
+def pod_blob(store, path, expected):
+    data = subprocess.run(['git', '-C', str(store), 'cat-file', 'blob', f'{POD_COMMIT}:{path}'],
+                          capture_output=True, check=True).stdout
+    data = gzip.decompress(data) if path.endswith('.gz') else data
+    if expected is not None:
+        assert hashlib.sha256(data).hexdigest() == expected, f'pinned fome-mc {path} changed'
+    return data
+
+
+class PodEquivalenceTests(unittest.TestCase):
+    """The captured pod intent compiles back to the reviewed 17-block / 12-obligation contracts.
+
+    The run captures the pod's microSD source schematic and the iteration-7 seed board from the
+    pinned fome-mc store, exports the native netlist and checks the authored TPS7B4253 facts.
+    The intent is the reviewed allocation (blocks and residual) and pad obligations, each
+    endpoint bound to its native pad UUID, plus the repeated GND terminals of U6 and U12.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        require_toolchain(native=True, tools=('pdftotext',))
+        store = pod_store()
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+        src = cls.root / 'src'
+        for path, (rel, expected) in POD_FILES.items():
+            (src / rel).parent.mkdir(parents=True, exist_ok=True)
+            (src / rel).write_bytes(pod_blob(store, path, expected))
+        cls.reviewed = {}
+        for name, (path, expected) in POD_REVIEWED.items():
+            data = pod_blob(store, path, expected)
+            cls.reviewed[name] = data if name == 'candidate' else json.loads(data)
+        cls.allocation_raw = pod_blob(store, *POD_REVIEWED['allocation'])
+        write_json(src / 'facts.json', {'schema': 'agent-ee.datasheet-facts/1', 'facts': POD_FACTS})
+        (src / 'requirements.md').write_text('# Pod intent equivalence\n\nThe captured pod intent compiles to its '
+                                             'reviewed block and locality contracts.\n')
+        control = read_json(FIXTURE / 'control.scope.json')
+        facts = next(c for c in control['checks'] if c['kind'] == 'datasheet_facts')
+        scope = {'schema': control['schema'], 'name': 'pod intent equivalence',
+                 'scope': 'Compile the captured pod intent against its native source and seed board.',
+                 'inputs': [{'path': str(src / 'project'), 'at': 'project'},
+                            *({'path': str(src / f), 'at': f} for f in ('facts.json', 'requirements.md', 'tps7b4253.pdf')),
+                            next(i for i in control['inputs'] if i['at'] == 'stock/template')],
+                 'schematic': 'project/telemetry-pod.kicad_sch', 'board': 'project/telemetry-pod.kicad_pcb',
+                 'requirements': ['requirements.md'],
+                 'checks': [{'id': 'netlist', 'kind': 'netlist'}, facts,
+                            {'id': 'pin-map', 'kind': 'pin_map', 'params': {
+                                'facts_check': 'facts', 'netlist_check': 'netlist',
+                                'symbols': [{'reference': ref, 'part_number': 'TPS7B4253QDDARQ1',
+                                             'facts': ['gnd-3', 'gnd-6']} for ref in ('U6', 'U12')]}}],
+                 'baseline': {'requirements': [{'id': 'pod', 'statement': 'Captured pod intent equivalence.',
+                                                'source': {'path': 'requirements.md', 'locator': 'Pod intent equivalence'},
+                                                'checks': ['netlist', 'facts', 'pin-map']}],
+                              'targets': ['requirements.md'], 'reference_architectures': ['requirements.md']}}
+        write_json(src / 'scope.json', scope)
+        cls.pod = cls.root / 'run'
+        cls.pod.mkdir()
+        capture(src / 'scope.json', cls.pod)
+        results = run_checks(cls.pod, time.monotonic() + 300)
+        freeze_evidence(cls.pod, results)
+        cls.board = physical_intent.native_board(cls.pod / 'inputs/project/telemetry-pod.kicad_pcb')
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def pad_uuid(self, reference, number):
+        pads = [p for p in self.board[reference]['pads'] if p['number'] == number]
+        self.assertEqual(len(pads), 1, f'{reference}.{number}')
+        return pads[0]['uuid']
+
+    def intent(self, **changes):
+        run = self.pod
+        manifest = read_json(run / 'candidate.json')
+        locality = copy.deepcopy(self.reviewed['policy']['electrical_locality']['obligations'])
+        for obligation in locality:
+            for role in electrical_locality.roles(obligation):
+                for end in ('from', 'to'):
+                    endpoint = obligation[role][end]
+                    endpoint['uuid'] = self.pad_uuid(endpoint['reference'], endpoint['pad'])
+        terminals = [{'id': f'{ref.lower()}-gnd-{pin}', 'reference': ref, 'pin': pin,
+                      'pad_uuid': self.pad_uuid(ref, pin), 'function': 'GND', 'fact': f'gnd-{pin}',
+                      'net': '/GND', 'class': 'ic', 'requirement': 'pod'}
+                     for ref in ('U6', 'U12') for pin in ('3', '6')]
+        intent = {'schema': physical_intent.SCHEMA, 'mode': 'manual',
+                  'sources': {'candidate_id': manifest['candidate_id'],
+                              'evidence_sha256': digest(run / 'work/verification/evidence.json'),
+                              'pin_map_check': 'pin-map',
+                              'board_sha256': digest(run / 'inputs/project/telemetry-pod.kicad_pcb'),
+                              'netlist_sha256': digest(run / 'work/netlist/design.xml'),
+                              'facts_sha256': digest(run / 'work/facts/facts.json'),
+                              'pin_map_sha256': digest(run / 'work/pin-map/pin-map.json')},
+                  'terminals': terminals,
+                  'blocks': copy.deepcopy(self.reviewed['allocation']['blocks']),
+                  'residual': list(self.reviewed['allocation']['residual']),
+                  'locality': locality}
+        intent.update(changes)
+        return intent
+
+    def test_captured_pod_intent_compiles_to_the_reviewed_contracts(self):
+        intent = self.intent()
+        started = time.monotonic()
+        compiled = compile_plan(self.pod, intent)
+        elapsed = time.monotonic() - started
+        # Provisional pure-compilation budget; netlist export and PDF extraction ran in the review run.
+        self.assertLess(elapsed, 10, f'provisional 10 s pod compilation budget: {elapsed:.3f} s')
+        receipt = compiled['receipt.json']
+        reviewed, derived = self.reviewed['allocation'], self.reviewed['derived']
+        # 17 blocks and the residual set: the emitted allocation is the reviewed document.
+        allocation = compiled['contracts/block-allocation.json']
+        self.assertEqual(len(allocation['blocks']), 17)
+        self.assertEqual(allocation, reviewed)
+        # The actual blocks.derive on the run's netlist and the digest-bound seed reproduces the
+        # reviewed derivation exactly: blocks, members, anchors and residual reasons.
+        self.assertEqual(receipt['allocation_derivation']['blocks'], derived['blocks'])
+        self.assertEqual(receipt['allocation_derivation']['residual'], derived['residual'])
+        self.assertEqual((len(derived['blocks']), len(derived['residual'])), (17, 53))
+        self.assertEqual(derived['board_sha256'], intent['sources']['board_sha256'])
+        # Exact mismatches, reported rather than hidden: the compiled file is canonical JSON, so its
+        # SHA-256 is not the reviewed file's; derive over the reviewed bytes gives the reviewed hash.
+        # The reviewed native.xml (inventory 7791d443...) is not committed; the run re-exports it.
+        self.assertNotEqual(receipt['allocation_derivation']['allocation_sha256'], derived['allocation_sha256'])
+        self.assertEqual(receipt['allocation_derivation']['allocation_sha256'],
+                         hashlib.sha256(json_bytes(allocation)).hexdigest())
+        netlist = self.pod / 'work/netlist/design.xml'
+        from agent_ee.placement_probe import extract
+        seed = extract(self.pod / 'inputs/project/telemetry-pod.kicad_pcb')
+        again = blocks.derive(read_native_inventory(netlist), read_sheet_names(netlist), seed,
+                              inventory_sha256=derived['inventory_sha256'], allocation_raw=self.allocation_raw)
+        self.assertEqual(again, derived)
+        self.assertNotEqual(digest(netlist), derived['inventory_sha256'])
+        # 12 obligations / 26 pairs: the emitted locality is the reviewed one plus native pad UUIDs.
+        locality = compiled['contracts/electrical-locality.json']
+        stripped = copy.deepcopy(locality['obligations'])
+        for obligation in stripped:
+            for role in electrical_locality.roles(obligation):
+                for end in ('from', 'to'):
+                    del obligation[role][end]['uuid']
+        policy = self.reviewed['policy']['electrical_locality']
+        self.assertEqual(stripped, policy['obligations'])
+        self.assertEqual(len(stripped), 12)
+        self.assertEqual(len(receipt['locality_qualification']), 26)
+        self.assertEqual({q['enforcement'] for q in receipt['locality_qualification']}, {'advisory'})
+        # Graded on the reviewed iteration-7 candidate board, the compiled contract reproduces the
+        # reviewed measurements: all 26 pairs within their (advisory) bounds, identical distances.
+        board = self.root / 'candidate.kicad_pcb'
+        board.write_bytes(self.reviewed['candidate'])
+        probe = extract(board)
+        compiled_grade = electrical_locality.grade(probe, locality)
+        reviewed_grade = electrical_locality.grade(probe, policy)
+        def rows(graded):
+            return [(r['obligation'], r['role'], r['distance_squared_nm'], r['constraint_provenance'])
+                    for r in graded['measured']]
+        self.assertEqual(rows(compiled_grade), rows(reviewed_grade))
+        self.assertEqual((compiled_grade['status'], compiled_grade['defects'], compiled_grade['unknown']), ('info', [], []))
+        self.assertEqual([a['exceeded'] for a in compiled_grade['advisories']], [False] * 26)
+        self.assertEqual([(r['obligation'], r['role'], round(r['distance_mm'], 6)) for r in compiled_grade['measured']],
+                         [(r['obligation'], r['role'], r['distance_mm']) for r in self.reviewed['measured']['rows']])
+        # Native repeated physical function: U6/U12 GND at pins 3 and 6 keep distinct identities.
+        topology = compiled['contracts/topology-rules.json']
+        self.assertEqual(topology['classes'], {'PodPower:TPS7B4253QDDARQ1': {
+            'class': 'ic', 'terminals': {'GND@3': '3', 'GND@6': '6'}}})
+        self.assertEqual(topology_rules.evaluate(topology, read_native_inventory(netlist))['outcome'], 'pass')
+        self.assertEqual(len(receipt['assertions']), 4 + 12 + 17 + 1)
+        out = self.root / 'pod-package'
+        compile_and_publish(self.pod, intent, out)
+        self.assertEqual(verify_receipt(out, self.pod, intent)['package_id'], receipt['package_id'])
+
+    def test_wrong_pins_on_the_captured_power_device_refuse(self):
+        # Rev5 invalid-pin classes on a captured device: a verified function on another pin, a
+        # function the cited fact does not state, an unverified fact and a repeated pad.
+        def gnd(pin, fact, **extra):
+            return {'id': f'u6-{pin}', 'reference': 'U6', 'pin': pin, 'pad_uuid': self.pad_uuid('U6', pin),
+                    'function': 'GND', 'fact': fact, 'net': '/GND', 'class': 'ic', 'requirement': 'pod', **extra}
+        for terminals, pattern in (
+                ([gnd('7', 'gnd-6')], 'verified GND fact binds U6 pin 6, not proposed pin 7'),
+                ([gnd('8', 'gnd-3', function='IN')], "states 'GND', not 'IN'"),
+                ([gnd('3', 'missing')], 'not a verified pin_function fact'),
+                ([gnd('3', 'gnd-3'), gnd('3', 'gnd-3', id='again')], 'duplicate terminal pin')):
+            with self.subTest(pattern):
+                with self.assertRaisesRegex(IntentRefused, pattern):
+                    compile_plan(self.pod, self.intent(terminals=terminals))
+        # The pod is one root sheet: a footprint dropped from the declared residual set is still
+        # reported by derive (root-sheet residual), never silently lost.
+        intent = self.intent()
+        intent['residual'] = [r for r in intent['residual'] if r != 'U1']
+        derivation = compile_plan(self.pod, intent)['receipt.json']['allocation_derivation']
+        self.assertIn({'reference': 'U1', 'reason': 'root-sheet'}, derivation['residual'])
 
 
 class RepeatedFunctionTests(unittest.TestCase):
