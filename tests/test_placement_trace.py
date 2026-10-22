@@ -652,6 +652,22 @@ class PlacementTraceTest(unittest.TestCase):
         self.assertLess(result['median_off_ns'], placement_trace.GATE_MIN_OFF_NS)
         self.assertEqual((result['gate']['applies'], result['gate']['met']), (False, None))
 
+    def test_overhead_report_never_presents_exit_zero_as_gate_passage(self):
+        """Coordinator disposition: exit 0 is output identity only; ``gate.met`` alone carries the gate."""
+        sys.path.insert(0, str(ROOT))
+        self.addCleanup(sys.path.remove, str(ROOT))
+        from scripts import placement_trace_overhead
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = placement_trace_overhead.main(['--runs', '1', '--warmups', '0', '--no-native'])
+        report = json.loads(out.getvalue())
+        self.assertEqual(code, 0)
+        self.assertIn('output identity only', report['exit_status'])
+        self.assertTrue(all(row['outputs_identical'] for row in report['cases']))
+        gate = report['gate']
+        self.assertEqual(gate['met'], gate['host_unloaded'] and bool(gate['met_by']) and not gate['exceeded_by'])
+        self.assertEqual('gate.met=false' in err.getvalue(), not gate['met'])
+
     def test_command_line(self):
         source, policy = promotion_case()
         with tempfile.TemporaryDirectory(prefix='agent-ee-trace-') as tmp:
@@ -896,6 +912,54 @@ class G0VerificationRegressionTest(unittest.TestCase):
         self.assertEqual(durations['stage_a.bounds']['count'], 0)
         self.assert_inclusive(durations)
         self.assertEqual(placement_trace.replay(document)['parity'], 'partial')
+
+    def test_a_raising_subspan_keeps_its_time(self):
+        """Residual R3: 510's raising-boundary probes. 1 ms then RuntimeError in the bound, request or
+        sample stays in that entered span (uncounted) and out of geometry and rank; the error propagates."""
+        from agent_ee import placer
+
+        class Clock:
+            value = 0
+
+            def __call__(self):
+                self.value += 1
+                return self.value
+        for target, attribute in ((placer, '_wire_bounds'), (placement_trace.Recorder, 'sample'),
+                                  (placement_trace.Recorder, 'scan_request')):
+            with self.subTest(attribute):
+                clock, sentinel = Clock(), RuntimeError('failed-span sentinel')
+
+                def broken(*args, **kwargs):
+                    clock.value += 1000000
+                    raise sentinel
+                source, policy = promotion_case()
+                with mock.patch.object(placement_trace, 'now', clock), \
+                        mock.patch.object(target, attribute, broken):
+                    with self.assertRaises(RuntimeError) as raised:
+                        with placement_trace.recording() as recorder:
+                            pack(copy.deepcopy(source), policy)
+                self.assertIs(raised.exception, sentinel)
+                durations = recorder.durations
+                search, trace = durations['stage_a.search'], durations['stage_a.trace']
+                self.assertGreaterEqual(search[0], 1000000)
+                if attribute == '_wire_bounds':  # Was bounds 0 ns, geometry 1,000,002 ns at 83815798.
+                    self.assertGreaterEqual(durations['stage_a.bounds'][0], 1000000)
+                    self.assertEqual(durations['stage_a.bounds'][1], 0)
+                    self.assertLess(durations['stage_a.geometry'][0], 1000000)
+                    self.assertEqual(durations['stage_a.geometry'][1], 1)
+                elif attribute == 'sample':  # Was trace 1 ns, rank 1,000,002 ns at 83815798.
+                    self.assertGreaterEqual(trace[0], 1000000)
+                    self.assertEqual(trace[1], recorder.counters['stage_a.scans'] +
+                                     durations['stage_a.exact'][1] - 1)  # The raising sample is uncounted.
+                    self.assertLess(durations['stage_a.rank'][0], 1000000)
+                    self.assertGreaterEqual(durations['stage_a.rank'][1], 1)
+                else:  # Was trace 0 ns at 83815798.
+                    self.assertGreaterEqual(trace[0], 1000000)
+                    self.assertEqual(trace[1], 0)
+                    self.assertEqual(durations['stage_a.geometry'][1], 0)
+                self.assertLessEqual(sum(durations[name][0] for name in (
+                    'stage_a.geometry', 'stage_a.bounds', 'stage_a.exact', 'stage_a.rank', 'stage_a.trace')),
+                    search[0])
 
     def test_a_raising_arrangement_closes_stage_b(self):
         from agent_ee import block_arrangement

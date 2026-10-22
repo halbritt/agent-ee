@@ -107,7 +107,12 @@ Every span closes when its code raises, as well as when it returns. A failed or
 interrupted run keeps the prep, search, judge, geometry, bounds, exact, rank,
 predicate and Stage-B time it entered, so `stage_a.search` still covers its
 children and `pipeline` its top-level rows. A raising exact resolution keeps its
-time but is not counted as resolved.
+time but is not counted as resolved. The same holds for the observer and bound
+subspans: a raising `_wire_bounds` keeps its time in `stage_a.bounds` (and out of
+`stage_a.geometry`), and a raising scan request or sample keeps its time in
+`stage_a.trace` (and out of `stage_a.rank`). None of these is counted, so each
+count stays the number of completed calls. The original exception propagates
+unchanged.
 
 ## Counters
 
@@ -247,10 +252,13 @@ Measured on 2026-10-22 on talos (12 threads) in the pinned CI image
 | pod-85x55-112 | planned | 4780.75 | 6.36% | 5.70% | 31.10 | yes: exceeded | partial | 681200 |
 
 **The gate is not met.** Both pod boards exceed 5% on an unloaded host, and
-`gate.met` is false. Every plan was identical with tracing on and off. On the
+`gate.met` is false. A second session at the same revision, independently
+recomputed by agent-510 from the raw arrays, gave cluster-three-cap +5.04%,
+pod-80x50-90 +8.45% and pod-85x55-112 +5.01%, so cluster-three-cap is not
+reliably within 5% either. Every plan was identical with tracing on and off. On the
 pod boards, almost all of the overhead is recording: the per-evaluation exact
 timing and sampling of up to 158,000 exact wire-cost evaluations. Export adds
-1 to 2 points. Matched reruns from saved captures on the same host vary by
+about 0.65 points on pod-85x55-112 and about 2 on pod-80x50-90. Matched reruns from saved captures on the same host vary by
 several points from round to round:
 
 - pod-85x55-112: 3.0 to 4.3% before the R3 correction (f3732773), 5.9 to 7.0%
@@ -261,6 +269,15 @@ The R3 correction adds one clock read for each exact evaluation, so that the
 sample time is reported in `stage_a.trace` instead of in rank time. That costs
 about one to three points on the largest pod. The gate was not met before the
 correction either. `stage_a.exact` is not coarsened to pass the gate.
+
+**Disposition (coordinator agent-449, owner of this provisional gate).** The
+gate stays UNMET and `gate.met` stays false. Placement tracing is experimental
+instrumentation and stays off by default. The script's exit status asserts output
+identity only: exit 0 means every plan was identical with tracing on and off,
+never that the gate passed. The report says so in `exit_status`, and the script
+prints `gate.met=false` on stderr when the gate is not met. The timing contract
+and the exact per-evaluation `stage_a.exact` timing are not changed to pass the
+gate. This disposition does not unlock G1 promotion.
 
 **Tracing off versus the pre-change parent.** On the same host and image, the
 tracing-off `pack` median was compared with the pre-AGENTEE-430 parent

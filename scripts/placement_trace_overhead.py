@@ -27,6 +27,8 @@ sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'tests'), str(ROOT)]
 from agent_ee import placement_trace  # noqa: E402
 
 MAX_LOAD = 2.0  # The gate is measured on an unloaded host: 1-minute load average below this.
+# Exit 0 asserts only that every plan was identical with tracing on and off; never gate passage.
+EXIT_STATUS = 'output identity only: 0 when every plan is identical with tracing on and off; gate.met is the gate'
 
 
 def unit_cases():
@@ -75,6 +77,8 @@ def main(argv=None):
     load_after = os.getloadavg()
     gated = [r for r in rows if r['gate_applies']]
     unloaded = max(load_before[0], load_after[0]) < MAX_LOAD
+    # Met only on an unloaded host, by every gated fixture, with at least one gated.
+    met = unloaded and bool(gated) and all(r['gate_met'] for r in gated)
     print(json.dumps({'schema': 'agent-ee.placement-trace-overhead-report/3', 'runs': args.runs,
                       'warmups': args.warmups, 'python': platform.python_version(), 'machine': platform.machine(),
                       'host': platform.node(), 'cpus': os.cpu_count(),
@@ -84,12 +88,14 @@ def main(argv=None):
                                'boundary': 'recording, envelope assembly and export to a fresh file',
                                'min_off_ns': placement_trace.GATE_MIN_OFF_NS, 'max_load_average_1m': MAX_LOAD,
                                'host_unloaded': unloaded,
-                               # Met only on an unloaded host, by every gated fixture, with at least one gated.
-                               'met': unloaded and bool(gated) and all(r['gate_met'] for r in gated),
+                               'met': met,
                                'met_by': [r['case'] for r in gated if r['gate_met']],
                                'exceeded_by': [r['case'] for r in gated if not r['gate_met']],
                                'reported_not_gated': [r['case'] for r in rows if not r['gate_applies']]},
-                      'cases': rows}, indent=2, sort_keys=True))
+                      'exit_status': EXIT_STATUS, 'cases': rows}, indent=2, sort_keys=True))
+    if not met:
+        print('placement trace overhead: gate.met=false (experiment gate not met; tracing stays an off-by-default '
+              'experiment)', file=sys.stderr)
     return 0 if all(r['outputs_identical'] for r in rows) else 1
 
 
