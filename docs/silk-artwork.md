@@ -288,6 +288,10 @@ with the marker claims a stamp. The marker in the title, company, revision or
 date, later in a comment, or in board text is user text and leaves every verdict
 as it is. A claim must be well formed and unique: two claims, a claim whose
 comment number repeats, or malformed digests are unknown at the gated checks.
+Any comment holding a string that begins with the marker is a claim whatever its
+shape, so a missing or invalid comment number, an extra element or an extra list
+is a malformed claim and is unknown at admission and at seal verification
+(AGENTEE-412), never an unstamped board.
 KiCad 10.0.7 keeps board-level properties in the project's text variables:
 `pcbnew.SaveBoard` drops a `(property ...)` node from the saved `.kicad_pcb`.
 The board file therefore has no dedicated non-user field, so the stamp shares

@@ -57,13 +57,23 @@ def _stamp_digests(value):
     return words[1:]
 
 
+def _claims(node):
+    """Whether any string in a parsed node, at any depth, begins with the stamp marker."""
+    return any(_claims(v) if isinstance(v, list) else isinstance(v, str) and v.startswith(STAMP)
+               for v in node)
+
+
 def unstamped(nodes):
     """Board-level nodes without the lineage stamp, and its digests (None when unstamped)."""
     kept, found = [], None
     for node in nodes:
         if isinstance(node, list) and node and node[0] == 'title_block':
             comments = [c for c in node[1:] if isinstance(c, list) and c[:1] == ['comment']]
-            claims = [c for c in comments if len(c) == 3 and isinstance(c[2], str) and c[2].startswith(STAMP)]
+            # A comment that claims the stamp in any other shape (missing or invalid slot,
+            # extra element or list) is a malformed claim, not user text (AGENTEE-412 H1).
+            claims = [c for c in comments if _claims(c[1:])]
+            if any(len(c) != 3 or not isinstance(c[2], str) or not c[2].startswith(STAMP) for c in claims):
+                raise ValueError('malformed placement lineage stamp claim')
             if claims:
                 # One claim in one unambiguous comment slot; a repeated slot hides which one KiCad reads.
                 if (found is not None or len(claims) != 1 or claims[0][1] not in STAMP_SLOTS or

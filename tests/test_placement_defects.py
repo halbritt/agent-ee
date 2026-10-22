@@ -276,6 +276,33 @@ class BoardLineageStampContractTests(unittest.TestCase):
                         placement_defects.before_check(Ctx(run, manifest, spec, time.monotonic() + 60))
                     self.assertEqual(caught.exception.execution, 'malformed')
 
+    def test_structurally_malformed_stamp_claims_refuse_at_admission_and_seal(self):
+        """AGENTEE-412 H1: a comment that claims the stamp in a malformed shape (extra element,
+        extra list, missing slot number) is unknown at admission and at seal verification."""
+        import tempfile
+        from agent_ee.checks import CheckError, Ctx
+        marker = f'{placement_defects.STAMP} {self.a}'
+        head, rest = self.board.split(b'\n', 1)
+        shapes = [f'(comment 8 "{marker}" extra)', f'(comment 8 "{marker}" (extra))', f'(comment "{marker}")',
+                  f'(comment 8 (extra "{marker}"))', f'(comment "{marker}" "notes")']
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / 'inputs').mkdir()
+            spec = {'id': 'fab', 'kind': 'fab_export'}
+            manifest = {'candidate_id': 'c' * 64, 'scope': {'board': 'b.kicad_pcb', 'checks': [spec]}, 'files': {}}
+            for shape in shapes:
+                data = head + f'\n (title_block {shape})\n'.encode() + rest
+                (run / 'inputs/b.kicad_pcb').write_bytes(data)
+                manifest['files']['b.kicad_pcb'] = digest(run / 'inputs/b.kicad_pcb')
+                with self.subTest(shape=shape):
+                    with self.assertRaisesRegex(ValueError, 'malformed placement lineage stamp'):
+                        placement_defects.stamp(data)
+                    with self.assertRaises(CheckError) as caught:
+                        placement_defects.before_check(Ctx(run, manifest, spec, time.monotonic() + 60))
+                    self.assertEqual(caught.exception.execution, 'malformed')
+                    with self.assertRaises(ValueError):
+                        placement_defects.verify_gate(run, {'id': 'fab', 'execution': 'ok', 'outcome': 'pass'}, manifest)
+
     def test_write_scope_admits_extension_and_refuses_drop_or_rewrite(self):
         from agent_ee import placement_adapter as pa
         one, two = stamped(self.board, self.a), stamped(self.board, self.a, self.b)
