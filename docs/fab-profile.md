@@ -403,26 +403,54 @@ are `source_subject_mismatch`, `source_value_mismatch` and
 `source_fact_unparsed`. Advisories are bound the same way: a `recommended`
 advisory must cite a recommendation, and a `guide_minimum` must cite a minimum.
 
-Silk minima also need supplier applicability. Profile-level `applicability`
-entries (fab-profile/2) each hold exactly `id`, `base_materials` and a
-`source`. The quote must be one whole recorded line
-`scope / <subject> / base material: <names>` (or `supported base materials`)
-naming exactly `base_materials`. Each entry covers the silk minima that cite its
-source page. An unverified entry refuses the descriptor. The inventory adds
-`dielectrics`: the saved `core`/`prepreg` stackup layers of the board and their
-`material` names, read with the shared S-expression parser, or `null` when the
-board saves no stackup. Applicability is checked first, and every outcome but
-the last is unknown:
+Silk minima also need supplier applicability, in three parts: the cited page's
+supplier scope, a captured order selection inside it, and a saved board that
+matches the order. Profile-level `applicability` entries (fab-profile/2) each
+hold exactly `id`, a `source` and one scope component:
 
-- no verified scope for the cited page: `silk_applicability_unsourced`
+- `base_materials`: names, quoted as `scope / <subject> / base material: <names>`
+  (or `supported base materials`)
+- `processes`: names, quoted as `scope / <subject> / process: <names>` (or
+  `supported processes`)
+- `copper_layers`: an inclusive `[min, max]` range, quoted as
+  `scope / <subject> / copper layers: <min>-<max>`
+
+Each quote must be one whole recorded line naming exactly the entry's values. A
+page states each component at most once, and its entries cover the silk minima
+that cite that page. The profile-level `order` holds the captured target order
+selection. It has exactly one entry for each of `process`, `base_material` and
+`copper_layers`. Each entry has exactly `id`, `selection`, `value` (one name, or
+a positive layer count) and a `source`, quoted as one whole recorded line
+`order / <subject> / <process|base material|copper layers>: <value>`. An
+unverified scope or order entry refuses the descriptor. A designer's saved
+stackup or a profile default never stands in for a missing order.
+
+The inventory adds `dielectrics`: the saved `core`/`prepreg` stackup layers and
+their `material` names, read with the shared S-expression parser, or `null` when
+the board saves no stackup. It also adds `stackup_problems`. Every saved stackup
+layer must classify. Copper layers must equal the board's copper layers, top to
+bottom, and every adjacent copper pair needs a `core` or `prepreg` between it.
+Mask, paste and silk types must lie outside the copper span. An untyped or
+unrecognized layer, an omitted dielectric, or a misplaced layer is a problem.
+Each problem keeps the saved layer name, type and materials; nothing drops out
+of scope. Applicability is checked first. Every outcome below is unknown and
+keeps the native result:
+
+- the page lacks any scope component: `silk_applicability_unsourced`
+  (`unqualified_silk` lists the missing components)
+- no verified order selection: `silk_order_unsourced`
+- any stackup problem: `silk_stackup_unverified`
 - no saved stackup, a dielectric with no material, or a material outside the
   qualified mapping (only KiCad `FR4` maps, to `FR-4`): `silk_material_unverified`
-- a mapped material outside the page's scope: `silk_applicability_mismatch`
-- every saved dielectric maps into the scope: grading continues
+- the order's process, base material or layer count, or the board's dielectric
+  material or copper-layer count, outside the page's scope:
+  `silk_applicability_mismatch`
+- the board's mapped material or copper-layer count differs from the order:
+  `silk_order_mismatch`
 
-KiCad writes `FR4` into a new stackup by default, so the saved material is the
-designer's declaration, not proof of the order. Order-form options are not
-captured.
+Grading continues only when none applies. KiCad writes `FR4` into a new stackup
+by default, so the saved material is the designer's declaration. It is checked
+against the order, and is never the order itself.
 
 The native inventory also adds `silk`: every saved item on `F.SilkS`/`B.SilkS`, as
 `texts` (class, visibility, stroke font or font name, knockout, height,
@@ -462,27 +490,35 @@ A candidate that needs both runs two `fab_profile` checks.
 | --- | --- | --- |
 | `pad-to-silk` | 0.15 mm | [Capabilities](https://jlcpcb.com/capabilities/pcb-capabilities/), Legend, Pad To Silkscreen |
 | `silk-text-height` | 1.0 mm | Capabilities, Legend, Minimum text height |
-| `silk-line-width` | 0.15 mm | [Silkscreen guide](https://jlcpcb.com/blog/pcb-silkscreen), line width / text thickness, absolute minimum |
-| `silk-to-mask` | 0.15 mm | Silkscreen guide, silkscreen-to-solder-mask clearance, absolute minimum (unmeasured) |
+| `silk-line-width` | 0.15 mm | Capabilities, Legend, Minimum Line Width (characters) |
+| `silk-to-mask` | 0.15 mm | [Silkscreen guide](https://jlcpcb.com/blog/pcb-silkscreen), silkscreen-to-solder-mask clearance, absolute minimum (unmeasured) |
 
 | Advisory | Value | Role |
 | --- | --- | --- |
+| `guide-line-width` | 0.15 mm | Guide's absolute line-width / text-thickness minimum. The capability minimum grades |
 | `guide-text-height` | 0.8 mm | Guide's absolute character-height minimum. The capability table's 1.0 mm minimum grades |
 | `recommended-line-width` | 0.2 mm | Recommended only |
 | `recommended-silk-to-mask` | 0.25 mm | Recommended only |
 
-| Applicability | Base materials | Source |
+| Applicability | Component | Source |
 | --- | --- | --- |
-| `capability-scope` (page 1) | FR-4 | Capabilities page, Rigid PCB Manufacturing Capabilities, Material row |
-| `guide-scope` (page 2) | FR-4, Aluminum, Copper Core, Flex (FPC) | Silkscreen guide table, Supported Base Materials |
+| `capability-scope` (page 1) | base materials: FR-4 | Capabilities page, PCB Specifications, Material row |
+| `capability-process` (page 1) | processes: rigid PCB | Capabilities page heading, Rigid PCB Manufacturing Capabilities |
+| `capability-copper-layers` (page 1) | copper layers: 1-32 | Capabilities page, PCB Specifications, Layer count |
+| `guide-scope` (page 2) | base materials: FR-4, Aluminum, Copper Core, Flex (FPC) | Silkscreen guide table, Supported Base Materials |
 
-So `pad-to-silk` and `silk-text-height` grade only a saved FR4 stackup, and
-`silk-line-width` grades it under the guide's wider scope.
+All three graded limits cite page 1. The capabilities table says characters
+narrower than 0.15 mm are unidentifiable, so `silk-line-width` cites that row.
+The guide's equal 0.15 mm absolute minimum is the `guide-line-width` advisory.
+The guide table names no legend process or copper-layer range, so a limit that
+cites it is `silk_applicability_unsourced`. The guide's 0.15 mm pad-edge
+clipping buffer is recorded but not graded.
 
-The capabilities table also says characters narrower than 0.15 mm are
-unidentifiable. That value is recorded on page 1. The graded line-width limit
-cites the guide, which names lines and text thickness. The guide's 0.15 mm
-pad-edge clipping buffer is recorded but not graded.
+No order selection was captured, so the preset carries no `order`. On its own,
+every graded silk limit is `silk_order_unsourced`, even on an FR4 board. A
+design grades only under a profile variant that adds its captured order
+selection, a rigid PCB in FR-4 with 1 to 32 copper layers that equals the saved
+board.
 
 [source-capture.json](../fixtures/fab-profiles/jlcpcb-silkscreen-2026-10-22/source-capture.json)
 records both host-captured URLs with UTC timestamps, HTTP status, raw response
@@ -492,13 +528,13 @@ holds numbers and names only. Page 1 is the capabilities table and page 2,
 after a form feed, is the guide. Raw vendor HTML remains in worker scratch,
 as for the via preset. Raw bytes were rechecked against the recorded lengths
 and SHA-256 values during review; the committed tests verify the numeric record
-only. Base-material applicability is checked as above. Order options are not
-checked, and this is not complete DFM or supplier approval.
+only. Applicability is checked as above. No order selection is shipped, and this
+is not complete DFM, pricing or supplier approval.
 
 `tests.test_silk_fab_profile` covers the preset contract: distinct page/quote
 bindings, advisory refusal and `/1` refusal. It also covers fact role, subject
-and value binding (recommendations cited as minima), and applicability scope
-lines. It refuses missing, changed,
+and value binding (recommendations cited as minima), applicability scope
+lines for each component, and order selection lines. It refuses missing, changed,
 misquoted and wrong-page captures, and runs the qualification gates on unit
 records. Real sandboxed KiCad DRC covers: a compliant board (pass, or unknown
 with `silk-to-mask`), the exact 0.15 mm boundary, and a 0.14 mm pad gap with
@@ -506,10 +542,16 @@ with `silk-to-mask`), the exact 0.15 mm boundary, and a 0.14 mm pad gap with
 and pad UUIDs. It also covers mask-margin independence, back-side grading
 with opposite-side silk ignored, tented pads and outline fonts as unknown,
 hidden footprint fields and the saved silk inventory. It also covers the 0.2 mm
-and 0.25 mm recommendations promoted to minima (unknown, not a defect). A
-missing scope, a missing stackup or material, Polyimide and an owned out-of-scope
-record are all unknown, with `native_status` kept for compliant and violating
-boards.
+and 0.25 mm recommendations promoted to minima (unknown, not a defect). The
+following are all unknown on compliant and violating boards, with
+`native_status` kept: a missing scope, a missing stackup or material,
+Polyimide, and an owned out-of-scope record. On an FR4 board, so are the shipped
+preset without an order, an order for another process or material, an order
+for four layers on a two-layer board, and a guide-cited limit. Four-layer boards
+with one FR4 core and an untyped, unrecognized-type or omitted dielectric are
+`silk_stackup_unverified`, citing the offending saved layers. A complete
+four-layer FR4 stackup under a matching four-layer order grades: it passes or
+reports a defect.
 
 ## Evidence and failure
 

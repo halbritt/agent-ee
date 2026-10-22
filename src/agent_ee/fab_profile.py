@@ -1,8 +1,9 @@
 """Offline, source-bound fabricator limits using the staged native rule compiler.
 
 Captured source text verifies citation occurrence, not fabricator authenticity or
-engineering applicability; only silk minima also bind a recorded supplier material
-scope. No built-in fabricator values or pricing are supplied.
+engineering applicability; only silk minima also bind a recorded supplier process,
+material and layer scope and a captured order selection. No built-in fabricator
+values or pricing are supplied.
 """
 import copy
 import datetime
@@ -60,8 +61,16 @@ SILK_SUBJECTS = {
 }
 MINIMUM_ROLES = ('minimum', 'absolute minimum')
 FACT_ROLES = {'limit': MINIMUM_ROLES, 'guide_minimum': MINIMUM_ROLES, 'recommended': ('recommended',)}
-# Supplier base-material scope of one source page, recorded as a whole names-only line.
-SCOPE = re.compile(r'scope / (?P<subject>.+) / (?:base material|supported base materials): (?P<names>.+)')
+# Supplier scope of one source page, one component per whole recorded line: base
+# material names, process names, or an inclusive copper-layer range ('1-32').
+SCOPE = re.compile(r'scope / (?P<subject>.+) / (?P<kind>base material|supported base materials|process'
+                   r'|supported processes|copper layers): (?P<values>.+)')
+SCOPE_KINDS = {'base_materials': ('base material', 'supported base materials'),
+               'processes': ('process', 'supported processes'), 'copper_layers': ('copper layers',)}
+# The captured target order selection, one whole recorded line per selection.
+ORDER = {'process': 'process', 'base_material': 'base material', 'copper_layers': 'copper layers'}
+ORDER_LINE = re.compile(r'order / (?P<subject>.+) / (?P<selection>process|base material|copper layers): '
+                        r'(?P<value>.+)')
 # Saved KiCad stackup dielectric material names qualified to a supplier base-material
 # name. Any other saved name, or none, leaves silk applicability unverified.
 BASE_MATERIALS = {'FR4': 'FR-4'}
@@ -119,33 +128,94 @@ def silk_fact(source, key, value, roles, inputs, files):
     return None
 
 
+def scope_values(kind, text, single=False):
+    """Parse a recorded value: names, an inclusive copper-layer range, or (single) one count."""
+    if kind != 'copper_layers':
+        return text.split(', ')
+    match = re.fullmatch(r'([1-9][0-9]*)' + ('' if single else r'-([1-9][0-9]*)'), text)
+    if not match:
+        return None
+    return int(match[1]) if single else [int(match[1]), int(match[2])]
+
+
 def compile_applicability(entries, files, inputs, as_of, dependencies):
-    """Supplier base-material scope per cited source page; never a rule, grade or charge."""
+    """Supplier scope components per cited source page; never a rule, grade or charge.
+
+    Each entry states one component (base materials, processes or a copper-layer
+    range) on one whole recorded scope line; a page may state each component once.
+    """
     if not isinstance(entries, list) or not entries:
         raise ValueError('applicability must be a nonempty list')
     records, ids, pages = [], set(), set()
     for entry in entries:
-        if (not isinstance(entry, dict) or set(entry) != {'id', 'base_materials', 'source'} or
+        kinds = set(entry) & SCOPE_KINDS.keys() if isinstance(entry, dict) else set()
+        if (not isinstance(entry, dict) or len(kinds) != 1 or set(entry) != {'id', 'source', *kinds} or
                 not isinstance(entry['id'], str) or not ID.fullmatch(entry['id'])):
-            raise ValueError('applicability needs exactly id/base_materials/source')
-        names, source = entry['base_materials'], entry['source']
-        if (not isinstance(names, list) or not names or len(set(map(repr, names))) != len(names) or
-                not all(isinstance(n, str) and n.strip() == n and n for n in names)):
-            raise ValueError('base_materials must be unique nonempty names')
-        page = (repr(source.get('path')), repr(source.get('page'))) if isinstance(source, dict) else None
+            raise ValueError('applicability needs exactly id/source and one of ' + '/'.join(SCOPE_KINDS))
+        kind = kinds.pop()
+        values, source = entry[kind], entry['source']
+        if kind == 'copper_layers':
+            if (not isinstance(values, list) or len(values) != 2 or
+                    any(isinstance(v, bool) or not isinstance(v, int) or v < 1 for v in values) or
+                    values[0] > values[1]):
+                raise ValueError('copper_layers must be an inclusive [min, max] positive layer range')
+        elif (not isinstance(values, list) or not values or len(set(map(repr, values))) != len(values) or
+                not all(isinstance(n, str) and n.strip() == n and n for n in values)):
+            raise ValueError(f'{kind} must be unique nonempty names')
+        page = (repr(source.get('path')), repr(source.get('page')), kind) if isinstance(source, dict) else None
         if entry['id'] in ids or page in pages:
-            raise ValueError('duplicate applicability id or source page')
+            raise ValueError('duplicate applicability id or source page component')
         ids.add(entry['id']); pages.add(page)
-        record = {'id': entry['id'], 'expected': copy.deepcopy(entry), 'execution': 'unsupported'}
+        record = {'id': entry['id'], 'component': kind, 'expected': copy.deepcopy(entry),
+                  'execution': 'unsupported'}
         try:
             if isinstance(source, dict) and isinstance(source.get('path'), str):
                 captured_file(inputs, files, source['path'])
                 dependencies.add(source['path'])
             verify_source(source, inputs, files, as_of)
             match = SCOPE.fullmatch(source['quote'])
-            if not match or not recorded_line(source, inputs, files) or match['names'].split(', ') != names:
-                raise ValueError('applicability quote must be one whole recorded scope line naming '
-                                 'exactly base_materials')
+            if (not match or match['kind'] not in SCOPE_KINDS[kind] or not recorded_line(source, inputs, files)
+                    or scope_values(kind, match['values']) != values):
+                raise ValueError(f'applicability quote must be one whole recorded scope line naming exactly {kind}')
+        except (ValueError, KeyError, OSError, UnicodeError) as exc:
+            record['reason'] = str(exc)
+        else:
+            record['execution'] = 'ready'
+        records.append(record)
+    return sorted(records, key=lambda r: r['id'])
+
+
+def compile_order(entries, files, inputs, as_of, dependencies):
+    """The captured target order selection: one process, base material and copper-layer count."""
+    if (not isinstance(entries, list) or
+            sorted(e['selection'] if isinstance(e, dict) and isinstance(e.get('selection'), str) else ''
+                   for e in entries) != sorted(ORDER)):
+        raise ValueError('order needs exactly one ' + ', '.join(sorted(ORDER)) + ' selection')
+    records, ids = [], set()
+    for entry in entries:
+        selection = entry['selection']
+        if (set(entry) != {'id', 'selection', 'value', 'source'} or not isinstance(entry['id'], str) or
+                not ID.fullmatch(entry['id']) or entry['id'] in ids):
+            raise ValueError('order selection needs exactly unique id/selection/value/source')
+        ids.add(entry['id'])
+        value = entry['value']
+        if (isinstance(value, bool) or not isinstance(value, int) or value < 1) if selection == 'copper_layers' \
+                else (not isinstance(value, str) or not value or value.strip() != value or ', ' in value):
+            raise ValueError(f'order {selection} must be one ' +
+                             ('positive layer count' if selection == 'copper_layers' else 'name'))
+        record = {'id': entry['id'], 'selection': selection, 'expected': copy.deepcopy(entry),
+                  'execution': 'unsupported'}
+        source = entry['source']
+        try:
+            if isinstance(source, dict) and isinstance(source.get('path'), str):
+                captured_file(inputs, files, source['path'])
+                dependencies.add(source['path'])
+            verify_source(source, inputs, files, as_of)
+            match = ORDER_LINE.fullmatch(source['quote'])
+            if (not match or match['selection'] != ORDER[selection] or not recorded_line(source, inputs, files)
+                    or scope_values(selection, match['value'], single=True) != (
+                        value if selection == 'copper_layers' else [value])):
+                raise ValueError(f'order quote must be one whole recorded order line selecting exactly {selection}')
         except (ValueError, KeyError, OSError, UnicodeError) as exc:
             record['reason'] = str(exc)
         else:
@@ -315,7 +385,8 @@ def compile_stackup(value, files, inputs, as_of):
 def compile_profile(profile, files, inputs):
     required = {'schema', 'name', 'as_of', 'limits'}
     if (not isinstance(profile, dict) or not required <= profile.keys() or
-            set(profile) - required - ({'finished_thickness_tolerance', 'stackup', 'advisories', 'applicability'}
+            set(profile) - required - ({'finished_thickness_tolerance', 'stackup', 'advisories', 'applicability',
+                                        'order'}
                                       if profile.get('schema') == SCHEMAS[1] else set()) or
             profile['schema'] not in SCHEMAS or not isinstance(profile['name'], str)
             or not ID.fullmatch(profile['name']) or not isinstance(profile['limits'], list)
@@ -327,8 +398,17 @@ def compile_profile(profile, files, inputs):
     if 'applicability' in profile:
         metadata['applicability'] = compile_applicability(profile['applicability'], files, inputs, as_of,
                                                           dependencies)
-    scopes = {(a['expected']['source']['path'], a['expected']['source']['page']): a
-              for a in metadata.get('applicability', []) if a['execution'] == 'ready'}
+    if 'order' in profile:
+        metadata['order'] = compile_order(profile['order'], files, inputs, as_of, dependencies)
+    scopes = defaultdict(dict)
+    for a in metadata.get('applicability', []):
+        if a['execution'] == 'ready':
+            scopes[a['expected']['source']['path'], a['expected']['source']['page']][a['component']] = a
+    order = metadata.get('order')
+    if order is not None and all(o['execution'] == 'ready' for o in order):
+        order = {**{o['selection']: o['expected']['value'] for o in order}, 'ids': [o['id'] for o in order]}
+    else:
+        order = None
     for limit in profile['limits']:
         validate_limit(limit, profile['schema'])
         lid, key, tier = limit['id'], limit.get('key'), limit['tier']
@@ -363,10 +443,13 @@ def compile_profile(profile, files, inputs):
                                for term in limit['all']]
         elif key in NATIVE or key in SILK:
             native_rule(record, key, limit['value'])
-            scope = scopes.get((source['path'], source['page']))
-            if key in SILK and scope is not None:
-                # Graded only where the saved board material is in this page's scope.
-                record['applicability'] = {'id': scope['id'], 'base_materials': scope['expected']['base_materials'],
+            scope = scopes.get((source['path'], source['page']), {})
+            if key in SILK and (scope or order):
+                # Graded only where the order and the saved board are in this page's verified
+                # scope; qualify_silk refuses any missing component or order selection.
+                record['applicability'] = {'scope_ids': sorted(a['id'] for a in scope.values()),
+                                           **{kind: a['expected'][kind] for kind, a in sorted(scope.items())},
+                                           'order': order,
                                            'source_path': source['path'], 'source_page': source['page']}
         elif key in UNMEASURED:
             code, reason = UNMEASURED[key]
@@ -427,6 +510,9 @@ def capability(params, scope, files, inputs, cid):
     unverified = [a for a in compiled.get('applicability', []) if a['execution'] != 'ready']
     if unverified:
         raise ValueError('applicability source not verified: ' + unverified[0]['reason'])
+    unverified = [o for o in compiled.get('order', []) if o['execution'] != 'ready']
+    if unverified:
+        raise ValueError('order selection source not verified: ' + unverified[0]['reason'])
     validate_mappings(compiled['constraints'], scope, files, cid)
     return {'compiled': compiled,
             'immutable_inputs': sorted({params['fab_profile'], *compiled['immutable_inputs'],
@@ -543,27 +629,73 @@ def native_inventory(board_path):
     if problem:
         inventory['outline_problem'] = {'reason': problem[0], 'locator_ids': problem[1]}
     inventory['silk'] = silk_inventory(board)
-    inventory['dielectrics'] = saved_dielectrics(board_path)
+    inventory['dielectrics'], inventory['stackup_problems'] = saved_dielectrics(
+        board_path, inventory['copper_layer_names'])
     return inventory
 
 
-def saved_dielectrics(board_path):
-    """Saved stackup core/prepreg layers with their material names; None without one stackup."""
-    from .board_envelope import atoms
+# Saved KiCad stackup layer types outside the copper span; any other type, or none, is unclassified.
+STACKUP_OUTER = ('Top Silk Screen', 'Top Solder Paste', 'Top Solder Mask',
+                 'Bottom Solder Mask', 'Bottom Solder Paste', 'Bottom Silk Screen')
+
+
+def saved_dielectrics(board_path, copper_names):
+    """Saved stackup dielectrics and every coverage problem; (None, []) without one stackup.
+
+    Every saved stackup layer must classify: copper layers equal the board's, every
+    adjacent copper pair has a core/prepreg between it, and mask/paste/silk types lie
+    outside the copper span. An untyped, unrecognized, omitted or misplaced layer is a
+    problem that keeps its saved name, type and materials; it never drops out of scope.
+    """
+    from .board_envelope import atoms, copper_names as names
     from .symbol_library import LibraryError, children, parse_sexpr
     try:
         root = parse_sexpr(Path(board_path).read_bytes())
     except LibraryError:
-        return None
+        return None, []
     setups = children(root, 'setup')
     stackups = children(setups[0], 'stackup') if len(setups) == 1 else []
     if len(stackups) != 1:
-        return None
-    return [{'layer': layer[1] if len(layer) > 1 and isinstance(layer[1], str) else None,
-             # Sublayers repeat material within the same saved layer.
-             'materials': [atoms(m)[0] for m in children(layer, 'material') if atoms(m)]}
-            for layer in children(stackups[0], 'layer')
-            if any(atoms(t)[:1] in (['core'], ['prepreg']) for t in children(layer, 'type'))]
+        return None, []
+    layers = []
+    for layer in children(stackups[0], 'layer'):
+        types = [atoms(t)[:1] for t in children(layer, 'type')]
+        layers.append({'layer': layer[1] if len(layer) > 1 and isinstance(layer[1], str) else None,
+                       'type': types[0][0] if len(types) == 1 and types[0] else None,
+                       # Sublayers repeat material within the same saved layer.
+                       'materials': [atoms(m)[0] for m in children(layer, 'material') if atoms(m)]})
+    problems = []
+    def problem(item, reason):
+        problems.append({**item, 'reason': reason})
+    copper = [i for i, l in enumerate(layers) if l['type'] == 'copper']
+    # Saved top-to-bottom order, which the board's enabled-layer sequence does not give.
+    if (sorted(copper_names) != sorted(names(len(copper_names))) or
+            [layers[i]['layer'] for i in copper] != names(len(copper_names))):
+        problem({'layer': None, 'type': 'copper', 'materials': [],
+                 'saved': [layers[i]['layer'] for i in copper], 'board': list(copper_names)},
+                'saved stackup copper layers differ from the board copper layers')
+    first, last = (copper[0], copper[-1]) if copper else (len(layers), -1)
+    for index, layer in enumerate(layers):
+        inside = first < index < last
+        if layer['type'] == 'copper':
+            continue
+        if layer['type'] in ('core', 'prepreg'):
+            if not inside:
+                problem(layer, 'dielectric outside the copper span')
+        elif layer['type'] in STACKUP_OUTER:
+            if inside:
+                problem(layer, f'{layer["type"]} layer inside the copper span')
+        else:
+            problem(layer, 'stackup layer type missing or unrecognized')
+    for above, below in zip(copper, copper[1:]):
+        between = layers[above+1:below]
+        if not any(l['type'] in ('core', 'prepreg') for l in between):
+            problem({'layer': None, 'type': None, 'materials': [],
+                     'between': [layers[above]['layer'], layers[below]['layer']]},
+                    'no saved core/prepreg dielectric between adjacent copper layers')
+    dielectrics = [{'layer': l['layer'], 'materials': l['materials']} for l in layers
+                   if l['type'] in ('core', 'prepreg')]
+    return dielectrics, problems
 
 
 def silk_inventory(board):
@@ -644,6 +776,66 @@ def offender_ids(record):
         i['uuid'] for f in record.get('native_findings', []) for i in f['items']}
 
 
+def silk_applicability(scope, inventory):
+    """Typed refusals unless the cited page's verified supplier process, material and
+    layer scope covers the captured order selection, and the order matches the saved board.
+
+    Every component is required: an absent scope component, order selection, saved
+    stackup or classifiable stackup layer is unknown, never out of scope or pass.
+    """
+    refusals = []
+    missing = [k for k in SCOPE_KINDS if scope is None or k not in scope]
+    if missing:
+        refusals.append(('silk_applicability_unsourced', 'no verified supplier ' + ', '.join(missing)
+                         + ' scope on the cited source page', missing))
+    order = None if scope is None else scope.get('order')
+    if order is None:
+        refusals.append(('silk_order_unsourced', 'no verified captured order selection of process, '
+                         'base material and copper layers', []))
+    dielectrics, problems = inventory.get('dielectrics'), inventory.get('stackup_problems')
+    if problems or (problems is None and dielectrics is not None):
+        # An inventory without the coverage check proves no stackup classification.
+        refusals.append(('silk_stackup_unverified', 'saved board stackup layers missing, untyped, '
+                         'unrecognized or misplaced', problems or []))
+    materials = None
+    if not dielectrics or any(not d['materials'] or set(d['materials']) - BASE_MATERIALS.keys()
+                              for d in dielectrics):
+        refusals.append(('silk_material_unverified', 'saved board stackup names no dielectric material '
+                         'qualified to a supplier base-material name', dielectrics or []))
+    else:
+        materials = {BASE_MATERIALS[m] for d in dielectrics for m in d['materials']}
+    if missing:
+        return refusals
+    low, high = scope['copper_layers']
+    copper = inventory.get('copper_layers')
+    outside = [{'component': 'base_materials', 'layer': d['layer'], 'materials': d['materials']}
+               for d in (dielectrics if materials else [])
+               if {BASE_MATERIALS[m] for m in d['materials']} - set(scope['base_materials'])]
+    if not isinstance(copper, int) or not low <= copper <= high:
+        outside.append({'component': 'copper_layers', 'board': copper, 'scope': [low, high]})
+    if order is not None:
+        for kind, selection, legal in (('processes', 'process', order['process'] in scope['processes']),
+                                       ('base_materials', 'base_material',
+                                        order['base_material'] in scope['base_materials']),
+                                       ('copper_layers', 'copper_layers', low <= order['copper_layers'] <= high)):
+            if not legal:
+                outside.append({'component': kind, 'order': order[selection], 'scope': scope[kind]})
+    if outside:
+        refusals.append(('silk_applicability_mismatch', 'order selection or saved board outside the cited '
+                         'supplier process, base-material or copper-layer scope', outside))
+    if order is not None:
+        differ = []
+        if materials and materials != {order['base_material']}:
+            differ.append({'selection': 'base_material', 'order': order['base_material'],
+                           'board': sorted(materials)})
+        if copper != order['copper_layers']:
+            differ.append({'selection': 'copper_layers', 'order': order['copper_layers'], 'board': copper})
+        if differ:
+            refusals.append(('silk_order_mismatch', 'saved board differs from the captured order selection',
+                             differ))
+    return refusals
+
+
 def qualify_silk(records, inventory):
     """Grade silk minima only where the saved silk is what the native rule measures.
 
@@ -663,20 +855,7 @@ def qualify_silk(records, inventory):
         cited = {i['uuid'] for f in record['native_findings'] for i in f['items']}
         refusals = []
         # Supplier applicability comes first: a measurement outside its scope proves nothing.
-        scope, dielectrics = record.get('applicability'), inventory.get('dielectrics')
-        if scope is None:
-            refusals.append(('silk_applicability_unsourced', 'no verified supplier base-material scope '
-                             'on the cited source page', []))
-        elif not dielectrics or any(not d['materials'] or set(d['materials']) - BASE_MATERIALS.keys()
-                                    for d in dielectrics):
-            refusals.append(('silk_material_unverified', 'saved board stackup names no dielectric material '
-                             'qualified to a supplier base-material name', dielectrics or []))
-        else:
-            outside = [d for d in dielectrics if {BASE_MATERIALS[m] for m in d['materials']}
-                       - set(scope['base_materials'])]
-            if outside:
-                refusals.append(('silk_applicability_mismatch', 'saved dielectric material outside the '
-                                 'cited supplier base-material scope', outside))
+        refusals.extend(silk_applicability(record.get('applicability'), inventory))
         if silk['other']:
             refusals.append(('silk_item_unqualified', 'silkscreen items outside the qualified text and '
                              'stroked-shape classes', silk['other']))

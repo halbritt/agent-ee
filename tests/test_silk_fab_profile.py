@@ -1,8 +1,10 @@
 """Dated JLCPCB silkscreen (legend) limits through the existing source-bound native check.
 
 Pad-to-silk and silk-to-mask stay distinct; recommendations are advisories only.
-Silk minima grade only where the saved board material is in the cited page's scope.
-Boards are owned synthetic fixtures; only the cited numbers come from the capture.
+Silk minima grade only where the cited page's supplier process, base-material and
+copper-layer scope covers a captured order selection, and the order matches a saved
+board whose complete stackup classifies. Boards and order selections are owned
+synthetic fixtures; only the cited supplier numbers and names come from the capture.
 """
 import copy
 import json
@@ -25,6 +27,27 @@ def silk_profile(inputs, limits=None):
     if limits is not None:
         document['limits'] = [limit for limit in document['limits'] if limit['id'] in limits]
     return document
+
+
+ORDER_SOURCE = 'Owned test order selection record'
+
+
+def ordered(inputs, document, process='rigid PCB', material='FR-4', layers=2):
+    """Owned captured order selection, one whole recorded line per selection, cited by the profile."""
+    lines = {'process': process, 'base_material': material, 'copper_layers': layers}
+    path = inputs / 'order-selection.txt'
+    quotes = {k: f'order / owned test order / {k.replace("_", " ")}: {v}' for k, v in lines.items()}
+    path.write_text('Owned test order / 2026-10-22\n' + '\n'.join(quotes.values()) + '\n', encoding='utf-8')
+    document['order'] = [{'id': f'order-{k.replace("_", "-")}', 'selection': k, 'value': v,
+                          'source': {'path': path.name, 'sha256': digest(path), 'source': ORDER_SOURCE,
+                                     'as_of': document['as_of'], 'page': 1, 'quote': quotes[k]}}
+                         for k, v in lines.items()]
+    return document
+
+
+def graded(limits=MEASURED, **order):
+    """Profile factory: the shipped preset (subset) with an owned captured order selection."""
+    return lambda inputs: ordered(inputs, silk_profile(inputs, limits), **order)
 
 
 def promote(document, limit_id, advisory_id):
@@ -83,13 +106,17 @@ class SilkProfileContractTest(unittest.TestCase):
         for record in (pad, height, records['silk-line-width']):
             self.assertEqual(record['project_rules'], {})
             self.assertIn(f'(rule "agent_ee_{record["id"]}"', record['rules'])
-        # Each graded minimum carries its own page's verified supplier scope.
-        self.assertEqual({i: records[i]['applicability']['id'] for i in MEASURED},
-                         {'pad-to-silk': 'capability-scope', 'silk-text-height': 'capability-scope',
-                          'silk-line-width': 'guide-scope'})
-        self.assertEqual(records['pad-to-silk']['applicability']['base_materials'], ['FR-4'])
-        self.assertEqual(records['silk-line-width']['applicability']['base_materials'],
-                         ['FR-4', 'Aluminum', 'Copper Core', 'Flex (FPC)'])
+        # Each graded minimum carries its own page's verified supplier scope components; the
+        # capability page states process and layer range, so the line width cites it too.
+        self.assertEqual(records['silk-line-width']['expected']['source']['page'], 1)
+        for limit in MEASURED:
+            scope = records[limit]['applicability']
+            self.assertEqual(scope['scope_ids'], ['capability-copper-layers', 'capability-process',
+                                                  'capability-scope'])
+            self.assertEqual((scope['base_materials'], scope['processes'], scope['copper_layers']),
+                             (['FR-4'], ['rigid PCB'], [1, 32]))
+            # No order selection was captured: the shipped preset alone grades no silk limit.
+            self.assertIsNone(scope['order'])
         self.assertNotIn('applicability', mask)
 
     def test_guide_text_height_and_recommendations_are_sourced_advisories_only(self):
@@ -99,6 +126,7 @@ class SilkProfileContractTest(unittest.TestCase):
         self.assertEqual({(a['expected']['key'], a['expected']['value'], a['expected']['role'])
                           for a in advisories.values()},
                          {('min_silk_text_height_mm', .8, 'guide_minimum'),
+                          ('min_silk_line_width_mm', .15, 'guide_minimum'),
                           ('min_silk_line_width_mm', .2, 'recommended'),
                           ('min_silk_to_mask_mm', .25, 'recommended')})
         # Both text-height sources keep their provenance; only the capability minimum grades.
@@ -170,7 +198,8 @@ class SilkProfileContractTest(unittest.TestCase):
         self.assertEqual(self.by_id(self.compile())['silk-text-height']['execution'], 'ready')
         document = copy.deepcopy(self.document)
         limit = next(l for l in document['limits'] if l['id'] == 'silk-text-height')
-        limit.update(value=.8, source=copy.deepcopy(document['advisories'][0]['source']))
+        guide = next(a for a in document['advisories'] if a['id'] == 'guide-text-height')
+        limit.update(value=.8, source=copy.deepcopy(guide['source']))
         record = self.by_id(self.compile(document))['silk-text-height']
         self.assertEqual(record['execution'], 'ready')
         self.assertIn('(constraint text_height (min 0.8mm))', record['rules'])
@@ -208,23 +237,93 @@ class SilkProfileContractTest(unittest.TestCase):
                 files = {p.name: digest(p) for p in self.inputs.iterdir()}
                 with self.assertRaisesRegex(ValueError, 'applicability source not verified'):
                     capability({'fab_profile': 'profile.json'}, {}, files, self.inputs, 'fab')
-                # No scope binds to the silk minima of that page.
+                # No base-material scope binds to the silk minima of that page.
                 records = self.by_id(self.compile(document))
-                self.assertNotIn('applicability', records['pad-to-silk'])
-                self.assertEqual(records['silk-line-width']['applicability']['id'], 'guide-scope')
+                for limit in MEASURED:
+                    self.assertNotIn('base_materials', records[limit]['applicability'])
+                    self.assertNotIn('capability-scope', records[limit]['applicability']['scope_ids'])
         for mutate, message in ((lambda d: d['applicability'].append(copy.deepcopy(d['applicability'][0])),
                                  'duplicate applicability'),
                                 (lambda d: d['applicability'][0].update(base_materials=[]), 'base_materials'),
                                 (lambda d: d['applicability'][0].update(process='rigid'), 'exactly'),
+                                (lambda d: d['applicability'][0].update(processes=['rigid PCB']), 'exactly'),
+                                (lambda d: d['applicability'][1].update(processes='rigid PCB'), 'processes'),
+                                (lambda d: d['applicability'][2].update(copper_layers=[32, 1]), 'range'),
+                                (lambda d: d['applicability'][2].update(copper_layers=[0, 32]), 'range'),
+                                (lambda d: d['applicability'][2].update(copper_layers=[True, 32]), 'range'),
+                                (lambda d: d['applicability'].append({**copy.deepcopy(d['applicability'][2]),
+                                                                      'id': 'again'}), 'source page component'),
                                 (lambda d: d.update(applicability=[]), 'nonempty')):
             document = copy.deepcopy(self.document)
             mutate(document)
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 self.compile(document)
+        # Process and copper-layer scope lines verify the same way, per component.
+        for index, mutate in ((1, lambda a: a.update(processes=['flex PCB'])),
+                              (1, lambda a: a['source'].update(quote='scope / rigid PCB capabilities / '
+                                                                     'base material: FR-4')),
+                              (2, lambda a: a.update(copper_layers=[1, 16])),
+                              (2, lambda a: a['source'].update(quote='scope / rigid PCB capabilities / '
+                                                                     'process: rigid PCB'))):
+            document = copy.deepcopy(self.document)
+            mutate(document['applicability'][index])
+            entry = document['applicability'][index]
+            with self.subTest(entry=entry['id'], quote=entry['source']['quote']):
+                record = next(a for a in self.compile(document)['applicability'] if a['id'] == entry['id'])
+                self.assertEqual(record['execution'], 'unsupported')
+                self.assertIn('whole recorded scope line', record['reason'])
+                kind = 'processes' if index == 1 else 'copper_layers'
+                self.assertNotIn(kind, self.by_id(self.compile(document))['pad-to-silk']['applicability'])
         # Without any applicability block the silk minima carry no scope at all.
         document = copy.deepcopy(self.document)
         del document['applicability']
         self.assertFalse(any('applicability' in r for r in self.compile(document)['constraints']))
+
+    def test_order_selection_is_verified_whole_order_lines(self):
+        document = ordered(self.inputs, copy.deepcopy(self.document), layers=4)
+        compiled = self.compile(document)
+        self.assertEqual({o['execution'] for o in compiled['order']}, {'ready'})
+        self.assertIn('order-selection.txt', compiled['immutable_inputs'])
+        scope = self.by_id(compiled)['pad-to-silk']['applicability']
+        self.assertEqual(scope['order'], {'process': 'rigid PCB', 'base_material': 'FR-4', 'copper_layers': 4,
+                                          'ids': ['order-base-material', 'order-copper-layers', 'order-process']})
+        # Each selection must be its own whole recorded line; any unverified selection drops
+        # the order for every silk minimum and refuses the descriptor before a native run.
+        for selection, mutate, reason in (
+                ('process', lambda o: o.update(value='flex PCB'), 'whole recorded order line'),
+                ('copper_layers', lambda o: o.update(value=2), 'whole recorded order line'),
+                ('base_material', lambda o: o['source'].update(
+                    quote='order / owned test order / process: rigid PCB'), 'whole recorded order line'),
+                ('process', lambda o: o['source'].update(sha256='0' * 64), 'hash mismatch'),
+                ('process', lambda o: o['source'].update(as_of='2026-10-21'), 'as_of')):
+            bad = copy.deepcopy(document)
+            mutate(next(o for o in bad['order'] if o['selection'] == selection))
+            with self.subTest(selection=selection, reason=reason):
+                compiled = self.compile(bad)
+                record = next(o for o in compiled['order'] if o['selection'] == selection)
+                self.assertEqual(record['execution'], 'unsupported')
+                self.assertIn(reason, record['reason'])
+                self.assertIsNone(self.by_id(compiled)['pad-to-silk']['applicability']['order'])
+                (self.inputs / 'profile.json').write_text(json.dumps(bad))
+                files = {p.name: digest(p) for p in self.inputs.iterdir()}
+                with self.assertRaisesRegex(ValueError, 'order selection source not verified'):
+                    capability({'fab_profile': 'profile.json'}, {}, files, self.inputs, 'fab')
+        for mutate, message in ((lambda d: d['order'].pop(), 'exactly one'),
+                                (lambda d: d['order'].append(copy.deepcopy(d['order'][0])), 'exactly one'),
+                                (lambda d: d['order'][0].update(selection='finish'), 'exactly one'),
+                                (lambda d: d['order'][0].update(extra=1), 'exactly unique'),
+                                (lambda d: next(o for o in d['order'] if o['selection'] == 'copper_layers')
+                                 .update(value='2'), 'layer count'),
+                                (lambda d: next(o for o in d['order'] if o['selection'] == 'process')
+                                 .update(value='rigid PCB, flex PCB'), 'one name'),
+                                (lambda d: d.update(order=[]), 'exactly one')):
+            bad = copy.deepcopy(document)
+            mutate(bad)
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                self.compile(bad)
+        v1 = copy.deepcopy(document); v1['schema'] = 'agent-ee.fab-profile/1'
+        with self.assertRaisesRegex(ValueError, 'no defaults'):
+            self.compile(v1)
 
     def test_no_silk_to_silk_rule_and_v1_refuses_silk_keys(self):
         bad = copy.deepcopy(self.document)
@@ -287,6 +386,8 @@ def text(uid, visible=True, stroke=True, knockout=False, **extra):
 
 
 FR4 = [{'layer': 'dielectric 1', 'materials': ['FR4']}]
+ORDER = {'process': 'rigid PCB', 'base_material': 'FR-4', 'copper_layers': 2,
+         'ids': ['order-base-material', 'order-copper-layers', 'order-process']}
 
 
 def graphic(uid, width, filled=False):
@@ -297,46 +398,78 @@ def graphic(uid, width, filled=False):
 class SilkQualificationTest(unittest.TestCase):
     """Applicability gates on native silk records, before any grade is reported."""
 
-    def record(self, key, status='satisfied', findings=(), value=.15, scope=('FR-4',)):
+    def record(self, key, status='satisfied', findings=(), value=.15, scope=('FR-4',), order=ORDER, **parts):
+        applicability = {'scope_ids': ['s'], 'base_materials': list(scope or ()), 'processes': ['rigid PCB'],
+                         'copper_layers': [1, 32], 'order': order, **parts}
         return {'id': 'r', 'requirement': 'fab', 'execution': 'ok', 'status': status,
                 'expected': {'key': key, 'value': value, 'tier': 'minimum'},
                 'native_findings': list(findings),
-                **({} if scope is None else {'applicability': {'id': 's', 'base_materials': list(scope)}})}
+                **({} if scope is None else {'applicability': applicability})}
 
-    def qualify(self, record, dielectrics=FR4, **silk):
-        inventory = {'silk': {'texts': [], 'graphics': [], 'other': [], **silk}, 'dielectrics': dielectrics}
+    def qualify(self, record, dielectrics=FR4, copper=2, problems=(), **silk):
+        inventory = {'silk': {'texts': [], 'graphics': [], 'other': [], **silk}, 'dielectrics': dielectrics,
+                     'stackup_problems': list(problems), 'copper_layers': copper}
         return qualify_silk([record], inventory)[0]
 
     def test_applicability_gates_precede_every_grade(self):
         finding = [{'type': 'silk_over_copper', 'items': [{'uuid': 'a'}]}]
         polyimide = [{'layer': 'dielectric 1', 'materials': ['Polyimide']}]
         mixed = [*FR4, {'layer': 'dielectric 2', 'materials': ['FR4', 'Not specified']}]
+        untyped = [{'layer': 'dielectric 2', 'type': None, 'materials': ['Polyimide'],
+                    'reason': 'stackup layer type missing or unrecognized'}]
         cases = ((dict(scope=None), {}, 'silk_applicability_unsourced'),
+                 (dict(processes=None), {}, 'silk_applicability_unsourced'),
+                 (dict(copper_layers=None), {}, 'silk_applicability_unsourced'),
+                 (dict(order=None), {}, 'silk_order_unsourced'),
+                 ({}, dict(problems=untyped), 'silk_stackup_unverified'),
                  ({}, dict(dielectrics=None), 'silk_material_unverified'),
                  ({}, dict(dielectrics=[]), 'silk_material_unverified'),
                  ({}, dict(dielectrics=[{'layer': 'dielectric 1', 'materials': []}]), 'silk_material_unverified'),
                  ({}, dict(dielectrics=polyimide), 'silk_material_unverified'),
                  ({}, dict(dielectrics=mixed), 'silk_material_unverified'),
-                 (dict(scope=('Aluminum',)), {}, 'silk_applicability_mismatch'))
+                 (dict(scope=('Aluminum',)), {}, 'silk_applicability_mismatch'),
+                 (dict(order={**ORDER, 'process': 'flex PCB'}), {}, 'silk_applicability_mismatch'),
+                 (dict(order={**ORDER, 'copper_layers': 34}, copper_layers=[1, 32]), dict(copper=34),
+                  'silk_applicability_mismatch'),
+                 (dict(order={**ORDER, 'base_material': 'Aluminum'}, scope=('FR-4', 'Aluminum')), {},
+                  'silk_order_mismatch'),
+                 (dict(order={**ORDER, 'copper_layers': 4}), {}, 'silk_order_mismatch'))
         for key in ('min_pad_to_silk_mm', 'min_silk_text_height_mm', 'min_silk_line_width_mm'):
             for options, inventory, code in cases:
+                record = self.record(key, **options)
+                # A None scope component is one the cited page never stated.
+                for part in ('processes', 'copper_layers'):
+                    if record.get('applicability', {}).get(part, ()) is None:
+                        del record['applicability'][part]
                 for status, findings in (('satisfied', []), ('violation', finding)):
-                    with self.subTest(key=key, code=code, inventory=inventory, status=status):
-                        result = self.qualify(self.record(key, status, findings, **options), **inventory)
+                    record.update(status=status, native_findings=list(findings))
+                    with self.subTest(key=key, code=code, options=options, inventory=inventory, status=status):
+                        result = self.qualify(copy.deepcopy(record), **inventory)
                         # Unverified applicability is unknown, never pass and never a defect;
                         # the native measurement stays as diagnostic evidence.
                         self.assertEqual((result['execution'], result['status'], result['code'], result['native_status']),
                                          ('unsupported', 'not_evaluated', code, status))
                         self.assertEqual(result['native_findings'], findings)
+        # Dielectrics without a stackup coverage inventory prove nothing either.
+        result = qualify_silk([self.record('min_pad_to_silk_mm')],
+                              {'silk': {'texts': [], 'graphics': [], 'other': []}, 'dielectrics': FR4,
+                               'copper_layers': 2})[0]
+        self.assertEqual((result['status'], result['code']), ('not_evaluated', 'silk_stackup_unverified'))
+        # The offending saved stackup layer stays in the diagnostic evidence.
+        result = self.qualify(self.record('min_pad_to_silk_mm'), problems=untyped)
+        self.assertEqual(result['unqualified_silk'], untyped)
         # Applicability takes precedence over, and keeps, every other silk refusal.
         other = [{'uuid': 'd', 'class': 'PCB_DIM_ALIGNED', 'layers': ['F.SilkS']}]
         result = self.qualify(self.record('min_pad_to_silk_mm', scope=None), other=other)
         self.assertEqual([r['code'] for r in result['silk_refusals']],
-                         ['silk_applicability_unsourced', 'silk_item_unqualified'])
-        # A scope naming the qualified material, on every saved dielectric, grades as before.
+                         ['silk_applicability_unsourced', 'silk_order_unsourced', 'silk_item_unqualified'])
+        # A scope naming the qualified material and process, a matching order, and the
+        # qualified material on every saved dielectric grades as before.
         two = [*FR4, {'layer': 'dielectric 2', 'materials': ['FR4', 'FR4']}]
         result = self.qualify(self.record('min_pad_to_silk_mm', scope=('Aluminum', 'FR-4')), dielectrics=two)
         self.assertEqual((result['execution'], result['status']), ('ok', 'satisfied'))
+        result = self.qualify(self.record('min_pad_to_silk_mm', 'violation', finding))
+        self.assertEqual((result['execution'], result['status']), ('ok', 'violation'))
 
     def test_missing_inventory_and_unqualified_items_are_unknown(self):
         record = qualify_silk([self.record('min_pad_to_silk_mm')], {})[0]
@@ -418,18 +551,35 @@ def stackup(material):
             '(type "Bottom Silk Screen")) (copper_finish "None") (dielectric_constraints no)) ')
 
 
+def stackup4(*dielectrics):
+    """Owned four-copper-layer saved stackup; each dielectric is its saved body, None omits it."""
+    copper = ('F.Cu', 'In1.Cu', 'In2.Cu', 'B.Cu')
+    layers = [f'(layer "{copper[0]}" (type "copper") (thickness 0.035))']
+    for index, (body, name) in enumerate(zip(dielectrics, copper[1:]), 1):
+        if body is not None:
+            layers.append(f'(layer "dielectric {index}" {body})')
+        layers.append(f'(layer "{name}" (type "copper") (thickness 0.035))')
+    return '(stackup ' + ' '.join(layers) + ' (copper_finish "None") (dielectric_constraints no)) '
+
+
+FR4_CORE = '(type "core") (thickness 0.5) (material "FR4")'
+FR4_PREPREG = '(type "prepreg") (thickness 0.2) (material "FR4")'
+
+
 def silk_board(saved, *, gap=0.2, margin=0.05, tented=False, back_gap=None, text_size=1.0, thickness=0.15,
-               line=0.15, hidden_small=False, outline_font=False, material='FR4', stacked=True):
+               line=0.15, hidden_small=False, outline_font=False, material='FR4', stacked=True, copper=2,
+               stack=None):
     """Owned board: one pad with a board silk line `gap` mm from its copper, plus text.
 
-    The saved stackup names one core `material`; stacked=False saves no stackup.
+    The saved stackup names one core `material`, or is the saved `stack` text for a
+    `copper`-layer board; stacked=False saves no stackup.
     `saved` receives role -> saved UUID, read back from the saved board.
     """
     def build(path, **_):
         import pcbnew as k
         def v(x, y):
             return k.VECTOR2I(round(x*MM), round(y*MM))
-        board = k.BOARD(); board.SetCopperLayerCount(2)
+        board = k.BOARD(); board.SetCopperLayerCount(copper)
         corners = ((0, 0), (30, 0), (30, 20), (0, 20))
         for start, end in zip(corners, corners[1:] + corners[:1]):
             edge = k.PCB_SHAPE(board, k.SHAPE_T_SEGMENT); edge.SetLayer(k.Edge_Cuts)
@@ -470,7 +620,7 @@ def silk_board(saved, *, gap=0.2, margin=0.05, tented=False, back_gap=None, text
         if stacked:
             raw = path.read_text(encoding='utf-8')
             at = raw.index('(setup') + len('(setup')
-            path.write_text(raw[:at] + ' ' + stackup(material) + raw[at:], encoding='utf-8')
+            path.write_text(raw[:at] + ' ' + (stack or stackup(material)) + raw[at:], encoding='utf-8')
         if outline_font:
             raw = path.read_text(encoding='utf-8')
             at = raw.index('(font', raw.index('"AE"'))
@@ -489,6 +639,7 @@ def silk_board(saved, *, gap=0.2, margin=0.05, tented=False, back_gap=None, text
         if outline_font:
             assert next(i for i in loaded.GetDrawings() if i.GetClass() == 'PCB_TEXT').GetFont() is not None
         assert loaded.GetDesignSettings().m_HasStackup == stacked
+        assert loaded.GetCopperLayerCount() == copper
     return build
 
 
@@ -502,7 +653,7 @@ class NativeSilkTest(unittest.TestCase):
     def run_silk(self, limits=MEASURED, profile=None, **options):
         saved = {}
         result = base.NativeFabTest.run_profile(self, None, builder=silk_board(saved, **options),
-                                                profile=profile or (lambda inputs: silk_profile(inputs, limits)))
+                                                profile=profile or graded(limits))
         return result, {c['id']: c for c in result['details']['constraints']}, saved
 
     def cited(self, record):
@@ -581,22 +732,8 @@ class NativeSilkTest(unittest.TestCase):
                                  ('not_evaluated', 'source_role_mismatch'))
                 self.assertNotIn('native_findings', records[limit])
 
-    def test_unverified_applicability_is_unknown_with_native_diagnostics(self):
-        # Review H2: the measured-only profile without a supplier scope, a board without a
-        # saved stackup material, an unqualified material and a scope that excludes the
-        # board's material are all unknown; the native measurement stays as native_status.
-        def unscoped(inputs):
-            document = silk_profile(inputs, MEASURED)
-            del document['applicability']
-            return document
-        def aluminum(inputs):
-            return rescope(inputs, silk_profile(inputs, MEASURED),
-                           'scope / rigid PCB capabilities / base material: Aluminum', ['Aluminum'])
-        cases = ((dict(profile=unscoped), MEASURED, 'silk_applicability_unsourced'),
-                 (dict(stacked=False), MEASURED, 'silk_material_unverified'),
-                 (dict(material=None), MEASURED, 'silk_material_unverified'),
-                 (dict(material='Polyimide'), MEASURED, 'silk_material_unverified'),
-                 (dict(profile=aluminum), ('pad-to-silk', 'silk-text-height'), 'silk_applicability_mismatch'))
+    def refused(self, cases):
+        """Each case is unknown at a compliant and a violating gap, keeping native_status."""
         for options, refused, code in cases:
             for gap, native in ((0.2, 'satisfied'), (0.14, 'violation')):
                 with self.subTest(code=code, options=sorted(options), gap=gap):
@@ -606,10 +743,83 @@ class NativeSilkTest(unittest.TestCase):
                         self.assertEqual((records[limit]['status'], records[limit]['code']),
                                          ('not_evaluated', code))
                     self.assertEqual(records['pad-to-silk']['native_status'], native)
-                    # The guide page's scope names the board's FR-4; that limit still grades.
-                    if 'silk-line-width' not in refused:
-                        self.assertEqual((records['silk-line-width']['execution'],
-                                          records['silk-line-width']['status']), ('ok', 'satisfied'))
+                    self.assertEqual(bool(records['pad-to-silk']['native_findings']), native == 'violation')
+
+    def test_unverified_material_is_unknown_with_native_diagnostics(self):
+        # The measured-only profile without a supplier scope, a board without a saved
+        # stackup material, an unqualified material and a scope that excludes the board's
+        # material are all unknown; the native measurement stays as native_status.
+        def unscoped(inputs):
+            document = graded()(inputs)
+            del document['applicability']
+            return document
+        def aluminum(inputs):
+            return ordered(inputs, rescope(inputs, silk_profile(inputs, MEASURED),
+                                           'scope / rigid PCB capabilities / base material: Aluminum', ['Aluminum']),
+                           material='Aluminum')
+        self.refused(((dict(profile=unscoped), MEASURED, 'silk_applicability_unsourced'),
+                      (dict(stacked=False), MEASURED, 'silk_material_unverified'),
+                      (dict(material=None), MEASURED, 'silk_material_unverified'),
+                      (dict(material='Polyimide'), MEASURED, 'silk_material_unverified'),
+                      (dict(profile=aluminum), MEASURED, 'silk_applicability_mismatch')))
+
+    def test_process_and_order_applicability_gate_fr4_boards(self):
+        # Review H1 (ee75d): an owned FR4 stackup and the measured-only shipped preset, with
+        # no captured order selection, or with one the cited page's process or layer scope
+        # does not cover, or that differs from the board, is unknown at either gap.
+        def guide_width(inputs):
+            document = graded(('silk-line-width',))(inputs)
+            document['limits'][0]['source'] = copy.deepcopy(next(a for a in document['advisories']
+                                                                 if a['id'] == 'guide-line-width')['source'])
+            return document
+        self.refused(((dict(profile=lambda inputs: silk_profile(inputs, MEASURED)), MEASURED, 'silk_order_unsourced'),
+                      (dict(profile=graded(process='flex PCB')), MEASURED, 'silk_applicability_mismatch'),
+                      (dict(profile=graded(material='Aluminum')), MEASURED, 'silk_applicability_mismatch'),
+                      (dict(profile=graded(layers=4)), MEASURED, 'silk_order_mismatch')))
+        result, records, _ = self.run_silk(profile=lambda inputs: silk_profile(inputs, MEASURED))
+        self.assertEqual(records['pad-to-silk']['silk_refusals'][0]['reason'],
+                         'no verified captured order selection of process, base material and copper layers')
+        # The guide table states neither a process nor a layer range: its line-width
+        # minimum is unknown under a matching order, compliant or not.
+        for line, native in ((0.15, 'satisfied'), (0.1, 'violation')):
+            result, records, _ = self.run_silk(profile=guide_width, line=line, thickness=line)
+            self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+            width = records['silk-line-width']
+            self.assertEqual((width['code'], width['native_status'], width['unqualified_silk']),
+                             ('silk_applicability_unsourced', native, ['processes', 'copper_layers']))
+        # The same boards grade once the captured order selection is in scope and matches.
+        for gap, outcome in ((0.2, 'pass'), (0.14, 'defect')):
+            result, records, _ = self.run_silk(gap=gap)
+            self.assertEqual((result['execution'], result['outcome']), ('ok', outcome), result)
+            self.assertEqual(records['pad-to-silk']['applicability']['order']['process'], 'rigid PCB')
+
+    def test_partial_multilayer_stackup_is_unknown(self):
+        # Review H2 (ee75d): a four-copper-layer board with one valid FR4 core whose other
+        # dielectrics are untyped, of an unrecognized type or omitted is unknown, never pass;
+        # the offending saved layer and its material stay in the diagnostic evidence.
+        untyped = '(thickness 0.5) (material "Polyimide")'
+        unknown = '(type "unspecified") (thickness 0.5) (material "Polyimide")'
+        # An unclassified layer also leaves its copper pair without a core/prepreg (None row).
+        gap = (None, None, [])
+        cases = (('untyped', (FR4_CORE, untyped, FR4_CORE), [('dielectric 2', None, ['Polyimide']), gap]),
+                 ('unrecognized', (FR4_CORE, FR4_PREPREG, unknown),
+                  [('dielectric 3', 'unspecified', ['Polyimide']), gap]),
+                 ('both', (FR4_CORE, untyped, unknown), [('dielectric 2', None, ['Polyimide']),
+                                                         ('dielectric 3', 'unspecified', ['Polyimide']), gap, gap]),
+                 ('omitted', (FR4_CORE, None, FR4_CORE), [gap]))
+        for name, dielectrics, offenders in cases:
+            options = dict(copper=4, stack=stackup4(*dielectrics), profile=graded(layers=4))
+            self.refused(((options, MEASURED, 'silk_stackup_unverified'),))
+            with self.subTest(case=name):
+                result, records, _ = self.run_silk(**options)
+                refusal = records['pad-to-silk']['silk_refusals'][0]
+                self.assertEqual(refusal['code'], 'silk_stackup_unverified')
+                self.assertEqual([(i['layer'], i['type'], i['materials']) for i in refusal['items']], offenders)
+        # A complete four-layer FR4 stackup grades under a matching four-layer order.
+        for gap, outcome in ((0.2, 'pass'), (0.14, 'defect')):
+            result, _, _ = self.run_silk(gap=gap, copper=4, stack=stackup4(FR4_CORE, FR4_PREPREG, FR4_CORE),
+                                         profile=graded(layers=4))
+            self.assertEqual((result['execution'], result['outcome']), ('ok', outcome), result)
 
     def test_inventory_records_saved_silk_classes(self):
         from agent_ee.fab_profile import native_inventory
@@ -626,13 +836,35 @@ class NativeSilkTest(unittest.TestCase):
 
     def test_inventory_reads_saved_stackup_dielectrics(self):
         from agent_ee.fab_profile import native_inventory
-        for options, expected in ((dict(), [{'layer': 'dielectric 1', 'materials': ['FR4']}]),
-                                  (dict(material=None), [{'layer': 'dielectric 1', 'materials': []}]),
-                                  (dict(stacked=False), None)):
-            with self.subTest(options=options), tempfile.TemporaryDirectory() as tmp:
+        polyimide = '(type "unspecified") (thickness 0.5) (material "Polyimide")'
+        for options, expected, problems in (
+                (dict(), [{'layer': 'dielectric 1', 'materials': ['FR4']}], []),
+                (dict(material=None), [{'layer': 'dielectric 1', 'materials': []}], []),
+                (dict(stacked=False), None, []),
+                (dict(copper=4, stack=stackup4(FR4_CORE, '(thickness 0.5) (material "Polyimide")', polyimide)),
+                 [{'layer': 'dielectric 1', 'materials': ['FR4']}],
+                 [{'layer': 'dielectric 2', 'type': None, 'materials': ['Polyimide'],
+                   'reason': 'stackup layer type missing or unrecognized'},
+                  {'layer': 'dielectric 3', 'type': 'unspecified', 'materials': ['Polyimide'],
+                   'reason': 'stackup layer type missing or unrecognized'},
+                  {'layer': None, 'type': None, 'materials': [], 'between': ['In1.Cu', 'In2.Cu'],
+                   'reason': 'no saved core/prepreg dielectric between adjacent copper layers'},
+                  {'layer': None, 'type': None, 'materials': [], 'between': ['In2.Cu', 'B.Cu'],
+                   'reason': 'no saved core/prepreg dielectric between adjacent copper layers'}]),
+                # The two-layer stackup on a board saved with four copper layers.
+                (dict(copper=4), [{'layer': 'dielectric 1', 'materials': ['FR4']}],
+                 [{'layer': None, 'type': 'copper', 'materials': [], 'saved': ['F.Cu', 'B.Cu'],
+                   'board': None, 'reason': 'saved stackup copper layers differ from the board copper layers'}])):
+            with self.subTest(options=sorted(options)), tempfile.TemporaryDirectory() as tmp:
                 path = Path(tmp) / 'b.kicad_pcb'
                 silk_board({}, **options)(path)
-                self.assertEqual(native_inventory(path)['dielectrics'], expected)
+                inventory = native_inventory(path)
+                self.assertEqual(inventory['dielectrics'], expected)
+                if problems and problems[0].get('board', ()) is None:
+                    problems[0]['board'] = inventory['copper_layer_names']
+                    self.assertEqual(sorted(inventory['copper_layer_names']),
+                                     ['B.Cu', 'F.Cu', 'In1.Cu', 'In2.Cu'])
+                self.assertEqual(inventory['stackup_problems'], problems)
 
     def test_hidden_footprint_field_is_inventoried_but_not_graded(self):
         # KiCad neither plots nor grades a hidden field; it never decides a silk limit.

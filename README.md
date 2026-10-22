@@ -624,9 +624,11 @@ records the published small-via surcharge options, grades drills below the
 0.15 mm minimum as defects and reports unlisted small drills as unknown; it
 covers a subset of DFM
 and supplies no pricing or supplier approval. A separate [dated JLCPCB silkscreen profile](docs/fab-profile.md#dated-jlcpcb-silkscreen-profile)
-grades pad-to-silk, silk text height and line width. It grades them only when the
-saved board stackup material is in the cited page's supplier scope. Its sourced
-silk-to-mask limit stays unknown because no qualified measurement exists.
+grades pad-to-silk, silk text height and line width. It grades them only under a
+captured order selection inside the cited page's supplier process, material and
+layer scope, on a matching board whose saved stackup classifies completely. No
+order is shipped, so the preset alone is unknown. Its sourced silk-to-mask limit
+stays unknown because no qualified measurement exists.
 The [DFM geometry check](docs/dfm-geometry.md) applies seven deterministic rules
 with captured thresholds to exact pcbnew geometry from the saved board: annular
 ring, via aspect ratio, acid traps, SMD bridge gap, courtyard spacing,

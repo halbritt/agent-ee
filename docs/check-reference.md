@@ -549,10 +549,12 @@ clearance has no qualified measurement and is always unknown
 filled shapes and other silk classes are typed unknowns. Silk citations bind the
 fact's role and value, so a recommendation cited as a minimum is unknown
 (`source_role_mismatch`). Silk minima grade only when profile `applicability`
-cites a supplier base-material scope for the source page, and the saved board
-stackup material maps into it. Otherwise they are unknown, with codes
-`silk_applicability_unsourced`, `silk_material_unverified` or
-`silk_applicability_mismatch`. Sourced `advisories`
+cites the source page's supplier base-material, process and copper-layer scope,
+a captured profile `order` selection lies inside it, and the saved board matches
+the order. The saved stackup must also classify completely, with every material
+mapped. Otherwise they are unknown, with codes `silk_applicability_unsourced`,
+`silk_order_unsourced`, `silk_stackup_unverified`, `silk_material_unverified`,
+`silk_applicability_mismatch` or `silk_order_mismatch`. Sourced `advisories`
 (recommendations, guide values) never grade. The
 [2026-10-22 JLCPCB silkscreen profile](fab-profile.md#dated-jlcpcb-silkscreen-profile)
 binds the capability Legend table and the silkscreen guide.
