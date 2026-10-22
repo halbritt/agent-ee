@@ -416,18 +416,24 @@ def _stamp_lineage(source, output, project_payloads, comparison, before, baselin
     """
     import copy
     import pcbnew
-    from .placement_defects import STAMP, STAMP_COMMENT, carry_digest, stamp
-    digests = stamp(output.read_bytes()) or []
+    from .placement_defects import STAMP, carry_digest, stamp, stamp_slot
+    data = output.read_bytes()
+    digests = stamp(data) or []
+    # User text in comment 9 keeps its slot; the stamp takes the highest free one (AGENTEE-412).
+    number = stamp_slot(data)
     board = pcbnew.LoadBoard(str(output))
     block = board.GetTitleBlock()
-    slot = int(STAMP_COMMENT) - 1
+    slot = int(number) - 1
     if block.GetComment(slot) and not digests:
-        raise ValueError(f'title block comment {STAMP_COMMENT} is occupied; placement lineage cannot be recorded')
+        raise ValueError(f'title block comment {number} is occupied; placement lineage cannot be recorded')
     value = carry_digest(comparison['open_defects'])
-    block.SetComment(slot, ' '.join([STAMP, *digests, *([value] if value not in digests else [])]))
+    recorded = [*digests, *([value] if value not in digests else [])]
+    block.SetComment(slot, ' '.join([STAMP, *recorded]))
     board.SetTitleBlock(block)
     if not pcbnew.SaveBoard(str(output), board):
         raise ValueError('native lineage stamp save failed')
+    if stamp(output.read_bytes()) != recorded:
+        raise ValueError('native lineage stamp did not save as recorded')
     for suffix, payload in project_payloads.items():
         target = output.with_suffix(suffix)
         if payload is None:
