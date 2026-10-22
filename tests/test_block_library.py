@@ -584,6 +584,45 @@ class MaterializeTests(LibraryFixture, unittest.TestCase):
         self.assertEqual(result['status'], 'refused')
         self.assertEqual([(p['kind'], p['reference']) for p in result['problems']], [('courtyard', 'C3')])
 
+    def test_back_members_materialize_at_every_quarter_turn(self):
+        """AGENTEE-373: all 16 B-side source/target pairs keep identity and admission."""
+        def back(capture, refs, turns):
+            capture = copy.deepcopy(capture)
+            for i, fp in enumerate(capture['footprints']):
+                if fp['ref'] in refs:
+                    fp['side'] = 'B'
+                    fp['courtyards'] = {'B': fp['courtyards']['F']}
+                    for pad in fp['pads']:
+                        pad['layers'] = ['B.Cu']
+                    capture['footprints'][i] = captured_at(fp, turns)
+            return capture
+
+        target, inventory, names, sha = self.second_instance()
+        refs = set(self.MAPPING.values())
+        for source_turns in range(4):
+            entry = self.cluster(capture=back(self.board, POWER, source_turns))
+            self.assertEqual({m['side'] for m in entry['layout']['members']}, {'B'})
+            for target_turns in range(4):
+                with self.subTest(source=source_turns, target=target_turns):
+                    turned = back(target, refs, target_turns)
+                    result = bl.materialize(entry, turned, inventory, names, sha, self.policy, self.MAPPING)
+                    self.assertEqual(result['status'], 'materialized', result['problems'])
+                    candidate = blocks.validate_candidate(result['candidate'])
+                    self.assertEqual({m['side'] for m in candidate['members']}, {'B'})
+                    self.assertEqual(blocks.match(candidate, turned, inventory),
+                                     {'status': 'match', 'mismatches': []})
+                    # A physical difference must still refuse at every target pose.
+                    grown = copy.deepcopy(target)
+                    ring = next(f for f in grown['footprints'] if f['ref'] == 'C13')['courtyards']['F']['polygons'][0]
+                    ring[2][1] += 1
+                    ring[3][1] += 1
+                    refused = bl.materialize(entry, back(grown, refs, target_turns), inventory,
+                                             names, sha, self.policy, self.MAPPING)
+                    self.assertEqual(refused['status'], 'refused')
+                    self.assertNotIn('candidate', refused)
+                    self.assertEqual([(p['kind'], p['reference']) for p in refused['problems']],
+                                     [('courtyard', 'C3')])
+
     def test_retired_pose_dependent_entries_validate_but_refuse_use(self):
         """An entry/1 identity was hashed in captured vertex order (AGENTEE-370): it still validates
         in a catalogue, but materialize, reproduce and add refuse it explicitly."""

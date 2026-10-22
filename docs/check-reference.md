@@ -1942,6 +1942,12 @@ AGENTEE-401 requires explicit floor and provenance records in every stored block
 locality measurement. Structural validation refuses missing or malformed records;
 board admission still independently regrades locality before consumers trust it.
 
+Block identity regressions (AGENTEE-373) exercise saved native custom-pad copper
+on both sides at all quarter turns, contour start/winding relabeling, and all 16
+B-side source/target [library materializations](block-library.md#materialization).
+Moved copper vertices and changed courtyards retain their identity refusals.
+These add coverage without changing any registered check or verdict.
+
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.
 AGENTEE-334 adds `kind: buck-output-loop` with explicit `ic`, `inductor`, and
