@@ -850,6 +850,25 @@ class EnvelopeMechanicsGeometryTests(unittest.TestCase):
         area['outline']['status']='unsupported'
         self.assertEqual(keepout_verdict(keepout,native)['status'],'unknown')
 
+    def test_contracted_source_envelope_keeps_every_obligation_before_staging(self):
+        """A source envelope named by the contract must carry its obligations verbatim, staged or not."""
+        from agent_ee.board_envelope import OBLIGATION_CONTRACTS
+        contract = OBLIGATION_CONTRACTS['telemetry-pod-expanded/1']
+        raw = read_json(ROOT / 'fixtures/telemetry-pod/envelope.json')
+        raw['id'] = contract['envelope_ids'][0]
+        raw['obligations'] = [dict(id=oid, **{k: item[k] for k in ('requirement_ids', 'statement', 'owner_items')})
+                              for oid, item in contract['obligations'].items()]
+        record = validate(json.dumps(raw).encode())
+        self.assertNotIn('obligation_contract', record)
+        self.assertEqual([u['predicate'] for u in record['unresolved'] if u['predicate'].startswith('mechanical_')],
+                         ['mechanical_' + oid for oid in contract['obligations']])
+        raw['obligations'].pop(1)
+        with self.assertRaisesRegex(ValueError, 'obligation height is missing; it cannot be dropped'):
+            validate(json.dumps(raw).encode())
+        # Another envelope id without staging is outside the contract: unchanged, unresolved.
+        raw['id'] = 'owned-other'
+        self.assertNotIn('obligation_contract', validate(json.dumps(raw).encode()))
+
     def test_parameters_and_tolerance_fail_closed(self):
         for params in (dict(criterion='mounting-holes/1',envelope='e.json'),
             dict(criterion='keepouts/1',envelope='e.json',id='../K'),
