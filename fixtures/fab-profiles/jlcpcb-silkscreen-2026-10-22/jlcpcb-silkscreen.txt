@@ -1,0 +1,20 @@
+JLCPCB / PCB capabilities / Legend / 2026-10-22
+
+Agent-ee recorded facts (numbers and names only).
+legend / pad to silkscreen / minimum: 0.15 mm
+legend / line width (characters) / minimum: 0.15 mm
+legend / text height / minimum: 1.0 mm
+scope / rigid PCB capabilities / base material: FR-4
+scope / rigid PCB capabilities / process: rigid PCB
+scope / rigid PCB capabilities / copper layers: 1-32
+JLCPCB / PCB silkscreen guide / legend DFM table / 2026-10-22
+
+Agent-ee recorded facts (numbers and names only).
+legend / character height / absolute minimum: 0.8 mm
+legend / character height / recommended: 1.0 mm
+legend / line width / text thickness / absolute minimum: 0.15 mm
+legend / line width / text thickness / recommended: 0.2 mm
+legend / silkscreen to solder mask clearance / absolute minimum: 0.15 mm
+legend / silkscreen to solder mask clearance / recommended: 0.25 mm
+legend / pad edge clipping buffer: 0.15 mm
+scope / legend DFM table / supported base materials: FR-4, Aluminum, Copper Core, Flex (FPC)

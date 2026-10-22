@@ -550,6 +550,26 @@ via result as `via_status` but is unknown with `code=hole_class_without_drill_ta
 and `unsupported_hole_classes` (saved pad UUIDs and requested drill sizes), and
 the check is unknown, never pass. Supplier process applicability
 and pricing remain unqualified.
+`/2` [silkscreen minima](fab-profile.md#silkscreen-limits-fab-profile2) grade
+pad-to-silk (native `silk_over_copper`, measured to pad copper), stroke-font
+silk text height and thickness, and saved silk stroke widths. Silk-to-mask
+clearance has no qualified measurement and is always unknown
+(`code=silk_to_mask_unmeasured`). Tented pads, outline-font or knockout text,
+filled shapes and other silk classes are typed unknowns. Silk citations bind the
+fact's role and value, so a recommendation cited as a minimum is unknown
+(`source_role_mismatch`). Silk minima grade only when profile `applicability`
+cites the source page's supplier base-material, process and copper-layer scope,
+a captured profile `order` selection lies inside it, and the saved board matches
+the order. The order selections must cite one captured order subject on one
+capture and page that records each selection once; spliced or ambiguous orders
+are never merged. The saved stackup must also classify completely, with one
+material on every dielectric sublayer and every material mapped. Otherwise they
+are unknown, with codes `silk_applicability_unsourced`, `silk_order_incoherent`,
+`silk_order_unsourced`, `silk_stackup_unverified`, `silk_material_unverified`,
+`silk_applicability_mismatch` or `silk_order_mismatch`. Sourced `advisories`
+(recommendations, guide values) never grade. The
+[2026-10-22 JLCPCB silkscreen profile](fab-profile.md#dated-jlcpcb-silkscreen-profile)
+binds the capability Legend table and the silkscreen guide.
 The [telemetry-pod profile](telemetry-pod-fab-profile.md) records
 eight dated JLCPCB native/geometry limits plus a finished-thickness tolerance
 from numeric/name captures. Envelope/2 checks the honest physical sum against
