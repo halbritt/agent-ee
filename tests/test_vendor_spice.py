@@ -151,6 +151,74 @@ class RegistryAndBindingTests(unittest.TestCase):
                 self.assertFalse((out / 'receipt.json').exists())
                 self.assertFalse((out / 'snapshot').exists())
 
+    def test_root_replaced_between_snapshot_copies_refuses_and_keeps_no_copy(self):
+        # Review H1 (ee441c): the model root is renamed and replaced by a link or by a
+        # lookalike directory with identical bytes right after a file's copy has been
+        # verified. The root is pinned once for the whole closure, so the replacement is
+        # never read and refuses, whether it lands between copies or after the last one.
+        def relink(path):
+            path.rename(path.with_name('real-' + path.name))
+            path.symlink_to(path.with_name('real-' + path.name))
+
+        def lookalike(path):
+            path.rename(path.with_name('real-' + path.name))
+            shutil.copytree(path.with_name('real-' + path.name), path)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for index, (swap, after) in enumerate(((relink, 'AEOPA.LIB'), (lookalike, 'AEOPA.LIB'),
+                                                   (relink, 'sub/stage.lib'), (lookalike, 'sub/stage.lib'))):
+                case = root / f'case{index}'
+                files = write_models(case / 'models')
+                write_json(case / 'manifest.json', manifest(files))
+                out = case / 'out'
+                real_digest, swapped = qvs.digest, []
+
+                def copied(path, *args, **kwargs):
+                    result = real_digest(path, *args, **kwargs)
+                    if Path(path) == out / 'snapshot' / after and not swapped:
+                        swap(case / 'models')
+                        swapped.append(after)
+                    return result
+                with self.subTest(swap=swap.__name__, after=after), \
+                        mock.patch.object(qvs, 'digest', copied), \
+                        self.assertRaisesRegex(ValueError, "component 'models' was replaced or linked"):
+                    qualify(case / 'manifest.json', case / 'models', out)
+                self.assertEqual(swapped, [after])
+                self.assertFalse((out / 'receipt.json').exists())
+                self.assertFalse((out / 'snapshot').exists())
+                self.assertFalse((out / 'scenarios').exists())
+
+    def test_bind_model_dir_refuses_root_replaced_between_files(self):
+        def relink(path):
+            path.rename(path.with_name('real-' + path.name))
+            path.symlink_to(path.with_name('real-' + path.name))
+
+        def lookalike(path):
+            path.rename(path.with_name('real-' + path.name))
+            shutil.copytree(path.with_name('real-' + path.name), path)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for index, swap in enumerate((relink, lookalike)):
+                case = root / f'case{index}'
+                files = write_models(case / 'models')
+                loaded = manifest(files)
+                self.assertEqual(bind_model_dir(loaded, case / 'models'), files)
+                real_read, reads = qvs.PinnedRoot.read, []
+
+                def read_then_swap(pinned, rel):
+                    data = real_read(pinned, rel)
+                    reads.append(rel)
+                    if len(reads) == 1:
+                        swap(case / 'models')
+                    return data
+                with self.subTest(swap=swap.__name__), \
+                        mock.patch.object(qvs.PinnedRoot, 'read', read_then_swap), \
+                        self.assertRaisesRegex(ValueError, "component 'models' was replaced or linked"):
+                    bind_model_dir(loaded, case / 'models')
+                self.assertEqual(reads, ['AEOPA.LIB'])
+
     def test_snapshot_changed_after_verification_refuses_before_capture(self):
         # The parse and every scenario read only the verified private snapshot; a later
         # change to the snapshot itself refuses rather than simulating unverified bytes.

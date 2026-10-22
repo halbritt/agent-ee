@@ -184,17 +184,23 @@ the dialect. Pin order is never inferred.
 PYTHONPATH=src python3 scripts/qualify_vendor_spice.py MANIFEST MODEL_DIR --out NEW_PRIVATE_DIR
 ```
 
-`MODEL_DIR` is read exactly once. Each declared file is opened through pinned
-directory descriptors: starting from `/`, every component of the resolved
-`MODEL_DIR` and of the relative path is opened relative to its already-open
-parent with `O_NOFOLLOW` (directories with `O_PATH | O_DIRECTORY`), so a link
-anywhere on the path refuses instead of being followed. The file is read once
-into a private read-only `snapshot/` under the output directory, then every
-component name is looked up again in its pinned parent and must still be the
-same unlinked directory or file, and the hash of exactly the copied bytes is
-compared with the manifest. A missing, linked, non-regular or changed file
+`MODEL_DIR` is resolved once and read exactly once. Before any file is copied,
+every component of the resolved `MODEL_DIR` is opened from `/`, each relative to
+its already-open parent with `O_PATH | O_DIRECTORY | O_NOFOLLOW`, and those
+root and ancestor descriptors stay open for the whole closure. Each declared
+file is then opened relative to the pinned root descriptor (never by pathname),
+every component of its relative path with `O_NOFOLLOW`, so a link anywhere on
+the path refuses instead of being followed. The file is read once into a
+private read-only `snapshot/` under the output directory, then every component
+name is looked up again in its pinned parent and must still be the same
+unlinked directory or file, and the hash of exactly the copied bytes is
+compared with the manifest. The root and its ancestors are checked against
+their original device and inode before and after every file and once more
+before the closure is accepted, so a model root renamed and replaced between
+copies, by a link or by a lookalike directory with identical bytes, refuses. A
+missing, linked, non-regular or changed file
 (including one whose inode, size or modification time moves while it is
-copied), or an ancestor directory renamed, replaced or linked while the file is
+copied), or an ancestor directory renamed, replaced or linked while the closure is
 read, refuses; the partial snapshot is removed and no receipt is written. The parse and every scenario are
 derived from that verified snapshot only; each scenario source rechecks the
 snapshot bytes, so a later change to the live directory cannot reach a run. The

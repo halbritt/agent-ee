@@ -16,8 +16,9 @@ ngspice through capture, the native netlist and the evidence seal:
   refused before ngspice runs;
 - solver_failure: a conflicting supply source must be a solver failure.
 
-The live MODEL_DIR is read exactly once: each declared file is copied into a
-private read-only snapshot, the copied bytes are verified against the manifest,
+The live MODEL_DIR is resolved and pinned once and read exactly once: each
+declared file is opened relative to the pinned root and copied into a private
+read-only snapshot, the copied bytes are verified against the manifest,
 and the parse and every scenario are derived from that snapshot. Each scenario's
 captured model bytes are then compared with the verified hashes (the unsafe
 scenario with its declared appended block), so a source changed during the run
@@ -108,85 +109,146 @@ DIR_FLAGS = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
 
 
-def read_pinned(model_dir, rel):
-    """Read one declared file through pinned directory descriptors and return its bytes.
+def _same(pinned, current):
+    return current is not None and (current.st_dev, current.st_ino, stat.S_IFMT(current.st_mode)) == (
+        pinned.st_dev, pinned.st_ino, stat.S_IFMT(pinned.st_mode))
 
-    Every component from / through the resolved model directory and the relative path is
-    opened relative to its already-open parent with O_NOFOLLOW (directories also
-    O_DIRECTORY), so a link or non-directory anywhere refuses instead of being followed.
-    After the read, each name is looked up again in its pinned parent and must still be
-    the same unlinked directory or file: a component renamed, replaced or linked while
-    the file was read refuses, as does a file whose size or mtime changed."""
-    parts = [*Path(model_dir).resolve().parts[1:], *Path(rel).parts]
-    descriptors = [os.open('/', DIR_FLAGS)]
-    chain = []
+
+def _lookup(parent, part):
     try:
-        for index, part in enumerate(parts):
-            flags = FILE_FLAGS if index == len(parts) - 1 else DIR_FLAGS
-            try:
-                descriptors.append(os.open(part, flags, dir_fd=descriptors[-1]))
-            except FileNotFoundError:
-                raise ValueError(f'vendor model file is missing: {rel}') from None
-            except OSError as exc:
-                # ELOOP for a link, ENOTDIR for a non-directory component.
-                raise ValueError(f'vendor model file is linked or unreadable: {rel}: {exc.strerror}') from None
-            chain.append((descriptors[-2], part, os.fstat(descriptors[-1])))
-        before = chain[-1][2]
-        if not stat.S_ISREG(before.st_mode):
-            raise ValueError(f'vendor model file is not a regular file: {rel}')
-        blocks = []
-        while block := os.read(descriptors[-1], 1 << 20):
-            blocks.append(block)
-        after = os.fstat(descriptors[-1])
-        for parent, part, pinned in chain:
-            try:
-                current = os.stat(part, dir_fd=parent, follow_symlinks=False)
-            except FileNotFoundError:
-                current = None
-            if current is None or (current.st_dev, current.st_ino, stat.S_IFMT(current.st_mode)) != (
-                    pinned.st_dev, pinned.st_ino, stat.S_IFMT(pinned.st_mode)):
+        return os.stat(part, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+
+
+class PinnedRoot:
+    """The model directory resolved once and held open for the whole closure.
+
+    Every component from / through the resolved model directory is opened relative to
+    its already-open parent with O_NOFOLLOW | O_DIRECTORY, and all those descriptors
+    stay open until the closure is accepted. Every declared file is opened relative to
+    the pinned root descriptor, never by pathname. verify() looks each root component
+    up again in its pinned parent: a component renamed, replaced by a link, or replaced
+    by a lookalike directory (even with identical bytes) has a different identity and
+    refuses."""
+
+    def __init__(self, model_dir):
+        self.descriptors = [os.open('/', DIR_FLAGS)]
+        self.chain = []
+        try:
+            for part in Path(model_dir).resolve().parts[1:]:
+                try:
+                    self.descriptors.append(os.open(part, DIR_FLAGS, dir_fd=self.descriptors[-1]))
+                except FileNotFoundError:
+                    raise ValueError(f'vendor model directory is missing: {model_dir}') from None
+                except OSError as exc:
+                    raise ValueError(f'vendor model directory is linked or unreadable: {model_dir}: '
+                                     f'{exc.strerror}') from None
+                self.chain.append((self.descriptors[-2], part, os.fstat(self.descriptors[-1])))
+        except BaseException:
+            self.close()
+            raise
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    def close(self):
+        while self.descriptors:
+            os.close(self.descriptors.pop())
+
+    def verify(self, rel=None):
+        """Refuse unless the root and every ancestor are still the directories pinned at start."""
+        for parent, part, pinned in self.chain:
+            if not _same(pinned, _lookup(parent, part)):
                 raise ValueError(f'vendor model path component {part!r} was replaced or linked '
-                                 f'while it was snapshotted: {rel}')
-        identity = lambda st: (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
-        if identity(before) != identity(after) or identity(before) != identity(current):
-            raise ValueError(f'vendor model file changed while it was snapshotted: {rel}')
-        return b''.join(blocks)
-    finally:
-        for descriptor in descriptors:
-            os.close(descriptor)
+                                 f'while {rel or "the closure"} was snapshotted')
+
+    def read(self, rel):
+        """Read one declared file relative to the pinned root and return its bytes.
+
+        Each relative component is opened relative to its already-open parent with
+        O_NOFOLLOW (directories also O_DIRECTORY), so a link or non-directory refuses
+        instead of being followed. After the read, each name is looked up again in its
+        pinned parent and must still be the same unlinked directory or file, the root
+        ancestry must be unchanged, and the file's size and mtime must not have moved."""
+        self.verify(rel)
+        parts = Path(rel).parts
+        descriptors = []
+        chain = []
+        try:
+            for index, part in enumerate(parts):
+                flags = FILE_FLAGS if index == len(parts) - 1 else DIR_FLAGS
+                parent = descriptors[-1] if descriptors else self.descriptors[-1]
+                try:
+                    descriptors.append(os.open(part, flags, dir_fd=parent))
+                except FileNotFoundError:
+                    raise ValueError(f'vendor model file is missing: {rel}') from None
+                except OSError as exc:
+                    # ELOOP for a link, ENOTDIR for a non-directory component.
+                    raise ValueError(f'vendor model file is linked or unreadable: {rel}: {exc.strerror}') from None
+                chain.append((parent, part, os.fstat(descriptors[-1])))
+            before = chain[-1][2]
+            if not stat.S_ISREG(before.st_mode):
+                raise ValueError(f'vendor model file is not a regular file: {rel}')
+            blocks = []
+            while block := os.read(descriptors[-1], 1 << 20):
+                blocks.append(block)
+            after = os.fstat(descriptors[-1])
+            for parent, part, pinned in chain:
+                current = _lookup(parent, part)
+                if not _same(pinned, current):
+                    raise ValueError(f'vendor model path component {part!r} was replaced or linked '
+                                     f'while it was snapshotted: {rel}')
+            self.verify(rel)
+            identity = lambda st: (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+            if identity(before) != identity(after) or identity(before) != identity(current):
+                raise ValueError(f'vendor model file changed while it was snapshotted: {rel}')
+            return b''.join(blocks)
+        finally:
+            for descriptor in descriptors:
+                os.close(descriptor)
 
 
 def bind_model_dir(manifest, model_dir):
-    """Refuse unless every declared file reads unlinked with exactly its declared hash."""
+    """Refuse unless every declared file reads unlinked under one pinned root with its declared hash."""
     observed = {}
-    for rel, expected in manifest['model_files'].items():
-        observed[rel] = hashlib.sha256(read_pinned(model_dir, rel)).hexdigest()
-        if observed[rel] != expected:
-            raise ValueError(f'vendor model file hash differs from manifest: {rel}')
+    with PinnedRoot(model_dir) as root:
+        for rel, expected in manifest['model_files'].items():
+            observed[rel] = hashlib.sha256(root.read(rel)).hexdigest()
+            if observed[rel] != expected:
+                raise ValueError(f'vendor model file hash differs from manifest: {rel}')
+        root.verify()
     return observed
 
 
 def snapshot_model_dir(manifest, model_dir, snapshot):
     """Copy each declared file once into a private snapshot and verify the copied bytes.
 
-    Each source is read once through pinned, non-following descriptors (read_pinned), and
-    the hash of exactly the bytes written is compared with the manifest; a file or any
-    ancestor changed, replaced, linked or missing while it is copied refuses. Nothing
-    later reads the live directory."""
+    The model directory is resolved and pinned once (PinnedRoot) and every source is read
+    once relative to that root through non-following descriptors; the hash of exactly the
+    bytes written is compared with the manifest. The root ancestry is revalidated before
+    and after every file and once more before the closure is accepted, so a file or any
+    ancestor changed, replaced (by a link or a lookalike directory), linked or missing
+    while the closure is copied refuses. Nothing later reads the live directory."""
     snapshot.mkdir(mode=0o700)
     observed = {}
-    for rel, expected in manifest['model_files'].items():
-        data = read_pinned(model_dir, rel)
-        observed[rel] = hashlib.sha256(data).hexdigest()
-        if observed[rel] != expected:
-            raise ValueError(f'vendor model file hash differs from manifest: {rel}')
-        target = snapshot / rel
-        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with open(target, 'xb') as handle:
-            handle.write(data)
-        target.chmod(0o400)
-        if digest(target, follow_symlinks=False) != expected:
-            raise ValueError(f'snapshot copy differs from manifest: {rel}')
+    with PinnedRoot(model_dir) as root:
+        for rel, expected in manifest['model_files'].items():
+            data = root.read(rel)
+            observed[rel] = hashlib.sha256(data).hexdigest()
+            if observed[rel] != expected:
+                raise ValueError(f'vendor model file hash differs from manifest: {rel}')
+            target = snapshot / rel
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with open(target, 'xb') as handle:
+                handle.write(data)
+            target.chmod(0o400)
+            if digest(target, follow_symlinks=False) != expected:
+                raise ValueError(f'snapshot copy differs from manifest: {rel}')
+        root.verify()
     return observed
 
 
