@@ -838,6 +838,32 @@ class FixedInputCopperTest(unittest.TestCase):
         self.assertIn(('P0', 'pad 2', 'outline'),
                       {(r, i, why) for r, i, _, why in copper_violations(capture_, [])})
 
+    def test_fixed_copper_is_reported_before_an_unrelated_area_proof(self):
+        # Review H1 on ruling 371d: each courtyard fits the board, only their sum exceeds its area, so
+        # the area proof fires; the fixed part's copper problem must still be reported first.
+        for kind in ('outline', 'unknown_S', 'keepout'):
+            with self.subTest(kind=kind):
+                b = board([offset_part()], rectangle(-3, -6, 9, 12) if kind == 'outline' else rectangle(-6, -6, 12, 12),
+                          None if kind == 'unknown_S' else MAX_ERROR)
+                if kind == 'keepout':
+                    b['rule_areas'] = [{'uuid': 'review-strip', 'owner': 'board', 'layers': ['F.Cu'],
+                                        'forbid': {'footprints': True},
+                                        'outline': {'status': 'proven', 'polygons': [rectangle(-4, -1, 1, 2)]}}]
+                b['footprints'].append(part('U1', 0, 0, shape=rectangle(-3, -6, 8, 12) if kind == 'outline'
+                                            else rectangle(-6, -6, 11, 12)))
+                plan = pack(b, request(fixed_refs=['C1']))
+                want = ('unsupported_geometry', 'unknown') if kind == 'unknown_S' else ('fixed_input_copper', 'defect')
+                self.assertEqual((plan['status'], plan['outcome']), want, plan)
+                self.assertEqual((plan['steps_used'], plan['placements']), (0, []))
+                self.assertTrue(plan['findings'], plan)
+                # Without the fixed-copper problem the area proof is what answers.
+                clean = copy.deepcopy(b)
+                clean['footprints'] = [part('U1', 0, 0, shape=rectangle(-6, -6, 11, 12)),
+                                       part('U2', 0, 0, shape=rectangle(-6, -6, 11, 12))]
+                clean['outline'] = {**clean['outline'], 'polygons': [rectangle(-6, -6, 12, 12)]}
+                clean.pop('rule_areas', None)
+                self.assertEqual(pack(clean, request(fixed_refs=[]))['status'], 'packing_infeasible')
+
 
 class FailedCopperAlignedPassTest(unittest.TestCase):
     """366b gap 4: a failed copper-aligned pass is recorded as a diagnostic only (AGENTEE-371)."""
