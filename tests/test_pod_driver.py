@@ -1,7 +1,10 @@
 """Real scaffold/receipt/check execution; synthetic inputs never qualify pod hardware."""
 import copy
+import json
+import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import unittest
 import uuid
@@ -9,13 +12,47 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_scaffold import ScaffoldFixture
-from toolchain import require_toolchain
+from toolchain import fome_mc_store, require_toolchain
 from agent_ee import pod_driver as pod, kicad_route_attempt as attempt
 from tests.kicad_route_fixture import make_checkout, FAKE_PIN
 from agent_ee.storage import read_json, write_json, digest, identity
 from agent_ee.stage_receipts import validate_pre_receipt
+from agent_ee import spec_record
+from agent_ee.storage import json_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
+# The captured Rev-3 requirement accounting (spec, exact spec-record capture and compiled scope),
+# read only from the owner's fome-mc object store at this pinned commit; never copied into the tree.
+REV3_COMMIT = '1157b91899fd9f420089fbec4264b823310f0ad9'
+REV3_DIR = 'telemetry-pod/expansion/requirements/compiled/'
+
+
+def rev3_capture():
+    """(spec bytes, spec-record bytes, compiled scope) of the actual captured Rev-3 baseline."""
+    repository = fome_mc_store(Path(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', str(Path.home() / 'git/fome-mc'))),
+                               REV3_COMMIT)
+    def show(path):
+        return subprocess.run(['git', '-C', str(repository), 'show', f'{REV3_COMMIT}:{REV3_DIR}{path}'],
+                              capture_output=True, check=True).stdout
+    return (show('requirements-map/spec.md'), show('requirements-map/spec-record.json'),
+            json.loads(show('scope.json')))
+
+
+def recapture(spec_raw, record_raw, drop=None, replace=None):
+    """The ordinary capture of an edited spec: one acceptance line removed, or text replaced."""
+    if drop is not None:
+        lines = spec_raw.split(b'\n')
+        hits = [i for i, line in enumerate(lines) if line.startswith(drop)]
+        assert len(hits) == 1, drop
+        del lines[hits[0]]
+        spec_raw = b'\n'.join(lines)
+    if replace is not None:
+        assert spec_raw.count(replace[0]) == 1
+        spec_raw = spec_raw.replace(*replace)
+    ids, name = json.loads(record_raw)['ids'], json.loads(record_raw)['spec']['name']
+    record = json_bytes(spec_record.capture(spec_raw, ids['prefix'], ids['codes'], name))
+    spec_record.verify(record, spec_raw)
+    return spec_raw, record
 
 
 class PodDriverTests(ScaffoldFixture, unittest.TestCase):
@@ -59,7 +96,7 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
                    schematic='design.kicad_sch',name='pod',label='campaign',checkout=str(checkout),budget=300,timeout=900)
         profile=read_json(ROOT/'profiles/pod-review.json')
         self.plan=dict(schema=pod.SCHEMA,scope='planning.scope.json',envelope='envelope.json',parts='parts.json',
-            spec='spec.md',spec_record='spec-record.json',writer_inputs={'intent':'intent.json','deviations':'deviations.json'},
+            spec='spec.md',spec_record='spec-record.json',requirement_source='telemetry-pod-rev2',writer_inputs={'intent':'intent.json','deviations':'deviations.json'},
             implementation_steps=steps,review_profile=profile,implementation=profile['adjudicator'],
             routing_budget_s=300,review_budget_s=3600,routing_adapter=route)
         self.plan_path=self.root/'pod-plan.json'
@@ -209,6 +246,276 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'POD-AC-8'):
             pod.build(self.plan_path,self.root/'refused')
         self.assertFalse((self.root/'refused').exists())
+
+    def use_rev3(self, spec_raw=None, record_raw=None, limitations=None):
+        """Graft the actual captured Rev-3 spec, its exact capture and the compiled scope's
+        criterion accounting into the synthetic driver fixture (still not pod hardware)."""
+        real_spec, real_record, real_scope = rev3_capture()
+        (self.source/'spec.md').write_bytes(real_spec if spec_raw is None else spec_raw)
+        (self.source/'spec-record.json').write_bytes(real_record if record_raw is None else record_raw)
+        self.scope['limitations'] = [s for s in self.scope['limitations'] if not s.startswith('POD-AC-')]
+        self.scope['limitations'] += real_scope['limitations'] if limitations is None else limitations
+        ac3 = copy.deepcopy(next(r for r in real_scope['baseline']['requirements'] if r['id'] == 'POD-AC-3'))
+        # The real ERC/DRC requirement, its source rebased to this fixture's copy of the same spec bytes.
+        ac3['source']['path'], ac3['checks'] = 'spec.md', ['erc', 'placement']
+        self.scope['baseline']['requirements'].append(ac3)
+        self.plan['requirement_source'] = 'telemetry-pod-rev3'
+        self.save()
+        return real_scope
+
+    def refused_build(self, reason, requirement):
+        with self.assertRaises(pod.RequirementSetError) as raised:
+            pod.build(self.plan_path, self.root/'refused')
+        self.assertEqual((raised.exception.reason, raised.exception.requirement), (reason, requirement))
+        self.assertFalse((self.root/'refused').exists())
+        return raised.exception
+
+    def test_actual_rev3_baseline_accepted_with_limitations_visible(self):
+        real_scope = self.use_rev3()
+        with mock.patch('agent_ee.campaign.run_campaign', side_effect=AssertionError('inference forbidden')):
+            receipt = self.build()
+        found = receipt['validation']['requirement_set']
+        self.assertEqual(found['revision'], 3)
+        self.assertEqual(found['acceptance'], [f'POD-AC-{n}' for n in range(1, 12)])
+        self.assertEqual(found['bench'], ['POD-AC-8', 'POD-AC-9', 'POD-AC-10', 'POD-AC-11'])
+        self.assertEqual(found['spec_sha256'], 'e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6')
+        self.assertEqual((found['revision_locator']['byte_start'], found['revision_locator']['byte_end']), (30, 421))
+        self.assertEqual((found['source'], found['record_sha256']), ('telemetry-pod-rev3',
+                         '1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b'))
+        self.assertEqual((found['locators']['POD-AC-10'], found['locators']['POD-AC-11']), ([21943, 22224], [22229, 22495]))
+        prepared = read_json(self.root/'run'/read_json(self.root/'run/campaign.json')['scope'])
+        kept = prepared['limitations']
+        for limitation in real_scope['limitations']:
+            self.assertIn(limitation, kept)
+        # Thermal, bench and owner DFM obligations remain visible; acceptance is not claimed.
+        self.assertTrue(any(s.startswith('POD-TEMP-ENCLOSURE: NOT CHECKED') for s in kept))
+        self.assertTrue(any(s.startswith('POD-AC-6: NOT CHECKED') and 'DFM' in s for s in kept))
+        for n in (8, 9, 10, 11):
+            self.assertTrue(any(s.startswith(f'POD-AC-{n}: BENCH REQUIRED') for s in kept))
+        self.assertFalse(receipt['done'])
+
+    def test_rev3_baseline_omitting_criterion_10_or_11_refused(self):
+        # Review gap 6 regression: a supplied scope dropping POD-AC-10 was accepted.
+        real_spec, real_record, real_scope = rev3_capture()
+        for rid in ('POD-AC-10', 'POD-AC-11'):
+            with self.subTest(scope_omits=rid):
+                self.use_rev3(limitations=[s for s in real_scope['limitations'] if not s.startswith(rid + ':')])
+                with self.assertRaises(pod.RequirementSetError) as raised:
+                    pod.build(self.plan_path, self.root/'refused')
+                self.assertEqual((raised.exception.reason, raised.exception.requirement),
+                                 ('unaccounted-acceptance-criterion', rid))
+                self.assertFalse((self.root/'refused').exists())
+                self.scope['baseline']['requirements'].pop()
+        for number in ('10', '11'):
+            # A recapture without the item is not the pinned Rev-3 source, so it never reaches accounting.
+            spec_raw, record_raw = recapture(real_spec, real_record, drop=number.encode() + b'. ')
+            with self.subTest(spec_omits=number):
+                self.use_rev3(spec_raw, record_raw)
+                self.refused_build('unapproved-source', 'telemetry-pod-rev3')
+                self.scope['baseline']['requirements'].pop()
+
+    def downgraded_rev3(self):
+        """Review H1: the real Rev-3 capture relabelled Revision 2, items 10/11 and their limitations removed."""
+        real_spec, real_record, real_scope = rev3_capture()
+        spec_raw, record_raw = recapture(real_spec, real_record, replace=(b'Revision 3,', b'Revision 2,'))
+        for number in (b'10. ', b'11. '):
+            spec_raw, record_raw = recapture(spec_raw, record_raw, drop=number)
+        found = [r['id'] for r in json.loads(record_raw)['requirements'] if r['kind'] == 'acceptance']
+        self.assertEqual(found, [f'POD-AC-{n}' for n in range(1, 10)])
+        limitations = [s for s in real_scope['limitations'] if not s.startswith(('POD-AC-10:', 'POD-AC-11:'))]
+        return spec_raw, record_raw, limitations
+
+    def test_downgraded_rev3_capture_refused_in_full_build(self):
+        spec_raw, record_raw, limitations = self.downgraded_rev3()
+        self.use_rev3(spec_raw, record_raw, limitations)
+        self.refused_build('unapproved-source', 'telemetry-pod-rev3')
+        # Selecting the legacy source does not admit it either: it is not the pinned Rev-2 capture.
+        self.plan['requirement_source'] = 'telemetry-pod-rev2'
+        self.save()
+        self.refused_build('unapproved-source', 'telemetry-pod-rev2')
+
+    def test_source_substitution_refused_in_full_build(self):
+        real_spec, real_record, real_scope = rev3_capture()
+        self.use_rev3()
+        # The genuine Rev-2 capture under the Rev-3 selection is a downgrade.
+        for name in ('spec.md', 'spec-record.json'):
+            shutil.copyfile(ROOT / 'fixtures/telemetry-pod' / name, self.source / name)
+        self.save()
+        self.refused_build('downgraded-source', 'telemetry-pod-rev3')
+        # The genuine Rev-3 capture under the Rev-2 selection, and an edited recapture, are unapproved.
+        self.scope['baseline']['requirements'].pop()
+        self.use_rev3()
+        self.plan['requirement_source'] = 'telemetry-pod-rev2'
+        self.save()
+        self.refused_build('unapproved-source', 'telemetry-pod-rev2')
+        self.plan['requirement_source'] = 'telemetry-pod-rev3'
+        spec_raw, record_raw = recapture(real_spec, real_record, replace=(b'Revision 3,', b'Revision 3 ,'))
+        (self.source/'spec.md').write_bytes(spec_raw)
+        (self.source/'spec-record.json').write_bytes(record_raw)
+        self.save()
+        self.refused_build('unapproved-source', 'telemetry-pod-rev3')
+        # A source outside the pinned registry is refused while validating the plan.
+        self.plan['requirement_source'] = 'telemetry-pod-rev4'
+        self.save()
+        self.refused_build('undeclared-source', 'telemetry-pod-rev4')
+        self.plan['requirement_source'] = ['telemetry-pod-rev3']
+        self.save()
+        self.refused_build('undeclared-source', "['telemetry-pod-rev3']")
+        del self.plan['requirement_source']
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'expected agent-ee.pod-plan/1 fields'):
+            pod.build(self.plan_path, self.root/'refused')
+        self.assertFalse((self.root/'refused').exists())
+
+    def cli_recapture(self, name, edit=None):
+        """Review H1: rename the supplied spec to ``name`` and recapture it with the ordinary capture CLI."""
+        spec_raw = (self.source/self.plan['spec']).read_bytes()
+        if edit is not None:
+            assert spec_raw.count(edit[0]) == 1
+            spec_raw = spec_raw.replace(*edit)
+        ids = read_json(self.source/self.plan['spec_record'])['ids']
+        (self.source/self.plan['spec']).unlink()
+        (self.source/self.plan['spec_record']).unlink()
+        (self.source/name).write_bytes(spec_raw)
+        self.scope['baseline']['targets'] = [name if t == self.plan['spec'] else t for t in self.scope['baseline']['targets']]
+        for requirement in self.scope['baseline']['requirements']:
+            if requirement['source']['path'] == self.plan['spec']:
+                requirement['source']['path'] = name
+        self.plan['spec'] = name
+        receipt = self.root/f'capture-{uuid.uuid4().hex}.receipt.json'
+        subprocess.run([sys.executable, '-m', 'agent_ee.spec_record', 'capture', str(self.source/name),
+                        '--out', str(self.source/self.plan['spec_record']), '--receipt', str(receipt),
+                        '--prefix', ids['prefix'], *[f'--code={h}={c}' for h, c in ids['codes'].items()]],
+                       check=True, capture_output=True, env={**os.environ, 'PYTHONPATH': str(ROOT/'src')})
+        record_raw = (self.source/self.plan['spec_record']).read_bytes()
+        record = spec_record.verify(record_raw, spec_raw)
+        self.assertEqual(record['spec']['name'], name)
+        self.save()
+        return record_raw
+
+    def renamed_recapture_accepted(self, source, name, count):
+        pin = pod.SOURCES[source]
+        record_raw = self.cli_recapture(name)
+        self.assertNotEqual(spec_record.sha256(record_raw), pin['record_sha256'])
+        with mock.patch('agent_ee.campaign.run_campaign', side_effect=AssertionError('inference forbidden')):
+            receipt = self.build()
+        found = receipt['validation']['requirement_set']
+        self.assertEqual((found['source'], found['spec_sha256'], found['record_sha256'], found['capture_name'],
+                          found['authoritative_record_sha256']),
+                         (source, pin['spec_sha256'], spec_record.sha256(record_raw), name, pin['record_sha256']))
+        self.assertEqual(found['acceptance'], [f'POD-AC-{n}' for n in range(1, count + 1)])
+        self.assertFalse(receipt['done'])
+
+    def test_cli_renamed_rev3_recapture_accepted_in_full_build(self):
+        # Review H1: the filename is not source authority. The actual Rev-3 spec, byte-identical,
+        # recaptured by the ordinary CLI under another filename is its pinned source.
+        self.use_rev3()
+        self.renamed_recapture_accepted('telemetry-pod-rev3', 'renamed.md', 11)
+        # The same renamed recapture with one byte changed is another source.
+        self.cli_recapture('renamed-edited.md', edit=(b'Revision 3,', b'Revision 3 ,'))
+        self.refused_build('unapproved-source', 'telemetry-pod-rev3')
+
+    def test_cli_renamed_rev2_recapture_accepted_in_full_build(self):
+        self.renamed_recapture_accepted('telemetry-pod-rev2', 'pod-spec.md', 9)
+        # Genuine Rev-2 bytes under a new name remain the earlier pin when Rev-3 is selected.
+        self.plan['requirement_source'] = 'telemetry-pod-rev3'
+        self.save()
+        self.refused_build('downgraded-source', 'telemetry-pod-rev3')
+        # A renamed one-byte change is unapproved under either selection.
+        self.cli_recapture('renamed-edited.md', edit=(b'Revision 2', b'Revision 2 '))
+        self.refused_build('unapproved-source', 'telemetry-pod-rev3')
+        self.plan['requirement_source'] = 'telemetry-pod-rev2'
+        self.save()
+        self.refused_build('unapproved-source', 'telemetry-pod-rev2')
+
+    def test_requirement_set_record_digest_must_be_the_verified_record(self):
+        spec_raw = (ROOT/'fixtures/telemetry-pod/spec.md').read_bytes()
+        record_raw = (ROOT/'fixtures/telemetry-pod/spec-record.json').read_bytes()
+        record = spec_record.verify(record_raw, spec_raw)
+        # A caller cannot present the pinned digest for a record whose content differs.
+        with self.assertRaisesRegex(ValueError, 'record_sha256 is not the digest of the verified spec record'):
+            pod.requirement_set('telemetry-pod-rev2', {**record, 'prose': []},
+                                pod.SOURCES['telemetry-pod-rev2']['record_sha256'], self.scope)
+
+    def test_pinned_sources_are_the_captured_files(self):
+        real_spec, real_record, _ = rev3_capture()
+        rev2 = [(ROOT/'fixtures/telemetry-pod'/name).read_bytes() for name in ('spec.md', 'spec-record.json')]
+        for name, (spec_raw, record_raw), count in (('telemetry-pod-rev2', rev2, 9),
+                                                     ('telemetry-pod-rev3', (real_spec, real_record), 11)):
+            entry = pod.SOURCES[name]
+            self.assertEqual((spec_record.sha256(spec_raw), spec_record.sha256(record_raw)),
+                             (entry['spec_sha256'], entry['record_sha256']))
+            record = spec_record.verify(record_raw, spec_raw)
+            self.assertEqual(record['spec']['name'], entry['name'])
+            self.assertEqual([r['id'] for r in record['requirements'] if r['kind'] == 'acceptance'],
+                             [f'POD-AC-{n}' for n in range(1, count + 1)])
+
+    def test_actual_rev3_requirement_set_and_refusals(self):
+        real_spec, real_record, real_scope = rev3_capture()
+        record = spec_record.verify(real_record, real_spec)
+        found = pod.requirement_set('telemetry-pod-rev3', record, spec_record.sha256(real_record), real_scope)
+        self.assertEqual((found['revision'], found['acceptance']), (3, [f'POD-AC-{n}' for n in range(1, 12)]))
+        # Each criterion item cited in pod_driver.REVISIONS is the captured source's own text span.
+        spans = {r['id']: (r['locator']['byte_start'], r['locator']['byte_end'])
+                 for r in record['requirements'] if r['kind'] == 'acceptance'}
+        self.assertEqual((spans['POD-AC-10'], spans['POD-AC-11']), ((21943, 22224), (22229, 22495)))
+        self.assertTrue(real_spec[21943:22224].startswith(b'All eight analog channels'))
+        def refused(scope):
+            return refused_record(self, 'telemetry-pod-rev3', real_record, record, scope)
+        for rid in ('POD-AC-10', 'POD-AC-11'):
+            downgraded = copy.deepcopy(real_scope)
+            downgraded['limitations'] = [s.replace(': BENCH REQUIRED', ': NOT CHECKED') if s.startswith(rid + ':')
+                                         else s for s in real_scope['limitations']]
+            self.assertEqual(refused(downgraded), ('missing-bench-obligation', rid))
+        unmapped = copy.deepcopy(real_scope)
+        unmapped['baseline']['requirements'] = []
+        self.assertEqual(refused(unmapped), ('unaccounted-acceptance-criterion', 'POD-AC-3'))
+        # A substring is not an accounting: 'POD-AC-10: ...' does not account for POD-AC-1.
+        no_ac1 = copy.deepcopy(real_scope)
+        no_ac1['limitations'] = [s for s in real_scope['limitations'] if not s.startswith('POD-AC-1: ')]
+        self.assertEqual(refused(no_ac1), ('unaccounted-acceptance-criterion', 'POD-AC-1'))
+        # Prose revision, criterion count and IDs never select the set: any other capture is unapproved.
+        for edit in ((b'Revision 3,', b'Revision 4,'), (b'\n11. ', b'\n12. Extra criterion.\n11. ')):
+            spec_raw, record_raw = recapture(real_spec, real_record, replace=edit)
+            self.assertEqual(refused_record(self, 'telemetry-pod-rev3', record_raw, spec_record.verify(record_raw, spec_raw),
+                                            real_scope), ('unapproved-source', 'telemetry-pod-rev3'))
+        self.assertEqual(refused_record(self, 'telemetry-pod-rev9', real_record, record, real_scope),
+                         ('undeclared-source', 'telemetry-pod-rev9'))
+        # A pinned entry whose capture declares another revision is refused, not relabelled.
+        spec_raw, record_raw = recapture(real_spec, real_record, replace=(b'Revision 3,', b'Revision 4,'))
+        forged = dict(pod.SOURCES['telemetry-pod-rev3'], spec_sha256=spec_record.sha256(spec_raw),
+                      record_sha256=spec_record.sha256(record_raw))
+        with mock.patch.dict(pod.SOURCES, {'forged': forged}):
+            self.assertEqual(refused_record(self, 'forged', record_raw, spec_record.verify(record_raw, spec_raw),
+                                            real_scope), ('revision-mismatch', 'POD-DOC-P1'))
+
+    def test_legacy_rev2_requirement_set_preserved(self):
+        spec_raw = (ROOT/'fixtures/telemetry-pod/spec.md').read_bytes()
+        record_raw = (ROOT/'fixtures/telemetry-pod/spec-record.json').read_bytes()
+        record = spec_record.verify(record_raw, spec_raw)
+        found = pod.requirement_set('telemetry-pod-rev2', record, spec_record.sha256(record_raw), self.scope)
+        self.assertEqual((found['source'], found['revision'], found['acceptance'], found['bench']),
+                         ('telemetry-pod-rev2', 2, [f'POD-AC-{n}' for n in range(1, 10)], ['POD-AC-8', 'POD-AC-9']))
+        # Rev-2 is its pinned capture: a tenth criterion or a dropped ninth is another, unapproved source.
+        for edit in (dict(replace=(b'\n9. ', b'\n10. Extra criterion.\n9. ')), dict(drop=b'9. ')):
+            edited_spec, edited_record = recapture(spec_raw, record_raw, **edit)
+            self.assertEqual(refused_record(self, 'telemetry-pod-rev2', edited_record,
+                                            spec_record.verify(edited_record, edited_spec), self.scope),
+                             ('unapproved-source', 'telemetry-pod-rev2'))
+        # The legacy scope contract is unchanged: AC8/AC9 bench text only, as test_removed_bench_obligation_refused.
+        with self.assertRaisesRegex(ValueError, 'POD-AC-9 must remain an explicit BENCH REQUIRED obligation'):
+            pod.requirement_set('telemetry-pod-rev2', record, spec_record.sha256(record_raw),
+                                {**self.scope, 'limitations': ['POD-AC-8: BENCH REQUIRED']})
+
+    def test_genuine_rev2_source_accepted_in_full_build(self):
+        with mock.patch('agent_ee.campaign.run_campaign', side_effect=AssertionError('inference forbidden')):
+            receipt = self.build()
+        found = receipt['validation']['requirement_set']
+        self.assertEqual((found['source'], found['revision'], found['spec_sha256'], found['record_sha256']),
+                         ('telemetry-pod-rev2', 2, pod.SOURCES['telemetry-pod-rev2']['spec_sha256'],
+                          pod.SOURCES['telemetry-pod-rev2']['record_sha256']))
+        self.assertEqual(found['acceptance'], [f'POD-AC-{n}' for n in range(1, 10)])
+        self.assertFalse(receipt['done'])
 
     def use_placement_adapter(self, policy='policy.json'):
         write_json(self.source/'policy.json',{'schema':'agent-ee.packing-policy/1','fixed_refs':[],
@@ -735,6 +1042,12 @@ class PodDriverTests(ScaffoldFixture, unittest.TestCase):
                     self.build('refused-'+name)
                 self.assertFalse((self.root/('refused-'+name)).exists())
                 self.plan,self.scope,derivation=original[0],original[1],original[2]
+
+
+def refused_record(test, source, record_raw, record, scope):
+    with test.assertRaises(pod.RequirementSetError) as raised:
+        pod.requirement_set(source, record, spec_record.sha256(record_raw), scope)
+    return raised.exception.reason, raised.exception.requirement
 
 
 if __name__=='__main__':
