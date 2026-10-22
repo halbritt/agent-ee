@@ -183,8 +183,18 @@ class ModelClosureTests(unittest.TestCase):
             defaults, identity = _kicad_model_defaults({})
             self.assertEqual(identity['version'], '10.0.7')
             self.assertEqual(identity['source'], 'kicad-default')
-            if Path(identity['directory']).is_dir():
-                self.assertEqual(defaults['KICAD10_3DMODEL_DIR'], identity['directory'])
+            self.assertEqual(identity['directory'], '/usr/share/kicad/3dmodels')
+            # Both library branches are injected, so neither depends on the host's packages.
+            library = self.root / 'stock'
+            library.mkdir()
+            with patch('agent_ee.models3d.KICAD10_LINUX_MODEL_DIR', library):
+                defaults, identity = _kicad_model_defaults({})
+                self.assertEqual(defaults, {'KICAD10_3DMODEL_DIR': str(library)})
+                self.assertEqual((identity['directory'], identity['available']), (str(library), True))
+            with patch('agent_ee.models3d.KICAD10_LINUX_MODEL_DIR', self.root / 'absent'):
+                defaults, identity = _kicad_model_defaults({})
+                self.assertEqual(defaults, {})
+                self.assertEqual((identity['directory'], identity['available']), (str(self.root / 'absent'), False))
             with patch('agent_ee.models3d.Path.is_dir', return_value=False):
                 self.assertEqual(_kicad_model_defaults({})[0], {})
         for version, code in (('9.0.7', 0), ('11.0.0', 0), ('10.0.7', 1), ('bad', 0)):
@@ -209,6 +219,59 @@ class ModelClosureTests(unittest.TestCase):
         with patch('agent_ee.models3d._kicad_model_defaults', return_value=({}, None)):
             model = inspect_models(self.board, {})['footprints'][0]['models'][0]
             self.assertEqual((model['status'], model['resolution_source']), ('unresolved', 'unresolved'))
+
+    def test_legacy_kisys3dmod_follows_kicad10_model_dir_like_kicad_cli(self):
+        # Observed with the pinned kicad-cli 10.0.7 (AGENTEE-428): its own value
+        # wins, else the process KICAD10_3DMODEL_DIR (environment, then built-in
+        # default); a project text variable KICAD10_3DMODEL_DIR does not feed it.
+        library, alternate = self.root / 'stock', self.root / 'alternate'
+        for directory in (library, alternate):
+            (directory / 'R.3dshapes').mkdir(parents=True)
+            (directory / 'R.3dshapes/r.step').write_bytes(b'model in ' + directory.name.encode())
+        self.write_board('(footprint "R" (model "${KISYS3DMOD}/R.3dshapes/r.step"))')
+        defaults = {'KICAD10_3DMODEL_DIR': str(library)}
+
+        def model(env, kicad_defaults=defaults):
+            inventory = inspect_models(self.board, env, kicad_defaults=kicad_defaults)
+            return inventory['footprints'][0]['models'][0], inventory['variable_aliases']
+        record, aliases = model({})
+        self.assertEqual((record['status'], record['resolution_source']), ('resolved', 'kicad-default'))
+        self.assertEqual(record['resolved_path'], str(library / 'R.3dshapes/r.step'))
+        self.assertEqual(record['variable_sources'], {'KISYS3DMOD': 'kicad-default'})
+        self.assertEqual(record['sha256'], hashlib.sha256(b'model in stock').hexdigest())
+        self.assertEqual(aliases, {'KISYS3DMOD': {'variable': 'KICAD10_3DMODEL_DIR', 'source': 'kicad-default'}})
+        record, aliases = model({'KICAD10_3DMODEL_DIR': str(alternate)})
+        self.assertEqual((record['status'], record['resolution_source']), ('resolved', 'env'))
+        self.assertEqual(record['resolved_path'], str(alternate / 'R.3dshapes/r.step'))
+        self.assertEqual(aliases['KISYS3DMOD']['source'], 'env')
+        # An explicit missing path never falls back to the default.
+        record, _ = model({'KICAD10_3DMODEL_DIR': str(self.root / 'absent')})
+        self.assertEqual((record['status'], record['resolution_source']), ('missing', 'env'))
+        self.assertNotIn('sha256', record)
+        record, aliases = model({'KISYS3DMOD': str(self.root / 'absent'), 'KICAD10_3DMODEL_DIR': str(alternate)})
+        self.assertEqual((record['status'], record['resolution_source'], aliases), ('missing', 'env', {}))
+        project = self.board.with_suffix('.kicad_pro')
+        project.write_text(json.dumps({'text_variables': {'KICAD10_3DMODEL_DIR': str(alternate)}}))
+        record, _ = model({})
+        self.assertEqual(record['resolved_path'], str(library / 'R.3dshapes/r.step'))
+        project.write_text(json.dumps({'text_variables': {'KISYS3DMOD': str(self.root / 'absent')}}))
+        record, aliases = model({'KICAD10_3DMODEL_DIR': str(alternate)})
+        self.assertEqual((record['status'], record['resolution_source'], aliases), ('missing', 'project', {}))
+        project.unlink()
+        # Absent library: unresolved, never claimed.
+        record, aliases = model({}, {})
+        self.assertEqual((record['status'], record['resolution_source'], aliases), ('unresolved', 'unresolved', {}))
+        # No qualified KiCad 10.0.x CLI: the alias is KiCad behaviour and is not inferred.
+        with patch('agent_ee.models3d._kicad_model_defaults', return_value=({}, None)):
+            record, aliases = model({'KICAD10_3DMODEL_DIR': str(alternate)}, None)
+        self.assertEqual((record['status'], record['unresolved_variables'], aliases), ('unresolved', ['KISYS3DMOD'], {}))
+        identity = {'version': '10.0.7', 'available': False}
+        with patch('agent_ee.models3d._kicad_model_defaults', return_value=({}, identity)):
+            record, aliases = model({'KICAD10_3DMODEL_DIR': str(alternate)}, None)
+        self.assertEqual((record['status'], record['resolution_source']), ('resolved', 'env'))
+        with patch('agent_ee.models3d._kicad_model_defaults', return_value=(defaults, identity)):
+            record, _ = model({}, None)
+        self.assertEqual((record['status'], record['resolution_source']), ('resolved', 'kicad-default'))
 
     def test_project_closure_hashes_aliases_duplicates_and_missing(self):
         models = self.root / 'inputs/models'
@@ -278,6 +341,64 @@ class ModelClosureTests(unittest.TestCase):
         (destination / 'alias.step').symlink_to(model)
         with self.assertRaisesRegex(ValueError, 'became a symlink'):
             verify_project_models(self.board, destination, closure)
+
+
+    def test_project_closure_carries_absolute_in_project_paths(self):
+        project = self.root / 'project'
+        (project / 'inputs/models').mkdir(parents=True)
+        (project / 'inputs/models/abs.step').write_bytes(b'owned absolute fixture')
+        external = self.root / 'external.step'
+        external.write_bytes(b'owned external fixture')
+        self.board = project / 'board.kicad_pcb'
+        self.write_board(f'''(footprint "Owned" (property "Reference" "J1")
+            (model "{project}/inputs/models/abs.step")
+            (model "{project}/inputs/models/../models/abs.step")
+            (model "{project}/inputs/models/gone.step")
+            (model "{external}"))''')
+        destination = project / 'proposal'
+        destination.mkdir()
+        closure = copy_project_models(self.board, destination)
+        self.assertEqual(closure['files'], {'inputs/models/abs.step': {
+            'sha256': hashlib.sha256(b'owned absolute fixture').hexdigest(), 'size_bytes': 22}})
+        self.assertEqual((destination / 'inputs/models/abs.step').read_bytes(), b'owned absolute fixture')
+        self.assertEqual([(r['status'], r['proposal_path'], r['absolute']) for r in closure['references']],
+                         [('resolved', 'inputs/models/abs.step', True)] * 2
+                         + [('missing', 'inputs/models/gone.step', True)])
+        self.assertNotIn(str(external), [r['path'] for r in closure['references']])
+        verify_project_models(self.board, destination, closure)
+        (project / 'inputs/models/abs.step').write_bytes(b'changed source')
+        with self.assertRaisesRegex(ValueError, 'project model changed'):
+            verify_project_models(self.board, destination, closure)
+        (project / 'inputs/models/abs.step').write_bytes(b'owned absolute fixture')
+        (project / 'inputs/models/gone.step').write_bytes(b'appeared')
+        with self.assertRaisesRegex(ValueError, 'missing.*appeared'):
+            verify_project_models(self.board, destination, closure)
+
+    def test_project_closure_absolute_paths_escape_alias_and_collision(self):
+        project = self.root / 'project'
+        project.mkdir()
+        outside = self.root / 'outside.step'
+        outside.write_bytes(b'owned outside fixture')
+        (project / 'link.step').symlink_to(outside)
+        self.board = project / 'board.kicad_pcb'
+        destination = project / 'proposal'
+        destination.mkdir()
+        self.write_board(f'(footprint "Owned" (model "{project}/link.step"))')
+        with self.assertRaisesRegex(ValueError, 'escapes source project'):
+            copy_project_models(self.board, destination)
+        (project / 'visuals').mkdir()
+        (project / 'visuals/m.step').write_bytes(b'owned')
+        self.write_board(f'(footprint "Owned" (model "{project}/visuals/m.step"))')
+        with self.assertRaisesRegex(ValueError, 'collides'):
+            copy_project_models(self.board, destination)
+        # A spelling of the project through an outside symlink is carried by its real location.
+        (project / 'body.step').write_bytes(b'owned body')
+        (self.root / 'alias').symlink_to(project)
+        self.write_board(f'(footprint "Owned" (model "{self.root}/alias/body.step"))')
+        closure = copy_project_models(self.board, destination)
+        self.assertEqual(list(closure['files']), ['body.step'])
+        self.assertEqual(closure['references'][0]['proposal_path'], 'body.step')
+        verify_project_models(self.board, destination, closure)
 
 
 class StockModelFetchTests(unittest.TestCase):
