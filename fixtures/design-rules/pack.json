@@ -5,7 +5,7 @@
   "provenance": {
     "authored_by": "agent-ee (AGENTEE-62)",
     "date": "2026-10-18",
-    "license": "MIT (proposed, pending owner approval, as for all AE material)",
+    "license": "MIT (LICENSE), as for all AE material (owner-approved 2026-10-22, AGENTEE-14)",
     "derived_from": [
       "Card field set (rule_id, description, applies_to, rationale, examples, violations_cause, priority) follows the MIT circuit-synth DesignRule dataclass; every card text here is original.",
       "I2C pull-up window 1 kOhm -10 % to 10 kOhm +10 % follows the idea in atopile faebryk/library/I2C.py; no code or text is copied."

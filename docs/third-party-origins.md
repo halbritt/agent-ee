@@ -9,13 +9,18 @@ including the new native fixtures, generation tooling and vendored viewer runtim
 
 ## Status
 
-- MIT is **proposed** in [LICENSE](../LICENSE) for agent-ee material: files
-  whose only origins are `AE` (written for agent-ee) or `AE-RUN` (outputs of
-  agent-ee runs on such material). The proposal is now included on main; the
-  owner has not approved it. MIT was the owner's stated default; another license needs explicit
-  owner approval.
-- One origin is **owner-confirmed**: `T16`, the fome-mc reference block
-  captures under `fixtures/fome-mc/`. On 2026-10-18 the owner decided they are
+- MIT is the license in [LICENSE](../LICENSE) for origins `AE` (written for
+  agent-ee), `AE-RUN` (outputs of agent-ee runs on such material), `T1` (the
+  FOME-MC RC filter fixture) and `T2` (the FOME-MC `eda.py`-derived logic in
+  `src/agent_ee/checks.py`). An owner decision of 2026-10-22, relayed by the
+  coordinator, approved it; [decisions](decisions.md#mit-license-approved-agentee-14-2026-10-22)
+  quotes the relay verbatim, and each origin's `owner_record` gives its date,
+  text and where it was relayed. These four origins are `owner-confirmed`.
+  The RC fixture embeds KiCad stock library data (`T6`, unresolved), so
+  `scripts/check_origins.py` reports files whose only origin is `T1` as
+  **derived** and names `T6`; files that also declare `T6` stay unresolved.
+- `T16` is also **owner-confirmed**, by a separate decision: the fome-mc
+  reference block captures under `fixtures/fome-mc/`. On 2026-10-18 the owner decided they are
   committed as fixtures, stated that the owner holds the rights to fome-mc and
   agent-ee, and answered that derived-from-Polygonus (and other derived) sheets
   are admitted with their upstream origin and licence recorded in the block
@@ -42,16 +47,18 @@ including the new native fixtures, generation tooling and vendored viewer runtim
   published history would be a history rewrite, which is a separate owner gate.
 
 At the baseline, 367 files were proposed for MIT and 4,799 were unresolved.
-Most unresolved files are retained evidence, which is classified by directory.
+After the 2026-10-22 decision, `check_origins.py` reports 6,501 files: 1,469
+`owner-confirmed`, 225 `derived` and 4,807 unresolved. Most unresolved files
+are retained evidence, which is classified by directory.
 
 ## Origins
 
 | ID | Origin | Upstream license, as checked | Tracked material |
 | --- | --- | --- | --- |
-| AE | agent-ee original material | MIT proposed | Code, tests, scripts, docs, planning records, original fixtures |
-| AE-RUN | agent-ee run outputs | MIT proposed | Records, native tool output and reviewer output from runs on agent-ee material |
-| T1 | FOME-MC RC filter fixture (`halbritt/fome-mc`, `5b7b175`) | No license found | `fixtures/rc/control/` and `seeded/`, 90 copies and variants in evidence, RC evidence directories and archives |
-| T2 | FOME-MC `toolchain/eda.py` | No license found | Adapted logic in `src/agent_ee/checks.py` |
+| AE | agent-ee original material | MIT, owner-confirmed 2026-10-22 | Code, tests, scripts, docs, planning records, original fixtures |
+| AE-RUN | agent-ee run outputs | MIT, owner-confirmed 2026-10-22 | Records, native tool output and reviewer output from runs on agent-ee material |
+| T1 | FOME-MC RC filter fixture (`halbritt/fome-mc`, `5b7b175`) | No license file upstream; MIT owner-confirmed 2026-10-22 (embeds `T6`) | `fixtures/rc/control/` and `seeded/`, 90 copies and variants in evidence, RC evidence directories and archives |
+| T2 | FOME-MC `toolchain/eda.py` | No license file upstream; MIT owner-confirmed 2026-10-22 | Adapted logic in `src/agent_ee/checks.py` |
 | T3 | Polygonus-Universal-112 donor (`FOME-Tech`, `ddcf0f7`) | No license found | Donor and model-baseline evidence, its Gerber/drill/render outputs, three reports, eight archives |
 | T4 | FOME-Tech kicad-libraries (`ab9c5f8`) | No license found; SamacSys terms not reviewed | Donor captures in archives; donor evidence |
 | T5 | rusEFI libraries vendored in the donor | Mixed; includes a GPLv3 credit | Donor captures in archives; donor evidence |
@@ -111,8 +118,9 @@ recorded review.
 - a retained `candidate.json` captured inputs from an origin that its rule
   omits, or a captured source matches no known origin;
 - an archive omits an origin of the evidence directory it holds;
-- a third-party origin is marked as proposed for MIT, or is marked
-  `owner-confirmed` without an `owner_record`.
+- a third-party origin is marked as proposed for MIT, or an origin is marked
+  `owner-confirmed` without an `owner_record`, or with a structured
+  `owner_record` that lacks a non-empty `date`, `decision` or `where`.
 
 A file is unresolved if any of its declared origins is unresolved. Otherwise,
 if an `owner-confirmed` origin transitively lists an unresolved upstream origin

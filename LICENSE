@@ -24,13 +24,21 @@ SOFTWARE.
 
 Scope of this license
 
-This license covers only files written for agent-ee or produced by its runs
-from such files: the files that docs/file-origins.json lists with origins AE
-or AE-RUN and no other origin. It grants no rights in any file with another
-origin. Those files come from, or are derived from, other projects or parties,
-including FOME-MC, FOME-Tech, rusEFI, KiCad, mck1117/wideband, semiconductor
-vendors, distributors and the public boards named in benchmarks/seeded/. They
-include src/agent_ee/checks.py, which adapts FOME-MC code, and the evidence
-archives. These files are not offered under this license. docs/file-origins.json
-lists each one with its origin, known upstream license and publication status,
-and docs/third-party-origins.md summarizes them.
+This license covers only the files that docs/file-origins.json lists with
+origins AE, AE-RUN, T1 or T2 and no other origin: files written for agent-ee or
+produced by its runs from such files (AE, AE-RUN), the RC filter fixture copied
+from FOME-MC (T1) and the validation logic in src/agent_ee/checks.py adapted
+from FOME-MC toolchain/eda.py (T2). An owner decision of 2026-10-22, relayed by
+the coordinator, approved MIT for these origins and gave the owner as sole
+author of T1 and T2; docs/decisions.md and each origin's owner_record quote
+the relay. Stock KiCad library data embedded in the RC fixture keeps its own
+license (origin T6); the inventory reports those files as derived.
+
+It grants no rights in any file with another origin. Those files come from, or
+are derived from, other projects or parties, including FOME-Tech, rusEFI,
+KiCad, mck1117/wideband, semiconductor vendors, distributors, three.js and the
+public boards named in benchmarks/seeded/, and they include the evidence
+archives and the fome-mc reference block captures under fixtures/fome-mc/.
+These files are not offered under this license. docs/file-origins.json lists
+each one with its origin, known upstream license and publication status, and
+docs/third-party-origins.md summarizes them.

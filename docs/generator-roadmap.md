@@ -409,11 +409,12 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
 
 ## Licence posture
 
-- agent-ee: MIT is proposed in main (AGENTEE-14), with
+- agent-ee: MIT (AGENTEE-14), approved for agent-ee material and the FOME-MC
+  RC fixture and `eda.py`-derived logic on 2026-10-22
+  ([decision](decisions.md#mit-license-approved-agentee-14-2026-10-22)), with
   a [file-origin inventory](file-origins.json) of every tracked file and a
-  [summary](third-party-origins.md). The proposal is merged; owner confirmation remains pending.
-  FOME-MC fixture, donor, vendor and other third-party files stay excluded
-  until the owner decides each origin.
+  [summary](third-party-origins.md). Donor, vendor and other third-party files
+  stay excluded until the owner decides each origin.
 - kicad-route: the current pin carries an MIT `LICENSE`; its owned routing
   engine retains the MIT upstream and fork notices.
 - KRT (KiCadRoutingTools) is MIT. Freerouting (GPL-3.0) runs as a separate
