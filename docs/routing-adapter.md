@@ -115,13 +115,30 @@ exit 2 would read as a partial route. It then runs:
 
 ```text
 /usr/bin/python3 -B -X pycache_prefix=/work/routing/pycache /opt/kicad-route/bin/kicad-route
-  run --out /work/routing/out --json --backend builtin --dir /candidate/P --board B --schematic S
+  run --out /work/routing/out --json --backend builtin --dir /work/routing/agent-ee-original/P --board B --schematic S
   --name N --label L --protect existing --budget T
 ```
 
 `--out` names the sandbox's writable output directory; the pin accepts it
-before or after `run`. `--json` produces a versioned record on stdout. The router reads the
-read-only `/candidate` copy, so it cannot edit the design it routes. Its
+before or after `run`. `--json` produces a versioned record on stdout. The design
+stays in the read-only `/candidate` mount, so the router cannot edit it. The router
+reads a staged copy instead (AGENTEE-442). After every other precondition holds,
+the adapter copies the verified `/candidate` tree to
+`/work/routing/agent-ee-original/`. The copy is real: regular files and
+directories with the same bytes and modes, never a link. That directory is
+outside the router's `--out`, and `--dir` is `/work/routing/agent-ee-original/P`.
+kicad-route's `experiment._origin` treats a `--dir` whose parent is named
+`candidate`, or whose grandparent holds `attempt.json` or `result.json`, as a
+run candidate with a missing predecessor. So `/candidate/P` is never an original
+(agent-507 origin adjudication). The staged path has neither, so the producer
+reads it as an original at depth 0. `report.inputs.staged` records the staged
+`path` and `root`, the per-file sha256 manifest (`files`) and the tree identity
+(`sha256`) of the copy. A copy that differs from the captured input is
+`not_run` and the router does not start. A staged tree that differs after the
+attempt is a contradiction. `verify` requires the record at the adapter's
+staging path, with a manifest and identity equal to the declared input (the
+receipt's `inputs`). It re-hashes the staged bytes where the run keeps them.
+Any mismatch refuses. Its
 environment is rebuilt from constants: `PATH`, `HOME`/`TMPDIR`/XDG under
 `/work/routing`, `LANG`, `PYTHONDONTWRITEBYTECODE`, `PYTHONPYCACHEPREFIX`,
 `PYTHONNOUSERSITE`, `KICAD_ROUTE_STATE` set to the read-only mount, and
@@ -562,8 +579,8 @@ For 0 and 2 the candidate must also bind to the attempt and its inputs:
   nothing else except the links the pin places beside it so that
   `${KIPRJMOD}/../<dir>` library paths resolve: each named for a top-level
   input directory other than the project (never a top-level input file),
-  with the literal target `/candidate/<same name>` (the input root in the
-  sandbox), and the two link sets equal, as `copy_project` links beside the
+  with the literal target `/work/routing/agent-ee-original/<same name>` (the
+  staged input root in the sandbox), and the two link sets equal, as `copy_project` links beside the
   candidate every sibling the snapshot linked. Any other entry, a link whose
   name or target differs (relative, elsewhere, with a trailing slash or
   `..`), a link named for a top-level input file, a real file or directory
@@ -606,7 +623,7 @@ step's work directory.
 
 The report records the request, the fixed argv and environment, the process
 exit or signal, the discovery, the retained file hashes, the full input
-inventory, the code and state identities before and after, the write probes,
+inventory and its staged copy (`inputs.staged`), the code and state identities before and after, the write probes,
 the executables (`kicad-route`, Python, `kicad-cli`) and the KiCad template
 library tables. For an eligible attempt it also records `candidate_files`, the
 hash of every file in the attempt's candidate project directory, because the
@@ -646,6 +663,9 @@ For every outcome, `verify` refuses a report when:
 
 - a field is missing, unknown or malformed, or a retained hash differs;
 - the inputs differ from the captured pre-step candidate;
+- an attempt that ran has no `inputs.staged`, or the staged record is not at
+  the adapter's staging path, or its manifest or identity is not the inputs', or
+  the staged bytes the run kept differ from it (AGENTEE-442);
 - the classification, proposal, coverage and adapter exit do not match;
 - the reported router exit differs from the observed process exit;
 - the claimed pin, adapter compatibility or `kicad-route` path is not the pin's;
@@ -849,7 +869,9 @@ Experiment evidence is never dropped and is never qualified.
     - `run_mismatch`: the eligible sidecar, with every digest correct, does
       not describe this execution. These must agree:
       - `source_dir` and the sidecar's `identity.input.source` must be exactly
-        the `--dir` the adapter passed (`/candidate/<project>`);
+        the `--dir` the adapter passed, the staged original
+        `/work/routing/agent-ee-original/<project>`. The read-only
+        `/candidate/<project>` mount is not that input;
       - the retained `snapshot.json` must have a non-empty `files` map of
         sha256 digests (otherwise `missing` or `malformed`, never a crash:
         review H2, ee442g);
@@ -979,7 +1001,7 @@ Experiment evidence is never dropped and is never qualified.
   - the same receipt delivered by a router the adapter ran, with every file it
     seals, goes through `step`, `stage_receipts.run_step`, `verify` and `adopt`
     and is refused `run_mismatch` (its `source_dir` is the producer's, not
-    `/candidate/<project>`), with no candidate and a rejected adoption, also
+    the staged `/work/routing/agent-ee-original/<project>`), with no candidate and a rejected adoption, also
     after `OUT` is removed. `RealReceiptReplayTest` replays the committed
     sidecar and manifests the same way: refused at the binding (`tampered`,
     `attempt.json`), as are the K91 review's resealed real variants (EI2, EI3,
@@ -993,7 +1015,7 @@ Experiment evidence is never dropped and is never qualified.
 
   The adapter cannot itself run this receipt: its pinned router writes no
   experiment evidence, and it issues only `--protect existing`, mode `all` and
-  `--dir /candidate/<project>`, while the receipt's request is `locked`,
+  `--dir /work/routing/agent-ee-original/<project>`, while the receipt's request is `locked`,
   `selected` and the producer's fixture directory. An adapter-run real positive
   needs the re-pin. **Integration activation is gated:** the native positives
   above go through `retain()` and `experiment_grade()`, the consumer's own
@@ -1028,10 +1050,16 @@ Experiment evidence is never dropped and is never qualified.
   (`origin predecessor is missing or does not own this input`): kicad-route
   `experiment._origin` reads any `--dir` whose parent directory is named
   `candidate` as a run candidate with a missing predecessor, and the adapter's
-  `--dir` is always `/candidate/<project>`. So every adapter-run K91 receipt is
-  `ineligible` until kicad-route or the sandbox layout changes. Agent-ee does not
-  relabel it. Records, receipts and negative controls are in
+  `--dir` was always `/candidate/<project>`. So every adapter-run K91 receipt was
+  `ineligible`. Agent-ee does not relabel that receipt. agent-507 adjudicated that
+  this is the intended producer contract. The consumer now routes a staged copy
+  of the original (see the router invocation above). The read-only mount is
+  unchanged. A fresh adapter-run attempt is needed for a positive. This change
+  does not run one. Records, receipts and negative controls are in
   `evidence/k91-native-positive/` (`evidence-manifest.json`, `SHA256SUMS`).
+  They predate staging: they record `--dir /candidate/project` and no
+  `inputs.staged`, which the current `verify` requires. They are kept as they
+  are, as the record of that attempt. They are not re-graded.
 - **Pin.** The pinned `b5774496` (AGENTEE-450) `cli.py` has no
   `--experiment-policy` (the K91 producer commits `a0ed434` and `bd1e633f` are
   not its ancestors), and its `main` turns every usage error into a refusal

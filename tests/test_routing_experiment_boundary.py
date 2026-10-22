@@ -152,6 +152,51 @@ class ExperimentBoundaryTest(unittest.TestCase):
         self.assertFalse(summary['experiment']['qualified'])
         stage_receipts.adopt(receipt_dir, receipt, design)
 
+    def test_the_staged_original_is_an_eligible_origin_through_the_actual_consumer(self):
+        # AGENTEE-442 (agent-507 origin adjudication): the router is given a staged copy of
+        # /candidate/<project>, which kicad-route _origin reads as an original (depth 0).
+        receipt, receipt_dir, design, report = self.receipt({'name': 'complete'}, CURRENT)
+        self.assertEqual((receipt['exit_code'], receipt['status']), (0, 'completed'), report['semantics'])
+        staged = '/work/routing/agent-ee-original/project'
+        argv = report['process']['argv']
+        self.assertEqual(argv[argv.index('--dir') + 1], staged)
+        self.assertEqual(report['inputs']['staged'], {
+            'path': staged, 'root': '/work/routing/agent-ee-original', 'files': receipt['inputs'],
+            'sha256': report['inputs']['sha256']})
+        attempt_dir = receipt_dir / 'run/routing/attempt'
+        self.assertEqual(json.loads((attempt_dir / 'attempt.json').read_text())['source']['source_dir'], staged)
+        body = json.loads((attempt_dir / attempt.EXPERIMENT_SIDECAR).read_text())
+        self.assertEqual((body['identity']['origin']['depth'], body['identity']['origin']['predecessors']), (0, []))
+        record = report['semantics']['experiment']
+        self.assertEqual((record['status'], record['comparison_eligible'], record['ineligible_reasons']),
+                         ('retained', True, []))
+        # verify re-hashes the staged bytes the run kept; they are the receipt's inputs.
+        kept = receipt_dir / 'run/routing' / attempt.ORIGINAL_STAGE
+        self.assertEqual(attempt.files_of(attempt.tree(kept)), receipt['inputs'])
+        self.assertEqual(self.verify(receipt_dir, receipt)['experiment'], record)
+        stage_receipts.adopt(receipt_dir, receipt, design)
+        board = kept / 'project/rc.kicad_pcb'
+        original = board.read_bytes()
+        board.write_bytes(original + b'\n')
+        with self.assertRaisesRegex(ValueError, 'staged original bytes differ from the adapter report'):
+            self.verify(receipt_dir, receipt)
+        board.write_bytes(original)
+        self.assertEqual(self.verify(receipt_dir, receipt)['experiment'], record)
+
+    def test_the_old_mount_or_an_input_beside_a_run_record_is_ineligible_and_refused(self):
+        # The producer contract (kicad-route bd1e633 experiment._origin, restated by the
+        # fixture): an input whose parent is named candidate, or whose grandparent holds a
+        # run record, without a readable predecessor, is not an original project.
+        missing = 'origin predecessor is missing or does not own this input'
+        for label, scenario in (('the /candidate/<project> mount as --dir', {'read_mount': True}),
+                                ('attempt.json beside the input', {'grandparent_record': 'attempt.json'}),
+                                ('result.json beside the input', {'grandparent_record': 'result.json'})):
+            with self.subTest(label):
+                receipt_dir = self.assert_refused({'name': 'complete', **scenario}, 'ineligible', missing)
+                record = json.loads((receipt_dir / 'run/routing/adapter-report.json').read_text())[
+                    'semantics']['experiment']
+                self.assertEqual((record['comparison_eligible'], record['ineligible_reasons']), (False, [missing]))
+
     def test_historical_and_current_policy_evidence_keep_distinct_identities(self):
         records = {}
         for policy in (CURRENT, HISTORICAL):
@@ -603,7 +648,9 @@ class ExperimentBoundaryTest(unittest.TestCase):
                 ({'source_dir': '{run}'}, 'unqualified', cycle),
                 # Outside the run, anything but the exact input directory is another execution's source.
                 ({'links': {'{out}/alias': '{cand}'}, 'source_dir': '{out}/alias'}, 'run_mismatch',
-                 "source_dir '/work/routing/out/alias' is not this attempt's input /candidate/project"),
+                 "source_dir '/work/routing/out/alias' is not this attempt's input /work/routing/agent-ee-original/project"),
+                # The read-only mount is not the input the router was given (AGENTEE-442).
+                ({'source_dir': '/candidate/project'}, 'run_mismatch', 'is not this attempt\'s input'),
                 ({'source_dir': '{src}/'}, 'run_mismatch', 'is not this attempt\'s input'),
                 ({'source_dir': '/candidate/./project'}, 'run_mismatch', 'is not this attempt\'s input'),
                 ({'source_dir': '/CANDIDATE/project'}, 'run_mismatch', 'is not this attempt\'s input'),
@@ -856,7 +903,7 @@ class ExperimentBoundaryTest(unittest.TestCase):
         host.mkdir(parents=True)
         (Path(self.tmp.name) / 'host-alias').symlink_to(host)
         cycle = "origin is a self-cycle: attempt.json source_dir is this run's own candidate"
-        other = "is not this attempt's input /candidate/project"
+        other = "is not this attempt's input /work/routing/agent-ee-original/project"
         for scenario, reason, detail in (
                 ({'source_dir': str(host)}, 'run_mismatch', other),
                 ({'source_dir': str(Path(self.tmp.name) / 'host-alias')}, 'run_mismatch', other),
@@ -1661,7 +1708,7 @@ class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
                                    self.policy)
         record = RealReceiptReplayTest.refused(boundary, outcome, 'run_mismatch',
                                                f"attempt.json source_dir '{K91_FINAL_SOURCE}' is not this attempt's "
-                                               'input /candidate/project')
+                                               'input /work/routing/agent-ee-original/project')
         self.assertEqual(record['identity_sha256'], K91_REVIEWED['native_receipt']['identity_sha256'])
         self.assertEqual(outcome[3]['omitted_design_files'][attempt.EXPERIMENT_RAW_OUTPUT],
                          K91_FINAL_PINNED[attempt.EXPERIMENT_RAW_OUTPUT])

@@ -56,6 +56,15 @@ def prepare(path, text):
 
 
 src, board, sch = Path(opts['--dir']), opts['--board'], opts['--schematic']
+# AGENTEE-442: scenario['read_mount'] stands in for an adapter that passed the read-only
+# mount itself (the first GIT_CEILING_DIRECTORIES entry) as --dir, as it did before it
+# staged the original; scenario['grandparent_record'] plants a run record two levels
+# above --dir, as a run's candidate laid out beside its attempt.json would have.
+if scenario.get('read_mount'):
+    src = Path(os.environ['GIT_CEILING_DIRECTORIES'].split(':')[0]) / src.relative_to(
+        Path(os.environ['GIT_CEILING_DIRECTORIES'].split(':')[1]))
+if scenario.get('grandparent_record'):
+    (src.parent.parent / scenario['grandparent_record']).write_text('{}\n')
 project, label = opts['--name'], opts['--label']
 state = Path(os.environ['KICAD_ROUTE_STATE'])
 (out / '.kicad-config').mkdir(parents=True, exist_ok=True)
@@ -442,6 +451,10 @@ if experiment is not None and experiment != 'omit':
         del identity['policy']
     copy = run / 'experiment-policy.json'
     reasons = [] if declared is not None else ['no experiment policy was declared (--experiment-policy)']
+    # As kicad-route bd1e633 experiment._origin without a readable predecessor: an input
+    # laid out as a run's candidate, or beside a run record, is not an original project.
+    if src.parent.name == 'candidate' or any((src.parent.parent / n).exists() for n in ('attempt.json', 'result.json')):
+        reasons.append('origin predecessor is missing or does not own this input')
     sealed = ['attempt.json', 'facts/reference-facts.json', 'validate/candidate-facts.json', manifest_name,
               request_name, 'experiment-policy.json', 'work/effective-configuration-output.kicad_pcb']
     body = {'schema': 'routability-experiment/2' if experiment == 'incompatible_schema' else

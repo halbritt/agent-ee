@@ -69,8 +69,10 @@ the read-only input tree. The adapter's request carries only:
 - an optional `diff_pairs: "auto"`, which cannot be combined with a layer policy.
 
 The fixed argv is `kicad-route run --out /work/routing/out --json --backend builtin
---dir /candidate/P --board B --schematic S --name N --label L --protect existing
---budget T`. A layer policy adds `--pour-area-loss PCT` and
+--dir /work/routing/agent-ee-original/P --board B --schematic S --name N --label L
+--protect existing --budget T`. `--dir` is a staged, byte-exact copy of the
+read-only `/candidate` tree, not the mount itself
+([AGENTEE-442](routing-adapter.md#the-step)). A layer policy adds `--pour-area-loss PCT` and
 `--backend-arg=--layers --backend-arg=<layer> ...`, plus `--layer-costs` when
 declared (`kicad_route_attempt.tool_argv`, `policy_argv`, `policy_backend_args`).
 The result's `settings` must equal `expected_settings` exactly. In particular,

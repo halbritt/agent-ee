@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -974,6 +975,128 @@ class LayerPolicyTest(unittest.TestCase):
              'label': 'routing', 'budget_s': 5, 'timeout_s': 30, 'backend': 'krt', 'state': 'checkout',
              'layer_policy': POLICY}))
         self.assertEqual(request['layer_policy'], POLICY)
+
+
+class StagedOriginalTest(unittest.TestCase):
+    """AGENTEE-442: the router reads a byte-exact staged copy of the verified input as
+    --dir, never the read-only /candidate mount, and the report binds that copy."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='agent-ee-route-stage-')
+        self.addCleanup(self.tmp.cleanup)
+        self.count = 0
+
+    def case(self, scenario):
+        self.count += 1
+        return Case(Path(self.tmp.name) / str(self.count), scenario)
+
+    def resealed(self, case, change):
+        """The report edited by change and resealed, so only the edited binding can refuse it."""
+        path = case.work / 'routing/adapter-report.json'
+        report = json.loads(path.read_text())
+        change(report)
+        body = {k: v for k, v in report.items() if k != 'identity'}
+        path.write_text(json.dumps({**body, 'identity': attempt.canonical_identity(body)}))
+
+    def test_the_router_reads_a_real_staged_copy_of_the_verified_input(self):
+        case = self.case('complete').run()
+        self.assertEqual(case.exit, 0, case.report['semantics'])
+        root, staged = case.work / 'routing' / attempt.ORIGINAL_STAGE, case.work / 'routing/agent-ee-original/project'
+        argv = case.report['process']['argv']
+        self.assertEqual(argv[argv.index('--dir') + 1], str(staged))
+        self.assertNotIn(str(case.candidate / 'project'), argv)
+        # kicad-route experiment._origin: the parent is not 'candidate' and the grandparent
+        # holds no run record, so the staged input is an original, not a missing predecessor.
+        self.assertNotEqual(staged.parent.name, 'candidate')
+        self.assertFalse(any((staged.parent.parent / n).exists() for n in ('attempt.json', 'result.json')))
+        self.assertNotIn('out', staged.relative_to(case.work / 'routing').parts)
+        # A real copy, never a link: the same tree (bytes and modes) as the mount.
+        self.assertFalse(any(p.is_symlink() for p in [root, *root.rglob('*')]))
+        self.assertEqual(attempt.tree(root), attempt.tree(case.candidate))
+        inputs = case.report['inputs']
+        self.assertEqual(inputs['staged'], {'path': str(staged), 'root': str(root), 'files': case.inputs,
+                                            'sha256': inputs['sha256']})
+        self.assertEqual(inputs['files'], case.inputs)
+        self.assertIn(str(root), case.report['process']['env']['GIT_CEILING_DIRECTORIES'].split(':'))
+        record = json.loads((case.work / 'routing/attempt/attempt.json').read_text())
+        self.assertEqual(record['source']['source_dir'], str(staged))
+        self.assertEqual(case.verify()['proposal'], 'eligible')
+
+    def test_verify_refuses_a_staged_original_other_than_the_declared_input(self):
+        other = '0' * 64
+        for label, change, message in (
+                ('manifest', lambda r: r['inputs']['staged']['files'].update({'project/rc.kicad_pcb': other}),
+                 'the staged original differs from the declared input'),
+                ('tree identity', lambda r: r['inputs']['staged'].update(sha256=other),
+                 'the staged original differs from the declared input'),
+                ('the mount as the staged path',
+                 lambda r: r['inputs']['staged'].update(path='/candidate/project'),
+                 'staged original is not at the adapter staging path'),
+                ('another root', lambda r: r['inputs']['staged'].update(root='/work/routing/out'),
+                 'staged original is not at the adapter staging path'),
+                ('no staged original', lambda r: r['inputs'].update(staged=None),
+                 'routing attempt ran without a staged original'),
+                ('no staged field', lambda r: r['inputs'].pop('staged'),
+                 'routing attempt inputs have unknown or missing fields'),
+                ('extra field', lambda r: r['inputs']['staged'].update(alias='/candidate/project'),
+                 'staged original is not at the adapter staging path')):
+            with self.subTest(label):
+                case = self.case('complete').run()
+                self.assertEqual(case.exit, 0)
+                self.resealed(case, change)
+                with self.assertRaisesRegex(ValueError, message):
+                    case.verify()
+
+    def test_verify_rehashes_the_staged_bytes_where_they_are_present(self):
+        case = self.case('complete').run()
+        (case.work / 'routing/agent-ee-original/project/rc.kicad_sch').write_text('edited after the attempt\n')
+        with self.assertRaisesRegex(ValueError, 'staged original bytes differ from the adapter report'):
+            case.verify()
+        # The bytes are not retained in a receipt: there the manifest binds the declared input.
+        case = self.case('complete').run()
+        shutil.rmtree(case.work / 'routing/agent-ee-original')
+        self.assertEqual(case.verify()['proposal'], 'eligible')
+
+    def test_a_staged_copy_that_differs_from_the_input_is_not_run(self):
+        real = attempt.stage_original
+
+        def differing(candidate_root, inputs_tree, root):
+            real(candidate_root, inputs_tree, root)
+            (root / 'project/rc.kicad_pcb').write_text('not the verified input\n')
+            return attempt.tree(root)
+
+        case = self.case('complete')
+        with patch.object(attempt, 'stage_original', differing):
+            case.run()
+        sem = case.report['semantics']
+        self.assertEqual((case.exit, sem['classification'], sem['proposal']), (attempt.EXIT_REQUEST, 'not_run', 'none'))
+        self.assertIn('the staged original differs from the captured input', sem['reasons'])
+        self.assertIsNone(case.report['process'])
+        self.assertFalse((case.work / 'routing/out').exists())
+        self.assertNotEqual(case.report['inputs']['staged']['files'], case.inputs)
+        self.assertEqual(case.verify()['classification'], 'not_run')
+        # A not-run attempt whose staged copy equalled its input would have run.
+        self.resealed(case, lambda r: r['inputs']['staged'].update(files=r['inputs']['files'],
+                                                                   sha256=r['inputs']['sha256']))
+        with self.assertRaisesRegex(ValueError, 'a not-run attempt records a staged original equal to its input'):
+            case.verify()
+
+    def test_a_router_that_writes_its_input_is_a_contradiction_and_the_mount_is_untouched(self):
+        case = self.case('touch_input').run()
+        sem = case.report['semantics']
+        self.assertEqual((sem['classification'], sem['proposal']), ('contradiction', 'none'))
+        self.assertIn('the staged original changed during the attempt', sem['reasons'])
+        self.assertEqual(attempt.files_of(attempt.tree(case.candidate)), case.inputs)
+        self.assertEqual(case.verify()['classification'], 'contradiction')
+
+    def test_preconditions_that_fail_stage_nothing(self):
+        case = self.case('complete')
+        (case.candidate / 'project/rc.kicad_sch').unlink()
+        case.run()
+        self.assertEqual(case.report['semantics']['classification'], 'not_run')
+        self.assertIsNone(case.report['inputs']['staged'])
+        self.assertFalse(os.path.lexists(case.work / 'routing' / attempt.ORIGINAL_STAGE))
+        self.assertEqual(case.verify()['classification'], 'not_run')
 
 
 class SandboxedAdapterTest(unittest.TestCase):

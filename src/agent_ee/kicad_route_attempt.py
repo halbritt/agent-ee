@@ -360,6 +360,14 @@ TOOL_VERSION = {'status': 'unknown', 'value': None,
 NO_BACKEND = {'status': 'unknown', 'value': None, 'reason': 'no result.json'}
 SANDBOX = {'work': '/work', 'candidate': '/candidate', 'checkout': '/opt/kicad-route',
            'state': '/opt/kicad-route-state'}
+# AGENTEE-442 (agent-507 origin adjudication; agent-449 seam decision): kicad-route
+# experiment._origin reads a --dir whose parent is named 'candidate', or whose
+# grandparent holds attempt.json or result.json, as a run's candidate with a missing
+# predecessor, so the read-only /candidate/<project> mount is never an original. The
+# mount stays; the router is given a real, byte-exact copy of the verified input tree,
+# staged in routing/ under this neutral name (never in the router's --out), and
+# report.inputs.staged records and binds it.
+ORIGINAL_STAGE = 'agent-ee-original'
 PYTHON = '/usr/bin/python3'
 # KICADROUTE-82: 'builtin' is the canonical name of the owned backend and 'krt' its deprecated
 # alias. agent-ee emits only 'builtin' (AGENTEE-450). 'krt' is read-only legacy: a request or
@@ -1101,7 +1109,7 @@ def experiment_run(request, layout, attempt_dir, omitted=None):
     if not isinstance(attempt_dir, str):
         return None
     return {'run_dir': str(Path(layout['work']) / 'routing' / attempt_dir),
-            'source_dir': str(Path(layout['candidate']) / request['project']),
+            'source_dir': str(staged_dir(request, layout)),
             'observed': dict(omitted) if isinstance(omitted, dict) else {}}
 
 
@@ -1721,6 +1729,41 @@ def parse_request(argv):
     return request
 
 
+def staged_root(layout):
+    """Where the adapter stages the verified input tree the router reads (AGENTEE-442)."""
+    return Path(layout['work']) / 'routing' / ORIGINAL_STAGE
+
+
+def staged_dir(request, layout):
+    """The --dir the router is given: the staged copy of /candidate/<project>."""
+    return staged_root(layout) / request['project']
+
+
+def stage_original(candidate_root, inputs_tree, root):
+    """Copy the verified input tree to root, a real copy with the same modes (never a
+    link), and return the tree observed there. inputs_tree holds no links or special
+    files: the adapter refuses those inputs before staging."""
+    root.mkdir()
+    for rel, entry in inputs_tree.items():
+        if entry[0] == 'dir':
+            (root / rel).mkdir()
+        else:
+            shutil.copyfile(Path(candidate_root) / rel, root / rel)
+            os.chmod(root / rel, int(entry[2], 8))
+    # Directory modes last: a read-only input directory still receives its files.
+    for rel, entry in reversed(list(inputs_tree.items())):
+        if entry[0] == 'dir':
+            os.chmod(root / rel, int(entry[1], 8))
+    return tree(root)
+
+
+def staged_record(request, layout, staged):
+    """report.inputs.staged: the staged path and the per-file manifest and tree identity
+    of the copy, to equal report.inputs (the verified /candidate input)."""
+    return {'path': str(staged_dir(request, layout)), 'root': str(staged_root(layout)),
+            'files': files_of(staged), 'sha256': canonical_identity(staged)}
+
+
 def default_layout(request):
     checkout = Path(SANDBOX['checkout'])
     state = checkout if request['state'] == 'checkout' else Path(SANDBOX['state'])
@@ -1733,7 +1776,7 @@ def tool_argv(request, layout):
     return [PYTHON, '-B', '-X', f'pycache_prefix={routing / "pycache"}',
             str(Path(layout['checkout']) / 'bin' / 'kicad-route'), 'run',
             '--out', str(routing / 'out'), '--json', '--backend', PIN_BACKEND_NAMES[request['backend']],
-            '--dir', str(Path(layout['candidate']) / request['project']),
+            '--dir', str(staged_dir(request, layout)),
             '--board', request['board'], '--schematic', request['schematic'],
             '--name', request['name'], '--label', request['label'],
             '--protect', 'existing', '--budget', str(request['budget_s']),
@@ -1759,7 +1802,7 @@ def tool_env(layout):
             'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONPYCACHEPREFIX': str(routing / 'pycache'),
             'PYTHONNOUSERSITE': '1', 'KICAD_ROUTE_STATE': str(layout['state']),
             'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_OPTIONAL_LOCKS': '0',
-            'GIT_CEILING_DIRECTORIES': f'{layout["candidate"]}:{work}'}
+            'GIT_CEILING_DIRECTORIES': f'{layout["candidate"]}:{staged_root(layout)}:{work}'}
 
 
 def expected_settings(request, rule_floor, pairs=None, reported=None):
@@ -2525,7 +2568,7 @@ def _project_with_sibling_links(root, project, siblings, candidate_root):
     """The names of the links beside the real project directory in root, or None
     unless root holds that directory and only the links the pinned
     copy_project/make_snapshot place for ${KIPRJMOD}/../<dir> library paths: named
-    for a top-level input directory, reading literally <candidate root>/<name>.
+    for a top-level input directory, reading literally <staged input root>/<name>.
     The links are read, never followed."""
     entries = {p.name: p for p in root.iterdir()}
     found = entries.pop(project, None)
@@ -2563,7 +2606,7 @@ def bind_candidate(request, layout, run_dir, result, attempt, inputs):
     links = []
     for label, root in (('candidate', run_dir / 'candidate'), ('reference', run_dir / 'reference')):
         names = None if root.is_symlink() or not root.is_dir() else _project_with_sibling_links(
-            root, cand_dir.name, siblings, layout['candidate'])
+            root, cand_dir.name, siblings, staged_root(layout))
         if names is None:
             problems.append(f'{label}/ must hold exactly the project directory and its sibling links')
             return problems, None, {}, {}
@@ -2788,7 +2831,7 @@ def attempt(request, layout, cancel=None):
     except (OSError, ValueError) as exc:
         inputs_tree, problems = {}, [f'candidate inputs unreadable: {exc}']
     inputs = files_of(inputs_tree)
-    report['inputs'] = {'files': inputs, 'sha256': canonical_identity(inputs_tree)}
+    report['inputs'] = {'files': inputs, 'sha256': canonical_identity(inputs_tree), 'staged': None}
     if links_of(inputs_tree):
         problems.append('candidate inputs contain links or special files')
     project = request['project']
@@ -2824,6 +2867,16 @@ def attempt(request, layout, cancel=None):
     if not all(p['refused'] for p in report['state_write_probe']):
         problems.append('the tool state or checkout is writable from the sandbox')
     report['identity_before'] = _identities(request, layout, generation)
+    if not problems:
+        # The router reads a staged copy of the verified input, never the mount itself.
+        try:
+            staged = stage_original(candidate_root, inputs_tree, staged_root(layout))
+        except (OSError, ValueError) as exc:
+            problems.append(f'cannot stage the original input: {exc}')
+        else:
+            report['inputs']['staged'] = staged_record(request, layout, staged)
+            if staged != inputs_tree:
+                problems.append('the staged original differs from the captured input')
     if problems:
         report['semantics'] = {'classification': 'not_run', 'reasons': problems, 'exit_code': None}
         experiment = experiment_grade(request, None, routing / 'attempt')
@@ -2877,6 +2930,12 @@ def attempt(request, layout, cancel=None):
         violations.append('tool code or state changed during the attempt')
     if after_inputs != inputs_tree:
         violations.append('candidate inputs changed during the attempt')
+    try:
+        after_staged = tree(staged_root(layout))
+    except (OSError, ValueError):
+        after_staged = None
+    if after_staged != inputs_tree:
+        violations.append('the staged original changed during the attempt')
     if 'experiment_policy' in request and (
             not policy_kept or policy_file.read_bytes() != canonical_json(request['experiment_policy']).encode()):
         violations.append('experiment policy file changed during the attempt')

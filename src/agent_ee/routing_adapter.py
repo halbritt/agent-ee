@@ -371,6 +371,7 @@ def _verify(run, report, inputs, receipt, layout):
     if sem['exit_code'] != (process['exit_code'] if process is not None else None):
         raise ValueError('reported router exit differs from the observed process exit')
     _tool_claims(report, request, expected, ran=process is not None)
+    _staged(routing, report, request, expected, ran=process is not None)
     if report['tool_version'] != attempt.TOOL_VERSION:
         raise ValueError('routing tool version is not the pinned unknown')
     if report['reproducibility'] != attempt.REPRODUCIBILITY[request['backend']]:
@@ -533,6 +534,39 @@ def _tool_claims(report, request, layout, *, ran):
         raise ValueError('router argv, environment or timeout differ from the fixed adapter values')
     if report['identity_after'] is None or report['discovery'] is None:
         raise ValueError('routing attempt ran without its after-identities or discovery')
+
+
+def _staged(routing, report, request, layout, *, ran):
+    """The staged original the router read as --dir (AGENTEE-442): at the adapter's
+    staging path, its per-file manifest and tree identity the declared input's, and,
+    where its bytes are still present (the attempt's own /work), those bytes."""
+    inputs = report['inputs']
+    if not isinstance(inputs, dict) or set(inputs) != {'files', 'sha256', 'staged'}:
+        raise ValueError('routing attempt inputs have unknown or missing fields')
+    staged = inputs['staged']
+    if staged is None:
+        if ran:
+            raise ValueError('routing attempt ran without a staged original')
+        return
+    if (not isinstance(staged, dict) or set(staged) != {'path', 'root', 'files', 'sha256'} or
+            staged['path'] != str(attempt.staged_dir(request, layout)) or
+            staged['root'] != str(attempt.staged_root(layout))):
+        raise ValueError('staged original is not at the adapter staging path')
+    # Staging runs only after every other precondition held, so a staged attempt that
+    # did not run is one whose copy differed from the input.
+    if (staged['files'] == inputs['files'] and staged['sha256'] == inputs['sha256']) != ran:
+        raise ValueError('the staged original differs from the declared input' if ran else
+                         'a not-run attempt records a staged original equal to its input')
+    path = routing / attempt.ORIGINAL_STAGE
+    if os.path.lexists(path):
+        entries = attempt.tree(path)
+        sem = report['semantics']
+        # Only a contradiction that names the change may sit over changed staged bytes.
+        if ((attempt.files_of(entries) != staged['files'] or
+             attempt.canonical_identity(entries) != staged['sha256']) and
+                (sem['classification'] != 'contradiction' or
+                 'the staged original changed during the attempt' not in sem['reasons'])):
+            raise ValueError('staged original bytes differ from the adapter report')
 
 
 def _attempt_dir(found, request):
