@@ -225,7 +225,8 @@ A second corpus seeds 16 review-derived defect classes into scratch copies of th
 hierarchical fome-mc board; its expectations and reports live in a private
 Git-backed store until the owner decides on publication (AGENTEE-118). Sources
 and generated designs remain outside the repository. The public corpus records a
-verified dependency closure, deterministic control false-alarm bounds and native
+verified dependency closure, deterministic control false-alarm bounds, a
+separate agent-drafted judgement of the remaining control records and native
 rerun comparisons. The closure audit exits 1 whenever tool or font licence
 evidence is unverified; owner review and any publication remain outstanding.
 
