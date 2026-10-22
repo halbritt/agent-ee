@@ -112,7 +112,11 @@ def validate_campaign(scope):
 
 
 def adopted(root, state, number):
-    """Validated helper artifact bundle of this turn, or None if no helper ran."""
+    """Validated helper artifact bundle of this turn, or None if no helper ran.
+
+    Every receipt is read only through the coordinator's anchored stage-receipt
+    index (state['stage_receipts']); placer receipts also need placement_records.
+    """
     from .placement_adapter import STEP, qualify_receipt
     from .stage_done import _receipts
     from .stage_receipts import validate_receipt

@@ -378,7 +378,10 @@ unchanged, so unmeasured pre-existing collisions keep baseline treatment
 
 The receipt uses the existing placement evidence envelope and adds
 `producer: agent-ee-routed-artwork`, the scope proof and the original routed
-board artifact. Carry adoption authenticates the entire tool snapshot against
+board artifact. Carry adoption reads artwork receipts only through the
+coordinator's anchored stage-receipt index (`stage_receipts` in campaign state):
+an unindexed receipt is ignored, and an unanchored, re-anchored or extended index
+or a receipt substituted after indexing refuses (AGENTEE-408). It authenticates the entire tool snapshot against
 the campaign package pin, verifies the exact launcher invocation and recomputes
 the proof from retained receipt inputs and output. The coordinator captures this
 bundle under `placement-evidence`, appending its ordered provenance link.
