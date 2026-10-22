@@ -1376,6 +1376,27 @@ from the footprint a defect, and an unmapped one unknown. See
 [component height](board-envelope.md#component-height) for parameter contracts,
 source applicability, model transform qualification and AGENTEE-209.
 
+`tht-thickness-fit/1` (AGENTEE-448) adds a captured immutable `thickness_fit`
+declaration and supplies `envelope:tht-thickness-fit/1`. It grades each declared
+through-hole part against the envelope's NOMINAL board thickness. Each part
+cites the manufacturer's recommended nominal thickness, and may add explicit hard
+limits or a wider documented fit range. Two tolerances are involved and are
+never conflated. The fabricator's finished-thickness tolerance
+(`finished_thickness_tolerance`) bounds the board the fab delivers and is never
+read as component fit. The component-side fit band uses, per side, the explicit
+hard limit if there is one. Otherwise it uses the default +/-10% screening band
+around the recommendation (inclusive, exact), widened on that side by a
+documented fit range that reaches further. A documented range never narrows the
+band; only an explicit hard limit can. Inside passes; the default band
+reports `screened (default +/-10% component fit)`. Outside an explicit hard
+limit is a defect. Outside the widened screening band is
+advisory: unknown, needing feature geometry or evidence, never a rejection. A
+mix of defects and unknowns reports unknown, keeps every defect in
+`defects` and names each defect in the summary before the unknown reasons. An uncited declaration is refused. A part not bound to one installed PTH footprint
+of the declared part number is unknown. Undeclared parts and every other
+criterion are unchanged. See
+[through-hole thickness fit](board-envelope.md#through-hole-thickness-fit).
+
 ## Assembly and test access
 
 `dfa_dft` evaluates one declared criterion per check over the sandboxed

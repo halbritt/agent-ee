@@ -271,6 +271,10 @@ def describe_check(spec, *, check_specs, files, scope, inputs=None):
                         from .digikey_record import evidence_inputs
                         for path in evidence_inputs(params['digikey_heights'], inputs):
                             captured(path, immutable=True)
+            if params['criterion'] == 'tht-thickness-fit/1' and inputs is not None:
+                # A malformed or uncited declaration is refused at capture, not graded.
+                from .tht_thickness_fit import declarations
+                declarations((Path(inputs) / params['thickness_fit']).read_bytes())
             if params['criterion'] == 'stackup/1':
                 if inputs is None:
                     raise ValueError('stackup copper_weight_oz needs captured source-verified profile inputs')

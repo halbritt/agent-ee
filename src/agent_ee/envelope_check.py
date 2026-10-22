@@ -16,7 +16,9 @@ from .placement import qualified_polygons
 
 CRITERIA = {'outline/1': 'outline', 'layers/1': 'layer_count', 'stackup/1': 'stackup',
             'mounting-holes/1': 'mounting_holes', 'keepouts/1': 'keepouts',
-            'component-height/1': 'max_component_height_mm'}
+            'component-height/1': 'max_component_height_mm',
+            # A part-side declaration, not an envelope field: it binds no envelope obligation.
+            'tht-thickness-fit/1': 'tht_thickness_fit'}
 
 
 def parameters(params):
@@ -29,6 +31,10 @@ def parameters(params):
         from .component_height import parameters as height_parameters
         paths = height_parameters(params)
         return [_path(params['envelope'], 'envelope'), *paths]
+    if params['criterion'] == 'tht-thickness-fit/1':
+        if set(params) != {'criterion', 'envelope', 'thickness_fit'}:
+            raise ValueError('tht-thickness-fit/1 params require criterion, envelope and thickness_fit')
+        return [_path(params['envelope'], 'envelope'), _path(params['thickness_fit'], 'thickness_fit')]
     if set(params) != {'criterion', 'envelope'} | ({'id'} if selected else set()):
         raise ValueError('board_envelope params require criterion, envelope and id for holes/keepouts only')
     if selected:
@@ -331,6 +337,15 @@ def check_board_envelope(ctx):
     if criterion == 'component-height/1':
         from .component_height import evaluate
         result = evaluate(ctx, record, native)
+    elif criterion == 'tht-thickness-fit/1':
+        from . import tht_thickness_fit
+        from .part_binding import parse_board_bindings
+        try:
+            parts = tht_thickness_fit.declarations(_captured(ctx, ctx.params['thickness_fit']))
+            bindings = parse_board_bindings(raw, defer_param_errors=True)
+        except (ValueError, KeyError, TypeError) as exc:
+            raise CheckError('malformed', f'thickness fit declaration refused: {exc}') from exc
+        result = tht_thickness_fit.evaluate(parts, record, native, bindings)
     elif criterion in ('mounting-holes/1', 'keepouts/1'):
         try:
             item = selected_item(record, ctx.params)
@@ -382,7 +397,10 @@ def check_board_envelope(ctx):
     ctx.evidence('envelope-judgment.json')
     ctx.result['details'].update(judgment)
     if result['status'] == 'unknown':
-        raise CheckError('unsupported', '; '.join(result['unknown']))
+        # Fail closed, but never mask a known defect behind the unknown reasons.
+        known = (f"{len(result['defects'])} exact envelope mismatch(es): " + '; '.join(result['defects'])
+                 + '; unknown: ') if result['defects'] else ''
+        raise CheckError('unsupported', known + '; '.join(result['unknown']))
     label = criterion + (' ' + ctx.params['id'] if 'id' in ctx.params else '')
     ctx.result.update(execution='ok', outcome=result['status'],
                       summary=f"{label}: {len(result['defects'])} exact envelope mismatch(es)")
