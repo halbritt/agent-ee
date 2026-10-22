@@ -83,11 +83,25 @@ and brackets `( ) [ ] { }` followed by another URI, UNC host (`\\host` or
 `//host`) or drive path (when the cluster holds `,` or `;`, any absolute path),
 so a later URI's authority or UNC host never becomes an earlier path's basename:
 `FILE:///home/a/m.step,FILE://host/` gives `<redacted>/m.step,<redacted>` and
-`/home/a/m.step (\\host)` gives `<redacted>/m.step (<redacted>)`. A host ends at
-the same boundaries. Ambiguous text fails closed: `\\` starts a UNC host even
-when glued to a word (`m.step\\host` gives `m.step<redacted>`), and a path with
-a doubled separator after its root (`/home/a//host`, `/a/m.step\\host`) keeps
-no basename. Redaction is idempotent.
+`/home/a/m.step (\\host)` gives `<redacted>/m.step (<redacted>)`. A host (a
+file URI authority or UNC host) ends at a slash, whitespace, a stop or such a
+boundary cluster, and otherwise runs through brackets and punctuation, so a
+bracketed IP literal or a grouped host name is removed whole:
+`FILE://[fd00::1]/share/m.step` and `\\host(1)\share\m.step` give
+`<redacted>/m.step`, and `file://[fd00::1]` or `(\\host)` give `<redacted>` and
+`(<redacted>)` (unmatched closing brackets and trailing punctuation of a pathless
+host stay outside it). When whitespace, a quote or a group interrupts a host and
+the next word continues it with a backslash (or a slash after a quote or closing
+bracket), the whole operand is removed with no basename:
+`\\host "user"\share\m.step` gives `<redacted>`. A single backslash root
+(`\share\m.step`) is a path like a POSIX root. Ambiguous text fails closed:
+`\\` starts a UNC host even when glued to a word (`m.step\\host` gives
+`m.step<redacted>`), and a path with a doubled separator after its root
+(`/home/a//host`, `/a/m.step\\host`) keeps no basename. Redaction is idempotent.
+Tests compose every operand kind (file URIs in every casing, bare drives with
+either slash, POSIX, UNC, IP-literal authorities and interrupted UNC hosts) as
+first, second and third operand inside groups and quotes, and check that the
+property check itself fails for deliberately leaky redactors.
 Other URLs and KiCad variables such as `${KIPRJMOD}/m.step` are kept. The
 server applies the same redaction to `manifest.json`, `viewer.json` and page
 warnings of older bundles on the way out.

@@ -32,10 +32,15 @@ _VIEWS = ("top", "bottom", "isometric")
 #   always removed and never kept as a basename; the path after it gives the
 #   basename, and an authority-only, empty or root path leaves just <redacted>;
 # - another URL (scheme://..., kept as is) and KiCad variables (${VAR}/..., kept);
-# - an absolute path: a POSIX root, a drive letter (either slash) or a UNC prefix,
+# - an absolute path: a POSIX or single backslash root, a drive letter (either
+#   slash) or a UNC prefix,
 #   whose host (\\host or //host) is never a basename either.
-# A host ends at a slash, whitespace, delimiter or bracket. A path runs through spaces,
-# commas and brackets (directory names contain them); a URL ends at whitespace.
+# A host ends at a slash, whitespace, a stop or a component boundary (below) and
+# otherwise runs through brackets and punctuation: [fd00::1] and host(1) are hosts
+# whole. A host interrupted by whitespace, a quote or a group and continued by a
+# backslash word (\\host "user"\share) is removed whole, without a basename.
+# A path runs through spaces, commas and brackets (directory names contain them);
+# a URL ends at whitespace.
 # Both stop at a quote, < > | or a newline, at any "file:" URI, and at a component
 # boundary: a cluster of whitespace, "," ";" and brackets ( ) [ ] { } followed by
 # another URI, UNC host or drive path (when the cluster holds "," or ";", also any
@@ -50,6 +55,8 @@ _DRIVE = re.compile(r"[A-Za-z]:[\\/]")
 _MARK = "<redacted>"
 _CLUSTER = re.compile(r"[\s,;()\[\]{}]*")
 _BOUNDARY = ",;()[]{}"
+_CLOSE = {")": "(", "]": "[", "}": "{"}
+_SKIP = re.compile(r"[\s'\"<>|,;()\[\]{}]*")
 _COUNTS = ("resolved", "missing", "unresolved", "disabled", "no_model")
 _ID = r"[a-f0-9]{12}-[a-f0-9]{12}"
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -104,6 +111,8 @@ def _path(text, root):
     end = root
     if end < len(text) and not text[end].isspace() and text[end] not in _BOUNDARY:
         end = _scan(text, end)
+        while text[end - 1].isspace():
+            end -= 1  # whitespace before a quote or stop is not part of the path
     if re.search(r"[\\/]{2}", text[root - 1:end].rstrip("/\\ \t")):
         return end, _MARK  # a/b//c or a\\host: ambiguous, so no basename
     parts = [p for p in re.split(r"[\\/]", text[:end].rstrip("/\\ \t")[root - 1:]) if p]
@@ -112,22 +121,79 @@ def _path(text, root):
     return end, _MARK + "/" + parts[-1] if parts else _MARK
 
 
+def _trim(text, start, end):
+    """End of the pathless host text[start:end] without trailing whitespace, , ; : =, openers or unmatched closers.
+
+    (\\\\host) and (file://host) keep their ")"; \\\\host(1) and file://[::1] are hosts whole.
+    """
+    opened, unmatched = {}, set()
+    for k in range(start, end):
+        if text[k] in "([{":
+            opened[text[k]] = opened.get(text[k], 0) + 1
+        elif text[k] in _CLOSE:
+            if opened.get(_CLOSE[text[k]]):
+                opened[_CLOSE[text[k]]] -= 1
+            else:
+                unmatched.add(k)
+    while end > start and (text[end - 1] in ",;:=([{" or text[end - 1].isspace() or end - 1 in unmatched):
+        end -= 1
+    return end
+
+
+def _continuation(text, i):
+    """End of the rest of a host operand interrupted at i, or None when none follows.
+
+    A quote, whitespace or grouping run, then a word holding a backslash (or a slash
+    right after a quote or closing bracket) continues the same UNC/authority path:
+    \\\\host "user"\\share\\m.step. It is removed whole, with no basename.
+    """
+    p = _SKIP.match(text, i).end()
+    if p >= len(text) or _token_at(text, p, True):
+        return None  # nothing follows, or a new path or URI of its own
+    for q in range(p, len(text)):
+        if text[q].isspace() or _token_at(text, q, False):
+            return None  # the word ends, or a further URI or UNC host starts in it
+        if text[q] == "\\" or (text[q] == "/" and text[q - 1] in "\"')]}"):
+            return _trim(text, i, _scan(text, q + 1))
+    return None
+
+
 def _host(text, i):
     """Return (end, replacement) for a host (file URI authority or UNC host) starting at i.
 
     The host is removed and never becomes a basename; only a path after it can.
-    Another double slash right after a host starts a further host.
+    It runs through brackets, "," and ";" (an IP literal [fd00::1], host(1)) up to a
+    slash, whitespace, a stop or a component boundary. Another double slash right
+    after a host starts a further host.
     """
     while True:
-        while i < len(text) and text[i] not in "/\\" and text[i] not in _BOUNDARY and text[i] not in _STOP \
+        start, opened = i, []
+        while i < len(text) and text[i] not in "/\\" and text[i] not in _STOP \
                 and not text[i].isspace() and not _file_at(text, i):
+            if text[i] in _BOUNDARY and not (opened and _CLOSE.get(text[i]) == opened[-1]):
+                j = _CLUSTER.match(text, i + 1).end()
+                if _token_at(text, j, any(c in ",;" for c in text[i:j])):
+                    break
+                while i < j and not text[i].isspace():  # the cluster is part of the host
+                    if opened and _CLOSE.get(text[i]) == opened[-1]:
+                        opened.pop()
+                    elif text[i] in "([{":
+                        opened.append(text[i])
+                    i += 1
+                continue
+            if opened and _CLOSE.get(text[i]) == opened[-1]:
+                opened.pop()  # closes a bracket of the host itself: [fd00::1]
             i += 1
         if not _double(text, i):
             break
         i += 2
     if i < len(text) and text[i] in "/\\":
         return _path(text, i + 1)
-    return i, _MARK
+    if i < len(text) and (text[i].isspace() or text[i] in _STOP):
+        end = _continuation(text, i)
+        if end is not None:
+            return end, _MARK
+    return _trim(text, start, i), _MARK
 
 
 def _token(text, i):
@@ -145,8 +211,9 @@ def _token(text, i):
         return None  # ${VAR}/x, and/or, v1.2/3: not host paths
     if _double(text, i):
         return _host(text, i + 2)
-    if text[i] == "/":
-        return _path(text, i + 1)
+    if text[i] == "/" or (text[i] == "\\" and i + 1 < len(text) and not text[i + 1].isspace()
+                          and text[i + 1] not in _STOP):
+        return _path(text, i + 1)  # a POSIX root, or a Windows root-relative \share\m.step
     if _DRIVE.match(text, i):
         return _path(text, i + 3)
     return None

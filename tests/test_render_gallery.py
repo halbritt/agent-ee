@@ -88,27 +88,98 @@ def later_operand_combinations():
                            first_expected + separator + second_expected + tail + third_expected + ')')
 
 
+# Review 433h H1: a bracketed IP-literal authority, and a UNC host interrupted by a
+# group, bracket or quote with its share continuing after it. These were published as
+# <redacted>[fd00:1234::1]<redacted>/m.step and <redacted>(1)\\private-share\\m.step.
+H1_EXAMPLES = {'FILE://[fd00:1234::1]/private-share/m.step': '<redacted>/m.step',
+               'fIlE://[fd00:1234::1]/': '<redacted>',
+               'file://[fd00:1234::1]': '<redacted>',
+               '\\\\private-host(1)\\private-share\\m.step': '<redacted>/m.step',
+               '\\\\private-host[1]\\private-share\\m.step': '<redacted>/m.step',
+               '\\\\private-host "private-user"\\private-share\\m.step': '<redacted>'}
+H1_URI_FORMS = {'ipv6': ('{}://[fd00:1234::1]/share-hidden/v6.step', '<redacted>/v6.step'),
+                'ipv6-root': ('{}://[fd00:1234::1]/', '<redacted>'),
+                'ipv6-empty': ('{}://[fd00:1234::1]', '<redacted>'),
+                'ipv6-user': ('{}://user-hidden@[fd00:1234::1]:8/share-hidden/v6u.step', '<redacted>/v6u.step')}
+H1_UNC_FORMS = {'unc-group': ('\\\\unc-host-hidden(1)\\share-hidden\\grp.step', '<redacted>/grp.step'),
+                'unc-bracket': ('\\\\unc-host-hidden[1]\\share-hidden\\brk.step', '<redacted>/brk.step'),
+                'unc-quoted': ('\\\\unc-host-hidden "user-hidden"\\share-hidden\\q.step', '<redacted>'),
+                'unc-spaced': ('\\\\unc-host-hidden (user-hidden)\\share-hidden\\s.step', '<redacted>')}
+# Review 433h H2: every operand kind, both drive separators included, as the first,
+# second and later operand inside balanced groups and quotes, with punctuation and
+# whitespace between them.
+OPERANDS = ([(t.format(c), e) for c in CASINGS for t, e in (*URI_FORMS.values(), *H1_URI_FORMS.values())]
+            + list(PLAIN_FORMS.values()) + list(UNC_FORMS.values()) + list(H1_UNC_FORMS.values())
+            + [('C:/Users/alice-hidden/fwd.step', '<redacted>/fwd.step'), ('D:/', '<redacted>'),
+               ('d:\\Users\\alice-hidden\\low.step', '<redacted>/low.step'),
+               ('/home/alice-hidden/posix.step', '<redacted>/posix.step')])
+WRAPPERS = ('{}', '({})', '[{}]', '{{{}}}', '"{}"', "'{}'", '(({}))', '["{}"]', '("{}")')
+OPERAND_SEPARATORS = (', ', '; ', ',', ';', ' ,\t', '; (', ',[')
+LOOSE_SEPARATORS = ('', ' ', '\t', '\n', ' and ', '=', ':', ' | ', ' > ', ' -- ', ')(', '][', '} {')
+
+
+def operand_triples(separators=OPERAND_SEPARATORS):
+    """Yield (operands, expected, wrappers, separators) with every operand first, every
+    operand second and a rotating third."""
+    k = 0
+    for first in OPERANDS:
+        for second in OPERANDS:
+            for separator in separators:
+                third = OPERANDS[k % len(OPERANDS)]
+                wrappers = [WRAPPERS[(k + n) % len(WRAPPERS)] for n in (0, 1, 2)]
+                k += 1
+                triple = (first, second, third)
+                yield ([t for t, _ in triple], [e for _, e in triple], wrappers,
+                       (separator, separators[k % len(separators)]))
+
+
+def compose(operands, wrappers, separators):
+    return (wrappers[0].format(operands[0]) + separators[0] + wrappers[1].format(operands[1])
+            + separators[1] + wrappers[2].format(operands[2]))
+
+
+def operand_combinations(separators=OPERAND_SEPARATORS):
+    """Yield (text, expected) for every operand triple."""
+    for operands, expected, wrappers, between in operand_triples(separators):
+        yield compose(operands, wrappers, between), compose(expected, wrappers, between)
+
+
+def surface_combinations():
+    """A compact set with every operand as the first, second and third, for the surface tests."""
+    combinations = list(H1_EXAMPLES.items())
+    for n, (text, expected) in enumerate(OPERANDS):
+        others = [OPERANDS[(n + 7) % len(OPERANDS)], OPERANDS[(n + 13) % len(OPERANDS)]]
+        for position in range(3):
+            parts = others[:position] + [(text, expected)] + others[position:]
+            separator, wrapper = OPERAND_SEPARATORS[n % len(OPERAND_SEPARATORS)], WRAPPERS[(n + position) % len(WRAPPERS)]
+            combinations.append((separator.join(wrapper.format(t) for t, _ in parts),
+                                 separator.join(wrapper.format(e) for _, e in parts)))
+    return combinations
+
+
 def assert_no_uri_leak(test, body, where):
-    for leak in ('hidden', 'file:', 'C:', '\\\\'):
+    for leak in ('hidden', 'file:', 'C:', '\\\\', 'fd00', 'private-'):
         test.assertNotIn(leak, body.lower() if leak == 'file:' else body, where)
 
 
-def assert_combinations_leak_free(test, redactor, seed=433, rounds=20000):
+def assert_combinations_leak_free(test, redactor, seed=433, rounds=20000, stride=1):
     """Every combination and seeded random sequence redacts without a host marker, idempotently."""
-    for text, _ in [*uri_combinations(), *later_operand_combinations()]:
+    combinations = [*uri_combinations(), *later_operand_combinations(), *H1_EXAMPLES.items(),
+                    *operand_combinations(), *operand_combinations(LOOSE_SEPARATORS)]
+    for text, _ in combinations[::stride]:
         assert_no_uri_leak(test, redactor(text), text)
         test.assertEqual(redactor(redactor(text)), redactor(text), text)
-    rng, forms = random.Random(seed), [t for t, _ in URI_FORMS.values()]
-    plain = [t for t, _ in (*PLAIN_FORMS.values(), *UNC_FORMS.values())]
-    separators = SEPARATORS + LATER_SEPARATORS + ('<', '(', '[', '=', ':', ' ; ', '\n')
+    rng, forms = random.Random(seed), [t for t, _ in (*URI_FORMS.values(), *H1_URI_FORMS.values())]
+    plain = [t for t, _ in OPERANDS if not t.lower().startswith('file')]
+    separators = SEPARATORS + LATER_SEPARATORS + LOOSE_SEPARATORS + ('<', '(', '[', ' ; ')
     boundaries = (' ', '\t', '\n', ',', ';', ', ', '"', "'", ')', ']', '>', '<', '|') + LATER_SEPARATORS
     for _ in range(rounds):
         parts = []
         for _ in range(rng.randint(1, 5)):
-            if rng.random() < .6:
+            if rng.random() < .5:
                 parts += [rng.choice(separators), rng.choice(forms).format(rng.choice(CASINGS))]
             else:  # a plain path or UNC host is a new token only after a boundary
-                parts += [rng.choice(boundaries), rng.choice(plain)]
+                parts += [rng.choice(boundaries), rng.choice(WRAPPERS).format(rng.choice(plain))]
         text = ''.join(parts + [rng.choice(separators)])
         assert_no_uri_leak(test, redactor(text), text)
         test.assertEqual(redactor(redactor(text)), redactor(text), text)
@@ -673,7 +744,14 @@ class GalleryTests(unittest.TestCase):
         for text, expected in later:
             self.assertEqual(redact(text), expected, text)
             self.assertEqual(redact(expected), expected, expected)
-        # Seeded random sequences of the same forms between boundary characters.
+        # Review 433h H2: every operand kind first, second and third, grouped and quoted.
+        operands = list(operand_combinations())
+        self.assertEqual(len(operands), len(OPERANDS) ** 2 * len(OPERAND_SEPARATORS))
+        for text, expected in operands:
+            self.assertEqual(redact(text), expected, text)
+            self.assertEqual(redact(expected), expected, expected)
+        # Seeded random sequences of the same forms between boundary characters, and
+        # every operand pair joined by loose separators (paths may then merge).
         assert_combinations_leak_free(self, redact)
         for kept in ('HTTP://example.org/a', 'https://example.org/b,c', '${KIPRJMOD}/m.step',
                      'see https://x.org/a ${KICAD8_3DMODEL_DIR}/m.step'):
@@ -699,6 +777,37 @@ class GalleryTests(unittest.TestCase):
             self.assertEqual(redact(text), expected, text)
             self.assertEqual(redact(expected), expected, expected)
 
+    def test_bracketed_authority_and_interrupted_unc_host_are_removed_whole(self):
+        # Review 433h H1: the six published leaks, then grouping kept around hosts.
+        cases = {**H1_EXAMPLES,
+                 '(file://[fd00:1234::1])': '(<redacted>)', '[FILE://[fd00:1234::1]/]': '[<redacted>]',
+                 'file://user@[fd00::1]:8/share/m.step': '<redacted>/m.step',
+                 '\\\\private-host "private-user"/private-share/m.step': '<redacted>',
+                 '\\\\private-host (private-user)\\private-share\\m.step': '<redacted>',
+                 'file://private-host "private-user"\\private-share\\m.step': '<redacted>',
+                 '((\\\\private-host "private-user"\\private-share\\m.step)), "x"': '((<redacted>)), "x"',
+                 '\\\\private-host "C:\\a\\m.step"': '<redacted> "<redacted>/m.step"',
+                 '\\\\private-host|\\private-share\\m.step': '<redacted>|<redacted>/m.step',
+                 '\\\\private-host and/or m.step': '<redacted> and/or m.step',
+                 '\\\\private-host, see': '<redacted>, see', '(\\\\private-host(1))': '(<redacted>)'}
+        for text, expected in cases.items():
+            self.assertEqual(redact(text), expected, text)
+            self.assertEqual(redact(expected), expected, expected)
+
+    def test_property_generator_covers_every_operand_position(self):
+        """Review 433h H2: bare drives (both separators), POSIX and UNC operands at every position."""
+        triples = [t for t, *_ in operand_triples()]
+        kinds = {'forward-drive': r'(?<![/\\])C:/Users', 'back-drive': r'(?<![/\\])[Cd]:\\Users',
+                 'posix': r'(?<![/\\:])/home/', 'unc': r'(?<![:\\])\\\\[a-z]',
+                 'ipv6': r'(?i)file://(user-hidden@)?\[', 'interrupted-unc': r'hidden[( ]'}
+        for kind, pattern in kinds.items():
+            for position in range(3):
+                found = [t for t in triples if re.search(pattern, t[position])]
+                self.assertTrue(found, (kind, position))
+        surface = [t for t, _ in surface_combinations()]
+        for kind, pattern in kinds.items():
+            self.assertTrue([t for t in surface if re.search(pattern, t)], kind)
+
     def test_property_regression_detects_a_leaky_redactor(self):
         """Negative control: the property check itself fails on redactors that leak hosts."""
         def unwrapped(text):  # 433g H1: a UNC prefix after a bracket is not seen
@@ -710,13 +819,26 @@ class GalleryTests(unittest.TestCase):
         def casing(text):  # an upper-case scheme is not recognized
             return redact(text.replace('FILE:', 'FILE'))
 
-        for leaky in (lambda text: text, unwrapped, braces_only, casing):
+        def misses_forward_drive(text):  # 433h H2: a bare C:/ operand is not seen
+            return text if re.search(r'(?<![/\\])[A-Za-z]:/', text) else redact(text)
+
+        def drive_letter(text):  # 433h H2: only the letter of a bare C:/ drive survives
+            return redact(re.sub(r'(?<![/\\A-Za-z])([A-Za-z]):/', '\\1\x01/', text)).replace('\x01', ':')
+
+        def split_authority(text):  # 433h H1: "[" ends a file URI authority
+            return redact(re.sub(r'(?i)file://(?=[^/\s]*\[)', '<redacted>', text))
+
+        def interrupted_unc(text):  # 433h H1: the share after a quoted or grouped user is prose
+            return redact(re.sub(r'\\\\[\w.-]+(?= ?[("])', '<redacted>', text))
+
+        for leaky in (lambda text: text, unwrapped, braces_only, casing, misses_forward_drive,
+                      drive_letter, split_authority, interrupted_unc):
             with self.assertRaisesRegex(AssertionError, 'unexpectedly found in'):
                 assert_combinations_leak_free(self, leaky, rounds=200)
         assert_combinations_leak_free(self, redact, seed=1, rounds=200)
 
     def test_uri_combinations_are_redacted_on_every_core_surface(self):
-        combinations = list(uri_combinations()) + list(later_operand_combinations())[::5]
+        combinations = surface_combinations() + list(uri_combinations()) + list(later_operand_combinations())[::5]
         texts, expected = [t for t, _ in combinations], [e for _, e in combinations]
         self.manifest['model_coverage']['board']['path'] = texts[0]
         self.manifest['model_coverage']['extra'] = dict(combinations)
@@ -1144,8 +1266,32 @@ class DiagnosticSupplementTests(unittest.TestCase):
                 assert_no_uri_leak(self, body, where + separator)
             self.assertEqual(json.loads(served)['source_packet']['name'], '<redacted>/m.step' + separator + '<redacted>')
 
+    def test_real_packet_names_with_ip_literal_or_interrupted_unc_host_are_redacted(self):
+        # Review 433h H1 on the source field. A file name cannot hold "/", so the three
+        # IP-literal authorities use the backslash file URI spelling.
+        names = {k: v for k, v in H1_EXAMPLES.items() if '/' not in k}
+        names.update({'FILE:\\\\[fd00:1234::1]\\private-share\\m.step': '<redacted>/m.step',
+                      'fIlE:\\\\[fd00:1234::1]\\': '<redacted>', 'file:\\\\[fd00:1234::1]': '<redacted>'})
+        self.assertEqual(len(names), 6)
+        for n, (name, expected) in enumerate(names.items()):
+            directory = self.base / ('packet-' + str(n))
+            directory.mkdir()
+            self.packet = directory / name
+            self.packet.write_text('diagnostic ' + str(n))
+            identifier = self.add()
+            stored = [(self.root/'diagnostics'/identifier/'manifest.json').read_text(),
+                      (self.root/'diagnostics.json').read_text()]
+            base = self.serving()
+            served = [self.get(base + '/diagnostics/' + identifier + suffix) for suffix in ('/manifest.json', '/index.html')]
+            served.append(self.get(base))
+            for where, body in zip(('stored manifest', 'stored listing', 'served manifest', 'served html', 'listing'),
+                                   stored + served):
+                assert_no_uri_leak(self, body, where + ' ' + name)
+            self.assertEqual(json.loads(served[0])['source_packet']['name'], expected)
+            self.assertEqual(json.loads(stored[0])['source_packet']['name'], expected)
+
     def test_uri_combinations_are_redacted_on_every_supplement_surface(self):
-        combinations = list(uri_combinations()) + list(later_operand_combinations())[::5]
+        combinations = surface_combinations() + list(uri_combinations()) + list(later_operand_combinations())[::5]
         texts = [t for t, _ in combinations]
         joined, expected = '|'.join(texts), '|'.join(e for _, e in combinations)
         identifier = self.add(label=joined, stage=' '.join(texts[::7]))
