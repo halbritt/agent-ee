@@ -207,6 +207,19 @@ Build from a clean checkout:
 docker build -t agent-ee:local .
 ```
 
+## Init and reaping
+
+The image's `ENTRYPOINT` is `/usr/bin/tini --` (Ubuntu `tini` 0.19.0-1, pinned
+and held like the other packages). As PID 1 it reaps orphaned descendants,
+forwards `SIGTERM`/`SIGINT` to the command and returns the command's exit
+status (`128+N` for a command killed by signal `N`). Without it, a long-lived
+parent such as `strict_suite.py` leaves every orphaned Bubblewrap process as a
+zombie (about 20,960 accumulated on one gate host). `docker run --init` is not
+used because it bind-mounts `/usr/sbin/docker-init`, a `/usr` submount that the
+stage-receipt refusal (`mount_source_submount`) correctly rejects; the refusal
+is unchanged. `tests/test_ci_init.py` runs the real `tini` against orphaned
+grandchildren, exit codes and signals, and checks the Dockerfile pin.
+
 ## Bubblewrap inside the container
 
 agent-ee keeps its own sandbox inside the container: every native check still
