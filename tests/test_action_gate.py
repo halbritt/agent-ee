@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -12,6 +13,8 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "action_gate.py"
 spec = importlib.util.spec_from_file_location("action_gate", SCRIPT)
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
+
+from agent_ee.findings import collect_findings
 
 
 def check(cid, execution="ok", outcome="pass", summary="native check summary"):
@@ -37,6 +40,12 @@ class ActionGateTests(unittest.TestCase):
             "limitations": ["Checks-only run: independent agent reviews and adjudication not performed."]}
 
     def write(self):
+        # Like the writer: each executed check is retained as checks/<id>.json and its defect becomes a finding.
+        shutil.rmtree(self.run_dir / "checks", ignore_errors=True)
+        (self.run_dir / "checks").mkdir()
+        for record in self.result["checks"]:
+            (self.run_dir / "checks" / f"{record['id']}.json").write_text(json.dumps(record))
+        self.result["findings"] = collect_findings([], self.result["checks"])
         (self.run_dir / "result.json").write_text(json.dumps(self.result))
 
     def gate(self, *args):
@@ -94,6 +103,7 @@ class ActionGateTests(unittest.TestCase):
         for change in ({"error": "ValueError: declared native/requirement input was not captured"},
                        {"state": "interrupted"}, {"state": "running"}, {"finished_utc": None},
                        {"candidate_id": None}):
+            self.write()
             value = dict(self.result, **change)
             (self.run_dir / "result.json").write_text(json.dumps(value))
             self.assertEqual(gate.judge(self.run_dir)["verdict"], "coverage_incomplete", change)
@@ -144,6 +154,102 @@ class ActionGateTests(unittest.TestCase):
         self.write()
         self.assertEqual(self.gate("--expect", "checks_passed")[0], 0)
         self.assertEqual(self.gate("--expect", "check_failed", "--expect-check", "rc-step=defect")[0], 1)
+
+    def test_projection_contradicting_retained_check_evidence_is_invalid(self):
+        self.result["checks"][1] = check("rc-step", outcome="defect", summary="vout_1ms=0.095 V outside 0.62..0.65")
+        self.write()
+        retained = json.loads((self.run_dir / "result.json").read_text())
+        mutations = {
+            "outcome": lambda r: r["checks"][1].update(outcome="pass"),
+            "summary": lambda r: r["checks"][1].update(summary="within limits"),
+            "finding": lambda r: r["findings"][0].update(title="within limits"),
+            "dropped finding": lambda r: r.update(findings=[]),
+            "unretained check": lambda r: r["checks"].append(check("drc")) or r["expected_check_ids"].append("drc"),
+            "unprojected record": lambda r: r["checks"].pop(1) and r["expected_check_ids"].pop(1),
+        }
+        for name, mutate in mutations.items():
+            value = json.loads(json.dumps(retained))
+            mutate(value)
+            (self.run_dir / "result.json").write_text(json.dumps(value))
+            judgment = gate.judge(self.run_dir, verify_exit=0)
+            self.assertEqual(judgment["verdict"], "result_invalid", name)
+            self.assertIn("retained check evidence", judgment["reasons"][0], name)
+            self.assertEqual(self.gate("--verify-exit", "0")[0], 1, name)
+        # An unexecuted placeholder for a check the run never reached needs no retained record.
+        (self.run_dir / "checks" / "erc.json").unlink()
+        retained["checks"][0] = check("erc", execution="not_run", outcome="unknown")
+        (self.run_dir / "result.json").write_text(json.dumps(retained))
+        self.assertEqual(gate.judge(self.run_dir)["verdict"], "coverage_incomplete")
+
+
+class CheckProjectionBindingTests(unittest.TestCase):
+    """Real checks-only runs: verify and the gate bind result.json to the retained checks/<id>.json."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.toolchain import require_toolchain
+        require_toolchain(native=True)
+        from agent_ee.cli import run_review
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.tmp.name)
+        fixtures = SCRIPT.parents[1] / "fixtures" / "rc"
+        for name in ("seeded", "control"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                run_review(fixtures / f"{name}.scope.json", cls.root / name / "run", 1200, checks_only=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def copy(self, name):
+        target = Path(tempfile.mkdtemp(dir=self.root)) / "run"
+        shutil.copytree(self.root / name / "run", target, symlinks=True)
+        return target
+
+    def judged(self, run):
+        from agent_ee.cli import verify
+        try:
+            verify(run)
+        except ValueError as exc:
+            return gate.judge(run, verify_exit=2)["verdict"], str(exc)
+        return gate.judge(run, verify_exit=0)["verdict"], None
+
+    def test_intact_seeded_and_control_runs_keep_their_verdicts(self):
+        self.assertEqual(self.judged(self.root / "seeded" / "run"), ("check_failed", None))
+        self.assertEqual(self.judged(self.root / "control" / "run"), ("checks_passed", None))
+
+    def test_mutated_check_or_finding_projection_fails_closed(self):
+        mutations = {
+            "rc-step outcome": (lambda r: next(c for c in r["checks"] if c["id"] == "rc-step").update(outcome="pass"),
+                                "check rc-step projection differs from retained native-check result"),
+            "rc-step summary": (lambda r: next(c for c in r["checks"] if c["id"] == "rc-step").update(summary="ok"),
+                                "check rc-step projection differs from retained native-check result"),
+            "finding title": (lambda r: r["findings"][0].update(title="within limits"),
+                              "finding check/rc-step differs from its retained native-check result"),
+            "dropped finding": (lambda r: r.update(findings=[]),
+                                "check findings differ from the defects in the retained native-check results"),
+            "check inventory": (lambda r: r["checks"].pop() and r["expected_check_ids"].pop(),
+                                "result check inventory differs from the captured scope's declared checks"),
+        }
+        for name, (mutate, reason) in mutations.items():
+            run = self.copy("seeded")
+            result = json.loads((run / "result.json").read_text())
+            self.assertEqual(result["state"], "incomplete")
+            mutate(result)
+            (run / "result.json").write_text(json.dumps(result))
+            verdict, error = self.judged(run)
+            self.assertEqual(verdict, "result_invalid", name)
+            self.assertIn(reason, error or "", name)
+            # The gate binds the evidence itself, even when told verification succeeded.
+            self.assertEqual(gate.judge(run, verify_exit=0)["verdict"], "result_invalid", name)
+
+    def test_missing_retained_check_record_fails_closed(self):
+        run = self.copy("control")
+        (run / "checks" / "rc-step.json").unlink()
+        verdict, error = self.judged(run)
+        self.assertEqual(verdict, "result_invalid")
+        self.assertIn("evidence changed", error)
+        self.assertEqual(gate.judge(run, verify_exit=0)["verdict"], "result_invalid")
 
 
 ACTION = SCRIPT.parents[1] / "action.yml"
@@ -229,6 +335,136 @@ class ActionDocumentationTests(unittest.TestCase):
         self.assertIn("scripts/container_apparmor.sh", action)
         self.assertIn("scripts/container_apparmor.sh", guide)
         self.assertNotIn("--security-opt apparmor=unconfined", guide)
+
+
+SAMPLE_SCRIPT = SCRIPT.parent / "consumer_sample.py"
+sample_spec = importlib.util.spec_from_file_location("consumer_sample", SAMPLE_SCRIPT)
+sample = importlib.util.module_from_spec(sample_spec)
+sample_spec.loader.exec_module(sample)
+
+
+class ConsumerSampleLocalRunnerTests(unittest.TestCase):
+    """The consumer sample is a local runner; no hosted workflow is committed."""
+
+    def retained(self, base, outcome):
+        run = Path(base) / "run"
+        run.mkdir(parents=True)
+        checks = [check("erc"), check("rc-step", outcome=outcome)]
+        (run / "checks").mkdir()
+        for item in checks:
+            (run / "checks" / f"{item['id']}.json").write_text(json.dumps(item))
+        result = {"schema": "agent-ee.result/1", "run_id": "r", "candidate_id": "c" * 64,
+                  "state": "incomplete", "outcome": "incomplete", "adjudicated": False,
+                  "started_utc": "2026-10-17T00:00:00+00:00", "finished_utc": "2026-10-17T00:01:00+00:00",
+                  "expected_check_ids": ["erc", "rc-step"], "checks": checks, "reviews": [],
+                  "review_executions": [], "findings": collect_findings([], checks),
+                  "limitations": []}
+        (run / "result.json").write_text(json.dumps(result))
+        return run
+
+    def judge(self, case, run):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return gate.main(sample.expectation(case, run))
+
+    def test_display_only_never_reports_acceptance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            defect = self.retained(tmp, "defect")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(sample.judge("seeded", defect, verify=False), 2)
+                self.assertEqual(sample.judge("control", defect, verify=False), 1)
+
+    def test_synthetic_unverifiable_result_is_refused_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            defect = self.retained(tmp, "defect")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(sample.judge("seeded", defect), 1)
+
+    def test_no_hosted_sample_workflow_is_committed(self):
+        root = SCRIPT.parents[1]
+        self.assertFalse((root / ".github" / "workflows" / "consumer-sample.yml").exists())
+        self.assertTrue((root / "action.yml").is_file())
+
+    def test_cases_point_at_existing_scopes(self):
+        for scope, _, _ in sample.CASES.values():
+            self.assertTrue((SCRIPT.parents[1] / scope).is_file(), scope)
+
+    def test_seeded_run_expects_the_rc_step_defect_and_control_expects_a_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            defect, passing = self.retained(Path(tmp) / "a", "defect"), self.retained(Path(tmp) / "b", "pass")
+            self.assertEqual(self.judge("seeded", defect), 0)
+            self.assertEqual(self.judge("control", passing), 0)
+            # The outcomes are not interchangeable.
+            self.assertEqual(self.judge("seeded", passing), 1)
+            self.assertEqual(self.judge("control", defect), 1)
+
+    def test_missing_result_is_not_the_expected_outcome(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self.judge("seeded", tmp), 1)
+            self.assertEqual(self.judge("control", tmp), 1)
+
+    def test_docs_cite_the_owner_answer_and_do_not_link_a_workflow(self):
+        quote = "I don't think we can use github CI for this, so c."
+        for name in ("container.md", "installation.md"):
+            text = (SCRIPT.parents[1] / "docs" / name).read_text()
+            self.assertIn(quote, text, name)
+            self.assertIn("owner-relayed", text, name)
+            self.assertNotIn("consumer-sample.yml", text, name)
+            self.assertIn("scripts/consumer_sample.py", text, name)
+
+
+class ConsumerSampleRetainedRunTests(unittest.TestCase):
+    """Real checks-only runs of the RC fixture: freshness and evidence verification."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.control = Path(cls.tmp.name) / "control"
+        cls.seeded = Path(cls.tmp.name) / "seeded"
+        cls.first = {}
+        for case, out in (("control", cls.control), ("seeded", cls.seeded)):
+            cls.first[case] = cls.quiet(sample.run, case, 900, out)
+
+    @staticmethod
+    def quiet(fn, *args, **kwargs):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return fn(*args, **kwargs)
+
+    def copy(self, source):
+        import shutil
+        target = Path(self.tmp.name) / f"copy-{len(list(Path(self.tmp.name).iterdir()))}"
+        shutil.copytree(source, target)
+        return target
+
+    def test_fresh_runs_give_the_expected_verdicts(self):
+        self.assertEqual(self.first, {"control": 0, "seeded": 0})
+
+    def test_retained_runs_are_judged_with_verification(self):
+        self.assertEqual(self.quiet(sample.judge, "control", self.control), 0)
+        self.assertEqual(self.quiet(sample.judge, "seeded", self.seeded), 0)
+        self.assertEqual(self.quiet(sample.judge, "seeded", self.control), 1)
+
+    def test_run_refuses_a_populated_valid_output(self):
+        self.assertEqual(self.quiet(sample.run, "control", 900, self.control), 2)
+        self.assertEqual(self.quiet(sample.run, "seeded", 900, self.seeded), 2)
+
+    def test_run_refuses_an_empty_existing_output(self):
+        empty = Path(self.tmp.name) / "empty"
+        empty.mkdir()
+        self.assertEqual(self.quiet(sample.run, "control", 900, empty), 2)
+        self.assertEqual(list(empty.iterdir()), [])
+
+    def test_missing_captured_input_is_refused_by_default(self):
+        broken = self.copy(self.control)
+        (broken / "inputs" / "project" / "rc_filter.kicad_sch").unlink()
+        self.assertEqual(self.quiet(sample.judge, "control", broken), 1)
+        self.assertEqual(self.quiet(sample.judge, "control", broken, verify=False), 2)
+
+    def test_changed_captured_input_is_refused_by_default(self):
+        broken = self.copy(self.control)
+        schematic = broken / "inputs" / "project" / "rc_filter.kicad_sch"
+        schematic.write_text(schematic.read_text() + "\n")
+        self.assertEqual(self.quiet(sample.judge, "control", broken), 1)
 
 
 if __name__ == "__main__":
