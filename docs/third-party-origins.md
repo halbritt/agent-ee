@@ -47,9 +47,12 @@ including the new native fixtures, generation tooling and vendored viewer runtim
   published history would be a history rewrite, which is a separate owner gate.
 
 At the baseline, 367 files were proposed for MIT and 4,799 were unresolved.
-After the 2026-10-22 decision, `check_origins.py` reports 6,501 files: 1,469
-`owner-confirmed`, 225 `derived` and 4,807 unresolved. Most unresolved files
-are retained evidence, which is classified by directory.
+After the 2026-10-22 decision, `check_origins.py` reported 6,501 files at
+commit `bf10b44ba0524f1e1d1a4d8c7b7646fdae241ea6`: 1,469 `owner-confirmed`,
+225 `derived` and 4,807 unresolved. These are snapshot counts; they change as
+files are added. Reproduce the current counts with
+`python3 scripts/check_origins.py` (the `by_status` object). Most unresolved
+files are retained evidence, which is classified by directory.
 
 ## Origins
 
