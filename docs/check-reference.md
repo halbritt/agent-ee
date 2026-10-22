@@ -1353,12 +1353,15 @@ limits or a wider documented fit range. Two tolerances are involved and are
 never conflated. The fabricator's finished-thickness tolerance
 (`finished_thickness_tolerance`) bounds the board the fab delivers and is never
 read as component fit. The component-side fit band uses, per side, the explicit
-hard limit, then the documented range, then the default +/-10% screening band
-around the recommendation (inclusive, exact). Inside passes; the default band
+hard limit if there is one. Otherwise it uses the default +/-10% screening band
+around the recommendation (inclusive, exact), widened on that side by a
+documented fit range that reaches further. A documented range never narrows the
+band; only an explicit hard limit can. Inside passes; the default band
 reports `screened (default +/-10% component fit)`. Outside an explicit hard
-limit is a defect. Outside the documented range or the screening band is
-advisory: unknown, needing feature geometry or evidence, never a rejection. An
-uncited declaration is refused. A part not bound to one installed PTH footprint
+limit is a defect. Outside the widened screening band is
+advisory: unknown, needing feature geometry or evidence, never a rejection. A
+mix of defects and unknowns reports unknown and keeps every defect in
+`defects`. An uncited declaration is refused. A part not bound to one installed PTH footprint
 of the declared part number is unknown. Undeclared parts and every other
 criterion are unchanged. See
 [through-hole thickness fit](board-envelope.md#through-hole-thickness-fit).

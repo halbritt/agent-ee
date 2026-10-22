@@ -630,7 +630,7 @@ The check selects the captured immutable declaration with `thickness_fit`:
 
 Each part may also declare `hard_limits: {min_mm?, max_mm?, source}`, the
 manufacturer's explicit limits with at least one bound, and
-`fit_range: {min_mm, max_mm, source}`, a wider documented fit range. Every
+`fit_range: {min_mm, max_mm, source}`, a documented fit range. Every
 `source` is `{class, citation}`. The class is `manufacturer` or `datasheet`,
 and the citation is a nonempty string. A missing or blank citation, an unknown
 field, a duplicate reference, a bound that excludes the recommended nominal, or
@@ -644,8 +644,17 @@ rational arithmetic and inclusive bounds:
 | Governing bound for that side | Board nominal inside | Board nominal outside |
 | --- | --- | --- |
 | Explicit `hard_limits` bound | pass | **defect** |
-| Otherwise the `fit_range` bound | pass | unknown: needs feature geometry or evidence |
+| Otherwise the `fit_range` bound, where it is wider than the default band | pass | unknown: needs feature geometry or evidence |
 | Otherwise the default band, recommended x 0.9 or x 1.1 | pass, `screened (default +/-10% component fit)` | unknown: needs feature geometry or evidence |
+
+A documented fit range only widens the default band, one side at a time: the
+minimum is the lower of `fit_range.min_mm` and recommended x 0.9, and the
+maximum is the higher of `fit_range.max_mm` and recommended x 1.1. A range
+inside the band, such as 1.55-1.60 mm for J1, leaves the band at
+1.413-1.727 mm, so a 1.65 mm board is still screened. Only an explicit
+`hard_limits` bound can narrow the pass region. When one part is a defect and
+another is unknown, the check reports unknown and keeps the defect in
+`defects`.
 
 The +/-10% default is the owner's engineering assumption for screening
 (2026-10-22). It is not a universal hard ceiling, so a board outside it is never
@@ -667,7 +676,9 @@ agent-ee carries only the contract and original test fixtures.
 
 `tests.test_tht_thickness_fit` covers J1 at 1.6 mm, the exact 1.413 and
 1.727 mm boundaries and 1 nm outside them, 1.40 mm as advisory, explicit-limit
-pass and fail, a wider documented range, refused citations, unbound parts, and
+pass and fail, documented ranges that are wider, narrower or one-sided wider
+than the band, hard limits narrowing a documented range, mixed defect and
+unknown parts, refused citations, unbound parts, and
 proof that the fab tolerance does not change the verdict. Its native tests run
 the registered check over original pcbnew boards:
 

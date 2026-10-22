@@ -7,9 +7,10 @@ The fabricator's finished-thickness tolerance (board_envelope
 finished_thickness_tolerance) is a different tolerance and is never read here.
 
 Precedence per bound: an explicit hard limit governs (outside is a defect);
-otherwise a documented fit range governs; otherwise the default screening band
-of +/-10% around the recommended nominal, inclusive. Outside a fit range or the
-screening band is unknown (needs feature geometry or evidence), never a defect.
+otherwise the default screening band of +/-10% around the recommended nominal,
+inclusive, widened on that side by a documented fit range reaching further. A
+fit range never narrows the band; only a hard limit can. Outside the band is
+unknown (needs feature geometry or evidence), never a defect.
 """
 from decimal import Decimal
 from fractions import Fraction
@@ -101,10 +102,13 @@ def bound(part, side):
     key = 'min_mm' if side == 'min' else 'max_mm'
     if key in part.get('hard_limits', {}):
         return part['hard_limits'][key], 'manufacturer hard limit', 'defect'
-    if 'fit_range' in part:
-        return part['fit_range'][key], 'documented fit range', 'unknown'
     factor = 1 - SCREENING_BAND if side == 'min' else 1 + SCREENING_BAND
-    return part['recommended_nm'] * factor, 'default +/-10% component fit', 'unknown'
+    screening = part['recommended_nm'] * factor
+    documented = part.get('fit_range', {}).get(key)
+    # A documented range only widens the screening band; it never narrows it.
+    if documented is not None and (documented < screening if side == 'min' else documented > screening):
+        return documented, 'documented fit range', 'unknown'
+    return screening, 'default +/-10% component fit', 'unknown'
 
 
 def judge(part, board):

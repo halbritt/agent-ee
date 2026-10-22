@@ -123,6 +123,60 @@ class PolicyTests(unittest.TestCase):
         hard = {'max_mm': 1.9, 'source': dict(TE)}
         self.assertEqual(grade('2.0', j1(fit_range=documented, hard_limits=hard))['status'], 'defect')
 
+    def test_narrow_documented_fit_range_never_shrinks_the_screening_band(self):
+        # Owner rule: at least +/-10%. A documented range inside the band leaves the band as is.
+        narrow = {'min_mm': 1.55, 'max_mm': 1.6, 'source': dict(TE)}
+        for thickness, status in (('1.65', 'pass'), ('1.413', 'pass'), ('1.727', 'pass'),
+                                  ('1.412999', 'unknown'), ('1.727001', 'unknown')):
+            with self.subTest(thickness=thickness):
+                result = grade(thickness, j1(fit_range=narrow))
+                self.assertEqual((result['status'], result['defects']), (status, []), result)
+                self.assertEqual(result['measured'][0]['band_mm'], ['1.413', '1.727'])
+        item, = grade('1.65', j1(fit_range=narrow))['measured']
+        self.assertEqual(item['reason'], 'screened (default +/-10% component fit)')
+        self.assertEqual(item['basis'], ['default +/-10% component fit'])
+        self.assertEqual(item['fit_range'], {'min_mm': '1.55', 'max_mm': '1.6', 'source': TE})
+
+    def test_asymmetric_documented_fit_range_widens_only_its_wider_side(self):
+        # 1.0 widens the minimum; 1.65 is inside the default maximum 1.727, which stays.
+        lopsided = {'min_mm': 1.0, 'max_mm': 1.65, 'source': dict(TE)}
+        item, = grade('1.2', j1(fit_range=lopsided))['measured']
+        self.assertEqual((item['status'], item['band_mm']), ('pass', ['1', '1.727']))
+        self.assertEqual(item['basis'], ['default +/-10% component fit', 'documented fit range'])
+        self.assertEqual(grade('1.0', j1(fit_range=lopsided))['status'], 'pass')
+        self.assertEqual(grade('0.999999', j1(fit_range=lopsided))['status'], 'unknown')
+        self.assertEqual(grade('1.7', j1(fit_range=lopsided))['status'], 'pass')
+        above = grade('1.727001', j1(fit_range=lopsided))
+        self.assertEqual((above['status'], above['defects']), ('unknown', []))
+        self.assertIn('above the default +/-10% component fit 1.727 mm', above['unknown'][0])
+        # The mirror image widens only the maximum.
+        upper = {'min_mm': 1.5, 'max_mm': 2.0, 'source': dict(TE)}
+        self.assertEqual(grade('1.9', j1(fit_range=upper))['measured'][0]['band_mm'], ['1.413', '2'])
+        self.assertEqual(grade('1.45', j1(fit_range=upper))['status'], 'pass')
+        self.assertEqual(grade('1.412999', j1(fit_range=upper))['status'], 'unknown')
+
+    def test_hard_limits_narrow_a_documented_fit_range(self):
+        documented = {'min_mm': 1.2, 'max_mm': 2.4, 'source': dict(TE)}
+        hard = {'min_mm': 1.55, 'max_mm': 1.6, 'source': dict(TE)}
+        part = j1(fit_range=documented, hard_limits=hard)
+        self.assertEqual(grade('1.6', part)['status'], 'pass')
+        self.assertEqual(grade('1.6', part)['measured'][0]['band_mm'], ['1.55', '1.6'])
+        for thickness, word in (('1.65', 'above'), ('1.5', 'below')):
+            with self.subTest(thickness=thickness):
+                result = grade(thickness, part)
+                self.assertEqual(result['status'], 'defect')
+                self.assertIn(f'{word} the manufacturer hard limit', result['defects'][0])
+
+    def test_mixed_unknown_and_defect_keeps_the_defect_and_fails_closed(self):
+        hard = {'max_mm': 1.58, 'source': dict(TE)}
+        parts = fit.declarations(raw(j1(hard_limits=hard),
+                                     {**j1(), 'reference': 'J2', 'footprint_id': 'Owned:Other'}))
+        result = fit.evaluate(parts, record('1.6'), native('1.6'), bindings())
+        self.assertEqual(result['status'], 'unknown')
+        self.assertEqual(result['defects'], ['J1: board nominal 1.6 mm is above the manufacturer hard limit 1.58 mm'])
+        self.assertEqual([m['status'] for m in result['measured']], ['defect', 'unknown'])
+        self.assertIn('J2: expected exactly one native footprint', result['unknown'][0])
+
     def test_missing_or_blank_citation_is_refused(self):
         cases = [j1(recommended_source={'class': 'manufacturer'}),
                  j1(recommended_source={'class': 'manufacturer', 'citation': '  '}),
@@ -297,6 +351,18 @@ class NativeThicknessFitTests(unittest.TestCase):
         self.assertEqual((result['execution'], result['outcome']), ('ok', 'defect'), result)
         self.assertEqual(result['details']['defects'],
                          ['J1: board nominal 1.6 mm is above the manufacturer hard limit 1.58 mm'])
+
+    def test_native_narrow_fit_range_screens_and_mixed_defect_stays_visible(self):
+        narrow = {'min_mm': 1.55, 'max_mm': 1.6, 'source': dict(TE)}
+        result = self.run_fit('1.65', raw(j1(fit_range=narrow)))
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertEqual(result['details']['measured'][0]['reason'], 'screened (default +/-10% component fit)')
+        hard = {'max_mm': 1.58, 'source': dict(TE)}
+        result = self.run_fit('1.6', raw(j1(hard_limits=hard), {**j1(), 'reference': 'J2'}))
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertEqual(result['details']['defects'],
+                         ['J1: board nominal 1.6 mm is above the manufacturer hard limit 1.58 mm'])
+        self.assertIn('J2: expected exactly one native footprint', result['summary'])
 
     def test_native_smd_footprint_and_uncited_declaration_do_not_pass(self):
         result = self.run_fit('1.6', raw(j1()), pads='smd')
