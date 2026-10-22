@@ -59,7 +59,7 @@ class CallLedger:
     def _open(self):
         created = not self.path.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(self.path, 'a+', encoding='utf-8')
+        handle = open(self.path, 'a+', encoding='utf-8', errors='replace')
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         if created:
             directory = os.open(self.path.parent, os.O_RDONLY)
@@ -78,8 +78,9 @@ class CallLedger:
 
     def _entries(self, handle):
         handle.seek(0)
+        text = handle.read()
         entries = []
-        for line in handle.read().splitlines():
+        for line in text.splitlines():
             try:
                 entry = json.loads(line)
                 if not isinstance(entry, dict):
@@ -95,6 +96,13 @@ class CallLedger:
             raise ValueError('call ledger header missing or malformed')
         if header.get('cap') != self.cap:
             raise ValueError(f'call ledger cap {header.get("cap")!r} differs from requested cap {self.cap}')
+        if not text.endswith('\n'):
+            # A crash left the last record unterminated. Terminate it in place, so it stays its
+            # own line (a reservation if complete, a charged malformed line if not), and record
+            # the repair. Nothing is removed, and the next record cannot fuse with the tail.
+            handle.write('\n')
+            self._append(handle, {'event': 'tail_terminated', 'line': len(entries), 'at_utc': _now()})
+            return self._entries(handle)
         return entries
 
     @staticmethod
@@ -105,6 +113,7 @@ class CallLedger:
                 'fake_calls': sum(1 for e in reserved if e.get('kind') == 'fake'),
                 'refused': sum(1 for e in entries if e.get('event') == 'refused'),
                 'malformed_lines': malformed,
+                'tails_terminated': sum(1 for e in entries if e.get('event') == 'tail_terminated'),
                 'unsettled': sorted({e['seq'] for e in reserved} -
                                     {e.get('seq') for e in entries if e.get('event') == 'settle'})}
 

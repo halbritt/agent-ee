@@ -57,6 +57,13 @@ provider. It appends a `settle` line with the execution state afterwards.
 - At the cap (12) a `refused` line is written. The dispatch then returns
   `not_run` and launches nothing.
 - A line that does not parse counts as a real call.
+- A crash can leave the last line without its newline. The next open validates
+  the header, then terminates that line in place and appends a
+  `tail_terminated` record before anything else. A complete reservation in the
+  tail stays a reservation; a partial one stays a malformed line and is
+  charged. The tail is never removed or rewritten, and the next reservation is
+  always written as a separate line. `state()` reports `tails_terminated`.
+- A ledger whose first line is not a valid header is refused without writing.
 - A ledger whose header cap differs from the request is refused.
 - Live mode refuses a ledger under `/tmp`.
 
@@ -66,7 +73,13 @@ that.
 
 `tests/test_packet_ab.py` covers the refusal of the 13th call across restarts, a
 refused reservation never launching, the reservation being on disk before the
-provider runs, retries counting, torn lines, and the volatile-ledger refusal. It
+provider runs, retries counting, torn lines, and the volatile-ledger refusal.
+Two regressions write a ledger with ten settled calls and a crashed eleventh
+reservation, once as complete JSON without its newline and once as partial JSON.
+Each then runs three calls, each in a new Python process. One launches and
+settles; the next two are refused. The tests check that the damaged tail is
+kept byte for byte and that no reservation is lost. A torn header is refused
+and the file is left untouched. It
 also covers `historical_packet`, the scoring boundaries and a native dry run of
 the full plan with the fake provider.
 

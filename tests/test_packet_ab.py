@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +11,20 @@ from agent_ee.storage import identity
 
 
 DEFINITION = {'harness': 'claude', 'model': 'claude-fable-5'}
+# One fresh interpreter per call: reserve, launch an inert fake provider, settle. Prints the outcome.
+RESTARTED_CALL = '''
+import sys
+from pathlib import Path
+from agent_ee import packet_ab
+launched = []
+def provider(*args, **kwargs):
+    launched.append(1)
+    return {'execution': 'ok', 'duration_s': 0.0}, {}
+ledger, cell = Path(sys.argv[1]), sys.argv[2]
+record, _ = packet_ab.metered(packet_ab.CallLedger(ledger), 'live', 'plan', provider)(
+    ledger.parent / cell, 'circuit', {'harness': 'fake', 'model': 'fake'}, 'p', {}, 1)
+print(record['execution'], len(launched))
+'''
 
 
 class CallLedgerTests(unittest.TestCase):
@@ -47,6 +64,56 @@ class CallLedgerTests(unittest.TestCase):
             packet_ab.CallLedger(self.path, cap=5).state()
         with self.assertRaises(ValueError):
             packet_ab.CallLedger(self.path, cap=packet_ab.CAP + 1)
+
+    def restarted_call(self, cell):
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [
+            str(Path(packet_ab.__file__).resolve().parents[1]), os.environ.get('PYTHONPATH')])))
+        result = subprocess.run([sys.executable, '-c', RESTARTED_CALL, str(self.path), cell], env=env,
+                                capture_output=True, text=True, timeout=60, check=True)
+        execution, launched = result.stdout.split()
+        return execution, int(launched)
+
+    def assert_damaged_tail_keeps_its_charge(self, tail):
+        """Ten settled real calls, then a crash while writing the eleventh reservation."""
+        for n in range(10):
+            seq = packet_ab.CallLedger(self.path).reserve('real', f'cell-{n}', 'circuit', 'plan')
+            packet_ab.CallLedger(self.path).settle(seq, {'execution': 'ok'})
+        with self.path.open('a') as handle:
+            handle.write(tail)
+        damaged = self.path.read_text()
+        outcomes = [self.restarted_call(f'after-{n}') for n in range(3)]
+        # The damaged tail is the eleventh call, so exactly one more launches; the thirteenth is refused.
+        self.assertEqual(outcomes, [('ok', 1), ('not_run', 0), ('not_run', 0)])
+        text = self.path.read_text()
+        self.assertTrue(text.startswith(damaged + '\n'), 'damaged tail must be kept, not rewritten')
+        self.assertTrue(text.endswith('\n'))
+        records = [json.loads(line) for line in text[len(damaged) + 1:].splitlines()]
+        self.assertEqual([r['event'] for r in records], ['tail_terminated', 'reserve', 'settle', 'refused', 'refused'])
+        self.assertEqual((records[1]['cell'], records[1]['real_calls_after']), ('after-0', 12))
+        self.assertEqual(records[2]['seq'], records[1]['seq'])
+        state = packet_ab.CallLedger(self.path).state()
+        self.assertEqual((state['real_calls'], state['refused'], state['tails_terminated']), (12, 2, 1))
+        self.assertEqual(self.path.read_text(), text, 'a terminated ledger is not repaired again')
+        return state
+
+    def test_unterminated_complete_reservation_is_kept_and_cannot_absorb_the_next(self):
+        tail = json.dumps({'event': 'reserve', 'seq': 21, 'kind': 'real', 'cell': 'cell-10', 'label': 'circuit',
+                           'plan_id': 'plan', 'at_utc': 'x', 'real_calls_after': 11}, sort_keys=True)
+        state = self.assert_damaged_tail_keeps_its_charge(tail)
+        self.assertEqual(state['malformed_lines'], 0)
+        self.assertEqual(state['unsettled'], [21])
+
+    def test_partial_reservation_is_charged_and_cannot_absorb_the_next(self):
+        state = self.assert_damaged_tail_keeps_its_charge('{"event": "reserve", "kind": "re')
+        self.assertEqual((state['malformed_lines'], state['unsettled']), (1, []))
+
+    def test_torn_header_is_refused_without_writing(self):
+        self.path.parent.mkdir(parents=True)
+        self.path.write_text('{"schema": "agent-ee.call-led')
+        for _ in range(2):
+            with self.assertRaises(ValueError):
+                packet_ab.CallLedger(self.path).reserve('real', 'a', 'circuit', 'plan')
+        self.assertEqual(self.path.read_text(), '{"schema": "agent-ee.call-led')
 
     def test_reservation_is_durable_before_launch_and_each_retry_is_a_call(self):
         ledger = packet_ab.CallLedger(self.path)
