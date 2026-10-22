@@ -445,7 +445,7 @@ def sampled_iou(supplier_pad, native_pad, step=0.002):
 
 
 class C11702ThresholdTests(unittest.TestCase):
-    """The absolute threshold is the only acceptance rule; relative acceptance awaits an owner decision."""
+    """The absolute threshold is the only acceptance rule (AGENTEE-31 criterion 1 coordinator ruling, 2026-10-22)."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

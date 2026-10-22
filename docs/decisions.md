@@ -676,3 +676,14 @@ the relayed record wins. The fome-mc J1 record quoting the 509 relays verbatim i
 - **Autonomous pod decisions** since 2026-10-20 (D-PCB-1, -8, -9, -11, -12, -14) are acknowledged as they stand; the thermal-evidence release gate (AGENTEE-447) still applies.
 - **Telemetry pod mechanics.** The ECU and pod are built from the ground up: the enclosure, panel and harness are team design deliverables, not blockers for bare-board placement, routing or fabrication readiness, and the seat cowl is the only existing external constraint. The standard JLCPCB four-layer 1.6 mm board with its published finished tolerance is accepted.
 - **Through-hole board-thickness fit (AGENTEE-448).** At least +/-10% of a part's recommended nominal board thickness is the inclusive component-side fit-screening default, independent of the fabricator's finished-thickness tolerance. Explicit manufacturer limits override, and outside the band alone is advisory. For J1, TE's 1.57 mm gives 1.413-1.727 mm, so the 1.6 mm board fits.
+
+## Supplier land-pattern threshold (AGENTEE-31, 2026-10-22)
+
+Coordinator ruling (agent-449, AGENTEE-31 worker assignment; not an owner
+statement): keep the 0.98 copper/hole IoU threshold. The actual C11702 pattern
+against `R_0402_1005Metric` is evaluated by exact IoU and reported as
+`low_accuracy` at IoU about 0.67. It is never passed by a relaxed or relative
+rule. Reasons: 0.98 is the ticket's own rule, the supplier pad geometry really
+differs from the IPC-nominal KiCad pads, and an earlier `nearest_variant`
+acceptance rule was rejected on review. The supplier bytes stay unpublished. See
+the [criterion 1 ruling](land-pattern.md#criterion-1-ruling-agentee-31-2026-10-22).

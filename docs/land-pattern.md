@@ -12,9 +12,11 @@ reported as an exact finite-polygon area.
 Status: the supplier reader, native extraction, comparison, CLI and coordinator
 adapter are implemented and tested with owned fixtures. The `land_pattern`
 kind is registered in the shared check registry, with captured dependencies,
-scope/3 coverage and coordinator-sealed evidence. The ticket's
-C11702-passes-against-R_0402 criterion is **not met** at the 0.98 threshold.
-See [C11702 qualification](#c11702-qualification).
+scope/3 coverage and coordinator-sealed evidence. The ticket's original
+"C11702 passes against R_0402_1005Metric" criterion contradicted its own 0.98
+threshold. A coordinator ruling (2026-10-22) amended it: the pair is a
+`low_accuracy` defect at IoU about 0.67. See
+[C11702 qualification](#c11702-qualification).
 
 ## Captured inputs
 
@@ -251,11 +253,33 @@ The supplier's rectangular 0.566 × 0.540 mm pads at ±0.433 mm differ
 substantially from KiCad's IPC-nominal 0.54 × 0.64 mm roundrect pads at
 ±0.51 mm. The ticket's literal "C11702 passes against R_0402_1005Metric at IoU
 above 0.98" is therefore false for these actual bytes, and the threshold was
-not tuned. Resolving it is an owner decision: a justified per-pair criterion, a
-variant-discrimination criterion, or a different library reference. Until that
-decision, the only acceptance rule is the absolute threshold. No relative or
-nearest-variant rule exists, and a criteria schema other than `/1` is refused
-as malformed.
+not tuned.
+
+### Criterion 1 ruling (AGENTEE-31, 2026-10-22)
+
+The burndown coordinator (agent-449) ruled on this contradiction in the
+AGENTEE-31 worker assignment. This is a coordinator ruling, not an owner
+statement. It keeps the 0.98 threshold and the `low_accuracy` result, and amends
+criterion 1 to:
+
+> C11702 against R_0402_1005Metric is evaluated by exact copper and hole IoU
+> and reported as low_accuracy (IoU about 0.67), never passed by a relaxed or
+> relative rule.
+
+Coordinator and agent reasoning:
+
+- 0.98 is the ticket's own acceptance threshold, taken from the upstream import
+  path. Relaxing it for one pair would tune the threshold until a part passes.
+- The supplier pad geometry really differs from the IPC-nominal KiCad pads, as
+  measured above. A 0.67 overlap is a real land-pattern difference that the
+  check exists to report.
+- An earlier worker attempt added a `nearest_variant` acceptance rule to make
+  the pair pass. It was rejected on review and withdrawn.
+
+`land_pattern.py` was not changed for this ruling. The absolute threshold
+remains the only acceptance rule. No relative or nearest-variant rule exists,
+and a criteria schema other than `/1` is refused as malformed. A future
+per-pair threshold would need its own recorded justification.
 
 The raw/derived supplier data remain unpublished. The EasyEDA data licence is
 unclear, so committed tests use only owned synthetic EasyEDA-format records.
