@@ -1769,7 +1769,7 @@ class _Search:
         self.fps = {fp['ref']: fp for fp in capture['footprints']}
         self.fixed = {fp['ref'] for fp in placed}
         self.exact, self.obstacles, self.outline, self.margin_nm = exact, obstacles, outline, margin_nm
-        self.pad_keepouts = pad_keepouts
+        self.pad_keepouts = list(pad_keepouts)
         self.solid = [(o['side'], slab) for o in exact for poly in o['polygons'] for slab in _slabs(poly) or ()]
         self.gap, self.budget, self.grounds = policy['gap_nm'], policy['step_budget'], policy['ground_nets']
         self.members, self.steps, self.placed, self.reserved = members, 0, [], []

@@ -569,7 +569,7 @@ class _Arrangement:
     def __init__(self, work, policy, arrangement, admitted, outline, keepouts, fixed, placed, exact, heartbeat,
                  pad_keepouts=()):
         self.policy, self.arrangement, self.heartbeat = policy, arrangement, heartbeat
-        self.outline, self.keepouts, self.pad_keepouts = outline, keepouts, pad_keepouts
+        self.outline, self.keepouts, self.pad_keepouts = outline, keepouts, list(pad_keepouts)
         self.margin = placer._edge_margin_nm(policy)
         self.gap, self.grounds = policy['gap_nm'], set(policy['ground_nets'])
         self.budget, self.steps = arrangement['step_budget'], 0
