@@ -1257,13 +1257,15 @@ class NoLineageProjectionSealTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def design(self, name, *shapes):
+    def design(self, name, *shapes, rules=None):
         """Owned RC control plus (layer, start, end) segments; library comparison ignored only."""
         import pcbnew as k
         from agent_ee.candidate import capture
         root = self.root / name
         design = root / 'design'
         shutil.copytree(Path(__file__).resolve().parents[1] / 'fixtures/rc/control', design)
+        if rules is not None:
+            (design / 'rc_filter.kicad_dru').write_text(rules)
         path = design / 'rc_filter.kicad_pcb'
         board = k.LoadBoard(str(path))
         for layer, start, end in shapes:
@@ -1358,6 +1360,59 @@ class NoLineageProjectionSealTests(unittest.TestCase):
         verify_evidence(run, [projection, full], required=True)
         self.assert_forgeries_refused(run, manifest, projection, full,
                                       (('pass', dict(projection, outcome='pass')),))
+
+
+    def test_forged_ok_over_runtime_unknown_evaluation_refuses(self):
+        """AGENTEE-407: the seal replays the runtime admissibility of the native report, so a
+        retained ok verdict cannot seal where the runtime check could only be unknown."""
+        from agent_ee.baseline import freeze_evidence, verify_evidence
+        from agent_ee.checks import run_checks
+        from agent_ee.outline_containment import sandboxed
+        # An owner rule (captured .kicad_dru) that disables a numeric clearance evaluation.
+        run, manifest = self.design('ignored', rules='(version 1)\n(rule quiet (constraint clearance '
+                                    '(min 0.1mm)) (severity ignore))\n')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        self.assertEqual((projection['execution'], projection['outcome']), ('malformed', 'unknown'),
+                         projection['summary'])
+        self.assertIn('explicitly ignored by sourced rule quiet', projection['summary'])
+        self.assertIn('work/projection/drc.json', projection['evidence'])
+        freeze_evidence(run, [projection, full])
+        verify_evidence(run, [projection, full], required=True)
+        # Genuine native containment of this same captured board, retained where a
+        # completed check keeps it: the only missing piece is the evaluation itself.
+        containment = run / 'work/projection/containment'
+        self.assertEqual(sandboxed(run / 'inputs', manifest['scope']['board'], containment), [])
+        evidence = projection['evidence'] + ['work/projection/containment/' + name for name in
+                                             ('copper-containment.json', 'execution.json', 'console.log')]
+        forged = dict(projection, execution='ok', outcome='pass', evidence=evidence)
+        for name, check in (('pass', forged),):
+            with self.subTest(forgery=name):
+                write_json(run / 'checks/projection.json', check)
+                for seal in (lambda: placement_defects.verify_gate(run, check, manifest),
+                             lambda: freeze_evidence(run, [check, full]),
+                             lambda: verify_evidence(run, [check, full], required=True)):
+                    with self.assertRaisesRegex(ValueError, 'explicitly ignored by sourced rule quiet'):
+                        seal()
+        write_json(run / 'checks/projection.json', projection)
+        verify_evidence(run, [projection, full], required=True)
+
+    def test_seal_replays_the_runtime_parity_skip_refusal(self):
+        """AGENTEE-407: a console stating parity was not performed is unknown at runtime and at seal."""
+        from agent_ee.checks import run_checks
+        run, manifest = self.design('parity-console')
+        projection, full = run_checks(run, time.monotonic() + 180)
+        self.assertEqual((projection['execution'], projection['outcome']), ('ok', 'pass'), projection['summary'])
+        placement_defects.verify_gate(run, projection, manifest)
+        console = run / 'work/projection/console.log'
+        retained = console.read_bytes()
+        console.write_bytes(retained + b'Failed to fetch schematic netlist for parity tests.\n')
+        with self.assertRaisesRegex(ValueError, 'schematic parity was not performed'):
+            placement_defects.verify_gate(run, projection, manifest)
+        console.unlink()
+        with self.assertRaises((OSError, ValueError)):
+            placement_defects.verify_gate(run, projection, manifest)
+        console.write_bytes(retained)
+        placement_defects.verify_gate(run, projection, manifest)
 
 
 class ContainedIdentities(dict):
