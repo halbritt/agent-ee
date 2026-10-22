@@ -144,8 +144,12 @@ def _box_contained(corners, outline):
                     for hole in holes))
 
 
-def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False):
+def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False, targets=None):
     """Translate owned fields and opted-in graphics within 10 mm, deterministically.
+
+    targets, when given, is a set of (reference, field name) pairs: only those
+    fields may move, each must name exactly one movable visible silk field,
+    and graphics are refused.
 
     Native bounding boxes include actual text metrics (as with AGENTEE-301,
     never character-count widths). Boxes conservatively search; they do not
@@ -154,7 +158,7 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
     """
     import pcbnew as k
 
-    targets = {i['uuid'] for v in findings if v['type'] in SILK_CONFLICTS for i in v['items']}
+    conflicted = {i['uuid'] for v in findings if v['type'] in SILK_CONFLICTS for i in v['items']}
     fields, obstacles = {}, []
     for fp in board.GetFootprints():
         props = {f.GetName(): f.GetText() for f in fp.GetFields()}
@@ -174,21 +178,35 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
                     item.GetLayer() in (k.F_SilkS, k.B_SilkS)):
                 fp = item.GetParentFootprint()
                 fields[item.m_Uuid.AsString()] = (fp.GetReference() if fp else '', item)
+    if targets is not None:
+        if graphics:
+            raise ValueError('artwork target set does not cover graphics')
+        named = {}
+        for fp in board.GetFootprints():
+            for f in fp.GetFields():
+                if (fp.GetReference(), f.GetName()) in targets:
+                    named.setdefault((fp.GetReference(), f.GetName()), []).append(f.m_Uuid.AsString())
+        if any(len(named.get(t, ())) != 1 for t in targets):
+            raise ValueError('artwork target must name exactly one footprint field')
+        allowed = {uids[0] for uids in named.values()}
+        if not allowed <= fields.keys():
+            raise ValueError('artwork target is not a movable visible silk field')
+        fields = {u: v for u, v in fields.items() if u in allowed}
     outline = _outline_with_holes(board)
     settings = board.GetDesignSettings()
     margin = max(200000, settings.m_SilkClearance)
     # KiCad 10 can omit custom-field UUIDs from silk reports, citing only the
     # other item. Native bounds nominate declared fields near those cited items;
     # the saved-board DRC remains the authority on whether a conflict cleared.
-    reported = frozenset(targets)
+    reported = frozenset(conflicted)
     for uid, (_, field) in fields.items():
         if field.GetClass() == 'PCB_FIELD' and field.GetName() not in ('Reference', 'Value'):
             box = field.GetBoundingBox()
             box.Inflate(margin)
             if any(box.Intersects(other) for other in _obstacle_boxes(field, obstacles, reported)):
-                targets.add(uid)
+                conflicted.add(uid)
     moved, moved_graphics, unresolved = [], [], []
-    for uid in sorted(targets & fields.keys(), key=lambda u: (fields[u][0], u)):
+    for uid in sorted(conflicted & fields.keys(), key=lambda u: (fields[u][0], u)):
         ref, field = fields[uid]
         start = field.GetPosition()
         reason = None
@@ -239,6 +257,8 @@ def relocate(board, findings, flipped_footprints=frozenset(), *, graphics=False)
                   moved_fields=moved, search_diagnostics=unresolved)
     if graphics:
         report['moved_graphics'] = moved_graphics
+    if targets is not None:
+        report['targets'] = [list(t) for t in sorted(targets)]
     return report
 
 

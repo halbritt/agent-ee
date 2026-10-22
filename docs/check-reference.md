@@ -2255,8 +2255,15 @@ contour. Touching, crossing, nested or unsupported contours establish no contain
 NPTH drills and pad slots are not outline holes; native DRC alone judges silk over them. Both producers seal a board-bound native containment witness in
 the placement report. Closure and campaign replay read it without rerunning
 pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
-unavailable evidence keep their refusal. Cached-text translations and boards
-containing backslashes refuse the producer's scope proof (test: `test_scope_refuses_backslashes_even_when_parser_erases_them` in `tests/test_routed_artwork.py`).
+unavailable evidence keep their refusal. Cached-text translations refuse the
+producer's scope proof. Unchanged nodes must keep their exact raw spelling.
+Backslashes are accepted only as KiCad writer escapes (`\"`, `\\`, `\n`, `\r`)
+inside quoted strings, so pod boards with escaped JSON properties attest. Any
+other backslash refuses (tests: `test_scope_refuses_backslashes_even_when_parser_erases_them`,
+`test_backslash_and_spelling_ambiguity_refuses` in `tests/test_routed_artwork.py`;
+AGENTEE-434). An optional receipted target set of footprint reference and
+field pairs restricts the repair to those fields; the proof refuses any other
+silk move ([targeted repair](silk-artwork.md#targeted-repair-agentee-434)).
 This adds no check registration or verdict waiver. The initial placer continues
 to refuse routed boards. The native campaign regression proves downstream
 refusal before the repair and passing verification geometry and native fab export after closure.

@@ -22,3 +22,12 @@ class SharedSexprTests(unittest.TestCase):
         for data in ('(a)', b'('*129+b'a'+b')'*129, b'x'*(32*1024*1024+1)):
             with self.subTest(kind=type(data).__name__, size=len(data)), self.assertRaises(LibraryError):
                 parse_sexpr(data)
+
+    def test_raw_mode_keeps_quoted_spelling_in_the_decoded_shape(self):
+        data = b'(property "A\\"b\\\\c\\nd" bare "x" ; "skip"\n (at 0 "0"))'
+        decoded, raw = parse_sexpr(data), parse_sexpr(data, raw=True)
+        self.assertEqual(decoded, ['property', 'A"b\\c\nd', 'bare', 'x', ['at', '0', '0']])
+        self.assertEqual(raw, ['property', '"A\\"b\\\\c\\nd"', 'bare', '"x"', ['at', '0', '"0"']])
+        for data in (b'(a "open)', b'(a "x\\', b'(a'):
+            with self.subTest(data=data), self.assertRaises(LibraryError):
+                parse_sexpr(data, raw=True)

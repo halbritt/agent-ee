@@ -21,8 +21,12 @@ class LibraryError(ValueError):
     pass
 
 
-def parse_sexpr(data, *, comment_chars=";"):
-    """Parse one bounded, complete S-expression without a format-specific root."""
+def parse_sexpr(data, *, comment_chars=";", raw=False):
+    """Parse one bounded, complete S-expression without a format-specific root.
+
+    With raw=True quoted atoms keep their exact source spelling, quotes and
+    escapes included, in a tree of the same shape as the decoded one.
+    """
     if not isinstance(data, bytes) or len(data) > BYTE_LIMIT:
         raise LibraryError('library must be bytes, at most 32 MiB')
     try:
@@ -60,6 +64,7 @@ def parse_sexpr(data, *, comment_chars=";"):
             pos += 1
         else:
             if char == '"':
+                start = pos
                 pos += 1
                 chars = []
                 while pos < len(text) and text[pos] != '"':
@@ -74,7 +79,7 @@ def parse_sexpr(data, *, comment_chars=";"):
                 if pos >= len(text):
                     raise LibraryError('unterminated quote')
                 pos += 1
-                atom = ''.join(chars)
+                atom = text[start:pos] if raw else ''.join(chars)
             else:
                 end = pos
                 while (end < len(text) and not text[end].isspace() and
