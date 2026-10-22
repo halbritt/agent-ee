@@ -262,31 +262,73 @@ def _atoms(node):
     return [x for x in node[1:] if isinstance(x, str)]
 
 
+LOCK_VALUES = {'yes': True, 'true': True, 'no': False, 'false': False}
+FOOTPRINT_FLAGS = frozenset(('locked', 'placed'))
+
+
+def _locked(fp, ref):
+    """Lock state with pcbnew semantics: the bare ``locked`` atom, ``(locked)`` or ``(locked yes|true)``.
+
+    ``(locked no|false)`` is unlocked. Any other atom or value, and more than one lock
+    declaration (pcbnew lets the last one win), refuses: no form defaults to unlocked.
+    """
+    flags = _atoms(fp)[1:]
+    unknown = sorted(set(flags) - FOOTPRINT_FLAGS)
+    if unknown:
+        _refuse(f'native footprint {ref}: unrecognized footprint atoms {unknown}')
+    declared = [True] * flags.count('locked')
+    for node in children(fp, 'locked'):
+        if len(node) == 1:
+            declared.append(True)
+        elif len(node) == 2 and node[1] in LOCK_VALUES:
+            declared.append(LOCK_VALUES[node[1]])
+        else:
+            _refuse(f'native footprint {ref}: unrecognized lock form {node!r}')
+    if len(declared) > 1:
+        _refuse(f'native footprint {ref}: ambiguous lock state: {len(declared)} lock declarations')
+    return bool(declared and declared[0])
+
+
 def native_board(path):
-    """Footprints by reference: library ID, UUID, lock state and pads (number, UUID, net) from the native board."""
+    """Footprints by reference: library ID, UUID, lock state and pads (number, UUID, net) from the native board.
+
+    Footprint identity is the footprint's own single UUID, unique on the board; pad UUIDs are
+    separate identities and never stand in for it.
+    """
     try:
-        root = parse_sexpr(Path(path).read_bytes())
+        raw = Path(path).read_bytes()
+        root = parse_sexpr(raw)
     except LibraryError as exc:
         _refuse(f'native board unreadable: {exc}')
     if root[0] != 'kicad_pcb':
         _refuse('native board is not a kicad_pcb')
-    footprints = {}
+    # parse_sexpr drops quoting; pcbnew rejects a quoted boolean, so a quoted lock value is no
+    # native lock state at all.
+    if re.search(rb'\(\s*locked\s+"', raw):
+        _refuse('native board has a quoted lock value; pcbnew lock booleans are bare yes/no/true/false')
+    footprints, identities = {}, {}
     for fp in children(root, 'footprint'):
         refs = [_atoms(p)[1] for p in children(fp, 'property') if _atoms(p)[:1] == ['Reference']]
         if len(refs) != 1:
             _refuse('native footprint lacks exactly one Reference')
         if refs[0] in footprints:
             _refuse(f'native board duplicates reference {refs[0]}')
-        locked = 'locked' in _atoms(fp) or any(_atoms(n) == ['yes'] for n in children(fp, 'locked'))
-        uuids = children(fp, 'uuid')
+        fp_uuids = children(fp, 'uuid')
+        fp_uuid = _atoms(fp_uuids[0]) if len(fp_uuids) == 1 else []
+        if len(fp_uuid) != 1 or not UUID.fullmatch(fp_uuid[0]):
+            _refuse(f'missing or ambiguous footprint identity: native {refs[0]} has no single footprint UUID')
+        if fp_uuid[0] in identities:
+            _refuse(f'missing or ambiguous footprint identity: native {identities[fp_uuid[0]]} and {refs[0]} '
+                    f'share footprint UUID {fp_uuid[0]}')
+        identities[fp_uuid[0]] = refs[0]
         pads = []
         for pad in children(fp, 'pad'):
-            uuids, nets = children(pad, 'uuid'), children(pad, 'net')
+            pad_uuids, nets = children(pad, 'uuid'), children(pad, 'net')
             pads.append({'number': _atoms(pad)[0] if _atoms(pad) else '',
-                         'uuid': _atoms(uuids[0])[0] if len(uuids) == 1 and _atoms(uuids[0]) else None,
+                         'uuid': _atoms(pad_uuids[0])[0] if len(pad_uuids) == 1 and _atoms(pad_uuids[0]) else None,
                          'net': _atoms(nets[0])[-1] if len(nets) == 1 and _atoms(nets[0]) else ''})
-        footprints[refs[0]] = {'locked': locked, 'pads': pads, 'fpid': _atoms(fp)[0] if _atoms(fp) else None,
-                               'uuid': _atoms(uuids[0])[0] if len(uuids) == 1 and _atoms(uuids[0]) else None}
+        footprints[refs[0]] = {'locked': _locked(fp, refs[0]), 'pads': pads,
+                               'fpid': _atoms(fp)[0] if _atoms(fp) else None, 'uuid': fp_uuid[0]}
     return footprints
 
 
@@ -386,8 +428,8 @@ def _terminals(intent, src, board, native):
     return resolved, document
 
 
-def _stated_lengths(text, locator, label):
-    """Every length stated in decision text as (decimal, unit); refuse any numeral it cannot allowlist.
+def _stated_lengths(text, locator, label, kind='decision'):
+    """Every length stated in decision or record text as (decimal, unit); refuse any numeral it cannot allowlist.
 
     Each whitespace token holding a digit is an identifier (``U1``, ``R-0``) or one complete
     unsigned ``nm``/``mm`` length; any other numeral, a sign before a length, or a length
@@ -397,7 +439,7 @@ def _stated_lengths(text, locator, label):
         return LENGTH_WORD.fullmatch(word.casefold()) and word.casefold() != 'in'
 
     def refuse(lexeme, why='an unresolvable length {!r}'):
-        _refuse(f'{label}: numeric mismatch: decision {locator} states {why.format(lexeme)}: every numeral must '
+        _refuse(f'{label}: numeric mismatch: {kind} {locator} states {why.format(lexeme)}: every numeral must '
                 'be a complete unsigned decimal length in nm or mm, or part of an identifier such as U1')
 
     tokens = list(re.finditer(r'\S+', text))
@@ -469,6 +511,36 @@ def _owner_decision(pair, records, label):
     return owner, value
 
 
+def _datasheet_value(pair, records, label):
+    """A numeric datasheet derivation binds to the one captured record line holding its locator and quote.
+
+    The locator must stand on that line as a whole token and the quote occur on it once, on
+    token boundaries; every numeral on the line must resolve (``_stated_lengths``) to one
+    length equal to ``value_nm``. A sign, grouping, fraction or second length refuses; no
+    matching token is picked out of a larger expression.
+    """
+    source = pair['provenance']['derivation']['source']
+    text, quote, locator = records[source['path']], source['quote'], source['locator']
+    token = re.compile(rf'(?<!\S){re.escape(locator)}(?=[{re.escape(SENTENCE_MARKS)}]?(?:\s|$))')
+    lines = [line for line in text.splitlines() if quote in line and token.search(line)]
+    if len(lines) != 1 or lines[0].count(quote) != 1:
+        _refuse(f'{label}: numeric mismatch: record {locator} is not exactly one captured line stating '
+                'the locator and the quote once')
+    line = lines[0]
+    start = line.index(quote)
+    end = start + len(quote)
+    if line[start - 1:start].strip() or line[end:end + 1].strip(SENTENCE_MARKS + ' \t'):
+        _refuse(f'{label}: numeric mismatch: record {locator} quote does not start and end on whole tokens')
+    values = {Fraction(n) * NM_PER[unit] for n, unit in _stated_lengths(line, locator, label, 'record')}
+    if len(values) != 1 or next(iter(values)).denominator != 1:
+        _refuse(f'{label}: numeric mismatch: record {locator} states no single resolvable maximum')
+    value = int(next(iter(values)))
+    if pair['provenance']['derivation'].get('value_nm') != value:
+        _refuse(f'{label}: numeric mismatch: record {locator} states {value} nm, not derivation value_nm '
+                f'{pair["provenance"]["derivation"].get("value_nm")}')
+    return value
+
+
 def _locality(intent, src, board):
     authored = intent.get('locality', [])
     if not authored:
@@ -507,6 +579,8 @@ def _locality(intent, src, board):
                 _refuse(f'{label}: owner authority not established by a captured, verified owner decision')
             if declared == 'datasheet' and authority['enforcement'] != 'hard':
                 _refuse(f'{label}: numeric mismatch: sourced derivation does not equal declared max_distance_nm')
+            if declared == 'datasheet':
+                _datasheet_value(pair, src['records'], label)
             entry = {'obligation': obligation['id'], 'role': role, 'class': authority['class'],
                      'enforcement': authority['enforcement'], 'reason': authority['reason']}
             if declared == 'owner':

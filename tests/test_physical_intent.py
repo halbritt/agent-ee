@@ -53,6 +53,33 @@ SWEEP = [(f'S-{i}', f'within 1{sep}3 {unit} of U1 VCC', sep, unit)
          for i, (sep, unit) in enumerate((s, u) for s in SEPARATORS for u in SWEEP_UNITS)]
 OWNER_TEXT += ''.join(f'{locator} (owner of record): keep the C1 supply pad {quote}.\n' for locator, quote, _, _ in SWEEP)
 LAYOUT_TEXT = 'Layout note L-2: place the decoupling capacitor within 3 mm of the VCC pin.\n'
+# Review ee388e-510-r1r5 H2: authored datasheet layout notes; each line is one numeric record.
+DATASHEET_LINES = {'N-1': ('within -3 mm', 3_000_000), 'N-2': ('within 1,003 mm', 3_000_000),
+                   'N-3': ('within 1/3 mm', 3_000_000), 'N-4': ('within 1\u2019234 mm', 234_000_000),
+                   'N-5': ('within 3 mm and 999 yd', 3_000_000), 'N-6': ('within 3 mm and 4 mm', 3_000_000),
+                   'N-7': ('within 3 mm', 3_000_000), 'N-8': ('within 0.5 mm', 500_000)}
+DATASHEET_TEXT = ''.join(f'Note {n}: place the capacitor {q} of the VCC pin.\n' for n, (q, _) in DATASHEET_LINES.items())
+# Review ee388e-510-r1r5 H3: an authored unnetted mechanical footprint for footprint-identity boards.
+H1_PAD = '7d0c3a51-2b8e-4e62-9a0f-3f1d5c2b9a10'
+U1_UUID = '33863c18-80e0-4310-9450-9194c18489ae'
+
+
+def mechanical(uuid):
+    return f'''\t(footprint "pins:MH"
+\t\t(layer "F.Cu")
+\t\t(uuid "{uuid}")
+\t\t(at 80 50)
+\t\t(property "Reference" "H1" (at 0 0 0) (layer "F.SilkS"))
+\t\t(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu" "F.Mask") (uuid "{H1_PAD}"))
+\t)
+\t(gr_rect'''
+
+
+def lock(board, form):
+    """U1 with ``form`` inserted before its footprint UUID."""
+    needle = f'(layer "F.Cu")\n\t\t(uuid "{U1_UUID}'
+    assert needle in board
+    return board.replace(needle, f'(layer "F.Cu")\n\t\t{form}\n\t\t(uuid "{U1_UUID}', 1)
 
 
 def sha(text):
@@ -77,7 +104,8 @@ class PhysicalIntentTests(unittest.TestCase):
         local = (board.replace('(net "unconnected-(U1-VCC-Pad3)")', '(net "VCC")')
                  .replace('(net "unconnected-(U1-GND-Pad2)")', '(net "GND")')
                  .replace('\t(gr_rect', C1, 1))
-        cls.local = cls.board_run('local', local, {'owner-decisions.md': OWNER_TEXT, 'layout-notes.md': LAYOUT_TEXT})
+        cls.local = cls.board_run('local', local, {'owner-decisions.md': OWNER_TEXT, 'layout-notes.md': LAYOUT_TEXT,
+                                                   'datasheet-notes.md': DATASHEET_TEXT})
         dup = (f'\t\t(pad "7" smd rect (at 5 2) (size 1 1) (layers "F.Cu" "F.Mask") '
                f'(net "unconnected-(U1-CANH-Pad7)") (uuid "{DUP7}"))\n\t\t(embedded_fonts no)')
         defect = (board.replace('(layer "F.Cu")\n\t\t(uuid "33863c18', '(layer "F.Cu")\n\t\t(locked yes)\n\t\t(uuid "33863c18', 1)
@@ -565,6 +593,152 @@ class PhysicalIntentTests(unittest.TestCase):
                          receipt['allocation_derivation'])
         self.assertEqual(derived['blocks'][0]['references'], ['U1'])
         self.assertIn('receipt.json', compile_plan(self.control, unlocked))
+
+    def noted(self, locator, value_nm, quote=None):
+        quote = quote or f'Note {locator}: place the capacitor {DATASHEET_LINES[locator][0]} of the VCC pin.'
+        return {'class': 'datasheet', 'basis': locator, 'derivation': {'kind': 'numeric', 'value_nm': value_nm, 'source': {
+            'path': 'datasheet-notes.md', 'sha256': sha(DATASHEET_TEXT), 'locator': locator, 'quote': quote}}}
+
+    def test_datasheet_numeric_binds_the_complete_record_line(self):
+        # Review ee388e-510-r1r5 H2: the shared classifier accepted any matching token, so signed,
+        # grouped, fractional and two-length datasheet lines published hard suffix maxima.
+        records = ('datasheet-notes.md',)
+        for locator, pattern in (('N-1', "signed length '-3 mm'|unresolvable length '-3"),
+                                 ('N-2', "unresolvable length '1,003"), ('N-3', "unresolvable length '1/3"),
+                                 ('N-4', "unresolvable length '1\u2019234"), ('N-5', "'999 yd'"),
+                                 ('N-6', 'no single resolvable maximum')):
+            value = DATASHEET_LINES[locator][1]
+            bad = self.intent(self.local, records=records,
+                              locality=self.locality(self.pair(self.noted(locator, value), limit=value)))
+            with self.subTest(locator=locator):
+                # The inherited classifier still certifies it; the compiler seam must not.
+                self.assertEqual(locality_provenance.classify(bad['locality'][0]['supply'],
+                                                              {'datasheet-notes.md': DATASHEET_TEXT})['enforcement'], 'hard')
+                self.refused(self.local, bad, f'numeric mismatch: record {locator} states .*{pattern}')
+                document = {'schema': electrical_locality.SCHEMA, 'obligations': bad['locality'],
+                            'source_records': {'datasheet-notes.md': DATASHEET_TEXT}}
+                self.stale_package(self.local, self.intent(self.local, records=records, locality=self.locality(
+                    self.pair(self.noted('N-7', 3_000_000)))), bad, 'contracts/electrical-locality.json',
+                    document, 'numeric mismatch')
+        # A quote cut out of a larger expression, or one occurring twice, binds nothing.
+        # The quote binds only on the one line that carries its locator as a whole token.
+        for locator, quote, value, pattern in (
+                ('N-1', '3 mm', 3_000_000, 'whole tokens'), ('N-4', '234 mm', 234_000_000, 'whole tokens'),
+                ('N-2', '003 mm', 3_000_000, 'whole tokens'), ('N-5', 'within 3 mm', 3_000_000, "'999 yd'"),
+                ('N-8', 'within 3 mm of', 3_000_000, 'not exactly one captured line'),
+                ('N', 'within 3 mm of', 3_000_000, 'not exactly one captured line'),
+                ('N-6', 'within 3 mm and 4 mm of', 3_000_000, 'no single resolvable maximum')):
+            with self.subTest(locator=locator, quote=quote):
+                self.refused(self.local, self.intent(self.local, records=records, locality=self.locality(
+                    self.pair(self.noted(locator, value, quote), limit=value))), f'numeric mismatch: .*{pattern}')
+        self.refused(self.local, self.intent(self.local, records=records, locality=self.locality(
+            self.pair(self.noted('N-7', 2_000_000), limit=2_000_000))), 'numeric mismatch')
+        # Matching single-length controls keep their hard maxima in the actual PlacementIndex.
+        for locator in ('N-7', 'N-8'):
+            value = DATASHEET_LINES[locator][1]
+            with self.subTest(positive=locator):
+                intent = self.intent(self.local, records=records,
+                                     locality=self.locality(self.pair(self.noted(locator, value), limit=value)))
+                out = self.root / f'datasheet-{locator}'
+                compile_and_publish(self.local, intent, out)
+                receipt = verify_receipt(out, self.local, intent)
+                self.assertEqual(receipt['locality_qualification'][0]['enforcement'], 'hard')
+                index = electrical_locality.PlacementIndex(read_json(out / 'contracts/electrical-locality.json'))
+                self.assertIn(('3', 'C1', value, True),
+                              [(own['pad'], peer['reference'], limit, hard) for own, peer, limit, hard in index.pairs['U1']])
+
+    def test_native_lock_forms_follow_pcbnew(self):
+        # Review ee388e-510-r1r5 H1: ``(locked)`` and ``(locked true)`` are locked to pcbnew but were
+        # read as unlocked, so U1 entered a rigid block that the actual blocks.derive refuses.
+        from agent_ee.placement_probe import extract
+        board = (FIXTURE / 'control/pins.kicad_pcb').read_text()
+        canl = [terminal('l', '6', 'CANL', 'canl')]
+        block = [{'id': 'locked', 'references': ['U1']}]
+        netlist_of = lambda run: run / 'work/netlist/design.xml'
+        forms = {'empty': ('(locked)', True), 'true': ('(locked true)', True), 'yes': ('(locked yes)', True),
+                 'no': ('(locked no)', False), 'false': ('(locked false)', False)}
+        atom = board.replace('(footprint "pins:SO8"', '(footprint "pins:SO8" locked', 1)
+        runs = {name: (self.board_run(f'lock-{name}', lock(board, form), {}), locked)
+                for name, (form, locked) in forms.items()}
+        runs['atom'] = (self.board_run('lock-atom', atom, {}), True)
+        for name, (run, locked) in runs.items():
+            with self.subTest(form=name):
+                path = run / 'inputs/project/pins.kicad_pcb'
+                probe = extract(path)
+                self.assertEqual(physical_intent.native_board(path)['U1']['locked'], locked)
+                self.assertEqual([f['locked'] for f in probe['footprints'] if f['ref'] == 'U1'], [locked])
+                allocation = self.intent(run, terminals=canl, blocks=block)
+                fixed = self.intent(run, terminals=canl, moves=[{'reference': 'U1', 'allow': ['translate']}])
+                if locked:
+                    self.refused(run, allocation, 'refused by blocks.derive: locked footprints cannot be rigid-block')
+                    self.refused(run, fixed, 'conflicting fixed move: native U1 is locked')
+                    self.stale_package(run, self.intent(run, terminals=canl), allocation,
+                                       'contracts/block-allocation.json',
+                                       {'schema': blocks.ALLOCATION, 'blocks': block}, 'locked footprints')
+                    with self.assertRaisesRegex(ValueError, 'locked footprints cannot be rigid-block members'):
+                        blocks.derive(read_native_inventory(netlist_of(run)), read_sheet_names(netlist_of(run)), probe,
+                                      inventory_sha256=digest(netlist_of(run)),
+                                      allocation_raw=json_bytes({'schema': blocks.ALLOCATION, 'blocks': block}))
+                else:
+                    out = self.root / f'lock-{name}-allocation'
+                    compile_and_publish(run, allocation, out)
+                    receipt = verify_receipt(out, run, allocation)
+                    derived = blocks.derive(read_native_inventory(netlist_of(run)), read_sheet_names(netlist_of(run)),
+                                            probe, inventory_sha256=digest(netlist_of(run)),
+                                            allocation_raw=(out / 'contracts/block-allocation.json').read_bytes())
+                    self.assertEqual({k: derived[k] for k in ('allocation_sha256', 'blocks', 'residual')},
+                                     receipt['allocation_derivation'])
+                    self.assertIn('receipt.json', compile_plan(run, fixed))
+        # Unknown, quoted or repeated lock declarations refuse; none defaults to unlocked.
+        for name, edited, pattern in (
+                ('repeated', lock(board, '(locked)(locked no)'), 'ambiguous lock state'),
+                ('value', lock(board, '(locked maybe)'), 'unrecognized lock form'),
+                ('quoted', lock(board, '(locked "no")'), 'quoted lock value'),
+                ('atom', board.replace('(footprint "pins:SO8"', '(footprint "pins:SO8" bogus', 1),
+                 "unrecognized footprint atoms \\['bogus'\\]")):
+            with self.subTest(refused=name), self.assertRaisesRegex(IntentRefused, pattern):
+                path = self.root / f'lock-{name}.kicad_pcb'
+                path.write_text(edited)
+                physical_intent.native_board(path)
+
+    def test_footprint_identity_is_the_native_footprint_uuid(self):
+        # Review ee388e-510-r1r5 H3: the footprint UUID was overwritten by the last pad UUID.
+        from agent_ee.placement_probe import extract
+        for run in (self.control, self.local, self.defect):
+            with self.subTest(run=run.name):
+                path = run / 'inputs/project/pins.kicad_pcb'
+                self.assertEqual({r: (f['uuid'], f['fpid'], f['locked'])
+                                  for r, f in physical_intent.native_board(path).items()},
+                                 {f['ref']: (f['uuid'], f['fpid'], f['locked']) for f in extract(path)['footprints']})
+        board = (FIXTURE / 'control/pins.kicad_pcb').read_text()
+        canl = [terminal('l', '6', 'CANL', 'canl')]
+        duplicate = self.board_run('fp-duplicate', board.replace('\t(gr_rect', mechanical(U1_UUID), 1), {})
+        path = duplicate / 'inputs/project/pins.kicad_pcb'
+        self.assertEqual(sorted(f['uuid'] for f in extract(path)['footprints']), [U1_UUID, U1_UUID])
+        bad = self.intent(duplicate, terminals=canl, blocks=[{'id': 'can', 'references': ['U1']}])
+        self.refused(duplicate, bad, 'missing or ambiguous footprint identity: native U1 and H1 share')
+        # The package an earlier compiler published from the control board's identities.
+        out = self.root / 'fp-duplicate-stale'
+        physical_intent.publish(compile_plan(self.control, self.intent(
+            terminals=canl, blocks=[{'id': 'can', 'references': ['U1']}])), out)
+        with self.assertRaisesRegex(IntentRefused, 'missing or ambiguous footprint identity'):
+            verify_receipt(out, duplicate, bad)
+        netlist = duplicate / 'work/netlist/design.xml'
+        with self.assertRaisesRegex(ValueError, 'missing or ambiguous footprint identity'):
+            blocks.derive(read_native_inventory(netlist), read_sheet_names(netlist), extract(path),
+                          inventory_sha256=digest(netlist), allocation_raw=json_bytes(
+                              {'schema': blocks.ALLOCATION, 'blocks': [{'id': 'can', 'references': ['U1']}]}))
+        missing = self.root / 'fp-missing.kicad_pcb'
+        missing.write_text(board.replace(f'\t\t(uuid "{U1_UUID}")\n', '', 1))
+        with self.assertRaisesRegex(IntentRefused, 'missing or ambiguous footprint identity: native U1 has no single'):
+            physical_intent.native_board(missing)
+        # A distinct mechanical footprint keeps the ordinary allocation positive.
+        distinct = self.board_run('fp-distinct', board.replace(
+            '\t(gr_rect', mechanical('7d0c3a51-2b8e-4e62-9a0f-3f1d5c2b9a11'), 1), {})
+        good = self.intent(distinct, terminals=canl, blocks=[{'id': 'can', 'references': ['U1']}])
+        out = self.root / 'fp-distinct-allocation'
+        compile_and_publish(distinct, good, out)
+        verify_receipt(out, distinct, good)
 
     # ------------------------------------------- unsupported and diagnostic
 

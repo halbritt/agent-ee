@@ -117,7 +117,16 @@ without a bound published, passed `verify_receipt` and then crashed
   numeral (`x3 mm`, `mm3`). Two different stated lengths are ambiguous and
   refuse;
 - a pair declaring `datasheet` must classify `hard`: the numeric derivation equals
-  the declared `max_distance_nm`. Otherwise it is a `numeric mismatch`;
+  the declared `max_distance_nm`. Otherwise it is a `numeric mismatch`. The
+  compiler then binds the derivation to one captured record line. That line
+  must hold the derivation's `locator` as a whole token and its quote exactly
+  once, on token boundaries. Every numeral on the line must pass the same
+  complete-lexeme rule as owner decisions and resolve to one length equal to
+  `value_nm`. The shared classifier accepts any matching token. Before this
+  check, `within -3 mm`, `within 1,003 mm`, `within 1/3 mm`, `within 1’234 mm`,
+  `3 mm and 999 yd` and `3 mm and 4 mm` all published hard suffix maxima
+  (review ee388e-510-r1r5 H2). They now refuse, both before output and at
+  `verify_receipt`;
 - only `derivation.kind: numeric` compiles. Its verified captured quote must
   state the declared maximum. A `layout` derivation is refused as
   `unverifiable derivation kind 'layout'`. Its `distance_units`,
@@ -150,7 +159,16 @@ reported as `advisory` or `feasibility` in `locality_qualification`.
 `conflicting membership`. The allocation is then admitted by the actual
 `blocks.derive`. It runs on the native netlist inventory and sheet names, and on
 a capture of the digest-bound native board (footprint reference, UUID, library
-ID, lock state and pad nets). `derive` refuses a locked member, with or without
+ID, lock state and pad nets). The footprint UUID is the footprint's own single
+`uuid`, never a pad UUID. A footprint with no single UUID, or one that shares a
+UUID with another footprint, refuses as `missing or ambiguous footprint
+identity`, the same refusal `derive` gives on a pcbnew capture (review
+ee388e-510-r1r5 H3). Lock state follows pcbnew: the bare `locked` footprint
+atom, `(locked)`, `(locked yes)` and `(locked true)` are locked, and `(locked
+no)` and `(locked false)` are not. Any other lock value, a quoted value, a
+second lock declaration (pcbnew lets the last one win) or an unrecognized
+footprint atom refuses; no unrecognized form defaults to unlocked (review
+ee388e-510-r1r5 H1). `derive` refuses a locked member, with or without
 a `moves` entry, so the locked U1 of the defect board is refused (verification
 510 R3). It also refuses a footprint that is not an on-board native component,
 such as the netted, board-only C1 of the locality board, and a footprint that
@@ -246,6 +264,17 @@ covers:
 - allocation through the actual `blocks.derive`: the locked U1 without moves,
   the board-only C1, and a positive whose receipt derivation equals `derive` on
   a pcbnew capture;
+- every native lock form (bare atom, `(locked)`, `(locked yes)`, `(locked true)`,
+  `(locked no)`, `(locked false)`), checked against pcbnew, with allocation and
+  fixed-move refusals for the locked forms and actual-`derive` positives for the
+  unlocked forms. Repeated, unknown and quoted lock forms and unknown atoms
+  refuse;
+- footprint identity equal to pcbnew on the fixture boards. Duplicate and
+  missing footprint UUIDs refuse, both before output and at `verify_receipt`;
+- datasheet record-line binding: the six signed, grouped, fractional and
+  two-length lines, partial-token quotes and locator mismatches refuse, both
+  before output and at `verify_receipt`. The 3 mm and 0.5 mm controls remain
+  hard in the actual `PlacementIndex`;
 - repeated physical functions (synthetic two-GND/two-VCC symbol through the
   real terminal join and topology evaluator), with wrong-pin, contradictory-pin
   and alias-collision refusals;
