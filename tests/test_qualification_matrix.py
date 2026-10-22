@@ -24,7 +24,8 @@ from agent_ee import hardware_interface as hi
 from agent_ee import io_map
 from agent_ee.capabilities import compile_coverage
 from agent_ee.storage import digest, json_bytes
-from tests.test_io_map import HistoricalQualificationTests as H, SOURCE, probe_bindings
+from tests import test_io_map as io_tests
+from tests.test_io_map import SOURCE, probe_bindings
 from tests.toolchain import require_toolchain
 
 CONSUMERS = ('validator', 'capability', 'coverage', 'compiler')
@@ -47,6 +48,10 @@ OTHER_BODY = b'accidentally different source\n'
 ITEM4 = b'owner item 4\n'
 NEW_API = hasattr(hi, 'verify_contract')
 COMPILE_CAPTURED = 'captured' in inspect.signature(io_map.compile_io_map).parameters
+# The shared fixture constants, not the TestCase class itself (which unittest would collect again here).
+RAW = io_tests.HistoricalQualificationTests.RAW
+HISTORY = io_tests.HistoricalQualificationTests.HISTORY
+SCOPE = io_tests.HistoricalQualificationTests.SCOPE
 
 
 def sha(data):
@@ -57,7 +62,7 @@ class Bundle:
     """Everything a consumer can be handed: the captured files, the scope pin and the compiler inputs."""
 
     def __init__(self, *, contract, record, history, compile_kwargs=None, extra=None, legacy=False):
-        self.csv = H.RAW
+        self.csv = RAW
         self.contract, self.record, self.history = contract, record, history
         self.compile_kwargs = compile_kwargs or {}
         self.pin = copy.deepcopy(contract['qualification_record']) if 'qualification_record' in contract else MISSING
@@ -91,7 +96,7 @@ class Bundle:
 
 
 def history(**origin):
-    h = copy.deepcopy(H.HISTORY)
+    h = copy.deepcopy(HISTORY)
     h['origin'].update(origin)
     return h
 
@@ -103,13 +108,13 @@ def compile_bundle(hist, extra=None):
         kwargs['captured'] = {k: v for k, v in extra.items() if k != hist['origin']['path']} or None
     if hist['origin']['path'] in extra:
         kwargs['origin_bytes'] = extra[hist['origin']['path']]
-    contract = io_map.compile_io_map(H.RAW, csv_path=CSV_PATH, requirement='interface', source=SOURCE, **kwargs)
+    contract = io_map.compile_io_map(RAW, csv_path=CSV_PATH, requirement='interface', source=SOURCE, **kwargs)
     record = kwargs['report'].get('qualification_record') or json_bytes(io_map.build_record(contract, hist))
     return Bundle(contract=contract, record=record, history=hist, extra=extra)
 
 
 def legacy_bundle(**compile_kwargs):
-    contract = io_map.compile_io_map(H.RAW, csv_path=CSV_PATH, requirement='interface', source=SOURCE,
+    contract = io_map.compile_io_map(RAW, csv_path=CSV_PATH, requirement='interface', source=SOURCE,
                                      bindings=probe_bindings(), **compile_kwargs)
     return Bundle(contract=contract, record=None, history=None, compile_kwargs=compile_kwargs, legacy=True)
 
@@ -167,7 +172,7 @@ def capture_dir(b, tmp):
     params = dict(contract='contract.json', netlist_check='netlist')
     if b.pin is not MISSING:
         params['qualification_record'] = copy.deepcopy(b.pin)
-    scope = dict(copy.deepcopy(H.SCOPE), schematic='interface.kicad_sch', board='interface.kicad_pcb')
+    scope = dict(copy.deepcopy(SCOPE), schematic='interface.kicad_sch', board='interface.kicad_pcb')
     scope['checks'] = [dict(id='netlist', kind='netlist'), dict(id='interface', kind='hardware_interface',
                                                                 params=params)]
     scope['baseline']['requirements'][0]['checks'] = ['netlist', 'interface']
@@ -409,7 +414,7 @@ for label, op in (('null', None), ('empty', {}), ('wrong-type', 'qualification.j
          na=('validator', 'compiler'))
 
 # contract citations changed, record and CSV unchanged
-csv_sha = sha(H.RAW)
+csv_sha = sha(RAW)
 UPGRADE_CSV = dict(path=CSV_PATH, sha256=csv_sha, locator='inherited Notes token')
 CITATION_MODES = {
     'bare-ids': lambda i: i['io_map'].update(requirements=[r['id'] if isinstance(r, dict) else r
@@ -620,8 +625,7 @@ class NativeQualificationMatrixTests(unittest.TestCase):
 
     def test_native_reporting_legacy_and_bound(self):
         require_toolchain(native=True)
-        from tests.test_io_map import NativeQualificationTests
-        runner = NativeQualificationTests()
+        runner = io_tests.NativeQualificationTests()
         try:
             for bound in (False, True):
                 with self.subTest(bound=bound):
