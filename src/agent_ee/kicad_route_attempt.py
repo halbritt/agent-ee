@@ -372,10 +372,70 @@ def canonical_backend(name):
     return BACKEND_ALIASES.get(name, name) if isinstance(name, str) else name
 
 
-# Installed backend inputs the pinned cli.py reads under KICAD_ROUTE_STATE.
+# Installed backend inputs the pinned cli.py reads under KICAD_ROUTE_STATE, in the
+# legacy layout (no router generation selected; the image's install.sh builds this).
 STATE_COMPONENTS = {'krt': ('.venv-krt',), 'builtin': ('.venv-krt',), 'freerouting': ('vendor/freerouting',)}
 STATE_REQUIRED = {'krt': ('.venv-krt/bin/python',), 'builtin': ('.venv-krt/bin/python',),
                   'freerouting': ('vendor/freerouting',)}
+# A router generation (`kicad-route update` at the pin) is one directory under the state
+# that holds the copied engine source and its venv; the manifest's krt.generation selects
+# it. These are the files the pin's common.router_generation requires before selecting it.
+GENERATION = re.compile(r'\.router-generations/[0-9a-f]{32}\Z')
+GENERATION_REQUIRED = ('installation.json', 'router/VERSION', 'router/UPSTREAM.json', 'venv/bin/python')
+
+
+def state_generation(state):
+    """The router generation the state manifest at `state` selects, or None (legacy layout).
+
+    Returns (generation, problems). An absent or unreadable manifest selects nothing
+    here; verify_state reports it. A selection the pin would not resolve, or one
+    outside STATE/.router-generations, is a problem, never a fallback to .venv-krt."""
+    try:
+        manifest = json.loads((Path(state) / 'manifest.json').read_bytes())
+    except (OSError, ValueError):
+        return None, []
+    krt = manifest.get('krt') if isinstance(manifest, dict) else None
+    generation = krt.get('generation') if isinstance(krt, dict) else None
+    if generation is None:
+        return None, []
+    if not isinstance(generation, str) or not GENERATION.match(generation):
+        return None, [f'state manifest selects an invalid router generation {generation!r}']
+    return generation, []
+
+
+def state_components(backend, generation=None):
+    """Installed state directories the backend reads: the selected generation, or the legacy ones."""
+    if canonical_backend(backend) == 'builtin' and generation is not None:
+        return (generation,)
+    return STATE_COMPONENTS[backend]
+
+
+def state_required(backend, generation=None):
+    """Installed files the backend cannot start without, for the state's layout."""
+    if canonical_backend(backend) == 'builtin' and generation is not None:
+        return tuple(f'{generation}/{rel}' for rel in GENERATION_REQUIRED)
+    return STATE_REQUIRED[backend]
+
+
+def generation_of_components(backend, components):
+    """Recover the layout a report's state identities were taken in; ValueError if none matches."""
+    components = tuple(components)
+    if components == STATE_COMPONENTS[backend]:
+        return None
+    if (canonical_backend(backend) == 'builtin' and len(components) == 1 and
+            isinstance(components[0], str) and GENERATION.match(components[0])):
+        return components[0]
+    raise ValueError('state identities name neither the legacy nor a router-generation layout')
+
+
+def runtime_paths(layout, generation):
+    """backend.runtime as the pin reports it when it runs the engine verified in this layout."""
+    checkout, state = Path(layout['checkout']), Path(layout['state'])
+    if generation is None:
+        return {'source': str(checkout / 'src/kicad_route/router'), 'venv': str(state / '.venv-krt'),
+                'generation': None}
+    return {'source': str(state / generation / 'router'), 'venv': str(state / generation / 'venv'),
+            'generation': str(state / generation)}
 SAFE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z')
 STAMP = re.compile(r'\d{8}T\d{6}\.\d{6}Z\Z')
 # Every top-level result.json/attempt.json key cli.run_attempt writes at PIN
@@ -389,6 +449,11 @@ RESULT_KEYS = {'schema', 'measurement', 'evidence', 'tool_identity', 'sandbox', 
 COPPER_OWNERSHIP_RECORD = 'validate/copper-ownership.json'
 COPPER_OWNERSHIP_BOUND = {'status', 'record', 'sha256', 'coverage', 'replay_authority'}
 COPPER_OWNERSHIP_UNAVAILABLE = {'status', 'reasons', 'replay_authority'}
+# Nested keys the pin adds (KICADROUTE generations and measurement qualification): every
+# result.json's process carries measurement_qualification, and an owned-engine result's
+# backend carries the runtime it executed, which must be the engine verified before the run.
+MEASUREMENT_QUALIFICATION = {'measurement', 'build_reproducible', 'reasons'}
+RUNTIME_KEYS = {'source', 'venv', 'generation'}
 ATTEMPT_KEYS = {'schema', 'backend', 'project', 'board', 'schematic', 'input_fingerprint', 'source',
                 'reference_dir', 'candidate_dir', 'reference_facts', 'baseline', 'scope',
                 'settings', 'floor', 'rules_files'}
@@ -641,15 +706,23 @@ def verify_state(checkout, state, backend='builtin', pinned=None, mounted_at=Non
     manifest recorded for any other directory would only fail inside the
     sandbox, so it is refused here first. The remaining checks read the files
     at `state`, wherever the caller sees them.
+
+    Both layouts the pin installs qualify, and only when built from the pinned
+    source: the legacy one (no generation; engine in the checkout, venv at
+    .venv-krt, as the image's install.sh builds it) and a router generation
+    (`kicad-route update`; STATE/.router-generations/<hex>/ holds a copy of the
+    source and its venv). A generation's digest is compared with the checkout's
+    SOURCE_ROOT, never with itself, so a stale generation is refused.
     """
     pinned = PINNED_CODE if pinned is None else pinned
     if canonical_backend(backend) != 'builtin' or 'src/kicad_route/engine.py' not in pinned:
         return []
     mounted_at = SANDBOX['checkout'] if mounted_at is None else str(mounted_at)
     script = r'''
-import json, sys
+import json, re, sys
 from pathlib import Path
-checkout, state, mounted_at = map(Path, sys.argv[1:])
+checkout, state, mounted_at = map(Path, sys.argv[1:4])
+GENERATION = re.compile(sys.argv[4])
 sys.path.insert(0, str(checkout / 'src'))
 from kicad_route import common, engine, statemanifest
 # statemanifest.read() also requires state_dir to equal the path this process
@@ -663,26 +736,48 @@ if m.get('state_dir') != str(mounted_at):
                     f"{str(mounted_at)!r}; record it with `kicad-route state-manifest` where "
                     f"KICAD_ROUTE_STATE is {str(mounted_at)!r}")
 k = m.get('krt') or {}
-# Only the owned engine inside the verified checkout may run, never a staged router generation.
-if k.get('generation') is not None:
-    problems.append('state manifest selects a router generation; only the checkout engine is qualified')
-if k.get('source_sha256') != engine.source_sha256(engine.SOURCE_ROOT):
-    problems.append('owned engine source digest differs')
+# The installed engine must be built from the pinned source in the verified checkout.
+# Under a router generation both the manifest and the pin's engine.ROOT describe the
+# generation's own copy, so the reference is always the checkout's SOURCE_ROOT: a
+# generation built from any other commit (kicad-route doctor still passes it) differs.
+pinned_source = engine.source_sha256(engine.SOURCE_ROOT)
+generation = k.get('generation')
+if generation is not None and not (isinstance(generation, str) and GENERATION.match(generation)):
+    problems.append(f'state manifest selects an invalid router generation {generation!r}')
+    generation = venv_path = None
+else:
+    venv_path = f'{generation}/venv' if generation else '.venv-krt'
+if k.get('source_sha256') != pinned_source:
+    problems.append('owned engine source digest differs' + (
+        f'; router generation {generation} was built from commit {k.get("commit")}, not the pinned '
+        f'source {pinned_source}: rerun `kicad-route update` at the pin' if generation else ''))
 module = (k.get('extension_module') or {}).get('path')
-venv = state / '.venv-krt'
-installed = statemanifest.extension_module(venv)
-if (not module or installed is None or
-        not (state / module).resolve().is_relative_to(venv.resolve()) or
-        (state / module).resolve() != installed.resolve()):
-    problems.append('manifest must identify the installed .venv-krt grid_router extension')
+if venv_path is not None:
+    venv = state / venv_path
+    installed = statemanifest.extension_module(venv)
+    if (not module or installed is None or
+            not (state / module).resolve().is_relative_to(venv.resolve()) or
+            (state / module).resolve() != installed.resolve()):
+        problems.append(f'manifest must identify the installed {venv_path} grid_router extension')
 if not (k.get('extension_module') or {}).get('sha256'):
     problems.append('missing installed engine digest')
-if (k.get('venv') or {}).get('path') != '.venv-krt':
+if venv_path is not None and (k.get('venv') or {}).get('path') != venv_path:
     problems.append('unexpected routing environment path')
-# The manifest was installed on the host. The immutable source is mounted at a
-# different absolute path inside the sandbox, and a separate state holds no
-# source at all; verify the recorded source hashes on the mounted checkout.
-if k:
+if generation:
+    # The generation runs its own copy of the source: its recorded paths stay, so the
+    # drift check below hashes that copy against the digest just bound to the pin.
+    if (k.get('source_path') != f'{generation}/router' or
+            (k.get('requirements') or {}).get('path') != f'{generation}/router/requirements.txt'):
+        problems.append('router generation source or requirements path is not the generation copy')
+    record = common.load_json(state / generation / 'installation.json')
+    if (not isinstance(record, dict) or not isinstance(record.get('source'), dict) or
+            record['source'].get('source_sha256') != pinned_source or
+            record.get('extension_sha256') != (k.get('extension_module') or {}).get('sha256')):
+        problems.append('router generation installation record differs from the pinned source or module')
+elif k:
+    # The manifest was installed on the host. The immutable source is mounted at a
+    # different absolute path inside the sandbox, and a separate state holds no
+    # source at all; verify the recorded source hashes on the mounted checkout.
     k['requirements']['path'] = str(engine.SOURCE_ROOT / 'requirements.txt')
     k['source_path'] = str(engine.SOURCE_ROOT)
 problems += [f"state manifest drift: {d['item']}" for d in statemanifest.verify(m, state)]
@@ -691,7 +786,7 @@ print(json.dumps(problems))
     try:
         # -B still reads caches. /dev/null cannot hold ignored bytecode.
         result = subprocess.run([PYTHON, '-I', '-B', '-X', 'pycache_prefix=/dev/null',
-                                 '-c', script, str(checkout), str(state), mounted_at],
+                                 '-c', script, str(checkout), str(state), mounted_at, GENERATION.pattern],
                                 capture_output=True, text=True, timeout=60,
                                 env={'PATH': '/usr/bin:/bin', 'PYTHONDONTWRITEBYTECODE': '1'})
         if result.returncode:
@@ -921,6 +1016,10 @@ def semantics(exit_code, result, attempt, refused_line, discovered, request):
         return 'contradiction', ['result.json shape differs from the pinned tool']
     if custody and not copper_ownership_shape(result['copper_ownership']):
         return 'contradiction', ['copper_ownership differs from the pinned tool']
+    if not measurement_shape(result):
+        return 'contradiction', ['process.measurement_qualification differs from the pinned tool']
+    if canonical_backend(request['backend']) == 'builtin' and not runtime_shape(result.get('backend')):
+        return 'contradiction', ['backend.runtime differs from the pinned tool']
     if result['kind'] != 'route' or not _is_int(result['exit_code']) or result['exit_code'] != exit_code:
         return 'contradiction', ['result.json kind or exit_code contradicts the process exit']
     statuses = [(result.get(k), k, allowed) for k, allowed in
@@ -997,6 +1096,36 @@ def terminal_problems(result):
         return ['native terminal evidence is missing or malformed']
     if result['routing'].get('status') == 'COMPLETE' and (candidate['incomplete_nets'] or candidate['component_deficit']):
         return ['routing COMPLETE while native terminals remain split']
+    return []
+
+
+def measurement_shape(result):
+    """process.measurement_qualification as the pin writes it, agreeing with the top-level measurement."""
+    process = result.get('process')
+    value = process.get('measurement_qualification') if isinstance(process, dict) else None
+    return (isinstance(value, dict) and set(value) == MEASUREMENT_QUALIFICATION and
+            isinstance(value['measurement'], bool) and value['measurement'] is result.get('measurement') and
+            value['build_reproducible'] in (True, False, None) and isinstance(value['reasons'], list) and
+            all(isinstance(r, str) and r for r in value['reasons']))
+
+
+def runtime_shape(backend):
+    """backend.runtime of an owned-engine result: exactly source, venv and generation paths."""
+    runtime = backend.get('runtime') if isinstance(backend, dict) else None
+    return (isinstance(runtime, dict) and set(runtime) == RUNTIME_KEYS and
+            all(isinstance(runtime[k], str) and runtime[k].startswith('/') for k in ('source', 'venv')) and
+            (runtime['generation'] is None or
+             (isinstance(runtime['generation'], str) and runtime['generation'].startswith('/'))))
+
+
+def runtime_problems(request, layout, generation, result):
+    """The engine an owned-engine attempt reports it ran must be the one verified before it ran."""
+    if canonical_backend(request['backend']) != 'builtin' or not isinstance(result, dict):
+        return []
+    runtime = (result.get('backend') or {}).get('runtime') if isinstance(result.get('backend'), dict) else None
+    if runtime != runtime_paths(layout, generation):
+        return ['the router ran an engine other than the verified '
+                + (f'router generation {generation}' if generation else 'checkout engine')]
     return []
 
 
@@ -1646,13 +1775,14 @@ def _executable(path):
     return {'path': str(path), 'resolved': str(real), 'sha256': digest(real) if real.is_file() else None}
 
 
-def _identities(request, layout):
+def _identities(request, layout, generation=None):
     def identity_of(root):
         return tree_identity(root) if root.is_dir() and not root.is_symlink() else None
 
     checkout, state = Path(layout['checkout']), Path(layout['state'])
     identities = {'code': {top: identity_of(checkout / top) for top in ('bin', 'src')},
-                  'state': {comp: identity_of(state / comp) for comp in STATE_COMPONENTS[request['backend']]}}
+                  'state': {comp: identity_of(state / comp)
+                            for comp in state_components(request['backend'], generation)}}
     manifest = state / 'manifest.json'
     identities['state_manifest'] = digest(manifest) if manifest.is_file() else None
     return identities
@@ -1784,16 +1914,18 @@ def attempt(request, layout, cancel=None):
     problems += code_problems
     if not code_problems:
         problems += verify_state(checkout, state, request['backend'], layout['code'], mounted_at=state)
-    for rel in STATE_REQUIRED[request['backend']]:
+    generation, selection = state_generation(state)
+    problems += selection
+    for rel in state_required(request['backend'], generation):
         if not os.path.lexists(state / rel):
             problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')
     targets = layout['probe'] if layout['probe'] is not None else (
-        [state] + [state / c for c in STATE_COMPONENTS[request['backend']] if (state / c).is_dir()] +
+        [state] + [state / c for c in state_components(request['backend'], generation) if (state / c).is_dir()] +
         ([checkout] if checkout != state else []))
     report['state_write_probe'] = write_probe(targets)
     if not all(p['refused'] for p in report['state_write_probe']):
         problems.append('the tool state or checkout is writable from the sandbox')
-    report['identity_before'] = _identities(request, layout)
+    report['identity_before'] = _identities(request, layout, generation)
     if problems:
         report['semantics'] = {'classification': 'not_run', 'reasons': problems, 'exit_code': None}
         return _finish(report, routing)
@@ -1801,7 +1933,7 @@ def attempt(request, layout, cancel=None):
     argv, env = tool_argv(request, layout), tool_env(layout)
     report['process'] = run_tool(argv, env, routing, routing / 'kicad-route.stdout', routing / 'kicad-route.stderr',
                                  request['timeout_s'], cancel)
-    report['identity_after'] = _identities(request, layout)
+    report['identity_after'] = _identities(request, layout, generation)
     after_inputs = tree(candidate_root)
     run_dir, found = discover(routing / 'out', request)
     report['discovery'] = {'attempt_dir': run_dir.relative_to(routing).as_posix() if run_dir else None,
@@ -1825,6 +1957,7 @@ def attempt(request, layout, cancel=None):
         classification, reasons = semantics(process['exit_code'], result, attempt_record, refused_line,
                                             run_dir is not None, request)
     violations = found + load + [f'link or special file in attempt diagnostics: {n}' for n in links]
+    violations += runtime_problems(request, layout, generation, result)
     if report['identity_after'] != report['identity_before']:
         violations.append('tool code or state changed during the attempt')
     if after_inputs != inputs_tree:

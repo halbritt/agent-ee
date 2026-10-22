@@ -197,7 +197,9 @@ class NativeKicadRouteTest(unittest.TestCase):
         return placed
 
     def state(self):
-        return {rel: attempt.tree(self.checkout / rel) for rel in ('bin', 'src', '.venv-krt')}
+        generation, _ = attempt.state_generation(self.checkout)
+        return {rel: attempt.tree(self.checkout / rel)
+                for rel in ('bin', 'src', *attempt.state_components('builtin', generation))}
 
     def spec(self):
         return routing_adapter.step(project='project', board='rc_filter.kicad_pcb', schematic='rc_filter.kicad_sch',
@@ -448,6 +450,8 @@ class NativeKicadRouteTest(unittest.TestCase):
         broken = self.root / 'broken-route'
         for top in ('bin', 'src'):
             shutil.copytree(self.checkout / top, broken / top, ignore=shutil.ignore_patterns('__pycache__'))
+        # A checkout has its pyproject.toml; without it the pin looks for a home state.
+        shutil.copyfile(self.checkout / 'pyproject.toml', broken / 'pyproject.toml')
         (broken / '.git').mkdir()
         (broken / '.git/HEAD').write_text(attempt.PIN + '\n')
         subprocess.run(['/usr/bin/python3', '-m', 'venv', '--without-pip', str(broken / '.venv-krt')], check=True)

@@ -504,9 +504,14 @@ The attempt is `not_run` (exit 64), and the router does not start, when:
 - the candidate lacks the board or schematic, or contains a link;
 - the checkout is not the pin or its code differs;
 - an installed backend input is missing. The report names the exact path, for
-  example `KICAD_ROUTE_STATE/.venv-krt/bin/python`;
+  example `KICAD_ROUTE_STATE/.venv-krt/bin/python`, or, when the state manifest
+  selects a router generation, `KICAD_ROUTE_STATE/.router-generations/<hex>/venv/bin/python`
+  (also its `installation.json`, `router/VERSION` and `router/UPSTREAM.json`);
+- the state manifest selects a router generation outside
+  `.router-generations/<32 hex>`;
 - a write probe succeeds. The script tries to create a file in the state
-  directory, in each backend component (`.venv-krt` for KRT,
+  directory, in each backend component (`.venv-krt`, or the selected
+  `.router-generations/<hex>` directory, for the owned engine;
   `vendor/freerouting` for Freerouting), and in the checkout when it is separate.
   Every probe must be
   refused by the OS. A probe file that was created is removed and reported.
@@ -860,7 +865,8 @@ when invoking upstream install/update, to contain generated skill links.
 Both host preflight and the sandbox adapter use the qualified tool's existing
 state-manifest reader to verify the source digest and installed extension,
 requirements, package and KiCad hashes. Missing manifests or extension digests,
-source drift and modules outside `.venv-krt` refuse routing. Manifest verification
+source drift and modules outside the layout's venv (`.venv-krt`, or the selected
+generation's `venv`) refuse routing. Manifest verification
 sets Python's cache prefix to `/dev/null` with bytecode writes disabled, so an
 ignored `__pycache__` file cannot replace verified tool source. The source path is
 rebased in memory for the sandbox mount before checking its recorded requirements
@@ -925,8 +931,7 @@ What changed at the adapter boundary, and what agent-ee does about it:
   `verify_state(..., mounted_at=)` refuses any other `state_dir` with a typed problem
   (`state manifest describes ..., not the sandbox state ...`), on the host at preflight
   and again inside the sandbox; the remaining checks read the files wherever the caller
-  sees them. A manifest that selects a staged router generation is refused: only the
-  engine inside the verified checkout is qualified. The image records `/opt/kicad-route`
+  sees them. The image records `/opt/kicad-route`
   natively. A host checkout records it by running `kicad-route state-manifest` in a
   bwrap view with the checkout bound writable at `/opt/kicad-route` and
   `KICAD_ROUTE_STATE=/opt/kicad-route`.
@@ -949,13 +954,41 @@ What changed at the adapter boundary, and what agent-ee does about it:
   rewritten. Via-budget pilots and campaigns that froze the adapter hash refuse the new
   adapter until recaptured, as before.
 
+- **Router generations.** The pin installs the owned engine in one of two layouts, and
+  both qualify only when built from the pinned source. Legacy (manifest
+  `krt.generation` null): the engine runs from the checkout's `src/kicad_route/router`
+  with `STATE/.venv-krt`; the image's `docker/kicad-route/install.sh` builds this.
+  Router generation (`kicad-route update`): `krt.generation` selects
+  `STATE/.router-generations/<32 hex>/`, which holds a copy of the source (`router/`),
+  its own `venv/` and `installation.json`. For a generation, the manifest's source,
+  requirements, venv and extension paths must all lie inside it; the recorded source
+  digest must equal `engine.source_sha256(engine.SOURCE_ROOT)` of the verified checkout
+  (not the generation's own `engine.ROOT`, which would make the check compare the
+  generation with itself); `installation.json` must record the same source digest and
+  extension hash; and the pin's drift check hashes the generation's copy. A generation
+  built from another commit is self-consistent, so `kicad-route doctor` passes it;
+  agent-ee refuses it (`owned engine source digest differs; router generation ... was
+  built from commit ...`). State components, required files and write-probe targets
+  follow the layout (`state_generation`, `state_components`, `state_required`), and
+  `routing_adapter.verify` recovers the layout from the report's state identities.
+- **Nested result keys.** Every `result.json` carries `process.measurement_qualification`
+  with exactly `measurement`, `build_reproducible` and `reasons`, and its `measurement`
+  must equal the top-level one. An owned-engine result's `backend` carries `runtime` with
+  exactly `source`, `venv` and `generation`; it must name the engine verified before the
+  run (the checkout's `src/kicad_route/router` and `STATE/.venv-krt` with generation
+  null, or the selected generation's `router` and `venv`). Freerouting results carry no
+  `runtime`. Any other shape, or a runtime other than the verified engine, is a
+  contradiction without a board. Covered by `tests.test_kicad_route_generations`.
+
 Settings, refusal classes, retained files and the attempt key set are unchanged. No
 routing constraint was relaxed: the fixed argv, settings, `--protect existing`, layer
 policy, net classes and preservation checks are as before.
 
 Qualify with `AGENT_EE_KICAD_ROUTE_CHECKOUT` set to the pinned checkout:
 `tests.test_kicad_route_repin` (policy and native cases, including a partially joined
-net and a 511-net capped raw report), `test_kicad_route_native`,
+net and a 511-net capped raw report), `tests.test_kicad_route_generations` (both
+installed layouts, stale-generation refusal, nested result keys, and a native run from a
+generation layout), `test_kicad_route_native`,
 `test_kicad_route_adapter`, `test_owned_router_pin` and the other modules listed in the
 [routing policy contract](routing-policy-contract.md).
 

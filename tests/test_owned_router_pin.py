@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from agent_ee import kicad_route_attempt as attempt, routing_adapter
+from tests.test_kicad_route_generations import derive_state
 from tests.toolchain import require_kicad_route
 
 
@@ -26,9 +27,10 @@ class OwnedRouterPinTests(unittest.TestCase):
     def test_missing_digest_wrong_source_and_replaced_module_refuse(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
-            # Only the runtime is mutable in this probe. Source is the real pin.
-            shutil.copytree(self.checkout / '.venv-krt', state / '.venv-krt', symlinks=True)
-            original = json.loads((self.checkout / 'manifest.json').read_text())
+            # Only the runtime is mutable in this probe. Source is the real pin; the
+            # qualified engine is laid out legacy-style whatever the checkout's layout.
+            original = derive_state(self.checkout, state, 'legacy', copy_venv=True)
+            (state / 'manifest.json').unlink()
             self.assertTrue(attempt.verify_state(self.checkout, state))
             for label in ('valid', 'source', 'schema', 'malformed', 'missing_digest', 'outside_venv', 'wrong_module', 'packages', 'module'):
                 with self.subTest(label=label):
@@ -76,12 +78,13 @@ class OwnedRouterPinTests(unittest.TestCase):
             for top in ('bin', 'src'):
                 shutil.copytree(self.checkout / top, root / top,
                                 ignore=shutil.ignore_patterns('__pycache__'))
+            # A checkout has its pyproject.toml; without it the pin looks for a home state.
+            shutil.copyfile(self.checkout / 'pyproject.toml', root / 'pyproject.toml')
             (root / '.git').mkdir()
             (root / '.git/HEAD').write_text(attempt.PIN + '\n')
             # The pin binds its manifest to the sandbox location of a checkout state
             # (/opt/kicad-route), so the copy reuses the qualified runtime as its own state.
-            (root / '.venv-krt').symlink_to(self.checkout / '.venv-krt')
-            shutil.copyfile(self.checkout / 'manifest.json', root / 'manifest.json')
+            derive_state(self.checkout, root, 'legacy')
             self.assertEqual(routing_adapter.preflight(root)['problems'], [])
             source = root / 'src/kicad_route/engine.py'
             cache = Path(importlib.util.cache_from_source(str(source)))
@@ -110,6 +113,8 @@ class OwnedRouterPinTests(unittest.TestCase):
             root = Path(tmp) / 'tool'
             for top in ('bin', 'src'):
                 shutil.copytree(self.checkout / top, root / top, ignore=shutil.ignore_patterns('__pycache__'))
+            # A checkout has its pyproject.toml; without it the pin looks for a home state.
+            shutil.copyfile(self.checkout / 'pyproject.toml', root / 'pyproject.toml')
             (root / '.git').mkdir()
             (root / '.git/HEAD').write_text(attempt.PIN + '\n')
             problems = routing_adapter.preflight(root, self.checkout)['problems']
@@ -119,8 +124,7 @@ class OwnedRouterPinTests(unittest.TestCase):
         for described in ('/home/elsewhere/kicad-route', None, attempt.SANDBOX['state']):
             with self.subTest(described=described), tempfile.TemporaryDirectory() as tmp:
                 state = Path(tmp)
-                (state / '.venv-krt').symlink_to(self.checkout / '.venv-krt')
-                m = json.loads((self.checkout / 'manifest.json').read_text())
+                m = derive_state(self.checkout, state, 'legacy')
                 m['state_dir'] = described
                 (state / 'manifest.json').write_text(json.dumps(m))
                 problems = attempt.verify_state(self.checkout, state)
@@ -130,12 +134,13 @@ class OwnedRouterPinTests(unittest.TestCase):
                 if described == attempt.SANDBOX['state']:
                     self.assertEqual(attempt.verify_state(self.checkout, state, mounted_at=described), [])
 
-    def test_a_staged_router_generation_is_not_the_qualified_engine(self):
+    def test_a_generation_outside_the_pins_selection_rules_is_refused(self):
+        # A router generation qualifies only as the pin selects it and when built from the
+        # pinned source (tests/test_kicad_route_generations.py); a malformed selection never does.
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
-            (state / '.venv-krt').symlink_to(self.checkout / '.venv-krt')
-            m = json.loads((self.checkout / 'manifest.json').read_text())
+            m = derive_state(self.checkout, state, 'legacy')
             m['krt']['generation'] = '.router-generations/g1'
             (state / 'manifest.json').write_text(json.dumps(m))
-            self.assertIn('state manifest selects a router generation; only the checkout engine is qualified',
+            self.assertIn("state manifest selects an invalid router generation '.router-generations/g1'",
                           attempt.verify_state(self.checkout, state))

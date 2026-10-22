@@ -93,7 +93,7 @@
       "layer_stack": "retained facts/reference-facts.json copper_layers, stackup",
       "layer_policy": "report.request.layer_policy, result.settings.backend_args and pour_area_loss_pct",
       "tool_code": "report.tool.commit == PIN; identity_before/after.code (bin, src); PINNED_CODE inside the adapter bytes",
-      "engine_and_state": "identity_before/after.state (.venv-krt), state_manifest digest, result.backend (version, build, commit, source_sha256)",
+      "engine_and_state": "identity_before/after.state (.venv-krt, or the selected .router-generations/<hex>), state_manifest digest, result.backend (version, build, commit, source_sha256, runtime bound to the verified engine)",
       "toolchain": "report.tool.{python,kicad_cli,kicad_route}.sha256 and kicad_share_templates",
       "adapter_and_binding": "receipt mounts, state.json.routing_binding.adapter_sha256"
     },

@@ -225,7 +225,14 @@ class RepinNativeTest(unittest.TestCase):
         manifest = json.loads((self.checkout / 'manifest.json').read_text())
         self.assertEqual(manifest['state_dir'], attempt.SANDBOX['checkout'])
         self.assertEqual((manifest['kicad_route']['commit'], manifest['krt']['commit']), (attempt.PIN, attempt.PIN))
-        self.assertIsNone(manifest['krt']['generation'])
+        # Either layout the pin installs, built from the pinned source (the image's install.sh
+        # builds the legacy one; `kicad-route update` a router generation).
+        generation = manifest['krt']['generation']
+        self.assertEqual(attempt.state_generation(self.checkout), (generation, []))
+        if generation is not None:
+            record = json.loads((self.checkout / generation / 'installation.json').read_text())
+            self.assertEqual(record['source']['source_sha256'], manifest['krt']['source_sha256'])
+            self.assertEqual(manifest['krt']['source_path'], f'{generation}/router')
         module = manifest['krt']['extension_module']
         self.assertEqual(attempt.digest(self.checkout / module['path']), module['sha256'])
         self.assertEqual(check['executable_sha256'], attempt.PINNED_CODE['bin/kicad-route'])

@@ -210,6 +210,28 @@ result = {'schema': 'kicad-route/route/1', 'measurement': False, 'evidence': {},
           'finished_utc': '2026-10-17T00:00:00+00:00', 'exit_code': code, 'ledger': {}}
 if paired:
     result.update(schema='kicad-route/route/2', pairs=[{**p, 'routed': True} for p in plans])
+# The pin's nested additions: measurement qualification on every process record, and the
+# runtime an owned-engine result executed (the selected router generation, else legacy).
+result['process']['measurement_qualification'] = {
+    'measurement': False, 'build_reproducible': None, 'reasons': ['no repeat evidence for this build']}
+if opts['--backend'] == 'builtin':
+    try:
+        generation = json.loads((state / 'manifest.json').read_text())['krt']['generation']
+    except (OSError, ValueError, KeyError, TypeError):
+        generation = None
+    result['backend']['runtime'] = (
+        {'source': str(state / generation / 'router'), 'venv': str(state / generation / 'venv'),
+         'generation': str(state / generation)} if generation else
+        {'source': str(ROOT / 'src/kicad_route/router'), 'venv': str(state / '.venv-krt'), 'generation': None})
+    if name == 'runtime_elsewhere':
+        result['backend']['runtime'] = {'source': '/elsewhere/router', 'venv': '/elsewhere/venv',
+                                        'generation': '/elsewhere'}
+    if name == 'runtime_extra_key':
+        result['backend']['runtime']['python'] = '/usr/bin/python3'
+if name == 'measurement_missing':
+    del result['process']['measurement_qualification']
+if name == 'measurement_disagrees':
+    result['process']['measurement_qualification']['measurement'] = True
 # The pin adds copper custody to a builtin attempt whose process passed (AGENTEE-450).
 if opts['--backend'] == 'builtin' and process_ok and name != 'custody_missing':
     if name == 'custody_unavailable':

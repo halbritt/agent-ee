@@ -67,7 +67,9 @@ def preflight(checkout, state=None, backend='builtin'):
     if not code_problems:
         problems += attempt.verify_state(checkout, state, backend, mounted_at=attempt.SANDBOX[
             'checkout' if state == checkout else 'state'])
-    for rel in attempt.STATE_REQUIRED[backend]:
+    generation, selection = attempt.state_generation(state)
+    problems += selection
+    for rel in attempt.state_required(backend, generation):
         if not os.path.lexists(state / rel):
             problems.append(f'missing installed backend dependency: KICAD_ROUTE_STATE/{rel}')
     return {'checkout': str(checkout), 'state': str(state), 'commit': commit, 'pin': attempt.PIN,
@@ -421,6 +423,9 @@ def _verify(run, report, inputs, receipt, layout):
                 if malformed or discovery['problems'] or report['identity_after'] != report['identity_before']:
                     raise ValueError(f'a {classification} attempt with discovery, report or tool-state '
                                      'violations is a contradiction')
+                generation = attempt.generation_of_components(request['backend'], report['identity_before']['state'])
+                if attempt.runtime_problems(request, expected, generation, result):
+                    raise ValueError(f'a {classification} attempt ran an engine other than the verified one')
         if proposal != 'none':
             _bind(routing, retained, report, request, expected, result, record)
     backend = attempt.backend_of(result)
@@ -480,7 +485,9 @@ def _tool_claims(report, request, layout, *, ran):
         targets = [str(t) for t in layout['probe']]
     else:
         state, checkout = Path(layout['state']), Path(layout['checkout'])
-        targets = [str(state)] + [str(state / c) for c in attempt.STATE_COMPONENTS[request['backend']]] + (
+        components = attempt.state_components(
+            request['backend'], attempt.generation_of_components(request['backend'], report['identity_before']['state']))
+        targets = [str(state)] + [str(state / c) for c in components] + (
             [str(checkout)] if checkout != state else [])
     if (not isinstance(probes, list) or [p.get('directory') for p in probes] != targets or
             any(p.get('refused') is not True or not p.get('errno') for p in probes)):

@@ -204,7 +204,7 @@ stage receipt:
 | Layer stack | retained reference facts `copper_layers`, `stackup` |
 | Layer policy | `report.request.layer_policy`; `result.settings.backend_args`, `pour_area_loss_pct`; derived record `layer_policy_records[N]` |
 | kicad-route code | `report.tool.commit` equal to `PIN`; `identity_before/after.code` for `bin/` and `src/`; `PINNED_CODE` inside the adapter bytes |
-| Engine and installed state | `identity_before/after.state` (`.venv-krt`), the state-manifest digest, `result.backend` (`version`, `build`, `commit`, `source_sha256`) |
+| Engine and installed state | `identity_before/after.state` (`.venv-krt`, or the selected `.router-generations/<hex>`), the state-manifest digest, `result.backend` (`version`, `build`, `commit`, `source_sha256`, and `runtime` bound to the verified engine) |
 | Toolchain | `report.tool.{kicad_route, python, kicad_cli}.sha256`, KiCad template library tables |
 | Adapter and execution | receipt mount identities, `state.json.routing_binding.adapter_sha256`, exact sandbox argv and environment |
 | Budget | `request.budget_s`, `timeout_s` (the measured `result.runtime_s` is an outcome, not identity) |
@@ -313,7 +313,8 @@ When agent-ee re-pins onto a commit with that work:
 7. **Qualification and text.** Run every test that imports the adapter or needs
    the router against the new checkout, with `AGENT_EE_REQUIRE_TOOLCHAIN=1` and
    zero skips. They include `test_kicad_route_native`, `test_kicad_route_adapter`,
-   `test_kicad_route_stage_receipt`, `test_owned_router_pin`, `test_routing_adapter`,
+   `test_kicad_route_stage_receipt`, `test_owned_router_pin`,
+   `test_kicad_route_repin`, `test_kicad_route_generations`, `test_routing_adapter`,
    `test_routing_campaign`, `test_route_layer_policy`, `test_per_net_layers`,
    `test_layer_policy_lineage`, `test_via_budget_pilot`, `test_pour_budget`,
    `test_rf_layer_wiring`, `test_gnss_rf_path` and `test_routing_policy_contract`.
