@@ -25,3 +25,8 @@ surfaces:
         actions:
           - {type: click, selector: 'section:first-of-type .button'}
         ready: '#render-status[data-ready="true"]'
+      diagnostic:
+        route: /
+        actions:
+          - {type: click, selector: 'a[href^="/diagnostics/"][href$="/index.html"]'}
+        ready: 'section img'

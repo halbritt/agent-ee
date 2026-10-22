@@ -480,3 +480,81 @@ class GalleryTests(unittest.TestCase):
             images[view]['sha256'] = manifest['views'][view]['sha256'] = digest(out / images[view]['path'])
         manifest_path.write_text(json.dumps(manifest))
         self.refuses('native render receipt', candidate=run)
+
+
+class DiagnosticSupplementTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+        self.root = self.base/'public'
+        self.root.mkdir()
+        self.image = self.base/'annotated.png'
+        self.image.write_bytes(png_bytes(100))
+        self.packet = self.base/'INDEX.md'
+        self.packet.write_text('Historical diagnostic. Proposed ADC move NOT adopted.')
+        self.board = self.base/'candidate.kicad_pcb'
+        self.board.write_text('captured board bytes')
+        self.board_hash = digest(self.board)
+
+    def add(self):
+        from agent_ee.render_gallery import publish_supplement
+        return publish_supplement(self.root, self.image, self.packet, self.board,
+                                  board_sha256=self.board_hash, label='Historic <analysis>',
+                                  stage='UNROUTED; proposed ADC move NOT adopted')
+
+    def test_independent_immutable_history_preserves_latest_bytes(self):
+        latest = b'[{"id":"unchanged current milestone"}]\n'
+        (self.root/'index.json').write_bytes(latest)
+        first = self.add()
+        old = {p.name:p.read_bytes() for p in (self.root/'diagnostics'/first).iterdir()}
+        self.image.write_bytes(png_bytes(150))
+        second = self.add()
+        self.assertNotEqual(first, second)
+        self.assertEqual(latest, (self.root/'index.json').read_bytes())
+        self.assertEqual(old, {p.name:p.read_bytes() for p in (self.root/'diagnostics'/first).iterdir()})
+        manifest = json.loads(old['manifest.json'])
+        self.assertEqual(manifest['board_sha256'], self.board_hash)
+        self.assertEqual(manifest['source_packet']['sha256'], digest(self.packet))
+        self.assertEqual(manifest['source_image']['sha256'], manifest['image']['sha256'])
+        self.assertEqual(set(old), {'image.png','manifest.json'})
+
+    def test_wrong_board_symlink_and_invalid_png_leave_listing_unchanged(self):
+        self.add()
+        before = (self.root/'diagnostics.json').read_bytes()
+        self.board.write_text('different')
+        with self.assertRaisesRegex(ValueError, 'hash mismatch'): self.add()
+        self.board.write_text('captured board bytes')
+        self.image.unlink()
+        self.image.symlink_to(self.packet)
+        with self.assertRaisesRegex(ValueError, 'symlink'): self.add()
+        self.image.unlink()
+        self.image.write_bytes(b'not a PNG')
+        with self.assertRaises(ValueError): self.add()
+        self.assertEqual(before, (self.root/'diagnostics.json').read_bytes())
+        self.assertEqual(list(self.root.glob('.diagnostic-*')), [])
+
+    def test_http_only_serves_allowlisted_diagnostic_artifacts(self):
+        identifier = self.add()
+        server = serve(self.root, '127.0.0.1', 0)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        base = f'http://127.0.0.1:{server.server_port}'
+        prefix = '/diagnostics/'+identifier+'/'
+        with urlopen(base+prefix+'index.html') as result:
+            body = result.read()
+            self.assertIn(b'Historic &lt;analysis&gt;', body)
+            self.assertIn(b'NOT adopted', body)
+            self.assertNotIn(b'Latest:', body)
+        with urlopen(base+prefix+'image.png') as result:
+            self.assertEqual(result.read(), self.image.read_bytes())
+        for path in ('diagnostics.json', prefix+'source-board', prefix+'source-packet', prefix+'../image.png', prefix):
+            with self.assertRaises(HTTPError) as error: urlopen(base+'/'+path.lstrip('/'))
+            self.assertEqual(error.exception.code, 404)
+        image = self.root/'diagnostics'/identifier/'image.png'
+        image.unlink()
+        image.symlink_to(self.image)
+        with self.assertRaises(HTTPError): urlopen(base+prefix+'image.png')
