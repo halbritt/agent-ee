@@ -446,6 +446,17 @@
     },
     {
       "paths": [
+        "src/agent_ee/native_netlist.py",
+        "tests/test_placement_blocks_request.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-439 netlist stamp identity code and tests. The module matches the opening <export version=\"E\"> design header only to locate the date and tool stamps; the minimal one-resistor netlist text in the tests is authored here, and native netlists are exported at test time from the owned RC fixture. No upstream design, library or vendor document bytes are embedded."
+    },
+    {
+      "paths": [
         "tests/test_blocks.py"
       ],
       "kind": "owned-source",

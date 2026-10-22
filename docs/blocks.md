@@ -647,6 +647,10 @@ the section from files. Every candidate file must be a bare
 `agent-ee.block-candidate/2` packed (`blocks pack --allocation`) or materialized
 (`block_library materialize --allocation --block`) against the same allocation
 file; any other document, such as a materialize result record, is refused.
+`block_arrangement.request_section_from_bytes` builds the same section from
+bytes the caller has already bound by digest. A campaign placement iteration
+uses it for a captured `blocks` declaration
+([placement adapter](placement-adapter.md#captured-blocks-requests-agentee-439)).
 
 ### Review input: block provenance (AGENTEE-355)
 

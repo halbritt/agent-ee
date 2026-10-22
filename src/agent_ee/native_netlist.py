@@ -4,6 +4,8 @@ The returned graph preserves each instance and selected physical pin. Callers ma
 use this read-only inventory for BOM checks without reparsing lossy JSON readers.
 See docs/native-binding.md for the board, BOM and population fields.
 """
+import hashlib
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -43,6 +45,41 @@ def _parse(path):
             raise Unsupported('native XML structure limit exceeded')
         pending.extend((child, depth + 1) for child in node)
     return root
+
+
+# Export stamps of the design header (AGENTEE-439): when the export ran and which tool build
+# wrote it. A fresh export of unchanged sources rewrites the date; nothing else is masked.
+STAMP_FIELDS = ('/export/design/date', '/export/design/tool')
+_STAMPED_HEADER = re.compile(
+    r'(?:<\?xml[^<>]*\?>\s*)?<export version="E">\s*<design>\s*<source>[^<]*</source>\s*'
+    r'<date>(?P<date>[^<]*)</date>\s*<tool>(?P<tool>[^<]*)</tool>')
+
+
+def stamp_identity(path):
+    """Exact bytes identity and the identity with only STAMP_FIELDS' text masked.
+
+    Two exports have the same ``semantic_sha256`` only when every byte outside the two
+    header stamps is identical; there is no XML canonicalization, so whitespace,
+    attribute order, comments and the title-block date stay significant. A header
+    that does not open with source, date and tool is refused, never guessed.
+    """
+    raw = Path(path).read_bytes()
+    root = _parse(path)
+    design = _one(root, 'design')
+    for tag in ('source', 'date', 'tool'):
+        _one(design, tag)
+    try:
+        decoded = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        raise ValueError('native netlist is not UTF-8') from None
+    found = _STAMPED_HEADER.match(decoded)
+    if found is None:
+        raise ValueError('native netlist header does not open with source, date and tool stamps')
+    masked = (decoded[:found.start('date')] + decoded[found.end('date'):found.start('tool')] +
+              decoded[found.end('tool'):])
+    return {'sha256': hashlib.sha256(raw).hexdigest(),
+            'semantic_sha256': hashlib.sha256(masked.encode('utf-8')).hexdigest(),
+            'stamps': {'date': found.group('date'), 'tool': found.group('tool')}}
 
 
 def _parts(root, pinless=False):
