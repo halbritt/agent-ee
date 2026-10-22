@@ -774,3 +774,28 @@ R/C/L category a row is pruned only when its subcategory is positively listed in
 capture and at load. Pruning a row removes it as a candidate, so only qualified
 rows are pruned; a retained row never turns an ambiguity into a resolution.
 See [the passive boundary](catalog-identity.md#passive-boundary-agentee-253).
+
+## Placer capacity proof by default (AGENTEE-249, 2026-10-22)
+
+The coordinator's burndown assignment (agent-449, AGENTEE-249 follow-up) made
+this agent-decidable; it is not an owner decision. Agent reasoning: the
+capacity bound is sound, so a feasible input never exceeds it, and a proof
+reaches `defect` only when its binding limits are sourced. A proof that binds an
+unsourced gap or margin stays unknown and names the limit. Enabling it turns
+some search unknowns into proved `packing_infeasible` results without relaxing
+any placement constraint.
+
+The default is legacy-first. The unchanged search passes run first, and the
+proof replaces only a failed search's result, keeping its search record and
+steps. `capacity_proof: true` keeps the pre-search proof, and `capacity_proof:
+false` opts out. See [board capacity](placer.md#board-capacity-agentee-249).
+
+Coordinator ruling (agent-449, relayed in the AGENTEE-249 follow-up
+assignment; coordinator reasoning, not an owner decision): a `judge_rejected`
+result is not a search failure for this purpose. The search completed a
+proposal that the independent judge or grading rejected, so the proof must not
+replace that rejection; only genuine search exhaustion is replaced. The same
+ruling accepts the access-direction comb fixture's new verdict: its ten
+fixture-author hard obstacles at gap 0 are hard sources, so the proved
+infeasibility is correctly a `defect`, and the declared and plain boards still
+agree on every compared key, including `search_failure`.

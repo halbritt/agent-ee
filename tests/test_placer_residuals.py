@@ -217,16 +217,22 @@ class CurvedCourtyardTest(unittest.TestCase):
         self.assertEqual(judge(capture([probe_part('TP1', 5, 5), probe_part('TP2', 7.05, 5)]))['verdict'], 'pass')
 
     def test_circle_infeasibility_is_proved_only_on_the_inner_bound(self):
-        def probes(side, count=2):
+        def probes(side, count=2, **changes):
             return pack(capture([probe_part(f'TP{i}', 1.2, 1.2) for i in range(1, count+1)],
-                                rectangle(0, 0, side, side)), request(fixed_refs=[]))
+                                rectangle(0, 0, side, side)), request(fixed_refs=[], **changes))
         # Two 1 mm circles: inner bounds 6.265 mm2 exceed a 2.4 mm square's 5.76 mm2.
         report = probes(2.4)
         self.assertEqual((report['status'], report['proof']['kind']), ('packing_infeasible', 'courtyard_area'))
         # A 2.506 mm square (6.280 mm2) lies between the inner (6.265) and outer (6.292) areas:
-        # not proved, so a bounded search failure, never a defect.
-        report = probes(2.506)
+        # not proved by area, so a bounded search failure, never a defect.
+        report = probes(2.506, capacity_proof=False)
         self.assertEqual((report['status'], report['outcome']), ('packing_search_exhausted', 'unknown'))
+        # AGENTEE-249 default: after that failure, the gapped capacity row proves it, but only
+        # against the unsourced 0.5 mm gap, so it stays unknown and names the gap.
+        report = probes(2.506)
+        self.assertEqual((report['status'], report['outcome'], report['proof']['kind'], report['owner_confirmation']),
+                         ('packing_infeasible', 'unknown', 'board_capacity_gap', ['gap_nm']))
+        self.assertEqual(report['search_failure']['status'], 'packing_search_exhausted')
         # One circle in a 2.002 mm square fits in truth; its outer bound (2.004 mm) does not.
         report = probes(2.002, 1)
         self.assertEqual((report['status'], report['outcome']), ('packing_search_exhausted', 'unknown'))
