@@ -551,8 +551,11 @@ fact's role and value, so a recommendation cited as a minimum is unknown
 (`source_role_mismatch`). Silk minima grade only when profile `applicability`
 cites the source page's supplier base-material, process and copper-layer scope,
 a captured profile `order` selection lies inside it, and the saved board matches
-the order. The saved stackup must also classify completely, with every material
-mapped. Otherwise they are unknown, with codes `silk_applicability_unsourced`,
+the order. The order selections must cite one captured order subject on one
+capture and page that records each selection once; spliced or ambiguous orders
+are never merged. The saved stackup must also classify completely, with one
+material on every dielectric sublayer and every material mapped. Otherwise they
+are unknown, with codes `silk_applicability_unsourced`, `silk_order_incoherent`,
 `silk_order_unsourced`, `silk_stackup_unverified`, `silk_material_unverified`,
 `silk_applicability_mismatch` or `silk_order_mismatch`. Sourced `advisories`
 (recommendations, guide values) never grade. The

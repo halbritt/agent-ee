@@ -224,6 +224,42 @@ def compile_order(entries, files, inputs, as_of, dependencies):
     return sorted(records, key=lambda r: r['id'])
 
 
+ORDER_IDENTITY = ('subject', 'source_path', 'source_page')
+
+
+def bind_order(records, files, inputs):
+    """Bind verified order selections to one captured target order; (order, None) or (None, conflict).
+
+    Every selection must cite the same capture, page and parsed order subject, and that
+    capture must record each selection for the subject exactly once. Selections drawn
+    from different orders or captures, or an ambiguous subject, are never merged.
+    """
+    cited = []
+    for record in records:
+        source = record['expected']['source']
+        cited.append({'id': record['id'], 'selection': record['selection'],
+                      'subject': ORDER_LINE.fullmatch(source['quote'])['subject'],
+                      'source_path': source['path'], 'source_page': source['page']})
+    targets = {tuple(c[k] for k in ORDER_IDENTITY) for c in cited}
+    if len(targets) != 1:
+        return None, {'reason': 'order selections cite more than one captured order subject, page or capture',
+                      'selections': cited}
+    subject, path, page = targets.pop()
+    text = captured_file(inputs, files, path).read_text(encoding='utf-8')
+    recorded = defaultdict(list)
+    for index, lines in enumerate(text.split('\f'), 1):
+        for line in lines.splitlines():
+            match = ORDER_LINE.fullmatch(line)
+            if match and match['subject'] == subject:
+                recorded[match['selection']].append({'page': index, 'line': line})
+    repeated = {k: v for k, v in sorted(recorded.items()) if len(v) != 1}
+    if repeated:
+        return None, {'reason': f'captured order {subject!r} records a selection more than once',
+                      'selections': cited, 'recorded': repeated}
+    return {**{r['selection']: r['expected']['value'] for r in records}, 'ids': [r['id'] for r in records],
+            'subject': subject, 'source_path': path, 'source_page': page}, None
+
+
 def validate_conjunctive(limit):
     """One sourced rule whose surcharge applies only when every term falls under its bound."""
     if set(limit) - {'id', 'requirement', 'all', 'tier', 'source'}:
@@ -404,11 +440,11 @@ def compile_profile(profile, files, inputs):
     for a in metadata.get('applicability', []):
         if a['execution'] == 'ready':
             scopes[a['expected']['source']['path'], a['expected']['source']['page']][a['component']] = a
-    order = metadata.get('order')
-    if order is not None and all(o['execution'] == 'ready' for o in order):
-        order = {**{o['selection']: o['expected']['value'] for o in order}, 'ids': [o['id'] for o in order]}
-    else:
-        order = None
+    order, conflict = None, None
+    if metadata.get('order') and all(o['execution'] == 'ready' for o in metadata['order']):
+        order, conflict = bind_order(metadata['order'], files, inputs)
+        metadata['order_binding'] = {'execution': 'ready', **{k: order[k] for k in ORDER_IDENTITY}} \
+            if order else {'execution': 'unsupported', **conflict}
     for limit in profile['limits']:
         validate_limit(limit, profile['schema'])
         lid, key, tier = limit['id'], limit.get('key'), limit['tier']
@@ -444,12 +480,12 @@ def compile_profile(profile, files, inputs):
         elif key in NATIVE or key in SILK:
             native_rule(record, key, limit['value'])
             scope = scopes.get((source['path'], source['page']), {})
-            if key in SILK and (scope or order):
+            if key in SILK and (scope or order or conflict):
                 # Graded only where the order and the saved board are in this page's verified
                 # scope; qualify_silk refuses any missing component or order selection.
                 record['applicability'] = {'scope_ids': sorted(a['id'] for a in scope.values()),
                                            **{kind: a['expected'][kind] for kind, a in sorted(scope.items())},
-                                           'order': order,
+                                           'order': order, **({'order_conflict': conflict} if conflict else {}),
                                            'source_path': source['path'], 'source_page': source['page']}
         elif key in UNMEASURED:
             code, reason = UNMEASURED[key]
@@ -657,16 +693,31 @@ def saved_dielectrics(board_path, copper_names):
     stackups = children(setups[0], 'stackup') if len(setups) == 1 else []
     if len(stackups) != 1:
         return None, []
-    layers = []
+    layers, sublayered = [], []
     for layer in children(stackups[0], 'layer'):
         types = [atoms(t)[:1] for t in children(layer, 'type')]
         layers.append({'layer': layer[1] if len(layer) > 1 and isinstance(layer[1], str) else None,
                        'type': types[0][0] if len(types) == 1 and types[0] else None,
                        # Sublayers repeat material within the same saved layer.
                        'materials': [atoms(m)[0] for m in children(layer, 'material') if atoms(m)]})
+        # KiCad saves each further dielectric sublayer after a bare addsublayer marker.
+        parts = [[]]
+        for item in layer[2:]:
+            if item == 'addsublayer':
+                parts.append([])
+            else:
+                parts[-1].append(item)
+        sublayered.append([[atoms(m)[0] for m in children(['', *part], 'material') if atoms(m)]
+                           for part in parts])
     problems = []
     def problem(item, reason):
         problems.append({**item, 'reason': reason})
+    for layer, sublayers in zip(layers, sublayered):
+        # One material per saved sublayer: a sublayer without one never inherits another's.
+        if layer['type'] in ('core', 'prepreg') and any(
+                len(m) > 1 or (len(sublayers) > 1 and not m) for m in sublayers):
+            problem({**layer, 'sublayers': [{'sublayer': i, 'materials': m} for i, m in enumerate(sublayers, 1)]},
+                    'dielectric sublayer material missing or repeated')
     copper = [i for i, l in enumerate(layers) if l['type'] == 'copper']
     # Saved top-to-bottom order, which the board's enabled-layer sequence does not give.
     if (sorted(copper_names) != sorted(names(len(copper_names))) or
@@ -789,7 +840,12 @@ def silk_applicability(scope, inventory):
         refusals.append(('silk_applicability_unsourced', 'no verified supplier ' + ', '.join(missing)
                          + ' scope on the cited source page', missing))
     order = None if scope is None else scope.get('order')
-    if order is None:
+    conflict = None if scope is None else scope.get('order_conflict')
+    if conflict:
+        # Never splice: selections from different or ambiguous captured orders grade nothing.
+        refusals.append(('silk_order_incoherent', 'order selections are not one unambiguous captured '
+                         'target order: ' + conflict['reason'], [conflict]))
+    elif order is None:
         refusals.append(('silk_order_unsourced', 'no verified captured order selection of process, '
                          'base material and copper layers', []))
     dielectrics, problems = inventory.get('dielectrics'), inventory.get('stackup_problems')

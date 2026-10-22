@@ -45,6 +45,59 @@ def ordered(inputs, document, process='rigid PCB', material='FR-4', layers=2):
     return document
 
 
+# Two owned captured orders, neither of which is a rigid FR-4 two-layer order (review H1, ee75e).
+ORDERS = {'order-A': {'process': 'rigid PCB', 'base_material': 'Aluminum', 'copper_layers': 4},
+          'order-B': {'process': 'flex PCB', 'base_material': 'FR-4', 'copper_layers': 2}}
+
+
+def order_line(subject, selection, value):
+    return f'order / {subject} / {selection.replace("_", " ")}: {value}'
+
+
+def cite_orders(inputs, document, picks, captures=None):
+    """Owned order captures; picks maps selection -> (capture name, subject, value) cited for it.
+
+    `captures` maps capture name -> {subject: {selection: value}}; by default one capture
+    'orders.txt' records ORDERS. Every citation is an unchanged whole recorded line.
+    """
+    for name, orders in (captures or {'orders.txt': ORDERS}).items():
+        (inputs / name).write_text('\n'.join(order_line(subject, k, v) for subject, values in orders.items()
+                                             for k, v in values.items()) + '\n', encoding='utf-8')
+    document['order'] = [{'id': f'order-{k.replace("_", "-")}', 'selection': k, 'value': value,
+                          'source': {'path': name, 'sha256': digest(inputs / name), 'source': ORDER_SOURCE,
+                                     'as_of': document['as_of'], 'page': 1,
+                                     'quote': order_line(subject, k, value)}}
+                         for k, (name, subject, value) in picks.items()]
+    return document
+
+
+def spliced(inputs):
+    """Process from order-A, material and layers from order-B, all in one capture."""
+    return cite_orders(inputs, silk_profile(inputs, MEASURED),
+                       {k: ('orders.txt', 'order-A' if k == 'process' else 'order-B',
+                            ORDERS['order-A' if k == 'process' else 'order-B'][k]) for k in ORDER_KEYS})
+
+
+def mixed(inputs):
+    """One order subject whose process line is cited from a second capture."""
+    rigid = {'order-C': {'process': 'rigid PCB', 'base_material': 'FR-4', 'copper_layers': 2}}
+    flex = {'order-C': {**rigid['order-C'], 'process': 'flex PCB'}}
+    return cite_orders(inputs, silk_profile(inputs, MEASURED),
+                       {k: ('second.txt' if k == 'process' else 'orders.txt', 'order-C', v)
+                        for k, v in rigid['order-C'].items()}, {'orders.txt': flex, 'second.txt': rigid})
+
+
+def coherent(inputs):
+    """A rigid FR-4 two-layer order recorded beside the two incompatible ones."""
+    orders = {**ORDERS, 'order-C': {'process': 'rigid PCB', 'base_material': 'FR-4', 'copper_layers': 2}}
+    return cite_orders(inputs, silk_profile(inputs, MEASURED),
+                       {k: ('orders.txt', 'order-C', v) for k, v in orders['order-C'].items()},
+                       {'orders.txt': orders})
+
+
+ORDER_KEYS = ('process', 'base_material', 'copper_layers')
+
+
 def graded(limits=MEASURED, **order):
     """Profile factory: the shipped preset (subset) with an owned captured order selection."""
     return lambda inputs: ordered(inputs, silk_profile(inputs, limits), **order)
@@ -286,7 +339,12 @@ class SilkProfileContractTest(unittest.TestCase):
         self.assertIn('order-selection.txt', compiled['immutable_inputs'])
         scope = self.by_id(compiled)['pad-to-silk']['applicability']
         self.assertEqual(scope['order'], {'process': 'rigid PCB', 'base_material': 'FR-4', 'copper_layers': 4,
-                                          'ids': ['order-base-material', 'order-copper-layers', 'order-process']})
+                                          'ids': ['order-base-material', 'order-copper-layers', 'order-process'],
+                                          'subject': 'owned test order', 'source_path': 'order-selection.txt',
+                                          'source_page': 1})
+        self.assertEqual(compiled['order_binding'], {'execution': 'ready', 'subject': 'owned test order',
+                                                     'source_path': 'order-selection.txt', 'source_page': 1})
+        self.assertNotIn('order_conflict', scope)
         # Each selection must be its own whole recorded line; any unverified selection drops
         # the order for every silk minimum and refuses the descriptor before a native run.
         for selection, mutate, reason in (
@@ -324,6 +382,52 @@ class SilkProfileContractTest(unittest.TestCase):
         v1 = copy.deepcopy(document); v1['schema'] = 'agent-ee.fab-profile/1'
         with self.assertRaisesRegex(ValueError, 'no defaults'):
             self.compile(v1)
+
+    def test_selections_bind_one_unambiguous_captured_order(self):
+        # Review H1 (ee75e): individually verified selections are never spliced into an
+        # order no capture records. Each is refused with the cited subjects retained.
+        def ambiguous(inputs):
+            document = coherent(inputs)
+            path = inputs / 'orders.txt'
+            path.write_text(path.read_text(encoding='utf-8') + order_line('order-C', 'process', 'flex PCB') + '\n',
+                            encoding='utf-8')
+            for entry in document['order']:
+                entry['source']['sha256'] = digest(path)
+            return document
+        for name, factory, reason, subjects in (
+                ('spliced', spliced, 'more than one captured order subject',
+                 {('order-A', 'orders.txt'), ('order-B', 'orders.txt')}),
+                ('mixed', mixed, 'more than one captured order subject',
+                 {('order-C', 'orders.txt'), ('order-C', 'second.txt')}),
+                ('ambiguous', ambiguous, "captured order 'order-C' records a selection more than once",
+                 {('order-C', 'orders.txt')})):
+            with self.subTest(case=name):
+                document = factory(self.inputs)
+                compiled = self.compile(document)
+                self.assertEqual({o['execution'] for o in compiled['order']}, {'ready'})
+                binding = compiled['order_binding']
+                self.assertEqual(binding['execution'], 'unsupported')
+                self.assertIn(reason, binding['reason'])
+                self.assertEqual({(c['subject'], c['source_path']) for c in binding['selections']}, subjects)
+                for record in compiled['constraints']:
+                    if record['id'] in MEASURED:
+                        self.assertIsNone(record['applicability']['order'])
+                        self.assertEqual(record['applicability']['order_conflict'],
+                                         {k: v for k, v in binding.items() if k != 'execution'})
+                if name == 'ambiguous':
+                    self.assertEqual([r['line'] for r in binding['recorded']['process']],
+                                     [order_line('order-C', 'process', 'rigid PCB'),
+                                      order_line('order-C', 'process', 'flex PCB')])
+                # The order does not refuse the descriptor, so the native measurement runs and
+                # stays as evidence; this unmapped scope stops it only at the mapping check.
+                (self.inputs / 'profile.json').write_text(json.dumps(document))
+                files = {p.name: digest(p) for p in self.inputs.iterdir()}
+                with self.assertRaisesRegex(ValueError, 'requirement mappings'):
+                    capability({'fab_profile': 'profile.json'}, {}, files, self.inputs, 'fab')
+        compiled = self.compile(coherent(self.inputs))
+        self.assertEqual(compiled['order_binding'], {'execution': 'ready', 'subject': 'order-C',
+                                                     'source_path': 'orders.txt', 'source_page': 1})
+        self.assertEqual(self.by_id(compiled)['pad-to-silk']['applicability']['order']['base_material'], 'FR-4')
 
     def test_no_silk_to_silk_rule_and_v1_refuses_silk_keys(self):
         bad = copy.deepcopy(self.document)
@@ -421,6 +525,8 @@ class SilkQualificationTest(unittest.TestCase):
                  (dict(processes=None), {}, 'silk_applicability_unsourced'),
                  (dict(copper_layers=None), {}, 'silk_applicability_unsourced'),
                  (dict(order=None), {}, 'silk_order_unsourced'),
+                 (dict(order=None, order_conflict={'reason': 'spliced', 'selections': []}), {},
+                  'silk_order_incoherent'),
                  ({}, dict(problems=untyped), 'silk_stackup_unverified'),
                  ({}, dict(dielectrics=None), 'silk_material_unverified'),
                  ({}, dict(dielectrics=[]), 'silk_material_unverified'),
@@ -820,6 +926,71 @@ class NativeSilkTest(unittest.TestCase):
             result, _, _ = self.run_silk(gap=gap, copper=4, stack=stackup4(FR4_CORE, FR4_PREPREG, FR4_CORE),
                                          profile=graded(layers=4))
             self.assertEqual((result['execution'], result['outcome']), ('ok', outcome), result)
+
+    def test_spliced_mixed_and_coherent_captured_orders(self):
+        # Review H1 (ee75e): selections spliced from two incompatible orders in one capture,
+        # or from one subject across two captures, are unknown at either gap with native
+        # diagnostics; a coherent order recorded beside them still grades.
+        self.refused(((dict(profile=spliced), MEASURED, 'silk_order_incoherent'),
+                      (dict(profile=mixed), MEASURED, 'silk_order_incoherent')))
+        result, records, _ = self.run_silk(profile=spliced)
+        conflict = records['pad-to-silk']['silk_refusals'][0]['items'][0]
+        self.assertEqual(sorted((c['selection'], c['subject']) for c in conflict['selections']),
+                         [('base_material', 'order-B'), ('copper_layers', 'order-B'), ('process', 'order-A')])
+        # Each captured order on its own is outside the cited scope or differs from the board.
+        for subject in ORDERS:
+            result, records, _ = self.run_silk(profile=lambda inputs: cite_orders(
+                inputs, silk_profile(inputs, MEASURED),
+                {k: ('orders.txt', subject, ORDERS[subject][k]) for k in ORDER_KEYS}))
+            self.assertEqual((result['execution'], result['outcome'], records['pad-to-silk']['code']),
+                             ('unsupported', 'unknown', 'silk_applicability_mismatch'))
+        for gap, outcome in ((0.2, 'pass'), (0.14, 'defect')):
+            result, records, _ = self.run_silk(gap=gap, profile=coherent)
+            self.assertEqual((result['execution'], result['outcome']), ('ok', outcome), result)
+            self.assertEqual(records['pad-to-silk']['applicability']['order']['subject'], 'order-C')
+
+    def test_dielectric_sublayer_without_material_is_unknown(self):
+        # Review H2 (ee75e): KiCad retains a bare addsublayer with no material on load and
+        # save. That sublayer never inherits another's FR4; it is unknown, natively resaved.
+        import pcbnew as k
+        def resaved(stack):
+            def build(path, **kwargs):
+                silk_board(saved, stack=stack, gap=gap)(path, **kwargs)
+                k.SaveBoard(str(path), k.LoadBoard(str(path)))
+                text = path.read_text(encoding='utf-8')
+                layer = text[text.index('(layer "dielectric 1"'):text.index('(layer "B.Cu"', text.index('(stackup'))]
+                kept.append(' '.join(layer.split()))
+            return build
+        def sublayered(second):
+            return stackup('FR4').replace('(material "FR4")', '(material "FR4") addsublayer (thickness 0.3)'
+                                          + ('' if second is None else f' (material "{second}")'))
+        for case, second, verdicts in (('complete', 'FR4', {0.2: ('ok', 'pass'), 0.14: ('ok', 'defect')}),
+                                       ('missing', None, None), ('polyimide', 'Polyimide', None)):
+            for gap, native in ((0.2, 'satisfied'), (0.14, 'violation')):
+                with self.subTest(case=case, gap=gap):
+                    saved, kept = {}, []
+                    result = base.NativeFabTest.run_profile(self, None, builder=resaved(sublayered(second)),
+                                                            profile=graded())
+                    records = {c['id']: c for c in result['details']['constraints']}
+                    # The natively resaved stackup keeps the second sublayer as saved.
+                    self.assertIn('addsublayer', kept[0])
+                    self.assertEqual(kept[0].count('(material'), 1 if second is None else 2)
+                    if verdicts:
+                        self.assertEqual((result['execution'], result['outcome']), verdicts[gap], result)
+                        continue
+                    self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+                    pad = records['pad-to-silk']
+                    self.assertEqual((pad['native_status'], bool(pad['native_findings'])),
+                                     (native, native == 'violation'))
+                    if second is None:
+                        self.assertEqual(pad['code'], 'silk_stackup_unverified')
+                        self.assertEqual(pad['unqualified_silk'], [
+                            {'layer': 'dielectric 1', 'type': 'core', 'materials': ['FR4'],
+                             'sublayers': [{'sublayer': 1, 'materials': ['FR4']},
+                                           {'sublayer': 2, 'materials': []}],
+                             'reason': 'dielectric sublayer material missing or repeated'}])
+                    else:
+                        self.assertEqual(pad['code'], 'silk_material_unverified')
 
     def test_inventory_records_saved_silk_classes(self):
         from agent_ee.fab_profile import native_inventory

@@ -422,8 +422,17 @@ selection. It has exactly one entry for each of `process`, `base_material` and
 `copper_layers`. Each entry has exactly `id`, `selection`, `value` (one name, or
 a positive layer count) and a `source`, quoted as one whole recorded line
 `order / <subject> / <process|base material|copper layers>: <value>`. An
-unverified scope or order entry refuses the descriptor. A designer's saved
-stackup or a profile default never stands in for a missing order.
+unverified scope or order entry refuses the descriptor. The verified selections
+must be one captured target order: every quote names the same `<subject>` on the
+same capture and page, and that capture records each selection for the subject
+exactly once. Selections from different subjects, pages or captures are never
+merged into an order no capture records, and a subject that records a selection
+twice is ambiguous. Either way the compiled `order_binding` is `unsupported`,
+listing each selection's subject, capture and page (and any repeated lines),
+and the silk records keep it as `order_conflict`. A coherent order is recorded
+in `order_binding` and in each record's `order` by subject, capture and page.
+A designer's saved stackup or a profile default never stands in for a missing
+order.
 
 The inventory adds `dielectrics`: the saved `core`/`prepreg` stackup layers and
 their `material` names, read with the shared S-expression parser, or `null` when
@@ -432,12 +441,18 @@ layer must classify. Copper layers must equal the board's copper layers, top to
 bottom, and every adjacent copper pair needs a `core` or `prepreg` between it.
 Mask, paste and silk types must lie outside the copper span. An untyped or
 unrecognized layer, an omitted dielectric, or a misplaced layer is a problem.
+KiCad saves each further dielectric sublayer after a bare `addsublayer` marker.
+Each sublayer of a multi-sublayer core or prepreg must name exactly one
+material; a sublayer without one never inherits another's. That is a problem
+listing every sublayer's materials by position.
 Each problem keeps the saved layer name, type and materials; nothing drops out
 of scope. Applicability is checked first. Every outcome below is unknown and
 keeps the native result:
 
 - the page lacks any scope component: `silk_applicability_unsourced`
   (`unqualified_silk` lists the missing components)
+- selections that are not one unambiguous captured order:
+  `silk_order_incoherent`
 - no verified order selection: `silk_order_unsourced`
 - any stackup problem: `silk_stackup_unverified`
 - no saved stackup, a dielectric with no material, or a material outside the
@@ -551,7 +566,13 @@ for four layers on a two-layer board, and a guide-cited limit. Four-layer boards
 with one FR4 core and an untyped, unrecognized-type or omitted dielectric are
 `silk_stackup_unverified`, citing the offending saved layers. A complete
 four-layer FR4 stackup under a matching four-layer order grades: it passes or
-reports a defect.
+reports a defect. One capture recording two incompatible orders, with the
+process cited from one and the material and layers from the other, and one
+subject cited across two captures, are `silk_order_incoherent`; a coherent
+rigid FR-4 two-layer order recorded beside them grades. A natively resaved
+two-layer board whose FR4 core has a second sublayer without a material is
+`silk_stackup_unverified`, and with Polyimide there `silk_material_unverified`;
+with FR4 on both sublayers it passes or reports a defect.
 
 ## Evidence and failure
 
