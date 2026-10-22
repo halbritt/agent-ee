@@ -1915,10 +1915,12 @@ class _Search:
         trace = placement_trace.active()  # None unless tracing is on (AGENTEE-430); no decision reads it.
         if trace is not None:
             t = placement_trace.now()
-            request = trace.scan_request(self.trace_index, self.generations[-1], fp, self.grounds, self.peers,
-                                         _pad_nets)
-            started = placement_trace.now()
-            trace.add('stage_a.trace', started - t)  # Recording is the observer's cost, not Stage A's.
+            try:
+                request = trace.scan_request(self.trace_index, self.generations[-1], fp, self.grounds,
+                                             self.peers, _pad_nets)
+            finally:
+                started = placement_trace.now()
+                trace.add('stage_a.trace', started - t)  # Recording is the observer's cost, not Stage A's.
             bounds = trace.durations['stage_a.bounds']
             bounds_before = bounds[0]
         try:
@@ -1964,9 +1966,13 @@ class _Search:
                 # by _ranked, in the same order as sorting every exact key.
                 if trace is not None:
                     t = placement_trace.now()
-                bound_x, bound_y = _wire_bounds(_pad_nets(fp, (0, 0), rotation, self.grounds), self.peers, xs, ys)
-                if trace is not None:
-                    trace.add('stage_a.bounds', placement_trace.now() - t)
+                try:
+                    bound_x, bound_y = _wire_bounds(_pad_nets(fp, (0, 0), rotation, self.grounds), self.peers,
+                                                    xs, ys)
+                finally:
+                    if trace is not None:
+                        # A raising computation is a failed bounds span, never geometry time.
+                        trace.add('stage_a.bounds', placement_trace.now() - t)
                 for x, y in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid,
                                         self.gap, conflicts, doomed, self.checkpoint):
                     self.checkpoint()
@@ -1998,9 +2004,12 @@ class _Search:
                     t1 = clock()
                     timed[0] += t1 - t  # A raising resolution's time is kept; only resolved ones are counted.
                 timed[1] += 1
-                sample(request, scan_generation, self.generations[-1], key, resolved[1])
-                recorded[0] += clock() - t1  # The sample is the observer's cost, not ranking's.
-                recorded[1] += 1
+                try:
+                    sample(request, scan_generation, self.generations[-1], key, resolved[1])
+                finally:
+                    # The sample is the observer's cost, not ranking's, even when recording raises.
+                    recorded[0] += clock() - t1
+                    recorded[1] += 1
                 return resolved
             order = trace.timed_rank(_ranked(ranked, exact))
             if request is not None:

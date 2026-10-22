@@ -822,6 +822,22 @@ class G0VerificationRegressionTest(unittest.TestCase):
             if report['parity'] == 'complete':
                 self.assertEqual(report['status'], 'exact')
 
+    def test_malformed_duration_references_are_typed_refusals(self):
+        """R2 residual (review H1): a non-string parent or within entry is refused, never a TypeError."""
+        for change, reason, label in (
+                (lambda d: d['durations'][0].update(parent=[]), 'parent must be a duration name', 'parent list'),
+                (lambda d: d['durations'][0].update(parent={}), 'parent must be a duration name', 'parent object'),
+                (lambda d: d['durations'][0].update(parent=7), 'parent must be a duration name', 'parent number'),
+                (lambda d: d['durations'][0].update(within=[{}]), 'within must list', 'within object entry'),
+                (lambda d: d['durations'][0].update(within=[[]]), 'within must list', 'within list entry'),
+                (lambda d: d['durations'][0].update(within={}), 'within must list', 'within object')):
+            document = self.changed(change)
+            self.assertTrue(trace_envelope.validate(document), label)
+            self.assert_refused(document, reason, label)
+        # A string reference to an absent duration is still named.
+        self.assert_refused(self.changed(lambda d: d['durations'][0].update(parent='nowhere')),
+                            'names unknown duration nowhere', 'unknown parent')
+
     def test_unexpected_reader_errors_are_not_refusals(self):
         """R2: only the typed refusal is a refusal; an implementation error is never reported as evidence."""
         with mock.patch.object(placement_trace, 'payload_problems', side_effect=KeyError('reader defect')):
@@ -896,6 +912,55 @@ class G0VerificationRegressionTest(unittest.TestCase):
         self.assertEqual(durations['stage_a.bounds']['count'], 0)
         self.assert_inclusive(durations)
         self.assertEqual(placement_trace.replay(document)['parity'], 'partial')
+
+    def deterministic_failure(self, target, attribute, injected):
+        """Review H2's deterministic-clock probe: 1 ms elapses inside ``attribute`` and it raises."""
+        class Clock:
+            value = 0
+
+            def __call__(self):
+                self.value += 1
+                return self.value
+        clock = Clock()
+
+        def failing(*args, **kwargs):
+            clock.value += injected
+            raise RuntimeError('placement sentinel')
+        source, policy = promotion_case()
+        with self.assertRaisesRegex(RuntimeError, 'placement sentinel'):
+            with mock.patch.object(placement_trace, 'now', clock):
+                with placement_trace.recording() as recorder:
+                    with mock.patch.object(target, attribute, failing):
+                        pack(copy.deepcopy(source), policy)
+        return recorder.durations
+
+    def test_failed_bounds_and_sample_spans_keep_their_time(self):
+        """R3 residual (review H2): time spent inside a raising bounds computation is a failed
+        bounds span, and time inside a raising sample record is the observer's, never geometry or rank."""
+        from agent_ee import placer
+        injected = 1000000
+        durations = self.deterministic_failure(placer, '_wire_bounds', injected)
+        self.assertEqual(durations['stage_a.bounds'][1], 1)
+        self.assertGreaterEqual(durations['stage_a.bounds'][0], injected)  # Was [0, 0] at 83815798.
+        self.assertLess(durations['stage_a.geometry'][0], injected)  # Was 1,000,002 at 83815798.
+        self.assertEqual(durations['stage_a.geometry'][1], 1)
+        self.assertGreaterEqual(durations['stage_a.search'][0],
+                                durations['stage_a.bounds'][0] + durations['stage_a.geometry'][0])
+        self.assertEqual(durations['stage_a.exact'], [0, 0])
+        durations = self.deterministic_failure(placement_trace.Recorder, 'sample', injected)
+        self.assertGreaterEqual(durations['stage_a.trace'][0], injected)  # Was [1, 1] at 83815798.
+        self.assertEqual(durations['stage_a.trace'][1], 2)  # The scan's request and the raising sample.
+        self.assertLess(durations['stage_a.rank'][0], injected)  # Was 1,000,002 at 83815798.
+        self.assertEqual(durations['stage_a.exact'][1], 1)  # The resolution itself succeeded.
+        self.assertLess(durations['stage_a.exact'][0], injected)
+        children = sum(durations[name][0] for name in ('stage_a.geometry', 'stage_a.bounds', 'stage_a.exact',
+                                                       'stage_a.rank', 'stage_a.predicates', 'stage_a.trace'))
+        self.assertLessEqual(children, durations['stage_a.search'][0])
+        # A raising scan request is the observer's time as well.
+        durations = self.deterministic_failure(placement_trace.Recorder, 'scan_request', injected)
+        self.assertEqual(durations['stage_a.trace'][1], 1)
+        self.assertGreaterEqual(durations['stage_a.trace'][0], injected)
+        self.assertEqual(durations['stage_a.geometry'], [0, 0])
 
     def test_a_raising_arrangement_closes_stage_b(self):
         from agent_ee import block_arrangement
@@ -988,6 +1053,29 @@ class TracePersistenceTest(unittest.TestCase):
         self.assertFalse(hasattr(raised.exception, 'placement_trace_error'))
         document = json.loads(self.trace.read_text())
         self.assertEqual(document['state'], {'status': 'failed', 'reason': 'RuntimeError: placement sentinel'})
+
+    def test_an_interrupted_trace_write_never_displaces_the_placement_error(self):
+        """Review H3: a BaseException while writing the trace is exposed, the primary error re-raised."""
+        for primary, secondary in ((RuntimeError('placement sentinel'), KeyboardInterrupt('trace interruption')),
+                                   (RuntimeError('placement sentinel'), SystemExit(9)),
+                                   (KeyboardInterrupt('placement interrupted'), OSError('trace disk full')),
+                                   (KeyboardInterrupt('placement interrupted'), KeyboardInterrupt('again'))):
+            for stage in ('export', 'envelope'):
+                label = (type(primary).__name__, type(secondary).__name__, stage)
+                with self.assertRaises(BaseException) as raised:
+                    self.run_traced(primary, **{stage: secondary})
+                self.assertIs(raised.exception, primary, label)
+                self.assertIs(raised.exception.placement_trace_error, secondary, label)
+                self.assertTrue(any('placement trace not written' in note for note in primary.__notes__), label)
+                self.assertFalse(self.trace.exists(), label)
+                del primary.placement_trace_error
+                primary.__notes__.clear()
+        # An interrupted placement whose trace is written records the interruption.
+        with self.assertRaises(KeyboardInterrupt) as raised:
+            self.run_traced(KeyboardInterrupt('placement interrupted'))
+        self.assertFalse(hasattr(raised.exception, 'placement_trace_error'))
+        document = json.loads(self.trace.read_text())
+        self.assertEqual(document['state']['status'], 'interrupted')
 
     def test_a_placed_candidate_with_an_unwritten_trace_is_reported_as_such(self):
         from agent_ee.placer_runner import TracePersistenceError

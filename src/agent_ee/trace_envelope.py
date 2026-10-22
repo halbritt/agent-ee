@@ -174,8 +174,9 @@ def validate(document):
             problems.append(f'{label}: nested overlap must name the durations it may run within')
     for i, row in enumerate(durations):
         if isinstance(row, dict) and isinstance(row.get('name'), str):
+            # Only type-valid references are cross-checked; the first pass already reported the others.
             for other in [row.get('parent')] + list(row.get('within', []) if isinstance(row.get('within'), list) else []):
-                if other is not None and other not in names:
+                if isinstance(other, str) and other not in names:
                     problems.append(f'durations[{i}]: names unknown duration {other}')
     counters = document['counters']
     if not isinstance(counters, dict) or not all(_count(v) for v in counters.values()):
