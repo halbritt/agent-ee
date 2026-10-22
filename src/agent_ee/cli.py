@@ -238,6 +238,11 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
             raise ValueError("stored RF review decision differs from the captured candidate's RF sources")
     from .purpose_review import verify_records as verify_purpose
     verify_purpose(run, result)
+    from .board_envelope import final_qualification
+    # Recomputed from the immutable baseline: a removed, stale or edited guard record is refused.
+    expected, stored = final_qualification(run), result.get("final_qualification")
+    if stored != expected:
+        raise ValueError("stored final qualification differs from the captured baseline envelope coverage")
     if result.get("outcome") != outcome(result):
         raise ValueError("stored result contradicts its execution and finding records")
     if result["state"] == "complete":
@@ -285,6 +290,9 @@ def outcome(result):
     statuses = [finding_status(f) for f in result.get("findings", []) if not advisory_deferral(f)]
     if any(s in ("accepted", "unresolved", "deferred") for s in statuses):
         return "defects_or_unresolved"
+    # Open captured envelope qualification is missing evidence, not a design defect (AGENTEE-197).
+    if (result.get("final_qualification") or {}).get("blocking"):
+        return "incomplete"
     return "criteria_satisfied"
 
 
@@ -482,6 +490,10 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         if result["policy_files"] != LOADED_POLICY_FILES:
             raise ValueError("implementation files changed after this process loaded; start a fresh process")
         m = capture(scope_path, run, profile)
+        from .board_envelope import final_qualification
+        # Final acceptance is held by the captured baseline's open envelope qualification (AGENTEE-197).
+        if (qualification := final_qualification(run)) is not None:
+            result["final_qualification"] = qualification
         validate_scope(m["scope"])
         if expected_baseline is not None:
             from .baseline import load_baseline
@@ -504,6 +516,11 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
                       expected_check_ids=[c["id"] for c in m["scope"]["checks"]],
                       expected_review_roles=[r["role"] for r in m["scope"].get("review_profile", {}).get("reviewers",
                           [{"role": "circuit"}, {"role": "physical"}])])
+        qualification = result.get("final_qualification")
+        if qualification is not None and qualification["blocking"]:
+            from .board_envelope import describe_blockers
+            result["limitations"].append("Final qualification open in the captured envelope baseline; the "
+                                         "outcome stays incomplete: " + describe_blockers(qualification["blocking"]))
         from . import rf_review
         # Candidate-bound routing adapter evidence for the RF review; absent or unverifiable is recorded so.
         rf_review.capture_routing(run, m, routing_context)

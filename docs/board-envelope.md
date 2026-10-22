@@ -348,6 +348,50 @@ items, naming each one, and refuses any obligation that is not bound. Nothing in
 the envelope or scope can close an open item. Closing one requires
 AGENTEE-177/179 evidence that adds a real binding.
 
+### Final acceptance guard
+
+`final_qualification(run)` is the one shared final guard. It reads the
+coverage in the run's captured, re-verified `baseline.json` (`load_baseline`),
+never the current envelope file, a scope field or a stored result. It returns
+`agent-ee.final-qualification/1` with the `baseline_id` and a `blocking` list,
+or `None` for a scope without an envelope. Each blocker is
+`{id, status, open}`: a `staged` obligation with its open item IDs, an
+obligation that is not `bound` or `soft`, a derived obligation missing from the
+coverage, or unresolved requirements. An empty `unresolved` list is not
+readiness: a staged obligation has none and still blocks. `require_final(run)`
+raises while anything blocks. Its consumers:
+
+- the review outcome. `review` records the guard in `result.json` as
+  `final_qualification` and adds a limitation naming every blocker. A result
+  that checks and reviewers would otherwise accept is `incomplete`, not a design
+  defect; `defects_or_unresolved` and other verdicts do not change. `verify`
+  recomputes the record from the baseline and refuses a removed, emptied or
+  stale one.
+- the `fab_package` done gate. The fab export and consistency gate still run,
+  so the exports stay available as diagnostics. A package that would pass is
+  `unsupported`/`unknown` (`fab package done gate held: ...`), and
+  `artifact_record` refuses to seal the release.
+- campaign acceptance and replay. A campaign that reaches `criteria_satisfied`
+  re-applies the guard before it publishes `fab_artifacts` or `stage_done`;
+  while anything blocks it ends `incomplete` with the blockers in `error`.
+  `verify-campaign` applies the guard to the final run of an accepted state, so
+  a stale or manually altered acceptance is refused. A declared fab step is
+  generation, so open qualification does not stop it being scheduled; the done
+  gate then holds its release.
+
+Staged generation keeps `require_obligations`: capture, scaffold and candidate
+generation proceed. The guard adds no physical closure: today's open items stay
+blocking for final acceptance.
+
+The telemetry pod's `connector-identity` item names candidate evidence that
+exists elsewhere. J1's connector part and CAD identity is bound at preparation
+time by the named part `connector/J1` in `composition/part-refs.json`, through
+`binding_fill.fill` and `parts_manifest.qualify_manifest` (complete coverage and
+the produced-identity comparison), plus the exact captured footprint. No generic
+identity checker repeats it here. A `connector-edge/1` placement check proves J1's
+pose only. It proves neither identity nor mating-plug or enclosure fit, so those
+items stay open.
+
 ## Stage-one requirements
 
 `stage_one_requirements(original, dialog_requirements)` appends the envelope's

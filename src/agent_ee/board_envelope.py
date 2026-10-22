@@ -1336,6 +1336,71 @@ def require_qualified(coverage):
     return coverage
 
 
+QUALIFICATION_SCHEMA = 'agent-ee.final-qualification/1'
+
+
+def qualification_blockers(record):
+    """What holds final acceptance in a captured agent-ee.envelope-baseline/1 record.
+
+    Read from the record's own coverage, never from an unresolved list alone: a
+    staged obligation has no unresolved predicate yet stays open. Each blocker is
+    {id, status, open: [item or predicate IDs]}; an empty list is qualification.
+    """
+    requirements, coverage = record['requirements'], record['coverage']
+    blockers = []
+    if not requirements['complete'] or requirements.get('unresolved'):
+        blockers.append({'id': 'envelope-requirements', 'status': 'incomplete',
+                         'open': [u['predicate'] for u in requirements.get('unresolved', [])]})
+    by_id = {r['id']: r for r in coverage}
+    for item in requirements['requirements']:
+        entry = by_id.get(item['id'])
+        if entry is None:
+            blockers.append({'id': item['id'], 'status': 'absent', 'open': []})
+        elif entry['status'] == 'staged':
+            blockers.append({'id': entry['id'], 'status': 'staged', 'open': [e['id'] for e in entry['open']]})
+        elif entry['status'] not in ('bound', 'soft'):
+            blockers.append({'id': entry['id'], 'status': entry['status'], 'open': []})
+    blockers += [{'id': r['id'], 'status': 'unlisted', 'open': []} for r in coverage
+                 if r['id'] not in {item['id'] for item in requirements['requirements']}]
+    return blockers
+
+
+def final_qualification(run):
+    """The final-acceptance guard over a run's CAPTURED baseline envelope; None without an envelope.
+
+    The one shared guard for final review outcome, fab release and campaign
+    acceptance/replay (AGENTEE-197). It re-verifies the immutable baseline.json
+    (load_baseline) and reads its envelope coverage; the candidate's current
+    envelope file, scope fields and stored results are never consulted, so
+    nothing a writer or reviewer changes can close an open item.
+    """
+    from .baseline import load_baseline
+    from .storage import read_json
+    run = Path(run)
+    if 'envelope' not in read_json(run / 'candidate.json')['scope']:
+        return None
+    baseline = load_baseline(run)
+    record = (baseline or {}).get('envelope')
+    if not isinstance(record, dict) or record.get('schema') != 'agent-ee.envelope-baseline/1':
+        raise ValueError('scope declares an envelope but its captured baseline carries no envelope coverage')
+    return {'schema': QUALIFICATION_SCHEMA, 'baseline_id': baseline['baseline_id'],
+            'blocking': qualification_blockers(record)}
+
+
+def describe_blockers(blockers):
+    return '; '.join(f"{b['id']} {b['status']}" + (f" ({', '.join(b['open'])})" if b['open'] else '')
+                     for b in blockers)
+
+
+def require_final(run):
+    """Refuse final acceptance or sealed release while the captured envelope qualification is open."""
+    qualification = final_qualification(run)
+    if qualification is not None and qualification['blocking']:
+        raise ValueError('final acceptance refused: captured envelope qualification open: '
+                         + describe_blockers(qualification['blocking']))
+    return qualification
+
+
 def json_object_start(path):
     """True when the first non-whitespace byte is '{'; reads no further than that."""
     with path.open('rb') as stream:

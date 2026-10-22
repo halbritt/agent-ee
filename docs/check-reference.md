@@ -1314,6 +1314,12 @@ An obligation's `coverage` record can [stage](board-envelope.md#staged-obligatio
 it for candidate generation. The record cites bound hole, keepout and
 connector-edge witnesses, plus `outline-containment/1` for declared overhangs.
 Its open qualification items keep `require_qualified` refusing final acceptance.
+The shared [final guard](board-envelope.md#final-acceptance-guard)
+`final_qualification` reads the captured baseline's coverage. While an item is
+open, a review that would satisfy its criteria is `incomplete`, a `fab_package`
+that would pass is `unsupported`/`unknown` with its exports kept as diagnostics,
+and a campaign cannot accept or replay as done. A `connector-edge/1` pass proves
+pose only, not part identity or mating and enclosure fit.
 
 `component-height/1` binds the optional envelope `max_component_height_mm` field
 and supplies `envelope:component-height/1`. It grades every native footprint from

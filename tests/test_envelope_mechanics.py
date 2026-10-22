@@ -513,6 +513,155 @@ class EnvelopeMechanicsTests(unittest.TestCase):
                     self.record()
 
 
+    def staged_blocking(self, coverage):
+        prefix = 'R-envelope-telemetry-pod-obligation-'
+        return [dict(id=prefix + oid, status='staged', open=[e['id'] for e in item['open']])
+                for oid, item in coverage.items()]
+
+    def review_profile(self):
+        definition = dict(harness='codex', model='test', effort='high', timeout_s=10)
+        return dict(schema='agent-ee.profile/1', name='final-guard-test', adjudicator=definition,
+                    reviewers=[dict(definition, role='circuit'), dict(definition, role='physical')])
+
+    def test_final_guard_holds_the_review_outcome(self):
+        """cli: the captured staged baseline yields incomplete with the open IDs, never a defect or a pass."""
+        import io
+        from agent_ee import cli
+        coverage = self.stage()
+        self.build()
+        write_json(self.root / 'scope.json', self.scope())
+        out = self.root / 'review'
+        cli.run_review(self.root / 'scope.json', out, 600, checks_only=True, output_stream=io.StringIO())
+        result = read_json(out / 'result.json')
+        baseline = read_json(out / 'baseline.json')
+        self.assertEqual(result['final_qualification'], dict(schema='agent-ee.final-qualification/1',
+                         baseline_id=baseline['baseline_id'], blocking=self.staged_blocking(coverage)))
+        held = [t for t in result['limitations'] if t.startswith('Final qualification open')]
+        self.assertEqual(len(held), 1)
+        for oid, item in coverage.items():
+            self.assertIn(f'obligation-{oid} staged (' + ', '.join(e['id'] for e in item['open']) + ')', held[0])
+        self.assertEqual(cli.verify(out)['final_qualification'], result['final_qualification'])
+        # Only a would-be pass changes: checks and reviews alone no longer satisfy the criteria.
+        satisfied = dict(state='complete', checks=[dict(id='c', execution='ok', outcome='pass')],
+                         reviews=[dict(role='circuit'), dict(role='physical')], adjudicated=True,
+                         review_executions=[dict(role='circuit', execution='ok')], findings=[])
+        self.assertEqual(cli.outcome(satisfied), 'criteria_satisfied')
+        guarded = dict(satisfied, final_qualification=result['final_qualification'])
+        self.assertEqual(cli.outcome(guarded), 'incomplete')
+        self.assertEqual(cli.outcome(dict(guarded, checks=[dict(id='c', execution='ok', outcome='defect')])),
+                         'defects_or_unresolved')
+        self.assertEqual(cli.outcome(dict(satisfied, final_qualification=dict(result['final_qualification'],
+                                                                             blocking=[]))), 'criteria_satisfied')
+        # A removed, emptied or stale guard record in a retained result is refused on verify.
+        original = (out / 'result.json').read_bytes()
+        for mode in ('removed', 'emptied', 'stale'):
+            with self.subTest(mode=mode):
+                forged = json.loads(original)
+                if mode == 'removed':
+                    del forged['final_qualification']
+                if mode == 'emptied':
+                    forged['final_qualification']['blocking'] = []
+                if mode == 'stale':
+                    forged['final_qualification']['baseline_id'] = '0' * 64
+                write_json(out / 'result.json', forged)
+                with self.assertRaisesRegex(ValueError, 'stored final qualification differs'):
+                    cli.verify(out)
+        (out / 'result.json').write_bytes(original)
+        cli.verify(out)
+        # The guard reads the immutable baseline, not the run's mutable envelope bytes.
+        envelope = out / 'inputs/envelope.json'
+        changed = json.loads(envelope.read_bytes())
+        for item in changed['obligations']:
+            del item['coverage']
+        envelope.write_bytes(json.dumps(changed).encode())
+        with self.assertRaises(ValueError):
+            cli.verify(out)
+
+    def test_final_guard_holds_campaign_acceptance_and_replay(self):
+        """campaign: an acceptance computed from checks and reviews alone cannot publish or replay as done."""
+        import contextlib
+        import io
+        from unittest import mock
+        from agent_ee import campaign
+        coverage = self.stage()
+        self.build()
+        scope = self.scope()
+        profile = self.review_profile()
+        scope.update(review_profile=profile, mutable_inputs=['board.kicad_pcb', 'board.kicad_sch'])
+        write_json(self.root / 'scope.json', scope)
+        write_json(self.root / 'campaign.json', dict(schema='agent-ee.campaign/1', scope='scope.json',
+                   review_profile=profile, implementation=profile['adjudicator'], max_iterations=1,
+                   max_seconds=600))
+        advance = campaign.advance
+        # Simulates the pre-guard acceptance rule: done from checks and reviewer judgements alone.
+        accepted = lambda *a, **k: (advance(*a, **k)[0], {'state': 'criteria_satisfied'})
+        message = 'final acceptance refused: captured envelope qualification open: R-envelope-telemetry-pod-'
+        root = self.root / 'campaign'
+        with mock.patch.object(campaign, 'advance', side_effect=accepted), \
+                contextlib.redirect_stdout(io.StringIO()):
+            status = campaign.run_campaign(self.root / 'campaign.json', root)
+            state = read_json(root / 'state.json')
+            self.assertEqual((status, state['state']), (1, 'incomplete'))
+            self.assertIn(message, state['error'])
+            for oid, item in coverage.items():
+                self.assertIn(f'obligation-{oid} staged (' + ', '.join(e['id'] for e in item['open']) + ')',
+                              state['error'])
+            self.assertNotIn('fab_artifacts', state)
+            self.assertNotIn('stage_done', state)
+            campaign.verify_campaign(root)
+            # Replay re-applies the guard: a manually accepted state is refused, not trusted.
+            forged = {k: v for k, v in state.items() if k != 'error'}
+            write_json(root / 'state.json', dict(forged, state='criteria_satisfied'))
+            with self.assertRaisesRegex(ValueError, message):
+                campaign.verify_campaign(root)
+
+    def fab_scope(self):
+        """The owned fab-export board as a generation scope over the captured envelope declaration."""
+        for name in ('fab.kicad_pcb', 'fab.kicad_sch'):
+            shutil.copyfile(ROOT / 'fixtures/fab-export' / name, self.source / name)
+        scope = self.scope()
+        scope.update(board='fab.kicad_pcb', schematic='fab.kicad_sch', generation=dict(
+            schema='agent-ee.generation/1', done_check='package'), inputs=[
+            dict(path=str(p), at=p.relative_to(self.source).as_posix())
+            for p in sorted(self.source.rglob('*')) if p.is_file()])
+        scope['checks'] += [dict(id='netlist', kind='netlist'), dict(id='geometry', kind='geometry'),
+                            dict(id='package', kind='fab_package', params=dict(netlist_check='netlist'))]
+        scope['baseline']['requirements'] += [
+            dict(id='R-package', statement='The captured board yields a complete fab package.', intent='acceptance',
+                 source=dict(path='targets.md', locator='line 1'), checks=['package']),
+            dict(id='I-native', statement='Retain native board and schematic observations.',
+                 intent='informational', source=dict(path='targets.md', locator='line 1'),
+                 checks=['netlist', 'geometry'])]
+        return scope
+
+    def test_final_guard_holds_the_fab_done_gate_and_release(self):
+        """fab_package: exports stay as diagnostics; the done gate and sealed release wait for qualification."""
+        from agent_ee.fab_package import artifact_record
+        results = {}
+        for mode in ('qualified', 'staged'):
+            with self.subTest(mode=mode):
+                self.envelope = copy.deepcopy(self.pristine)
+                coverage = self.stage() if mode == 'staged' else None
+                run, _ = self.capture(self.fab_scope())
+                results[mode] = check = run_checks(run, time.monotonic() + 300)[-1]
+                self.assertEqual(check['id'], 'package')
+                self.assertTrue((run / 'work/package/fab/gerbers.zip').stat().st_size > 0)
+                if mode == 'qualified':
+                    self.assertEqual((check['execution'], check['outcome']), ('ok', 'pass'), check['summary'])
+                    self.assertEqual(artifact_record(run, check), check['details']['artifacts'])
+                    continue
+                self.assertEqual((check['execution'], check['outcome']), ('unsupported', 'unknown'))
+                self.assertIn('fab package done gate held: final acceptance refused', check['summary'])
+                for oid, item in coverage.items():
+                    self.assertIn(f'obligation-{oid} staged (' + ', '.join(e['id'] for e in item['open']) + ')',
+                                  check['summary'])
+                self.assertNotIn('artifacts', check['details'])
+                # A result claiming the gate passed still cannot be sealed for release.
+                passed = dict(results['qualified'], candidate_id=check['candidate_id'])
+                with self.assertRaisesRegex(ValueError, 'captured envelope qualification open'):
+                    artifact_record(run, passed)
+
+
 class EnvelopeMechanicsGeometryTests(unittest.TestCase):
     def test_board_area_and_concave_coverage_use_edges_not_only_vertices(self):
         area = dict(uuid='board-area',owner='board',layers=['F.Cu'],placement_area=False,

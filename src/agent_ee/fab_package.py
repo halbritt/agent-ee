@@ -224,12 +224,15 @@ def artifact_record(run_dir, check):
     """`agent-ee.fab-artifacts/1` recomputed from a retained passing fab_package result.
 
     Raises ValueError when the result did not pass or a listed file is absent,
-    empty, unsealed or differs from its manifest digest. With a declared
+    empty, unsealed or differs from its manifest digest, and while the captured
+    baseline envelope qualification is open (require_final). With a declared
     cpl_rotation check the CPL artifact is its corrected cpl.csv.
     """
     run_dir = Path(run_dir)
     candidate_path = run_dir / 'candidate.json'
     if candidate_path.is_file():
+        from .board_envelope import require_final
+        require_final(run_dir)
         from .placement_defects import release_defects
         if release_defects(run_dir, check, read_json(candidate_path)):
             raise ValueError('fab release refused: carried open placement silkscreen defects')
@@ -322,6 +325,12 @@ def check_fab_package(ctx):
         for rel in (f"work/{rotation['id']}/cpl-rotation.json", f"work/{rotation['id']}/cpl/cpl.csv"):
             if rel in prior.get('evidence', []) and rel not in ctx.result['evidence']:
                 ctx.result['evidence'].append(rel)
+    from .board_envelope import require_final
+    try:
+        # The exports above stay as diagnostics; the done gate and sealed release wait for qualification.
+        require_final(ctx.run_dir)
+    except ValueError as exc:
+        raise CheckError('unsupported', f'fab package done gate held: {exc}') from exc
     try:
         from .placement_defects import prepare_release
         prepare_release(ctx)
