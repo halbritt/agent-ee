@@ -13,6 +13,7 @@ import re
 import stat
 import sys
 import tempfile
+import uuid
 from urllib.error import HTTPError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
@@ -158,11 +159,12 @@ class S3Store:
     def object_key(self, group, name):
         return '/'.join(part for part in (self.prefix, group, name) if part)
 
-    def request(self, method, key, payload_sha256=EMPTY_SHA256, data=None, length=None, now=None):
+    def request(self, method, key, payload_sha256=EMPTY_SHA256, data=None, length=None, now=None, extra=None):
         path = '/' + quote(self.bucket, safe='') + '/' + quote(key, safe='/-_.~')
         now = now or datetime.datetime.now(datetime.timezone.utc)
         stamp, day = now.strftime('%Y%m%dT%H%M%SZ'), now.strftime('%Y%m%d')
-        headers = {'host': self.endpoint.netloc, 'x-amz-content-sha256': payload_sha256, 'x-amz-date': stamp}
+        headers = {'host': self.endpoint.netloc, 'x-amz-content-sha256': payload_sha256, 'x-amz-date': stamp,
+                   **{name.lower(): value for name, value in (extra or {}).items()}}
         signed = ';'.join(sorted(headers))
         canonical = '\n'.join([method, path, '', *(f'{name}:{headers[name]}' for name in sorted(headers)),
                                '', signed, payload_sha256])
@@ -244,23 +246,85 @@ def fetch(manifest, group, base_url, destination, store=None):
         os.close(parent_fd)
 
 
+class AtomicCreateUnavailable(StoreUnavailable):
+    """Typed refusal: the store does not enforce PUT If-None-Match: *.
+
+    Without an atomic create-if-absent a writer racing between the existence
+    check and the PUT would be silently replaced, so upload refuses outright.
+    (Garage v2.3.0, the owner's store on 2026-10-22, ignores the precondition.)
+    """
+
+
+CREATE_IF_ABSENT = {'If-None-Match': '*'}
+# Precondition Failed, or Conflict for a concurrent conditional write (AWS S3).
+CREATE_REFUSED = (409, 412)
+
+
+def put_if_absent(store, key, record, data):
+    """True if this PUT created the object; False if the store refused because one exists."""
+    try:
+        with urlopen(store.request('PUT', key, record['sha256'], data, len(data), extra=CREATE_IF_ABSENT),
+                     timeout=120):
+            return True
+    except HTTPError as exc:
+        if exc.code in CREATE_REFUSED:
+            return False
+        raise
+
+
+def require_atomic_create(store):
+    """Demonstrate that the store enforces create-if-absent, or raise AtomicCreateUnavailable.
+
+    Writes one fresh random probe key twice with If-None-Match: *; the second
+    write must be refused. Only that probe key is written and then deleted.
+    """
+    key = store.object_key('.agent-ee-create-probe', uuid.uuid4().hex)
+    probe = {'sha256': hashlib.sha256(b'probe').hexdigest()}
+    if not put_if_absent(store, key, probe, b'probe'):
+        raise AtomicCreateUnavailable(f'create-if-absent probe refused a fresh key {key}')
+    try:
+        second = {'sha256': hashlib.sha256(b'replaced').hexdigest()}
+        if put_if_absent(store, key, second, b'replaced'):
+            raise AtomicCreateUnavailable(
+                f'{store!r} ignores PUT If-None-Match: *; upload refuses because a concurrent writer could be '
+                'replaced (see docs/reproducing-evidence.md)')
+    finally:
+        with urlopen(store.request('DELETE', key), timeout=30):
+            pass
+
+
+def verify_existing(store, key, record):
+    """Accept an existing object only if a GET returns exactly the manifest bytes; never replace it."""
+    with tempfile.TemporaryDirectory() as scratch:
+        download(store.request('GET', key), Path(scratch) / 'object', record)
+
+
+def local_bytes(path, record):
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f'missing or non-regular local evidence: {path}')
+    data = path.read_bytes()
+    if len(data) != record['bytes'] or hashlib.sha256(data).hexdigest() != record['sha256']:
+        raise ValueError(f'local evidence differs from manifest: {path}')
+    return data
+
+
 def upload(manifest, group, evidence, store):
     """Upload one group's exact manifest bytes; never replace a differing object.
 
-    Local bytes are checked against the manifest before sending. Each PUT
-    declares the manifest SHA-256 as its signed payload hash, so the store
-    rejects a body that changed in transit. An existing object is accepted only
-    after a GET returns exactly the manifest bytes.
+    Local bytes are checked against the manifest before sending. Upload first
+    demonstrates that the store enforces create-if-absent and refuses
+    (AtomicCreateUnavailable) when it does not. Every PUT carries
+    If-None-Match: * and declares the manifest SHA-256 as its signed payload
+    hash, so the store rejects a body that changed in transit. An object that
+    exists, including one created concurrently after the existence check, is
+    accepted only after a GET returns exactly the manifest bytes.
     """
     files = group_files(manifest, group)
     root = Path(evidence) / group
     for name, record in sorted(files.items()):
-        path = root / name
-        if path.is_symlink() or not path.is_file():
-            raise ValueError(f'missing or non-regular local evidence: {path}')
-        data = path.read_bytes()
-        if len(data) != record['bytes'] or hashlib.sha256(data).hexdigest() != record['sha256']:
-            raise ValueError(f'local evidence differs from manifest: {path}')
+        local_bytes(root / name, record)
+    require_atomic_create(store)
+    for name, record in sorted(files.items()):
         key = store.object_key(group, name)
         try:
             with urlopen(store.request('HEAD', key), timeout=30):
@@ -268,12 +332,9 @@ def upload(manifest, group, evidence, store):
         except HTTPError as exc:
             if exc.code != 404:
                 raise
-        else:
-            with tempfile.TemporaryDirectory() as scratch:
-                download(store.request('GET', key), Path(scratch) / 'object', record)
-            continue
-        with urlopen(store.request('PUT', key, record['sha256'], data, len(data)), timeout=120):
-            pass
+            if put_if_absent(store, key, record, local_bytes(root / name, record)):
+                continue
+        verify_existing(store, key, record)
     return len(files)
 
 
@@ -320,7 +381,12 @@ def main():
     if args.command == 'upload':
         if store is None:
             raise ValueError('upload requires an s3:// store')
-        print(f'{args.group}: {upload(manifest, args.group, args.evidence, store)} files present in store')
+        try:
+            count = upload(manifest, args.group, args.evidence, store)
+        except AtomicCreateUnavailable as exc:
+            print(f'evidence_fetch: refused (no atomic create-if-absent): {exc}', file=sys.stderr)
+            return 3
+        print(f'{args.group}: {count} files present in store')
     else:
         fetch(manifest, args.group, args.base_url, args.destination, store)
         print(args.destination / args.group)

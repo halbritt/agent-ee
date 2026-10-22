@@ -111,7 +111,9 @@ refuses with exit 3 when that file is absent or unsafe. Credentials are never
 committed, archived or passed into sandboxes. It checks sizes and hashes in private
 staging and atomically publishes a complete named directory without replacing
 any existing destination. It refuses destination ancestor symlinks and unsafe
-manifest paths. It does not grant sandbox network access, authenticate a publisher,
+manifest paths. Upload writes only with `If-None-Match: *` and refuses (exit 3)
+a store that does not demonstrably enforce that precondition, so a concurrent
+writer is never silently replaced. It does not grant sandbox network access, authenticate a publisher,
 scan all secrets, establish publication rights or protect against a hostile host.
 See the [relocation workflow](reproducing-evidence.md#evidence-relocation-agentee-20)
 for Linux prerequisites, historical verification limitations and owner gates.

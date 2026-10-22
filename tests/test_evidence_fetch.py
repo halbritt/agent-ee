@@ -179,12 +179,19 @@ class EvidenceFetchTests(unittest.TestCase):
 
 
 class FakeS3:
-    """Path-style S3 stand-in that, like Garage, rejects a body whose SHA-256 differs from the signed one."""
+    """Path-style S3 stand-in that, like Garage, rejects a body whose SHA-256 differs from the signed one.
 
-    def __init__(self):
+    enforce_create=False models Garage v2.3.0, which ignores PUT If-None-Match: *
+    (observed on the owner's store 2026-10-22); True models AWS S3, whose refusal
+    is 412, or 409 (refused_code) for a concurrent conditional write. after_head
+    runs between a HEAD that found nothing and the next request, to stage a
+    concurrent writer.
+    """
+
+    def __init__(self, enforce_create=True, refused_code=412):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         import threading
-        self.objects, self.requests = {}, []
+        self.objects, self.requests, self.after_head = {}, [], None
         store = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -200,6 +207,14 @@ class FakeS3:
                 if (key := self._key()) is not None:
                     self.send_response(200 if key in store.objects else 404)
                     self.send_header('Content-Length', '0')
+                    self.end_headers()
+                    if key not in store.objects and store.after_head:
+                        store.after_head(key)
+
+            def do_DELETE(self):
+                if (key := self._key()) is not None:
+                    store.objects.pop(key, None)
+                    self.send_response(204)
                     self.end_headers()
 
             def do_GET(self):
@@ -220,9 +235,14 @@ class FakeS3:
                     return
                 body = self.rfile.read(int(self.headers['Content-Length']))
                 ok = hashlib.sha256(body).hexdigest() == self.headers['x-amz-content-sha256']
-                if ok:
+                if ok and enforce_create and self.headers.get('If-None-Match') == '*' and key in store.objects:
+                    code = refused_code
+                elif ok:
                     store.objects[key] = body
-                self.send_response(200 if ok else 400)
+                    code = 200
+                else:
+                    code = 400
+                self.send_response(code)
                 self.send_header('Content-Length', '0')
                 self.end_headers()
 
@@ -250,6 +270,10 @@ def credentials(directory, endpoint, mode=0o600, **changed):
     return path
 
 
+def evidence_puts(fake):
+    return sum(method == 'PUT' and '/.agent-ee-create-probe/' not in path for method, path, _ in fake.requests)
+
+
 class S3StoreTests(unittest.TestCase):
     def test_signature_matches_independent_reference(self):
         # Expected values were produced by botocore's S3SigV4Auth for the same requests.
@@ -268,6 +292,13 @@ class S3StoreTests(unittest.TestCase):
                 self.assertEqual(request.get_header('Authorization'),
                                  'AWS4-HMAC-SHA256 Credential=GKEXAMPLE/20261022/garage/s3/aws4_request, '
                                  'SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=' + signature)
+        conditional = store.request('PUT', store.object_key('grp', 'x.bin'), hashlib.sha256(b'abc').hexdigest(),
+                                    b'abc', 3, now=now, extra=fetcher.CREATE_IF_ABSENT)
+        self.assertEqual(conditional.get_header('If-none-match'), '*')
+        self.assertEqual(conditional.get_header('Authorization'),
+                         'AWS4-HMAC-SHA256 Credential=GKEXAMPLE/20261022/garage/s3/aws4_request, '
+                         'SignedHeaders=host;if-none-match;x-amz-content-sha256;x-amz-date, '
+                         'Signature=770fa7dd20bf9ea85ab7191504b86a7164e4f15f8b91b8648b95c6e7d6ace26e')
         self.assertNotIn('secret-example', repr(store))
 
     def test_absent_or_unsafe_credentials_are_a_typed_refusal(self):
@@ -312,9 +343,10 @@ class S3StoreTests(unittest.TestCase):
                 store = fetcher.open_store('s3://bucket/pre', credentials(root, fake.endpoint))
                 self.assertEqual(fetcher.upload(manifest, 'demo', root / 'evidence', store), 2)
                 self.assertEqual(sorted(fake.objects), ['/bucket/pre/demo/b.json', '/bucket/pre/demo/sub/a%20%23%25.bin'])
-                puts = sum(method == 'PUT' for method, _, _ in fake.requests)
+                puts = evidence_puts(fake)
+                self.assertEqual(puts, 2)
                 self.assertEqual(fetcher.upload(manifest, 'demo', root / 'evidence', store), 2)
-                self.assertEqual(sum(method == 'PUT' for method, _, _ in fake.requests), puts)
+                self.assertEqual(evidence_puts(fake), puts)
                 (root / 'out').mkdir()
                 fetcher.fetch(manifest, 'demo', 's3://bucket/pre', root / 'out', store)
                 self.assertEqual(fetcher.inventory(root / 'out'), manifest)
@@ -331,3 +363,64 @@ class S3StoreTests(unittest.TestCase):
                     fetcher.upload(manifest, 'demo', root / 'evidence', store)
         finally:
             fake.close()
+
+
+class AtomicCreateTests(unittest.TestCase):
+    """Upload never replaces a differing object, including one created after its existence check."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        (self.root / 'evidence/demo').mkdir(parents=True)
+        (self.root / 'evidence/demo/a').write_bytes(b'expected')
+        self.manifest = fetcher.inventory(self.root / 'evidence')
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def store(self, fake):
+        self.addCleanup(fake.close)
+        return fetcher.open_store('s3://bucket', credentials(self.root, fake.endpoint))
+
+    def test_store_ignoring_create_precondition_is_refused_before_any_evidence_put(self):
+        fake = FakeS3(enforce_create=False)
+        store = self.store(fake)
+        with self.assertRaisesRegex(fetcher.AtomicCreateUnavailable, 'ignores PUT If-None-Match'):
+            fetcher.upload(self.manifest, 'demo', self.root / 'evidence', store)
+        self.assertEqual(evidence_puts(fake), 0)
+        self.assertEqual(fake.objects, {})  # Only the probe key was written, then deleted.
+        self.assertEqual([m for m, _, _ in fake.requests], ['PUT', 'PUT', 'DELETE'])
+        self.assertEqual(len({p for _, p, _ in fake.requests}), 1)
+
+    def test_cli_refusal_is_exit_3(self):
+        import os
+        import subprocess
+        import sys
+        fake = FakeS3(enforce_create=False)
+        self.addCleanup(fake.close)
+        (self.root / 'manifest.json').write_text(json.dumps(self.manifest))
+        result = subprocess.run([sys.executable, str(Path(fetcher.__file__)), 'upload', 'demo',
+                                 '--manifest', str(self.root / 'manifest.json'), '--evidence', str(self.root / 'evidence'),
+                                 '--base-url', 's3://bucket', '--credentials', str(credentials(self.root, fake.endpoint))],
+                                capture_output=True, text=True, env=dict(os.environ))
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn('refused (no atomic create-if-absent)', result.stderr)
+        self.assertEqual((evidence_puts(fake), fake.objects), (0, {}))
+
+    def test_concurrent_differing_object_is_never_replaced(self):
+        for code in fetcher.CREATE_REFUSED:
+            with self.subTest(code=code):
+                fake = FakeS3(refused_code=code)
+                store = self.store(fake)
+                fake.after_head = lambda key: fake.objects.__setitem__(key, b'concurrent different evidence')
+                with self.assertRaisesRegex(ValueError, 'download (exceeds manifest size|size/hash mismatch)'):
+                    fetcher.upload(self.manifest, 'demo', self.root / 'evidence', store)
+                self.assertEqual(fake.objects, {'/bucket/demo/a': b'concurrent different evidence'})
+                self.assertEqual([m for m, p, _ in fake.requests if p == '/bucket/demo/a'], ['HEAD', 'PUT', 'GET'])
+
+    def test_concurrent_identical_object_is_accepted(self):
+        fake = FakeS3()
+        store = self.store(fake)
+        fake.after_head = lambda key: fake.objects.__setitem__(key, b'expected')
+        self.assertEqual(fetcher.upload(self.manifest, 'demo', self.root / 'evidence', store), 1)
+        self.assertEqual(fake.objects, {'/bucket/demo/a': b'expected'})

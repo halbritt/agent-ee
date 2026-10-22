@@ -299,15 +299,33 @@ case. A missing or corrupt object fails the whole group, as described below.
 Nothing falls back to a partial or unverified group, and no check treats absent
 evidence as a pass.
 
-The owner uploads with the separate key. Each PUT carries the manifest SHA-256
-as its signed payload hash, so Garage rejects a body that changed in transit. An
-existing object is never replaced. It is accepted only when a GET returns the
-manifest bytes:
+The owner uploads with the separate key:
 
 ```sh
 python3 scripts/evidence_fetch.py upload GROUP --evidence evidence \
   --base-url s3://agent-ee-evidence --credentials ~/.config/agent-ee/evidence-s3-upload.env
 ```
+
+Upload never replaces an existing object, including one that another writer
+creates between the existence check and the write. Every PUT therefore carries
+`If-None-Match: *` (create only if absent) and the manifest SHA-256 as its
+signed payload hash, so the store rejects a body that changed in transit. An
+object that exists, or whose conditional PUT the store refuses with 412 or 409,
+is accepted only when a GET returns exactly the manifest bytes; otherwise the
+upload fails and the object is left as it is.
+
+The precondition only protects evidence if the store enforces it. Before any
+evidence PUT, upload writes one fresh random key under
+`.agent-ee-create-probe/` twice with `If-None-Match: *`, then deletes that key.
+If the second write is not refused, upload stops with exit 3 and
+`evidence_fetch: refused (no atomic create-if-absent): ...`, without writing
+any evidence. On 2026-10-22 the owner's Garage v2.3.0 ignored the precondition:
+a repeated conditional PUT, and 8 concurrent conditional PUTs to each of 30
+fresh probe keys, all returned 200 and the last write won. Upload to this store
+therefore refuses. All 20 groups were already in the bucket before this check
+was added. Adding evidence needs a store that enforces conditional writes, or an
+owner-run upload while no other writer can be active, which this tool does not
+offer.
 
 ### What stays in the tree
 
@@ -332,9 +350,22 @@ relocated group can link to sibling files; fetch the group to follow those links
 The file-origin check still classifies every relocated path. The paths come from
 the hash-pinned manifest. The facts that the check reads from bytes (content
 markers and the origins of captured candidate inputs) were recorded in
-`relocation.json` from a hash-verified fetch, together with a digest of the marker
-patterns and capture sources. If those patterns or sources change, the check
-fails until the facts are recorded again from a fresh fetch:
+`relocation.json` from a hash-verified fetch. The record
+(`agent-ee.relocated-origin-facts/2`) holds a digest of the marker patterns and
+capture sources and the files manifest SHA-256. It has an explicit entry for
+every file of the 17 groups: an empty marker list is a recorded negative. Every
+`candidate.json` also has an entry, which is null when it has no sources table.
+The check refuses, and reads nothing as clean, when any of these holds:
+
+- a table or entry is missing, or names a file outside the groups;
+- a value is malformed or uses an unknown marker or origin;
+- the patterns, sources or manifest changed;
+- a retained file's recorded facts disagree with its bytes.
+
+These facts are trusted offline attestations from the recorded fetch, not a
+fresh inspection of the absent bytes. A well-formed but false entry cannot be
+detected without fetching the group. To record the facts again from a fresh,
+hash-verified fetch:
 
 ```sh
 python3 scripts/check_origins.py --relocated-facts build/fetched-evidence
@@ -354,9 +385,9 @@ absent and their policy is older. This is recorded, not repaired. The
 [local fetch receipt](../evidence/fetch-local-check-20261017.json) record the
 earlier preparation.
 
-The tracked tree fell from 358.7 MB to about 38 MB. This does not meet the
+The tracked tree fell from 358.7 MB to about 38.9 MB. This does not meet the
 20 MB criterion, because files outside `evidence/` (source, fixtures, docs and
-tests) now total about 30 MB. Clone size does not fall: Git history keeps every
+tests) now total about 30.1 MB. Clone size does not fall: Git history keeps every
 earlier evidence object until the owner decides on a separate history rewrite.
 
 ### Fetch mechanics

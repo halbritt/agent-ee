@@ -272,7 +272,8 @@ model or acquire measurements from instruments.
 moves 4,753 run and archive files (about 321 MB) out of the tracked tree into the
 owner's private Garage bucket. A hash-verified fetch restores any manifest group
 with a credentials file kept outside the checkout. Without that file, the fetch
-refuses with a typed error. Files that tests and summaries read stay in the tree.
+refuses with a typed error. Upload refuses a store that does not enforce atomic
+create-if-absent; the owner's Garage does not. Files that tests and summaries read stay in the tree.
 History is not rewritten, so clone size does not fall; the tree is still above
 the 20 MB target (AGENTEE-20).
 
