@@ -236,16 +236,28 @@ if experiment is not None and experiment != 'omit':
     if 'source_dir' in scenario:
         attempt['source']['source_dir'] = scenario['source_dir'].format(**paths)
         write(run / 'attempt.json', attempt)
-    # As kicad-route a0ed434: the attempt names the board's project file and its custom
-    # rules file (scenario['rules_files'] overrides), and the effective-configuration
-    # manifest captures the input board and the files beside it by suffix.
+    # As kicad-route a0ed434: the attempt names the board's project file, its custom
+    # rules file and the rule files beside it KiCad does not load (cli.rules_files;
+    # scenario['rules_files'] overrides), the wrapper prepares the backend input in
+    # work/input/<project dir> (scenario['prepared'] {name: text} stands in for
+    # protection and preprocessing), and the effective-configuration manifest
+    # captures that prepared board and the files beside it by suffix.
     stem = Path(board).stem
     attempt['rules_files'] = {'project': f'{stem}.kicad_pro',
                               'custom_rules': f'{stem}.kicad_dru' if f'{stem}.kicad_dru' in files else None,
-                              'not_loaded': [], **scenario.get('rules_files', {})}
+                              'not_loaded': sorted(n for n in files if Path(n).suffix in ('.kicad_pro', '.kicad_dru')
+                                                   and Path(n).stem != stem),
+                              **scenario.get('rules_files', {})}
     write(run / 'attempt.json', attempt)
-    captured = {'board_sha256': files.get(board),
-                'rules': {suffix: files.get(stem + suffix) for suffix in ('.kicad_pro', '.kicad_dru')}}
+    prepared = run / 'work/input' / src.name
+    prepared.mkdir(parents=True, exist_ok=True)
+    for f in sorted(ref.iterdir()):
+        shutil.copy2(f, prepared / f.name)
+    for rel, text in scenario.get('prepared', {}).items():
+        (prepared / rel).write_text(text)
+    captured = {'board_sha256': sha(prepared / board),
+                'rules': {suffix: sha(prepared / (stem + suffix)) if (prepared / (stem + suffix)).is_file() else None
+                          for suffix in ('.kicad_pro', '.kicad_dru')}}
     # The raw backend output kicad-route seals (a design file the adapter never retains);
     # the fixture's wrapper changes nothing, so it is the delivered board.
     raw_output = run / 'work/effective-configuration-output.kicad_pcb'
@@ -276,7 +288,7 @@ if experiment is not None and experiment != 'omit':
     result['process']['effective_configuration'] = scenario.get('effective_binding') or {
         'status': 'bound', 'reasons': [], 'replay_authority': False, 'sha256': sha(run / manifest_name),
         'request_sha256': sha(run / request_name), 'capture_status': 'complete',
-        'coverage': 'resolved_outer_batch_only', 'captured_input_sha256': files.get(board),
+        'coverage': 'resolved_outer_batch_only', 'captured_input_sha256': captured['board_sha256'],
         'backend_output_sha256': raw_sha, 'output_stage': RAW_STAGE,
         'wrapper_output_board_sha256': validation.get('delivered_board_sha256'),
         'wrapper_output_stage': 'after_wrapper_postprocessing_before_native_refill'}
@@ -390,9 +402,17 @@ if experiment is not None and experiment != 'omit':
             sidecar.write_text(json.dumps(forged, indent=2) + '\n')
     else:
         sidecar.write_text('not json {' if experiment == 'malformed' else json.dumps(body, indent=2) + '\n')
-    # scenario['remove'] [run-relative names] deletes sealed files after sealing.
+    # scenario['remove'] [run-relative names] deletes sealed files after sealing;
+    # scenario['prepared_after'] {name: text | None | 'link:TARGET'} then changes the
+    # prepared input the adapter observes (None deletes it).
     for rel in scenario.get('remove', []):
         (run / rel).unlink()
+    for rel, text in scenario.get('prepared_after', {}).items():
+        (prepared / rel).unlink(missing_ok=True)
+        if isinstance(text, str) and text.startswith('link:'):
+            (prepared / rel).symlink_to(text[len('link:'):])
+        elif text is not None:
+            (prepared / rel).write_text(text)
     # Byte edits [file, old, new, 'first'|'last'] of one occurrence (AGENTEE-442
     # duplicate-key probes); an edit that finds nothing writes an unmistakable file.
     for file, before, after, which in scenario.get('edits', []):

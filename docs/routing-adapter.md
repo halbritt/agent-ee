@@ -585,7 +585,10 @@ refusals. The router's stdout and stderr are kept. The attempt's
 `result.json`, `attempt.json`, `RESULT.md`, `snapshot.json`, `validate/`,
 `facts/` and `work/` logs are byte copies under `routing/attempt/`. Design files
 there (boards, project and rule files, including KRT's project writeback) are
-hashed under `omitted_design_files` and not copied. The only board that leaves
+hashed under `omitted_design_files` and not copied. The router's prepared
+backend input under `work/input` is observed the same way: its regular design
+files are hashed under `omitted_design_files`, and nothing under `work/input`
+is copied (links there are ignored). The only board that leaves
 an attempt is `routing/candidate/P/B` of an eligible exit. Missing reports are
 listed under `missing_artifacts`; none is invented. The raw OUT stays in the
 step's work directory.
@@ -842,16 +845,27 @@ Experiment evidence is never dropped and is never qualified.
       - the input fingerprint must equal `attempt.json`, `result.json` and the
         fingerprint of the retained `snapshot.json` files, and the snapshot
         files, input board name and digest must match those files;
-      - the named input files (review H1, ee442g): `identity.input.project` must
-        be the board's own `<stem>.kicad_pro` with its snapshot digest (null
-        only when the snapshot has none); `identity.input.rules` must restate
-        `attempt.json` `rules_files` (`custom_rules` and `not_loaded`) with the
-        snapshot digest of that file, and a named rules file must be
-        `<stem>.kicad_dru`, the only one KiCad loads; `attempt.json` must state
-        both `rules_files` members;
-      - `identity.effective.input` must equal the files beside the board in the
-        snapshot (`board_sha256`, `.kicad_pro`, `.kicad_dru`) and the `input` of
-        both sealed manifests;
+      - the ORIGINAL input and its named files (review H1, ee442g; agent-510
+        R1): the snapshot must hold the board's own `<stem>.kicad_pro` (kicad-route
+        refuses an input without it), and `identity.input.project` must be that
+        file with its snapshot digest. The rules inventory is derived from the
+        snapshot as kicad-route `a0ed434` `cli.rules_files` derives it: the custom
+        rules file is `<stem>.kicad_dru` when the snapshot has it, else null, and
+        `not_loaded` is every other `.kicad_pro`/`.kicad_dru` beside the board,
+        sorted. `attempt.json` `rules_files` (`project`, `custom_rules`,
+        `not_loaded`) and `identity.input.rules` (name, snapshot digest,
+        `not_loaded`) must both equal that one derived inventory, so a loaded
+        rules file declared absent, or an invented or omitted not-loaded file, is
+        refused even when the attempt and the sidecar agree;
+      - the PREPARED input (agent-510 R2): protection and preprocessing change
+        the backend input, so it is not the snapshot. The adapter observes it in
+        `work/input/<reference_dir name>/<board>` and the `.kicad_pro` and
+        `.kicad_dru` beside it (kicad-route `experiment._retained_backend_input`)
+        by the digests `retain()` recorded in `omitted_design_files`.
+        `identity.effective.input` and the `input` of both sealed manifests must
+        equal it, and a run without a regular prepared board and project there
+        is refused. The original and prepared boards may differ: a
+        `protect existing` run locks copper in the prepared input;
       - the request settings must restate `attempt.json` `settings`, which the
         adapter checks against its fixed request: `protect`, `mode`, the
         backend, the budgets, `experiment_policy_sha256` and the other
@@ -870,7 +884,7 @@ Experiment evidence is never dropped and is never qualified.
         board (`candidate_board_sha256`, `validated_board_sha256`,
         `file_sha256`) must equal the board `result.json` validated and
         `validate/candidate-facts.json`. The binding's `captured_input_sha256`
-        must be the input board;
+        must be the observed prepared input board, never the original;
       - the outcome statuses must equal `result.json`'s;
       - the manifest's `requested_output` must be `RUN/work/krt-out/<board>`.
 
@@ -898,7 +912,7 @@ Experiment evidence is never dropped and is never qualified.
   `/SIG_A`, eligible). The receipt's sidecar, policy copy and sealed manifests
   are committed byte for byte in `tests/fixtures/k91-real` (origin T17; see its
   `PROVENANCE.md`). Its boards and facts hold route_demo geometry and are not
-  committed. `tests/test_routing_experiment_boundary.py` has two real replays:
+  committed. `tests/test_routing_experiment_boundary.py` has these real replays:
   - `FinalNativeReceiptTest` grades the receipt with its own run, source,
     input and candidate. `retain()` copies the run's diagnostics as the
     adapter does, and `experiment_grade()` grades the retained bytes against
@@ -913,7 +927,20 @@ Experiment evidence is never dropped and is never qualified.
     self-origins. The receipt is external: `AGENT_EE_K91_FINAL_RECEIPT` names a
     byte copy (default `build/k91-final-clean-receipt` in the checkout, then
     the original). The test pins its key hashes and skips, saying so, only
-    when it is absent;
+    when it is absent. Resealed with the rules declared absent, or with an
+    invented not-loaded file, in both the attempt record and the sidecar, it is
+    refused (agent-510 R1), and so is a prepared-input observation that is not
+    the one the manifests captured;
+  - `ProtectedExistingReceiptTest` and `ProtectedHumanFallbackReceiptTest`
+    grade agent-507's protected native `a0ed434` receipts (`--protect
+    existing`, and `--protect human` falling back to existing protection) the
+    same way. Their original snapshot board and their prepared `work/input`
+    board differ, and both are `retained`. The stage conflation, resealed so
+    that both manifests, the identity and the binding claim the original
+    input, is refused. The receipts are external (`AGENT_EE_K91_PROTECTED_EXISTING`
+    and `AGENT_EE_K91_PROTECTED_HUMAN`, default
+    `build/k91-protected-existing` and `build/k91-protected-human`). The human
+    run makes no selective-human claim;
   - the same receipt delivered by a router the adapter ran, with every file it
     seals, goes through `step`, `stage_receipts.run_step`, `verify` and `adopt`
     and is refused `run_mismatch` (its `source_dir` is the producer's, not
@@ -933,7 +960,13 @@ Experiment evidence is never dropped and is never qualified.
   experiment evidence, and it issues only `--protect existing`, mode `all` and
   `--dir /candidate/<project>`, while the receipt's request is `locked`,
   `selected` and the producer's fixture directory. An adapter-run real positive
-  needs the re-pin. The real replay qualifies the consumer's handling of
+  needs the re-pin. **Integration activation is gated:** the native positives
+  above go through `retain()` and `experiment_grade()`, the consumer's own
+  helpers, not through `step`, `run_step`, `verify` and `adopt`, where the real
+  receipt is still refused. They are not the matching adapter-run positive. That
+  positive needs a qualification under the actual adapter request against an
+  isolated proposed pin, after agent-507's producer qualification; the
+  production pin and the defaults are unchanged. The real replay qualifies the consumer's handling of
   two-layer route_demo current-policy evidence only. It is not target
   qualification, not a re-pin and not a router release claim. A retained record
   is still `qualified: false`: binding proves which run the evidence describes,

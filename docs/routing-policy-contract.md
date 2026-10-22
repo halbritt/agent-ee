@@ -260,9 +260,13 @@ that claims `comparison_eligible` is requalified from the attempt record, facts
 and sealed effective-configuration manifest it names by digest, and must
 describe this execution (input and named input files, source, request, the raw,
 wrapper and graded board seals, and run), never trusted on the producer's flag.
-The real replay covers two-layer route_demo current-policy evidence only, graded
-with the receipt's own execution identity; the adapter cannot run that receipt
-before a re-pin.
+The original input is the snapshot, with the rules inventory derived from it as
+kicad-route `cli.rules_files` derives it. The prepared input (the effective
+configuration's `input` and `captured_input_sha256`) is the `work/input` the
+adapter observes by digest. The real replay covers two-layer route_demo
+current-policy evidence, clean and protected, graded with each receipt's own
+execution identity by the consumer's helpers. The adapter cannot run those
+receipts before a re-pin, so integration activation stays gated.
 That producer is not pinned or qualified. The pin does not produce this evidence, so steps 1-3 and 5-7 below
 still apply when agent-ee re-pins.
 

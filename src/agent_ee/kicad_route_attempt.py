@@ -989,8 +989,9 @@ def experiment_run(request, layout, attempt_dir, omitted=None):
     the paths are those the sandboxed router was given (tool_argv's --out and
     --dir), so the sidecar is bound to this execution, never to its own claims.
     omitted is the adapter's own record of the design files retain() observed
-    in the run and did not copy (report.omitted_design_files): the only digest
-    of the raw backend output that is not the producer's claim."""
+    in the run and did not copy (report.omitted_design_files): the only digests
+    of the raw backend output and of the prepared backend input (work/input)
+    that are not the producer's claims."""
     if not isinstance(attempt_dir, str):
         return None
     return {'run_dir': str(Path(layout['work']) / 'routing' / attempt_dir),
@@ -1139,19 +1140,55 @@ def _requalify(body, result, attempt_dir, run):
                                f'or another path inside this run ({src})')
     if src != run['source_dir']:
         return 'run_mismatch', f'attempt.json source_dir {src!r} is not this attempt\'s input {run["source_dir"]}'
-    return _run_mismatch(body, result, record, facts, config, request, attempt_dir, run_dir)
+    return _run_mismatch(body, result, record, facts, config, request, attempt_dir, run_dir,
+                         run.get('observed') or {})
 
 
-def _run_mismatch(body, result, record, facts, config, request, attempt_dir, run_dir):
+def _rules_inventory(files, board):
+    """kicad-route a0ed434 cli.rules_files over the typed snapshot: (project, custom_rules,
+    not_loaded) KiCad grades board with, derived from file presence, never from a claim.
+
+    KiCad loads only the project and custom rules of the board's own name; every other
+    .kicad_pro/.kicad_dru beside the board is not loaded. The snapshot records the
+    reference copy rules_files reads, by run-relative name."""
+    path = PurePosixPath(board)
+    project, rules = path.with_suffix('.kicad_pro').name, path.with_suffix('.kicad_dru').name
+    beside = [PurePosixPath(n) for n in files if PurePosixPath(n).parent == path.parent]
+    return (project, rules if str(path.with_suffix('.kicad_dru')) in files else None,
+            sorted(p.name for p in beside if p.suffix in ('.kicad_pro', '.kicad_dru') and
+                   p.name not in (project, rules)))
+
+
+def _prepared_input(record, board, observed):
+    """The prepared backend input the adapter observed (kicad-route a0ed434
+    experiment._retained_backend_input): work/input/<reference name>/<board> and its
+    .kicad_pro and .kicad_dru, by the digests retain() recorded, or None without a
+    regular prepared board and project."""
+    reference = record.get('reference_dir')
+    name = PurePosixPath(reference).name if isinstance(reference, str) else ''
+    if name in ('', '.', '..') or PurePosixPath(board).name != board:
+        return None
+    path = PurePosixPath('work/input', name, board)
+    prepared = {'board_sha256': observed.get(str(path)),
+                'rules': {s: observed.get(str(path.with_suffix(s))) for s in ('.kicad_pro', '.kicad_dru')}}
+    return prepared if prepared['board_sha256'] and prepared['rules']['.kicad_pro'] else None
+
+
+def _run_mismatch(body, result, record, facts, config, request, attempt_dir, run_dir, observed):
     """(reason, detail) unless the sidecar describes this execution, or None.
 
     Every comparison is with retained bytes the adapter binds independently:
     result.json (whose input, settings, validation and run the adapter checks
     against the request and the delivered board), snapshot.json, and the attempt
-    record, facts and manifests the sidecar names. A self-consistent sidecar of
-    another run, even with digests rewritten to this run's files, differs here
-    ('run_mismatch'); a snapshot.json that is not a file-digest map is
-    'missing' or 'malformed', never a crash."""
+    record, facts and manifests the sidecar names. Two input stages stay distinct:
+    the ORIGINAL input (identity.input) is the snapshot, with the rules inventory
+    derived from it (_rules_inventory); the PREPARED input (identity.effective.input,
+    both manifests' input and the binding's captured_input_sha256) is the
+    work/input the adapter observed (_prepared_input), which protection and
+    preprocessing may change. A self-consistent sidecar of another run, even with
+    digests rewritten to this run's files, differs here ('run_mismatch'); a
+    snapshot.json that is not a file-digest map is 'missing' or 'malformed',
+    never a crash."""
     identity, candidate, outcome, sealed = body['identity'], body['candidate'], body['outcome'], body['artifacts']
     claimed = identity['input']
     inp = result.get('input') if isinstance(result.get('input'), dict) else {}
@@ -1163,18 +1200,22 @@ def _run_mismatch(body, result, record, facts, config, request, attempt_dir, run
             not all(isinstance(v, str) and SHA256.match(v) for v in files.values())):
         return 'malformed', 'snapshot.json files is not a non-empty map of file names to sha256 digests'
     board = record['board']
-    stem = PurePosixPath(board).stem
-    # The named input files (review H1, ee442g): kicad-route names the board's own
-    # project file and the attempt's custom rules file, digests from the reference
-    # copy, which snapshot.json records; the manifests capture the files beside the
-    # board by suffix. A name or digest of another input is not this execution's.
+    # The named input files (review H1, ee442g; agent-510 R1): kicad-route names the
+    # board's own project file and custom rules file, digests from the reference copy,
+    # which snapshot.json records. Which rules file is loaded, and which siblings are
+    # not, is derived from the snapshot; the attempt record and the sidecar must both
+    # state that one inventory. A name or digest of another input is not this execution's.
     rules_files = record.get('rules_files')
     if not isinstance(rules_files, dict) or not {'custom_rules', 'not_loaded'} <= set(rules_files):
         return 'run_mismatch', 'attempt.json rules_files does not state custom_rules and not_loaded'
-    custom = rules_files['custom_rules']
-    project_name = f'{stem}.kicad_pro'
-    captured = {'board_sha256': files.get(board),
-                'rules': {s: files.get(f'{stem}{s}') for s in ('.kicad_pro', '.kicad_dru')}}
+    project_name, custom, not_loaded = _rules_inventory(files, board)
+    if project_name not in files:
+        return 'run_mismatch', f'the snapshot has no {project_name}: kicad-route refuses such an input'
+    # agent-510 R2: the prepared input is observed in work/input, not the snapshot.
+    prepared = _prepared_input(record, board, observed)
+    if prepared is None:
+        return 'run_mismatch', ('the adapter observed no regular prepared input board and project in work/input '
+                                'for attempt.json reference_dir and board')
     checks = [
         ('input fingerprint', claimed['fingerprint'], [record['input_fingerprint'], inp.get('fingerprint'),
                                                        fingerprint(files)]),
@@ -1183,10 +1224,11 @@ def _run_mismatch(body, result, record, facts, config, request, attempt_dir, run
          [[inp.get('board'), files.get(board)], [board, facts['facts/reference-facts.json'].get('sha256')]]),
         ('input project', [claimed['project']['name'], claimed['project']['sha256']],
          [[project_name, files.get(project_name)]]),
+        ('input rules file', [rules_files.get('project'), rules_files['custom_rules'],
+                              rules_files['not_loaded']], [[project_name, custom, not_loaded]]),
         ('input rules', [claimed['rules']['name'], claimed['rules']['sha256'], claimed['rules'].get('not_loaded')],
-         [[custom, files.get(custom) if isinstance(custom, str) else None, rules_files['not_loaded']]]),
-        ('input rules file', claimed['rules']['name'], [f'{stem}.kicad_dru' if custom is not None else None]),
-        ('effective input', identity['effective']['input'], [captured, config.get('input'), request.get('input')]),
+         [[custom, files.get(custom) if custom is not None else None, not_loaded]]),
+        ('effective input', identity['effective']['input'], [prepared, config.get('input'), request.get('input')]),
         ('input source', claimed['source'], [record['source']])]
     settings = record['settings']
     requested = identity['request']
@@ -1202,8 +1244,9 @@ def _run_mismatch(body, result, record, facts, config, request, attempt_dir, run
     binding = result['process']['effective_configuration']
     output = config.get('output') if isinstance(config.get('output'), dict) else {}
     sha = validation.get('validated_board_sha256')
-    # Three distinct seals, each against its own stage record (kicad-route a0ed434).
-    checks += [('captured input board', claimed['board']['sha256'], [binding.get('captured_input_sha256')]),
+    # The prepared input and three distinct output seals, each against its own stage
+    # record (kicad-route a0ed434).
+    checks += [('captured input board', prepared['board_sha256'], [binding.get('captured_input_sha256')]),
                ('raw backend output board', candidate['raw_backend_output_board_sha256'],
                 [sealed.get(EXPERIMENT_RAW_OUTPUT), output.get('board_sha256'), binding.get('backend_output_sha256')]),
                ('raw backend output stage', EXPERIMENT_RAW_STAGE, [output.get('stage'), binding.get('output_stage')]),
@@ -1222,8 +1265,8 @@ def _run_mismatch(body, result, record, facts, config, request, attempt_dir, run
                    posixpath.normpath(requested_output) if isinstance(requested_output, str) else None,
                    [str(run_dir / 'work/krt-out' / board)]))
     for label, claim, observed in checks:
-        # A request setting or a named input may be null but must be stated; every other claim must be non-null.
-        if (claim is None and not label.startswith(('request ', 'input rules file'))) or any(
+        # A request setting may be null but must be stated; every other claim must be non-null.
+        if (claim is None and not label.startswith('request ')) or any(
                 v is _UNSTATED for v in (claim, *observed)) or any(
                 canonical_json(claim) != canonical_json(o) for o in observed):
             return 'run_mismatch', f'the sidecar {label} is not this execution\'s'
@@ -2294,7 +2337,10 @@ def bind_candidate(request, layout, run_dir, result, attempt, inputs):
 
 
 def retain(run_dir, dest):
-    """Copy the attempt's diagnostics, regular files only, no design files."""
+    """Copy the attempt's diagnostics, regular files only, no design files.
+
+    Design files are observed by digest and not copied (omitted), including the
+    prepared backend input under work/input; links under work/input are ignored."""
     retained, omitted, links = {}, {}, []
     if run_dir is None:
         return retained, omitted, links
@@ -2316,6 +2362,11 @@ def retain(run_dir, dest):
         for rel, entry in tree(root).items():
             name = f'{top}/{rel}'
             if top == 'work' and PurePosixPath(rel).parts[0] == 'input':
+                # The prepared backend input (after protection and preprocessing) is
+                # observed, never copied: its regular design files by digest only, so
+                # experiment_grade can bind the sidecar's effective input to it.
+                if entry[0] == 'file' and name.endswith(DESIGN_SUFFIXES):
+                    omitted[name] = entry[1]
                 continue
             if entry[0] in ('link', 'other'):
                 links.append(name)

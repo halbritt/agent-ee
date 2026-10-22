@@ -11,7 +11,10 @@ values the adapter reads are meaningful. RealReceiptReplayTest replays the REAL
 kicad-route a0ed434 clean native receipt's sidecar and sealed manifests in
 tests/fixtures/k91-real through the same path, and retires the interim
 4f06368f receipts. FinalNativeReceiptTest grades that receipt with its own
-retained run, source, input and candidate (external artifacts).
+retained run, source, input and candidate, and ProtectedExistingReceiptTest and
+ProtectedHumanFallbackReceiptTest grade the protected native receipts, whose
+prepared input differs from the original (external artifacts; helper evidence,
+not an adapter-run positive: integration activation stays gated).
 The policy declarations are the reviewed five-field routability-policy/1 form of
 kicad-route experiment_policy.load.
 """
@@ -643,6 +646,89 @@ class ExperimentBoundaryTest(unittest.TestCase):
                                                                     'not_loaded': []}}},
                             'run_mismatch', 'the sidecar input rules')
 
+    def test_the_rules_inventory_is_derived_from_the_snapshot(self):
+        # agent-510 R1: which rules file KiCad loads and which siblings it does not are
+        # derived from the snapshot (kicad-route a0ed434 cli.rules_files), never taken
+        # from the attempt record or the sidecar. Each negative states the same false
+        # inventory in BOTH, sealed self-consistently.
+        rules = {'rc.kicad_dru': '(version 1)\n'}
+        for scenario, detail in (
+                ({'rules_files': {'custom_rules': None}}, 'input rules file'),
+                ({'rules_files': {'not_loaded': ['invented.kicad_dru']}}, 'input rules file'),
+                ({'rules_files': {'project': 'other.kicad_pro'}}, 'input rules file')):
+            with self.subTest(scenario=scenario):
+                directory = self.assert_refused({'name': 'complete', **scenario}, 'run_mismatch',
+                                                f'the sidecar {detail}', design_files=rules)
+                body = json.loads((directory / 'run/routing/attempt' / attempt.EXPERIMENT_SIDECAR).read_text())
+                record = json.loads((directory / 'run/routing/attempt/attempt.json').read_text())
+                self.assertEqual([body['identity']['input']['rules'][k] for k in ('name', 'not_loaded')],
+                                 [record['rules_files'][k] for k in ('custom_rules', 'not_loaded')])
+        # Siblings KiCad does not load are the derived not_loaded set: retained and adopted
+        # after OUT removal when stated, refused when omitted.
+        siblings = {**rules, 'old.kicad_dru': '(version 1)\n', 'old.kicad_pro': '{}\n'}
+        receipt, receipt_dir, design, report = self.receipt({'name': 'complete'}, CURRENT, siblings)
+        self.assertEqual(report['semantics']['experiment']['status'], 'retained', report['semantics'])
+        body = json.loads((receipt_dir / 'run/routing/attempt' / attempt.EXPERIMENT_SIDECAR).read_text())
+        self.assertEqual(body['identity']['input']['rules']['not_loaded'], ['old.kicad_dru', 'old.kicad_pro'])
+        shutil.rmtree(receipt_dir / 'run/routing/out')
+        self.assertEqual(self.verify(receipt_dir, receipt)['experiment'], report['semantics']['experiment'])
+        stage_receipts.adopt(receipt_dir, receipt, design)
+        self.assert_refused({'name': 'complete', 'rules_files': {'not_loaded': []}}, 'run_mismatch',
+                            'the sidecar input rules file', design_files=siblings)
+        # Without a rules file the derived inventory is null rules, the legitimate absent-rules
+        # positive (test_the_named_input_files_are_this_executions); claiming one refuses.
+        self.assert_refused({'name': 'complete', 'rules_files': {'custom_rules': 'rc.kicad_dru'}}, 'run_mismatch',
+                            'the sidecar input rules file')
+
+    def test_the_prepared_input_is_bound_to_the_observed_work_input(self):
+        # agent-510 R2: protection and preprocessing change the backend input, so the
+        # ORIGINAL input (identity.input) is the snapshot and the PREPARED input
+        # (effective.input, both manifests' input, captured_input_sha256) is the
+        # work/input the adapter observed by digest. The fixture's 'prepared' bytes
+        # stand in for protection locking copper in the work input.
+        locked = {'rc.kicad_pcb': 'SYNTHETIC board, copper locked by protection\n'}
+        receipt, receipt_dir, design, report = self.receipt({'name': 'complete', 'prepared': locked}, CURRENT)
+        self.assertEqual(report['semantics']['experiment']['status'], 'retained', report['semantics'])
+        kept = receipt_dir / 'run/routing/attempt'
+        body = json.loads((kept / attempt.EXPERIMENT_SIDECAR).read_text())
+        files = json.loads((kept / 'snapshot.json').read_text())['files']
+        prepared = hashlib.sha256(locked['rc.kicad_pcb'].encode()).hexdigest()
+        original = {'board_sha256': files['rc.kicad_pcb'],
+                    'rules': {'.kicad_pro': files['rc.kicad_pro'], '.kicad_dru': None}}
+        self.assertEqual(body['identity']['input']['board']['sha256'], files['rc.kicad_pcb'])
+        self.assertEqual(body['identity']['effective']['input'], {**original, 'board_sha256': prepared})
+        self.assertNotEqual(prepared, files['rc.kicad_pcb'])
+        # Observed by digest, never retained.
+        self.assertEqual(report['omitted_design_files']['work/input/project/rc.kicad_pcb'], prepared)
+        self.assertFalse((kept / 'work/input').exists())
+        shutil.rmtree(receipt_dir / 'run/routing/out')
+        self.assertEqual(self.verify(receipt_dir, receipt)['experiment'], report['semantics']['experiment'])
+        stage_receipts.adopt(receipt_dir, receipt, design)
+        absent = 'the adapter observed no regular prepared input board and project in work/input'
+        rules = {'rc.kicad_dru': '(version 1)\n'}
+        for scenario, detail, design_files in (
+                # The stage conflation, stated consistently: every prepared-stage record claims
+                # the original input while the observed work input is the locked one.
+                ({'prepared': locked, 'manifest': {'input': original}, 'request_manifest': {'input': original},
+                  'effective': {'input': original}, 'binding': {'captured_input_sha256': original['board_sha256']}},
+                 'the sidecar effective input', None),
+                ({'prepared': locked, 'binding': {'captured_input_sha256': original['board_sha256']}},
+                 'the sidecar captured input board', None),
+                # The work input changed after the manifests captured it.
+                ({'prepared_after': {'rc.kicad_pcb': 'SYNTHETIC other board\n'}}, 'the sidecar effective input', None),
+                ({'prepared_after': {'rc.kicad_pro': '{"other": 1}\n'}}, 'the sidecar effective input', None),
+                ({'prepared_after': {'rc.kicad_dru': '(version 1) (rule other)\n'}}, 'the sidecar effective input',
+                 rules),
+                ({'prepared_after': {'rc.kicad_dru': None}}, 'the sidecar effective input', rules),
+                # No regular prepared board or project to observe.
+                ({'prepared_after': {'rc.kicad_pcb': None}}, absent, None),
+                ({'prepared_after': {'rc.kicad_pro': None}}, absent, None),
+                ({'prepared_after': {'rc.kicad_pcb': 'link:../../../reference/project/rc.kicad_pcb'}}, absent, None),
+                ({'prepared_after': {'rc.kicad_pcb': 'link:rc.kicad_pcb'}}, absent, None)):
+            with self.subTest(scenario=scenario):
+                self.assert_refused({'name': 'complete', **scenario}, 'run_mismatch', detail,
+                                    design_files=design_files)
+
     def test_the_three_board_seals_are_bound_to_their_own_stage_records(self):
         # kicad-route a0ed434: the raw backend output, the wrapper output before native
         # refill and the graded refilled board are distinct seals, each bound to its record.
@@ -1155,37 +1241,76 @@ K91_FINAL_PINNED = {
         '7495a5771807d594621710bc39de7f1d274449b01504cdd9d1bd2cf627788219'}
 
 
-def final_receipt():
-    """The external clean receipt copy, or None when it is absent."""
-    for where in (os.environ.get('AGENT_EE_K91_FINAL_RECEIPT'),
-                  Path(__file__).resolve().parents[1] / 'build/k91-final-clean-receipt', K91_FINAL_RUN):
+# agent-507's protected native a0ed434 receipts (native delivery 33be1109, the
+# composed experiment0 runs): --protect existing, and --protect human, which this
+# input makes fall back to existing protection (no selective-human claim). Protection
+# locks copper in the PREPARED input (work/input), so its board differs from the
+# ORIGINAL snapshot board (agent-510 R2). Same external-artifact rules as above;
+# AGENT_EE_K91_PROTECTED_<EXISTING|HUMAN> names a byte copy.
+K91_PROTECTED_BUILD = '/home/halbritt/git/kicad-route/build/krt91-final-native-agent507/composed-tmp/experiment0'
+K91_ORIGINAL_BOARD = '0cfd162b0677e865e0308547c671eda39f15e965ae5c4f3cdf59b0a410f1dff0'
+K91_PREPARED_BOARD = '1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478'
+K91_PROTECTED = {
+    'existing': {'run': f'{K91_PROTECTED_BUILD}/protected-existing',
+                 'source': f'{K91_PROTECTED_BUILD}/existing-fixture', 'pinned': {
+                     'routability-experiment.json':
+                         'e37530a27b5f80215207fe624260bc51e515efb98494442683a759b0204a20b2',
+                     'experiment-policy.json': 'bbba9c43d37ecb7fa96ba3ce7cf387656f7f6cde52dd2143651150c6e982c59e',
+                     'attempt.json': 'a76fb8bfef16a278b960906b5fdeb862556f972636aa90e023362e0c98641032',
+                     'reference/existing-fixture/route_demo.kicad_pcb': K91_ORIGINAL_BOARD,
+                     'work/input/existing-fixture/route_demo.kicad_pcb': K91_PREPARED_BOARD,
+                     'candidate/existing-fixture/route_demo.kicad_pcb':
+                         'e2b57728f995ef3b3b619b48d5c14f418c1d6b0ceb9a564e0821efa533f1f541',
+                     'work/effective-configuration-output.kicad_pcb':
+                         '1a22beded37a68a8e2d5c32f0171802d7fb03e7c7d11a34fe1870ab685e019a3'},
+                 'identity_sha256': '9a799925bf71dbc6613614ce26de64ac744f85f361a983edefba9606bb73e751'},
+    'human': {'run': f'{K91_PROTECTED_BUILD}/protected-human',
+              'source': f'{K91_PROTECTED_BUILD}/human-fixture', 'pinned': {
+                  'routability-experiment.json': 'ea32ebf4b96a616e11f81bc893f2b72ae7f6233744312b19306474c123cc7fff',
+                  'experiment-policy.json': 'bbba9c43d37ecb7fa96ba3ce7cf387656f7f6cde52dd2143651150c6e982c59e',
+                  'attempt.json': '89bc71c4b6795abde0d6546264e8f1f0e633ae25b28c8b3a76fbd36039887ed0',
+                  'reference/human-fixture/route_demo.kicad_pcb': K91_ORIGINAL_BOARD,
+                  'work/input/human-fixture/route_demo.kicad_pcb': K91_PREPARED_BOARD,
+                  'candidate/human-fixture/route_demo.kicad_pcb':
+                      'c15e6ea3f95323cfc40036787fae4a2ff65b6d25a1a0f97019295e650802d030',
+                  'work/effective-configuration-output.kicad_pcb':
+                      '3d5914d39851da6c80fcf66c4e3f2809dc645d90dfe6d9f9e4ea5dd4c698973a'},
+              'identity_sha256': 'a946d9a381fe89612f9345952c8c657695e2f26e4d88605f1ee3e53e9227f937'}}
+
+
+_KEEP = object()
+
+
+def external_receipt(variable, build_name, original):
+    """An external native receipt copy, or None when it is absent."""
+    for where in (os.environ.get(variable), Path(__file__).resolve().parents[1] / 'build' / build_name, original):
         if where and (Path(where) / 'routability-experiment.json').is_file():
             return Path(where)
     return None
 
 
-class FinalNativeReceiptTest(unittest.TestCase):
-    """agent-507's clean native a0ed434 receipt with its OWN run, source, input and candidate.
+def final_receipt():
+    """The external clean receipt copy, or None when it is absent."""
+    return external_receipt('AGENT_EE_K91_FINAL_RECEIPT', 'k91-final-clean-receipt', K91_FINAL_RUN)
 
-    The routing adapter executes only its pinned router, which writes no experiment
-    evidence and cannot issue this receipt's request (protect locked, mode selected,
-    --dir the producer fixture), so this receipt cannot be an adapter execution
-    without a re-pin. It is graded here by the consumer's own functions: retain()
-    copies the run's diagnostics exactly as the adapter does after a run, and
-    experiment_grade() grades the retained bytes against the receipt's execution
-    identity (K91_FINAL_RUN, K91_FINAL_SOURCE, the design-file digests retain()
-    observed). Every record is qualified: false. This qualifies the two-layer
-    route_demo current-policy evidence only: not a target, not a re-pin.
-    """
+
+class NativeReceiptCase:
+    """Grading one external native receipt with the consumer's own functions (see
+    FinalNativeReceiptTest): RUN and SOURCE are its execution identity, PINNED the
+    digests its copy must have, located by locate()."""
+    RUN, SOURCE, PINNED = K91_FINAL_RUN, K91_FINAL_SOURCE, K91_FINAL_PINNED
+
+    def locate(self):
+        return final_receipt()
 
     def setUp(self):
-        self.source = final_receipt()
+        self.source = self.locate()
         if self.source is None:
-            self.skipTest('external artifact absent: agent-507 clean native receipt (kicad-route a0ed434); set '
-                          'AGENT_EE_K91_FINAL_RECEIPT to a byte copy of ' + K91_FINAL_RUN)
-        for name, digest in K91_FINAL_PINNED.items():
+            self.skipTest('external artifact absent: agent-507 native receipt (kicad-route a0ed434); set '
+                          f'the AGENT_EE_K91_* variable to a byte copy of {self.RUN}')
+        for name, digest in self.PINNED.items():
             self.assertEqual(sha256(self.source / name), digest, name)
-        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-k91-final-')
+        tmp = tempfile.TemporaryDirectory(prefix='agent-ee-k91-native-')
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.run_copy = self.root / 'run'
@@ -1200,12 +1325,61 @@ class FinalNativeReceiptTest(unittest.TestCase):
         kept, sidecar_links = attempt.retain_experiment(run or self.run_copy, routing)
         self.assertEqual((links, sidecar_links, kept), ([], [], [attempt.EXPERIMENT_SIDECAR,
                                                                  attempt.EXPERIMENT_POLICY_COPY]))
+        # The prepared input is observed by digest only: none of its bytes are retained.
+        self.assertFalse((routing / 'attempt/work/input').exists())
         return routing / 'attempt', omitted
 
-    def grade(self, attempt_dir, observed, run_dir=K91_FINAL_RUN, source_dir=K91_FINAL_SOURCE, result=None):
+    def grade(self, attempt_dir, observed, run_dir=None, source_dir=None, result=None):
         result = result or json.loads((attempt_dir / 'result.json').read_text())
         return attempt.experiment_grade({'experiment_policy': self.policy}, result, attempt_dir,
-                                        {'run_dir': run_dir, 'source_dir': source_dir, 'observed': observed})
+                                        {'run_dir': run_dir or self.RUN, 'source_dir': source_dir or self.SOURCE,
+                                         'observed': observed})
+
+    def assert_refused(self, record, reason, detail, attempt_dir, observed, **grade):
+        self.assertEqual((record['status'], record['reason'], record['qualified']), ('refused', reason, False), record)
+        self.assertIn(detail, record['detail'])
+        # The same decision from the retained bytes after the run's output is removed.
+        if self.run_copy.exists():
+            shutil.rmtree(self.run_copy)
+        self.assertEqual(self.grade(attempt_dir, observed, **grade), record)
+
+    def resealed(self, attempt_dir, edit_attempt=None, edit_body=None, swap=None):
+        """The retained attempt record and facts edited or swapped, the sidecar resealed over
+        them as kicad-route would (every artifact digest and the identity seal correct), and
+        result.json re-bound to the resealed sidecar."""
+        for name, other in (swap or {}).items():
+            shutil.copyfile(attempt_dir / other, attempt_dir / name)
+        record = json.loads((attempt_dir / 'attempt.json').read_text())
+        body = json.loads((attempt_dir / attempt.EXPERIMENT_SIDECAR).read_text())
+        if edit_attempt is not None:
+            edit_attempt(record, body)
+            (attempt_dir / 'attempt.json').write_text(json.dumps(record, indent=2) + '\n')
+        for name in body['artifacts']:
+            if (attempt_dir / name).is_file():
+                body['artifacts'][name] = sha256(attempt_dir / name)
+        (edit_body or (lambda b: None))(body)
+        body['identity_sha256'] = attempt._sha256_of(body['identity'])
+        text = json.dumps(body, indent=2) + '\n'
+        (attempt_dir / attempt.EXPERIMENT_SIDECAR).write_text(text)
+        result = json.loads((attempt_dir / 'result.json').read_text())
+        result['experiment']['sha256'] = hashlib.sha256(text.encode()).hexdigest()
+        self.assertIsNone(attempt._sidecar_shape_refusal(body))
+        return result
+
+
+class FinalNativeReceiptTest(NativeReceiptCase, unittest.TestCase):
+    """agent-507's clean native a0ed434 receipt with its OWN run, source, input and candidate.
+
+    The routing adapter executes only its pinned router, which writes no experiment
+    evidence and cannot issue this receipt's request (protect locked, mode selected,
+    --dir the producer fixture), so this receipt cannot be an adapter execution
+    without a re-pin. It is graded here by the consumer's own functions: retain()
+    copies the run's diagnostics exactly as the adapter does after a run, and
+    experiment_grade() grades the retained bytes against the receipt's execution
+    identity (K91_FINAL_RUN, K91_FINAL_SOURCE, the design-file digests retain()
+    observed). Every record is qualified: false. This qualifies the two-layer
+    route_demo current-policy evidence only: not a target, not a re-pin.
+    """
 
     def test_the_clean_receipt_is_retained_with_its_own_run_source_input_and_candidate(self):
         snapshot = json.loads((self.run_copy / 'snapshot.json').read_text())
@@ -1231,14 +1405,6 @@ class FinalNativeReceiptTest(unittest.TestCase):
         shutil.rmtree(self.run_copy)
         self.assertEqual(self.grade(attempt_dir, observed), record)
 
-    def assert_refused(self, record, reason, detail, attempt_dir, observed, **grade):
-        self.assertEqual((record['status'], record['reason'], record['qualified']), ('refused', reason, False), record)
-        self.assertIn(detail, record['detail'])
-        # The same decision from the retained bytes after the run's output is removed.
-        if self.run_copy.exists():
-            shutil.rmtree(self.run_copy)
-        self.assertEqual(self.grade(attempt_dir, observed, **grade), record)
-
     def test_another_execution_is_refused(self):
         # H1: the same retained bytes graded as another execution's: another run directory,
         # another input directory (one that exists on this host), another observed raw output.
@@ -1260,29 +1426,6 @@ class FinalNativeReceiptTest(unittest.TestCase):
                 if raw is not None:
                     seen[attempt.EXPERIMENT_RAW_OUTPUT] = raw
                 self.assert_refused(self.grade(attempt_dir, seen), reason, detail, attempt_dir, seen)
-
-    def resealed(self, attempt_dir, edit_attempt=None, edit_body=None, swap=None):
-        """The retained attempt record and facts edited or swapped, the sidecar resealed over
-        them as kicad-route would (every artifact digest and the identity seal correct), and
-        result.json re-bound to the resealed sidecar."""
-        for name, other in (swap or {}).items():
-            shutil.copyfile(attempt_dir / other, attempt_dir / name)
-        record = json.loads((attempt_dir / 'attempt.json').read_text())
-        body = json.loads((attempt_dir / attempt.EXPERIMENT_SIDECAR).read_text())
-        if edit_attempt is not None:
-            edit_attempt(record, body)
-            (attempt_dir / 'attempt.json').write_text(json.dumps(record, indent=2) + '\n')
-        for name in body['artifacts']:
-            if (attempt_dir / name).is_file():
-                body['artifacts'][name] = sha256(attempt_dir / name)
-        (edit_body or (lambda b: None))(body)
-        body['identity_sha256'] = attempt._sha256_of(body['identity'])
-        text = json.dumps(body, indent=2) + '\n'
-        (attempt_dir / attempt.EXPERIMENT_SIDECAR).write_text(text)
-        result = json.loads((attempt_dir / 'result.json').read_text())
-        result['experiment']['sha256'] = hashlib.sha256(text.encode()).hexdigest()
-        self.assertIsNone(attempt._sidecar_shape_refusal(body))
-        return result
 
     def test_other_run_records_and_aliased_origins_are_refused_when_resealed(self):
         # H1 and H2 at this boundary: each case reseals the real sidecar over the edited
@@ -1332,6 +1475,51 @@ class FinalNativeReceiptTest(unittest.TestCase):
                 self.assert_refused(self.grade(attempt_dir, observed, result=result), reason, detail, attempt_dir,
                                     observed, result=result)
 
+    def test_a_false_rules_inventory_or_prepared_input_is_refused(self):
+        # agent-510 R1 on the real receipt, whose snapshot and effective input hold
+        # route_demo.kicad_dru: the rules declared absent, or an invented not-loaded file,
+        # in BOTH the attempt record and the resealed sidecar. And R2's observation: the
+        # prepared input the adapter observed is not the one the manifests captured.
+        absent = 'the adapter observed no regular prepared input board and project in work/input'
+
+        def rules(custom=_KEEP, not_loaded=_KEEP, attempt_too=True):
+            def edit(record, body):
+                for target, name in ((record['rules_files'], 'custom_rules'), (body['identity']['input']['rules'], 'name')):
+                    if target is record['rules_files'] and not attempt_too:
+                        continue
+                    if custom is not _KEEP:
+                        target[name] = custom
+                    if not_loaded is not _KEEP:
+                        target['not_loaded'] = not_loaded
+                if custom is None:
+                    body['identity']['input']['rules']['sha256'] = None
+            return edit
+
+        def reference_dir(record, body):
+            record['reference_dir'] = 'reference/..'
+        for edit, detail in ((rules(custom=None), 'the sidecar input rules file'),
+                             (rules(not_loaded=['invented.kicad_dru']), 'the sidecar input rules file'),
+                             (rules(not_loaded=['invented.kicad_dru'], attempt_too=False), 'the sidecar input rules'),
+                             (reference_dir, absent)):
+            with self.subTest(detail=detail):
+                if not self.run_copy.exists():
+                    shutil.copytree(self.source, self.run_copy, symlinks=True)
+                attempt_dir, observed = self.retained()
+                result = self.resealed(attempt_dir, edit_attempt=edit)
+                self.assert_refused(self.grade(attempt_dir, observed, result=result), 'run_mismatch', detail,
+                                    attempt_dir, observed, result=result)
+        if not self.run_copy.exists():
+            shutil.copytree(self.source, self.run_copy, symlinks=True)
+        attempt_dir, observed = self.retained()
+        board = 'work/input/route_demo/route_demo.kicad_pcb'
+        self.assertEqual(observed[board], K91_PREPARED_BOARD)
+        for seen, detail in (({**observed, board: '4' * 64}, 'the sidecar effective input'),
+                             ({**observed, 'work/input/route_demo/route_demo.kicad_dru': '4' * 64},
+                              'the sidecar effective input'),
+                             ({k: v for k, v in observed.items() if not k.startswith('work/input/')}, absent)):
+            with self.subTest(detail=detail, observed=sorted(set(seen.items()) - set(observed.items()))):
+                self.assert_refused(self.grade(attempt_dir, seen), 'run_mismatch', detail, attempt_dir, seen)
+
     def test_the_real_receipt_as_an_adapter_execution_is_refused_and_not_adopted(self):
         # The same receipt delivered by a router the adapter ran is not that execution: its
         # request, input directory and run are the producer's. Through step, run_step,
@@ -1357,6 +1545,81 @@ class FinalNativeReceiptTest(unittest.TestCase):
         self.assertEqual(record['identity_sha256'], K91_REVIEWED['native_receipt']['identity_sha256'])
         self.assertEqual(outcome[3]['omitted_design_files'][attempt.EXPERIMENT_RAW_OUTPUT],
                          K91_FINAL_PINNED[attempt.EXPERIMENT_RAW_OUTPUT])
+
+
+class ProtectedNativeReceiptCase(NativeReceiptCase):
+    """A protected native a0ed434 receipt (K91_PROTECTED) with its OWN run, source,
+    ORIGINAL input (the snapshot) and PREPARED input (the protected work input), graded
+    as FinalNativeReceiptTest grades the clean one. Helper evidence only, like it: the
+    adapter's pinned router cannot issue this request. No selective-human claim."""
+    KIND = None
+
+    def setUp(self):
+        spec = K91_PROTECTED[self.KIND]
+        self.RUN, self.SOURCE, self.PINNED = spec['run'], spec['source'], spec['pinned']
+        self.project = Path(self.SOURCE).name
+        super().setUp()
+
+    def locate(self):
+        return external_receipt(f'AGENT_EE_K91_PROTECTED_{self.KIND.upper()}', f'k91-protected-{self.KIND}',
+                                K91_PROTECTED[self.KIND]['run'])
+
+    def test_the_prepared_protected_input_is_retained_distinct_from_the_original(self):
+        snapshot = json.loads((self.run_copy / 'snapshot.json').read_text())
+        self.assertEqual(snapshot['files']['route_demo.kicad_pcb'], K91_ORIGINAL_BOARD)
+        attempt_dir, observed = self.retained()
+        self.assertEqual(observed[f'work/input/{self.project}/route_demo.kicad_pcb'], K91_PREPARED_BOARD)
+        record = self.grade(attempt_dir, observed)
+        self.assertEqual(record['status'], 'retained', record.get('detail'))
+        self.assertEqual((record['qualified'], record['comparison_eligible'], record['sha256'], record['identity_sha256']),
+                         (False, True, self.PINNED[attempt.EXPERIMENT_SIDECAR],
+                          K91_PROTECTED[self.KIND]['identity_sha256']))
+        body = json.loads((attempt_dir / attempt.EXPERIMENT_SIDECAR).read_text())
+        result = json.loads((attempt_dir / 'result.json').read_text())
+        # Two distinct input stages, each bound to its own record.
+        self.assertEqual(body['identity']['input']['board']['sha256'], K91_ORIGINAL_BOARD)
+        self.assertEqual(body['identity']['effective']['input']['board_sha256'], K91_PREPARED_BOARD)
+        self.assertEqual(result['process']['effective_configuration']['captured_input_sha256'], K91_PREPARED_BOARD)
+        self.assertEqual(body['identity']['protection']['mode'], 'existing')
+        self.assertEqual(body['candidate']['validated_board_sha256'],
+                         sha256(self.run_copy / f'candidate/{self.project}/route_demo.kicad_pcb'))
+        shutil.rmtree(self.run_copy)
+        self.assertEqual(self.grade(attempt_dir, observed), record)
+
+    def test_the_original_stage_claimed_for_the_prepared_input_is_refused(self):
+        # The stage conflation as a self-consistent forgery: both manifests, the sealed
+        # effective identity and the result.json binding claim the ORIGINAL input, every
+        # digest and seal resealed, while the adapter observed the protected work input.
+        attempt_dir, observed = self.retained()
+        original = {'board_sha256': K91_ORIGINAL_BOARD,
+                    'rules': json.loads((attempt_dir / attempt.EXPERIMENT_MANIFESTS[0]).read_text())['input']['rules']}
+        config_name, request_name = attempt.EXPERIMENT_MANIFESTS
+        request = json.loads((attempt_dir / request_name).read_text())
+        request['input'] = original
+        (attempt_dir / request_name).write_text(json.dumps(request, indent=2) + '\n')
+        config = json.loads((attempt_dir / config_name).read_text())
+        config.update(input=original, request_sha256=sha256(attempt_dir / request_name))
+        (attempt_dir / config_name).write_text(json.dumps(config, indent=2) + '\n')
+        result = self.resealed(attempt_dir, edit_body=lambda b: b['identity']['effective'].update(input=original))
+        result['process']['effective_configuration'].update(
+            sha256=sha256(attempt_dir / config_name), request_sha256=sha256(attempt_dir / request_name),
+            captured_input_sha256=K91_ORIGINAL_BOARD)
+        self.assert_refused(self.grade(attempt_dir, observed, result=result), 'run_mismatch',
+                            'the sidecar effective input', attempt_dir, observed, result=result)
+        # The unchanged receipt with an observed work input that is the original board.
+        shutil.copytree(self.source, self.run_copy, symlinks=True)
+        attempt_dir, observed = self.retained()
+        seen = {**observed, f'work/input/{self.project}/route_demo.kicad_pcb': K91_ORIGINAL_BOARD}
+        self.assert_refused(self.grade(attempt_dir, seen), 'run_mismatch', 'the sidecar effective input',
+                            attempt_dir, seen)
+
+
+class ProtectedExistingReceiptTest(ProtectedNativeReceiptCase, unittest.TestCase):
+    KIND = 'existing'
+
+
+class ProtectedHumanFallbackReceiptTest(ProtectedNativeReceiptCase, unittest.TestCase):
+    KIND = 'human'
 
 
 class NotRunExperimentTest(unittest.TestCase):
