@@ -149,3 +149,116 @@ tests with overflow checks enabled. Complete generated rank sequences on both
 pod fixtures were compared beyond the trace sample cap. Saved board, DRC and
 receipt parity passed. Documentation and file-origin checks passed. The Docker
 recipe was reviewed but its image was not rebuilt in this worktree.
+
+## Comparing a retained board
+
+The captured-geometry benchmark generates a 9 by 9 grid at four rotations for
+each movable footprint. It measures fixed-peer and hypothetical all-other-peer
+states separately, including native preparation, argument conversion and
+release. Both consume the same immutable snapshots; snapshot creation and
+library loading are outside these scorer timings. These queries do not assert
+legal placements or reproduce a search trace. Batch throughput is separate
+from the scalar API used by the lazy placer.
+
+Run native work through the host's admission wrapper, with the matching KiCad
+Python interpreter and `kicad-cli` on PATH. Every output directory must be new:
+
+```sh
+native-admit run --label scorer-replay -- python3 scripts/telemetry_scorer_replay.py \
+  --capture "$CAPTURE" --policy "$POLICY" --library "$SCORER_LIBRARY" \
+  --out build/scoring/captured-replay --runs 5
+native-admit run --label scorer-pod-pair -- python3 scripts/telemetry_scorer_compare.py \
+  --board "$BOARD" --netlist "$NETLIST" --request "$REQUEST" \
+  --library "$SCORER_LIBRARY" --out build/scoring/pod-pair-python-first
+```
+
+The second command runs the complete `place_candidate` pipeline, capped at
+900 seconds per arm. It includes library loading, arrangement, residual
+placement, saving and native checks; both arms skip visual rendering. Repeat
+with a fresh output directory and `--rust-first` to reverse the order.
+It preserves the supplied policy and changes only the authorized scratch
+root and the rendering flag. A matched refusal exits 2 and cannot establish
+placement speedup. A one-shot probe records whether Rust actually scored a
+pose; it removes itself before the first native call.
+
+Raw evidence remains unchanged. Comparison verifies the original board, plan
+and provenance hash links before normalizing arrangement elapsed time and
+its dependent hashes, native DRC dates and temporary staging paths. Candidate
+board bytes must match exactly. Native clearance findings can arrive in a
+different order: comparison sorts only their subsequences in named native
+finding lists, preserving all fields, duplicates, other finding positions and
+nested item order. Source manifests support explicitly pinned
+archives on disposable hosts, including verification of all listed files;
+ordinary checkouts record their observed Git revision and module hashes.
+
+## Telemetry pod comparison on Spot, 2026-10-22
+
+The full retained telemetry-pod workflow showed no meaningful speedup. Two
+matched pairs used the unchanged historical `iter8n` request, including its
+18 admitted blocks, with the run order reversed for the second pair:
+
+| Run order | Python runner | Rust runner |
+| --- | ---: | ---: |
+| Python, then Rust | 94.3468 s | 93.7740 s |
+| Rust, then Python | 94.2394 s | 94.3401 s |
+| Mean | 94.2931 s | 94.0570 s |
+
+The observed mean reduction is 0.25%, with Rust slightly slower in the reverse
+pair. Two observations per backend do not establish a reliable improvement.
+These times cover `place_candidate`, including arrangement, residual packing,
+board export and native validation. Both arms skip visual rendering. There
+was no dedicated full-runner warmup.
+
+All four runs produced byte-identical candidate boards and the same complete
+309-placement plan, apart from recorded arrangement elapsed time: 4,277 steps,
+of which 101 were arrangement steps. Both Rust runs demonstrably invoked the
+native scorer and recorded no fallback. All eight retained baseline/final-candidate
+DRC execution records report success. All four resulting boards retained outcome
+`defect`; parity does not establish board acceptance.
+
+The original comparators reported differences from native DRC clearance
+finding order. Independent review verified that the complete records, nested
+item order and multiplicities were equal. Separate comparison reports apply
+the narrow ordering normalization described above to `baseline/native-drc.json`,
+`native-drc.json`, `pre-artwork-drc.json` and the named DRC comparison lists.
+All 32 retained artifacts per pair then compare equal. The original failed
+comparison manifests and all raw evidence remain unchanged.
+
+The current sealed `j6b2` emission could not provide a full-placement timing:
+both arms refused fixed C42 before any search step or scorer invocation. Its
+captured origin is outside the 90 by 65 mm board. An earlier historical
+`iter8d` request also failed before scoring because its C31 block identity
+predates the current canonical courtyard format. No constraints or block
+identities were changed to make either input pass.
+
+Generated scorer queries on the current `j6b2` geometry did show a benefit
+when many peers contribute. Each state covers 95,904 queries, with five
+alternating repetitions after one warmup per arm. Every score matched exactly.
+
+| Peer state | Prepared Python median | Rust scalar median | Rust batch median |
+| --- | ---: | ---: | ---: |
+| Fixed peers | 91.640 ms | 164.747 ms (0.56×) | 88.192 ms (1.04×) |
+| Hypothetical all-other peers | 489.551 ms | 191.354 ms (2.56×) | 112.841 ms (4.34×) |
+
+The scalar column uses the API integrated into lazy placement; batch is a
+separate throughput measurement. Python consumes the same prepared immutable
+snapshots. Timings include native preparation, validation, argument conversion,
+result materialization and release, but exclude snapshot creation and library
+loading. The dense state includes captured unplaced origins: 300 of 309 are
+outside the board bounds. The grid queries are not a legal-placement search
+trace. In the fixed-peer state, 166 of 296 sources have no matching peers and
+the scalar adapter is 1.80 times slower than the prepared Python reference.
+
+Measurements used source `e015e053efda2325d81e8b3eb7670dd614515249` on an
+isolated GCP `c2d-highcpu-4` Spot instance: four vCPUs, 8 GiB RAM, AMD EPYC
+7B13, Python 3.12.3 and KiCad 10.0.7. The existing VM image was
+`agent-ee-gate-20261022-0352`, with runtime image `agent-ee:ci-14ef7275`.
+Rust 1.99.1 compiled the library for that CPU. Native admission serialized the
+runs; the container had no CPU quota. Source and input hashes were verified
+before and after each pair. The 18 scorer tests also passed against the cloud
+library without skips. The VM and its boot disk were deleted after downloading
+and verifying the evidence.
+
+[Telemetry measurements, source pins and artifact hashes](benchmarks/telemetry-scorer-2026-10-22.json)
+retain both successful pairs, both rejected inputs, raw scorer samples,
+comparison rules and teardown evidence. The implementation remains opt-in.

@@ -1,0 +1,836 @@
+{
+  "conclusion": "Two matched full-runner pairs on retained telemetry iter8n show no meaningful demonstrated speedup. Dense generated j6b2 peer scoring is faster, while sparse scalar scoring is slower. Current sealed j6b2 refuses before search.",
+  "current_j6b2_scorer_queries": {
+    "all_scores_exact": true,
+    "generation": {
+      "board_bbox_nm": [
+        0,
+        0,
+        90000000,
+        65000000
+      ],
+      "fixed": 13,
+      "footprints": 309,
+      "grid": {
+        "ordering": "x then y then rotation",
+        "pose_sha256": "bce3ca5d44c9e79de61ca10dd9eb24ca6e5ec0adc74d11fb9050ca957fd70ff2",
+        "rotations_deg": [
+          0,
+          90,
+          180,
+          270
+        ],
+        "size": [
+          9,
+          9
+        ],
+        "x_nm": [
+          0,
+          11250000,
+          22500000,
+          33750000,
+          45000000,
+          56250000,
+          67500000,
+          78750000,
+          90000000
+        ],
+        "y_nm": [
+          0,
+          8125000,
+          16250000,
+          24375000,
+          32500000,
+          40625000,
+          48750000,
+          56875000,
+          65000000
+        ]
+      },
+      "ground_nets": [
+        "/GND"
+      ],
+      "movable": 296
+    },
+    "input_verification": {
+      "design_manifest_entries": 558,
+      "frozen_input_files": 559,
+      "method": "fresh SHA-256 reads of every source and copied file; metadata is not hash evidence",
+      "mismatches": [],
+      "retained_seal_entries": 326,
+      "source_verified_before_and_after": true
+    },
+    "inputs": {
+      "capture": {
+        "path": "/opt/agent-ee/build/rust-scoring/telemetry-j6b2/capture.json",
+        "sha256": "d6a96fc4ad9c38f8e710ed120e9e39ff27e988d9e6bd252e697c55cbe37837b4"
+      },
+      "library": {
+        "path": "/opt/agent-ee/build/rust-scoring/placement_score-cloud.so",
+        "sha256": "4805e8710ac3bc06a97b9df22c3347723e9f5a02c0a1b8369f159da724ed84e1"
+      },
+      "placer_source": {
+        "path": "/opt/agent-ee/src/agent_ee/placer.py",
+        "sha256": "1bcc7aef74e44e81093d64ca49be6e44075996354345872f764b3f0c4e66bf10"
+      },
+      "policy": {
+        "path": "/opt/agent-ee/build/rust-scoring/telemetry-j6b2/policy.json",
+        "sha256": "8a4997d30c2cef93b5190af93f6af0b34acef03a358ec2bb01cd0c2eb0ac5199"
+      },
+      "python_wrapper": {
+        "path": "/opt/agent-ee/src/agent_ee/placement_scoring.py",
+        "sha256": "5382ba82dc65b24ad9ad7df29127d944401aad77c2629ad5a8424386e2c178cd"
+      },
+      "rust_source": {
+        "path": "/opt/agent-ee/src/agent_ee/data/placement_score.rs",
+        "sha256": "09fcdbf3e9bf04a06584de072befc563431283d8f171bf4d46e823c466111411"
+      },
+      "script": {
+        "path": "/opt/agent-ee/build/rust-scoring/capture_replay.py",
+        "sha256": "21dc83f05b40e4addf236b25137c74cd6c0e659339c0213cbd5d3165a9f7caeb"
+      }
+    },
+    "limits": [
+      "Generated 9 by 9 grids at four rotations on real captured geometry; not actual search traces or legal placements.",
+      "The all-other-peer state is hypothetical and includes captured unplaced origins; 300 of 309 origins are outside the board bounding box.",
+      "Python prepared reference consumes the same immutable snapshots; this baseline is not the live placer pad transformation callback.",
+      "The scalar wrapper is the integration API. Batch throughput is not the active lazy placement integration.",
+      "Fixed-peer scalar Rust is 1.80 times slower; 166 of 296 sources have no matching peers in that state.",
+      "No current-j6b2 full placement speedup is established."
+    ],
+    "policy": {
+      "fixed_refs": [
+        "C42",
+        "D3",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "J1",
+        "J2",
+        "J3",
+        "L3",
+        "U1",
+        "U2",
+        "U3"
+      ],
+      "identity": "010e09c4bd7ffc0503745ef6c569bfda420c58d9bd37db466b95772e0704086f",
+      "path": "policy.json",
+      "sha256": "8a4997d30c2cef93b5190af93f6af0b34acef03a358ec2bb01cd0c2eb0ac5199",
+      "step_budget": 200000
+    },
+    "provenance": {
+      "path": "build/rust-scoring/telemetry-j6b2/provenance.json",
+      "sha256": "5474dc62b1754aad1343622012c983ae8626b6d70201d7d26d8be983da1c3079"
+    },
+    "report": {
+      "path": "build/rust-scoring/telemetry-j6b2/scorer-replay/report.json",
+      "sha256": "b537f639e1a084f399dc1ed16bd385b35aa5bc2d35af0b23e5a1d9c0b37acb3f"
+    },
+    "request": {
+      "allowed_per_arm_adaptation": "authorization.writable_root only; preserve all other request fields",
+      "derived_by": [
+        "placement_adapter.binding",
+        "placement_adapter.helper_request"
+      ],
+      "identity": "fccc0fe6191fe0fbb1975d967e4256e9a1da6ff180c05bd9f0ad8d5cdaaf2f5e",
+      "original_derived_writable_root": "/work/placement",
+      "path": "request.json",
+      "sha256": "342f40cd8543bad869bf667bec752e5301bf07bf53bc6305b5b757db89600cb4",
+      "writable_root_placeholder": "/home/halbritt/.cache/agent-worktrees/agent-ee/rust-placement-scorer-agent524/build/rust-scoring/telemetry-j6b2/arm-placeholder"
+    },
+    "runs": 5,
+    "source": {
+      "clean_before_and_after": true,
+      "git_head": "5d923c5412d3659638c67c9cfa9f097e24620518",
+      "git_tree": "b5abfda2ecb0660a4e6bfa6a0a3cb7307a62acc1",
+      "manifest_sha256": "cff19152fecc2238e306f3cf45e48fbf60505189cd78fe9ed195f9600ed24709",
+      "original_producer_agent_ee_commit": "81e387ee24981bfabfbdfb423337e07ca2867887",
+      "project": "fome-mc telemetry-pod j6b2",
+      "repository": "/home/halbritt/.cache/agent-worktrees/fome-mc/pod-capture-j6b2",
+      "retained_evidence": "/home/halbritt/.cache/agent-worktrees/fome-mc/pod-capture-j6b2/telemetry-pod/expansion/production-capture/evidence/emission-81e387ee",
+      "sha256sums_sha256": "90adc6e7eacc1149cfdea0b9b0bb5d3be5b67c39453b15f1b06e4b8298e55331"
+    },
+    "states": [
+      {
+        "all_scores_exact": true,
+        "arm_orders": [
+          [
+            "python_prepared_reference",
+            "rust_prepared_batch",
+            "rust_scalar_wrapper",
+            "checked_batch"
+          ],
+          [
+            "checked_batch",
+            "rust_scalar_wrapper",
+            "rust_prepared_batch",
+            "python_prepared_reference"
+          ],
+          [
+            "python_prepared_reference",
+            "rust_prepared_batch",
+            "rust_scalar_wrapper",
+            "checked_batch"
+          ],
+          [
+            "checked_batch",
+            "rust_scalar_wrapper",
+            "rust_prepared_batch",
+            "python_prepared_reference"
+          ],
+          [
+            "python_prepared_reference",
+            "rust_prepared_batch",
+            "rust_scalar_wrapper",
+            "checked_batch"
+          ]
+        ],
+        "expected_scores_sha256": "42d863d51155b4b15d2bacfdc93dd1c06d6397c0a4b77b45459243e2e8fd2d08",
+        "interpretation": "Each movable source scored against fixed/locked footprints at captured coordinates.",
+        "median_ns": {
+          "checked_batch": 197010292,
+          "python_prepared_reference": 91639526,
+          "rust_prepared_batch": 88191662,
+          "rust_scalar_wrapper": 164747301
+        },
+        "peer_footprint_pool_count": 13,
+        "peer_pool_footprints_with_origins_outside_board_bbox": 4,
+        "queries_per_source": 324,
+        "queries_total": 95904,
+        "raw_ns": {
+          "checked_batch": [
+            199335627,
+            196738493,
+            197209972,
+            195972335,
+            197010292
+          ],
+          "python_prepared_reference": [
+            91669126,
+            91785966,
+            91639526,
+            90953967,
+            91304956
+          ],
+          "rust_prepared_batch": [
+            88624753,
+            89415011,
+            88142563,
+            88191662,
+            87054965
+          ],
+          "rust_scalar_wrapper": [
+            165098810,
+            165486690,
+            164747301,
+            164380772,
+            163570043
+          ]
+        },
+        "source_count": 296,
+        "sources_with_no_matching_peers": 166,
+        "speedup_vs_python_reference": {
+          "checked_batch": 0.4651509576971745,
+          "python_prepared_reference": 1.0,
+          "rust_prepared_batch": 1.0390951244347792,
+          "rust_scalar_wrapper": 0.5562429578133119
+        },
+        "state": "fixed_peers_initial",
+        "warmup_ns": {
+          "checked_batch": 196704913,
+          "python_prepared_reference": 91165317,
+          "rust_prepared_batch": 89450061,
+          "rust_scalar_wrapper": 163092975
+        }
+      },
+      {
+        "all_scores_exact": true,
+        "arm_orders": [
+          [
+            "python_prepared_reference",
+            "rust_prepared_batch",
+            "rust_scalar_wrapper",
+            "checked_batch"
+          ],
+          [
+            "checked_batch",
+            "rust_scalar_wrapper",
+            "rust_prepared_batch",
+            "python_prepared_reference"
+          ],
+          [
+            "python_prepared_reference",
+            "rust_prepared_batch",
+            "rust_scalar_wrapper",
+            "checked_batch"
+          ],
+          [
+            "checked_batch",
+            "rust_scalar_wrapper",
+            "rust_prepared_batch",
+            "python_prepared_reference"
+          ],
+          [
+            "python_prepared_reference",
+            "rust_prepared_batch",
+            "rust_scalar_wrapper",
+            "checked_batch"
+          ]
+        ],
+        "expected_scores_sha256": "2d4d7eaaabc7a917f09d69f34d6ec60780ab0aad231684c18115c35b0b2e0355",
+        "interpretation": "Each movable source scored against every other footprint at captured coordinates; this is a hypothetical dense peer state, not a realized late placement.",
+        "median_ns": {
+          "checked_batch": 624807466,
+          "python_prepared_reference": 489551282,
+          "rust_prepared_batch": 112841341,
+          "rust_scalar_wrapper": 191353745
+        },
+        "peer_footprint_pool_count": 309,
+        "peer_pool_footprints_with_origins_outside_board_bbox": 300,
+        "queries_per_source": 324,
+        "queries_total": 95904,
+        "raw_ns": {
+          "checked_batch": [
+            620061226,
+            622035452,
+            624807466,
+            630367724,
+            625087225
+          ],
+          "python_prepared_reference": [
+            486792728,
+            488778774,
+            489551282,
+            498422404,
+            498298093
+          ],
+          "rust_prepared_batch": [
+            111632534,
+            112841341,
+            113200520,
+            113472479,
+            112697571
+          ],
+          "rust_scalar_wrapper": [
+            189720138,
+            192206692,
+            191216305,
+            194053349,
+            191353745
+          ]
+        },
+        "source_count": 296,
+        "sources_with_no_matching_peers": 1,
+        "speedup_vs_python_reference": {
+          "checked_batch": 0.7835234190367373,
+          "python_prepared_reference": 1.0,
+          "rust_prepared_batch": 4.338403617518158,
+          "rust_scalar_wrapper": 2.558357465123037
+        },
+        "state": "all_other_peers_hypothetical",
+        "warmup_ns": {
+          "checked_batch": 621584302,
+          "python_prepared_reference": 490866629,
+          "rust_prepared_batch": 115684005,
+          "rust_scalar_wrapper": 189450719
+        }
+      }
+    ],
+    "timing_boundary": {
+      "excluded": [
+        "capture/policy loading",
+        "snapshot creation",
+        "shared library loading",
+        "compilation",
+        "comparison with expected results",
+        "report hashing/serialization"
+      ],
+      "included": [
+        "native state preparation for every source on every arm invocation",
+        "pose packing and validation used by each native API",
+        "score evaluation and Python result materialization",
+        "native handle release after each source",
+        "complete Python oracle computation within checked_batch"
+      ],
+      "reference": "Python reference consumes the same immutable snapshots; native preparation does not apply."
+    },
+    "total_distinct_source_state_pose_queries": 191808,
+    "warmups_per_arm": 1
+  },
+  "date": "2026-10-22",
+  "full_runner": {
+    "aggregate_python_over_rust_ratio": 1.0025096892340906,
+    "board_acceptance": "All four runs are placed with outcome defect. Equal outputs and native tool process exit 0 do not establish a DRC-clean or production-accepted board.",
+    "boundary": "Scorer context/library loading and complete place_candidate: block arrangement, residual placement, board save, native checks, reports. Imports and external result serialization excluded. Visuals skipped in both arms.",
+    "case": "historical telemetry iter8n",
+    "input_identity": {
+      "board": {
+        "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/seed.kicad_pcb",
+        "sha256": "0365485efbac76fe77e6810baba0fd15077803289e184d1ff4069773a612907c"
+      },
+      "library": {
+        "path": "/opt/agent-ee/build/rust-scoring/placement_score-cloud.so",
+        "sha256": "4805e8710ac3bc06a97b9df22c3347723e9f5a02c0a1b8369f159da724ed84e1"
+      },
+      "netlist": {
+        "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/native.xml",
+        "sha256": "7791d44380d40bb46b0dbe1cd7495ce59408e8691afe2bf360eaf70b3eab7556"
+      },
+      "project": {
+        "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/seed.kicad_pro",
+        "sha256": "a91ee4d1a8ecfa583df33e707defdb3174e505d91853fc1e4959600d770aa57f"
+      },
+      "request": {
+        "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/request.json",
+        "sha256": "306a8b7c197faf2fb3bd170b372b03a26af7964812819a552435634ff26d2bc1"
+      },
+      "rules": {
+        "path": "/opt/agent-ee/build/rust-scoring/telemetry-iter8n/inputs/seed.kicad_dru",
+        "sha256": null
+      }
+    },
+    "input_verification": {
+      "cache_seal_entries": 133,
+      "canonical_member_row_errors": 0,
+      "canonical_member_rows_checked": 272,
+      "frozen_input_files": 5,
+      "full_current_admission": {
+        "admitted": 18,
+        "derivation_sha256": "0e6a4ed6f599ecd9a328e08a8e04f734532f0ed6b85004c2e291fca1d7eaf9c4",
+        "method": "current blocks.derive and block_arrangement.admit_entry on exact retained probe, native XML and request allocation; reported independently; pure Python read-only",
+        "problems": [],
+        "reviewer": "/root/doctrine_review",
+        "status": "pass",
+        "total": 18
+      },
+      "mismatches": [],
+      "source_verified_before_and_after": true
+    },
+    "interpretation": "0.25 percent mean reduction with two observations per backend is not meaningful demonstrated acceleration; the reverse pair has Rust slightly slower.",
+    "mean_runner_s": {
+      "python": 94.2930659075,
+      "rust": 94.057012037
+    },
+    "model_limit": "The historical missing J1 project model remains missing in both arms. All 27 available stock models were frozen with matching hashes; visual rendering is skipped.",
+    "observed_mean_wall_reduction_percent": 0.25034064618447704,
+    "pairs": [
+      {
+        "arms": [
+          {
+            "backend": "python",
+            "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+            "first_native_invocation": null,
+            "outcome": "defect",
+            "process_exit_code": 0,
+            "runner_children_cpu": {
+              "system_s": 0.703521,
+              "user_s": 3.266288
+            },
+            "runner_self_cpu": {
+              "system_s": 1.1140320000000001,
+              "user_s": 89.39334699999999
+            },
+            "runner_wall_ns": 94346759580,
+            "scorer_events": [],
+            "status": "placed"
+          },
+          {
+            "backend": "rust",
+            "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+            "first_native_invocation": {
+              "method": "one",
+              "pose_nm_rotation_deg": [
+                66575000,
+                24457031,
+                0
+              ],
+              "returned": true
+            },
+            "outcome": "defect",
+            "process_exit_code": 0,
+            "runner_children_cpu": {
+              "system_s": 0.704437,
+              "user_s": 3.277069
+            },
+            "runner_self_cpu": {
+              "system_s": 1.1020320000000001,
+              "user_s": 88.91946800000001
+            },
+            "runner_wall_ns": 93773954985,
+            "scorer_events": [],
+            "status": "placed"
+          }
+        ],
+        "comparison_artifacts_per_arm": 32,
+        "identities_stable": true,
+        "measured_driver": {
+          "original_execution_path": "build/rust-scoring/telemetry_compare.py",
+          "path": "build/rust-scoring/telemetry-cloud/telemetry_compare-iter8n-pair1.py",
+          "sha256": "6ba52b0acd4820c1933a47601005495d6dfa45506beb766b23f5c4f918644804"
+        },
+        "observed_python_over_rust_ratio": 1.0061083548741399,
+        "order": [
+          "python",
+          "rust"
+        ],
+        "original_changed_files": [
+          "baseline/native-drc.json",
+          "native-drc-comparison.json",
+          "placement-result.json",
+          "raw-report.json"
+        ],
+        "original_comparison_status": "different",
+        "raw_manifest": {
+          "path": "build/rust-scoring/telemetry-iter8n/pair-1/manifest.json",
+          "sha256": "897e8e7e48910b3da1f7739f9a02db294bc3c01eff3ca2c6dcd168a4584c3523"
+        },
+        "raw_manifest_status": "failed-comparison",
+        "reviewed_comparison": {
+          "path": "build/rust-scoring/telemetry-iter8n/pair-1/recomparison-all-drc-clearance-order.json",
+          "sha256": "9c0f2fc4e5142c7a6a431a85062cad995eb473dc4b665b419fb8ee48e66654b8"
+        },
+        "reviewed_comparison_status": "equal"
+      },
+      {
+        "arms": [
+          {
+            "backend": "rust",
+            "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+            "first_native_invocation": {
+              "method": "one",
+              "pose_nm_rotation_deg": [
+                66575000,
+                24457031,
+                0
+              ],
+              "returned": true
+            },
+            "outcome": "defect",
+            "process_exit_code": 0,
+            "runner_children_cpu": {
+              "system_s": 0.737246,
+              "user_s": 3.228485
+            },
+            "runner_self_cpu": {
+              "system_s": 1.144198,
+              "user_s": 89.463694
+            },
+            "runner_wall_ns": 94340069089,
+            "scorer_events": [],
+            "status": "placed"
+          },
+          {
+            "backend": "python",
+            "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+            "first_native_invocation": null,
+            "outcome": "defect",
+            "process_exit_code": 0,
+            "runner_children_cpu": {
+              "system_s": 0.700336,
+              "user_s": 3.206769
+            },
+            "runner_self_cpu": {
+              "system_s": 1.184187,
+              "user_s": 89.324224
+            },
+            "runner_wall_ns": 94239372235,
+            "scorer_events": [],
+            "status": "placed"
+          }
+        ],
+        "comparison_artifacts_per_arm": 32,
+        "identities_stable": true,
+        "measured_driver": {
+          "original_execution_path": "build/rust-scoring/telemetry_compare.py",
+          "path": "build/rust-scoring/telemetry-cloud/telemetry_compare-iter8n-pair2.py",
+          "sha256": "4cacca26c9d84c4b15dcf92e7a5ab8f64ba3faa159a906ae48eb03d815fc36c2"
+        },
+        "observed_python_over_rust_ratio": 0.9989326183988163,
+        "order": [
+          "rust",
+          "python"
+        ],
+        "original_changed_files": [
+          "native-drc.json",
+          "pre-artwork-drc.json"
+        ],
+        "original_comparison_status": "different",
+        "raw_manifest": {
+          "path": "build/rust-scoring/telemetry-iter8n/pair-2/manifest.json",
+          "sha256": "ecbeffa807c4e88a5120c7d2cb2481db3e8b4c579f7a65d2f54021e3c5ddd477"
+        },
+        "raw_manifest_status": "failed-comparison",
+        "reviewed_comparison": {
+          "path": "build/rust-scoring/telemetry-iter8n/pair-2/recomparison-all-drc-clearance-order.json",
+          "sha256": "77d8a8ce505406721fc5b4b0e72bbfe2e05e099c8097e56fd5ffd679c6bddefb"
+        },
+        "reviewed_comparison_status": "equal"
+      }
+    ],
+    "parity": {
+      "all_four_candidate_boards_byte_identical": true,
+      "all_four_plans_equal_except_arrangement_elapsed_s": true,
+      "arrangement_steps_per_run": 101,
+      "board_sha256": "ef2316564abbe2d1158aa56937874baf26299c7727abf2446e4de1576a115c43",
+      "compared_artifacts_per_pair": 32,
+      "fallback_events": 0,
+      "independent_reviewers": [
+        "scorer_tests",
+        "scorer_baseline",
+        "doctrine_review"
+      ],
+      "native_invocation_witnesses": 2,
+      "normalization": "Comparison copies remove arrangement elapsed_s and update dependent hashes after validating original hash links; normalize native DRC dates and exact temporary staging roots; sort complete clearance records only within existing clearance slots of the three named native DRC violations arrays and named DRC comparison arrays. All fields, duplicates, nested item order and other finding positions remain significant.",
+      "normalized_plan_sha256": "928c9abc576d0832a570b373661aa5c8ca480cb6f03a57efc5b1b0be185296e4",
+      "placements_per_run": 309,
+      "raw_evidence_immutable": true,
+      "residual_steps_per_run": 4176,
+      "retained_baseline_and_final_candidate_drc_execution_records_ok": 8,
+      "steps_per_run": 4277
+    },
+    "policy": {
+      "arrangement_step_budget": 200000,
+      "changed": false,
+      "identity": "a8b2585ed4060bb5bd5efc1565af6b2f793c97744570c53f596c647f5e8bb563",
+      "path": "policy.json",
+      "sha256": "026ec98d6ab2052cd281d548dcc2a89519a86425e792afe228d4b67fb6ad5964",
+      "step_budget": 200000
+    },
+    "provenance": {
+      "path": "build/rust-scoring/telemetry-iter8n/provenance.json",
+      "sha256": "68afa7fbd0bbb2add3247783a6d700ca1de218df62c9809d2fc37e5c39424eee"
+    },
+    "request": {
+      "allocation_text_preserved": true,
+      "allowed_per_arm_adaptation": "authorization.writable_root only; caller may uniformly pass --skip-visuals",
+      "block_candidates": 18,
+      "blocks_identity": "18643598fff71feba856057235dd56efddba2286282fa5e0a2db6b42fdaf64ea",
+      "embedded_blocks_preserved": true,
+      "only_change": "authorization.writable_root",
+      "original_path": "inputs/request.json",
+      "original_sha256": "18ad603524f19195ce6374678ad354c57685a9b1496309b07d3edf2f1a4e04bf",
+      "original_writable_root": "/work",
+      "path": "request.json",
+      "sha256": "306a8b7c197faf2fb3bd170b372b03a26af7964812819a552435634ff26d2bc1",
+      "writable_root_placeholder": "/home/halbritt/.cache/agent-worktrees/agent-ee/rust-placement-scorer-agent524/build/rust-scoring/telemetry-iter8n/arm-placeholder"
+    },
+    "sampling": "Two measured pairs, opposite orders, no dedicated full-runner warmup. Each arm in a fresh worker, 900-second cap. Scorer fast mode has no Python oracle in successful native calls.",
+    "source": {
+      "cache": "/home/halbritt/.cache/agent449-pod/iter8n",
+      "original_producer_agent_ee_commit": "f06b30bced3e0971354feadea7b5c0d0c39b885f",
+      "project": "fome-mc telemetry-pod historical iter8n",
+      "sha256sums_sha256": "8157660550144b4d4c0f0697724d87732ab211c7d87ede82c7f0d34d3f853eef"
+    },
+    "target_limit": "This is retained iter8n, not the current sealed j6b2 emission."
+  },
+  "host": {
+    "bubblewrap": "0.9.0",
+    "cpu_model": "AMD EPYC 7B13",
+    "creation_timestamp": "2026-10-22T15:36:17.609-07:00",
+    "instance": "agent-ee-rust524-20261022-2238",
+    "instance_id": "19682330611757326",
+    "isolation": "Dedicated disposable VM; sequential native-admit lease with one weight; containers cpuset 0-3, 6GiB RAM, no CPU quota and no network. No application image rebuild. Existing cached rust-toolchain target supplied compiler.",
+    "kernel": "7.0.0-1014-gcp",
+    "kicad": "10.0.7",
+    "machine_type": "c2d-highcpu-4",
+    "memory_gib": 8,
+    "project": "heath-stuff",
+    "provider": "GCP",
+    "provisioning_model": "SPOT",
+    "python": "3.12.3",
+    "runtime_image": "agent-ee:ci-14ef7275",
+    "runtime_image_id_prefix": "c61213c757f4",
+    "scheduling": {
+      "automaticRestart": false,
+      "instanceTerminationAction": "DELETE",
+      "maxRunDuration": {
+        "nanos": 0,
+        "seconds": "7200"
+      },
+      "onHostMaintenance": "TERMINATE",
+      "preemptible": true,
+      "provisioningModel": "SPOT"
+    },
+    "storage": "100GB pd-balanced boot disk; online discard disabled and fstrim.timer enabled before measurement",
+    "teardown": {
+      "delete_exit_code": 0,
+      "disk_list_exit_code": 0,
+      "evidence_sha256": {
+        "delete.log": "ada2d7ea9ae24c665cda2b69607eae651f7687af5b1415fd7e19fd211d031eca",
+        "disks-after-delete.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "instances-after-delete.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      },
+      "instance": "agent-ee-rust524-20261022-2238",
+      "instance_id": "19682330611757326",
+      "instance_list_exit_code": 0,
+      "matching_disks": [],
+      "matching_instances": [],
+      "project": "heath-stuff",
+      "provisioning_model": "SPOT",
+      "schema": "agent-ee.spot-teardown/1",
+      "verification_time_utc": "2026-10-22T23:07:20.764822+00:00",
+      "zone": "us-west1-b"
+    },
+    "vcpus": 4,
+    "vm_image": "agent-ee-gate-20261022-0352",
+    "zone": "us-west1-b"
+  },
+  "implementation": {
+    "archive_sha256": "c609270ccc7c3ab0b4a816f16f59fca53f51deea6a776098733ab93b98963d7d",
+    "build": "rustc 1.99.1, LLVM 23.1.1; opt-level=3, LTO, codegen-units=1, panic=abort, target-cpu=native on measured VM; library loaded from explicitly supplied path",
+    "comparison_drivers": [
+      {
+        "path": "scripts/telemetry_scorer_compare.py",
+        "sha256": "3ed086341f48794a873ac985098518be0868752aee7499f938ff0f6ed354f253"
+      },
+      {
+        "path": "scripts/telemetry_scorer_replay.py",
+        "sha256": "4e98ecb32993883da06a59867b1c4c5c39d30ddc2affaa2b173803b13ac00f02"
+      }
+    ],
+    "driver_retention": "Measured scratch driver versions are retained separately. Tracked scripts differ in root location and documentation; final comparison also normalizes the independently verified clearance ordering. Implementation source is unchanged across all measured arms.",
+    "manifest_sha256": "32a02b73607176f6d06ed1c744595d26f2b7b7f10ce8cd960d5d885f2a0c65fd",
+    "revision": "e015e053efda2325d81e8b3eb7670dd614515249",
+    "rust_implementation_commit": "3cd1a5e2f52937d37f5f4ab5fdd999f12d862343",
+    "scorer_files": {
+      "library": {
+        "path": "/opt/agent-ee/build/rust-scoring/placement_score-cloud.so",
+        "sha256": "4805e8710ac3bc06a97b9df22c3347723e9f5a02c0a1b8369f159da724ed84e1"
+      },
+      "placer_source": {
+        "path": "/opt/agent-ee/src/agent_ee/placer.py",
+        "sha256": "1bcc7aef74e44e81093d64ca49be6e44075996354345872f764b3f0c4e66bf10"
+      },
+      "python_wrapper": {
+        "path": "/opt/agent-ee/src/agent_ee/placement_scoring.py",
+        "sha256": "5382ba82dc65b24ad9ad7df29127d944401aad77c2629ad5a8424386e2c178cd"
+      },
+      "rust_source": {
+        "path": "/opt/agent-ee/src/agent_ee/data/placement_score.rs",
+        "sha256": "09fcdbf3e9bf04a06584de072befc563431283d8f171bf4d46e823c466111411"
+      }
+    },
+    "verified_export_file_count": 230
+  },
+  "preflight_failure": {
+    "detail": "An input hash verifier expected the iter8d nested map instead of the iter8n direct map. It failed before running either arm. Only the verifier lookup was corrected; the retained input bytes and policy were unchanged.",
+    "evidence": {
+      "path": "build/rust-scoring/telemetry-cloud/run-iter8n-preflight-failed.log",
+      "sha256": "88503bb88441803ff0f10b0e340aabc5081d26f51e22eaf039a7f0e9741f15df"
+    }
+  },
+  "refused_runs": [
+    {
+      "arms": [
+        {
+          "backend": "python",
+          "exception": null,
+          "first_native_invocation": null,
+          "runner_wall_ns": 2126379637,
+          "scorer_events": [],
+          "status": "fixed_conflict"
+        },
+        {
+          "backend": "rust",
+          "exception": null,
+          "first_native_invocation": null,
+          "runner_wall_ns": 2120672758,
+          "scorer_events": [],
+          "status": "fixed_conflict"
+        }
+      ],
+      "case": "telemetry-j6b2",
+      "manifest": {
+        "path": "build/rust-scoring/telemetry-j6b2/pair-1/manifest.json",
+        "sha256": "18010a33b4e212d9da016bf4ab1869e159c30acd500b68c3fbbbfaee45dcf431"
+      },
+      "performance_interpretation": "No placement or scorer speedup can be inferred from a refusal.",
+      "raw_status": "matched-refusal",
+      "reason": "Current sealed emission refuses fixed C42 before search or scoring. No block declaration is present in this retained request."
+    },
+    {
+      "arms": [
+        {
+          "backend": "python",
+          "exception": {
+            "message": "C31: identity_version: courtyard record is not in canonical ring order; a candidate from before AGENTEE-370 hashed a pose-dependent identity, pack it again",
+            "type": "ValueError"
+          },
+          "first_native_invocation": null,
+          "runner_wall_ns": 1338875199,
+          "scorer_events": [],
+          "status": null
+        },
+        {
+          "backend": "rust",
+          "exception": {
+            "message": "C31: identity_version: courtyard record is not in canonical ring order; a candidate from before AGENTEE-370 hashed a pose-dependent identity, pack it again",
+            "type": "ValueError"
+          },
+          "first_native_invocation": null,
+          "runner_wall_ns": 1332988693,
+          "scorer_events": [],
+          "status": null
+        }
+      ],
+      "case": "telemetry-iter8d",
+      "manifest": {
+        "path": "build/rust-scoring/telemetry-iter8d/pair-1/manifest.json",
+        "sha256": "c1818db36acca28941b9346081730bc3a212486feb5b48f310240381bc40bdf9"
+      },
+      "performance_interpretation": "No placement or scorer speedup can be inferred from a refusal.",
+      "raw_status": "failed-comparison",
+      "reason": "Historical block candidate C31 uses a pre-AGENTEE-370 noncanonical courtyard identity and current admission rejects it before scoring."
+    }
+  ],
+  "retained_evidence": {
+    "admission_and_cpu_logs": "build/rust-scoring/telemetry-cloud/*admission*.json and *cpu-stat*.txt; inputs verified before and after each matched run",
+    "archives": [
+      {
+        "path": "build/rust-scoring/telemetry-cloud/results-j6b2.tar.zst",
+        "sha256": "64073e7b520d6d403ccf72558cec42b9813a279586bbd02407eee77945d59c98"
+      },
+      {
+        "path": "build/rust-scoring/telemetry-cloud/results-iter8d.tar.zst",
+        "sha256": "cc17d22b4d259dfb4eb603d372146ba576a5791ab29ac67bbea29c8e50e8e62c"
+      },
+      {
+        "path": "build/rust-scoring/telemetry-cloud/results-iter8n-first.tar.zst",
+        "sha256": "ad4d9c5da0ca04318efb48f1fee36e89ca4d9e8ae593f61ee108f334cca3f76d"
+      },
+      {
+        "path": "build/rust-scoring/telemetry-cloud/results-iter8n-final.tar.zst",
+        "sha256": "e0f4ec3079126a5f4ceb1ff902e5fe668f2efce58a52785a545b50f59887fed8"
+      }
+    ],
+    "compiler": {
+      "path": "build/rust-scoring/telemetry-cloud/rustc-version.txt",
+      "sha256": "f22d5e4e9ced367e774ce5bc140d9e6b1235c1882fec80d011044851f3ae6369"
+    },
+    "ignored_artifact_root": "build/rust-scoring",
+    "local_worktree": "/home/halbritt/.cache/agent-worktrees/agent-ee/rust-placement-scorer-agent524",
+    "retention": "Raw archives, sealed inputs, capture, library, stdout/stderr, manifests and comparison copies remain local in the ignored build tree. This committed summary retains selected measurements and their hashes.",
+    "runtime": {
+      "path": "build/rust-scoring/telemetry-cloud/runtime.txt",
+      "sha256": "76184b989a3d427e9752e34d46cf9df9754f339cc66f72e365a8d1680ca339bc"
+    },
+    "teardown": {
+      "path": "build/rust-scoring/telemetry-cloud/teardown.json",
+      "sha256": "40bdf7cb8d7757c63d1e13bbd8b83db901694449edb42b864262beb9eb5a938e"
+    }
+  },
+  "schema": "agent-ee.telemetry-scorer-comparison/1",
+  "verification": {
+    "cloud_command": "python3 -m unittest -v tests.test_placement_scoring.ScoringTest",
+    "cloud_test_log": {
+      "path": "build/rust-scoring/telemetry-cloud/cloud-scorer-tests.log",
+      "sha256": "2ccd91d92a4f3a87d60c272385bd19ba215f5e48305c86d26b041ae93ea25e89"
+    },
+    "cloud_tests": 18,
+    "cloud_tests_result": "passed; no skips",
+    "cloud_tests_seconds": 41.779,
+    "comparator_checks": "Independent raw full-record parity review and negative mutations for changed values, nested item order, removed duplicates and reordered other findings; invalid raw board/plan/provenance/embedded comparison links rejected.",
+    "documentation_and_origins": "scripts/check_docs.py and scripts/check_origins.py passed; git diff --check passed"
+  }
+}
