@@ -9,8 +9,11 @@ routing policy.
 
 - Schema: [`schemas/pcb-trace-envelope-1.json`](../schemas/pcb-trace-envelope-1.json) (JSON Schema 2020-12).
 - Reference reader: `agent_ee.trace_envelope.validate(document)` returns a list of problems.
-  It is stdlib only, and also checks cross-field rules that the schema cannot
-  express: every `parent` and `within` name exists, and duration names are unique.
+  It is stdlib only. It applies the schema's field rules exactly: a present field
+  is checked whatever its record's status, so an `unknown` identity with a
+  malformed `sha256` is invalid. It adds only cross-field rules that the schema
+  does not express: every `parent` and `within` name exists, duration names are
+  unique, and `sampling.bytes` does not exceed `sampling.limits.bytes`.
 
 ## Fields
 
@@ -28,7 +31,7 @@ All of these fields are required.
 | `objective` | `id` and `version`, or unknown with a reason |
 | `clock` | `source: monotonic` and a named `unit` (`ns`) |
 | `durations` | rows of `name, unit, value, count, boundary (inclusive/exclusive), overlap (disjoint/nested), parent`. Nested rows list `within`. |
-| `counters` | lowercase names mapped to non-negative integers |
+| `counters` | names mapped to non-negative integers (consumers use lowercase identifiers) |
 | `sampling` | `limits`, `recorded`, `bytes`, `dropped`, `coverage` (complete/partial), `partial_reasons` |
 | `payload` | a consumer-owned object naming its own `schema` |
 
@@ -40,8 +43,13 @@ omitted, and it is never given a guessed value.
 `complete` coverage means nothing was dropped and there are no partial reasons.
 A truncated sample set, a byte-limited sample set, or a run that did not complete
 is `partial` with at least one reason. `trace_envelope.complete_parity_allowed(document)`
-is true only for a valid envelope with complete coverage. A partial trace can
-support partial comparisons, but it can never qualify complete parity.
+is true only for a valid envelope of a `completed` run with complete coverage. A
+`failed` or `interrupted` run never qualifies, even if its coverage label says
+`complete`. The record stays valid and can be retained. A partial trace can
+support partial comparisons, but it can never qualify complete parity. A consumer
+reader must also reconcile its payload with the coverage it claims. For example,
+the [placement trace](placement-trace.md#replay-sample) refuses samples that the
+counters do not account for.
 
 ## Version rule
 
@@ -53,4 +61,5 @@ support partial comparisons, but it can never qualify complete parity.
 
 `tests/test_placement_trace.py` (`EnvelopeSchemaTest`) checks each rule against
 both the reference reader and the published schema file: required fields, unknown
-handling, truncation marking, additive fields and version refusal.
+handling, truncation marking, additive fields and version refusal. A field-by-field
+table checks that the reader and the schema accept and reject the same documents.

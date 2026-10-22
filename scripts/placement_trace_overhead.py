@@ -60,12 +60,17 @@ def main(argv=None):
                          'steps_used': plan.get('steps_used'), 'counters': document['counters'],
                          'stage_ns': {r['name']: r['value'] for r in document['durations'] if r['value']},
                          'sampling': document['sampling'], 'wall_s': round(time.monotonic() - started, 3),
-                         **{k: result[k] for k in ('median_off_ns', 'median_on_ns', 'median_envelope_ns',
-                                                   'median_overhead', 'median_overhead_with_envelope',
-                                                   'outputs_identical', 'envelope_bytes_max', 'off_ns', 'on_ns')}})
-    print(json.dumps({'schema': 'agent-ee.placement-trace-overhead-report/1', 'runs': args.runs,
+                         **{k: result[k] for k in ('median_off_ns', 'median_on_ns', 'median_recording_ns',
+                                                   'median_export_ns', 'median_overhead', 'median_recording_overhead',
+                                                   'outputs_identical', 'trace_bytes_max', 'off_ns', 'on_ns',
+                                                   'recording_ns', 'export_ns')},
+                         'gate_met': result['gate']['met']})
+    print(json.dumps({'schema': 'agent-ee.placement-trace-overhead-report/2', 'runs': args.runs,
                       'warmups': args.warmups, 'python': platform.python_version(), 'machine': platform.machine(),
-                      'gate': {'kind': 'experiment', 'provisional_max_median_overhead': 0.05},
+                      'gate': {'kind': 'experiment', 'provisional_max_median_overhead': 0.05,
+                               'boundary': 'recording, envelope assembly and export to a fresh file',
+                               'met_by': [r['case'] for r in rows if r['gate_met']],
+                               'exceeded_by': [r['case'] for r in rows if not r['gate_met']]},
                       'cases': rows}, indent=2, sort_keys=True))
     return 0 if all(r['outputs_identical'] for r in rows) else 1
 

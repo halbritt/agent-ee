@@ -209,6 +209,58 @@ class EnvelopeSchemaTest(unittest.TestCase):
         document['counters']['negative'] = -1
         self.assert_rejected(document, 'negative counter')
 
+    def test_reader_and_published_schema_agree_on_every_present_field(self):
+        """H5 (review ee430b): a malformed defined field is rejected by both, whatever its record's status."""
+        bad_hash = {'status': 'unknown', 'reason': 'absent', 'sha256': 'invalid'}
+        cases = [
+            # (location, value, expected valid), the reviewer's reproduction first.
+            (('identity', 'pcb'), bad_hash, False),
+            (('identity', 'capture'), bad_hash, False),
+            (('identity', 'pcb'), {'status': 'unknown', 'reason': 'absent', 'sha256': 'a' * 64}, True),
+            (('identity', 'pcb'), {'status': 'qualified', 'id': ''}, False),
+            (('identity', 'pcb'), {'status': 'qualified', 'id': 'x', 'sha256': 7}, False),
+            (('hashes', 'native_tools'), [{'name': 'tool', **bad_hash}], False),
+            (('hashes', 'native_tools'), [{'name': '', 'status': 'qualified', 'sha256': 'a' * 64}], False),
+            (('objective',), {'status': 'unknown', 'reason': 'undeclared', 'sha256': 'invalid'}, True),
+            (('objective',), {'status': 'unknown', 'reason': 'undeclared', 'id': 'x'}, False),
+            (('objective',), {'status': 'unknown', 'reason': 'undeclared', 'id': 'x', 'version': '1'}, True),
+            (('objective',), {'id': 'x', 'version': ''}, False),
+            (('generation',), {'status': 'unknown', 'reason': ''}, False),
+            (('generation',), {'status': 'other', 'id': 'g'}, True),
+            (('generation',), {'id': ''}, False),
+            (('state',), {'status': 'completed', 'reason': ''}, False),
+            (('state',), {'status': 'completed', 'reason': 'note'}, True),
+            (('state',), {'status': 'interrupted', 'reason': 3}, False),
+            (('durations', 0, 'within'), 'pipeline', False),
+            (('durations', 0, 'within'), ['Not A Name'], False),
+            (('counters', 'Free Form'), 1, True),
+            (('counters', 'free'), True, False),
+            (('consumer', 'version'), '', False),
+            (('stage', 'id'), 'Upper', False),
+            (('clock', 'unit'), 'ms', False),
+            (('sampling', 'limits'), {}, False),
+            (('sampling', 'partial_reasons'), [''], False),
+            (('payload', 'schema'), '', False),
+        ]
+        for location, value, valid in cases:
+            document = copy.deepcopy(self.document)
+            target = document
+            for key in location[:-1]:
+                target = target[key]
+            target[location[-1]] = value
+            reader, schema = self.both(document)
+            self.assertEqual((not reader, not schema), (valid, valid), (location, value, reader, schema))
+
+    def test_a_run_that_did_not_complete_never_qualifies_complete_parity(self):
+        """H2 (review ee430b): the coverage label alone cannot make a failed or interrupted run complete."""
+        for status in ('failed', 'interrupted'):
+            document = copy.deepcopy(self.document)
+            document['state'] = {'status': status, 'reason': 'stopped'}
+            self.assertEqual(document['sampling']['coverage'], 'complete')
+            self.assertEqual(self.both(document), ([], []))  # Retained as a valid record ...
+            self.assertFalse(trace_envelope.complete_parity_allowed(document))  # ... never as complete evidence.
+        self.assertTrue(trace_envelope.complete_parity_allowed(self.document))
+
     def test_payload_is_consumer_owned(self):
         document = copy.deepcopy(self.document)
         document['payload'] = {'schema': 'kicad-route.routing-trace/1', 'anything': [1]}
@@ -360,6 +412,172 @@ class PlacementTraceTest(unittest.TestCase):
         invalid['schema'] = 'pcb-trace-envelope/2'
         self.assertEqual(placement_trace.replay(invalid)['status'], 'refused')
 
+    def assert_refused(self, document, reason, label):
+        report = placement_trace.replay(document)
+        self.assertEqual((report['status'], report['parity']), ('refused', 'none'), (label, report))
+        self.assertIn(reason, report['reason'], label)
+
+    def test_replay_refuses_missing_duplicated_and_malformed_evidence(self):
+        """H1 (review ee430b): sample evidence is reconciled with the counters, never taken from the label."""
+        source, policy = anchor_case()
+        _, document = traced(source, policy)
+        self.assertEqual((len(document['payload']['requests']), len(document['payload']['samples'])), (4, 6))
+
+        def changed(change):
+            changed = copy.deepcopy(document)
+            change(changed['payload'], changed)
+            return changed
+
+        def resize(payload, document):
+            # Keep the sampling record consistent with the edited payload, so only reconciliation can refuse it.
+            sampling = document['sampling']
+            sampling['recorded'] = len(payload['requests']) + len(payload['samples'])
+            sampling['bytes'] = len(canonical({'requests': payload['requests'], 'samples': payload['samples']}))
+
+        def drop_samples(payload, document):
+            payload['samples'] = []
+            resize(payload, document)
+
+        def drop_all(payload, document):
+            payload['requests'], payload['samples'] = [], []
+            resize(payload, document)
+
+        def duplicate(payload, document):
+            payload['samples'].append(list(payload['samples'][0]))
+            resize(payload, document)
+        unaccounted = 'does not account for'
+        for change, reason, label in (
+                (drop_samples, unaccounted, 'every sample deleted'),
+                (drop_all, unaccounted, 'every request and sample deleted'),
+                (duplicate, 'duplicates request', 'duplicated sample'),
+                (lambda p, d: p['samples'].pop(), 'sampling.recorded', 'sample deleted, record unchanged'),
+                (lambda p, d: p['samples'][0].pop(), 'must be integer', 'sample missing a field'),
+                (lambda p, d: p['samples'][0].__setitem__(4, 45), 'rotation 45', 'invalid rotation'),
+                (lambda p, d: p['samples'][0].__setitem__(2, True), 'must be integer', 'boolean coordinate'),
+                (lambda p, d: p['samples'][0].__setitem__(5, '1.5'), 'must be integer', 'inexact local cost'),
+                (lambda p, d: p['samples'][0].__setitem__(0, 9), 'unrecorded request 9', 'unknown request'),
+                (lambda p, d: p['requests'][1].__setitem__('id', 0), 'recording position', 'duplicate request id'),
+                (lambda p, d: p['requests'][0].__setitem__('search', 5), 'not a recorded search', 'unknown search'),
+                (lambda p, d: p['requests'][0].__setitem__('generation', 99), 'never allocated', 'future generation'),
+                (lambda p, d: p['requests'][0]['pads'].pop('90'), 'pads must give', 'missing rotation pads'),
+                (lambda p, d: p['requests'][0].pop('peers'), 'peers must map', 'missing peers'),
+                (lambda p, d: p['requests'][0].__setitem__('generated', 0), 'exceed its 0 generated',
+                 'more samples than candidates'),
+                (lambda p, d: d['sampling'].__setitem__('bytes', d['sampling']['bytes'] - 1), 'sampling.bytes',
+                 'wrong byte count'),
+                (lambda p, d: d['counters'].__setitem__('stage_a.exact_resolved', 7), 'stage_a.exact count',
+                 'counter edited alone'),
+                (lambda p, d: p.__setitem__('samples', {}), 'must be lists', 'samples not a list')):
+            self.assert_refused(changed(change), reason, label)
+        # A capped trace stays explicitly partial; removing one of its samples is refused too.
+        _, capped = traced(source, policy, {'samples': 2})
+        self.assertEqual(placement_trace.replay(capped)['parity'], 'partial')
+        capped['payload']['samples'].pop()
+        capped['sampling']['recorded'] -= 1
+        capped['sampling']['bytes'] = len(canonical({'requests': capped['payload']['requests'],
+                                                     'samples': capped['payload']['samples']}))
+        self.assert_refused(capped, unaccounted, 'capped sample deleted')
+
+    def test_replay_needs_the_declared_contract_and_qualified_identities(self):
+        """H2 (review ee430b): unknown or other contracts are refused; unknown identity or an
+        incomplete run leaves agreement partial. Neither ever reports complete parity."""
+        source, policy = anchor_case()
+        _, document = traced(source, policy)
+        self.assertEqual(placement_trace.replay(document)['parity'], 'complete')
+
+        def changed(key, value):
+            changed = copy.deepcopy(document)
+            changed[key] = value
+            return changed
+        for key, value, reason in (
+                ('objective', {'status': 'unknown', 'reason': 'not declared'}, 'objective is unknown'),
+                ('objective', {**placement_trace.OBJECTIVE, 'id': 'other.score'}, 'objective other.score/1'),
+                ('objective', {**placement_trace.OBJECTIVE, 'version': '2'}, 'is not the supported'),
+                ('generation', {'status': 'unknown', 'reason': 'not declared'}, 'generation is unknown'),
+                ('generation', {**document['generation'], 'id': 'other/1'}, 'generation other/1'),
+                ('consumer', {'id': 'kicad-route.routing', 'version': '1'}, 'consumer kicad-route.routing/1')):
+            self.assert_refused(changed(key, value), reason, f'{key} {value}')
+        unknown = trace_envelope.unknown('withheld')
+        for key, value, reason in (
+                ('state', {'status': 'failed', 'reason': 'stopped'}, 'traced run failed: stopped'),
+                ('state', {'status': 'interrupted', 'reason': 'signal'}, 'traced run interrupted: signal'),
+                ('identity', {**document['identity'], 'pcb': unknown}, 'identity.pcb unknown: withheld'),
+                ('identity', {**document['identity'], 'rules': unknown}, 'identity.rules unknown: withheld'),
+                ('identity', {key: unknown for key in document['identity']}, 'identity.pcb unknown')):
+            report = placement_trace.replay(changed(key, value))
+            self.assertEqual((report['status'], report['parity']), ('exact', 'partial'), (key, value, report))
+            self.assertIn(reason, report['partial_reasons'][0] if key == 'state' else ' '.join(
+                report['partial_reasons']))
+
+    def test_byte_budget_bounds_what_is_retained_during_capture(self):
+        """H4 (review ee430b): an oversized request is sized, not copied, and never retained."""
+        class Points(list):
+            yielded = 0
+
+            def __iter__(self):
+                for point in list.__iter__(self):
+                    Points.yielded += 1
+                    yield point
+        recorder = placement_trace.Recorder({'bytes': 900})
+        fp = {'ref': 'U1', 'uuid': None}
+        peers = {'N': Points([(i, i) for i in range(100000)])}
+
+        def pad_nets(fp, position, rotation, grounds):
+            return [('N', 0, 0)]
+        self.assertIsNone(recorder.scan_request(0, 0, fp, set(), peers, pad_nets))
+        self.assertEqual((recorder.requests, recorder.byte_dropped_requests), ([], 1))
+        self.assertLessEqual(recorder.stored, 900)
+        self.assertEqual(Points.yielded, 0)  # Dropped from its point count: no point is read or copied.
+        request = recorder.scan_request(0, 0, fp, set(), {'N': Points([(1, 2)])}, pad_nets)
+        self.assertEqual(request['peers'], {'N': [[1, 2]]})
+        for _ in range(100):
+            recorder.sample(request, 0, 0, (0, 1, 3, 4, 0, ()), 2)
+        self.assertLessEqual(recorder.stored, 900)
+        self.assertGreater(recorder.byte_dropped_samples, 0)
+        # Through the placer: at every byte limit the retained set is within it and the plan unchanged.
+        source, policy = anchor_case()
+        full_plan, full = traced(source, policy)
+        sizes = set()
+        # The account is an upper bound (it reserves each request's generated count and hash), so a
+        # limit of exactly the full trace's size may still drop; twice that keeps everything.
+        for limit in (placement_trace.FRAME_BYTES, placement_trace.FRAME_BYTES + 1, 300, 600, 900, 1500,
+                      full['sampling']['bytes'], 2 * full['sampling']['bytes']):
+            with placement_trace.recording({'bytes': limit}) as recorder:
+                plan = pack(copy.deepcopy(source), policy)
+            self.assertEqual(canonical(plan), canonical(full_plan))
+            retained = len(canonical({'requests': recorder.requests, 'samples': recorder.samples}))
+            self.assertLessEqual(recorder.stored, limit)
+            # Recording's byte account bounds the exported size (generated count and hash are reserved).
+            self.assertLessEqual(retained, recorder.stored)
+            document = placement_trace.envelope(recorder, stage='pack', state={'status': 'completed'},
+                                                identity=placement_trace.pack_identity(source, policy, plan))
+            self.assertLessEqual(document['sampling']['bytes'], limit)
+            report = placement_trace.replay(document)
+            self.assertEqual(report['status'], 'exact', (limit, report))
+            self.assertEqual(report['parity'], 'complete' if document['sampling']['coverage'] == 'complete'
+                             else 'partial')
+            sizes.add(document['sampling']['bytes'])
+            if limit == 2 * full['sampling']['bytes']:
+                self.assertEqual((report['parity'], document['payload']), ('complete', full['payload']))
+        self.assertIn(placement_trace.FRAME_BYTES, sizes)  # The minimum budget is a valid empty capture.
+
+    def test_impossible_limits_are_refused_before_placement(self):
+        self.assertEqual(placement_trace.FRAME_BYTES, len(canonical({'requests': [], 'samples': []})))
+        source, policy = anchor_case()
+        for limits in ({'bytes': 0}, {'bytes': 1}, {'bytes': 25}, {'bytes': 26},
+                       {'bytes': placement_trace.FRAME_BYTES - 1}, {'samples': True}, {'other': 1}):
+            with self.assertRaises(ValueError, msg=limits):
+                placement_trace.Recorder(limits)
+            with self.assertRaises(ValueError, msg=limits):
+                traced(source, policy, limits)
+            self.assertIsNone(placement_trace.active())
+        _, document = traced(source, policy, {'bytes': placement_trace.FRAME_BYTES})
+        sampling = document['sampling']
+        self.assertEqual((sampling['bytes'], sampling['recorded'], sampling['coverage']),
+                         (placement_trace.FRAME_BYTES, 0, 'partial'))
+        self.assertEqual(sampling['dropped'], document['counters']['stage_a.scans']
+                         + document['counters']['stage_a.exact_resolved'])
+
     def test_capture_is_bounded_and_truncation_is_partial(self):
         source, policy = anchor_case()
         full_plan, full = traced(source, policy)
@@ -421,9 +639,13 @@ class PlacementTraceTest(unittest.TestCase):
         source, policy = promotion_case()
         result = placement_trace.overhead(source, policy, runs=2, warmups=0)
         self.assertTrue(result['outputs_identical'])
-        self.assertEqual((len(result['off_ns']), len(result['on_ns']), len(result['envelope_ns'])), (2, 2, 2))
+        self.assertEqual([len(result[k]) for k in ('off_ns', 'on_ns', 'recording_ns', 'export_ns')], [2, 2, 2, 2])
+        # H6 (review ee430b): an enabled run is measured until its trace is exported.
+        self.assertEqual(result['on_ns'], [r + e for r, e in zip(result['recording_ns'], result['export_ns'])])
+        self.assertGreater(result['trace_bytes_max'], 0)
         self.assertEqual(result['gate']['kind'], 'experiment')
         self.assertIsInstance(result['median_overhead'], float)
+        self.assertEqual(result['gate']['met'], result['median_overhead'] <= 0.05)
 
     def test_command_line(self):
         source, policy = promotion_case()
@@ -540,6 +762,45 @@ class NativePlacementTraceTest(unittest.TestCase):
                 main([str(source), str(xml), '--request', str(self.root / 'request.json'),
                       '--destination', str(self.scratch / 'again'), '--result', str(self.scratch / 'again.json'),
                       '--trace', str(bad)])
+
+    def test_trace_writer_refuses_before_any_write(self):
+        """H3 (review ee430b): authorization and the trace path are checked before recording or writing."""
+        from agent_ee.placer_runner import main, traced_place_candidate
+        source, xml, config = self.fixture()
+        outside = self.root / 'outside.json'
+        unauthorized = copy.deepcopy(config)
+        unauthorized['authorization']['single_design_writer'] = False
+        (self.scratch / 'existing.json').write_text('kept\n')
+        (self.scratch / 'link.json').symlink_to(self.root / 'linked.json')
+        (self.scratch / 'sub').mkdir()
+        before = sorted(p.name for p in self.scratch.iterdir())
+        for request, trace, limits, message, label in (
+                # The reviewer's reproduction: refused authorization, trace beside the root.
+                (unauthorized, outside, None, 'single-design-writer authorization', 'unauthorized, outside'),
+                (unauthorized, self.scratch / 'trace.json', None, 'single-design-writer authorization',
+                 'unauthorized, inside'),
+                (config, outside, None, 'trace must be a fresh file', 'outside the root'),
+                (config, self.scratch / 'link.json', None, 'trace must be a fresh file', 'symlink'),
+                (config, self.scratch / 'existing.json', None, 'trace must be a fresh file', 'existing file'),
+                (config, self.scratch / 'proposal', None, 'trace must be a fresh file', 'the destination'),
+                (config, self.scratch / '.hidden.json', None, 'trace must be a fresh file', 'hidden name'),
+                (config, self.scratch / 'sub' / 'trace.json', None, 'trace must be a fresh file', 'subdirectory'),
+                (config, self.scratch / 'trace.json', {'bytes': 1}, 'byte limit', 'impossible byte limit')):
+            with self.assertRaisesRegex(ValueError, message, msg=label):
+                traced_place_candidate(source, xml, self.scratch / 'proposal', request, trace, limits=limits)
+            self.assertFalse(outside.exists(), label)
+            self.assertFalse((self.root / 'linked.json').exists(), label)
+            self.assertEqual(sorted(p.name for p in self.scratch.iterdir()), before, label)
+            self.assertEqual(list((self.scratch / 'sub').iterdir()), [], label)
+            self.assertEqual((self.scratch / 'existing.json').read_text(), 'kept\n', label)
+            self.assertIsNone(placement_trace.active())
+        # The command line goes through the same boundary.
+        (self.root / 'unauthorized.json').write_text(json.dumps(unauthorized))
+        with self.assertRaisesRegex(ValueError, 'single-design-writer authorization'):
+            main([str(source), str(xml), '--request', str(self.root / 'unauthorized.json'),
+                  '--destination', str(self.scratch / 'proposal'), '--result', str(self.scratch / 'result.json'),
+                  '--trace', str(self.scratch / 'trace.json')])
+        self.assertEqual(sorted(p.name for p in self.scratch.iterdir()), before)
 
     def test_failed_placement_still_writes_a_failed_trace(self):
         from agent_ee.placer_runner import traced_place_candidate

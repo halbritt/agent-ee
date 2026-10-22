@@ -7,13 +7,16 @@ boundaries, counters and sample accounting. Consumer data lives in ``payload``,
 owned and versioned by the consumer; no consumer policy enters the envelope.
 
 The published JSON Schema is ``schemas/pcb-trace-envelope-1.json``; kicad-route
-keeps a byte-identical copy. ``validate`` checks the same rules with the standard
-library, plus the cross-field rules a schema cannot express (parent names exist).
+keeps a byte-identical copy. ``validate`` checks the same field rules with the
+standard library (a present field is checked whatever its record's status), plus the
+cross-field rules the schema does not express: duration names are unique, every
+parent and within name exists, and recorded bytes do not exceed the byte limit.
 
 Version rule: a ``/1`` reader ignores unknown fields (additive), refuses any other
 envelope version, and never reads a field by a changed meaning. Removing or
 retyping a required field, or changing a meaning, needs ``pcb-trace-envelope/2``.
-A truncated sample set is ``partial`` and never qualifies complete parity.
+A truncated sample set is ``partial``, and a failed or interrupted run never
+qualifies complete parity whatever its coverage label (``complete_parity_allowed``).
 """
 import hashlib
 import json
@@ -59,16 +62,38 @@ def file_hash(name, path):
         return {'name': name, 'status': 'unknown', 'reason': f'unreadable: {exc.__class__.__name__}', 'path': str(path)}
 
 
+def _text(value):
+    return isinstance(value, str) and bool(value)
+
+
 def _identity_problems(label, value):
+    """The published ``$defs/identity`` rules: a present field is checked whatever the status."""
     if not isinstance(value, dict) or value.get('status') not in ('qualified', 'unknown'):
         return [f'{label}: status must be qualified or unknown']
-    if value['status'] == 'unknown':
-        return [] if isinstance(value.get('reason'), str) and value['reason'] else [f'{label}: unknown needs a reason']
-    if 'sha256' not in value and not (isinstance(value.get('id'), str) and value['id']):
-        return [f'{label}: qualified needs sha256 or id']
+    problems = []
     if 'sha256' in value and not (isinstance(value['sha256'], str) and SHA256.match(value['sha256'])):
-        return [f'{label}: sha256 must be 64 lowercase hex']
-    return []
+        problems.append(f'{label}: sha256 must be 64 lowercase hex')
+    if value['status'] == 'unknown':
+        if not _text(value.get('reason')):
+            problems.append(f'{label}: unknown needs a reason')
+    elif 'sha256' not in value and not _text(value.get('id')):
+        problems.append(f'{label}: qualified needs sha256 or id')
+    return problems
+
+
+def _labelled_problems(key, value):
+    """The published ``$defs/labelled`` rules (generation, objective): an id, or unknown with a reason."""
+    if not isinstance(value, dict):
+        return [f'{key}: id required, or status unknown with a reason']
+    problems = []
+    if value.get('status') == 'unknown':
+        if not _text(value.get('reason')):
+            problems.append(f'{key}: unknown needs a reason')
+    elif not _text(value.get('id')):
+        problems.append(f'{key}: id required, or status unknown with a reason')
+    if key == 'objective' and 'id' in value and not _text(value.get('version')):
+        problems.append('objective: version required')
+    return problems
 
 
 def _count(value):
@@ -115,16 +140,12 @@ def validate(document):
     state = document['state']
     if not isinstance(state, dict) or state.get('status') not in STATES:
         problems.append(f'state.status must be one of {", ".join(STATES)}')
-    elif state['status'] != 'completed' and not (isinstance(state.get('reason'), str) and state['reason']):
+    elif state['status'] != 'completed' and not _text(state.get('reason')):
         problems.append('state: a run that did not complete needs a reason')
+    elif 'reason' in state and not _text(state['reason']):
+        problems.append('state: reason must be a non-empty string')
     for key in ('generation', 'objective'):
-        value = document[key]
-        if isinstance(value, dict) and value.get('status') == 'unknown':
-            problems += _identity_problems(key, value)
-        elif not isinstance(value, dict) or not (isinstance(value.get('id'), str) and value['id']):
-            problems.append(f'{key}: id required, or status unknown with a reason')
-        elif key == 'objective' and not (isinstance(value.get('version'), str) and value['version']):
-            problems.append('objective: version required')
+        problems += _labelled_problems(key, document[key])
     clock = document['clock']
     if not isinstance(clock, dict) or clock.get('source') != 'monotonic' or clock.get('unit') not in UNITS:
         problems.append('clock: source must be monotonic with a named unit')
@@ -147,7 +168,9 @@ def validate(document):
         if 'parent' not in row or not (row['parent'] is None or isinstance(row['parent'], str)):
             problems.append(f'{label}: parent must be a duration name or null')
         within = row.get('within', [])
-        if row.get('overlap') == 'nested' and not (isinstance(within, list) and within):
+        if not (isinstance(within, list) and all(isinstance(n, str) and NAME.match(n) for n in within)):
+            problems.append(f'{label}: within must list duration names')
+        elif row.get('overlap') == 'nested' and not within:
             problems.append(f'{label}: nested overlap must name the durations it may run within')
     for i, row in enumerate(durations):
         if isinstance(row, dict) and isinstance(row.get('name'), str):
@@ -155,9 +178,8 @@ def validate(document):
                 if other is not None and other not in names:
                     problems.append(f'durations[{i}]: names unknown duration {other}')
     counters = document['counters']
-    if not isinstance(counters, dict) or not all(isinstance(k, str) and NAME.match(k) and _count(v)
-                                                 for k, v in counters.items()):
-        problems.append('counters must map lowercase names to non-negative integers')
+    if not isinstance(counters, dict) or not all(_count(v) for v in counters.values()):
+        problems.append('counters must map names to non-negative integers')
     sampling = document['sampling']
     problems += sampling_problems(sampling)
     payload = document['payload']
@@ -198,5 +220,7 @@ def check(document):
 
 
 def complete_parity_allowed(document):
-    """Only a valid envelope with complete sample coverage can qualify complete parity."""
-    return not validate(document) and document['sampling']['coverage'] == 'complete'
+    """Only a valid envelope of a completed run with complete sample coverage can qualify complete
+    parity. A failed or interrupted run never does, whatever its coverage label says."""
+    return (not validate(document) and document['state']['status'] == 'completed'
+            and document['sampling']['coverage'] == 'complete')

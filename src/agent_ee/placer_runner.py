@@ -804,13 +804,30 @@ def _trace_identity(source, netlist, request, report, experiment):
                                                              if isinstance(report, dict) else 'placement raised')))}
 
 
+def _trace_path(trace_path, root, destination):
+    """A fresh trace file directly inside the authorized writable root, beside the candidate."""
+    trace_path = Path(trace_path).absolute()
+    if trace_path.parent != root or trace_path.name.startswith('.') or trace_path == destination \
+            or trace_path.exists() or trace_path.is_symlink():
+        raise ValueError('trace must be a fresh file directly inside authorized scratch root, '
+                         'not the candidate destination')
+    return trace_path
+
+
 def traced_place_candidate(source, netlist, destination, request, trace_path, *, experiment=None, limits=None):
     """``place_candidate`` with the opt-in placement trace written to a fresh ``trace_path`` (AGENTEE-430).
 
-    The trace is written even when placement raises; it then records a failed state
-    and the error is re-raised. The candidate directory and report are unchanged.
+    The single-design-writer authorization and the trace path (a fresh, non-hidden direct
+    child of the authorized writable root, not the destination) are checked before
+    anything is recorded or written: a refusal leaves no trace and no candidate. After
+    that, the trace is written even when placement raises; it then records a failed
+    state and the error is re-raised. The candidate directory and report are unchanged.
     """
     source, netlist = Path(source).resolve(), Path(netlist).resolve()
+    destination = Path(destination).absolute()
+    root = _authorization(source, destination, request['authorization'])
+    trace_path = _trace_path(trace_path, root, destination)
+    placement_trace.Recorder(limits)  # Refuse invalid limits before placement, not after it.
     recorder = report = None
     try:
         with placement_trace.recording(limits) as recorder:
@@ -827,8 +844,7 @@ def traced_place_candidate(source, netlist, destination, request, trace_path, *,
                 identity=_trace_identity(source, netlist, request, report, experiment),
                 native_tools=placement_trace.native_tool_hashes(),
                 outcome=report.get('status') if isinstance(report, dict) else None)
-            with Path(trace_path).open('x') as stream:
-                stream.write(json.dumps(document, indent=2, sort_keys=True) + '\n')
+            placement_trace.export(document, trace_path)
     return report
 
 
@@ -856,8 +872,9 @@ def main(argv=None):
         report = place_candidate(args.board, args.netlist, args.destination, request)
     else:
         trace_path = Path(args.trace).absolute()
-        if trace_path.parent != root or trace_path == result_path or trace_path.exists() or trace_path.is_symlink():
+        if trace_path == result_path:
             raise ValueError('trace must be a fresh file directly inside authorized scratch root, not the result')
+        # traced_place_candidate checks authorization and the trace path before any write.
         report = traced_place_candidate(args.board, args.netlist, args.destination, request, trace_path,
                                         experiment=args.trace_experiment)
     with result_path.open('x') as stream:

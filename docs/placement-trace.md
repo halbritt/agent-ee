@@ -26,10 +26,17 @@ PYTHONPATH=src python3 -m agent_ee.placement_trace replay trace.json
 ```
 
 Python callers use `placement_trace.traced_pack(capture, policy)` or
-`placer_runner.traced_place_candidate(...)`. The runner writes the trace even
-when placement raises. The trace then has state `failed` with the error, partial
-coverage and an unknown candidate identity, and the error is re-raised. A trace
-path that already exists is refused. To roll back, turn the trace off.
+`placer_runner.traced_place_candidate(...)`. Before anything is recorded or
+written, `traced_place_candidate` checks the single-design-writer authorization
+and the trace path, which must be a fresh, non-hidden, non-symlink file directly
+inside the authorized writable root and must not be the candidate destination.
+It also refuses impossible limits at this point. A refusal leaves no trace and no
+candidate. The command line goes through the same check and also refuses the
+result path. After these checks pass, the runner writes the trace even when
+placement raises. The trace then has state `failed` with the error, partial
+coverage and an unknown candidate identity, and the error is re-raised. Traces are
+written as canonical JSON (sorted keys, no whitespace) to a path that must not
+already exist. To roll back, turn the trace off.
 
 ## Outputs are unchanged
 
@@ -105,22 +112,59 @@ stored exactly as the string `p/q`.
 
 `placement_trace.stage_a_inputs(trace)` returns the scoring inputs of each sampled
 scan: pads, peers, poses and the expected bounds and costs. This is the G1 replay
-contract. It refuses an invalid envelope, a request whose inputs differ from their
-hash, and a sample whose generation is not its request's (stale).
+contract. Before it returns anything, it checks the evidence and raises
+`ValueError` on any of these:
+
+- an invalid envelope;
+- an unsupported contract. The consumer must be `agent-ee.placement/1`, the
+  objective `agent-ee.placer.wire-cost/1` and the generation scheme
+  `agent-ee.placer.search-stack/1`. An `unknown` objective or generation is never
+  assumed to be the supported one;
+- a malformed payload: a request whose id is not its recording position, an
+  unrecorded search, a generation the search never allocated, pads missing a
+  quarter turn, peers that are not `[x, y]` points of the pad nets, or inputs that
+  differ from their hash. A sample without its eight integer fields (`local_cost`
+  may be `p/q`), with a rotation other than 0, 90, 180 or 270, or that names an
+  unrecorded request is also malformed;
+- a stale sample, whose generation is not its request's;
+- a duplicated sample, a request with more samples than generated candidates, or
+  samples and requests over their limits;
+- evidence that does not reconcile. `sampling.recorded` and `sampling.bytes` must
+  count and size the payload exactly. `sampling.dropped` must equal the scans and
+  exact evaluations that the counters report and the payload does not hold. The
+  counters must reconcile with the durations and the generation records. Deleting
+  samples, or editing one counter, is refused even when the coverage label still
+  says `complete`.
 
 `replay` recomputes each sample with the placer's own `_wire_cost` and
-`_wire_bounds`. Its `status` is `exact`, `mismatch` or `refused`. Its `parity` is
-`complete` only for an exact replay of an envelope with complete coverage. A capped
-trace replays as `partial`.
+`_wire_bounds`. Its `status` is `exact`, `mismatch` or `refused`. A refusal has
+parity `none` and a reason. Its `parity` is `complete` only for an exact replay of
+a completed run that has complete, reconciled coverage and qualified `pcb` and
+`rules` identities. An exact replay is `partial`, with a reason for each gap, in
+these cases: a capped trace, a `failed` or `interrupted` run (whatever its coverage
+label says), or an unknown `pcb` or `rules` identity. A trace with unknown fields
+stays a valid, retained record. It is never certified as complete evidence.
 
 ## Limits
 
 The defaults are 256 requests, 8192 samples and 8 MiB of serialized requests plus
-samples. Set them with `--max-requests`, `--max-samples` and `--max-bytes`. When a
-limit is reached, the dropped records are counted in `sampling.dropped`, coverage
-becomes `partial`, and a reason names the limit. Requests are kept first, then
-their samples, in recording order, up to the byte limit. Samples of a dropped
-request are dropped too.
+samples. Set them with `--max-requests`, `--max-samples` and `--max-bytes`.
+
+The limits apply while the trace records, not when it is exported. The recorder
+keeps a byte account of everything it keeps. The account is an upper bound of the
+serialized size, because it reserves each request's generated-candidate count. A
+request is sized before its peers are read or copied. A request whose peer points
+cannot fit, at a minimum of 6 bytes each, is dropped from its point count alone.
+A request or sample that would take the account over the byte limit is dropped and
+not kept. Samples of a dropped request are dropped too. Counters stay complete
+whatever is dropped.
+
+When a limit is reached, the dropped records are counted in `sampling.dropped`,
+coverage becomes `partial`, and a reason names the limit. The smallest byte limit
+is 28, the size of the empty sample set `{"requests":[],"samples":[]}`. A smaller
+limit, or a limit that is not a non-negative integer, is refused before placement
+starts. At 28 bytes the trace records timings and counters but keeps no requests
+or samples.
 
 ## Overhead experiment gate
 
@@ -130,31 +174,40 @@ measurement.
 
 `scripts/placement_trace_overhead.py` runs `placement_trace.overhead`. It times
 matched, alternating tracing-off and tracing-on `pack` runs (one warmup, five
-runs) and checks that the plans are identical. The fixtures are three unit
-fixtures and the first two owned pod-scale qualification boards. The script
-generates the pod boards natively, as in `scripts/qualify_pod_placement.py`. The
-overhead column is recording overhead. The envelope column adds the envelope
-assembly after the run.
+runs) and checks that the plans are identical. A traced run is timed until its
+trace is on disk: recording, envelope assembly and export to a fresh file are
+all inside the measured boundary (`median_overhead`, `gate.met`). The recording
+alone is reported separately as `median_recording_overhead`. The fixtures are
+three unit fixtures and the first two owned pod-scale qualification boards. The
+script generates the pod boards natively, as in `scripts/qualify_pod_placement.py`.
 
-Measured 2026-10-22 on agent-ee-gate-c4 in the pinned CI image (`ae-ci-exec`,
-Python 3.12.3, x86_64), in two sessions:
+Measured on 2026-10-22 on agent-ee-gate-c4 in the pinned CI image (`ae-ci-exec`),
+in two sessions (A / B). The host is shared with release gates, and its load
+average was 15 to 25 during these runs:
 
-| Fixture | Parts | Status | Steps | Exact | Median off ms | Overhead | With envelope | Coverage | Envelope bytes | Exact share of Stage-A search |
-|---|---|---|---|---|---|---|---|---|---|---|
-| search-promotion | 3 | planned | 3 | 3 | 1.8 / 1.9 | 4.80% / 4.03% | 15.79% / 14.32% | complete | 5810 | 1% |
-| search-anchor | 3 | planned | 6 | 6 | 1.9 / 1.9 | 3.22% / 4.69% | 13.11% / 15.01% | complete | 5945 | 1% |
-| cluster-three-cap | 4 | packing_budget_exhausted | 500 | 501 | 76.6 / 76.2 | 2.26% / 2.52% | 2.92% / 3.21% | complete | 32604 | 2% |
-| pod-80x50-90 | 90 | planned | 182 | 34595 | 692.9 / 697.5 | 3.74% / 3.59% | 5.11% / 4.99% | partial | 594315 | 53% |
-| pod-85x55-112 | 112 | planned | 128 | 157833 | 2481.5 / 2504.3 | 3.23% / 2.38% | 3.72% / 2.87% | partial | 681039 | 75% |
+| Fixture | Status | Steps | Exact | Median off ms | Overhead (to export) | Recording only | Export ms | Coverage | Trace bytes |
+|---|---|---|---|---|---|---|---|---|---|
+| search-promotion | planned | 3 | 3 | 2.4 / 2.8 | 24.66% / 24.36% | 8.87% / 8.21% | 0.38 / 0.45 | complete | 5812 |
+| search-anchor | planned | 6 | 6 | 2.5 / 2.0 | 25.56% / 23.56% | 9.50% / 8.41% | 0.39 / 0.29 | complete | 5947 |
+| cluster-three-cap | packing_budget_exhausted | 500 | 501 | 111.1 / 106.7 | 2.03% / 5.01% | 0.77% / 3.89% | 1.31 / 1.26 | complete | 32608 |
+| pod-80x50-90 | planned | 182 | 34595 | 765.4 / 743.7 | 6.21% / 8.98% | 4.10% / 6.97% | 16.54 / 15.73 | partial | 594321 |
+| pod-85x55-112 | planned | 128 | 157833 | 2824.1 / 2669.7 | 4.79% / 7.57% | 4.09% / 6.83% | 19.60 / 19.58 | partial | 681040 |
 
-Every fixture met the gate for recording overhead in both sessions, and every plan
-was identical. With envelope assembly included, the pod boards are within 5% except
-pod-80x50-90 in one session (5.11%). On the 2 ms unit fixtures, envelope assembly
-is a fixed cost of about 0.2 ms and exceeds the gate. The pod traces are partial
-because their exact evaluations exceed the 8192-sample limit. Exact wire cost
-takes 53% and 75% of Stage-A search time on the pod boards, which is the score
-fraction the GPU plan listed as unmeasured. These are single-host measurements.
-The plan's five matched real-workload replays and its G1/G2 admissions still apply.
+**The gate is not met across these fixtures.** Every plan was identical with
+tracing on and off. On the 2 ms unit fixtures, recording, assembly and export
+cost a fixed 0.3 to 0.5 ms, which is far above 5% of the run. On the pod boards,
+the recording cost is mostly the per-evaluation timing and sampling of up to
+158,000 exact wire-cost evaluations. Export of the 0.6 MB trace adds about 2%.
+Earlier sessions on the same host measured 2 to 4% recording overhead on the pod
+boards, which shows that host load moves these numbers by several points. Whether
+the gate should apply to millisecond unit fixtures, and under which boundary and
+host conditions, is a coordinator ruling. These results are not relabelled as met.
+
+The pod traces are partial because their exact evaluations exceed the
+8192-sample limit. Exact wire cost is the larger share of Stage-A search time on
+the pod boards. That is the score fraction the GPU plan listed as unmeasured.
+These are single-host measurements. The plan's five matched real-workload replays
+and its G1/G2 admissions still apply.
 
 To reproduce:
 
