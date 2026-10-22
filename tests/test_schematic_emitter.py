@@ -7,6 +7,7 @@ files only through kicad-cli 10.0.7 ERC, XML netlist export and upgrade.
 """
 import hashlib
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -316,6 +317,56 @@ class DeterminismTests(unittest.TestCase):
         self.assertEqual(len([p for p in children(symbol, 'property') if p[1] == 'Datasheet']), 1)
         self.assertIn(['hide', 'yes'], props['LCSC'])
         self.assertEqual(files, emit(intent=intent)[1])
+
+    def test_missing_standard_fields_precede_custom_bindings(self):
+        # AGENTEE-444: KiBot reads the third field as the footprint by ordinal.
+        # A symbol without library Footprint/Datasheet must not let a custom
+        # binding that sorts first (AGENT_EE_Probe) take that slot.
+        from agent_ee import probe_features as pf
+        intent = load('regulator.intent.json')
+        files = captures(intent)
+        path = 'lib/Owned_Gen.kicad_sym'
+        data = files[path].decode()
+        start = data.index('(symbol "CONN3"')
+        body = data[start:]
+        for name in ('Footprint', 'Datasheet'):
+            body, count = re.subn(r'\t\t\(property "%s" ""\n.*?\n\t\t\)\n' % name, '', body, count=1, flags=re.S)
+            self.assertEqual(count, 1, name)
+        files[path] = (data[:start] + body).encode()
+        intent['libraries'][0]['sha256'] = hashlib.sha256(files[path]).hexdigest()
+        record = dict(schema='agent-ee.bare-copper-probe/1', **{key: 'x' for key in (
+            'part_id', 'lib_id', 'footprint', 'pin', 'symbol', 'footprint_source', 'symbol_body_sha256',
+            'geometry', 'sheet', 'reference', 'net', 'native_net')})
+        for probe in (pf.marker(record), json.dumps(record, sort_keys=True, separators=(',', ':'))):
+            with self.subTest(encoded=probe.startswith(pf.MARKER_PREFIX)):
+                intent['components'][0]['part_binding'] = {
+                    'AGENT_EE_Probe': probe, 'Datasheet': 'captured/owned.pdf', 'LCSC': 'C900001'}
+                result, emitted = emit_schematic(intent, files, load('regulator.layout.json'))
+                self.assertEqual(result['execution'], 'ok', result['findings'])
+                symbol = next(s for s in children(parse_sexpr(emitted['regulator.kicad_sch']), 'symbol')
+                              if any(p[1:3] == ['Reference', 'J1'] for p in children(s, 'property')))
+                props = children(symbol, 'property')
+                self.assertEqual([p[1] for p in props],
+                                 ['Reference', 'Value', 'Footprint', 'Datasheet', 'Description',
+                                  'AGENT_EE_Probe', 'LCSC'])
+                self.assertEqual(props[2][2], 'OwnedFP:CONN_1x3')
+                self.assertEqual(props[3][2], 'captured/owned.pdf')
+                self.assertEqual(props[5][2], probe)
+                self.assertIn(['hide', 'yes'], props[2])
+
+    def test_every_fixture_symbol_starts_with_standard_fields(self):
+        # AGENTEE-444: ordinal readers need Reference, Value, Footprint first.
+        for name in ('regulator', 'dual', 'presentation', 'regulator-core', 'transforms',
+                     'two_level', 'three_level'):
+            with self.subTest(fixture=name):
+                result, files = emit(name)
+                self.assertEqual(result['execution'], 'ok', result['findings'])
+                symbols = [s for f, data in files.items() if f.endswith('.kicad_sch')
+                           for s in children(parse_sexpr(data), 'symbol')]
+                self.assertTrue(symbols)
+                for symbol in symbols:
+                    self.assertEqual([p[1] for p in children(symbol, 'property')[:3]],
+                                     ['Reference', 'Value', 'Footprint'], symbol[1])
 
     def test_long_canonical_datasheet_binding_and_exact_byte_limit(self):
         for raw in (datasheet_binding(), datasheet_binding('https://example.com/' + 'a' * 1902)):
