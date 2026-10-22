@@ -641,6 +641,10 @@ written `placement-plan.json` bytes),
 `derivation_sha256`, `policy_sha256`, and `rules` (each block rule's
 enforcement and status on the saved board). `authority` is a fixed statement: the
 artifact is review input only, and an advisory block confers no acceptance.
+A scope that declares `block_provenance` carries the artifact whole in every
+initial reviewer's packet as `block_provenance.record`, so each reviewer sees
+every block's provenance `class` and `citation` (AGENTEE-421;
+`tests/test_block_provenance.py`).
 `placement-result.json` records the file's hash as `block_provenance_sha256`.
 The placement plan records the search's wall `elapsed_s`, so `plan_sha256`, and
 with it the artifact's bytes, differ between otherwise identical runs; every
