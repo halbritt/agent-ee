@@ -217,6 +217,14 @@ what the evidence can check:
 - `board` must be the bytes of the subject's board hash, and `routing` must cite
   it: `unrouted` is refused when the board has tracks, arcs or vias, `routed`
   when it has none.
+- Each known value must cite the retained report it was taken from. `unrouted`
+  is the only claim the bound board supports alone. `routed`, `adopted`,
+  `not-adopted`, `qualified`, `unqualified` and `full` must cite a disposition
+  (`receipt`, `review` or `index`; `routed` also the board); `models-only` the
+  `design-diff`; `drc` counts and `silk` or `drc` defect counts the `drc` report;
+  `review` defect counts the `review` report; a model claim the `model` file.
+  Citing the board or the association instead is refused: the association is a
+  mapping of files, not a disposition.
 - Every other evidence file must be covered by one reviewed **association**
   (`agent-ee.gallery-association/1`), supplied as `association` evidence. A
   hash alone, or a DRC report's `source` file name, does not show that a report,
@@ -259,7 +267,10 @@ longer matches the stored manifest shows "does not match" and every field
 unknown; a stored or served value outside the vocabulary, or one whose cited
 evidence is not hash-bound in the record, is unknown, and so is a value citing
 anything but the subject's board in a record that binds no association (records
-attached before associations existed show only board-checked routing).
+attached before associations existed show only board-checked routing). The same
+citation rule is applied when serving, so a record sealed before it (for
+example `qualified` citing only the board or only the association) shows that
+value unknown on every page and JSON surface.
 
 `statuses.json` is mutable and only names and orders the immutable records. Each
 listed record is read from `statuses/ID/status.json` without following a link
@@ -272,7 +283,11 @@ match" and every field unknown. The newest record is shown; older records are
 retained. `/bundles/ID/status.json` and
 `/diagnostics/ID/status.json` report `matched`, `mismatched` or `none` with the
 verified record and `shown`, the claims the pages show from it (`null` where
-unknown), and `/statuses/ID/status.json` serves a record itself. The
+unknown); in `record`, a value its citations do not support is `null` too.
+`/statuses/ID/status.json` serves a record itself, read the same way: only when
+its bytes are its identity and its subject still matches the stored manifest
+and board (an unsupported value `null`, as above), else HTTP 404 with
+`{"id": ID, "attached": "mismatched", "record": null}`. The
 served `manifest.json` of a bundle or supplement and the served
 `viewer/viewer.json` carry the same report as `recorded_status` beside the
 projected stored fields; the stored files never contain it.

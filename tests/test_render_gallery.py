@@ -1600,6 +1600,135 @@ class StatusRecordTests(unittest.TestCase):
         listing.write_text(json.dumps(entries))
         mismatched('swapped')
 
+    DISPOSITIONS = {'qualification': {'value': 'qualified', 'evidence': ['board']},
+                    'adoption': {'value': 'adopted', 'evidence': ['board']},
+                    'scope': {'value': 'full', 'evidence': ['board']},
+                    'open_defects': {'count': 0, 'class': 'review', 'evidence': ['board']}}
+
+    def cite(self, roles, routing='routed'):
+        """DISPOSITIONS, plus a routing claim, each citing only roles."""
+        record = {key: dict(value, evidence=list(roles)) for key, value in self.DISPOSITIONS.items()}
+        return dict(record, routing={'value': routing, 'evidence': list(roles)})
+
+    def every_projection(self, url):
+        """index, detail and viewer HTML, then the bundle status, manifest and viewer JSON status reports."""
+        base = url + '/bundles/' + self.bundle + '/'
+        bodies = [html.unescape(body) for body in self.served(url)]
+        reports = [json.loads(bodies[3])] + [json.loads(urlopen(base + name).read())['recorded_status']
+                                             for name in ('manifest.json', 'viewer/viewer.json')]
+        return bodies[:3], reports
+
+    def test_board_or_association_alone_supports_no_disposition_claim(self):
+        """Review 433n H1: only unrouted is checked against the board; a disposition needs its retained report."""
+        board = [('board', self.evidence_dir / 'board.kicad_pcb')]
+        for key, claim in self.DISPOSITIONS.items():
+            self.refuses(f'{key} must cite (receipt or review or index|review) evidence', record={key: claim}, evidence=board)
+        # An empty reviewed association is a mapping, not a disposition, whether cited or not.
+        self.associate([], models=[], name='empty.json')
+        mapping = board + [('association', self.evidence_dir / 'empty.json')]
+        for key, claim in self.DISPOSITIONS.items():
+            for roles in (['association'], ['board', 'association']):
+                self.refuses(f'{key} must cite', record={key: dict(claim, evidence=roles)}, evidence=mapping)
+        # Review defects need the review report; a DRC report or index does not support them.
+        self.refuses('open_defects must cite review evidence',
+                     record={'open_defects': {'count': 0, 'class': 'review', 'evidence': ['index', 'drc']}})
+        # Only unrouted stands on the board alone.
+        self.attach({'routing': {'value': 'unrouted', 'evidence': ['board']}}, board)
+
+        # Records sealed before this rule (planted as an earlier writer would have) are unknown on every surface.
+        sealed = self.sealed(self.attach())
+        association = next(e for e in sealed['evidence'] if e['role'] == 'association')
+        for why, roles, evidence in (
+                ('board only', ['board'], [e for e in sealed['evidence'] if e['role'] == 'board']),
+                ('association only', ['association'], sealed['evidence']),
+                ('board and association', ['board', 'association'],
+                 [e for e in sealed['evidence'] if e['role'] == 'board'] + [association])):
+            status = self.plant(dict(sealed, **self.cite(roles), evidence=evidence))
+            with self.serving() as url:
+                pages, reports = self.every_projection(url)
+                direct = json.loads(urlopen(url + '/statuses/' + status + '/status.json').read())
+            for report in reports:
+                self.assertEqual((report['attached'], report['record']['id']), ('matched', status), why)
+                self.assertEqual({key: report['shown'][key] for key in ('routing', 'adoption', 'qualification', 'scope',
+                                                                        'open_defects')},
+                                 dict.fromkeys(('routing', 'adoption', 'qualification', 'scope', 'open_defects')), why)
+            for record in [direct] + [report['record'] for report in reports]:
+                self.assertEqual([record[key]['value'] for key in ('routing', 'adoption', 'qualification', 'scope')],
+                                 [None] * 4, why)
+                self.assertEqual((record['open_defects']['count'], record['open_defects']['class']), (None, None), why)
+            for where, body in zip(('index', 'detail', 'viewer'), pages):
+                for key in ('Routing', 'Adoption', 'Qualification', 'Scope', 'Open defects'):
+                    self.assertIn(f'<li>{key}: unknown (not recorded)</li>', body, (why, where))
+                for text in ('Qualified (', 'Adopted (', 'Full design candidate', 'defects open in the recorded review',
+                             'Routed: the bound board'):
+                    self.assertNotIn(text, body, (why, where))
+
+    def test_dispositions_cite_retained_reports_under_the_association(self):
+        """The supported counterpart: each disposition cites a receipt, review or index the association covers."""
+        (self.evidence_dir / 'REVIEW.md').write_text('Review: zero open defects; qualified; adopted.\n')
+        record = iter8_record(**{key: dict(claim, evidence=['receipt', 'review', 'index'])
+                                 for key, claim in self.DISPOSITIONS.items()})
+        status = self.attach(record, self.evidence(review='REVIEW.md'))
+        with self.serving() as url:
+            pages, reports = self.every_projection(url)
+            direct = json.loads(urlopen(url + '/statuses/' + status + '/status.json').read())
+        self.assertEqual(direct, self.sealed(status))
+        for report in reports:
+            self.assertEqual(report['record'], {'id': status, **direct})
+            self.assertEqual({key: report['shown'][key] for key in ('adoption', 'qualification', 'scope', 'open_defects')},
+                             {'adoption': 'adopted', 'qualification': 'qualified', 'scope': 'full',
+                              'open_defects': {'count': 0, 'class': 'review'}})
+        for body in pages:
+            for text in ('Qualified (recorded disposition', 'Adopted (recorded disposition)', 'Full design candidate',
+                         'Open defects: 0 defects open in the recorded review'):
+                self.assertIn(text, body)
+        # Each disposition still needs the report it cites to be in the association.
+        files = self.evidence(association=None, review='REVIEW.md')
+        self.associate([e for e in files if e[0] != 'review'], name='no-review.json')
+        self.refuses('review evidence is not in a reviewed association', record=record,
+                     evidence=files + [('association', self.evidence_dir / 'no-review.json')])
+
+    def test_direct_status_endpoint_serves_only_the_verified_record(self):
+        """Review 433n H2: /statuses/ID/status.json verifies identity and subject like every other surface."""
+        status = self.attach()
+        stored = self.sealed(status)
+        sealed = self.root / 'statuses' / status / 'status.json'
+        manifest = self.root / 'bundles' / self.bundle / 'manifest.json'
+        other = self.attach(iter8_record(adoption={'value': None, 'evidence': []}))
+        target = '/statuses/' + status + '/status.json'
+
+        def direct():
+            with self.serving() as url:
+                try:
+                    return 200, json.loads(urlopen(url + target).read())
+                except HTTPError as error:
+                    return error.code, json.loads(error.read())
+
+        self.assertEqual(direct(), (200, stored))
+        refused = (404, {'id': status, 'attached': 'mismatched', 'record': None})
+        data = sealed.read_bytes()
+        for why, change in (('deleted', lambda: sealed.unlink()),
+                            ('corrupt', lambda: sealed.write_bytes(b'{')),
+                            ('rewritten', lambda: sealed.write_bytes(data.replace(b'"unqualified"', b'"qualified"'))),
+                            ('re-encoded', lambda: sealed.write_bytes(json.dumps(json.loads(data)).encode())),
+                            ('swapped', lambda: sealed.write_bytes((self.root / 'statuses' / other / 'status.json').read_bytes())),
+                            ('symlink', lambda: (sealed.rename(sealed.with_name('real.json')), sealed.symlink_to('real.json')))):
+            change()
+            self.assertEqual(direct(), refused, why)
+            for path in (sealed, sealed.with_name('real.json')):
+                with contextlib.suppress(FileNotFoundError):
+                    path.unlink()
+            sealed.write_bytes(data)
+            self.assertEqual(direct(), (200, stored), why)
+        # A record no longer bound to its subject's stored bytes is refused too.
+        original = manifest.read_bytes()
+        manifest.write_bytes(original.replace(b'Iteration 8', b'Iteration 9'))
+        self.assertEqual(direct(), refused)
+        manifest.unlink()
+        self.assertEqual(direct(), refused)
+        manifest.write_bytes(original)
+        self.assertEqual(direct(), (200, stored))
+
     def test_canonical_label_and_stage_are_shown_for_an_earlier_publication(self):
         manifest = self.root / 'bundles' / self.bundle / 'manifest.json'
         record = json.loads(manifest.read_text())

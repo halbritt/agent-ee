@@ -97,6 +97,9 @@ _PROVENANCE = {"manufacturer": "manufacturer model", "mechanical": "mechanical m
                                     "model evidence"}
 _TRANSPARENCY = {"verified": "transparency verified"}
 _EVIDENCE = ("board", "association", "receipt", "design-diff", "drc", "index", "model", "review")
+# Retained disposition evidence: the receipt, review report or packet index a recorded
+# disposition (routed, adoption, qualification, full scope) is taken from.
+_DISPOSITION = ("receipt", "review", "index")
 # A reviewed association: the reviewer's mapping of one subject board digest to the
 # digests of the other evidence retained with it in the same packet, and of each
 # model reference to its model digest, provenance and transparency. The gallery cannot
@@ -305,8 +308,27 @@ def _status_record(item):
         "published_at": _match(_TIME, item.get("published_at"))})
 
 
-def _cited(record, cited):
-    """True when at least one role is cited and every cited role names hash-bound evidence in the record.
+def _support(field, value):
+    """The evidence a known claim must cite: at least one role from each group.
+
+    Only "unrouted" is a fact the gallery checks against the bound board alone. Every
+    other claim needs the retained report it was taken from (a disposition, DRC report,
+    design-diff or model), which is accepted only under a reviewed association; neither
+    the board nor the association mapping itself supports a disposition.
+    """
+    if field == "routing":
+        return (("board",),) if value == "unrouted" else (("board",), _DISPOSITION)
+    if field == "scope" and value == "models-only":
+        return (("design-diff",),)
+    if field == "open_defects":  # value is the defect class
+        return (("review",),) if value == "review" else (("drc",),)
+    if field in ("drc", "models"):
+        return (("drc" if field == "drc" else "model",),)
+    return (_DISPOSITION,)
+
+
+def _cited(record, cited, groups):
+    """True when the cited roles support a claim (_support groups) and each names hash-bound evidence.
 
     Board evidence counts only as the subject's board; any other role counts only when
     the record also binds a reviewed association with that board.
@@ -314,7 +336,8 @@ def _cited(record, cited):
     board = record["subject"]["board_sha256"]
     bound = {e["role"] for e in record["evidence"] if e["role"] is not None and e["sha256"] is not None
              and (e["role"] != "board" or e["sha256"] == board)}
-    return bool(cited) and set(cited) <= bound and (set(cited) <= {"board"} or "association" in bound)
+    return (bool(cited) and set(cited) <= bound and all(set(group) & set(cited) for group in groups)
+            and (set(cited) <= {"board"} or "association" in bound))
 
 
 def _plain(label, stage):
@@ -821,12 +844,14 @@ def attach_status(root, subject, record, evidence):
             raise ValueError(f"the publication already has a canonical {key}; the status record may only "
                              f"supply one for an earlier record whose {key} is not published")
     defects, drc, routing = projected["open_defects"], projected["drc"], projected["routing"]
-    claims = [(key, projected[key]["value"], projected[key]["evidence"]) for key in _RECORDED]
-    claims += [("open_defects", (defects["count"], defects["class"]), defects["evidence"]),
-               ("drc", (drc["violations"], drc["raw_unconnected_items"]), drc["evidence"])]
-    claims += [(f"model {m['reference']}", (m["provenance"], m["transparency"], m["sha256"]), m["evidence"])
-               for m in projected["models"]]
-    for key, value, cited in claims:
+    claims = [(key, projected[key]["value"], projected[key]["evidence"], _support(key, projected[key]["value"]))
+              for key in _RECORDED]
+    claims += [("open_defects", (defects["count"], defects["class"]), defects["evidence"],
+                _support("open_defects", defects["class"])),
+               ("drc", (drc["violations"], drc["raw_unconnected_items"]), drc["evidence"], _support("drc", None))]
+    claims += [(f"model {m['reference']}", (m["provenance"], m["transparency"], m["sha256"]), m["evidence"],
+                _support("models", None)) for m in projected["models"]]
+    for key, value, cited, _ in claims:
         if value not in (None, (None, None), (None, None, None)) and not cited:
             raise ValueError(f"{key} must cite the retained evidence it was taken from")
         missing = sorted(set(cited) - set(contents))
@@ -888,6 +913,11 @@ def attach_status(root, subject, record, evidence):
         names = {e["name"] for e in bound if e["role"] == "model" and e["sha256"] == model["sha256"]}
         if not names & set(on_board):
             raise ValueError(f"model {reference} evidence is not a model of footprint {reference} on the bound board")
+    for key, value, cited, groups in claims:
+        unsupported = [" or ".join(group) for group in groups if not set(group) & set(cited)]
+        if value not in (None, (None, None), (None, None, None)) and unsupported:
+            raise ValueError(f"{key} must cite {' and '.join(unsupported)} evidence: the bound board alone supports "
+                             "only unrouted, and a reviewed association is a mapping, not a disposition")
     with _publication(root, "statuses", ".status-") as staged:
         record_bytes = _encode(projected)
         _put(staged.directory, "status.json", record_bytes)
@@ -914,6 +944,27 @@ def _sealed(root, identifier):
     return {"id": identifier, **record}
 
 
+def _subject(root, key):
+    """(manifest sha256, bound board sha256) of the publication key = (area, id) as stored, else None."""
+    try:
+        data = _read(root / key[0], key[1] + "/manifest.json")
+        project = _bundle if key[0] == "bundles" else _diagnostic
+        return hashlib.sha256(data).hexdigest(), project(json.loads(data.decode("utf-8")))["board_sha256"]
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+
+
+def _verified(root, identifier):
+    """The sealed record identifier (_sealed) when it is still bound to its subject's stored bytes, else None."""
+    record = _sealed(root, identifier)
+    if record is None:
+        return None
+    key = (record["subject"]["area"], record["subject"]["id"])
+    if None in key or _subject(root, key) != (record["subject"]["manifest_sha256"], record["subject"]["board_sha256"]):
+        return None
+    return record
+
+
 def _attached(root):
     """Map (area, id) to the newest status record bound to that publication's stored bytes.
 
@@ -937,12 +988,7 @@ def _attached(root):
             continue
         record = _sealed(root, listed["id"]) if listed.get("id") is not None else None
         if key not in digests:
-            try:
-                data = _read(root / key[0], key[1] + "/manifest.json")
-                project = _bundle if key[0] == "bundles" else _diagnostic
-                digests[key] = (hashlib.sha256(data).hexdigest(), project(json.loads(data.decode("utf-8")))["board_sha256"])
-            except (OSError, UnicodeDecodeError, ValueError):
-                digests[key] = None
+            digests[key] = _subject(root, key)
         if (record is None or record != listed
                 or digests[key] != (record["subject"]["manifest_sha256"], record["subject"]["board_sha256"])):
             found[key] = False
@@ -954,15 +1000,34 @@ def _attached(root):
 def _claims(record):
     """The claims shown for a verified record: each value whose cited evidence is bound (_cited), else None."""
     defects, drc = record["open_defects"], record["drc"]
-    return {**{key: record[key]["value"] if _cited(record, record[key]["evidence"]) else None for key in _RECORDED},
+    return {**{key: record[key]["value"] if _cited(record, record[key]["evidence"],
+                                                     _support(key, record[key]["value"])) else None
+               for key in _RECORDED},
             "open_defects": {"count": defects["count"], "class": defects["class"]}
-            if None not in (defects["count"], defects["class"]) and _cited(record, defects["evidence"]) else None,
+            if None not in (defects["count"], defects["class"])
+            and _cited(record, defects["evidence"], _support("open_defects", defects["class"])) else None,
             "drc": {"violations": drc["violations"], "raw_unconnected_items": drc["raw_unconnected_items"]}
-            if (drc["violations"], drc["raw_unconnected_items"]) != (None, None) and _cited(record, drc["evidence"]) else None,
+            if (drc["violations"], drc["raw_unconnected_items"]) != (None, None)
+            and _cited(record, drc["evidence"], _support("drc", None)) else None,
             "models": [{"reference": m["reference"],
-                        **{key: m[key] if _cited(record, m["evidence"]) else None
+                        **{key: m[key] if _cited(record, m["evidence"], _support("models", None)) else None
                            for key in ("provenance", "transparency", "sha256")}}
                        for m in record["models"] if m["reference"] is not None]}
+
+
+def _masked(record):
+    """A verified record as served: every claim its citations do not support (_claims) is null.
+
+    A record whose claims are all supported is served unchanged, as its sealed bytes.
+    """
+    claims, defects, drc = _claims(record), record["open_defects"], record["drc"]
+    supported = _support("models", None)
+    return {**record, **{key: {**record[key], "value": claims[key]} for key in _RECORDED},
+            "open_defects": defects if claims["open_defects"] else {**defects, "count": None, "class": None},
+            "drc": drc if claims["drc"] else {**drc, "violations": None, "raw_unconnected_items": None},
+            "models": [m if m["reference"] is not None and _cited(record, m["evidence"], supported)
+                       else {**m, "provenance": None, "transparency": None, "sha256": None}
+                       for m in record["models"]]}
 
 
 def _status_lines(state):
@@ -1109,8 +1174,8 @@ def _recorded(area, identifier, state):
     """The served status of a publication: whether a verified record matches its bytes, that record, and
     the claims the pages show from it (any value without bound, associated evidence is None)."""
     return {"subject": {"area": area, "id": identifier},
-            "attached": "matched" if state else "mismatched" if state is False else "none", "record": state or None,
-            "shown": _claims(state) if state else None}
+            "attached": "matched" if state else "mismatched" if state is False else "none",
+            "record": _masked(state) if state else None, "shown": _claims(state) if state else None}
 
 
 def _with_status(data, identifier, state):
@@ -1124,8 +1189,8 @@ def _with_status(data, identifier, state):
 
 
 class GalleryHandler(SimpleHTTPRequestHandler):
-    def _send(self, data, content_type):
-        self.send_response(200)
+    def _send(self, data, content_type, code=200):
+        self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -1151,6 +1216,14 @@ class GalleryHandler(SimpleHTTPRequestHandler):
             allowed = parts[2] in {"manifest.json", "image.png", "index.html", "status.json"}
         if len(parts) == 3 and parts[0] == "statuses" and re.fullmatch(_ID, parts[1]):
             allowed = parts[2] == "status.json"
+        if allowed and parts[0] == "statuses":
+            # An immutable status record is served only as its verified identity (read without following a
+            # link), still bound to its subject's stored bytes; anything else is a mismatched refusal.
+            record = _verified(root, parts[1])
+            if record is None:
+                return self._send(_encode({"id": parts[1], "attached": "mismatched", "record": None}),
+                                  "application/json", 404)
+            return self._send(_encode({k: v for k, v in _masked(record).items() if k != "id"}), "application/json")
         path = root / relative
         if generated:
             path = path.with_name("manifest.json")
@@ -1173,10 +1246,9 @@ class GalleryHandler(SimpleHTTPRequestHandler):
             # The stored viewer page is served with the recorded status in front of it.
             return self._send(_with_status(path.read_bytes(), parts[1], _attached(root).get(("bundles", parts[1]))),
                               "text/html; charset=utf-8")
-        if parts[-1] in ("manifest.json", "viewer.json", "status.json"):
+        if parts[-1] in ("manifest.json", "viewer.json"):
             # Publications are immutable and may predate the allowlist; project on the way out.
-            project = (_viewer if parts[-1] == "viewer.json" else _status_record if parts[0] == "statuses"
-                       else _diagnostic if parts[0] == "diagnostics" else _bundle)
+            project = _viewer if parts[-1] == "viewer.json" else _diagnostic if parts[0] == "diagnostics" else _bundle
             data = project(_json(path))
             if parts[0] in _AREAS:  # the stored record, with its attached status beside it
                 data["recorded_status"] = _recorded(parts[0], parts[1], _attached(root).get((parts[0], parts[1])))
