@@ -437,7 +437,9 @@ def _experiment_grade(routing, report, request, result, classification, retained
         if (key not in retained or (routing / key).read_bytes() !=
                 attempt.canonical_json(request['experiment_policy']).encode()):
             raise ValueError('experiment policy file differs from the declared experiment policy')
-    grade = attempt.experiment_grade(request, result, routing / 'attempt')
+    found = (report.get('discovery') or {}).get('attempt_dir')
+    grade = attempt.experiment_grade(request, result, routing / 'attempt',
+                                     PurePosixPath(found).name if isinstance(found, str) else None)
     if ('experiment' in sem) != (grade is not None) or sem.get('experiment') != grade:
         raise ValueError('experiment evidence record differs from the retained routing evidence')
     if (grade is not None and grade['status'] == 'refused' and

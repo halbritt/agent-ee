@@ -208,16 +208,45 @@ if name == 'env':
                                       'pycache_prefix': sys.pycache_prefix})
 # SYNTHETIC routability-experiment/1 sidecar (AGENTEE-442), written by this
 # fixture, never by the KICADROUTE-91 producer. It has the run-relative reference
-# and the top-level and identity key sets of kicad-route 4f06368f's sidecar, but
-# only the values the adapter reads are meaningful: identity.policy {declared,
-# declared_sha256, experiment_class}, identity_sha256, comparison_eligible,
-# ineligible_reasons and artifacts['experiment-policy.json'], the router's
-# retained declaration copy, written as kicad-route's common.write_json does.
-# scenario['replay'] = {'sidecar': text, 'copy': text or None} instead writes
-# REAL kicad-route bytes verbatim (tests/fixtures/k91-real); edits still apply.
+# and the full shape of kicad-route 4f06368f's sidecar (schemas/routability-
+# experiment-1.json), and, when it claims comparison_eligible, the evidence the
+# adapter requalifies: a synthetic effective-configuration manifest and request
+# it seals, the result.json process binding of that manifest, and the attempt
+# record and facts it was built from. Values the adapter does not read are
+# shape-valid stand-ins. scenario['replay'] = {'sidecar': text, 'copy': text or
+# None} instead writes REAL kicad-route bytes verbatim (tests/fixtures/k91-real),
+# with scenario['payload'] {run-relative name: text} and
+# scenario['effective_binding'] the real run's sealed files and binding; edits
+# still apply. scenario['self_cycle'] points attempt.json source_dir at the run's
+# own candidate, as the K91 review's EI3 case does.
 replay = scenario.get('replay')
 experiment = scenario.get('experiment', 'ok' if '--experiment-policy' in opts or replay else None)
 if experiment is not None and experiment != 'omit':
+    if scenario.get('self_cycle'):
+        attempt['source']['source_dir'] = str(cand.resolve())
+        write(run / 'attempt.json', attempt)
+    if not (run / 'validate/candidate-facts.json').exists():
+        write(run / 'validate/candidate-facts.json', {'sha256': board_sha, 'tracks': [], 'vias': []})
+    source_sha, producer_sha = (hashlib.sha256(f'SYNTHETIC {n}'.encode()).hexdigest() for n in ('source', 'producer'))
+    manifest_name, request_name = 'work/effective-configuration.json', 'work/effective-configuration-request.json'
+    write(run / request_name, {'schema': 'kicad-route/effective-configuration-request/1',
+                               'source_sha256': source_sha, 'producer_sha256': producer_sha, 'field_names': []})
+    manifest = {'schema': 'kicad-route/effective-configuration/1', 'capture_status': 'complete',
+                'coverage': 'resolved_outer_batch_only', 'stage': 'SYNTHETIC agent-ee fixture',
+                'execution': {'later_subruns': 0, 'outer_batches': 1}, 'issues': [], 'not_captured': [],
+                'configuration': {'layers': ['F.Cu', 'B.Cu']}, 'effective_environment': {}, 'runtime_policy': {},
+                'routing_environment': {}, 'invocation': [], 'scope': [], 'rules': None, 'net_inventory': [],
+                'request_sha256': sha(run / request_name), 'source_sha256': source_sha,
+                'producer_sha256': producer_sha, 'requested_output': str(run / 'work/krt-out' / board)}
+    manifest.update(scenario.get('manifest', {}))
+    write(run / manifest_name, manifest)
+    for rel, content in scenario.get('payload', {}).items():
+        (run / rel).parent.mkdir(parents=True, exist_ok=True)
+        (run / rel).write_text(content)
+    result['process']['effective_configuration'] = scenario.get('effective_binding') or {
+        'status': 'bound', 'reasons': [], 'replay_authority': False, 'sha256': sha(run / manifest_name),
+        'request_sha256': sha(run / request_name), 'capture_status': 'complete',
+        'coverage': 'resolved_outer_batch_only'}
     policy_path = opts.get('--experiment-policy')
     declared = None
     if policy_path:
@@ -233,23 +262,60 @@ if experiment is not None and experiment != 'omit':
     policy = {'declared': declared,
               'declared_sha256': None if declared is None else
               hashlib.sha256(json.dumps(declared, sort_keys=True).encode()).hexdigest(),
-              'experiment_class': None if declared is None else declared.get('experiment_class')}
+              'experiment_class': None if declared is None else declared.get('experiment_class'),
+              'physical_stack': ['F.Cu', 'B.Cu'],
+              'input_rule_areas_sha256': None if declared is None else declared.get('rule_areas_sha256'),
+              'input_rule_areas_coverage': {}}
     sidecar = run / 'routability-experiment.json'
-    identity = {key: None for key in ('origin', 'scope', 'protection', 'request', 'budgets', 'native', 'build',
-                                      'effective')}
-    identity.update(policy=policy, input={'fingerprint': fingerprint,
-                                          'source': 'SYNTHETIC agent-ee coordinator fixture (AGENTEE-442)'})
+
+    def digest_of(value):
+        return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+    named = {'name': None, 'sha256': None}
+    identity = {
+        'input': {'fingerprint': fingerprint, 'board': {'name': board, 'sha256': files.get(board)},
+                  'project': dict(named), 'rules': dict(named), 'files': files, 'snapshot_files': files,
+                  'netlist_sha256': None, 'nets_sha256': None, 'placement_sha256': None,
+                  'mechanical_sha256': None, 'setup_sha256': None, 'native_facts_kicad_version': None,
+                  'source': attempt['source']},
+        'origin': {'root_input_fingerprint': fingerprint, 'depth': 0, 'predecessors': []},
+        'scope': attempt['scope'], 'protection': {'mode': settings['protect'], 'only_sha256': None},
+        'request': {'fixture': 'SYNTHETIC agent-ee coordinator fixture (AGENTEE-442)',
+                    **{k: v for k, v in settings.items() if k not in ('budget_s', 'stall_s')}},
+        'policy': policy,
+        'budgets': {'backend_s': settings['budget_s'], 'stall_s': None, 'command_budget_s': None, 'grace_s': None},
+        'native': {'kicad_cli': None, 'pcbnew_build': None, 'terminal_producer': None,
+                   'terminal_native_identity': None},
+        'build': {'wrapper': None, 'backend': {}, 'execution_build_id': None, 'executed_source_sha256': source_sha,
+                  'producer_sha256': producer_sha, 'state_manifest_sha256': None},
+        'effective': {**{k: manifest[k] for k in ('schema', 'capture_status', 'coverage', 'stage', 'execution',
+                                                   'not_captured', 'configuration', 'effective_environment',
+                                                   'runtime_policy', 'routing_environment', 'invocation',
+                                                   'scope')},
+                      'rules_sha256': None, 'net_inventory_sha256': None}}
+    identity.update(scenario.get('identity', {}))
     if experiment == 'no_policy_identity':
         del identity['policy']
     copy = run / 'experiment-policy.json'
     reasons = [] if declared is not None else ['no experiment policy was declared (--experiment-policy)']
+    sealed = ['attempt.json', 'facts/reference-facts.json', 'validate/candidate-facts.json', manifest_name,
+              request_name, 'experiment-policy.json']
     body = {'schema': 'routability-experiment/2' if experiment == 'incompatible_schema' else
             'routability-experiment/1',
             'identity': identity,
-            'identity_sha256': hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest(),
+            'identity_sha256': digest_of(identity),
             'comparison_eligible': not reasons, 'ineligible_reasons': reasons,
-            'policy_qualification': None, 'native_terminals': None, 'candidate': None, 'outcome': None,
-            'artifacts': {'experiment-policy.json': sha(copy) if copy.is_file() else None},
+            'policy_qualification': {'status': 'PASS' if declared is not None else 'NOT_RUN', 'reasons': [],
+                                     'policy_sha256': None, 'rule_areas_sha256': None, 'coverage': None,
+                                     'actual_trace_layers': [], 'actual_via_spans': [],
+                                     'effective_layers': ['F.Cu', 'B.Cu'], 'effective_via': {}},
+            'native_terminals': {},
+            'candidate': {'backend_output_board_sha256': board_sha, 'pre_refill_board_sha256': board_sha,
+                          'candidate_board_sha256': board_sha, 'candidate_copper_signature': None,
+                          'validated_board_sha256': board_sha, 'file_sha256': board_sha},
+            'outcome': {'process': result['process']['status'], 'routing': routing[routing_status]['status'],
+                        'validation': validation['status'], 'unconnected_total': 0, 'backend_runtime_s': 0.1,
+                        'wall_clock_stop': False},
+            'artifacts': {rel: sha(run / rel) if (run / rel).is_file() else None for rel in sealed},
             'replay_authority': False}
     if replay is not None:
         sidecar.write_text(replay['sidecar'])

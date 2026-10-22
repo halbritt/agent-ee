@@ -13,9 +13,14 @@ on kicad-route's own `fixtures/route_demo` board. Its artifacts directory's
 | `negative-stale-runtime.routability-experiment.json` | `negative-stale-runtime/routability-experiment.json` |
 | `current-policy.experiment-policy.json` | `positive-current/experiment-policy.json` (the same bytes as the stale run's copy) |
 | `historical-all-layer.experiment-policy.json` | `positive-historical/experiment-policy.json` |
+| `positive-current.effective-configuration.json` | `positive-current/work/effective-configuration.json` |
+| `positive-current.effective-configuration-request.json` | `positive-current/work/effective-configuration-request.json` |
+| `positive-historical.effective-configuration.json` | `positive-historical/work/effective-configuration.json` |
+| `positive-historical.effective-configuration-request.json` | `positive-historical/work/effective-configuration-request.json` |
 
 `receipts.json` is agent-ee's record of each run's `result.json` `experiment`
-binding and of the producer schema digest (`schemas/routability-experiment-1.json`
+binding, of each positive run's `result.json` `process.effective_configuration`
+binding (the sealed manifests the adapter requalifies an eligible receipt from), and of the producer schema digest (`schemas/routability-experiment-1.json`
 at that commit). No board, schematic, library or other design file is copied.
 The receipts contain hashes, router configuration and the producer host's
 absolute paths. `docs/file-origins.json` classifies them as origin T17 and leaves

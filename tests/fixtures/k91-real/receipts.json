@@ -16,6 +16,25 @@
         "path": "routability-experiment.json",
         "sha256": "cea85ed8b5f274e48446330883c16e897e61edc54bf5a54b30bb351947064bea",
         "schema": "routability-experiment/1"
+      },
+      "effective_configuration": "positive-current.effective-configuration.json",
+      "effective_configuration_request": "positive-current.effective-configuration-request.json",
+      "result_effective_configuration": {
+        "status": "bound",
+        "reasons": [],
+        "replay_authority": false,
+        "record": "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/positive-current/work/effective-configuration.json",
+        "sha256": "39db7c50b20c8f24a58a3e10c58b80c3816f943d52e2d2f2329256bb289006bd",
+        "coverage": "resolved_outer_batch_only",
+        "output_stage": "backend_output_before_wrapper_lock_restore_and_native_refill",
+        "named_inventory_binding": "native_input_facts",
+        "numeric_net_ids": "captured_only_not_independently_validated",
+        "capture_status": "complete",
+        "captured_input_sha256": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478",
+        "backend_output_sha256": "007b6908745ab62121064ca8a696584b0fde3d081d12b31c4b7c6a5eabfeceb8",
+        "request_sha256": "b20fb79a6bff398e6ebdd8238a011b545f519c57c4a09c613a2e82118f90d35d",
+        "settings_sha256": "24629070cd2a6a4407602439ed46a1bf1df9facee6cb9cd899b2daa99c4ccdb3",
+        "wrapper_output_board_sha256": "007b6908745ab62121064ca8a696584b0fde3d081d12b31c4b7c6a5eabfeceb8"
       }
     },
     "positive-historical": {
@@ -25,6 +44,25 @@
         "path": "routability-experiment.json",
         "sha256": "4be90bda12f63e965d13dcc8d40aa84ebd917301c18a73b2e9ef06eef5a781bd",
         "schema": "routability-experiment/1"
+      },
+      "effective_configuration": "positive-historical.effective-configuration.json",
+      "effective_configuration_request": "positive-historical.effective-configuration-request.json",
+      "result_effective_configuration": {
+        "status": "bound",
+        "reasons": [],
+        "replay_authority": false,
+        "record": "/tmp/agent-ee-burndown-20261017/workers/krt91c-experiment/scratch/artifacts/positive-historical/work/effective-configuration.json",
+        "sha256": "602114303a6e37cd6ed3fde6371aeb7e373786e349f9820e388e9d4152f77314",
+        "coverage": "resolved_outer_batch_only",
+        "output_stage": "backend_output_before_wrapper_lock_restore_and_native_refill",
+        "named_inventory_binding": "native_input_facts",
+        "numeric_net_ids": "captured_only_not_independently_validated",
+        "capture_status": "complete",
+        "captured_input_sha256": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478",
+        "backend_output_sha256": "47671d8db1d1658e18019fc16fecef07d27010de24b50e5298976b6d62177259",
+        "request_sha256": "756ff0106ac5d2fd3ee70a0a211115d6703fc70ee92db74e8ddc81af37b11d9d",
+        "settings_sha256": "2ab318d56dc22340a739237cb28920a732b3621ef1152ccb378ccfeb810fb5a0",
+        "wrapper_output_board_sha256": "47671d8db1d1658e18019fc16fecef07d27010de24b50e5298976b6d62177259"
       }
     },
     "negative-stale-runtime": {

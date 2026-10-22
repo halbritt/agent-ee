@@ -742,7 +742,15 @@ Experiment evidence is never dropped and is never qualified.
       which forbids other properties). Also malformed: `replay_authority` other
       than `false`, a `comparison_eligible` that is not a boolean true exactly
       when `ineligible_reasons` is empty, `artifacts` digests that are not hex,
-      and an `identity_sha256` that is not hex. Repeated keys are malformed
+      and an `identity_sha256` that is not hex. Any other member outside the
+      producer schema is malformed too: `EXPERIMENT_SHAPE` restates every
+      required member, JSON type, constant, enumeration, sha256 leaf and closed
+      object of that schema file, and the stdlib `_shape_error` reports the first
+      path that leaves it (for example `policy_qualification` that is not an
+      object, or an `outcome` with an unsupported field). An eligible receipt
+      whose retained `attempt.json`, `facts/reference-facts.json` or
+      `validate/candidate-facts.json` is not a JSON object of the producer's
+      shape is malformed (K91 review EI4). Repeated keys are malformed
       too, never resolved to their last value: a repeated `experiment` key in
       `result.json` or a repeated key in its reference, and any repeated key in
       the sidecar. So are numbers the parser cannot represent: NaN, Infinity, a
@@ -777,7 +785,35 @@ Experiment evidence is never dropped and is never qualified.
       receipt not `comparison_eligible`. One example is kicad-route's
       stale-runtime negative, which lacks effective-configuration identity.
       The record keeps `identity_sha256`, `comparison_eligible` and
-      `ineligible_reasons`, and the detail quotes the reasons.
+      `ineligible_reasons`, and the detail quotes the reasons;
+    - `unqualified`: the sidecar claims `comparison_eligible`, but this
+      boundary cannot requalify the claim from the retained bytes. The flag
+      and the stored `bound` status are claims, never authority. `_requalify`
+      re-derives the obligations:
+      - the sidecar's `artifacts` must seal `work/effective-configuration.json`
+        and `work/effective-configuration-request.json`, and the retained
+        files must be those bytes (otherwise `missing` or `tampered`);
+      - the manifest must cover exactly one outer batch and no later subrun
+        (`execution` `{outer_batches: 1, later_subruns: 0}`), have coverage
+        `resolved_outer_batch_only`, a `complete` capture without `issues`,
+        and a `request_sha256` that is the retained request's digest. Its
+        `source_sha256` and `producer_sha256` must equal the request's
+        (K91 review EI2);
+      - the sidecar's `identity.effective` and `identity.build` must restate
+        the manifest, and `result.json` `process.effective_configuration`
+        must bind it (status `bound`, both digests, coverage and capture);
+      - the origin must be a single run: depth 0, no predecessors (their
+        receipts are not retained here, so a chain is unsupported), a root
+        fingerprint equal to the sidecar's input fingerprint, and an
+        `attempt.json` `source_dir` that is not the run's own
+        `candidate_dir`. That last case is a self-cycle that kicad-route
+        truncates to depth 0 (K91 review EI3). The run is named by the
+        adapter's discovered attempt directory and by the manifest's
+        `requested_output`.
+
+      The record keeps `identity_sha256`, `comparison_eligible` and
+      `ineligible_reasons` as observed. A wrong manifest or request schema is
+      `incompatible_schema`.
 
     The record keeps the reference and, when a root sidecar was retained, its
     path and recomputed hash. For `unbound`, that is the unbound file.
@@ -794,7 +830,8 @@ Experiment evidence is never dropped and is never qualified.
   attempt that is not a contradiction, timeout or cancellation.
 - **Real producer replay.** The sidecar shape follows the real receipts of
   kicad-route `4f06368f`, the KICADROUTE-91 producer that krt91c-experiment
-  built for agent-507. Three sidecars and two policy copies from that run are
+  built for agent-507. Three sidecars, two policy copies and the positives' sealed
+  manifests from that run are
   committed byte for byte in `tests/fixtures/k91-real` (origin T17; see its
   `PROVENANCE.md`). `RealReceiptReplayTest` in
   `tests/test_routing_experiment_boundary.py` replays them through `step`,
@@ -802,13 +839,24 @@ Experiment evidence is never dropped and is never qualified.
   - the current-policy and historical-all-layer positives are retained and
     adopted, unqualified;
   - the stale-runtime receipt is refused as `ineligible`;
+  - the positives' sealed effective-configuration manifests and requests are
+    committed too, with their `result.json` binding in `receipts.json`. Resealed
+    variants of the positive are refused as `unqualified` or `malformed`:
+    several batches, a wrong request hash, an incomplete capture, a self-cycle
+    or a predecessor chain (EI2, EI3). So are list-shaped attempt records and
+    facts (EI4) and members outside the producer schema (review H2, ee442e);
   - edited, re-bound, re-ordered, missing and out-of-range variants are
     refused as `tampered`, `missing`, `incompatible_policy` or `malformed`;
   - each receipt under the other declared policy is `incompatible_policy`.
 
   The fixture router routes agent-ee's own fixture design, so the sidecar's
   internal board and run identities are retained provenance. agent-ee does not
-  re-derive them; only `kicad_route.experiment.verify` can. The `K91_REVIEWED`
+  re-derive them; only `kicad_route.experiment.verify` can. In particular the
+  sidecar's `attempt.json`, facts and `validate/` digests and its candidate and
+  input identities are not compared with the adapter's own run: a sidecar
+  transplanted from another run with the same declared policy and its sealed
+  manifests is still retained, unqualified. Requalification reads the
+  adapter's own retained attempt record and facts. The `K91_REVIEWED`
   hook records the producer commit, the sha256 of its schema file and the
   positive receipt's file and identity digests. `EXPERIMENT_CONTRACT` names
   the producer as unpinned and not qualified. Two contract points have still

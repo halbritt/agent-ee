@@ -441,7 +441,10 @@ TRACK_IDENTITY = ('kind', 'layer', 'net', 'width', 'start', 'mid', 'end')
 # copy, which kicad-route writes as json.dumps(policy, indent=2) + newline. A
 # receipt the producer marks not comparison_eligible is refused as 'ineligible'
 # when the coordinator declared a policy (the experiment it asked for is not a
-# valid one) and otherwise retained with that marking. Nothing is pinned or
+# valid one) and otherwise retained with that marking. A receipt that claims
+# comparison_eligible is requalified by _requalify from the retained bytes and
+# refused when that proof is missing or unsupported; the flag is never
+# authority. The whole sidecar must fit EXPERIMENT_SHAPE. Nothing is pinned or
 # qualified by this: EXPERIMENT_CONTRACT names the unpinned producer.
 EXPERIMENT_SCHEMA = 'routability-experiment/1'
 EXPERIMENT_POLICY_SCHEMA = 'routability-policy/1'
@@ -456,6 +459,17 @@ EXPERIMENT_SIDECAR_KEYS = {'schema', 'identity', 'identity_sha256', 'comparison_
 EXPERIMENT_IDENTITY_KEYS = {'input', 'origin', 'scope', 'protection', 'request', 'policy', 'budgets', 'native',
                             'build', 'effective'}
 EXPERIMENT_JSON_DEPTH = 64
+# The effective-configuration manifest and request an eligible sidecar must seal
+# (kicad-route experiment.CONFIGURATION and its request), the one coverage and
+# execution this boundary can requalify, and the manifest fields the sealed
+# identity.effective restates verbatim.
+EXPERIMENT_MANIFESTS = ('work/effective-configuration.json', 'work/effective-configuration-request.json')
+EXPERIMENT_MANIFEST_SCHEMA = 'kicad-route/effective-configuration/1'
+EXPERIMENT_REQUEST_SCHEMA = 'kicad-route/effective-configuration-request/1'
+EXPERIMENT_COVERAGE = 'resolved_outer_batch_only'
+EXPERIMENT_EXECUTION = {'outer_batches': 1, 'later_subruns': 0}
+EXPERIMENT_RESTATED = ('schema', 'capture_status', 'coverage', 'stage', 'execution', 'not_captured',
+                       'configuration', 'effective_environment', 'runtime_policy', 'scope')
 EXPERIMENT_POLICY_FILE = 'agent-ee-experiment-policy.json'
 EXPERIMENT_SIDECAR = 'routability-experiment.json'
 EXPERIMENT_POLICY_COPY = 'experiment-policy.json'
@@ -463,8 +477,126 @@ EXPERIMENT_CONTRACT = ('agent-ee/AGENTEE-442: routability-experiment/1 as writte
                        '4f06368fbd68bab44cbfde839647aa5b3f7ef7c5 (unpinned, not qualified); '
                        'routability-policy/1 five fields')
 EXPERIMENT_REFUSALS = ('missing', 'malformed', 'unknown_schema', 'tampered', 'incompatible_schema',
-                       'incompatible_policy', 'unbound', 'ineligible')
+                       'incompatible_policy', 'unbound', 'ineligible', 'unqualified')
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
+
+
+def _shape(kind, **rules):
+    """One node of EXPERIMENT_SHAPE: JSON type name(s) plus the JSON-schema rules it uses."""
+    return {'type': (kind,) if isinstance(kind, str) else tuple(kind), **rules}
+
+
+def _closed(required, optional=None, nullable=False):
+    """An object with exactly the required keys plus any optional ones (additionalProperties false)."""
+    return _shape(('object', 'null') if nullable else 'object', properties={**required, **(optional or {})},
+                  required=tuple(required), closed=True)
+
+
+# kicad-route 4f06368f schemas/routability-experiment-1.json, restated for the
+# stdlib validator _shape_error: every required member, its JSON type, each
+# const/enum, every sha256 and sha256-or-null leaf, and each object the producer
+# schema closes. A sidecar outside it is malformed evidence (review H2, ee442e).
+_SHA = _shape('string', pattern=SHA256)
+_SHA_OR_NULL = _shape(('string', 'null'), pattern=SHA256)
+_STR_OR_NULL = _shape(('string', 'null'))
+_OBJ_OR_NULL = _shape(('object', 'null'))
+_STRINGS = _shape('array', items=_shape('string'))
+_NAMED_FILE = _closed({'name': _STR_OR_NULL, 'sha256': _SHA_OR_NULL},
+                      {'not_loaded': _shape(('array', 'null'), items=_shape('string'))})
+_EFFECTIVE = _closed({
+    'schema': _shape('string', const='kicad-route/effective-configuration/1'),
+    'capture_status': _shape('string', const='complete'), 'coverage': _shape('string'),
+    'stage': _shape('string'), 'execution': _shape('object'), 'not_captured': _STRINGS,
+    'configuration': _shape('object'), 'effective_environment': _shape('object'),
+    'runtime_policy': _shape('object'), 'rules_sha256': _SHA_OR_NULL,
+    'routing_environment': _shape('object', values=_shape('string')), 'invocation': _STRINGS,
+    'scope': _STRINGS, 'net_inventory_sha256': _SHA_OR_NULL}, nullable=True)
+EXPERIMENT_SHAPE = _closed({
+    'schema': _shape('string', const=EXPERIMENT_SCHEMA),
+    'identity': _closed({
+        'input': _closed({
+            'fingerprint': _STR_OR_NULL, 'board': _NAMED_FILE, 'project': _NAMED_FILE, 'rules': _NAMED_FILE,
+            'files': _shape(('object', 'null'), values=_SHA), 'snapshot_files': _shape(('object', 'null'), values=_SHA),
+            'netlist_sha256': _SHA_OR_NULL, 'nets_sha256': _SHA_OR_NULL, 'placement_sha256': _SHA_OR_NULL,
+            'mechanical_sha256': _SHA_OR_NULL, 'setup_sha256': _SHA_OR_NULL,
+            'native_facts_kicad_version': _STR_OR_NULL, 'source': _OBJ_OR_NULL}),
+        'origin': _closed({
+            'root_input_fingerprint': _STR_OR_NULL, 'depth': _shape('integer', minimum=0),
+            'predecessors': _shape('array', items=_closed({
+                'attempt_sha256': _SHA_OR_NULL, 'candidate_board_sha256': _SHA_OR_NULL,
+                'experiment_sha256': _SHA_OR_NULL}))}),
+        'scope': _OBJ_OR_NULL,
+        'protection': _shape('object', required=('mode', 'only_sha256')),
+        'request': _shape('object'),
+        'policy': _closed({
+            'declared': _OBJ_OR_NULL, 'declared_sha256': _SHA_OR_NULL,
+            'experiment_class': _shape(('string', 'null'), enum=(*EXPERIMENT_CLASSES, None)),
+            'physical_stack': _shape(('array', 'null'), items=_shape('string')),
+            'input_rule_areas_sha256': _SHA_OR_NULL, 'input_rule_areas_coverage': _shape('object')}),
+        'budgets': _closed({'backend_s': _shape(('integer', 'null')), 'stall_s': _shape(('number', 'null')),
+                            'command_budget_s': _shape(('integer', 'null')), 'grace_s': _shape(('number', 'null'))}),
+        'native': _closed({'kicad_cli': _OBJ_OR_NULL, 'pcbnew_build': _STR_OR_NULL,
+                           'terminal_producer': _OBJ_OR_NULL, 'terminal_native_identity': _OBJ_OR_NULL}),
+        'build': _closed({'wrapper': _OBJ_OR_NULL, 'backend': _shape('object'), 'execution_build_id': _STR_OR_NULL,
+                          'executed_source_sha256': _SHA_OR_NULL, 'producer_sha256': _SHA_OR_NULL,
+                          'state_manifest_sha256': _SHA_OR_NULL}),
+        'effective': _EFFECTIVE}),
+    'identity_sha256': _SHA,
+    'comparison_eligible': _shape('boolean'),
+    'ineligible_reasons': _STRINGS,
+    'policy_qualification': _shape('object', required=(
+        'status', 'reasons', 'policy_sha256', 'rule_areas_sha256', 'coverage', 'actual_trace_layers',
+        'actual_via_spans', 'effective_layers', 'effective_via'), properties={
+        'status': _shape('string', enum=('PASS', 'FAIL', 'NOT_RUN')), 'reasons': _STRINGS,
+        'actual_trace_layers': _STRINGS, 'actual_via_spans': _shape('array', items=_STRINGS)}),
+    'native_terminals': _shape('object', values=_shape('object', required=(
+        'board_sha256', 'inventory_sha256', 'terminal_nets', 'incomplete_nets', 'component_deficit'))),
+    'candidate': _closed({
+        'backend_output_board_sha256': _SHA_OR_NULL, 'pre_refill_board_sha256': _SHA_OR_NULL,
+        'candidate_board_sha256': _SHA_OR_NULL, 'candidate_copper_signature': _OBJ_OR_NULL,
+        'validated_board_sha256': _SHA_OR_NULL, 'file_sha256': _SHA_OR_NULL}),
+    'artifacts': _shape('object', values=_SHA_OR_NULL),
+    'outcome': _closed({'process': _STR_OR_NULL, 'routing': _STR_OR_NULL, 'validation': _STR_OR_NULL,
+                        'unconnected_total': _shape(('integer', 'null')),
+                        'backend_runtime_s': _shape(('number', 'null')), 'wall_clock_stop': _shape('boolean')}),
+    'replay_authority': _shape('boolean', const=False)})
+_JSON_TYPES = {'string': (str,), 'null': (type(None),), 'object': (dict,), 'array': (list,), 'boolean': (bool,),
+               'integer': (int,), 'number': (int, float)}
+
+
+def _shape_error(value, shape, where='sidecar'):
+    """The first place value leaves shape, as 'where: what', or None. Iterative, so nesting
+    is bounded by strict_json's EXPERIMENT_JSON_DEPTH rather than by recursion."""
+    stack = [(value, shape, where)]
+    while stack:
+        value, shape, where = stack.pop()
+        # bool is a Python int, never a JSON integer or number.
+        kinds = [k for k in shape['type'] if isinstance(value, _JSON_TYPES[k]) and
+                 not (isinstance(value, bool) and k in ('integer', 'number'))]
+        if not kinds:
+            return f'{where} must be {" or ".join(shape["type"])}'
+        if 'const' in shape and canonical_json(value) != canonical_json(shape['const']):
+            return f'{where} must be {canonical_json(shape["const"])}'
+        if 'enum' in shape and canonical_json(value) not in map(canonical_json, shape['enum']):
+            return f'{where} must be one of {canonical_json(list(shape["enum"]))}'
+        if isinstance(value, str) and 'pattern' in shape and not shape['pattern'].match(value):
+            return f'{where} must be 64 lowercase hex digits'
+        if isinstance(value, int) and 'minimum' in shape and value < shape['minimum']:
+            return f'{where} must be at least {shape["minimum"]}'
+        if isinstance(value, dict):
+            missing = [k for k in shape.get('required', ()) if k not in value]
+            if missing:
+                return f'{where} lacks {", ".join(missing)}'
+            extra = sorted(set(value) - set(shape['properties'])) if shape.get('closed') else []
+            if extra:
+                return f'{where} has unsupported fields {", ".join(extra)}'
+            for key in sorted(value, reverse=True):
+                inner = shape.get('properties', {}).get(key, shape.get('values'))
+                if inner is not None:
+                    stack.append((value[key], inner, f'{where}.{key}'))
+        if isinstance(value, list) and 'items' in shape:
+            stack.extend((item, shape['items'], f'{where}[{i}]') for i, item in reversed(list(enumerate(value))))
+    return None
 
 
 def canonical_json(value):
@@ -664,7 +796,7 @@ def _retained_file(attempt_dir, name):
     return {'path': f'attempt/{name}', 'sha256': digest(path)}
 
 
-def experiment_grade(request, result, attempt_dir):
+def experiment_grade(request, result, attempt_dir, run_name=None):
     """The experiment-evidence record, re-derived from the retained bytes alone.
 
     None when no policy was declared, result.json references no sidecar and
@@ -672,8 +804,11 @@ def experiment_grade(request, result, attempt_dir):
     recomputed identity, 'refused' with one of EXPERIMENT_REFUSALS, or 'absent'
     when the router wrote neither result.json nor a sidecar. The reference binds
     only the run-relative EXPERIMENT_SIDECAR; a retained root file that no valid
-    reference binds is refused as 'unbound' with its recomputed identity. Every
-    record is qualified: false."""
+    reference binds is refused as 'unbound' with its recomputed identity. A
+    sidecar that claims comparison_eligible is requalified by _requalify from
+    the retained attempt record, facts and sealed manifests of the run named
+    run_name, and refused (typed) when that proof is missing or unsupported.
+    Every record is qualified: false."""
     expected = experiment_policy_identity(request.get('experiment_policy'))
     has_ref = isinstance(result, dict) and 'experiment' in result
     orphan = _retained_file(attempt_dir, EXPERIMENT_SIDECAR)
@@ -771,6 +906,10 @@ def experiment_grade(request, result, attempt_dir):
     if expected is not None and body['comparison_eligible'] is not True:
         return refused('ineligible', 'the producer marked the declared experiment not comparison-eligible: '
                        + '; '.join(body['ineligible_reasons'][:8]), **orphan, **eligibility)
+    if body['comparison_eligible']:
+        unqualified = _requalify(body, result, attempt_dir, run_name)
+        if unqualified is not None:
+            return refused(*unqualified, **orphan, **eligibility)
     return {'status': 'retained', **base, 'schema': EXPERIMENT_SCHEMA, 'reference': ref, **orphan, **eligibility}
 
 
@@ -798,8 +937,126 @@ def _sidecar_shape_refusal(body):
         return 'malformed', 'sidecar artifacts must map names to sha256 digests or null'
     if not isinstance(body['identity_sha256'], str) or not SHA256.match(body['identity_sha256']):
         return 'malformed', 'sidecar identity_sha256 is not 64 lowercase hex digits'
-    if body['identity_sha256'] != hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest():
+    error = _shape_error(body, EXPERIMENT_SHAPE)
+    if error is not None:
+        return 'malformed', f'{error} (kicad-route routability-experiment/1)'
+    if body['identity_sha256'] != _sha256_of(identity):
         return 'tampered', 'sidecar identity_sha256 differs from the digest of its identity'
+    return None
+
+
+def _sha256_of(value):
+    """kicad-route common.sha256_of: the digest of the sorted-key json.dumps text."""
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _retained_json(attempt_dir, name, label=None):
+    """(value, None) for a retained regular strict-JSON file, else (None, (reason, detail))."""
+    path = Path(attempt_dir) / name
+    if path.is_symlink() or not path.is_file():
+        return None, ('missing', f'no regular {name} was retained')
+    try:
+        return strict_json_file(path, label or name), None
+    except RequestError as exc:
+        return None, ('malformed', str(exc))
+
+
+def _requalify(body, result, attempt_dir, run_name):
+    """(reason, detail) refusing an eligible-claiming sidecar this boundary cannot requalify, or None.
+
+    The producer's comparison_eligible flag and the stored 'bound' status are
+    claims, not authority (review H1, ee442e). The obligations are re-derived
+    from the retained bytes: the attempt record and the native facts are JSON
+    objects of the producer's shape (EI4); the effective-configuration manifest
+    and its request are the files the sidecar seals, the manifest covers exactly
+    one outer batch and no later subrun, its capture is complete, it binds the
+    retained request by hash, and the sidecar identity and the result.json
+    process binding restate it (EI2); and the origin is a single run whose input
+    is not its own candidate (EI3). A predecessor chain is unsupported here: its
+    receipts are not retained, so it cannot be requalified."""
+    record, refusal = _retained_json(attempt_dir, 'attempt.json')
+    if refusal is not None:
+        return refusal
+    source = record.get('source') if isinstance(record, dict) else None
+    if (not isinstance(record, dict) or not isinstance(record.get('schema'), str) or
+            not record['schema'].startswith('kicad-route/attempt/') or
+            not all(isinstance(record.get(k), str) and record[k] for k in ('board', 'candidate_dir',
+                                                                           'input_fingerprint')) or
+            not isinstance(source, dict) or not isinstance(source.get('source_dir'), str)):
+        return 'malformed', ('attempt.json is not a kicad-route attempt record (an object with schema, board, '
+                             'candidate_dir, input_fingerprint and source.source_dir strings)')
+    for name, lists in (('facts/reference-facts.json', ('tracks', 'vias', 'copper_layers')),
+                        ('validate/candidate-facts.json', ('tracks', 'vias'))):
+        facts, refusal = _retained_json(attempt_dir, name)
+        if refusal is not None:
+            return refusal
+        if (not isinstance(facts, dict) or
+                any(k in facts and (not isinstance(facts[k], list) or
+                                    not all(isinstance(v, dict) for v in facts[k])) for k in lists) or
+                ('footprints' in facts and not isinstance(facts['footprints'], dict))):
+            return 'malformed', f'{name} is not a native facts object (lists of objects, footprints an object)'
+    sealed = body['artifacts']
+    manifest = {}
+    for name in EXPERIMENT_MANIFESTS:
+        kept = _retained_file(attempt_dir, name)
+        if sealed.get(name) is None:
+            return 'unqualified', f'the eligible sidecar seals no {name}'
+        if kept is None:
+            return 'missing', f'the sidecar seals {name} but no regular file was retained'
+        if kept['sha256'] != sealed[name]:
+            return 'tampered', f'{name} sha256 differs from the sidecar artifacts digest'
+        manifest[name], refusal = _retained_json(attempt_dir, name)
+        if refusal is not None:
+            return refusal
+        if not isinstance(manifest[name], dict):
+            return 'malformed', f'{name} is not a JSON object'
+    config, request = (manifest[n] for n in EXPERIMENT_MANIFESTS)
+    config_name, request_name = EXPERIMENT_MANIFESTS
+    if request.get('schema') != EXPERIMENT_REQUEST_SCHEMA:
+        return 'incompatible_schema', f'{request_name} schema is not {EXPERIMENT_REQUEST_SCHEMA}'
+    if config.get('schema') != EXPERIMENT_MANIFEST_SCHEMA:
+        return 'incompatible_schema', f'{config_name} schema is not {EXPERIMENT_MANIFEST_SCHEMA}'
+    if config.get('capture_status') != 'complete' or config.get('issues') != []:
+        return 'unqualified', f'{config_name} capture is not complete without issues'
+    if config.get('coverage') != EXPERIMENT_COVERAGE:
+        return 'unqualified', f'{config_name} coverage is not {EXPERIMENT_COVERAGE}'
+    if canonical_json(config.get('execution')) != canonical_json(EXPERIMENT_EXECUTION):
+        return 'unqualified', (f'{config_name} execution is not one outer batch without later subruns: '
+                               + canonical_json(config.get('execution')))
+    if config.get('request_sha256') != sealed[request_name]:
+        return 'unqualified', f'{config_name} request_sha256 is not the retained {request_name}'
+    for key in ('source_sha256', 'producer_sha256'):
+        if not isinstance(config.get(key), str) or config[key] != request.get(key):
+            return 'unqualified', f'{config_name} {key} differs from {request_name}'
+    effective, build = body['identity']['effective'], body['identity']['build']
+    restated = {**{k: config.get(k) for k in EXPERIMENT_RESTATED},
+                'rules_sha256': _sha256_of(config['rules']) if config.get('rules') is not None else None,
+                'net_inventory_sha256': _sha256_of(config['net_inventory']) if config.get('net_inventory') else None}
+    if (effective is None or any(canonical_json(effective[k]) != canonical_json(v) for k, v in restated.items()) or
+            build['executed_source_sha256'] != config['source_sha256'] or
+            build['producer_sha256'] != config['producer_sha256']):
+        return 'unqualified', f'the sidecar identity does not restate the retained {config_name}'
+    process = result.get('process')
+    binding = process.get('effective_configuration') if isinstance(process, dict) else None
+    if (not isinstance(binding, dict) or binding.get('status') != 'bound' or
+            binding.get('sha256') != sealed[config_name] or binding.get('request_sha256') != sealed[request_name] or
+            binding.get('capture_status') != 'complete' or binding.get('coverage') != EXPERIMENT_COVERAGE):
+        return 'unqualified', f'result.json process.effective_configuration does not bind the retained {config_name}'
+    origin, claimed = body['identity']['origin'], body['identity']['input']['fingerprint']
+    if origin['depth'] != 0 or origin['predecessors']:
+        return 'unqualified', (f'the origin chain has {origin["depth"]} predecessor(s) whose receipts this '
+                               'boundary does not retain')
+    if origin['root_input_fingerprint'] is None or origin['root_input_fingerprint'] != claimed:
+        return 'unqualified', 'origin root_input_fingerprint is not the sidecar input fingerprint'
+    # kicad-route cli.previous_step follows source_dir to RUN/candidate_dir; when RUN is this
+    # run the producer stops at the revisit and reports depth 0 (EI3). The run is named by
+    # the adapter's discovered attempt directory and by the manifest's RUN/work/krt-out/BOARD.
+    src, cand = PurePosixPath(source['source_dir']).parts, PurePosixPath(record['candidate_dir']).parts
+    output = config.get('requested_output')
+    runs = {run_name, PurePosixPath(output).parent.parent.parent.name if isinstance(output, str) else None} - {None, ''}
+    if len(src) > len(cand) and src[-len(cand):] == cand and src[-len(cand) - 1] in runs:
+        return 'unqualified', ('origin is a self-cycle: attempt.json source_dir is this run\'s own candidate '
+                               f'{record["candidate_dir"]}')
     return None
 
 
@@ -2093,7 +2350,7 @@ def attempt(request, layout, cancel=None):
     for sidecar in sidecars:
         report['retained'][f'attempt/{sidecar}'] = digest(routing / 'attempt' / sidecar)
     links += sidecar_links
-    experiment = experiment_grade(request, result, routing / 'attempt')
+    experiment = experiment_grade(request, result, routing / 'attempt', run_dir.name if run_dir else None)
     stdout = (routing / 'kicad-route.stdout').read_bytes().decode('utf-8', 'replace')
     refused_line = refused_output(stdout)
     process = report['process']

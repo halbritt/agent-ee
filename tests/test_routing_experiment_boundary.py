@@ -470,6 +470,20 @@ class ExperimentBoundaryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'experiment policy file differs'):
             routing_adapter.verify(receipt_dir / 'run', layout=self.pin)
 
+    def test_the_synthetic_sidecar_is_schema_valid_and_requalified_like_a_real_one(self):
+        receipt, receipt_dir, _, report = self.receipt({'name': 'complete'}, CURRENT)
+        body = json.loads((receipt_dir / 'run/routing/attempt/routability-experiment.json').read_text())
+        self.assertIsNone(attempt._shape_error(body, attempt.EXPERIMENT_SHAPE))
+        self.assertEqual(report['semantics']['experiment']['status'], 'retained')
+        for scenario, detail in (
+                ({'manifest': {'execution': {'outer_batches': 1, 'later_subruns': 2}}}, 'execution is not one outer'),
+                ({'manifest': {'request_sha256': '0' * 64}}, 'request_sha256 is not the retained'),
+                ({'self_cycle': True}, 'origin is a self-cycle'),
+                ({'identity': {'origin': {'root_input_fingerprint': None, 'depth': 0, 'predecessors': []}}},
+                 'root_input_fingerprint is not the sidecar input fingerprint')):
+            with self.subTest(scenario=scenario):
+                self.assert_refused({'name': 'complete', **scenario}, 'unqualified', detail)
+
     def test_the_contract_names_the_replayed_producer_and_claims_no_qualification(self):
         self.assertIn(K91_REVIEWED['producer_commit'], attempt.EXPERIMENT_CONTRACT)
         self.assertIn('unpinned, not qualified', attempt.EXPERIMENT_CONTRACT)
@@ -543,11 +557,19 @@ class RealReceiptReplayTest(unittest.TestCase):
     POLICY = {'current-policy': json.loads(real('current-policy.experiment-policy.json')),
               'historical-all-layer': json.loads(real('historical-all-layer.experiment-policy.json'))}
 
-    def replay(self, run, policy, copy='default', **scenario):
+    def replay(self, run, policy, copy='default', sidecar=None, **scenario):
+        """The real run's sidecar, policy copy and (for the positives) its sealed manifest,
+        request and result.json binding of them; scenario keys override or extend."""
         spec = self.MANIFEST['runs'][run]
-        sidecar = real(spec['sidecar'])
-        return self.receipt({'name': 'complete', 'replay': {
-            'sidecar': sidecar, 'copy': real(spec['policy_copy']) if copy == 'default' else copy}, **scenario},
+        sealed = {}
+        if 'effective_configuration' in spec:
+            sealed = {'payload': {attempt.EXPERIMENT_MANIFESTS[0]: real(spec['effective_configuration']),
+                                  attempt.EXPERIMENT_MANIFESTS[1]: real(spec['effective_configuration_request'])},
+                      'effective_binding': spec['result_effective_configuration']}
+        payload = {**sealed.get('payload', {}), **scenario.pop('payload', {})}
+        return self.receipt({'name': 'complete', **sealed, 'payload': payload, 'replay': {
+            'sidecar': real(spec['sidecar']) if sidecar is None else sidecar,
+            'copy': real(spec['policy_copy']) if copy == 'default' else copy}, **scenario},
             self.POLICY[policy])
 
     def refused(self, outcome, reason, detail):
@@ -663,6 +685,157 @@ class RealReceiptReplayTest(unittest.TestCase):
                             ('negative-stale-runtime', 'historical-all-layer')):
             with self.subTest(run=run, declared=policy):
                 self.refused(self.replay(run, policy), 'incompatible_policy', 'differs from the declared policy')
+
+    def resealed(self, change_manifest=None, change_body=None, run='positive-current'):
+        """The real positive with its effective-configuration manifest edited and the sidecar
+        resealed as kicad-route's experiment.write would: the manifest digest in artifacts and
+        in the result.json binding, identity.effective restating it, a fresh identity_sha256.
+        This is how the K91 review's EI2/EI3 cases were built (k91-ei-review challenges.py)."""
+        spec = self.MANIFEST['runs'][run]
+        name = attempt.EXPERIMENT_MANIFESTS[0]
+        config = json.loads(real(spec['effective_configuration']))
+        (change_manifest or (lambda doc: None))(config)
+        text = json.dumps(config)
+        body = json.loads(real(spec['sidecar']))
+        body['artifacts'][name] = hashlib.sha256(text.encode()).hexdigest()
+        body['identity']['effective'].update({k: config.get(k) for k in attempt.EXPERIMENT_RESTATED})
+        (change_body or (lambda doc: None))(body)
+        body['identity_sha256'] = attempt._sha256_of(body['identity'])
+        return {'sidecar': json.dumps(body, indent=2, sort_keys=True) + '\n', 'payload': {name: text},
+                'effective_binding': {**spec['result_effective_configuration'],
+                                      'sha256': body['artifacts'][name]}}
+
+    def test_eligible_receipts_are_requalified_from_the_sealed_manifest(self):
+        # K91 review EI2: the stored 'bound' status and comparison_eligible are claims. Each
+        # case is resealed self-consistently and the producer still calls it eligible.
+        def batches(doc):
+            doc['execution'] = {'outer_batches': 2, 'later_subruns': 1}
+
+        def request(doc):
+            doc['request_sha256'] = '0' * 64
+
+        def capture(doc):
+            doc.update(capture_status='incomplete', issues=['later unknown'])
+
+        def issues(doc):
+            doc['issues'] = ['later unknown']
+
+        def coverage(doc):
+            doc['coverage'] = 'all_batches'
+
+        def source(doc):
+            doc['source_sha256'] = '1' * 64
+
+        def unrestated(body):
+            body['identity']['effective']['execution'] = {'outer_batches': 1, 'later_subruns': 0}
+        cases = (
+            (self.resealed(batches), 'unqualified', 'execution is not one outer batch without later subruns'),
+            (self.resealed(batches, unrestated), 'unqualified', 'execution is not one outer batch'),
+            (self.resealed(request), 'unqualified', 'request_sha256 is not the retained'),
+            # The resealed identity restates capture_status 'incomplete', which the producer schema forbids.
+            (self.resealed(capture), 'malformed', 'identity.effective.capture_status must be "complete"'),
+            (self.resealed(issues), 'unqualified', 'capture is not complete without issues'),
+            (self.resealed(coverage), 'unqualified', 'coverage is not resolved_outer_batch_only'),
+            (self.resealed(source), 'unqualified', 'source_sha256 differs from'),
+            # The manifest edited without a reseal: not the sealed bytes.
+            ({'payload': {attempt.EXPERIMENT_MANIFESTS[0]: '{}'}}, 'tampered',
+             'effective-configuration.json sha256 differs from the sidecar artifacts digest'),
+            ({'payload': {attempt.EXPERIMENT_MANIFESTS[1]: '{}'}}, 'tampered',
+             'effective-configuration-request.json sha256 differs'),
+            # The real sealed manifest, but a result.json binding that does not bind it.
+            ({'effective_binding': {**self.MANIFEST['runs']['positive-current']['result_effective_configuration'],
+                                    'status': 'mismatch'}}, 'unqualified',
+             'process.effective_configuration does not bind'),
+            ({'effective_binding': {**self.MANIFEST['runs']['positive-current']['result_effective_configuration'],
+                                    'sha256': '2' * 64}}, 'unqualified',
+             'process.effective_configuration does not bind'))
+        for scenario, reason, detail in cases:
+            with self.subTest(detail=detail, reason=reason):
+                record = self.refused(self.replay('positive-current', 'current-policy', **scenario), reason, detail)
+                if reason == 'malformed':
+                    # Outside the producer schema: only the file identity is retained.
+                    self.assertNotIn('identity_sha256', record)
+                    continue
+                # The observed claim and identity are retained with the refusal.
+                self.assertTrue(record['comparison_eligible'])
+                self.assertEqual(record['identity_sha256'], json.loads(
+                    scenario.get('sidecar') or real('positive-current.routability-experiment.json'))['identity_sha256'])
+
+    def test_an_origin_chain_this_boundary_cannot_requalify_is_refused(self):
+        # K91 review EI3: a source_dir that is the run's own candidate truncates the producer's
+        # origin chain to depth 0 and stays eligible. A real predecessor chain is unsupported here.
+        receipt_dir = None
+        for scenario, detail in (
+                ({'self_cycle': True}, "origin is a self-cycle: attempt.json source_dir is this run's own candidate"),
+                (self.resealed(change_body=lambda b: b['identity']['origin'].update(depth=1, predecessors=[
+                    {'attempt_sha256': '3' * 64, 'candidate_board_sha256': None, 'experiment_sha256': None}])),
+                 'the origin chain has 1 predecessor(s)'),
+                (self.resealed(change_body=lambda b: b['identity']['origin'].update(root_input_fingerprint='x')),
+                 'root_input_fingerprint is not the sidecar input fingerprint')):
+            with self.subTest(detail=detail):
+                outcome = self.replay('positive-current', 'current-policy', **scenario)
+                record = self.refused(outcome, 'unqualified', detail)
+                receipt_dir = outcome[1]
+                if 'self_cycle' in scenario:
+                    # The decision is re-derived from the sealed retained bytes alone.
+                    shutil.rmtree(receipt_dir / 'run/routing/out')
+                    self.assertEqual(self.verify(receipt_dir, outcome[0])['experiment'], record)
+
+    def test_malformed_attempt_or_facts_are_typed_refusals(self):
+        # K91 review EI4: a non-empty JSON list where the producer reads an object raised an
+        # AttributeError in kicad-route's qualify; here it is a typed refusal.
+        attempt_detail = 'attempt.json is not a kicad-route attempt record'
+        for rel, text, detail in (
+                ('attempt.json', '[{"wrong":"shape"}]', attempt_detail),
+                ('attempt.json', '{"schema":"kicad-route/attempt/1"}', attempt_detail),
+                ('attempt.json', '{"a":1,"a":2}', 'duplicate key "a"'),
+                ('validate/candidate-facts.json', '[{"wrong":"shape"}]', 'candidate-facts.json is not a native facts'),
+                ('validate/candidate-facts.json', '{"tracks":{"0":1}}', 'candidate-facts.json is not a native facts'),
+                ('facts/reference-facts.json', '[{"wrong":"shape"}]', 'reference-facts.json is not a native facts'),
+                ('facts/reference-facts.json', '{"footprints":[]}', 'reference-facts.json is not a native facts'),
+                ('validate/candidate-facts.json', 'NaN', 'non-finite number NaN')):
+            with self.subTest(rel=rel, text=text):
+                self.refused(self.replay('positive-current', 'current-policy', payload={rel: text}),
+                             'malformed', detail)
+
+    def test_schema_invalid_real_sidecar_members_are_malformed(self):
+        # Review H2 (ee442e): members outside the producer schema, with identity untouched.
+        base = json.loads(real('positive-current.routability-experiment.json'))
+        cases = [('policy_qualification', [], 'sidecar.policy_qualification must be object'),
+                 ('candidate', 42, 'sidecar.candidate must be object'),
+                 ('native_terminals', 'wrong', 'sidecar.native_terminals must be object'),
+                 ('outcome', False, 'sidecar.outcome must be object')]
+
+        def nested(path, value):
+            body = json.loads(json.dumps(base))
+            parent = body
+            for key in path[:-1]:
+                parent = parent[key]
+            parent[path[-1]] = value
+            return body
+        cases += [(('outcome', 'wall_clock_stop'), 0, 'sidecar.outcome.wall_clock_stop must be boolean'),
+                  (('candidate', 'file_sha256'), 'X' * 64, 'sidecar.candidate.file_sha256 must be 64 lowercase hex'),
+                  (('policy_qualification', 'status'), 'MAYBE', 'sidecar.policy_qualification.status must be one of'),
+                  (('native_terminals', 'candidate', 'terminal_nets'), None, None),
+                  (('outcome', 'extra'), 1, 'sidecar.outcome has unsupported fields extra'),
+                  (('artifacts', 'attempt.json'), 7, 'sidecar artifacts must map names to sha256 digests')]
+        for field, value, detail in cases:
+            with self.subTest(field=field):
+                if isinstance(field, tuple):
+                    body = nested(field, value)
+                    if detail is None:
+                        del body['native_terminals']['candidate']['terminal_nets']
+                        detail = 'sidecar.native_terminals.candidate lacks terminal_nets'
+                else:
+                    body = {**base, field: value}
+                self.assertEqual(body['identity_sha256'], attempt._sha256_of(body['identity']))
+                record = self.refused(self.replay('positive-current', 'current-policy',
+                                                  sidecar=json.dumps(body, indent=2) + '\n'), 'malformed', detail)
+                self.assertIsNone(record.get('identity_sha256'))
+
+    def test_the_real_shapes_conform_to_the_restated_producer_schema(self):
+        for run in self.MANIFEST['runs'].values():
+            self.assertIsNone(attempt._shape_error(json.loads(real(run['sidecar'])), attempt.EXPERIMENT_SHAPE))
 
 
 class NotRunExperimentTest(unittest.TestCase):

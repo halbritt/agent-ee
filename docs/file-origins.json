@@ -413,7 +413,7 @@
     },
     "T17": {
       "name": "kicad-route routability-experiment/1 receipts",
-      "description": "Byte copies of three routability-experiment/1 sidecars and two experiment-policy.json copies written by kicad-route 4f06368f on its own fixtures/route_demo board, replayed by AGENTEE-442 through the routing adapter. They hold hashes, router configuration and producer-host paths, with no design file bytes.",
+      "description": "Byte copies of three routability-experiment/1 sidecars, two experiment-policy.json copies and the two positive runs' work/effective-configuration manifests and requests written by kicad-route 4f06368f on its own fixtures/route_demo board, replayed by AGENTEE-442 through the routing adapter. They hold hashes, router configuration and producer-host paths, with no design file bytes.",
       "upstream": {
         "repository": "https://github.com/halbritt/kicad-route",
         "local_path": "/home/halbritt/git/kicad-route",
