@@ -1881,7 +1881,9 @@ and captured manufacturer-record integrity failures retain unknown coverage.
 A sourced bound below the necessary copper floor is `locality_infeasible`.
 Block candidates preserve source records and accept truthful advisory `info`
 through production, validation and independent admission regrading; hard defects
-and unknown coverage still refuse. See [blocks](blocks.md).
+and unknown coverage still refuse. Deferred block-locality rows retain those
+advisories and report `info` for above-bound advisory measurements
+(AGENTEE-402). See [blocks](blocks.md).
 
 AGENTEE-330 permits different `supply.from` and `return.from` references,
 retaining the same capacitor destination and exact pad/net/UUID validation.

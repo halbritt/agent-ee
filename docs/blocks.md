@@ -600,7 +600,10 @@ steps. `block_arrangement` records:
 - `rules`: every block rule graded with its enforcement;
 - `deferred_grading`: every deferred obligation and group of every block, with
   its status on the complete plan. A deferred obligation that is not measured is
-  `unknown`, which fails the plan.
+  `unknown`, which fails the plan. Exceeded locality advisories produce `info` rows
+  with the original `advisories` (including `exceeded`); they do not reject the
+  plan. Unexceeded advisory rows retain `pass` and include their advisories.
+  Defects or unavailable measurements still reject it (AGENTEE-402).
 
 ### Runner request
 

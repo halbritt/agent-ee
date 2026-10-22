@@ -1012,8 +1012,13 @@ def _deferred_grading(plan, admitted):
         for oid in deferred['obligations']:
             measured = [m for m in locality['measured'] if m['obligation'] == oid]
             bad = [d for d in locality['defects'] + locality['unknown'] if d.get('obligation') == oid]
-            out.append({'block': bid, 'kind': 'obligation', 'id': oid, 'measured': len(measured),
-                        'status': 'pass' if measured and not bad else 'defect' if bad else 'unknown'})
+            advisories = [a for a in locality.get('advisories', []) if a.get('obligation') == oid]
+            row = {'block': bid, 'kind': 'obligation', 'id': oid, 'measured': len(measured),
+                   'status': ('defect' if bad else 'unknown' if not measured else
+                              'info' if any(a.get('exceeded') for a in advisories) else 'pass')}
+            if advisories:
+                row['advisories'] = copy.deepcopy(advisories)
+            out.append(row)
         for gid in deferred['groups']:
             measured = [m for m in groups.get('measured', []) if m.get('group') == gid]
             bad = [d for d in placement_groups.violations(groups) if d.get('group') == gid]
@@ -1220,7 +1225,7 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     plan['policy'] = copy.deepcopy(effective)
     plan['block_arrangement'] = record
     failed = [r for r in rows if r['enforcement'] == 'hard' and r['status'] != 'pass']
-    if failed or any(d['status'] != 'pass' for d in record['deferred_grading']):
+    if failed or any(d['status'] not in ('pass', 'info') for d in record['deferred_grading']):
         return failure('judge_rejected', 'complete plan failed a hard block rule or a deferred obligation',
                        plan['steps_used'])
     return plan
