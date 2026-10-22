@@ -237,8 +237,9 @@ Authenticated summaries verify that digest and replay retained sealed evidence
 before scoring; recorded failed generation never passes. Unanchored summaries
 remain diagnostic local consistency checks.
 Unsafe writer outputs remain failed attempts with unknown checks.
-Its original native fixture qualifies the
-harness; importing the ten unlicensed upstream prompts remains blocked.
+Its committed original prompt series qualifies the
+harness and, by a relayed owner decision, substitutes for the ten unlicensed
+upstream prompts, which stay private and uncommitted.
 
 The [false-positive calibration](docs/fp-calibration.md) measures the reviewers
 themselves. It shows each profile reviewer pairs made from a design and its seeded

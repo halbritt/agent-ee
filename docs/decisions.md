@@ -474,6 +474,19 @@ execution or task metadata. The external freeze assumes trusted records at the
 time of freezing; it does not create an owner evidence store or repair already
 forged history. See [the freeze contract](generation-benchmark.md#authenticated-series-freeze).
 
+## Generation benchmark prompt substitute (AGENTEE-69)
+
+Relayed decision (owner-relayed, agent-drafted record; AGENTEE-69 Plane comment,
+2026-10-22), verbatim:
+
+> "Owner decision (2026-10-22, owner via agent-519 decision quiz): KEEP PRIVATE: the ten unlicensed tscircuit prompts are not committed. Accept the committed original prompt series as the substitute and amend criterion 2 accordingly."
+
+Criterion 2 now requires the committed original prompt series, instead of the
+ten tscircuit prompts, to give every acceptance criterion at least one check ID
+or be refused by scope/3. Harness behavior and verdicts are unchanged. The
+wording of this entry is agent-drafted. See
+[the feature page](generation-benchmark.md).
+
 ## Historical datasheet acquisition is separate from live capture (AGENTEE-306)
 
 Retained PDFs can have a hash-bound URL and capture time without any recorded
