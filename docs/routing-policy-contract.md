@@ -252,10 +252,11 @@ identity, or refused with a typed reason. The
 [routing adapter](routing-adapter.md#routability-experiment-evidence-agentee-442)
 page describes the record. The declaration is the reviewed five-field
 `routability-policy/1` of kicad-route `a5fa636d`. The reference is bound only to
-the run-relative `routability-experiment.json`. The sidecar fields read (`schema`,
-`identity.policy`) and the retained `experiment-policy.json` copy are provisional
-until the reviewed K91 schema exists. The pin does not produce this evidence, so steps 1-3 and 5-7 below still
-apply when agent-ee re-pins.
+the run-relative `routability-experiment.json`. The sidecar shape and the
+retained `experiment-policy.json` copy are those of kicad-route `4f06368f`, whose
+real receipts the boundary tests replay. That producer is not pinned or
+qualified. The pin does not produce this evidence, so steps 1-3 and 5-7 below
+still apply when agent-ee re-pins.
 
 The code pin is still byte-exact over every tracked `bin/` and `src/` file:
 276 files, including `src/kicad_route/campaign.py`

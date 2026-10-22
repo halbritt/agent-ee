@@ -1,0 +1,266 @@
+{
+  "artifacts": {
+    "attempt.json": "b6c8a0fff8472a1091e04e12cc098a1aa0a1e6909c562e822559c4ec2e7e14b9",
+    "experiment-policy.json": "bbba9c43d37ecb7fa96ba3ce7cf387656f7f6cde52dd2143651150c6e982c59e",
+    "facts/reference-facts.json": "186683be82a4b5a47a108f93f1b943a8fce01f0e07e56cff94979e649985b95d",
+    "validate/candidate-drc.json": "b53856b89b321a4a429850498fbde56f7d688cfcf1f10025bf4e7818c93edbde",
+    "validate/candidate-facts.json": "02a52f624ab6afd1661f15c40385d1735404f292879a4673c56f17106d7a8ceb",
+    "validate/candidate-refill.json": "8f89b6db8e1fdcd8142d28673c13c884c09cd0c3131b716afa25ce866f7ccbd3",
+    "validate/candidate-terminal-components.json": "cb717e7e0e9f7d1e385fa2376625237117085904be35ec5b7692a44620e93716",
+    "validate/new-findings.json": "5ff88c9f28b8acc5f2c72b470a49c028151205a12102b200c793d6ef1aeebbbd",
+    "validate/pour-integrity.json": "42a4ed4eaf2b642f9f64aa6108ff09046405a085759fa8f9bfd0b1a9c3ca3e8f",
+    "validate/preservation.json": "e219468c00e7d664237279b3b27a17042f8545e4fd2f2b8ae7ba2e99a091c9a6",
+    "validate/reference-terminal-components.json": "9eec51500f566ea592600c0fa9d80418e6bb3bbf2722d20e68c3b52cb1eb8f7c",
+    "work/effective-configuration-request.json": "7bee4e4faf94d6fa3ebcc3f551aef973ccf83db7bc460015a69c6a02005b5a73",
+    "work/effective-configuration.json": "53270d056c78a774e75e77da8b3a38b65cdeb3acb7c9845742eddc19d1524dd1"
+  },
+  "candidate": {
+    "backend_output_board_sha256": "c1c4d1036f269d59c22617a3d43d0d6ee05bccd645be9fa8bcb4faf5c70b049d",
+    "candidate_board_sha256": "1022408858c7adc1c34aa531b5588e9703e4428b3bee7025ea401eaef2ee766a",
+    "candidate_copper_signature": {
+      "sha256": "98ed71c6f0a622a4c0ec89b50cd45f58db2ee8c67a1bb58088757d0c2495b394",
+      "tracks": 8,
+      "vias": 2
+    },
+    "file_sha256": "1022408858c7adc1c34aa531b5588e9703e4428b3bee7025ea401eaef2ee766a",
+    "pre_refill_board_sha256": "c1c4d1036f269d59c22617a3d43d0d6ee05bccd645be9fa8bcb4faf5c70b049d",
+    "validated_board_sha256": "1022408858c7adc1c34aa531b5588e9703e4428b3bee7025ea401eaef2ee766a"
+  },
+  "comparison_eligible": false,
+  "identity": {
+    "budgets": {
+      "backend_s": 20,
+      "command_budget_s": 20,
+      "grace_s": 30,
+      "stall_s": null
+    },
+    "build": {
+      "backend": {
+        "commit": "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5",
+        "extension_module_sha256": "4ef91e43ebcdb709f6cab68a6e31422ef959b37aa92f2b6a25821d5d8ef48126",
+        "grid_router_version": "0.23.1",
+        "name": "builtin",
+        "source_sha256": "3c91fe5c012087783c1e4543b053907c4e3cca2ca36de66c8f3ee8165c354e23",
+        "tag": "owned-3c91fe5c0120",
+        "venv_packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae",
+        "venv_python_version": "3.14.4",
+        "version": "0.23.1"
+      },
+      "executed_source_sha256": null,
+      "execution_build_id": "c787ba97f3b8c4dc2c6030898e18da92c2d730db5231d8486fd7be51aae0e1b1",
+      "producer_sha256": null,
+      "state_manifest_sha256": "ae1af88d27b16a3bba4fbd65e648b544bcb74ee528799a17ea9327ac34719722",
+      "wrapper": {
+        "commit": "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5",
+        "dirty": false,
+        "version": "4f06368"
+      }
+    },
+    "effective": null,
+    "input": {
+      "board": {
+        "name": "route_demo.kicad_pcb",
+        "sha256": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478"
+      },
+      "files": {
+        "fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+        "route_demo.kicad_dru": "86f29647af18453e03b6a7b4ad7b7fadbf5c58d11810a86ca8594bd3ccb729cf",
+        "route_demo.kicad_pcb": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478",
+        "route_demo.kicad_pro": "9e37d0fc2b30552f6b3c29b38cb6631a0a851216b625f7146b6655dd6671e550",
+        "route_demo.kicad_sch": "a0a85566d95f8e669046615b8fd939739a549c5de492d73a0d6ede74b734c0b5",
+        "sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1"
+      },
+      "fingerprint": "ba2f343c49e2f97183bc15cf4dadbeef7e186fed4a1a935b3163964714aaf732",
+      "mechanical_sha256": "e3660c52a35088664b53a2500b0434b4bb6cfa6e73abcce4c241c741a4232950",
+      "native_facts_kicad_version": "10.0.7-10.0.7~ubuntu26.04.1",
+      "netlist_sha256": "ec4d9fa1fba50228e08eda8eeff0f7b4bbb7ec0bfb831d0896aa059d9be7f302",
+      "nets_sha256": "5601fe2ec1a7196416cfeac8a83f32a9cb1a9d992bf2aa16ff72ac273ef10554",
+      "placement_sha256": "503ffe40f7fec06a0478cd375f4dea8174d376b90f780289dcdc626179dd0266",
+      "project": {
+        "name": "route_demo.kicad_pro",
+        "sha256": "9e37d0fc2b30552f6b3c29b38cb6631a0a851216b625f7146b6655dd6671e550"
+      },
+      "rules": {
+        "name": "route_demo.kicad_dru",
+        "not_loaded": [],
+        "sha256": "86f29647af18453e03b6a7b4ad7b7fadbf5c58d11810a86ca8594bd3ccb729cf"
+      },
+      "setup_sha256": "ac04ec90d7608d53e83621776d343da3898c560d948c85ae022eee5b927ec711",
+      "snapshot_files": {
+        "fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+        "route_demo.kicad_dru": "86f29647af18453e03b6a7b4ad7b7fadbf5c58d11810a86ca8594bd3ccb729cf",
+        "route_demo.kicad_pcb": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478",
+        "route_demo.kicad_pro": "9e37d0fc2b30552f6b3c29b38cb6631a0a851216b625f7146b6655dd6671e550",
+        "route_demo.kicad_sch": "a0a85566d95f8e669046615b8fd939739a549c5de492d73a0d6ede74b734c0b5",
+        "sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1"
+      },
+      "source": {
+        "source": "working tree",
+        "source_dir": "/home/halbritt/.cache/agent-worktrees/kicad-route/krt91c-experiment/fixtures/route_demo",
+        "source_dirty_files": [],
+        "source_git_head": "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5"
+      }
+    },
+    "native": {
+      "kicad_cli": {
+        "path": "/usr/bin/kicad-cli",
+        "sha256": "e1757e73d993c99d763b7b388ceedc785f1b5ec2d8d9e4011a2dc980f2447c89",
+        "version": "10.0.7"
+      },
+      "pcbnew_build": "10.0.7-10.0.7~ubuntu26.04.1",
+      "terminal_native_identity": {
+        "binding": {
+          "path": "/usr/lib/python3/dist-packages/pcbnew.py",
+          "sha256": "50740b1aeed153349ffe000c7e2c39d9fd75d1cdf49118897f5df5bf957b8458"
+        },
+        "module": {
+          "path": "/usr/bin/_pcbnew.kiface",
+          "sha256": "947720ddd91b45d9fb949c1ec81af532c826ba37d136b750ec03f38a2df6215f"
+        },
+        "python": {
+          "path": "/usr/bin/python3.14",
+          "sha256": "52e0a13e60a981d8c4b6478be2ba5176f69da07948a056bf49cf6f077e30cb41"
+        },
+        "version": "10.0.7-10.0.7~ubuntu26.04.1"
+      },
+      "terminal_producer": {
+        "kicad/facts.py": "d47a3fd2eb40518b7beba5457b679b901150c64e3988f86537d67f373bef8c52",
+        "kicad/native_components.py": "071b5624884586e9a8ea83b7b253c292267b352623f58c3291ddd1ae7ec14fb6",
+        "native_components.py": "fc5099d821f972212b0a2e30bfb15b9755336684902cea933d6db88446b361e0"
+      }
+    },
+    "origin": {
+      "depth": 0,
+      "predecessors": [],
+      "root_input_fingerprint": "ba2f343c49e2f97183bc15cf4dadbeef7e186fed4a1a935b3163964714aaf732"
+    },
+    "policy": {
+      "declared": {
+        "allowed_trace_layers": [
+          "F.Cu",
+          "B.Cu"
+        ],
+        "allowed_via_spans": [
+          [
+            "F.Cu",
+            "B.Cu"
+          ]
+        ],
+        "experiment_class": "current-policy",
+        "rule_areas_sha256": "606967c8ff0d4da456fac35944b9dd0d938080b704e10db57edbcc6977836128",
+        "schema": "routability-policy/1"
+      },
+      "declared_sha256": "ad0d5bd3ec720294b3c662b811f7cf6d3cdbbb3793814cca46ddff0426d4e723",
+      "experiment_class": "current-policy",
+      "input_rule_areas_coverage": {
+        "rule_areas_coverage": "board-and-footprint",
+        "rule_areas_reasons": [],
+        "rule_areas_status": "PASS"
+      },
+      "input_rule_areas_sha256": "606967c8ff0d4da456fac35944b9dd0d938080b704e10db57edbcc6977836128",
+      "physical_stack": [
+        "F.Cu",
+        "B.Cu"
+      ]
+    },
+    "protection": {
+      "mode": "locked",
+      "only_sha256": null
+    },
+    "request": {
+      "backend": "builtin",
+      "backend_args": [],
+      "backend_env": {},
+      "barrier": null,
+      "clearance_margin_mm": null,
+      "default_clearance_mm": 0.4,
+      "experiment_policy_sha256": "ad0d5bd3ec720294b3c662b811f7cf6d3cdbbb3793814cca46ddff0426d4e723",
+      "max_iterations": 5000,
+      "mode": "selected",
+      "net_patterns": [
+        "/SIG_A"
+      ],
+      "netclasses": [],
+      "passes": null,
+      "pour_area_loss_pct": null,
+      "pour_min_spokes": null,
+      "protect": "locked",
+      "reserve_spokes": null,
+      "rule_floor_sha256": null
+    },
+    "scope": {
+      "mode": "selected",
+      "net_patterns": [
+        "/SIG_A"
+      ],
+      "netclasses": [],
+      "nets": [
+        "/SIG_A"
+      ]
+    }
+  },
+  "identity_sha256": "4f9c992435a88fa462b7d6593ddfc00e23a7c83c4ec90b448ecb2c37bb3c1921",
+  "ineligible_reasons": [
+    "effective configuration is mismatch: routing_environment binding mismatch; missing or malformed batch execution coverage",
+    "effective routing layers are absent or exceed the declared trace layers",
+    "missing experiment identity: build.executed_source_sha256",
+    "missing experiment identity: build.producer_sha256",
+    "missing experiment identity: effective.configuration",
+    "missing experiment identity: effective.effective_environment",
+    "missing experiment identity: effective.invocation",
+    "missing experiment identity: effective.net_inventory_sha256",
+    "missing experiment identity: effective.rules_sha256",
+    "missing experiment identity: effective.runtime_policy",
+    "missing experiment identity: effective.scope"
+  ],
+  "native_terminals": {
+    "candidate": {
+      "board_sha256": "1022408858c7adc1c34aa531b5588e9703e4428b3bee7025ea401eaef2ee766a",
+      "component_deficit": 5,
+      "incomplete_nets": 4,
+      "inventory_sha256": "52266ddcc3d9d2aada9c9701a813039e726edcefa699c2f2d368d2835a66423e",
+      "terminal_nets": 6
+    },
+    "reference": {
+      "board_sha256": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478",
+      "component_deficit": 6,
+      "incomplete_nets": 5,
+      "inventory_sha256": "52266ddcc3d9d2aada9c9701a813039e726edcefa699c2f2d368d2835a66423e",
+      "terminal_nets": 6
+    }
+  },
+  "outcome": {
+    "backend_runtime_s": 2.373,
+    "process": "PASS",
+    "routing": "COMPLETE",
+    "unconnected_total": 5,
+    "validation": "PASS",
+    "wall_clock_stop": false
+  },
+  "policy_qualification": {
+    "actual_trace_layers": [
+      "B.Cu",
+      "F.Cu"
+    ],
+    "actual_via_spans": [
+      [
+        "F.Cu",
+        "B.Cu"
+      ]
+    ],
+    "coverage": "board-and-footprint",
+    "effective_layers": null,
+    "effective_via": {
+      "run_via": null,
+      "via_cost": null,
+      "via_drill": null,
+      "via_size": null
+    },
+    "policy_sha256": "ad0d5bd3ec720294b3c662b811f7cf6d3cdbbb3793814cca46ddff0426d4e723",
+    "reasons": [],
+    "rule_areas_sha256": "606967c8ff0d4da456fac35944b9dd0d938080b704e10db57edbcc6977836128",
+    "status": "PASS"
+  },
+  "replay_authority": false,
+  "schema": "routability-experiment/1"
+}

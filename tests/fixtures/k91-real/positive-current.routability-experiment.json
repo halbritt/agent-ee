@@ -1,0 +1,564 @@
+{
+  "artifacts": {
+    "attempt.json": "2189d1c753f83d5349944053ad181cc90449d3e42a6e13696503b9c866aa2769",
+    "experiment-policy.json": "bbba9c43d37ecb7fa96ba3ce7cf387656f7f6cde52dd2143651150c6e982c59e",
+    "facts/reference-facts.json": "186683be82a4b5a47a108f93f1b943a8fce01f0e07e56cff94979e649985b95d",
+    "validate/candidate-drc.json": "e13d6f7867696fc31091f705498b554ea9cb948201a2c6b2357c85bc4766fa49",
+    "validate/candidate-facts.json": "fa48677469359ed5d43024d3581164aacd465f1c0458c9201df0418187066cf5",
+    "validate/candidate-refill.json": "4d21e418fc4cfd6f420c4699eb2a5719fa4c1aac2cfdb1daac519577096ba616",
+    "validate/candidate-terminal-components.json": "d6990af99a53d3d51bd7d462076c38865819708804406fb60cba2ba5da807128",
+    "validate/new-findings.json": "5ff88c9f28b8acc5f2c72b470a49c028151205a12102b200c793d6ef1aeebbbd",
+    "validate/pour-integrity.json": "4633dd36c4a256d3481d4278b47353994d47ca3c3d362ce3dd5a72a84b78be31",
+    "validate/preservation.json": "e219468c00e7d664237279b3b27a17042f8545e4fd2f2b8ae7ba2e99a091c9a6",
+    "validate/reference-terminal-components.json": "9eec51500f566ea592600c0fa9d80418e6bb3bbf2722d20e68c3b52cb1eb8f7c",
+    "work/effective-configuration-request.json": "b20fb79a6bff398e6ebdd8238a011b545f519c57c4a09c613a2e82118f90d35d",
+    "work/effective-configuration.json": "39db7c50b20c8f24a58a3e10c58b80c3816f943d52e2d2f2329256bb289006bd"
+  },
+  "candidate": {
+    "backend_output_board_sha256": "007b6908745ab62121064ca8a696584b0fde3d081d12b31c4b7c6a5eabfeceb8",
+    "candidate_board_sha256": "641ae6d98b25b556c5587cf357470bd9104ac0723f24cf97b35a60fa148f3cd3",
+    "candidate_copper_signature": {
+      "sha256": "98ed71c6f0a622a4c0ec89b50cd45f58db2ee8c67a1bb58088757d0c2495b394",
+      "tracks": 8,
+      "vias": 2
+    },
+    "file_sha256": "641ae6d98b25b556c5587cf357470bd9104ac0723f24cf97b35a60fa148f3cd3",
+    "pre_refill_board_sha256": "007b6908745ab62121064ca8a696584b0fde3d081d12b31c4b7c6a5eabfeceb8",
+    "validated_board_sha256": "641ae6d98b25b556c5587cf357470bd9104ac0723f24cf97b35a60fa148f3cd3"
+  },
+  "comparison_eligible": true,
+  "identity": {
+    "budgets": {
+      "backend_s": 20,
+      "command_budget_s": 20,
+      "grace_s": 30,
+      "stall_s": null
+    },
+    "build": {
+      "backend": {
+        "commit": "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5",
+        "extension_module_sha256": "96ffef02d0de35dfd7ccea03014bff3e35e84746c8f49b3897f2cc5c912e92a8",
+        "grid_router_version": "0.23.1",
+        "name": "builtin",
+        "source_sha256": "9cfc5d5e9369fd044ac6555afe57bdc4ccc829421e5496d42599c2d4a71951b2",
+        "tag": "owned-9cfc5d5e9369",
+        "venv_packages_sha256": "0dc7c913210ed2d7f0afe996b4f936eaee539c19ca5e6e5d76949d13eaf304ae",
+        "venv_python_version": "3.14.4",
+        "version": "0.23.1"
+      },
+      "executed_source_sha256": "9cfc5d5e9369fd044ac6555afe57bdc4ccc829421e5496d42599c2d4a71951b2",
+      "execution_build_id": "1e622b08ea66ed6b8183107c44bffa772a5fdc20f229239ae77f1fb76f26d46d",
+      "producer_sha256": "fe9254c32d895f936e97f03f34f9a6edbb16fcad086179f62325cf0eeeb1722e",
+      "state_manifest_sha256": "d8db35855f44596cd3143f7b92e4157db9db7d378186cd9529d56a4ef8b971a8",
+      "wrapper": {
+        "commit": "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5",
+        "dirty": false,
+        "version": "4f06368"
+      }
+    },
+    "effective": {
+      "capture_status": "complete",
+      "configuration": {
+        "ac_couple_match": false,
+        "add_teardrops": false,
+        "bga_exclusion_zones": [],
+        "bga_proximity_cost": 0.2,
+        "bga_proximity_radius": 7.0,
+        "board_copper_layers": [
+          "F.Cu",
+          "B.Cu"
+        ],
+        "board_edge_clearance": 0.3,
+        "bus_attraction_bonus": 5000,
+        "bus_attraction_radius": 5.0,
+        "bus_detection_radius": 5.0,
+        "bus_enabled": false,
+        "bus_min_nets": 2,
+        "bus_rip_resistance": 1.0,
+        "clearance": 0.4,
+        "collect_stats": false,
+        "coplanar_gap": 0.0,
+        "coplanar_layer_widths": {},
+        "coplanar_net_ids": {
+          "items": [],
+          "type": "set"
+        },
+        "corridor_waypoints": [],
+        "crossing_layer_check": true,
+        "debug_lines": false,
+        "debug_memory": false,
+        "diff_chamfer_extra": 1.5,
+        "diff_pair_centerline_setback": null,
+        "diff_pair_gap": 0.101,
+        "diff_pair_hybrid_escape": true,
+        "diff_pair_intra_match": false,
+        "diff_pair_setback_floor": null,
+        "diff_pair_setback_no_ladder": false,
+        "diff_pair_uncouple_factor": 6.0,
+        "direction_order": "forward",
+        "direction_preference_cost": 250,
+        "gnd_via_enabled": true,
+        "grid_step": 0.1,
+        "guide_corridor_enabled": false,
+        "guide_corridor_layer": "User.1",
+        "guide_corridor_spacing": 0.0,
+        "heuristic_weight": 2.3,
+        "hole_clearance": 0.0,
+        "hole_to_hole_clearance": 0.2,
+        "impedance_target": null,
+        "keep_away": {
+          "items": [],
+          "type": "tuple"
+        },
+        "keep_away_cost": 0.5,
+        "keep_away_free": 1.5,
+        "keepout_enabled": false,
+        "keepout_layer": "User.2",
+        "layer_clearances": {},
+        "layer_costs": [
+          1.0,
+          3.0
+        ],
+        "layer_widths": {},
+        "layers": [
+          "F.Cu",
+          "B.Cu"
+        ],
+        "length_match_groups": null,
+        "length_match_tolerance": 0.1,
+        "max_iterations": 5000,
+        "max_probe_iterations": 5000,
+        "max_rip_up_count": 3,
+        "max_setback_angle": 45.0,
+        "max_turn_angle": 180.0,
+        "meander_amplitude": 1.0,
+        "meander_spacing": 2.0,
+        "min_turning_radius": 0.2,
+        "neckdown_length": 2.5,
+        "neckdown_taper_length": 0.5,
+        "net_clearance_floor": 0.4,
+        "net_clearances": {
+          "items": [
+            [
+              1,
+              0.3
+            ],
+            [
+              2,
+              0.3
+            ]
+          ],
+          "type": "map"
+        },
+        "net_layer_widths": {},
+        "net_track_widths": {
+          "items": [
+            [
+              1,
+              0.5
+            ],
+            [
+              2,
+              0.5
+            ]
+          ],
+          "type": "map"
+        },
+        "net_via_sizes": {
+          "items": [
+            [
+              1,
+              {
+                "items": [
+                  0.8,
+                  0.4
+                ],
+                "type": "tuple"
+              }
+            ],
+            [
+              2,
+              {
+                "items": [
+                  0.8,
+                  0.4
+                ],
+                "type": "tuple"
+              }
+            ]
+          ],
+          "type": "map"
+        },
+        "netclass_width_floors": {
+          "items": [
+            [
+              1,
+              0.5
+            ],
+            [
+              2,
+              0.5
+            ]
+          ],
+          "type": "map"
+        },
+        "package_proximity_zones": null,
+        "plan_probe": false,
+        "pour_barriers": [],
+        "power_net_widths": {},
+        "power_tap_neckdown": false,
+        "proximity_heuristic_factor": 0.02,
+        "reserve_layer_widths": false,
+        "ripped_route_avoidance_cost": 0.1,
+        "ripped_route_avoidance_radius": 1.0,
+        "ripup_abandon_metric": "stranded",
+        "ripup_blocker_select": "count",
+        "routing_clearance_margin": 1.0,
+        "run_via": null,
+        "same_net_pad_clearance": -1.0,
+        "stub_layer_swap": true,
+        "stub_proximity_cost": 0.2,
+        "stub_proximity_radius": 2.0,
+        "target_swap_crossing_penalty": 1000.0,
+        "time_match_tolerance": 1.0,
+        "time_matching": false,
+        "track_clearances": {},
+        "track_proximity_cost": 0.0,
+        "track_proximity_distance": 2.0,
+        "track_width": 0.2,
+        "turn_cost": 1000,
+        "verbose": false,
+        "vertical_attraction_cost": 0.0,
+        "vertical_attraction_radius": 1.0,
+        "via_cost": 75,
+        "via_drill": 0.3,
+        "via_proximity_cost": 10,
+        "via_rung": 0,
+        "via_size": 0.6
+      },
+      "coverage": "resolved_outer_batch_only",
+      "effective_environment": {
+        "DYNAMIC_ITERATIONS": false,
+        "DYNAMIC_ITERATIONS_CLAMP": 10000000,
+        "GLOBAL_PLAN": {
+          "attract": false,
+          "attract_home": false,
+          "attract_potential": 0,
+          "c2": false,
+          "cost": 0.0,
+          "debug": false,
+          "dump": "",
+          "dump_exit": false,
+          "enable": false,
+          "escape": false,
+          "escape_radius": 1.5,
+          "hweight": 2.3,
+          "iters": 5000,
+          "layer": "",
+          "layer_discount": 0.7,
+          "layer_mode": "clique",
+          "layer_tax": 1.0,
+          "order": "share",
+          "order_file": "",
+          "power_first": false,
+          "power_layer_costs": "",
+          "probe_via_cost": 0,
+          "radius": 1.0,
+          "river": false,
+          "river_debug": false,
+          "seq": false,
+          "seq_cost": 0.15,
+          "seq_radius": 1.0,
+          "swaps": false,
+          "zone_scale": 1.0
+        },
+        "HISTORY": {
+          "blocked_weight": 0.25,
+          "cap": 0.5,
+          "cost": 0.1,
+          "escalate": 0.0,
+          "max_cells": 500000,
+          "radius": 0.25,
+          "rip_weight": 1.0
+        },
+        "INRUN_FLOOR_SYNC": false,
+        "NET_RESCUE": false,
+        "PACKAGE_PROXIMITY": false,
+        "PACK_INLINE": false,
+        "RESCUE_CAP_MOVE": false,
+        "TERMINAL_ESCALATION": false,
+        "VIA_RUNG_2": true
+      },
+      "execution": {
+        "later_subruns": 0,
+        "outer_batches": 1
+      },
+      "invocation": [
+        "$RUN/work/input/route_demo/route_demo.kicad_pcb",
+        "--output",
+        "$RUN/work/krt-out/route_demo.kicad_pcb",
+        "--escalation",
+        "off",
+        "--fab-tier",
+        "standard",
+        "--strict-sizes",
+        "--no-power-tap-neckdown",
+        "--no-fix-drc-settings",
+        "--json-out",
+        "$RUN/work/krt-out/summary.json",
+        "--max-iterations",
+        "5000",
+        "--clearance",
+        "0.4",
+        "--nets",
+        "/SIG_A"
+      ],
+      "net_inventory_sha256": "3e598c27ca59ad294b7293f2eceeff6f8b4eee37baa52aea40c679107415a246",
+      "not_captured": [
+        "per_net_search_clones",
+        "later_subruns",
+        "derived_runtime_maps",
+        "native_validation"
+      ],
+      "routing_environment": {
+        "KICAD_CLI": "/usr/bin/kicad-cli",
+        "KICAD_DYNAMIC_ITERATIONS": "0",
+        "KICAD_GLOBAL_PLAN": "0",
+        "KICAD_IMPEDANCE_NECKDOWN": "0",
+        "KICAD_INRUN_FLOOR_SYNC": "0",
+        "KICAD_NET_RESCUE": "0",
+        "KICAD_PLANE_FINALIZE": "0",
+        "KICAD_RESCUE_CAP_MOVE": "0",
+        "KICAD_ROUTE_LEDGER": "off",
+        "KICAD_TERMINAL_ESCALATION": "0"
+      },
+      "rules_sha256": "f758fc03ed4d2b1fdb136b7e72520e9fc986df41a5fd94acd0c0c40ccedeee29",
+      "runtime_policy": {
+        "escalation": {
+          "items": [
+            "off",
+            {
+              "annular": 0.1,
+              "board_edge": 0.3,
+              "clearance": 0.15,
+              "track_width": 0.15,
+              "via_diameter": 0.5,
+              "via_drill": 0.25
+            }
+          ],
+          "type": "tuple"
+        },
+        "fab_tier": {
+          "items": [
+            "standard",
+            {}
+          ],
+          "type": "tuple"
+        },
+        "final_reconcile": true,
+        "ordering_strategy": "mps"
+      },
+      "schema": "kicad-route/effective-configuration/1",
+      "scope": [
+        "/SIG_A"
+      ],
+      "stage": "after_rule_width_pour_resolution_before_normal_pass"
+    },
+    "input": {
+      "board": {
+        "name": "route_demo.kicad_pcb",
+        "sha256": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478"
+      },
+      "files": {
+        "fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+        "route_demo.kicad_dru": "86f29647af18453e03b6a7b4ad7b7fadbf5c58d11810a86ca8594bd3ccb729cf",
+        "route_demo.kicad_pcb": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478",
+        "route_demo.kicad_pro": "9e37d0fc2b30552f6b3c29b38cb6631a0a851216b625f7146b6655dd6671e550",
+        "route_demo.kicad_sch": "a0a85566d95f8e669046615b8fd939739a549c5de492d73a0d6ede74b734c0b5",
+        "sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1"
+      },
+      "fingerprint": "ba2f343c49e2f97183bc15cf4dadbeef7e186fed4a1a935b3163964714aaf732",
+      "mechanical_sha256": "e3660c52a35088664b53a2500b0434b4bb6cfa6e73abcce4c241c741a4232950",
+      "native_facts_kicad_version": "10.0.7-10.0.7~ubuntu26.04.1",
+      "netlist_sha256": "ec4d9fa1fba50228e08eda8eeff0f7b4bbb7ec0bfb831d0896aa059d9be7f302",
+      "nets_sha256": "5601fe2ec1a7196416cfeac8a83f32a9cb1a9d992bf2aa16ff72ac273ef10554",
+      "placement_sha256": "503ffe40f7fec06a0478cd375f4dea8174d376b90f780289dcdc626179dd0266",
+      "project": {
+        "name": "route_demo.kicad_pro",
+        "sha256": "9e37d0fc2b30552f6b3c29b38cb6631a0a851216b625f7146b6655dd6671e550"
+      },
+      "rules": {
+        "name": "route_demo.kicad_dru",
+        "not_loaded": [],
+        "sha256": "86f29647af18453e03b6a7b4ad7b7fadbf5c58d11810a86ca8594bd3ccb729cf"
+      },
+      "setup_sha256": "ac04ec90d7608d53e83621776d343da3898c560d948c85ae022eee5b927ec711",
+      "snapshot_files": {
+        "fp-lib-table": "5920f6994f7eb805b4b1a8f47b6d05756ec0519343f3c18fa0c0bb6a385e0502",
+        "route_demo.kicad_dru": "86f29647af18453e03b6a7b4ad7b7fadbf5c58d11810a86ca8594bd3ccb729cf",
+        "route_demo.kicad_pcb": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478",
+        "route_demo.kicad_pro": "9e37d0fc2b30552f6b3c29b38cb6631a0a851216b625f7146b6655dd6671e550",
+        "route_demo.kicad_sch": "a0a85566d95f8e669046615b8fd939739a549c5de492d73a0d6ede74b734c0b5",
+        "sym-lib-table": "4a4eb72d752f4ca92d1dbf149b9d8407cdda2f43cb63c825248c2bcc3002d4d1"
+      },
+      "source": {
+        "source": "working tree",
+        "source_dir": "/home/halbritt/.cache/agent-worktrees/kicad-route/krt91c-experiment/fixtures/route_demo",
+        "source_dirty_files": [],
+        "source_git_head": "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5"
+      }
+    },
+    "native": {
+      "kicad_cli": {
+        "path": "/usr/bin/kicad-cli",
+        "sha256": "e1757e73d993c99d763b7b388ceedc785f1b5ec2d8d9e4011a2dc980f2447c89",
+        "version": "10.0.7"
+      },
+      "pcbnew_build": "10.0.7-10.0.7~ubuntu26.04.1",
+      "terminal_native_identity": {
+        "binding": {
+          "path": "/usr/lib/python3/dist-packages/pcbnew.py",
+          "sha256": "50740b1aeed153349ffe000c7e2c39d9fd75d1cdf49118897f5df5bf957b8458"
+        },
+        "module": {
+          "path": "/usr/bin/_pcbnew.kiface",
+          "sha256": "947720ddd91b45d9fb949c1ec81af532c826ba37d136b750ec03f38a2df6215f"
+        },
+        "python": {
+          "path": "/usr/bin/python3.14",
+          "sha256": "52e0a13e60a981d8c4b6478be2ba5176f69da07948a056bf49cf6f077e30cb41"
+        },
+        "version": "10.0.7-10.0.7~ubuntu26.04.1"
+      },
+      "terminal_producer": {
+        "kicad/facts.py": "d47a3fd2eb40518b7beba5457b679b901150c64e3988f86537d67f373bef8c52",
+        "kicad/native_components.py": "071b5624884586e9a8ea83b7b253c292267b352623f58c3291ddd1ae7ec14fb6",
+        "native_components.py": "fc5099d821f972212b0a2e30bfb15b9755336684902cea933d6db88446b361e0"
+      }
+    },
+    "origin": {
+      "depth": 0,
+      "predecessors": [],
+      "root_input_fingerprint": "ba2f343c49e2f97183bc15cf4dadbeef7e186fed4a1a935b3163964714aaf732"
+    },
+    "policy": {
+      "declared": {
+        "allowed_trace_layers": [
+          "F.Cu",
+          "B.Cu"
+        ],
+        "allowed_via_spans": [
+          [
+            "F.Cu",
+            "B.Cu"
+          ]
+        ],
+        "experiment_class": "current-policy",
+        "rule_areas_sha256": "606967c8ff0d4da456fac35944b9dd0d938080b704e10db57edbcc6977836128",
+        "schema": "routability-policy/1"
+      },
+      "declared_sha256": "ad0d5bd3ec720294b3c662b811f7cf6d3cdbbb3793814cca46ddff0426d4e723",
+      "experiment_class": "current-policy",
+      "input_rule_areas_coverage": {
+        "rule_areas_coverage": "board-and-footprint",
+        "rule_areas_reasons": [],
+        "rule_areas_status": "PASS"
+      },
+      "input_rule_areas_sha256": "606967c8ff0d4da456fac35944b9dd0d938080b704e10db57edbcc6977836128",
+      "physical_stack": [
+        "F.Cu",
+        "B.Cu"
+      ]
+    },
+    "protection": {
+      "mode": "locked",
+      "only_sha256": null
+    },
+    "request": {
+      "backend": "builtin",
+      "backend_args": [],
+      "backend_env": {},
+      "barrier": null,
+      "clearance_margin_mm": null,
+      "default_clearance_mm": 0.4,
+      "experiment_policy_sha256": "ad0d5bd3ec720294b3c662b811f7cf6d3cdbbb3793814cca46ddff0426d4e723",
+      "max_iterations": 5000,
+      "mode": "selected",
+      "net_patterns": [
+        "/SIG_A"
+      ],
+      "netclasses": [],
+      "passes": null,
+      "pour_area_loss_pct": null,
+      "pour_min_spokes": null,
+      "protect": "locked",
+      "reserve_spokes": null,
+      "rule_floor_sha256": null
+    },
+    "scope": {
+      "mode": "selected",
+      "net_patterns": [
+        "/SIG_A"
+      ],
+      "netclasses": [],
+      "nets": [
+        "/SIG_A"
+      ]
+    }
+  },
+  "identity_sha256": "df960e1c4bb87c621cd84d506052bb5a2bcea3c8878ebc0dbb87eb05d095a144",
+  "ineligible_reasons": [],
+  "native_terminals": {
+    "candidate": {
+      "board_sha256": "641ae6d98b25b556c5587cf357470bd9104ac0723f24cf97b35a60fa148f3cd3",
+      "component_deficit": 5,
+      "incomplete_nets": 4,
+      "inventory_sha256": "52266ddcc3d9d2aada9c9701a813039e726edcefa699c2f2d368d2835a66423e",
+      "terminal_nets": 6
+    },
+    "reference": {
+      "board_sha256": "1477600bf32bf50fc348651c8317f4f6772d208ea3a03ea3eaf955ff25800478",
+      "component_deficit": 6,
+      "incomplete_nets": 5,
+      "inventory_sha256": "52266ddcc3d9d2aada9c9701a813039e726edcefa699c2f2d368d2835a66423e",
+      "terminal_nets": 6
+    }
+  },
+  "outcome": {
+    "backend_runtime_s": 2.361,
+    "process": "PASS",
+    "routing": "COMPLETE",
+    "unconnected_total": 5,
+    "validation": "PASS",
+    "wall_clock_stop": false
+  },
+  "policy_qualification": {
+    "actual_trace_layers": [
+      "B.Cu",
+      "F.Cu"
+    ],
+    "actual_via_spans": [
+      [
+        "F.Cu",
+        "B.Cu"
+      ]
+    ],
+    "coverage": "board-and-footprint",
+    "effective_layers": [
+      "F.Cu",
+      "B.Cu"
+    ],
+    "effective_via": {
+      "run_via": null,
+      "via_cost": 75,
+      "via_drill": 0.3,
+      "via_size": 0.6
+    },
+    "policy_sha256": "ad0d5bd3ec720294b3c662b811f7cf6d3cdbbb3793814cca46ddff0426d4e723",
+    "reasons": [],
+    "rule_areas_sha256": "606967c8ff0d4da456fac35944b9dd0d938080b704e10db57edbcc6977836128",
+    "status": "PASS"
+  },
+  "replay_authority": false,
+  "schema": "routability-experiment/1"
+}

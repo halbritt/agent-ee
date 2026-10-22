@@ -25,7 +25,8 @@
     "never_consumed": ["kicad-route/route-campaign/1", "campaign/2 (planned)", "blocked/2"],
     "experiment_boundary": {
       "item": "AGENTEE-442",
-      "status": "provisional consumer boundary; the pin produces no experiment evidence; sidecar body unfrozen",
+      "status": "consumer boundary replayed against real kicad-route 4f06368f receipts; the pin produces no experiment evidence; no re-pin, not qualified",
+      "producer": "kicad-route 4f06368fbd68bab44cbfde839647aa5b3f7ef7c5 schemas/routability-experiment-1.json",
       "reference_keys": ["path", "schema", "sha256"],
       "reference_path": "routability-experiment.json (run-relative)",
       "sidecar_schema": "routability-experiment/1",
@@ -36,8 +37,10 @@
       "policy_file": "agent-ee-experiment-policy.json",
       "sidecar_file": "routability-experiment.json",
       "policy_copy_file": "experiment-policy.json",
+      "sidecar_keys": ["artifacts", "candidate", "comparison_eligible", "identity", "identity_sha256", "ineligible_reasons", "native_terminals", "outcome", "policy_qualification", "replay_authority", "schema"],
+      "identity_keys": ["budgets", "build", "effective", "input", "native", "origin", "policy", "protection", "request", "scope"],
       "record_statuses": ["retained", "refused", "absent"],
-      "refusal_reasons": ["missing", "malformed", "unknown_schema", "tampered", "incompatible_schema", "incompatible_policy", "unbound"],
+      "refusal_reasons": ["missing", "malformed", "unknown_schema", "tampered", "incompatible_schema", "incompatible_policy", "unbound", "ineligible"],
       "qualified": false
     }
   },

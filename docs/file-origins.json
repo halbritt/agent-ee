@@ -410,6 +410,26 @@
       "capture_sources": [
         "/fixtures/fome-mc/"
       ]
+    },
+    "T17": {
+      "name": "kicad-route routability-experiment/1 receipts",
+      "description": "Byte copies of three routability-experiment/1 sidecars and two experiment-policy.json copies written by kicad-route 4f06368f on its own fixtures/route_demo board, replayed by AGENTEE-442 through the routing adapter. They hold hashes, router configuration and producer-host paths, with no design file bytes.",
+      "upstream": {
+        "repository": "https://github.com/halbritt/kicad-route",
+        "local_path": "/home/halbritt/git/kicad-route",
+        "revisions": {
+          "4f06368fbd68bab44cbfde839647aa5b3f7ef7c5": "KICADROUTE-91 producer (krt91c-experiment, for agent-507); artifacts SHA256SUMS verified 2026-10-22."
+        },
+        "license_file": "LICENSE (MIT License, Copyright (c) 2026 halbritt) at 4f06368f"
+      },
+      "upstream_license": "MIT (kicad-route LICENSE at 4f06368f)",
+      "license_verified": true,
+      "permission_status": "unresolved-owner-decision-required",
+      "owner_decision": "Confirm that these kicad-route output receipts, including their producer-host paths, may be published in agent-ee. kicad-route's MIT license and halbritt authorship are not treated as an agent-ee publication decision.",
+      "evidence": [
+        "tests/fixtures/k91-real/PROVENANCE.md",
+        "tests/fixtures/k91-real/SHA256SUMS"
+      ]
     }
   },
   "rules": [
@@ -3709,6 +3729,16 @@
         "AE-RUN"
       ],
       "reviewed": "Captured host/toolchain environment report from the peecee-wsl GPU research run. The only rights notice is the g++ --version banner (FSF copyright line), a tool banner recorded as an identity fact, not copied source."
+    },
+    {
+      "paths": [
+        "tests/fixtures/k91-real/"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "T17"
+      ],
+      "note": "Real kicad-route 4f06368f receipts, an agent-ee binding record and provenance; see tests/fixtures/k91-real/PROVENANCE.md."
     }
   ]
 }

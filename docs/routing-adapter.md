@@ -724,24 +724,47 @@ Experiment evidence is never dropped and is never qualified.
   `policy_copy` (path and recomputed hash of the retained copy, or `null`),
   `contract` and `qualified: false`.
   - `retained`: `path` (the retained root sidecar), the recomputed `sha256`,
-    `schema` and `reference` (the result.json reference, verbatim).
+    `schema`, `reference` (the result.json reference, verbatim) and the
+    producer's `identity_sha256`, `comparison_eligible` and
+    `ineligible_reasons`, copied from the sidecar. Without a declared policy,
+    kicad-route always marks its receipt not comparison-eligible, and the
+    record keeps that marking.
   - `refused`: `reason` is one of the following:
-    - `missing`: no reference despite a declared policy, or no regular root
-      sidecar was retained;
+    - `missing`: no reference despite a declared policy, no regular root
+      sidecar was retained, or the sidecar's `artifacts` binds an
+      `experiment-policy.json` that was not retained;
     - `malformed`: the reference shape, a hash that is not hex, a `path` other than
       the literal run-relative `routability-experiment.json` (a cwd-relative,
       absolute, `..` or other file name is unsupported), a sidecar that is not a
-      JSON object, or one without `identity.policy`. Repeated keys are malformed
+      JSON object, or one whose top-level or `identity` key set is not exactly
+      the producer's (`EXPERIMENT_SIDECAR_KEYS`, `EXPERIMENT_IDENTITY_KEYS`,
+      after kicad-route `4f06368f` `schemas/routability-experiment-1.json`,
+      which forbids other properties). Also malformed: `replay_authority` other
+      than `false`, a `comparison_eligible` that is not a boolean true exactly
+      when `ineligible_reasons` is empty, `artifacts` digests that are not hex,
+      and an `identity_sha256` that is not hex. Repeated keys are malformed
       too, never resolved to their last value: a repeated `experiment` key in
-      `result.json` or a repeated key in its reference, and any repeated key or
-      non-finite number in the sidecar. The retained `experiment-policy.json`
+      `result.json` or a repeated key in its reference, and any repeated key in
+      the sidecar. So are numbers the parser cannot represent: NaN, Infinity, a
+      float that overflows to infinity, an integer beyond the interpreter's
+      4300-digit limit, and nesting deeper than 64 levels, in the sidecar, the
+      policy copy or the reference. Each of these is a typed refusal, never an
+      escaping exception. The retained `experiment-policy.json`
       is read like `experiment_policy.load` (repeated keys refused, exactly the
-      five fields and their value rules); one that fails that, or that decodes
-      to the declaration but is not its canonical bytes, is malformed. A
+      five fields and their value rules). One that fails that is malformed. So
+      is one that decodes to the declaration in bytes other than kicad-route's
+      `common.write_json` form (`json.dumps(policy, indent=2)` and a newline, in
+      the copy's own key order). An integer beyond the digit limit anywhere in
+      `result.json` makes it unreadable, so a retained sidecar is `unbound`. A
       `result.json` with repeated keys is also refused by `verify`: the stage
       receipt's strict parser reports its backend as unknown;
     - `unknown_schema`: the reference schema;
-    - `tampered`: the recomputed sha256 differs from the reference;
+    - `tampered`: the recomputed sha256 differs from the reference; the
+      sidecar's `identity_sha256` is not kicad-route's `common.sha256_of` of
+      its `identity`, so an identity edited after sealing is refused even when
+      `result.json` re-binds the edited file; or the retained
+      `experiment-policy.json` is not the file the sidecar's `artifacts` digest
+      binds;
     - `incompatible_schema`: the sidecar's own `schema`;
     - `incompatible_policy`: the sidecar `identity.policy` (`declared`,
       `declared_sha256`, `experiment_class`) differs from the declared identity,
@@ -749,7 +772,12 @@ Experiment evidence is never dropped and is never qualified.
       `experiment-policy.json` is a valid policy other than the declaration.
       Identities compare as canonical JSON bytes, not decoded values;
     - `unbound`: a retained root file that no reference binds, because
-      `result.json` is absent or has no `experiment`.
+      `result.json` is absent or unreadable or has no `experiment`;
+    - `ineligible`: a policy was declared, and the producer marked the
+      receipt not `comparison_eligible`. One example is kicad-route's
+      stale-runtime negative, which lacks effective-configuration identity.
+      The record keeps `identity_sha256`, `comparison_eligible` and
+      `ineligible_reasons`, and the detail quotes the reasons.
 
     The record keeps the reference and, when a root sidecar was retained, its
     path and recomputed hash. For `unbound`, that is the unbound file.
@@ -764,16 +792,29 @@ Experiment evidence is never dropped and is never qualified.
   argv and `verify` summaries are unchanged. `verify` returns the record as `experiment`, refuses a record
   that differs from the retained bytes, and refuses a refused record on an
   attempt that is not a contradiction, timeout or cancellation.
-- **Provisional contract.** The five-field policy is the reviewed producer
-  contract. The sidecar body is not frozen: the fields read (`schema`,
-  `identity.policy`), the `experiment-policy.json` copy, whether
-  `result.settings` echoes the policy digest (then `expected_settings`
-  changes), and whether failed runs carry a sidecar follow the unfrozen
-  krt91c-experiment draft. `EXPERIMENT_CONTRACT` says so.
-  `tests/test_routing_experiment_boundary.py` exercises the boundary through
-  `step`, `stage_receipts.run_step` and `verify` with a synthetic fixture
-  sidecar. Its `K91_REVIEWED` hook marks where the final reviewed schema,
-  producer commit and real native receipt go before the positive test is rerun.
+- **Real producer replay.** The sidecar shape follows the real receipts of
+  kicad-route `4f06368f`, the KICADROUTE-91 producer that krt91c-experiment
+  built for agent-507. Three sidecars and two policy copies from that run are
+  committed byte for byte in `tests/fixtures/k91-real` (origin T17; see its
+  `PROVENANCE.md`). `RealReceiptReplayTest` in
+  `tests/test_routing_experiment_boundary.py` replays them through `step`,
+  `stage_receipts.run_step`, `verify` and `adopt`:
+  - the current-policy and historical-all-layer positives are retained and
+    adopted, unqualified;
+  - the stale-runtime receipt is refused as `ineligible`;
+  - edited, re-bound, re-ordered, missing and out-of-range variants are
+    refused as `tampered`, `missing`, `incompatible_policy` or `malformed`;
+  - each receipt under the other declared policy is `incompatible_policy`.
+
+  The fixture router routes agent-ee's own fixture design, so the sidecar's
+  internal board and run identities are retained provenance. agent-ee does not
+  re-derive them; only `kicad_route.experiment.verify` can. The `K91_REVIEWED`
+  hook records the producer commit, the sha256 of its schema file and the
+  positive receipt's file and identity digests. `EXPERIMENT_CONTRACT` names
+  the producer as unpinned and not qualified. Two contract points have still
+  not been exercised by a real run: whether `result.settings` echoes the
+  policy digest (then `expected_settings` changes), and how a re-pinned
+  router's failed runs carry the sidecar.
 - **Pin.** The pinned `5f1c072` `cli.py` has no `--experiment-policy`, and its
   `main` turns every usage error into a refusal (exit 4). A declared policy at
   this pin is therefore a `refused` attempt with an `absent` record, or a

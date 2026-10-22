@@ -24,6 +24,7 @@ import collections
 import errno
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -431,12 +432,17 @@ TRACK_IDENTITY = ('kind', 'layer', 'net', 'width', 'start', 'mid', 'end')
 # router's retained policy copy EXPERIMENT_POLICY_COPY are retained even when
 # result.json does not reference them, and are then refused as unbound, never
 # dropped. The sidecar, the policy copy and the result.json binding are read with
-# strict_json: a repeated key is malformed evidence, never its last value. The
-# sidecar fields experiment_grade reads (schema and identity.policy
-# {declared, declared_sha256, experiment_class}) and the policy copy follow the
-# unfrozen krt91c-experiment draft; EXPERIMENT_CONTRACT says so until agent-507
-# sends the final reviewed schema and producer SHA, and
-# tests/test_routing_experiment_boundary.py marks the hook to rerun against it.
+# strict_json: a repeated key, a non-finite or out-of-range number or excessive
+# nesting is malformed evidence, never a crash or a last value. The sidecar shape
+# is the one kicad-route 4f06368f writes (schemas/routability-experiment-1.json,
+# replayed from its real receipts in tests/fixtures/k91-real): exactly
+# EXPERIMENT_SIDECAR_KEYS and EXPERIMENT_IDENTITY_KEYS, identity_sha256 the
+# digest of identity, replay_authority false, and artifacts binding the policy
+# copy, which kicad-route writes as json.dumps(policy, indent=2) + newline. A
+# receipt the producer marks not comparison_eligible is refused as 'ineligible'
+# when the coordinator declared a policy (the experiment it asked for is not a
+# valid one) and otherwise retained with that marking. Nothing is pinned or
+# qualified by this: EXPERIMENT_CONTRACT names the unpinned producer.
 EXPERIMENT_SCHEMA = 'routability-experiment/1'
 EXPERIMENT_POLICY_SCHEMA = 'routability-policy/1'
 EXPERIMENT_CLASSES = ('current-policy', 'historical-all-layer')
@@ -444,13 +450,20 @@ EXPERIMENT_REFERENCE_KEYS = {'path', 'sha256', 'schema'}
 EXPERIMENT_POLICY_KEYS = {'schema', 'experiment_class', 'allowed_trace_layers', 'allowed_via_spans',
                           'rule_areas_sha256'}
 EXPERIMENT_SIDECAR_POLICY_KEYS = {'declared', 'declared_sha256', 'experiment_class'}
+EXPERIMENT_SIDECAR_KEYS = {'schema', 'identity', 'identity_sha256', 'comparison_eligible', 'ineligible_reasons',
+                           'policy_qualification', 'native_terminals', 'candidate', 'artifacts', 'outcome',
+                           'replay_authority'}
+EXPERIMENT_IDENTITY_KEYS = {'input', 'origin', 'scope', 'protection', 'request', 'policy', 'budgets', 'native',
+                            'build', 'effective'}
+EXPERIMENT_JSON_DEPTH = 64
 EXPERIMENT_POLICY_FILE = 'agent-ee-experiment-policy.json'
 EXPERIMENT_SIDECAR = 'routability-experiment.json'
 EXPERIMENT_POLICY_COPY = 'experiment-policy.json'
-EXPERIMENT_CONTRACT = ('agent-ee/AGENTEE-442 provisional: routability-policy/1 five fields reviewed at '
-                       'kicad-route a5fa636d; K91 sidecar body unfrozen')
+EXPERIMENT_CONTRACT = ('agent-ee/AGENTEE-442: routability-experiment/1 as written by kicad-route '
+                       '4f06368fbd68bab44cbfde839647aa5b3f7ef7c5 (unpinned, not qualified); '
+                       'routability-policy/1 five fields')
 EXPERIMENT_REFUSALS = ('missing', 'malformed', 'unknown_schema', 'tampered', 'incompatible_schema',
-                       'incompatible_policy', 'unbound')
+                       'incompatible_policy', 'unbound', 'ineligible')
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
 
 
@@ -509,7 +522,7 @@ def validate_layer_policy(policy):
 def parse_layer_policy(text):
     try:
         policy = json.loads(text)
-    except (TypeError, json.JSONDecodeError):
+    except (TypeError, ValueError, RecursionError):
         raise RequestError('layer policy must be JSON') from None
     validate_layer_policy(policy)
     if canonical_json(policy) != text:
@@ -523,10 +536,13 @@ def _unique_names(value):
 
 
 def strict_json(data, label):
-    """JSON text or bytes with no duplicate object key and no NaN/Infinity, or RequestError.
+    """JSON text or bytes with unique keys, finite numbers and bounded nesting, or RequestError.
 
     The same strictness as kicad_route.experiment_policy.load: a repeated key is
-    ambiguous evidence, never silently resolved to its last value."""
+    ambiguous evidence, never silently resolved to its last value. NaN,
+    Infinity, a float that overflows to infinity, an integer beyond the
+    interpreter's digit limit and nesting beyond EXPERIMENT_JSON_DEPTH are
+    malformed evidence too, never an escaping exception."""
     def unique(pairs):
         found = {}
         for key, value in pairs:
@@ -537,10 +553,31 @@ def strict_json(data, label):
 
     def constant(name):
         raise RequestError(f'{label} has a non-finite number {name}')
+
+    def finite(token):
+        value = float(token)
+        if not math.isfinite(value):
+            raise RequestError(f'{label} has a non-finite number {token[:32]}')
+        return value
     try:
-        return json.loads(data, object_pairs_hook=unique, parse_constant=constant)
+        value = json.loads(data, object_pairs_hook=unique, parse_constant=constant, parse_float=finite)
+    except RequestError:
+        raise
+    except RecursionError:
+        raise RequestError(f'{label} nesting exceeds {EXPERIMENT_JSON_DEPTH}') from None
     except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
         raise RequestError(f'{label} must be JSON') from None
+    except ValueError:
+        # For example an integer beyond the interpreter's digit limit.
+        raise RequestError(f'{label} has an out-of-range number') from None
+    stack = [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, (dict, list)):
+            if depth > EXPERIMENT_JSON_DEPTH:
+                raise RequestError(f'{label} nesting exceeds {EXPERIMENT_JSON_DEPTH}')
+            stack.extend((v, depth + 1) for v in (item.values() if isinstance(item, dict) else item))
+    return value
 
 
 def strict_json_file(path, label):
@@ -647,10 +684,16 @@ def experiment_grade(request, result, attempt_dir):
             'policy_file': f'attempt/{EXPERIMENT_POLICY_FILE}' if expected is not None else None,
             'policy_copy': copy}
     ref = result.get('experiment') if isinstance(result, dict) else None
+    try:
+        canonical_json(ref)
+        echo = ref
+    except (ValueError, RecursionError):
+        # A non-finite number the permissive result.json read decoded: not echoed.
+        echo = None
 
     def refused(reason, detail, **known):
         return {'status': 'refused', **base, 'reason': reason, 'detail': detail,
-                'reference': ref, 'path': None, 'sha256': None, **known}
+                'reference': echo, 'path': None, 'sha256': None, **known}
 
     unbound = orphan or copy
     unbound_name = EXPERIMENT_SIDECAR if orphan is not None else EXPERIMENT_POLICY_COPY
@@ -663,6 +706,9 @@ def experiment_grade(request, result, attempt_dir):
             return refused('unbound', f'{unbound_name} exists but result.json has no experiment reference',
                            **unbound)
         return refused('missing', 'a policy was declared but result.json has no experiment reference')
+    if echo is not ref:
+        return refused('malformed', 'experiment reference has a non-finite number or excessive nesting',
+                       **(orphan or {}))
     if (not isinstance(ref, dict) or set(ref) != EXPERIMENT_REFERENCE_KEYS or
             not all(isinstance(ref[k], str) for k in EXPERIMENT_REFERENCE_KEYS)):
         return refused('malformed', 'experiment reference must have exactly string path, sha256 and schema',
@@ -693,8 +739,11 @@ def experiment_grade(request, result, attempt_dir):
         return refused('malformed', 'experiment sidecar is not a JSON object', **orphan)
     if body.get('schema') != EXPERIMENT_SCHEMA:
         return refused('incompatible_schema', f'sidecar schema is not {EXPERIMENT_SCHEMA}', **orphan)
-    identity = body.get('identity')
-    claimed = identity.get('policy') if isinstance(identity, dict) else None
+    shape = _sidecar_shape_refusal(body)
+    if shape is not None:
+        return refused(*shape, **orphan)
+    identity = body['identity']
+    claimed = identity['policy']
     if not isinstance(claimed, dict) or not EXPERIMENT_SIDECAR_POLICY_KEYS <= set(claimed):
         return refused('malformed', 'sidecar has no identity.policy {declared, declared_sha256, experiment_class}',
                        **orphan)
@@ -706,11 +755,52 @@ def experiment_grade(request, result, attempt_dir):
             canonical_json(claimed['experiment_class']) !=
             canonical_json(None if declared is None else declared['experiment_class'])):
         return refused('incompatible_policy', 'sidecar policy identity differs from the declared policy', **orphan)
+    bound = body['artifacts'].get(EXPERIMENT_POLICY_COPY)
     if copy is not None:
         refusal = _policy_copy_refusal(Path(attempt_dir) / EXPERIMENT_POLICY_COPY, declared)
         if refusal is not None:
             return refused(*refusal, **orphan)
-    return {'status': 'retained', **base, 'schema': EXPERIMENT_SCHEMA, 'reference': ref, **orphan}
+        if bound != copy['sha256']:
+            return refused('tampered', f'{EXPERIMENT_POLICY_COPY} sha256 differs from the sidecar artifacts digest',
+                           **orphan)
+    elif bound is not None:
+        return refused('missing', f'the sidecar binds {EXPERIMENT_POLICY_COPY} but no regular copy was retained',
+                       **orphan)
+    eligibility = {'identity_sha256': body['identity_sha256'], 'comparison_eligible': body['comparison_eligible'],
+                   'ineligible_reasons': body['ineligible_reasons']}
+    if expected is not None and body['comparison_eligible'] is not True:
+        return refused('ineligible', 'the producer marked the declared experiment not comparison-eligible: '
+                       + '; '.join(body['ineligible_reasons'][:8]), **orphan, **eligibility)
+    return {'status': 'retained', **base, 'schema': EXPERIMENT_SCHEMA, 'reference': ref, **orphan, **eligibility}
+
+
+def _sidecar_shape_refusal(body):
+    """(reason, detail) refusing a sidecar that is not kicad-route's routability-experiment/1, or None.
+
+    The top-level and identity key sets are exact (the producer schema forbids
+    additional properties); identity_sha256 must be kicad-route's
+    common.sha256_of(identity), so an identity edited after it was sealed is
+    tampered even when result.json re-binds the edited file."""
+    if set(body) != EXPERIMENT_SIDECAR_KEYS:
+        return 'malformed', 'sidecar must have exactly the fields ' + ', '.join(sorted(EXPERIMENT_SIDECAR_KEYS))
+    identity = body['identity']
+    if not isinstance(identity, dict) or set(identity) != EXPERIMENT_IDENTITY_KEYS:
+        return 'malformed', 'sidecar identity must have exactly ' + ', '.join(sorted(EXPERIMENT_IDENTITY_KEYS))
+    if body['replay_authority'] is not False:
+        return 'malformed', 'sidecar replay_authority must be false'
+    reasons = body['ineligible_reasons']
+    if (not isinstance(body['comparison_eligible'], bool) or not isinstance(reasons, list) or
+            not all(isinstance(r, str) for r in reasons) or body['comparison_eligible'] == bool(reasons)):
+        return 'malformed', 'sidecar comparison_eligible must be a boolean that is true exactly without reasons'
+    artifacts = body['artifacts']
+    if not isinstance(artifacts, dict) or any(v is not None and (not isinstance(v, str) or not SHA256.match(v))
+                                              for v in artifacts.values()):
+        return 'malformed', 'sidecar artifacts must map names to sha256 digests or null'
+    if not isinstance(body['identity_sha256'], str) or not SHA256.match(body['identity_sha256']):
+        return 'malformed', 'sidecar identity_sha256 is not 64 lowercase hex digits'
+    if body['identity_sha256'] != hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest():
+        return 'tampered', 'sidecar identity_sha256 differs from the digest of its identity'
+    return None
 
 
 def _ambiguous_binding(result_path):
@@ -730,7 +820,7 @@ def _ambiguous_binding(result_path):
         return found
     try:
         top = json.loads(result_path.read_bytes(), object_pairs_hook=pairs_hook)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
         return 'result.json is not JSON'
     ref = top.get('experiment') if isinstance(top, dict) else None
     if any(obj is top and key == 'experiment' for obj, key in marked):
@@ -744,16 +834,17 @@ def _policy_copy_refusal(path, declared):
     """(reason, detail) refusing the router's retained policy copy, or None.
 
     The copy is read like kicad_route.experiment_policy.load (duplicate keys
-    refused, exactly the five routability-policy/1 fields) and must then be the
-    canonical bytes of the declared policy."""
+    refused, exactly the five routability-policy/1 fields), must declare the
+    same policy and must be the bytes kicad-route's common.write_json writes for
+    it (json.dumps(policy, indent=2) + newline, in the copy's own key order)."""
     try:
         kept = validate_experiment_policy(strict_json_file(path, EXPERIMENT_POLICY_COPY), EXPERIMENT_POLICY_COPY)
     except RequestError as exc:
         return 'malformed', str(exc)
     if declared is None or canonical_json(kept) != canonical_json(declared):
         return 'incompatible_policy', f'{EXPERIMENT_POLICY_COPY} differs from the declared policy'
-    if path.read_bytes() != canonical_json(declared).encode():
-        return 'malformed', f'{EXPERIMENT_POLICY_COPY} is not the canonical bytes of the declared policy'
+    if path.read_bytes() != (json.dumps(kept, indent=2) + '\n').encode():
+        return 'malformed', f'{EXPERIMENT_POLICY_COPY} is not the bytes kicad-route writes for the policy'
     return None
 
 
@@ -1102,7 +1193,8 @@ def refused_output(stdout):
     """Only a known machine refusal can classify exit 4 as a refusal."""
     try:
         record = json.loads(stdout)
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):
+        # ValueError includes an integer beyond the interpreter's digit limit.
         return False
     return (isinstance(record, dict) and record.get('schema') == 'kicad-route/refusal/1' and
             record.get('kind') == 'refusal' and _is_int(record.get('exit_code')) and
@@ -1620,7 +1712,8 @@ def load_json(path, problems, label):
         return None
     try:
         return json.loads(path.read_bytes())
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        # ValueError includes an integer beyond the interpreter's digit limit.
         problems.append(f'{label} is not JSON')
         return None
 

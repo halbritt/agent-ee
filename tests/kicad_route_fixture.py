@@ -208,16 +208,21 @@ if name == 'env':
                                       'pycache_prefix': sys.pycache_prefix})
 # SYNTHETIC routability-experiment/1 sidecar (AGENTEE-442), written by this
 # fixture, never by the KICADROUTE-91 producer. It has the run-relative reference
-# and only the fields the adapter reads, shaped after the unfrozen krt91c draft:
-# identity.policy {declared, declared_sha256, experiment_class} and the router's
-# retained declaration copy experiment-policy.json.
-experiment = scenario.get('experiment', 'ok' if '--experiment-policy' in opts else None)
+# and the top-level and identity key sets of kicad-route 4f06368f's sidecar, but
+# only the values the adapter reads are meaningful: identity.policy {declared,
+# declared_sha256, experiment_class}, identity_sha256, comparison_eligible,
+# ineligible_reasons and artifacts['experiment-policy.json'], the router's
+# retained declaration copy, written as kicad-route's common.write_json does.
+# scenario['replay'] = {'sidecar': text, 'copy': text or None} instead writes
+# REAL kicad-route bytes verbatim (tests/fixtures/k91-real); edits still apply.
+replay = scenario.get('replay')
+experiment = scenario.get('experiment', 'ok' if '--experiment-policy' in opts or replay else None)
 if experiment is not None and experiment != 'omit':
     policy_path = opts.get('--experiment-policy')
     declared = None
     if policy_path:
         declared = json.loads(Path(policy_path).read_bytes())
-        shutil.copyfile(policy_path, run / 'experiment-policy.json')
+        (run / 'experiment-policy.json').write_text(json.dumps(declared, indent=2) + '\n')
         if experiment == 'rewrite_policy':
             Path(policy_path).write_text(json.dumps({**declared, 'experiment_class': 'historical-all-layer'},
                                                     sort_keys=True, separators=(',', ':')))
@@ -230,15 +235,29 @@ if experiment is not None and experiment != 'omit':
               hashlib.sha256(json.dumps(declared, sort_keys=True).encode()).hexdigest(),
               'experiment_class': None if declared is None else declared.get('experiment_class')}
     sidecar = run / 'routability-experiment.json'
+    identity = {key: None for key in ('origin', 'scope', 'protection', 'request', 'budgets', 'native', 'build',
+                                      'effective')}
+    identity.update(policy=policy, input={'fingerprint': fingerprint,
+                                          'source': 'SYNTHETIC agent-ee coordinator fixture (AGENTEE-442)'})
+    if experiment == 'no_policy_identity':
+        del identity['policy']
+    copy = run / 'experiment-policy.json'
+    reasons = [] if declared is not None else ['no experiment policy was declared (--experiment-policy)']
     body = {'schema': 'routability-experiment/2' if experiment == 'incompatible_schema' else
             'routability-experiment/1',
-            'synthetic': 'agent-ee coordinator fixture (AGENTEE-442); not the KICADROUTE-91 producer',
-            'identity': {'policy': policy, 'input': {'fingerprint': fingerprint}},
-            'comparison_eligible': False, 'ineligible_reasons': ['synthetic fixture'],
+            'identity': identity,
+            'identity_sha256': hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest(),
+            'comparison_eligible': not reasons, 'ineligible_reasons': reasons,
+            'policy_qualification': None, 'native_terminals': None, 'candidate': None, 'outcome': None,
+            'artifacts': {'experiment-policy.json': sha(copy) if copy.is_file() else None},
             'replay_authority': False}
-    if experiment == 'no_policy_identity':
-        del body['identity']['policy']
-    sidecar.write_text('not json {' if experiment == 'malformed' else json.dumps(body, indent=2) + '\n')
+    if replay is not None:
+        sidecar.write_text(replay['sidecar'])
+        copy.unlink(missing_ok=True)
+        if replay.get('copy') is not None:
+            copy.write_text(replay['copy'])
+    else:
+        sidecar.write_text('not json {' if experiment == 'malformed' else json.dumps(body, indent=2) + '\n')
     # Byte edits [file, old, new, 'first'|'last'] of one occurrence (AGENTEE-442
     # duplicate-key probes); an edit that finds nothing writes an unmistakable file.
     for file, before, after, which in scenario.get('edits', []):
@@ -258,7 +277,9 @@ if experiment is not None and experiment != 'omit':
         result['experiment']['path'] = '../routability-experiment.json'
     if experiment == 'cwd_relative':
         result['experiment']['path'] = os.path.relpath(sidecar)
-    if experiment == 'tamper':
+    if experiment == 'tamper' and replay is not None:
+        sidecar.write_text(replay['sidecar'].replace('"replay_authority": false', '"replay_authority": true'))
+    elif experiment == 'tamper':
         sidecar.write_text(json.dumps({**body, 'identity': {}}) + '\n')
     if experiment == 'missing_file':
         sidecar.unlink()
