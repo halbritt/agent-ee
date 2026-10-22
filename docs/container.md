@@ -300,7 +300,8 @@ repository. One job:
 4. Runs every test module in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
    through [scripts/strict_suite.py](../scripts/strict_suite.py), four modules at
    a time, with both inputs mounted read-only. Native 3D board render tests run
-   when renderer-related files changed. GitHub's preceding push commit is the
+   when renderer-related files or the pinned KiCad image inputs changed.
+   GitHub's preceding push commit is the
    comparison base; manual dispatch, an unknown base, or a dirty checkout runs
    them. Every selected test must pass without a skip, and every module must
    produce a valid result. The job summary gives the module and test counts,

@@ -275,6 +275,22 @@ class RenderChangeSelectionTests(unittest.TestCase):
                 self.assertEqual(strict_suite.render_mode_from_change_base(base), 'run')
                 git('commit', '-qam', 'renderer')
                 self.assertEqual(strict_suite.render_mode_from_change_base(base), 'run')
+                for path in ('Dockerfile', 'docker/kicad-10.0-releases.asc', 'docker/apt-retry.sh',
+                             'docker/agent-ee.apparmor', '.dockerignore', 'scripts/container_apparmor.sh'):
+                    with self.subTest(path=path):
+                        previous = git('rev-parse', 'HEAD')
+                        changed = root / path
+                        changed.parent.mkdir(parents=True, exist_ok=True)
+                        changed.write_text('changed\n')
+                        git('add', path)
+                        git('commit', '-qm', 'image toolchain')
+                        self.assertEqual(strict_suite.render_mode_from_change_base(previous), 'run')
+                previous = git('rev-parse', 'HEAD')
+                gallery_installer = root / 'scripts/install_render_gallery.sh'
+                gallery_installer.write_text('changed\n')
+                git('add', 'scripts/install_render_gallery.sh')
+                git('commit', '-qm', 'gallery deployment')
+                self.assertEqual(strict_suite.render_mode_from_change_base(previous), 'omit')
 
 
 class RequiredInputTests(unittest.TestCase):
