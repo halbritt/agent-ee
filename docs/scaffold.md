@@ -653,6 +653,16 @@ and `default`. Importing a citation does not certify its applicability. A declar
 non-default net-class setting requires one explicit native `Default` class in
 the project template; the importer refuses an implicit or ambiguous class.
 
+**Open authority gap (AGENTEE-348 G4):** this importer currently accepts a class
+and free-text `basis` as hard authority for every non-default class. It does not
+verify a captured JLCPCB/datasheet reference or a committed owner decision, and
+does not refuse an agent-named owner. This is weaker than the locality reference
+checks described in [locality provenance](placer.md#locality-provenance-agentee-337).
+Locality owner references also do not currently require a pinned decision commit.
+These behaviors do not meet the requested common authority model. In particular,
+the geometry inventory's source exclusions below inherit this authority gap;
+an excluded setting is not proof of a verified owner or vendor source.
+
 The importer applies declared non-default values. A declared default does not
 replace the template value. The captured source is immutable. The receipt's
 `constraint_provenance` inventories every emitted board rule and numeric net-class

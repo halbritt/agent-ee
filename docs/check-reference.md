@@ -2193,6 +2193,14 @@ The DRC check retains the raw `drc.json`, raw counts, waiver keys and locators;
 from graded issues without changing connectivity or parity treatment.
 A native tool failure or missing/malformed output cannot become a pass.
 
+AGENTEE-348 G4 remains open: the design-rule importer accepts declared
+non-default classes with a free-text basis, without verifying the source or an
+owner decision commit. Locality validates captured text references and rejects
+agent-named owners, but does not require a committed owner citation either.
+See the [authority gap](scaffold.md#declared-design-rule-sources-agentee-331).
+Existing hard classifications and geometry-inventory source exclusions must
+not be interpreted as evidence that this common authority model is implemented.
+
 AGENTEE-425 adds the [unsourced geometry inventory](scaffold.md#unsourced-geometry-inventory-agentee-425)
 to scaffold receipts and project bindings; board-build refreshes it on template
 merge. It lists retained unsourced settings and potential router/zone-filler
