@@ -653,3 +653,14 @@ its reservations, and native saved-board checks retain their authority.
 The [policy audit](placer.md#unsourced-policy-limits-agentee-358) records the
 remaining numeric limits and their effects; gap-source authentication remains
 AGENTEE-348.
+
+## Supplier land-pattern threshold (AGENTEE-31, 2026-10-22)
+
+Coordinator ruling (agent-449, AGENTEE-31 worker assignment; not an owner
+statement): keep the 0.98 copper/hole IoU threshold. The actual C11702 pattern
+against `R_0402_1005Metric` is evaluated by exact IoU and reported as
+`low_accuracy` at IoU about 0.67. It is never passed by a relaxed or relative
+rule. Reasons: 0.98 is the ticket's own rule, the supplier pad geometry really
+differs from the IPC-nominal KiCad pads, and an earlier `nearest_variant`
+acceptance rule was rejected on review. The supplier bytes stay unpublished. See
+the [criterion 1 ruling](land-pattern.md#criterion-1-ruling-agentee-31-2026-10-22).

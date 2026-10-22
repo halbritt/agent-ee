@@ -705,8 +705,8 @@ record that `verify` recomputes against the same agent-ee commit and each
 review's retained source inputs, independently of later design adoptions.
 A [supplier land-pattern check](docs/land-pattern.md) compares captured supplier
 geometry with native KiCad footprints, including pad numbering. Its owned controls
-are qualified; the actual C11702/0402 pair does not meet the requested 0.98 overlap
-threshold, so that acceptance example remains unresolved pending an owner decision.
+are qualified. The actual C11702/0402 pair is a `low_accuracy` defect at IoU about
+0.67 against the 0.98 threshold, as amended by a coordinator ruling.
 
 [Datasheet acquisition](docs/datasheet-capture.md) captures explicitly supplied
 URLs before offline checks, with byte limits, deadlines and per-part missing
