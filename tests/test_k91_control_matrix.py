@@ -41,6 +41,17 @@ class ControlMatrixTest(unittest.TestCase):
                          *(f'missing {key}' for key in self.matrix.MISSING + self.matrix.PRECONDITION_FIELDS[slot])):
                 with self.subTest(slot=slot, case=case):
                     self.assertIn(f'{slot}: {case}', ids)
+        # agent-510 e5c23190: (1) the original replay error kept under the finalization mask, and (2) each
+        # attack blocking the aggregate, alone in each required slot and in all of them together.
+        for slot in self.matrix.REQUIRED:
+            for mode in self.matrix.ATTACKS:
+                with self.subTest(slot=slot, attack=mode):
+                    self.assertIn(f'{slot}: {mode} keeps the original replay error in the consumer chain', ids)
+                    row = next(r for r in self.rows if r['id'] == f'{slot}: {mode}')
+                    self.assertEqual((row['actual'], row['actual_controls_refused']), ('incomplete', False))
+            self.assertIn(f'{slot}: wrong_replay_binding outer error is the finalization mask', ids)
+        for mode in self.matrix.ATTACKS:
+            self.assertIn(f'aggregate: {mode} in every required slot blocks controls_refused', ids)
         # Only the intended rows refuse; every plumbing row is incomplete and keeps controls_refused false.
         refused = sorted(row['id'] for row in self.rows if row['slot'] and row['actual'] == 'refused')
         self.assertEqual(refused, sorted(f'{slot}: intended refusal' for slot in self.matrix.SLOTS))

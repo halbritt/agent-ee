@@ -42,6 +42,7 @@ REQUIRED = ('a_mismatched_runtime', 'b_tampered_candidate', 'c_stale_input')
 BOARD = 'project/rc.kicad_pcb'
 SIDECAR = 'routing/attempt/routability-experiment.json'
 REFUSED, NOT_REFUSED, INCOMPLETE = 'refused', 'not_refused', 'incomplete'
+ATTACKS = ('wrong_replay_binding', 'invalid_receipt_json', 'missing_receipt')
 PLUMBING = ('wrong_replay_binding', 'invalid_receipt_json', 'missing_receipt', 'finalization_error',
             'unrelated_exception')
 MISSING = ('consumer', 'consumer_run_step', 'consumer_verify', 'consumer_adopt', 'direct_adopt', 'design_before',
@@ -62,7 +63,7 @@ class Matrix:
         from tests.kicad_route_fixture import FAKE_PIN, make_candidate, make_checkout
         from tests.test_routing_experiment_boundary import CURRENT
         self.k, self.c, self.root, self.make = k, c, Path(root), make_candidate
-        self.rows, self.count = [], 0
+        self.rows, self.count, self.attacks = [], 0, {}
         checkout, code = make_checkout(self.root / 'checkout', {'name': 'complete'})
         self.mismatch, _ = make_checkout(self.root / 'mismatch', {'name': 'complete'})
         with (self.mismatch / 'src/kicad_route/__init__.py').open('a') as handle:
@@ -184,8 +185,10 @@ class Matrix:
                           else {**untouched, 'host_binding': self.intended[slot]['host_binding']},
                           NOT_REFUSED, 'round-3 adjudicate-r3.py replay')
             for mode in PLUMBING:
-                self.slot_row(f'{slot}: {mode}', slot, self.plumbing(slot, mode), INCOMPLETE,
-                              'round-3 H4' if mode in PLUMBING[:3] else 'mandate (5)')
+                record = self.plumbing(slot, mode)
+                self.attacks[slot, mode] = record
+                self.slot_row(f'{slot}: {mode}', slot, record, INCOMPLETE,
+                              'round-3 H4; agent-510 e5c23190 (2)' if mode in ATTACKS else 'mandate (5)')
             for key in MISSING + PRECONDITION_FIELDS[slot]:
                 record = copy.deepcopy(self.intended[slot])
                 if key == 'consumer.exception':
@@ -205,6 +208,20 @@ class Matrix:
             record = copy.deepcopy(self.intended[slot])
             record['consumer_adopt'] = {'attempted': False}
             self.slot_row(f'{slot}: malformed skip record', slot, record, INCOMPLETE, 'round-3 adjudicate-r3.py')
+        # agent-510 e5c23190 (1): the original replay error survives under campaign finalization's error,
+        # in the consumer's chain and in the run_step layer; (2): each attack blocks the aggregate.
+        for slot in REQUIRED:
+            for mode in ATTACKS:
+                record = self.attacks[slot, mode]
+                self.check_row(f'{slot}: {mode} keeps the original replay error in the consumer chain', True,
+                               original_kept(record, mode), 'agent-510 e5c23190 (1)')
+            self.check_row(f'{slot}: wrong_replay_binding outer error is the finalization mask', True,
+                           (self.attacks[slot, 'wrong_replay_binding']['consumer'].get('error') or '')
+                           == 'ValueError: stage receipt identity mismatch', 'agent-510 e5c23190 (1); round-3 H4')
+        for mode in ATTACKS:
+            controls = {**self.intended, **{slot: self.attacks[slot, mode] for slot in REQUIRED}}
+            self.check_row(f'aggregate: {mode} in every required slot blocks controls_refused', False,
+                           self.verdict(controls=controls)['controls_refused'], 'agent-510 e5c23190 (2)')
         self.slot_row('b_tampered_candidate: candidate file missing, no tamper shown', 'b_tampered_candidate',
                       self.replayed(None, 'missing_candidate_file'), INCOMPLETE,
                       'round-3 adjudicate-r3.py missing actual file')
@@ -248,6 +265,24 @@ class Matrix:
         (run / 'routing').mkdir(parents=True)
         shutil.copyfile(evidence / 'adapter-report.json', run / 'routing/adapter-report.json')
         return routing_adapter.verify(run, layout={'pin': pin}) == manifest['controls']['a_mismatched_runtime']['verify']['value']
+
+
+ORIGINAL = {'wrong_replay_binding': ('ValueError', 'replayed receipt is not the step and binding the consumer asked for'),
+            'invalid_receipt_json': ('JSONDecodeError', 'Expecting property name enclosed in double quotes'),
+            'missing_receipt': ('FileNotFoundError', 'receipt.json')}
+
+
+def original_kept(record, mode):
+    """The attack's original replay error is a link of the consumer's recorded chain, raised through the
+    replayed run_step, and the run_step layer recorded it too (not only the outer finalization error)."""
+    kind, text = ORIGINAL[mode]
+
+    def is_original(link):
+        return (isinstance(link, dict) and link.get('type') == kind and text in (link.get('message') or '')
+                and 'k91_consumer.py:run_step' in (link.get('frames') or []))
+    chain = (record.get('consumer') or {}).get('exception') or []
+    layer = (record.get('consumer_run_step') or {}).get('exception') or []
+    return any(map(is_original, chain)) and bool(layer) and is_original(layer[-1])
 
 
 def matches(row):
