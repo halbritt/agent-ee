@@ -18,6 +18,8 @@ CRITERION = 'electrical-locality/1'
 
 MAX_DOCUMENT_DEPTH = 64
 DEPTH_ERROR = f'locality document nesting exceeds {MAX_DOCUMENT_DEPTH} levels'
+MAX_DOCUMENT_NODES = 200_000
+NODE_ERROR = f'locality document exceeds {MAX_DOCUMENT_NODES} nodes'
 
 
 def _bounded_depth(value):
@@ -26,9 +28,13 @@ def _bounded_depth(value):
     Subclass storage is read through the base type, so no override runs here.
     """
     ancestors = set()
+    nodes = [0]
 
     def visit(value, depth):
         kind = type(value)  # Not isinstance: a __class__ property cannot pose as a container.
+        nodes[0] += 1  # Shared sub-objects are revisited, so a DAG is counted as the tree it unfolds to.
+        if nodes[0] > MAX_DOCUMENT_NODES:
+            raise ValueError(NODE_ERROR)
         if not issubclass(kind, (dict, list)):
             return
         if depth > MAX_DOCUMENT_DEPTH:
@@ -57,9 +63,13 @@ def load_json(text):
 def _plain_json(value):
     """Copy exact JSON types into fresh containers unreachable by copy hooks."""
     ancestors = set()
+    nodes = [0]
 
     def copy_value(value, depth):
         kind = type(value)
+        nodes[0] += 1  # Shared sub-objects are copied per reference, so budget the unfolded tree.
+        if nodes[0] > MAX_DOCUMENT_NODES:
+            raise ValueError(NODE_ERROR)
         if kind is dict or kind is list:
             if depth > MAX_DOCUMENT_DEPTH:
                 raise ValueError(DEPTH_ERROR)
