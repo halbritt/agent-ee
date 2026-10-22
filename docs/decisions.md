@@ -755,3 +755,22 @@ unresolved origin stay unresolved. `T3` to `T13` stay unresolved and are not
 offered under MIT. `T14`, `T15` and `T16` are unchanged: the decision does not
 mention them, and the 2026-10-18 `T16` decision chooses no repository licence.
 Excludes history rewriting and any change to repository visibility.
+
+## Catalog identity passive boundary (AGENTEE-253)
+
+Agent reasoning (agent-449 burndown worker, AGENTEE-253); not owner-stated. The
+identity index keeps excluding exactly resistor, capacitor and inductor rows.
+Those are the only families `part_selection` resolves by captured nominal value
+with tolerance, package and rating intervals, so a declared MPN is not needed
+to choose them. Diodes, LEDs, connectors and regulators exist in
+`agent-ee.catalog/1`, but forward voltage, colour, pinout or output setting is
+not captured as an interchangeable value, so they stay in the index. Unmapped
+families, such as crystals, fuses and ferrite beads, stay in the index too. The
+boundary fails closed: a family joins it only when its identity can be
+established from captured fields, and `catalog_bouni.passive_boundary` refuses
+anything outside the value-resolved set at capture and at load. Within an
+R/C/L category a row is pruned only when its subcategory is positively listed in
+`QUALIFIED_SUBCATEGORIES`; unknown, empty and unlisted subcategories are kept, at
+capture and at load. Pruning a row removes it as a candidate, so only qualified
+rows are pruned; a retained row never turns an ambiguity into a resolution.
+See [the passive boundary](catalog-identity.md#passive-boundary-agentee-253).
