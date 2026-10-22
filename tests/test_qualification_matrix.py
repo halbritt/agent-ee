@@ -527,6 +527,70 @@ case('legacy/legacy-explicit/unqualified-with-original-source', mutate_contract(
      probe='r1 probe.py historical-unqualified-with-original-source')
 
 
+# agent-521 1b7c9cc0 (1): runtime schema checks are unconditional. Values a type hint or a loose
+# isinstance would let through (bool for int, float, numeric strings, whitespace, uppercase or short
+# digests, unsafe paths, extra keys, near-miss enums, nested values) must refuse in every consumer.
+RUNTIME = [
+    ('bound', ('rows', 0, 'row'), True), ('bound', ('rows', 0, 'row'), 2.0), ('bound', ('rows', 0, 'row'), 1),
+    ('bound', ('rows', 0, 'row'), -2), ('bound', ('rows', 0, 'row'), 3),
+    ('bound', ('rows', 0, 'connector_pin'), '   '), ('bound', ('rows', 0, 'connector_pin'), 1),
+    ('bound', ('rows', 0, 'signal'), ['CAN_H']), ('bound', ('rows', 0, 'external_destination'), {'text': 'x'}),
+    ('bound', ('io_map', 'sha256'), 'A' * 64), ('bound', ('io_map', 'sha256'), 'a' * 63),
+    ('bound', ('io_map', 'sha256'), 1), ('bound', ('io_map', 'path'), '/abs/io-map.csv'),
+    ('bound', ('io_map', 'path'), '../io-map.csv'), ('bound', ('io_map', 'path'), '.'),
+    ('bound', ('io_map', 'extra'), 'x'), ('bound', ('extra',), 'x'), ('bound', ('rows', 0, 'extra'), 'x'),
+    ('bound', ('rows', 0, 'origin', 'extra'), 'x'), ('bound', ('rows', 0, 'requirements', 0, 'extra'), 'x'),
+    ('bound', ('rows', 0, 'requirements', 0), 'POD-IF-A'),
+    ('bound', ('rows', 0, 'requirements', 1), {'id': 'POD-IF-A', 'qualification': 'unqualified-carryover'}),
+    ('bound', ('rows', 0, 'requirements', 0, 'qualification'), 'Sourced'),
+    ('bound', ('rows', 0, 'requirements', 0, 'qualification'), ['unqualified-carryover']),
+    ('bound', ('rows', 0, 'requirements', 0, 'qualification'), True),
+    ('bound', ('rows', 0, 'requirements', 0, 'id'), {'id': 'POD-IF-A'}),
+    ('bound', ('rows', 0, 'requirements', 0, 'id'), '  '),
+    ('bound', ('rows', 0, 'origin', 'sha256'), 'A' * 64), ('bound', ('rows', 0, 'origin', 'sha256'), 0),
+    ('bound', ('rows', 0, 'origin', 'path'), '/v9/io-map.csv'), ('bound', ('rows', 0, 'origin', 'path'), '../v9.csv'),
+    ('bound', ('rows', 0, 'origin', 'revision'), ['v9']), ('bound', ('rows', 0, 'origin', 'revision'), 9),
+    ('bound', ('rows', 0, 'origin', 'locator'), ' '), ('bound', ('schema',), 'agent-ee.io-map-qualification/2'),
+    ('bound-mixed', ('rows', 0, 'requirements', 0, 'source', 'sha256'), 'A' * 64),
+    ('bound-mixed', ('rows', 0, 'requirements', 0, 'source', 'path'), '/item4.md'),
+    ('bound-mixed', ('rows', 0, 'requirements', 0, 'source', 'extra'), 'x'),
+    ('bound-mixed', ('rows', 0, 'requirements', 0, 'qualification'), 'unqualified-carryover'),
+]
+for index, (base_name, path, value) in enumerate(RUNTIME):
+    dotted = '.'.join(str(p) for p in path)
+    case(f'runtime-type/{index:02d}/{base_name}/{dotted}={json.dumps(value)[:24]}', mutate_record(base_name, path, value))
+for label, op in (('sha256-uppercase', dict(path=RECORD_PATH, sha256='A' * 64)),
+                  ('path-absolute', dict(path='/qualification.json', sha256='a' * 64)),
+                  ('extra-key', dict(path=RECORD_PATH, sha256='a' * 64, note='x')),
+                  ('sha256-int', dict(path=RECORD_PATH, sha256=1))):
+    case(f'runtime-type/declaration/{label}', mutate_contract('bound', lambda c, op=op: c.update(qualification_record=op)))
+case('runtime-type/contract/citation-row-bool', mutate_contract('bound', each_citation(lambda i: i['io_map'].update(row=True))))
+case('runtime-type/contract/citation-sha256-uppercase', mutate_contract('bound', each_citation(
+    lambda i: i['io_map'].update(sha256=i['io_map']['sha256'].upper()))))
+
+# agent-521 1b7c9cc0 (2): authenticated origin bytes stay distinct from qualification and authority.
+BASES['bound-mixed-verified'] = lambda: compile_bundle(
+    dict(history(path='origin.csv', sha256=sha(ORIGIN_BODY)), sourced={'POD-IF-A': SOURCED}),
+    {'origin.csv': ORIGIN_BODY, 'item4.md': ITEM4})
+case('authority/verified-origin-mixed', lambda: base('bound-mixed-verified'), 'accept',
+     dict(bound=True, sourced=['POD-IF-A'], unqualified=['POD-IF-B'], origins={'origin.csv': 'verified'}))
+ORIGIN_AS_SOURCE = dict(path='origin.csv', sha256=sha(ORIGIN_BODY), locator='v9 table 2')
+case('authority/sourced-cites-verified-origin', mutate_contract(
+    'bound-verified', each_citation(lambda i: i['io_map'].update(requirements=[
+        dict(id=e['id'], qualification='sourced', source=dict(ORIGIN_AS_SOURCE)) for e in i['io_map']['requirements']])),
+    record_fn=each_row(lambda r: r.update(requirements=[
+        dict(id=e['id'], qualification='sourced', source=dict(ORIGIN_AS_SOURCE)) for e in r['requirements']])),
+    repin=True))
+case('authority/sourced-cites-uncaptured-origin', mutate_contract(
+    'bound', each_citation(lambda i: i['io_map'].update(requirements=[
+        dict(id=e['id'], qualification='sourced', source=dict(path='v9/io-map.csv', sha256='a' * 64, locator='v9'))
+        for e in i['io_map']['requirements']])),
+    record_fn=each_row(lambda r: r.update(requirements=[
+        dict(id=e['id'], qualification='sourced', source=dict(path='v9/io-map.csv', sha256='a' * 64, locator='v9'))
+        for e in r['requirements']])),
+    repin=True))
+
+
 # ---- running ---------------------------------------------------------------------------------------
 
 def evaluate(entry):
@@ -619,6 +683,56 @@ class QualificationMatrixTests(unittest.TestCase):
         self.assertIn('origin.csv', descriptor['immutable_inputs'])
         self.assertEqual({r['origin'] for r in descriptor['requirement_history']['rows']}, {'verified'})
 
+
+    def test_loader_runs_on_every_call_and_accepts_only_bytes(self):
+        """1b7c9cc0 (1): no pre-built or typed object bypasses the runtime schema."""
+        b = base('bound')
+        good = hi.load_qualification_record(b.contract['qualification_record'], b.record)
+        forged = hi.QualificationRecord(good.path, good.sha256, good.raw, {'schema': None})
+        for supplied in (good, forged, good.data, b.record.decode(), memoryview(b.record), [b.record]):
+            with self.subTest(type(supplied).__name__), self.assertRaisesRegex(ValueError, 'exact bytes'):
+                hi.verify_contract(copy.deepcopy(b.contract), qualification=supplied, captured=b.captured())
+            with self.subTest('bind', type=type(supplied).__name__), self.assertRaisesRegex(ValueError, 'exact bytes'):
+                hi.bind_qualification_record(copy.deepcopy(b.contract), supplied, b.captured())
+        self.assertTrue(hi.verify_contract(copy.deepcopy(b.contract), qualification=bytearray(b.record),
+                                           captured=b.captured())[1]['qualification_bound'])
+
+    def test_verified_origin_confers_no_qualification(self):
+        """1b7c9cc0 (2): authenticated origin bytes prove provenance, never a requirement's qualification."""
+        for name in ('bound-verified', 'bound-mixed-verified'):
+            b = base(name)
+            with tempfile.TemporaryDirectory() as tmp:
+                scope, files, root = capture_dir(b, tmp)
+                descriptor = hi.capability(scope['checks'][1]['params'], scope, files, root, 'interface')
+                coverage = compile_coverage(scope, files, root)
+            rows = descriptor['requirement_history']['rows']
+            self.assertEqual({r['origin'] for r in rows}, {'verified'})
+            expected_sourced = ['POD-IF-A'] if name == 'bound-mixed-verified' else []
+            for row in rows:
+                for rid, status in row['requirements'].items():
+                    self.assertEqual(status, 'sourced' if rid in expected_sourced else 'unqualified historical assertion')
+            self.assertEqual(descriptor['requirement_authority']['sourced'], expected_sourced)
+            cited = coverage['requirement_citations']
+            self.assertEqual(cited['qualified'], expected_sourced)
+            self.assertIn('POD-IF-B', cited['unqualified-carryover']['interface'])
+            self.assertIs(cited['counted_as_coverage'], False)
+
+    def test_uncaptured_origin_is_labelled_never_dropped(self):
+        """1b7c9cc0 (2): every row keeps its origin, labelled declared-unverified, in every consumer."""
+        b = base('bound-verified')
+        b.uncaptured.add('origin.csv')
+        record_rows = [r['row'] for r in b.record_value()['rows']]
+        _, report = hi.verify_contract(copy.deepcopy(b.contract), qualification=b.record, captured=b.captured())
+        with tempfile.TemporaryDirectory() as tmp:
+            scope, files, root = capture_dir(b, tmp)
+            descriptor = hi.capability(scope['checks'][1]['params'], scope, files, root, 'interface')
+            detail = compile_coverage(scope, files, root)['checks']['interface']['requirement_qualification']
+        for history in (report, descriptor['requirement_history'], detail):
+            self.assertEqual(history['origin_verification'], {'origin.csv': 'declared-unverified'})
+            self.assertEqual([r['row'] for r in history['rows']], record_rows)
+            self.assertEqual({(r['origin_path'], r['origin']) for r in history['rows']},
+                             {('origin.csv', 'declared-unverified')})
+            self.assertNotIn('origin.csv', descriptor['immutable_inputs'])
 
 class NativeQualificationMatrixTests(unittest.TestCase):
     """r1 native_probe.py: native pass keeps independent structural authority; carry-over is reported."""

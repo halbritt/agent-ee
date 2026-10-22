@@ -98,8 +98,14 @@ the record's exact bytes, checks their sha256 against the declared pin, parses
 strict JSON (UTF-8, unique keys, no NaN) and validates the
 `agent-ee.io-map-qualification/1` schema unconditionally. A parsed `null`,
 empty or wrong-typed record or field is refused; absent means no bytes were
-supplied, and a bound contract then refuses. `bind_qualification_record`
-binds the loaded record to the contract and to captured bytes. Every citation
+supplied, and a bound contract then refuses. Every presence, type and value
+constraint is checked at runtime on every call, for every consumer. Python
+type hints are not validation: a bool or float row, a numeric string, a
+whitespace-only value, an uppercase or short digest, an unsafe path, an extra
+key and a near-miss status are all refused. `bind_qualification_record` takes
+the record bytes and runs the loader itself, so no pre-built record object
+bypasses the schema. It then binds the record to the contract and to captured
+bytes. Every citation
 must equal its record row: row number, connector pin, signal, external
 destination, and the complete requirement entries with their statuses. Every
 record row must be cited. The captured io-map CSV must match the record's
@@ -124,7 +130,12 @@ are refused before any row is labelled, in any row order, whether or not that
 path is captured. Each row's label comes from its own pair. The label is
 `verified` only when that pair's captured bytes match; it is
 `declared-unverified` when the path is not captured, and mismatching captured
-bytes refuse. A verified origin becomes an immutable input.
+bytes refuse. A verified origin becomes an immutable input. Authenticating an
+origin proves those bytes only. It never qualifies a requirement or confers
+authority: a carried ID stays an `unqualified historical assertion` under a
+verified origin, and a `sourced` entry may not cite an origin path. An
+uncaptured origin is never dropped; each of its rows is reported
+`declared-unverified`. Native structural grading is unchanged.
 `--history-source FILE` (API `origin_bytes=`) supplies the origin bytes to the
 compiler, and `--captured PATH` (API `captured=`) supplies each sourced
 requirement source. The compiler verifies its own output with the same loader,

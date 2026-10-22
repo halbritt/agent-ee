@@ -86,7 +86,9 @@ RECORD_ROW_FIELDS = 'row connector_pin signal external_destination requirements'
 
 
 class QualificationRecord:
-    """A record authenticated by load_qualification_record: pin path, pin sha256, exact bytes, parsed data."""
+    """Result of load_qualification_record: pin path, pin sha256, exact bytes, parsed data.
+
+    A plain container, not a proof: consumers pass bytes, and the loader re-validates at runtime on every call."""
     __slots__ = ('path', 'sha256', 'raw', 'data')
 
     def __init__(self, path, sha256, raw, data):
@@ -152,6 +154,10 @@ def validate_record_schema(record):
         if origins.setdefault(rel_path(origin['path']), declared) != declared:
             raise ValueError(f"conflicting historical origin declarations for {origin['path']!r} "
                              '(one path must declare one revision and sha256)')
+    # Authenticated origin bytes prove provenance only; they never become a requirement's qualifying source.
+    if any(r['qualification'] == 'sourced' and rel_path(r['source']['path']) in origins
+           for entry in record['rows'] for r in entry['requirements']):
+        raise ValueError('sourced requirement cannot cite a historical origin; origin bytes confer no authority')
     return record
 
 
@@ -205,16 +211,15 @@ def record_origins(record):
     return origins
 
 
-def bind_qualification_record(contract, record, captured):
-    """Tie an authenticated record to every citation, to the captured CSV rows and to captured sources.
+def bind_qualification_record(contract, raw, captured):
+    """Load `raw` (the record's exact bytes) and tie it to every citation, the captured CSV rows and sources.
 
-    Returns the qualification report; each row's origin label comes from its own (path, sha256) pair.
+    The loader runs here on every call: the runtime schema is never skipped for an object built
+    elsewhere (a QualificationRecord instance is not accepted). Returns the qualification report;
+    each row's origin label comes from its own (path, sha256) pair, and an origin label never
+    changes a requirement status.
     """
-    if not isinstance(record, QualificationRecord):
-        raise ValueError('qualification record must come from load_qualification_record')
-    if (record.path, record.sha256) != (contract['qualification_record']['path'],
-                                        contract['qualification_record']['sha256']):
-        raise ValueError('qualification record differs from the contract declaration')
+    record = load_qualification_record(contract['qualification_record'], raw)
     if captured is None:
         raise ValueError('qualification-bound validation requires captured io_map CSV and source bytes')
     data = record.data
@@ -325,13 +330,12 @@ def verify_contract(contract, *, source_bytes=None, require_source_sha256=False,
                     captured=None):
     """(contract, qualification report). The single bound-verdict path for every consumer.
 
-    Bound: load_qualification_record(declaration, qualification) then bind_qualification_record.
+    Bound: bind_qualification_record, which runs load_qualification_record on the supplied bytes.
     Unbound (legacy): supplying a record is refused and the report says not qualification-bound.
     """
     validate_contract_shape(contract, source_bytes=source_bytes, require_source_sha256=require_source_sha256)
     if 'qualification_record' in contract:
-        record = load_qualification_record(contract['qualification_record'], qualification)
-        return contract, bind_qualification_record(contract, record, captured)
+        return contract, bind_qualification_record(contract, qualification, captured)
     if qualification is not None:
         raise ValueError('qualification record supplied for a contract that declares none')
     return contract, {'qualification_bound': False, 'origins': {}}
