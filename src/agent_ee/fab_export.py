@@ -1067,7 +1067,8 @@ def inventory(fab):
 
 def verify_manifest(fab, manifest):
     """Recompute the staging inventory; raise ValueError on any disagreement."""
-    if not isinstance(manifest, dict) or manifest.get('schema') not in (SCHEMA,) + LEGACY_SCHEMAS:
+    if (not isinstance(manifest, dict) or not isinstance(manifest.get('schema'), str)
+            or manifest['schema'] not in (SCHEMA,) + LEGACY_SCHEMAS):
         raise ValueError(f'not an {SCHEMA} (or legacy {LEGACY_SCHEMAS[0]})')
     if 'headers' in manifest and manifest['headers'] != header_records():
         raise ValueError('manifest headers do not match captured JLC templates')

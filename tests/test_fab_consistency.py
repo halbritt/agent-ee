@@ -444,6 +444,12 @@ class FabConsistencyTests(FabCase):
                     manifest_edit=lambda m: m.update(schema=f'agent-ee.fab-manifest/{version}'))
                 self.assertStatus(result, 'malformed', 'unknown', 'fields')
 
+    def test_non_string_manifest_schema_is_malformed_not_a_crash(self):
+        for value in ([], {}, ['agent-ee.fab-manifest/2'], None, 2, True):
+            with self.subTest(value=value):
+                result = self.run_case(manifest_edit=lambda m: m.update(schema=value))
+                self.assertStatus(result, 'malformed', 'unknown', 'fields')
+
     def test_defect_citations_stay_sealable_when_export_seals_only_manifest(self):
         files = package()
         files['bom.csv'] = files['bom.csv'].replace(b'"R1,R2"', b'"R1,R1"')

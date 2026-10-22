@@ -346,7 +346,7 @@ def load_manifest(ctx, stage):
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         fail('manifest', f'manifest.json is not JSON ({exc})')
     if (not isinstance(data, dict) or not (MANIFEST_KEYS <= set(data) <= MANIFEST_KEYS | OPTIONAL_MANIFEST_KEYS)
-            or data['schema'] not in MANIFEST_SCHEMAS):
+            or not isinstance(data['schema'], str) or data['schema'] not in MANIFEST_SCHEMAS):
         fail('manifest', f'expected exactly the {MANIFEST_SCHEMA} fields (or legacy {LEGACY_MANIFEST_SCHEMA})')
     board = ctx.scope.get('board')
     captured = ctx.manifest['files'].get(board)

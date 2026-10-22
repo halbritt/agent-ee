@@ -700,6 +700,13 @@ class PackagingTests(unittest.TestCase):
                 self.assertEqual(archive.namelist(), ['a.gtl', 'b.gbl'])
                 self.assertEqual({i.date_time for i in archive.infolist()}, {(1980, 1, 1, 0, 0, 0)})
 
+    def test_manifest_non_string_schema_is_refused_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for value in ([], {}, None, 2, True):
+                with self.subTest(value=value):
+                    with self.assertRaisesRegex(ValueError, 'not an'):
+                        verify_manifest(Path(tmp), {'schema': value, 'files': {}})
+
     def test_manifest_inventory_mismatch_is_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
             fab = Path(tmp)
