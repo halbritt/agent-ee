@@ -788,7 +788,7 @@ def _fits(candidate, outline, margin_nm=0, band=()):
         access = access_direction.evaluate(candidate, outline)
         if access['status'] not in ('pass', 'info'):
             return False
-        if not band and access['provenance']['enforcement'] == 'hard':
+        if not band and access['provenance']['enforcement'] == 'hard' and access['relaxes_outline']:
             band = access['lane_polygons_nm']
             exit_edges = access['overhang']['edges']
     # A band is a declared overhang across outline edges; its regions share no area with the board.

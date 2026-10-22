@@ -2292,7 +2292,10 @@ The existing `placement` check with `outline-containment/1` also grades native
 [footprint access declarations](access-direction.md). Sourced declarations with
 an inboard lane or an unexitable mouth are defects; malformed or unsupported
 sourced geometry remains unknown. Uncited declarations are reported advisories
-and never gate. The saved-board placement judge retains transformed lane
+and never gate. Only a hard `manufacturer` or `datasheet` lane with a declared
+`travel_nm` equal to its depth relaxes courtyard containment inside the lane
+(AGENTEE-419). Other sourced lanes still gate, and their outside courtyard area
+stays an `outside_outline` defect. The saved-board placement judge retains transformed lane
 measurements and the shared fixed-overhang edge-sweep geometry for review.
 This adds no check kind or independent acceptance authority.
 
