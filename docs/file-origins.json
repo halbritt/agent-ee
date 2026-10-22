@@ -3901,6 +3901,18 @@
     },
     {
       "paths": [
+        "evidence/packet-index-ab/call-ledger.jsonl",
+        "evidence/packet-index-ab/report.json",
+        "evidence/packet-index-ab/manifest.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "AGENTEE-12 capped reviewer A/B records written by src/agent_ee/packet_ab.py: the call ledger (cell ids, reservation/settle events, execution states, durations, timestamps), the aggregate report (token counts, durations, scores, candidate/plan identities) and the store manifest (object names, hashes, sizes). No captured design, library, prompt or reviewer text."
+    },
+    {
+      "paths": [
         "tools/ee454_io_profile/analyze.py",
         "tools/ee454_io_profile/count_calls.py",
         "tools/ee454_io_profile/profile_io.py",

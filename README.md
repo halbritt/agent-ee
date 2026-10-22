@@ -892,9 +892,10 @@ Adjudicators may cite the verified immutable `baseline.json`.
 native components, pins, nets and board primitives to declared checks and
 requirements. Bounded views retain access to the full baseline and raw evidence;
 ambiguous identities stay unresolved. The index supplies navigation, not defect
-authority. Its effect on model token use and detection is not yet measured.
-An initial matched-version pilot stopped when both control reviewers timed out;
-no replacement samples or performance claims were made.
+authority. An initial matched-version pilot stopped when both control reviewers
+timed out. A capped [live A/B](docs/packet-index-ab.md) on 2026-10-22 made 9
+subscription calls. It measured tokens, latency and missed defects, found no
+misses and no navigation citations, and makes no savings claim.
 
 Bench corrections bind to the complete captured design inventory. Changing a
 component, connection, layout or library makes calibrated acceptance unavailable

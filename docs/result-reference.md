@@ -696,4 +696,7 @@ PYTHONPATH=src python3 scripts/benchmark_packet_index.py build/review
 The report separates structural index size, prefix packet size and indexed packet
 size. It does not measure tokens, provider latency or model missed defects.
 No reviewer attention, detection or cost improvement is established by these
-mechanical measurements; a paired live reviewer comparison remains outstanding.
+mechanical measurements. The capped live comparison is in
+[packet navigation reviewer A/B](packet-index-ab.md). It recorded provider token
+usage, reviewer latency and missed-defect outcomes for three comparable matched
+pairs, and it makes no savings claim.

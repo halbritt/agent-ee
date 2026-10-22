@@ -1,0 +1,35 @@
+{"cap": 12, "created_utc": "2026-10-22T17:53:55.562647+00:00", "event": "header", "schema": "agent-ee.call-ledger/1"}
+{"at_utc": "2026-10-22T17:53:55.581060+00:00", "cell": "seeded-r1-baseline", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 1}
+{"at_utc": "2026-10-22T17:53:55.623681+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 1}
+{"at_utc": "2026-10-22T17:53:59.290676+00:00", "cell": "seeded-r1-indexed", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 3}
+{"at_utc": "2026-10-22T17:53:59.344146+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 3}
+{"at_utc": "2026-10-22T17:54:02.433360+00:00", "cell": "control-r1-indexed", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 5}
+{"at_utc": "2026-10-22T17:54:02.469240+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 5}
+{"at_utc": "2026-10-22T17:54:05.267652+00:00", "cell": "control-r1-baseline", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 7}
+{"at_utc": "2026-10-22T17:54:05.312363+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 7}
+{"at_utc": "2026-10-22T17:54:08.071226+00:00", "cell": "seeded-r2-indexed", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 9}
+{"at_utc": "2026-10-22T17:54:08.113907+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 9}
+{"at_utc": "2026-10-22T17:54:12.018665+00:00", "cell": "seeded-r2-baseline", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 11}
+{"at_utc": "2026-10-22T17:54:12.074676+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 11}
+{"at_utc": "2026-10-22T17:54:14.829349+00:00", "cell": "control-r2-baseline", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 13}
+{"at_utc": "2026-10-22T17:54:14.878543+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 13}
+{"at_utc": "2026-10-22T17:54:17.911993+00:00", "cell": "control-r2-indexed", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 15}
+{"at_utc": "2026-10-22T17:54:17.963234+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 15}
+{"at_utc": "2026-10-22T17:58:41.464904+00:00", "cell": "seeded-r1-baseline", "event": "reserve", "kind": "real", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 1, "seq": 17}
+{"at_utc": "2026-10-22T18:01:37.026476+00:00", "duration_s": 174.449, "event": "settle", "execution": "ok", "seq": 17}
+{"at_utc": "2026-10-22T18:01:39.651884+00:00", "cell": "seeded-r1-indexed", "event": "reserve", "kind": "real", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 2, "seq": 19}
+{"at_utc": "2026-10-22T18:05:45.025702+00:00", "duration_s": 244.836, "event": "settle", "execution": "ok", "seq": 19}
+{"at_utc": "2026-10-22T18:05:47.851328+00:00", "cell": "control-r1-indexed", "event": "reserve", "kind": "real", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 3, "seq": 21}
+{"at_utc": "2026-10-22T18:10:39.949507+00:00", "duration_s": 291.575, "event": "settle", "execution": "ok", "seq": 21}
+{"at_utc": "2026-10-22T18:10:48.124284+00:00", "cell": "control-r1-baseline", "event": "reserve", "kind": "real", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 4, "seq": 23}
+{"at_utc": "2026-10-22T18:15:18.103342+00:00", "duration_s": 269.06, "event": "settle", "execution": "ok", "seq": 23}
+{"at_utc": "2026-10-22T18:15:25.605156+00:00", "cell": "seeded-r2-indexed", "event": "reserve", "kind": "real", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 5, "seq": 25}
+{"at_utc": "2026-10-22T18:19:32.912356+00:00", "duration_s": 246.043, "event": "settle", "execution": "ok", "seq": 25}
+{"at_utc": "2026-10-22T18:19:38.186570+00:00", "cell": "seeded-r2-baseline", "event": "reserve", "kind": "real", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 6, "seq": 27}
+{"at_utc": "2026-10-22T18:23:16.516015+00:00", "duration_s": 217.346, "event": "settle", "execution": "ok", "seq": 27}
+{"at_utc": "2026-10-22T18:23:19.407555+00:00", "cell": "seeded-r2-baseline", "event": "reserve", "kind": "real", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 7, "seq": 29}
+{"at_utc": "2026-10-22T18:25:23.615984+00:00", "duration_s": 123.586, "event": "settle", "execution": "ok", "seq": 29}
+{"at_utc": "2026-10-22T18:25:28.949388+00:00", "cell": "control-r2-baseline", "event": "reserve", "kind": "real", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 8, "seq": 31}
+{"at_utc": "2026-10-22T18:30:36.085279+00:00", "duration_s": 306.258, "event": "settle", "execution": "ok", "seq": 31}
+{"at_utc": "2026-10-22T18:30:40.188956+00:00", "cell": "control-r2-indexed", "event": "reserve", "kind": "real", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 9, "seq": 33}
+{"at_utc": "2026-10-22T18:36:50.287326+00:00", "duration_s": 369.266, "event": "settle", "execution": "ok", "seq": 33}

@@ -414,6 +414,10 @@ the stopped report SHA-256 is
 These identifiers support retained-record comparison; the records and captured
 third-party fixture inputs have not been republished as benchmark evidence.
 
+A capped same-snapshot comparison followed on 2026-10-22 on the Claude route
+(9 of 12 approved calls). It is described in
+[packet navigation reviewer A/B](packet-index-ab.md).
+
 ## Writer-side stage receipts
 
 `test_stage_receipts.py` runs an original test step program in the real sandbox.
