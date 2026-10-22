@@ -286,6 +286,105 @@ class AccessTests(unittest.TestCase):
             self.assertEqual(len(result['advisories']), 0 if cited else 1)
 
 
+def edge_socket(source_class, *, travel=30, lane_travel=30, overhang=2):
+    """Mouth 0.5 mm inside the courtyard at the right board edge (x = 20 mm)."""
+    fp = socket()
+    value = fp['access_direction']
+    value['provenance']['class'] = source_class
+    value['provenance']['citation'] = f'Original EE419 {source_class} fixture: outward lane, {travel} mm travel.'
+    value['mouth_nm'] = [1500000, MM]
+    value['lane_polygons_nm'] = [rectangle(1.5, 0, lane_travel, 2)]
+    if travel is not None:
+        value['travel_nm'] = travel * MM
+    fp['courtyards']['B']['polygons'] = [rectangle(7, 7, overhang, 2)]
+    return transform(fp, [18500000, 5*MM], 0)
+
+
+class LaneSourceTests(unittest.TestCase):
+    """AGENTEE-419: only manufacturer or datasheet lanes with a declared travel relax containment."""
+
+    def test_other_sourced_classes_gate_but_never_relax_containment(self):
+        for source_class in ('fixture_author', 'board', 'arrangement_rule'):
+            fp = edge_socket(source_class)
+            with self.subTest(source_class=source_class):
+                self.assertFalse(access.relaxes(fp))
+                self.assertFalse(access.overhangs_courtyard(fp))
+                result = judge(capture([fp]))
+                self.assertEqual(result['verdict'], 'hard_fail', result)
+                self.assertEqual([(r['kind'], r['outside_area_mm2']) for r in result['hard_failures']],
+                                 [('outside_outline', 1.0)])
+                self.assertNotIn('declared_overhangs', result)
+                row = result['access_directions'][0]
+                self.assertEqual((row['status'], row['relaxes_outline']), ('pass', False))
+                # Gating is unchanged: the same source still refuses an inboard lane.
+                inboard = copy.deepcopy(fp)
+                inboard['access_direction']['lane_polygons_nm'][0].reverse()
+                inboard = transform(inboard, [10*MM, 5*MM], 0)
+                self.assertFalse(access.admits(inboard, rectangle(0, 0, 20, 20)))
+                self.assertIn('access_direction', [r['kind'] for r in judge(capture([inboard]))['hard_failures']])
+                self.assertEqual(pack(capture([fp]), request(fixed_refs=['J3']))['status'], 'fixed_conflict')
+
+    def test_manufacturer_and_datasheet_lanes_with_declared_travel_relax(self):
+        from agent_ee.placer import _fits
+        for source_class in ('manufacturer', 'datasheet'):
+            fp = edge_socket(source_class)
+            with self.subTest(source_class=source_class):
+                self.assertTrue(access.relaxes(fp))
+                result = judge(capture([fp]))
+                self.assertEqual(result['verdict'], 'pass', result)
+                self.assertEqual(result['declared_overhangs'], [{'ref': 'J3', 'side': 'B', 'overhang_area_mm2': 1.0}])
+                self.assertTrue(result['access_directions'][0]['relaxes_outline'])
+                self.assertTrue(_fits(fp, rectangle(0, 0, 20, 20), 250000))
+                self.assertEqual(pack(capture([fp]), request(fixed_refs=['J3']))['status'], 'planned')
+                # Area outside the lane width remains a defect.
+                wider = copy.deepcopy(fp)
+                wider['courtyards']['B']['polygons'] = [rectangle(18.5, 5, 2, 3)]
+                self.assertIn('outside_outline', [r['kind'] for r in judge(capture([wider]))['hard_failures']])
+
+    def test_relaxing_class_without_declared_travel_does_not_relax(self):
+        from agent_ee.placer import _fits
+        fp = edge_socket('manufacturer', travel=None)
+        self.assertFalse(access.relaxes(fp))
+        result = judge(capture([fp]))
+        self.assertEqual(result['verdict'], 'hard_fail', result)
+        self.assertEqual(result['hard_failures'][0]['kind'], 'outside_outline')
+        self.assertFalse(_fits(fp, rectangle(0, 0, 20, 20)))
+
+    def test_unbounded_lane_travel_cannot_relax_large_overhang(self):
+        # Reproduces AGENTEE-379 review probe P9: a 1000 mm lane passed 97 mm2 of overhang.
+        fp = edge_socket('fixture_author', travel=None, lane_travel=1000, overhang=50.5)
+        result = judge(capture([fp]))
+        self.assertEqual(result['verdict'], 'hard_fail', result)
+        self.assertEqual(result['hard_failures'][0]['outside_area_mm2'], 98.0)
+        # A declared travel must equal the lane depth; a longer lane is unknown, never a pass.
+        fp = edge_socket('manufacturer', travel=30, lane_travel=1000, overhang=50.5)
+        self.assertRaises(ValueError, access.relaxes, fp)
+        result = judge(capture([fp]))
+        self.assertEqual(result['verdict'], 'hard_fail')  # The unrelaxed overhang stays a defect.
+        self.assertEqual([u['kind'] for u in result['unknown']], ['access_direction'])
+        self.assertEqual(pack(capture([fp]), request(fixed_refs=['J3']))['status'], 'unsupported_geometry')
+
+    def test_malformed_travel_fails_closed(self):
+        for travel in (0, -MM, 30.0 * MM, True, '30000000', 31 * MM, 29 * MM):
+            fp = edge_socket('manufacturer')
+            fp['access_direction']['travel_nm'] = travel
+            with self.subTest(travel=travel):
+                result = judge(capture([fp]))
+                self.assertNotEqual(result['verdict'], 'pass')
+                self.assertEqual([u['kind'] for u in result['unknown']], ['access_direction'])
+                self.assertNotIn('declared_overhangs', result)
+                result = pack(capture([fp]), request(fixed_refs=[]))
+                self.assertEqual((result['status'], result['outcome']), ('unsupported_geometry', 'unknown'))
+
+    def test_uncited_travel_stays_advisory(self):
+        fp = edge_socket('manufacturer')
+        fp['access_direction'].pop('provenance')
+        self.assertFalse(access.relaxes(fp))
+        result = judge(capture([fp]))
+        self.assertEqual(result['hard_failures'][0]['kind'], 'outside_outline')
+        self.assertEqual(result['access_directions'][0]['status'], 'info')
+
+
 class BlockAccessTests(ArrangementFixture, unittest.TestCase):
     def test_stage_a_defers_access_and_stage_b_rotates_storage_member_to_edge(self):
         # Original block fixture substitutes a storage socket role on a movable member.
