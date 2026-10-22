@@ -1027,11 +1027,25 @@ Experiment evidence is never dropped and is never qualified.
   change repairs. The producer itself marked the receipt not comparison-eligible
   (`origin predecessor is missing or does not own this input`): kicad-route
   `experiment._origin` reads any `--dir` whose parent directory is named
-  `candidate` as a run candidate with a missing predecessor, and the adapter's
-  `--dir` is always `/candidate/<project>`. So every adapter-run K91 receipt is
-  `ineligible` until kicad-route or the sandbox layout changes. Agent-ee does not
-  relabel it. Records, receipts and negative controls are in
-  `evidence/k91-native-positive/` (`evidence-manifest.json`, `SHA256SUMS`).
+  `candidate` as a run candidate with a missing predecessor. For a top-level
+  project input the adapter's `--dir` is `/candidate/<project>`, so every
+  adapter-run K91 receipt for a top-level project is `ineligible`. A nested
+  project path (`/candidate/nested/project`) does not meet that rule (review
+  probe of the producer's `_origin`; not a receipt and not a route). Agent-ee does
+  not relabel it. Records, receipts and negative controls are in
+  `evidence/k91-native-positive/` (`evidence-manifest.json`, `SHA256SUMS`). The
+  harness's recorded `controls_refused: false` is a harness defect: it counted
+  the mismatched-runtime control's verified `not_run` as accepted. The record is
+  kept as written. `scripts/k91_classify.py` re-derives it (`CLASSIFIER_V1`) and
+  classifies with `CLASSIFIER_V2`. Under V2 a coherent verified `not_run` with
+  failed adoption is a refusal, the candidate-board and sidecar tamper controls
+  are separate, and a missing candidate-board control is incomplete. The
+  successor `scripts/k91_native_positive_v2.py` uses V2. It takes the exact
+  runtime and input identities and the router and total limits, and it adopts
+  only after a `verify` that did not refuse, as the consumer does. A bare
+  `stage_receipts.adopt` checks only the declared outputs: it accepts a receipt
+  whose retained sidecar was tampered, which only `verify` refuses
+  (`tests/test_k91_harness_classifier.py`).
 - **Pin.** The pinned `b5774496` (AGENTEE-450) `cli.py` has no
   `--experiment-policy` (the K91 producer commits `a0ed434` and `bd1e633f` are
   not its ancestors), and its `main` turns every usage error into a refusal
