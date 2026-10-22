@@ -133,9 +133,15 @@ its own isolated copy of the board:
    - A `via` witness ends at a through via that meets the via rule minima and
      reaches another copper layer.
 
+   Before these checks, each witness record must match its kind exactly:
+   `target` only on `direct`, `via` only on `via`, `direction` never on
+   `direct`, no unknown key, and a `via` record with exactly `diameter_nm`,
+   `drill_nm`, an integer `position_nm`, `layers` and `reaches`. An empty group
+   (or one that is not a list) is refused: zero witnesses are zero evidence.
+
    Any failure refuses the group with `semantic_findings`. A malformed witness
-   is never materialized. A writable refused group still runs the native steps
-   below, so its native findings are reported too.
+   or empty group is never materialized. A writable refused group still runs
+   the native steps below, so its native findings are reported too.
 2. Copy the board and keep its rule files byte-identical. pcbnew rewrites the
    project file on save, so the source bytes are restored before DRC.
 3. Add the witness tracks and vias on the source net. Native pcbnew connectivity
@@ -156,28 +162,63 @@ establish simultaneous routability.
 
 ## Block sidecar: `agent-ee.block-access/1`
 
-`placement_access.block_access(candidate, geometry, routing_policy)` writes the
-optional sidecar for an `agent-ee.block-candidate/2` placed on a complete board.
-It runs in diagnostic mode only:
+`placement_access.block_access(candidate, geometry, routing_policy, capture=capture)`
+writes the optional sidecar for an `agent-ee.block-candidate/2` placed on a
+complete board. `capture` is the `agent-ee.placement-probe/1` capture
+(`placement_probe` without `--routing-geometry`) of the same saved board. It
+runs in diagnostic mode only:
 
 - **Reads, never writes.** It reads the strict candidate/2 and binds its
   canonical digest. It adds no field to that schema.
+- **Capture binding** (`bind_capture`). The two captures must name the same
+  board SHA-256, the same footprints at the same poses and the same pads by
+  UUID, with equal number, net, position, orientation, shape, attribute and
+  drill. Circle, rectangle, oval and rounded-rectangle copper must match the
+  captured land: its size, offset and orientation, within the max-error rim,
+  and its area. Drill contours must match the captured drill size. Any
+  difference refuses. Trapezoid, chamfered and custom lands, and copper-layer
+  sets that differ, cannot be bound. Those pads are listed in `unbound_pads`
+  and analysed as unsupported, so their terminals stay unknown. A direct
+  witness into such a pad is dropped.
+- **Member evidence.** Each member's land-pattern and courtyard hashes are
+  recomputed from the capture (`blocks.pad_geometry_sha256`,
+  `blocks.courtyard_sha256`) and must equal the candidate's. Its footprint,
+  side and per-pad nets must equal the candidate member and its pins.
+  Missing, changed or foreign member evidence refuses. `member_evidence`
+  records each member's pads by UUID, number, net and copper.
 - **Pose check.** Each member must sit on the board at its frame pose relative to
   the anchor. Otherwise the sidecar refuses.
-- **Contents.** The candidate's pose-independent pad and courtyard hashes,
-  internal and boundary net roles, member terminals with their witnesses and
-  unknowns, coverage, policy and limits.
+- **Contents.** The candidate's pose-independent pad and courtyard hashes, the
+  capture digest, member evidence, unbound pads, internal and boundary net
+  roles, member terminals with their witnesses and unknowns, coverage, policy
+  and limits.
 - **Recheck.** A witness that uses space outside the block must be rechecked
   after arrangement.
 
 `access_status(candidate, sidecar=None)` reports `unknown` when there is no
-sidecar. Admission (`blocks.admit`) is unchanged: it does not read the sidecar.
+sidecar. With a sidecar, it derives the status from the evidence itself
+(`validate_sidecar`), never from the supplied counts. Validation checks the
+following, and any omission or inconsistency raises:
+
+- The exact field set and the candidate binding: digest, block, status, frame
+  and member hashes.
+- Member evidence against the candidate pins.
+- Policy, limits and search model.
+- Coverage: `unknown` exactly when it has reasons, and then no witness
+  terminal.
+- Terminals: they must cover exactly the member copper pads with their nets.
+  A witness terminal needs witnesses whose forms are valid and whose source,
+  net, layer, width and via match its terminal and policy.
+- The summary: it is recounted from the terminals and must equal the supplied
+  one.
+
+Admission (`blocks.admit`) is unchanged: it does not read the sidecar.
 With the feature off, candidate identity, bytes and member order are exactly the
 legacy ones.
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.placement_access block --candidate block.candidate.json \
-    --geometry geometry.json --policy policy.json --out block-access.json
+    --geometry geometry.json --capture capture.json --policy policy.json --out block-access.json
 ```
 
 ## Tests
@@ -199,6 +240,19 @@ PYTHONPATH=src python3 -m agent_ee.placement_access block --candidate block.cand
   an exit that stays on its own land and a witness on a foreign source are all
   refused. Native DRC alone passes the shortened link. A malformed witness is
   never written.
+- Witness forms. Direct, exit and via witnesses qualify. The same witnesses with
+  a key of another kind are refused before materialization: a direct witness
+  with `via: {}` (formerly a `KeyError`), with a full via, or with a direction;
+  an exit with a target; and a via record that is incomplete, extended or
+  textual. Empty groups are refused too.
+- Capture binding. The authored board's rotated, mirrored and drilled lands bind
+  to its native placement capture. Only the trapezoid and the custom land stay
+  unbound. A changed copper extent, drill or custom-land support refuses.
+- Sidecar evidence. Removed, renetted or re-identified member pads, changed
+  copper, another board or a missing capture all refuse. This includes U23 on
+  the pod candidate. Summary-only sidecars, missing fields, unknown coverage
+  with witnesses, dropped terminals, promoted unknowns and inconsistent counts
+  refuse too.
 - The exact U23/C87 replay from the pinned fome-mc store. It includes the actual
   sensor-power-front candidate sidecar, and those witnesses also pass native DRC.
 

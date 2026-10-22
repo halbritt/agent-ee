@@ -25,8 +25,11 @@ unknown, and a different-net zone makes its layer unknown.
 Native KiCad remains the authority: ``qualify`` materializes witnesses on an
 isolated copy with unchanged rules, refills and runs kicad-cli DRC in the
 existing sandbox. The ``agent-ee.block-access/1`` sidecar binds the strict
-candidate/2 digest and is written only in diagnostic mode; it never changes a
-candidate, its order or its admission. See docs/placement-access.md.
+candidate/2 digest and, through the placement capture of the same board, every
+member's land pattern, courtyard, pads and nets; it is written only in
+diagnostic mode and never changes a candidate, its order or its admission. Its
+status is recounted from validated terminal evidence. See
+docs/placement-access.md.
 """
 import argparse
 from collections import Counter
@@ -797,18 +800,183 @@ def analyze_access(geometry, poses, routing_policy, limits=None, refs=None):
     return index.analyze(refs)
 
 
+# ------------------------------------------------------------------ binding
+
+# pcbnew PAD_SHAPE values whose copper box is the size box about ShapePos (circle, rect, oval,
+# roundrect); tests pin them against pcbnew. Trapezoid, chamfered and custom lands are not
+# recorded in the placement capture with enough detail to bind their contours.
+BOXED_SHAPES = frozenset((0, 1, 2, 4))
+CUSTOM_SHAPE = 6
+# Integer rounding of captured vertices and of the float frame rotation, nm.
+ROUNDING_NM = 2
+
+
+def _area(polygon):
+    return abs(sum(a[0]*b[1] - b[0]*a[1] for a, b in _edges(polygon))) / 2
+
+
+def _local_extent(polygon, centre, rotation):
+    """Half extents of a polygon in a pad frame: board points turned by the pad orientation about ``centre``."""
+    angle = math.radians(rotation)
+    cos, sin = math.cos(angle), math.sin(angle)
+    points = [((q[0]-centre[0])*cos - (q[1]-centre[1])*sin, (q[0]-centre[0])*sin + (q[1]-centre[1])*cos)
+              for q in polygon]
+    return max(abs(x) for x, _ in points), max(abs(y) for _, y in points)
+
+
+def _land_problems(pad, land, error):
+    """Contour problems of a boxed land against its captured size, offset and orientation, per copper layer."""
+    offset = [v[0] / v[1] for v in land['copper_centroid_offset_nm']]
+    centre = (land['position_nm'][0] + offset[0], land['position_nm'][1] + offset[1])
+    w, h = land['size_nm']
+    half, t = (w / 2, h / 2), ROUNDING_NM
+    perimeter = 2 * (w + h)
+    # The smallest boxed land of this size is the stadium (oval or circle); the largest is the rectangle.
+    least = w * h - (4 - math.pi) * (min(w, h) / 2) ** 2
+    problems = []
+    for layer, bounds in sorted(pad['copper'].items()):
+        if len(bounds['outer']) != 1 or len(bounds['inner']) != 1:
+            problems.append(f'{layer}: a boxed land has exactly one copper contour per bound')
+            continue
+        outer, inner = bounds['outer'][0], bounds['inner'][0]
+        ox, oy = _local_extent(outer, centre, land['rotation_deg'])
+        ix, iy = _local_extent(inner, centre, land['rotation_deg'])
+        if not all(s - t <= o <= s + error + t for o, s in ((ox, half[0]), (oy, half[1]))):
+            problems.append(f'{layer}: outer copper extent differs from the captured land size')
+        if not all(s - error - t <= i <= s + t for i, s in ((ix, half[0]), (iy, half[1]))):
+            problems.append(f'{layer}: inner copper extent differs from the captured land size')
+        if _area(outer) < least - t * perimeter or _area(inner) > w * h + t * perimeter:
+            problems.append(f'{layer}: copper area differs from the captured land size')
+    return problems
+
+
+def _hole_problems(pad, land, error):
+    hole = pad['hole']
+    drilled = land['attribute'] in ('PTH', 'NPTH')
+    if (hole is None) != (not drilled):
+        return ['drill presence differs from the placement capture']
+    if hole is None:
+        return []
+    drill = land['drill_size_nm']
+    if hole['drill_nm'] != drill or hole['plated'] != (land['attribute'] == 'PTH'):
+        return ['drill size or plating differs from the placement capture']
+    if 'native drill contour unavailable' in pad.get('reasons', []):
+        return []
+    if len(hole['outer']) != 1:
+        return ['a drill has exactly one contour']
+    x, y = _local_extent(hole['outer'][0], land['position_nm'], land['rotation_deg'])
+    t = ROUNDING_NM
+    if not all(d / 2 - t <= e <= d / 2 + error + t for e, d in ((x, drill[0]), (y, drill[1]))):
+        return ['drill contour differs from the captured drill size']
+    return []
+
+
+def bind_capture(geometry, capture):
+    try:
+        return _bind_capture(geometry, capture)
+    except (KeyError, TypeError, IndexError, AttributeError, ZeroDivisionError) as exc:
+        raise ValueError(f'malformed routing geometry or placement capture: {type(exc).__name__}: {exc}') from None
+
+
+def _bind_capture(geometry, capture):
+    """Bind a routing geometry to the ``agent-ee.placement-probe/1`` capture of the same saved board.
+
+    Raises ``ValueError`` when footprints, pads, their UUIDs, numbers, nets,
+    poses, shapes, attributes, drills or boxed copper contours differ from the
+    capture (missing, stale or changed evidence). Returns ``{pad uuid:
+    reason}`` for copper the capture cannot bind (non-boxed lands, layer sets
+    that differ): those pads are analysed as unsupported, so their terminals
+    stay unknown.
+    """
+    validate_geometry(geometry)
+    if not isinstance(capture, dict) or capture.get('schema') != 'agent-ee.placement-probe/1':
+        raise ValueError('block access needs the agent-ee.placement-probe/1 capture of the same board')
+    if capture.get('board_sha256') != geometry['board_sha256']:
+        raise ValueError('placement capture and routing geometry are of different boards')
+    error = geometry['max_error_nm']
+    footprints = {(fp['ref'], fp['uuid']): fp for fp in capture['footprints']}
+    pose = ('side', 'position_nm', 'rotation_deg')
+    if (sorted(footprints) != sorted((fp['ref'], fp['uuid']) for fp in geometry['footprints'])
+            or any({k: footprints[(fp['ref'], fp['uuid'])][k] for k in pose} != {k: fp[k] for k in pose}
+                   for fp in geometry['footprints'])):
+        raise ValueError('routing geometry footprints differ from the placement capture')
+    lands = {p['uuid']: (fp, p) for fp in capture['footprints'] for p in fp['pads']}
+    if (len(lands) != sum(len(fp['pads']) for fp in capture['footprints'])
+            or set(lands) != {p['uuid'] for p in geometry['pads']}):
+        raise ValueError('routing geometry pads differ from the placement capture pads')
+    unbound = {}
+    for pad in geometry['pads']:
+        fp, land = lands[pad['uuid']]
+        label = f"{pad['ref']}.{pad['number']} ({pad['uuid']})"
+        if pad['ref'] != fp['ref'] or pad['footprint_uuid'] != fp['uuid'] or any(
+                pad[k] != land[k] for k in ('number', 'net', 'position_nm', 'rotation_deg', 'shape', 'attribute')):
+            raise ValueError(f'{label}: pad identity, net or pose differs from the placement capture')
+        if pad['shape'] == CUSTOM_SHAPE and pad['status'] == 'supported':
+            raise ValueError(f'{label}: a custom land is never supported for access')
+        problems = _hole_problems(pad, land, error)
+        layers = sorted(l for l in land['layers'] if l in geometry['copper_layers'])
+        if land['attribute'] != 'NPTH' and sorted(pad['copper']) != layers:
+            unbound[pad['uuid']] = 'copper layers differ from the placement capture'
+        elif pad['copper'] and (pad['shape'] not in BOXED_SHAPES or 'copper_centroid_offset_nm' not in land):
+            unbound[pad['uuid']] = 'land contour not bound by the placement capture'
+        elif pad['copper']:
+            problems += _land_problems(pad, land, error)
+        if problems:
+            raise ValueError(f'{label}: ' + '; '.join(problems))
+    return unbound
+
+
+def _member_evidence(candidate, geometry, capture):
+    """Each member's land pattern, courtyard, footprint and pin nets checked against the candidate."""
+    from . import blocks
+    board = {fp['ref']: fp for fp in capture['footprints']}
+    evidence = []
+    for row in candidate['members']:
+        ref = row['reference']
+        fp = board.get(ref)
+        if fp is None:
+            raise ValueError(f'{ref}: candidate member absent from the placement capture')
+        if fp.get('fpid') != row['fpid'] or fp['side'] != row['side']:
+            raise ValueError(f'{ref}: board footprint or side differs from the candidate member')
+        for key, compute in (('pad_geometry_sha256', blocks.pad_geometry_sha256),
+                             ('courtyard_sha256', blocks.courtyard_sha256)):
+            if compute(fp) != row[key]:
+                raise ValueError(f'{ref}: board {key} differs from the candidate member')
+        nets = blocks._pad_nets(fp)
+        if any(not p['number'] and p['net'] for p in fp['pads']):
+            raise ValueError(f'{ref}: an unnumbered pad carries a net the candidate does not bind')
+        if nets != {pin['pad']: pin.get('net', '') for pin in row['pins']}:
+            raise ValueError(f'{ref}: board pad nets differ from the candidate member pins')
+        copper = {p['uuid']: bool(p['copper']) for p in geometry['pads'] if p['ref'] == ref}
+        evidence.append({'reference': ref, 'footprint_uuid': fp['uuid'],
+                         'pad_geometry_sha256': row['pad_geometry_sha256'], 'courtyard_sha256': row['courtyard_sha256'],
+                         'pads': [{'uuid': p['uuid'], 'number': p['number'], 'net': p['net'], 'copper': copper[p['uuid']]}
+                                  for p in sorted(fp['pads'], key=lambda p: (p['number'], p['uuid']))]})
+    return evidence
+
+
 # ------------------------------------------------------------------ sidecar
 
-def block_access(candidate, geometry, routing_policy, limits=None):
+def block_access(candidate, geometry, routing_policy, limits=None, *, capture):
     """Diagnostic ``agent-ee.block-access/1`` for a candidate/2 placed on a complete candidate board.
 
     The candidate is read, never changed: the sidecar binds its canonical
-    digest. Every member must sit on the board at the candidate's frame poses
-    relative to its anchor. Witnesses that use space outside the block (edge,
-    neighbours, vias) must be rechecked after arrangement.
+    digest. ``capture`` is the ``agent-ee.placement-probe/1`` capture of the
+    same saved board; the routing geometry is bound to it (``bind_capture``)
+    and every member's land pattern, courtyard, footprint and pin nets are
+    recomputed from it and must equal the candidate's. Every member must sit
+    on the board at the candidate's frame poses relative to its anchor.
+    Witnesses that use space outside the block (edge, neighbours, vias) must
+    be rechecked after arrangement.
     """
     from . import blocks
     blocks.validate_candidate(candidate)
+    unbound = bind_capture(geometry, capture)
+    evidence = _member_evidence(candidate, geometry, capture)
+    if unbound:
+        geometry = {**geometry, 'pads': [
+            {**p, 'status': 'unsupported', 'reasons': sorted(set(p.get('reasons', [])) | {unbound[p['uuid']]})}
+            if p['uuid'] in unbound else p for p in geometry['pads']]}
     index = AccessIndex(geometry, routing_policy, limits)
     members = [row['reference'] for row in candidate['members']]
     anchor = candidate['frame']['anchor']
@@ -825,6 +993,8 @@ def block_access(candidate, geometry, routing_policy, limits=None):
             raise ValueError(f"{row['reference']}: board pose differs from the candidate frame pose")
     report = index.analyze(members)
     member_set = set(members)
+    # A direct witness into copper the capture cannot bind proves nothing about that target.
+    unbound_ids = {c['id'] for c in index.components() if any(p['uuid'] in unbound for p in c['pads'])}
     roles = {}
     for terminal in report['terminals']:
         refs = {p['ref'] for p in terminal['pads']}
@@ -833,27 +1003,202 @@ def block_access(candidate, geometry, routing_policy, limits=None):
         if net and not net.startswith('unconnected-'):
             roles[net] = 'boundary' if outside else 'internal'
         terminal['members'] = sorted(refs & member_set)
+        if terminal['status'] == 'witness':
+            kept = [w for w in terminal['witnesses'] if w.get('target') not in unbound_ids]
+            if not kept:
+                terminal.update(status='unknown', witnesses=[], reason='witnesses target unbound copper')
+            terminal['witnesses'] = kept
+    summary = Counter(t['status'] for t in report['terminals'])
     return {'schema': SIDECAR, 'mode': 'diagnostic', 'block_id': candidate['block_id'],
             'candidate_sha256': digest(candidate), 'candidate_status': candidate['status'],
             'frame': candidate['frame'], 'board_sha256': report['board_sha256'],
-            'geometry_sha256': report['geometry_sha256'],
+            'geometry_sha256': report['geometry_sha256'], 'capture_sha256': digest(capture),
             'pad_geometry_sha256': {row['reference']: row['pad_geometry_sha256'] for row in candidate['members']},
             'courtyard_sha256': {row['reference']: row['courtyard_sha256'] for row in candidate['members']},
+            'member_evidence': evidence,
+            'unbound_pads': [{'uuid': uuid, 'reason': reason} for uuid, reason in sorted(unbound.items())],
             'net_roles': [{'net': net, 'role': roles[net]} for net in sorted(roles)],
             'policy': report['policy'], 'limits': report['limits'], 'search': SEARCH, 'coverage': report['coverage'],
-            'recheck_after_arrangement': ['board edge', 'neighbour copper', 'via sites', 'planes'],
-            'summary': report['summary'], 'terminals': report['terminals']}
+            'recheck_after_arrangement': list(RECHECK),
+            'summary': {k: summary.get(k, 0) for k in STATUSES}, 'terminals': report['terminals']}
+
+
+RECHECK = ('board edge', 'neighbour copper', 'via sites', 'planes')
+STATUSES = ('witness', 'unknown', 'not_required')
+SIDECAR_KEYS = frozenset((
+    'schema', 'mode', 'block_id', 'candidate_sha256', 'candidate_status', 'frame', 'board_sha256', 'geometry_sha256',
+    'capture_sha256', 'pad_geometry_sha256', 'courtyard_sha256', 'member_evidence', 'unbound_pads', 'net_roles',
+    'policy', 'limits', 'search', 'coverage', 'recheck_after_arrangement', 'summary', 'terminals'))
+
+
+def _exact(value, keys, label, optional=()):
+    if not isinstance(value, dict) or not set(keys) <= set(value) or set(value) - set(keys) - set(optional):
+        raise ValueError(f'access sidecar {label} needs exactly ' + ', '.join(sorted(keys)))
+    return value
+
+
+def _text(value, label):
+    if not isinstance(value, str):
+        raise ValueError(f'access sidecar {label} must be text')
+    return value
+
+
+def _sha(value, label):
+    if not isinstance(value, str) or len(value) != 64 or set(value) - set('0123456789abcdef'):
+        raise ValueError(f'access sidecar {label} must be a lowercase SHA-256')
+
+
+def _sidecar_policy(policy):
+    _exact(policy, ('track_width_nm', 'routing_layers', 'vias'), 'policy')
+    _nm(policy['track_width_nm'], 'policy track_width_nm')
+    layers = policy['routing_layers']
+    if not isinstance(layers, list) or not layers or len(set(map(str, layers))) != len(layers) or \
+            any(not isinstance(l, str) for l in layers):
+        raise ValueError('access sidecar policy routing_layers must list distinct layers')
+    if not isinstance(policy['vias'], list):
+        raise ValueError('access sidecar policy vias must be a list')
+    for via in policy['vias']:
+        _exact(via, ('diameter_nm', 'drill_nm'), 'policy via')
+        if _nm(via['diameter_nm'], 'policy via diameter_nm') <= _nm(via['drill_nm'], 'policy via drill_nm'):
+            raise ValueError('access sidecar policy via diameter must exceed its drill')
+    return policy
+
+
+def validate_sidecar(candidate, sidecar):
+    """Strict ``agent-ee.block-access/1`` validation against its candidate; returns the evidence-derived summary.
+
+    Structure, candidate binding, member land/pin evidence, policy, limits,
+    coverage, terminal obligations and witness forms are checked; the summary
+    is recounted from the terminal records and a supplied summary must equal
+    it. Any omission or inconsistency raises ``ValueError``.
+    """
+    _exact(sidecar, SIDECAR_KEYS, 'record')
+    if sidecar['schema'] != SIDECAR or sidecar['mode'] != 'diagnostic':
+        raise ValueError(f'access sidecar must be a diagnostic {SIDECAR}')
+    if sidecar['candidate_sha256'] != digest(candidate):
+        raise ValueError('access sidecar is bound to another candidate')
+    rows = candidate['members']
+    if (sidecar['block_id'] != candidate['block_id'] or sidecar['candidate_status'] != candidate['status']
+            or sidecar['frame'] != candidate['frame']):
+        raise ValueError('access sidecar block, status or frame differs from its candidate')
+    for key in ('board_sha256', 'geometry_sha256', 'capture_sha256'):
+        _sha(sidecar[key], key)
+    for key in ('pad_geometry_sha256', 'courtyard_sha256'):
+        if sidecar[key] != {row['reference']: row[key] for row in rows}:
+            raise ValueError(f'access sidecar {key} differs from its candidate members')
+    evidence = sidecar['member_evidence']
+    if not isinstance(evidence, list) or len(evidence) != len(rows):
+        raise ValueError('access sidecar needs member evidence for every candidate member')
+    copper, all_pads = {}, set()
+    for row, record in zip(rows, evidence):
+        _exact(record, ('reference', 'footprint_uuid', 'pad_geometry_sha256', 'courtyard_sha256', 'pads'),
+               'member evidence')
+        if any(record[k] != row[k] for k in ('pad_geometry_sha256', 'courtyard_sha256')) or \
+                record['reference'] != row['reference']:
+            raise ValueError(f"access sidecar member evidence differs from candidate member {row['reference']}")
+        _text(record['footprint_uuid'], 'member footprint_uuid')
+        if not isinstance(record['pads'], list):
+            raise ValueError('access sidecar member pads must be a list')
+        nets = {}
+        for pad in record['pads']:
+            _exact(pad, ('uuid', 'number', 'net', 'copper'), 'member pad')
+            for key in ('uuid', 'number', 'net'):
+                _text(pad[key], f'member pad {key}')
+            if type(pad['copper']) is not bool or pad['uuid'] in all_pads:
+                raise ValueError('access sidecar member pads need unique UUIDs and a copper flag')
+            all_pads.add(pad['uuid'])
+            if pad['number']:
+                nets.setdefault(pad['number'], set()).add(pad['net'])
+            elif pad['net']:
+                raise ValueError('access sidecar member evidence has an unnumbered pad with a net')
+            if pad['copper']:
+                copper[pad['uuid']] = (row['reference'], pad['number'], pad['net'])
+        if {n: s.pop() if len(s) == 1 else None for n, s in nets.items()} != \
+                {pin['pad']: pin.get('net', '') for pin in row['pins']}:
+            raise ValueError(f"access sidecar member pad nets differ from candidate pins of {row['reference']}")
+    policy = _sidecar_policy(sidecar['policy'])
+    if not isinstance(sidecar['limits'], dict) or set(sidecar['limits']) != set(LIMITS) or \
+            search_limits(sidecar['limits']) != sidecar['limits']:
+        raise ValueError('access sidecar limits must state every search limit')
+    if sidecar['search'] != SEARCH or sidecar['recheck_after_arrangement'] != list(RECHECK):
+        raise ValueError('access sidecar search or recheck list is not this model')
+    coverage = _exact(sidecar['coverage'], ('status', 'reasons', 'model', 'not_modelled'), 'coverage')
+    reasons = coverage['reasons']
+    if (not isinstance(reasons, list) or any(not isinstance(r, str) for r in reasons)
+            or coverage['status'] != ('unknown' if reasons else 'modelled')):
+        raise ValueError('access sidecar coverage status must follow its reasons')
+    unbound = sidecar['unbound_pads']
+    if not isinstance(unbound, list):
+        raise ValueError('access sidecar unbound_pads must be a list')
+    unbound = {_text(_exact(u, ('uuid', 'reason'), 'unbound pad')['uuid'], 'unbound pad uuid') for u in unbound}
+    roles = sidecar['net_roles']
+    if not isinstance(roles, list) or any(_exact(r, ('net', 'role'), 'net role')['role'] not in ('internal', 'boundary')
+                                          for r in roles):
+        raise ValueError('access sidecar net roles must be internal or boundary')
+    terminals, member_refs = sidecar['terminals'], {row['reference'] for row in rows}
+    if not isinstance(terminals, list):
+        raise ValueError('access sidecar terminals must be a list')
+    ids, seen, counts = set(), {}, Counter()
+    for terminal in terminals:
+        _exact(terminal, ('id', 'net', 'pads', 'status', 'members'), 'terminal',
+               optional=('witnesses', 'reason', 'details', 'attempted', 'truncated', 'blockers', 'source_pad',
+                         'zone_layers_unknown', 'unresolved_contact'))
+        _text(terminal['id'], 'terminal id')
+        net, status, pads = _text(terminal['net'], 'terminal net'), terminal['status'], terminal['pads']
+        if terminal['id'] in ids or status not in STATUSES or not isinstance(pads, list) or not pads:
+            raise ValueError('access sidecar terminals need unique ids, a known status and pads')
+        ids.add(terminal['id'])
+        for pad in pads:
+            _exact(pad, ('ref', 'number', 'uuid'), 'terminal pad')
+            if pad['uuid'] in seen:
+                raise ValueError('access sidecar pad appears in two terminals')
+            seen[pad['uuid']] = (pad['ref'], pad['number'], net)
+        if terminal['members'] != sorted({p['ref'] for p in pads} & member_refs) or not terminal['members']:
+            raise ValueError('access sidecar terminal members differ from its pads')
+        witnesses = terminal.get('witnesses', [])
+        if not isinstance(witnesses, list):
+            raise ValueError('access sidecar witnesses must be a list')
+        if status == 'witness':
+            if coverage['status'] != 'modelled' or not witnesses or {p['uuid'] for p in pads} & unbound:
+                raise ValueError('access sidecar witness terminal without modelled coverage, witnesses or bound copper')
+            for witness in witnesses:
+                problem = _witness_form(witness)
+                if problem is None and (witness['source_pad'] not in {p['uuid'] for p in pads}
+                                        or witness['net'] != net or witness['layer'] not in policy['routing_layers']
+                                        or witness['track_width_nm'] != policy['track_width_nm']):
+                    problem = 'witness source, net, layer or width differs from its terminal and policy'
+                if problem is None and witness['kind'] == 'via' and \
+                        {k: witness['via'][k] for k in ('diameter_nm', 'drill_nm')} not in policy['vias']:
+                    problem = 'witness via is not an approved policy via'
+                if problem is None and witness['kind'] == 'direct' and witness['target'] == terminal['id']:
+                    problem = 'direct witness targets its own terminal'
+                if problem:
+                    raise ValueError(f"access sidecar terminal {terminal['id']}: {problem}")
+        elif witnesses or (status == 'unknown' and not isinstance(terminal.get('reason'), str)):
+            raise ValueError('access sidecar unknown or not-required terminal carries witnesses or lacks a reason')
+        counts[status] += 1
+    members_seen = {u: v for u, v in seen.items() if v[0] in member_refs}
+    if members_seen != copper:
+        raise ValueError('access sidecar terminals do not cover exactly the member copper pads and nets')
+    derived = {k: counts.get(k, 0) for k in STATUSES}
+    if sidecar['summary'] != derived:
+        raise ValueError('access sidecar summary is inconsistent with its terminal evidence')
+    return derived
 
 
 def access_status(candidate, sidecar=None):
-    """Access evidence for a candidate; a missing sidecar is unknown and admission is unchanged."""
+    """Access evidence for a candidate; a missing sidecar is unknown and admission is unchanged.
+
+    The status is derived from the validated terminal evidence
+    (``validate_sidecar``), never from a supplied summary.
+    """
     if sidecar is None:
         return {'status': 'unknown', 'reason': 'no block-access sidecar'}
     if not isinstance(sidecar, dict) or sidecar.get('schema') != SIDECAR:
         raise ValueError(f'access sidecar must be {SIDECAR}')
     if sidecar.get('candidate_sha256') != digest(candidate):
         raise ValueError('access sidecar is bound to another candidate')
-    summary = sidecar['summary']
+    summary = validate_sidecar(candidate, sidecar)
     if not summary['witness']:
         status = 'unknown'
     else:
@@ -862,6 +1207,61 @@ def access_status(candidate, sidecar=None):
 
 
 # ------------------------------------------------------------ native authority
+
+# Keys a witness may carry, by kind: ``target`` only on direct, ``via`` only on via, ``direction`` never on direct.
+WITNESS_KEYS = {'direct': ({'target'}, set()), 'exit': (set(), {'direction'}), 'via': ({'via'}, {'direction'})}
+WITNESS_COMMON = ({'kind', 'source_pad', 'net', 'layer', 'track_width_nm', 'path_nm'}, {'min_margin_nm', 'limiting'})
+VIA_KEYS = frozenset(('diameter_nm', 'drill_nm', 'position_nm', 'layers', 'reaches'))
+
+
+def _point(value):
+    return isinstance(value, list) and len(value) == 2 and all(type(v) is int for v in value)
+
+
+def _witness_form(witness):
+    """The first structural problem of a witness record (kind/key consistency, types), or None.
+
+    Complete before anything is checked against a board or materialized: a
+    record with a key of another kind, a missing key or a malformed via is
+    refused, never written.
+    """
+    if not isinstance(witness, dict):
+        return 'a witness must be an object'
+    kind = witness.get('kind')
+    if kind not in WITNESS_KEYS:
+        return f'unknown witness kind {kind!r}'
+    required = WITNESS_COMMON[0] | WITNESS_KEYS[kind][0]
+    allowed = required | WITNESS_COMMON[1] | WITNESS_KEYS[kind][1]
+    if required - set(witness) or set(witness) - allowed:
+        return (f'{kind} witness needs exactly ' + ', '.join(sorted(required))
+                + (', optionally ' + ', '.join(sorted(allowed - required)) if allowed - required else '')
+                + '; got ' + ', '.join(sorted(map(str, witness))))
+    for key in ('source_pad', 'net', 'layer') + (('target',) if kind == 'direct' else ()) + \
+            (('direction',) if 'direction' in witness else ()):
+        if not isinstance(witness[key], str):
+            return f'witness {key} must be text'
+    path = witness['path_nm']
+    if not isinstance(path, list) or len(path) < 2 or not all(_point(q) for q in path):
+        return 'path_nm must list at least two integer points'
+    if type(witness['track_width_nm']) is not int or witness['track_width_nm'] <= 0:
+        return 'track_width_nm must be a positive integer nm'
+    if witness.get('min_margin_nm') is not None and type(witness['min_margin_nm']) is not int:
+        return 'min_margin_nm must be an integer nm or null'
+    if witness.get('limiting') is not None and not isinstance(witness['limiting'], str):
+        return 'limiting must be text or null'
+    if kind == 'via':
+        via = witness['via']
+        if not isinstance(via, dict) or set(via) != VIA_KEYS:
+            return 'a via witness needs a via with exactly ' + ', '.join(sorted(VIA_KEYS))
+        diameter, drill = via['diameter_nm'], via['drill_nm']
+        if type(diameter) is not int or type(drill) is not int or diameter <= drill or drill <= 0:
+            return 'via diameter_nm and drill_nm must be positive integers, diameter above drill'
+        if not _point(via['position_nm']):
+            return 'via position_nm must be an integer point'
+        if any(not isinstance(via[k], list) or not all(isinstance(l, str) for l in via[k]) for k in ('layers', 'reaches')):
+            return 'via layers and reaches must list layer names'
+    return None
+
 
 def _witness_problems(witness, geometry, components):
     """Source, target, kind and reach semantics of one witness against the native capture of the qualified board.
@@ -874,8 +1274,10 @@ def _witness_problems(witness, geometry, components):
     same-net target component, which is not the source's; ``exit`` ends outside
     the owning footprint's copper box grown by clearance plus half the width;
     ``via`` ends at a through via of at least the rule minima that reaches
-    another copper layer. Returns ``(problems, writable)``: a witness that is
-    not writable (malformed, or without source copper on its layer) is never
+    another copper layer. Kind/key consistency and every type, including the
+    whole via record, are checked first (``_witness_form``). Returns
+    ``(problems, writable)``: a witness that is not writable (malformed, a key
+    of another kind, or without source copper on its layer) is never
     materialized.
     """
     pads = {p['uuid']: p for p in geometry['pads']}
@@ -884,29 +1286,27 @@ def _witness_problems(witness, geometry, components):
     def inner(uuid, layer, point):
         bounds = pads[uuid]['copper'].get(layer)
         return bool(bounds) and any(inside(point, [tuple(q) for q in poly]) for poly in bounds['inner'])
-    kind, layer, path = witness.get('kind'), witness.get('layer'), witness.get('path_nm')
-    if kind not in ('direct', 'exit', 'via'):
-        return [f'unknown witness kind {kind!r}'], False
-    source = pads.get(witness.get('source_pad'))
+    form = _witness_form(witness)
+    if form is not None:
+        return [form], False
+    kind, layer, path = witness['kind'], witness['layer'], witness['path_nm']
+    source = pads.get(witness['source_pad'])
     if source is None:
         return ['source pad is not on the board'], False
-    if (not isinstance(path, list) or len(path) < 2
-            or any(not isinstance(q, list) or len(q) != 2 or any(type(v) is not int for v in q) for q in path)):
-        return ['path_nm must list at least two integer points'], False
     problems = []
     path = [tuple(q) for q in path]
     if source['net'] != witness.get('net') or not source['net']:
         problems.append('witness net is not the source pad net')
     if layer not in layers or layer not in source['copper']:
         return problems + [f'source pad has no copper on {layer!r}'], False
-    width = witness.get('track_width_nm')
-    if type(width) is not int or width < max(1, rules['min_track_width_nm']):
+    width = witness['track_width_nm']
+    if width < rules['min_track_width_nm']:
         return problems + ['track width is below the captured minimum'], False
     if not inner(source['uuid'], layer, path[0]):
         problems.append('path does not start inside the source pad copper')
     own = next(c for c in components if any(p['uuid'] == source['uuid'] for p in c['pads']))
     if kind == 'direct':
-        target = next((c for c in components if c['id'] == witness.get('target')), None)
+        target = next((c for c in components if c['id'] == witness['target']), None)
         if target is None or target is own or target['net'] != source['net']:
             problems.append('direct target is not another same-net terminal component')
         elif not any(inner(p['uuid'], layer, path[-1]) for p in target['pads']):
@@ -921,18 +1321,13 @@ def _witness_problems(witness, geometry, components):
         if box[0] <= end[0] <= box[2] and box[1] <= end[1] <= box[3]:
             problems.append('exit path ends inside the footprint copper clearance box')
     else:
-        via = witness.get('via')
-        if not isinstance(via, dict):
-            return problems + ['via witness lacks its via'], False
-        diameter, drill = via.get('diameter_nm'), via.get('drill_nm')
-        if type(diameter) is not int or type(drill) is not int or diameter <= drill or drill <= 0:
-            return problems + ['via diameter_nm and drill_nm must be positive integers'], False
-        reaches = via.get('reaches')
-        if via.get('position_nm') != list(path[-1]):
+        via = witness['via']
+        diameter, drill, reaches = via['diameter_nm'], via['drill_nm'], via['reaches']
+        if via['position_nm'] != list(path[-1]):
             problems.append('via is not at the path end')
-        if via.get('layers') != layers:
+        if via['layers'] != layers:
             problems.append('via is not a through via')
-        if not isinstance(reaches, list) or not reaches or layer in reaches or not set(reaches) <= set(layers):
+        if not reaches or layer in reaches or not set(reaches) <= set(layers):
             problems.append('via reaches no other copper layer')
         if (diameter < rules['min_via_diameter_nm'] or drill < rules['min_through_drill_nm']
                 or diameter - drill < 2 * rules['min_via_annular_nm']):
@@ -964,7 +1359,7 @@ def materialize(board_path, witnesses, out_path):
             board.Add(track)
             tracks.append(track)
             added.append(track.m_Uuid.AsString())
-        if 'via' in witness:
+        if witness['kind'] == 'via':
             via = pcbnew.PCB_VIA(board)
             via.SetViaType(pcbnew.VIATYPE_THROUGH)
             via.SetPosition(pcbnew.VECTOR2I(*witness['via']['position_nm']))
@@ -1001,7 +1396,8 @@ def qualify(board_path, groups, out):
     Before any copper is materialized, every witness's source, target, kind
     and reach claim is checked against a fresh native capture of the board
     (``_witness_problems``); a semantic failure refuses the group, and a
-    malformed witness is never written. Writable groups are still checked
+    malformed witness or an empty group is never written and is refused:
+    zero witnesses are zero evidence. Writable groups are still checked
     natively so their findings are reported. After
     materialization, native connectivity must show each witness's first track
     touching its source pad and a direct witness's last track touching a pad of
@@ -1046,6 +1442,10 @@ def qualify(board_path, groups, out):
     results = []
     for number, group in enumerate(groups):
         semantic, writable = [], True
+        if not isinstance(group, list) or not group:
+            # Zero witnesses are zero evidence: an empty group is refused, never qualified.
+            semantic.append({'witness': None, 'problem': 'a witness group must list at least one witness'})
+            group, writable = [], False
         for i, witness in enumerate(group):
             problems, ok = _witness_problems(witness, geometry, components)
             semantic += [{'witness': i, 'problem': problem} for problem in problems]
@@ -1104,6 +1504,8 @@ def main(argv=None):
         command.add_argument('--out', required=True)
         if name == 'block':
             command.add_argument('--candidate', required=True, help='agent-ee.block-candidate/2 document')
+            command.add_argument('--capture', required=True,
+                                 help='agent-ee.placement-probe/1 capture of the same board (placement_probe)')
     args = parser.parse_args(argv)
     geometry = strict_json(Path(args.geometry).read_bytes())
     policy = strict_json(Path(args.policy).read_bytes())
@@ -1111,7 +1513,8 @@ def main(argv=None):
     if args.command == 'analyze':
         report = analyze_access(geometry, None, policy, limits)
     else:
-        report = block_access(strict_json(Path(args.candidate).read_bytes()), geometry, policy, limits)
+        report = block_access(strict_json(Path(args.candidate).read_bytes()), geometry, policy, limits,
+                              capture=strict_json(Path(args.capture).read_bytes()))
     Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
     print(json.dumps(report['summary'], sort_keys=True), file=sys.stderr)
     return 0
