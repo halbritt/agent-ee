@@ -1035,7 +1035,7 @@ The compiler CLI always requires readable source bytes and refuses a missing
 source with exit 2 and a typed error before writing a contract;
 `--require-source-sha256` remains accepted. Digest-free legacy contracts retain
 their existing validation. See [source options](io-map.md#requirements-source-provenance).
-Requirement citations carry `qualification` (`unqualified-carryover` default for bare IDs, or `sourced` with a captured sha256 source); unqualified IDs are reported in `details.requirement_qualification` and never graded. See [qualification](io-map.md#requirement-qualification).
+Requirement citations carry `qualification` (`unqualified-carryover` default for bare IDs, or `sourced` with a captured sha256 source); unqualified IDs are reported in `details.requirement_qualification` and never graded. Optional `qualification_record` check parameter pins a record that binds the complete citation set, statuses and original provenance; coverage reports it. See [qualification](io-map.md#requirement-qualification).
 Concrete MCU rows require an explicit `MCU_Path=direct` declaration or the IDs
 of declared [indirect paths](io-map.md#indirect-mcu-paths). Undeclared path names
 are refused with their CSV row; TBD MCU rows keep an unresolved predicate without

@@ -64,22 +64,54 @@ object with an enforced `qualification`: `unqualified-carryover` (`id`,
 `qualification`) or `sourced` (`id`, `qualification`, `source` = `path`,
 `sha256`, `locator`). A bare ID is read as `unqualified-carryover`, never as
 sourced, so existing contracts and the pod fixture validate unchanged. A
-`sourced` entry without a complete source, a missing or unknown status, or an
-`unqualified-carryover` entry carrying a source is refused by
-`validate_contract`. `capability` also requires every sourced source to be a
-captured input with the declared `sha256`, and makes it immutable.
+`sourced` entry without a complete source, a missing or unknown status, an
+`unqualified-carryover` entry carrying a source, or a `sourced` source that is
+the inherited io-map CSV itself is refused by `validate_contract`. `capability`
+also requires every sourced source to be a captured input with the declared
+`sha256`, and makes it immutable. An ID is reported sourced only if all its
+citations are sourced.
 
-`--qualifications FILE` (API `qualifications=`) maps requirement IDs to source
-references; when given, every cited ID is emitted explicitly, `sourced` for
-mapped IDs and `unqualified-carryover` for the rest. A mapping for an ID that
-no row cites is refused. The CLI prints the unqualified carry-over IDs. An ID is
-reported sourced only if all its citations are sourced.
+### Qualification-bound contracts (historical provenance)
 
-Unqualified citations are traceability only: the hardware_interface check
-records `details.requirement_qualification` and a limitation naming them, and
-no verdict is graded from them. Adding the status is a new optional shape under
-`agent-ee.interface/1`; migrate by leaving bare IDs (fail-closed) or supplying
-sources per ID.
+Legacy mode cannot detect lost or rewritten statuses, so a carried table (for
+example v9 citations) is compiled with `--history FILE`
+(`agent-ee.io-map-history/1`: `origin` = original `path`, `revision`, `sha256`,
+`locator`; optional `rows` = connector pin to per-row locator; `sourced` = IDs
+promoted with a current source) plus `--record-path` (the captured path the
+contract declares) and `--record-out`. The compiler then writes an
+`agent-ee.io-map-qualification/1` record binding every compiled row (row number,
+connector pin, signal, external destination, complete requirement entries with
+status) to its original provenance, and the contract declares
+`qualification_record` `{path, sha256}`.
+
+The scope's `hardware_interface` check params must pin the same record with the
+optional `qualification_record` `{path, sha256}`; the contract may not declare a
+record the scope does not pin, and stripping the declaration while the scope
+pins one is refused. With a record, `validate_contract(qualification=record)`
+and `capability` refuse: bare IDs, emptied or changed requirement lists, a
+removed `io_map` citation, an upgrade of any status or source, a changed
+signal or external destination, an uncited record row, and a record whose bytes
+differ from the pinned sha256. Contracts without a pin remain valid legacy
+inputs; coverage reports them as not qualification-bound.
+
+`--qualifications FILE` (API `qualifications=`) is the lighter form: it marks
+sourced IDs and emits the rest explicitly, without a record. A mapping for an ID
+that no row cites is refused.
+
+### Consumers
+
+Unqualified citations are traceability only. The hardware_interface check
+records `details.requirement_qualification` (`sourced`, `unqualified-carryover`)
+and a limitation naming them. `compile_coverage` adds, per check, a
+`requirement_qualification` (the same lists, `qualification_bound` and the
+original `origins` per ID) and a report-level `requirement_citations`
+(`qualified`, `unqualified-carryover` per check, `counted_as_coverage: false`).
+Carry-over never counts as qualified coverage; structural predicates keep their
+independently bound requirement source and grading. With `--spec-record`, the
+CLI prints `spec traceability: qualified=... unqualified-carryover=...`, and the
+API fills `report=` with the same split. Traceability still requires every
+`POD-IF-*` ID to be cited; it no longer implies that token presence is
+qualified.
 
 ## CSV and bindings
 

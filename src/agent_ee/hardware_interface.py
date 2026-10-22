@@ -60,6 +60,74 @@ def validate_requirement_entry(entry):
     return text(entry['id'])
 
 
+RECORD_SCHEMA = 'agent-ee.io-map-qualification/1'
+RECORD_ROW_FIELDS = 'row connector_pin signal external_destination requirements'
+SHA256 = '[0-9a-f]{64}'
+
+
+def validate_origin(origin):
+    exact_keys(origin, 'path revision sha256 locator')
+    safe_relative(origin['path'])
+    text(origin['revision'])
+    text(origin['locator'])
+    if not isinstance(origin['sha256'], str) or not re.fullmatch(SHA256, origin['sha256']):
+        raise ValueError('invalid historical origin sha256')
+
+
+def validate_record(contract, record):
+    """Bind the complete expected citation set, statuses and original provenance to the compiled rows."""
+    exact_keys(record, 'schema io_map rows')
+    if record['schema'] != RECORD_SCHEMA:
+        raise ValueError('unsupported qualification record schema')
+    exact_keys(record['io_map'], 'path sha256')
+    safe_relative(record['io_map']['path'])
+    if not isinstance(record['io_map']['sha256'], str) or not re.fullmatch(SHA256, record['io_map']['sha256']):
+        raise ValueError('invalid qualification record io_map sha256')
+    if not isinstance(record['rows'], list) or not record['rows']:
+        raise ValueError('qualification record requires rows')
+    by_row = {}
+    for entry in record['rows']:
+        exact_keys(entry, RECORD_ROW_FIELDS + ' origin')
+        if type(entry['row']) is not int or entry['row'] < 2 or entry['row'] in by_row:
+            raise ValueError('invalid or duplicate qualification record row')
+        for field in ('connector_pin', 'signal', 'external_destination'):
+            text(entry[field])
+        validate_origin(entry['origin'])
+        if not isinstance(entry['requirements'], list) or any(isinstance(r, str) for r in entry['requirements']):
+            raise ValueError('qualification record requirements must be explicit qualified entries')
+        ids = [validate_requirement_entry(r) for r in entry['requirements']]
+        if len(set(ids)) != len(ids):
+            raise ValueError('duplicate text identity')
+        by_row[entry['row']] = entry
+    seen = set()
+    for invariant in contract['invariants']:
+        citation = invariant.get('io_map')
+        if citation is None:
+            raise ValueError('qualification-bound contract requires an io_map citation on every invariant')
+        if (citation['path'], citation['sha256']) != (record['io_map']['path'], record['io_map']['sha256']):
+            raise ValueError('io_map citation differs from qualification record CSV identity')
+        entry = by_row.get(citation['row'])
+        if entry is None or {k: entry[k] for k in RECORD_ROW_FIELDS.split()} != {
+                k: citation[k] for k in RECORD_ROW_FIELDS.split()}:
+            raise ValueError(f"io_map citation row {citation['row']} differs from qualification record "
+                             '(statuses, requirements or descriptive values)')
+        seen.add(citation['row'])
+    if seen != set(by_row):
+        raise ValueError('qualification record rows are not all cited by the contract')
+    return record
+
+
+def record_origins(record):
+    """Original provenance per carried requirement ID."""
+    origins = {}
+    for entry in record['rows']:
+        for req in entry['requirements']:
+            known = origins.setdefault(req['id'], [])
+            if entry['origin'] not in known:
+                known.append(entry['origin'])
+    return origins
+
+
 def requirement_authority(contract):
     """Split cited requirement IDs; an ID is sourced only when every citation of it is sourced."""
     status = {}
@@ -106,9 +174,19 @@ def validate_path(invariant, components, terminals):
             raise ValueError('indirect_path endpoint cannot be an intermediate device')
 
 
-def validate_contract(contract, *, source_bytes=None, require_source_sha256=False):
+def validate_contract(contract, *, source_bytes=None, require_source_sha256=False, qualification=None):
     """Validate declarations; optional path-to-bytes inputs verify local source hashes."""
-    exact_keys(contract, 'schema components terminals allowed_edits invariants')
+    exact_keys(contract, 'schema components terminals allowed_edits invariants' +
+               (' qualification_record' if isinstance(contract, dict) and 'qualification_record' in contract else ''))
+    bound = 'qualification_record' in contract
+    if bound:
+        exact_keys(contract['qualification_record'], 'path sha256')
+        safe_relative(contract['qualification_record']['path'])
+        if (not isinstance(contract['qualification_record']['sha256'], str)
+                or not re.fullmatch(SHA256, contract['qualification_record']['sha256'])):
+            raise ValueError('invalid qualification record sha256')
+    elif qualification is not None:
+        raise ValueError('qualification record supplied for a contract that declares none')
     if contract['schema'] != 'agent-ee.interface/1':
         raise ValueError('unsupported interface schema')
     components, terminals = contract['components'], contract['terminals']
@@ -181,7 +259,12 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
             if reqs:
                 if not isinstance(reqs, list):
                     raise ValueError('io_map requirements must be a list')
+                if bound and any(isinstance(e, str) for e in reqs):
+                    raise ValueError('qualification-bound contract refuses bare requirement IDs')
                 cited = [validate_requirement_entry(e) for e in reqs]
+                for e in reqs:
+                    if isinstance(e, dict) and e['qualification'] == 'sourced' and e['source']['path'] == citation['path']:
+                        raise ValueError('sourced requirement cannot cite the inherited io_map CSV itself')
                 if len(set(cited)) != len(cited):
                     raise ValueError('duplicate text identity')
             elif reqs != []:
@@ -234,6 +317,10 @@ def validate_contract(contract, *, source_bytes=None, require_source_sha256=Fals
             strings(invariant['terminals'])
             if len(invariant['terminals']) != 2 or any(t not in terminals for t in invariant['terminals']):
                 raise ValueError('relation requires two declared terminals')
+    if bound and any('io_map' not in i for i in invariants):
+        raise ValueError('qualification-bound contract requires an io_map citation on every invariant')
+    if qualification is not None:
+        validate_record(contract, qualification)
     paths = {frozenset((i['terminals'][0], i['terminals'][-1])) for i in invariants if i['kind'] == 'indirect_path'}
     if any(i['kind'] == 'same_net' and frozenset(i['terminals']) in paths for i in invariants):
         raise ValueError('same_net cannot be asserted across a declared indirect path')
@@ -259,11 +346,23 @@ def load_contract(inputs, path):
 
 
 def capability(params, scope, files, inputs, check_id, *, block_sources=False):
-    exact_keys(params, 'contract netlist_check')
+    exact_keys(params, 'contract netlist_check' + (' qualification_record' if 'qualification_record' in params else ''))
     rel = str(safe_relative(params['contract']))
     if rel not in files or inputs is None:
         raise ValueError('interface contract must be captured')
     contract = load_contract(inputs, rel)
+    pin = params.get('qualification_record')
+    record = None
+    if pin is not None:
+        exact_keys(pin, 'path sha256')
+        record_rel = str(safe_relative(pin['path']))
+        if contract.get('qualification_record') != pin:
+            raise ValueError('contract must declare the qualification record pinned by the scope')
+        if record_rel not in files or digest(Path(inputs) / record_rel) != pin['sha256']:
+            raise ValueError('qualification record must be captured with matching sha256')
+        record = json.loads((Path(inputs) / record_rel).read_text(), object_pairs_hook=unique_object)
+    elif 'qualification_record' in contract:
+        raise ValueError('declared qualification record must be pinned by the scope check parameters')
     requirements = {r['id']: r for r in scope.get('baseline', {}).get('requirements', [])}
     declared = {i['requirement'] for i in contract['invariants']}
     mapped = {rid for rid, req in requirements.items() if check_id in req['checks']}
@@ -281,8 +380,11 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
             raise ValueError('interface invariant requires exact captured requirement source and check mapping')
     sources = {i['source']['path'] for i in contract['invariants']
                if i['source'].get('kind') != 'pinned-external' and 'sha256' in i['source']}
-    validate_contract(contract, source_bytes={p: (Path(inputs) / p).read_bytes() for p in sources})
+    validate_contract(contract, source_bytes={p: (Path(inputs) / p).read_bytes() for p in sources},
+                      qualification=record)
     immutable = {rel, *sources}
+    if record is not None:
+        immutable.add(record_rel)
     for invariant in contract['invariants']:
         citation = invariant.get('io_map')
         if citation:
@@ -298,6 +400,8 @@ def capability(params, scope, files, inputs, check_id, *, block_sources=False):
                     immutable.add(src['path'])
     return {'contract': contract, 'immutable_inputs': sorted(immutable),
             'requirement_authority': requirement_authority(contract),
+            'requirement_history': {'qualification_bound': record is not None,
+                                    'origins': record_origins(record) if record is not None else {}},
             'predicates': ['interface:' + i['id'] for i in contract['invariants']]}
 
 

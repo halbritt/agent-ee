@@ -12,8 +12,9 @@ from pathlib import Path
 from agent_ee.candidate import capture
 from agent_ee.checks import run_checks
 from agent_ee.hardware_interface import capability, evaluate, requirement_authority, validate_contract
-from agent_ee.io_map import REQUIRED, compile_io_map, main
-from agent_ee.storage import read_json, write_json
+from agent_ee.capabilities import compile_coverage
+from agent_ee.io_map import REQUIRED, build_record, compile_io_map, main, traceability
+from agent_ee.storage import digest, json_bytes, read_json, write_json
 from tests.test_hardware_interface import FIXTURE, generator
 from tests.toolchain import require_toolchain
 
@@ -868,3 +869,319 @@ class RequirementQualificationTests(unittest.TestCase):
             self.assertIn('unqualified carry-over requirements (reported, never authority): POD-IF-B',
                           stdout.getvalue())
             self.assertEqual(requirement_authority(read_json(root / 'out.json'))['sourced'], ['POD-IF-A'])
+
+
+class HistoricalQualificationTests(unittest.TestCase):
+    """Original provenance, complete citation set and statuses are bound to a pinned qualification record."""
+    FIELDS = RequirementQualificationTests.FIELDS
+    ROWS = RequirementQualificationTests.ROWS
+    RAW = csv_bytes(ROWS, fields=FIELDS)
+    HISTORY = dict(schema='agent-ee.io-map-history/1', rows={'J1-2': 'v9 table 2 / J1-2'}, sourced={},
+                   origin=dict(path='v9/io-map.csv', revision='v9', sha256='a' * 64, locator='v9 table 2'))
+    SCOPE = dict(schema='agent-ee.scope/3', checks=[dict(id='interface', kind='hardware_interface',
+        params=dict(contract='contract.json', netlist_check='netlist'))],
+        baseline=dict(requirements=[dict(id='interface', statement='Preserve declared interface invariants.',
+        intent='acceptance', source=SOURCE, checks=['interface'])], targets=['requirements.md'],
+        reference_architectures=['requirements.md']))
+
+    def compile_bound(self, history=None):
+        return compile_(self.RAW, bindings=probe_bindings(), history=history or self.HISTORY,
+                        record_path='qualification.json')
+
+    def record(self, history=None):
+        return build_record(self.compile_bound(history), history or self.HISTORY)
+
+    def capture(self, contract, record, *, pin=True, extra=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / 'io-map.csv').write_bytes(self.RAW)
+        (root / 'requirements.md').write_bytes(b'Structural interface\n')
+        write_json(root / 'contract.json', contract)
+        scope = copy.deepcopy(self.SCOPE)
+        if record is not None:
+            write_json(root / 'qualification.json', record)
+            if pin:
+                scope['checks'][0]['params']['qualification_record'] = dict(
+                    path='qualification.json', sha256=digest(root / 'qualification.json'))
+        for name, data in (extra or {}).items():
+            (root / name).write_bytes(data)
+        files = {p.name: digest(p) for p in root.iterdir()}
+        return scope, files, root
+
+    def run_capability(self, contract, record, **kwargs):
+        scope, files, root = self.capture(contract, record, **kwargs)
+        return capability(scope['checks'][0]['params'], scope, files, root, 'interface')
+
+    def mutate(self, contract, mode):
+        csv_sha = hashlib.sha256(self.RAW).hexdigest()
+        for invariant in contract['invariants']:
+            if mode == 'strip-io-map':
+                invariant.pop('io_map')
+                continue
+            cite = invariant['io_map']
+            if mode == 'bare-ids':
+                cite['requirements'] = [r['id'] if isinstance(r, dict) else r for r in cite['requirements']]
+            elif mode == 'empty-citations':
+                cite['requirements'] = []
+            elif mode == 'upgrade-from-csv':
+                cite['requirements'] = [dict(id=r['id'] if isinstance(r, dict) else r, qualification='sourced',
+                    source=dict(path='io-map.csv', sha256=csv_sha, locator='inherited Notes token'))
+                    for r in cite['requirements']]
+            elif mode == 'changed-description':
+                cite['external_destination'] = 'accidental current-authority description'
+            elif mode == 'changed-signal':
+                cite['signal'] = 'CHANGED'
+        return contract
+
+    MODES = ('bare-ids', 'empty-citations', 'strip-io-map', 'upgrade-from-csv', 'changed-description',
+             'changed-signal')
+
+    def test_correct_retention_is_accepted_with_original_provenance(self):
+        contract, record = self.compile_bound(), self.record()
+        self.assertEqual(contract['qualification_record']['sha256'], hashlib.sha256(json_bytes(record)).hexdigest())
+        origins = {r['connector_pin']: r['origin'] for r in record['rows']}
+        self.assertEqual(origins['J1-1'], self.HISTORY['origin'])
+        self.assertEqual(origins['J1-2'], dict(self.HISTORY['origin'], locator='v9 table 2 / J1-2'))
+        self.assertEqual(validate_contract(copy.deepcopy(contract), qualification=record), contract)
+        descriptor = self.run_capability(contract, record)
+        self.assertEqual(descriptor['requirement_authority'],
+                         {'sourced': [], 'unqualified-carryover': ['POD-IF-A', 'POD-IF-B']})
+        self.assertTrue(descriptor['requirement_history']['qualification_bound'])
+        self.assertEqual(descriptor['requirement_history']['origins']['POD-IF-A'],
+                         [self.HISTORY['origin'], dict(self.HISTORY['origin'], locator='v9 table 2 / J1-2')])
+        self.assertIn('qualification.json', descriptor['immutable_inputs'])
+
+    def test_loss_upgrade_and_description_changes_refuse_in_validator_and_capability(self):
+        original, record = self.compile_bound(), self.record()
+        for mode in self.MODES:
+            contract = self.mutate(copy.deepcopy(original), mode)
+            with self.subTest(mode, where='validator'), self.assertRaises(ValueError):
+                validate_contract(contract, qualification=record)
+            with self.subTest(mode, where='capability'), self.assertRaises(ValueError):
+                self.run_capability(contract, record)
+
+    def test_declaration_cannot_be_stripped_or_left_unpinned(self):
+        original, record = self.compile_bound(), self.record()
+        stripped = copy.deepcopy(original)
+        del stripped['qualification_record']
+        with self.assertRaisesRegex(ValueError, 'pinned by the scope'):
+            self.run_capability(stripped, record)
+        with self.assertRaisesRegex(ValueError, 'must be pinned'):
+            self.run_capability(original, record, pin=False)
+        with self.assertRaisesRegex(ValueError, 'declares none'):
+            validate_contract(stripped, qualification=record)
+
+    def test_record_tampering_and_missing_provenance_refuse(self):
+        original, record = self.compile_bound(), self.record()
+        scope, files, root = self.capture(original, record)
+        write_json(root / 'qualification.json', record)
+        tampered = copy.deepcopy(record)
+        tampered['rows'][0]['requirements'][0] = dict(id='POD-IF-A', qualification='sourced', source=dict(
+            path='x.md', sha256='b' * 64, locator='forged'))
+        write_json(root / 'qualification.json', tampered)
+        with self.assertRaisesRegex(ValueError, 'matching sha256'):
+            capability(scope['checks'][0]['params'], scope, files, root, 'interface')
+        for mutate in (lambda r: r['rows'][0].pop('origin'),
+                       lambda r: r['rows'][0]['origin'].pop('revision'),
+                       lambda r: r['rows'][0]['origin'].update(sha256='bad'),
+                       lambda r: r['rows'].pop(),
+                       lambda r: r['rows'][0].update(requirements=['POD-IF-A'])):
+            broken = copy.deepcopy(record)
+            mutate(broken)
+            with self.assertRaises(ValueError):
+                validate_contract(copy.deepcopy(original), qualification=broken)
+
+    def test_legacy_inputs_stay_accepted_but_cannot_upgrade_from_the_inherited_csv(self):
+        legacy = compile_(self.RAW, bindings=probe_bindings())
+        descriptor = self.run_capability(legacy, None)
+        self.assertEqual(descriptor['requirement_authority']['sourced'], [])
+        self.assertFalse(descriptor['requirement_history']['qualification_bound'])
+        explicit = compile_(self.RAW, bindings=probe_bindings(), qualifications={})
+        self.assertEqual(self.run_capability(explicit, None)['requirement_authority']['unqualified-carryover'],
+                         ['POD-IF-A', 'POD-IF-B'])
+        for contract in (legacy, explicit):
+            upgraded = self.mutate(copy.deepcopy(contract), 'upgrade-from-csv')
+            with self.assertRaisesRegex(ValueError, 'inherited io_map CSV'):
+                validate_contract(upgraded)
+            with self.assertRaises(ValueError):
+                self.run_capability(upgraded, None)
+        entry = explicit['invariants'][0]['io_map']['requirements'][0]
+        entry['source'] = dict(path='io-map.csv', sha256='a' * 64, locator='original v9 row')
+        with self.assertRaises(ValueError):
+            validate_contract(explicit)
+
+    def test_history_compile_refusals(self):
+        for mutate in (lambda h: h.pop('origin'), lambda h: h['origin'].update(sha256='x'),
+                       lambda h: h.update(schema='other'), lambda h: h.update(extra=1),
+                       lambda h: h['sourced'].update({'POD-IF-A': dict(path='n.md', locator='x')}),
+                       lambda h: h['sourced'].update({'POD-IF-Z': dict(path='n.md', sha256='c' * 64, locator='x')})):
+            history = copy.deepcopy(self.HISTORY)
+            mutate(history)
+            with self.subTest(), self.assertRaises(ValueError):
+                self.compile_bound(history)
+        with self.assertRaisesRegex(ValueError, 'requires record_path'):
+            compile_(self.RAW, bindings=probe_bindings(), history=self.HISTORY)
+
+    def test_mixed_statuses_in_record_are_reported_and_origin_retained(self):
+        history = copy.deepcopy(self.HISTORY)
+        history['sourced'] = {'POD-IF-A': dict(path='item4.md', sha256='c' * 64, locator='item 4')}
+        contract, record = self.compile_bound(history), self.record(history)
+        self.assertEqual(requirement_authority(contract),
+                         {'sourced': ['POD-IF-A'], 'unqualified-carryover': ['POD-IF-B']})
+        item = history['sourced']['POD-IF-A']
+        scope, files, root = self.capture(contract, record, extra={'item4.md': b'x'})
+        with self.assertRaisesRegex(ValueError, 'sourced requirement must be captured'):
+            capability(scope['checks'][0]['params'], scope, files, root, 'interface')
+        body = b'owner item 4\n'
+        history['sourced']['POD-IF-A']['sha256'] = hashlib.sha256(body).hexdigest()
+        contract, record = self.compile_bound(history), self.record(history)
+        descriptor = self.run_capability(contract, record, extra={'item4.md': body})
+        self.assertEqual(descriptor['requirement_authority']['sourced'], ['POD-IF-A'])
+        upgraded = copy.deepcopy(contract)
+        for invariant in upgraded['invariants']:
+            invariant['io_map']['requirements'] = [
+                dict(id=r['id'] if isinstance(r, dict) else r, qualification='sourced', source=dict(item, sha256=hashlib.sha256(body).hexdigest()))
+                for r in invariant['io_map']['requirements']]
+        with self.assertRaisesRegex(ValueError, 'differs from qualification record'):
+            self.run_capability(upgraded, record, extra={'item4.md': body})
+
+    def coverage_scope(self, contract, record):
+        scope, files, root = self.capture(contract, record)
+        scope['checks'].insert(0, dict(id='netlist', kind='netlist'))
+        scope['baseline']['requirements'][0]['checks'].insert(0, 'netlist')
+        scope.update(schematic='interface.kicad_sch', board='interface.kicad_pcb')
+        for name in ('interface.kicad_sch', 'interface.kicad_pcb'):
+            (root / name).write_bytes(b'synthetic inventory placeholder')
+        return scope, {p.name: digest(p) for p in root.iterdir()}, root
+
+    def test_coverage_reports_unqualified_ids_without_counting_them(self):
+        contract, record = self.compile_bound(), self.record()
+        scope, files, root = self.coverage_scope(contract, record)
+        coverage = compile_coverage(scope, files, root)
+        cited = coverage['requirement_citations']
+        self.assertEqual(cited['unqualified-carryover'], {'interface': ['POD-IF-A', 'POD-IF-B']})
+        self.assertEqual(cited['qualified'], [])
+        self.assertIs(cited['counted_as_coverage'], False)
+        detail = coverage['checks']['interface']['requirement_qualification']
+        self.assertTrue(detail['qualification_bound'])
+        self.assertEqual(detail['origins']['POD-IF-B'], [self.HISTORY['origin']])
+        # structural predicates stay graded by their independently bound requirement source
+        self.assertTrue(coverage['checks']['interface']['can_evaluate_bound'])
+        self.assertEqual(coverage['requirements']['interface']['acceptance_checks'], ['interface'])
+
+    def test_coverage_refuses_loss_and_upgrade_and_reports_mixed(self):
+        contract, record = self.compile_bound(), self.record()
+        for mode in ('bare-ids', 'empty-citations', 'strip-io-map', 'upgrade-from-csv', 'changed-description'):
+            bad = self.mutate(copy.deepcopy(contract), mode)
+            scope, files, root = self.coverage_scope(bad, record)
+            with self.subTest(mode), self.assertRaises(ValueError):
+                compile_coverage(scope, files, root)
+        body = b'owner item 4\n'
+        history = copy.deepcopy(self.HISTORY)
+        history['sourced'] = {'POD-IF-A': dict(path='item4.md', sha256=hashlib.sha256(body).hexdigest(), locator='i4')}
+        contract, record = self.compile_bound(history), self.record(history)
+        scope, files, root = self.capture(contract, record, extra={'item4.md': body})
+        scope['checks'].insert(0, dict(id='netlist', kind='netlist'))
+        scope['baseline']['requirements'][0]['checks'].insert(0, 'netlist')
+        scope.update(schematic='interface.kicad_sch', board='interface.kicad_pcb')
+        for name in ('interface.kicad_sch', 'interface.kicad_pcb'):
+            (root / name).write_bytes(b'synthetic inventory placeholder')
+        files = {p.name: digest(p) for p in root.iterdir()}
+        cited = compile_coverage(scope, files, root)['requirement_citations']
+        self.assertEqual((cited['qualified'], cited['unqualified-carryover']),
+                         (['POD-IF-A'], {'interface': ['POD-IF-B']}))
+
+    def test_legacy_coverage_without_citations_is_unchanged(self):
+        contract = copy.deepcopy(compile_(self.RAW, bindings=probe_bindings()))
+        for invariant in contract['invariants']:
+            invariant['io_map']['requirements'] = []
+        scope, files, root = self.coverage_scope(contract, None)
+        coverage = compile_coverage(scope, files, root)
+        self.assertNotIn('requirement_citations', coverage)
+        self.assertNotIn('requirement_qualification', coverage['checks']['interface'])
+
+    def test_spec_traceability_separates_qualified_from_token_presence(self):
+        spec = read_json(POD / 'spec-record.json')
+        raw = (POD / 'io-map.csv').read_bytes()
+        kwargs = dict(csv_path='io-map.csv', requirement='POD-AC-1', spec_record=spec,
+                      source=dict(path='spec.md', locator='Acceptance criteria / item 1'))
+        for extra in ({}, dict(qualifications={})):
+            report = {}
+            contract = compile_io_map(raw, report=report, **extra, **kwargs)
+            self.assertEqual(report['traceability']['qualified'], [])
+            self.assertEqual(len(report['traceability']['unqualified-carryover']), 8)
+            self.assertEqual(report['traceability']['missing'], [])
+        sourced = dict(path='cap/cite.md', sha256='d' * 64, locator='item 1')
+        report = {}
+        compile_io_map(raw, report=report, qualifications={'POD-IF-CAN1': sourced}, **kwargs)
+        self.assertEqual(report['traceability']['qualified'], ['POD-IF-CAN1'])
+        self.assertNotIn('POD-IF-CAN1', report['traceability']['unqualified-carryover'])
+        self.assertEqual(traceability(contract, spec)['missing'], [])
+
+    def test_cli_history_writes_record_and_reports_split(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'in.csv').write_bytes(self.RAW)
+            (root / 'requirements.md').write_bytes(b'r\n')
+            write_json(root / 'h.json', self.HISTORY)
+            write_json(root / 'b.json', probe_bindings())
+            argv = ['in.csv', '--csv-path', 'io-map.csv', '--requirement', 'interface', '--source',
+                    'requirements.md', '--locator', 'x', '--bindings', 'b.json', '--out', 'out.json']
+            with contextlib.chdir(root):
+                with self.assertRaises(SystemExit) as refused:
+                    main([*argv, '--history', 'h.json'])
+                self.assertEqual(refused.exception.code, 2)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    main([*argv, '--history', 'h.json', '--record-path', 'qualification.json',
+                          '--record-out', 'record.json'])
+            contract, record = read_json(root / 'out.json'), read_json(root / 'record.json')
+            self.assertEqual(contract['qualification_record'],
+                             dict(path='qualification.json', sha256=digest(root / 'record.json')))
+            self.assertEqual(validate_contract(contract, qualification=record), contract)
+
+
+class NativeQualificationTests(unittest.TestCase):
+    """Native pass keeps independent structural authority while carry-over is reported, never graded."""
+
+    def run_native(self, bound):
+        require_toolchain(native=True)
+        base = RequirementQualificationTests()
+        raw = csv_bytes(base.ROWS, fields=base.FIELDS)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        history = HistoricalQualificationTests.HISTORY
+        if bound:
+            contract = compile_(raw, bindings=probe_bindings(), history=history, record_path='qualification.json')
+            write_json(root / 'qualification.json', build_record(contract, history))
+        else:
+            contract = base.build(qualifications={})
+        schematic = generator.schematic('disconnect').replace('X1', 'J1').replace('"IN"', '"CAN+"').replace('"OUT"', '"CAN-"')
+        (root / 'interface.kicad_sch').write_text(schematic)
+        for filename in ('interface.kicad_pcb', 'requirements.md'):
+            (root / filename).write_bytes((FIXTURE / filename).read_bytes())
+        (root / 'io-map.csv').write_bytes(raw)
+        write_json(root / 'contract.json', contract)
+        scope = read_json(FIXTURE / 'control.scope.json')
+        scope['checks'] = scope['checks'][:2]
+        scope['baseline']['requirements'] = scope['baseline']['requirements'][:1]
+        scope['inputs'].append(dict(path='io-map.csv', at='io-map.csv'))
+        if bound:
+            scope['inputs'].append(dict(path='qualification.json', at='qualification.json'))
+            scope['checks'][1]['params']['qualification_record'] = dict(
+                path='qualification.json', sha256=digest(root / 'qualification.json'))
+        write_json(root / 'scope.json', scope)
+        run = root / 'run'
+        run.mkdir()
+        capture(root / 'scope.json', run)
+        return run_checks(run, time.monotonic() + 90)[1]
+
+    def test_unqualified_citations_are_reported_never_graded(self):
+        for bound in (False, True):
+            with self.subTest(bound=bound):
+                result = self.run_native(bound)
+                self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+                self.assertEqual(result['details']['requirement_qualification'],
+                                 {'sourced': [], 'unqualified-carryover': ['POD-IF-A', 'POD-IF-B']})
+                self.assertTrue(any('never graded' in x for x in result['limitations']), result)
