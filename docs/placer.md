@@ -2220,3 +2220,8 @@ for resolution provenance, path safety and publication checks.
 `placer_runner --trace PATH` and `python3 -m agent_ee.placement_trace pack` record
 an opt-in, bounded timing and Stage-A replay trace. Tracing is off by default and
 leaves plans and boards unchanged. See [placement trace](placement-trace.md).
+
+The opt-in [Rust scorer](placement-scoring.md) accelerates the exact Stage-A
+wire cost while retaining lazy ordering and generation invalidation. Its fast
+mode and full Python verification mode have separate benchmark timings;
+ordinary placement continues to use Python.

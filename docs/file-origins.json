@@ -3972,6 +3972,7 @@
     },
     {
       "paths": [
+<<<<<<< HEAD
         "evidence/packet-index-ab/call-ledger.jsonl",
         "evidence/packet-index-ab/report.json",
         "evidence/packet-index-ab/manifest.json"
@@ -3988,11 +3989,15 @@
         "tools/ee454_io_profile/count_calls.py",
         "tools/ee454_io_profile/profile_io.py",
         "tools/ee454_io_profile/reconstruct.py"
+=======
+        "src/agent_ee/data/placement_score.rs"
+>>>>>>> 3cd1a5e2 (Port placement scoring to prepared Rust kernels)
       ],
       "kind": "owned-source",
       "origins": [
         "AE"
       ],
+<<<<<<< HEAD
       "reviewed": "Original AGENTEE-454 diagnostic harness written for agent-ee: reconstruction from pinned local objects, I/O wrapper profiling, call counting and analysis. No third-party code or design bytes."
     },
     {
@@ -4035,6 +4040,9 @@
         "AE"
       ],
       "reviewed": "Original AGENTEE-454 repair measurement notes."
+=======
+      "reviewed": "Original Rust port of the agent-ee AGENTEE-431 integer Manhattan scorer, with owned prepared-state and bounded integer fast paths. No third-party source, designs, or libraries."
+>>>>>>> 3cd1a5e2 (Port placement scoring to prepared Rust kernels)
     }
   ]
 }

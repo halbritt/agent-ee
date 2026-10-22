@@ -26,7 +26,7 @@ import math
 import time
 
 from . import (access_direction, advisory_regions, electrical_locality, placement_groups, placement_provenance,
-               placement_trace)
+               placement_scoring, placement_trace)
 from .placement import (area2, boxes_meet, convex, courtyard_bounds, cross, edges, intersection_area, judge,
                         on_segment, overhang_bands, qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
@@ -1991,11 +1991,22 @@ class _Search:
             if trace is not None:
                 # Closed on failure too: an exception never loses the entered span.
                 trace.add('stage_a.geometry', placement_trace.now() - started - (bounds[0] - bounds_before))
+        scoring, scorer = placement_scoring.active(), None
+
         def exact(key):
+            nonlocal scorer
             self.checkpoint()  # Each exact cost is checked as promptly as when generation computed it.
             local_cost, _, x, y, rotation, doomed = key
-            return (local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
-                    x, y, rotation, doomed)
+            if scoring is None:
+                cost = _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers)
+            else:
+                # A resumed parent scan must not reuse state prepared before a push/backjump.
+                generation = (self.generations_allocated, self.generations[-1])
+                if scorer is None or scorer.snapshot.generation != generation:
+                    pads = {str(r): _pad_nets(fp, (0, 0), r, self.grounds) for r in (0, 90, 180, 270)}
+                    scorer = scoring.scorer(placement_scoring.Snapshot.capture(generation, pads, self.peers))
+                cost = scorer.score(x, y, rotation, generation=generation)
+            return (local_cost, cost, x, y, rotation, doomed)
         order = _ranked(ranked, exact)
         if trace is not None:
             untraced, timed, sample, clock = exact, trace.durations['stage_a.exact'], trace.sample, placement_trace.now

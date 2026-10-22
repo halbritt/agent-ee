@@ -95,6 +95,14 @@ RUN set -eu; \
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN /usr/local/share/agent-ee/kicad-route/install.sh install
 
+# Reuse the pinned build-only Rust toolchain. Availability does not activate
+# the optional scorer; Python remains the normal placement backend.
+COPY src/agent_ee/data/placement_score.rs /tmp/placement_score.rs
+RUN mkdir -p /usr/local/lib/agent-ee && \
+    rustc --edition=2021 --crate-type=cdylib -C opt-level=3 -C lto=fat \
+      -C codegen-units=1 -C panic=abort /tmp/placement_score.rs \
+      -o /usr/local/lib/agent-ee/placement_score.so
+
 FROM native AS toolchain
 
 # Installed analyzer tool, kept outside the agent-ee package and candidate.
@@ -134,6 +142,8 @@ RUN set -eu; \
 ENV AGENT_EE_KICAD_ROUTE_CHECKOUT=/opt/kicad-route
 COPY --from=kicad-route-build --chown=10001:10001 /opt/kicad-route /opt/kicad-route
 COPY --from=kicad-route-build /opt/kicad-route.install.json /opt/kicad-route.install.json
+COPY --from=kicad-route-build /usr/local/lib/agent-ee/placement_score.so /usr/local/lib/agent-ee/placement_score.so
+ENV AGENT_EE_PLACEMENT_SCORE_LIBRARY=/usr/local/lib/agent-ee/placement_score.so
 COPY docker/kicad-route /usr/local/share/agent-ee/kicad-route
 RUN --network=none /usr/local/share/agent-ee/kicad-route/install.sh verify
 
