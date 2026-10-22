@@ -255,8 +255,10 @@ page describes the record. The declaration is the reviewed five-field
 the run-relative `routability-experiment.json`. The sidecar shape and the
 retained `experiment-policy.json` copy are those of kicad-route `4f06368f`, whose
 real receipts the boundary tests replay. A receipt that claims
-`comparison_eligible` is requalified from the retained attempt record, facts and
-sealed effective-configuration manifest, never trusted on the producer's flag.
+`comparison_eligible` is requalified from the attempt record, facts and sealed
+effective-configuration manifest it names by digest, and must describe this
+execution (input, source, request, candidate and run), never trusted on the
+producer's flag.
 That producer is not pinned or qualified. The pin does not produce this evidence, so steps 1-3 and 5-7 below
 still apply when agent-ee re-pins.
 
@@ -302,8 +304,8 @@ When agent-ee re-pins onto a commit with that work:
    file without a binding reference is refused as `unbound`, so the receipt never
    omits it. When the reviewed schema arrives, re-check the sidecar fields
    `experiment_grade` reads (the whole sidecar against `EXPERIMENT_SHAPE`, the
-   policy copy, and the manifest, request, attempt and facts fields `_requalify`
-   reads),
+   policy copy, the artifacts it must name, and the manifest, request, attempt,
+   facts and identity fields `_requalify` and `_run_mismatch` read),
    whether the router echoes the policy in `result.settings` (then
    `expected_settings` changes), and whether a sidecar exists on process
    failure. Its comparison key must still be rebuilt from the bytes agent-ee

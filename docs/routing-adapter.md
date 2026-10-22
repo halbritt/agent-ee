@@ -789,10 +789,16 @@ Experiment evidence is never dropped and is never qualified.
     - `unqualified`: the sidecar claims `comparison_eligible`, but this
       boundary cannot requalify the claim from the retained bytes. The flag
       and the stored `bound` status are claims, never authority. `_requalify`
-      re-derives the obligations:
-      - the sidecar's `artifacts` must seal `work/effective-configuration.json`
-        and `work/effective-configuration-request.json`, and the retained
-        files must be those bytes (otherwise `missing` or `tampered`);
+      re-derives the obligations, reading only bytes the sidecar names:
+      - every digest in the sidecar's `artifacts` is bound to the retained file
+        it names, recomputed from the retained bytes. The sidecar must name
+        `attempt.json`, `facts/reference-facts.json`,
+        `validate/candidate-facts.json`, `work/effective-configuration.json`
+        and `work/effective-configuration-request.json` (`EXPERIMENT_BOUND`);
+        an unnamed or null one is `unbound`. A named file that was not
+        retained is `missing`, other bytes are `tampered`, and a name that is
+        not a run-relative retained report is `malformed`. The adapter's own
+        retained files are never the identity source;
       - the manifest must cover exactly one outer batch and no later subrun
         (`execution` `{outer_batches: 1, later_subruns: 0}`), have coverage
         `resolved_outer_batch_only`, a `complete` capture without `issues`,
@@ -805,15 +811,38 @@ Experiment evidence is never dropped and is never qualified.
       - the origin must be a single run: depth 0, no predecessors (their
         receipts are not retained here, so a chain is unsupported), a root
         fingerprint equal to the sidecar's input fingerprint, and an
-        `attempt.json` `source_dir` that is not the run's own
-        `candidate_dir`. That last case is a self-cycle that kicad-route
-        truncates to depth 0 (K91 review EI3). The run is named by the
-        adapter's discovered attempt directory and by the manifest's
-        `requested_output`.
+        `attempt.json` `source_dir` that is not inside this run. That case is a
+        self-cycle that kicad-route truncates to depth 0 (K91 review EI3).
+        `source_dir` is a string in the router's namespace. It is normalised
+        lexically (`.`, `..`, repeated and trailing separators), never
+        followed on the host, and compared with this run's directory
+        (`experiment_run`: the `--out` run the adapter discovered). So
+        `RUN/hop/../candidate/project`, `RUN/candidate/project/` or a link
+        inside the run are self-cycles too (review H2, ee442f).
 
       The record keeps `identity_sha256`, `comparison_eligible` and
       `ineligible_reasons` as observed. A wrong manifest or request schema is
-      `incompatible_schema`.
+      `incompatible_schema`;
+    - `run_mismatch`: the eligible sidecar, with every digest correct, does
+      not describe this execution. These must agree:
+      - `source_dir` and the sidecar's `identity.input.source` must be exactly
+        the `--dir` the adapter passed (`/candidate/<project>`);
+      - the input fingerprint must equal `attempt.json`, `result.json` and the
+        fingerprint of the retained `snapshot.json` files, and the snapshot
+        files, input board name and digest must match those files;
+      - the request settings must restate `attempt.json` `settings`, which the
+        adapter checks against its fixed request: `protect`, `mode`, the
+        backend, the budgets, `experiment_policy_sha256` and the other
+        `EXPERIMENT_REQUEST_SETTINGS`;
+      - the candidate's board digests must equal the board `result.json`
+        validated and `validate/candidate-facts.json`, and the pre-refill
+        digest must equal the delivered one;
+      - the outcome statuses must equal `result.json`'s;
+      - the manifest's `requested_output` must be `RUN/work/krt-out/<board>`.
+
+      A same-policy receipt of another run, transplanted with every file it
+      seals, and a real sidecar resealed over this run's digests are both
+      refused here.
 
     The record keeps the reference and, when a root sidecar was retained, its
     path and recomputed hash. For `unbound`, that is the unbound file.
@@ -836,27 +865,32 @@ Experiment evidence is never dropped and is never qualified.
   `PROVENANCE.md`). `RealReceiptReplayTest` in
   `tests/test_routing_experiment_boundary.py` replays them through `step`,
   `stage_receipts.run_step`, `verify` and `adopt`:
-  - the current-policy and historical-all-layer positives are retained and
-    adopted, unqualified;
+  - the real positives are producer-format fixtures only. The fixture router
+    routes agent-ee's own design, so each real sidecar names another run's
+    attempt record and facts, and is refused (`tampered`, `attempt.json`),
+    with no candidate and a rejected adoption (agent-509 ruling on ee442f: the
+    old hybrid positive must refuse). The end-to-end positive is the coherent
+    synthetic receipt of `ExperimentBoundaryTest` until the corrected producer
+    and a fresh native replay supply a real one;
   - the stale-runtime receipt is refused as `ineligible`;
   - the positives' sealed effective-configuration manifests and requests are
-    committed too, with their `result.json` binding in `receipts.json`. Resealed
-    variants of the positive are refused as `unqualified` or `malformed`:
-    several batches, a wrong request hash, an incomplete capture, a self-cycle
-    or a predecessor chain (EI2, EI3). So are list-shaped attempt records and
-    facts (EI4) and members outside the producer schema (review H2, ee442e);
+    committed too, with their `result.json` binding in `receipts.json`. The K91
+    review's resealed real variants (EI2, EI3, EI4) are refused at the binding.
+    The same cases sealed coherently on the synthetic receipt are refused by
+    their own checks: `unqualified` or `malformed` for several batches, a wrong
+    request hash, an incomplete capture, a self-cycle or a predecessor chain,
+    and list-shaped attempt records and facts. Members outside the producer
+    schema are `malformed` (review H2, ee442e);
+  - the real sidecar with its digests rewritten to this run's files and
+    resealed is `run_mismatch`;
   - edited, re-bound, re-ordered, missing and out-of-range variants are
     refused as `tampered`, `missing`, `incompatible_policy` or `malformed`;
   - each receipt under the other declared policy is `incompatible_policy`.
 
-  The fixture router routes agent-ee's own fixture design, so the sidecar's
-  internal board and run identities are retained provenance. agent-ee does not
-  re-derive them; only `kicad_route.experiment.verify` can. In particular the
-  sidecar's `attempt.json`, facts and `validate/` digests and its candidate and
-  input identities are not compared with the adapter's own run: a sidecar
-  transplanted from another run with the same declared policy and its sealed
-  manifests is still retained, unqualified. Requalification reads the
-  adapter's own retained attempt record and facts. The `K91_REVIEWED`
+  Every refusal is re-derived by `verify` after the router's `OUT` is removed.
+  A retained record is still `qualified: false`: binding proves which run the
+  evidence describes, not that the producer measured it correctly (only
+  `kicad_route.experiment.verify` and producer qualification can). The `K91_REVIEWED`
   hook records the producer commit, the sha256 of its schema file and the
   positive receipt's file and identity digests. `EXPERIMENT_CONTRACT` names
   the producer as unpinned and not qualified. Two contract points have still

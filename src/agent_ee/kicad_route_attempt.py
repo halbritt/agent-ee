@@ -26,6 +26,7 @@ import hashlib
 import json
 import math
 import os
+import posixpath
 import re
 import secrets
 import shutil
@@ -470,6 +471,14 @@ EXPERIMENT_COVERAGE = 'resolved_outer_batch_only'
 EXPERIMENT_EXECUTION = {'outer_batches': 1, 'later_subruns': 0}
 EXPERIMENT_RESTATED = ('schema', 'capture_status', 'coverage', 'stage', 'execution', 'not_captured',
                        'configuration', 'effective_environment', 'runtime_policy', 'scope')
+# The reports an eligible sidecar must name by digest, and the attempt settings its
+# identity.request restates (kicad-route records both from the same run options).
+EXPERIMENT_BOUND = ('attempt.json', 'facts/reference-facts.json', 'validate/candidate-facts.json',
+                    *EXPERIMENT_MANIFESTS)
+EXPERIMENT_REQUEST_SETTINGS = ('protect', 'mode', 'max_iterations', 'passes', 'default_clearance_mm',
+                               'clearance_margin_mm', 'pour_area_loss_pct', 'pour_min_spokes', 'backend_args',
+                               'backend_env', 'reserve_spokes', 'barrier', 'rule_floor_sha256')
+_UNSTATED = object()
 EXPERIMENT_POLICY_FILE = 'agent-ee-experiment-policy.json'
 EXPERIMENT_SIDECAR = 'routability-experiment.json'
 EXPERIMENT_POLICY_COPY = 'experiment-policy.json'
@@ -477,7 +486,7 @@ EXPERIMENT_CONTRACT = ('agent-ee/AGENTEE-442: routability-experiment/1 as writte
                        '4f06368fbd68bab44cbfde839647aa5b3f7ef7c5 (unpinned, not qualified); '
                        'routability-policy/1 five fields')
 EXPERIMENT_REFUSALS = ('missing', 'malformed', 'unknown_schema', 'tampered', 'incompatible_schema',
-                       'incompatible_policy', 'unbound', 'ineligible', 'unqualified')
+                       'incompatible_policy', 'unbound', 'ineligible', 'unqualified', 'run_mismatch')
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
 
 
@@ -796,7 +805,7 @@ def _retained_file(attempt_dir, name):
     return {'path': f'attempt/{name}', 'sha256': digest(path)}
 
 
-def experiment_grade(request, result, attempt_dir, run_name=None):
+def experiment_grade(request, result, attempt_dir, run=None):
     """The experiment-evidence record, re-derived from the retained bytes alone.
 
     None when no policy was declared, result.json references no sidecar and
@@ -806,8 +815,9 @@ def experiment_grade(request, result, attempt_dir, run_name=None):
     only the run-relative EXPERIMENT_SIDECAR; a retained root file that no valid
     reference binds is refused as 'unbound' with its recomputed identity. A
     sidecar that claims comparison_eligible is requalified by _requalify from
-    the retained attempt record, facts and sealed manifests of the run named
-    run_name, and refused (typed) when that proof is missing or unsupported.
+    the retained attempt record, facts and sealed manifests it names, bound to
+    the execution run (experiment_run), and refused (typed) when that proof is
+    missing, unsupported or another run's.
     Every record is qualified: false."""
     expected = experiment_policy_identity(request.get('experiment_policy'))
     has_ref = isinstance(result, dict) and 'experiment' in result
@@ -907,7 +917,7 @@ def experiment_grade(request, result, attempt_dir, run_name=None):
         return refused('ineligible', 'the producer marked the declared experiment not comparison-eligible: '
                        + '; '.join(body['ineligible_reasons'][:8]), **orphan, **eligibility)
     if body['comparison_eligible']:
-        unqualified = _requalify(body, result, attempt_dir, run_name)
+        unqualified = _requalify(body, result, attempt_dir, run)
         if unqualified is not None:
             return refused(*unqualified, **orphan, **eligibility)
     return {'status': 'retained', **base, 'schema': EXPERIMENT_SCHEMA, 'reference': ref, **orphan, **eligibility}
@@ -961,19 +971,63 @@ def _retained_json(attempt_dir, name, label=None):
         return None, ('malformed', str(exc))
 
 
-def _requalify(body, result, attempt_dir, run_name):
+def experiment_run(request, layout, attempt_dir):
+    """The execution an eligible sidecar must describe, or None without a discovered run.
+
+    attempt_dir is the discovered run relative to routing/ (report.discovery);
+    the paths are those the sandboxed router was given (tool_argv's --out and
+    --dir), so the sidecar is bound to this execution, never to its own claims."""
+    if not isinstance(attempt_dir, str):
+        return None
+    return {'run_dir': str(Path(layout['work']) / 'routing' / attempt_dir),
+            'source_dir': str(Path(layout['candidate']) / request['project'])}
+
+
+def _bound_artifacts(sealed, attempt_dir):
+    """(reason, detail) unless every artifact the sidecar names is the retained file it names.
+
+    Each non-null digest must name a run-relative report retain() copies and be
+    recomputed from that retained file; the attempt record, both facts files and
+    the sealed manifests must be named (EXPERIMENT_BOUND). The adapter's own files
+    are never the identity source: an unnamed one is unbound evidence."""
+    for name, want in sorted(sealed.items()):
+        if name == EXPERIMENT_POLICY_COPY or want is None:
+            continue
+        parts = name.split('/')
+        if (any(p in ('', '.', '..') for p in parts) or
+                not (name in RETAINED_FILES or (len(parts) > 1 and parts[0] in RETAINED_DIRS))):
+            return 'malformed', f'sidecar artifact {name!r} is not a run-relative retained report'
+        kept = _retained_file(attempt_dir, name)
+        if kept is None:
+            return 'missing', f'the sidecar binds {name} but no regular file was retained'
+        if kept['sha256'] != want:
+            return 'tampered', f'{name} sha256 differs from the sidecar artifacts digest'
+    for name in EXPERIMENT_BOUND:
+        if sealed.get(name) is None:
+            return 'unbound', f'the eligible sidecar binds no {name} digest'
+    return None
+
+
+def _requalify(body, result, attempt_dir, run):
     """(reason, detail) refusing an eligible-claiming sidecar this boundary cannot requalify, or None.
 
     The producer's comparison_eligible flag and the stored 'bound' status are
-    claims, not authority (review H1, ee442e). The obligations are re-derived
-    from the retained bytes: the attempt record and the native facts are JSON
+    claims, not authority (review H1, ee442e). First every artifact the sidecar
+    names is bound by digest to the retained file (_bound_artifacts), so the
+    checks below read only the bytes the sidecar describes. Then the obligations
+    are re-derived from them: the attempt record and the native facts are JSON
     objects of the producer's shape (EI4); the effective-configuration manifest
-    and its request are the files the sidecar seals, the manifest covers exactly
-    one outer batch and no later subrun, its capture is complete, it binds the
-    retained request by hash, and the sidecar identity and the result.json
-    process binding restate it (EI2); and the origin is a single run whose input
-    is not its own candidate (EI3). A predecessor chain is unsupported here: its
-    receipts are not retained, so it cannot be requalified."""
+    covers exactly one outer batch and no later subrun, its capture is complete,
+    it binds the retained request by hash, and the sidecar identity and the
+    result.json process binding restate it (EI2); and the origin is a single run
+    whose input is not its own output (EI3). Last, the sidecar must describe this
+    execution (run, an experiment_run): its input, source, request, candidate,
+    outcome and output are this attempt's, else 'run_mismatch'. A predecessor
+    chain is unsupported here: its receipts are not retained."""
+    sealed = body['artifacts']
+    refusal = _bound_artifacts(sealed, attempt_dir)
+    if refusal is not None:
+        return refusal
     record, refusal = _retained_json(attempt_dir, 'attempt.json')
     if refusal is not None:
         return refusal
@@ -982,29 +1036,24 @@ def _requalify(body, result, attempt_dir, run_name):
             not record['schema'].startswith('kicad-route/attempt/') or
             not all(isinstance(record.get(k), str) and record[k] for k in ('board', 'candidate_dir',
                                                                            'input_fingerprint')) or
-            not isinstance(source, dict) or not isinstance(source.get('source_dir'), str)):
+            not isinstance(source, dict) or not isinstance(source.get('source_dir'), str) or
+            not isinstance(record.get('settings'), dict)):
         return 'malformed', ('attempt.json is not a kicad-route attempt record (an object with schema, board, '
-                             'candidate_dir, input_fingerprint and source.source_dir strings)')
+                             'candidate_dir, input_fingerprint and source.source_dir strings and settings)')
+    facts = {}
     for name, lists in (('facts/reference-facts.json', ('tracks', 'vias', 'copper_layers')),
                         ('validate/candidate-facts.json', ('tracks', 'vias'))):
-        facts, refusal = _retained_json(attempt_dir, name)
+        facts[name], refusal = _retained_json(attempt_dir, name)
         if refusal is not None:
             return refusal
-        if (not isinstance(facts, dict) or
-                any(k in facts and (not isinstance(facts[k], list) or
-                                    not all(isinstance(v, dict) for v in facts[k])) for k in lists) or
-                ('footprints' in facts and not isinstance(facts['footprints'], dict))):
+        found = facts[name]
+        if (not isinstance(found, dict) or
+                any(k in found and (not isinstance(found[k], list) or
+                                    not all(isinstance(v, dict) for v in found[k])) for k in lists) or
+                ('footprints' in found and not isinstance(found['footprints'], dict))):
             return 'malformed', f'{name} is not a native facts object (lists of objects, footprints an object)'
-    sealed = body['artifacts']
     manifest = {}
     for name in EXPERIMENT_MANIFESTS:
-        kept = _retained_file(attempt_dir, name)
-        if sealed.get(name) is None:
-            return 'unqualified', f'the eligible sidecar seals no {name}'
-        if kept is None:
-            return 'missing', f'the sidecar seals {name} but no regular file was retained'
-        if kept['sha256'] != sealed[name]:
-            return 'tampered', f'{name} sha256 differs from the sidecar artifacts digest'
         manifest[name], refusal = _retained_json(attempt_dir, name)
         if refusal is not None:
             return refusal
@@ -1028,7 +1077,8 @@ def _requalify(body, result, attempt_dir, run_name):
     for key in ('source_sha256', 'producer_sha256'):
         if not isinstance(config.get(key), str) or config[key] != request.get(key):
             return 'unqualified', f'{config_name} {key} differs from {request_name}'
-    effective, build = body['identity']['effective'], body['identity']['build']
+    identity = body['identity']
+    effective, build = identity['effective'], identity['build']
     restated = {**{k: config.get(k) for k in EXPERIMENT_RESTATED},
                 'rules_sha256': _sha256_of(config['rules']) if config.get('rules') is not None else None,
                 'net_inventory_sha256': _sha256_of(config['net_inventory']) if config.get('net_inventory') else None}
@@ -1042,21 +1092,85 @@ def _requalify(body, result, attempt_dir, run_name):
             binding.get('sha256') != sealed[config_name] or binding.get('request_sha256') != sealed[request_name] or
             binding.get('capture_status') != 'complete' or binding.get('coverage') != EXPERIMENT_COVERAGE):
         return 'unqualified', f'result.json process.effective_configuration does not bind the retained {config_name}'
-    origin, claimed = body['identity']['origin'], body['identity']['input']['fingerprint']
+    origin, claimed = identity['origin'], identity['input']['fingerprint']
     if origin['depth'] != 0 or origin['predecessors']:
         return 'unqualified', (f'the origin chain has {origin["depth"]} predecessor(s) whose receipts this '
                                'boundary does not retain')
     if origin['root_input_fingerprint'] is None or origin['root_input_fingerprint'] != claimed:
         return 'unqualified', 'origin root_input_fingerprint is not the sidecar input fingerprint'
-    # kicad-route cli.previous_step follows source_dir to RUN/candidate_dir; when RUN is this
-    # run the producer stops at the revisit and reports depth 0 (EI3). The run is named by
-    # the adapter's discovered attempt directory and by the manifest's RUN/work/krt-out/BOARD.
-    src, cand = PurePosixPath(source['source_dir']).parts, PurePosixPath(record['candidate_dir']).parts
+    if run is None:
+        return 'run_mismatch', 'no discovered run to bind the eligible sidecar to'
+    # kicad-route cli.previous_step resolves source_dir and stops at a revisit of this run,
+    # reporting depth 0 (EI3). The path is a producer-namespace string: it is normalised
+    # lexically (., .., repeated and trailing separators), never followed on this host.
+    # Any form inside this run is a self-origin, whatever alias reaches it; any other
+    # string than the exact input directory the adapter passed is not this execution.
+    src = source['source_dir']
+    run_dir = PurePosixPath(run['run_dir'])
+    canon = PurePosixPath(posixpath.normpath('/' + src.lstrip('/'))) if src.startswith('/') else None
+    if canon is not None and (canon == run_dir or run_dir in canon.parents):
+        return 'unqualified', ("origin is a self-cycle: attempt.json source_dir is this run's own candidate "
+                               f'or another path inside this run ({src})')
+    if src != run['source_dir']:
+        return 'run_mismatch', f'attempt.json source_dir {src!r} is not this attempt\'s input {run["source_dir"]}'
+    return _run_mismatch(body, result, record, facts, config, attempt_dir, run_dir)
+
+
+def _run_mismatch(body, result, record, facts, config, attempt_dir, run_dir):
+    """('run_mismatch', detail) unless the sidecar describes this execution, or None.
+
+    Every comparison is with retained bytes the adapter binds independently:
+    result.json (whose input, settings, validation and run the adapter checks
+    against the request and the delivered board), snapshot.json, and the attempt
+    record and facts the sidecar names. A self-consistent sidecar of another run,
+    even with digests rewritten to this run's files, differs here."""
+    identity, candidate, outcome = body['identity'], body['candidate'], body['outcome']
+    claimed = identity['input']
+    inp = result.get('input') if isinstance(result.get('input'), dict) else {}
+    snapshot, refusal = _retained_json(attempt_dir, 'snapshot.json')
+    files = snapshot.get('files') if refusal is None and isinstance(snapshot, dict) else None
+    board = record['board']
+    checks = [
+        ('input fingerprint', claimed['fingerprint'], [record['input_fingerprint'], inp.get('fingerprint'),
+                                                       fingerprint(files) if isinstance(files, dict) else None]),
+        ('input snapshot files', claimed['snapshot_files'], [files, claimed['files']]),
+        ('input board', [claimed['board']['name'], claimed['board']['sha256']],
+         [[inp.get('board'), (files or {}).get(board)], [board, facts['facts/reference-facts.json'].get('sha256')]]),
+        ('input source', claimed['source'], [record['source']])]
+    settings = record['settings']
+    requested = identity['request']
+    checks += [(f'request {k}', requested.get(k, _UNSTATED), [settings.get(k, _UNSTATED)])
+               for k in EXPERIMENT_REQUEST_SETTINGS]
+    checks += [('request backend', canonical_backend(requested.get('backend')),
+                [canonical_backend(settings.get('backend'))]),
+               ('request experiment_policy_sha256', requested.get('experiment_policy_sha256'),
+                [identity['policy']['declared_sha256']]),
+               ('protection mode', identity['protection']['mode'], [settings.get('protect')]),
+               ('backend budget', identity['budgets']['backend_s'], [settings.get('budget_s')])]
+    validation = result.get('validation') if isinstance(result.get('validation'), dict) else {}
+    sha = validation.get('validated_board_sha256')
+    checks += [('candidate board', [candidate[k] for k in ('candidate_board_sha256', 'validated_board_sha256',
+                                                           'file_sha256')],
+                [[sha, validation.get('candidate_board_sha256'), facts['validate/candidate-facts.json'].get('sha256')]
+                 if isinstance(sha, str) else None]),
+               ('pre-refill board', candidate['pre_refill_board_sha256'], [validation.get('delivered_board_sha256')])]
+    statuses = {k: result[k].get('status') if isinstance(result.get(k), dict) else None
+                for k in ('process', 'routing', 'validation')}
+    checks.append(('outcome', {k: outcome[k] for k in statuses}, [statuses]))
+    binding = result['process']['effective_configuration']
+    for key, value in (('captured_input_sha256', claimed['board']['sha256']),
+                       ('backend_output_sha256', candidate['backend_output_board_sha256'])):
+        if key in binding:
+            checks.append((f'result.json effective_configuration {key}', value, [binding[key]]))
     output = config.get('requested_output')
-    runs = {run_name, PurePosixPath(output).parent.parent.parent.name if isinstance(output, str) else None} - {None, ''}
-    if len(src) > len(cand) and src[-len(cand):] == cand and src[-len(cand) - 1] in runs:
-        return 'unqualified', ('origin is a self-cycle: attempt.json source_dir is this run\'s own candidate '
-                               f'{record["candidate_dir"]}')
+    checks.append(('requested output', posixpath.normpath(output) if isinstance(output, str) else None,
+                   [str(run_dir / 'work/krt-out' / board)]))
+    for label, claim, observed in checks:
+        # A request setting may be null but must be stated; every other claim must be non-null.
+        if (claim is None and not label.startswith('request ')) or any(
+                v is _UNSTATED for v in (claim, *observed)) or any(
+                canonical_json(claim) != canonical_json(o) for o in observed):
+            return 'run_mismatch', f'the sidecar {label} is not this execution\'s'
     return None
 
 
@@ -2350,7 +2464,8 @@ def attempt(request, layout, cancel=None):
     for sidecar in sidecars:
         report['retained'][f'attempt/{sidecar}'] = digest(routing / 'attempt' / sidecar)
     links += sidecar_links
-    experiment = experiment_grade(request, result, routing / 'attempt', run_dir.name if run_dir else None)
+    experiment = experiment_grade(request, result, routing / 'attempt',
+                                  experiment_run(request, layout, report['discovery']['attempt_dir']))
     stdout = (routing / 'kicad-route.stdout').read_bytes().decode('utf-8', 'replace')
     refused_line = refused_output(stdout)
     process = report['process']

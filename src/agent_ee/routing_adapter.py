@@ -414,7 +414,7 @@ def _verify(run, report, inputs, receipt, layout):
     if 'pair_coverage' in sem and sem['pair_coverage'] != pairs:
         raise ValueError('pair coverage differs from retained routing evidence')
     policy = _policy_grade(routing, report, request, result, classification)
-    experiment = _experiment_grade(routing, report, request, result, classification, retained)
+    experiment = _experiment_grade(routing, report, request, result, classification, retained, expected)
     return {'classification': classification, 'proposal': proposal, 'coverage': coverage,
             'pair_coverage': pairs,
             'router_exit': sem['exit_code'], 'candidate_sha256': (report['candidate'] or {}).get('sha256'),
@@ -424,7 +424,7 @@ def _verify(run, report, inputs, receipt, layout):
             **({'experiment': experiment} if experiment is not None else {})}
 
 
-def _experiment_grade(routing, report, request, result, classification, retained):
+def _experiment_grade(routing, report, request, result, classification, retained, layout):
     """Re-derive the K91 experiment record (AGENTEE-442) from the retained bytes; None when not involved.
 
     A refused record is honest only on an attempt that delivers no board."""
@@ -439,7 +439,7 @@ def _experiment_grade(routing, report, request, result, classification, retained
             raise ValueError('experiment policy file differs from the declared experiment policy')
     found = (report.get('discovery') or {}).get('attempt_dir')
     grade = attempt.experiment_grade(request, result, routing / 'attempt',
-                                     PurePosixPath(found).name if isinstance(found, str) else None)
+                                     attempt.experiment_run(request, layout, found))
     if ('experiment' in sem) != (grade is not None) or sem.get('experiment') != grade:
         raise ValueError('experiment evidence record differs from the retained routing evidence')
     if (grade is not None and grade['status'] == 'refused' and

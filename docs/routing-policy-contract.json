@@ -40,7 +40,7 @@
       "sidecar_keys": ["artifacts", "candidate", "comparison_eligible", "identity", "identity_sha256", "ineligible_reasons", "native_terminals", "outcome", "policy_qualification", "replay_authority", "schema"],
       "identity_keys": ["budgets", "build", "effective", "input", "native", "origin", "policy", "protection", "request", "scope"],
       "record_statuses": ["retained", "refused", "absent"],
-      "refusal_reasons": ["missing", "malformed", "unknown_schema", "tampered", "incompatible_schema", "incompatible_policy", "unbound", "ineligible", "unqualified"],
+      "refusal_reasons": ["missing", "malformed", "unknown_schema", "tampered", "incompatible_schema", "incompatible_policy", "unbound", "ineligible", "unqualified", "run_mismatch"],
       "qualified": false
     }
   },

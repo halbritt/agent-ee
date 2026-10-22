@@ -27,4 +27,6 @@ absolute paths. `docs/file-origins.json` classifies them as origin T17 and leave
 publication to an owner decision.
 
 tests/test_routing_experiment_boundary.py `RealReceiptReplayTest` replays them
-through step, run_step, verify and adopt. `SHA256SUMS` lists the copied bytes.
+through step, run_step, verify and adopt. They are producer-format fixtures
+attached to another run, so every eligible one is refused at the artifact
+binding (agent-509 ruling on ee442f). `SHA256SUMS` lists the copied bytes.

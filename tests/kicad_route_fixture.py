@@ -218,12 +218,21 @@ if name == 'env':
 # with scenario['payload'] {run-relative name: text} and
 # scenario['effective_binding'] the real run's sealed files and binding; edits
 # still apply. scenario['self_cycle'] points attempt.json source_dir at the run's
-# own candidate, as the K91 review's EI3 case does.
+# own candidate, as the K91 review's EI3 case does; 'source_dir', 'links',
+# 'effective', 'artifacts' and replay['forge'] are described where they apply.
 replay = scenario.get('replay')
 experiment = scenario.get('experiment', 'ok' if '--experiment-policy' in opts or replay else None)
 if experiment is not None and experiment != 'omit':
     if scenario.get('self_cycle'):
         attempt['source']['source_dir'] = str(cand.resolve())
+        write(run / 'attempt.json', attempt)
+    # scenario['source_dir'] is a format string over this run's paths (EI3 alias
+    # cases); scenario['links'] {path: target} creates links the same way.
+    paths = {'run': run, 'cand': cand.resolve(), 'out': out, 'src': src}
+    for link, target in scenario.get('links', {}).items():
+        Path(link.format(**paths)).symlink_to(target.format(**paths))
+    if 'source_dir' in scenario:
+        attempt['source']['source_dir'] = scenario['source_dir'].format(**paths)
         write(run / 'attempt.json', attempt)
     if not (run / 'validate/candidate-facts.json').exists():
         write(run / 'validate/candidate-facts.json', {'sha256': board_sha, 'tracks': [], 'vias': []})
@@ -280,7 +289,8 @@ if experiment is not None and experiment != 'omit':
         'origin': {'root_input_fingerprint': fingerprint, 'depth': 0, 'predecessors': []},
         'scope': attempt['scope'], 'protection': {'mode': settings['protect'], 'only_sha256': None},
         'request': {'fixture': 'SYNTHETIC agent-ee coordinator fixture (AGENTEE-442)',
-                    **{k: v for k, v in settings.items() if k not in ('budget_s', 'stall_s')}},
+                    **{k: v for k, v in settings.items() if k not in ('budget_s', 'stall_s')},
+                    'experiment_policy_sha256': policy['declared_sha256']},
         'policy': policy,
         'budgets': {'backend_s': settings['budget_s'], 'stall_s': None, 'command_budget_s': None, 'grace_s': None},
         'native': {'kicad_cli': None, 'pcbnew_build': None, 'terminal_producer': None,
@@ -293,6 +303,7 @@ if experiment is not None and experiment != 'omit':
                                                    'scope')},
                       'rules_sha256': None, 'net_inventory_sha256': None}}
     identity.update(scenario.get('identity', {}))
+    identity['effective'].update(scenario.get('effective', {}))
     if experiment == 'no_policy_identity':
         del identity['policy']
     copy = run / 'experiment-policy.json'
@@ -317,11 +328,33 @@ if experiment is not None and experiment != 'omit':
                         'wall_clock_stop': False},
             'artifacts': {rel: sha(run / rel) if (run / rel).is_file() else None for rel in sealed},
             'replay_authority': False}
+    # scenario['artifacts'] [[name, digest | None | 'delete' | 'rename:NEW']] edits the
+    # digests before sealing (artifact-binding cases).
+    for rel, op in scenario.get('artifacts', []):
+        if op == 'delete' or (isinstance(op, str) and op.startswith('rename:')):
+            value = body['artifacts'].pop(rel)
+            if op != 'delete':
+                body['artifacts'][op[len('rename:'):]] = value
+        else:
+            body['artifacts'][rel] = op
     if replay is not None:
         sidecar.write_text(replay['sidecar'])
         copy.unlink(missing_ok=True)
         if replay.get('copy') is not None:
             copy.write_text(replay['copy'])
+        # A self-consistent non-identity forgery: the replayed sidecar's digests rewritten
+        # to this run's files, replay['input'] also restating this run's input, and resealed.
+        if replay.get('forge'):
+            forged = json.loads(replay['sidecar'])
+            forged['artifacts'] = {rel: sha(run / rel) if (run / rel).is_file() else None
+                                   for rel in forged['artifacts']}
+            if replay.get('input'):
+                forged['identity']['input'].update(fingerprint=fingerprint, files=files, snapshot_files=files,
+                                                   board={'name': board, 'sha256': files.get(board)},
+                                                   source=attempt['source'])
+                forged['identity']['origin']['root_input_fingerprint'] = fingerprint
+            forged['identity_sha256'] = digest_of(forged['identity'])
+            sidecar.write_text(json.dumps(forged, indent=2) + '\n')
     else:
         sidecar.write_text('not json {' if experiment == 'malformed' else json.dumps(body, indent=2) + '\n')
     # Byte edits [file, old, new, 'first'|'last'] of one occurrence (AGENTEE-442

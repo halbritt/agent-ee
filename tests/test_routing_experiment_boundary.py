@@ -135,6 +135,8 @@ class ExperimentBoundaryTest(unittest.TestCase):
         # The receipt anchors the report, so the record is bound to the coordinator execution.
         self.assertEqual(receipt['artifacts']['routing/adapter-report.json'],
                          sha256(receipt_dir / 'run/routing/adapter-report.json'))
+        # The coherent sidecar is bound to this execution: the same record after the router's output is gone.
+        shutil.rmtree(receipt_dir / 'run/routing/out')
         summary = self.verify(receipt_dir, receipt)
         self.assertEqual((summary['classification'], summary['experiment']), ('complete', record))
         self.assertFalse(summary['experiment']['qualified'])
@@ -211,6 +213,9 @@ class ExperimentBoundaryTest(unittest.TestCase):
             return receipt_dir
         summary = self.verify(receipt_dir, receipt)
         self.assertEqual((summary['classification'], summary['experiment']), ('contradiction', record))
+        # Re-derived from the sealed retained bytes alone, after the router's output is gone.
+        shutil.rmtree(receipt_dir / 'run/routing/out')
+        self.assertEqual(self.verify(receipt_dir, receipt)['experiment'], record)
         return receipt_dir
 
     def test_a_duplicate_key_policy_copy_is_refused_not_adopted(self):
@@ -484,6 +489,98 @@ class ExperimentBoundaryTest(unittest.TestCase):
             with self.subTest(scenario=scenario):
                 self.assert_refused({'name': 'complete', **scenario}, 'unqualified', detail)
 
+    def test_every_artifact_the_sidecar_names_is_bound_by_digest(self):
+        # Review H1 (ee442f): the attempt record and facts the boundary reads must be the
+        # files the sidecar names, recomputed from the retained bytes; never the adapter's own.
+        wrong = '0' * 64
+        cases = []
+        for name in ('attempt.json', 'facts/reference-facts.json', 'validate/candidate-facts.json',
+                     *attempt.EXPERIMENT_MANIFESTS):
+            cases += [([[name, wrong]], 'tampered', f'{name} sha256 differs from the sidecar artifacts digest'),
+                      ([[name, None]], 'unbound', f'the eligible sidecar binds no {name} digest'),
+                      ([[name, 'delete']], 'unbound', f'the eligible sidecar binds no {name} digest')]
+        self.assertEqual([ops[0][0] for ops, *_ in cases[::3]], list(attempt.EXPERIMENT_BOUND))
+        cases += [
+            # Moved under another name: the named file is not retained, or is not a retained report.
+            ([['attempt.json', 'rename:validate/attempt.json']], 'missing',
+             'binds validate/attempt.json but no regular file was retained'),
+            ([['attempt.json', 'rename:attempt-of-another-run.json']], 'malformed',
+             "sidecar artifact 'attempt-of-another-run.json' is not a run-relative retained report"),
+            ([['attempt.json', 'rename:../attempt.json']], 'malformed', "'../attempt.json' is not a run-relative"),
+            ([['attempt.json', 'rename:facts//attempt.json']], 'malformed', 'is not a run-relative'),
+            # Any other named report is bound too, not only the ones the checks read.
+            ([['validate/preservation.json', wrong]], 'tampered', 'validate/preservation.json sha256 differs'),
+            ([['validate/never-written.json', wrong]], 'missing', 'binds validate/never-written.json but no regular')]
+        for ops, reason, detail in cases:
+            with self.subTest(ops=ops):
+                self.assert_refused({'name': 'complete', 'artifacts': ops}, reason, detail)
+
+    def test_a_same_policy_cross_run_transplant_is_refused(self):
+        # agent-509 ruling (ee442f): a coherent receipt of another run under the same policy,
+        # transplanted with every file it seals, is not this execution's evidence.
+        receipt, receipt_dir, _, report = self.receipt({'name': 'complete'}, CURRENT)
+        self.assertEqual(report['semantics']['experiment']['status'], 'retained')
+        donor = receipt_dir / 'run/routing/attempt'
+        result = json.loads((donor / 'result.json').read_text())
+        sealed = [n for n, v in json.loads((donor / attempt.EXPERIMENT_SIDECAR).read_text())['artifacts'].items()
+                  if v is not None and n != attempt.EXPERIMENT_POLICY_COPY]
+        self.assertEqual(set(sealed), set(attempt.EXPERIMENT_BOUND))
+        replay = {'sidecar': (donor / attempt.EXPERIMENT_SIDECAR).read_text(),
+                  'copy': (donor / attempt.EXPERIMENT_POLICY_COPY).read_text()}
+        whole = {'payload': {n: (donor / n).read_text() for n in sealed},
+                 'effective_binding': result['process']['effective_configuration']}
+        for label, scenario, reason, detail in (
+                # Same design, same policy, every sealed file: only the run differs.
+                ('with every sealed file', whole, 'run_mismatch', 'the sidecar requested output'),
+                # The sidecar alone: this run's own manifest is not the one it seals.
+                ('sidecar only', {}, 'tampered', 'work/effective-configuration.json sha256 differs')):
+            with self.subTest(label):
+                self.assert_refused({'name': 'complete', 'replay': replay, **scenario}, reason, detail)
+
+    def test_an_aliased_self_origin_is_a_self_cycle_and_other_sources_are_not_this_run(self):
+        # Review H2 (ee442f): the artifact digests are all correct; the source_dir is a
+        # producer-namespace string, normalised lexically and never followed on this host.
+        cycle = "origin is a self-cycle: attempt.json source_dir is this run's own candidate"
+        for scenario, reason, detail in (
+                ({'source_dir': '{run}/hop/../candidate/project'}, 'unqualified', cycle),
+                ({'source_dir': '{cand}/'}, 'unqualified', cycle),
+                ({'source_dir': '{run}//candidate//project'}, 'unqualified', cycle),
+                ({'source_dir': '{run}/./candidate/./project/.'}, 'unqualified', cycle),
+                ({'source_dir': '/{run}/candidate/project'}, 'unqualified', cycle),
+                ({'source_dir': '{run}/../{run.name}/candidate/project'}, 'unqualified', cycle),
+                # A link inside the run reaching its candidate, and a case variant inside the run.
+                ({'links': {'{run}/alias': '{cand}'}, 'source_dir': '{run}/alias'}, 'unqualified', cycle),
+                ({'source_dir': '{run}/Candidate/project'}, 'unqualified', cycle),
+                ({'source_dir': '{run}'}, 'unqualified', cycle),
+                # Outside the run, anything but the exact input directory is another execution's source.
+                ({'links': {'{out}/alias': '{cand}'}, 'source_dir': '{out}/alias'}, 'run_mismatch',
+                 "source_dir '/work/routing/out/alias' is not this attempt's input /candidate/project"),
+                ({'source_dir': '{src}/'}, 'run_mismatch', 'is not this attempt\'s input'),
+                ({'source_dir': '/candidate/./project'}, 'run_mismatch', 'is not this attempt\'s input'),
+                ({'source_dir': '/CANDIDATE/project'}, 'run_mismatch', 'is not this attempt\'s input'),
+                ({'source_dir': 'candidate/project'}, 'run_mismatch', 'is not this attempt\'s input'),
+                ({'source_dir': '/elsewhere/project'}, 'run_mismatch', 'is not this attempt\'s input')):
+            with self.subTest(scenario=scenario):
+                receipt_dir = self.assert_refused({'name': 'complete', **scenario}, reason, detail)
+                kept = json.loads((receipt_dir / 'run/routing/attempt/attempt.json').read_text())
+                body = json.loads((receipt_dir / 'run/routing/attempt' / attempt.EXPERIMENT_SIDECAR).read_text())
+                # The sidecar names exactly these bytes: the refusal is the origin, not the binding.
+                self.assertEqual(body['artifacts']['attempt.json'],
+                                 sha256(receipt_dir / 'run/routing/attempt/attempt.json'))
+                self.assertEqual(body['identity']['input']['source'], kept['source'])
+
+    def test_the_synthetic_sidecar_must_describe_this_execution(self):
+        # Each identity field resealed self-consistently, with every digest correct.
+        for scenario, detail in (
+                ({'identity': {'request': {'protect': 'locked'}}}, 'request protect'),
+                ({'identity': {'budgets': {'backend_s': 6, 'stall_s': None, 'command_budget_s': None,
+                                           'grace_s': None}}}, 'backend budget'),
+                ({'identity': {'protection': {'mode': 'locked', 'only_sha256': None}}}, 'protection mode'),
+                ({'manifest': {'requested_output': '/work/routing/out/runs/rc/step-1/other/work/krt-out/rc.kicad_pcb'}},
+                 'requested output')):
+            with self.subTest(detail=detail):
+                self.assert_refused({'name': 'complete', **scenario}, 'run_mismatch', f'the sidecar {detail}')
+
     def test_the_contract_names_the_replayed_producer_and_claims_no_qualification(self):
         self.assertIn(K91_REVIEWED['producer_commit'], attempt.EXPERIMENT_CONTRACT)
         self.assertIn('unpinned, not qualified', attempt.EXPERIMENT_CONTRACT)
@@ -547,12 +644,17 @@ class RealReceiptReplayTest(unittest.TestCase):
 
     The fixture router writes the real sidecar and policy-copy bytes verbatim and
     binds them as the real run's result.json did; agent-ee declares the real
-    five-field policy. The router routes the fixture design, so the sidecar's
-    internal board identities are provenance the adapter retains, not facts it
-    re-derives (only kicad_route.experiment.verify can).
+    five-field policy. The router routes the fixture design, so these are
+    PRODUCER-FORMAT fixtures attached to another run: the real sidecar describes
+    the route_demo run, not this execution, and every eligible one is refused
+    (agent-509 ruling on ee442f: the old hybrid positive must refuse). The
+    end-to-end positive is the coherent synthetic receipt until the corrected
+    producer supplies a fresh native one. Each EI case is also run coherently on
+    the synthetic receipt, where its own check is what refuses.
     """
-    setUp, receipt, verify = (ExperimentBoundaryTest.setUp, ExperimentBoundaryTest.receipt,
-                              ExperimentBoundaryTest.verify)
+    setUp, receipt, verify, assert_refused = (ExperimentBoundaryTest.setUp, ExperimentBoundaryTest.receipt,
+                                              ExperimentBoundaryTest.verify, ExperimentBoundaryTest.assert_refused)
+    HYBRID = ('tampered', 'attempt.json sha256 differs from the sidecar artifacts digest')
     MANIFEST = json.loads((REAL / 'receipts.json').read_text())
     POLICY = {'current-policy': json.loads(real('current-policy.experiment-policy.json')),
               'historical-all-layer': json.loads(real('historical-all-layer.experiment-policy.json'))}
@@ -587,6 +689,8 @@ class RealReceiptReplayTest(unittest.TestCase):
             stage_receipts.adopt(receipt_dir, receipt, design)
         summary = self.verify(receipt_dir, receipt)
         self.assertEqual((summary['classification'], summary['experiment']), ('contradiction', record))
+        shutil.rmtree(receipt_dir / 'run/routing/out')
+        self.assertEqual(self.verify(receipt_dir, receipt)['experiment'], record)
         return record
 
     def test_the_fixture_bytes_are_the_verified_real_receipts(self):
@@ -603,42 +707,49 @@ class RealReceiptReplayTest(unittest.TestCase):
         for run in self.MANIFEST['runs'].values():
             self.assertEqual(run['result_experiment']['sha256'], sha256(REAL / run['sidecar']))
 
-    def test_the_real_positive_receipts_are_retained_and_adopted_unqualified(self):
+    def test_the_real_positive_receipts_on_another_run_are_refused_not_adopted(self):
+        # Formerly retained and adopted unqualified: a real sidecar of another run attached to
+        # this run's synthetic attempt record, facts and candidate is not this execution's.
         for run, policy in (('positive-current', 'current-policy'), ('positive-historical', 'historical-all-layer')):
             with self.subTest(run):
                 spec = self.MANIFEST['runs'][run]
-                receipt, receipt_dir, design, report = self.replay(run, policy)
-                self.assertEqual((receipt['exit_code'], receipt['status'], receipt['violations']),
-                                 (0, 'completed', []), report['semantics'])
-                attempt_dir = receipt_dir / 'run/routing/attempt'
-                result = json.loads((attempt_dir / 'result.json').read_text())
+                outcome = self.replay(run, policy)
+                result = json.loads((outcome[1] / 'run/routing/attempt/result.json').read_text())
                 # The fixture binds the real bytes exactly as the real run's result.json did.
                 self.assertEqual(result['experiment'], spec['result_experiment'])
+                record = self.refused(outcome, *self.HYBRID)
                 body = json.loads(real(spec['sidecar']))
-                declared = self.POLICY[policy]
-                policy_bytes = attempt.canonical_json(declared).encode()
-                record = report['semantics']['experiment']
-                self.assertEqual(record, {
-                    'status': 'retained', 'qualified': False, 'contract': attempt.EXPERIMENT_CONTRACT,
-                    'schema': 'routability-experiment/1', 'reference': spec['result_experiment'],
-                    'path': 'attempt/routability-experiment.json', 'sha256': spec['result_experiment']['sha256'],
-                    'policy': {'declared': declared, 'sha256': hashlib.sha256(policy_bytes).hexdigest(),
-                               'policy_sha256': body['identity']['policy']['declared_sha256']},
-                    'policy_file': 'attempt/agent-ee-experiment-policy.json',
-                    'policy_copy': {'path': 'attempt/experiment-policy.json',
-                                    'sha256': body['artifacts']['experiment-policy.json']},
-                    'identity_sha256': body['identity_sha256'], 'comparison_eligible': True,
-                    'ineligible_reasons': []})
-                self.assertEqual(sha256(attempt_dir / 'experiment-policy.json'), sha256(REAL / spec['policy_copy']))
+                self.assertEqual((record['sha256'], record['identity_sha256'], record['comparison_eligible']),
+                                 (spec['result_experiment']['sha256'], body['identity_sha256'], True))
+                self.assertEqual(record['policy_copy']['sha256'], body['artifacts']['experiment-policy.json'])
                 if run == 'positive-current':
                     self.assertEqual((record['sha256'], record['identity_sha256']),
                                      tuple(K91_REVIEWED['native_receipt'].values()))
-                self.assertEqual(report['retained']['attempt/routability-experiment.json'], record['sha256'])
-                self.assertEqual(receipt['artifacts']['routing/adapter-report.json'],
-                                 sha256(receipt_dir / 'run/routing/adapter-report.json'))
-                summary = self.verify(receipt_dir, receipt)
-                self.assertEqual((summary['classification'], summary['experiment']), ('complete', record))
-                stage_receipts.adopt(receipt_dir, receipt, design)
+                self.assertNotEqual(sha256(outcome[1] / 'run/routing/attempt/attempt.json'),
+                                    body['artifacts']['attempt.json'])
+
+    def test_a_self_consistent_non_identity_sidecar_forgery_is_refused(self):
+        # Coordinator ruling (ee442g): the real sidecar with its digests rewritten to this run's
+        # attempt record, facts and policy copy, its own sealed manifests, and resealed. Every
+        # digest and the identity seal verify; the run it describes is not this one.
+        for forge, detail in (({'forge': True}, 'the sidecar input fingerprint'),
+                              ({'forge': True, 'input': True}, 'the sidecar request protect')):
+            with self.subTest(forge=forge):
+                spec = self.MANIFEST['runs']['positive-current']
+                sidecar = real(spec['sidecar'])
+                outcome = self.receipt({'name': 'complete', 'payload': {
+                    attempt.EXPERIMENT_MANIFESTS[0]: real(spec['effective_configuration']),
+                    attempt.EXPERIMENT_MANIFESTS[1]: real(spec['effective_configuration_request'])},
+                    'effective_binding': spec['result_effective_configuration'],
+                    'replay': {'sidecar': sidecar, 'copy': real(spec['policy_copy']), **forge}},
+                    self.POLICY['current-policy'])
+                attempt_dir = outcome[1] / 'run/routing/attempt'
+                body = json.loads((attempt_dir / attempt.EXPERIMENT_SIDECAR).read_text())
+                self.assertEqual(body['identity_sha256'], attempt._sha256_of(body['identity']))
+                for name in attempt.EXPERIMENT_BOUND:
+                    self.assertEqual(body['artifacts'][name], sha256(attempt_dir / name), name)
+                self.assertIsNone(attempt._shape_error(body, attempt.EXPERIMENT_SHAPE))
+                self.refused(outcome, 'run_mismatch', detail)
 
     def test_the_real_stale_runtime_receipt_is_refused_as_ineligible(self):
         record = self.refused(self.replay('negative-stale-runtime', 'current-policy'), 'ineligible',
@@ -751,6 +862,9 @@ class RealReceiptReplayTest(unittest.TestCase):
              'process.effective_configuration does not bind'))
         for scenario, reason, detail in cases:
             with self.subTest(detail=detail, reason=reason):
+                # The K91 review's real bytes on this run are another run's evidence: refused at the
+                # binding, before the manifest is read, except where the shape already refuses.
+                reason, detail = (reason, detail) if reason == 'malformed' else self.HYBRID
                 record = self.refused(self.replay('positive-current', 'current-policy', **scenario), reason, detail)
                 if reason == 'malformed':
                     # Outside the producer schema: only the file identity is retained.
@@ -760,11 +874,34 @@ class RealReceiptReplayTest(unittest.TestCase):
                 self.assertTrue(record['comparison_eligible'])
                 self.assertEqual(record['identity_sha256'], json.loads(
                     scenario.get('sidecar') or real('positive-current.routability-experiment.json'))['identity_sha256'])
+        # The same EI2 cases on the coherent synthetic receipt, sealed self-consistently.
+        config, request = attempt.EXPERIMENT_MANIFESTS
+        for scenario, reason, detail in (
+                ({'manifest': {'execution': {'outer_batches': 2, 'later_subruns': 1}}}, 'unqualified',
+                 'execution is not one outer batch without later subruns'),
+                ({'manifest': {'execution': {'outer_batches': 2, 'later_subruns': 1}},
+                  'effective': {'execution': {'outer_batches': 1, 'later_subruns': 0}}}, 'unqualified',
+                 'execution is not one outer batch'),
+                ({'manifest': {'request_sha256': '0' * 64}}, 'unqualified', 'request_sha256 is not the retained'),
+                ({'manifest': {'capture_status': 'incomplete', 'issues': ['later unknown']}}, 'malformed',
+                 'identity.effective.capture_status must be "complete"'),
+                ({'manifest': {'issues': ['later unknown']}}, 'unqualified', 'capture is not complete without issues'),
+                ({'manifest': {'coverage': 'all_batches'}}, 'unqualified', 'coverage is not resolved_outer_batch_only'),
+                ({'manifest': {'source_sha256': '1' * 64}}, 'unqualified', 'source_sha256 differs from'),
+                ({'edits': [[config, '"stage"', '"stage" ', 'first']]}, 'tampered',
+                 'effective-configuration.json sha256 differs from the sidecar artifacts digest'),
+                ({'edits': [[request, '"field_names"', '"field_names" ', 'first']]}, 'tampered',
+                 'effective-configuration-request.json sha256 differs'),
+                ({'edits': [['result.json', '"status": "bound"', '"status": "mismatch"', 'first']]}, 'unqualified',
+                 'process.effective_configuration does not bind'),
+                ({'edits': [['result.json', '"coverage": "resolved_outer_batch_only"', '"coverage": "all"', 'first']]},
+                 'unqualified', 'process.effective_configuration does not bind')):
+            with self.subTest(synthetic=detail, reason=reason):
+                self.assert_refused({'name': 'complete', **scenario}, reason, detail)
 
     def test_an_origin_chain_this_boundary_cannot_requalify_is_refused(self):
         # K91 review EI3: a source_dir that is the run's own candidate truncates the producer's
         # origin chain to depth 0 and stays eligible. A real predecessor chain is unsupported here.
-        receipt_dir = None
         for scenario, detail in (
                 ({'self_cycle': True}, "origin is a self-cycle: attempt.json source_dir is this run's own candidate"),
                 (self.resealed(change_body=lambda b: b['identity']['origin'].update(depth=1, predecessors=[
@@ -773,13 +910,18 @@ class RealReceiptReplayTest(unittest.TestCase):
                 (self.resealed(change_body=lambda b: b['identity']['origin'].update(root_input_fingerprint='x')),
                  'root_input_fingerprint is not the sidecar input fingerprint')):
             with self.subTest(detail=detail):
-                outcome = self.replay('positive-current', 'current-policy', **scenario)
-                record = self.refused(outcome, 'unqualified', detail)
-                receipt_dir = outcome[1]
-                if 'self_cycle' in scenario:
-                    # The decision is re-derived from the sealed retained bytes alone.
-                    shutil.rmtree(receipt_dir / 'run/routing/out')
-                    self.assertEqual(self.verify(receipt_dir, outcome[0])['experiment'], record)
+                # The real bytes on this run refuse at the binding (refused() also replays
+                # the decision after the router's output is removed).
+                self.refused(self.replay('positive-current', 'current-policy', **scenario), *self.HYBRID)
+        for scenario, detail in (
+                ({'self_cycle': True}, "origin is a self-cycle: attempt.json source_dir is this run's own candidate"),
+                ({'identity': {'origin': {'root_input_fingerprint': None, 'depth': 1, 'predecessors': [
+                    {'attempt_sha256': '3' * 64, 'candidate_board_sha256': None, 'experiment_sha256': None}]}}},
+                 'the origin chain has 1 predecessor(s)'),
+                ({'identity': {'origin': {'root_input_fingerprint': 'x', 'depth': 0, 'predecessors': []}}},
+                 'root_input_fingerprint is not the sidecar input fingerprint')):
+            with self.subTest(synthetic=detail):
+                self.assert_refused({'name': 'complete', **scenario}, 'unqualified', detail)
 
     def test_malformed_attempt_or_facts_are_typed_refusals(self):
         # K91 review EI4: a non-empty JSON list where the producer reads an object raised an
@@ -795,8 +937,10 @@ class RealReceiptReplayTest(unittest.TestCase):
                 ('facts/reference-facts.json', '{"footprints":[]}', 'reference-facts.json is not a native facts'),
                 ('validate/candidate-facts.json', 'NaN', 'non-finite number NaN')):
             with self.subTest(rel=rel, text=text):
-                self.refused(self.replay('positive-current', 'current-policy', payload={rel: text}),
-                             'malformed', detail)
+                # On the real hybrid the named attempt record is not this run's; refused at the binding.
+                self.refused(self.replay('positive-current', 'current-policy', payload={rel: text}), *self.HYBRID)
+                # Sealed coherently by the synthetic sidecar, the shape check refuses it.
+                self.assert_refused({'name': 'complete', 'payload': {rel: text}}, 'malformed', detail)
 
     def test_schema_invalid_real_sidecar_members_are_malformed(self):
         # Review H2 (ee442e): members outside the producer schema, with identity untouched.
