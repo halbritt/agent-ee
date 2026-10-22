@@ -67,53 +67,73 @@ receipts live in the same output directory. Without `--candidate` (a render of a
 loose `.kicad_pcb`), there is no retained board to re-stage, so the snapshot is
 only checked against the manifest's own hashes.
 
-Absolute host paths in model coverage, warnings and `viewer.json` (every string
-and key) are replaced by `<redacted>/basename` at publication: POSIX paths,
-Windows drive paths with either slash, UNC paths and `file:` URIs, including
-directory names with spaces, commas or brackets. Redaction is a structural
-left-to-right scan, not a regular expression. A case-insensitive `file:`
-followed by a slash or drive starts a file URI at any position (`FILE:///...`,
-`File:///C:/...`, even `x-file:///...`); its authority (`file://host/...`), like
-the host of a UNC path (`\\host\share`), is parsed on its own and removed, and
-only a real path component of the same URI can be kept as the basename. An
-authority-only, empty or root path (`file://host`, `FILE://host/`, `file:/`,
-`\\host`) becomes a bare `<redacted>`. A path stops at a quote, `<`, `>`, `|`
-or a newline, at any `file:` URI, and at any cluster of whitespace, `,`, `;`
-and brackets `( ) [ ] { }` followed by another URI, UNC host (`\\host` or
-`//host`) or drive path (when the cluster holds `,` or `;`, any absolute path),
-so a later URI's authority or UNC host never becomes an earlier path's basename:
-`FILE:///home/a/m.step,FILE://host/` gives `<redacted>/m.step,<redacted>` and
-`/home/a/m.step (\\host)` gives `<redacted>/m.step (<redacted>)`. A host (a
-file URI authority or UNC host) ends at a slash, whitespace, a stop or such a
-boundary cluster, and otherwise runs through brackets and punctuation, so a
-bracketed IP literal or a grouped host name is removed whole:
-`FILE://[fd00::1]/share/m.step` and `\\host(1)\share\m.step` give
-`<redacted>/m.step`, and `file://[fd00::1]` or `(\\host)` give `<redacted>` and
-`(<redacted>)` (unmatched closing brackets and trailing punctuation of a pathless
-host stay outside it). When whitespace, a quote or a group interrupts a host,
-the rest of the operand runs on the same line through words, whitespace, quotes
-and groups (whitespace inside them included) up to a separator that continues
-it: a backslash, a slash inside or right after a quote or group, or a root after
-other text. The whole operand is then removed with no basename, so
-`\\host "user"\share\m.step`, `\\host "user name" \share\m.step`,
-`\\host (user name)\share\m.step` and `file://host "user name"/share/m.step` all
-give `<redacted>` (an unclosed quote or group runs to the separator too). A later
-URI, UNC host or drive, a root right after the host (`\\host \share` is two
-operands), a newline after text, or no separator at all ends this: the rest is
-redacted on its own, and `\\host "a b" and m.step` gives
-`<redacted> "a b" and m.step`. A single backslash root
-(`\share\m.step`) is a path like a POSIX root. Ambiguous text fails closed:
-`\\` starts a UNC host even when glued to a word (`m.step\\host` gives
-`m.step<redacted>`), and a path with a doubled separator after its root
-(`/home/a//host`, `/a/m.step\\host`) keeps no basename. Redaction is idempotent.
-Tests compose every operand kind (file URIs in every casing, bare drives with
-either slash, POSIX, UNC, IP-literal authorities and interrupted UNC hosts and
-authorities, with whitespace inside or after their quote or group) as
-first, second and third operand inside groups and quotes, and check that the
-property check itself fails for deliberately leaky redactors.
-Other URLs and KiCad variables such as `${KIPRJMOD}/m.step` are kept. The
-server applies the same redaction to `manifest.json`, `viewer.json` and page
-warnings of older bundles on the way out.
+### What is published: an allowlist, not redaction
+
+Every publication surface (the stored `manifest.json` and listing entry, the
+published `viewer/viewer.json`, both JSON endpoints and the HTML pages) carries
+only allowlisted fields, rebuilt from structured parts at publication and again
+when served. Free text is never scrubbed; anything that cannot be rebuilt is
+replaced whole by the fixed token `<redacted>`, and every unlisted field is
+dropped.
+
+- **Paths.** A path-bearing field (a model path in a warning, `board.path`,
+  `board.name` and `captured_board` of the viewer and supplement) is published
+  as the final component of an unambiguous local path or as `<redacted>`. Local
+  means a POSIX path without a backslash, a drive path with either slash
+  (`C:\Users\A\m.step`, `C:/x/m.step`), or either after a KiCad
+  `${VARIABLE}`; the component must be a plain file name (letters, digits,
+  `_ . + -`, not starting with a dot). Any URI or other `name:` (`file:` in any
+  case, with or without an authority), a UNC or `//` host, a doubled separator,
+  a backslash outside a drive path, a quote, `< > | * ?`, a control character
+  or a trailing separator gives `<redacted>`. So `/home/a/m.step` gives
+  `m.step`, and `\\host\share\m.step`, `file:///home/a/m.step` and
+  `\\host "user name" \share\m.step` give `<redacted>`.
+- **Source file names** of a supplement (`source_packet.name`,
+  `source_image.name`) are published only when they already are a plain file
+  name; a name that looks like a path is `<redacted>`.
+- **Warnings** are rebuilt from a recognised code with allowlisted parameters:
+  `REF: no 3D model is declared`, `REF: missing|unresolved 3D model NAME` (the
+  path becomes a basename as above), `VIEW: KiCad produced WxH for requested
+  WxH`, and the fixed model/viewer notices. A native log line keeps only its
+  view (`top: <redacted>`); any other warning is `<redacted>`.
+- **Labels and stages** are kept only when they are plain text of at most 200
+  characters (ASCII letters, digits, spaces and punctuation, plus `· – — ’ “ ” ×`)
+  without path syntax: no `/ \ @ ~ $ %` and no colon unless a space or the end
+  follows. Publication refuses any other label or stage; an earlier record's
+  label or stage that does not qualify is served as `<redacted>`.
+- **Identities** (board hash, candidate id, model hash, image hashes), times,
+  counts, views and statuses must match their grammar or vocabulary, else they
+  are published as `null` (shown as unknown).
+
+Published shapes are versioned. A render bundle record is
+`agent-ee.gallery-bundle/2`: `label`, `stage`, `board_sha256`, `candidate_id`,
+`published_at`, `rendered_at`, `model_coverage` (only `summary` with the counts
+`footprints`, `models`, `footprints_fully_resolved`, `resolved`, `missing`,
+`unresolved`, `disabled` and `no_model`; the per-footprint inventory stays in
+the local render manifest), `warnings`, `images` and `viewer`. The published
+`viewer.json` keeps `"schema": "agent-ee.viewer/1"`, which the viewer page
+checks, and adds `"publication": "agent-ee.gallery-viewer/2"`; it holds only
+`board` (`name`, `path`, `sha256`), `candidate_id`, `captured_board`, `model`,
+`warnings`, `coordinates` and `model_sha256` (the export command and logs are
+dropped). Supplements are `agent-ee.gallery-diagnostic/3` (below). Records
+published before the allowlist (bundle records without a schema, supplements of
+schema `/2`) stay byte-for-byte as stored and are projected into the current
+shape when served; projection is idempotent.
+
+Tests keep the composed generator of every review round (433c-433i) as the
+regression oracle: file URIs in every casing with and without an authority
+(empty and root paths, bracketed IP literals, user info), UNC hosts and paths,
+drives with either slash, POSIX paths and hosts interrupted by quotes, groups and
+whitespace, wrapped, punctuated and joined as first, second and later operands,
+together with each reported example and the partly scrubbed text earlier
+redactors published. Every text is put into every field and key of a bundle,
+viewer and supplement record, and the stored and served JSON and both pages
+must carry no host, user or share text. The oracle is shown to fail on
+deliberately leaky publication: pass-through, a regex scrubber, an unlisted
+field, a basename without the local-path checks, trusting text that starts with
+the marker, and a label check that refuses only `/`.
+
+### Cards and history
 
 Each card shows model coverage outside any collapsed element: a badge ("Incomplete
 models" when any model is missing, unresolved or disabled or a footprint has no
@@ -155,7 +175,7 @@ The command verifies the retained candidate snapshot (as `--candidate` does for
 renders), re-reads its captured board and requires `--board-sha256` to equal
 those bytes' hash; a missing, stale or different candidate, or a board that is
 not a parseable KiCad board, is refused. The manifest records the candidate id,
-captured board path and board hash. `--routing` is one of `unrouted`,
+captured board name and board hash. `--routing` is one of `unrouted`,
 `partially-routed` or `routed`, and `--adoption` one of `not-adopted`, `adopted`
 or `no-proposal`; any other value is refused. `unrouted` is checked: it is
 refused when the retained board has tracks, arcs or vias, and the other two are
@@ -170,9 +190,13 @@ The PNG is fully validated and the copied image and source packet hashes are
 bound in the publication manifest. This establishes candidate and byte
 identity, not correctness of the analysis or adoption of a proposal. Only the
 PNG and manifest are served; the source board and packet stay private. SVG is
-not accepted. The whole record, including source file names, is redacted as
-above at publication, and listings, diagnostic pages and manifests are redacted
-again when served. Open `/diagnostics/RETURNED_ID/index.html` for a permanent
+not accepted. The record is the allowlisted `agent-ee.gallery-diagnostic/3`
+shape above: label, stage, candidate id, `captured_board` (its basename),
+board hash, routing and adoption status, publication time, the source packet
+and image names (plain file names or `<redacted>`) and hashes, the image
+dimensions and hash and the fixed limitation. Listings, diagnostic pages and
+manifests are projected again when served; a record without candidate binding
+(no schema `/2` or `/3`) shows "Status unknown". Open `/diagnostics/RETURNED_ID/index.html` for a permanent
 page or `/diagnostics/RETURNED_ID/image.png` for the exact full-size image. The
 main gallery links its separate diagnostic section.
 
