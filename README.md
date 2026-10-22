@@ -209,6 +209,13 @@ through the writer's native gate. The writer publishes each placed block's
 provenance class and enforcement as review input, which a scope's
 `block_provenance` carries to every initial reviewer.
 
+An opt-in [placement trace](docs/placement-trace.md) (`placer_runner --trace`,
+`python3 -m agent_ee.placement_trace`) records per-stage timings and a capped,
+replayable Stage-A scoring sample. It uses the shared
+[`pcb-trace-envelope/1`](docs/trace-envelope.md). Plans and saved boards are the
+same with tracing on and off. It is experimental and off by default: its
+provisional 5% overhead gate is not met.
+
 Native tools and agents run in Bubblewrap sandboxes; supported writers
 also acquire process leases to prevent concurrent campaign mutations.
 
