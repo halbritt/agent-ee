@@ -36,6 +36,19 @@ including the new native fixtures, generation tooling and vendored viewer runtim
   the origin table, `scripts/check_origins.py` folds every `T16` file's status
   to **derived** (never `owner-confirmed`) and names each embedded upstream
   origin id and `upstream_license`.
+- `KICAD-HAPPY-219`, the vendored kicad-happy MIT correction patch, is
+  **owner-confirmed** for publication under its own upstream MIT license, with
+  its notice, by a decision of 2026-10-22 relayed by agent-519 (AGENTEE-219
+  Plane comment `91bc4b33-e29a-480c-9f8f-2a4599f6d3a7`; class owner-relayed,
+  agent-transcribed). The relay reads, verbatim: "APPROVED: vendor the
+  kicad-happy MIT correction patch (origin KICAD-HAPPY-219) into the public
+  agent-ee repo with its MIT notice, AND send the fix upstream; move the pin
+  when upstream lands. The held 51f7bcf chain may be integrated." It is not
+  covered by agent-ee's MIT grant: the origin carries `license_basis`
+  `upstream`, and its files report **owner-confirmed-upstream-license**. The
+  patch was already public from 2026-10-19 (commit `51f7bcf4`), which that
+  authorization does not cover; see the row below. The upstream submission and
+  the pin move are open.
 - Every other origin is **unresolved**. Those files are not offered under MIT.
   Each origin needs an owner decision, recorded in the inventory, before its
   status changes. Ownership of this repository, or of the checkout a file was
@@ -76,6 +89,7 @@ files are retained evidence, which is classified by directory.
 | T14 | three.js r180 (0.180.0) | MIT; upstream notice retained | Viewer runtime, loader and controls in `src/agent_ee/viewer_assets/vendor/`; exact sources and transforms in its manifest |
 | T15 | FOME-MC seeded-benchmark records (`halbritt/fome-mc`, `5954c3a`) | No license found | None tracked: the AGENTEE-108 expectations manifest and run reports stay in a private store; the repository keeps only their SHA-256 hashes ([seeded benchmark](seeded-benchmark.md)). Publication is AGENTEE-118 |
 | T16 | fome-mc reference block captures (`halbritt/fome-mc`, `df304f3`) | No licence file in fome-mc; owner holds the rights and admitted derived sheets with upstream licences recorded (2026-10-18): `T3` and `T8` (FOME-Tech Polygonus-Universal-112 `ddcf0f7` and Polygonus `b3176cb`, no licence file found), `T4` (FOME-Tech `kicad-libraries` `ab9c5f8`, no licence file found; SamacSys terms not reviewed), `T6` (KiCad 10.0.7 stock libraries, CC-BY-SA-4.0 with the KiCad library exception), `T9` (`mck1117/wideband` Rev C `ca2adce`, MIT notice in `fixtures/fome-mc/LICENSE-NOTICE.md`); files report `derived` | `fixtures/fome-mc/`: copied sheets and project libraries (inventory, PSU block and wideband channels), and the block entries, contracts and inventories generated from them (each carrying `upstream_origin` and `upstream_license`); planning documents are cited by pinned identity, not copied |
+| KICAD-HAPPY-219 | kicad-happy MIT correction patch (`aklofas/kicad-happy`, base `0684046` v2.3.1) | MIT, Copyright (c) 2025 Andrew Klofas, per its notice `correction-LICENSE.txt`. Publication with that notice is owner-confirmed 2026-10-22 under the upstream MIT license, not agent-ee's grant (`license_basis` `upstream`): AGENTEE-219 Plane comment `91bc4b33-e29a-480c-9f8f-2a4599f6d3a7`, posted by agent-519, owner-relayed and agent-transcribed. Caveat: the decision question framed the patch as not yet landed, but `51f7bcf4` had already published it to the public agent-ee repository on 2026-10-19, so publication from 2026-10-19 to 2026-10-22 was not owner-authorized at the time; the authorization applies from 2026-10-22. Still open, not done: the upstream submission and the pin move once upstream lands it; files report `owner-confirmed-upstream-license` | `fixtures/kicad-happy/ac4-false-positives/correction.patch` and `correction-LICENSE.txt` |
 
 The inventory gives each origin's repository, revisions, local source path,
 license evidence and owner decision. The exact files are listed by rule, and
@@ -123,7 +137,11 @@ recorded review.
 - an archive omits an origin of the evidence directory it holds;
 - a third-party origin is marked as proposed for MIT, or an origin is marked
   `owner-confirmed` without an `owner_record`, or with a structured
-  `owner_record` that lacks a non-empty `date`, `decision` or `where`.
+  `owner_record` that lacks a non-empty `date`, `decision` or `where`;
+- an origin has a `license_basis` other than `upstream`, an agent-ee origin
+  (`AE`, `AE-RUN`) has one, or an `owner-confirmed` origin with
+  `license_basis` `upstream` lacks a structured `owner_record` with non-empty
+  `date`, `decision`, `where`, `class` and `applies`.
 
 A file is unresolved if any of its declared origins is unresolved. Otherwise,
 if an `owner-confirmed` origin transitively lists an unresolved upstream origin
@@ -131,8 +149,11 @@ in `embedded_origins`, the file's status folds to `derived` and its inventory
 entry names each embedded upstream origin `id` and `upstream_license` in
 `upstream_origins`, so an owner decision admitting a derived sheet records the
 upstream provenance without marking the file `owner-confirmed`. Otherwise a
-file is `owner-confirmed` if any of its origins is, or proposed for MIT only
-when all of its origins are agent-ee origins. An unknown or self-referencing
+file is `owner-confirmed-upstream-license` if any of its origins, declared or
+embedded, has `license_basis` `upstream`: the owner approved publishing that
+third-party material under its own upstream license, which is not agent-ee's
+MIT grant. Otherwise a file is `owner-confirmed` if any of its origins is, or
+proposed for MIT only when all of its origins are agent-ee origins. An unknown or self-referencing
 embedded origin is an error.
 
 Without `.git`, as in the container image, the check walks the checkout with
@@ -182,6 +203,10 @@ owner decisions.
 
 Set the origin's `permission_status` to `owner-confirmed` and add an
 `owner_record` with the date, the decision and where the owner gave it. The
-check refuses a confirmed status without that record. A decision to remove or
+check refuses a confirmed status without that record. For third-party
+material the owner approves publishing under its own upstream license, also set
+`license_basis` to `upstream` and give the structured record a `class` (for
+example `owner-relayed`) and the scope it `applies` to; its files then report
+`owner-confirmed-upstream-license`, never `owner-confirmed`. A decision to remove or
 replace files is a separate change. Do not delete or rewrite retained evidence
 to make the inventory pass.

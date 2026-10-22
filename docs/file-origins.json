@@ -8,7 +8,7 @@
     "file": "LICENSE",
     "status": "Owner-approved (owner-relayed decision of 2026-10-22, origins AE, AE-RUN, T1 and T2; see their owner_record). Origins T3-T16 are not covered by this decision.",
     "covers": "Files whose every origin is AE, AE-RUN, T1 or T2. Of those, files whose origins embed an unresolved upstream origin (T1 embeds T6) report permission_status derived: the MIT grant covers the owner's material in them, not the embedded upstream content, which keeps its upstream_license.",
-    "excludes": "Every file with an origin other than AE, AE-RUN, T1 or T2, including every file with an origin whose permission_status is unresolved-owner-decision-required, and T16 (owner-confirmed for committing as fixtures, with no repository licence chosen)."
+    "excludes": "Every file with an origin other than AE, AE-RUN, T1 or T2, including every file with an origin whose permission_status is unresolved-owner-decision-required, and T16 (owner-confirmed for committing as fixtures, with no repository licence chosen), and KICAD-HAPPY-219 (owner-confirmed 2026-10-22 for publication under its upstream MIT license, license_basis upstream; files report owner-confirmed-upstream-license)."
   },
   "observations": [
     "On 2026-10-17 the GitHub API reported halbritt/agent-ee and halbritt/fome-mc as public, with agent-ee main at 69d7bbf46fa40b170c61bf325f18e5ef78988f8c. That branch already contains the third-party-origin files listed here. This is an observation, not a rights decision."
@@ -17,7 +17,8 @@
     "proposed-mit-pending-owner-approval": "Written for agent-ee or produced by its runs from such material. MIT is proposed; owner approval is pending.",
     "unresolved-owner-decision-required": "Originates in another project. Not offered under MIT. Publication requires an explicit owner decision recorded here.",
     "owner-confirmed": "Owner decision recorded in owner_record (date, decision and where it was given).",
-    "derived": "Captured or generated under an owner-confirmed origin that embeds upstream origins whose permission_status is unresolved; check_origins names each embedded upstream origin id and upstream_license."
+    "derived": "Captured or generated under an owner-confirmed origin that embeds upstream origins whose permission_status is unresolved; check_origins names each embedded upstream origin id and upstream_license.",
+    "owner-confirmed-upstream-license": "File-level status of files whose origins are all confirmed and include an origin with license_basis upstream: the owner approved publishing third-party material under its own upstream_license (owner_record with date, decision, where, class and applies). Not covered by agent-ee's MIT grant."
   },
   "kinds": {
     "owned-source": "Code, tests, scripts and configuration written for agent-ee.",
@@ -33,7 +34,7 @@
     "evidence-archive": "Compressed evidence bundle holding a readable copy of an evidence directory, its captured inputs and generated run configuration.",
     "third-party-source": "Vendored third-party software with its own license and retained notices."
   },
-  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its declared origins is unresolved, derived if an owner-confirmed origin embeds an unresolved upstream origin (with each embedded origin id and upstream_license named), otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
+  "matching": "Each rule path is an exact tracked path, or a directory prefix ending in \"/\". A rule with suffixes matches only names ending in one of them. The most specific match wins: an exact path, then the longest prefix, then a suffix-filtered rule. Two equally specific matches are an error. A file's permission status is unresolved if any of its declared origins is unresolved, derived if an owner-confirmed origin embeds an unresolved upstream origin (with each embedded origin id and upstream_license named), otherwise owner-confirmed-upstream-license if any of its origins (declared or embedded) has license_basis upstream, otherwise owner-confirmed if any of its origins is owner-confirmed, otherwise proposed.",
   "risk_review": "scripts/check_origins.py flags files by name (PDF, HTML, images, archives, KiCad design/library files, library tables, Gerber/drill, C/C++, PGP keys) and, for files whose origins are agent-ee only, by content markers (embedded KiCad design text, PDF/HTML headers, PGP blocks, rights notices, donor and third-party project names). A flagged file passes only with a third-party origin or an exact-path rule that records a review.",
   "origins": {
     "AE": {
@@ -454,8 +455,18 @@
       },
       "upstream_license": "MIT; Copyright (c) 2025 Andrew Klofas; retained in fixtures/kicad-happy/ac4-false-positives/correction-LICENSE.txt",
       "license_verified": true,
-      "permission_status": "unresolved-owner-decision-required",
-      "owner_decision": "The 2026-10-19 AGENTEE-219e assignment authorizes retaining this exact MIT software diff locally with its notice for portable tests. Publication is not authorized by this assignment; record an owner publication decision before distribution. This third-party software is excluded from the agent-ee proposed MIT grant.",
+      "license_basis": "upstream",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): publication of this exact MIT software diff in the public agent-ee repository, with its MIT notice, is approved under its upstream MIT license (license_basis upstream). This third-party software is not covered by agent-ee's MIT grant; files report owner-confirmed-upstream-license. Earlier, the 2026-10-19 AGENTEE-219e assignment authorized only retaining the diff locally with its notice for portable tests.",
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: vendor the kicad-happy MIT correction patch (origin KICAD-HAPPY-219) into the public agent-ee repo with its MIT notice, AND send the fix upstream; move the pin when upstream lands. The held 51f7bcf chain may be integrated.",
+        "where": "AGENTEE-219 Plane comment 91bc4b33-e29a-480c-9f8f-2a4599f6d3a7 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed",
+        "class": "owner-relayed",
+        "applies": "publication of fixtures/kicad-happy/ac4-false-positives/correction.patch with its MIT notice correction-LICENSE.txt, under the upstream MIT license (Copyright (c) 2025 Andrew Klofas), from 2026-10-22",
+        "caveat": "The decision question framed the patch as not yet landed, but commit 51f7bcf4a785edb14b790306400eaca3088c5188 had already published it to the public agent-ee repository on 2026-10-19. Publication between 2026-10-19 and 2026-10-22 was therefore not owner-authorized at the time; the authorization applies from 2026-10-22.",
+        "open_follow_ups": "Not done: submitting the fix to upstream aklofas/kicad-happy, and moving the kicad-happy pin once upstream lands it."
+      },
       "evidence": [
         "fixtures/kicad-happy/ac4-false-positives/correction-LICENSE.txt",
         "fixtures/kicad-happy/ac4-false-positives/correction.patch"
