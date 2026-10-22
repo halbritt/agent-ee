@@ -436,6 +436,16 @@
     },
     {
       "paths": [
+        "tests/test_blocks.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-373 block identity regressions. The native custom-pad and B-side quarter-turn tests embed authored minimal board text (a kicad_pcb with Owned:CustomL footprints) written for this test; it is original owned test content, not third-party design text. No upstream design, library or vendor document bytes are copied."
+    },
+    {
+      "paths": [
         "tests/test_citation_locators.py"
       ],
       "kind": "owned-source",
