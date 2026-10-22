@@ -877,6 +877,10 @@ class PhysicalIntentTests(unittest.TestCase):
                                    True, 'a pad has 2 uuid nodes'),
             # pcbnew invents an identity for a pad without one; the text has none, so they disagree.
             'missing-pad-uuid': (board.replace(f'(uuid "{PAD["6"]}")', '', 1), True, None),
+            # ee388j: pad 7 renamed 6 beside the pad 6 without identity; the two pads numbered 6 compare
+            # by number and UUID, one missing, and must refuse as typed disagreement, never TypeError.
+            'missing-pad-uuid-renumbered': (board.replace(f'(uuid "{PAD["6"]}")', '', 1)
+                                            .replace('(pad "7"', '(pad "6"', 1), True, None),
         }
         good = self.intent(terminals=canl, blocks=block)
         for name, (text, loads, parse) in cases.items():

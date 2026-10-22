@@ -18,6 +18,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from collections import Counter
 from fractions import Fraction
 
 from . import blocks, electrical_locality, executor, locality_provenance, placement, topology_rules
@@ -391,9 +392,10 @@ def native_board(path, data=None):
 
 
 def _native_rows(footprints):
-    return sorted((ref, fp['uuid'], fp['fpid'], fp['locked'],
-                   tuple(sorted((p['number'], p['uuid'], p['net']) for p in fp['pads'])))
-                  for ref, fp in footprints)
+    """Footprint rows as a multiset; a missing identity (None) compares by equality, never by order."""
+    return Counter((ref, fp['uuid'], fp['fpid'], fp['locked'],
+                    frozenset(Counter((p['number'], p['uuid'], p['net']) for p in fp['pads']).items()))
+                   for ref, fp in footprints)
 
 
 def admitted_board(run, src):
@@ -427,8 +429,9 @@ def admitted_board(run, src):
                           'pads': [{k: p[k] for k in ('number', 'uuid', 'net')} for p in f['pads']]})
               for f in facts['footprints']]
     text = native_board(path, data)
-    if _native_rows(native) != _native_rows(text.items()):
-        differ = sorted({row[0] for row in set(_native_rows(native)) ^ set(_native_rows(text.items()))})
+    native_rows, text_rows = _native_rows(native), _native_rows(text.items())
+    if native_rows != text_rows:
+        differ = sorted({row[0] for row in (native_rows - text_rows) + (text_rows - native_rows)})
         _refuse(f'native admission: pcbnew and the board text disagree on footprints {differ}')
     return dict(native)
 

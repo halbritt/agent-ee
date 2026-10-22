@@ -49,8 +49,10 @@ or second UUID refuses. A pad with two `uuid` nodes also refuses. The text
 parse and the pcbnew objects must agree on every footprint reference, UUID,
 library ID, lock state and pad number, UUID and net. Otherwise the compiler
 refuses with `native admission: pcbnew and the board text disagree`. For
-example, pcbnew invents an identity for a pad that has no `uuid`. The compiler
-uses the native values. `verify_receipt` recompiles, so a package bound to a
+example, pcbnew invents an identity for a pad that has no `uuid`. The rows are
+compared as multisets, never ordered, so a missing pad UUID beside a present one
+with the same pad number is a typed refusal, not a comparison error, and no
+identity is fabricated for it (ee388j). The compiler uses the native values. `verify_receipt` recompiles, so a package bound to a
 board that pcbnew cannot load also fails verification.
 
 ## Terminal join
@@ -351,8 +353,8 @@ captured pod run above. Together they cover:
 - native admission: boards pcbnew does not load (quoted `locked` and `uuid`
   keywords, a nested UUID, quoted lock values, a quoted footprint flag, a nested
   lock value and an unknown node only pcbnew reads), duplicate footprint and pad
-  `uuid` nodes, and a pad without a UUID that pcbnew and the text disagree on.
-  Each refuses before output and at `verify_receipt`;
+  `uuid` nodes, and a pad without a UUID that pcbnew and the text disagree on,
+  also when another pad is renumbered to share its number. Each refuses before output and at `verify_receipt`;
 - footprint identity equal to pcbnew on the fixture boards. Duplicate and
   missing footprint UUIDs refuse, both before output and at `verify_receipt`;
 - datasheet record-line binding: the six signed, grouped, fractional and
