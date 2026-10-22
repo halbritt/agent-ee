@@ -291,6 +291,13 @@ class RenderChangeSelectionTests(unittest.TestCase):
                 git('add', 'scripts/install_render_gallery.sh')
                 git('commit', '-qm', 'gallery deployment')
                 self.assertEqual(strict_suite.render_mode_from_change_base(previous), 'omit')
+                for path in ('src/agent_ee/candidate.py', 'src/agent_ee/executor.py'):
+                    with self.subTest(path=path):
+                        previous = git('rev-parse', 'HEAD')
+                        (root / path).write_text('generic change\n')
+                        git('add', path)
+                        git('commit', '-qm', 'unrelated source')
+                        self.assertEqual(strict_suite.render_mode_from_change_base(previous), 'omit')
 
 
 class RequiredInputTests(unittest.TestCase):
