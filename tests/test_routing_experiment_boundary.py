@@ -172,6 +172,100 @@ class ExperimentBoundaryTest(unittest.TestCase):
                 summary = self.verify(receipt_dir, receipt)
                 self.assertEqual((summary['classification'], summary['experiment']), ('contradiction', record))
 
+    def assert_refused(self, scenario, reason, detail, replay=True):
+        """The actual consumer refuses the evidence with a typed reason and keeps no candidate.
+
+        replay=False: the receipt's own strict result.json parser already reports
+        the backend as unknown, so verify refuses the whole receipt instead."""
+        receipt, receipt_dir, design, report = self.receipt(scenario, CURRENT)
+        sem = report['semantics']
+        self.assertEqual((receipt['exit_code'], receipt['status'], sem['classification'], sem['proposal']),
+                         (attempt.EXIT_CONTRADICTION, 'failed', 'contradiction', 'none'), sem)
+        self.assertIsNone(report['candidate'])
+        record = sem['experiment']
+        self.assertEqual((record['status'], record['reason'], record['qualified']), ('refused', reason, False))
+        self.assertIn(detail, record['detail'])
+        self.assertTrue(any(r.startswith(f'routability experiment evidence refused ({reason})')
+                            for r in sem['reasons']), sem['reasons'])
+        # The refused bytes are still retained with their recomputed identities.
+        attempt_dir = receipt_dir / 'run/routing/attempt'
+        self.assertEqual((record['path'], record['sha256']),
+                         ('attempt/routability-experiment.json', sha256(attempt_dir / 'routability-experiment.json')))
+        self.assertEqual(record['policy_copy'],
+                         {'path': 'attempt/experiment-policy.json', 'sha256': sha256(attempt_dir / 'experiment-policy.json')})
+        with self.assertRaises(ValueError):
+            stage_receipts.adopt(receipt_dir, receipt, design)
+        if not replay:
+            self.assertEqual(receipt['tool']['backend']['status'], 'unknown')
+            with self.assertRaisesRegex(ValueError, 'backend differs from the retained result.json'):
+                self.verify(receipt_dir, receipt)
+            return receipt_dir
+        summary = self.verify(receipt_dir, receipt)
+        self.assertEqual((summary['classification'], summary['experiment']), ('contradiction', record))
+        return receipt_dir
+
+    def test_a_duplicate_key_policy_copy_is_refused_not_adopted(self):
+        # Review H1 (ee442c): the copy starts with a wrong schema key followed by the
+        # whole valid declaration, so a last-key-wins read decodes it as the declaration.
+        copy = 'experiment-policy.json'
+        receipt_dir = self.assert_refused(
+            {'name': 'complete', 'edits': [[copy, '{', '{"schema":"routability-policy/999",', 'first']]},
+            'malformed', 'duplicate key "schema"')
+        text = (receipt_dir / 'run/routing/attempt' / copy).read_text()
+        self.assertTrue(text.startswith('{"schema":"routability-policy/999",'), text)
+        with self.assertRaisesRegex(attempt.RequestError, 'duplicate key'):
+            attempt.parse_experiment_policy(text)
+        wrong = {'schema': '"routability-policy/999"', 'experiment_class': '"historical-all-layer"',
+                 'allowed_trace_layers': '["In1.Cu"]', 'allowed_via_spans': '[]',
+                 'rule_areas_sha256': json.dumps('0' * 64)}
+        self.assertEqual(set(wrong), attempt.EXPERIMENT_POLICY_KEYS)
+        for key, value in wrong.items():
+            with self.subTest(copy_field=key):
+                self.assert_refused(
+                    {'name': 'complete', 'edits': [[copy, f'"{key}":', f'"{key}":{value},"{key}":', 'first']]},
+                    'malformed', f'duplicate key "{key}"')
+
+    def test_a_malformed_or_noncanonical_policy_copy_is_refused(self):
+        copy = 'experiment-policy.json'
+        for edit, reason, detail in (
+                ([copy, ',', ', ', 'first'], 'malformed', 'not the canonical bytes'),
+                ([copy, '{', '{"extra":1,', 'first'], 'malformed', 'exactly the routability-policy/1 fields'),
+                ([copy, '"routability-policy/1"', '"routability-policy/2"', 'first'], 'malformed',
+                 'incompatible experiment-policy.json schema'),
+                ([copy, '{', '[{', 'first'], 'malformed', 'must be JSON'),
+                ([copy, '"F.Cu","B.Cu"]]', '"B.Cu","F.Cu"]]', 'last'], 'incompatible_policy',
+                 'differs from the declared policy')):
+            with self.subTest(edit=edit):
+                self.assert_refused({'name': 'complete', 'edits': [edit]}, reason, detail)
+
+    def test_duplicate_keys_in_the_sidecar_or_its_binding_are_refused(self):
+        sidecar = 'routability-experiment.json'
+        cases = [
+            ([sidecar, '"schema": ', '"schema": "routability-experiment/9", "schema": ', 'first'],
+             'duplicate key "schema"'),
+            ([sidecar, '"identity": ', '"identity": {}, "identity": ', 'first'], 'duplicate key "identity"'),
+            ([sidecar, '"policy": ', '"policy": null, "policy": ', 'first'], 'duplicate key "policy"'),
+            ([sidecar, '"declared": ', '"declared": null, "declared": ', 'first'], 'duplicate key "declared"'),
+            ([sidecar, '"declared_sha256": ', '"declared_sha256": "0", "declared_sha256": ', 'first'],
+             'duplicate key "declared_sha256"'),
+            ([sidecar, '"experiment_class": ', '"experiment_class": "x", "experiment_class": ', 'last'],
+             'duplicate key "experiment_class"')]
+        # Every field of the declaration the sidecar's identity claims.
+        # (The declared schema is the sidecar's last "schema" key.)
+        cases += [([sidecar, f'"{key}": ', f'"{key}": null, "{key}": ', 'last' if key == 'schema' else 'first'],
+                   f'duplicate key "{key}"') for key in sorted(attempt.EXPERIMENT_POLICY_KEYS - {'experiment_class'})]
+        cases.append(([sidecar, '"experiment_class": ', '"experiment_class": "x", "experiment_class": ', 'first'],
+                      'duplicate key "experiment_class"'))
+        # The result.json binding: a repeated experiment key, or a repeated key in the reference.
+        cases += [(['result.json', '"experiment": ', '"experiment": null, "experiment": ', 'last'],
+                   'duplicate key "experiment"')]
+        cases += [(['result.json', f'"{key}": ', f'"{key}": "x", "{key}": ', 'last'],
+                   'experiment reference has a duplicate key') for key in sorted(attempt.EXPERIMENT_REFERENCE_KEYS)]
+        for edit, detail in cases:
+            with self.subTest(edit=edit):
+                self.assert_refused({'name': 'complete', 'edits': [edit]}, 'malformed', detail,
+                                    replay=edit[0] != 'result.json')
+
     def test_a_router_that_rewrites_the_policy_file_is_a_contradiction(self):
         receipt, receipt_dir, _, report = self.receipt({'name': 'complete', 'experiment': 'rewrite_policy'},
                                                        CURRENT)

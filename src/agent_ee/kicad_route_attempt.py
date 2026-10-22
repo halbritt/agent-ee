@@ -430,7 +430,9 @@ TRACK_IDENTITY = ('kind', 'layer', 'net', 'width', 'start', 'mid', 'end')
 # a typed reason; it is provenance, never qualified. The root sidecar and the
 # router's retained policy copy EXPERIMENT_POLICY_COPY are retained even when
 # result.json does not reference them, and are then refused as unbound, never
-# dropped. The sidecar fields experiment_grade reads (schema and identity.policy
+# dropped. The sidecar, the policy copy and the result.json binding are read with
+# strict_json: a repeated key is malformed evidence, never its last value. The
+# sidecar fields experiment_grade reads (schema and identity.policy
 # {declared, declared_sha256, experiment_class}) and the policy copy follow the
 # unfrozen krt91c-experiment draft; EXPERIMENT_CONTRACT says so until agent-507
 # sends the final reviewed schema and producer SHA, and
@@ -520,32 +522,49 @@ def _unique_names(value):
             all(isinstance(v, str) and v for v in value) and len(value) == len(set(value)))
 
 
-def _unique_keys(pairs):
-    found = {}
-    for key, value in pairs:
-        if key in found:
-            raise RequestError('experiment policy has a duplicate key')
-        found[key] = value
-    return found
+def strict_json(data, label):
+    """JSON text or bytes with no duplicate object key and no NaN/Infinity, or RequestError.
+
+    The same strictness as kicad_route.experiment_policy.load: a repeated key is
+    ambiguous evidence, never silently resolved to its last value."""
+    def unique(pairs):
+        found = {}
+        for key, value in pairs:
+            if key in found:
+                raise RequestError(f'{label} has a duplicate key {json.dumps(key)}')
+            found[key] = value
+        return found
+
+    def constant(name):
+        raise RequestError(f'{label} has a non-finite number {name}')
+    try:
+        return json.loads(data, object_pairs_hook=unique, parse_constant=constant)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        raise RequestError(f'{label} must be JSON') from None
 
 
-def parse_experiment_policy(text):
-    """A declared routability-policy/1 document, unchanged, or RequestError.
+def strict_json_file(path, label):
+    """strict_json of a retained regular file within JSON_LIMIT, or RequestError."""
+    if not path.is_file() or path.is_symlink():
+        raise RequestError(f'{label} is not a regular file')
+    if path.stat().st_size > JSON_LIMIT:
+        raise RequestError(f'{label} exceeds {JSON_LIMIT} bytes')
+    return strict_json(path.read_bytes(), label)
+
+
+def validate_experiment_policy(policy, label='experiment policy'):
+    """A routability-policy/1 document, unchanged, or RequestError.
 
     Exactly the five fields kicad_route.experiment_policy.load accepts, with its
     value rules; any other schema version, class, key or shape (including the
-    two-field {schema, policy} draft) is refused before the router runs. Whether
-    rule_areas_sha256 matches the board's native rule areas is the router's
-    qualification, which agent-ee does not claim."""
-    try:
-        policy = json.loads(text, object_pairs_hook=_unique_keys)
-    except (TypeError, json.JSONDecodeError):
-        raise RequestError('experiment policy must be JSON') from None
+    two-field {schema, policy} draft) is refused. Whether rule_areas_sha256
+    matches the board's native rule areas is the router's qualification, which
+    agent-ee does not claim."""
     if not isinstance(policy, dict) or set(policy) != EXPERIMENT_POLICY_KEYS:
-        raise RequestError('experiment policy must have exactly the routability-policy/1 fields '
+        raise RequestError(f'{label} must have exactly the routability-policy/1 fields '
                            + ', '.join(sorted(EXPERIMENT_POLICY_KEYS)))
     if policy['schema'] != EXPERIMENT_POLICY_SCHEMA:
-        raise RequestError(f'incompatible experiment policy schema: expected {EXPERIMENT_POLICY_SCHEMA}')
+        raise RequestError(f'incompatible {label} schema: expected {EXPERIMENT_POLICY_SCHEMA}')
     if policy['experiment_class'] not in EXPERIMENT_CLASSES:
         raise RequestError(f'experiment_class must be one of {EXPERIMENT_CLASSES}')
     if not _unique_names(policy['allowed_trace_layers']):
@@ -557,6 +576,15 @@ def parse_experiment_policy(text):
         raise RequestError('duplicate allowed_via_spans')
     if not isinstance(policy['rule_areas_sha256'], str) or not SHA256.match(policy['rule_areas_sha256']):
         raise RequestError('rule_areas_sha256 must be 64 lowercase hex digits')
+    return policy
+
+
+def parse_experiment_policy(text):
+    """A declared routability-policy/1 document, unchanged, or RequestError.
+
+    validate_experiment_policy of strict canonical JSON; refused before the
+    router runs."""
+    policy = validate_experiment_policy(strict_json(text, 'experiment policy'))
     if canonical_json(policy) != text:
         raise RequestError('experiment policy must be canonical JSON (sorted keys, no spaces)')
     return policy
@@ -639,6 +667,9 @@ def experiment_grade(request, result, attempt_dir):
             not all(isinstance(ref[k], str) for k in EXPERIMENT_REFERENCE_KEYS)):
         return refused('malformed', 'experiment reference must have exactly string path, sha256 and schema',
                        **(orphan or {}))
+    ambiguous = _ambiguous_binding(Path(attempt_dir) / 'result.json')
+    if ambiguous:
+        return refused('malformed', ambiguous, **(orphan or {}))
     if ref['schema'] != EXPERIMENT_SCHEMA:
         return refused('unknown_schema', f'experiment reference schema is not {EXPERIMENT_SCHEMA}',
                        **(orphan or {}))
@@ -654,10 +685,12 @@ def experiment_grade(request, result, attempt_dir):
         return refused('missing', 'no regular sidecar file at the referenced path was retained')
     if orphan['sha256'] != ref['sha256']:
         return refused('tampered', 'sidecar sha256 differs from the result.json reference', **orphan)
-    problems = []
-    body = load_json(Path(attempt_dir) / EXPERIMENT_SIDECAR, problems, 'experiment sidecar')
+    try:
+        body = strict_json_file(Path(attempt_dir) / EXPERIMENT_SIDECAR, 'experiment sidecar')
+    except RequestError as exc:
+        return refused('malformed', str(exc), **orphan)
     if not isinstance(body, dict):
-        return refused('malformed', '; '.join(problems) or 'experiment sidecar is not a JSON object', **orphan)
+        return refused('malformed', 'experiment sidecar is not a JSON object', **orphan)
     if body.get('schema') != EXPERIMENT_SCHEMA:
         return refused('incompatible_schema', f'sidecar schema is not {EXPERIMENT_SCHEMA}', **orphan)
     identity = body.get('identity')
@@ -666,16 +699,62 @@ def experiment_grade(request, result, attempt_dir):
         return refused('malformed', 'sidecar has no identity.policy {declared, declared_sha256, experiment_class}',
                        **orphan)
     declared = None if expected is None else expected['declared']
-    if (claimed['declared'] != declared or
-            claimed['declared_sha256'] != (None if expected is None else expected['policy_sha256']) or
-            claimed['experiment_class'] != (None if declared is None else declared['experiment_class'])):
+    # Canonical bytes, not decoded equality: 1 == 1.0 == True in Python.
+    if (canonical_json(claimed['declared']) != canonical_json(declared) or
+            canonical_json(claimed['declared_sha256']) !=
+            canonical_json(None if expected is None else expected['policy_sha256']) or
+            canonical_json(claimed['experiment_class']) !=
+            canonical_json(None if declared is None else declared['experiment_class'])):
         return refused('incompatible_policy', 'sidecar policy identity differs from the declared policy', **orphan)
     if copy is not None:
-        kept = load_json(Path(attempt_dir) / EXPERIMENT_POLICY_COPY, problems, EXPERIMENT_POLICY_COPY)
-        if declared is None or kept != declared:
-            return refused('incompatible_policy',
-                           f'{EXPERIMENT_POLICY_COPY} differs from the declared policy', **orphan)
+        refusal = _policy_copy_refusal(Path(attempt_dir) / EXPERIMENT_POLICY_COPY, declared)
+        if refusal is not None:
+            return refused(*refusal, **orphan)
     return {'status': 'retained', **base, 'schema': EXPERIMENT_SCHEMA, 'reference': ref, **orphan}
+
+
+def _ambiguous_binding(result_path):
+    """Why result.json's experiment binding is ambiguous, or None.
+
+    The permissive result.json read keeps the last of repeated keys, so the
+    binding is re-read strictly: a repeated top-level experiment key, or a
+    repeated key inside the reference, refuses the evidence."""
+    marked = []
+
+    def pairs_hook(pairs):
+        found = {}
+        for key, value in pairs:
+            if key in found:
+                marked.append((found, key))
+            found[key] = value
+        return found
+    try:
+        top = json.loads(result_path.read_bytes(), object_pairs_hook=pairs_hook)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return 'result.json is not JSON'
+    ref = top.get('experiment') if isinstance(top, dict) else None
+    if any(obj is top and key == 'experiment' for obj, key in marked):
+        return 'result.json has a duplicate key "experiment"'
+    if any(obj is ref for obj, _ in marked):
+        return 'experiment reference has a duplicate key'
+    return None
+
+
+def _policy_copy_refusal(path, declared):
+    """(reason, detail) refusing the router's retained policy copy, or None.
+
+    The copy is read like kicad_route.experiment_policy.load (duplicate keys
+    refused, exactly the five routability-policy/1 fields) and must then be the
+    canonical bytes of the declared policy."""
+    try:
+        kept = validate_experiment_policy(strict_json_file(path, EXPERIMENT_POLICY_COPY), EXPERIMENT_POLICY_COPY)
+    except RequestError as exc:
+        return 'malformed', str(exc)
+    if declared is None or canonical_json(kept) != canonical_json(declared):
+        return 'incompatible_policy', f'{EXPERIMENT_POLICY_COPY} differs from the declared policy'
+    if path.read_bytes() != canonical_json(declared).encode():
+        return 'malformed', f'{EXPERIMENT_POLICY_COPY} is not the canonical bytes of the declared policy'
+    return None
 
 
 def policy_backend_args(policy):

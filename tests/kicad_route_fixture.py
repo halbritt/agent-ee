@@ -239,6 +239,15 @@ if experiment is not None and experiment != 'omit':
     if experiment == 'no_policy_identity':
         del body['identity']['policy']
     sidecar.write_text('not json {' if experiment == 'malformed' else json.dumps(body, indent=2) + '\n')
+    # Byte edits [file, old, new, 'first'|'last'] of one occurrence (AGENTEE-442
+    # duplicate-key probes); an edit that finds nothing writes an unmistakable file.
+    for file, before, after, which in scenario.get('edits', []):
+        if file == 'result.json':
+            continue
+        target = run / file
+        text = target.read_text()
+        head, found, tail = text.partition(before) if which == 'first' else text.rpartition(before)
+        target.write_text(head + after + tail if found else 'fixture edit not found')
     result['experiment'] = {'path': 'routability-experiment.json', 'sha256': sha(sidecar),
                             'schema': 'routability-experiment/1'}
     if experiment == 'unknown_schema':
@@ -266,6 +275,10 @@ if experiment is not None and experiment != 'omit':
         shutil.copyfile(sidecar, run / 'alternate.json')
         result['experiment']['path'] = 'alternate.json'
 text = 'not json {' if name == 'malformed_json' else json.dumps(result, indent=2) + '\n'
+for file, before, after, which in scenario.get('edits', []):
+    if file == 'result.json':
+        head, found, tail = text.partition(before) if which == 'first' else text.rpartition(before)
+        text = head + after + tail if found else 'fixture edit not found'
 (run / 'result.json').write_text(text)
 print(text, flush=True)
 (run / 'RESULT.md').write_text('# Routing attempt (fixture)\n')

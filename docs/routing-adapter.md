@@ -731,14 +731,23 @@ Experiment evidence is never dropped and is never qualified.
     - `malformed`: the reference shape, a hash that is not hex, a `path` other than
       the literal run-relative `routability-experiment.json` (a cwd-relative,
       absolute, `..` or other file name is unsupported), a sidecar that is not a
-      JSON object, or one without `identity.policy`;
+      JSON object, or one without `identity.policy`. Repeated keys are malformed
+      too, never resolved to their last value: a repeated `experiment` key in
+      `result.json` or a repeated key in its reference, and any repeated key or
+      non-finite number in the sidecar. The retained `experiment-policy.json`
+      is read like `experiment_policy.load` (repeated keys refused, exactly the
+      five fields and their value rules); one that fails that, or that decodes
+      to the declaration but is not its canonical bytes, is malformed. A
+      `result.json` with repeated keys is also refused by `verify`: the stage
+      receipt's strict parser reports its backend as unknown;
     - `unknown_schema`: the reference schema;
     - `tampered`: the recomputed sha256 differs from the reference;
     - `incompatible_schema`: the sidecar's own `schema`;
     - `incompatible_policy`: the sidecar `identity.policy` (`declared`,
       `declared_sha256`, `experiment_class`) differs from the declared identity,
       including a policy the coordinator never declared, or the retained
-      `experiment-policy.json` is not the declaration;
+      `experiment-policy.json` is a valid policy other than the declaration.
+      Identities compare as canonical JSON bytes, not decoded values;
     - `unbound`: a retained root file that no reference binds, because
       `result.json` is absent or has no `experiment`.
 
