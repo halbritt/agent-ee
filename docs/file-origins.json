@@ -3096,6 +3096,17 @@
     },
     {
       "paths": [
+        "tools/ee454_io_profile/"
+      ],
+      "kind": "owned-metadata",
+      "origins": [
+        "AE",
+        "T16"
+      ],
+      "note": "AGENTEE-454 I/O profile harness and measurement records written for agent-ee. They name fome-mc capture paths and SHA-256 values of the pinned Rev-3 parts manifest; no fome-mc or third-party file content is copied."
+    },
+    {
+      "paths": [
         "fixtures/pod/ampseal/README.md"
       ],
       "kind": "owned-documentation",
