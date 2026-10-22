@@ -10,7 +10,6 @@ package on any contradiction and publishes a complete directory atomically or
 nothing. Kelvin and current-loop obligations have no owned checker and stay
 visible as unsupported. Runtime activation remains gated by KICADROUTE-91.
 """
-import itertools
 import json
 import re
 import shutil
@@ -37,16 +36,21 @@ DIAGNOSTIC_KINDS = frozenset(('access', 'cut'))
 DIAGNOSTIC_STATUSES = frozenset(('unknown', 'observed'))
 UUID = re.compile('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 SHA256 = re.compile('[0-9a-f]{64}')
-# Stated lengths in a captured decision are read as complete lexemes: a maximal run of
-# digits and grouping punctuation, then the word or mark that follows it. A word in the
-# length vocabulary (any case, by its leading letters) makes the lexeme a stated length; only an unsigned plain
-# decimal in exactly ``nm`` or ``mm`` resolves, every other stated length refuses.
-NUMERAL = re.compile(r"\d[\d.,_\u00a0\u2009\u202f]*")
-UNIT = re.compile(r'\s*([^\W\d_]\w*|["\'\u2032\u2033])')
-LENGTH_WORD = re.compile(r'(?:[nuµμmcdk]?m|mils?|thou|in|inch(?:es)?|ft|foot|feet|microns?|'
-                         r'(?:nano|micro|milli|centi|deci|kilo)?met(?:er|re)s?|["\'\u2032\u2033])')
+# Every numeral in a captured decision is allowlisted whole (AGENTEE-388 review HOLD H1). The
+# text is split at whitespace; a token holding any digit (ASCII or Unicode) must be, after at
+# most one trailing sentence mark, either an identifier such as U1, C128, R-0 or D-1, or a
+# complete unsigned length: a plain decimal, at most one ASCII space, then exactly ``nm`` or
+# ``mm``. Anything else adjacent to a digit (fraction, apostrophe or quote, nbsp or thin-space
+# grouping, comma, exponent, sign, unknown unit) refuses; no suffix is extracted, nothing skipped.
 DECIMAL = re.compile(r'(?:0|[1-9][0-9]*)(?:\.[0-9]+)?')
-SIGNS = '+-\u2212\u2013\u00b1~<>\u2264\u2265'
+LENGTH = re.compile(rf'({DECIMAL.pattern})(nm|mm)')
+IDENTIFIER = re.compile(r'([A-Za-z]+)[A-Za-z0-9]*(?:-[A-Za-z0-9]+)*')
+SENTENCE_MARKS = '.,;:'
+# Length vocabulary (any case): a word here is a stated unit even where it cannot resolve. ``in``
+# is ordinary English and is only treated as a unit directly after a numeral.
+LENGTH_WORD = re.compile(r'(?:[nuµμmcdk]?m|mils?|thou|in|inch(?:es)?|ft|foot|feet|yds?|yards?|microns?|'
+                         r'(?:nano|micro|milli|centi|deci|kilo)?met(?:er|re)s?|["\'\u2032\u2033])')
+SIGNS = '+-\u2212\u2013\u2014\u00b1~<>\u2264\u2265'
 NM_PER = {'nm': 1, 'mm': 1000000}
 OWNER_AUTHORITY = ('owner and manufacturer authors cannot be authenticated in-process: agents run as the '
                    "owner's Unix user and no signing boundary exists until AGENTEE-348, so a sourced owner "
@@ -343,32 +347,56 @@ def _terminals(intent, src, board, native):
 
 
 def _stated_lengths(text, locator, label):
-    """Every length stated in decision text as (decimal, unit); refuse any it cannot resolve whole.
+    """Every length stated in decision text as (decimal, unit); refuse any numeral it cannot allowlist.
 
-    A signed, ranged, grouped, digit-separated, exponent or non-ASCII numeral, or a length unit
-    other than exactly ``nm`` or ``mm``, is unresolvable: no positive suffix is extracted and
-    no stated length is dropped.
+    Each whitespace token holding a digit is an identifier (``U1``, ``R-0``) or one complete
+    unsigned ``nm``/``mm`` length; any other numeral, a sign before a length, or a length
+    word attached to no resolvable numeral refuses. No suffix is extracted, no length dropped.
     """
-    lengths = []
-    for numeral in NUMERAL.finditer(text):
-        unit = UNIT.match(text, numeral.end())
-        if not unit:
+    def unit_word(word):
+        return LENGTH_WORD.fullmatch(word.casefold()) and word.casefold() != 'in'
+
+    def refuse(lexeme, why='an unresolvable length {!r}'):
+        _refuse(f'{label}: numeric mismatch: decision {locator} states {why.format(lexeme)}: every numeral must '
+                'be a complete unsigned decimal length in nm or mm, or part of an identifier such as U1')
+
+    tokens = list(re.finditer(r'\S+', text))
+    lengths, consumed = [], set()
+    for i, token in enumerate(tokens):
+        if i in consumed:
             continue
-        word = unit[1] if not unit[1][0].isalpha() else ''.join(itertools.takewhile(str.isalpha, unit[1]))
-        if not LENGTH_WORD.fullmatch(word.casefold()):
+        word = token[0]
+        core = word[:-1] if word[-1] in SENTENCE_MARKS else word
+        following = tokens[i + 1] if i + 1 < len(tokens) else None
+        spaced = following is not None and text[token.end():following.start()] == ' '
+        if not any(c.isnumeric() for c in word):
+            if unit_word(core):
+                refuse(core, 'a length unit {!r} attached to no resolvable numeral')
             continue
-        number, before = numeral[0], text[:numeral.start()]
-        lexeme = re.search(r'\S*$', before)[0] + text[numeral.start():unit.end()]
-        if unit[1] not in NM_PER:
-            _refuse(f'{label}: numeric mismatch: decision {locator} states a length {lexeme!r} '
-                    'in a unit that cannot be resolved to nm')
-        prior = before.rstrip()[-1:]
-        if (not DECIMAL.fullmatch(number) or before[-1:].isalnum() or before[-1:] in tuple('._')
-                or prior and (prior in SIGNS or prior.isdigit())
-                or prior in tuple(',.') and before.rstrip()[-2:-1].isdigit()):
-            _refuse(f'{label}: numeric mismatch: decision {locator} states an unresolvable length {lexeme!r}: '
-                    'only an unsigned plain decimal resolves')
-        lengths.append((number, unit[1]))
+        identifier = IDENTIFIER.fullmatch(core)
+        if identifier:
+            if unit_word(identifier[1]):
+                refuse(core, 'a length unit {!r} attached to a numeral')
+            continue
+        lexeme = word + (f' {following[0]}' if spaced and following[0][:1].isalpha() else '')
+        prior = tokens[i - 1][0] if i else ''
+        if prior[-1:] in tuple(SIGNS):
+            refuse(f'{prior} {lexeme}', 'a signed length {!r}')
+        length = LENGTH.fullmatch(core)
+        if not length and DECIMAL.fullmatch(word) and spaced:
+            unit = following[0][:-1] if following[0][-1] in SENTENCE_MARKS else following[0]
+            if unit in NM_PER:
+                length = (None, word, unit)
+                consumed.add(i + 1)
+            elif LENGTH_WORD.fullmatch(unit.casefold()):
+                refuse(f'{word} {unit}', 'a length {!r} in a unit that cannot be resolved to nm')
+        elif not length:
+            unit = re.sub(r'^[0-9.]*', '', core)
+            if DECIMAL.fullmatch(core[:len(core) - len(unit)]) and LENGTH_WORD.fullmatch(unit.casefold()):
+                refuse(core, 'a length {!r} in a unit that cannot be resolved to nm')
+        if not length:
+            refuse(lexeme)
+        lengths.append((length[1], length[2]))
     return lengths
 
 

@@ -40,7 +40,17 @@ OWNER_TEXT = ('D-1 (owner of record): keep the C1 supply pad within 3 mm of U1 V
               'D-7 (owner of record): keep the C1 supply pad within 1,003 mm of U1 VCC.\n'
               'D-8 (owner of record): keep the C1 supply pad within 3 mm and 999 MM of U1 VCC.\n'
               'D-9 (owner of record): keep the C1 supply pad within 3mm of U1 VCC.\n'
-              'D-10 (owner of record): keep the C1 supply pad within 0.5 mm of U1 VCC.\n')
+              'D-10 (owner of record): keep the C1 supply pad within 0.5 mm of U1 VCC.\n'
+              'D-11 (owner of record): keep the C1 supply pad within 1/3 mm of U1 VCC.\n'
+              'D-12 (owner of record): keep the C1 supply pad within 1\u2019234 mm of U1 VCC.\n'
+              'D-13 (owner of record): keep the C1 supply pad within 3 mm and 999 yd of U1 VCC.\n')
+# Review ee388c-numeric H1 sweep: every separator between two digits, before every unit, refuses
+# unless the whole lexeme is a supported length (only ``1.3 mm``).
+SEPARATORS = ('/', '\u2019', "'", ',', '.', ' ', '\u00a0', '\u2009')
+SWEEP_UNITS = ('mm', 'MM', 'yd', 'ft', 'cm', 'um')
+SWEEP = [(f'S-{i}', f'within 1{sep}3 {unit} of U1 VCC', sep, unit)
+         for i, (sep, unit) in enumerate((s, u) for s in SEPARATORS for u in SWEEP_UNITS)]
+OWNER_TEXT += ''.join(f'{locator} (owner of record): keep the C1 supply pad {quote}.\n' for locator, quote, _, _ in SWEEP)
 LAYOUT_TEXT = 'Layout note L-2: place the decoupling capacitor within 3 mm of the VCC pin.\n'
 
 
@@ -351,7 +361,11 @@ class PhysicalIntentTests(unittest.TestCase):
         records = ('owner-decisions.md',)
         cases = [('D-6', 'within -3 mm of U1 VCC', "unresolvable length '-3 mm'"),
                  ('D-7', 'within 1,003 mm of U1 VCC', "unresolvable length '1,003 mm'"),
-                 ('D-8', 'within 3 mm and 999 MM of U1 VCC', "length '999 MM' in a unit that cannot be resolved")]
+                 ('D-8', 'within 3 mm and 999 MM of U1 VCC', "length '999 MM' in a unit that cannot be resolved"),
+                 # Review ee388c-numeric H1: a fraction, U+2019 grouping and a second unsupported length.
+                 ('D-11', 'within 1/3 mm of U1 VCC', "unresolvable length '1/3 mm'"),
+                 ('D-12', 'within 1\u2019234 mm of U1 VCC', "unresolvable length '1\u2019234 mm'"),
+                 ('D-13', 'within 3 mm and 999 yd of U1 VCC', "length '999 yd' in a unit that cannot be resolved")]
         for locator, quote, pattern in cases:
             with self.subTest(locator=locator):
                 self.refused(self.local, self.intent(self.local, records=records, locality=self.locality(
@@ -368,10 +382,29 @@ class PhysicalIntentTests(unittest.TestCase):
                                  ('authority_unavailable', nm))
         stated = physical_intent._stated_lengths
         for text in ('2-3 mm', '\u2212 3 mm', '1 003 mm', '1\u2009003 mm', '003 mm', '1e3 mm', '3. mm', '.5 mm',
-                     'x3 mm', '\uff13 mm', '3 millimetres', '3 mm\u00b2', '3 Mm', '3"', '3 mm (3000 um)'):
+                     'x3 mm', '\uff13 mm', '3 millimetres', '3 mm\u00b2', '3 Mm', '3"', '3 mm (3000 um)',
+                     '1/3 mm', '1\u2019234 mm', '3 mm and 999 yd', '3 mm and 999 mms', '1^3 mm', '3\u00a0mm',
+                     '3MM', '3yd', 'mm3 or 3 mm', '3 mm, not 3', "U1's 3 mm", '3 more pads', '(3 mm)', '+3 mm',
+                     '- 3 mm', '3 mm-5 mm', '\u0663 mm', '\u00bd mm', 'U\u0661 3 mm'):
             with self.subTest(text=text), self.assertRaisesRegex(IntentRefused, 'numeric mismatch'):
                 stated(f'within {text} of U1 VCC', 'D-0', 'probe')
-        self.assertEqual(stated('3 more pads within 3 mm of pin 4.', 'D-0', 'probe'), [('3', 'mm')])
+        # Digits inside identifiers are allowlisted; a sentence mark may close a length or identifier.
+        self.assertEqual(stated('keep C128, R-0, D-1 and U1-VCC within 3 mm. Then 3mm; U1:', 'D-0', 'probe'),
+                         [('3', 'mm'), ('3', 'mm')])
+
+    def test_owner_length_separator_unit_sweep(self):
+        # Review ee388c-numeric H1: end to end, each separator x unit form refuses with no output;
+        # the one complete supported lexeme (1.3 mm) binds its whole value, never a suffix.
+        records = ('owner-decisions.md',)
+        for locator, quote, sep, unit in SWEEP:
+            with self.subTest(quote=quote):
+                pair = lambda nm: self.locality(self.pair(self.owner(locator=locator, quote=quote), limit=nm))
+                self.refused(self.local, self.intent(self.local, records=records, locality=pair(3_000_000)),
+                             'numeric mismatch')
+                if (sep, unit) == ('.', 'mm'):
+                    out = compile_plan(self.local, self.intent(self.local, records=records, locality=pair(1_300_000)))
+                    self.assertEqual(out['receipt.json']['locality_qualification'][0]['stated_max_distance_nm'],
+                                     1_300_000)
 
     def test_spoofed_owner_authority_refuses(self):
         records = ('owner-decisions.md',)

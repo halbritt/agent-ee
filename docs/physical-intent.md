@@ -84,13 +84,21 @@ pad number and net must match the native board. Each pair is qualified with
   declared), no stated value, two values, a length in another unit (`mil`, `in`,
   `um`, `millimetres`, `MM` and so on) or no declared `max_distance_nm` is a
   `numeric mismatch`;
-- every length is read as a complete lexeme: the whole run of digits and grouping
-  punctuation before a length unit. Only an unsigned plain decimal (`3`, `0.5`)
-  directly followed by exactly `nm` or `mm` resolves (`3 mm` and `3mm` both
-  bind 3 mm). A signed or ranged value (`-3 mm`, `2-3 mm`), grouping (`1,003 mm`,
-  `1 003 mm`), leading zeros, exponents, a bare decimal point or non-ASCII digits
-  are an unresolvable length and a `numeric mismatch`. No positive suffix is
-  extracted, and a second unresolved length (`3 mm and 999 MM`) is never dropped;
+- every numeral in the decision text is allowlisted whole. The text is split at
+  whitespace, and each token holding a digit (ASCII or any other Unicode digit
+  or numeral) must be, after at most one trailing sentence mark (`.`, `,`, `;`,
+  `:`), either an identifier such as `U1`, `C128`, `R-0` or `D-1` (ASCII letters
+  first, then letters, digits and single hyphens), or a complete unsigned length:
+  a plain decimal (`3`, `0.5`), at most one ASCII space, then exactly `nm` or
+  `mm` (`3 mm` and `3mm` both bind 3 mm). Every other numeral refuses as a
+  `numeric mismatch`, with no suffix extracted and no length skipped: a fraction
+  (`1/3 mm`), an apostrophe, quote, comma, nbsp or thin-space grouping
+  (`1’234 mm`, `1,003 mm`, `1 003 mm`), a sign (`-3 mm`, `− 3 mm`, `+3 mm`) or
+  range (`2-3 mm`), an exponent or `^`, leading zeros, a bare decimal point,
+  non-ASCII digits, a bare number (`3 more pads`, `pin 4`), a length in another
+  unit (`3 mm and 999 yd`, `999 MM`) or a length word attached to no resolvable
+  numeral (`x3 mm`, `mm3`). Two different stated lengths are ambiguous and
+  refuse;
 - a pair declaring `datasheet` must classify `hard`: the numeric derivation equals
   the declared `max_distance_nm`. Otherwise it is a `numeric mismatch`.
 
@@ -185,8 +193,9 @@ covers:
 - conflicting membership and fixed moves;
 - owner spoofing, owner identity binding (including the `Mallory` review
   probe), owner value binding (3 mm against 999 mm, a missing value, two
-  values, an unresolvable unit; signed, grouped and second unresolved lengths
-  against the matching 3 mm, 3mm and 0.5 mm controls) and the non-hard `authority_unavailable` owner
+  values, an unresolvable unit; signed, grouped, fractional and second
+  unresolved lengths, and a separator by unit sweep, against the matching 3 mm,
+  3mm, 0.5 mm and 1.3 mm controls) and the non-hard `authority_unavailable` owner
   output;
 - datasheet numeric mismatch and locality endpoint binding;
 - assertion ID collisions (`u1-canl`, `block:can`, a diagnostic and an
