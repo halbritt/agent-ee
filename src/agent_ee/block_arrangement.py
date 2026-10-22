@@ -1448,9 +1448,9 @@ def review_input(run_dir, manifest):
             'plan': {'path': 'inputs/' + plan_rel, 'sha256': manifest['files'][plan_rel]}}
 
 
-def _candidate_file(path):
+def _candidate_file(path, raw=None):
     """A bare candidate file; a ``block_library materialize`` record is refused, not unwrapped."""
-    document = strict_json(Path(path).read_bytes())
+    document = strict_json(Path(path).read_bytes() if raw is None else raw)
     if not isinstance(document, dict) or document.get('schema') != blocks.CANDIDATE:
         raise ValueError(f'{path}: expected a bare {blocks.CANDIDATE} file '
                          '(block_library materialize --out writes one; its result record is not a candidate)')
@@ -1468,9 +1468,17 @@ def request_section(allocation, arrangement, candidates):
     materialized against (``blocks pack --allocation``, ``block_library materialize
     --allocation``); the runner derives from its text and admission binds its hash.
     """
-    return {'allocation_text': None if allocation is None else Path(allocation).read_bytes().decode('utf-8'),
-            'arrangement': strict_json(Path(arrangement).read_bytes()),
-            'candidates': load_entries(candidates)}
+    return request_section_from_bytes(None if allocation is None else Path(allocation).read_bytes(),
+                                      Path(arrangement).read_bytes(), [Path(c).read_bytes() for c in candidates],
+                                      names=list(map(str, candidates)))
+
+
+def request_section_from_bytes(allocation, arrangement, candidates, names=None):
+    """The same section from bytes a caller has already bound by digest (AGENTEE-439)."""
+    names = names or [f'candidate {i + 1}' for i in range(len(candidates))]
+    return {'allocation_text': None if allocation is None else allocation.decode('utf-8'),
+            'arrangement': strict_json(arrangement),
+            'candidates': [{'candidate': _candidate_file(name, raw)} for name, raw in zip(names, candidates)]}
 
 
 def plan_from_request(facts, section, policy, effective, netlist, heartbeat=None):

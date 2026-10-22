@@ -37,6 +37,7 @@ CONTEXT_SCHEMA = 'agent-ee.placement-writer-context/1'
 DRIVER_SCHEMA = 'agent-ee.placement-driver/1'
 COPPER_SCHEMA = 'agent-ee.group-copper-scope/1'
 SUBLAYOUT_KEYS = {'request', 'sub_boards'}
+BLOCKS_KEYS = {'netlist', 'arrangement', 'candidates'}
 # Board-level nodes a reused group may add, with the pcbnew class its planned copy must have.
 GROUP_TAGS = {'segment': 'PCB_TRACK', 'arc': 'PCB_ARC', 'via': 'PCB_VIA', 'zone': 'ZONE', 'gr_text': 'PCB_TEXT',
               **{tag: 'PCB_SHAPE' for tag in ('gr_line', 'gr_rect', 'gr_circle', 'gr_arc', 'gr_poly', 'gr_curve')}}
@@ -159,12 +160,40 @@ def validate_sublayout(value):
     return {'request': request, 'sub_boards': _relative(value['sub_boards'], 'sub-board root')}
 
 
+def validate_blocks(value):
+    """Captured block-arrangement request files (AGENTEE-439), in declared candidate order.
+
+    The netlist is the captured native export every candidate was packed against; the
+    helper uses it only while a fresh in-sandbox export has the same stamp-masked identity."""
+    if (not isinstance(value, dict) or not BLOCKS_KEYS <= set(value) or set(value) - BLOCKS_KEYS - {'allocation'}):
+        raise ValueError(f'placement blocks must have exactly {sorted(BLOCKS_KEYS)} and optionally allocation')
+    def captured(rel, label, suffix):
+        rel = _relative(rel, label)
+        if not rel.endswith(suffix):
+            raise ValueError(f'{label} must be a captured {suffix} file')
+        return rel
+    candidates = value['candidates']
+    if not isinstance(candidates, list) or not candidates:
+        raise ValueError('placement blocks need a nonempty list of captured candidate files')
+    normalized = {'netlist': captured(value['netlist'], 'block netlist', '.xml'),
+                  'arrangement': captured(value['arrangement'], 'block arrangement', '.json'),
+                  'candidates': [captured(c, 'block candidate', '.json') for c in candidates]}
+    if 'allocation' in value:
+        normalized['allocation'] = captured(value['allocation'], 'block allocation', '.json')
+    paths = [normalized['netlist'], normalized['arrangement'], *normalized['candidates']]
+    paths += [normalized['allocation']] if 'allocation' in normalized else []
+    if len(set(paths)) != len(paths):
+        raise ValueError('placement block files must be distinct')
+    return normalized
+
+
 def validate_declaration(value):
     """Return the normalized campaign declaration; no placement default is implied."""
     keys = {'schema', 'helper', 'policy', 'fixed_footprints', 'timeout_s'}
     if (not isinstance(value, dict) or value.get('schema') != ADAPTER_SCHEMA or not keys <= set(value) or
-            set(value) - keys - {'sublayout', 'targeted_plans'}):
-        raise ValueError(f'expected {ADAPTER_SCHEMA} with exactly {sorted(keys)} and optionally sublayout or targeted_plans')
+            set(value) - keys - {'sublayout', 'targeted_plans', 'blocks'}):
+        raise ValueError(f'expected {ADAPTER_SCHEMA} with exactly {sorted(keys)} and optionally sublayout, '
+                         'targeted_plans or blocks')
     helper, policy = value['helper'], value['policy']
     if helper is not None and helper not in HELPERS:
         raise ValueError(f'placement helper must be null or one of {HELPERS}')
@@ -190,6 +219,13 @@ def validate_declaration(value):
         if helper is None:
             raise ValueError('targeted_plans requires a placement helper')
         normalized['targeted_plans'] = _relative(value['targeted_plans'], 'targeted plans')
+    if 'blocks' in value:
+        if helper is None:
+            raise ValueError('placement blocks require a placement helper')
+        if 'targeted_plans' in value:
+            raise ValueError('placement blocks and targeted_plans cannot be combined')
+        # Only present when declared, so the identity of every other declaration is unchanged.
+        normalized['blocks'] = validate_blocks(value['blocks'])
     if 'sublayout' in value:
         if helper is not None:
             # The pinned placer refuses any board that holds tracks, vias or zones, so once a group
@@ -228,6 +264,14 @@ def bind_declaration(declaration, manifest, mutable_inputs):
             raise ValueError('sub-layout request must be a captured immutable input')
         if any(rel == sub['sub_boards'] or rel.startswith(sub['sub_boards'] + '/') for rel in mutable_inputs):
             raise ValueError('sub-boards must be captured immutable inputs')
+    section = declaration.get('blocks')
+    if section is not None:
+        for rel in [section['netlist'], section['arrangement'], *section['candidates'],
+                    *([section['allocation']] if 'allocation' in section else [])]:
+            if rel not in files or rel in mutable_inputs:
+                raise ValueError(f'placement block file {rel} must be a captured immutable input')
+        section = {**section, 'netlist_sha256': files[section['netlist']]}
+        return {**declaration, 'blocks': section, 'board': board, 'schematic': schematic}
     return {**declaration, 'board': board, 'schematic': schematic}
 
 
@@ -363,6 +407,8 @@ def _policy(inputs, bound, manifest):
         raise ValueError('placement policy must be an agent-ee.packing-policy/1 object with fixed_refs')
     if 'targeted_plans' in policy:
         raise ValueError('targeted_plans must come from the captured declaration')
+    if 'blocks' in policy:
+        raise ValueError('blocks must come from the captured declaration')
     scope_margin = _scope_edge_margin_mm(inputs, manifest)
     if scope_margin is not None:
         current = policy.get('min_courtyard_edge_mm')
@@ -470,7 +516,66 @@ def binding(declaration, manifest, inputs, mutable_inputs):
                                     'sha256': manifest['files'][bound['targeted_plans']]}
     if bound.get('sublayout') is not None:
         record['sublayout'] = sublayout_binding(bound['sublayout'], manifest, inputs, mutable_inputs)
+    if 'blocks' in bound:
+        record['blocks'], policy['blocks'] = blocks_binding(bound['blocks'], manifest, inputs,
+                                                            request_policy(policy, protected_refs))
     return record, bound, policy, protected, protected_refs
+
+
+def blocks_binding(section, manifest, inputs, policy):
+    """Bind captured block files by digest and their candidates to this request (AGENTEE-439).
+
+    Returns (binding record, placer ``blocks`` request section). ``policy`` is the exact
+    request policy the helper receives; every candidate must name it, the captured netlist
+    and the captured allocation, so a stale candidate refuses here, before any iteration is
+    spent. The placer's own admission still binds the board and derivation."""
+    from .block_arrangement import request_section_from_bytes
+    from .blocks import digest as canonical_digest, validate_candidate
+    from .native_netlist import STAMP_FIELDS, stamp_identity
+    files = manifest['files']
+
+    def captured(rel):
+        path = Path(inputs) / rel
+        data = None if path.is_symlink() or not path.is_file() else path.read_bytes()
+        if data is None or hashlib.sha256(data).hexdigest() != files[rel]:
+            raise ValueError(f'captured placement block file {rel} changed')
+        return data
+    netlist = section['netlist']
+    captured(netlist)
+    try:
+        identity_record = stamp_identity(Path(inputs) / netlist)
+    except ValueError as exc:
+        raise ValueError(f'captured block netlist {netlist} has no stamp-masked identity: {exc}') from None
+    if identity_record['sha256'] != files[netlist]:
+        raise ValueError(f'captured placement block file {netlist} changed')
+    allocation = captured(section['allocation']) if 'allocation' in section else None
+    raws = [captured(rel) for rel in section['candidates']]
+    request = request_section_from_bytes(allocation, captured(section['arrangement']), raws,
+                                         names=section['candidates'])
+    expected = {'inventory_sha256': files[netlist], 'policy_sha256': canonical_digest(policy),
+                'allocation_sha256': None if allocation is None else files[section['allocation']]}
+    candidates = []
+    for rel, entry in zip(section['candidates'], request['candidates']):
+        document = entry['candidate']
+        try:
+            validate_candidate(document)
+        except ValueError as exc:
+            raise ValueError(f'block candidate {rel} is invalid: {exc}') from None
+        stale = {key: document['sources'][key] for key in expected if document['sources'][key] != expected[key]}
+        if stale:
+            raise ValueError(f'block candidate {rel} was not packed for this request: {stale} differ from '
+                             f'{ {key: expected[key] for key in stale} }')
+        candidates.append({'path': rel, 'sha256': files[rel], 'block_id': document['block_id']})
+    if len({c['block_id'] for c in candidates}) != len(candidates):
+        raise ValueError('placement blocks name one block in several candidates')
+    record = {'netlist': {'path': netlist, 'sha256': files[netlist],
+                          'semantic_sha256': identity_record['semantic_sha256'],
+                          'stamp_fields': list(STAMP_FIELDS)},
+              'allocation': None if allocation is None else {'path': section['allocation'],
+                                                             'sha256': files[section['allocation']]},
+              'arrangement': {'path': section['arrangement'], 'sha256': files[section['arrangement']]},
+              'candidates': candidates, 'request_policy_sha256': expected['policy_sha256']}
+    return record, request
 
 
 def sublayout_binding(sub, manifest, inputs, mutable_inputs):
@@ -1379,31 +1484,49 @@ def proposal_scope(source_inputs, design, board, protected, copper=None):
 
 # Coordinator-run helper step (AGENTEE-95 stage receipt).
 
-def helper_request(board, policy, protected_refs):
-    """Coordinator-derived placer request bound to the exact delivered board bytes."""
+def request_policy(policy, protected_refs):
+    """The exact packing policy a helper request carries; block candidates bind its digest."""
     policy = copy.deepcopy(policy)
     if not isinstance(policy, dict) or not isinstance(policy.get('fixed_refs'), list):
         raise ValueError('placement policy must be an agent-ee.packing-policy/1 object')
     policy['fixed_refs'] += [r for r in protected_refs if r not in policy['fixed_refs']]
-    targeted = {'targeted_plans': policy.pop('targeted_plans')} if 'targeted_plans' in policy else {}
-    return {**targeted, 'policy': policy, 'authorization': {
+    policy.pop('targeted_plans', None)
+    policy.pop('blocks', None)
+    return policy
+
+
+def helper_request(board, policy, protected_refs):
+    """Coordinator-derived placer request bound to the exact delivered board bytes."""
+    if not isinstance(policy, dict):
+        raise ValueError('placement policy must be an agent-ee.packing-policy/1 object')
+    targeted = {key: copy.deepcopy(policy[key]) for key in ('targeted_plans', 'blocks') if key in policy}
+    return {**targeted, 'policy': request_policy(policy, protected_refs), 'authorization': {
         'schema': 'agent-ee.placement-write/1', 'single_design_writer': True,
         'source_sha256': hashlib.sha256(board).hexdigest(), 'writable_root': ROOT}}
 
 
 def tool_snapshot(destination):
-    """Copy the agent_ee sources into a coordinator-owned tree the step mounts read-only."""
+    """Copy the pinned agent_ee files into a coordinator-owned tree the step mounts read-only.
+
+    The files are exactly the campaign pin (cli.policy_files): the sources and the package
+    data they read, such as the captured JLCPCB locality record (AGENTEE-439)."""
+    from .cli import policy_files
     destination = Path(destination)
     package = destination / 'agent_ee'
     package.mkdir(parents=True)
-    for source in sorted(Path(__file__).resolve().parent.glob('*.py')):
-        package.joinpath(source.name).write_bytes(source.read_bytes())
+    root = Path(__file__).resolve().parent
+    for name in policy_files():
+        target = package / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((root / name).read_bytes())
     (destination / 'launch.py').write_text(LAUNCHER)
     return destination
 
 
 def verify_snapshot(tool_dir, source_files):
-    """Refuse a helper source snapshot that is not exactly the campaign's pinned agent_ee sources."""
+    """Refuse a helper source snapshot that is not exactly the campaign's pinned agent_ee files.
+
+    The pin covers package data too, so a snapshot missing a data file is refused."""
     expected = {f'agent_ee/{name}': sha for name, sha in source_files.items()}
     expected['launch.py'] = hashlib.sha256(LAUNCHER.encode()).hexdigest()
     if _files(tool_dir) != dict(sorted(expected.items())):
@@ -1413,10 +1536,13 @@ def verify_snapshot(tool_dir, source_files):
 def step_declaration(step_dir, bound):
     """The one placement stage-step declaration for a coordinator step directory."""
     step_dir = Path(step_dir)
+    # A blocks request names its captured netlist and digest; other declarations keep their argv.
+    netlist = (['--netlist', f"/candidate/{bound['blocks']['netlist']}",
+                '--netlist-sha256', bound['blocks']['netlist_sha256']] if 'blocks' in bound else [])
     return {'schema': 'agent-ee.stage-step/1', 'stage': 'placement', 'step': STEP,
             'argv': ['/usr/bin/python3', '-B', '-I', f'{TOOL_AT}/launch.py',
                      f"/candidate/{bound['board']}", f"/candidate/{bound['schematic']}",
-                     '--request', f'{REQUEST_AT}/request.json', '--root', ROOT],
+                     '--request', f'{REQUEST_AT}/request.json', '--root', ROOT, *netlist],
             'mounts': [{'source': str(step_dir / 'tool'), 'at': TOOL_AT},
                        {'source': str(step_dir / 'request'), 'at': REQUEST_AT}],
             'version_argv': ['/usr/bin/kicad-cli', 'version'], 'source': TOOL_AT,
@@ -1741,13 +1867,29 @@ def writer_context(run, manifest):
 
 # In-sandbox driver: native netlist export, then the unchanged AGENTEE-54 writer.
 
+def netlist_identity(captured, exported):
+    """Stamp-masked identity of a captured netlist against a fresh export (AGENTEE-439).
+
+    ``semantic_match`` only when every byte outside native_netlist.STAMP_FIELDS is equal;
+    both exact digests and both stamps are recorded, and any other difference refuses."""
+    from .native_netlist import STAMP_FIELDS, stamp_identity
+    record = {'stamp_fields': list(STAMP_FIELDS), 'captured': stamp_identity(captured),
+              'exported': stamp_identity(exported)}
+    same = record['captured']['semantic_sha256'] == record['exported']['semantic_sha256']
+    return {**record, 'status': 'semantic_match' if same else 'mismatch'}
+
+
 def sandbox_main(argv=None):
     parser = argparse.ArgumentParser(description='placement helper step (sandbox side)')
     parser.add_argument('board')
     parser.add_argument('schematic')
     parser.add_argument('--request', required=True)
     parser.add_argument('--root', required=True)
+    parser.add_argument('--netlist', help='captured native netlist a blocks request was packed against')
+    parser.add_argument('--netlist-sha256', help='bound sha256 of the captured netlist bytes')
     args = parser.parse_args(argv)
+    if (args.netlist is None) != (args.netlist_sha256 is None):
+        parser.error('--netlist and --netlist-sha256 go together')
     root = Path(args.root)
     root.mkdir()
     netlist = root / 'netlist.xml'
@@ -1762,8 +1904,25 @@ def sandbox_main(argv=None):
         if completed.returncode != 0 or not netlist.is_file():
             record['status'] = 'netlist_export_failed'
             return 3
+        placer_netlist = netlist
+        if args.netlist is not None:
+            # The captured bytes are used only when they are bound and the fresh export of the
+            # captured schematic differs from them in the declared stamps at most.
+            record['netlist_identity'] = None
+            try:
+                if digest(args.netlist) != args.netlist_sha256:
+                    raise ValueError('captured netlist differs from its bound sha256')
+                record['netlist_identity'] = netlist_identity(args.netlist, netlist)
+            except (OSError, ValueError) as exc:
+                record.update(status='netlist_identity_refused', error=f'{type(exc).__name__}: {exc}')
+                return 4
+            if record['netlist_identity']['status'] != 'semantic_match':
+                record.update(status='netlist_identity_mismatch',
+                              error='captured netlist differs from the fresh export beyond the declared stamps')
+                return 4
+            placer_netlist = Path(args.netlist)
         from .placer_runner import main
-        code = main([args.board, str(netlist), '--request', args.request,
+        code = main([args.board, str(placer_netlist), '--request', args.request,
                      '--destination', str(root / 'placed'), '--result', str(root / 'placement-result.json')])
         record['status'] = 'placed' if code == 0 else 'not_placed'
         return code

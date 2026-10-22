@@ -2326,6 +2326,17 @@ keep-outs and `no_stacking` shadows carry their rule's citation as
 `arrangement_rule`/`hard`, so a residual capacity proof that rests on one
 reports `defect` instead of `unknown`. No check registration changes.
 
+AGENTEE-439 makes the campaign placement helper accept a captured
+[blocks request](placement-adapter.md#captured-blocks-requests-agentee-439).
+Its candidates must bind the captured netlist bytes, the allocation and the
+exact request policy at binding time. The helper uses the captured netlist only
+when a fresh in-sandbox export differs from it in nothing but the declared
+`/export/design/date` and `/export/design/tool` stamps. Any other difference
+refuses (driver exit 4) and no board is written. The campaign source pin
+(`policy_files`) and the helper snapshot now include `agent_ee/data/*`.
+Run results therefore record the data digests under `data/<name>`. No check
+registration or verdict changes.
+
 ### Saved-placement reserve diagnostics (AGENTEE-380)
 
 The [placer reserve-cost record](placer.md#advisory-reserve-cost-agentee-380)
