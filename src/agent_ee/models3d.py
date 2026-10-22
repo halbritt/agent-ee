@@ -31,6 +31,8 @@ STOCK_REVISIONS = (
 )
 STOCK_RECEIPT = ".agent-ee-models.json"
 STOCK_VARIABLE = re.compile(r"KICAD\d+_3DMODEL_DIR|KISYS3DMOD")
+KICAD10_LINUX_MODEL_DIR = Path("/usr/share/kicad/3dmodels")
+_URI_OR_ALIAS = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://|^:[^:]+:")
 _TOKEN = re.compile(r'\s+|;[^\n]*|"(?:\\.|[^"\\])*"|[()]|[^()\s";]+')
 _VARIABLE = re.compile(r"\$\{([^{}]+)\}|\$\(([^()]+)\)")
 _STOCK_REFERENCE = re.compile(r"^\$\{(" + STOCK_VARIABLE.pattern + r")\}/(.+)$")
@@ -133,7 +135,7 @@ def _inspect_model(model, board, variables, sources):
     if unresolved:
         return {**record, "status": "unresolved", "unresolved_variables": unresolved,
                 "reason": "unresolved or cyclic model path variables"}
-    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://|^:[^:]+:", expanded):
+    if _URI_OR_ALIAS.match(expanded):
         return {**record, "status": "unresolved", "reason": "embedded, URI, or KiCad alias path requires native resolution"}
     if PureWindowsPath(expanded).is_absolute() and not Path(expanded).is_absolute():
         return {**record, "status": "unresolved", "reason": "Windows absolute path is not local on this host"}
@@ -191,7 +193,7 @@ def _kicad_model_defaults(env):
     version = probe.stdout.strip()
     if probe.returncode or not re.fullmatch(r'10\.0\.\d+', version):
         return {}, None
-    directory = Path('/usr/share/kicad/3dmodels')
+    directory = KICAD10_LINUX_MODEL_DIR
     identity = {'executable': cli, 'version': version, 'source': 'kicad-default',
                 'platform': 'linux-packages', 'directory': str(directory),
                 'available': directory.is_dir()}
@@ -209,6 +211,9 @@ def inspect_models(board: Path, env: dict, *, kicad_defaults: dict | None = None
     KIPRJMOD defaults to the
     board directory. Relative filenames are relative to that board directory.
     Embedded models and custom KiCad aliases remain explicitly unresolved.
+    With a qualified KiCad 10.0.x CLI or injected defaults, an unset legacy
+    KISYS3DMOD follows the process KICAD10_3DMODEL_DIR (environment, then
+    default), as kicad-cli 10.0.7 does; project text variables do not feed it.
     Malformed input raises ValueError; filesystem failures propagate as OSError.
     """
     board = Path(board).expanduser().resolve()
@@ -222,6 +227,13 @@ def inspect_models(board: Path, env: dict, *, kicad_defaults: dict | None = None
                **dict.fromkeys(project_variables, 'project'), **dict.fromkeys(env, 'env')}
     variables.setdefault("KIPRJMOD", str(board.parent))
     sources.setdefault('KIPRJMOD', 'project')
+    aliases = {}
+    if (kicad_defaults is not None or identity is not None) and 'KISYS3DMOD' not in variables:
+        for origin, source in ((env, 'env'), (defaults, 'kicad-default')):
+            if 'KICAD10_3DMODEL_DIR' in origin:
+                variables['KISYS3DMOD'], sources['KISYS3DMOD'] = origin['KICAD10_3DMODEL_DIR'], source
+                aliases['KISYS3DMOD'] = {'variable': 'KICAD10_3DMODEL_DIR', 'source': source}
+                break
     footprints = []
     for node in document:
         if not isinstance(node, list) or not node or node[0] not in ("footprint", "module"):
@@ -237,7 +249,7 @@ def inspect_models(board: Path, env: dict, *, kicad_defaults: dict | None = None
     summary.update({status: sum(model["status"] == status for model in models)
                     for status in ("resolved", "missing", "unresolved", "disabled")})
     return {"schema": "agent-ee.models3d/1", "board": {"path": str(board), "sha256": hashlib.sha256(raw).hexdigest()},
-            "project": project, "kicad_default": identity, "footprints": footprints, "summary": summary,
+            "project": project, "kicad_default": identity, "variable_aliases": aliases, "footprints": footprints, "summary": summary,
             "warnings": ["File availability is not proof that KiCad loaded a model; inspect native render logs."]}
 
 
@@ -246,6 +258,8 @@ def copy_project_models(board: Path, destination: Path) -> dict:
 
     No stock or external files are copied. Missing files remain missing. Paths
     escaping the source project and collisions with proposal artifacts refuse.
+    A literal absolute path inside the source project is carried too, marked
+    absolute: the proposal board still names the source location.
     """
     board, destination = Path(board).resolve(), Path(destination).resolve()
     inventory = inspect_models(board, {'KIPRJMOD': str(board.parent)})
@@ -257,12 +271,21 @@ def copy_project_models(board: Path, destination: Path) -> dict:
             if not model['enabled'] or not path:
                 continue
             local = 'KIPRJMOD' in model.get('variable_sources', {})
-            relative = (not _VARIABLE.search(path) and not Path(path).is_absolute()
-                        and not PureWindowsPath(path).is_absolute()
-                        and not re.match(r'^[A-Za-z][A-Za-z0-9+.-]*://|^:[^:]+:', path))
-            if not (local or relative):
+            literal = (not _VARIABLE.search(path) and not PureWindowsPath(path).is_absolute()
+                       and not _URI_OR_ALIAS.match(path))
+            relative = literal and not Path(path).is_absolute()
+            absolute = None
+            if literal and Path(path).is_absolute():
+                # In the project by spelling (then the escape check applies) or by real location.
+                for candidate in (Path(os.path.normpath(path)), Path(model['resolved_path'])):
+                    if candidate.is_relative_to(board.parent):
+                        absolute = candidate.relative_to(board.parent)
+                        break
+            if not (local or relative or absolute is not None):
                 continue
             record = {'reference': footprint['reference'], 'path': path, 'status': model['status']}
+            if absolute is not None:
+                record['absolute'] = True
             references.append(record)
             if model['status'] == 'unresolved':
                 continue
@@ -271,12 +294,19 @@ def copy_project_models(board: Path, destination: Path) -> dict:
                 raise ValueError(f'project model escapes source project: {path}')
             # Preserve the referenced spelling, including an internal symlink alias.
             expanded, _ = _expand_path(path, {**variables, 'KIPRJMOD': str(board.parent)})
-            target_relative = Path(os.path.normpath(expanded))
+            target_relative = Path(os.path.normpath(expanded)) if absolute is None else absolute
             if target_relative.is_absolute():
                 target_relative = target_relative.relative_to(board.parent)
             if '..' in target_relative.parts or not target_relative.parts:
                 raise ValueError(f'unsafe project model destination: {path}')
             record['proposal_path'] = target_relative.as_posix()
+            if absolute is not None:
+                # The real file inspected (and hashed); a later retarget refuses even to identical bytes.
+                real = Path(model['resolved_path'])
+                if not real.is_relative_to(board.parent):
+                    raise ValueError(f'project model escapes source project: {path}')
+                record['real_path'] = real.relative_to(board.parent).as_posix()
+                _bind_absolute_reference(board, record)
             if model['status'] != 'resolved':
                 continue
             key = target_relative.as_posix()
@@ -300,8 +330,26 @@ def copy_project_models(board: Path, destination: Path) -> dict:
                       for key, entry in sorted(files.items())}, 'references': references}
 
 
+def _bind_absolute_reference(board, record):
+    """The literal absolute path the proposal board names must resolve to its carried project file.
+
+    Both spellings must still resolve to the real location recorded at capture.
+    """
+    project = Path(board).parent.resolve()
+    real = Path(record['path']).resolve()
+    captured = record.get('real_path')
+    if (not isinstance(captured, str) or not real.is_relative_to(project)
+            or real != project / captured or real != (project / record['proposal_path']).resolve()):
+        raise ValueError(f'absolute project model reference no longer resolves to its captured file: {record["path"]}')
+
+
 def verify_project_models(board: Path, destination: Path, closure: dict):
-    """Refuse changed source/proposal model bytes or newly appearing missing files."""
+    """Refuse changed source/proposal model bytes or newly appearing missing files.
+
+    Absolute references are checked through the literal path the proposal board
+    still names against the real location captured: a symlink retarget (even to
+    identical bytes), swap or escape after capture refuses.
+    """
     for relative, entry in closure['files'].items():
         source, target = Path(board).parent / relative, Path(destination) / relative
         if not source.resolve().is_relative_to(Path(board).parent.resolve()):
@@ -312,6 +360,13 @@ def verify_project_models(board: Path, destination: Path, closure: dict):
         if digest(source) != entry['sha256'] or digest(target) != entry['sha256']:
             raise ValueError(f'captured placement project model changed: {relative}')
     for model in closure['references']:
+        if model.get('absolute') and 'proposal_path' in model:
+            _bind_absolute_reference(board, model)
+            if (model['status'] == 'resolved'
+                    and digest(Path(model['path'])) != closure['files'][model['proposal_path']]['sha256']):
+                raise ValueError(f'captured placement project model changed: {model["path"]}')
+            if model['status'] == 'missing' and Path(model['path']).exists():
+                raise ValueError(f'captured missing placement project model appeared: {model["path"]}')
         if model['status'] == 'missing' and (Path(board).parent / model['proposal_path']).exists():
             raise ValueError(f'captured missing placement project model appeared: {model["proposal_path"]}')
 

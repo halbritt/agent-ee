@@ -58,6 +58,15 @@ exist. Unknown tool versions/platforms or an absent default directory leave the
 variable unresolved. The manifest records the CLI identity and default directory
 in `model_coverage.kicad_default`, plus each model's `resolution_source` and
 `variable_sources` (`env`, `kicad-default`, `project`, `relative` or `unresolved`).
+Legacy `${KISYS3DMOD}` paths follow kicad-cli 10.0.7, verified in the pinned
+image (AGENTEE-428): an environment or project text value for `KISYS3DMOD`
+wins; otherwise it takes the process `KICAD10_3DMODEL_DIR` (environment, then
+the qualified default). A project text variable named `KICAD10_3DMODEL_DIR`
+does not feed the alias. `model_coverage.variable_aliases` records each applied
+alias and its source. The alias needs a qualified 10.0.x CLI identity or
+injected defaults; otherwise `KISYS3DMOD` stays unresolved. The pinned CLI
+also aliases other versioned `KICADn_3DMODEL_DIR` names; inventory does not,
+so those references stay unresolved (under-reported, never claimed).
 An explicit environment path whose file is absent stays missing; inventory never
 tries another filename or substitutes STEP for WRL. Every resolved file carries
 its SHA-256 and size. Availability still does not prove native model loading;
@@ -176,6 +185,18 @@ relative model paths. The referenced directory layout is preserved, including
 hashes, sizes and per-reference availability. Repeated references share one copy;
 disabled models are omitted. Missing sources remain reported and are never
 replaced or downloaded. Stock library files are resolved read-only on the host.
+
+A literal absolute model path inside the source project (by spelling or by
+real location) is carried the same way, at its project-relative path, and its
+reference is marked `absolute: true` (AGENTEE-428). The proposal board is not
+rewritten, so native renders still read the source file; the recorded SHA-256 and
+the pre-publication source and copy checks bind those bytes. Before publication
+the literal absolute path is resolved again: it must still lead to the same
+real project location recorded at capture (`real_path`) with the same bytes (a
+captured missing reference must still be absent there), so retargeting, swapping
+or escaping a symlink on that path after capture refuses the proposal, even when
+the new target holds identical bytes. Absolute paths
+outside the project are external files and are neither copied nor listed.
 
 Paths escaping the source project, including escaping symlinks, and collisions
 with proposal artifacts refuse publication. Copied bytes and source bytes are
