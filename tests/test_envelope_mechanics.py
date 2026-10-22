@@ -484,6 +484,60 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         files = source_inventory(self.source)[0]
         self.assertEqual(require_obligations(self.scope(), requirements, record, files, self.source), report)
 
+    def test_j1_thickness_is_screened_not_open(self):
+        """AGENTEE-446: J1 thickness is judged by the AGENTEE-448 component-side fit, not left open.
+
+        The contract statement stays verbatim to the hash-bound source; the 1.6 mm nominal
+        screens inside 1.413-1.727 mm around TE's 1.57 mm. A nominal outside the band makes
+        'thickness-tolerance' a required open item again; the other physical items stay open.
+        """
+        from agent_ee import board_envelope as be
+        coverage = self.stage()
+        contract = be.OBLIGATION_CONTRACTS['telemetry-pod-expanded/1']['obligations']['harness-edge']
+        self.assertEqual(list(contract['open']), ['panel-cutout', 'mating-plug', 'retention', 'harness-clearance'])
+        self.assertIn('board thickness tolerance', contract['statement'])
+        record = self.record()
+        fit = record['obligation_contract']['thickness_fit']['harness-edge']
+        self.assertEqual((fit['reference'], fit['part_number'], fit['footprint_id'], fit['status'], fit['reason'],
+                          fit['recommended_mm'], fit['board_nominal_mm'], fit['band_mm']),
+                         ('J1', '1-776163-1', 'PodConnector:AMPSEAL_35_1-776163-1', 'pass',
+                          'screened (default +/-10% component fit)', '1.57', '1.6', ['1.413', '1.727']))
+        self.assertIn('776163 rev K1, sheet 2', fit['recommended_source']['citation'])
+        self.assertNotIn('mechanical_harness-edge_thickness-tolerance',
+                         [u['predicate'] for u in record['qualification_open']])
+        run, _ = self.capture()
+        report = read_json(run / 'baseline.json')['envelope']['coverage']
+        harness = next(r for r in report if r['id'].endswith('obligation-harness-edge'))
+        self.assertEqual((harness['status'], harness['thickness_fit']), ('staged', fit))
+        self.assertEqual([e['id'] for e in harness['open']], [e['id'] for e in coverage['harness-edge']['open']])
+        self.assertNotIn('thickness_fit', next(r for r in report if r['id'].endswith('obligation-antenna')))
+        with self.assertRaisesRegex(ValueError, 'obligation-harness-edge \\(panel-cutout, mating-plug, '
+                                                'retention, harness-clearance\\)'):
+            be.require_qualified(report)
+        # Off-band nominals: the screen is advisory (unknown), so the open item is required again.
+        vertices = be.validate_outline(self.envelope['outline'])[0]
+        obligations = be.validate_obligations(copy.deepcopy(self.envelope['obligations']), self.envelope)
+        harness_open = next(o for o in obligations if o['id'] == 'harness-edge')['coverage']['open']
+        for nominal, status in (('1.413', 'pass'), ('1.727', 'pass'), ('1.412999', 'unknown'),
+                                ('1.727001', 'unknown'), ('2.4', 'unknown')):
+            with self.subTest(nominal=nominal):
+                stackup = {'thickness_mm': nominal}
+                if status == 'pass':
+                    result = be.obligation_contract(self.envelope, obligations, vertices, stackup)
+                    self.assertEqual(result['thickness_fit']['harness-edge']['status'], 'pass')
+                    continue
+                with self.assertRaisesRegex(ValueError, "obligation harness-edge coverage must keep source contract "
+                                                        "telemetry-pod-expanded/1 open qualification items; "
+                                                        "dropped \\['thickness-tolerance'\\]"):
+                    be.obligation_contract(self.envelope, obligations, vertices, stackup)
+                harness_open.append(dict(id='thickness-tolerance', stage='candidate_assessment', statement='t'))
+                with self.assertRaisesRegex(ValueError, "restaged \\['thickness-tolerance'\\]"):
+                    be.obligation_contract(self.envelope, obligations, vertices, stackup)
+                harness_open[-1]['stage'] = 'physical_qualification'
+                result = be.obligation_contract(self.envelope, obligations, vertices, stackup)
+                self.assertEqual(result['thickness_fit']['harness-edge']['status'], 'unknown')
+                harness_open.pop()
+
     def refused(self, message, scope=None):
         with self.assertRaisesRegex(ValueError, message):
             self.capture(scope)
