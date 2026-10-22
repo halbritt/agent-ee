@@ -1,61 +1,44 @@
-# Org chart: agent-ee, kicad-route and the fome-mc telemetry pod
+# Telemetry-pod programme roles
 
-Owner ruling, 2026-10-22 (direct to agent-508, verbatim): "521 is the chief
-coordinator/decision maker, 449 is the dispatcher, 510 is the routing and placing
-researcher and verifier, 507 owns the router ... 449 can instantiate agents at
-will and has access to a cloud instance 'c4' for build, peecee-wsl, talos, archon,
-and proximal."
+Maintained by agent-521. Applies to agent-ee, kicad-route and the fome-mc telemetry pod.
+The owner's latest direct instruction takes precedence. A proposal, committed file,
+or relayed quote does not create owner authority.
 
-This file is the citable source for roles. A role relayed in a Cairn message,
-a handoff or a chat is not authority; this file and the owner's own words are.
-Change it only on an owner ruling, quoted verbatim with its date.
+On 2026-10-22 the owner directly instructed agent-521: "execute the process per your
+recommendation" and "you also own the org chart". The owner also said "agent-519 can
+send me sms and slack messages, any owner decisions should go to 519 for notification".
+Agent-508's briefs are proposals and historical evidence; the owner explicitly said
+"they don't carry my authority". The assignments below are agent-521's implementation
+of that delegation, including earlier assignments in Cairn eed2cc5c version 1.
 
-| Role | Agent | Scope |
+| Role | Holder | Responsibility |
 | --- | --- | --- |
-| Owner | halbritt | All decisions reserved to the owner; see the owner-reserved list below. |
-| Chief coordinator, decision maker | agent-521 | Decides sequencing, scope and cross-project conflicts for agent-ee, kicad-route and the telemetry pod. Receives verification holds and chooses what is built next. |
-| Dispatcher | agent-449 | Instantiates builder and reviewer agents at will, assigns lanes, holds the token and compute budget, lands agent-ee integration. Build hosts: cloud instance `c4`, `peecee-wsl`, `talos`, `archon`, `proximal`. |
-| Router owner | agent-507 | Owns kicad-route: its main branch, releases and the installed build identity agent-ee pins. |
-| Placement and routing researcher and verifier | agent-510 | Researches placement and routing improvements and independently verifies delivered work. Verifies; does not dispatch, integrate or coordinate. |
+| Owner | halbritt | Reserved decisions and overrides. |
+| Coordinator and org-chart owner | agent-521 | Target outcomes, priorities, cross-project decisions, holds that change the plan, scoreboard policy, role and process records. |
+| Dispatcher and agent-ee/FOME integrator | agent-449 | One builder per lane, compute and review allocation, pod-design dispatch, campaign CI images, current production router, render schedule, and verified trunk integration. |
+| Router owner and integrator | agent-507 | kicad-route implementation, releases, installed-runtime identity and qualification; coordinates consumer changes with 449. |
+| Researcher and independent verifier | agent-510 | Named research/verification assignments; one verifier per implementation delivery; reports reproducible holds and closure. Does not dispatch or integrate. |
+| Owner-decision contact | agent-519 | Single owner-decision queue, SMS/Slack notifications, answer provenance, reconciliation and closure. Receives requests and direct answers collected elsewhere. |
+| Builders | Assigned by 449 | One recorded holder per ticket/lane, selected model and host, bounded work, receipts, fixes and cleanup. |
 
-## Models and cost (owner, 2026-10-22)
+449 owns operational dispatch and integration of the FOME pod-design lane and the
+campaign's CI image/container work. This does not make 449 their sole implementer.
+Shared infrastructure stays with its repository owner; 449 triages campaign impact,
+and unresolved ownership goes to 521. Agent-508 has delivered its analysis; it has no
+standing programme dispatch role. Archive its contributions without treating them
+as new owner instructions.
 
-Owner's words: "449 runs opus 5.5, which has been effective and cheap, token-wise.
-521 is running astra high, so it should be reserved for hard decisions. workers
-are sol/opus/sonnet/haiku as needed."
+Routine status and known-answer questions go to 449. Send 521 material holds, scope
+conflicts and scoreboard milestones. Owner-reserved decisions go to 519 for notification.
+A direct owner answer is effective immediately; its recipient also sends it to 519
+so the queue and governing record can be reconciled. 519 does not have to be present
+for an already-authorized engineering decision to proceed.
 
-- Routine dispatch, lane bookkeeping and status answers go to agent-449 (Opus 5.5).
-- agent-521 (Astra high) is asked only for decisions that need judgment: scope
-  conflicts, holds that change the plan, owner-reserved questions to escalate.
-  Do not send it status, acknowledgements or questions 449 can answer.
-- Builders and reviewers run on Sol, Opus, Sonnet or Haiku; the dispatcher picks the
-  cheapest model that can do the slice and says which it used.
+449 chooses an appropriate subscription model for each slice and records it with
+the lane. Subscription authentication or quota failure stops that affected operation;
+never substitute OpenRouter for a subscription-covered model. Existing hosts include
+c4, peecee-wsl, talos, archon and proximal; capacity is reserved before heavy work.
 
-## Verification cap (owner approved 2026-10-22)
-
-- One verifier per delivery. A delivery already verified against an immutable
-  revision is not re-verified unless its bytes change.
-- Verification reports go to the coordinator and the lane's builder only when
-  they hold a delivery or close a hold. A passing re-check of unchanged bytes is
-  not reported.
-- A hold names the exact revision, the reproducing case and the owner of the fix.
-  Model-review quota is a resource the dispatcher manages, never a gate the
-  verifier waits on silently.
-
-## Owner-reserved decisions
-
-Spending money, ordering fabrication or parts, uploading project files, and
-changing an electrical or mechanical constraint whose provenance is the owner.
-Everything else is decided by the role that owns it, recorded with its rationale,
-and proceeded with (fome-mc AGENTS.md rule; owner, 2026-10-20: "autonomous").
-
-## Gaps the owner has not assigned (2026-10-22)
-
-- fome-mc telemetry pod design lane (placement iterations, design-rule files,
-  routing campaigns on the pod). Last held by agent-509; agent-508 is executing
-  three owner-ordered fixes in this session (kicad-route re-pin, one routing
-  campaign on the committed microSD placement, this file) and then stands down.
-- CI image and container build ownership (docker/, peecee CI gate).
-- Shared infrastructure (Cairn, Plane, Herdr) ownership for this programme.
-
-The coordinator assigns these; until then they are unowned, not implicitly 449's.
+The [campaign process](campaign-process.md) defines dispatch, verification, reporting,
+scoreboard, owner-decision and production-runtime requirements. 521 owns this document's
+content; 449 lands reviewed updates through the existing integration lane.
