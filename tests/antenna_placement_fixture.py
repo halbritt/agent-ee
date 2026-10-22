@@ -26,12 +26,14 @@ def _mm(value):
 
 
 def make_board(path, footprint_dir, *, anchor=GOOD['anchor'], rotation=GOOD['rotation'], flipped=False,
-               drop_zone=False, loosen_zone=False, intrusion=False, reference='U1', outline=(WIDTH, HEIGHT)):
+               drop_zone=False, loosen_zone=False, intrusion=False, reference='U1', outline=(WIDTH, HEIGHT),
+               split_top=None):
     import pcbnew as k
     board = k.BOARD()
     board.SetCopperLayerCount(4)
     w, h = outline
-    corners = [(0, 0), (w, 0), (w, h), (0, h)]
+    # split_top draws the top edge as two collinear Edge.Cuts segments meeting at (split_top, 0).
+    corners = [(0, 0), *([(split_top, 0)] if split_top else []), (w, 0), (w, h), (0, h)]
     for a, b in zip(corners, corners[1:] + corners[:1]):
         seg = k.PCB_SHAPE(board)
         seg.SetShape(k.SHAPE_T_SEGMENT)

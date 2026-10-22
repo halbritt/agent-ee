@@ -191,6 +191,14 @@ class NativeAntennaPlacementTests(unittest.TestCase):
                 _, result = self.run_board(self.declaration(), anchor=(x, 6.75))
                 self.assert_only(result, 'defect', ['feed_side_corner'])
 
+    def test_collinear_edge_pieces_are_one_edge_for_the_corner_gap(self):
+        # A vertex at x=30 must not shorten the 40 mm feed-side gap of the opposite-corner pose.
+        _, result = self.run_board(self.declaration(), anchor=(11.0, 6.75), split_top=30.0)
+        self.assert_only(result, 'defect', ['feed_side_corner'])
+        self.assertEqual(result['details']['sections']['feed_side_corner']['feed_side_gap_nm'], 40_000_000)
+        _, result = self.run_board(self.declaration(), split_top=30.0)
+        self.assert_only(result, 'pass', [])
+
     def test_body_overhang_leaves_feed_point_distance_unknown(self):
         # The pod's earlier boards placed U1 0.25 mm further out; no source bounds "close".
         _, result = self.run_board(self.declaration(), anchor=(49.0, 6.5))

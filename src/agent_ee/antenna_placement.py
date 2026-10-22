@@ -333,8 +333,25 @@ def _section(status, reason, **measured):
 
 
 def _edge_segments(points, anchor, turns):
-    local = [to_local(p, anchor, turns) for p in points]
-    return [(a, b) for a, b in zip(local, local[1:] + local[:1]) if a != b]
+    """Outline edges in the module frame, collinear runs merged into one straight edge."""
+    ring = []
+    for p in (to_local(p, anchor, turns) for p in points):
+        if not ring or p != ring[-1]:
+            ring.append(p)
+    if len(ring) > 1 and ring[0] == ring[-1]:
+        ring.pop()
+    changed = True
+    while changed and len(ring) > 3:
+        changed = False
+        for i, b in enumerate(ring):
+            a, c = ring[i - 1], ring[(i + 1) % len(ring)]
+            cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])
+            dot = (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1])
+            if cross == 0 and dot > 0:
+                del ring[i]
+                changed = True
+                break
+    return [(a, b) for a, b in zip(ring, ring[1:] + ring[:1])]
 
 
 def _covering(segments, y, x0, x1):
