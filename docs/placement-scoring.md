@@ -115,3 +115,37 @@ Report throughput improvements at the measured boundary. Fixture speedups,
 shared-host diagnostics and scorer replay do not establish a current-board
 placement or routing improvement. The command's successful exit asserts
 parity and absence of fallback; it does not change the default backend.
+
+## Measured results, 2026-10-22
+
+Source `3cd1a5e2f52937d37f5f4ab5fdd999f12d862343`, Rust 1.99.1 / LLVM
+23.1.1, `--native-cpu`, Python 3.12.3, Intel i5-11400F on proximal.
+These are five alternating matched runs after one warmup, through
+`native-admit`. The host was shared: load averages began at 24.05 and ended
+at 21.60 on 12 logical CPUs. Treat the numbers as this session's observations.
+
+| Fixture | Python pack median | Rust pack median | Placement speedup | Rust scalar replay speedup |
+| --- | ---: | ---: | ---: | ---: |
+| search-promotion | 2.169 ms | 2.426 ms | 0.89× | 0.15× |
+| search-anchor | 2.334 ms | 2.848 ms | 0.82× | 0.18× |
+| cluster-three-cap | 117.543 ms | 115.056 ms | 1.02× | 0.49× |
+| pod-80x50-90 | 1,851.542 ms | 918.723 ms | 2.02× | 2.76× |
+| pod-85x55-112 | 4,104.536 ms | 1,512.478 ms | 2.71× | 1.45× |
+
+Every measured score and plan matched exactly, with no fallback. Setup costs
+outweigh native scoring on the tiny requests. The larger fixtures improved on
+every matched placement pair: wall time fell 43.6–56.7% for the 90-footprint
+fixture and 57.2–69.1% for the 112-footprint fixture. Full Python verification
+remained slower than ordinary Python placement on both larger fixtures.
+
+[Raw samples and source/input/library hashes](benchmarks/placement-scoring-2026-10-22.json)
+retain the measured boundaries and host metadata. Both pod cases are generated
+fixtures; this measurement does not establish full-placement speed on the
+current telemetry pod. No default-backend change follows from this report.
+
+Verification covered 73 distinct Python tests across the scorer, benchmark,
+native scorer/writer, geometry cost, search and placement trace, plus five Rust
+tests with overflow checks enabled. Complete generated rank sequences on both
+pod fixtures were compared beyond the trace sample cap. Saved board, DRC and
+receipt parity passed. Documentation and file-origin checks passed. The Docker
+recipe was reviewed but its image was not rebuilt in this worktree.
