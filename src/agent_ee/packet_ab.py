@@ -48,6 +48,8 @@ class CallLedger:
 
     Retries and resubmissions are separate reservations. A line that does not parse
     (for example one torn by a crash) counts as a real call, so damage never frees budget.
+    Bytes that are not valid UTF-8 are never decoded leniently: the ledger is refused and left
+    unmodified, because a replacement character could silently change what a reservation says.
     """
 
     def __init__(self, path, cap=CAP):
@@ -59,7 +61,7 @@ class CallLedger:
     def _open(self):
         created = not self.path.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(self.path, 'a+', encoding='utf-8', errors='replace')
+        handle = open(self.path, 'a+', encoding='utf-8')
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         if created:
             directory = os.open(self.path.parent, os.O_RDONLY)
@@ -78,7 +80,11 @@ class CallLedger:
 
     def _entries(self, handle):
         handle.seek(0)
-        text = handle.read()
+        try:
+            text = handle.read()
+        except UnicodeDecodeError as error:
+            # Undecodable bytes could hide a damaged reservation, so nothing is charged, written or launched.
+            raise ValueError(f'call ledger {self.path} is not valid UTF-8; refusing to reserve or launch: {error}') from error
         entries = []
         for line in text.splitlines():
             try:

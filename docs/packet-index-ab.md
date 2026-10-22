@@ -63,6 +63,9 @@ provider. It appends a `settle` line with the execution state afterwards.
   tail stays a reservation; a partial one stays a malformed line and is
   charged. The tail is never removed or rewritten, and the next reservation is
   always written as a separate line. `state()` reports `tails_terminated`.
+  The ledger is decoded as strict UTF-8: any undecodable byte, even inside an
+  otherwise complete JSON line, makes reading raise `ValueError`, so no
+  reservation or launch happens and the bytes are left untouched.
 - A ledger whose first line is not a valid header is refused without writing.
 - A ledger whose header cap differs from the request is refused.
 - Live mode refuses a ledger under `/tmp`.

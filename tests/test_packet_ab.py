@@ -107,6 +107,40 @@ class CallLedgerTests(unittest.TestCase):
         state = self.assert_damaged_tail_keeps_its_charge('{"event": "reserve", "kind": "re')
         self.assertEqual((state['malformed_lines'], state['unsettled']), (1, []))
 
+    def assert_invalid_utf8_refuses_launch_and_keeps_bytes(self, damage, terminated):
+        for n in range(11):
+            seq = packet_ab.CallLedger(self.path).reserve('real', f'cell-{n}', 'circuit', 'plan')
+            if n < 10:
+                packet_ab.CallLedger(self.path).settle(seq, {'execution': 'ok'})
+        raw = self.path.read_bytes()
+        prefix, last = raw.rstrip(b'\n').rsplit(b'\n', 1)
+        old, new = damage
+        self.assertIn(old, last)
+        damaged = prefix + b'\n' + last.replace(old, new) + (b'\n' if terminated else b'')
+        self.path.write_bytes(damaged)
+        for _ in range(2):
+            with self.assertRaises(ValueError):
+                packet_ab.CallLedger(self.path).state()
+            with self.assertRaises(ValueError):
+                packet_ab.CallLedger(self.path).reserve('real', 'after', 'circuit', 'plan')
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [
+            str(Path(packet_ab.__file__).resolve().parents[1]), os.environ.get('PYTHONPATH')])))
+        for n in range(2):
+            result = subprocess.run([sys.executable, '-c', RESTARTED_CALL, str(self.path), f'r-{n}'], env=env,
+                                    capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, '', 'no provider may launch against an undecodable ledger')
+        self.assertEqual(self.path.read_bytes(), damaged, 'ledger bytes are never rewritten or discarded')
+
+    def test_invalid_utf8_in_complete_json_refuses_launch_in_every_field(self):
+        for old, new in ((b'"kind": "real"', b'"kind": "rea\xff"'), (b'"event": "reserve"', b'"event": "reser\xff"'),
+                         (b'"cell": "cell-10"', b'"cell": "cell-\xff0"'), (b'"plan_id": "plan"', b'"plan_id": "pl\xffn"')):
+            for terminated in (True, False):
+                with self.subTest(field=old, terminated=terminated):
+                    self.tearDown()
+                    self.setUp()
+                    self.assert_invalid_utf8_refuses_launch_and_keeps_bytes((old, new), terminated)
+
     def test_torn_header_is_refused_without_writing(self):
         self.path.parent.mkdir(parents=True)
         self.path.write_text('{"schema": "agent-ee.call-led')
