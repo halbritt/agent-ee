@@ -1006,9 +1006,13 @@ The receipt completed with exit 0 in 17.835 s; adapter replay returned `complete
 and `eligible`, and native validation returned `PASS`. A controlled mismatched
 source generation was refused by the same step declaration before routing.
 
-The retained delivery is
-`/tmp/agent-ee-burndown-20261017/workers/ee450-prod-validate/`: its review/result
-records the image identity, exact commands, evidence hashes, and a corrected
-harness path assertion (no second routing attempt). This qualifies execution
+The retained delivery, the independent Opus review and its probes are kept
+durably in the private evidence bucket as
+`s3://agent-ee-evidence/closeout/AGENTEE-450/AGENTEE-450-evidence-db54e86f0f2cdd162de40be98d7f8c17a66097c8b4f2a8fbbf879740bd753d98.tar.zst`
+(the name carries the archive's sha256; its `AGENTEE-450/SHA256SUMS` lists
+27,054 files). The worker result records the image identity, exact commands,
+evidence hashes, and a corrected harness path assertion (no second routing
+attempt). The receipt's `generation: null` is the supported checkout-local
+layout, and the image build is not claimed to be reproducible. This qualifies execution
 identity on the RC control; it does not demonstrate target-board improvement,
 repeatability, differential-pair acceptance, or close AGENTEE-442.
