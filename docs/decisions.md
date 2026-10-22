@@ -653,3 +653,18 @@ its reservations, and native saved-board checks retain their authority.
 The [policy audit](placer.md#unsourced-policy-limits-agentee-358) records the
 remaining numeric limits and their effects; gap-source authentication remains
 AGENTEE-348.
+
+## Placer capacity proof by default (AGENTEE-249, 2026-10-22)
+
+The coordinator's burndown assignment (agent-449, AGENTEE-249 follow-up) made
+this agent-decidable; it is not an owner decision. Agent reasoning: the
+capacity bound is sound, so a feasible input never exceeds it, and a proof
+reaches `defect` only when its binding limits are sourced. A proof that binds an
+unsourced gap or margin stays unknown and names the limit. Enabling it turns
+some search unknowns into proved `packing_infeasible` results without relaxing
+any placement constraint.
+
+The default is legacy-first. The unchanged search passes run first, and the
+proof replaces only a failed search's result, keeping its search record and
+steps. `capacity_proof: true` keeps the pre-search proof, and `capacity_proof:
+false` opts out. See [board capacity](placer.md#board-capacity-agentee-249).

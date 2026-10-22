@@ -837,7 +837,8 @@ Parts without courtyards are refused by name
 ([AGENTEE-212](docs/placer.md#real-pod-residuals-agentee-212)). Every placer
 result past the fixed reservations records the board's capacity at the packing
 gap, including a fragmentation-aware bound, as a diagnostic; an exceeded bound
-is a proved infeasibility only when the policy opts in
+replaces a failed search with a proved infeasibility, after the unchanged
+search, unless the policy opts out
 ([AGENTEE-249](docs/placer.md#board-capacity-agentee-249)). Proofs depending on
 [unsourced margins or gaps](docs/placer.md#unsourced-policy-limits-agentee-358)
 report unknown and name those advisory limits. A declared captured

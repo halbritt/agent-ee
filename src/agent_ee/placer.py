@@ -1574,7 +1574,7 @@ def _capacity_impossibility(sides, policy):
     return None
 
 
-def _capacity_proof(capture, outline, fixed, policy, margin_nm):
+def _capacity_proof(capture, outline, fixed, policy, margin_nm, prove):
     """Keep diagnostic inputs, but prefer proofs independent of advisory constraints."""
     sides = _board_capacity(capture, outline, fixed, policy, margin_nm)
     capacity = _capacity_diagnostic(sides, policy, margin_nm)
@@ -1582,8 +1582,7 @@ def _capacity_proof(capture, outline, fixed, policy, margin_nm):
                      if fp['ref'] not in fixed and access_direction.overhangs_courtyard(fp))
     if omitted:
         capacity['excluded_access_overhang_refs'] = omitted
-    # Opt-in: before AGENTEE-249 such inputs ended as search failures (unknown).
-    proof = _capacity_impossibility(sides, policy) if policy.get('capacity_proof') else None
+    proof = _capacity_impossibility(sides, policy) if prove else None
     if proof:
         proof_policy, proof_margin = policy, margin_nm
         declared = policy.get('constraint_provenance', {})
@@ -2116,14 +2115,14 @@ def _pack_gated(capture, policy, *, heartbeat, seed, arranged):
     runtime = {}
     result = _pack_joint(capture, policy, heartbeat, runtime, seed, arranged)
     if result['status'] == 'planned' or not runtime.get('copper_escapes'):
-        return result
+        return _proved_after_search(result, runtime)
     # AGENTEE-366: every pass gates copper; only a failed search adds the copper
     # alignment axes, so an earlier admissible plan is never replaced. A failed
     # aligned pass leaves the earlier (legacy or joint-annotated) result unchanged.
     used = runtime['steps']
     remaining = policy['step_budget'] - used
     if remaining == 0:
-        return result
+        return _proved_after_search(result, runtime)
     aligned = _pack(capture, policy, heartbeat=heartbeat, joint=False, remaining_steps=remaining,
                     deadline=runtime['search'].deadline, copper_axes=True, seed=seed, arranged=arranged)
     if aligned['status'] != 'planned':
@@ -2132,11 +2131,28 @@ def _pack_gated(capture, policy, *, heartbeat, seed, arranged):
             result['search']['copper_aligned_attempt'] = {
                 'status': aligned['status'], 'outcome': aligned['outcome'], 'reason': aligned['reason'],
                 'steps_used': aligned['steps_used'], 'prior_steps_used': used}
-        return result
+        return _proved_after_search(result, runtime)
     aligned['steps_used'] += used
     aligned['search']['legacy_attempt'] = runtime['legacy']
     aligned['search']['copper_aligned'] = {'prior_steps_used': used, 'copper_setback': copper_setback_record(capture)}
     return aligned
+
+
+SEARCH_FAILURES = ('packing_search_exhausted', 'packing_budget_exhausted', 'locality_cluster_exhausted',
+                   'judge_rejected')
+
+
+def _proved_after_search(result, runtime):
+    """The default capacity proof (AGENTEE-249): applied only once every search pass has failed.
+
+    The legacy result is kept unless the search failed and a capacity row is exceeded;
+    the proof then replaces the search's verdict, keeping its record and steps as diagnostics.
+    """
+    proved = runtime.get('capacity_failure')
+    if result['status'] not in SEARCH_FAILURES or proved is None:
+        return result
+    return {**result, **proved, 'steps_used': result['steps_used'],
+            'search_failure': {key: result[key] for key in ('status', 'outcome', 'reason')}}
 
 
 def _pack_joint(capture, policy, heartbeat, runtime, seed, arranged):
@@ -2305,13 +2321,19 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
         region_failure = _soft_proof({**failure, 'proof': proof}, binding)
     if region_failure is not None and (region_failure['outcome'] == 'defect' or not policy.get('capacity_proof')):
         return region_failure
-    capacity, proof, binding = _capacity_proof(capture, outline, fixed, policy, margin_nm)
+    # Default (key absent): computed here but applied by ``_pack_gated`` only after every
+    # search pass fails (legacy first); ``capacity_proof: true`` applies it before the search.
+    deferred = runtime is not None and 'capacity_proof' not in policy
+    capacity, proof, binding = _capacity_proof(capture, outline, fixed, policy, margin_nm,
+                                               deferred or policy.get('capacity_proof', False))
     if proof:
         failure = _failure(capture, policy, 'packing_infeasible', 'defect', 0,
                            f"{proof['side']} courtyards grown by half the gap exceed the board's free area"
                            + (f" usable by {proof['square_nm']} nm squares" if proof['square_nm'] else ''), margin_nm)
         board_failure = _soft_proof({**failure, 'proof': proof, 'capacity': capacity}, binding)
-        if board_failure['outcome'] == 'defect' or region_failure is None:
+        if deferred:
+            runtime['capacity_failure'] = board_failure
+        elif board_failure['outcome'] == 'defect' or region_failure is None:
             return board_failure
     if region_failure is not None:
         return region_failure

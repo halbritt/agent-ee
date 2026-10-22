@@ -1,4 +1,7 @@
-"""AGENTEE-249: board capacity at the packing gap, as a diagnostic and as an opt-in proof.
+"""AGENTEE-249: board capacity at the packing gap, as a diagnostic and as a proof.
+
+The proof applies by default once the search has failed (legacy first);
+``capacity_proof: true`` applies it before the search and ``false`` opts out.
 
 The fixtures are authored here from numbers. A 20 x 12 mm board with a 0.5 mm
 edge margin and a fixed 12 x 9 mm block in its middle leaves two 3.25 mm wide
@@ -239,14 +242,54 @@ class CapacityDiagnosticTest(unittest.TestCase):
                 pack(source, {**policy, 'constraint_provenance': {
                     'min_courtyard_edge_mm': {**source_entry, field: value}}})
 
-    def test_without_the_opt_in_the_same_input_stays_unknown_with_the_diagnostic(self):
-        source, policy = columns_case(7)
+    def test_opted_out_the_same_input_stays_unknown_with_the_diagnostic(self):
+        source, policy = columns_case(7, capacity_proof=False)
         report = pack(source, policy)
         self.assertIn(report['status'], ('packing_search_exhausted', 'packing_budget_exhausted'))
         self.assertEqual((report['outcome'], report['placements']), ('unknown', []))
         self.assertNotIn('proof', report)
+        self.assertNotIn('search_failure', report)
         row, = report['capacity']['sides']['F']['fragmentation']
-        self.assertGreater(rational(row['ratio']), 1)  # Reported, never a verdict without the opt-in.
+        self.assertGreater(rational(row['ratio']), 1)  # Reported, never a verdict when opted out.
+
+    def test_by_default_the_proof_replaces_the_failed_search(self):
+        source, policy = columns_case(7)
+        opted_out = pack(source, {**policy, 'capacity_proof': False})
+        report = pack(source, policy)
+        # Unsourced margin and gap: the same proof, but unknown, naming both for confirmation.
+        self.assertEqual((report['status'], report['outcome'], report['placements']),
+                         ('packing_infeasible', 'unknown', []))
+        self.assertEqual(report['proof']['kind'], 'board_capacity_fragmented')
+        self.assertEqual(report['owner_confirmation'], ['min_courtyard_edge_mm', 'gap_nm'])
+        # The failed legacy search ran first and stays as the diagnostic record.
+        self.assertEqual(report['search_failure'], {key: opted_out[key] for key in ('status', 'outcome', 'reason')})
+        self.assertEqual((report['search'], report['steps_used'], report['capacity']),
+                         (opted_out['search'], opted_out['steps_used'], opted_out['capacity']))
+        # Sourced limits: a defect, with the same proof and binding constraints as the explicit opt-in.
+        source, policy = columns_case(7, capacity_proof=True)
+        explicit = pack(source, policy)
+        default = pack(source, {key: value for key, value in policy.items() if key != 'capacity_proof'})
+        self.assertEqual((default['status'], default['outcome']), ('packing_infeasible', 'defect'))
+        for key in ('proof', 'binding_constraints', 'capacity', 'reason'):
+            self.assertEqual(default[key], explicit[key], key)
+        self.assertNotIn('owner_confirmation', default)
+        self.assertEqual((explicit['steps_used'], default['search_failure']['outcome']), (0, 'unknown'))
+        self.assertGreater(default['steps_used'], 0)
+
+    def test_default_proof_never_replaces_a_plan(self):
+        # Legacy first: even an (artificially) exceeded row cannot displace a plan the search found.
+        source, policy = columns_case(6)
+        plan = pack(source, policy)
+        self.assertEqual(plan['status'], 'planned')
+        fake = {'kind': 'board_capacity_gap', 'side': 'F', 'gap_nm': 0, 'blocked_by': [], 'square_nm': 0,
+                'references': ['C1'], 'required_grown_courtyard_area_nm2': [1, 1], 'available_area_upper_nm2': [0, 1]}
+        original = placer._capacity_impossibility
+        placer._capacity_impossibility = lambda sides, policy: fake
+        try:
+            self.assertEqual(pack(source, policy), plan)
+            self.assertEqual(pack(source, dict(policy, capacity_proof=True))['status'], 'packing_infeasible')
+        finally:
+            placer._capacity_impossibility = original
 
     def test_squares_grown_by_half_the_gap_exceed_the_free_area(self):
         # Sixteen 2 mm squares (64 mm2) on a 10 x 10 mm board pass the plain area proof;
@@ -265,18 +308,19 @@ class CapacityDiagnosticTest(unittest.TestCase):
         nine = pack(board(parts[:9], rectangle(0, 0, 10, 10)), dict(policy, step_budget=100000))
         self.assertEqual(nine['status'], 'planned', nine.get('reason'))
 
-    def test_existing_unknowns_become_proofs_only_with_the_opt_in(self):
-        # Truly infeasible inputs that existing tests keep as search failures (verdict preservation).
+    def test_former_search_unknowns_are_proved_after_the_search(self):
+        # Truly infeasible inputs that were search failures before the default (AGENTEE-249).
         tight = (capture([part('C1', 5, 5)], rectangle(0, 0, 4, 20)), request(fixed_refs=[], min_courtyard_edge_mm=1.5))
         shape = polygon([(0, 0), (8, 0), (8, 5), (5, 5), (5, 8), (0, 8)])
         notch = (capture([part('U1', 0, 0, shape=shape), part('C1', 1, 1)], rectangle(0, 0, 8, 8)),
                  request(gap_nm=1_500_000))
         for source, policy in (tight, notch):
-            self.assertEqual(pack(source, policy)['status'], 'packing_search_exhausted')
-            proved = pack(source, authored_gap(authored_margin(dict(policy, capacity_proof=True)),
-                'tests/test_placer_capacity.py:test_existing_unknowns_become_proofs_only_with_the_opt_in'))
-            self.assertEqual((proved['status'], proved['outcome'], proved['proof']['kind']),
-                             ('packing_infeasible', 'defect', 'board_capacity_fragmented'))
+            self.assertEqual(pack(source, dict(policy, capacity_proof=False))['status'], 'packing_search_exhausted')
+            sourced = authored_gap(authored_margin(policy),
+                                   'tests/test_placer_capacity.py:test_former_search_unknowns_are_proved_after_the_search')
+            for proved in (pack(source, sourced), pack(source, dict(sourced, capacity_proof=True))):
+                self.assertEqual((proved['status'], proved['outcome'], proved['proof']['kind']),
+                                 ('packing_infeasible', 'defect', 'board_capacity_fragmented'))
 
     def test_planned_fixtures_are_unchanged_by_the_opt_in(self):
         import test_placer_crowded

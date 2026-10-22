@@ -10,7 +10,7 @@ request also exposes net-cluster seeds and BGA escape plans for inspection.
 `priority_refs`, `ground_nets`, and `obstacles`, plus optional
 `min_courtyard_edge_mm` (default `0.0`), envelope-bound `fixed_overhangs`,
 declared `groups` ([AGENTEE-212](#real-pod-residuals-agentee-212)) and the boolean
-`capacity_proof` (default `false`, [AGENTEE-249](#board-capacity-agentee-249)) and the boolean
+`capacity_proof` (default: applied after a failed search; `true` applies it before the search, `false` opts out; [AGENTEE-249](#board-capacity-agentee-249)) and the boolean
 `carry_seed_fixed_pairs` (default `false`, [AGENTEE-376](#seed-fixed-pairs-under-an-unsourced-gap-agentee-376)). Obstacles declare `side` and
 closed straight `polygons` in integer nanometres. Locked footprints are fixed
 even when absent from `fixed_refs`; interface-owned fixed references must be
@@ -55,8 +55,8 @@ placements. A board too small for its parts yields `packing_infeasible`,
 | `diameter` | a part's courtyard is longer than the outline's longest vertex-to-vertex span | `ref`, `board_diameter_squared_nm2`, `footprint_diameter_squared_nm2` |
 | `region_capacity` | a declared group region cannot hold the courtyards that must lie in it ([below](#region-capacity-proofs-agentee-212)) | `group`, `side`, `groups`, `references`, `region_board_area_nm2`, `blocked_area_nm2`, `blocked_by`, `available_area_nm2`, `required_courtyard_area_nm2` |
 | `region_capacity_gap` | the same, with every courtyard and the region grown by half the packing gap | `group`, `side`, `groups`, `references`, `gap_nm`, `grown_region_area_upper_nm2`, `blocked_area_nm2`, `blocked_by`, `available_area_nm2`, `required_grown_courtyard_area_nm2` |
-| `board_capacity_gap` | with `capacity_proof`: the movable courtyards on one side, grown by half the gap, exceed the board's free area ([below](#board-capacity-agentee-249)) | `side`, `gap_nm`, `blocked_by`, `square_nm` (0), `references`, `required_grown_courtyard_area_nm2`, `available_area_upper_nm2`, `ratio` |
-| `board_capacity_fragmented` | with `capacity_proof`: the parts at least `square_nm` thick exceed the free area such parts can reach | the same, `square_nm` > 0 |
+| `board_capacity_gap` | unless `capacity_proof: false`: the movable courtyards on one side, grown by half the gap, exceed the board's free area ([below](#board-capacity-agentee-249)) | `side`, `gap_nm`, `blocked_by`, `square_nm` (0), `references`, `required_grown_courtyard_area_nm2`, `available_area_upper_nm2`, `ratio` |
+| `board_capacity_fragmented` | unless `capacity_proof: false`: the parts at least `square_nm` thick exceed the free area such parts can reach | the same, `square_nm` > 0 |
 
 Values are exact `[numerator, denominator]` rationals in square nanometres.
 The width and diameter proofs hold for every rotation, not only quarter turns,
@@ -684,17 +684,37 @@ earlier proofs) do not carry it; the earlier proofs still name their
 
 A row that is exceeded becomes a `packing_infeasible` result
 (`board_capacity_gap` for the free-area row, `board_capacity_fragmented` for a
-square size) only when the policy sets `capacity_proof: true`. By default the
-result stays the search's unknown. With it enabled, a proof establishes a defect
-only when its binding limits permit that verdict: an unsourced gap remains unknown.
-Examples retained as search failures without the opt-in include the 4 mm board
-with a 1.5 mm margin (`test_placer.PlacerTest.test_edge_margin`), the 3 mm
-notch at a 1.5 mm gap
-(`test_placer.EnvelopeFixedTest.test_fixed_courtyard_is_a_polygon_not_its_bounding_box`)
-and two 1 mm circles in a 2.506 mm square at the 0.5 mm gap
-(`test_placer_residuals.CurvedCourtyardTest.test_circle_infeasibility_is_proved_only_on_the_inner_bound`).
-Making it the default is an owner decision. No placement constraint is relaxed
-either way. The bound is not tight: a feasible input never exceeds it, but an
+square size). A proof establishes a defect only when its binding limits permit
+that verdict: a proof that binds an unsourced gap or margin stays unknown and
+names it in `owner_confirmation`.
+
+When the policy omits `capacity_proof` (the default since the
+[2026-10-22 decision](decisions.md#placer-capacity-proof-by-default-agentee-249-2026-10-22)),
+the proof is legacy-first. The unchanged search, joint cluster and
+copper-aligned passes run first, and any plan they find is returned
+unchanged. Only when the final result is a search failure
+(`packing_search_exhausted`, `packing_budget_exhausted`,
+`locality_cluster_exhausted` or `judge_rejected`) and a row is exceeded does the
+proof replace it. That result keeps the search's `search` record, its
+`steps_used` and every other field, and records the replaced failure's
+`status`, `outcome` and `reason` as `search_failure`. Failures before the search
+(fixed conflicts, region proofs, unsupported geometry) are unchanged.
+`capacity_proof: true` applies the proof before the search, as before, with
+`steps_used` 0. `capacity_proof: false` opts out: an exceeded row is reported
+only in `capacity`, and the result stays the search's unknown.
+
+Former search failures that the default now proves include the 4 mm board
+with a 1.5 mm margin (`test_placer.PlacerTest.test_edge_margin`: unknown,
+binding the unsourced margin), the 3 mm notch at a 1.5 mm gap
+(`test_placer.EnvelopeFixedTest.test_fixed_courtyard_is_a_polygon_not_its_bounding_box`:
+unknown, binding the unsourced gap; a defect with an authored gap), two 1 mm
+circles in a 2.506 mm square at the 0.5 mm gap
+(`test_placer_residuals.CurvedCourtyardTest.test_circle_infeasibility_is_proved_only_on_the_inner_bound`:
+`board_capacity_gap`, unknown, binding the unsourced gap) and the 1.2 mm gap slot
+beside a carried fixed pair
+(`test_placer.SeedFixedPairsTest.test_fixed_fixed_pair_is_carried_and_movable_parts_keep_the_gap`:
+unknown, binding the unsourced gap). Each test also asserts the opted-out or
+replaced search failure. No placement constraint is relaxed either way. The bound is not tight: a feasible input never exceeds it, but an
 infeasible one may not either. Owned fixtures are in
 `tests/test_placer_capacity.py`. On a 20 × 12 mm board with a 12 × 9 mm fixed
 block, six 3.2 mm squares are placed. Seven are proved infeasible against the

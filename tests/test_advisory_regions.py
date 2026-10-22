@@ -31,7 +31,10 @@ class AdvisoryRegionTests(unittest.TestCase):
         board = capture([part('U1', 0, 0), part('C1', 3, 0)], outline=rectangle(0, 0, 6, 2))
         right = [rectangle(2, 0, 4, 2)]
         blocked = pack(board, request(gap_nm=0, obstacles=[{'side': 'F', 'polygons': right}]))
-        self.assertEqual((blocked['status'], blocked['outcome']), ('packing_search_exhausted', 'unknown'), blocked)
+        self.assertEqual(blocked['search_failure']['status'], 'packing_search_exhausted', blocked)
+        # AGENTEE-249 default: the proof binds the unsourced (soft) obstacle, so it stays unknown.
+        self.assertEqual((blocked['status'], blocked['outcome'], blocked['owner_confirmation']),
+                         ('packing_infeasible', 'unknown', ['obstacle 0']), blocked)
         plain = pack(board, request(gap_nm=0))
         self.assertEqual(plain['status'], 'planned')
         policy = request(gap_nm=0, advisory_regions=[region('right-half', side='F', polygons=right)])
