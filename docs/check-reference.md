@@ -2167,7 +2167,15 @@ replay it validates that retained witness, tool-free. Without that native
 evidence a would-be closure still refuses. At freeze and at replay the
 evidence seal reconstructs the verdict, whether or not the candidate captured
 placement lineage, so a no-lineage projection cannot seal a pass over
-structural containment or uncarried silk either. It reclassifies the check's own
+structural containment or uncarried silk either. Before grading, the seal
+replays the runtime admissibility of the native report (AGENTEE-407,
+`checks.drc_admissible` and `checks.drc_net_binding`): a later full `drc`
+declaration, the project's net constraint binding, the retained `console.log`
+showing that schematic parity ran, constraint provenance for every native
+violation including waived ones, and no sourced numeric limit explicitly
+ignored. Where the check could only be `unsupported` or `malformed`, a retained
+`ok` verdict is refused, even beside genuine containment output for the same
+board. It reclassifies the check's own
 `drc.json` against the captured immutable waiver input and derives the
 receipt-backed carry, recomputes the numeric provenance from the captured
 board inputs and reads the retained `containment/copper-containment.json` and
@@ -2183,7 +2191,10 @@ silk, and the earliest failing stage becomes routing. There the full DRC and
 the verification check refuse the carry.
 `test_projection_consumes_a_natively_closed_carry_and_seals` and
 `NoLineageProjectionSealTests` are the native regressions for the closed-carry
-and no-lineage seal paths.
+and no-lineage seal paths; its
+`test_forged_ok_over_runtime_unknown_evaluation_refuses` and
+`test_seal_replays_the_runtime_parity_skip_refusal` cover the replayed
+admissibility.
 
 ## Post-routing silk repair (AGENTEE-350)
 

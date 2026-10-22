@@ -387,6 +387,40 @@ def grade_drc(unwaived, sources, projection, carried, structural):
     return graded, advisories, failing
 
 
+def drc_net_binding(inputs, board):
+    """The saved project's literal net constraints bind to the captured board, or ValueError."""
+    project = (Path(inputs) / board).with_suffix('.kicad_pro')
+    if project.is_file():
+        from .net_binding import require_project_nets
+        try:
+            require_project_nets(json.loads(project.read_bytes()), (Path(inputs) / board).read_bytes())
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise ValueError(f"DRC net constraint binding: {exc}") from exc
+
+
+def drc_admissible(inputs, board, report, console):
+    """Runtime admissibility of one native DRC report, replayed by the projection seal (AGENTEE-407).
+
+    A ValueError means the check cannot grade the report (unknown, never pass).
+    Returns the captured constraint sources and every native violation classified.
+    """
+    for key in ("violations", "unconnected_items", "schematic_parity"):
+        if (not isinstance(report.get(key), list) or
+                any(not isinstance(v, dict) for v in report[key])):
+            raise ValueError(f"DRC report is missing {key}")
+    skip = PARITY_SKIP_RE.search(console)
+    if skip:
+        raise ValueError(f"schematic parity was not performed: {skip.group(0).strip()}")
+    from .design_rule_provenance import classify_finding, finding_sources, require_evaluated_limits
+    try:
+        sources = finding_sources(Path(inputs) / board, report["violations"])
+        classified = [classify_finding(dict(finding), sources) for finding in report["violations"]]
+    except (OSError, ValueError) as exc:
+        raise ValueError(f'DRC constraint provenance: {exc}') from exc
+    require_evaluated_limits(report, sources)
+    return sources, classified
+
+
 def check_drc(ctx):
     try:
         projection = drc_projection(ctx.params)
@@ -395,14 +429,10 @@ def check_drc(ctx):
     except ValueError as exc:
         raise CheckError("unsupported", str(exc)) from exc
     board = ctx.candidate_path(ctx.scope["board"])
-    project = (ctx.inputs / ctx.scope["board"]).with_suffix('.kicad_pro')
-    if project.is_file():
-        from .net_binding import require_project_nets
-        try:
-            require_project_nets(json.loads(project.read_bytes()),
-                                 (ctx.inputs / ctx.scope["board"]).read_bytes())
-        except (OSError, ValueError, TypeError, KeyError) as exc:
-            raise CheckError("unsupported", f"DRC net constraint binding: {exc}") from exc
+    try:
+        drc_net_binding(ctx.inputs, ctx.scope["board"])
+    except ValueError as exc:
+        raise CheckError("unsupported", str(exc)) from exc
     ctx.candidate_path(ctx.scope["schematic"])  # parity needs it alongside
     ctx.seed_kicad_config()
     ctx.execute(["kicad-cli", "pcb", "drc", "--format", "json", "--severity-all",
@@ -420,10 +450,6 @@ def check_drc(ctx):
         if (not isinstance(report.get(key), list) or
                 any(not isinstance(v, dict) for v in report[key])):
             raise CheckError("malformed", f"DRC report is missing {key}")
-    skip = PARITY_SKIP_RE.search(ctx.console())
-    if skip:
-        raise CheckError("malformed",
-                         f"schematic parity was not performed: {skip.group(0).strip()}")
     v, u, p = report["violations"], report["unconnected_items"], report["schematic_parity"]
     ctx.result["details"].update({
         "violations": len(v), "unconnected_items": len(u), "schematic_parity": len(p),
@@ -431,14 +457,9 @@ def check_drc(ctx):
         "by_type": count_by(v + u + p, "type"),
         "ignored_checks": [c.get("key") for c in report.get("ignored_checks", [])],
     })
-    from .design_rule_provenance import classify_finding, finding_sources, require_evaluated_limits
+    from .design_rule_provenance import classify_finding
     try:
-        sources = finding_sources(ctx.inputs / ctx.scope['board'], v)
-        classified = [classify_finding(dict(finding), sources) for finding in v]
-    except (OSError, ValueError) as exc:
-        raise CheckError('malformed', f'DRC constraint provenance: {exc}') from exc
-    try:
-        require_evaluated_limits(report, sources)
+        sources, classified = drc_admissible(ctx.inputs, ctx.scope['board'], report, ctx.console())
     except ValueError as exc:
         raise CheckError('malformed', str(exc)) from exc
     from .violation_waivers import classify
