@@ -659,7 +659,8 @@ class ContactAndSemanticsTests(unittest.TestCase):
         self.assertEqual(groups[5]['added_items'], [])  # a malformed witness is never written
 
     def test_witness_keys_follow_their_kind_and_empty_groups_refuse(self):
-        """agent-510 R3 and review-ee386b H3: kind/key consistency before materialization; no empty evidence."""
+        """agent-510 R3/R4 and review-ee386b/ee386c H3: kind/key consistency and kind type before
+        materialization; no empty evidence."""
         j3 = terminal(self.report, 'J3', '1')
         full = next(w for w in j3['witnesses'] if w['kind'] == 'direct' and len(w['path_nm']) == 2)
         exit_ = next(w for w in j3['witnesses'] if w['kind'] == 'exit')
@@ -677,7 +678,10 @@ class ContactAndSemanticsTests(unittest.TestCase):
         via_text['via']['position_nm'] = ['0', '0']
         stray = {**copy.deepcopy(exit_), 'note': 'x'}
         groups = [[full], [exit_], [via], [direct_via], [direct_full_via], [exit_target], [direct_direction],
-                  [via_short], [via_extra], [via_text], [stray], [], [full, direct_via], 'not a group', [None]]
+                  [via_short], [via_extra], [via_text], [stray], [], [full, direct_via], 'not a group', [None],
+                  # agent-510 R4 / review-ee386c H3: an unhashable kind raised TypeError from the key lookup.
+                  [{**copy.deepcopy(full), 'kind': []}], [{**copy.deepcopy(full), 'kind': {}}],
+                  [{**copy.deepcopy(exit_), 'kind': ['exit']}]]
         result = access.qualify(self.board, groups, self.dir / 'kinds')
         statuses = [g['status'] for g in result['groups']]
         self.assertEqual(statuses[:3], ['qualified'] * 3, result['groups'][:3])
@@ -700,14 +704,20 @@ class ContactAndSemanticsTests(unittest.TestCase):
                              [{'witness': None, 'problem': 'a witness group must list at least one witness'}])
         self.assertEqual(problems[14], 'a witness must be an object')
         self.assertEqual(result['groups'][12]['semantic_findings'][0]['witness'], 1)
+        self.assertEqual(problems[15:], ['unknown witness kind []', 'unknown witness kind {}',
+                                         "unknown witness kind ['exit']"])
 
     def test_routing_geometry_binds_to_the_native_placement_capture(self):
         import pcbnew
         self.assertEqual(access.BOXED_SHAPES, {pcbnew.PAD_SHAPE_CIRCLE, pcbnew.PAD_SHAPE_RECT, pcbnew.PAD_SHAPE_OVAL,
                                                pcbnew.PAD_SHAPE_ROUNDRECT})
+        self.assertEqual(access.SPECIFIED_SHAPES, {pcbnew.PAD_SHAPE_CIRCLE, pcbnew.PAD_SHAPE_RECT,
+                                                   pcbnew.PAD_SHAPE_OVAL})
+        self.assertEqual(access.CHAMFERED_SHAPE, pcbnew.PAD_SHAPE_CHAMFERED_RECT)
         self.assertEqual(access.CUSTOM_SHAPE, pcbnew.PAD_SHAPE_CUSTOM)
         capture = extract(self.board)
         self.assertEqual(access.bind_capture(self.geometry, capture), {})
+        self.assertEqual(access.bind_capture(self.geometry, capture, native=True), {})
         # A copper extent changed by more than the max-error rim refuses; within it, the bound still holds.
         forged = copy.deepcopy(self.geometry)
         pad = next(p for p in forged['pads'] if p['ref'] == 'J3')
@@ -716,15 +726,56 @@ class ContactAndSemanticsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'J3.1 .*outer copper extent differs'):
             access.bind_capture(forged, capture)
 
+    def test_squared_circular_inner_copper_refuses(self):
+        """review-ee386c H1: J1/J2 inner circles replaced by their 1 mm bounding squares (same extent)."""
+        capture = extract(self.board)
+        forged = copy.deepcopy(self.geometry)
+        for ref in ('J1', 'J2'):
+            pad = next(p for p in forged['pads'] if p['ref'] == ref)
+            (cx, cy), h = pad['position_nm'], 500_000
+            pad['copper']['F.Cu']['inner'] = [[[cx - h, cy - h], [cx + h, cy - h], [cx + h, cy + h], [cx - h, cy + h]]]
+        # The forged contours would join J1 and J2 and erase the obligation native KiCad reports.
+        merged = terminal(access.analyze_access(forged, None, POLICY), 'J1', '1')
+        self.assertEqual(sorted(p['ref'] for p in merged['pads']), ['J1', 'J2'])
+        self.assertEqual(merged['status'], 'not_required')
+        self.assertIn(('J1', 'J2'), self.native)
+        with self.assertRaisesRegex(ValueError, 'J1.1 .*inner copper contour differs from the captured land shape'):
+            access.bind_capture(forged, capture)
+        # Squaring the outer bound too (a superset) still refuses: the contour, not only the extent, is bound.
+        for ref in ('J1', 'J2'):
+            pad = next(p for p in forged['pads'] if p['ref'] == ref)
+            pad['copper']['F.Cu']['outer'] = copy.deepcopy(pad['copper']['F.Cu']['inner'])
+        with self.assertRaisesRegex(ValueError, 'J1.1 .*contour differs from the captured land shape'):
+            access.bind_capture(forged, capture)
+
 
 class NativeCaptureBindingTests(NativeFixture, unittest.TestCase):
     def test_rotated_mirrored_and_drilled_lands_bind_and_others_stay_unbound(self):
         capture = extract(self.board)
         unbound = access.bind_capture(self.geometry, capture)
         pads = {p['uuid']: p for p in self.geometry['pads']}
+        # Circles, rectangles and ovals (30 deg rotated, back-side mirrored, PTH, slotted) bind by contour.
+        # Rounded rectangles (radius not captured), the trapezoid and the custom land stay unbound.
+        rounded = [(f['ref'], str(i)) for f in SPEC['footprints'] for i, p in enumerate(f['pads'], 1)
+                   if p['shape'] == R]
+        self.assertEqual(len(rounded), 16)
         self.assertEqual(sorted((pads[u]['ref'], pads[u]['number'], r) for u, r in unbound.items()),
-                         [('J1', '3', 'land contour not bound by the placement capture'),
-                          ('X1', '1', 'land contour not bound by the placement capture')])
+                         sorted([(ref, n, 'land contour not bound by the placement capture') for ref, n in rounded]
+                                + [('J1', '3', 'land contour not bound by the placement capture'),
+                                   ('X1', '1', 'land contour not bound by the placement capture')]))
+        bound = {(pads[u]['ref'], pads[u]['number']) for u in pads if u not in unbound and pads[u]['copper']}
+        self.assertTrue({('U1', '9'), ('J1', '1'), ('J1', '2'), ('TP1', '1')} <= bound, bound)
+        self.assertEqual(access.bind_capture(self.geometry, capture, native=True), {})
+        # Without the native board an unbound land proves no contact and obstructs as its size box;
+        # the trapezoid and custom land have no captured box, so coverage is unknown.
+        _, analysed, coverage = access._bind(self.geometry, capture, False)
+        r1 = next(p for p in analysed['pads'] if p['ref'] == 'R1' and p['number'] == '1')
+        native_r1 = next(p for p in self.geometry['pads'] if p['uuid'] == r1['uuid'])
+        self.assertEqual(r1['copper']['F.Cu']['inner'], [])
+        box = r1['copper']['F.Cu']['outer'][0]
+        self.assertTrue(all(access.inside(tuple(q), [tuple(b) for b in box])
+                            for q in native_r1['copper']['F.Cu']['outer'][0]))
+        self.assertEqual(sorted(c.split(' ')[0] for c in coverage), ['J1.3', 'X1.1'])
         forged = copy.deepcopy(self.geometry)
         hole = next(p for p in forged['pads'] if p['ref'] == 'J1' and p['number'] == '2')['hole']
         hole['drill_nm'] = [hole['drill_nm'][0], hole['drill_nm'][0]]
@@ -830,12 +881,16 @@ class SidecarTests(unittest.TestCase):
         self.assertEqual(access.access_status(candidate), {'status': 'unknown', 'reason': 'no block-access sidecar'})
         geometry, capture = synthetic_geometry(self.fixture.board, candidate)
         sidecar = access.block_access(candidate, geometry, POLICY, capture=capture)
-        self.assertIn(access.access_status(candidate, sidecar)['status'], ('witnessed', 'partial', 'unknown'))
+        self.assertIn(access.access_status(candidate, sidecar, geometry=geometry, capture=capture)['status'],
+                      ('witnessed', 'partial', 'unknown'))
         self.assertEqual(blocks.admit(candidate, self.fixture.board, inventory, derived, policy), admitted)
         other = copy.deepcopy(candidate)
         other['search']['steps_used'] += 1
         with self.assertRaisesRegex(ValueError, 'another candidate'):
-            access.access_status(other, sidecar)
+            access.access_status(other, sidecar, geometry=geometry, capture=capture)
+        # A sidecar without the evidence it binds establishes nothing.
+        with self.assertRaisesRegex(ValueError, 'needs the routing geometry and placement capture'):
+            access.access_status(candidate, sidecar)
 
     def test_sidecar_refuses_a_board_that_does_not_hold_the_candidate_poses(self):
         candidate = self.pack()['candidate']
@@ -908,7 +963,32 @@ class SidecarTests(unittest.TestCase):
             (cx, cy), h = pad['position_nm'], 200_000
             star = [[cx - h, cy], [cx, cy - h], [cx + h, cy], [cx, cy + h]]
             pad['copper']['F.Cu'] = {'outer': [star], 'inner': [star]}
-        refuses('copper area differs', notch)
+        refuses('copper contour differs from the captured land shape', notch)
+
+        def small_notch(g, c):  # agent-510 R5: 80 um deep, 160 um tall notch, 8 % of the area, same extents
+            pad = next(p for p in g['pads'] if p['uuid'] == 'U1-1')
+            (cx, cy), h = pad['position_nm'], 200_000
+            notched = [[cx - h, cy - h], [cx + h, cy - h], [cx + h, cy - 80_000], [cx + h - 80_000, cy - 80_000],
+                       [cx + h - 80_000, cy + 80_000], [cx + h, cy + 80_000], [cx + h, cy + h], [cx - h, cy + h]]
+            area = abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(notched, notched[1:] + notched[:1]))) / 2
+            self.assertAlmostEqual(1 - area / (4 * h * h), 0.08)
+            pad['copper']['F.Cu'] = {'outer': [notched], 'inner': [notched]}
+        refuses('U1.1 .*outer copper contour differs from the captured land shape', small_notch)
+
+        def outer_notch(g, c):  # the obstacle alone shrinks; the inner bound is unchanged
+            small_notch(g, c)
+            pad = next(p for p in g['pads'] if p['uuid'] == 'U1-1')
+            (cx, cy), h = pad['position_nm'], 200_000
+            pad['copper']['F.Cu']['inner'] = [[[cx - h, cy - h], [cx + h, cy - h], [cx + h, cy + h], [cx - h, cy + h]]]
+        refuses('U1.1 .*outer copper contour differs from the captured land shape', outer_notch)
+
+        def cut_corners(g, c):  # review-ee386c H1: 100 um corner triangles cut from a 400 um rectangle
+            for pad in g['pads']:
+                (cx, cy), h, k = pad['position_nm'], 200_000, 100_000
+                cut = [[cx - h + k, cy - h], [cx + h - k, cy - h], [cx + h, cy - h + k], [cx + h, cy + h - k],
+                       [cx + h - k, cy + h], [cx - h + k, cy + h], [cx - h, cy + h - k], [cx - h, cy - h + k]]
+                pad['copper']['F.Cu'] = {'outer': [cut], 'inner': [cut]}
+        refuses('outer copper contour differs from the captured land shape', cut_corners)
 
         def other_board(g, c):
             c['board_sha256'] = 'b' * 64
@@ -922,6 +1002,10 @@ class SidecarTests(unittest.TestCase):
             fp = next(f for f in g['footprints'] if f['ref'] == 'U1')
             fp['position_nm'] = [fp['position_nm'][0] + 1, fp['position_nm'][1]]
         refuses('footprints differ', moved_fp)
+
+        def max_error(g, c):  # a widened max-error rim would loosen every contour tolerance
+            g['max_error_nm'] = 50_000
+        refuses('max error differs', max_error)
         with self.assertRaises(TypeError):
             access.block_access(candidate, geometry, POLICY)  # the capture is required
 
@@ -937,13 +1021,30 @@ class SidecarTests(unittest.TestCase):
         record = next(t for t in sidecar['terminals'] if any(p['uuid'] == pad['uuid'] for p in t['pads']))
         self.assertEqual(record['status'], 'unknown')
         self.assertEqual(record['reason'], 'unsupported_geometry')
-        access.validate_sidecar(candidate, sidecar)
+        access.validate_sidecar(candidate, sidecar, geometry=geometry, capture=capture)
+
+    def test_stripped_copper_keeps_its_obligation_unknown(self):
+        """review-ee386c H2: copper removed from the routing geometry cannot drop a member obligation."""
+        candidate, geometry, capture = self.bound()
+        pad = next(p for p in geometry['pads'] if p['uuid'] == 'U1-1')
+        pad['copper'], pad['own_clearance_nm'] = {}, {}
+        sidecar = access.block_access(candidate, geometry, POLICY, capture=capture)
+        self.assertEqual(sidecar['unbound_pads'], [{'uuid': 'U1-1',
+                                                    'reason': 'copper layers differ from the placement capture'}])
+        record = next(t for t in sidecar['terminals'] if any(p['uuid'] == 'U1-1' for p in t['pads']))
+        self.assertEqual(record['status'], 'unknown')
+        evidence = next(p for e in sidecar['member_evidence'] for p in e['pads'] if p['uuid'] == 'U1-1')
+        self.assertTrue(evidence['copper'])
 
     def test_status_is_derived_from_validated_evidence(self):
         """review-ee386b H2: summaries are recounted; invented, partial or inconsistent sidecars refuse."""
         candidate, geometry, capture = self.bound()
         sidecar = access.block_access(candidate, geometry, POLICY, capture=capture)
-        status = access.access_status(candidate, sidecar)
+        evidence = {'geometry': geometry, 'capture': capture}
+        status = access.access_status(candidate, sidecar, **evidence)
+        self.assertEqual(sidecar['contour_authority'], 'placement capture')
+        # A sidecar written and read back as JSON (the CLI form) still re-derives exactly.
+        self.assertEqual(access.access_status(candidate, json.loads(json.dumps(sidecar)), **evidence), status)
         counts = Counter(t['status'] for t in sidecar['terminals'])
         self.assertEqual(status['summary'], {k: counts.get(k, 0) for k in ('witness', 'unknown', 'not_required')})
         self.assertIn(status['status'], ('witnessed', 'partial'))
@@ -953,7 +1054,7 @@ class SidecarTests(unittest.TestCase):
             forged = copy.deepcopy(sidecar)
             edit(forged)
             with self.assertRaisesRegex(ValueError, pattern):
-                access.access_status(candidate, forged)
+                access.access_status(candidate, forged, **evidence)
         refuses('needs exactly', lambda f: [f.pop(k) for k in list(f) if k not in
                                             ('schema', 'candidate_sha256', 'summary')])
         refuses('needs exactly', lambda f: f.pop('terminals'))
@@ -1004,6 +1105,65 @@ class SidecarTests(unittest.TestCase):
         refuses('member pad nets differ from candidate pins', other_pins)
         refuses('limits must state', lambda f: f['limits'].pop('grid_nm'))
         refuses('another candidate', lambda f: f.update(candidate_sha256='0' * 64))
+
+        # review-ee386c H2: records that stay self-consistent cannot change what the evidence obliges.
+        def recount(f):
+            counts = Counter(t['status'] for t in f['terminals'])
+            f['summary'] = {k: counts.get(k, 0) for k in access.STATUSES}
+
+        def suppress_copper(f):  # nine member copper flags cleared, their terminals deleted, one witness kept
+            keep = witnessed['pads'][0]['uuid']
+            gone = {p['uuid'] for e in f['member_evidence'] for p in e['pads'] if p['copper'] and p['uuid'] != keep}
+            self.assertGreaterEqual(len(gone), 9)
+            for record in f['member_evidence']:
+                for pad in record['pads']:
+                    pad['copper'] = pad['copper'] and pad['uuid'] not in gone
+            f['terminals'] = [t for t in f['terminals'] if not {p['uuid'] for p in t['pads']} & gone]
+            recount(f)
+            self.assertEqual(access._validate_structure(candidate, f)['witness'], 1)  # the old boundary accepted it
+        refuses('differs from the evidence it binds', suppress_copper)
+
+        def invented_exemption(f):  # a witnessed terminal turned into an unproven not_required exemption
+            record = next(t for t in f['terminals'] if t['id'] == witnessed['id'])
+            for key in ('witnesses', 'attempted', 'truncated', 'blockers', 'source_pad'):
+                record.pop(key, None)
+            record.update(status='not_required', reason='no other terminal on the net')
+            recount(f)
+            access._validate_structure(candidate, f)
+        refuses('differs from the evidence it binds', invented_exemption)
+
+        def forged_geometry(f):  # evidence other than the one the sidecar binds
+            evidence['geometry'] = {**geometry, 'pcbnew_version': 'other'}
+        try:
+            refuses('bound to another routing geometry', forged_geometry)
+        finally:
+            evidence['geometry'] = geometry
+        native = copy.deepcopy(sidecar)
+        native['contour_authority'] = 'native board'
+        with self.assertRaisesRegex(ValueError, 'needs its saved board'):
+            access.access_status(candidate, native, **evidence)
+
+    def test_deleting_an_unknown_obligation_refuses(self):
+        """review-ee386c H2: a real layer-mismatch unknown cannot be deleted to promote partial to witnessed."""
+        candidate, geometry, capture = self.bound()
+        pad = next(p for p in geometry['pads'] if p['uuid'] == 'U1-1')
+        square = pad['copper']['F.Cu']['outer'][0]
+        pad['copper']['B.Cu'] = {'outer': [square], 'inner': [square]}
+        pad['own_clearance_nm']['B.Cu'] = 200_000
+        sidecar = access.block_access(candidate, geometry, POLICY, capture=capture)
+        status = access.access_status(candidate, sidecar, geometry=geometry, capture=capture)
+        self.assertEqual(status['status'], 'partial')
+        forged = copy.deepcopy(sidecar)
+        for record in forged['member_evidence']:
+            for land in record['pads']:
+                if land['uuid'] == 'U1-1':
+                    land['copper'] = False
+        forged['terminals'] = [t for t in forged['terminals'] if not any(p['uuid'] == 'U1-1' for p in t['pads'])]
+        counts = Counter(t['status'] for t in forged['terminals'])
+        forged['summary'] = {k: counts.get(k, 0) for k in access.STATUSES}
+        self.assertEqual(access._validate_structure(candidate, forged)['unknown'], 0)  # the old boundary: witnessed
+        with self.assertRaisesRegex(ValueError, 'differs from the evidence it binds'):
+            access.access_status(candidate, forged, geometry=geometry, capture=capture)
 
 
 # The captured pod (iteration-7 candidate board, as in tests/test_physical_intent.py): read from the
@@ -1072,11 +1232,35 @@ class PodReplayTests(unittest.TestCase):
     def test_actual_candidate_sidecar_binds_and_witnesses_qualify(self):
         candidate = json.loads(self.candidate_raw)
         capture = extract(self.board)
-        sidecar = access.block_access(candidate, self.geometry, POLICY, capture=capture)
+        sidecar = access.block_access(candidate, self.geometry, POLICY, capture=capture, board=self.board)
         self.assertEqual(sidecar['candidate_sha256'], blocks.digest(candidate))
+        self.assertEqual(sidecar['contour_authority'], 'native board')
+        self.assertEqual(sidecar['unbound_pads'], [])
         self.assertIn('U23', sidecar['pad_geometry_sha256'])
         self.assertEqual(sidecar['coverage']['status'], 'modelled')
-        self.assertIn(access.access_status(candidate, sidecar)['status'], ('witnessed', 'partial'))
+        evidence = {'geometry': self.geometry, 'capture': capture, 'board': self.board}
+        self.assertIn(access.access_status(candidate, sidecar, **evidence)['status'], ('witnessed', 'partial'))
+        # The native board is the contour authority: a capture the board does not reproduce refuses.
+        notched = copy.deepcopy(self.geometry)
+        u23 = next(p for p in notched['pads'] if p['ref'] == 'U23' and p['number'] == '7')
+        layer = sorted(u23['copper'])[0]
+        u23['copper'][layer]['outer'][0] = u23['copper'][layer]['outer'][0][:-1]
+        with self.assertRaisesRegex(ValueError, 'routing geometry differs from the native capture'):
+            access.block_access(candidate, notched, POLICY, capture=capture, board=self.board)
+        with self.assertRaisesRegex(ValueError, 'needs its saved board'):
+            access.access_status(candidate, sidecar, geometry=self.geometry, capture=capture)
+        # Without the board, contours the placement capture does not specify are never witnessed.
+        shapes = {p['uuid']: p['shape'] for p in self.geometry['pads']}
+        plain = access.block_access(candidate, self.geometry, POLICY, capture=capture)
+        self.assertEqual(plain['contour_authority'], 'placement capture')
+        unbound = {u['uuid'] for u in plain['unbound_pads']}
+        self.assertTrue(unbound)
+        self.assertTrue(all(shapes[u] not in access.SPECIFIED_SHAPES for u in unbound))
+        for record in plain['terminals']:
+            if record['status'] == 'witness':
+                self.assertFalse({p['uuid'] for p in record['pads']} & unbound, record['id'])
+                self.assertFalse({w.get('target') for w in record['witnesses']}
+                                 & {t['id'] for t in plain['terminals'] if {p['uuid'] for p in t['pads']} & unbound})
         # review-ee386b H1 on the actual pod: removed or renetted U23 lands refuse, never witness.
         stripped = {**self.geometry, 'pads': [p for p in self.geometry['pads'] if p['ref'] != 'U23']}
         with self.assertRaisesRegex(ValueError, 'pads differ from the placement capture'):

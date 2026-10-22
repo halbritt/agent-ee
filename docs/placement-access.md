@@ -133,7 +133,9 @@ its own isolated copy of the board:
    - A `via` witness ends at a through via that meets the via rule minima and
      reaches another copper layer.
 
-   Before these checks, each witness record must match its kind exactly:
+   Before these checks, `kind` must be one of the three names (a list or
+   object kind is refused, not raised), and each witness record must match its
+   kind exactly:
    `target` only on `direct`, `via` only on `via`, `direction` never on
    `direct`, no unknown key, and a `via` record with exactly `diameter_nm`,
    `drill_nm`, an integer `position_nm`, `layers` and `reaches`. An empty group
@@ -162,7 +164,7 @@ establish simultaneous routability.
 
 ## Block sidecar: `agent-ee.block-access/1`
 
-`placement_access.block_access(candidate, geometry, routing_policy, capture=capture)`
+`placement_access.block_access(candidate, geometry, routing_policy, capture=capture, board=None)`
 writes the optional sidecar for an `agent-ee.block-candidate/2` placed on a
 complete board. `capture` is the `agent-ee.placement-probe/1` capture
 (`placement_probe` without `--routing-geometry`) of the same saved board. It
@@ -170,16 +172,37 @@ runs in diagnostic mode only:
 
 - **Reads, never writes.** It reads the strict candidate/2 and binds its
   canonical digest. It adds no field to that schema.
+- **Contour authority.** With `board` (the saved board file), the board's
+  SHA-256 must be the captures' and both captures must equal fresh native
+  captures of it (`routing_geometry`, `extract`). Every native contour, drill
+  and rule is then authoritative, and `contour_authority` is `native board`.
+  Without it, `contour_authority` is `placement capture` and only what the
+  placement capture specifies is bound, as below.
 - **Capture binding** (`bind_capture`). The two captures must name the same
-  board SHA-256, the same footprints at the same poses and the same pads by
-  UUID, with equal number, net, position, orientation, shape, attribute and
-  drill. Circle, rectangle, oval and rounded-rectangle copper must match the
-  captured land: its size, offset and orientation, within the max-error rim,
-  and its area. Drill contours must match the captured drill size. Any
-  difference refuses. Trapezoid, chamfered and custom lands, and copper-layer
-  sets that differ, cannot be bound. Those pads are listed in `unbound_pads`
-  and analysed as unsupported, so their terminals stay unknown. A direct
-  witness into such a pad is dropped.
+  board SHA-256 and max error, the same footprints at the same poses and the
+  same pads by UUID, with equal number, net, position, orientation, shape,
+  attribute and drill. Any difference refuses.
+  - Circle, rectangle and oval lands are fully specified by the capture's size,
+    copper offset and orientation, so their contours are bound shape by
+    shape. On each copper layer the inner bound must lie inside the land and
+    contain it shrunk by the max error. The outer bound must contain the land
+    and lie inside it grown by the max error. Both hold within 2 nm of
+    rounding. A notch (even 8 % of the area at unchanged extents), cut corners
+    or a squared circle refuses. Drill contours are bound the same way to the
+    captured drill.
+  - The capture does not record a rounded rectangle's radius or a chamfer, and
+    has no box for a trapezoid or custom land. Those pads, and pads whose
+    copper-layer set differs from the land's, are listed in `unbound_pads`.
+    They are analysed as unsupported, so their terminals stay unknown. They
+    prove no contact (no inner copper), so they never join a component. A
+    direct witness into such a pad is dropped. As obstacles, they use their
+    conservative size box grown by the max error on every layer where their
+    copper is not bound, including a copper layer the routing geometry left
+    out. Copper with no captured box (trapezoid, custom) makes coverage
+    unknown. Removing a pad's copper from the routing geometry therefore never
+    drops its obligation.
+  - An NPTH carries copper only when its land exceeds its drill.
+  - A drill without a native contour obstructs as its drill box.
 - **Member evidence.** Each member's land-pattern and courtyard hashes are
   recomputed from the capture (`blocks.pad_geometry_sha256`,
   `blocks.courtyard_sha256`) and must equal the candidate's. Its footprint,
@@ -195,22 +218,32 @@ runs in diagnostic mode only:
 - **Recheck.** A witness that uses space outside the block must be rechecked
   after arrangement.
 
-`access_status(candidate, sidecar=None)` reports `unknown` when there is no
-sidecar. With a sidecar, it derives the status from the evidence itself
-(`validate_sidecar`), never from the supplied counts. Validation checks the
-following, and any omission or inconsistency raises:
+`access_status(candidate, sidecar=None, *, geometry, capture, board=None)`
+reports `unknown` when there is no sidecar. A sidecar without the routing
+geometry and placement capture it binds refuses. With them, the status comes
+from `validate_sidecar`, never from the supplied counts or terminal list.
+Validation has two steps, and any omission or inconsistency raises:
 
-- The exact field set and the candidate binding: digest, block, status, frame
-  and member hashes.
-- Member evidence against the candidate pins.
-- Policy, limits and search model.
-- Coverage: `unknown` exactly when it has reasons, and then no witness
-  terminal.
-- Terminals: they must cover exactly the member copper pads with their nets.
-  A witness terminal needs witnesses whose forms are valid and whose source,
-  net, layer, width and via match its terminal and policy.
-- The summary: it is recounted from the terminals and must equal the supplied
-  one.
+1. Structure:
+   - The exact field set and the candidate binding: digest, block, status,
+     frame and member hashes.
+   - Member evidence against the candidate pins.
+   - Policy, limits and search model.
+   - Coverage: `unknown` exactly when it has reasons, and then no witness
+     terminal.
+   - Terminals: they must cover exactly the member copper pads with their
+     nets. A witness terminal needs witnesses whose forms are valid and whose
+     source, net, layer, width and via match its terminal and policy.
+   - The summary: it is recounted from the terminals and must equal the
+     supplied one.
+2. Re-derivation. The sidecar's records are editable, so they cannot establish
+   their own obligations. The sidecar is re-derived from the geometry and
+   capture it binds, using its policy and limits, and must equal it exactly.
+   The digests must match first. A `native board` sidecar also needs its
+   board. Pad identity, copper participation, the terminal partition,
+   `not_required` exemptions and witnesses therefore come from the bound
+   evidence. Clearing copper flags and deleting terminals refuses. So does
+   deleting a real unknown, or inventing an exemption, even with a recount.
 
 Admission (`blocks.admit`) is unchanged: it does not read the sidecar.
 With the feature off, candidate identity, bytes and member order are exactly the
@@ -218,7 +251,8 @@ legacy ones.
 
 ```sh
 PYTHONPATH=src python3 -m agent_ee.placement_access block --candidate block.candidate.json \
-    --geometry geometry.json --capture capture.json --policy policy.json --out block-access.json
+    --geometry geometry.json --capture capture.json --board board.kicad_pcb --policy policy.json \
+    --out block-access.json
 ```
 
 ## Tests
@@ -245,16 +279,29 @@ PYTHONPATH=src python3 -m agent_ee.placement_access block --candidate block.cand
   with `via: {}` (formerly a `KeyError`), with a full via, or with a direction;
   an exit with a target; and a via record that is incomplete, extended or
   textual. Empty groups are refused too.
-- Capture binding. The authored board's rotated, mirrored and drilled lands bind
-  to its native placement capture. Only the trapezoid and the custom land stay
-  unbound. A changed copper extent, drill or custom-land support refuses.
+- Capture binding. The authored board's rotated, mirrored and drilled circle,
+  rectangle and oval lands bind to its native placement capture by contour. The
+  rounded rectangles, the trapezoid and the custom land stay unbound; the
+  rounded ones obstruct as their size box, and the other two make coverage
+  unknown. A changed copper extent, drill or custom-land support refuses. So
+  do these contour forgeries: J1/J2 inner circles squared to their bounding
+  boxes, which would join them and erase the 8.63 µm native gap; an 8 % notch
+  at unchanged extents; and cut corners.
 - Sidecar evidence. Removed, renetted or re-identified member pads, changed
-  copper, another board or a missing capture all refuse. This includes U23 on
-  the pod candidate. Summary-only sidecars, missing fields, unknown coverage
-  with witnesses, dropped terminals, promoted unknowns and inconsistent counts
-  refuse too.
+  copper, a changed max error, another board or a missing capture all refuse.
+  This includes U23 on the pod candidate. Summary-only sidecars, missing
+  fields, unknown coverage with witnesses, dropped terminals, promoted unknowns
+  and inconsistent counts refuse too. Self-consistent forgeries refuse on
+  re-derivation: suppressed copper flags, a deleted real unknown and an
+  invented exemption. Copper stripped from the routing geometry stays an
+  unknown obligation.
+- Witness kinds. A list or object `kind` is refused before materialization. It
+  formerly raised `TypeError`.
 - The exact U23/C87 replay from the pinned fome-mc store. It includes the actual
-  sensor-power-front candidate sidecar, and those witnesses also pass native DRC.
+  sensor-power-front candidate sidecar under native board authority, and those
+  witnesses also pass native DRC. A routing geometry that the board does not
+  reproduce refuses. Under placement-capture authority alone, no witness uses
+  an unbound land.
 
 Native tests require the toolchain and may not skip under
 `AGENT_EE_REQUIRE_TOOLCHAIN=1`.

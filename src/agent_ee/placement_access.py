@@ -26,13 +26,16 @@ Native KiCad remains the authority: ``qualify`` materializes witnesses on an
 isolated copy with unchanged rules, refills and runs kicad-cli DRC in the
 existing sandbox. The ``agent-ee.block-access/1`` sidecar binds the strict
 candidate/2 digest and, through the placement capture of the same board, every
-member's land pattern, courtyard, pads and nets; it is written only in
+member's land pattern, courtyard, pads and nets. Copper contours are bound
+shape-specifically to the placement capture, or exactly to fresh native
+captures of the saved board (``contour_authority``). It is written only in
 diagnostic mode and never changes a candidate, its order or its admission. Its
-status is recounted from validated terminal evidence. See
-docs/placement-access.md.
+status is derived from terminal evidence re-derived from the captures it binds.
+See docs/placement-access.md.
 """
 import argparse
 from collections import Counter
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -802,52 +805,133 @@ def analyze_access(geometry, poses, routing_policy, limits=None, refs=None):
 
 # ------------------------------------------------------------------ binding
 
-# pcbnew PAD_SHAPE values whose copper box is the size box about ShapePos (circle, rect, oval,
-# roundrect); tests pin them against pcbnew. Trapezoid, chamfered and custom lands are not
-# recorded in the placement capture with enough detail to bind their contours.
+# pcbnew PAD_SHAPE values. A circle, rectangle or oval is fully specified by the placement capture
+# (size, copper centroid offset, orientation), so its contour is bound shape-specifically. A rounded
+# or chamfered rectangle lies inside its size box but its radius or chamfer is not captured; a
+# trapezoid or custom land has no captured box. Tests pin the values against pcbnew.
+SPECIFIED_SHAPES = frozenset((0, 1, 2))
 BOXED_SHAPES = frozenset((0, 1, 2, 4))
+CHAMFERED_SHAPE = 5
 CUSTOM_SHAPE = 6
 # Integer rounding of captured vertices and of the float frame rotation, nm.
 ROUNDING_NM = 2
 
 
-def _area(polygon):
-    return abs(sum(a[0]*b[1] - b[0]*a[1] for a, b in _edges(polygon))) / 2
-
-
-def _local_extent(polygon, centre, rotation):
-    """Half extents of a polygon in a pad frame: board points turned by the pad orientation about ``centre``."""
-    angle = math.radians(rotation)
-    cos, sin = math.cos(angle), math.sin(angle)
-    points = [((q[0]-centre[0])*cos - (q[1]-centre[1])*sin, (q[0]-centre[0])*sin + (q[1]-centre[1])*cos)
-              for q in polygon]
-    return max(abs(x) for x, _ in points), max(abs(y) for _, y in points)
-
-
-def _land_problems(pad, land, error):
-    """Contour problems of a boxed land against its captured size, offset and orientation, per copper layer."""
+def _land_frame(land):
+    """Copper centre and pad orientation of a captured land: (centre, to_local, to_board)."""
     offset = [v[0] / v[1] for v in land['copper_centroid_offset_nm']]
     centre = (land['position_nm'][0] + offset[0], land['position_nm'][1] + offset[1])
+    angle = math.radians(land['rotation_deg'])
+    cos, sin = math.cos(angle), math.sin(angle)
+
+    def to_local(q):
+        x, y = q[0] - centre[0], q[1] - centre[1]
+        return (x*cos - y*sin, x*sin + y*cos)
+
+    def to_board(q):
+        return (centre[0] + q[0]*cos + q[1]*sin, centre[1] - q[0]*sin + q[1]*cos)
+    return centre, to_local, to_board
+
+
+def _land_shape(land):
+    """The captured land in its local frame: ('rect', hw, hh) or ('capsule', a, b, radius)."""
     w, h = land['size_nm']
-    half, t = (w / 2, h / 2), ROUNDING_NM
-    perimeter = 2 * (w + h)
-    # The smallest boxed land of this size is the stadium (oval or circle); the largest is the rectangle.
-    least = w * h - (4 - math.pi) * (min(w, h) / 2) ** 2
+    if land['shape'] == 1:
+        return ('rect', w / 2, h / 2)
+    if land['shape'] == 0 or w == h:
+        return ('capsule', (0.0, 0.0), (0.0, 0.0), min(w, h) / 2)
+    core = (abs(w - h) / 2, 0.0) if w > h else (0.0, abs(w - h) / 2)
+    return ('capsule', (-core[0], -core[1]), core, min(w, h) / 2)
+
+
+def _within(point, shape, grow):
+    """Point inside the shape grown by ``grow`` (a rectangle grows to its box)."""
+    if shape[0] == 'rect':
+        return abs(point[0]) <= shape[1] + grow and abs(point[1]) <= shape[2] + grow
+    return _point_segment(point, shape[1], shape[2]) <= shape[3] + grow
+
+
+def _encloses(polygon, shape, shrink):
+    """The shape shrunk by ``shrink`` lies inside ``polygon``: its centre is inside and no edge enters it.
+
+    Every supported land is convex and connected, so a contour boundary that
+    does not meet the shrunk land, around a point of it, encloses it.
+    """
+    if not inside((0.0, 0.0), polygon):
+        return False
+    if shape[0] == 'rect':
+        hw, hh = shape[1] - shrink, shape[2] - shrink
+        if hw <= 0 or hh <= 0:
+            return True
+        core = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+        return all(shape_distance(a, b, ('poly', core)) > 0 for a, b in _edges(polygon))
+    radius = shape[3] - shrink
+    return radius <= 0 or all(segment_distance(a, b, shape[1], shape[2]) >= radius for a, b in _edges(polygon))
+
+
+def _land_problems(pad, land, error, layers):
+    """Contour problems of a fully specified land against its captured size, offset and orientation.
+
+    On each layer the native inner bound (ERROR_INSIDE) must lie inside the
+    captured land and contain it shrunk by the max error, and the outer bound
+    (ERROR_OUTSIDE) must contain the land and lie inside it grown by the max
+    error, each within the integer rounding. This proves the contour, not only
+    its extents or area: a notch, a cut corner or a squared circle refuses.
+    """
+    _, to_local, _ = _land_frame(land)
+    shape, t = _land_shape(land), ROUNDING_NM
+    half = (land['size_nm'][0] / 2, land['size_nm'][1] / 2)
     problems = []
-    for layer, bounds in sorted(pad['copper'].items()):
+    for layer in layers:
+        bounds = pad['copper'][layer]
         if len(bounds['outer']) != 1 or len(bounds['inner']) != 1:
             problems.append(f'{layer}: a boxed land has exactly one copper contour per bound')
             continue
-        outer, inner = bounds['outer'][0], bounds['inner'][0]
-        ox, oy = _local_extent(outer, centre, land['rotation_deg'])
-        ix, iy = _local_extent(inner, centre, land['rotation_deg'])
+        outer = [to_local(q) for q in bounds['outer'][0]]
+        inner = [to_local(q) for q in bounds['inner'][0]]
+        if len(outer) < 3 or len(inner) < 3:
+            problems.append(f'{layer}: a copper contour needs at least three vertices')
+            continue
+        ox, oy = max(abs(q[0]) for q in outer), max(abs(q[1]) for q in outer)
+        ix, iy = max(abs(q[0]) for q in inner), max(abs(q[1]) for q in inner)
         if not all(s - t <= o <= s + error + t for o, s in ((ox, half[0]), (oy, half[1]))):
             problems.append(f'{layer}: outer copper extent differs from the captured land size')
         if not all(s - error - t <= i <= s + t for i, s in ((ix, half[0]), (iy, half[1]))):
             problems.append(f'{layer}: inner copper extent differs from the captured land size')
-        if _area(outer) < least - t * perimeter or _area(inner) > w * h + t * perimeter:
-            problems.append(f'{layer}: copper area differs from the captured land size')
+        if not _encloses(outer, shape, t) or not all(_within(q, shape, error + t) for q in outer):
+            problems.append(f'{layer}: outer copper contour differs from the captured land shape')
+        if not all(_within(q, shape, t) for q in inner) or not _encloses(inner, shape, error + t):
+            problems.append(f'{layer}: inner copper contour differs from the captured land shape')
     return problems
+
+
+def _land_box(land, error):
+    """A board-frame polygon that contains the land's copper, or None when the capture has no box for it.
+
+    A rounded or chamfered rectangle lies inside its size box about the land
+    (``ShapePos``) centre; when only the area centroid of a chamfered land is
+    captured, the box is doubled about it. Grown by the max error and rounding.
+    """
+    if land['shape'] not in BOXED_SHAPES | {CHAMFERED_SHAPE}:
+        return None
+    w, h = land['size_nm']
+    if 'copper_land_offset_nm' in land:
+        offset = land['copper_land_offset_nm']
+        land = {**land, 'copper_centroid_offset_nm': [[offset[0], 1], [offset[1], 1]]}
+    elif 'copper_centroid_offset_nm' not in land:
+        return None
+    elif land['shape'] == CHAMFERED_SHAPE:
+        w, h = 2 * w, 2 * h
+    _, _, to_board = _land_frame(land)
+    hw, hh = w / 2 + error + ROUNDING_NM, h / 2 + error + ROUNDING_NM
+    return [[int(round(x)), int(round(y))] for x, y in
+            (to_board(q) for q in ((-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)))]
+
+
+def _drill(land):
+    """The captured drill as a land of its own (an oval slot or a circle about the pad position)."""
+    return {'shape': 2, 'size_nm': land['drill_size_nm'], 'position_nm': land['position_nm'],
+            'rotation_deg': land['rotation_deg'], 'copper_centroid_offset_nm': [[0, 1], [0, 1]]}
 
 
 def _hole_problems(pad, land, error):
@@ -860,33 +944,61 @@ def _hole_problems(pad, land, error):
     drill = land['drill_size_nm']
     if hole['drill_nm'] != drill or hole['plated'] != (land['attribute'] == 'PTH'):
         return ['drill size or plating differs from the placement capture']
-    if 'native drill contour unavailable' in pad.get('reasons', []):
-        return []
+    if not hole['outer']:
+        return []  # no native contour: obstructs as its conservative drill box (_bound_geometry)
     if len(hole['outer']) != 1:
         return ['a drill has exactly one contour']
-    x, y = _local_extent(hole['outer'][0], land['position_nm'], land['rotation_deg'])
-    t = ROUNDING_NM
+    _, to_local, _ = _land_frame(_drill(land))
+    contour, shape, t = [to_local(q) for q in hole['outer'][0]], _land_shape(_drill(land)), ROUNDING_NM
+    x, y = max(abs(q[0]) for q in contour), max(abs(q[1]) for q in contour)
     if not all(d / 2 - t <= e <= d / 2 + error + t for e, d in ((x, drill[0]), (y, drill[1]))):
         return ['drill contour differs from the captured drill size']
+    if not _encloses(contour, shape, t) or not all(_within(q, shape, error + t) for q in contour):
+        return ['drill contour differs from the captured drill shape']
     return []
 
 
-def bind_capture(geometry, capture):
+def _copper_layers(land, layers):
+    """Copper layers the capture gives a land: its copper layers; an NPTH only when the land exceeds its drill."""
+    copper = sorted(l for l in land['layers'] if l in layers)
+    if land['attribute'] == 'NPTH' and not any(s > d for s, d in zip(land['size_nm'], land['drill_size_nm'])):
+        return []
+    return copper
+
+
+def bind_capture(geometry, capture, *, native=False):
+    """``{pad uuid: reason}`` of copper the placement capture cannot bind; raises on contradicting evidence."""
+    return _bind(geometry, capture, native)[0]
+
+
+def _bind(geometry, capture, native):
     try:
-        return _bind_capture(geometry, capture)
+        return _bind_capture(geometry, capture, native)
     except (KeyError, TypeError, IndexError, AttributeError, ZeroDivisionError) as exc:
         raise ValueError(f'malformed routing geometry or placement capture: {type(exc).__name__}: {exc}') from None
 
 
-def _bind_capture(geometry, capture):
+def _bind_capture(geometry, capture, native):
     """Bind a routing geometry to the ``agent-ee.placement-probe/1`` capture of the same saved board.
 
     Raises ``ValueError`` when footprints, pads, their UUIDs, numbers, nets,
-    poses, shapes, attributes, drills or boxed copper contours differ from the
-    capture (missing, stale or changed evidence). Returns ``{pad uuid:
-    reason}`` for copper the capture cannot bind (non-boxed lands, layer sets
-    that differ): those pads are analysed as unsupported, so their terminals
-    stay unknown.
+    poses, shapes, attributes, drills, the max error or the contours of fully
+    specified lands (circle, rectangle, oval: ``_land_problems``) differ from
+    the capture (missing, stale or changed evidence). Returns ``(unbound,
+    geometry, coverage)``. ``unbound`` maps a pad UUID to the reason the capture cannot
+    bind its copper: a land whose contour the capture does not specify
+    (rounded, chamfered, trapezoid, custom), or a copper-layer set that differs
+    from the captured land's. The returned geometry is the one to analyse: an
+    unbound pad is unsupported (its terminal stays unknown), proves no contact
+    (no inner copper), and obstructs on every layer with copper the capture
+    cannot bind as its conservative size box; copper that has no such box is
+    listed in ``coverage`` and makes every terminal unknown. A missing native
+    drill contour obstructs as its drill box.
+
+    With ``native`` the geometry and capture are the native captures of the
+    hashed board (``block_access`` with ``board``): every native contour is
+    authoritative, and only identity, pose, drill and custom-land support are
+    checked here.
     """
     validate_geometry(geometry)
     if not isinstance(capture, dict) or capture.get('schema') != 'agent-ee.placement-probe/1':
@@ -894,6 +1006,8 @@ def _bind_capture(geometry, capture):
     if capture.get('board_sha256') != geometry['board_sha256']:
         raise ValueError('placement capture and routing geometry are of different boards')
     error = geometry['max_error_nm']
+    if capture.get('max_error_nm') != error:
+        raise ValueError('routing geometry max error differs from the placement capture')
     footprints = {(fp['ref'], fp['uuid']): fp for fp in capture['footprints']}
     pose = ('side', 'position_nm', 'rotation_deg')
     if (sorted(footprints) != sorted((fp['ref'], fp['uuid']) for fp in geometry['footprints'])
@@ -904,7 +1018,7 @@ def _bind_capture(geometry, capture):
     if (len(lands) != sum(len(fp['pads']) for fp in capture['footprints'])
             or set(lands) != {p['uuid'] for p in geometry['pads']}):
         raise ValueError('routing geometry pads differ from the placement capture pads')
-    unbound = {}
+    unbound, pads, coverage = {}, [], []
     for pad in geometry['pads']:
         fp, land = lands[pad['uuid']]
         label = f"{pad['ref']}.{pad['number']} ({pad['uuid']})"
@@ -914,16 +1028,41 @@ def _bind_capture(geometry, capture):
         if pad['shape'] == CUSTOM_SHAPE and pad['status'] == 'supported':
             raise ValueError(f'{label}: a custom land is never supported for access')
         problems = _hole_problems(pad, land, error)
-        layers = sorted(l for l in land['layers'] if l in geometry['copper_layers'])
-        if land['attribute'] != 'NPTH' and sorted(pad['copper']) != layers:
-            unbound[pad['uuid']] = 'copper layers differ from the placement capture'
-        elif pad['copper'] and (pad['shape'] not in BOXED_SHAPES or 'copper_centroid_offset_nm' not in land):
-            unbound[pad['uuid']] = 'land contour not bound by the placement capture'
-        elif pad['copper']:
-            problems += _land_problems(pad, land, error)
+        if not problems and pad['hole'] and not pad['hole']['outer']:
+            pad = {**pad, 'hole': {**pad['hole'], 'outer': [_land_box({**_drill(land), 'shape': 1}, error)]}}
+        if native:
+            if problems:
+                raise ValueError(f'{label}: ' + '; '.join(problems))
+            pads.append(pad)
+            continue
+        expected, given = _copper_layers(land, geometry['copper_layers']), sorted(pad['copper'])
+        verified = []
+        if pad['shape'] in SPECIFIED_SHAPES and 'copper_centroid_offset_nm' in land:
+            verified = sorted(set(expected) & set(given))
+            problems += _land_problems(pad, land, error, verified)
         if problems:
             raise ValueError(f'{label}: ' + '; '.join(problems))
-    return unbound
+        if expected != given:
+            unbound[pad['uuid']] = 'copper layers differ from the placement capture'
+        elif given and verified != given:
+            unbound[pad['uuid']] = 'land contour not bound by the placement capture'
+        if pad['uuid'] not in unbound:
+            pads.append(pad)
+            continue
+        box, copper, clearance = _land_box(land, error), {}, dict(pad['own_clearance_nm'])
+        for layer in sorted(set(expected) | set(given)):
+            if layer in verified:
+                outer = pad['copper'][layer]['outer']
+            elif box is not None:
+                outer = [box]
+            else:
+                coverage.append(f'{label}: copper contour not bound by the placement capture')
+                outer = pad['copper'].get(layer, {}).get('outer', [])
+            copper[layer] = {'outer': outer, 'inner': []}
+            clearance.setdefault(layer, max(clearance.values(), default=geometry['rules']['min_clearance_nm']))
+        pads.append({**pad, 'copper': copper, 'own_clearance_nm': clearance, 'status': 'unsupported',
+                     'reasons': sorted(set(pad.get('reasons', [])) | {unbound[pad['uuid']]})})
+    return unbound, {**geometry, 'pads': pads}, sorted(set(coverage))
 
 
 def _member_evidence(candidate, geometry, capture):
@@ -957,27 +1096,43 @@ def _member_evidence(candidate, geometry, capture):
 
 # ------------------------------------------------------------------ sidecar
 
-def block_access(candidate, geometry, routing_policy, limits=None, *, capture):
+def _native_evidence(board, geometry, capture):
+    """The routing geometry and placement capture must be the native captures of the hashed saved board."""
+    from .placement_probe import extract, routing_geometry
+    board = Path(board)
+    if hashlib.sha256(board.read_bytes()).hexdigest() != geometry['board_sha256']:
+        raise ValueError('native board differs from the routing geometry board')
+    if digest(routing_geometry(board)) != digest(geometry):
+        raise ValueError('routing geometry differs from the native capture of the board')
+    if digest(extract(board)) != digest(capture):
+        raise ValueError('placement capture differs from the native capture of the board')
+
+
+def block_access(candidate, geometry, routing_policy, limits=None, *, capture, board=None):
     """Diagnostic ``agent-ee.block-access/1`` for a candidate/2 placed on a complete candidate board.
 
     The candidate is read, never changed: the sidecar binds its canonical
     digest. ``capture`` is the ``agent-ee.placement-probe/1`` capture of the
     same saved board; the routing geometry is bound to it (``bind_capture``)
     and every member's land pattern, courtyard, footprint and pin nets are
-    recomputed from it and must equal the candidate's. Every member must sit
-    on the board at the candidate's frame poses relative to its anchor.
-    Witnesses that use space outside the block (edge, neighbours, vias) must
-    be rechecked after arrangement.
+    recomputed from it and must equal the candidate's. With ``board`` (the
+    saved board file), both captures must equal fresh native captures of it,
+    so every native contour and rule is authoritative (``contour_authority``
+    ``native board``); without it only contours the placement capture
+    specifies are bound (``placement capture``). Every member must sit on the
+    board at the candidate's frame poses relative to its anchor. Witnesses that
+    use space outside the block (edge, neighbours, vias) must be rechecked
+    after arrangement.
     """
     from . import blocks
     blocks.validate_candidate(candidate)
-    unbound = bind_capture(geometry, capture)
-    evidence = _member_evidence(candidate, geometry, capture)
-    if unbound:
-        geometry = {**geometry, 'pads': [
-            {**p, 'status': 'unsupported', 'reasons': sorted(set(p.get('reasons', [])) | {unbound[p['uuid']]})}
-            if p['uuid'] in unbound else p for p in geometry['pads']]}
-    index = AccessIndex(geometry, routing_policy, limits)
+    validate_geometry(geometry)
+    if board is not None:
+        _native_evidence(board, geometry, capture)
+    unbound, analysed, coverage = _bind(geometry, capture, board is not None)
+    evidence = _member_evidence(candidate, analysed, capture)
+    index = AccessIndex(analysed, routing_policy, limits)
+    index.coverage = sorted(set(index.coverage) | set(coverage))
     members = [row['reference'] for row in candidate['members']]
     anchor = candidate['frame']['anchor']
     missing = [ref for ref in members if ref not in index.footprints]
@@ -1012,7 +1167,8 @@ def block_access(candidate, geometry, routing_policy, limits=None, *, capture):
     return {'schema': SIDECAR, 'mode': 'diagnostic', 'block_id': candidate['block_id'],
             'candidate_sha256': digest(candidate), 'candidate_status': candidate['status'],
             'frame': candidate['frame'], 'board_sha256': report['board_sha256'],
-            'geometry_sha256': report['geometry_sha256'], 'capture_sha256': digest(capture),
+            'geometry_sha256': digest(geometry), 'capture_sha256': digest(capture),
+            'contour_authority': 'native board' if board is not None else 'placement capture',
             'pad_geometry_sha256': {row['reference']: row['pad_geometry_sha256'] for row in candidate['members']},
             'courtyard_sha256': {row['reference']: row['courtyard_sha256'] for row in candidate['members']},
             'member_evidence': evidence,
@@ -1027,7 +1183,7 @@ RECHECK = ('board edge', 'neighbour copper', 'via sites', 'planes')
 STATUSES = ('witness', 'unknown', 'not_required')
 SIDECAR_KEYS = frozenset((
     'schema', 'mode', 'block_id', 'candidate_sha256', 'candidate_status', 'frame', 'board_sha256', 'geometry_sha256',
-    'capture_sha256', 'pad_geometry_sha256', 'courtyard_sha256', 'member_evidence', 'unbound_pads', 'net_roles',
+    'capture_sha256', 'contour_authority', 'pad_geometry_sha256', 'courtyard_sha256', 'member_evidence', 'unbound_pads', 'net_roles',
     'policy', 'limits', 'search', 'coverage', 'recheck_after_arrangement', 'summary', 'terminals'))
 
 
@@ -1064,14 +1220,36 @@ def _sidecar_policy(policy):
     return policy
 
 
-def validate_sidecar(candidate, sidecar):
-    """Strict ``agent-ee.block-access/1`` validation against its candidate; returns the evidence-derived summary.
+def validate_sidecar(candidate, sidecar, *, geometry, capture, board=None):
+    """Strict ``agent-ee.block-access/1`` validation against its candidate and evidence; returns the summary.
 
     Structure, candidate binding, member land/pin evidence, policy, limits,
-    coverage, terminal obligations and witness forms are checked; the summary
-    is recounted from the terminal records and a supplied summary must equal
-    it. Any omission or inconsistency raises ``ValueError``.
+    coverage, terminal obligations and witness forms are checked first, and
+    the summary is recounted from the terminal records. Those records are
+    editable, so they cannot establish their own obligations: the sidecar is
+    then re-derived from the routing geometry and placement capture it binds
+    (and the saved board when its ``contour_authority`` is ``native board``)
+    and must equal it exactly. Pad identity, copper participation, terminal
+    partition, exemptions and witnesses therefore come from the bound
+    evidence, never from the sidecar. Any omission or inconsistency raises
+    ``ValueError``.
     """
+    summary = _validate_structure(candidate, sidecar)
+    if sidecar['contour_authority'] not in ('native board', 'placement capture'):
+        raise ValueError('access sidecar contour_authority must be native board or placement capture')
+    if digest(geometry) != sidecar['geometry_sha256'] or digest(capture) != sidecar['capture_sha256']:
+        raise ValueError('access sidecar is bound to another routing geometry or placement capture')
+    native = sidecar['contour_authority'] == 'native board'
+    if native and board is None:
+        raise ValueError('access sidecar with native contour authority needs its saved board')
+    derived = block_access(candidate, geometry, sidecar['policy'], sidecar['limits'], capture=capture,
+                           board=board if native else None)
+    if digest(derived) != digest(sidecar):
+        raise ValueError('access sidecar differs from the evidence it binds')
+    return summary
+
+
+def _validate_structure(candidate, sidecar):
     _exact(sidecar, SIDECAR_KEYS, 'record')
     if sidecar['schema'] != SIDECAR or sidecar['mode'] != 'diagnostic':
         raise ValueError(f'access sidecar must be a diagnostic {SIDECAR}')
@@ -1186,11 +1364,13 @@ def validate_sidecar(candidate, sidecar):
     return derived
 
 
-def access_status(candidate, sidecar=None):
+def access_status(candidate, sidecar=None, *, geometry=None, capture=None, board=None):
     """Access evidence for a candidate; a missing sidecar is unknown and admission is unchanged.
 
-    The status is derived from the validated terminal evidence
-    (``validate_sidecar``), never from a supplied summary.
+    The status is derived from the terminal evidence re-derived from the
+    routing geometry, placement capture (and saved board) the sidecar binds
+    (``validate_sidecar``), never from a supplied summary or terminal list. A
+    sidecar without that evidence refuses.
     """
     if sidecar is None:
         return {'status': 'unknown', 'reason': 'no block-access sidecar'}
@@ -1198,7 +1378,9 @@ def access_status(candidate, sidecar=None):
         raise ValueError(f'access sidecar must be {SIDECAR}')
     if sidecar.get('candidate_sha256') != digest(candidate):
         raise ValueError('access sidecar is bound to another candidate')
-    summary = validate_sidecar(candidate, sidecar)
+    if geometry is None or capture is None:
+        raise ValueError('access status needs the routing geometry and placement capture the sidecar binds')
+    summary = validate_sidecar(candidate, sidecar, geometry=geometry, capture=capture, board=board)
     if not summary['witness']:
         status = 'unknown'
     else:
@@ -1228,7 +1410,8 @@ def _witness_form(witness):
     if not isinstance(witness, dict):
         return 'a witness must be an object'
     kind = witness.get('kind')
-    if kind not in WITNESS_KEYS:
+    # Type first: an unhashable kind (a list or object) must refuse, not raise from the lookup.
+    if not isinstance(kind, str) or kind not in WITNESS_KEYS:
         return f'unknown witness kind {kind!r}'
     required = WITNESS_COMMON[0] | WITNESS_KEYS[kind][0]
     allowed = required | WITNESS_COMMON[1] | WITNESS_KEYS[kind][1]
@@ -1506,6 +1689,8 @@ def main(argv=None):
             command.add_argument('--candidate', required=True, help='agent-ee.block-candidate/2 document')
             command.add_argument('--capture', required=True,
                                  help='agent-ee.placement-probe/1 capture of the same board (placement_probe)')
+            command.add_argument('--board', help='the saved board: both captures must equal its native captures '
+                                                 '(contour authority native board)')
     args = parser.parse_args(argv)
     geometry = strict_json(Path(args.geometry).read_bytes())
     policy = strict_json(Path(args.policy).read_bytes())
@@ -1514,7 +1699,7 @@ def main(argv=None):
         report = analyze_access(geometry, None, policy, limits)
     else:
         report = block_access(strict_json(Path(args.candidate).read_bytes()), geometry, policy, limits,
-                              capture=strict_json(Path(args.capture).read_bytes()))
+                              capture=strict_json(Path(args.capture).read_bytes()), board=args.board)
     Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
     print(json.dumps(report['summary'], sort_keys=True), file=sys.stderr)
     return 0
