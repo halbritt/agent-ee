@@ -1,13 +1,16 @@
 """Private, immutable render publication and a read-only gallery server."""
 import argparse
+import contextlib
+import errno
 import fcntl
 import functools
+import hashlib
 import html
 import ipaddress
 import json
 import os
 import re
-import shutil
+import secrets
 import tempfile
 from io import BytesIO
 from datetime import datetime, timezone
@@ -18,6 +21,7 @@ from urllib.parse import unquote, urlsplit
 from .candidate import verify_snapshot
 from .render3d import _VIEWS as _VIEW_COMMANDS, RenderError, _png_info
 from .storage import digest
+from .symbol_library import LibraryError, children, parse_sexpr
 from .viewer import _ASSETS, _source_board, _stage_board, _validate_glb
 
 _VIEWS = ("top", "bottom", "isometric")
@@ -28,6 +32,16 @@ _VIEWS = ("top", "bottom", "isometric")
 _URL = re.compile(r"(?<![\w.+-])(?!file:)[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]*")
 _ABSOLUTE = re.compile(r"(?<![\w.}\])/\\])(?<!<redacted>)(?:file://)?(?:/|\\\\|[A-Za-z]:[\\/])(?=[^\s'\"<>])[^'\"<>\r\n]*")
 _COUNTS = ("resolved", "missing", "unresolved", "disabled", "no_model")
+_ID = r"[a-f0-9]{12}-[a-f0-9]{12}"
+_DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+# Supplement status vocabulary. Anything else is refused at publication and shown
+# as unknown when served. "unrouted" is checked against the retained board.
+_ROUTING = {"unrouted": "Unrouted (verified: the retained board has no tracks or vias)",
+            "partially-routed": "Partially routed (publisher statement; tracks or vias present)",
+            "routed": "Routed (publisher statement; completeness not verified)"}
+_ADOPTION = {"not-adopted": "Proposed change NOT adopted (publisher statement)",
+             "adopted": "Proposed change adopted (publisher statement, not verified)",
+             "no-proposal": "No change proposed (publisher statement)"}
 
 
 def _redact_text(text):
@@ -61,8 +75,8 @@ def _json(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _write(path, data):
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+def _encode(data):
+    return (json.dumps(data, indent=2) + "\n").encode()
 
 
 def _artifact(source, relative):
@@ -77,14 +91,144 @@ def _artifact(source, relative):
     return file
 
 
-def _copy(source, relative, target, expected):
+def _read(source, relative, expected=None):
+    """Read a source artifact once; the returned bytes are the ones hashed and published."""
     file = _artifact(source, relative)
-    if digest(file) != expected:
+    try:
+        descriptor = os.open(file, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError as error:
+        raise ValueError(f"artifact must be a regular file without symlinks: {error.strerror}") from None
+    with os.fdopen(descriptor, "rb") as stream:
+        data = stream.read()
+    if expected is not None and hashlib.sha256(data).hexdigest() != expected:
         raise ValueError("artifact hash mismatch")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(file, target)
-    if digest(target) != expected:
-        raise ValueError("artifact changed while copying")
+    return data
+
+
+def _directory(parent, name):
+    """Open (creating if absent) a directory entry without following a symlink."""
+    for _ in range(2):
+        try:
+            return os.open(name, _DIRECTORY, dir_fd=parent)
+        except FileNotFoundError:
+            with contextlib.suppress(FileExistsError):
+                os.mkdir(name, 0o755, dir_fd=parent)
+        except OSError as error:
+            if error.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(f"publication destination {name!r} must be a directory, not a symlink") from None
+            raise
+    raise ValueError(f"publication destination {name!r} could not be opened")
+
+
+def _put(parent, name, data):
+    """Create a new file; never follows a symlink or replaces an existing entry."""
+    try:
+        descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                             0o644, dir_fd=parent)
+    except FileExistsError:
+        raise ValueError(f"publication file {name!r} already exists") from None
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(data)
+
+
+def _put_tree(parent, source):
+    for item in sorted(source.iterdir()):
+        if item.is_dir():
+            os.mkdir(item.name, 0o755, dir_fd=parent)
+            child = _directory(parent, item.name)
+            try:
+                _put_tree(child, item)
+            finally:
+                os.close(child)
+        else:
+            _put(parent, item.name, item.read_bytes())
+
+
+def _remove(parent, name):
+    child = os.open(name, _DIRECTORY, dir_fd=parent)
+    try:
+        for entry in list(os.scandir(child)):
+            if entry.is_dir(follow_symlinks=False):
+                _remove(child, entry.name)
+            else:
+                os.unlink(entry.name, dir_fd=child)
+    finally:
+        os.close(child)
+    os.rmdir(name, dir_fd=parent)
+
+
+@contextlib.contextmanager
+def _publication(root, area, prefix):
+    """Lock the gallery and stage a new publication beside its area, all opened without symlinks.
+
+    Every component of root, root/area and the staging directory are opened
+    with O_NOFOLLOW and used through directory descriptors, so a link planted at
+    any level refuses publication instead of redirecting writes outside root.
+    """
+    root = Path(os.path.abspath(root))
+    descriptors = []
+    try:
+        descriptors.append(os.open("/", _DIRECTORY))
+        for part in root.parts[1:]:
+            descriptors.append(_directory(descriptors[-1], part))
+            os.close(descriptors.pop(-2))
+        root_fd = descriptors[0]
+        try:
+            lock = os.open(".publish.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644,
+                           dir_fd=root_fd)
+        except OSError as error:
+            raise ValueError(f"publication lock must be a regular file, not a symlink: {error.strerror}") from None
+        descriptors.append(lock)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        area_fd = _directory(root_fd, area)
+        descriptors.append(area_fd)
+        staged = prefix + secrets.token_hex(8)
+        os.mkdir(staged, 0o755, dir_fd=root_fd)
+        try:
+            staged_fd = _directory(root_fd, staged)
+            descriptors.append(staged_fd)
+            yield _Staged(root_fd, area_fd, staged, staged_fd)
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                _remove(root_fd, staged)
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+class _Staged:
+    def __init__(self, root, area, name, directory):
+        self.root, self.area, self.name, self.directory = root, area, name, directory
+
+    def commit(self, identifier, listing, entry):
+        """Move the staged publication into place and prepend it to the listing.
+
+        An existing publication is never replaced, and the listing is replaced
+        atomically through an exclusive, unpredictable staging file.
+        """
+        try:
+            descriptor = os.open(listing, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=self.root)
+        except FileNotFoundError:
+            entries = []
+        except OSError as error:
+            raise ValueError(f"{listing} must be a regular file, not a symlink: {error.strerror}") from None
+        else:
+            with os.fdopen(descriptor, "rb") as stream:
+                entries = json.loads(stream.read().decode("utf-8"))
+        try:
+            os.stat(identifier, dir_fd=self.area, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            raise ValueError(f"publication {identifier} already exists; immutable publications are never replaced")
+        temporary = f".{listing}-{secrets.token_hex(8)}.next"
+        _put(self.root, temporary, _encode([entry, *entries]))
+        try:
+            os.rename(self.name, identifier, src_dir_fd=self.root, dst_dir_fd=self.area)
+        except BaseException:
+            os.unlink(temporary, dir_fd=self.root)
+            raise
+        os.replace(temporary, listing, src_dir_fd=self.root, dst_dir_fd=self.root)
 
 
 def _option(command, flag):
@@ -194,101 +338,147 @@ def publish(root, renders, *, label, stage, viewer=None, candidate=None):
     if {i["view"] for i in images} != set(_VIEWS) or len(images) != 3:
         raise ValueError("top, bottom and isometric images are required")
     _verify_provenance(manifest, renders, candidate)
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "bundles").mkdir(exist_ok=True)
-    with (root / ".publish.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        with tempfile.TemporaryDirectory(prefix=".publish-", dir=root) as temporary:
-            pending = Path(temporary)
-            record = {"label": label, "stage": stage, "board_sha256": board_hash,
-                      "candidate_id": manifest.get("candidate_id"),
-                      "published_at": datetime.now(timezone.utc).isoformat(),
-                      "rendered_at": manifest.get("finished_at"),
-                      "model_coverage": redact(manifest.get("model_coverage")),
-                      "warnings": redact(manifest.get("warnings", [])), "images": [], "viewer": bool(viewer)}
-            for item in images:
-                name = item["view"] + ".png"
-                _copy(renders, item["path"], pending / name, item["sha256"])
-                if (pending / name).read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
-                    raise ValueError("image is not PNG")
-                record["images"].append({"view": item["view"], "path": name, "sha256": item["sha256"]})
-            if viewer:
-                metadata = _json(viewer / "viewer.json")
-                if metadata.get("schema") != "agent-ee.viewer/1" or metadata["board"]["sha256"] != board_hash:
-                    raise ValueError("viewer belongs to a different board")
-                if (metadata.get("candidate_id"), metadata.get("captured_board")) != (
-                        manifest.get("candidate_id"), manifest.get("captured_board")):
-                    raise ValueError("viewer belongs to a different candidate")
-                _copy(viewer, "board.glb", pending / "viewer/board.glb", metadata["model_sha256"])
-                _validate_glb(pending / "viewer/board.glb")
-                shutil.copytree(_ASSETS, pending / "viewer", dirs_exist_ok=True)
-                _write(pending / "viewer/viewer.json", redact(metadata))
-            _write(pending / "manifest.json", record)
-            # Include image identity so a new export of the same board retains history.
-            bundle = board_hash[:12] + "-" + digest(pending / "manifest.json")[:12]
-            os.rename(pending, root / "bundles" / bundle)
-        index_path = root / "index.json"
-        index = _json(index_path) if index_path.exists() else []
-        index.insert(0, {"id": bundle, **record})
-        temporary_index = root / ".index.next"
-        _write(temporary_index, index)
-        os.replace(temporary_index, index_path)
+    with _publication(root, "bundles", ".publish-") as staged:
+        record = redact({"label": label, "stage": stage, "board_sha256": board_hash,
+                         "candidate_id": manifest.get("candidate_id"),
+                         "published_at": datetime.now(timezone.utc).isoformat(),
+                         "rendered_at": manifest.get("finished_at"),
+                         "model_coverage": manifest.get("model_coverage"),
+                         "warnings": manifest.get("warnings", []), "images": [], "viewer": bool(viewer)})
+        for item in images:
+            name = item["view"] + ".png"
+            data = _read(renders, item["path"], item["sha256"])
+            if data[:8] != b"\x89PNG\r\n\x1a\n":
+                raise ValueError("image is not PNG")
+            _put(staged.directory, name, data)
+            record["images"].append({"view": item["view"], "path": name, "sha256": item["sha256"]})
+        if viewer:
+            metadata = _json(viewer / "viewer.json")
+            if metadata.get("schema") != "agent-ee.viewer/1" or metadata["board"]["sha256"] != board_hash:
+                raise ValueError("viewer belongs to a different board")
+            if (metadata.get("candidate_id"), metadata.get("captured_board")) != (
+                    manifest.get("candidate_id"), manifest.get("captured_board")):
+                raise ValueError("viewer belongs to a different candidate")
+            _validate_glb(_artifact(viewer, "board.glb"))
+            model = _read(viewer, "board.glb", metadata["model_sha256"])
+            os.mkdir("viewer", 0o755, dir_fd=staged.directory)
+            directory = _directory(staged.directory, "viewer")
+            try:
+                _put(directory, "board.glb", model)
+                _put_tree(directory, _ASSETS)
+                _put(directory, "viewer.json", _encode(redact(metadata)))
+            finally:
+                os.close(directory)
+        manifest_bytes = _encode(record)
+        _put(staged.directory, "manifest.json", manifest_bytes)
+        # Include image identity so a new export of the same board retains history.
+        bundle = board_hash[:12] + "-" + hashlib.sha256(manifest_bytes).hexdigest()[:12]
+        staged.commit(bundle, "index.json", {"id": bundle, **record})
     return bundle
 
 
+def _copper_items(data):
+    """Count track segments, arcs and vias in retained board bytes; unparseable boards refuse."""
+    try:
+        board = parse_sexpr(data)
+    except LibraryError as error:
+        raise ValueError(f"retained candidate board is not a parseable KiCad board: {error}") from None
+    if board[0] != "kicad_pcb":
+        raise ValueError("retained candidate board is not a parseable KiCad board")
+    return sum(len(children(board, kind)) for kind in ("segment", "arc", "via"))
 
-def publish_supplement(root, image, packet, board, *, board_sha256, label, stage):
-    """Publish a verified annotated PNG separately from native render milestones."""
-    if not re.fullmatch(r"[a-f0-9]{64}", board_sha256):
+
+def publish_supplement(root, image, packet, *, candidate, board_sha256, label, stage, routing, adoption):
+    """Publish an annotated PNG bound to a verified retained candidate, separately from render milestones."""
+    if not isinstance(board_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", board_sha256):
         raise ValueError("invalid board hash")
-    image_hash, packet_hash = digest(image), digest(packet)
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "diagnostics").mkdir(exist_ok=True)
-    with (root / ".publish.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        with tempfile.TemporaryDirectory(prefix=".diagnostic-", dir=root) as temporary:
-            pending = Path(temporary)
-            _copy(board.parent, board.name, pending / "source-board", board_sha256)
-            _copy(packet.parent, packet.name, pending / "source-packet", packet_hash)
-            _copy(image.parent, image.name, pending / "image.png", image_hash)
-            info = _png_info(pending / "image.png")
-            record = {"schema": "agent-ee.gallery-diagnostic/1", "kind": "annotated-2d-diagnostic",
-                      "label": redact(label), "stage": redact(stage), "board_sha256": board_sha256,
-                      "published_at": datetime.now(timezone.utc).isoformat(),
-                      "source_packet": {"name": packet.name, "sha256": packet_hash},
-                      "source_image": {"name": image.name, "sha256": image_hash},
-                      "image": {"path": "image.png", **info},
-                      "limitation": "Publisher verifies input bytes, not the analysis or adoption of any proposed change."}
-            # Retain identities, not source files or host paths, in the HTTP publication.
-            (pending / "source-board").unlink()
-            (pending / "source-packet").unlink()
-            _write(pending / "manifest.json", record)
-            identifier = board_sha256[:12] + "-" + digest(pending / "manifest.json")[:12]
-            os.rename(pending, root / "diagnostics" / identifier)
-        index_path = root / "diagnostics.json"
-        index = _json(index_path) if index_path.exists() else []
-        index.insert(0, {"id": identifier, **record})
-        temporary_index = root / ".diagnostics.next"
-        _write(temporary_index, index)
-        os.replace(temporary_index, index_path)
+    if routing not in _ROUTING:
+        raise ValueError(f"routing status must be one of {sorted(_ROUTING)}; unknown status is refused")
+    if adoption not in _ADOPTION:
+        raise ValueError(f"adoption status must be one of {sorted(_ADOPTION)}; unknown status is refused")
+    candidate = Path(candidate).expanduser().resolve()
+    if not (candidate / "candidate.json").is_file():
+        raise ValueError("a retained candidate run directory is required")
+    # verify_snapshot recomputes every captured file hash; the board is then read once more
+    # and the bytes used for the status checks are the ones bound to the publication.
+    board, candidate_id, captured = _source_board(candidate)
+    data = _read(board.parent, board.name)
+    retained = verify_snapshot(candidate)
+    if hashlib.sha256(data).hexdigest() != retained["files"][captured] or retained["candidate_id"] != candidate_id:
+        raise ValueError("candidate snapshot changed; evidence is stale")
+    if board_sha256 != retained["files"][captured]:
+        raise ValueError("board hash mismatch: the supplied hash is not the retained candidate board")
+    tracks = _copper_items(data)
+    if (routing == "unrouted") != (tracks == 0):
+        raise ValueError(f"routing status {routing!r} contradicts the retained board ({tracks} tracks or vias)")
+    try:
+        info = _png_info(_artifact(image.parent, image.name))
+    except RenderError as error:
+        raise ValueError(f"supplement image is not a valid PNG: {error}") from None
+    image_data, packet_data = _read(image.parent, image.name, info["sha256"]), _read(packet.parent, packet.name)
+    with _publication(root, "diagnostics", ".diagnostic-") as staged:
+        # Retain identities, not source files or host paths, in the HTTP publication.
+        record = redact({"schema": "agent-ee.gallery-diagnostic/2", "kind": "annotated-2d-diagnostic",
+                         "label": label, "stage": stage, "candidate_id": candidate_id,
+                         "captured_board": captured, "board_sha256": board_sha256,
+                         "routing": {"status": routing, "copper_items": tracks},
+                         "adoption": {"status": adoption, "verified": False},
+                         "published_at": datetime.now(timezone.utc).isoformat(),
+                         "source_packet": {"name": packet.name, "sha256": hashlib.sha256(packet_data).hexdigest()},
+                         "source_image": {"name": image.name, "sha256": info["sha256"]},
+                         "image": {"path": "image.png", **info},
+                         "limitation": "Publisher verifies the retained candidate and input bytes, not the analysis "
+                                       "or the adoption of any proposed change."})
+        _put(staged.directory, "image.png", image_data)
+        manifest_bytes = _encode(record)
+        _put(staged.directory, "manifest.json", manifest_bytes)
+        identifier = board_sha256[:12] + "-" + hashlib.sha256(manifest_bytes).hexdigest()[:12]
+        staged.commit(identifier, "diagnostics.json", {"id": identifier, **record})
     return identifier
 
 
-def diagnostic_cards(supplements):
+def _supplement_status(item, latest):
+    """Status lines for a served supplement; anything not bound to a verified candidate is unknown."""
+    escape = html.escape
+    routing = item.get("routing") if isinstance(item.get("routing"), dict) else {}
+    adoption = item.get("adoption") if isinstance(item.get("adoption"), dict) else {}
+    if (item.get("schema") != "agent-ee.gallery-diagnostic/2" or not isinstance(item.get("candidate_id"), str)
+            or routing.get("status") not in _ROUTING or adoption.get("status") not in _ADOPTION):
+        return ('<p class="badge unknown" role="status">Status unknown: not bound to a verified retained '
+                'candidate, or routing and adoption status are not recorded</p>')
+    if latest is None:
+        currency = "No Latest render to compare: treat as historical"
+    elif latest.get("board_sha256") == item.get("board_sha256"):
+        currency = "Same board as the Latest render"
+    else:
+        currency = "Historical: not the board in the Latest render"
+    return (f'<p class="badge incomplete" role="status">{escape(currency)}</p>'
+            f'<p>Retained candidate {escape(item["candidate_id"])}</p>'
+            f'<p>Routing: {escape(_ROUTING[routing["status"]])}</p>'
+            f'<p>Adoption: {escape(_ADOPTION[adoption["status"]])}</p>')
+
+
+def diagnostic_cards(supplements, latest=None):
+    escape = html.escape
     cards = []
     for item in supplements:
-        base = "/diagnostics/" + item["id"] + "/"
-        cards.append(f'<section id="diagnostic-{item["id"]}"><h2>{html.escape(item["label"])}</h2>'
-                     f'<p><strong>Annotated 2D diagnostic supplement</strong></p><p>{html.escape(item["stage"])}</p>'
-                     f'<p class="hash">Historical board SHA-256: {item["board_sha256"]}</p>'
-                     f'<p>Published {html.escape(item["published_at"])}</p>'
+        identifier = str(item.get("id"))
+        if not re.fullmatch(_ID, identifier):
+            continue
+        base = "/diagnostics/" + identifier + "/"
+        cards.append(f'<section id="diagnostic-{identifier}"><h2>{escape(str(item.get("label")))}</h2>'
+                     f'<p><strong>Annotated 2D diagnostic supplement</strong></p><p>{escape(str(item.get("stage")))}</p>'
+                     f'{_supplement_status(item, latest)}'
+                     f'<p class="hash">Board SHA-256: {escape(str(item.get("board_sha256")))}</p>'
+                     f'<p>Published {escape(str(item.get("published_at")))}</p>'
                      f'<a href="{base}image.png"><img src="{base}image.png" alt="Annotated 2D diagnostic; open full-size image"></a>'
-                     f'<p>{html.escape(item["limitation"])}</p><a href="{base}index.html">Open diagnostic</a> · <a href="{base}manifest.json">Diagnostic provenance</a></section>')
+                     f'<p>{escape(str(item.get("limitation")))}</p><a href="{base}index.html">Open diagnostic</a> · <a href="{base}manifest.json">Diagnostic provenance</a></section>')
     return ''.join(cards)
 
 
-def page(index, supplements=(), *, diagnostic_only=False):
+def page(index, supplements=(), *, diagnostic_only=False, latest=None):
     escape = html.escape
+    latest = latest if latest is not None else (index[0] if index else None)
     cards = []
     for position, item in enumerate(index):
         base = "/bundles/" + item["id"] + "/"
@@ -305,17 +495,18 @@ def page(index, supplements=(), *, diagnostic_only=False):
         summary = {key: "unknown" if value is None else value for key, value in summary.items()}
         coverage_text = (f'Models: {summary["resolved"]} resolved; {summary["missing"]} missing; {summary["unresolved"]} unresolved; {summary["disabled"]} disabled; {summary["no_model"]} footprints without a model.')
         warnings = "".join('<li>' + escape(redact(str(w))) + '</li>' for w in item["warnings"])
-        cards.append(f'<section><h2>{"Latest: " if position == 0 else ""}{escape(item["label"])}</h2><p>{escape(item["stage"])} · Rendered {escape(str(item["rendered_at"]))}</p><p class="hash">Board SHA-256: {item["board_sha256"]}</p>{badge}<p class="coverage">{escape(coverage_text)}</p>{viewer}<div class="images">{pictures}</div><details><summary>Model warnings ({len(item["warnings"])})</summary><ul>{warnings}</ul></details><a href="{base}manifest.json">Publication manifest</a></section>')
-    return ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PCB render gallery</title><style>body{font:16px system-ui;background:#111923;color:#e7eef7;margin:auto;padding:24px;max-width:1400px}a{color:#8fc9ff}li{overflow-wrap:anywhere}h1{margin-bottom:8px}section{background:#1b2735;padding:24px;margin:24px 0;border-radius:12px}.images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0}figure{margin:0}img{width:100%;border-radius:8px}figcaption{padding:8px}.hash,pre{overflow-wrap:anywhere;white-space:pre-wrap;font-size:13px}.badge{display:inline-block;padding:6px 10px;border-radius:6px;font-weight:600}.incomplete{background:#7a4b00;color:#fff}.unknown{background:#8a1c1c;color:#fff}.complete{background:#1e5a3a;color:#fff}.button{display:inline-block;padding:12px;background:#294968;border-radius:6px}@media(max-width:700px){body{padding:12px}section{padding:16px}.images{grid-template-columns:1fr}}</style>' + ('<h1>PCB diagnostic supplement</h1><p><a href="/">Back to render gallery</a></p>' if diagnostic_only else '<h1>PCB render gallery</h1><p>Native KiCad images · Latest candidate and retained history</p>') + '<p>Visual inspection only. Missing component models can make geometry incomplete; these images do not approve electrical or fabrication readiness.</p>' + ('<p><a href="#diagnostics">Diagnostic supplements</a></p>' if supplements else '') + (''.join(cards) or ('' if diagnostic_only else '<p>No completed render bundles have been published yet.</p>')) + ('<div id="diagnostics"><h2>Diagnostic supplements</h2>' + diagnostic_cards(supplements) + '</div>' if supplements else '') + '</html>').encode()
+        cards.append(f'<section><h2>{"Latest: " if position == 0 else ""}{escape(item["label"])}</h2><p>{escape(item["stage"])} · Rendered {escape(str(item["rendered_at"]))}</p><p class="hash">Board SHA-256: {escape(str(item["board_sha256"]))}</p>{badge}<p class="coverage">{escape(coverage_text)}</p>{viewer}<div class="images">{pictures}</div><details><summary>Model warnings ({len(item["warnings"])})</summary><ul>{warnings}</ul></details><a href="{base}manifest.json">Publication manifest</a></section>')
+    return ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PCB render gallery</title><style>body{font:16px system-ui;background:#111923;color:#e7eef7;margin:auto;padding:24px;max-width:1400px}a{color:#8fc9ff}li{overflow-wrap:anywhere}h1{margin-bottom:8px}section{background:#1b2735;padding:24px;margin:24px 0;border-radius:12px}.images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0}figure{margin:0}img{width:100%;border-radius:8px}figcaption{padding:8px}.hash,pre{overflow-wrap:anywhere;white-space:pre-wrap;font-size:13px}.badge{display:inline-block;padding:6px 10px;border-radius:6px;font-weight:600}.incomplete{background:#7a4b00;color:#fff}.unknown{background:#8a1c1c;color:#fff}.complete{background:#1e5a3a;color:#fff}.button{display:inline-block;padding:12px;background:#294968;border-radius:6px}@media(max-width:700px){body{padding:12px}section{padding:16px}.images{grid-template-columns:1fr}}</style>' + ('<h1>PCB diagnostic supplement</h1><p><a href="/">Back to render gallery</a></p>' if diagnostic_only else '<h1>PCB render gallery</h1><p>Native KiCad images · Latest candidate and retained history</p>') + '<p>Visual inspection only. Missing component models can make geometry incomplete; these images do not approve electrical or fabrication readiness.</p>' + ('<p><a href="#diagnostics">Diagnostic supplements</a></p>' if supplements else '') + (''.join(cards) or ('' if diagnostic_only else '<p>No completed render bundles have been published yet.</p>')) + ('<div id="diagnostics"><h2>Diagnostic supplements</h2>' + diagnostic_cards(supplements, latest) + '</div>' if supplements else '') + '</html>').encode()
 
 
 class GalleryHandler(SimpleHTTPRequestHandler):
     def send_head(self):
         root = Path(self.directory)
         relative = unquote(urlsplit(self.path).path).lstrip("/")
+        def listing(name):
+            return redact(_json(root / name)) if (root / name).is_file() else []
         if not relative:
-            data = page(_json(root / "index.json") if (root / "index.json").exists() else [],
-                        _json(root / "diagnostics.json") if (root / "diagnostics.json").exists() else [])
+            data = page(listing("index.json"), listing("diagnostics.json"))
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
@@ -323,13 +514,13 @@ class GalleryHandler(SimpleHTTPRequestHandler):
             return BytesIO(data)
         parts = Path(relative).parts
         allowed = False
-        if len(parts) >= 3 and parts[0] == "bundles" and re.fullmatch(r"[a-f0-9]{12}-[a-f0-9]{12}", parts[1]):
+        if len(parts) >= 3 and parts[0] == "bundles" and re.fullmatch(_ID, parts[1]):
             suffix = "/".join(parts[2:])
             allowed = suffix in {"manifest.json", "top.png", "bottom.png", "isometric.png", "viewer/index.html", "viewer/viewer.json", "viewer/board.glb", "viewer/viewer.css", "viewer/viewer.js"} or (suffix.startswith("viewer/vendor/") and ( _ASSETS / suffix.removeprefix("viewer/")).is_file())
         diagnostic_page = (len(parts) == 3 and parts[0] == "diagnostics"
-                           and re.fullmatch(r"[a-f0-9]{12}-[a-f0-9]{12}", parts[1])
+                           and re.fullmatch(_ID, parts[1])
                            and parts[2] == "index.html")
-        if len(parts) == 3 and parts[0] == "diagnostics" and re.fullmatch(r"[a-f0-9]{12}-[a-f0-9]{12}", parts[1]):
+        if len(parts) == 3 and parts[0] == "diagnostics" and re.fullmatch(_ID, parts[1]):
             allowed = parts[2] in {"manifest.json", "image.png", "index.html"}
         path = root / relative
         if diagnostic_page:
@@ -338,7 +529,8 @@ class GalleryHandler(SimpleHTTPRequestHandler):
             self.send_error(404)
             return None
         if diagnostic_page:
-            data = page([], [{"id": parts[1], **redact(_json(path))}], diagnostic_only=True)
+            data = page([], [{"id": parts[1], **redact(_json(path))}], diagnostic_only=True,
+                        latest=next(iter(listing("index.json")), None))
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
@@ -380,8 +572,11 @@ def main():
     supplement = commands.add_parser("supplement", help="publish annotated PNG without changing Latest")
     supplement.add_argument("--image", type=Path, required=True)
     supplement.add_argument("--packet", type=Path, required=True)
-    supplement.add_argument("--board", type=Path, required=True)
-    supplement.add_argument("--board-sha256", required=True)
+    supplement.add_argument("--candidate", type=Path, required=True,
+                            help="retained run directory whose captured board the image analyses")
+    supplement.add_argument("--board-sha256", required=True, help="expected hash of the retained board")
+    supplement.add_argument("--routing", required=True, choices=sorted(_ROUTING))
+    supplement.add_argument("--adoption", required=True, choices=sorted(_ADOPTION))
     supplement.add_argument("--label", required=True)
     supplement.add_argument("--stage", required=True)
     server = commands.add_parser("serve")
@@ -392,8 +587,9 @@ def main():
         print(publish(args.root, args.renders, label=args.label, stage=args.stage, viewer=args.viewer,
                       candidate=args.candidate))
     elif args.command == "supplement":
-        print(publish_supplement(args.root, args.image, args.packet, args.board,
-                                board_sha256=args.board_sha256, label=args.label, stage=args.stage))
+        print(publish_supplement(args.root, args.image, args.packet, candidate=args.candidate,
+                                 board_sha256=args.board_sha256, label=args.label, stage=args.stage,
+                                 routing=args.routing, adoption=args.adoption))
     else:
         with serve(args.root, args.bind, args.port) as httpd:
             httpd.serve_forever()

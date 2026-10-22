@@ -98,23 +98,48 @@ plots remain in their native review packets.
 
 Use `supplement` for an annotated 2D PNG, rather than manufacturing a native
 three-view render manifest. Supplements have a separate listing and never change
-`Latest` or any existing render bundle. Keep historical/unrouted status and
-unadopted proposals explicit in the label and stage.
+`Latest` or any existing render bundle. Every supplement is bound to a retained
+candidate run and records its routing and adoption status explicitly.
 
 ```sh
 PYTHONPATH="$HOME/.local/share/agent-ee-render-gallery/app" python3 -m agent_ee.render_gallery \
   --root "$HOME/.local/share/agent-ee-render-gallery/artifacts" supplement \
   --image /durable/analysis/annotated.png --packet /durable/analysis/INDEX.md \
-  --board /durable/candidate.kicad_pcb --board-sha256 ACTUAL_BOARD_SHA256 \
-  --label 'Historical bottom-view free-space analysis' \
-  --stage 'Unrouted diagnostic; proposed ADC move NOT adopted'
+  --candidate /durable/runs/CANDIDATE_RUN --board-sha256 ACTUAL_BOARD_SHA256 \
+  --routing unrouted --adoption not-adopted \
+  --label 'Bottom-view free-space analysis' \
+  --stage 'Diagnostic; proposed ADC move NOT adopted'
 ```
 
-The command verifies the supplied board digest, validates the PNG, and binds the
-copied image and source packet hashes in a publication manifest. This establishes
-byte identity, not correctness of the analysis or adoption of a proposal. Only
-the PNG and manifest are served; the source board and packet stay private. SVG
-is not accepted. Open `/diagnostics/RETURNED_ID/index.html` for a permanent page
-or `/diagnostics/RETURNED_ID/image.png` for the exact full-size image. The main
-gallery links its separate diagnostic section. Publications are serialized by
-the same lock as render imports, and the diagnostic listing is replaced atomically.
+The command verifies the retained candidate snapshot (as `--candidate` does for
+renders), re-reads its captured board and requires `--board-sha256` to equal
+those bytes' hash; a missing, stale or different candidate, or a board that is
+not a parseable KiCad board, is refused. The manifest records the candidate id,
+captured board path and board hash. `--routing` is one of `unrouted`,
+`partially-routed` or `routed`, and `--adoption` one of `not-adopted`, `adopted`
+or `no-proposal`; any other value is refused. `unrouted` is checked: it is
+refused when the retained board has tracks, arcs or vias, and the other two are
+refused when it has none. Whether a board with tracks is completely routed, and
+the adoption status, are the publisher's statement and are labelled as such.
+The page labels a supplement historical unless its board hash equals the
+current Latest render's; this is computed when served, not stored. A served
+supplement without a recorded candidate or with an unknown status (including
+supplements published before candidate binding) shows "Status unknown".
+
+The PNG is fully validated and the copied image and source packet hashes are
+bound in the publication manifest. This establishes candidate and byte
+identity, not correctness of the analysis or adoption of a proposal. Only the
+PNG and manifest are served; the source board and packet stay private. SVG is
+not accepted. The whole record, including source file names, is redacted as
+above at publication, and listings, diagnostic pages and manifests are redacted
+again when served. Open `/diagnostics/RETURNED_ID/index.html` for a permanent
+page or `/diagnostics/RETURNED_ID/image.png` for the exact full-size image. The
+main gallery links its separate diagnostic section.
+
+Publication, for supplements and render bundles alike, opens the gallery root
+and every parent directory, `bundles/`, `diagnostics/`, the lock and the listing
+without following symlinks and writes through directory descriptors: a link at
+any of those places refuses publication instead of redirecting writes. Files are
+created exclusively, a publication whose identifier already exists is refused
+rather than replaced, and the listing is replaced atomically through an
+exclusive, randomly named staging file. Publications are serialized by one lock.

@@ -481,6 +481,8 @@ class GalleryTests(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest))
         self.refuses('native render receipt', candidate=run)
 
+UNROUTED_BOARD = '(kicad_pcb (version 20240108) (generator "fixture") (gr_line (start 0 0) (end 1 0)))\n'
+
 
 class DiagnosticSupplementTests(unittest.TestCase):
     def setUp(self):
@@ -493,15 +495,51 @@ class DiagnosticSupplementTests(unittest.TestCase):
         self.image.write_bytes(png_bytes(100))
         self.packet = self.base/'INDEX.md'
         self.packet.write_text('Historical diagnostic. Proposed ADC move NOT adopted.')
-        self.board = self.base/'candidate.kicad_pcb'
-        self.board.write_text('captured board bytes')
-        self.board_hash = digest(self.board)
+        self.run, self.candidate = self.capture('unrouted', UNROUTED_BOARD)
+        self.board_hash = self.candidate['files']['project/board.kicad_pcb']
 
-    def add(self):
+    def capture(self, name, text):
+        source = self.base/('source-' + name)
+        source.mkdir()
+        (source/'board.kicad_pcb').write_text(text)
+        scope = self.base/('scope-' + name + '.json')
+        scope.write_text(json.dumps({'schema': 'agent-ee.scope/1', 'board': 'project/board.kicad_pcb',
+                                     'inputs': [{'path': source.name, 'at': 'project'}]}))
+        run = self.base/('run-' + name)
+        run.mkdir()
+        return run, capture(scope, run)
+
+    def add(self, **overrides):
         from agent_ee.render_gallery import publish_supplement
-        return publish_supplement(self.root, self.image, self.packet, self.board,
-                                  board_sha256=self.board_hash, label='Historic <analysis>',
-                                  stage='UNROUTED; proposed ADC move NOT adopted')
+        arguments = dict(candidate=self.run, board_sha256=self.board_hash, label='Historic <analysis>',
+                         stage='UNROUTED; proposed ADC move NOT adopted', routing='unrouted', adoption='not-adopted')
+        arguments.update(overrides)
+        return publish_supplement(self.root, overrides.pop('image', self.image), self.packet,
+                                  **{k: v for k, v in arguments.items() if k != 'image'})
+
+    def snapshot(self):
+        return {p.relative_to(self.root).as_posix(): p.read_bytes()
+                for p in self.root.rglob('*') if p.is_file() and not p.is_symlink() and p.name != '.publish.lock'}
+
+    def refuses(self, pattern, **overrides):
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, pattern):
+            self.add(**overrides)
+        self.assertEqual(before, self.snapshot())
+        self.assertEqual(list(self.root.glob('.diagnostic-*')) + list(self.root.glob('.diagnostics.json-*')), [])
+
+    def get(self, url):
+        with urlopen(url) as response:
+            return response.read().decode()
+
+    def serving(self):
+        server = serve(self.root, '127.0.0.1', 0)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        return f'http://127.0.0.1:{server.server_port}'
 
     def test_independent_immutable_history_preserves_latest_bytes(self):
         latest = b'[{"id":"unchanged current milestone"}]\n'
@@ -515,40 +553,35 @@ class DiagnosticSupplementTests(unittest.TestCase):
         self.assertEqual(old, {p.name:p.read_bytes() for p in (self.root/'diagnostics'/first).iterdir()})
         manifest = json.loads(old['manifest.json'])
         self.assertEqual(manifest['board_sha256'], self.board_hash)
+        self.assertEqual(manifest['candidate_id'], self.candidate['candidate_id'])
+        self.assertEqual(manifest['captured_board'], 'project/board.kicad_pcb')
+        self.assertEqual(manifest['routing'], {'status': 'unrouted', 'copper_items': 0})
+        self.assertEqual(manifest['adoption'], {'status': 'not-adopted', 'verified': False})
         self.assertEqual(manifest['source_packet']['sha256'], digest(self.packet))
         self.assertEqual(manifest['source_image']['sha256'], manifest['image']['sha256'])
         self.assertEqual(set(old), {'image.png','manifest.json'})
 
-    def test_wrong_board_symlink_and_invalid_png_leave_listing_unchanged(self):
+    def test_wrong_board_hash_symlink_and_invalid_png_leave_listing_unchanged(self):
         self.add()
-        before = (self.root/'diagnostics.json').read_bytes()
-        self.board.write_text('different')
-        with self.assertRaisesRegex(ValueError, 'hash mismatch'): self.add()
-        self.board.write_text('captured board bytes')
+        self.refuses('hash mismatch', board_sha256=digest(self.packet))
+        self.refuses('invalid board hash', board_sha256='A' * 64)
         self.image.unlink()
         self.image.symlink_to(self.packet)
-        with self.assertRaisesRegex(ValueError, 'symlink'): self.add()
+        self.refuses('symlink')
         self.image.unlink()
-        self.image.write_bytes(b'not a PNG')
-        with self.assertRaises(ValueError): self.add()
-        self.assertEqual(before, (self.root/'diagnostics.json').read_bytes())
-        self.assertEqual(list(self.root.glob('.diagnostic-*')), [])
+        for data in (b'not a PNG', b'<svg xmlns="http://www.w3.org/2000/svg"/>', png_bytes(100) + b'trailing',
+                     png_bytes(100)[:-6]):
+            self.image.write_bytes(data)
+            self.refuses('PNG')
 
     def test_http_only_serves_allowlisted_diagnostic_artifacts(self):
         identifier = self.add()
-        server = serve(self.root, '127.0.0.1', 0)
-        thread = threading.Thread(target=server.serve_forever)
-        thread.start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(thread.join)
-        self.addCleanup(server.shutdown)
-        base = f'http://127.0.0.1:{server.server_port}'
+        base = self.serving()
         prefix = '/diagnostics/'+identifier+'/'
-        with urlopen(base+prefix+'index.html') as result:
-            body = result.read()
-            self.assertIn(b'Historic &lt;analysis&gt;', body)
-            self.assertIn(b'NOT adopted', body)
-            self.assertNotIn(b'Latest:', body)
+        body = self.get(base+prefix+'index.html')
+        self.assertIn('Historic &lt;analysis&gt;', body)
+        self.assertIn('NOT adopted', body)
+        self.assertNotIn('Latest:', body)
         with urlopen(base+prefix+'image.png') as result:
             self.assertEqual(result.read(), self.image.read_bytes())
         for path in ('diagnostics.json', prefix+'source-board', prefix+'source-packet', prefix+'../image.png', prefix):
@@ -558,3 +591,164 @@ class DiagnosticSupplementTests(unittest.TestCase):
         image.unlink()
         image.symlink_to(self.image)
         with self.assertRaises(HTTPError): urlopen(base+prefix+'image.png')
+
+    # --- supplement review H1: destination symlinks ---------------------------
+    def test_destination_symlinks_refuse_without_writing_outside_root(self):
+        outside = self.base/'outside'
+        outside.mkdir()
+        (self.root/'diagnostics').symlink_to(outside, target_is_directory=True)
+        self.refuses('must be a directory, not a symlink')
+        self.assertEqual(list(outside.iterdir()), [])
+        (self.root/'diagnostics').unlink()
+        linked = self.base/'linked-root'
+        linked.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'not a symlink'):
+            from agent_ee.render_gallery import publish_supplement
+            publish_supplement(linked/'nested', self.image, self.packet, candidate=self.run,
+                               board_sha256=self.board_hash, label='x', stage='y', routing='unrouted',
+                               adoption='not-adopted')
+        self.assertFalse((self.root/'nested').exists())
+
+    def test_planted_listing_and_staging_links_never_overwrite_a_publication(self):
+        first = self.add()
+        manifest = self.root/'diagnostics'/first/'manifest.json'
+        old = manifest.read_bytes()
+        # The pre-fix staging name, and every guessable alternative, is now irrelevant.
+        (self.root/'.diagnostics.next').symlink_to(manifest)
+        self.image.write_bytes(png_bytes(150))
+        second = self.add()
+        self.assertEqual(old, manifest.read_bytes())
+        self.assertTrue((self.root/'.diagnostics.next').is_symlink())
+        listing = json.loads((self.root/'diagnostics.json').read_text())
+        self.assertEqual([item['id'] for item in listing], [second, first])
+        # A listing replaced by a link is refused rather than followed.
+        saved = self.root/'saved.json'
+        (self.root/'diagnostics.json').rename(saved)
+        (self.root/'diagnostics.json').symlink_to(manifest)
+        self.image.write_bytes(png_bytes(200))
+        self.refuses('must be a regular file, not a symlink')
+        self.assertEqual(old, manifest.read_bytes())
+        lock = self.root/'.publish.lock'
+        (self.root/'diagnostics.json').unlink()
+        lock.unlink()
+        lock.symlink_to(manifest)
+        self.refuses('publication lock')
+        self.assertEqual(old, manifest.read_bytes())
+
+    def test_identifier_collision_never_replaces_an_existing_supplement(self):
+        from unittest import mock
+        import agent_ee.render_gallery as gallery
+        fixed = gallery.datetime(2026, 10, 22, tzinfo=gallery.timezone.utc)
+        with mock.patch.object(gallery, 'datetime', wraps=gallery.datetime) as clock:
+            clock.now.return_value = fixed
+            first = self.add()
+            target = self.root/'diagnostics'/first
+            old = {p.name: p.read_bytes() for p in target.iterdir()}
+            for entry in target.iterdir():
+                entry.unlink()
+            self.refuses('already exists; immutable publications are never replaced')
+            for name, data in old.items():
+                (target/name).write_bytes(data)
+            self.refuses('already exists; immutable publications are never replaced')
+        self.assertEqual(old, {p.name: p.read_bytes() for p in target.iterdir()})
+
+    def test_bundle_destination_symlinks_refuse(self):
+        outside = self.base/'outside-bundles'
+        outside.mkdir()
+        (self.root/'bundles').symlink_to(outside, target_is_directory=True)
+        renders = self.base/'renders'
+        renders.mkdir()
+        (renders/'render-manifest.json').write_text(json.dumps({
+            'schema': 'agent-ee.render3d/1', 'status': 'completed', 'board': {'sha256': 'a' * 64},
+            'images': [{'view': v} for v in ('top', 'bottom', 'isometric')]}))
+        from agent_ee import render_gallery as gallery
+        from unittest import mock
+        with mock.patch.object(gallery, '_verify_provenance'):
+            with self.assertRaisesRegex(ValueError, 'must be a directory, not a symlink'):
+                publish(self.root, renders, label='x', stage='y')
+        self.assertEqual(list(outside.iterdir()), [])
+
+    # --- supplement review H2: bound to a verified retained candidate ---------
+    def test_supplement_requires_a_verified_retained_candidate(self):
+        self.refuses('retained candidate run directory is required', candidate=self.base/'missing')
+        self.refuses('retained candidate run directory is required', candidate=self.base)
+        junk, record = self.capture('junk', 'not a KiCad board or retained candidate')
+        self.refuses('not a parseable KiCad board', candidate=junk, board_sha256=record['files']['project/board.kicad_pcb'])
+        other, record = self.capture('other', UNROUTED_BOARD.replace('fixture', 'other'))
+        self.refuses('hash mismatch', candidate=other)
+        (self.run/'inputs'/'project'/'board.kicad_pcb').write_text(UNROUTED_BOARD + ' ')
+        self.refuses('stale')
+        self.assertFalse((self.root/'diagnostics.json').exists())
+
+    def test_status_is_explicit_and_unrouted_is_checked_against_the_board(self):
+        for routing in ('', 'unknown', 'UNROUTED', None):
+            self.refuses('routing status must be one of', routing=routing)
+        for adoption in ('', 'unknown', 'maybe', None):
+            self.refuses('adoption status must be one of', adoption=adoption)
+        self.refuses('contradicts the retained board', routing='routed')
+        routed = UNROUTED_BOARD.replace('(gr_line', '(segment (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net 0)) (gr_line')
+        run, record = self.capture('routed', routed)
+        digest_ = record['files']['project/board.kicad_pcb']
+        self.refuses('contradicts the retained board', candidate=run, board_sha256=digest_)
+        identifier = self.add(candidate=run, board_sha256=digest_, routing='partially-routed', adoption='adopted')
+        manifest = json.loads((self.root/'diagnostics'/identifier/'manifest.json').read_text())
+        self.assertEqual(manifest['routing'], {'status': 'partially-routed', 'copper_items': 1})
+        self.assertEqual(manifest['candidate_id'], record['candidate_id'])
+
+    def test_served_status_labels_historical_and_fails_closed_on_unknown(self):
+        identifier = self.add()
+        base = self.serving()
+        page_ = self.get(base)
+        self.assertIn('No Latest render to compare', page_)
+        self.assertIn('Retained candidate ' + self.candidate['candidate_id'], page_)
+        self.assertIn('Unrouted (verified: the retained board has no tracks or vias)', page_)
+        self.assertIn('Proposed change NOT adopted (publisher statement)', page_)
+        (self.root/'index.json').write_text(json.dumps([{'id': '0' * 12 + '-' + '1' * 12, 'label': 'L', 'stage': 'S',
+                                                          'board_sha256': 'b' * 64, 'rendered_at': 't', 'images': [],
+                                                          'warnings': [], 'viewer': False}]))
+        for body in (self.get(base), self.get(base + '/diagnostics/' + identifier + '/index.html')):
+            self.assertIn('Historical: not the board in the Latest render', body)
+        latest = json.loads((self.root/'index.json').read_text())
+        (self.root/'index.json').write_text(json.dumps([dict(latest[0], board_sha256=self.board_hash)]))
+        for body in (self.get(base), self.get(base + '/diagnostics/' + identifier + '/index.html')):
+            self.assertIn('Same board as the Latest render', body)
+            self.assertNotIn('Historical:', body)
+        # A supplement from before candidate binding, or a tampered status, is unknown.
+        listing = json.loads((self.root/'diagnostics.json').read_text())
+        legacy = {k: v for k, v in listing[0].items() if k not in ('candidate_id', 'routing', 'adoption')}
+        legacy.update(schema='agent-ee.gallery-diagnostic/1', id='2' * 12 + '-' + '3' * 12)
+        tampered = dict(listing[0], id='4' * 12 + '-' + '5' * 12, routing={'status': 'mostly'})
+        (self.root/'diagnostics.json').write_text(json.dumps([legacy, tampered, listing[0]]))
+        body = self.get(base)
+        self.assertEqual(body.count('Status unknown: not bound to a verified retained candidate'), 2)
+        self.assertEqual(body.count('Unrouted (verified'), 1)
+
+    # --- supplement review H3: host paths in supplement surfaces --------------
+    def test_windows_and_posix_host_paths_are_redacted_on_every_supplement_surface(self):
+        leaks = ('C:/Users/secret/project/board.kicad_pcb', 'C:\\Users\\secret\\project\\b.kicad_pcb',
+                 '\\\\fileserver\\private-share\\c.png', '/home/secret/project/d.md')
+        packet = self.base/'\\\\fileserver\\private-share\\INDEX.md'
+        packet.write_text('packet')
+        self.packet = packet
+        identifier = self.add(label='see ' + leaks[0], stage=' '.join(leaks))
+        stored = (self.root/'diagnostics'/identifier/'manifest.json').read_text()
+        stored += (self.root/'diagnostics.json').read_text()
+        base = self.serving()
+        # Legacy records stored before publication redaction are redacted when served.
+        listing = json.loads((self.root/'diagnostics.json').read_text())
+        legacy_id = '6' * 12 + '-' + '7' * 12
+        legacy = dict(listing[0], id=legacy_id, label=leaks[0], stage=leaks[2],
+                      source_packet={'name': leaks[2], 'sha256': 'c' * 64})
+        (self.root/'diagnostics'/legacy_id).mkdir()
+        (self.root/'diagnostics'/legacy_id/'manifest.json').write_text(json.dumps(legacy))
+        (self.root/'diagnostics.json').write_text(json.dumps([legacy, *listing]))
+        bodies = [stored]
+        for ident in (identifier, legacy_id):
+            bodies += [self.get(base + '/diagnostics/' + ident + suffix) for suffix in ('/index.html', '/manifest.json')]
+        bodies.append(self.get(base))
+        for body in bodies:
+            for leak in ('secret', 'fileserver', 'private-share', 'C:', '/home/'):
+                self.assertNotIn(leak, body)
+        record = json.loads(bodies[2])
+        self.assertEqual(record['source_packet']['name'], '<redacted>/INDEX.md')
+        self.assertEqual(record['label'], 'see <redacted>/board.kicad_pcb')
