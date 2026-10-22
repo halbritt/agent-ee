@@ -456,8 +456,10 @@ ensembles for one unloaded first-order topology. A separate
 pin bindings and declared transient/AC/DC-sweep measurements, with
 [role-keyed templates](docs/spice-templates.md) that derive regulator,
 amplifier and filter testbenches from captured targets without defaults. Its
-committed control models are synthetic; vendor-model qualification and publication rights are separate
-evidence obligations.
+committed control models are synthetic. A [hash-bound qualification
+harness](docs/active-spice.md#vendor-model-qualification) runs a captured vendor
+op-amp model through the same check without tracking its bytes; no vendor model
+is recorded as qualified yet, and publication rights remain a separate gate.
 Optional [PCB DC path resistance](docs/dc-path.md) connects explicitly captured
 materials and saved native copper dimensions to declared DC drop/loss limits.
 Its initial qualification is limited to ideal F.Cu endpoint paths and bounded

@@ -170,6 +170,53 @@ or redistribution rights. Third-party models/designs must remain outside the
 repository until the owner authorizes publication. The committed synthetic model
 does not satisfy vendor-model acceptance by itself.
 
+## Vendor model qualification
+
+`scripts/qualify_vendor_spice.py` qualifies one captured vendor op-amp model
+against the owned control circuit without bringing the vendor bytes into the
+repository. A manifest (`agent-ee.vendor-spice-manifest/1`) names the vendor,
+part and source, maps every model file's relative path to its SHA-256, and
+declares the subcircuit, the explicit map from the owned symbol pins (3 IN+,
+2 IN-, 7 V+, 4 V-, 6 OUT) to header formals, the supplies (default +/-15 V) and
+the dialect. Pin order is never inferred.
+
+```sh
+PYTHONPATH=src python3 scripts/qualify_vendor_spice.py MANIFEST MODEL_DIR --out NEW_PRIVATE_DIR
+```
+
+Every declared file must exist unlinked in `MODEL_DIR` with exactly its
+declared hash, or the run refuses before anything is written. The closure is
+then parsed with the same `capture_models` policy as the check; a refused
+closure (unsupported dialect, non-ASCII text, unsafe directive) or a pin map
+whose formals differ from the actual header is recorded as unqualified with the
+reason, and no scenario runs. Otherwise six real active_spice runs go through
+capture, the native netlist, sandboxed ngspice and the evidence seal:
+
+| Scenario | Mutation | Required status |
+| --- | --- | --- |
+| `control` | none: follower of the owned 10 kohm / 100 nF low-pass | `ok/pass` against the owned bounds around the analytic response (63.2 mV at 1 ms, 0.847 V/V at 100 Hz) |
+| `seeded` | 10 kohm changed to 100 kohm | `ok/defect` |
+| `missing_model` | a second populated part without a model | `unsupported/unknown` |
+| `invalid_formal` | pin 3 mapped to a nonexistent formal | `unsupported/unknown` |
+| `unsafe_directive` | `.control` block appended to a copy of each root model | `unsupported/unknown`, before any ngspice invocation |
+| `solver_failure` | a second, conflicting supply source | `failed/unknown` |
+
+The model is qualified only if every scenario returns exactly its required
+status. The receipt (`agent-ee.vendor-spice-receipt/1`) records the manifest
+and model hashes, header locator, metrics, deck hashes, ngspice hash and each
+scenario's evidence-seal hash; it contains no model text. The private output
+directory does keep copies of the model inside each run and is never a
+publication artifact. Qualification covers only these declared conditions at
+the declared supplies and 25 C; it says nothing about the model's accuracy
+elsewhere; the bounds exercise a unity-gain follower at low frequency only.
+
+[`fixtures/active-spice/vendor-qualifications.json`](../fixtures/active-spice/vendor-qualifications.json)
+is the tracked record: hashes and receipt hashes only. A `qualified` entry needs
+model file hashes and a receipt hash; an `unqualified` entry needs a reason. The
+TI OPA197 capture behind the AGENTEE-19 scenario report is recorded as
+unqualified: its bytes, hashes and receipts were not retained, so the report
+cannot be rerun or bound. Publication of vendor files stays behind AGENTEE-118.
+
 ## Scope/3 coverage
 
 The executable-coverage audit validates the active-SPICE declaration and its
