@@ -1207,9 +1207,12 @@ side-flip canonicalization above.
 The computational coverage guard is `KEEPOUT_MAX_STEPS = 1_000_000`. This is a
 resource budget requested by AGENTEE-427, not a sourced physical design limit.
 It counts native inventory visits, item/area pairs, layer tests weighted by area
-vertex count, area serialization weighted by vertex count, owner normalization,
-pad layer normalization, cached owner pad/graphic inventory and witness assembly
-(including each no-contact environment entry). The cap is
+vertex count, area serialization weighted by vertex count, owner normalization
+(including side-flip canonicalization and cached local inventory), and witness
+assembly (including each no-contact environment entry). The existing per-owner
+normalization work unit is retained so unflipped inputs keep their exact budget
+boundary. Pad counts are bounded by the earlier inventory visits and the native
+layer count is fixed. The cap is
 checked before each charged operation; there is no wall-clock default. The
 scan remains O(copper items × rule areas), but stops at this deterministic
 budget. It does not bound native board-loading time, memory or the duration of

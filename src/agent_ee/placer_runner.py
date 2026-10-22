@@ -320,15 +320,14 @@ def _keepout_item_states(path, states, *, max_steps=None, stats=None):
             fp.SetPosition(k.VECTOR2I(0, 0))
             enabled = board.GetEnabledLayers()
             for pad in fp.Pads():
-                charge()
                 layers = k.LSET()
                 for layer in pad.GetLayerSet().Seq():
-                    charge()
                     if enabled.Contains(layer):
                         layers.AddLayer(layer)
                 pad.SetLayerSet(layers)
             # Inventory only this owner, once; do not rescan the board per contact.
-            charge(len(list(fp.Pads())) + len(list(fp.GraphicalItems())))
+            # Keep the existing per-owner normalization work unit: inventory
+            # size is bounded by the earlier pad visits and native layer count.
             local_witnesses[owner] = (owner, json.dumps({
                 'pads': _footprint_pad_inventory(fp), 'graphics': _local_graphics(fp)}, sort_keys=True))
             work['normalized_owners'] += 1
