@@ -18,8 +18,8 @@ with tempfile.TemporaryDirectory(prefix='gallery-ui-') as temporary:
     root = Path(temporary)
     render_board(board, root/'renders', width=800, height=600, quality='basic', jobs=1)
     build_viewer(board, root/'viewer')
-    for label in ('Previous fixture', 'Latest fixture'):
-        publish(root/'public', root/'renders', label=label, stage='Synthetic RC test fixture', viewer=root/'viewer')
+    for label in ('Fixture 1', 'Fixture 2'):
+        publish(root/'public', root/'renders', label=label, stage='fixture', viewer=root/'viewer')
     packet = root/'INDEX.md'
     packet.write_text('Synthetic diagnostic UI fixture, not production analysis.')
     scope = root/'scope.json'
@@ -29,7 +29,6 @@ with tempfile.TemporaryDirectory(prefix='gallery-ui-') as temporary:
     candidate = capture(scope, root/'run')
     publish_supplement(root/'public', root/'renders/rc_filter-3d-top.png', packet, candidate=root/'run',
                        board_sha256=candidate['files']['project/rc_filter.kicad_pcb'],
-                       label='Historical diagnostic fixture', routing='partially-routed', adoption='not-adopted',
-                       stage='Proposed move NOT adopted; image is only a layout-test fixture')
+                       label='Diagnostic 1', routing='partially-routed', adoption='not-adopted', stage='fixture')
     with serve(root/'public', '127.0.0.1', args.port) as httpd:
         httpd.serve_forever()

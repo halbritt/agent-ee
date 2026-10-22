@@ -31,7 +31,7 @@ agent-ee view3d /path/candidate.kicad_pcb --out /durable/milestone/viewer --expo
 PYTHONPATH="$HOME/.local/share/agent-ee-render-gallery/app" python3 -m agent_ee.render_gallery \
   --root "$HOME/.local/share/agent-ee-render-gallery/artifacts" publish \
   --renders /durable/milestone/renders --viewer /durable/milestone/viewer \
-  --label 'Telemetry pod iteration 8' --stage 'Unrouted diagnostic placement'
+  --label 'Iteration 8' --stage placement
 ```
 
 `--viewer` is optional. Three completed native still views are required. Import
@@ -78,7 +78,10 @@ dropped.
 
 - **Paths.** A path-bearing field (a model path in a warning, `board.path`,
   `board.name` and `captured_board` of the viewer and supplement) is published
-  as the final component of an unambiguous local path or as `<redacted>`. Local
+  as the final component of an unambiguous local path or as `<redacted>`. A
+  value an earlier redactor already scrubbed (`<redacted>/name`) is
+  `<redacted>` whole: what followed its marker is not known to have been a
+  local file name. Local
   means a POSIX path without a backslash, a drive path with either slash
   (`C:\Users\A\m.step`, `C:/x/m.step`), or either after a KiCad
   `${VARIABLE}`; the component must be a plain file name (letters, digits,
@@ -96,17 +99,22 @@ dropped.
   path becomes a basename as above), `VIEW: KiCad produced WxH for requested
   WxH`, and the fixed model/viewer notices. A native log line keeps only its
   view (`top: <redacted>`); any other warning is `<redacted>`.
-- **Labels and stages** are kept only when they are plain text of at most 200
-  characters (ASCII letters, digits, spaces and punctuation, plus `· – — ’ “ ” ×`)
-  without path syntax: no `/ \ @ ~ $ %` and no colon unless a space or the end
-  follows. Publication refuses any other label or stage; an earlier record's
-  label or stage that does not qualify is served as `<redacted>`.
+- **Labels and stages** carry no publisher free text. A stage is one code:
+  `placement`, `routing`, `routed`, `review`, `diagnostic` or `fixture`
+  (shown as Placement, Routing in progress, Routed, Design review, Diagnostic,
+  Test fixture; all are the publisher's statement). A label is `KIND NUMBER`,
+  `KIND` one of `Iteration`, `Revision`, `Candidate`, `Milestone`,
+  `Diagnostic`, `Fixture` and `NUMBER` a decimal from 0 to 999999, rebuilt
+  from those two parts. Publication refuses anything else; an earlier record's
+  label or stage outside this vocabulary (such as `Telemetry pod iteration 8`)
+  is served as `<redacted>` whole. Describe the change in the review packet,
+  which is not published.
 - **Identities** (board hash, candidate id, model hash, image hashes), times,
   counts, views and statuses must match their grammar or vocabulary, else they
   are published as `null` (shown as unknown).
 
 Published shapes are versioned. A render bundle record is
-`agent-ee.gallery-bundle/2`: `label`, `stage`, `board_sha256`, `candidate_id`,
+`agent-ee.gallery-bundle/3`: `label`, `stage`, `board_sha256`, `candidate_id`,
 `published_at`, `rendered_at`, `model_coverage` (only `summary` with the counts
 `footprints`, `models`, `footprints_fully_resolved`, `resolved`, `missing`,
 `unresolved`, `disabled` and `no_model`; the per-footprint inventory stays in
@@ -115,12 +123,12 @@ the local render manifest), `warnings`, `images` and `viewer`. The published
 checks, and adds `"publication": "agent-ee.gallery-viewer/2"`; it holds only
 `board` (`name`, `path`, `sha256`), `candidate_id`, `captured_board`, `model`,
 `warnings`, `coordinates` and `model_sha256` (the export command and logs are
-dropped). Supplements are `agent-ee.gallery-diagnostic/3` (below). Records
-published before the allowlist (bundle records without a schema, supplements of
-schema `/2`) stay byte-for-byte as stored and are projected into the current
+dropped). Supplements are `agent-ee.gallery-diagnostic/4` (below). Records
+published earlier (bundle records without a schema or of schema `/2`,
+supplements of schema `/2` or `/3`) stay byte-for-byte as stored and are projected into the current
 shape when served; projection is idempotent.
 
-Tests keep the composed generator of every review round (433c-433i) as the
+Tests keep the composed generator of every review round (433c-433k) as the
 regression oracle: file URIs in every casing with and without an authority
 (empty and root paths, bracketed IP literals, user info), UNC hosts and paths,
 drives with either slash, POSIX paths and hosts interrupted by quotes, groups and
@@ -131,7 +139,8 @@ viewer and supplement record, and the stored and served JSON and both pages
 must carry no host, user or share text. The oracle is shown to fail on
 deliberately leaky publication: pass-through, a regex scrubber, an unlisted
 field, a basename without the local-path checks, trusting text that starts with
-the marker, and a label check that refuses only `/`.
+the marker, a label check that refuses only `/`, a label kept when it is plain
+text without path syntax, and a `<redacted>/NAME` value published as `NAME`.
 
 ### Cards and history
 
@@ -167,8 +176,7 @@ PYTHONPATH="$HOME/.local/share/agent-ee-render-gallery/app" python3 -m agent_ee.
   --image /durable/analysis/annotated.png --packet /durable/analysis/INDEX.md \
   --candidate /durable/runs/CANDIDATE_RUN --board-sha256 ACTUAL_BOARD_SHA256 \
   --routing unrouted --adoption not-adopted \
-  --label 'Bottom-view free-space analysis' \
-  --stage 'Diagnostic; proposed ADC move NOT adopted'
+  --label 'Diagnostic 3' --stage diagnostic
 ```
 
 The command verifies the retained candidate snapshot (as `--candidate` does for
@@ -190,13 +198,13 @@ The PNG is fully validated and the copied image and source packet hashes are
 bound in the publication manifest. This establishes candidate and byte
 identity, not correctness of the analysis or adoption of a proposal. Only the
 PNG and manifest are served; the source board and packet stay private. SVG is
-not accepted. The record is the allowlisted `agent-ee.gallery-diagnostic/3`
+not accepted. The record is the allowlisted `agent-ee.gallery-diagnostic/4`
 shape above: label, stage, candidate id, `captured_board` (its basename),
 board hash, routing and adoption status, publication time, the source packet
 and image names (plain file names or `<redacted>`) and hashes, the image
 dimensions and hash and the fixed limitation. Listings, diagnostic pages and
 manifests are projected again when served; a record without candidate binding
-(no schema `/2` or `/3`) shows "Status unknown". Open `/diagnostics/RETURNED_ID/index.html` for a permanent
+(no schema `/2`, `/3` or `/4`) shows "Status unknown". Open `/diagnostics/RETURNED_ID/index.html` for a permanent
 page or `/diagnostics/RETURNED_ID/image.png` for the exact full-size image. The
 main gallery links its separate diagnostic section.
 

@@ -88,7 +88,9 @@ REVIEW_EXAMPLES = (
     # Published by the scrubbing redactor; each still carried host or user text.
     '<redacted>/private-server)', '<redacted>[fd00:1234::1]<redacted>/m.step', '<redacted>(1)\\private-share\\m.step',
     '<redacted> "private-user"\\private-share\\m.step', '<redacted> "private-user name"<redacted>/m.step',
-    '<redacted> (private-user name)<redacted>/m.step')
+    '<redacted> (private-user name)<redacted>/m.step', '<redacted>/private-server',
+    # Review 433k H1: host, user and share words with no path syntax at all.
+    'private-host private-user private-share', 'FILE: private-host', 'private-host; private-user')
 OPERANDS = ([t.format(c) for c in CASINGS for t in URI_FORMS + IP_URI_FORMS] + list(PLAIN_FORMS) + list(UNC_FORMS)
             + list(INTERRUPTED_FORMS) + ['C:/Users/alice-hidden/fwd.step', 'D:/', 'd:\\Users\\alice-hidden\\low.step',
                                          '/home/alice-hidden/posix.step'])
@@ -198,7 +200,7 @@ def assert_leak_free(test, published, seed=433, rounds=20000, stride=1):
 
 
 def publish_in_process(root, renders, label):
-    publish(Path(root), Path(renders), label=label, stage='concurrent')
+    publish(Path(root), Path(renders), label=label, stage='placement')
 
 
 class GalleryTests(unittest.TestCase):
@@ -239,7 +241,7 @@ class GalleryTests(unittest.TestCase):
         (self.renders / 'render-manifest.json').write_text(json.dumps(self.manifest))
 
     def add(self):
-        return publish(self.root, self.renders, label='Candidate <one>', stage='Unrouted diagnostic')
+        return publish(self.root, self.renders, label='Candidate 1', stage='diagnostic')
 
     def test_history_and_failed_import_preserves_latest(self):
         first = self.add()
@@ -272,7 +274,7 @@ class GalleryTests(unittest.TestCase):
         viewer.mkdir()
         (viewer/'viewer.json').write_text(json.dumps({'schema':'agent-ee.viewer/1', 'board':{'sha256':'b'*64}}))
         with self.assertRaisesRegex(ValueError, 'different board'):
-            publish(self.root, self.renders, label='Bad', stage='test', viewer=viewer)
+            publish(self.root, self.renders, label='Iteration 2', stage='placement', viewer=viewer)
         self.assertFalse((self.root/'index.json').exists())
         self.assertEqual(list((self.root/'bundles').iterdir()), [])
 
@@ -286,7 +288,14 @@ class GalleryTests(unittest.TestCase):
         self.addCleanup(httpd.shutdown)
         url = f'http://127.0.0.1:{httpd.server_port}'
         with urlopen(url) as response:
-            self.assertIn(b'Candidate &lt;one&gt;', response.read())
+            body = response.read()
+        self.assertIn(b'Latest: Candidate 1</h2><p>Stage: Diagnostic', body)
+        listing = json.loads((self.root / 'index.json').read_text())
+        (self.root / 'index.json').write_text(json.dumps([dict(listing[0], label='<b>x</b>', stage='<i>')]))
+        with urlopen(url) as response:
+            body = response.read()
+        self.assertIn(b'Latest: &lt;redacted&gt;</h2><p>Stage: &lt;redacted&gt;', body)
+        self.assertNotIn(b'<b>', body)
         with urlopen(url+'/bundles/'+bundle+'/top.png') as response:
             self.assertEqual(response.status, 200)
         for path in ('/.publish.lock','/index.json','/bundles/','/../etc/passwd', '/bundles/'+bundle+'/secret.txt'):
@@ -325,7 +334,7 @@ class GalleryTests(unittest.TestCase):
     def refuses(self, pattern, **kwargs):
         before = (self.root / 'index.json').read_bytes() if (self.root / 'index.json').exists() else None
         with self.assertRaisesRegex(ValueError, pattern):
-            publish(self.root, self.renders, label='x', stage='y', **kwargs)
+            publish(self.root, self.renders, label='Iteration 1', stage='placement', **kwargs)
         after = (self.root / 'index.json').read_bytes() if (self.root / 'index.json').exists() else None
         self.assertEqual(before, after)
         self.assertEqual(list(self.root.glob('.publish-*')), [])
@@ -392,7 +401,7 @@ class GalleryTests(unittest.TestCase):
         self.bind(run, candidate)
         # A bound manifest cannot be published without verifying the candidate.
         self.refuses('pass --candidate')
-        bundle = publish(self.root, self.renders, label='x', stage='y', candidate=run)
+        bundle = publish(self.root, self.renders, label='Iteration 1', stage='placement', candidate=run)
         record = json.loads((self.root / 'bundles' / bundle / 'manifest.json').read_text())
         self.assertEqual(record['candidate_id'], candidate['candidate_id'])
         self.manifest['candidate_id'] = '0' * 64
@@ -420,7 +429,7 @@ class GalleryTests(unittest.TestCase):
         return viewer
 
     def test_published_files_contain_no_absolute_host_paths(self):
-        bundle = publish(self.root, self.renders, label='x', stage='y', viewer=self.make_viewer())
+        bundle = publish(self.root, self.renders, label='Iteration 1', stage='placement', viewer=self.make_viewer())
         for path in (self.root / 'index.json', *(self.root / 'bundles' / bundle).rglob('*.json')):
             if 'vendor' in path.parts:
                 continue
@@ -428,7 +437,7 @@ class GalleryTests(unittest.TestCase):
             self.assertNotIn('/home/', text, path)
             self.assertNotIn(HOST, text, path)
         record = json.loads((self.root / 'bundles' / bundle / 'manifest.json').read_text())
-        self.assertEqual(record['schema'], 'agent-ee.gallery-bundle/2')
+        self.assertEqual(record['schema'], 'agent-ee.gallery-bundle/3')
         self.assertEqual(record['model_coverage'], {'summary': dict(
             resolved=3, missing=1, unresolved=2, disabled=4, no_model=5, footprints=None, models=None,
             footprints_fully_resolved=None)})
@@ -444,14 +453,15 @@ class GalleryTests(unittest.TestCase):
         kept = {'/home/a/m.step': 'm.step', '/home/A B/p q/m.step': 'm.step', '/home/Smith, Alice/m.step': 'm.step',
                 'C:/Users/A/m.step': 'm.step', 'C:\\Users\\A B\\m.step': 'm.step', 'd:\\x\\R_0603.wrl': 'R_0603.wrl',
                 '${KICAD8_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0603.step': 'R_0603.step',
-                'models/r.step': 'r.step', 'r.step': 'r.step',
-                '<redacted>/m.step': 'm.step', None: None}
+                'models/r.step': 'r.step', 'r.step': 'r.step', None: None}
         redacted = ('\\\\srv\\share\\m.step', '//srv/share/m.step', 'file:///home/a/m.step', 'FILE:///home/a/m.step',
                     'file:C:/Users/A/m.step', 'https://x.org/a/m.step', ':alias:m.step', 'C:m.step', '\\share\\m.step', '${KIPRJMOD}\\models\\r.step',
                     '/home/a//host/m.step', '/a/m.step\\\\host', 'C:\\a\\\\host\\m.step', '/home/a/', 'C:\\', 'D:/', '',
                     '/home/a/"m.step"', "/home/a/m'step", '/home/a/<m>.step', '/home/a/m.step|x', '/home/a/m\tb.step',
                     '/home/a/m\n.step', '/home/a/m step', '/home/a/.hidden', '/home/a/..', '/home/a/m.step)',
-                    '<redacted>', '<redacted>/', '<redacted>/a/b', 'x<redacted>/m.step', 3, ['m.step'], {'a': 1})
+                    '<redacted>', '<redacted>/', '<redacted>/a/b', 'x<redacted>/m.step', 3, ['m.step'], {'a': 1},
+                    # Review 433k H2: an earlier redactor's output is not known to end in a file name.
+                    '<redacted>/m.step', '<redacted>/private-server', '<redacted>\\private-server')
         for value, expected in kept.items():
             self.assertEqual(gallery._basename(value), expected, value)
         for value in redacted:
@@ -474,22 +484,79 @@ class GalleryTests(unittest.TestCase):
                  'top: KiCad produced 10×20 for requested 30×40': 'top: KiCad produced 10×20 for requested 30×40',
                  'isometric: Warning: could not load ' + HOST + '/r.step': 'isometric: <redacted>',
                  'see ' + HOST + '/x.log': '<redacted>', notice: notice, notice + ' ' + HOST: '<redacted>',
-                 'R1: missing 3D model <redacted>/r.step': 'R1: missing 3D model r.step', 7: '<redacted>'}
+                 'R1: missing 3D model <redacted>/r.step': 'R1: missing 3D model <redacted>',
+                 'R1: missing 3D model <redacted>/private-server': 'R1: missing 3D model <redacted>', 7: '<redacted>'}
         for text, expected in cases.items():
             self.assertEqual(gallery._warning(text), expected, text)
             self.assertEqual(gallery._warning(expected), expected, expected)
 
-    def test_labels_and_stages_with_path_syntax_are_refused_and_never_served(self):
-        for value in ('Rung 1: unrouted', 'Candidate <one> (rev B) — placement', "C3's \"bypass\" & U1 #2"):
-            self.assertEqual(gallery._text(value), value)
-        for value in ('see ' + HOST, 'C:\\x', 'rev A/B', 'user@host', '~/x', '${KIPRJMOD}', '%USERPROFILE%', 'file:x',
-                      'a\nb', 'x' * 201, '', None, 3, *REVIEW_EXAMPLES):
-            self.assertEqual(gallery._text(value), '<redacted>', value)
+    def test_labels_and_stages_are_rebuilt_from_their_vocabulary_or_redacted_whole(self):
+        """Review 433k H1: no publisher free text is published, with or without path syntax."""
+        for value in ('Iteration 8', 'Revision 0', 'Candidate 12', 'Milestone 999999', 'Diagnostic 1', 'Fixture 2'):
+            self.assertEqual(gallery._label(value), value)
+        self.assertEqual(gallery._label('Iteration 08'), 'Iteration 8')
+        for value in ('placement', 'routing', 'routed', 'review', 'diagnostic', 'fixture'):
+            self.assertEqual(gallery._stage(value), value)
+        exact = ('private-host private-user private-share', 'FILE: private-host', 'private-host; private-user')
+        refused = (*exact, 'Telemetry pod iteration 8', 'Iteration', 'Iteration ', 'Iteration 8 ', 'iteration 8',
+                   'Iteration 1000000', 'Iteration -1', 'Iteration 8.0', 'Iteration \uff18', 'Iteration private-host',
+                   'Candidate <one>', 'Placement', 'see ' + HOST, 'C:\\x', 'user@host', '', '<redacted>',
+                   '<redacted>/private-server', None, 3, ['placement'], {'a': 1}, *REVIEW_EXAMPLES)
+        for value in refused:
+            self.assertEqual(gallery._label(value), '<redacted>', value)
+            self.assertEqual(gallery._stage(value), '<redacted>', value)
             if isinstance(value, str):
-                for field in ('label', 'stage'):
-                    with self.assertRaisesRegex(ValueError, field + ' must be plain text'):
-                        publish(self.root, self.renders, **dict(dict(label='x', stage='y'), **{field: value}))
+                with self.assertRaisesRegex(ValueError, 'label must be KIND NUMBER'):
+                    publish(self.root, self.renders, label=value, stage='placement')
+                with self.assertRaisesRegex(ValueError, 'stage must be one of'):
+                    publish(self.root, self.renders, label='Iteration 1', stage=value)
+        with self.assertRaisesRegex(ValueError, 'label must be KIND NUMBER'):
+            publish(self.root, self.renders, label='Iteration 08', stage='placement')
         self.assertFalse((self.root / 'index.json').exists())
+
+    def test_reviewed_host_text_in_labels_stages_and_marker_paths_is_never_published(self):
+        """Review 433k H1/H2 exact inputs, through real publication, legacy records and HTTP."""
+        exact = ('private-host private-user private-share', 'FILE: private-host', 'private-host; private-user')
+        marker = '<redacted>/private-server'
+        self.manifest['warnings'] = ['R1: missing 3D model ' + marker, 'R2: unresolved 3D model ' + marker]
+        self.save()
+        viewer = self.make_viewer(warnings=['R1: missing 3D model ' + marker])
+        metadata = json.loads((viewer / 'viewer.json').read_text())
+        metadata['board'].update(name=marker, path=marker)
+        (viewer / 'viewer.json').write_text(json.dumps(metadata))
+        bundle = publish(self.root, self.renders, label='Iteration 1', stage='placement', viewer=viewer)
+        names = ('manifest.json', 'viewer/viewer.json')
+        stored = [(self.root / 'bundles' / bundle / n).read_text() for n in names] + [(self.root / 'index.json').read_text()]
+        with self.serving() as url:
+            served = [urlopen(url + '/bundles/' + bundle + '/' + n).read().decode() for n in names]
+            served.append(urlopen(url).read().decode())
+            bodies = []
+            for label, stage in zip(exact, exact[1:] + exact[:1]):
+                for n in names:  # an earlier publisher stored the text as given
+                    path = self.root / 'bundles' / bundle / n
+                    record = json.loads(path.read_text())
+                    record.update(label=label, stage=stage, captured_board=marker,
+                                  board=dict(record.get('board', {}), name=marker, path=marker),
+                                  warnings=['R1: missing 3D model ' + marker, label, stage])
+                    if n == 'manifest.json':
+                        record['schema'] = 'agent-ee.gallery-bundle/2'
+                    path.write_text(json.dumps(record))
+                listing = json.loads((self.root / 'index.json').read_text())
+                listing[0].update(label=label, stage=stage, warnings=['R1: missing 3D model ' + marker])
+                (self.root / 'index.json').write_text(json.dumps(listing))
+                bodies += [urlopen(url + '/bundles/' + bundle + '/' + n).read().decode() for n in names]
+                bodies.append(urlopen(url).read().decode())
+        for n, body in enumerate(stored + served + bodies):
+            assert_no_uri_leak(self, body, n)
+            self.assertNotIn('private', body, n)
+        record, viewer_record = json.loads(served[0]), json.loads(served[1])
+        self.assertEqual((record['label'], record['stage']), ('Iteration 1', 'placement'))
+        self.assertEqual(record['warnings'], ['R1: missing 3D model <redacted>', 'R2: unresolved 3D model <redacted>'])
+        self.assertEqual((viewer_record['board']['name'], viewer_record['board']['path']), ('<redacted>', '<redacted>'))
+        self.assertEqual(viewer_record['warnings'], ['R1: missing 3D model <redacted>'])
+        legacy = json.loads(bodies[-3])
+        self.assertEqual((legacy['label'], legacy['stage'], legacy['schema']),
+                         ('<redacted>', '<redacted>', 'agent-ee.gallery-bundle/3'))
 
     def test_legacy_bundle_is_projected_when_served(self):
         bundle = self.add()
@@ -505,7 +572,7 @@ class GalleryTests(unittest.TestCase):
         self.assertNotIn(HOST, body)
         served = json.loads(body)
         self.assertEqual(served['warnings'], ['<redacted>', 'R1: missing 3D model m.step'])
-        self.assertEqual((served['label'], served['schema']), ('<redacted>', 'agent-ee.gallery-bundle/2'))
+        self.assertEqual((served['label'], served['schema']), ('<redacted>', 'agent-ee.gallery-bundle/3'))
         self.assertNotIn('private', served)
         self.assertEqual(json.loads(legacy.read_text()), record)  # immutable: served, not rewritten
 
@@ -526,7 +593,7 @@ class GalleryTests(unittest.TestCase):
         return Context()
 
     def test_viewer_happy_path_and_vendor_assets_are_served(self):
-        bundle = publish(self.root, self.renders, label='x', stage='y', viewer=self.make_viewer())
+        bundle = publish(self.root, self.renders, label='Iteration 1', stage='placement', viewer=self.make_viewer())
         with self.serving() as url:
             base = url + '/bundles/' + bundle + '/viewer/'
             for name in ('index.html', 'viewer.js', 'viewer.css', 'board.glb', 'viewer.json',
@@ -547,11 +614,11 @@ class GalleryTests(unittest.TestCase):
     def test_viewer_for_other_candidate_is_refused(self):
         viewer = self.make_viewer(candidate_id='f' * 64)
         with self.assertRaisesRegex(ValueError, 'different candidate'):
-            publish(self.root, self.renders, label='x', stage='y', viewer=viewer)
+            publish(self.root, self.renders, label='Iteration 1', stage='placement', viewer=viewer)
 
     def test_concurrent_publishers_keep_every_bundle_and_a_valid_index(self):
         context = multiprocessing.get_context('fork')
-        workers = [context.Process(target=publish_in_process, args=(str(self.root), str(self.renders), f'c{n}'))
+        workers = [context.Process(target=publish_in_process, args=(str(self.root), str(self.renders), f'Iteration {n}'))
                    for n in range(6)]
         for w in workers:
             w.start()
@@ -561,7 +628,7 @@ class GalleryTests(unittest.TestCase):
         index = json.loads((self.root / 'index.json').read_text())
         self.assertEqual(len(index), 6)
         self.assertEqual(len({item['id'] for item in index}), 6)
-        self.assertEqual(sorted(item['label'] for item in index), [f'c{n}' for n in range(6)])
+        self.assertEqual(sorted(item['label'] for item in index), [f'Iteration {n}' for n in range(6)])
         for item in index:
             self.assertTrue((self.root / 'bundles' / item['id'] / 'top.png').is_file())
         self.assertEqual(len(list((self.root / 'bundles').iterdir())), 6)
@@ -579,7 +646,7 @@ class GalleryTests(unittest.TestCase):
             self.refuses('not the retained candidate board', candidate=run)
         self.assertEqual((run / 'inputs' / 'project' / 'board.kicad_pcb').read_text(), 'board text')
         self.bind(run, candidate)
-        publish(self.root, self.renders, label='x', stage='y', candidate=run)
+        publish(self.root, self.renders, label='Iteration 1', stage='placement', candidate=run)
         self.manifest['snapshot']['project'] = {'path': 'snapshot/board.kicad_pro', 'sha256': digest(staged)}
         shutil.copyfile(staged, self.renders / 'snapshot' / 'board.kicad_pro')
         self.save()
@@ -630,7 +697,7 @@ class GalleryTests(unittest.TestCase):
         metadata['board']['path'] = paths[2]
         metadata['warnings'] = list(paths)
         (viewer / 'viewer.json').write_text(json.dumps(metadata))
-        bundle = publish(self.root, self.renders, label='x', stage='y', viewer=viewer)
+        bundle = publish(self.root, self.renders, label='Iteration 1', stage='placement', viewer=viewer)
         names = ('manifest.json', 'viewer/viewer.json')
         bodies = [(self.root / 'bundles' / bundle / n).read_text() for n in names] + [(self.root / 'index.json').read_text()]
         with self.serving() as url:
@@ -700,9 +767,19 @@ class GalleryTests(unittest.TestCase):
         def slash_only(text):  # a label allowlist that only refuses "/"
             return surfaces(text) + (text if '/' not in text else '')
 
-        for leaky in (lambda text: text, scrubbed, unlisted, loose_basename, legacy_marker, slash_only):
+        character_filter = re.compile(r"(?:[A-Za-z0-9 _.,;!?'\"()\[\]{}<>&=*#+|·–—’“”×-]|:(?= |$)){1,200}")
+
+        def plain_text(text):  # review 433k H1: a label kept when it is plain text without path syntax
+            return surfaces(text) + (text if character_filter.fullmatch(text) else '')
+
+        def marker_name(text):  # review 433k H2: "<redacted>/NAME" trusted as an earlier basename
+            name = text[len('<redacted>/'):] if text.startswith('<redacted>/') else ''
+            return surfaces(text) + (name if re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.+-]*', name) else '')
+
+        exact = (legacy_marker, slash_only, plain_text, marker_name)
+        for leaky in (lambda text: text, scrubbed, unlisted, loose_basename, *exact):
             with self.assertRaisesRegex(AssertionError, 'unexpectedly found in'):
-                assert_leak_free(self, leaky, rounds=200, stride=1 if leaky in (legacy_marker, slash_only) else 7)
+                assert_leak_free(self, leaky, rounds=200, stride=1 if leaky in exact else 7)
         assert_leak_free(self, surfaces, seed=1, rounds=200, stride=50)
 
     def test_composed_texts_are_never_published_on_any_core_surface(self):
@@ -715,7 +792,7 @@ class GalleryTests(unittest.TestCase):
         metadata = json.loads((viewer / 'viewer.json').read_text())
         metadata['board']['path'] = texts[2]
         (viewer / 'viewer.json').write_text(json.dumps(metadata))
-        bundle = publish(self.root, self.renders, label='x', stage='y', viewer=viewer)
+        bundle = publish(self.root, self.renders, label='Iteration 1', stage='placement', viewer=viewer)
         names = ('manifest.json', 'viewer/viewer.json')
         stored = [(self.root / 'bundles' / bundle / n).read_text() for n in names] + [(self.root / 'index.json').read_text()]
         with self.serving() as url:
@@ -767,7 +844,7 @@ class GalleryTests(unittest.TestCase):
         manifest_path = render_board(run, out, width=128, height=128, quality='basic', jobs=1, timeout=120)
         viewer = Path(self.tmp.name) / 'native-viewer'
         build_viewer(run, viewer)
-        bundle = publish(self.root, out, label='native', stage='y', viewer=viewer, candidate=run)
+        bundle = publish(self.root, out, label='Iteration 1', stage='placement', viewer=viewer, candidate=run)
         record = json.loads((self.root / 'bundles' / bundle / 'manifest.json').read_text())
         self.assertEqual(set(record['model_coverage']['summary']) >= {'resolved', 'disabled', 'no_model'}, True)
         published = ''.join(p.read_text() for p in (self.root / 'bundles' / bundle).rglob('*.json') if 'vendor' not in p.parts)
@@ -826,8 +903,8 @@ class DiagnosticSupplementTests(unittest.TestCase):
 
     def add(self, **overrides):
         from agent_ee.render_gallery import publish_supplement
-        arguments = dict(candidate=self.run, board_sha256=self.board_hash, label='Historic <analysis>',
-                         stage='UNROUTED; proposed ADC move NOT adopted', routing='unrouted', adoption='not-adopted')
+        arguments = dict(candidate=self.run, board_sha256=self.board_hash, label='Diagnostic 1',
+                         stage='diagnostic', routing='unrouted', adoption='not-adopted')
         arguments.update(overrides)
         return publish_supplement(self.root, overrides.pop('image', self.image), self.packet,
                                   **{k: v for k, v in arguments.items() if k != 'image'})
@@ -870,7 +947,7 @@ class DiagnosticSupplementTests(unittest.TestCase):
         self.assertEqual(manifest['board_sha256'], self.board_hash)
         self.assertEqual(manifest['candidate_id'], self.candidate['candidate_id'])
         self.assertEqual(manifest['captured_board'], 'board.kicad_pcb')  # a basename, like every published path
-        self.assertEqual(manifest['schema'], 'agent-ee.gallery-diagnostic/3')
+        self.assertEqual(manifest['schema'], 'agent-ee.gallery-diagnostic/4')
         self.assertEqual(manifest['routing'], {'status': 'unrouted', 'copper_items': 0})
         self.assertEqual(manifest['adoption'], {'status': 'not-adopted', 'verified': False})
         self.assertEqual(manifest['source_packet']['sha256'], digest(self.packet))
@@ -895,7 +972,7 @@ class DiagnosticSupplementTests(unittest.TestCase):
         base = self.serving()
         prefix = '/diagnostics/'+identifier+'/'
         body = self.get(base+prefix+'index.html')
-        self.assertIn('Historic &lt;analysis&gt;', body)
+        self.assertIn('<h2>Diagnostic 1</h2>', body)
         self.assertIn('NOT adopted', body)
         self.assertNotIn('Latest:', body)
         with urlopen(base+prefix+'image.png') as result:
@@ -921,7 +998,7 @@ class DiagnosticSupplementTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'not a symlink'):
             from agent_ee.render_gallery import publish_supplement
             publish_supplement(linked/'nested', self.image, self.packet, candidate=self.run,
-                               board_sha256=self.board_hash, label='x', stage='y', routing='unrouted',
+                               board_sha256=self.board_hash, label='Iteration 1', stage='placement', routing='unrouted',
                                adoption='not-adopted')
         self.assertFalse((self.root/'nested').exists())
 
@@ -981,7 +1058,7 @@ class DiagnosticSupplementTests(unittest.TestCase):
         from unittest import mock
         with mock.patch.object(gallery, '_verify_provenance'):
             with self.assertRaisesRegex(ValueError, 'must be a directory, not a symlink'):
-                publish(self.root, renders, label='x', stage='y')
+                publish(self.root, renders, label='Iteration 1', stage='placement')
         self.assertEqual(list(outside.iterdir()), [])
 
     # --- supplement review H2: bound to a verified retained candidate ---------
@@ -1057,12 +1134,45 @@ class DiagnosticSupplementTests(unittest.TestCase):
                   for suffix in ('/manifest.json', '/index.html')]
         return stored + served + [self.get(base)]
 
-    def test_labels_and_stages_with_path_syntax_are_refused(self):
+    def test_labels_and_stages_outside_the_vocabulary_are_refused(self):
         for value in ('see C:/Users/secret/project/board.kicad_pcb', '\\\\fileserver\\private-share\\c.png',
-                      'FILE://private-server/', *REVIEW_EXAMPLES):
-            self.refuses('label must be plain text', label=value)
-            self.refuses('stage must be plain text', stage=value)
+                      'FILE://private-server/', 'Historic analysis', 'Diagnostic', *REVIEW_EXAMPLES):
+            self.refuses('label must be KIND NUMBER', label=value)
+            self.refuses('stage must be one of', stage=value)
         self.assertFalse((self.root/'diagnostics.json').exists())
+
+    def test_reviewed_host_text_and_marker_board_in_earlier_supplements_is_never_served(self):
+        """Review 433k H1/H2 exact inputs in a legacy supplement's label, stage and captured_board."""
+        identifier = self.add()
+        exact = ('private-host private-user private-share', 'FILE: private-host', 'private-host; private-user')
+        ids = []
+        for n, (label, stage) in enumerate(zip(exact, exact[1:] + exact[:1])):
+            ids.append(f'{n + 6}' * 12 + '-' + '7' * 12)
+            self.legacy(ids[-1], label=label, stage=stage, captured_board='<redacted>/private-server',
+                        schema='agent-ee.gallery-diagnostic/3')
+        bodies = self.surfaces(*ids, identifier, stored=False)
+        for n, body in enumerate(bodies):
+            assert_no_uri_leak(self, body, n)
+            self.assertNotIn('private', body, n)
+        for body in bodies[0:6:2]:
+            record = json.loads(body)
+            self.assertEqual((record['label'], record['stage'], record['captured_board'], record['schema']),
+                             ('<redacted>', '<redacted>', '<redacted>', 'agent-ee.gallery-diagnostic/4'))
+        record = json.loads(bodies[6])
+        self.assertEqual((record['label'], record['stage'], record['captured_board']),
+                         ('Diagnostic 1', 'diagnostic', 'board.kicad_pcb'))
+        self.assertIn('<h2>Diagnostic 1</h2>', bodies[-1])
+        self.assertIn('Stage: Diagnostic', bodies[-1])
+
+    def test_malformed_earlier_statuses_are_served_as_unknown(self):
+        """Review 433k gap: list or mapping statuses render unknown instead of failing the request."""
+        identifier = self.add()
+        self.legacy('8' * 12 + '-' + '9' * 12, routing={'status': ['unrouted']}, adoption={'status': {'a': 1}})
+        bodies = self.surfaces('8' * 12 + '-' + '9' * 12, identifier, stored=False)
+        record = json.loads(bodies[0])
+        self.assertEqual((record['routing']['status'], record['adoption']['status']), (None, None))
+        self.assertIn('Status unknown: not bound to a verified retained candidate', bodies[1])
+        self.assertEqual(bodies[-1].count('Status unknown: not bound'), 1)
 
     def test_host_text_in_earlier_supplement_records_is_never_served(self):
         identifier = self.add()

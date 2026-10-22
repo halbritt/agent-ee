@@ -33,17 +33,17 @@ _VIEWS = ("top", "bottom", "isometric")
 #   and anything else is the fixed token <redacted>;
 # - a warning is rebuilt from a recognised code and allowlisted parameters, else it
 #   is <redacted> as a whole (a native log line keeps only its view);
-# - a label or stage is kept only when it is plain text without path syntax;
+# - a stage is a code from _STAGES and a label is a kind from _LABELS with a number,
+#   rebuilt from those parts, else the whole field is <redacted>;
 # - hashes, identifiers, times, counts and statuses must match their grammar;
 # - every other field is dropped.
 _MARK = "<redacted>"
-_BUNDLE_SCHEMA = "agent-ee.gallery-bundle/2"
+_BUNDLE_SCHEMA = "agent-ee.gallery-bundle/3"
 _VIEWER_PUBLICATION = "agent-ee.gallery-viewer/2"
-_DIAGNOSTIC_SCHEMA = "agent-ee.gallery-diagnostic/3"
+_DIAGNOSTIC_SCHEMA = "agent-ee.gallery-diagnostic/4"
 _NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}")
 _VARIABLE = re.compile(r"\$\{[A-Za-z0-9_]+\}(?=[\\/])")
 _DRIVE = re.compile(r"[A-Za-z]:[\\/]")
-_TEXT = re.compile(r"(?:[A-Za-z0-9 _.,;!?'\"()\[\]{}<>&=*#+|·–—’“”×-]|:(?= |$)){1,200}")
 _HASH = re.compile(r"[a-f0-9]{64}")
 _TIME = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|[+-]\d\d:\d\d)?")
 _REFERENCE = r"([A-Za-z0-9_.+*#-]{1,32})"
@@ -58,6 +58,11 @@ _SUMMARY = ("footprints", "models", "footprints_fully_resolved", "resolved", "mi
             "disabled", "no_model")
 _COUNTS = ("resolved", "missing", "unresolved", "disabled", "no_model")
 _ID = r"[a-f0-9]{12}-[a-f0-9]{12}"
+# Publication stages and the text shown for each, and the label kinds. A label is
+# "KIND NUMBER"; no publisher-supplied free text is ever published.
+_STAGES = {"placement": "Placement", "routing": "Routing in progress", "routed": "Routed",
+           "review": "Design review", "diagnostic": "Diagnostic", "fixture": "Test fixture"}
+_LABELS = ("Iteration", "Revision", "Candidate", "Milestone", "Diagnostic", "Fixture")
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 # Supplement status vocabulary. Anything else is refused at publication and shown
 # as unknown when served. "unrouted" is checked against the retained board.
@@ -76,16 +81,14 @@ def _basename(value):
     with either slash, or either of those after a KiCad ${VARIABLE}. A URI or other
     "name:", a UNC or "//" host, a doubled separator, a backslash outside a drive
     path, a quote, < > | * ? or a control character anywhere, a trailing separator,
-    or a final component that is not a plain file name, is <redacted>. "<redacted>/name", the form
-    published before the allowlist, keeps its name.
+    or a final component that is not a plain file name, is <redacted>. So is a value an
+    earlier redactor already scrubbed ("<redacted>/name"): what followed its marker is
+    not known to have been a local file name.
     """
     if value is None:
         return None
     if not isinstance(value, str):
         return _MARK
-    if value.startswith(_MARK + "/"):
-        name = value[len(_MARK) + 1:]
-        return name if _NAME.fullmatch(name) else _MARK
     if any(c in "\"'<>|*?" or not c.isprintable() for c in value) or value.endswith(("/", "\\")):
         return _MARK  # a trailing separator names a directory, not a file
     variable = _VARIABLE.match(value)
@@ -110,9 +113,23 @@ def _name(value):
     return value if isinstance(value, str) and _NAME.fullmatch(value) else _MARK
 
 
-def _text(value):
-    """A label or stage when it is plain text without path syntax, else <redacted>."""
-    return value if isinstance(value, str) and _TEXT.fullmatch(value) else _MARK
+def _label(value):
+    """A label rebuilt as "KIND NUMBER" (KIND from _LABELS, NUMBER 0 to 999999), else <redacted>."""
+    if not isinstance(value, str):
+        return _MARK
+    kind, _, number = value.partition(" ")
+    if kind in _LABELS and number.isascii() and number.isdecimal() and len(number) <= 6:
+        return f"{kind} {int(number)}"
+    return _MARK
+
+
+def _stage(value):
+    """A stage code from _STAGES, else <redacted>."""
+    return value if isinstance(value, str) and value in _STAGES else _MARK
+
+
+def _status(value, vocabulary):
+    return value if isinstance(value, str) and value in vocabulary else None
 
 
 def _warning(value):
@@ -166,7 +183,7 @@ def _bundle(item):
     item = _mapping(item)
     summary = _mapping(_mapping(item.get("model_coverage")).get("summary"))
     return _identified(item, {
-        "schema": _BUNDLE_SCHEMA, "label": _text(item.get("label")), "stage": _text(item.get("stage")),
+        "schema": _BUNDLE_SCHEMA, "label": _label(item.get("label")), "stage": _stage(item.get("stage")),
         "board_sha256": _match(_HASH, item.get("board_sha256")),
         "candidate_id": _match(_HASH, item.get("candidate_id")),
         "published_at": _match(_TIME, item.get("published_at")),
@@ -199,16 +216,17 @@ def _diagnostic(item):
     item = _mapping(item)
     routing, adoption = _mapping(item.get("routing")), _mapping(item.get("adoption"))
     packet, source, image = (_mapping(item.get(key)) for key in ("source_packet", "source_image", "image"))
-    bound = item.get("schema") in ("agent-ee.gallery-diagnostic/2", _DIAGNOSTIC_SCHEMA)
+    bound = item.get("schema") in ("agent-ee.gallery-diagnostic/2", "agent-ee.gallery-diagnostic/3",
+                                   _DIAGNOSTIC_SCHEMA)
     return _identified(item, {
         "schema": _DIAGNOSTIC_SCHEMA if bound else None, "kind": "annotated-2d-diagnostic",
-        "label": _text(item.get("label")), "stage": _text(item.get("stage")),
+        "label": _label(item.get("label")), "stage": _stage(item.get("stage")),
         "candidate_id": _match(_HASH, item.get("candidate_id")),
         "captured_board": _basename(item.get("captured_board")),
         "board_sha256": _match(_HASH, item.get("board_sha256")),
-        "routing": {"status": routing.get("status") if routing.get("status") in _ROUTING else None,
+        "routing": {"status": _status(routing.get("status"), _ROUTING),
                     "copper_items": _count(routing.get("copper_items"))},
-        "adoption": {"status": adoption.get("status") if adoption.get("status") in _ADOPTION else None,
+        "adoption": {"status": _status(adoption.get("status"), _ADOPTION),
                      "verified": False},
         "published_at": _match(_TIME, item.get("published_at")),
         "source_packet": {"name": _name(packet.get("name")), "sha256": _match(_HASH, packet.get("sha256"))},
@@ -218,11 +236,13 @@ def _diagnostic(item):
         "limitation": _LIMITATION})
 
 
-def _plain(name, value):
+def _plain(label, stage):
     """Refuse a label or stage that the allowlist would not publish as given."""
-    if _text(value) != value or value == _MARK:
-        raise ValueError(f"{name} must be plain text of at most 200 characters: letters, digits, spaces and "
-                         "punctuation, without path syntax (/ \\ @ ~ $ % or a colon not followed by a space)")
+    if _label(label) != label or label == _MARK:
+        raise ValueError(f"label must be KIND NUMBER with KIND one of {', '.join(_LABELS)} and NUMBER "
+                         "0 to 999999 without leading zeros")
+    if _stage(stage) != stage or stage == _MARK:
+        raise ValueError(f"stage must be one of {sorted(_STAGES)}")
 
 
 def coverage_counts(coverage):
@@ -499,8 +519,7 @@ def publish(root, renders, *, label, stage, viewer=None, candidate=None):
     images = manifest["images"]
     if {i["view"] for i in images} != set(_VIEWS) or len(images) != 3:
         raise ValueError("top, bottom and isometric images are required")
-    _plain("label", label)
-    _plain("stage", stage)
+    _plain(label, stage)
     _verify_provenance(manifest, renders, candidate)
     with _publication(root, "bundles", ".publish-") as staged:
         record = _bundle({"label": label, "stage": stage, "board_sha256": board_hash,
@@ -558,8 +577,7 @@ def publish_supplement(root, image, packet, *, candidate, board_sha256, label, s
         raise ValueError(f"routing status must be one of {sorted(_ROUTING)}; unknown status is refused")
     if adoption not in _ADOPTION:
         raise ValueError(f"adoption status must be one of {sorted(_ADOPTION)}; unknown status is refused")
-    _plain("label", label)
-    _plain("stage", stage)
+    _plain(label, stage)
     candidate = Path(candidate).expanduser().resolve()
     if not (candidate / "candidate.json").is_file():
         raise ValueError("a retained candidate run directory is required")
@@ -627,7 +645,7 @@ def diagnostic_cards(supplements, latest=None):
             continue
         base = "/diagnostics/" + identifier + "/"
         cards.append(f'<section id="diagnostic-{identifier}"><h2>{escape(item["label"])}</h2>'
-                     f'<p><strong>Annotated 2D diagnostic supplement</strong></p><p>{escape(item["stage"])}</p>'
+                     f'<p><strong>Annotated 2D diagnostic supplement</strong></p><p>Stage: {escape(_STAGES.get(item["stage"], _MARK))}</p>'
                      f'{_supplement_status(item, latest)}'
                      f'<p class="hash">Board SHA-256: {escape(str(item["board_sha256"] or "unknown"))}</p>'
                      f'<p>Published {escape(str(item["published_at"] or "unknown"))}</p>'
@@ -656,7 +674,7 @@ def page(index, supplements=(), *, diagnostic_only=False, latest=None):
         summary = {key: "unknown" if value is None else value for key, value in summary.items()}
         coverage_text = (f'Models: {summary["resolved"]} resolved; {summary["missing"]} missing; {summary["unresolved"]} unresolved; {summary["disabled"]} disabled; {summary["no_model"]} footprints without a model.')
         warnings = "".join('<li>' + escape(w) + '</li>' for w in item["warnings"])
-        cards.append(f'<section><h2>{"Latest: " if position == 0 else ""}{escape(item["label"])}</h2><p>{escape(item["stage"])} · Rendered {escape(item["rendered_at"] or "unknown")}</p><p class="hash">Board SHA-256: {escape(item["board_sha256"] or "unknown")}</p>{badge}<p class="coverage">{escape(coverage_text)}</p>{viewer}<div class="images">{pictures}</div><details><summary>Model warnings ({len(item["warnings"])})</summary><ul>{warnings}</ul></details><a href="{base}manifest.json">Publication manifest</a></section>')
+        cards.append(f'<section><h2>{"Latest: " if position == 0 else ""}{escape(item["label"])}</h2><p>Stage: {escape(_STAGES.get(item["stage"], _MARK))} · Rendered {escape(item["rendered_at"] or "unknown")}</p><p class="hash">Board SHA-256: {escape(item["board_sha256"] or "unknown")}</p>{badge}<p class="coverage">{escape(coverage_text)}</p>{viewer}<div class="images">{pictures}</div><details><summary>Model warnings ({len(item["warnings"])})</summary><ul>{warnings}</ul></details><a href="{base}manifest.json">Publication manifest</a></section>')
     return ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PCB render gallery</title><style>body{font:16px system-ui;background:#111923;color:#e7eef7;margin:auto;padding:24px;max-width:1400px}a{color:#8fc9ff}li{overflow-wrap:anywhere}h1{margin-bottom:8px}section{background:#1b2735;padding:24px;margin:24px 0;border-radius:12px}.images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0}figure{margin:0}img{width:100%;border-radius:8px}figcaption{padding:8px}.hash,pre{overflow-wrap:anywhere;white-space:pre-wrap;font-size:13px}.badge{display:inline-block;padding:6px 10px;border-radius:6px;font-weight:600}.incomplete{background:#7a4b00;color:#fff}.unknown{background:#8a1c1c;color:#fff}.complete{background:#1e5a3a;color:#fff}.button{display:inline-block;padding:12px;background:#294968;border-radius:6px}@media(max-width:700px){body{padding:12px}section{padding:16px}.images{grid-template-columns:1fr}}</style>' + ('<h1>PCB diagnostic supplement</h1><p><a href="/">Back to render gallery</a></p>' if diagnostic_only else '<h1>PCB render gallery</h1><p>Native KiCad images · Latest candidate and retained history</p>') + '<p>Visual inspection only. Missing component models can make geometry incomplete; these images do not approve electrical or fabrication readiness.</p>' + ('<p><a href="#diagnostics">Diagnostic supplements</a></p>' if supplements else '') + (''.join(cards) or ('' if diagnostic_only else '<p>No completed render bundles have been published yet.</p>')) + ('<div id="diagnostics"><h2>Diagnostic supplements</h2>' + diagnostic_cards(supplements, latest) + '</div>' if supplements else '') + '</html>').encode()
 
 
@@ -730,8 +748,9 @@ def main():
     add.add_argument("--renders", type=Path, required=True)
     add.add_argument("--viewer", type=Path)
     add.add_argument("--candidate", type=Path, help="retained run directory the render was taken from")
-    add.add_argument("--label", required=True)
-    add.add_argument("--stage", required=True)
+    labels = f"KIND NUMBER, KIND one of {', '.join(_LABELS)}"
+    add.add_argument("--label", required=True, help=labels)
+    add.add_argument("--stage", required=True, choices=sorted(_STAGES))
     supplement = commands.add_parser("supplement", help="publish annotated PNG without changing Latest")
     supplement.add_argument("--image", type=Path, required=True)
     supplement.add_argument("--packet", type=Path, required=True)
@@ -740,8 +759,8 @@ def main():
     supplement.add_argument("--board-sha256", required=True, help="expected hash of the retained board")
     supplement.add_argument("--routing", required=True, choices=sorted(_ROUTING))
     supplement.add_argument("--adoption", required=True, choices=sorted(_ADOPTION))
-    supplement.add_argument("--label", required=True)
-    supplement.add_argument("--stage", required=True)
+    supplement.add_argument("--label", required=True, help=labels)
+    supplement.add_argument("--stage", required=True, choices=sorted(_STAGES))
     server = commands.add_parser("serve")
     server.add_argument("--bind", default="127.0.0.1")
     server.add_argument("--port", type=int, default=18510)
