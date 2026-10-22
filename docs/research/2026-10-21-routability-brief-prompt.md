@@ -20,7 +20,9 @@ after every step.
 
 ## Measured problem
 
-Placement completes in 2–3 minutes and passes every electrical locality bound, but routing
+Placement completes in 2–3 minutes and passes every electrical locality bound (a pre-AGENTEE-337
+claim: unsourced locality bounds are advisory `info`, not a pass; six of the 26 pairs exceed their
+unsourced bound, see [blocks.md](../blocks.md#real-pod-diagnostic-stage-a)), but routing
 plateaus at 203 of 235 nets: a second run with twice the time budget reproduces the
 identical result, and re-ordering nets in later rounds makes it worse (59–64 open). The 32
 open nets are short intra-block nets (eFuse setting resistors packed at 0.26 mm courtyard
