@@ -1,0 +1,167 @@
+{
+  "schema": "agent-ee.scope/2",
+  "name": "Control-derived RC unplaced stage fixture",
+  "scope": "Checks-only stage boundary qualification: unplaced derived from fixtures/rc/control; expected initial outcomes are declared in requirements/unplaced.md.",
+  "limitations": [
+    "Derivative of fixtures/rc/control (origin T1) with stock KiCad footprints (origin T6).",
+    "No simulation, manufacturing qualification or complete campaign is claimed. Zone fill is graded as saved.",
+    "Expected seeded defects remain defects; fixture expectations never invert a production grade."
+  ],
+  "inputs": [
+    {
+      "path": "unplaced",
+      "at": "project"
+    },
+    {
+      "path": "requirements",
+      "at": "requirements"
+    },
+    {
+      "path": "/usr/share/kicad/symbols",
+      "at": "stock/symbols",
+      "include": [
+        "Device.kicad_sym",
+        "power.kicad_sym",
+        "Connector_Generic.kicad_sym"
+      ]
+    },
+    {
+      "path": "/usr/share/kicad/footprints",
+      "at": "stock/footprints",
+      "include": [
+        "Resistor_SMD.pretty/*",
+        "Capacitor_SMD.pretty/*",
+        "Connector_PinHeader_2.54mm.pretty/*"
+      ]
+    },
+    {
+      "path": "/usr/share/kicad/template",
+      "at": "stock/template",
+      "include": [
+        "sym-lib-table",
+        "fp-lib-table"
+      ]
+    }
+  ],
+  "schematic": "project/rc_filter.kicad_sch",
+  "board": "project/rc_filter.kicad_pcb",
+  "mutable_inputs": [
+    "project/rc_filter.kicad_pcb"
+  ],
+  "requirements": [
+    "requirements/unplaced.md"
+  ],
+  "checks": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "drc-placement",
+      "kind": "drc",
+      "params": {
+        "projection": "placement-stage/1"
+      }
+    },
+    {
+      "id": "courtyard",
+      "kind": "placement",
+      "params": {
+        "criterion": "courtyard-overlap/1",
+        "drc_check": "drc-placement"
+      }
+    },
+    {
+      "id": "containment",
+      "kind": "placement",
+      "params": {
+        "criterion": "outline-containment/1",
+        "drc_check": "drc-placement"
+      }
+    },
+    {
+      "id": "drc-final",
+      "kind": "drc"
+    }
+  ],
+  "baseline": {
+    "requirements": [
+      {
+        "id": "R-erc",
+        "statement": "Native ERC has no issues.",
+        "source": {
+          "path": "requirements/unplaced.md",
+          "locator": "R-erc"
+        },
+        "checks": [
+          "erc"
+        ]
+      },
+      {
+        "id": "R-netlist",
+        "statement": "Native XML exports the three-component RC network.",
+        "source": {
+          "path": "requirements/unplaced.md",
+          "locator": "R-netlist"
+        },
+        "checks": [
+          "netlist"
+        ]
+      },
+      {
+        "id": "R-drc-placement",
+        "statement": "Native placement violations and schematic parity have no issues; unrouted connectivity is ungraded.",
+        "source": {
+          "path": "requirements/unplaced.md",
+          "locator": "R-drc-placement"
+        },
+        "checks": [
+          "drc-placement"
+        ]
+      },
+      {
+        "id": "R-courtyard",
+        "statement": "Mounting-side courtyards do not overlap.",
+        "source": {
+          "path": "requirements/unplaced.md",
+          "locator": "R-courtyard"
+        },
+        "checks": [
+          "courtyard"
+        ]
+      },
+      {
+        "id": "R-containment",
+        "statement": "Every courtyard is wholly inside the board outline.",
+        "source": {
+          "path": "requirements/unplaced.md",
+          "locator": "R-containment"
+        },
+        "checks": [
+          "containment"
+        ]
+      },
+      {
+        "id": "R-drc-final",
+        "statement": "Native DRC including connectivity and schematic parity has no issues.",
+        "source": {
+          "path": "requirements/unplaced.md",
+          "locator": "R-drc-final"
+        },
+        "checks": [
+          "drc-final"
+        ]
+      }
+    ],
+    "targets": [
+      "requirements/unplaced.md"
+    ],
+    "reference_architectures": [
+      "requirements/unplaced.md"
+    ]
+  }
+}

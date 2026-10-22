@@ -1,0 +1,52 @@
+{
+  "candidate_id": "c58b76eeb0e5275a6d3ea28a0fd34d4c9fbeb38a48dcf04f7ecfb84538e2b797",
+  "details": {
+    "advisory": null,
+    "board_sha256": "787def8dda99dde63ddfd175441853236d2928afafb09374033398c0d5cca26f",
+    "candidate_id": "c58b76eeb0e5275a6d3ea28a0fd34d4c9fbeb38a48dcf04f7ecfb84538e2b797",
+    "criterion": "outline-containment/1",
+    "defects": [],
+    "drc": {
+      "check_id": "drc-placement",
+      "drc_json": "work/drc-placement/drc.json",
+      "drc_sha256": "c6e1884d67b3f0671283ec5baa2361e0f4e26d0e3a3f0fab78f4aec6e2970aba",
+      "kicad_version": "10.0.7",
+      "outcome": "pass",
+      "projection": "placement-stage/1",
+      "result_sha256": "963a05b7d9f43dd0ab7998fb2401a21dfb6dfa32e9c884729c47e4b2565cc8f3"
+    },
+    "pcbnew_version": "10.0.7",
+    "routing_feedback": null,
+    "status": "pass",
+    "tool": {
+      "argv": [
+        "/usr/bin/python3",
+        "-B",
+        "-m",
+        "agent_ee.placement_probe",
+        "/candidate/project/rc_filter.kicad_pcb",
+        "--out",
+        "/work/placement-probe.json"
+      ],
+      "console_sha256": "ecfdabc9a488fbdbeb42728b58080ecf903a12f0cabcb48d0622d8aa9f2d1a1e",
+      "duration_s": 0.852,
+      "exit_code": 0
+    },
+    "unknown": []
+  },
+  "evidence": [
+    "work/drc-placement/drc.json",
+    "work/containment/execution.json",
+    "work/containment/console.log",
+    "work/containment/placement-probe.json",
+    "work/containment/placement-judgment.json"
+  ],
+  "execution": "ok",
+  "id": "containment",
+  "kind": "placement",
+  "limitations": [
+    "placement predicate over saved geometry and the prerequisite native DRC; no copper, thermal, EMC or routed-length analysis; advisory score and routing feedback never pass or fail"
+  ],
+  "outcome": "pass",
+  "summary": "outline-containment/1: 0 proved violation(s)"
+}

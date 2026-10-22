@@ -1,0 +1,118 @@
+{
+  "baseline_id": "7a46bfc355c566b5dad590b1db72adfbca3b7298c306408bbd1d4bbd3168a063",
+  "criteria": [
+    {
+      "id": "erc",
+      "kind": "erc"
+    },
+    {
+      "id": "netlist",
+      "kind": "netlist"
+    },
+    {
+      "id": "drc-placement",
+      "kind": "drc",
+      "params": {
+        "projection": "placement-stage/1"
+      }
+    },
+    {
+      "id": "courtyard",
+      "kind": "placement",
+      "params": {
+        "criterion": "courtyard-overlap/1",
+        "drc_check": "drc-placement"
+      }
+    },
+    {
+      "id": "containment",
+      "kind": "placement",
+      "params": {
+        "criterion": "outline-containment/1",
+        "drc_check": "drc-placement"
+      }
+    },
+    {
+      "id": "drc-final",
+      "kind": "drc"
+    }
+  ],
+  "files": {
+    "requirements/unplaced.md": "9ef6ad581e709816abc1eac495677b99bfc98279337f3c026c8a65016ff43c80"
+  },
+  "reference_architectures": [
+    "requirements/unplaced.md"
+  ],
+  "requirements": [
+    {
+      "checks": [
+        "erc"
+      ],
+      "id": "R-erc",
+      "source": {
+        "locator": "R-erc",
+        "path": "requirements/unplaced.md"
+      },
+      "statement": "Native ERC has no issues."
+    },
+    {
+      "checks": [
+        "netlist"
+      ],
+      "id": "R-netlist",
+      "source": {
+        "locator": "R-netlist",
+        "path": "requirements/unplaced.md"
+      },
+      "statement": "Native XML exports the three-component RC network."
+    },
+    {
+      "checks": [
+        "drc-placement"
+      ],
+      "id": "R-drc-placement",
+      "source": {
+        "locator": "R-drc-placement",
+        "path": "requirements/unplaced.md"
+      },
+      "statement": "Native placement violations and schematic parity have no issues; unrouted connectivity is ungraded."
+    },
+    {
+      "checks": [
+        "courtyard"
+      ],
+      "id": "R-courtyard",
+      "source": {
+        "locator": "R-courtyard",
+        "path": "requirements/unplaced.md"
+      },
+      "statement": "Mounting-side courtyards do not overlap."
+    },
+    {
+      "checks": [
+        "containment"
+      ],
+      "id": "R-containment",
+      "source": {
+        "locator": "R-containment",
+        "path": "requirements/unplaced.md"
+      },
+      "statement": "Every courtyard is wholly inside the board outline."
+    },
+    {
+      "checks": [
+        "drc-final"
+      ],
+      "id": "R-drc-final",
+      "source": {
+        "locator": "R-drc-final",
+        "path": "requirements/unplaced.md"
+      },
+      "statement": "Native DRC including connectivity and schematic parity has no issues."
+    }
+  ],
+  "schema": "agent-ee.baseline/1",
+  "targets": [
+    "requirements/unplaced.md"
+  ]
+}

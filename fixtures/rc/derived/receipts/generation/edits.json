@@ -1,0 +1,72 @@
+{
+  "placed-unrouted": {
+    "moved_mm": {},
+    "removed_track_and_via_uuids": [
+      "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "8b528360-109d-4533-a657-35923fd930f8",
+      "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "b71a70d7-bbc1-43d1-ae55-5e4d992412a4"
+    ],
+    "zones": {
+      "unfilled": [
+        "38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+      ]
+    }
+  },
+  "seeded-placement": {
+    "moved_mm": {
+      "C1": [
+        108,
+        100
+      ],
+      "J1": [
+        95.5,
+        100
+      ]
+    },
+    "removed_track_and_via_uuids": [
+      "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "8b528360-109d-4533-a657-35923fd930f8",
+      "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "b71a70d7-bbc1-43d1-ae55-5e4d992412a4"
+    ],
+    "zones": {
+      "unfilled": [
+        "38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+      ]
+    }
+  },
+  "unplaced": {
+    "moved_mm": {
+      "C1": [
+        135,
+        100
+      ],
+      "J1": [
+        145,
+        100
+      ],
+      "R1": [
+        125,
+        100
+      ]
+    },
+    "removed_track_and_via_uuids": [
+      "69a2edc1-cbed-4fb8-a0fc-ac38c986e5f5",
+      "7deb1fb0-3a34-4321-a0ef-399bdd8439d1",
+      "8b528360-109d-4533-a657-35923fd930f8",
+      "a6dab0b4-e4e6-4317-973b-5d185e509a82",
+      "ae12bf6f-d4ed-46d3-9916-8738850152cc",
+      "b71a70d7-bbc1-43d1-ae55-5e4d992412a4"
+    ],
+    "zones": {
+      "removed": [
+        "38a83012-bcf9-4bb9-b9f4-50d49cd91d90"
+      ]
+    }
+  }
+}

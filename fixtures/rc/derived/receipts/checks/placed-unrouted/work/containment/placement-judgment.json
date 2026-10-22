@@ -1,0 +1,21 @@
+{
+  "advisory": null,
+  "board_sha256": "787def8dda99dde63ddfd175441853236d2928afafb09374033398c0d5cca26f",
+  "candidate_id": "c58b76eeb0e5275a6d3ea28a0fd34d4c9fbeb38a48dcf04f7ecfb84538e2b797",
+  "criterion": "outline-containment/1",
+  "defects": [],
+  "drc": {
+    "check_id": "drc-placement",
+    "drc_json": "work/drc-placement/drc.json",
+    "drc_sha256": "c6e1884d67b3f0671283ec5baa2361e0f4e26d0e3a3f0fab78f4aec6e2970aba",
+    "kicad_version": "10.0.7",
+    "outcome": "pass",
+    "projection": "placement-stage/1",
+    "result_sha256": "963a05b7d9f43dd0ab7998fb2401a21dfb6dfa32e9c884729c47e4b2565cc8f3"
+  },
+  "pcbnew_version": "10.0.7",
+  "routing_feedback": null,
+  "schema": "agent-ee.placement-predicate/1",
+  "status": "pass",
+  "unknown": []
+}

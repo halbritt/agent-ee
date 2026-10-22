@@ -45,8 +45,9 @@ fome-mc source tree was not modified.
 ## Original stage-boundary alternative (AGENTEE-103)
 
 `stages/` is original agent-ee material, not a derivative of the FOME-MC control.
-The requested control-derived variants remain blocked by the assignment's
-non-MIT/copying gate; see `docs/file-origins.json`. The alternative has an
+It was built while the control's rights were unresolved; the control-derived
+variants the ticket asks for are now in `derived/` (next section). Both sets are
+kept. The alternative has an
 authored resistor symbol and reuses the original AGENTEE-40 capacitor/connector
 symbols and two land patterns in `fixtures/generation/project/lib/`. It uses
 the same RC topology and values as facts, with independently authored board
@@ -72,3 +73,55 @@ Committed original stage board hashes (SHA-256):
 
 Generation script SHA-256: `7cc8203dae999cabf950688078bdef261b2ca9dc890c6c4286e71ec9bad8db71`.
 The complete per-file hashes are in `stages/receipts/generation/fixture-hashes.json`.
+
+## Control-derived stage variants (AGENTEE-103)
+
+`derived/` holds the ticket's literal deliverable: three stage-boundary
+variants of `control/` (origin T1, with the stock KiCad footprint data it
+embeds, T6). The owner decision that unblocked them is cited as relayed, not
+restated. Class: owner-relayed. Coordinator agent-519 relayed it in AGENTEE-14
+Plane comment `ad29d555-b855-43f2-bc24-b5b5dfa67991` (2026-10-22), quoted
+verbatim:
+
+> Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT
+> for agent-ee material, and MIT for the FOME-MC RC fixture and the
+> eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded.
+> This also unblocks AGENTEE-103 and AGENTEE-16.
+
+The rest of this section is agent-written. The origin status change for T1 is
+recorded by the AGENTEE-14 lane, not here; `docs/file-origins.json` classifies
+`derived/` as T1 + T6 like `control/`, so publication of the embedded stock
+footprint data (T6) is still governed by that origin.
+
+`derived/generate.py` runs pcbnew 10.0.7 in the existing networkless executor
+with `control/` mounted read-only. For each variant it loads
+`control/rc_filter.kicad_pcb`, applies one edit set and saves the board with
+`SaveBoard(..., skip settings)`; the schematic, project and both library tables
+are byte copies of the control. Footprint, pad and zone UUIDs, values, nets and
+the outline are unchanged.
+
+| Variant | Edits to the control board |
+| --- | --- |
+| `unplaced` | R1, C1, J1 moved to a staging row at x = 125, 135, 145 mm, y = 100 mm (outline 96..116 x 96..108 mm); the five tracks, the GND via and the B.Cu GND zone removed: no copper |
+| `placed-unrouted` | Reference positions kept; the five tracks and the GND via removed; the B.Cu GND zone kept and saved unfilled |
+| `seeded-placement` | As placed-unrouted, plus C1 moved from (110,100) to (108,100) mm so its courtyard overlaps R1's, and J1 from (100,100) to (95.5,100) mm, across the left board edge |
+
+Run `PYTHONPATH=src python3 fixtures/rc/derived/generate.py --out build/rc-derived`
+to reproduce them. The committed receipt in `derived/receipts/generation/`
+records the executor argv (including `--unshare-net`), exit, tool versions, the
+SHA-256 of the generator and of every control file read (`sources.json`), the
+removed track/via and zone UUIDs and moves (`edits.json`) and every generated
+file's SHA-256 (`fixture-hashes.json`). `tests/test_rc_derived.py` regenerates
+every byte. Scopes, requirements and expectations were authored before any
+check ran on these boards. See
+[stage fixture qualification](../../docs/rc-stage-fixtures.md#control-derived-variants).
+
+Committed derived board hashes (SHA-256):
+
+| Variant | `rc_filter.kicad_pcb` |
+| --- | --- |
+| `unplaced` | `dfcf3ac73a18e385454f2a9b6b19002ad3484344ecb41184632b1675ccd2b259` |
+| `placed-unrouted` | `787def8dda99dde63ddfd175441853236d2928afafb09374033398c0d5cca26f` |
+| `seeded-placement` | `a2e3ca22dcada2a097120c97c69f6f203ff15f8020518612f7fe3aabacdde3e0` |
+
+Generation script SHA-256: `a17a7d7dc5132b493154554d13eaa568789f7f1c6a265d6cc310b6e745ada8de`.

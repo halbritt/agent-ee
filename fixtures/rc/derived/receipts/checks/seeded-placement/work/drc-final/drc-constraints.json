@@ -1,0 +1,318 @@
+{
+  "sources": {
+    "conditional_spoke_rules": [],
+    "ignored_rules": [],
+    "item_classes": {},
+    "rule_constraints": {},
+    "rules": {},
+    "settings": []
+  },
+  "violations": [
+    {
+      "constraint_provenance": {
+        "citation": {
+          "basis": "Coordinator decisions AGENTEE-318/325 and AGENTEE-331: shorts, co-located drills, copper beyond the outline, PTH courtyard intrusion and introduced inter-footprint mask bridges",
+          "locator": "native DRC publication gate",
+          "path": "docs/placer.md"
+        },
+        "class": "engineering",
+        "enforcement": "hard",
+        "reason": "Structural invariant; numeric provenance does not relax it"
+      },
+      "description": "Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.0000 mm)",
+      "items": [
+        {
+          "description": "Segment on Edge.Cuts",
+          "pos": {
+            "x": 96.0,
+            "y": 108.0
+          },
+          "uuid": "e56f0780-9f76-46de-8e56-6b4e59cdf1e1"
+        },
+        {
+          "description": "PTH pad 1 [/IN] of J1",
+          "pos": {
+            "x": 95.5,
+            "y": 100.0
+          },
+          "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+        }
+      ],
+      "severity": "error",
+      "type": "copper_edge_clearance"
+    },
+    {
+      "constraint_provenance": {
+        "citation": {
+          "basis": "Coordinator decisions AGENTEE-318/325 and AGENTEE-331: shorts, co-located drills, copper beyond the outline, PTH courtyard intrusion and introduced inter-footprint mask bridges",
+          "locator": "native DRC publication gate",
+          "path": "docs/placer.md"
+        },
+        "class": "engineering",
+        "enforcement": "hard",
+        "reason": "Structural invariant; numeric provenance does not relax it"
+      },
+      "description": "Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.0000 mm)",
+      "items": [
+        {
+          "description": "Segment on Edge.Cuts",
+          "pos": {
+            "x": 96.0,
+            "y": 108.0
+          },
+          "uuid": "e56f0780-9f76-46de-8e56-6b4e59cdf1e1"
+        },
+        {
+          "description": "PTH pad 2 [/OUT] of J1",
+          "pos": {
+            "x": 95.5,
+            "y": 102.54
+          },
+          "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+        }
+      ],
+      "severity": "error",
+      "type": "copper_edge_clearance"
+    },
+    {
+      "constraint_provenance": {
+        "citation": {
+          "basis": "Coordinator decisions AGENTEE-318/325 and AGENTEE-331: shorts, co-located drills, copper beyond the outline, PTH courtyard intrusion and introduced inter-footprint mask bridges",
+          "locator": "native DRC publication gate",
+          "path": "docs/placer.md"
+        },
+        "class": "engineering",
+        "enforcement": "hard",
+        "reason": "Structural invariant; numeric provenance does not relax it"
+      },
+      "description": "Board edge clearance violation (board setup constraints edge clearance 0.5000 mm; actual 0.0000 mm)",
+      "items": [
+        {
+          "description": "Segment on Edge.Cuts",
+          "pos": {
+            "x": 96.0,
+            "y": 108.0
+          },
+          "uuid": "e56f0780-9f76-46de-8e56-6b4e59cdf1e1"
+        },
+        {
+          "description": "PTH pad 3 [GND] of J1",
+          "pos": {
+            "x": 95.5,
+            "y": 105.08
+          },
+          "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+        }
+      ],
+      "severity": "error",
+      "type": "copper_edge_clearance"
+    },
+    {
+      "constraint_provenance": {
+        "citation": {
+          "basis": "Existing saved-board courtyard qualification before publication",
+          "locator": "native courtyard qualification",
+          "path": "docs/placer.md"
+        },
+        "class": "engineering",
+        "enforcement": "hard",
+        "reason": "Structural courtyard qualification"
+      },
+      "description": "Courtyards overlap",
+      "items": [
+        {
+          "description": "Footprint C1",
+          "pos": {
+            "x": 108.0,
+            "y": 100.0
+          },
+          "uuid": "7e69886f-9bbf-4607-a40e-520cfd05e452"
+        },
+        {
+          "description": "Footprint R1",
+          "pos": {
+            "x": 105.0,
+            "y": 100.0
+          },
+          "uuid": "8404a180-a151-464e-8f25-8cf316cdcba5"
+        }
+      ],
+      "severity": "error",
+      "type": "courtyards_overlap"
+    },
+    {
+      "constraint_provenance": {
+        "citation": null,
+        "class": "default",
+        "enforcement": "advisory",
+        "reason": "No unambiguous captured source for the native limit"
+      },
+      "description": "Silkscreen clipped by board edge",
+      "items": [
+        {
+          "description": "Segment on Edge.Cuts",
+          "pos": {
+            "x": 96.0,
+            "y": 108.0
+          },
+          "uuid": "e56f0780-9f76-46de-8e56-6b4e59cdf1e1"
+        },
+        {
+          "description": "Reference field of J1",
+          "pos": {
+            "x": 95.5,
+            "y": 97.62
+          },
+          "uuid": "f5cd1878-9e9f-4b16-85d8-8e85f44a7708"
+        }
+      ],
+      "severity": "warning",
+      "type": "silk_edge_clearance"
+    },
+    {
+      "constraint_provenance": {
+        "citation": null,
+        "class": "default",
+        "enforcement": "advisory",
+        "reason": "No unambiguous captured source for the native limit"
+      },
+      "description": "Silkscreen clipped by board edge",
+      "items": [
+        {
+          "description": "Segment on Edge.Cuts",
+          "pos": {
+            "x": 96.0,
+            "y": 108.0
+          },
+          "uuid": "e56f0780-9f76-46de-8e56-6b4e59cdf1e1"
+        },
+        {
+          "description": "Segment of J1 on F.Silkscreen",
+          "pos": {
+            "x": 94.12,
+            "y": 101.27
+          },
+          "uuid": "07d78746-6cbe-4419-8d47-243d2479e836"
+        }
+      ],
+      "severity": "warning",
+      "type": "silk_edge_clearance"
+    },
+    {
+      "constraint_provenance": {
+        "citation": null,
+        "class": "default",
+        "enforcement": "advisory",
+        "reason": "No unambiguous captured source for the native limit"
+      },
+      "description": "Silkscreen clipped by board edge",
+      "items": [
+        {
+          "description": "Segment on Edge.Cuts",
+          "pos": {
+            "x": 96.0,
+            "y": 108.0
+          },
+          "uuid": "e56f0780-9f76-46de-8e56-6b4e59cdf1e1"
+        },
+        {
+          "description": "Segment of J1 on F.Silkscreen",
+          "pos": {
+            "x": 94.12,
+            "y": 106.46
+          },
+          "uuid": "ed076603-42ca-41ce-9f76-a52751372178"
+        }
+      ],
+      "severity": "warning",
+      "type": "silk_edge_clearance"
+    },
+    {
+      "constraint_provenance": {
+        "citation": {
+          "basis": "Coordinator decisions AGENTEE-318/325 and AGENTEE-331: shorts, co-located drills, copper beyond the outline, PTH courtyard intrusion and introduced inter-footprint mask bridges",
+          "locator": "native DRC publication gate",
+          "path": "docs/placer.md"
+        },
+        "class": "engineering",
+        "enforcement": "hard",
+        "reason": "Structural invariant; numeric provenance does not relax it"
+      },
+      "description": "Saved effective copper polygon extends outside board material",
+      "items": [
+        {
+          "description": "PAD",
+          "pos": {
+            "x": 95.5,
+            "y": 100.0
+          },
+          "uuid": "7e93f4b3-5c55-47a4-9f1e-7c816bea7a27"
+        }
+      ],
+      "layers": [
+        "F.Cu",
+        "B.Cu"
+      ],
+      "severity": "error",
+      "type": "copper_outside_outline"
+    },
+    {
+      "constraint_provenance": {
+        "citation": {
+          "basis": "Coordinator decisions AGENTEE-318/325 and AGENTEE-331: shorts, co-located drills, copper beyond the outline, PTH courtyard intrusion and introduced inter-footprint mask bridges",
+          "locator": "native DRC publication gate",
+          "path": "docs/placer.md"
+        },
+        "class": "engineering",
+        "enforcement": "hard",
+        "reason": "Structural invariant; numeric provenance does not relax it"
+      },
+      "description": "Saved effective copper polygon extends outside board material",
+      "items": [
+        {
+          "description": "PAD",
+          "pos": {
+            "x": 95.5,
+            "y": 102.54
+          },
+          "uuid": "d6746591-9171-4a10-bdd5-188aafc20e95"
+        }
+      ],
+      "layers": [
+        "F.Cu",
+        "B.Cu"
+      ],
+      "severity": "error",
+      "type": "copper_outside_outline"
+    },
+    {
+      "constraint_provenance": {
+        "citation": {
+          "basis": "Coordinator decisions AGENTEE-318/325 and AGENTEE-331: shorts, co-located drills, copper beyond the outline, PTH courtyard intrusion and introduced inter-footprint mask bridges",
+          "locator": "native DRC publication gate",
+          "path": "docs/placer.md"
+        },
+        "class": "engineering",
+        "enforcement": "hard",
+        "reason": "Structural invariant; numeric provenance does not relax it"
+      },
+      "description": "Saved effective copper polygon extends outside board material",
+      "items": [
+        {
+          "description": "PAD",
+          "pos": {
+            "x": 95.5,
+            "y": 105.08
+          },
+          "uuid": "ddcb81c6-a965-456f-b8c7-71a870b91a1d"
+        }
+      ],
+      "layers": [
+        "F.Cu",
+        "B.Cu"
+      ],
+      "severity": "error",
+      "type": "copper_outside_outline"
+    }
+  ]
+}

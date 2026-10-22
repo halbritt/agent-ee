@@ -433,11 +433,11 @@ the projection grades instead of refusing. A native `silk_overlap` or
 `silk_over_copper` violation whose type and complete item-UUID set equal an
 open carried defect is graded as carried rather than as a violation.
 
-The [original RC stage fixtures](rc-stage-fixtures.md) exercise this boundary:
-placed-unrouted retains native unconnected items and passes the placement
-projection; seeded-placement has a native R1/C1 courtyard overlap. Both remain
-defects under full DRC. The control-derived variants requested by AGENTEE-103
-remain blocked by unresolved third-party rights.
+The [RC stage fixtures](rc-stage-fixtures.md) exercise this boundary, both
+the control-derived variants and the original alternative: placed-unrouted
+retains native unconnected items and passes the placement projection;
+seeded-placement has a native R1/C1 courtyard overlap. Both remain defects
+under full DRC.
 
 Zone fill is evaluated as saved. The implementation does not refill, save or
 repair the board. Reported exclusions stay visible and are not dropped by this
