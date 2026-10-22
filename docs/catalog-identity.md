@@ -266,8 +266,11 @@ subcategory keeps its row (fail closed, no default pruning). The reasoning is in
   exists for it; only the pinned jlcparts `source-db-v2` layout is accepted.
 - The subcategory words are matched against owned synthetic labels only. Real
   jlcparts category and subcategory strings are unqualified until a full-feed
-  capture exists; an unlisted non-value-interchangeable subcategory inside an
-  R/C/L category is still pruned.
+  capture exists. Pruning is positive-only: a row inside an R/C/L category is
+  pruned only when its family/subcategory combination is listed in
+  `QUALIFIED_SUBCATEGORIES`. Unknown, empty and unlisted subcategories are
+  retained, so an unqualified real label costs index size, never a wrongly
+  removed candidate. Which real labels to add stays unqualified.
 - A full-feed capture and its size, runtime and row counts have not been
   qualified. The 1 GiB derived-database limit of the catalog importer applies.
   Committed tests use owned synthetic multi-category archives only.
