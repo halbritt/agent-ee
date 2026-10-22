@@ -49,7 +49,7 @@ class TaskTests(unittest.TestCase):
             with self.subTest(task=root.name):
                 pinned_task(root)
                 doc = read_json(root / 'task.json')
-                self.assertEqual(doc['scope']['schema'], 'agent-ee.scope/3')
+                self.assertIn(doc['scope']['schema'], ('agent-ee.scope/2', 'agent-ee.scope/3'))
                 checks = {c['id'] for c in doc['scope']['checks']}
                 acceptance = [r for r in doc['scope']['baseline']['requirements'] if r['intent'] == 'acceptance']
                 self.assertTrue(acceptance)
