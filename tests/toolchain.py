@@ -22,6 +22,12 @@ def enable_visuals_for_module():
     unittest.enterModuleContext(patch.dict(os.environ, {'AGENT_EE_SKIP_VISUALS': '0'}))
 
 
+def native_board_render_test(test):
+    """Mark a regression that launches KiCad's native 3D board renderer."""
+    test._agent_ee_native_board_render = True
+    return test
+
+
 @functools.lru_cache(maxsize=None)
 def prerequisite_problem(native=False, tools=()):
     if shutil.which('bwrap') is None:

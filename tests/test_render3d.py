@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 from agent_ee.candidate import capture, verify_snapshot
 from agent_ee.render3d import RenderError, _png_info, render_board
 from agent_ee.storage import digest
-from toolchain import enable_visuals_for_module
+from toolchain import enable_visuals_for_module, native_board_render_test
 
 
 setUpModule = enable_visuals_for_module
@@ -293,6 +293,7 @@ Path(sys.argv[sys.argv.index('--output')+1]).write_bytes(image)
 
 
 class NativeRenderSmokeTests(unittest.TestCase):
+    @native_board_render_test
     @unittest.skipUnless(shutil.which('kicad-cli'), 'native KiCad CLI is not installed')
     def test_real_small_fixture_renders_all_three_views_without_source_changes(self):
         capability = subprocess.run(['kicad-cli', 'pcb', 'render', '--help'],

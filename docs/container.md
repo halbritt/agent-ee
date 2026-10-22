@@ -297,12 +297,16 @@ repository. One job:
    runner: an anonymous clone of the public fome-mc repository at the
    pinned commit, verified before use, and the J1 manufacturer drawing, checked
    against its pinned SHA-256. A mismatch or failed download fails the job.
-4. Runs the full test suite in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
+4. Runs every test module in the image with `AGENT_EE_REQUIRE_TOOLCHAIN=1`
    through [scripts/strict_suite.py](../scripts/strict_suite.py), four modules at
-   a time, with both inputs mounted read-only. This is the required full gate: it fails if any test fails, errors or
-   is skipped, or if any module produces no valid result. Its job summary gives
-   the module and test counts and names every test that did not execute because a
-   [required external input](#required-external-inputs) is absent.
+   a time, with both inputs mounted read-only. Native 3D board render tests run
+   when renderer-related files or the pinned KiCad image inputs changed.
+   GitHub's preceding push commit is the
+   comparison base; manual dispatch, an unknown base, or a dirty checkout runs
+   them. Every selected test must pass without a skip, and every module must
+   produce a valid result. The job summary gives the module and test counts,
+   names render tests omitted by change selection, and names tests that did not
+   execute because a [required external input](#required-external-inputs) is absent.
 5. Runs `scripts/check_docs.py` in the image. This step, the conflict-marker
    check and step 6 also run after a failed suite step, so that their own results
    are reported. Any failed step still fails the job.
@@ -323,9 +327,17 @@ runner and only the gate summary reaches the job page.
 
 The shared test harness defaults incidental candidate imaging off with
 `AGENT_EE_SKIP_VISUALS=1`. The candidate-visual and 3D-render modules explicitly
-restore imaging for their tests, including native image/hash checks. This test
-setting does not change production defaults or skip any unittest. See
+restore imaging for their tests, including native image/hash checks. Native 3D
+render tests have explicit markers; the strict runner excludes them before
+execution only when the change selector returns `omit`. This test setting does
+not change production defaults or turn any selected unittest into a skip. See
 [candidate inspection images](pcb-renders.md#candidate-inspection-images-agentee-382).
+
+For an explicit full render regression run, use
+`scripts/strict_suite.py --render-mode run` with the same strict toolchain and external inputs. A local
+change-selected run can use `--render-change-base origin/main`; a missing base
+runs the render tests. Candidate-bound milestone gallery rendering remains a
+separate workflow and is not selected by this regression-test gate.
 
 `AGENT_EE_REQUIRE_TOOLCHAIN=1` is the strict-toolchain contract: toolchain tests
 must fail rather than skip when KiCad, ngspice, Bubblewrap, a usable user
