@@ -352,25 +352,30 @@ AGENTEE-177/179 evidence that adds a real binding.
 
 ### Final acceptance guard
 
-`final_qualification(run)` is the one shared final guard. It reads the
-coverage in the run's captured, re-verified `baseline.json` (`load_baseline`),
-never the current envelope file, a scope field or a stored result. It returns
-`agent-ee.final-qualification/1` with the `baseline_id` and a `blocking` list,
-or `None` for a scope without an envelope. Unless the run has neither a
-baseline declaration nor a `baseline.json`, it first checks `candidate.json`
-against its `candidate_id`, and only then reads the scope's envelope
-declaration. A removed or edited declaration therefore refuses: the identity
-differs; or, when the identity is recomputed, the recompiled baseline differs
-or refuses the envelope the scope still consumes; or the retained
-`baseline.json` still carries envelope coverage that the candidate no longer
-declares. `None` means an authenticated scope without an envelope whose
-retained baseline has no envelope coverage. That path reads `baseline.json`
-without recompiling it, so verification hashes no input twice (AGENTEE-250).
+`final_qualification(run, candidate_id)` is the one shared final guard. It
+reads the coverage in the run's captured, re-verified `baseline.json`
+(`load_baseline`), never the current envelope file, a scope field or a stored
+result. It returns `agent-ee.final-qualification/1` with the `baseline_id` and
+a `blocking` list, or `None` for a verified capture without an envelope.
+`candidate_id` is the identity the consumer's own retained evidence was
+produced for: the review result, or the done check's result. The guard first
+checks `candidate.json` against its `candidate_id`, then requires that identity
+to equal the consumer's, and only then verifies the baseline and reads the
+scope's envelope declaration. It never infers "no envelope" from a missing
+record. A removed or edited declaration, a missing, empty, null or
+envelope-free `baseline.json`, and a re-identified scope therefore refuse: the
+identity differs; or it belongs to another candidate than the consumer's
+evidence; or the recompiled baseline differs from the retained one, or refuses
+the envelope the scope still consumes. `None` means either a verified scope/2
+or scope/3 baseline without envelope coverage, or a scope/1 candidate, which
+compiles no baseline and must retain no `baseline.json`. `verify` passes in the
+baseline it has just verified, so the guard compiles it no second time
+(AGENTEE-250).
 Each blocker is
 `{id, status, open}`: a `staged` obligation with its open item IDs, an
 obligation that is not `bound` or `soft`, a derived obligation missing from the
 coverage, or unresolved requirements. An empty `unresolved` list is not
-readiness: a staged obligation has none and still blocks. `require_final(run)`
+readiness: a staged obligation has none and still blocks. `require_final(run, candidate_id)`
 raises while anything blocks. Its consumers:
 
 - the review outcome. `review` records the guard in `result.json` as
@@ -382,7 +387,10 @@ raises while anything blocks. Its consumers:
 - the `fab_package` done gate. The fab export and consistency gate still run,
   so the exports stay available as diagnostics. A package that would pass is
   `unsupported`/`unknown` (`fab package done gate held: ...`), and
-  `artifact_record` refuses to seal the release.
+  `artifact_record` refuses to seal the release. `artifact_record` applies
+  the guard last, after the placement release lineage and the package checks,
+  bound to the done check's `candidate_id`, which the retained fab export
+  manifest must also carry.
 - campaign acceptance and replay. A campaign that reaches `criteria_satisfied`
   re-applies the guard before it publishes `fab_artifacts` or `stage_done`;
   while anything blocks it ends `incomplete` with the blockers in `error`.

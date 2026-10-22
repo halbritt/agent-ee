@@ -864,6 +864,23 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             write_json(root / 'state.json', dict(forged, state='criteria_satisfied'))
             with self.assertRaisesRegex(ValueError, message):
                 campaign.verify_campaign(root)
+            # review-ee197w-stv-hold H1: deleting, emptying or nulling the final run's captured
+            # baseline does not turn the forged acceptance into an envelope-less pass.
+            bpath = root / 'runs/1/baseline.json'
+            retained = bpath.read_bytes()
+            for mode in ('deleted', 'empty', 'null'):
+                with self.subTest(mode=mode):
+                    if mode == 'deleted':
+                        bpath.unlink()
+                    else:
+                        bpath.write_text('{}' if mode == 'empty' else 'null')
+                    try:
+                        with self.assertRaisesRegex(ValueError, 'immutable baseline changed'):
+                            campaign.verify_campaign(root)
+                    finally:
+                        bpath.write_bytes(retained)
+            with self.assertRaisesRegex(ValueError, message):
+                campaign.verify_campaign(root)
 
     def fab_scope(self):
         """The owned fab-export board as a generation scope over the captured envelope declaration."""
@@ -906,8 +923,16 @@ class EnvelopeMechanicsTests(unittest.TestCase):
                     self.assertIn(f'obligation-{oid} staged (' + ', '.join(e['id'] for e in item['open']) + ')',
                                   check['summary'])
                 self.assertNotIn('artifacts', check['details'])
-                # A result claiming the gate passed still cannot be sealed for release.
-                passed = dict(results['qualified'], candidate_id=check['candidate_id'])
+                # A result claiming the gate passed, with this run's genuine native release
+                # lineage (prepare_release), still cannot be sealed for release.
+                from agent_ee.checks import Ctx
+                from agent_ee.placement_defects import prepare_release
+                manifest = read_json(run / 'candidate.json')
+                ctx = Ctx(run, manifest, next(c for c in manifest['scope']['checks'] if c['id'] == check['id']),
+                          time.monotonic() + 300)
+                prepare_release(ctx)
+                passed = dict(check, execution='ok', outcome='pass',
+                              evidence=sorted(set(check['evidence'] + ctx.result['evidence'])))
                 with self.assertRaisesRegex(ValueError, 'captured envelope qualification open'):
                     artifact_record(run, passed)
 
@@ -945,28 +970,78 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         def changed_reidentified(candidate):
             candidate['scope']['envelope']['profile'] = 'targets.md'
             candidate['candidate_id'] = identity({'scope': candidate['scope'], 'files': candidate['files']})
-        cases = {'removed declaration': (removed, 'candidate metadata differs from its captured identity'),
-                 # The retained baseline still carries the staged envelope coverage.
-                 'removed declaration, re-identified': (removed_reidentified,
-                                                        'captured baseline carries envelope coverage the candidate '
-                                                        'no longer declares'),
-                 'changed declaration, re-identified': (changed_reidentified, 'immutable baseline changed|fab profile')}
-        for mode, (change, message) in cases.items():
+        def stripped(candidate):
+            candidate['scope'].pop('envelope')
+            candidate['scope'].pop('baseline')
+        def stripped_reidentified(candidate):
+            stripped(candidate)
+            candidate['candidate_id'] = identity({'scope': candidate['scope'], 'files': candidate['files']})
+        def envelope_free(baseline):
+            baseline.pop('envelope')
+            return baseline
+        consumed = 'consumed envelope .*without a scope envelope declaration'
+        # (candidate change, retained baseline.json, refusal for the done check's evidence,
+        #  refusal for evidence claiming the re-identified candidate, or None when not re-identified).
+        # review-ee197w-stv-hold H1: a missing, empty, null or envelope-free baseline never reads
+        # as an envelope-less capture.
+        cases = {'removed declaration': (removed, None, 'candidate metadata differs from its captured identity', None),
+                 'removed declaration, re-identified': (removed_reidentified, None,
+                                                        'belongs to another candidate', consumed),
+                 'changed declaration, re-identified': (changed_reidentified, None, 'belongs to another candidate',
+                                                        'immutable baseline changed|fab profile'),
+                 'removed declaration, baseline deleted': (removed, 'deleted',
+                                                           'differs from its captured identity', None),
+                 'stripped declarations, baseline deleted': (stripped, 'deleted',
+                                                             'differs from its captured identity', None),
+                 'stripped declarations, re-identified, baseline deleted': (
+                     stripped_reidentified, 'deleted', 'belongs to another candidate',
+                     'scope/2 requires baseline requirements'),
+                 'removed declaration, re-identified, envelope-free baseline': (
+                     removed_reidentified, envelope_free, 'belongs to another candidate', consumed),
+                 'removed declaration, re-identified, empty baseline': (
+                     removed_reidentified, {}, 'belongs to another candidate', consumed),
+                 'removed declaration, re-identified, null baseline': (
+                     removed_reidentified, 'null', 'belongs to another candidate', consumed),
+                 'unchanged declaration, baseline deleted': (None, 'deleted', 'immutable baseline changed', None),
+                 'unchanged declaration, empty baseline': (None, {}, 'immutable baseline changed', None),
+                 'unchanged declaration, null baseline': (None, 'null', 'immutable baseline changed', None),
+                 'unchanged declaration, envelope-free baseline': (None, envelope_free,
+                                                                    'immutable baseline changed', None)}
+        bpath = run / 'baseline.json'
+        retained_baseline = bpath.read_bytes()
+        for mode, (change, retained, message, forged) in cases.items():
             with self.subTest(mode=mode):
                 candidate = read_json(path)
-                change(candidate)
-                write_json(path, candidate)
+                if change is not None:
+                    change(candidate)
+                    write_json(path, candidate)
+                if retained == 'deleted':
+                    bpath.unlink()
+                elif retained == 'null':
+                    bpath.write_text('null')
+                elif callable(retained):
+                    write_json(bpath, retained(read_json(bpath)))
+                elif retained is not None:
+                    write_json(bpath, retained)
                 try:
                     with self.assertRaisesRegex(ValueError, message):
-                        require_final(run)
+                        require_final(run, check['candidate_id'])
                     with self.assertRaisesRegex(ValueError, message):
                         artifact_record(run, passed)
+                    if forged is not None:
+                        # Evidence claiming the forged identity still meets the immutable baseline,
+                        # and the retained fab export manifest binds the identity it was exported for.
+                        with self.assertRaisesRegex(ValueError, forged):
+                            require_final(run, candidate['candidate_id'])
+                        with self.assertRaisesRegex(ValueError, 'manifest belongs to another candidate'):
+                            artifact_record(run, dict(passed, candidate_id=candidate['candidate_id']))
                 finally:
                     path.write_bytes(original)
+                    bpath.write_bytes(retained_baseline)
         # The captured baseline still stages every obligation.
         self.assertTrue(read_json(run / 'baseline.json')['envelope']['coverage'])
         with self.assertRaisesRegex(ValueError, 'captured envelope qualification open'):
-            require_final(run)
+            require_final(run, check['candidate_id'])
 
 
 class EnvelopeMechanicsGeometryTests(unittest.TestCase):

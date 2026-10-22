@@ -367,6 +367,81 @@ class NativeFabPackageTests(NativeRun):
         with self.assertRaisesRegex(ValueError, 'did not pass'):
             artifact_record(self.run_dir, {**result, 'outcome': 'defect'})
 
+    def test_envelope_less_release_refuses_missing_or_forged_baseline_state(self):
+        """review-ee197w-stv-hold H1: a verified envelope-less capture seals; its absent,
+        empty, null or forged baseline, or a re-identified scope, never reads as "no envelope".
+
+        The passing done check carries its genuine native release lineage, so the only
+        difference between the control and each case is the retained baseline state.
+        """
+        from agent_ee.board_envelope import final_qualification
+        from agent_ee.storage import identity
+        result = self.run_case()
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        self.assertIsNone(final_qualification(self.run_dir, result['candidate_id']))
+        self.assertEqual(artifact_record(self.run_dir, result), result['details']['artifacts'])
+        path, bpath = self.run_dir / 'candidate.json', self.run_dir / 'baseline.json'
+        original, baseline = path.read_bytes(), bpath.read_bytes()
+
+        def reidentified(candidate):
+            candidate['candidate_id'] = identity({'scope': candidate['scope'], 'files': candidate['files']})
+
+        def stripped(candidate):
+            candidate['scope'].pop('baseline')
+
+        def scope1(candidate):
+            # An envelope- and baseline-free scope/1 forgery whose identity is recomputed.
+            for key in ('baseline', 'generation'):
+                candidate['scope'].pop(key)
+            candidate['scope']['schema'] = 'agent-ee.scope/1'
+            reidentified(candidate)
+        cases = {
+            'baseline deleted': (None, 'deleted', 'immutable baseline changed'),
+            'baseline empty': (None, {}, 'immutable baseline changed'),
+            'baseline null': (None, 'null', 'immutable baseline changed'),
+            'baseline coverage removed': (None, 'coverage', 'immutable baseline changed'),
+            'scope baseline stripped, baseline deleted': (stripped, 'deleted', 'differs from its captured identity'),
+            'scope baseline stripped, re-identified': (lambda c: (stripped(c), reidentified(c)), 'deleted',
+                                                       'belongs to another candidate'),
+            'scope/1 forgery, baseline deleted': (scope1, 'deleted', 'belongs to another candidate'),
+            'scope/1 forgery, baseline retained': (scope1, None, 'belongs to another candidate'),
+        }
+        for mode, (change, retained, message) in cases.items():
+            with self.subTest(mode=mode):
+                try:
+                    if change is not None:
+                        candidate = read_json(path)
+                        change(candidate)
+                        write_json(path, candidate)
+                    if retained == 'deleted':
+                        bpath.unlink()
+                    elif retained == 'null':
+                        bpath.write_text('null')
+                    elif retained == 'coverage':
+                        forged = read_json(bpath)
+                        forged.pop('coverage')
+                        write_json(bpath, forged)
+                    elif retained is not None:
+                        write_json(bpath, retained)
+                    with self.assertRaisesRegex(ValueError, message):
+                        final_qualification(self.run_dir, result['candidate_id'])
+                    with self.assertRaisesRegex(ValueError, message):
+                        artifact_record(self.run_dir, result)
+                finally:
+                    path.write_bytes(original)
+                    bpath.write_bytes(baseline)
+        # The forged scope/1 also refuses for evidence claiming its new identity: a scope/1
+        # candidate retains no baseline record.
+        candidate = read_json(path)
+        scope1(candidate)
+        write_json(path, candidate)
+        try:
+            with self.assertRaisesRegex(ValueError, 'immutable baseline changed'):
+                final_qualification(self.run_dir, candidate['candidate_id'])
+        finally:
+            path.write_bytes(original)
+        self.assertEqual(artifact_record(self.run_dir, result), result['details']['artifacts'])
+
     def test_missing_empty_or_unparseable_export_file_is_never_a_pass(self):
         def removed(name, rehash=True):
             def mutate(stage):

@@ -215,7 +215,8 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
         raise ValueError("review evidence packet changed")
     from .packet_index import verify_navigation
     from .baseline import load_baseline
-    verify_navigation(run, manifest, load_baseline(run), result["checks"], result["run_id"])
+    baseline = load_baseline(run)
+    verify_navigation(run, manifest, baseline, result["checks"], result["run_id"])
     from .preflight import verify_calls
     verify_calls(run, result, manifest)
     from .baseline import verify_evidence
@@ -239,8 +240,9 @@ def verify_records(run, result, *, current_source=True, observations=None, invok
     from .purpose_review import verify_records as verify_purpose
     verify_purpose(run, result)
     from .board_envelope import final_qualification
-    # Recomputed from the immutable baseline: a removed, stale or edited guard record is refused.
-    expected, stored = final_qualification(run), result.get("final_qualification")
+    # Recomputed from the immutable baseline verified above: a removed, stale or edited guard record is refused.
+    expected = final_qualification(run, result.get("candidate_id"), baseline=baseline)
+    stored = result.get("final_qualification")
     if stored != expected:
         raise ValueError("stored final qualification differs from the captured baseline envelope coverage")
     if result.get("outcome") != outcome(result):
@@ -492,7 +494,7 @@ def _run_review(scope_path, out, max_seconds, *, checks_only=False, previous=Non
         m = capture(scope_path, run, profile)
         from .board_envelope import final_qualification
         # Final acceptance is held by the captured baseline's open envelope qualification (AGENTEE-197).
-        if (qualification := final_qualification(run)) is not None:
+        if (qualification := final_qualification(run, m["candidate_id"])) is not None:
             result["final_qualification"] = qualification
         validate_scope(m["scope"])
         if expected_baseline is not None:

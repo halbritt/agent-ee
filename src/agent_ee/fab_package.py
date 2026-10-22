@@ -231,8 +231,6 @@ def artifact_record(run_dir, check):
     run_dir = Path(run_dir)
     candidate_path = run_dir / 'candidate.json'
     if candidate_path.is_file():
-        from .board_envelope import require_final
-        require_final(run_dir)
         from .placement_defects import release_defects
         if release_defects(run_dir, check, read_json(candidate_path)):
             raise ValueError('fab release refused: carried open placement silkscreen defects')
@@ -270,6 +268,9 @@ def artifact_record(run_dir, check):
         if rotation['cpl'] not in sealed:
             raise ValueError(f"fab_package {cid!r} did not seal {rotation['cpl']}")
         files[rotation['cpl']] = rotation['cpl_sha256']
+    from .board_envelope import require_final
+    # Last, bound to the candidate the done check ran for: a re-identified run is refused.
+    require_final(run_dir, check['candidate_id'])
     value = {'schema': ARTIFACT_SCHEMA, 'check_id': cid, 'candidate_id': check['candidate_id'],
              'board_path': manifest['board_path'], 'board_sha256': manifest['board_sha256'],
              'files': dict(sorted(files.items())), 'rotation': rotation}
@@ -328,7 +329,7 @@ def check_fab_package(ctx):
     from .board_envelope import require_final
     try:
         # The exports above stay as diagnostics; the done gate and sealed release wait for qualification.
-        require_final(ctx.run_dir)
+        require_final(ctx.run_dir, ctx.manifest['candidate_id'])
     except ValueError as exc:
         raise CheckError('unsupported', f'fab package done gate held: {exc}') from exc
     try:

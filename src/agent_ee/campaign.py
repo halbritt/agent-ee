@@ -592,7 +592,7 @@ def record_iteration(root, state, run, config):
         from .board_envelope import require_final
         try:
             # The same captured-baseline guard as the review outcome and fab release (AGENTEE-197).
-            require_final(run)
+            require_final(run, result["candidate_id"])
         except ValueError as exc:
             state.update(state="incomplete", error=f"ValueError: {exc}")
     if state["state"] == "criteria_satisfied":
@@ -797,7 +797,8 @@ def verify_campaign_records(root, *, observations=None):
     if state["state"] == "criteria_satisfied" and history:
         # Replay re-applies the final guard to the captured baseline, never to the stored acceptance.
         from .board_envelope import require_final
-        require_final(history[-1]["run"])
+        # result is the final run's history snapshot, verified against its evidence above.
+        require_final(history[-1]["run"], result["candidate_id"])
     if state["state"] != diagnostic["state"] and not (state["state"] == "incomplete" and state.get("error")):
         raise ValueError("campaign terminal state contradicts convergence history")
     # Done for a generation scope includes its fab artifacts: recomputed here, never trusted from state.
