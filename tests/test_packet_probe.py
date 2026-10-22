@@ -159,6 +159,33 @@ class PacketProbeTests(unittest.TestCase):
         packet = read_json(self.root / 'budget/empty/packet.json')
         self.assertEqual(packet['baseline'], read_json(fixture.run / 'baseline.json'))
 
+    def add_visual(self, rel='work/candidate.visuals/native/front/front.svg'):
+        path = self.run / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+        self.manifest['visuals'] = {'board_sha256': self.manifest['files']['design/board'],
+                                    'images': [{'view': 'front', 'path': rel, 'sha256': digest(path)}]}
+        write_json(self.run / 'candidate.json', self.manifest)
+        self.save_result()
+        return path
+
+    def test_coordinator_images_are_copied_into_the_measured_packet(self):
+        self.add_visual()
+        candidate = self.probe()['candidates'][0]
+        self.assertEqual(candidate['status'], 'measured')
+        packet = read_json(self.root / 'budget/empty/packet.json')
+        self.assertEqual(packet['candidate_visuals'], self.manifest['visuals'])
+        self.assertTrue((self.root / 'budget/empty/work/candidate.visuals/native/front/front.svg').is_file())
+
+    def test_changed_or_foreign_coordinator_image_is_unavailable(self):
+        path = self.add_visual()
+        path.write_text('<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>')
+        self.assertEqual(self.probe(name='changed')['candidates'][0]['status'], 'unavailable')
+        self.add_visual('work/drc/foreign.svg')
+        candidate = self.probe(name='foreign')['candidates'][0]
+        self.assertEqual(candidate['status'], 'unavailable')
+        self.assertIn('non-coordinator candidate image', candidate['reason'])
+
     def test_output_overlap_and_reuse_refused(self):
         with self.assertRaisesRegex(ValueError, 'separate'):
             probe_candidates({'empty': self.run}, self.run / 'budget')

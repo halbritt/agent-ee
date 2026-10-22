@@ -451,6 +451,9 @@ From decision 5 and the [closed-loop boundaries](closed-loop.md#five-enforced-bo
   (inputs, netlist, DRC, probe output, check receipts, and metadata), source hashes,
   overflow contributions, artifact truncation and local assembly time. The copies
   under the output directory retain assembled packets without changing source runs.
+  Coordinator candidate images (AGENTEE-382) are copied at their recorded hashes,
+  so an imaged run measures its real packet; a changed image or one outside
+  `work/candidate.visuals/` makes that stage unavailable.
   Process and network launches are refused during the probe; no model runs.
   Missing or damaged captures are recorded as unavailable and exit status is 1
   when any stage is unavailable. Failed native checks retain their failed status;
