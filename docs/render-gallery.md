@@ -78,11 +78,16 @@ the host of a UNC path (`\\host\share`), is parsed on its own and removed, and
 only a real path component of the same URI can be kept as the basename. An
 authority-only, empty or root path (`file://host`, `FILE://host/`, `file:/`,
 `\\host`) becomes a bare `<redacted>`. A path stops at a quote, `<`, `>`, `|`
-or a newline, at any `file:` URI, and at whitespace, `,`, `;`, `)` or `]`
-followed by another URI, UNC host or drive path (after `,` or `;`, any absolute
-path), so a later URI's authority never becomes an earlier path's basename:
-`FILE:///home/a/m.step,FILE://host/` gives `<redacted>/m.step,<redacted>`.
-Redaction is idempotent.
+or a newline, at any `file:` URI, and at any cluster of whitespace, `,`, `;`
+and brackets `( ) [ ] { }` followed by another URI, UNC host (`\\host` or
+`//host`) or drive path (when the cluster holds `,` or `;`, any absolute path),
+so a later URI's authority or UNC host never becomes an earlier path's basename:
+`FILE:///home/a/m.step,FILE://host/` gives `<redacted>/m.step,<redacted>` and
+`/home/a/m.step (\\host)` gives `<redacted>/m.step (<redacted>)`. A host ends at
+the same boundaries. Ambiguous text fails closed: `\\` starts a UNC host even
+when glued to a word (`m.step\\host` gives `m.step<redacted>`), and a path with
+a doubled separator after its root (`/home/a//host`, `/a/m.step\\host`) keeps
+no basename. Redaction is idempotent.
 Other URLs and KiCad variables such as `${KIPRJMOD}/m.step` are kept. The
 server applies the same redaction to `manifest.json`, `viewer.json` and page
 warnings of older bundles on the way out.

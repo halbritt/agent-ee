@@ -1,6 +1,7 @@
 import json
 import multiprocessing
 import random
+import re
 import shutil
 import struct
 import tempfile
@@ -62,9 +63,55 @@ def uri_combinations():
                            first_expected + separator + second_expected)
 
 
+# Review 433g H1: a bare UNC host or path, or a file URI, as the second and later
+# operand after grouping punctuation, delimiter and quote clusters.
+UNC_FORMS = {'bare-unc': ('\\\\later-host-hidden', '<redacted>'),
+             'bare-slash': ('//later-host-hidden', '<redacted>'),
+             'unc-path': ('\\\\later-host-hidden\\share-hidden\\later.step', '<redacted>/later.step'),
+             'slash-path': ('//later-host-hidden/share-hidden/later.step', '<redacted>/later.step')}
+LATER_SEPARATORS = (' (', ' [', '),(', ',[', ';(', '" ', "' ", '<', '{', ' {', '}(', ', (', ';[')
+
+
+def later_operand_combinations():
+    """Yield (text, expected) with a UNC host or file URI as the second and third operand."""
+    later = [(t.format(c), e) for c in CASINGS for t, e in URI_FORMS.values()] + list(UNC_FORMS.values())
+    k = 0
+    for n, casing in enumerate(CASINGS):
+        firsts = [(t.format(casing), e) for t, e in URI_FORMS.values()] + list(PLAIN_FORMS.values())
+        for first, first_expected in firsts:
+            for second, second_expected in later:
+                for separator in LATER_SEPARATORS:
+                    third, third_expected = later[k % len(later)]
+                    tail = LATER_SEPARATORS[k // len(later) % len(LATER_SEPARATORS)]
+                    k += 1
+                    yield (first + separator + second + tail + third + ')',
+                           first_expected + separator + second_expected + tail + third_expected + ')')
+
+
 def assert_no_uri_leak(test, body, where):
-    for leak in ('hidden', 'file:', 'C:'):
+    for leak in ('hidden', 'file:', 'C:', '\\\\'):
         test.assertNotIn(leak, body.lower() if leak == 'file:' else body, where)
+
+
+def assert_combinations_leak_free(test, redactor, seed=433, rounds=20000):
+    """Every combination and seeded random sequence redacts without a host marker, idempotently."""
+    for text, _ in [*uri_combinations(), *later_operand_combinations()]:
+        assert_no_uri_leak(test, redactor(text), text)
+        test.assertEqual(redactor(redactor(text)), redactor(text), text)
+    rng, forms = random.Random(seed), [t for t, _ in URI_FORMS.values()]
+    plain = [t for t, _ in (*PLAIN_FORMS.values(), *UNC_FORMS.values())]
+    separators = SEPARATORS + LATER_SEPARATORS + ('<', '(', '[', '=', ':', ' ; ', '\n')
+    boundaries = (' ', '\t', '\n', ',', ';', ', ', '"', "'", ')', ']', '>', '<', '|') + LATER_SEPARATORS
+    for _ in range(rounds):
+        parts = []
+        for _ in range(rng.randint(1, 5)):
+            if rng.random() < .6:
+                parts += [rng.choice(separators), rng.choice(forms).format(rng.choice(CASINGS))]
+            else:  # a plain path or UNC host is a new token only after a boundary
+                parts += [rng.choice(boundaries), rng.choice(plain)]
+        text = ''.join(parts + [rng.choice(separators)])
+        assert_no_uri_leak(test, redactor(text), text)
+        test.assertEqual(redactor(redactor(text)), redactor(text), text)
 
 
 def publish_in_process(root, renders, label):
@@ -620,27 +667,56 @@ class GalleryTests(unittest.TestCase):
             self.assertEqual(redact(text), expected, text)
             self.assertEqual(redact(expected), expected, expected)
             assert_no_uri_leak(self, redact(text), text)
+        later = list(later_operand_combinations())
+        self.assertEqual(len(later), len(CASINGS) * 9 * (len(URI_FORMS) * len(CASINGS) + len(UNC_FORMS))
+                         * len(LATER_SEPARATORS))
+        for text, expected in later:
+            self.assertEqual(redact(text), expected, text)
+            self.assertEqual(redact(expected), expected, expected)
         # Seeded random sequences of the same forms between boundary characters.
-        rng, forms = random.Random(433), [t for t, _ in URI_FORMS.values()]
-        plain = [t for t, _ in PLAIN_FORMS.values()]
-        separators = SEPARATORS + ('<', '(', '[', '=', ':', ' ; ', '\n')
-        boundaries = (' ', '\t', '\n', ',', ';', ', ', '"', "'", ')', ']', '>', '<', '|')
-        for _ in range(20000):
-            parts = []
-            for _ in range(rng.randint(1, 5)):
-                if rng.random() < .7:
-                    parts += [rng.choice(separators), rng.choice(forms).format(rng.choice(CASINGS))]
-                else:  # a plain path or UNC host is a new token only after a boundary
-                    parts += [rng.choice(boundaries), rng.choice(plain)]
-            text = ''.join(parts + [rng.choice(separators)])
-            assert_no_uri_leak(self, redact(text), text)
-            self.assertEqual(redact(redact(text)), redact(text), text)
+        assert_combinations_leak_free(self, redact)
         for kept in ('HTTP://example.org/a', 'https://example.org/b,c', '${KIPRJMOD}/m.step',
                      'see https://x.org/a ${KICAD8_3DMODEL_DIR}/m.step'):
             self.assertEqual(redact(kept), kept)
 
+    def test_wrapped_unc_host_never_becomes_a_basename(self):
+        # Review 433g H1: these published <redacted>/private-server) before.
+        cases = {'FILE:///home/alice/m.step (\\\\private-server)': '<redacted>/m.step (<redacted>)',
+                 '/home/alice/m.step [\\\\private-server]': '<redacted>/m.step [<redacted>]',
+                 'FILE:///home/alice/m.step),(\\\\private-server)': '<redacted>/m.step),(<redacted>)',
+                 'C:\\Users\\alice\\m.step (\\\\private-server)': '<redacted>/m.step (<redacted>)',
+                 '/home/a/m.step {//private-server/share/x.step}': '<redacted>/m.step {<redacted>/x.step}',
+                 '/home/a/m.step,[\\\\private-server]': '<redacted>/m.step,[<redacted>]',
+                 # Glued or doubled separators are ambiguous: no basename survives.
+                 '/home/alice/m.step\\\\private-server': '<redacted>',
+                 '/home/alice//private-server': '<redacted>',
+                 'm.step\\\\private-server': 'm.step<redacted>',
+                 # Bracketed directory names and later local paths keep their basenames.
+                 '/home/Alice (work)/m.step': '<redacted>/m.step',
+                 '/home/a/x.step),(/home/b/y.step': '<redacted>/x.step),(<redacted>/y.step',
+                 '${KIPRJMOD}/m.step (https://x.org/a)': '${KIPRJMOD}/m.step (https://x.org/a)'}
+        for text, expected in cases.items():
+            self.assertEqual(redact(text), expected, text)
+            self.assertEqual(redact(expected), expected, expected)
+
+    def test_property_regression_detects_a_leaky_redactor(self):
+        """Negative control: the property check itself fails on redactors that leak hosts."""
+        def unwrapped(text):  # 433g H1: a UNC prefix after a bracket is not seen
+            return redact(re.sub(r'([(\[{<,;"\' ])(\\\\|//)', r'\1', text))
+
+        def braces_only(text):  # only the new "{" separator is missed
+            return redact(text.replace('{\\\\', '{').replace('{//', '{'))
+
+        def casing(text):  # an upper-case scheme is not recognized
+            return redact(text.replace('FILE:', 'FILE'))
+
+        for leaky in (lambda text: text, unwrapped, braces_only, casing):
+            with self.assertRaisesRegex(AssertionError, 'unexpectedly found in'):
+                assert_combinations_leak_free(self, leaky, rounds=200)
+        assert_combinations_leak_free(self, redact, seed=1, rounds=200)
+
     def test_uri_combinations_are_redacted_on_every_core_surface(self):
-        combinations = list(uri_combinations())
+        combinations = list(uri_combinations()) + list(later_operand_combinations())[::5]
         texts, expected = [t for t, _ in combinations], [e for _, e in combinations]
         self.manifest['model_coverage']['board']['path'] = texts[0]
         self.manifest['model_coverage']['extra'] = dict(combinations)
@@ -1055,8 +1131,21 @@ class DiagnosticSupplementTests(unittest.TestCase):
         self.assertEqual(record['source_packet']['name'], '<redacted>/d.step')
         self.assertEqual(record['label'], '<redacted>/b.step')
 
+    def test_real_packet_name_with_wrapped_unc_host_is_redacted(self):
+        # Review 433g H1 on the source field: a real packet file, no legacy injection.
+        for n, separator in enumerate((' (', ' [', '),(', ',[', ';(', ' {')):
+            self.packet = self.base / ('C:\\Users\\alice-hidden\\m.step' + separator + '\\\\host-hidden' + str(n))
+            self.packet.write_text('diagnostic ' + str(n))
+            identifier = self.add()
+            stored = [(self.root/'diagnostics'/identifier/'manifest.json').read_text(),
+                      (self.root/'diagnostics.json').read_text()]
+            served = self.get(self.serving() + '/diagnostics/' + identifier + '/manifest.json')
+            for where, body in zip(('stored manifest', 'stored listing', 'served manifest'), stored + [served]):
+                assert_no_uri_leak(self, body, where + separator)
+            self.assertEqual(json.loads(served)['source_packet']['name'], '<redacted>/m.step' + separator + '<redacted>')
+
     def test_uri_combinations_are_redacted_on_every_supplement_surface(self):
-        combinations = list(uri_combinations())
+        combinations = list(uri_combinations()) + list(later_operand_combinations())[::5]
         texts = [t for t, _ in combinations]
         joined, expected = '|'.join(texts), '|'.join(e for _, e in combinations)
         identifier = self.add(label=joined, stage=' '.join(texts[::7]))

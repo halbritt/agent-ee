@@ -34,18 +34,22 @@ _VIEWS = ("top", "bottom", "isometric")
 # - another URL (scheme://..., kept as is) and KiCad variables (${VAR}/..., kept);
 # - an absolute path: a POSIX root, a drive letter (either slash) or a UNC prefix,
 #   whose host (\\host or //host) is never a basename either.
-# A host ends at a slash, whitespace or delimiter. A path runs through spaces,
+# A host ends at a slash, whitespace, delimiter or bracket. A path runs through spaces,
 # commas and brackets (directory names contain them); a URL ends at whitespace.
 # Both stop at a quote, < > | or a newline, at any "file:" URI, and at a component
-# boundary: whitespace, ",", ";", ")" or "]" followed by another URI, UNC host or
-# drive path (after "," or ";" also any absolute path). So a later URI's
-# authority never becomes an earlier path's basename. Already redacted text is
-# left alone, so serving a redacted bundle is idempotent.
+# boundary: a cluster of whitespace, "," ";" and brackets ( ) [ ] { } followed by
+# another URI, UNC host or drive path (when the cluster holds "," or ";", also any
+# absolute path). So a later URI's authority or UNC host never becomes an earlier
+# path's basename. A UNC "\\" starts a host wherever it is not part of a longer
+# slash run, and a path with a doubled separator after its root is ambiguous and
+# keeps no basename at all (fail closed: over-redact rather than leak a host).
+# Already redacted text is left alone, so serving a redacted bundle is idempotent.
 _STOP = frozenset("'\"<>|\r\n")
 _SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 _DRIVE = re.compile(r"[A-Za-z]:[\\/]")
 _MARK = "<redacted>"
-_SPACE = re.compile(r"\s*")
+_CLUSTER = re.compile(r"[\s,;()\[\]{}]*")
+_BOUNDARY = ",;()[]{}"
 _COUNTS = ("resolved", "missing", "unresolved", "disabled", "no_model")
 _ID = r"[a-f0-9]{12}-[a-f0-9]{12}"
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -81,9 +85,9 @@ def _scan(text, i, url=False):
         char = text[i]
         if char in _STOP or _file_at(text, i) or (url and char.isspace()):
             return i
-        if char.isspace() or char in ",;)]":
-            j = _SPACE.match(text, i + 1).end()
-            if _token_at(text, j, char in ",;"):
+        if char.isspace() or char in _BOUNDARY:
+            j = _CLUSTER.match(text, i + 1).end()
+            if _token_at(text, j, any(c in ",;" for c in text[i:j])):
                 return i
             i = j
         else:
@@ -98,8 +102,10 @@ def _path(text, root):
     stop is just its root (file://host/ and FILE://host/, both stay <redacted>).
     """
     end = root
-    if end < len(text) and not text[end].isspace() and text[end] not in ",;)]":
+    if end < len(text) and not text[end].isspace() and text[end] not in _BOUNDARY:
         end = _scan(text, end)
+    if re.search(r"[\\/]{2}", text[root - 1:end].rstrip("/\\ \t")):
+        return end, _MARK  # a/b//c or a\\host: ambiguous, so no basename
     parts = [p for p in re.split(r"[\\/]", text[:end].rstrip("/\\ \t")[root - 1:]) if p]
     if parts and _DRIVE.match(parts[0] + "/") and len(parts[0]) == 2:
         parts = parts[1:]
@@ -113,7 +119,7 @@ def _host(text, i):
     Another double slash right after a host starts a further host.
     """
     while True:
-        while i < len(text) and text[i] not in "/\\,;)]" and text[i] not in _STOP \
+        while i < len(text) and text[i] not in "/\\" and text[i] not in _BOUNDARY and text[i] not in _STOP \
                 and not text[i].isspace() and not _file_at(text, i):
             i += 1
         if not _double(text, i):
@@ -131,8 +137,12 @@ def _token(text, i):
         if _double(text, i):
             return _host(text, i + 2)
         return _path(text, i + (3 if _DRIVE.match(text, i) else 1))
-    if i and (text[i - 1].isalnum() or text[i - 1] in "_.}/\\") or text.endswith(_MARK, 0, i):
-        return None  # ${VAR}/x, and/or, v1.2/3: not host paths; already redacted text
+    if text.endswith(_MARK, 0, i) or i and text[i - 1] in "/\\":
+        return None  # already redacted text; the rest of a slash run
+    if text.startswith("\\\\", i):
+        return _host(text, i + 2)  # a UNC host even when glued: m.step\\host
+    if i and (text[i - 1].isalnum() or text[i - 1] in "_.}"):
+        return None  # ${VAR}/x, and/or, v1.2/3: not host paths
     if _double(text, i):
         return _host(text, i + 2)
     if text[i] == "/":
