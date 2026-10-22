@@ -1,0 +1,17 @@
+{"cap": 12, "created_utc": "2026-10-22T17:53:55.562647+00:00", "event": "header", "schema": "agent-ee.call-ledger/1"}
+{"at_utc": "2026-10-22T17:53:55.581060+00:00", "cell": "seeded-r1-baseline", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 1}
+{"at_utc": "2026-10-22T17:53:55.623681+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 1}
+{"at_utc": "2026-10-22T17:53:59.290676+00:00", "cell": "seeded-r1-indexed", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 3}
+{"at_utc": "2026-10-22T17:53:59.344146+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 3}
+{"at_utc": "2026-10-22T17:54:02.433360+00:00", "cell": "control-r1-indexed", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 5}
+{"at_utc": "2026-10-22T17:54:02.469240+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 5}
+{"at_utc": "2026-10-22T17:54:05.267652+00:00", "cell": "control-r1-baseline", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 7}
+{"at_utc": "2026-10-22T17:54:05.312363+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 7}
+{"at_utc": "2026-10-22T17:54:08.071226+00:00", "cell": "seeded-r2-indexed", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 9}
+{"at_utc": "2026-10-22T17:54:08.113907+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 9}
+{"at_utc": "2026-10-22T17:54:12.018665+00:00", "cell": "seeded-r2-baseline", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 11}
+{"at_utc": "2026-10-22T17:54:12.074676+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 11}
+{"at_utc": "2026-10-22T17:54:14.829349+00:00", "cell": "control-r2-baseline", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 13}
+{"at_utc": "2026-10-22T17:54:14.878543+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 13}
+{"at_utc": "2026-10-22T17:54:17.911993+00:00", "cell": "control-r2-indexed", "event": "reserve", "kind": "fake", "label": "circuit", "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c", "real_calls_after": 0, "seq": 15}
+{"at_utc": "2026-10-22T17:54:17.963234+00:00", "duration_s": 0.0, "event": "settle", "execution": "ok", "seq": 15}

@@ -3765,6 +3765,16 @@
         "AE"
       ],
       "reviewed": "Original gallery service, HTML markup, native fixture browser configuration and user service unit written for agent-ee; existing third-party viewer assets remain under their existing origin rules."
+    },
+    {
+      "paths": [
+        "evidence/packet-index-ab/call-ledger.jsonl"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "AGENTEE-12 capped reviewer A/B call ledger written by src/agent_ee/packet_ab.py: cell ids, reservation/settle events, execution states, durations and timestamps only. No captured design, library, prompt or reviewer text."
     }
   ]
 }
