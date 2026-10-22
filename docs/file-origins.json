@@ -2374,6 +2374,16 @@
     },
     {
       "paths": [
+        "tests/test_render_gallery.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing a minimal synthetic KiCad board literal (one graphic line, optionally one segment) for supplement candidate binding; no owner or third-party design is read or committed."
+    },
+    {
+      "paths": [
         "tests/test_render3d.py"
       ],
       "kind": "owned-source",
