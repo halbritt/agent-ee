@@ -265,6 +265,19 @@ class GateHardeningTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'identities ambiguous'):
                     _proposal_drc(source, self._mask_candidate(source, name))
 
+    def test_duplicate_footprint_kiid_is_typed_refusal(self):
+        import pcbnew as k
+        from agent_ee.placer_runner import _drc_item_states
+        original = self.board()
+        uuids = [f.m_Uuid.AsString() for f in k.LoadBoard(str(original)).GetFootprints()]
+        self.assertGreaterEqual(len(uuids), 2)
+        text = original.read_text()
+        self.assertIn(uuids[1], text)
+        source = self.root / 'dup-footprint-kiid.kicad_pcb'
+        source.write_text(text.replace(uuids[1], uuids[0]))
+        with self.assertRaisesRegex(ValueError, 'identities ambiguous'):
+            _drc_item_states(source)
+
     def test_shared_kiid_across_moved_footprints_refuses(self):
         import pcbnew as k
         source = self._share_pad_kiids(self.board(), 'shared-collision')
