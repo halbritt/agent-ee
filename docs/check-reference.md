@@ -2258,6 +2258,14 @@ names never waive structural native findings. Standalone geometric poses stay
 hypothetical and unverified. The optimum is limited to the declared finite pose
 set. Fixed and rigid-block alternatives remain unsearched.
 
+AGENTEE-420 retains unchanged blocking baseline findings as unknown pose
+legality, using the shared native DRC comparison and saved item states. New or
+moved blockers still reject, even alongside baseline findings. Completed native
+attempts carry normalized candidate and baseline DRC content digests into the
+cost record; normalization is specified in the feature reference. Advisory
+measurement or search exceptions produce an explicit unknown record and cannot
+refuse placement. Hard publication gates keep their existing verdicts.
+
 ## Access direction in placement containment (AGENTEE-379)
 
 The existing `placement` check with `outline-containment/1` also grades native

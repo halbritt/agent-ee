@@ -111,7 +111,9 @@ Saved proposals report [advisory reserve costs](docs/placer.md#advisory-reserve-
 per side and owner, including keepouts and courtyard excess over fabrication
 bodies. Large reserves enter arranged-block review packets. Cheaper poses are
 reported as legal only after native DRC and preservation checks on scratch copies; unvalidated poses remain hypothetical. The search
-covers a declared finite pose set.
+covers a declared finite pose set. Unchanged baseline defects leave pose legality
+unknown; normalized DRC digests bind completed attempts to their retained reports.
+Reserve diagnostic failures remain advisory unknowns (AGENTEE-420).
 
 Declared [placer obstacles](docs/placer.md#declared-obstacle-unions-and-reserved-gap-provenance-agentee-338)
 reserve the exact union of touching or overlapping polygons. The pod's 0.25 mm
