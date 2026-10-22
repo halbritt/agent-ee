@@ -183,7 +183,9 @@ Matching by footprint, land-pattern hash, pin roles and declared value tolerance
 refuses any mismatch. Land-pattern and courtyard hashes use canonical contour rings,
 so they do not depend on the captured board rotation (AGENTEE-370).
 The [block library](docs/block-library.md) keeps versioned known-good blocks in
-`blocks/` with provenance receipts. Its entries come from KiCad board regions,
+`blocks/` with provenance receipts. Board-region materialization refuses with
+`copper_unknown` until applied copper can be checked; region imports with zones
+also refuse (AGENTEE-403). Its entries come from KiCad board regions,
 scale-verified datasheet figures and project clusters. A lookup returns each block
 with its provenance class. Project clusters, including the four telemetry pod
 regulator clusters, are search-derived and advisory. Hard classes are disabled

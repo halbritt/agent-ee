@@ -72,6 +72,12 @@ The [file digest contract](result-reference.md) requires fresh byte reads for
 verification. Its stat-unchanged mmap regressions control metadata observations
 while retaining real mappings and hash reads (AGENTEE-294); they add no check kind.
 
+The [block library](block-library.md#materialization) refuses board-region
+materialization with `copper_unknown` and no candidate: placement checks cannot
+establish that recorded copper was applied. Region imports containing zones also
+refuse as unknown copper coverage (AGENTEE-403). These are producer refusals;
+no check kind, schema or existing check verdict is changed.
+
 All handlers execute against the captured candidate, not the source checkout.
 Their working directories are separate. The original tool commands, sandbox
 arguments, exit status and console output remain in `work/CHECK_ID/`.
