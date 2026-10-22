@@ -141,15 +141,16 @@ check reports a defect, coverage is incomplete, or the result is missing,
 malformed or refused by `agent-ee verify`. The expected exit 1 of a checks-only
 review is not a failure. No model review runs.
 
-[consumer-sample.yml](../.github/workflows/consumer-sample.yml) runs the action
-on the RC fixture with the seeded resistor defect and is expected to fail. The job
-summary shows the `check_failed` verdict, the `rc-step` row
-(`vout_1ms=0.0951625 outside [0.62, 0.65]`) and the run report. The run
-directory is uploaded as `rc-seeded-run`. The workflow runs only on manual dispatch
-(`gh workflow run consumer-sample.yml --ref main`), because agent-ee's own
-development uses no pull-request workflow. A consumer project uses the same steps
-with its own scope, a pinned reference to this repository and the triggers it
-chooses, for example `pull_request:`:
+A hosted sample run is not used. The owner answer (decision #13), owner-relayed
+by agent-519 (class: owner-relayed, agent-drafted, unconfirmed), reads verbatim:
+"I don't think we can use github CI for this, so c." No sample workflow is
+committed. `scripts/consumer_sample.py run seeded` runs the RC fixture with the
+seeded resistor defect locally and expects the `check_failed` verdict with the
+`rc-step` row (`vout_1ms=0.0951625 outside [0.62, 0.65]`); `run control` expects
+`checks_passed`. See [Sample consumer run](container.md#sample-consumer-run-local-only).
+A consumer project uses the action in its own repository with its own scope, a
+pinned reference to this repository and the triggers it chooses, for example
+`pull_request:`:
 
 ```yaml
 name: agent-ee checks
@@ -171,15 +172,13 @@ jobs:
           artifact-name: rc-seeded-run
 ```
 
-Inside an agent-ee checkout, `uses: ./` runs the local copy, as the committed
-sample does. For a real board, use your own scope and requirements; the fixture's
+Inside an agent-ee checkout, `uses: ./` runs the local copy, as an agent-ee
+checkout's own workflow would. For a real board, use your own scope and requirements; the fixture's
 limits apply only to that filter. agent-ee's own CI runs on pushes to `main` and
 manual dispatch. It runs the RC fixtures directly in the image and judges them
 with the same gate, but it does not call the action and uploads no run directory.
-The sample's uploaded run directory contains the fixture design files and the
-stock KiCad library files that the seeded scope captures; see
-[publication of the sample artifact](container.md#sample-workflow-and-local-evidence)
-before dispatching it. Inputs, verdicts and the local evidence for this behavior
+A run directory of the seeded scope contains the captured stock KiCad library files, so keep it local.
+Inputs, verdicts and the local evidence for this behavior
 are listed in the [container reference](container.md#reusable-action).
 
 ## Subscription authentication

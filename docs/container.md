@@ -318,7 +318,7 @@ Project CI does not call the reusable action and uploads no run directory. A run
 directory holds copies of the candidate inputs, and the RC fixture inputs include
 the FOME-MC-origin fixture (origin T1 in [file-origins.json](file-origins.json))
 and captured stock KiCad library files (origin T6). This repository is public.
-T6 publication is unresolved (see [the sample workflow](#sample-workflow-and-local-evidence)),
+T6 files are not redistributed (see [the sample run](#sample-consumer-run-local-only)),
 so run outputs stay on the ephemeral runner and only the gate summary reaches the
 job page.
 
@@ -505,63 +505,41 @@ request can also edit the scope and requirements it is judged against, so the
 gate checks a contribution only against criteria the consumer controls when the
 scope comes from a trusted revision.
 
-### Sample workflow and local evidence
+### Sample consumer run (local only)
 
-[consumer-sample.yml](../.github/workflows/consumer-sample.yml) is the
-[installation guide's](installation.md#sample-consumer-workflow) sample consumer
-workflow, committed in this repository. It runs only on manual dispatch. It calls
-the action with `uses: ./` on `fixtures/rc/seeded.scope.json` and is expected to
-fail. Its last step adds one line to the job summary saying whether the verdict is
-the expected `check_failed`; it fails for any other verdict. It cannot make the
-job pass.
+A hosted GitHub Actions run of the sample is not used. The owner answered the
+question of running it on GitHub CI (owner decision #13), relayed by agent-519
+(class: owner-relayed, agent-drafted, unconfirmed), verbatim:
 
-Like every action run, it uploads the whole run directory as the `rc-seeded-run`
-artifact. In a local replay of the seeded run, the directory held 589 files. Of
-these, 453 files (17 MB) were the stock KiCad library collections that the scope
-captures under `inputs/stock/`: `Device`, `power` and `Connector_Generic`
-symbols, the complete `Resistor_SMD`, `Capacitor_SMD` and
-`Connector_PinHeader_2.54mm` footprint libraries, and the template tables. The
-directory contains no CC-BY-SA license document. The rest is the T1 fixture,
-the requirements, and the run's own records, tool outputs and inspection renders.
-A version of the scope without the stock captures is not a substitute: ERC and DRC
-then report library warnings as defects (9 ERC and 3 DRC violations in a local
-probe).
+> I don't think we can use github CI for this, so c.
 
-The MIT approval relayed on AGENTEE-14 covers T1, not T6. It is an owner
-decision relayed by a coordinator, not text the owner wrote here (class:
-owner-relayed, agent-drafted, unconfirmed), and is quoted verbatim from the
-AGENTEE-14 Plane comment of 2026-10-22:
+So no sample workflow is committed, nothing is uploaded as an artifact, and the
+T6 stock KiCad library files that a run directory captures under `inputs/stock/`
+are not redistributed by this design. The reusable [action.yml](../action.yml)
+stays available for consumers to run in their own repositories.
 
-> Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.
+[scripts/consumer_sample.py](../scripts/consumer_sample.py) reproduces the sample
+locally on the RC fixture. The seeded scope (`fixtures/rc/seeded.scope.json`)
+must give `check_failed` with an `rc-step` defect (`vout_1ms=0.0951625` outside
+`[0.62, 0.65]`). The control scope (`fixtures/rc/control.scope.json`) must give
+`checks_passed`. Both are judged from `result.json` by
+[action_gate.py](../scripts/action_gate.py) with `--expect` and `--expect-check`,
+so any other verdict, a missing result or a different `rc-step` outcome exits 1.
 
-So a hosted dispatch of the sample would publish T6 library files, without their
-license document, as an artifact of a public repository. That still needs an owner
-decision on T6 before dispatch. The origin statuses in `file-origins.json` are
-maintained separately from this page.
+```
+scripts/consumer_sample.py run seeded      # review into a new temp directory, verify, judge
+scripts/consumer_sample.py run control
+scripts/consumer_sample.py judge seeded RUN_DIR [--verify]   # judge a retained run directory
+```
 
-The local evidence is a replay, not a hosted run. A scratch harness, not part of
-the repository, extracted each `run:` body of the sample workflow and of
-`action.yml` from a committed tree. It ran them in order with GitHub's
-`bash -eo pipefail` semantics and real Docker. The image was built with the
-action's own `docker build` step. Three steps were replaced:
-`actions/checkout` by `git archive`, `upload-artifact` by a directory copy, and
-the AppArmor step by the name of the already-loaded `agent-ee-container` profile,
-because that step runs `sudo`. Results:
+`run` needs the native toolchain: the container image, or a host with
+`kicad-cli` and `ngspice`. `judge` needs only the retained directory. The
+retained run directory stays local; it holds the captured stock libraries and no
+CC-BY-SA license document, so do not publish it. The local runner is tested in
+[test_action_gate.py](../tests/test_action_gate.py) with synthetic results; the
+native verdicts come from the checks' own tests.
 
-- Seeded fixture: review exited 1, `agent-ee verify` exited 0 and the gate gave
-  `check_failed`. The summary had the `rc-step` row
-  `vout_1ms=0.0951625 outside [0.62, 0.65]`, ERC, DRC and geometry `pass`, the
-  run report and the expected-outcome line. The final action step failed with
-  `::error::agent-ee checks-only verdict: check_failed`. The copied run
-  directory, hidden files included, was identical to the original (`diff -r`).
-- The control scope in the same workflow gave `checks_passed`, a passing action
-  step and a failed expected-outcome step.
-
-An earlier harness covered the remaining verdicts. A zero budget gave
-`coverage_incomplete`. A missing scope, an existing output directory and an
-output outside the workspace each gave `result_invalid`.
-
-The action has not yet run on a hosted runner.
+The action has not run on a hosted runner, and this design does not plan one.
 
 ## Stock 3D models
 

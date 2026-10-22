@@ -231,65 +231,62 @@ class ActionDocumentationTests(unittest.TestCase):
         self.assertNotIn("--security-opt apparmor=unconfined", guide)
 
 
-SAMPLE = SCRIPT.parents[1] / ".github" / "workflows" / "consumer-sample.yml"
+SAMPLE_SCRIPT = SCRIPT.parent / "consumer_sample.py"
+sample_spec = importlib.util.spec_from_file_location("consumer_sample", SAMPLE_SCRIPT)
+sample = importlib.util.module_from_spec(sample_spec)
+sample_spec.loader.exec_module(sample)
 
 
-def sample_step_script(name):
-    """Return one consumer-sample.yml step's `run: |` body without a YAML dependency."""
-    lines = SAMPLE.read_text().splitlines()
-    start = lines.index(f"      - name: {name}")
-    run = next(i for i in range(start, len(lines)) if lines[i] == "        run: |")
-    body = []
-    for line in lines[run + 1:]:
-        if line.strip() and not line.startswith("          "):
-            break
-        body.append(line[10:])
-    return "\n".join(body) + "\n"
+class ConsumerSampleLocalRunnerTests(unittest.TestCase):
+    """The consumer sample is a local runner; no hosted workflow is committed."""
 
+    def retained(self, base, outcome):
+        run = Path(base) / "run"
+        run.mkdir(parents=True)
+        checks = [check("erc"), check("rc-step", outcome=outcome)]
+        result = {"schema": "agent-ee.result/1", "run_id": "r", "candidate_id": "c" * 64,
+                  "state": "incomplete", "outcome": "incomplete", "adjudicated": False,
+                  "started_utc": "2026-10-17T00:00:00+00:00", "finished_utc": "2026-10-17T00:01:00+00:00",
+                  "expected_check_ids": ["erc", "rc-step"], "checks": checks, "reviews": [],
+                  "review_executions": [], "findings": [], "limitations": []}
+        (run / "result.json").write_text(json.dumps(result))
+        return run
 
-class ConsumerSampleWorkflowTests(unittest.TestCase):
-    """The committed sample runs the action on the seeded fixture, by manual dispatch only."""
+    def judge(self, case, run):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return sample.judge(case, run)
 
-    def test_sample_is_dispatch_only(self):
-        text = SAMPLE.read_text()
-        triggers = text.split("\non:\n", 1)[1].split("\n\n", 1)[0].splitlines()
-        self.assertEqual(triggers, ["  workflow_dispatch:"])
-        for event in ("pull_request", "pull_request_target", "push:", "schedule:", "workflow_run"):
-            self.assertNotIn(event, text)
-        self.assertIn("permissions:\n  contents: read\n", text)
+    def test_no_hosted_sample_workflow_is_committed(self):
+        root = SCRIPT.parents[1]
+        self.assertFalse((root / ".github" / "workflows" / "consumer-sample.yml").exists())
+        self.assertTrue((root / "action.yml").is_file())
 
-    def test_sample_calls_the_local_action_on_the_seeded_fixture(self):
-        text = SAMPLE.read_text()
-        self.assertIn("        uses: ./\n", text)
-        self.assertIn("          scope: fixtures/rc/seeded.scope.json\n", text)
-        self.assertIn("          artifact-name: rc-seeded-run\n", text)
-        self.assertTrue((SCRIPT.parents[1] / "fixtures/rc/seeded.scope.json").is_file())
-        # The guide's consumer copy uses the same inputs against a pinned reference.
-        guide = (SCRIPT.parents[1] / "docs" / "installation.md").read_text()
-        self.assertIn("(../.github/workflows/consumer-sample.yml)", guide)
-        for line in ("scope: fixtures/rc/seeded.scope.json", "output-directory: build/agent-ee/rc-seeded",
-                     'max-seconds: "900"', "artifact-name: rc-seeded-run"):
-            self.assertIn(line, guide)
-            self.assertIn(line, text)
+    def test_cases_point_at_existing_scopes(self):
+        for scope, _, _ in sample.CASES.values():
+            self.assertTrue((SCRIPT.parents[1] / scope).is_file(), scope)
 
-    def expected_outcome(self, verdict):
+    def test_seeded_run_expects_the_rc_step_defect_and_control_expects_a_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
-            script, summary = Path(tmp) / "state.sh", Path(tmp) / "summary.md"
-            script.write_text(sample_step_script("State the expected outcome"))
-            env = dict(os.environ, VERDICT=verdict, GITHUB_STEP_SUMMARY=str(summary))
-            done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", str(script)],
-                                  env=env, capture_output=True, text=True)
-            return done.returncode, summary.read_text()
+            defect, passing = self.retained(Path(tmp) / "a", "defect"), self.retained(Path(tmp) / "b", "pass")
+            self.assertEqual(self.judge("seeded", defect), 0)
+            self.assertEqual(self.judge("control", passing), 0)
+            # The outcomes are not interchangeable.
+            self.assertEqual(self.judge("seeded", passing), 1)
+            self.assertEqual(self.judge("control", defect), 1)
 
-    def test_only_the_seeded_check_failure_is_the_expected_outcome(self):
-        code, summary = self.expected_outcome("check_failed")
-        self.assertEqual(code, 0)
-        self.assertIn("Expected outcome", summary)
-        # A run that did not reach the rc-step finding is not the demonstrated failure.
-        for verdict in ("checks_passed", "coverage_incomplete", "result_invalid"):
-            code, summary = self.expected_outcome(verdict)
-            self.assertEqual(code, 1, verdict)
-            self.assertIn(f"Unexpected outcome: verdict {verdict}", summary)
+    def test_missing_result_is_not_the_expected_outcome(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self.judge("seeded", tmp), 1)
+            self.assertEqual(self.judge("control", tmp), 1)
+
+    def test_docs_cite_the_owner_answer_and_do_not_link_a_workflow(self):
+        quote = "I don't think we can use github CI for this, so c."
+        for name in ("container.md", "installation.md"):
+            text = (SCRIPT.parents[1] / "docs" / name).read_text()
+            self.assertIn(quote, text, name)
+            self.assertIn("owner-relayed", text, name)
+            self.assertNotIn("consumer-sample.yml", text, name)
+            self.assertIn("scripts/consumer_sample.py", text, name)
 
 
 if __name__ == "__main__":
