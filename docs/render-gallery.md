@@ -109,6 +109,9 @@ dropped.
   label or stage outside this vocabulary (such as `Telemetry pod iteration 8`)
   is served as `<redacted>` whole. Describe the change in the review packet,
   which is not published.
+- **Status records** carry only fixed codes, integers, hashes, plain evidence
+  file names and model references such as `U3`
+  ([Recorded status and limitations](#recorded-status-and-limitations)).
 - **Identities** (board hash, candidate id, model hash, image hashes), times,
   counts, views and statuses must match their grammar or vocabulary, else they
   are published as `null` (shown as unknown).
@@ -135,12 +138,14 @@ drives with either slash, POSIX paths and hosts interrupted by quotes, groups an
 whitespace, wrapped, punctuated and joined as first, second and later operands,
 together with each reported example and the partly scrubbed text earlier
 redactors published. Every text is put into every field and key of a bundle,
-viewer and supplement record, and the stored and served JSON and both pages
+viewer, supplement and status record, and the stored and served JSON, the
+gallery, supplement and bundle pages and the served viewer page
 must carry no host, user or share text. The oracle is shown to fail on
 deliberately leaky publication: pass-through, a regex scrubber, an unlisted
 field, a basename without the local-path checks, trusting text that starts with
 the marker, a label check that refuses only `/`, a label kept when it is plain
-text without path syntax, and a `<redacted>/NAME` value published as `NAME`.
+text without path syntax, a `<redacted>/NAME` value published as `NAME`, and a
+status record that keeps a free-text model reference.
 
 ### Cards and history
 
@@ -159,9 +164,144 @@ hash, render time, declared stage, model coverage and warnings. They are evidenc
 of import identity, not independent verification of a producer's claims.
 
 Do not label diagnostic or unrouted output as a release. Missing models remain
-visible limitations. Rendering does not substitute for native DRC or engineering
+visible limitations; record the candidate's status as described in
+[Recorded status and limitations](#recorded-status-and-limitations). Rendering does not substitute for native DRC or engineering
 review. This first gallery publishes 3D images and the interactive viewer; layer
 plots remain in their native review packets.
+
+## Recorded status and limitations
+
+A candidate's limitations (unrouted, not adopted, not qualified, a models-only
+derivative, open defects, how a component model was obtained) are not free
+text and are never shown as model warnings. They are carried by a separate,
+immutable **status record** (`agent-ee.gallery-status/1`) attached to a
+published bundle or supplement. Attaching one never changes the publication's
+bytes, its listing entry or which bundle is Latest: the record is its own
+publication under `statuses/ID/`, listed in `statuses.json`, and bound to the
+SHA-256 of the subject's stored `manifest.json` and to its board hash. So the
+same mechanism records the status of a bundle published before these fields
+existed.
+
+```sh
+PYTHONPATH="$HOME/.local/share/agent-ee-render-gallery/app" python3 -m agent_ee.render_gallery \
+  --root "$HOME/.local/share/agent-ee-render-gallery/artifacts" status \
+  --subject bundles/BUNDLE_ID --record status.json \
+  --evidence board=/durable/run/candidate.kicad_pcb --evidence index=/durable/run/INDEX.md \
+  --evidence receipt=/durable/run/RECEIPT.json --evidence design-diff=/durable/run/design-diff.json \
+  --evidence drc=/durable/run/drc.json --evidence model=/durable/run/models/u3.step \
+  --evidence association=/durable/review/association.json
+```
+
+`status.json` holds only these fields, each a fixed code or `null` (unknown),
+never free text; an omitted field is unknown:
+
+| Field | Codes | Shown as |
+|---|---|---|
+| `routing` | `routed`, `unrouted` | Routed (completeness not verified) / Unrouted |
+| `adoption` | `adopted`, `not-adopted` | recorded disposition |
+| `qualification` | `qualified`, `unqualified` | recorded disposition, not machine qualification |
+| `scope` | `full`, `models-only` | Full design candidate / Models-only derivative |
+| `open_defects` | `count` (integer) with `class` `silk`, `drc` or `review` | Open defects: N ... |
+| `drc` | `violations`, `raw_unconnected_items` (integers) | raw unconnected items, not an incomplete-net count |
+| `models` | `reference` (`U3`), `provenance` `manufacturer`, `mechanical` or `datasheet-derived`, `transparency` `verified`, `sha256` | per model; every other model's provenance is shown unknown |
+| `label`, `stage` | the label and stage vocabulary above | only for an earlier publication whose own label or stage is served as `<redacted>` |
+
+The first four are `{"value": CODE, "evidence": [ROLES]}`; `open_defects`,
+`drc` and each model also carry `evidence`. Evidence roles are `board`,
+`association`, `receipt`, `design-diff`, `drc`, `index`, `model` and `review`; each `--evidence`
+file is read once and its plain file name and SHA-256 are recorded. Values come
+from retained evidence and are never inferred from checks; publication refuses
+a value that cites no evidence or evidence that was not supplied, and checks
+what the evidence can check:
+
+- `board` must be the bytes of the subject's board hash, and `routing` must cite
+  it: `unrouted` is refused when the board has tracks, arcs or vias, `routed`
+  when it has none.
+- Each known value must cite the retained report it was taken from. `unrouted`
+  is the only claim the bound board supports alone. `routed`, `adopted`,
+  `not-adopted`, `qualified`, `unqualified` and `full` must cite a disposition
+  (`receipt`, `review` or `index`; `routed` also the board); `models-only` the
+  `design-diff`; `drc` counts and `silk` or `drc` defect counts the `drc` report;
+  `review` defect counts the `review` report; a model claim the `model` file.
+  Citing the board or the association instead is refused: the association is a
+  mapping of files, not a disposition.
+- Every other evidence file must be covered by one reviewed **association**
+  (`agent-ee.gallery-association/1`), supplied as `association` evidence. A
+  hash alone, or a DRC report's `source` file name, does not show that a report,
+  receipt, diff or model belongs to this candidate; the association is the
+  reviewer's mapping of the subject board to the files retained with it in the
+  same packet. Publication refuses evidence it does not list, and an association
+  for any other board:
+
+  ```json
+  {"schema": "agent-ee.gallery-association/1", "board_sha256": "SUBJECT BOARD SHA-256",
+   "evidence": [{"role": "drc", "sha256": "..."}, {"role": "receipt", "sha256": "..."}],
+   "models": [{"reference": "U3", "sha256": "...", "provenance": "datasheet-derived", "transparency": null}]}
+  ```
+
+  `evidence` lists each associated file by role (not `board` or `association`)
+  and SHA-256; `models` lists each reviewed model once. Nothing else is
+  accepted. The gallery checks supplied evidence against the association; it
+  cannot check who reviewed it, so produce it only from a reviewed packet (its
+  receipt and checksums).
+- `drc` counts must equal the `violations` and `unconnected_items` of the cited
+  KiCad DRC JSON report; a `silk` or `drc` open-defect count must equal its
+  `silk_*` or total violations.
+- `models-only` must cite an `agent-ee.design-diff/1` board diff of the
+  subject board (`raw.subject_sha256`) whose every entry is a
+  `footprint[REF]/model` change with unchanged placement and structural hashes.
+- A model claim needs `sha256`, the hash of a cited `model` evidence file; its
+  reference, hash, provenance and transparency must be the association's entry
+  for that reference, and the supplied board must have a footprint with that
+  reference whose model file name is the model evidence file name.
+
+`qualified`, `adopted`, `full`, `review` defect counts and model provenance are
+recorded dispositions, shown as such; the gallery does not validate them.
+
+Every card, the bundle page `/bundles/ID/index.html`, and the served
+`viewer/index.html` (the stored page with the status inserted when served) show
+all of these lines outside any collapsed element, with a badge listing every
+recorded limitation and unknown. A publication without a record shows "No
+status record attached" and every field unknown; a record whose subject hash no
+longer matches the stored manifest shows "does not match" and every field
+unknown; a stored or served value outside the vocabulary, or one whose cited
+evidence is not hash-bound in the record, is unknown, and so is a value citing
+anything but the subject's board in a record that binds no association (records
+attached before associations existed show only board-checked routing). The same
+citation rule is applied when serving, so a record sealed before it (for
+example `qualified` citing only the board or only the association) shows that
+value unknown on every page and JSON surface.
+
+`statuses.json` is mutable and only names and orders the immutable records. Each
+listed record is read from `statuses/ID/status.json` without following a link
+and served only when its bytes are the canonical encoding of its projection,
+`ID` is its subject manifest hash prefix and its own SHA-256 prefix, the listing
+entry equals it, and its subject still matches the stored manifest and board. If
+any listed record of a publication is missing, corrupt, rewritten, differs from
+its listing entry or names another subject, the publication shows "does not
+match" and every field unknown. The newest record is shown; older records are
+retained. `/bundles/ID/status.json` and
+`/diagnostics/ID/status.json` report `matched`, `mismatched` or `none` with the
+verified record and `shown`, the claims the pages show from it (`null` where
+unknown); in `record`, a value its citations do not support is `null` too.
+`/statuses/ID/status.json` serves a record itself, read the same way: only when
+its bytes are its identity and its subject still matches the stored manifest
+and board (an unsupported value `null`, as above), else HTTP 404 with
+`{"id": ID, "attached": "mismatched", "record": null}`. The
+served `manifest.json` of a bundle or supplement and the served
+`viewer/viewer.json` carry the same report as `recorded_status` beside the
+projected stored fields; the stored files never contain it.
+
+The iter8t migration attaches `routing` unrouted (board, INDEX), `qualification`
+unqualified (INDEX's recorded diagnostic/unsealed/not-qualified disposition),
+`scope` models-only (RECEIPT, design-diff), 9 open `silk` defects and 226 DRC
+violations with 499 raw unconnected items (DRC report), U3 `datasheet-derived`
+with its STEP hash (RECEIPT, model) and transparency unknown; adoption is not
+recorded for it and stays unknown. Every one of these but routing needs the
+reviewed iter8t association: its board hash, the RECEIPT, design-diff, DRC
+report, INDEX and U3 STEP hashes of the same retained packet, and U3's STEP hash
+with `datasheet-derived` provenance and unknown transparency. The historical supplement attaches
+`Diagnostic 1`, `diagnostic`, `unrouted` and `not-adopted`.
 
 ## Annotated diagnostic supplements
 

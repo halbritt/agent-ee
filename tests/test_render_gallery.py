@@ -1,3 +1,6 @@
+import contextlib
+import hashlib
+import html
 import itertools
 import json
 import multiprocessing
@@ -5,6 +8,8 @@ import random
 import re
 import shutil
 import struct
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -186,11 +191,32 @@ def records(text):
     return bundle, viewer, diagnostic
 
 
+def status_record(text):
+    """An attached status record with text in every field, key and evidence name, as projected."""
+    cited = {'value': text, 'evidence': [text, 'board']}
+    return gallery._status_record({
+        'id': '4' * 12 + '-' + '5' * 12, 'schema': 'agent-ee.gallery-status/1', text: text,
+        'subject': {'area': text, 'id': text, 'manifest_sha256': text, 'board_sha256': text, text: text},
+        'label': text, 'stage': text, 'routing': cited, 'adoption': cited, 'qualification': cited, 'scope': cited,
+        'open_defects': {'count': text, 'class': text, 'evidence': [text]},
+        'drc': {'violations': text, 'raw_unconnected_items': text, 'evidence': [text], text: text},
+        'models': [{'reference': text, 'provenance': text, 'transparency': text, 'sha256': text, 'evidence': [text]},
+                   {'reference': 'U3', 'provenance': text, 'evidence': ['model']}, text],
+        'evidence': [{'role': text, 'name': text, 'sha256': text, 'path': text}, {'role': 'model', 'name': text}],
+        'published_at': text})
+
+
 def surfaces(text):
     """Everything publication or the server can emit for text: stored and served JSON and both pages."""
     bundle, viewer, diagnostic = records(text)
-    return (json.dumps([bundle, viewer, diagnostic], ensure_ascii=False) + page([bundle], [diagnostic]).decode()
-            + page([], [diagnostic], diagnostic_only=True, latest=bundle).decode())
+    status = status_record(text)
+    statuses = {('bundles', bundle['id']): status, ('diagnostics', diagnostic['id']): status}
+    return (json.dumps([bundle, viewer, diagnostic, status], ensure_ascii=False)
+            + page([bundle], [diagnostic], statuses=statuses).decode()
+            + page([], [diagnostic], diagnostic_only=True, latest=bundle, statuses=statuses).decode()
+            + page([bundle], statuses=statuses, detail=True).decode()
+            + gallery._with_status(b'<body>', bundle['id'], status).decode()
+            + json.dumps(gallery._recorded('bundles', bundle['id'], status), ensure_ascii=False))
 
 
 def assert_leak_free(test, published, seed=433, rounds=20000, stride=1):
@@ -1218,3 +1244,611 @@ class DiagnosticSupplementTests(unittest.TestCase):
         record = json.loads(self.surfaces(self.add(image=image))[0])
         self.assertEqual((record['source_packet']['name'], record['source_image']['name'], record['captured_board']),
                          ('Free-space_analysis.v2.md', '<redacted>', 'board.kicad_pcb'))
+
+
+def drc_report(silk=2, clearance=1, unconnected=3):
+    violations = ([{'type': 'silk_over_copper', 'severity': 'warning'}] * (silk - silk // 2)
+                  + [{'type': 'silk_overlap', 'severity': 'warning'}] * (silk // 2)
+                  + [{'type': 'clearance', 'severity': 'error'}] * clearance)
+    return {'$schema': 'https://schemas.kicad.org/drc.v1.json', 'source': 'board.kicad_pcb', 'violations': violations,
+            'unconnected_items': [{'type': 'unconnected_items'}] * unconnected, 'schematic_parity': []}
+
+
+# The status fixture board: unrouted, with footprint U3 whose model is the fixture STEP.
+STATUS_BOARD = ('(kicad_pcb (version 20240108) (generator "fixture") (footprint "Package:U3" (layer "F.Cu") '
+                '(property "Reference" "U3") (model "${KIPRJMOD}/models/u3.step")) (gr_line (start 0 0) (end 1 0)))\n')
+STATUS_BOARD_SHA256 = hashlib.sha256(STATUS_BOARD.encode()).hexdigest()
+
+
+def design_diff(placement='p' * 64, paths=('footprint[U3]/model@0a1b2c', 'footprint[U3]/model@3d4e5f'),
+                subject=STATUS_BOARD_SHA256):
+    return {'schema': 'agent-ee.design-diff/1', 'format': 'board', 'equivalent': False,
+            'entries': [{'path': path} for path in paths], 'raw': {'subject_sha256': subject},
+            'hashes': {'changed': ['identity'], 'reference': {'placement': 'p' * 64, 'structural': 's' * 64},
+                       'subject': {'placement': placement, 'structural': 's' * 64}}}
+
+
+def iter8_record(**changes):
+    """A status record of the kind the iter8t migration attaches; see docs/render-gallery.md."""
+    record = {
+        'routing': {'value': 'unrouted', 'evidence': ['board', 'index']},
+        'adoption': {'value': 'not-adopted', 'evidence': ['index']},
+        'qualification': {'value': 'unqualified', 'evidence': ['index']},
+        'scope': {'value': 'models-only', 'evidence': ['receipt', 'design-diff']},
+        'open_defects': {'count': 2, 'class': 'silk', 'evidence': ['drc']},
+        'drc': {'violations': 3, 'raw_unconnected_items': 3, 'evidence': ['drc']},
+        'models': [{'reference': 'U3', 'provenance': 'datasheet-derived', 'transparency': None,
+                    'sha256': hashlib.sha256(b'original fixture STEP\n').hexdigest(), 'evidence': ['receipt', 'model']}]}
+    record.update(changes)
+    return record
+
+
+class StatusRecordTests(unittest.TestCase):
+    """Attached, hash-bound status records (433 deployment compatibility follow-up)."""
+    maxDiff = None
+
+    def setUp(self):
+        GalleryTests.setUp(self)
+        self.evidence_dir = Path(self.tmp.name) / 'evidence'
+        self.evidence_dir.mkdir()
+        files = {'board.kicad_pcb': STATUS_BOARD, 'INDEX.md': 'Status: UNROUTED placement candidate, not qualified.\n',
+                 'RECEIPT.json': json.dumps({'purpose': 'models-only derivation'}),
+                 'drc.json': json.dumps(drc_report()), 'design-diff.json': json.dumps(design_diff()),
+                 'u3.step': 'original fixture STEP\n'}
+        for name, text in files.items():
+            (self.evidence_dir / name).write_text(text)
+        self.board_hash = digest(self.evidence_dir / 'board.kicad_pcb')
+        self.manifest['board']['sha256'] = self.board_hash
+        self.save()
+        self.bundle = publish(self.root, self.renders, label='Iteration 8', stage='placement', viewer=self.make_viewer())
+
+    make_viewer = GalleryTests.make_viewer
+    serving = GalleryTests.serving
+    write_receipt = GalleryTests.write_receipt
+    save = GalleryTests.save
+
+    U3 = {'reference': 'U3', 'sha256': hashlib.sha256(b'original fixture STEP\n').hexdigest(),
+          'provenance': 'datasheet-derived', 'transparency': None}
+
+    def evidence(self, association='association.json', models=None, board_sha256=None, **replace):
+        """The evidence list, with a reviewed association covering every other file supplied.
+
+        association=None supplies none; a name other than association.json supplies that file as is.
+        """
+        roles = {'board': 'board.kicad_pcb', 'index': 'INDEX.md', 'receipt': 'RECEIPT.json', 'drc': 'drc.json',
+                 'design-diff': 'design-diff.json', 'model': 'u3.step', **replace}
+        evidence = [(role, self.evidence_dir / name) for role, name in roles.items() if name]
+        if association == 'association.json':
+            self.associate(evidence, models, board_sha256)
+        return evidence + ([('association', self.evidence_dir / association)] if association else [])
+
+    def associate(self, evidence, models=None, board_sha256=None, name='association.json'):
+        mapping = {'schema': 'agent-ee.gallery-association/1', 'board_sha256': board_sha256 or self.board_hash,
+                   'evidence': [{'role': role, 'sha256': digest(path)} for role, path in evidence if role != 'board'],
+                   'models': [self.U3] if models is None else models}
+        (self.evidence_dir / name).write_text(json.dumps(mapping))
+        return mapping
+
+    def snapshot(self):
+        return {p.relative_to(self.root).as_posix(): p.read_bytes()
+                for p in self.root.rglob('*') if p.is_file() and p.name != '.publish.lock'}
+
+    def attach(self, record=None, evidence=None, subject=None):
+        return gallery.attach_status(self.root, subject or 'bundles/' + self.bundle,
+                                     iter8_record() if record is None else record,
+                                     self.evidence() if evidence is None else evidence)
+
+    def refuses(self, pattern, **kwargs):
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, pattern):
+            self.attach(**kwargs)
+        self.assertEqual(before, self.snapshot())
+        self.assertEqual(list(self.root.glob('.status-*')) + list(self.root.glob('.statuses.json-*')), [])
+
+    def served(self, url, bundle=None):
+        base = url + '/bundles/' + (bundle or self.bundle) + '/'
+        return [urlopen(target).read().decode() for target in
+                (url, base + 'index.html', base + 'viewer/index.html', base + 'status.json')]
+
+    LIMITATIONS = ('Unrouted: the bound board has no tracks, arcs or vias', 'Not adopted (recorded disposition)',
+                   'Not qualified (recorded disposition, not machine qualification)', 'Models-only derivative',
+                   'Open defects: 2 silkscreen defects', '3 violations; 3 raw unconnected items (not an incomplete-net count)',
+                   'Model U3: datasheet-derived visualization model, not manufacturer or mechanical model evidence; '
+                   'transparency unknown (not verified)', 'Other component models: provenance unknown (not recorded)')
+
+    def test_attached_record_keeps_bytes_and_latest_and_is_visible_on_every_served_surface(self):
+        before = self.snapshot()
+        status = self.attach()
+        after = self.snapshot()
+        self.assertEqual({k: v for k, v in after.items() if not k.startswith('statuses')}, before)
+        self.assertEqual(json.loads(after['statuses.json'])[0]['id'], status)
+        stored = json.loads(after[f'statuses/{status}/status.json'])
+        self.assertEqual(stored['subject'], {'area': 'bundles', 'id': self.bundle, 'board_sha256': self.board_hash,
+                                             'manifest_sha256': hashlib.sha256(before[f'bundles/{self.bundle}/manifest.json']).hexdigest()})
+        self.assertEqual({e['role']: e['sha256'] for e in stored['evidence']},
+                         {role: digest(path) for role, path in self.evidence()})
+        with self.serving() as url:
+            index, detail, viewer, record = self.served(url)
+            self.assertEqual(json.loads(urlopen(url + '/statuses/' + status + '/status.json').read()), stored)
+            base = url + '/bundles/' + self.bundle + '/'
+            served = [json.loads(urlopen(base + name).read()) for name in ('manifest.json', 'viewer/viewer.json')]
+        for body in served:  # both JSON endpoints carry the record beside the unchanged stored fields
+            self.assertEqual(body['recorded_status'], json.loads(record))
+        self.assertEqual({k: v for k, v in served[0].items() if k != 'recorded_status'},
+                         json.loads(before[f'bundles/{self.bundle}/manifest.json']))
+        for where, body in (('index', index), ('detail', detail), ('viewer', viewer)):
+            visible = html.unescape(body.split('<details>')[0])
+            for text in self.LIMITATIONS:
+                self.assertIn(text, visible, where)
+            self.assertIn('Recorded limitations: Unrouted; Not adopted; Not qualified; Models-only derivative; '
+                          '2 open defects; U3 model datasheet-derived; U3 transparency unknown', visible, where)
+        self.assertIn('Latest: Iteration 8', index)
+        self.assertIn('Latest: Iteration 8', detail)
+        self.assertIn('Model warnings (1)', index)  # limitations are never model warnings
+        for text in ('Unrouted', 'datasheet', 'Not adopted'):
+            self.assertNotIn(text, index.split('<details>')[1].split('</details>')[0])
+        self.assertIn('viewer.js', viewer)
+        self.assertEqual(json.loads(record)['attached'], 'matched')
+        self.assertEqual(json.loads(record)['record'], {'id': status, **stored})
+        self.assertEqual(json.loads(record)['shown'], {
+            'routing': 'unrouted', 'adoption': 'not-adopted', 'qualification': 'unqualified', 'scope': 'models-only',
+            'open_defects': {'count': 2, 'class': 'silk'}, 'drc': {'violations': 3, 'raw_unconnected_items': 3},
+            'models': [{'reference': 'U3', 'provenance': 'datasheet-derived', 'transparency': None,
+                        'sha256': self.U3['sha256']}]})
+
+    def test_without_a_record_every_status_is_explicitly_unknown(self):
+        with self.serving() as url:
+            bodies = self.served(url)
+        for body in bodies[:3]:
+            self.assertIn('No status record attached: routing, adoption, qualification, scope, open defects and '
+                          'model provenance are unknown', body)
+            for key in ('Routing', 'Adoption', 'Qualification', 'Scope', 'Open defects'):
+                self.assertIn(f'<li>{key}: unknown (not recorded)</li>', body)
+            self.assertNotIn('Unrouted', body)
+        self.assertEqual(json.loads(bodies[3]), {'subject': {'area': 'bundles', 'id': self.bundle},
+                                                 'attached': 'none', 'record': None, 'shown': None})
+
+    def test_record_not_matching_the_publication_bytes_is_unknown(self):
+        self.attach()
+        manifest = self.root / 'bundles' / self.bundle / 'manifest.json'
+        manifest.write_bytes(manifest.read_bytes().replace(b'Iteration 8', b'Iteration 9'))
+        with self.serving() as url:
+            bodies = self.served(url)
+        for body in bodies[1:3]:
+            self.assertIn("An attached status record does not match this publication&#x27;s bytes", body)
+            self.assertNotIn('Unrouted', body)
+        self.assertEqual(json.loads(bodies[3])['attached'], 'mismatched')
+
+    def test_newest_matching_record_is_shown_and_history_is_retained(self):
+        first = self.attach()
+        second = self.attach(iter8_record(adoption={'value': None, 'evidence': []}))
+        listing = json.loads((self.root / 'statuses.json').read_text())
+        self.assertEqual([item['id'] for item in listing], [second, first])
+        with self.serving() as url:
+            detail = self.served(url)[1]
+        self.assertIn('<li>Adoption: unknown (not recorded)</li>', detail)
+        self.assertIn('Adoption unknown', detail)
+
+    def plant(self, record):
+        """Publish a stored status record as is (an earlier or foreign writer), with its identity and listing entry."""
+        data = gallery._encode(gallery._status_record(record))
+        status = record['subject']['manifest_sha256'][:12] + '-' + hashlib.sha256(data).hexdigest()[:12]
+        (self.root / 'statuses' / status).mkdir(parents=True)
+        (self.root / 'statuses' / status / 'status.json').write_bytes(data)
+        listing = self.root / 'statuses.json'
+        entries = json.loads(listing.read_text()) if listing.is_file() else []
+        listing.write_text(json.dumps([{'id': status, **json.loads(data)}] + entries))
+        return status
+
+    def sealed(self, status):
+        return json.loads((self.root / 'statuses' / status / 'status.json').read_text())
+
+    def test_old_missing_or_uncited_fields_are_served_as_unknown(self):
+        entry = self.sealed(self.attach())
+        for key in ('qualification', 'scope', 'open_defects', 'drc', 'models'):
+            del entry[key]
+        entry['routing'] = {'value': 'unrouted', 'evidence': ['review']}  # cites evidence that is not bound
+        entry['adoption'] = {'value': 'not-adopted'}
+        status = self.plant(entry)
+        with self.serving() as url:
+            detail = self.served(url)[1]
+            self.assertEqual(json.loads(self.served(url)[3])['record']['id'], status)
+        for key in ('Routing', 'Adoption', 'Qualification', 'Scope', 'Open defects'):
+            self.assertIn(f'<li>{key}: unknown (not recorded)</li>', detail)
+        self.assertIn('<li>Native DRC report: unknown (not recorded)</li>', detail)
+        self.assertNotIn('Model U3', detail)
+
+    def test_a_record_without_a_reviewed_association_serves_only_board_checked_claims(self):
+        """An earlier record (433m shape) binds no association: every claim citing other evidence is unknown."""
+        entry = self.sealed(self.attach())
+        entry['evidence'] = [e for e in entry['evidence'] if e['role'] != 'association']
+        entry['routing']['evidence'] = ['board']
+        status = self.plant(entry)
+        with self.serving() as url:
+            detail = html.unescape(self.served(url)[1])
+            report = json.loads(self.served(url)[3])
+        self.assertEqual((report['attached'], report['record']['id']), ('matched', status))
+        self.assertEqual(report['shown'], {'routing': 'unrouted', 'adoption': None, 'qualification': None, 'scope': None,
+                                           'open_defects': None, 'drc': None,
+                                           'models': [{'reference': 'U3', 'provenance': None, 'transparency': None,
+                                                       'sha256': None}]})
+        self.assertIn('Unrouted: the bound board has no tracks, arcs or vias', detail)
+        for key in ('Adoption', 'Qualification', 'Scope', 'Open defects'):
+            self.assertIn(f'<li>{key}: unknown (not recorded)</li>', detail)
+        self.assertIn('<li>Native DRC report: unknown (not recorded)</li>', detail)
+        self.assertIn('Model U3: provenance unknown (not recorded); transparency unknown (not verified)', detail)
+        self.assertNotIn('datasheet-derived visualization', detail)
+        # Board evidence counts only as the subject's own board.
+        entry['evidence'] = [dict(e, sha256='f' * 64) if e['role'] == 'board' else e for e in entry['evidence']]
+        self.plant(entry)
+        with self.serving() as url:
+            self.assertIn('<li>Routing: unknown (not recorded)</li>', self.served(url)[1])
+
+    def test_claims_need_a_reviewed_association_with_the_subject_board(self):
+        report = drc_report(silk=0, clearance=0, unconnected=0)
+        report['source'] = 'unrelated-candidate.kicad_pcb'
+        (self.evidence_dir / 'foreign.json').write_text(json.dumps(report))
+        zero = {'drc': {'violations': 0, 'raw_unconnected_items': 0, 'evidence': ['drc']},
+                'open_defects': {'count': 0, 'class': 'silk', 'evidence': ['drc']}}
+        self.refuses('drc evidence is not in a reviewed association', record=zero,
+                     evidence=[('drc', self.evidence_dir / 'foreign.json')])
+        # An association covering the other files does not cover a substituted report.
+        current = self.evidence()
+        self.refuses('drc evidence is not in a reviewed association', record=iter8_record(),
+                     evidence=[(r, self.evidence_dir / 'foreign.json' if r == 'drc' else p) for r, p in current])
+        self.associate(self.evidence(association=None), board_sha256='e' * 64, name='other-board.json')
+        self.refuses('association evidence is for another board', evidence=self.evidence(association='other-board.json'))
+        for name, mapping in (('extra.json', {'schema': 'agent-ee.gallery-association/1', 'board_sha256': self.board_hash,
+                                              'evidence': [], 'models': [], 'notes': 'x'}),
+                              ('board-role.json', {'schema': 'agent-ee.gallery-association/1', 'board_sha256': self.board_hash,
+                                                   'evidence': [{'role': 'board', 'sha256': self.board_hash}], 'models': []}),
+                              ('twice.json', {'schema': 'agent-ee.gallery-association/1', 'board_sha256': self.board_hash,
+                                              'evidence': [], 'models': [self.U3, self.U3]}),
+                              ('list.json', [])):
+            (self.evidence_dir / name).write_text(json.dumps(mapping))
+            self.refuses('association evidence is not', evidence=self.evidence(association=name))
+        self.refuses('at most one association', evidence=self.evidence() + [('association', self.evidence_dir / 'twice.json')])
+        # A diff of another board is not this candidate's models-only evidence.
+        (self.evidence_dir / 'foreign-diff.json').write_text(json.dumps(design_diff(subject='d' * 64)))
+        self.refuses('design-diff subject is not the board', evidence=self.evidence(**{'design-diff': 'foreign-diff.json'}))
+        # Board evidence alone needs no association: routing is checked against the board itself.
+        board_only = {'routing': {'value': 'unrouted', 'evidence': ['board']}}
+        self.attach(board_only, [('board', self.evidence_dir / 'board.kicad_pcb')])
+
+    def test_model_claims_must_match_the_association_and_the_bound_board(self):
+        (self.evidence_dir / 'foreign.step').write_text('unrelated model never associated with this board')
+        foreign = {'reference': 'U999999', 'provenance': 'manufacturer', 'transparency': 'verified',
+                   'sha256': digest(self.evidence_dir / 'foreign.step'), 'evidence': ['model']}
+        self.refuses('must be the ones in the reviewed association', record={'models': [foreign]},
+                     evidence=self.evidence(model='foreign.step', models=[]))
+        self.refuses('not a model of footprint U999999 on the bound board', record={'models': [foreign]},
+                     evidence=self.evidence(model='foreign.step', models=[{k: foreign[k] for k in self.U3}]))
+        u3 = iter8_record()['models'][0]
+        for change in ({'provenance': 'manufacturer'}, {'transparency': 'verified'}):
+            self.refuses('must be the ones in the reviewed association', record=iter8_record(models=[dict(u3, **change)]))
+        self.refuses('must be the ones in the reviewed association', evidence=self.evidence(models=[dict(self.U3, reference='U4')]))
+        self.refuses('needs the bound board evidence', record={'models': [u3]}, evidence=self.evidence(board=None))
+        self.refuses('hash must be the hash of cited model evidence',
+                     record={'models': [dict(u3, sha256=None)]})
+        # The right STEP bytes under a name the board does not reference are not U3's model.
+        (self.evidence_dir / 'renamed.step').write_text('original fixture STEP\n')
+        self.refuses('not a model of footprint U3', evidence=self.evidence(model='renamed.step'))
+        self.attach(iter8_record())
+
+    def test_served_status_is_the_verified_immutable_record(self):
+        """The listing only orders immutable records; a changed, missing, corrupt or swapped record is mismatched."""
+        status = self.attach()
+        published = self.snapshot()
+        sealed = self.root / 'statuses' / status / 'status.json'
+        listing = self.root / 'statuses.json'
+        original = listing.read_bytes()
+
+        def served():
+            with self.serving() as url:
+                bodies = self.served(url)
+                bodies.append(urlopen(url + '/bundles/' + self.bundle + '/manifest.json').read().decode())
+            return [html.unescape(body) for body in bodies]
+
+        def mismatched(why):
+            bodies = served()
+            for body in bodies[:3]:
+                self.assertIn("An attached status record does not match this publication's bytes", body, why)
+                self.assertNotIn('Not qualified', body, why)
+                self.assertNotIn('Qualified', body, why)
+                self.assertNotIn('manufacturer model;', body, why)
+            for body in (bodies[3], bodies[4]):
+                report = json.loads(body) if body is bodies[3] else json.loads(body)['recorded_status']
+                self.assertEqual((report['attached'], report['record']), ('mismatched', None), why)
+            self.assertEqual({k: v for k, v in self.snapshot().items() if not k.startswith('statuses')},
+                             {k: v for k, v in published.items() if not k.startswith('statuses')}, why)
+
+        entries = json.loads(original)
+        entries[0]['qualification']['value'] = 'qualified'
+        entries[0]['models'][0]['provenance'] = 'manufacturer'
+        listing.write_text(json.dumps(entries))
+        mismatched('listing changed')
+        self.assertEqual(sealed.read_bytes(), published[f'statuses/{status}/status.json'])
+        listing.write_bytes(original)
+        self.assertEqual(json.loads(served()[3])['attached'], 'matched')
+
+        for why, change in (('deleted', lambda: sealed.unlink()),
+                            ('corrupt', lambda: sealed.write_bytes(b'{')),
+                            ('rewritten', lambda: sealed.write_bytes(sealed.read_bytes().replace(b'"unqualified"', b'"qualified"'))),
+                            ('re-encoded', lambda: sealed.write_bytes(json.dumps(json.loads(sealed.read_bytes())).encode())),
+                            ('symlink', lambda: (sealed.rename(sealed.with_name('real.json')), sealed.symlink_to('real.json')))):
+            data = sealed.read_bytes()
+            change()
+            mismatched(why)
+            with contextlib.suppress(FileNotFoundError):
+                sealed.unlink()
+            with contextlib.suppress(FileNotFoundError):
+                sealed.with_name('real.json').unlink()
+            sealed.write_bytes(data)
+        self.assertEqual(json.loads(served()[3])['attached'], 'matched')
+
+        # Swapped: a listing entry naming this bundle, pointing at another subject's sealed record.
+        identifier = '9' * 12 + '-' + '8' * 12
+        legacy = {'schema': 'agent-ee.gallery-diagnostic/1', 'label': 'Diagnostic 1', 'stage': 'diagnostic',
+                  'board_sha256': self.board_hash, 'image': {'width': 2, 'height': 2}}
+        (self.root / 'diagnostics' / identifier).mkdir(parents=True)
+        (self.root / 'diagnostics' / identifier / 'manifest.json').write_text(json.dumps(legacy))
+        other = self.attach({'routing': {'value': 'unrouted', 'evidence': ['board']}},
+                            [('board', self.evidence_dir / 'board.kicad_pcb')], subject='diagnostics/' + identifier)
+        published = self.snapshot()
+        entries = json.loads(listing.read_text())
+        entries[0] = dict(entries[1], id=other)
+        listing.write_text(json.dumps(entries))
+        mismatched('swapped')
+
+    DISPOSITIONS = {'qualification': {'value': 'qualified', 'evidence': ['board']},
+                    'adoption': {'value': 'adopted', 'evidence': ['board']},
+                    'scope': {'value': 'full', 'evidence': ['board']},
+                    'open_defects': {'count': 0, 'class': 'review', 'evidence': ['board']}}
+
+    def cite(self, roles, routing='routed'):
+        """DISPOSITIONS, plus a routing claim, each citing only roles."""
+        record = {key: dict(value, evidence=list(roles)) for key, value in self.DISPOSITIONS.items()}
+        return dict(record, routing={'value': routing, 'evidence': list(roles)})
+
+    def every_projection(self, url):
+        """index, detail and viewer HTML, then the bundle status, manifest and viewer JSON status reports."""
+        base = url + '/bundles/' + self.bundle + '/'
+        bodies = [html.unescape(body) for body in self.served(url)]
+        reports = [json.loads(bodies[3])] + [json.loads(urlopen(base + name).read())['recorded_status']
+                                             for name in ('manifest.json', 'viewer/viewer.json')]
+        return bodies[:3], reports
+
+    def test_board_or_association_alone_supports_no_disposition_claim(self):
+        """Review 433n H1: only unrouted is checked against the board; a disposition needs its retained report."""
+        board = [('board', self.evidence_dir / 'board.kicad_pcb')]
+        for key, claim in self.DISPOSITIONS.items():
+            self.refuses(f'{key} must cite (receipt or review or index|review) evidence', record={key: claim}, evidence=board)
+        # An empty reviewed association is a mapping, not a disposition, whether cited or not.
+        self.associate([], models=[], name='empty.json')
+        mapping = board + [('association', self.evidence_dir / 'empty.json')]
+        for key, claim in self.DISPOSITIONS.items():
+            for roles in (['association'], ['board', 'association']):
+                self.refuses(f'{key} must cite', record={key: dict(claim, evidence=roles)}, evidence=mapping)
+        # Review defects need the review report; a DRC report or index does not support them.
+        self.refuses('open_defects must cite review evidence',
+                     record={'open_defects': {'count': 0, 'class': 'review', 'evidence': ['index', 'drc']}})
+        # Only unrouted stands on the board alone.
+        self.attach({'routing': {'value': 'unrouted', 'evidence': ['board']}}, board)
+
+        # Records sealed before this rule (planted as an earlier writer would have) are unknown on every surface.
+        sealed = self.sealed(self.attach())
+        association = next(e for e in sealed['evidence'] if e['role'] == 'association')
+        for why, roles, evidence in (
+                ('board only', ['board'], [e for e in sealed['evidence'] if e['role'] == 'board']),
+                ('association only', ['association'], sealed['evidence']),
+                ('board and association', ['board', 'association'],
+                 [e for e in sealed['evidence'] if e['role'] == 'board'] + [association])):
+            status = self.plant(dict(sealed, **self.cite(roles), evidence=evidence))
+            with self.serving() as url:
+                pages, reports = self.every_projection(url)
+                direct = json.loads(urlopen(url + '/statuses/' + status + '/status.json').read())
+            for report in reports:
+                self.assertEqual((report['attached'], report['record']['id']), ('matched', status), why)
+                self.assertEqual({key: report['shown'][key] for key in ('routing', 'adoption', 'qualification', 'scope',
+                                                                        'open_defects')},
+                                 dict.fromkeys(('routing', 'adoption', 'qualification', 'scope', 'open_defects')), why)
+            for record in [direct] + [report['record'] for report in reports]:
+                self.assertEqual([record[key]['value'] for key in ('routing', 'adoption', 'qualification', 'scope')],
+                                 [None] * 4, why)
+                self.assertEqual((record['open_defects']['count'], record['open_defects']['class']), (None, None), why)
+            for where, body in zip(('index', 'detail', 'viewer'), pages):
+                for key in ('Routing', 'Adoption', 'Qualification', 'Scope', 'Open defects'):
+                    self.assertIn(f'<li>{key}: unknown (not recorded)</li>', body, (why, where))
+                for text in ('Qualified (', 'Adopted (', 'Full design candidate', 'defects open in the recorded review',
+                             'Routed: the bound board'):
+                    self.assertNotIn(text, body, (why, where))
+
+    def test_dispositions_cite_retained_reports_under_the_association(self):
+        """The supported counterpart: each disposition cites a receipt, review or index the association covers."""
+        (self.evidence_dir / 'REVIEW.md').write_text('Review: zero open defects; qualified; adopted.\n')
+        record = iter8_record(**{key: dict(claim, evidence=['receipt', 'review', 'index'])
+                                 for key, claim in self.DISPOSITIONS.items()})
+        status = self.attach(record, self.evidence(review='REVIEW.md'))
+        with self.serving() as url:
+            pages, reports = self.every_projection(url)
+            direct = json.loads(urlopen(url + '/statuses/' + status + '/status.json').read())
+        self.assertEqual(direct, self.sealed(status))
+        for report in reports:
+            self.assertEqual(report['record'], {'id': status, **direct})
+            self.assertEqual({key: report['shown'][key] for key in ('adoption', 'qualification', 'scope', 'open_defects')},
+                             {'adoption': 'adopted', 'qualification': 'qualified', 'scope': 'full',
+                              'open_defects': {'count': 0, 'class': 'review'}})
+        for body in pages:
+            for text in ('Qualified (recorded disposition', 'Adopted (recorded disposition)', 'Full design candidate',
+                         'Open defects: 0 defects open in the recorded review'):
+                self.assertIn(text, body)
+        # Each disposition still needs the report it cites to be in the association.
+        files = self.evidence(association=None, review='REVIEW.md')
+        self.associate([e for e in files if e[0] != 'review'], name='no-review.json')
+        self.refuses('review evidence is not in a reviewed association', record=record,
+                     evidence=files + [('association', self.evidence_dir / 'no-review.json')])
+
+    def test_direct_status_endpoint_serves_only_the_verified_record(self):
+        """Review 433n H2: /statuses/ID/status.json verifies identity and subject like every other surface."""
+        status = self.attach()
+        stored = self.sealed(status)
+        sealed = self.root / 'statuses' / status / 'status.json'
+        manifest = self.root / 'bundles' / self.bundle / 'manifest.json'
+        other = self.attach(iter8_record(adoption={'value': None, 'evidence': []}))
+        target = '/statuses/' + status + '/status.json'
+
+        def direct():
+            with self.serving() as url:
+                try:
+                    return 200, json.loads(urlopen(url + target).read())
+                except HTTPError as error:
+                    return error.code, json.loads(error.read())
+
+        self.assertEqual(direct(), (200, stored))
+        refused = (404, {'id': status, 'attached': 'mismatched', 'record': None})
+        data = sealed.read_bytes()
+        for why, change in (('deleted', lambda: sealed.unlink()),
+                            ('corrupt', lambda: sealed.write_bytes(b'{')),
+                            ('rewritten', lambda: sealed.write_bytes(data.replace(b'"unqualified"', b'"qualified"'))),
+                            ('re-encoded', lambda: sealed.write_bytes(json.dumps(json.loads(data)).encode())),
+                            ('swapped', lambda: sealed.write_bytes((self.root / 'statuses' / other / 'status.json').read_bytes())),
+                            ('symlink', lambda: (sealed.rename(sealed.with_name('real.json')), sealed.symlink_to('real.json')))):
+            change()
+            self.assertEqual(direct(), refused, why)
+            for path in (sealed, sealed.with_name('real.json')):
+                with contextlib.suppress(FileNotFoundError):
+                    path.unlink()
+            sealed.write_bytes(data)
+            self.assertEqual(direct(), (200, stored), why)
+        # A record no longer bound to its subject's stored bytes is refused too.
+        original = manifest.read_bytes()
+        manifest.write_bytes(original.replace(b'Iteration 8', b'Iteration 9'))
+        self.assertEqual(direct(), refused)
+        manifest.unlink()
+        self.assertEqual(direct(), refused)
+        manifest.write_bytes(original)
+        self.assertEqual(direct(), (200, stored))
+
+    def test_canonical_label_and_stage_are_shown_for_an_earlier_publication(self):
+        manifest = self.root / 'bundles' / self.bundle / 'manifest.json'
+        record = json.loads(manifest.read_text())
+        record.update(label='iter8t models-only (UNROUTED) private-host', stage='models only', schema='agent-ee.gallery-bundle/2')
+        manifest.write_text(json.dumps(record))
+        listing = json.loads((self.root / 'index.json').read_text())
+        listing[0].update(label=record['label'], stage=record['stage'])
+        (self.root / 'index.json').write_text(json.dumps(listing))
+        self.refuses('outside its vocabulary', record=iter8_record(label='iter8t'))
+        self.refuses('outside its vocabulary', record=iter8_record(stage='models-only'))
+        self.attach(iter8_record(label='Iteration 8', stage='placement'))
+        with self.serving() as url:
+            index, detail, viewer, _ = self.served(url)
+        for body in (index, detail):
+            self.assertIn('<h2>Latest: Iteration 8</h2><p>Stage: Placement', body)
+            self.assertNotIn('private', body)
+        self.assertIn('Unrouted', viewer)
+
+    def test_historical_supplement_maps_to_diagnostic_1(self):
+        identifier = '9' * 12 + '-' + '8' * 12
+        legacy = {'schema': 'agent-ee.gallery-diagnostic/1', 'label': 'Historical free-space analysis',
+                  'stage': 'historical', 'board_sha256': self.board_hash, 'image': {'width': 2, 'height': 2}}
+        (self.root / 'diagnostics' / identifier).mkdir(parents=True)
+        (self.root / 'diagnostics' / identifier / 'manifest.json').write_text(json.dumps(legacy))
+        (self.root / 'diagnostics.json').write_text(json.dumps([dict(legacy, id=identifier)]))
+        record = {'label': 'Diagnostic 1', 'stage': 'diagnostic',
+                  'routing': {'value': 'unrouted', 'evidence': ['board', 'index']},
+                  'adoption': {'value': 'not-adopted', 'evidence': ['index']}}
+        self.attach(record, self.evidence(receipt=None, drc=None, model=None, **{'design-diff': None}),
+                    subject='diagnostics/' + identifier)
+        with self.serving() as url:
+            bodies = [urlopen(url + path).read().decode() for path in ('/', f'/diagnostics/{identifier}/index.html')]
+            self.assertEqual(json.loads(urlopen(url + f'/diagnostics/{identifier}/status.json').read())['attached'], 'matched')
+        for body in bodies:
+            section = body.split(f'id="diagnostic-{identifier}"')[1]
+            self.assertIn('<h2>Diagnostic 1</h2>', section)
+            self.assertIn('Stage: Diagnostic', section)
+            self.assertIn('Unrouted: the bound board has no tracks, arcs or vias', section)
+            self.assertIn('Not adopted (recorded disposition)', section)
+            self.assertIn('Qualification: unknown (not recorded)', section)
+            self.assertNotIn('free-space', section)
+        self.assertIn('Latest: Iteration 8', bodies[0])
+
+    def test_unsupported_values_and_unbound_evidence_are_refused(self):
+        free = iter8_record(routing={'value': 'unrouted; see /home/private-host', 'evidence': ['board']})
+        self.refuses('outside its vocabulary', record=free)
+        self.refuses('outside its vocabulary', record=iter8_record(routing={'value': 'unknown', 'evidence': []}))
+        self.refuses('outside its vocabulary', record=iter8_record(open_defects={'count': '9', 'class': 'silk',
+                                                                                  'evidence': ['drc']}))
+        self.refuses('outside its vocabulary', record=iter8_record(models=[{'reference': 'U3 GPS', 'provenance': None,
+                                                                            'transparency': None, 'sha256': None,
+                                                                            'evidence': []}]))
+        self.refuses('fields must be among', record=dict(iter8_record(), notes='free text'))
+        self.refuses('must cite the retained evidence', record=iter8_record(adoption={'value': 'not-adopted', 'evidence': []}))
+        self.refuses('cites evidence that was not supplied', evidence=self.evidence(index=None))
+        self.refuses('evidence role must be one of', evidence=self.evidence() + [('notes', self.evidence_dir / 'INDEX.md')])
+        self.refuses('both a count and a class', record=iter8_record(open_defects={'count': 2, 'class': None,
+                                                                                    'evidence': ['drc']}))
+        self.refuses('subject must be', subject='bundles/../x')
+        self.refuses('not a readable publication', subject='bundles/' + '0' * 12 + '-' + '0' * 12)
+        (self.evidence_dir / 'INDEX copy.md').write_text('x')
+        self.refuses('plain file name', evidence=self.evidence(index='INDEX copy.md'))
+
+    def test_values_are_checked_against_the_bound_evidence(self):
+        routed = STATUS_BOARD.replace('(gr_line', '(via (at 0 0) (size 0.6) (drill 0.3) (net 0)) (gr_line')
+        (self.evidence_dir / 'other.kicad_pcb').write_text(routed)
+        self.refuses('not the board this publication is bound to', evidence=self.evidence(board='other.kicad_pcb'))
+        self.refuses('routing must cite the bound board', record=iter8_record(routing={'value': 'unrouted', 'evidence': ['index']}))
+        self.refuses('contradicts the bound board', record=iter8_record(routing={'value': 'routed', 'evidence': ['board']}))
+        self.refuses('drc violations 4 is not the 3', record=iter8_record(drc={'violations': 4, 'raw_unconnected_items': 3,
+                                                                               'evidence': ['drc']}))
+        self.refuses('raw_unconnected_items 9 is not the 3', record=iter8_record(
+            drc={'violations': None, 'raw_unconnected_items': 9, 'evidence': ['drc']}))
+        self.refuses('open_defects 3 is not the 2 silk', record=iter8_record(open_defects={'count': 3, 'class': 'silk',
+                                                                                             'evidence': ['drc']}))
+        self.refuses('silk open defects must cite the DRC', record=iter8_record(open_defects={'count': 2, 'class': 'silk',
+                                                                                                 'evidence': ['index']}))
+        self.refuses('models-only must cite the design-diff', record=iter8_record(scope={'value': 'models-only',
+                                                                                          'evidence': ['receipt']}))
+        for name, diff in (('moved.json', design_diff(placement='q' * 64)),
+                           ('pad.json', design_diff(paths=('footprint[U3]/model@0a1b2c', 'footprint[U3]/pad[1]')))):
+            (self.evidence_dir / name).write_text(json.dumps(diff))
+            self.refuses('does not show only footprint model changes', evidence=self.evidence(**{'design-diff': name}))
+        (self.evidence_dir / 'other.step').write_text('another model')
+        self.refuses('hash must be the hash of cited model evidence', evidence=self.evidence(model='other.step'))
+        (self.evidence_dir / 'bad-drc.json').write_text('[]')
+        self.refuses('drc evidence is not a JSON object', evidence=self.evidence(drc='bad-drc.json'))
+        self.refuses('already has a canonical label', record=iter8_record(label='Iteration 8'))
+
+    def test_unknown_values_need_no_evidence_and_stay_unknown(self):
+        unknown = {key: {'value': None, 'evidence': []} for key in ('routing', 'adoption', 'qualification', 'scope')}
+        self.attach(dict(unknown, open_defects={'count': None, 'class': None, 'evidence': []}), evidence=[])
+        with self.serving() as url:
+            detail = self.served(url)[1]
+        self.assertIn('Recorded limitations: Routing unknown; Adoption unknown; Qualification unknown; Scope unknown; '
+                      'Open defects unknown; Other model provenance unknown', detail)
+
+    def test_command_line_attaches_a_record(self):
+        record = Path(self.tmp.name) / 'status.json'
+        record.write_text(json.dumps(iter8_record()))
+        arguments = ['--root', str(self.root), 'status', '--subject', 'bundles/' + self.bundle, '--record', str(record)]
+        for role, path in self.evidence():
+            arguments += ['--evidence', f'{role}={path}']
+        result = subprocess.run([sys.executable, '-m', 'agent_ee.render_gallery', *arguments], capture_output=True,
+                                text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads((self.root / 'statuses.json').read_text())[0]['id'], result.stdout.strip())
+
+    def test_status_projection_is_idempotent(self):
+        for text in itertools.islice(corpus(), 0, None, 37):
+            record = status_record(text)
+            self.assertEqual(gallery._status_record(record), record, text)
+            self.assertNotIn(text, record)
+        record = status_record('x')
+        self.assertEqual(record['routing'], {'value': None, 'evidence': ['board']})
+        self.assertEqual([m['reference'] for m in record['models']], [None, 'U3'])
+
+    def test_oracle_fails_when_status_records_leak(self):
+        """Negative control: a status projection that keeps free-text references is caught by the oracle."""
+        from unittest import mock
+        with mock.patch.object(gallery, '_DESIGNATOR', re.compile(r'.*', re.S)):
+            with self.assertRaisesRegex(AssertionError, 'unexpectedly found in'):
+                assert_leak_free(self, surfaces, rounds=200, stride=7)
