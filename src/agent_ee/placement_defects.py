@@ -235,10 +235,11 @@ def _bundle(manifest, inputs, link):
         raise ValueError('malformed carried placement receipt link')
     path = _read(manifest, inputs, link['receipt'], link['sha256'])
     receipt = read_json(path)
-    from .stage_receipts import RECEIPT_SCHEMA
-    if (receipt.get('schema') != RECEIPT_SCHEMA or receipt.get('status') != 'completed' or
+    from .stage_receipts import RECEIPT_SCHEMAS, legacy_source_refusal
+    if (receipt.get('schema') not in RECEIPT_SCHEMAS or receipt.get('status') != 'completed' or
             receipt.get('identity') != identity({k: v for k, v in receipt.items() if k != 'identity'})):
         raise ValueError('carried placement receipt identity or status invalid')
+    legacy_source_refusal(receipt)
     prefix = str(Path(link['receipt']).parent)
     from . import routed_artwork
     artwork = receipt['spec']['step'] == routed_artwork.STEP

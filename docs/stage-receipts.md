@@ -167,10 +167,25 @@ cannot restore it, so a link planted during the run and removed before the
 post-run inventory also refuses as `live_package_source:<at>`, naming the
 directory mounts. Any other status change of an existing live file during such
 a run (an in-place write, chmod or rename in the checkout) refuses the same way.
+A baseline entry absent from a later inventory (its name removed, or replaced by
+another inode, as an atomic bytecode rewrite does) is never treated as unchanged:
+it refuses the same way (AGENTEE-374). Before the first pre-launch inventory the
+coordinator waits until the kernel's file-stamping clock (`CLOCK_REALTIME_COARSE`)
+is in a later whole second than every baseline status time, so any later link or
+unlink is stamped strictly after its baseline even on a filesystem with
+one-second timestamps; a link made and removed between the baseline and that
+fence never coexists with a launched tool, because the inventory after the fence
+sees any link still present. A baseline time that the clock does not pass within
+2.5 s (a status time in the future) refuses rather than being compared. The
+status time is used only to detect link operations; it is not a content
+identity (writes through a shared mapping can leave status unchanged), and
+mounted bytes stay covered by the before/after content digests. Filesystems with
+timestamps coarser than one second (FAT) are outside this fence.
 Directories cannot gain hard links and are not compared, so bytecode written
-into `__pycache__` does not refuse. Live entries created or replaced during the
-run are not compared, and steps with only file mounts skip this comparison
-because no planted name can reach the sandbox.
+into `__pycache__` does not refuse. Live entries created during the run are not
+compared (their bytes are the creator's, not pre-existing live source), and
+steps with only file mounts skip this comparison because no planted name can
+reach the sandbox.
 A byte-for-byte independent copy is allowed. An ancestor rename cannot redirect this inventory;
 file bind mounts and directory binds are both refused. This conservative rule also refuses benign
 submounts: registered builders need plain tool trees, never nested mount
@@ -211,17 +226,39 @@ resolved one component at a time with `O_PATH | O_NOFOLLOW` opens relative to
 the held mount descriptor; a link is expanded only from the object just opened,
 and the bytes hashed are read from that resolved object. A component swapped
 for an absolute link after resolution therefore cannot make the coordinator
-digest a host file. The walk inside a mount or source tree identity still
-lists and digests by path below the held descriptor. Three bounds remain
-(AGENTEE-357 review residuals; behavior unchanged): historical receipts that
-already carry an escaped link-only source identity still validate and adopt
-under replay, because replay never re-resolves the source; the status-change
-comparison treats a baseline entry absent from the later live inventory as
-unchanged and cannot see a link planted and removed without a visible timestamp
-change (same tick); and the walks of mount
-and source tree identities below the held root descriptor still resolve entries
-by pathname, keeping the documented component-swap bound for those walks. This
-observation does not emulate cross-mount sandbox symlink resolution. Transient
+digest a host file. The walks of mount and source tree identities, of the
+held-descriptor submount and live-link inventory, and of the live `src`
+inventories are descriptor-relative (AGENTEE-374): each directory is listed
+through the object opened from its parent's listing, every entry is looked up
+as one no-follow component of that held directory, a subdirectory is entered
+only when the object opened is the entry just observed, and a file is digested
+through its own held `O_PATH` object. A component swapped for a link is recorded
+as a `link:` entry when it is observed as a link, and a component replaced after
+its lookup (by a link or by another directory) refuses as
+`mount_source_changed:<at>` (`ENOTDIR` or `ESTALE`); no swap can redirect the
+walk to a host tree. Recorded identities keep their form (file digests and link
+targets by relative path; directories and special files contribute nothing).
+This observation does not emulate cross-mount sandbox symlink resolution.
+
+Historical escaped link-only receipts (AGENTEE-374 decision). Replay must refuse
+them: such an identity names a host target that was never digested, so the
+receipt claims provenance it does not have. A receipt does not retain the link
+target, and a `/1` link-only source identity is indistinguishable from a
+one-file source tree. Replay therefore refuses, by version, the whole class it
+cannot decide: an `agent-ee.stage-receipt/1` receipt whose declared `source` is
+nested (not a mount root) and whose `tool` or `tool_after` source identity has
+exactly one entry raises `LegacySourceIdentityError` (`ValueError`) with
+violation `legacy_source_identity:<source>`, so neither `validate_receipt` nor
+`adopt` accepts it, nor the binding-fill and carried-placement receipt readers.
+A nested-source `/1` receipt whose `tool` or `tool_after` source identity lacks a
+count, or whose count is not a non-negative integer (null, string, float, bool,
+negative), cannot show that it is outside that class and refuses the same way.
+The stored receipt is never rewritten or reinterpreted; re-run the step to obtain
+a `/2` receipt. Every other `/1` receipt (no source, a source at a mount root,
+or a nested source whose two counts are both integers, each zero or at least two) replays exactly as before.
+Receipts written now are `agent-ee.stage-receipt/2`, produced only by the strict
+run observation above, so a one-entry nested source in a `/2` receipt is an
+ordinary one-file tree and replays. Transient
 in-place edits of tool bytes between observations remain outside the guard. This
 guard requires Linux `/proc/self/mountinfo`, `/proc/self/fdinfo`, `O_PATH`, and bwrap support for
 `--ro-bind-fd`; unavailable facilities fail closed.
@@ -291,7 +328,8 @@ boundaries; `tests.test_tool_source` validates copied native refusal receipts.
 
 ## Receipt fields and status
 
-Schema `agent-ee.stage-receipt/1`, `receipts/<k>-<step>/receipt.json`, retained with
+Schema `agent-ee.stage-receipt/2` (written since AGENTEE-374; `/1` has the same fields and
+still replays except for the legacy source class above), `receipts/<k>-<step>/receipt.json`, retained with
 `inputs/` (the pre-step design, mounted at `/candidate`), `run/` (executor records, the
 writable `design/` copy and declared outputs) and `version/`.
 

@@ -1767,7 +1767,13 @@ sources to pathnames. Directory
 sources containing hard links into live `src` refuse with `live_package_source:<at>`
 (AGENTEE-349), including persistent links planted after inventory, by re-inventorying
 the held descriptor before launches and after execution, and links planted and
-removed during a run, detected by live entries' status-change times (AGENTEE-357).
+removed during a run, detected by live entries' status-change times (AGENTEE-357),
+with a missing baseline entry refused and a whole-second clock fence before launch so a
+same-tick link cannot keep its time (AGENTEE-374). Mount, source and live tree walks are
+descriptor-relative; a component replaced mid-walk refuses as `mount_source_changed:<at>`.
+New receipts are `agent-ee.stage-receipt/2`; a `/1` receipt with a nested source whose
+identity has one entry (possibly an escaped link-only record), or a missing or non-integer count, refuses on replay as
+`legacy_source_identity:<source>` (AGENTEE-374).
 Before/after identity of
 declared mounts reads through held descriptors; post-run source replacement or
 observation lookup failure raises typed `mount_source_changed:<at>`. Absolute and
