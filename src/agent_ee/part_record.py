@@ -15,21 +15,21 @@ LIMIT = ('Captured exact identity only; no parametric ranking, suitability, data
          'applicability, live stock or owner approval is established.')
 
 
-def _sources(root, catalog, datasheets, datasheet_id, lcsc):
+def _sources(root, catalog, datasheets, datasheet_id, lcsc, reads=None):
     # Local import avoids a module cycle: parts_manifest owns captured-path rules.
-    from .parts_manifest import _blob, _read_blob, read_captured
+    from .parts_manifest import _blob, _read_blob, captured_sha256, read_captured
     _blob(catalog)
     _blob(datasheets)
     if not isinstance(lcsc, str) or not LCSC_RE.fullmatch(lcsc):
         raise ValueError('exact LCSC required')
     nonempty(datasheet_id)
-    stock = strict_json(_read_blob(root, catalog))
+    stock = strict_json(_read_blob(root, catalog, reads))
     parent = Path(catalog['path']).parent
     response_blobs = {}
 
     def read_response(rel):
         path = (parent / rel).as_posix()
-        raw = read_captured(root, path)
+        raw = read_captured(root, path, reads)
         response_blobs[path] = hashlib.sha256(raw).hexdigest()
         return raw
 
@@ -38,13 +38,13 @@ def _sources(root, catalog, datasheets, datasheet_id, lcsc):
         raise ValueError('named part has no successful captured JLCPCB row')
     row = stock['parts'][lcsc]
     request = next(r for r in stock['requests'] if r['lcsc'] == lcsc)
-    acquisition = strict_json(_read_blob(root, datasheets))
+    acquisition = strict_json(_read_blob(root, datasheets, reads))
     # The producer's complete binding digest is rederived, including other IDs.
     records = acquisition.get('parts') if isinstance(acquisition, dict) else None
     if not isinstance(records, list) or any(not isinstance(r, dict) for r in records):
         raise ValueError('datasheet acquisition requires records')
     bindings = sorted([dict(id=r['id'], datasheet_url=r['url']) for r in records], key=lambda r: r['id'])
-    acquired, pdf_paths = load_acquisition(root, datasheets, bindings)
+    acquired, pdf_paths = load_acquisition(root, datasheets, bindings, reads)
     sheet = acquired.get(datasheet_id)
     if sheet is None or sheet['missing']:
         raise ValueError('named part requires a captured datasheet')
@@ -59,7 +59,7 @@ def _sources(root, catalog, datasheets, datasheet_id, lcsc):
                     **response_blobs}
     # Use the manifest reader too, so all paths obey one canonical capture policy.
     for path in pdf_paths:
-        dependencies[path] = hashlib.sha256(read_captured(root, path)).hexdigest()
+        dependencies[path] = captured_sha256(root, path, reads)
     artifact = dict(path=(Path(datasheets['path']).parent / sheet['path']).as_posix(), sha256=sheet['sha256'])
     return observation, artifact, dict(sorted(dependencies.items()))
 
@@ -79,8 +79,10 @@ def prepare_record(root, lcsc, catalog, datasheets, datasheet_id, *, source_sele
     return record
 
 
-def qualify_record(document, root):
-    """Replay identity and return the complete immutable capture dependency map."""
+def qualify_record(document, root, reads=None):
+    """Replay identity and return the complete immutable capture dependency map.
+
+    reads is the calling validation's storage.CallReads, or None to read everything now."""
     fields = ('schema', *FIELDS, 'catalog', 'datasheets', 'datasheet_id', 'artifact')
     exact_fields(document, (*fields, *[k for k in ('source_selection', 'acquisition') if k in document]))
     if type(document['stock']) is not int or document['stock'] < 0:
@@ -88,7 +90,7 @@ def qualify_record(document, root):
     if document['schema'] != SCHEMA:
         raise ValueError('unsupported part-record schema')
     observation, artifact, dependencies = _sources(root, document['catalog'], document['datasheets'],
-                                                  document['datasheet_id'], document['lcsc'])
+                                                  document['datasheet_id'], document['lcsc'], reads)
     if any(document[k] != observation[k] for k in FIELDS) or document['artifact'] != artifact:
         raise ValueError('part record differs from captured identity')
     if 'source_selection' in document:
@@ -132,13 +134,13 @@ def datasheet_url_crosscheck(document, root, identity_url=None):
             'response_sha256': request['response']['sha256'], 'verdict': verdict}
 
 
-def _external_sources(root, identity_source, datasheets, datasheet_id, deviation_ref):
-    from .parts_manifest import _blob, _read_blob, read_captured
+def _external_sources(root, identity_source, datasheets, datasheet_id, deviation_ref, reads=None):
+    from .parts_manifest import _blob, _read_blob, captured_sha256, read_captured
     from .part_decisions import validate_deviation
     _blob(identity_source, True)
     if identity_source['locator'] != '/':
         raise ValueError('external identity locator must name the whole typed declaration: /')
-    declaration = strict_json(_read_blob(root, identity_source))
+    declaration = strict_json(_read_blob(root, identity_source, reads))
     exact_fields(declaration, ('schema', 'mpn', 'manufacturer', 'package', 'evidence_refs'))
     if declaration['schema'] != 'agent-ee.external-part-identity/1':
         raise ValueError('expected captured external-part-identity/1 declaration')
@@ -150,13 +152,13 @@ def _external_sources(root, identity_source, datasheets, datasheet_id, deviation
         raise ValueError('external identity needs captured source evidence')
     for ref in refs:
         _blob(ref, True)
-        if not _read_blob(root, ref):
+        if not _read_blob(root, ref, reads):
             raise ValueError('empty external identity source')
         dependencies[ref['path']] = ref['sha256']
     exact_fields(deviation_ref, ('path', 'sha256', 'index'))
     deviation_blob = {k: deviation_ref[k] for k in ('path', 'sha256')}
     _blob(deviation_blob)
-    deviations = strict_json(_read_blob(root, deviation_blob))
+    deviations = strict_json(_read_blob(root, deviation_blob, reads))
     exact_fields(deviations, ('schema', 'deviations'))
     index = deviation_ref['index']
     if (deviations['schema'] != 'agent-ee.part-deviations/1' or
@@ -171,20 +173,20 @@ def _external_sources(root, identity_source, datasheets, datasheet_id, deviation
     for ref in deviation['evidence_refs']:
         exact_fields(ref, ('path', 'locator'))
         nonempty(ref['locator'])
-        raw = read_captured(root, ref['path'])
+        raw = read_captured(root, ref['path'], reads)
         if not raw:
             raise ValueError('empty hand-fit evidence')
         dependencies[ref['path']] = hashlib.sha256(raw).hexdigest()
     _blob(datasheets)
-    acquisition = strict_json(_read_blob(root, datasheets))
+    acquisition = strict_json(_read_blob(root, datasheets, reads))
     bindings = sorted([dict(id=r['id'], datasheet_url=r['url']) for r in acquisition['parts']], key=lambda r: r['id'])
-    acquired, paths = load_acquisition(root, datasheets, bindings)
+    acquired, paths = load_acquisition(root, datasheets, bindings, reads)
     nonempty(datasheet_id)
     sheet = acquired.get(datasheet_id)
     if sheet is None or sheet['missing']:
         raise ValueError('external part requires a captured datasheet')
     for path in paths:
-        dependencies[path] = hashlib.sha256(read_captured(root, path)).hexdigest()
+        dependencies[path] = captured_sha256(root, path, reads)
     observed = {k: declaration[k] for k in ('mpn', 'manufacturer', 'package')}
     observed.update(lcsc='NO_LCSC', stock=None, datasheet_url=sheet['url'], acquisition=sheet)
     artifact = dict(path=(Path(datasheets['path']).parent / sheet['path']).as_posix(), sha256=sheet['sha256'])
@@ -198,14 +200,14 @@ def prepare_external_record(root, identity_source, datasheets, datasheet_id, dev
                 datasheets=datasheets, datasheet_id=datasheet_id, artifact=artifact, deviation_ref=deviation_ref)
 
 
-def qualify_external_record(document, root):
+def qualify_external_record(document, root, reads=None):
     exact_fields(document, ('schema', 'mpn', 'manufacturer', 'package', 'lcsc', 'stock', 'datasheet_url',
                             'identity_source', 'datasheets', 'datasheet_id', 'artifact', 'deviation_ref',
                             *(['acquisition'] if 'acquisition' in document else [])))
     if document['schema'] != 'agent-ee.external-part-record/1':
         raise ValueError('unsupported external part record')
     observed, artifact, dependencies = _external_sources(root, document['identity_source'], document['datasheets'],
-                                                        document['datasheet_id'], document['deviation_ref'])
+                                                        document['datasheet_id'], document['deviation_ref'], reads)
     if (any(document[k] != v for k, v in observed.items() if k != 'acquisition' or k in document)
             or document['artifact'] != artifact):
         raise ValueError('external part record differs from captured identity/deviation')

@@ -1,5 +1,4 @@
 """Replay explicit captured source decisions independently of purchase identity."""
-import hashlib
 import re
 from pathlib import Path
 
@@ -97,31 +96,31 @@ def acquisition_source(root, ref, *, context):
     return {k: provenance[k] for k in ('path', 'sha256')}, acquisition_id
 
 
-def _acquisition(root, provenance):
+def _acquisition(root, provenance, reads=None):
     """Replay one source through the shared acquisition loader."""
     from .datasheet_facts import load_acquisition
-    from .parts_manifest import _read_blob, read_captured
+    from .parts_manifest import _read_blob, captured_sha256
     match = re.fullmatch(r'parts\[id=(.+)\]', provenance['locator'])
     if match is None:
         raise ValueError('datasheet provenance must select a captured acquisition id')
     blob = {k: provenance[k] for k in ('path', 'sha256')}
-    document = strict_json(_read_blob(root, blob))
+    document = strict_json(_read_blob(root, blob, reads))
     bindings = sorted([{'id': r['id'], 'datasheet_url': r['url']} for r in document['parts']],
                       key=lambda r: r['id'])
-    acquired, paths = load_acquisition(root, blob, bindings)
+    acquired, paths = load_acquisition(root, blob, bindings, reads)
     record = acquired.get(match[1])
     if record is None or record['missing']:
         raise ValueError('part datasheet acquisition missing')
-    return record, {p: hashlib.sha256(read_captured(root, p)).hexdigest() for p in paths}
+    return record, {p: captured_sha256(root, p, reads) for p in paths}
 
 
-def datasheet(root, part):
+def datasheet(root, part, reads=None):
     from .copper_features import require_purchased
     require_purchased(part, 'datasheet binding')
     sheet = part['datasheet']
     if sheet['status'] != 'captured':
         raise ValueError('binding fill requires captured datasheet: ' + part['id'])
-    record, paths = _acquisition(root, sheet['provenance'])
+    record, paths = _acquisition(root, sheet['provenance'], reads)
     artifact = {'path': (Path(sheet['provenance']['path']).parent / record['path']).as_posix(),
                 'sha256': record['sha256']}
     if artifact != sheet['artifact']:

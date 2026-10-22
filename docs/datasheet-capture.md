@@ -188,7 +188,8 @@ historical capture or fetch time. Invented redirects, altered notes or PDFs,
 unbound hashes, and claims that an import was live are refused on replay.
 
 `load_acquisition` replays both versions offline and includes the note in the
-immutable dependency closure. `datasheet_facts` retains the full acquisition
+immutable dependency closure. It reads each PDF once and checks the `%PDF-`/`%%EOF`
+envelope on exactly the bytes it hashed (AGENTEE-454). `datasheet_facts` retains the full acquisition
 records in both its report and check details, so citation receipts expose the
 import and unknown redirect provenance. Part records and source selections pin
 the versioned acquisition manifest and record ID. Textual citation checks may

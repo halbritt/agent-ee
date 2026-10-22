@@ -12,7 +12,7 @@ from .candidate import safe_relative
 from .catalog import exact_fields, nonempty, strict_json
 from .footprint_library import _members, check_assignments, validate_declaration
 from .part_selection import selection_check
-from .storage import identity
+from .storage import CallReads, identity, read_verified
 from .probe_features import is_probe
 from .copper_features import is_copper
 
@@ -175,7 +175,7 @@ def validate_manifest(document):
     return document
 
 
-def read_captured(root, path):
+def _captured(root, path):
     """Refuse links at every component and all nonregular capture members."""
     import stat
     path = _path(path)
@@ -187,22 +187,40 @@ def read_captured(root, path):
             raise ValueError('captured dependency is a symlink: ' + path)
     if not stat.S_ISREG(mode):
         raise ValueError('captured dependency is not regular: ' + path)
-    return current.read_bytes()
+    return current
+
+
+def read_captured(root, path, reads=None):
+    """Bytes of a capture member under the link/regular-file policy, checked at every call.
+
+    reads, when given, is the calling validation's CallReads (bytes this call already read)."""
+    current = _captured(root, path)
+    return current.read_bytes() if reads is None else reads.read(current)[0]
+
+
+def captured_sha256(root, path, reads=None):
+    """SHA-256 of a capture member under the same policy as read_captured."""
+    return read_verified(_captured(root, path), reads=reads)[1]
 
 
 def load_manifest(root, path):
     return validate_manifest(strict_json(read_captured(root, path)))
 
 
-def _read_blob(root, blob):
-    payload = read_captured(root, blob['path'])
-    if hashlib.sha256(payload).hexdigest() != blob['sha256']:
+def _read_blob(root, blob, reads=None):
+    payload, found = read_verified(_captured(root, blob['path']), blob['sha256'], reads)
+    if found != blob['sha256']:
         raise ValueError('captured dependency hash mismatch: ' + blob['path'])
     return payload
 
 
-def dependency_closure(document, root):
-    """Validate pins and return every immutable path/hash, excluding candidate CAD."""
+def dependency_closure(document, root, reads=None):
+    """Validate pins and return every immutable path/hash, excluding candidate CAD.
+
+    Each distinct file is read and hashed once per call (AGENTEE-454): a CallReads is
+    created here, or passed by qualify_manifest, and dropped on return; the next call
+    rereads everything. Path policy and pins are still checked at every use."""
+    reads = CallReads() if reads is None else reads
     validate_manifest(document)
     blobs = [document['declaration_source'], document['cad']['manifest'], document['cad']['assignments']]
     if 'declarations' in document['cad']:
@@ -213,8 +231,8 @@ def dependency_closure(document, root):
     if catalog is not None:
         blobs += [dict(path=catalog['snapshot'] + '/manifest.json', sha256=catalog['manifest_sha256']),
                   dict(path=catalog['snapshot'] + '/catalog.sqlite3', sha256=catalog['database_sha256'])]
-    members = _members(strict_json(_read_blob(root, document['cad']['manifest'])))
-    declaration = strict_json(_read_blob(root, document['cad']['assignments']))
+    members = _members(strict_json(_read_blob(root, document['cad']['manifest'], reads)))
+    declaration = strict_json(_read_blob(root, document['cad']['assignments'], reads))
     validate_declaration(declaration)
     cad_blobs = [member for _, member in members] + [
         {k: library[k] for k in ('path', 'sha256')} for library in declaration['libraries']]
@@ -233,18 +251,18 @@ def dependency_closure(document, root):
         if 'source_selection' in sheet:
             from .datasheet_selection import check_binding, datasheet
             check_binding(root, sheet['source_selection'], sheet['artifact'], sheet['provenance'], context=context)
-            _, paths = datasheet(root, part)
+            _, paths = datasheet(root, part, reads)
             blobs += [dict(path=p, sha256=h) for p, h in paths.items()]
             blobs.append({k: sheet['source_selection'][k] for k in ('path', 'sha256')})
         if named_selection(part):
             from .part_record import qualify_record, qualify_external_record
             record_blob = _named_blob(part)
-            record = strict_json(_read_blob(root, record_blob))
+            record = strict_json(_read_blob(root, record_blob, reads))
             qualifier = qualify_external_record if part['selection']['kind'] == 'external' else qualify_record
             if 'source_selection' in record and sheet.get('source_selection') != record['source_selection']:
                 raise ValueError(context + ': manifest must retain part-record source_selection')
             try:
-                dependencies = qualifier(record, root)
+                dependencies = qualifier(record, root, reads)
             except ValueError as exc:
                 raise ValueError(context + ': ' + str(exc)) from exc
             blobs += [record_blob, part['selection']['decision_ref']]
@@ -256,7 +274,7 @@ def dependency_closure(document, root):
     closure = {}
     for blob in blobs:
         _blob(blob, 'locator' in blob)
-        _read_blob(root, blob)
+        _read_blob(root, blob, reads)
         if blob['path'] in closure and closure[blob['path']] != blob['sha256']:
             raise ValueError('contradictory dependency pin')
         closure[blob['path']] = blob['sha256']
@@ -265,12 +283,13 @@ def dependency_closure(document, root):
 
 def qualify_manifest(document, root):
     """Rederive selection and captured CAD identities; never authenticate approval."""
-    closure = dependency_closure(document, root)
+    reads = CallReads()
+    closure = dependency_closure(document, root, reads)
     generic = [p for p in document['parts'] if not named_selection(p) and not is_probe(p) and not is_copper(p)]
     selection, choices, quantities = None, {}, {}
     if document['catalog'] is not None:
-        requirements = strict_json(_read_blob(root, document['selection']['requirements']))
-        expected = strict_json(_read_blob(root, document['selection']['result']))
+        requirements = strict_json(_read_blob(root, document['selection']['requirements'], reads))
+        expected = strict_json(_read_blob(root, document['selection']['result'], reads))
         catalog = document['catalog']
         selection = selection_check(Path(root) / catalog['snapshot'], catalog['manifest_sha256'], requirements)
         if selection != expected or selection['execution'] != 'ok' or selection['outcome'] != 'pass':
@@ -282,7 +301,7 @@ def qualify_manifest(document, root):
         quantities = {p['id']: p['quantity_per_board'] for p in requirements['parts']}
     if set(choices) != {p['selection_id'] for p in generic}:
         raise ValueError('selection allocation coverage differs from declared generic parts')
-    declaration = strict_json(_read_blob(root, document['cad']['assignments']))
+    declaration = strict_json(_read_blob(root, document['cad']['assignments'], reads))
     assignments = {c['reference']: c for c in declaration['components']}
     if set(assignments) != {p['id'] for p in document['parts']}:
         raise ValueError('CAD assignments must name each logical part exactly once')
@@ -297,11 +316,11 @@ def qualify_manifest(document, root):
                                           for k in ('path', 'sha256'))):
                 raise ValueError('probe symbol differs from captured CAD assignment')
             cad_members = {lib + ':' + Path(blob['path']).stem: blob for lib, blob in
-                           _members(strict_json(_read_blob(root, document['cad']['manifest'])))}
+                           _members(strict_json(_read_blob(root, document['cad']['manifest'], reads)))}
             if cad_members.get(part['footprint']) != feature['footprint']:
                 raise ValueError('probe footprint differs from captured CAD assignment')
         elif named_selection(part):
-            record = strict_json(_read_blob(root, _named_blob(part)))
+            record = strict_json(_read_blob(root, _named_blob(part), reads))
             if any(part[k] != record[k] for k in ('lcsc', 'mpn', 'manufacturer', 'package', 'stock')):
                 raise ValueError('named identity/stock differs from captured part record: ' + part['id'])
             sheet = part['datasheet']
@@ -320,9 +339,10 @@ def qualify_manifest(document, root):
             raise ValueError('CAD identity differs from logical part: ' + part['id'])
         if not is_probe(part) and not is_copper(part) and part['datasheet']['status'] == 'unavailable' and part['datasheet']['required']:
             missing.append(dict(part_id=part['id'], reason=part['datasheet']['reason']))
-    cad_manifest = strict_json(_read_blob(root, document['cad']['manifest']))
-    captures = {p: read_captured(root, p) for p in closure}
-    declarations = (strict_json(_read_blob(root, document['cad']['declarations']))
+    cad_manifest = strict_json(_read_blob(root, document['cad']['manifest'], reads))
+    # The CAD check consumes exactly the bytes the closure verified in this call.
+    captures = {p: _read_blob(root, dict(path=p, sha256=h), reads) for p, h in closure.items()}
+    declarations = (strict_json(_read_blob(root, document['cad']['declarations'], reads))
                     if 'declarations' in document['cad'] else None)
     cad = check_assignments(cad_manifest, captures, declaration, native_membership=True,
                             declarations=declarations)
