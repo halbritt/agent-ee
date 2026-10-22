@@ -134,6 +134,8 @@ def cite(cls, citation, records, values_mm=()):
     result = (owner_decision if kind == 'owner_decision' else verified_reference)(citation, records)
     if result['enforcement'] == 'verified':
         result = {'enforcement': 'hard', 'reason': 'captured source record verified'}
+    elif kind == 'captured_source' and result['enforcement'] == 'advisory':
+        result = advisory('captured source record, locator or quote not verified')
     if result['enforcement'] == 'hard' and not states(citation['quote'], values_mm):
         return advisory('cited quote does not state the declared value')
     return result

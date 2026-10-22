@@ -122,6 +122,9 @@ class CitationModelTest(unittest.TestCase):
         self.assertEqual(source_authority.cite('manufacturer', citation('datasheet', TEXT, PATH), RECORDS, [0.15]),
                          {'enforcement': 'advisory',
                           'reason': "manufacturer cannot resolve through citation kind 'captured_source'"})
+        self.assertEqual(source_authority.cite('datasheet', citation('datasheet', TEXT, 'absent.txt'), RECORDS,
+                                               [0.15]),
+                         {'enforcement': 'advisory', 'reason': 'captured source record, locator or quote not verified'})
         self.assertEqual(source_authority.cite('default', citation('datasheet', TEXT, PATH), RECORDS, [0.15]),
                          {'enforcement': 'advisory', 'reason': 'default class is never hard'})
         capture = citation('manufacturer', TEXT, PATH)
