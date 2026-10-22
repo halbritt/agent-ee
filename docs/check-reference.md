@@ -2165,7 +2165,7 @@ NPTH drills and pad slots are not outline holes; native DRC alone judges silk ov
 the placement report. Closure and campaign replay read it without rerunning
 pcbnew; absent or invalid witnesses close nothing. Remaining conflicts and
 unavailable evidence keep their refusal. Cached-text translations and boards
-containing backslashes refuse the producer's scope proof.
+containing backslashes refuse the producer's scope proof (test: `test_scope_refuses_backslashes_even_when_parser_erases_them` in `tests/test_routed_artwork.py`).
 This adds no check registration or verdict waiver. The initial placer continues
 to refuse routed boards. The native campaign regression proves downstream
 refusal before the repair and passing verification geometry and native fab export after closure.
