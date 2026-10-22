@@ -3809,6 +3809,50 @@
         "KICAD-HAPPY-219"
       ],
       "reviewed": "Exact git diff of six changed software/documentation/CI files from v2.3.1 to the proposed correction; no design or library files. Upstream MIT notice retained separately."
+    },
+    {
+      "paths": [
+        "tools/ee454_io_profile/analyze.py",
+        "tools/ee454_io_profile/count_calls.py",
+        "tools/ee454_io_profile/profile_io.py",
+        "tools/ee454_io_profile/reconstruct.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original AGENTEE-454 diagnostic harness written for agent-ee: reconstruction from pinned local objects, I/O wrapper profiling, call counting and analysis. No third-party code or design bytes."
+    },
+    {
+      "paths": [
+        "tools/ee454_io_profile/README.md"
+      ],
+      "kind": "owned-documentation",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original usage notes for the AGENTEE-454 diagnostic harness."
+    },
+    {
+      "paths": [
+        "tools/ee454_io_profile/evidence/attribution.json",
+        "tools/ee454_io_profile/evidence/calls-envelope-identity.json",
+        "tools/ee454_io_profile/evidence/calls-pod-driver.json",
+        "tools/ee454_io_profile/evidence/calls-scaffold-review.json",
+        "tools/ee454_io_profile/evidence/closure-count-2.json",
+        "tools/ee454_io_profile/evidence/closure-count.json",
+        "tools/ee454_io_profile/evidence/closure-cprofile.json",
+        "tools/ee454_io_profile/evidence/closure-plain-2.json",
+        "tools/ee454_io_profile/evidence/closure-plain.json",
+        "tools/ee454_io_profile/evidence/inputs.json",
+        "tools/ee454_io_profile/evidence/qualify-count.json",
+        "tools/ee454_io_profile/evidence/qualify-plain.json"
+      ],
+      "kind": "retained-output",
+      "origins": [
+        "AE-RUN"
+      ],
+      "reviewed": "Harness outputs from the AGENTEE-454 phase-1 profile: call counts, byte totals, timings and path/content-hash records of the reconstructed manifest inputs. Path and hash metadata only; no third-party design bytes."
     }
   ]
 }
