@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import html
 import itertools
@@ -214,7 +215,8 @@ def surfaces(text):
             + page([bundle], [diagnostic], statuses=statuses).decode()
             + page([], [diagnostic], diagnostic_only=True, latest=bundle, statuses=statuses).decode()
             + page([bundle], statuses=statuses, detail=True).decode()
-            + gallery._with_status(b'<body>', bundle['id'], status).decode())
+            + gallery._with_status(b'<body>', bundle['id'], status).decode()
+            + json.dumps(gallery._recorded('bundles', bundle['id'], status), ensure_ascii=False))
 
 
 def assert_leak_free(test, published, seed=433, rounds=20000, stride=1):
@@ -1252,9 +1254,16 @@ def drc_report(silk=2, clearance=1, unconnected=3):
             'unconnected_items': [{'type': 'unconnected_items'}] * unconnected, 'schematic_parity': []}
 
 
-def design_diff(placement='p' * 64, paths=('footprint[U3]/model@0a1b2c', 'footprint[U3]/model@3d4e5f')):
+# The status fixture board: unrouted, with footprint U3 whose model is the fixture STEP.
+STATUS_BOARD = ('(kicad_pcb (version 20240108) (generator "fixture") (footprint "Package:U3" (layer "F.Cu") '
+                '(property "Reference" "U3") (model "${KIPRJMOD}/models/u3.step")) (gr_line (start 0 0) (end 1 0)))\n')
+STATUS_BOARD_SHA256 = hashlib.sha256(STATUS_BOARD.encode()).hexdigest()
+
+
+def design_diff(placement='p' * 64, paths=('footprint[U3]/model@0a1b2c', 'footprint[U3]/model@3d4e5f'),
+                subject=STATUS_BOARD_SHA256):
     return {'schema': 'agent-ee.design-diff/1', 'format': 'board', 'equivalent': False,
-            'entries': [{'path': path} for path in paths],
+            'entries': [{'path': path} for path in paths], 'raw': {'subject_sha256': subject},
             'hashes': {'changed': ['identity'], 'reference': {'placement': 'p' * 64, 'structural': 's' * 64},
                        'subject': {'placement': placement, 'structural': 's' * 64}}}
 
@@ -1282,7 +1291,7 @@ class StatusRecordTests(unittest.TestCase):
         GalleryTests.setUp(self)
         self.evidence_dir = Path(self.tmp.name) / 'evidence'
         self.evidence_dir.mkdir()
-        files = {'board.kicad_pcb': UNROUTED_BOARD, 'INDEX.md': 'Status: UNROUTED placement candidate, not qualified.\n',
+        files = {'board.kicad_pcb': STATUS_BOARD, 'INDEX.md': 'Status: UNROUTED placement candidate, not qualified.\n',
                  'RECEIPT.json': json.dumps({'purpose': 'models-only derivation'}),
                  'drc.json': json.dumps(drc_report()), 'design-diff.json': json.dumps(design_diff()),
                  'u3.step': 'original fixture STEP\n'}
@@ -1298,10 +1307,27 @@ class StatusRecordTests(unittest.TestCase):
     write_receipt = GalleryTests.write_receipt
     save = GalleryTests.save
 
-    def evidence(self, **replace):
+    U3 = {'reference': 'U3', 'sha256': hashlib.sha256(b'original fixture STEP\n').hexdigest(),
+          'provenance': 'datasheet-derived', 'transparency': None}
+
+    def evidence(self, association='association.json', models=None, board_sha256=None, **replace):
+        """The evidence list, with a reviewed association covering every other file supplied.
+
+        association=None supplies none; a name other than association.json supplies that file as is.
+        """
         roles = {'board': 'board.kicad_pcb', 'index': 'INDEX.md', 'receipt': 'RECEIPT.json', 'drc': 'drc.json',
                  'design-diff': 'design-diff.json', 'model': 'u3.step', **replace}
-        return [(role, self.evidence_dir / name) for role, name in roles.items() if name]
+        evidence = [(role, self.evidence_dir / name) for role, name in roles.items() if name]
+        if association == 'association.json':
+            self.associate(evidence, models, board_sha256)
+        return evidence + ([('association', self.evidence_dir / association)] if association else [])
+
+    def associate(self, evidence, models=None, board_sha256=None, name='association.json'):
+        mapping = {'schema': 'agent-ee.gallery-association/1', 'board_sha256': board_sha256 or self.board_hash,
+                   'evidence': [{'role': role, 'sha256': digest(path)} for role, path in evidence if role != 'board'],
+                   'models': [self.U3] if models is None else models}
+        (self.evidence_dir / name).write_text(json.dumps(mapping))
+        return mapping
 
     def snapshot(self):
         return {p.relative_to(self.root).as_posix(): p.read_bytes()
@@ -1364,6 +1390,11 @@ class StatusRecordTests(unittest.TestCase):
         self.assertIn('viewer.js', viewer)
         self.assertEqual(json.loads(record)['attached'], 'matched')
         self.assertEqual(json.loads(record)['record'], {'id': status, **stored})
+        self.assertEqual(json.loads(record)['shown'], {
+            'routing': 'unrouted', 'adoption': 'not-adopted', 'qualification': 'unqualified', 'scope': 'models-only',
+            'open_defects': {'count': 2, 'class': 'silk'}, 'drc': {'violations': 3, 'raw_unconnected_items': 3},
+            'models': [{'reference': 'U3', 'provenance': 'datasheet-derived', 'transparency': None,
+                        'sha256': self.U3['sha256']}]})
 
     def test_without_a_record_every_status_is_explicitly_unknown(self):
         with self.serving() as url:
@@ -1375,7 +1406,7 @@ class StatusRecordTests(unittest.TestCase):
                 self.assertIn(f'<li>{key}: unknown (not recorded)</li>', body)
             self.assertNotIn('Unrouted', body)
         self.assertEqual(json.loads(bodies[3]), {'subject': {'area': 'bundles', 'id': self.bundle},
-                                                 'attached': 'none', 'record': None})
+                                                 'attached': 'none', 'record': None, 'shown': None})
 
     def test_record_not_matching_the_publication_bytes_is_unknown(self):
         self.attach()
@@ -1398,22 +1429,176 @@ class StatusRecordTests(unittest.TestCase):
         self.assertIn('<li>Adoption: unknown (not recorded)</li>', detail)
         self.assertIn('Adoption unknown', detail)
 
+    def plant(self, record):
+        """Publish a stored status record as is (an earlier or foreign writer), with its identity and listing entry."""
+        data = gallery._encode(gallery._status_record(record))
+        status = record['subject']['manifest_sha256'][:12] + '-' + hashlib.sha256(data).hexdigest()[:12]
+        (self.root / 'statuses' / status).mkdir(parents=True)
+        (self.root / 'statuses' / status / 'status.json').write_bytes(data)
+        listing = self.root / 'statuses.json'
+        entries = json.loads(listing.read_text()) if listing.is_file() else []
+        listing.write_text(json.dumps([{'id': status, **json.loads(data)}] + entries))
+        return status
+
+    def sealed(self, status):
+        return json.loads((self.root / 'statuses' / status / 'status.json').read_text())
+
     def test_old_missing_or_uncited_fields_are_served_as_unknown(self):
-        status = self.attach()
-        listing = json.loads((self.root / 'statuses.json').read_text())
-        entry = listing[0]
+        entry = self.sealed(self.attach())
         for key in ('qualification', 'scope', 'open_defects', 'drc', 'models'):
             del entry[key]
         entry['routing'] = {'value': 'unrouted', 'evidence': ['review']}  # cites evidence that is not bound
         entry['adoption'] = {'value': 'not-adopted'}
-        (self.root / 'statuses.json').write_text(json.dumps(listing))
+        status = self.plant(entry)
         with self.serving() as url:
             detail = self.served(url)[1]
+            self.assertEqual(json.loads(self.served(url)[3])['record']['id'], status)
         for key in ('Routing', 'Adoption', 'Qualification', 'Scope', 'Open defects'):
             self.assertIn(f'<li>{key}: unknown (not recorded)</li>', detail)
         self.assertIn('<li>Native DRC report: unknown (not recorded)</li>', detail)
         self.assertNotIn('Model U3', detail)
-        self.assertTrue((self.root / 'statuses' / status / 'status.json').is_file())
+
+    def test_a_record_without_a_reviewed_association_serves_only_board_checked_claims(self):
+        """An earlier record (433m shape) binds no association: every claim citing other evidence is unknown."""
+        entry = self.sealed(self.attach())
+        entry['evidence'] = [e for e in entry['evidence'] if e['role'] != 'association']
+        entry['routing']['evidence'] = ['board']
+        status = self.plant(entry)
+        with self.serving() as url:
+            detail = html.unescape(self.served(url)[1])
+            report = json.loads(self.served(url)[3])
+        self.assertEqual((report['attached'], report['record']['id']), ('matched', status))
+        self.assertEqual(report['shown'], {'routing': 'unrouted', 'adoption': None, 'qualification': None, 'scope': None,
+                                           'open_defects': None, 'drc': None,
+                                           'models': [{'reference': 'U3', 'provenance': None, 'transparency': None,
+                                                       'sha256': None}]})
+        self.assertIn('Unrouted: the bound board has no tracks, arcs or vias', detail)
+        for key in ('Adoption', 'Qualification', 'Scope', 'Open defects'):
+            self.assertIn(f'<li>{key}: unknown (not recorded)</li>', detail)
+        self.assertIn('<li>Native DRC report: unknown (not recorded)</li>', detail)
+        self.assertIn('Model U3: provenance unknown (not recorded); transparency unknown (not verified)', detail)
+        self.assertNotIn('datasheet-derived visualization', detail)
+        # Board evidence counts only as the subject's own board.
+        entry['evidence'] = [dict(e, sha256='f' * 64) if e['role'] == 'board' else e for e in entry['evidence']]
+        self.plant(entry)
+        with self.serving() as url:
+            self.assertIn('<li>Routing: unknown (not recorded)</li>', self.served(url)[1])
+
+    def test_claims_need_a_reviewed_association_with_the_subject_board(self):
+        report = drc_report(silk=0, clearance=0, unconnected=0)
+        report['source'] = 'unrelated-candidate.kicad_pcb'
+        (self.evidence_dir / 'foreign.json').write_text(json.dumps(report))
+        zero = {'drc': {'violations': 0, 'raw_unconnected_items': 0, 'evidence': ['drc']},
+                'open_defects': {'count': 0, 'class': 'silk', 'evidence': ['drc']}}
+        self.refuses('drc evidence is not in a reviewed association', record=zero,
+                     evidence=[('drc', self.evidence_dir / 'foreign.json')])
+        # An association covering the other files does not cover a substituted report.
+        current = self.evidence()
+        self.refuses('drc evidence is not in a reviewed association', record=iter8_record(),
+                     evidence=[(r, self.evidence_dir / 'foreign.json' if r == 'drc' else p) for r, p in current])
+        self.associate(self.evidence(association=None), board_sha256='e' * 64, name='other-board.json')
+        self.refuses('association evidence is for another board', evidence=self.evidence(association='other-board.json'))
+        for name, mapping in (('extra.json', {'schema': 'agent-ee.gallery-association/1', 'board_sha256': self.board_hash,
+                                              'evidence': [], 'models': [], 'notes': 'x'}),
+                              ('board-role.json', {'schema': 'agent-ee.gallery-association/1', 'board_sha256': self.board_hash,
+                                                   'evidence': [{'role': 'board', 'sha256': self.board_hash}], 'models': []}),
+                              ('twice.json', {'schema': 'agent-ee.gallery-association/1', 'board_sha256': self.board_hash,
+                                              'evidence': [], 'models': [self.U3, self.U3]}),
+                              ('list.json', [])):
+            (self.evidence_dir / name).write_text(json.dumps(mapping))
+            self.refuses('association evidence is not', evidence=self.evidence(association=name))
+        self.refuses('at most one association', evidence=self.evidence() + [('association', self.evidence_dir / 'twice.json')])
+        # A diff of another board is not this candidate's models-only evidence.
+        (self.evidence_dir / 'foreign-diff.json').write_text(json.dumps(design_diff(subject='d' * 64)))
+        self.refuses('design-diff subject is not the board', evidence=self.evidence(**{'design-diff': 'foreign-diff.json'}))
+        # Board evidence alone needs no association: routing is checked against the board itself.
+        board_only = {'routing': {'value': 'unrouted', 'evidence': ['board']}}
+        self.attach(board_only, [('board', self.evidence_dir / 'board.kicad_pcb')])
+
+    def test_model_claims_must_match_the_association_and_the_bound_board(self):
+        (self.evidence_dir / 'foreign.step').write_text('unrelated model never associated with this board')
+        foreign = {'reference': 'U999999', 'provenance': 'manufacturer', 'transparency': 'verified',
+                   'sha256': digest(self.evidence_dir / 'foreign.step'), 'evidence': ['model']}
+        self.refuses('must be the ones in the reviewed association', record={'models': [foreign]},
+                     evidence=self.evidence(model='foreign.step', models=[]))
+        self.refuses('not a model of footprint U999999 on the bound board', record={'models': [foreign]},
+                     evidence=self.evidence(model='foreign.step', models=[{k: foreign[k] for k in self.U3}]))
+        u3 = iter8_record()['models'][0]
+        for change in ({'provenance': 'manufacturer'}, {'transparency': 'verified'}):
+            self.refuses('must be the ones in the reviewed association', record=iter8_record(models=[dict(u3, **change)]))
+        self.refuses('must be the ones in the reviewed association', evidence=self.evidence(models=[dict(self.U3, reference='U4')]))
+        self.refuses('needs the bound board evidence', record={'models': [u3]}, evidence=self.evidence(board=None))
+        self.refuses('hash must be the hash of cited model evidence',
+                     record={'models': [dict(u3, sha256=None)]})
+        # The right STEP bytes under a name the board does not reference are not U3's model.
+        (self.evidence_dir / 'renamed.step').write_text('original fixture STEP\n')
+        self.refuses('not a model of footprint U3', evidence=self.evidence(model='renamed.step'))
+        self.attach(iter8_record())
+
+    def test_served_status_is_the_verified_immutable_record(self):
+        """The listing only orders immutable records; a changed, missing, corrupt or swapped record is mismatched."""
+        status = self.attach()
+        published = self.snapshot()
+        sealed = self.root / 'statuses' / status / 'status.json'
+        listing = self.root / 'statuses.json'
+        original = listing.read_bytes()
+
+        def served():
+            with self.serving() as url:
+                bodies = self.served(url)
+                bodies.append(urlopen(url + '/bundles/' + self.bundle + '/manifest.json').read().decode())
+            return [html.unescape(body) for body in bodies]
+
+        def mismatched(why):
+            bodies = served()
+            for body in bodies[:3]:
+                self.assertIn("An attached status record does not match this publication's bytes", body, why)
+                self.assertNotIn('Not qualified', body, why)
+                self.assertNotIn('Qualified', body, why)
+                self.assertNotIn('manufacturer model;', body, why)
+            for body in (bodies[3], bodies[4]):
+                report = json.loads(body) if body is bodies[3] else json.loads(body)['recorded_status']
+                self.assertEqual((report['attached'], report['record']), ('mismatched', None), why)
+            self.assertEqual({k: v for k, v in self.snapshot().items() if not k.startswith('statuses')},
+                             {k: v for k, v in published.items() if not k.startswith('statuses')}, why)
+
+        entries = json.loads(original)
+        entries[0]['qualification']['value'] = 'qualified'
+        entries[0]['models'][0]['provenance'] = 'manufacturer'
+        listing.write_text(json.dumps(entries))
+        mismatched('listing changed')
+        self.assertEqual(sealed.read_bytes(), published[f'statuses/{status}/status.json'])
+        listing.write_bytes(original)
+        self.assertEqual(json.loads(served()[3])['attached'], 'matched')
+
+        for why, change in (('deleted', lambda: sealed.unlink()),
+                            ('corrupt', lambda: sealed.write_bytes(b'{')),
+                            ('rewritten', lambda: sealed.write_bytes(sealed.read_bytes().replace(b'"unqualified"', b'"qualified"'))),
+                            ('re-encoded', lambda: sealed.write_bytes(json.dumps(json.loads(sealed.read_bytes())).encode())),
+                            ('symlink', lambda: (sealed.rename(sealed.with_name('real.json')), sealed.symlink_to('real.json')))):
+            data = sealed.read_bytes()
+            change()
+            mismatched(why)
+            with contextlib.suppress(FileNotFoundError):
+                sealed.unlink()
+            with contextlib.suppress(FileNotFoundError):
+                sealed.with_name('real.json').unlink()
+            sealed.write_bytes(data)
+        self.assertEqual(json.loads(served()[3])['attached'], 'matched')
+
+        # Swapped: a listing entry naming this bundle, pointing at another subject's sealed record.
+        identifier = '9' * 12 + '-' + '8' * 12
+        legacy = {'schema': 'agent-ee.gallery-diagnostic/1', 'label': 'Diagnostic 1', 'stage': 'diagnostic',
+                  'board_sha256': self.board_hash, 'image': {'width': 2, 'height': 2}}
+        (self.root / 'diagnostics' / identifier).mkdir(parents=True)
+        (self.root / 'diagnostics' / identifier / 'manifest.json').write_text(json.dumps(legacy))
+        other = self.attach({'routing': {'value': 'unrouted', 'evidence': ['board']}},
+                            [('board', self.evidence_dir / 'board.kicad_pcb')], subject='diagnostics/' + identifier)
+        published = self.snapshot()
+        entries = json.loads(listing.read_text())
+        entries[0] = dict(entries[1], id=other)
+        listing.write_text(json.dumps(entries))
+        mismatched('swapped')
 
     def test_canonical_label_and_stage_are_shown_for_an_earlier_publication(self):
         manifest = self.root / 'bundles' / self.bundle / 'manifest.json'
@@ -1479,7 +1664,7 @@ class StatusRecordTests(unittest.TestCase):
         self.refuses('plain file name', evidence=self.evidence(index='INDEX copy.md'))
 
     def test_values_are_checked_against_the_bound_evidence(self):
-        routed = UNROUTED_BOARD.replace('(gr_line', '(via (at 0 0) (size 0.6) (drill 0.3) (net 0)) (gr_line')
+        routed = STATUS_BOARD.replace('(gr_line', '(via (at 0 0) (size 0.6) (drill 0.3) (net 0)) (gr_line')
         (self.evidence_dir / 'other.kicad_pcb').write_text(routed)
         self.refuses('not the board this publication is bound to', evidence=self.evidence(board='other.kicad_pcb'))
         self.refuses('routing must cite the bound board', record=iter8_record(routing={'value': 'unrouted', 'evidence': ['index']}))

@@ -188,7 +188,8 @@ PYTHONPATH="$HOME/.local/share/agent-ee-render-gallery/app" python3 -m agent_ee.
   --subject bundles/BUNDLE_ID --record status.json \
   --evidence board=/durable/run/candidate.kicad_pcb --evidence index=/durable/run/INDEX.md \
   --evidence receipt=/durable/run/RECEIPT.json --evidence design-diff=/durable/run/design-diff.json \
-  --evidence drc=/durable/run/drc.json --evidence model=/durable/run/models/u3.step
+  --evidence drc=/durable/run/drc.json --evidence model=/durable/run/models/u3.step \
+  --evidence association=/durable/review/association.json
 ```
 
 `status.json` holds only these fields, each a fixed code or `null` (unknown),
@@ -207,7 +208,7 @@ never free text; an omitted field is unknown:
 
 The first four are `{"value": CODE, "evidence": [ROLES]}`; `open_defects`,
 `drc` and each model also carry `evidence`. Evidence roles are `board`,
-`receipt`, `design-diff`, `drc`, `index`, `model` and `review`; each `--evidence`
+`association`, `receipt`, `design-diff`, `drc`, `index`, `model` and `review`; each `--evidence`
 file is read once and its plain file name and SHA-256 are recorded. Values come
 from retained evidence and are never inferred from checks; publication refuses
 a value that cites no evidence or evidence that was not supplied, and checks
@@ -216,14 +217,35 @@ what the evidence can check:
 - `board` must be the bytes of the subject's board hash, and `routing` must cite
   it: `unrouted` is refused when the board has tracks, arcs or vias, `routed`
   when it has none.
+- Every other evidence file must be covered by one reviewed **association**
+  (`agent-ee.gallery-association/1`), supplied as `association` evidence. A
+  hash alone, or a DRC report's `source` file name, does not show that a report,
+  receipt, diff or model belongs to this candidate; the association is the
+  reviewer's mapping of the subject board to the files retained with it in the
+  same packet. Publication refuses evidence it does not list, and an association
+  for any other board:
+
+  ```json
+  {"schema": "agent-ee.gallery-association/1", "board_sha256": "SUBJECT BOARD SHA-256",
+   "evidence": [{"role": "drc", "sha256": "..."}, {"role": "receipt", "sha256": "..."}],
+   "models": [{"reference": "U3", "sha256": "...", "provenance": "datasheet-derived", "transparency": null}]}
+  ```
+
+  `evidence` lists each associated file by role (not `board` or `association`)
+  and SHA-256; `models` lists each reviewed model once. Nothing else is
+  accepted. The gallery checks supplied evidence against the association; it
+  cannot check who reviewed it, so produce it only from a reviewed packet (its
+  receipt and checksums).
 - `drc` counts must equal the `violations` and `unconnected_items` of the cited
   KiCad DRC JSON report; a `silk` or `drc` open-defect count must equal its
-  `silk_*` or total violations. The report has no board digest: its binding to
-  the board is the retained packet that names it.
-- `models-only` must cite an `agent-ee.design-diff/1` board diff whose every
-  entry is a `footprint[REF]/model` change with unchanged placement and
-  structural hashes.
-- A model `sha256` must be the hash of a cited `model` evidence file.
+  `silk_*` or total violations.
+- `models-only` must cite an `agent-ee.design-diff/1` board diff of the
+  subject board (`raw.subject_sha256`) whose every entry is a
+  `footprint[REF]/model` change with unchanged placement and structural hashes.
+- A model claim needs `sha256`, the hash of a cited `model` evidence file; its
+  reference, hash, provenance and transparency must be the association's entry
+  for that reference, and the supplied board must have a footprint with that
+  reference whose model file name is the model evidence file name.
 
 `qualified`, `adopted`, `full`, `review` defect counts and model provenance are
 recorded dispositions, shown as such; the gallery does not validate them.
@@ -235,10 +257,22 @@ recorded limitation and unknown. A publication without a record shows "No
 status record attached" and every field unknown; a record whose subject hash no
 longer matches the stored manifest shows "does not match" and every field
 unknown; a stored or served value outside the vocabulary, or one whose cited
-evidence is not hash-bound in the record, is unknown. The newest matching record
-is shown; older records are retained. `/bundles/ID/status.json` and
+evidence is not hash-bound in the record, is unknown, and so is a value citing
+anything but the subject's board in a record that binds no association (records
+attached before associations existed show only board-checked routing).
+
+`statuses.json` is mutable and only names and orders the immutable records. Each
+listed record is read from `statuses/ID/status.json` without following a link
+and served only when its bytes are the canonical encoding of its projection,
+`ID` is its subject manifest hash prefix and its own SHA-256 prefix, the listing
+entry equals it, and its subject still matches the stored manifest and board. If
+any listed record of a publication is missing, corrupt, rewritten, differs from
+its listing entry or names another subject, the publication shows "does not
+match" and every field unknown. The newest record is shown; older records are
+retained. `/bundles/ID/status.json` and
 `/diagnostics/ID/status.json` report `matched`, `mismatched` or `none` with the
-projected record, and `/statuses/ID/status.json` serves a record itself. The
+verified record and `shown`, the claims the pages show from it (`null` where
+unknown), and `/statuses/ID/status.json` serves a record itself. The
 served `manifest.json` of a bundle or supplement and the served
 `viewer/viewer.json` carry the same report as `recorded_status` beside the
 projected stored fields; the stored files never contain it.
@@ -248,7 +282,10 @@ unqualified (INDEX's recorded diagnostic/unsealed/not-qualified disposition),
 `scope` models-only (RECEIPT, design-diff), 9 open `silk` defects and 226 DRC
 violations with 499 raw unconnected items (DRC report), U3 `datasheet-derived`
 with its STEP hash (RECEIPT, model) and transparency unknown; adoption is not
-recorded for it and stays unknown. The historical supplement attaches
+recorded for it and stays unknown. Every one of these but routing needs the
+reviewed iter8t association: its board hash, the RECEIPT, design-diff, DRC
+report, INDEX and U3 STEP hashes of the same retained packet, and U3's STEP hash
+with `datasheet-derived` provenance and unknown transparency. The historical supplement attaches
 `Diagnostic 1`, `diagnostic`, `unrouted` and `not-adopted`.
 
 ## Annotated diagnostic supplements

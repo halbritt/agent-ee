@@ -96,7 +96,13 @@ _PROVENANCE = {"manufacturer": "manufacturer model", "mechanical": "mechanical m
                "datasheet-derived": "datasheet-derived visualization model, not manufacturer or mechanical "
                                     "model evidence"}
 _TRANSPARENCY = {"verified": "transparency verified"}
-_EVIDENCE = ("board", "receipt", "design-diff", "drc", "index", "model", "review")
+_EVIDENCE = ("board", "association", "receipt", "design-diff", "drc", "index", "model", "review")
+# A reviewed association: the reviewer's mapping of one subject board digest to the
+# digests of the other evidence retained with it in the same packet, and of each
+# model reference to its model digest, provenance and transparency. The gallery cannot
+# tell whether a report, receipt or model belongs to a candidate; it checks every
+# supplied file against this mapping, and evidence it does not cover is refused.
+_ASSOCIATION_SCHEMA = "agent-ee.gallery-association/1"
 _DESIGNATOR = re.compile(r"[A-Z]{1,8}[0-9]{1,6}")
 _AREAS = ("bundles", "diagnostics")
 
@@ -300,9 +306,15 @@ def _status_record(item):
 
 
 def _cited(record, cited):
-    """True when every cited role names hash-bound evidence in the record, and at least one is cited."""
-    bound = {e["role"] for e in record["evidence"] if e["role"] is not None and e["sha256"] is not None}
-    return bool(cited) and set(cited) <= bound
+    """True when at least one role is cited and every cited role names hash-bound evidence in the record.
+
+    Board evidence counts only as the subject's board; any other role counts only when
+    the record also binds a reviewed association with that board.
+    """
+    board = record["subject"]["board_sha256"]
+    bound = {e["role"] for e in record["evidence"] if e["role"] is not None and e["sha256"] is not None
+             and (e["role"] != "board" or e["sha256"] == board)}
+    return bool(cited) and set(cited) <= bound and (set(cited) <= {"board"} or "association" in bound)
 
 
 def _plain(label, stage):
@@ -708,9 +720,12 @@ def _drc_counts(data):
     return {"violations": len(violations), "raw_unconnected_items": len(unconnected), "silk": silk}
 
 
-def _check_models_only(data):
-    """Refuse a design-diff that shows anything but footprint model changes with unchanged placement and structure."""
+def _check_models_only(data, board_sha256):
+    """Refuse a design-diff of another board, or one that shows anything but footprint model changes
+    with unchanged placement and structure."""
     diff = _evidence_json(data, "design-diff")
+    if _mapping(diff.get("raw")).get("subject_sha256") != board_sha256:
+        raise ValueError("scope models-only: the design-diff subject is not the board this publication is bound to")
     hashes = _mapping(diff.get("hashes"))
     reference, subject, entries = _mapping(hashes.get("reference")), _mapping(hashes.get("subject")), diff.get("entries")
     if (diff.get("schema") != "agent-ee.design-diff/1" or diff.get("format") != "board"
@@ -723,6 +738,38 @@ def _check_models_only(data):
                          "changes with unchanged placement and structural hashes")
 
 
+def _association(data, board_sha256):
+    """The (role, sha256) pairs and the per-reference models of a reviewed association with board_sha256."""
+    mapping = _evidence_json(data, "association")
+    evidence, models = mapping.get("evidence"), mapping.get("models")
+    roles = [role for role in _EVIDENCE if role not in ("board", "association")]
+    if (mapping.get("schema") != _ASSOCIATION_SCHEMA or set(mapping) != {"schema", "board_sha256", "evidence", "models"}
+            or not isinstance(evidence, list) or not isinstance(models, list)
+            or not all(isinstance(e, dict) and set(e) == {"role", "sha256"} and e["role"] in roles
+                       and _match(_HASH, e["sha256"]) for e in evidence)
+            or not all(isinstance(m, dict) and set(m) == {"reference", "sha256", "provenance", "transparency"}
+                       and _match(_DESIGNATOR, m["reference"]) and _match(_HASH, m["sha256"])
+                       and (m["provenance"] is None or _status(m["provenance"], _PROVENANCE))
+                       and (m["transparency"] is None or _status(m["transparency"], _TRANSPARENCY)) for m in models)
+            or len({m["reference"] for m in models}) != len(models)):
+        raise ValueError(f"association evidence is not an {_ASSOCIATION_SCHEMA} mapping")
+    if board_sha256 is None or mapping.get("board_sha256") != board_sha256:
+        raise ValueError("association evidence is for another board, not the board this publication is bound to")
+    return {(e["role"], e["sha256"]) for e in evidence}, {m["reference"]: m for m in models}
+
+
+def _footprint_models(data):
+    """Map each footprint reference on a board to the file names of its 3D models."""
+    found = {}
+    for footprint in children(parse_sexpr(data), "footprint"):
+        references = [p[2] for p in children(footprint, "property") if len(p) > 2 and p[1:2] == ["Reference"]]
+        references += [t[2] for t in children(footprint, "fp_text") if len(t) > 2 and t[1:2] == ["reference"]]
+        names = [re.split(r"[\\/]", m[1])[-1] for m in children(footprint, "model") if len(m) > 1 and isinstance(m[1], str)]
+        for reference in references:
+            found.setdefault(reference, []).extend(names)
+    return found
+
+
 def attach_status(root, subject, record, evidence):
     """Attach an immutable status record to a published bundle or supplement.
 
@@ -732,7 +779,10 @@ def attach_status(root, subject, record, evidence):
     list of (role, path) whose bytes are hashed into the record. Every value must
     cite supplied evidence; routing is checked against the bound board, DRC counts
     and silk/DRC defect counts against the DRC report, and models-only against the
-    design-diff. Nothing is inferred: an absent value stays unknown.
+    design-diff of the bound board. Evidence other than the bound board must be covered
+    by a reviewed association with that board, and each model claim must match the
+    association and name a model of that reference on the board. Nothing is inferred:
+    an absent value stays unknown.
     """
     area, _, identifier = str(subject).partition("/")
     if area not in _AREAS or not re.fullmatch(_ID, identifier):
@@ -754,7 +804,7 @@ def attach_status(root, subject, record, evidence):
         payload = _read(path.parent, path.name)
         bound.append({"role": role, "name": path.name, "sha256": hashlib.sha256(payload).hexdigest()})
         contents.setdefault(role, []).append(payload)
-    for role in ("board", "drc", "design-diff"):
+    for role in ("board", "association", "drc", "design-diff"):
         if len(contents.get(role, ())) > 1:
             raise ValueError(f"at most one {role} evidence file is accepted")
     full = {"schema": _STATUS_SCHEMA,
@@ -786,6 +836,14 @@ def attach_status(root, subject, record, evidence):
         raise ValueError("open_defects needs both a count and a class, or neither (unknown)")
     if contents.get("board") and hashlib.sha256(contents["board"][0]).hexdigest() != stored["board_sha256"]:
         raise ValueError("board evidence is not the board this publication is bound to")
+    associated, reviewed = set(), {}
+    if contents.get("association"):
+        associated, reviewed = _association(contents["association"][0], stored["board_sha256"])
+    loose = sorted({e["role"] for e in bound if e["role"] not in ("board", "association")
+                    and (e["role"], e["sha256"]) not in associated})
+    if loose:
+        raise ValueError(f"{', '.join(loose)} evidence is not in a reviewed association with the board this "
+                         "publication is bound to")
     if routing["value"] is not None:
         if "board" not in routing["evidence"]:
             raise ValueError("routing must cite the bound board evidence")
@@ -809,11 +867,27 @@ def attach_status(root, subject, record, evidence):
     if projected["scope"]["value"] == "models-only":
         if "design-diff" not in projected["scope"]["evidence"]:
             raise ValueError("scope models-only must cite the design-diff evidence")
-        _check_models_only(contents["design-diff"][0])
+        _check_models_only(contents["design-diff"][0], stored["board_sha256"])
     models = {e["sha256"] for e in bound if e["role"] == "model"}
     for model in projected["models"]:
-        if model["sha256"] is not None and (model["sha256"] not in models or "model" not in model["evidence"]):
-            raise ValueError(f"model {model['reference']} hash must be the hash of cited model evidence")
+        reference = model["reference"]
+        if (model["provenance"], model["transparency"], model["sha256"]) == (None, None, None):
+            continue
+        if model["sha256"] not in models or "model" not in model["evidence"]:
+            raise ValueError(f"model {reference} hash must be the hash of cited model evidence")
+        expected = reviewed.get(reference)
+        if expected is None or any(expected[key] != model[key] for key in ("sha256", "provenance", "transparency")):
+            raise ValueError(f"model {reference} hash, provenance and transparency must be the ones in the "
+                             "reviewed association")
+        if not contents.get("board"):
+            raise ValueError(f"model {reference} needs the bound board evidence")
+        try:
+            on_board = _footprint_models(contents["board"][0]).get(reference, [])
+        except LibraryError as error:
+            raise ValueError(f"board evidence is not a parseable KiCad board: {error}") from None
+        names = {e["name"] for e in bound if e["role"] == "model" and e["sha256"] == model["sha256"]}
+        if not names & set(on_board):
+            raise ValueError(f"model {reference} evidence is not a model of footprint {reference} on the bound board")
     with _publication(root, "statuses", ".status-") as staged:
         record_bytes = _encode(projected)
         _put(staged.directory, "status.json", record_bytes)
@@ -822,11 +896,33 @@ def attach_status(root, subject, record, evidence):
     return status
 
 
+def _sealed(root, identifier):
+    """The immutable status record published as identifier, or None unless its bytes are that identity.
+
+    The file is read without following a link and must be the canonical encoding of
+    its own projection, whose digest and subject manifest digest form the identifier.
+    """
+    try:
+        data = _read(root / "statuses", identifier + "/status.json")
+        record = _status_record(json.loads(data.decode("utf-8")))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    manifest = record["subject"]["manifest_sha256"]
+    if (record["schema"] is None or "id" in record or _encode(record) != data or manifest is None
+            or identifier != manifest[:12] + "-" + hashlib.sha256(data).hexdigest()[:12]):
+        return None
+    return {"id": identifier, **record}
+
+
 def _attached(root):
     """Map (area, id) to the newest status record bound to that publication's stored bytes.
 
-    False marks a publication with status records none of which matches its current
-    manifest and board hashes; a publication without records is absent (unknown).
+    The mutable statuses.json only names and orders the immutable status publications:
+    each record served is read from statuses/ID/status.json and verified against its
+    identity, the listing entry and the subject's current manifest and board hashes.
+    False marks a publication for which any listed record is missing, corrupt, differs
+    from its listing entry or does not match; a publication without records is absent
+    (unknown).
     """
     root = Path(root)
     try:
@@ -834,29 +930,48 @@ def _attached(root):
     except ValueError:
         listing = []
     found, digests = {}, {}
-    for record in map(_status_record, _items(listing)):
-        key = (record["subject"]["area"], record["subject"]["id"])
-        if record.get("id") is None or record["schema"] is None or None in key or found.get(key):
+    for entry in _items(listing):
+        listed = _status_record(entry)
+        key = (listed["subject"]["area"], listed["subject"]["id"])
+        if None in key:
             continue
+        record = _sealed(root, listed["id"]) if listed.get("id") is not None else None
         if key not in digests:
             try:
                 data = _read(root / key[0], key[1] + "/manifest.json")
                 project = _bundle if key[0] == "bundles" else _diagnostic
                 digests[key] = (hashlib.sha256(data).hexdigest(), project(json.loads(data.decode("utf-8")))["board_sha256"])
-            except (UnicodeDecodeError, ValueError):
+            except (OSError, UnicodeDecodeError, ValueError):
                 digests[key] = None
-        found[key] = record if digests[key] == (record["subject"]["manifest_sha256"],
-                                                record["subject"]["board_sha256"]) else False
+        if (record is None or record != listed
+                or digests[key] != (record["subject"]["manifest_sha256"], record["subject"]["board_sha256"])):
+            found[key] = False
+        elif key not in found:
+            found[key] = record
     return found
+
+
+def _claims(record):
+    """The claims shown for a verified record: each value whose cited evidence is bound (_cited), else None."""
+    defects, drc = record["open_defects"], record["drc"]
+    return {**{key: record[key]["value"] if _cited(record, record[key]["evidence"]) else None for key in _RECORDED},
+            "open_defects": {"count": defects["count"], "class": defects["class"]}
+            if None not in (defects["count"], defects["class"]) and _cited(record, defects["evidence"]) else None,
+            "drc": {"violations": drc["violations"], "raw_unconnected_items": drc["raw_unconnected_items"]}
+            if (drc["violations"], drc["raw_unconnected_items"]) != (None, None) and _cited(record, drc["evidence"]) else None,
+            "models": [{"reference": m["reference"],
+                        **{key: m[key] if _cited(record, m["evidence"]) else None
+                           for key in ("provenance", "transparency", "sha256")}}
+                       for m in record["models"] if m["reference"] is not None]}
 
 
 def _status_lines(state):
     """(badge class, badge text, status lines, evidence lines) for an attached record, False or None."""
     record = state if state else _status_record({})
+    claims = _claims(record)
     limits, lines = [], []
     for key, vocabulary in _RECORDED.items():
-        field = record[key]
-        value = field["value"] if _cited(record, field["evidence"]) else None
+        value = claims[key]
         if value is None:
             limits.append(f"{key.title()} unknown")
             lines.append(f"{key.title()}: unknown (not recorded)")
@@ -864,28 +979,25 @@ def _status_lines(state):
             text, limit = vocabulary[value]
             lines.append(f"{key.title()}: {text}")
             limits += [limit] if limit else []
-    defects = record["open_defects"]
-    if defects["count"] is None or defects["class"] is None or not _cited(record, defects["evidence"]):
+    defects = claims["open_defects"]
+    if defects is None:
         limits.append("Open defects unknown")
         lines.append("Open defects: unknown (not recorded)")
     else:
         lines.append(f"Open defects: {defects['count']} {_DEFECTS[defects['class']]} (recorded)")
         limits += [f"{defects['count']} open defects"] if defects["count"] else []
-    drc = record["drc"]
-    if _cited(record, drc["evidence"]) and (drc["violations"], drc["raw_unconnected_items"]) != (None, None):
+    drc = claims["drc"]
+    if drc is not None:
         violations, unconnected = ("unknown" if v is None else v for v in (drc["violations"], drc["raw_unconnected_items"]))
         lines.append(f"Native DRC (recorded report, not re-run by the gallery): {violations} violations; "
                      f"{unconnected} raw unconnected items (not an incomplete-net count)")
     else:
         lines.append("Native DRC report: unknown (not recorded)")
-    for model in record["models"]:
-        reference, cited = model["reference"], _cited(record, model["evidence"])
-        if reference is None:
-            continue
-        provenance, transparency = (model["provenance"], model["transparency"]) if cited else (None, None)
+    for model in claims["models"]:
+        reference, provenance, transparency = model["reference"], model["provenance"], model["transparency"]
         lines.append(f"Model {reference}: {_PROVENANCE.get(provenance, 'provenance unknown (not recorded)')}; "
                      f"{_TRANSPARENCY.get(transparency, 'transparency unknown (not verified)')}"
-                     + (f"; model SHA-256 {model['sha256']}" if cited and model["sha256"] else ""))
+                     + (f"; model SHA-256 {model['sha256']}" if model["sha256"] else ""))
         if provenance not in ("manufacturer", "mechanical"):
             limits.append(f"{reference} model " + ("datasheet-derived" if provenance else "provenance unknown"))
         limits += [] if transparency else [f"{reference} transparency unknown"]
@@ -994,9 +1106,11 @@ def page(index, supplements=(), *, diagnostic_only=False, latest=None, statuses=
 
 
 def _recorded(area, identifier, state):
-    """The served status of a publication: whether a record matches its bytes, and that record."""
+    """The served status of a publication: whether a verified record matches its bytes, that record, and
+    the claims the pages show from it (any value without bound, associated evidence is None)."""
     return {"subject": {"area": area, "id": identifier},
-            "attached": "matched" if state else "mismatched" if state is False else "none", "record": state or None}
+            "attached": "matched" if state else "mismatched" if state is False else "none", "record": state or None,
+            "shown": _claims(state) if state else None}
 
 
 def _with_status(data, identifier, state):
