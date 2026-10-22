@@ -791,11 +791,30 @@ report. Projects without a provenance binding retain their existing behavior;
 bound projects must carry a matching inventory. This verifies consistency with
 captured inputs, not the authenticity or applicability of a citation.
 
-Integration limitation (AGENTEE-437): a native KiCad save can materialize new
-geometry defaults without refreshing the binding. Exact verification then
-refuses evaluation. Existing IMU placement regressions expose this conflict
-with verdict preservation; resolving that producer boundary requires a
-coordinator decision before this grading change is integrated.
+Coordinator ruling 437a permits native-save materialization only for values in
+[a closed KiCad 10.0.7 default table](../src/agent_ee/native_geometry_defaults.py).
+Each entry cites its native capture and setting locator. The executable source
+is `NativeDefaultTableTest.test_pinned_native_defaults`: load an original minimal
+board beside an empty project using the pinned `/usr/bin/python3` `pcbnew`, then
+`SaveBoard` and enumerate the saved project's geometry settings. The regression
+compares all 104 entries against that native output, including tuning patterns,
+teardrops, zones and the native Default net class. These are observed facts;
+no KiCad implementation or third-party design/library files are copied.
+
+`geometry_emission` retains the exact `storage.json_bytes` serialization at
+emission, its SHA-256 and the table version. To avoid a self-referential digest,
+the serialized snapshot includes the project, sources and bound inventory but
+excludes only `geometry_emission` itself. The final emitted project carries this
+witness in its provenance envelope; the hash identifies the pre-witness bytes,
+not the final envelope's file digest. Grading verifies the snapshot digest,
+serialization and original provenance metadata, then re-derives both inventories
+from the emitted snapshot and saved project/rules. Every originally inventoried
+row must remain equal. An added row is equivalent only if its setting and value
+match the cited table; additions remain advisory and never acquire authority.
+Changed or removed rows, unknown/non-default additions, edited inventories and
+missing/altered witnesses refuse evaluation. Unbound legacy projects retain
+their previous handling. The snapshot is a consistency witness within immutable
+candidate inputs, not an independent signature or owner evidence store.
 
 This is an inventory of emitted project/rule settings, not of KiCad or router
 implementation constants, nor of explicit pad, zone or footprint geometry.

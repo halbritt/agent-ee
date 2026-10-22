@@ -969,7 +969,6 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
             owner_names = {str(n[1]) for n in rule_forms(read_captured(inputs, owner_rules), native=True)
                            if len(n) > 1 and n[0] == 'rule'}
             require_owner_rule_classes(constraint_record, PurePosixPath(owner_rules).name, owner_names)
-        bind_project(project, constraint_record, composed_rules)
         plans = sheet_plan(document, sch)
         generated = {path for path, _ in plans.values()} | {pcb}
         if set(scope.get('mutable_inputs', [])) - generated:
@@ -979,6 +978,11 @@ def scaffold(envelope_path, parts_path, out, *, scope_path=None, plan_path=None,
         seed = identity({'envelope': files[envelope_rel], 'parts': files[parts_rel]})
         root = str(uuid.uuid5(NAMESPACE, seed + ':root'))
         outputs = native_files(record, sch, project, root, seed, plans)
+        # Bind after the shared builder adds final filename and sheet metadata:
+        # the emission witness must describe emitted bytes, not the template.
+        project = strict_json(outputs[pro])
+        bind_project(project, constraint_record, composed_rules)
+        outputs[pro] = json_bytes(project)
         if net_artifacts:
             record_rel = str(PurePosixPath(pro).with_suffix('.net-constraints.record.json'))
             report = strict_json(net_artifacts['record'])

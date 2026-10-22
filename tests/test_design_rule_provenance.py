@@ -329,6 +329,100 @@ class FindingSourceTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'DRC constraint provenance:.*geometry inventory'):
                         drc_admissible(board.parent, board.name, report, '')
 
+    def test_emission_witness_and_materialization_boundaries(self):
+        import tempfile
+        import hashlib
+        from agent_ee.design_rule_provenance import bind_project, finding_sources, PROJECT_KEY
+        from agent_ee.native_geometry_defaults import DEFAULTS
+        with tempfile.TemporaryDirectory() as temporary:
+            board = Path(temporary) / 'design.kicad_pcb'
+            project = {'board': {'design_settings': {'track_widths': [0.37]}}}
+            record = {'settings': inventory(project)}
+            bind_project(project, record)
+            emission = record['geometry_emission']
+            self.assertEqual(hashlib.sha256(emission['project_bytes'].encode()).hexdigest(),
+                             emission['sha256'])
+            self.assertEqual(json.loads(emission['project_bytes'])[PROJECT_KEY],
+                             {k: v for k, v in record.items() if k != 'geometry_emission'})
+            for mutation in ('missing witness', 'hash', 'bytes', 'version', 'metadata',
+                             'removed', 'changed to native default', 'unknown addition',
+                             'nondefault addition', 'bool impersonation'):
+                with self.subTest(mutation=mutation):
+                    changed = copy.deepcopy(project)
+                    witness = changed[PROJECT_KEY]['geometry_emission']
+                    design = changed['board']['design_settings']
+                    if mutation == 'missing witness':
+                        del changed[PROJECT_KEY]['geometry_emission']
+                    elif mutation == 'hash':
+                        witness['sha256'] = '0' * 64
+                    elif mutation == 'bytes':
+                        witness['project_bytes'] += ' '
+                    elif mutation == 'version':
+                        witness['native_defaults_version'] = 'future'
+                    elif mutation == 'metadata':
+                        changed[PROJECT_KEY]['generated_rules'] = {}
+                    elif mutation == 'removed':
+                        del design['track_widths']
+                    elif mutation == 'changed to native default':
+                        design['track_widths'] = [0.0]
+                    elif mutation == 'unknown addition':
+                        design['future_geometry'] = False
+                    elif mutation == 'nondefault addition':
+                        design['zones_allow_external_fillets'] = True
+                    else:
+                        design['zones_allow_external_fillets'] = 0
+                    write_json(board.with_suffix('.kicad_pro'), changed)
+                    with self.assertRaisesRegex(ValueError, 'geometry inventory'):
+                        finding_sources(board)
+            # Every allowed addition is closed over a cited native setting/value;
+            # adding it must not refresh or enlarge the original binding.
+            for name, (value, citation) in DEFAULTS.items():
+                with self.subTest(native_default=name):
+                    changed = copy.deepcopy(project)
+                    parts = name.split('.')
+                    node = changed
+                    for part in parts[:-1]:
+                        if isinstance(node, list):
+                            index = 0 if part == 'Default' else int(part)
+                            while len(node) <= index:
+                                node.append({})
+                            node = node[index]
+                        else:
+                            node = node.setdefault(part, [] if part in {
+                                'track_widths', 'via_dimensions', 'diff_pair_dimensions',
+                                'teardrop_options', 'teardrop_parameters', 'classes'} else {})
+                    if isinstance(node, list):
+                        while len(node) <= int(parts[-1]):
+                            node.append(0.0)
+                        node[int(parts[-1])] = value
+                    else:
+                        node[parts[-1]] = value
+                    if name.startswith('net_settings.classes.'):
+                        changed['net_settings']['classes'][0]['name'] = 'Default'
+                    # Track preset index zero was explicitly emitted as 0.37:
+                    # materialization cannot excuse overwriting it.
+                    if name == 'board.design_settings.track_widths.0':
+                        continue
+                    self.assertIn('10.0.7', citation)
+                    write_json(board.with_suffix('.kicad_pro'), changed)
+                    finding_sources(board)
+                    self.assertEqual(changed[PROJECT_KEY], record)
+                    if type(value) is float and value.is_integer():
+                        node[int(parts[-1]) if isinstance(node, list) else parts[-1]] = int(value)
+                        write_json(board.with_suffix('.kicad_pro'), changed)
+                        finding_sources(board)
+
+    def test_empty_binding_refuses_while_unbound_legacy_stays_supported(self):
+        import tempfile
+        from agent_ee.design_rule_provenance import finding_sources, PROJECT_KEY
+        with tempfile.TemporaryDirectory() as temporary:
+            board = Path(temporary) / 'legacy.kicad_pcb'
+            write_json(board.with_suffix('.kicad_pro'), {})
+            finding_sources(board)
+            write_json(board.with_suffix('.kicad_pro'), {PROJECT_KEY: {}})
+            with self.assertRaisesRegex(ValueError, 'no valid settings inventory'):
+                finding_sources(board)
+
     def test_native_materialized_defaults_are_advisory_without_changing_bound_settings(self):
         import tempfile
         from agent_ee.design_rule_provenance import bind_project, finding_sources
@@ -445,6 +539,41 @@ class FindingSourceTest(unittest.TestCase):
             for name, cls in [('Default', 'default'), ('Owned', 'owner')]]}
         finding = {'type': 'clearance', 'description': 'Clearance violation ( clearance 0.2000 mm; actual 0.1500 mm)'}
         self.assertEqual(classify_finding(finding, sources)['constraint_provenance']['class'], 'default')
+
+
+class NativeDefaultTableTest(unittest.TestCase):
+    def test_pinned_native_defaults(self):
+        import tempfile
+        import subprocess
+        from agent_ee.native_geometry_defaults import DEFAULTS, VERSION
+        from agent_ee.design_rule_provenance import bind_project, finding_sources, PROJECT_KEY
+        require_toolchain(native=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            board = Path(temporary) / 'native.kicad_pcb'
+            # Original minimal board and empty project: no third-party fixtures.
+            board.write_text('(kicad_pcb (version 20260101) (generator "pcbnew") '
+                '(general (thickness 1.6)) (paper "A4") '
+                '(layers (0 "F.Cu" signal) (31 "B.Cu" signal) (44 "Edge.Cuts" user)))')
+            project = {}
+            record = {'settings': []}
+            bind_project(project, record)
+            write_json(board.with_suffix('.kicad_pro'), project)
+            script = ('import pcbnew,sys; '
+                'assert pcbnew.GetBuildVersion().startswith(sys.argv[2]); '
+                'b=pcbnew.LoadBoard(sys.argv[1]); pcbnew.SaveBoard(sys.argv[1],b)')
+            result = subprocess.run(['/usr/bin/python3', '-c', script, str(board), VERSION],
+                                    capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            saved = read_json(board.with_suffix('.kicad_pro'))
+            rows = geometry_defaults(saved, {})
+            self.assertEqual({r['setting']: r['value'] for r in rows},
+                             {name: value for name, (value, _) in DEFAULTS.items()})
+            self.assertEqual(saved[PROJECT_KEY], project[PROJECT_KEY])
+            finding_sources(board)
+            saved['board']['design_settings']['zones_allow_external_fillets'] = True
+            write_json(board.with_suffix('.kicad_pro'), saved)
+            with self.assertRaisesRegex(ValueError, 'geometry inventory'):
+                finding_sources(board)
 
 
 class NativeGeometryInventoryTest(PlaneFixture, unittest.TestCase):

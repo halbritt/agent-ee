@@ -2088,7 +2088,11 @@ by position without changing name-based owner DRC authority. Before grading,
 `finding_sources` re-derives and compares the bound inventory with the saved
 project and native rules. Missing, stale or edited inventory refuses DRC
 evaluation as unknown, even with no native violations. Valid inventories retain
-their existing verdicts. Projects without a provenance binding remain supported.
+their existing verdicts. Under ruling 437a, a bound emission snapshot and its
+hash anchor the original inventory; native-save additions are equivalent only
+when their values match the closed, cited KiCad 10.0.7 table. Removed/changed
+settings and unknown or non-default additions remain stale. Projects without a
+provenance binding remain supported.
 
 The placement comparison retains classified baseline and candidate findings,
 including baseline silk/text, and derives added numeric blockers from those

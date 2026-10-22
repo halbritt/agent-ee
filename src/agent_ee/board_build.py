@@ -26,7 +26,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from .storage import digest, read_json, write_json
+from .storage import digest, json_bytes, read_json, write_json
 
 ENVELOPE_SCHEMA = 'agent-ee.rung1-envelope/0-experimental'
 RECEIPT_SCHEMA = 'agent-ee.rung1-board-build-receipt/0-experimental'
@@ -501,7 +501,7 @@ def write_project(name, files, template_project, destination):
             if merged == project:
                 shutil.copyfile(path, target)
             else:
-                target.write_text(json.dumps(merged, indent=2) + '\n')
+                target.write_bytes(json_bytes(merged))
         else:
             shutil.copyfile(path, target)
 
