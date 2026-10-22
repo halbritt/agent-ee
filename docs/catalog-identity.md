@@ -197,14 +197,41 @@ index URL for the same LCSC id. The result is one of:
 The verdict is informational. It does not change the record and it grants no
 source authority.
 
+## Offline bouni split inspection and LCSC `pdfUrl`
+
+`catalog_bouni.inspect_split(manifest, root)` verifies an
+`agent-ee.catalog-bouni-split/1` manifest (`archive`, `member`, and `parts` with
+`path`, `size_bytes`, `sha256`) against numbered parts `NAME.zip.001 ... NNN`.
+It checks name pattern, contiguous numbering from 001, listed order, duplicates,
+unlisted parts on disk, regular-file status, size and SHA-256, then streams the
+parts into a private temporary file and requires a readable ZIP whose only
+member is the declared one. It reports counts and sizes, and never reads the
+member as a catalog. Every refusal is a `BouniRefusal` with a typed `reason`
+(`missing_part`, `reordered_parts`, `duplicate_part`, `checksum_mismatch`,
+`size_mismatch`, `archive_truncated`, `unlisted_part`, `manifest_malformed`, ...).
+The layout is an owner-authored description, not qualified against the real
+feed, which is not fetched.
+
+`catalog_bouni.lcsc_pdf_url(raw, lcsc)` reads `result.pdfUrl` from retained LCSC
+response bytes for the exact `result.productCode`. It returns the stripped
+string, or None when absent, null, blank or for another part; a non-string value
+or a malformed response is refused. The URL is recorded and never fetched.
+
+`catalog_bouni.passive_boundary(families)` is the explicit input for the family
+set treated as passive (subset of resistor, capacitor, inductor). It has no
+default and refuses a missing or invalid value. The current identity index still
+excludes exactly R/C/L; whether that boundary is intended is **pending owner
+confirmation**.
+
 ## Limits
 
 - The `dataManualUrl` field name is unqualified against live JLCPCB responses
-  until an owner-run capture shows it. The `pdfUrl` field of LCSC responses is
-  not read.
-- The bouni/kicad-jlcpcb-tools split-archive format is not supported. Its layout
-  has not been inspected or qualified offline. Only the pinned jlcparts
-  `source-db-v2` layout is accepted.
+  until an owner-run capture shows it. The LCSC `pdfUrl` is read offline only
+  (see below) and its response shape is likewise unqualified.
+- The bouni/kicad-jlcpcb-tools format is inspected offline against an
+  owner-authored layout and synthetic archives only (see below). No importer
+  exists for it; only the pinned jlcparts `source-db-v2` layout is accepted.
+- The R/C/L boundary is pending owner confirmation.
 - A full-feed capture and its size, runtime and row counts have not been
   qualified. The 1 GiB derived-database limit of the catalog importer applies.
   Committed tests use owned synthetic multi-category archives only.
