@@ -998,18 +998,30 @@ TEMPERATURE_FILES = frozenset({"operating-temperature-acceptances.txt", "operati
                                "operating-temperature-exemptions.txt"})
 TEMPERATURE_EXCEPTION_SCOPE = "operating_temperature_selection_exception"
 # Owner grants of delegated engineering authority (AGENTEE-310). A captured delegation is recognized only
-# when it names one of these by kind, repository and commit and its cited list item is byte-identical to the
-# item the owner committed there. Grants are pinned only by a reviewed agent-ee change that traced the item
-# to the owner's commit; text a deciding agent writes, copies or captures never extends this table.
+# when it names one of these by kind, repository and commit, its cited list item is byte-identical to the
+# item the owner committed there, and the whole captured file is one of the approved owner snapshots: the
+# complete AGENTS.md (full-file SHA-256) at an owner commit whose surrounding text was reviewed to leave the
+# grant unconditional and in force. A newly composed file that quotes, fences, conditions or rescopes the
+# item is not a snapshot. Grants and snapshots are pinned only by a reviewed agent-ee change that traced them
+# to the owner's commits; text a deciding agent writes, copies or captures never extends this table.
 OWNER_GRANTS = {
     ("repository_agents_md", "github.com/halbritt/fome-mc", "3f959131abca2dd9d40400496f3f6ebac9d363f5"): {
         # AGENTS.md "Owner-reserved decisions are made autonomously, not parked." (owner direction 2026-10-20)
         "path": "AGENTS.md", "author": "halbritt <halbritt@gmail.com>",
         "item_sha256": "4087feebb9654f736f4eba5cc0401df9faa9cf7c819e2f4c83f039815033b569",
-        "scopes": (TEMPERATURE_EXCEPTION_SCOPE,)},
+        "scopes": (TEMPERATURE_EXCEPTION_SCOPE,),
+        # Full-file SHA-256 -> the owner commit that wrote that AGENTS.md. fb1aa094 only adds the separate
+        # gating-provenance item after the grant; the pod commit 7ab81564 carries the fb1aa094 file unchanged.
+        "snapshots": {
+            "36b520a0d29200075454ba29dea7993f3df246645738231c1d4555e404b6ab01":
+                "3f959131abca2dd9d40400496f3f6ebac9d363f5",
+            "31a0b80e72a2f03498e96580a929d8056348ee119ca89f874c45586999e745df":
+                "fb1aa0949b865efbdcd386b6de34e6da54b9dcd1"}},
 }
 # Decisions recorded under a pinned owner grant, each with the exact part it authorizes. record_sha256 is the
-# SHA-256 of the decision's JSON member ("key": "text", unescaped UTF-8) at the recording commit. Registered
+# SHA-256 of the decision's JSON member ("key": "text", unescaped UTF-8) at the recording commit; snapshots
+# are the approved complete decision files (full-file SHA-256 -> owner commit), the recording commit's and
+# the pod commit's, in which no other record withdraws, conditions or rescopes the decision. Registered
 # under agent-509 request A (2026-10-22), which names D-PCB-9 and D-PCB-12 as the pod use case.
 DELEGATED_DECISIONS = {
     ("github.com/halbritt/fome-mc", "D-PCB-9"): {
@@ -1020,7 +1032,12 @@ DELEGATED_DECISIONS = {
         "scope": TEMPERATURE_EXCEPTION_SCOPE, "reference": "U3", "subject": "U3 u-blox NEO-M9N",
         "min_c": Decimal("-40"), "max_c": Decimal("85"), "mpn": "NEO-M9N-00B", "manufacturer": "u-blox",
         "normalization": "the decision names the NEO-M9N product; NEO-M9N-00B is its ordering code, the "
-                         "pod schematic part number"},
+                         "pod schematic part number",
+        "snapshots": {
+            "6fdb9ecbb8a37b23c6cb63c75bf4b1b0a038811e42eb4c80e4e14e8ce8b02f5d":
+                "40bb1374cd251c338a60f8602e1ae8c208042199",
+            "e7e095b3ca595fdfb3c73fc22ad87c326fbc1c152523e85f2da4df4d908ea2e4":
+                "7ab81564dd638ed68b664f3036a78187ce5760bd"}},
     ("github.com/halbritt/fome-mc", "D-PCB-12"): {
         "grant_commit": "3f959131abca2dd9d40400496f3f6ebac9d363f5",
         "commit": "b6ba9a09e7b4f572a3d8e5ad109107fd30ccc5c5",
@@ -1028,7 +1045,12 @@ DELEGATED_DECISIONS = {
         "record_sha256": "97c4530f63f0d0937314cb2086d990e05f54c494b046cd21ec7352d3d2262ebb",
         "scope": TEMPERATURE_EXCEPTION_SCOPE, "reference": "J3", "subject": "J3 Hirose DM3AT-SF-PEJM5",
         "min_c": Decimal("-25"), "max_c": Decimal("85"), "mpn": "DM3AT-SF-PEJM5",
-        "manufacturer": "Hirose Electric Co Ltd", "normalization": None},
+        "manufacturer": "Hirose Electric Co Ltd", "normalization": None,
+        "snapshots": {
+            "e375e19c3df7f4f66b6bdaf710fa1c33a73987d1fa7d037f7c699e3d1ec5b17a":
+                "b6ba9a09e7b4f572a3d8e5ad109107fd30ccc5c5",
+            "e7e095b3ca595fdfb3c73fc22ad87c326fbc1c152523e85f2da4df4d908ea2e4":
+                "7ab81564dd638ed68b664f3036a78187ce5760bd"}},
 }
 
 
@@ -1282,6 +1304,14 @@ def _verify_delegated_acceptance(inputs_root, ref, record, captured_files, evide
     if hashlib.sha256("\n".join(unit).encode("utf-8")).hexdigest() != record["grant"]["item_sha256"]:
         raise ValueError(f"{ref} delegation statement in {rel!r} is not the owner grant committed at "
                          f"{delegation['repository']} {delegation['commit']}")
+    # The grant authorizes only in its owner context: both whole files must be approved owner snapshots, so a
+    # composed file that quotes, conditions or rescopes the exact item or decision is never authority.
+    if delegation["sha256"] not in record["grant"]["snapshots"]:
+        raise ValueError(f"{ref} delegation source {rel!r} is not an approved owner snapshot of "
+                         f"{delegation['repository']} {record['grant']['path']}; the grant's context is unverified")
+    if decision["sha256"] not in registered["snapshots"]:
+        raise ValueError(f"decision {decision['id']} source {decision['source']!r} is not an approved snapshot of "
+                         f"{delegation['repository']} {registered['path']}; the decision's context is unverified")
     # The decision authorizes one exact part: the evaluated part must be it, by MPN and manufacturer.
     if evidence["mpn"] != registered["mpn"] or evidence["manufacturer"].casefold() != \
             registered["manufacturer"].casefold():

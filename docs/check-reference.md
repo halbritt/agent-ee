@@ -1732,8 +1732,11 @@ repository_agents_md`, repository, owner commit, source, sha256, line, quote).
 Authority comes only from grants pinned in agent-ee by owner commit and item
 hash (`OWNER_GRANTS`), and from decisions registered there by member hash with
 their reference, range and exact MPN and manufacturer (`DELEGATED_DECISIONS`).
-A captured grant or decision that differs from the pinned bytes, an
-unregistered decision or a different evaluated part is refused or unknown.
+A captured grant or decision that differs from the pinned bytes, a whole
+grant or decision file that is not an approved owner snapshot (full-file
+SHA-256), an unregistered decision or a different evaluated part is refused or
+unknown. So the exact item placed in a newly composed, fenced, conditional or
+rescoped context never authorizes.
 Owner, withdrawn or non-autonomous decisions, `authority: owner`, unrecognized
 kinds and self-citing or temperature-file sources are refused. Ratings and thermal
 evidence are judged exactly as for owner acceptance

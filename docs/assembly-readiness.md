@@ -457,7 +457,11 @@ agent-ee commit:
 - `OWNER_GRANTS` pins each recognized owner grant by kind, repository and the
   owner's commit, with the grant file path, the commit author and the SHA-256
   of the exact `- ` list item (with its indented continuation lines) at that
-  commit. It also lists the scopes the grant covers.
+  commit. It also lists the scopes the grant covers and its approved
+  `snapshots`: the full-file SHA-256 of each complete grant file the owner
+  committed, mapped to that commit. A snapshot is approved only after review
+  confirms that its surrounding text leaves the grant unconditional and in
+  force.
 - `DELEGATED_DECISIONS` registers each decision made under a pinned grant by
   repository and id. An entry holds the recording commit and path, the SHA-256
   of the decision's JSON member (`"key": "text"` as unescaped UTF-8), the scope
@@ -465,7 +469,9 @@ agent-ee commit:
   covers. It also holds the decision's subject text, the decided range, and
   the exact authorized part: the MPN and the DigiKey manufacturer name.
   `normalization` records any visible difference between the stated name and
-  the exact MPN.
+  the exact MPN. Its `snapshots` are the approved complete decision files, by
+  full-file SHA-256: the recording commit's file and the pod commit's file. In
+  neither does another record withdraw, condition or rescope the decision.
 
 The pod entries are the fome-mc grant from owner commit
 `3f959131abca2dd9d40400496f3f6ebac9d363f5` (AGENTS.md lines 19-26) and the
@@ -474,13 +480,22 @@ two decisions agent-509 request A names. D-PCB-9 was recorded at
 NEO-M9N-00B at -40 to 85 degC. The decision names the NEO-M9N product, and
 NEO-M9N-00B is its ordering code and the pod's schematic part number. D-PCB-12
 was recorded at `b6ba9a09e7b4f572a3d8e5ad109107fd30ccc5c5` and authorizes J3
-Hirose Electric Co Ltd DM3AT-SF-PEJM5 at -25 to 85 degC.
+Hirose Electric Co Ltd DM3AT-SF-PEJM5 at -25 to 85 degC. The approved
+AGENTS.md snapshots are the grant commit's file and the file from owner commit
+`fb1aa0949b865efbdcd386b6de34e6da54b9dcd1`. That commit only adds the separate
+gating-provenance item after the grant, and pod commit
+`7ab81564dd638ed68b664f3036a78187ce5760bd` carries its file unchanged. The
+approved decision files are `constraints.json` at each recording commit and at
+`7ab81564dd638ed68b664f3036a78187ce5760bd`.
 `tests.test_assembly_readiness` traces every entry back to the fome-mc object
 store. It checks that the grant commit's author and committer are the owner,
 that `git blame` attributes every line of the item to that commit, that each
 decision member hashes as registered at its recording commit and at the pod
-commit, and that the grant commit precedes each decision. Adding a grant or
-decision needs that same trace, plus an authorization recorded outside the
+commit, and that the grant commit precedes each decision. It also checks that
+every snapshot hash is the complete file at its owner commit, that each grant
+snapshot descends from the grant and holds the identical item, and that each
+decision snapshot holds the registered member. Adding a grant, decision or
+snapshot needs that same trace, plus an authorization recorded outside the
 deciding agent's own files.
 
 #### Validation
@@ -530,6 +545,17 @@ At evaluation, each failure below makes the reference unknown:
   look for words such as "autonomously". A prohibition, an unrelated or
   ambiguous statement, a new grant added to the same file, or the owner's item
   with one word changed or one line dropped is not the grant.
+- **Context.** The whole captured delegation file and the whole decision file
+  must each be an approved snapshot. Otherwise the reference is unknown,
+  because the grant's or decision's context is unverified. Suppose a newly
+  composed file holds the exact owner item or decision member, but fences it as
+  a historical example, sets a condition the owner never met, puts it under a
+  heading that scopes it to another part, or adds a record that rescopes the
+  decision. That file is refused even if the agent repins its hash and
+  locator. A byte-exact copy of an approved snapshot keeps its provenance
+  wherever it is captured from, including an untracked scratch directory or a
+  file newly staged on the deciding branch, because its full-file hash is
+  traced to the owner commit. One changed byte makes it unknown.
 - **Part identity.** The DigiKey record's MPN must equal the registered MPN, and
   its manufacturer must equal the registered manufacturer (case-insensitive).
   The existing binding already ties the schematic part number and

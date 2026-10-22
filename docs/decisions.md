@@ -523,6 +523,16 @@ traces it to the owner's commit, and the tests repeat that trace against the
 fome-mc object store. See
 [the authority anchor](assembly-readiness.md#authority-anchor).
 
+Review of the anchored form (ee310e HOLD H1) found that the exact grant item
+still authorized when an agent placed it in a newly composed AGENTS.md: fenced
+as a revoked historical example, under an unmet owner-approval condition, or
+under a heading that scoped it to another part. The pinned item alone did not
+carry its context. Each pinned grant and registered decision now also lists
+its approved owner `snapshots` by full-file SHA-256. Both whole captured files
+must be one of these snapshots, so a grant authorizes only in the owner context
+that was reviewed. Byte-exact copies keep their provenance, wherever they were
+captured from.
+
 
 ## Copper locality and captured policy binding (AGENTEE-328)
 

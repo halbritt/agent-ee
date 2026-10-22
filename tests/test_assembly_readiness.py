@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from agent_ee import executor
 from agent_ee.assembly_readiness import (
+    OWNER_GRANTS,
     AssemblyReadinessExecutionError,
     evaluate_assembly_readiness,
     campaign_stock_context,
@@ -185,6 +186,10 @@ def agents_items(text):
                 unit.append(more)
             items[hashlib.sha256("\n".join(unit).encode("utf-8")).hexdigest()] = (n + 1, len(unit))
     return items
+
+
+# The pinned owner grant item of the pod's AGENTS.md (AGENTEE-310).
+OWNER_GRANTS_ITEM = next(iter(OWNER_GRANTS.values()))["item_sha256"]
 
 
 class AssemblyReadinessTests(unittest.TestCase):
@@ -1968,11 +1973,102 @@ class AssemblyReadinessTests(unittest.TestCase):
             record["delegation"]["sha256"] = digest(agents)
         self.refused(netlist, params, "U3", "is not the owner grant committed at")
 
+    def test_delegated_temperature_grant_context_is_an_approved_owner_snapshot(self):
+        # AGENTEE-310 H1 (ee310e review): the exact pinned grant item or decision record authorizes only inside an
+        # approved owner snapshot of its whole file; a newly composed source that quotes, conditions or rescopes
+        # it is unknown through capture and run_checks, whatever hash and locator the declaring agent repins.
+        refused = "is not an approved owner snapshot of github.com/halbritt/fome-mc AGENTS.md"
+        def compose(agents, decisions=None):
+            _, params = self.pod_temperature_case(thermal=80)
+            path = self.root / "pod/AGENTS.md"
+            original = path.read_text(encoding="utf-8")
+            lines = original.removesuffix("\n").split("\n")
+            item = lines[18:18 + agents_items(original)[OWNER_GRANTS_ITEM][1]]
+            text, line = agents(lines, item)
+            path.write_text(text, encoding="utf-8")
+            for record in params["operating_temperature"]["delegated_acceptance"].values():
+                record["delegation"].update(sha256=digest(path), line=line)
+                self.assertEqual(lines[18], text.split("\n")[line - 1])
+            if decisions is not None:
+                target = self.root / self.DECISIONS
+                doc = read_json(target)
+                doc["decisions"] = decisions(doc["decisions"])
+                target.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                for record in params["operating_temperature"]["delegated_acceptance"].values():
+                    record["decision"].update(sha256=digest(target),
+                                              line=self.decision_line(record["decision"]["id"]))
+            return params
+        cases = {
+            "fenced historical example": lambda lines, item: (
+                "# Historical example only; do not apply this revoked grant.\n\n```markdown\n" +
+                "\n".join(item) + "\n```\n", 4),
+            "unmet external condition": lambda lines, item: (
+                "# Authority applies only if the owner separately approves U3 and J3; no such approval exists.\n\n" +
+                "\n".join(item) + "\n", 3),
+            "other-part scope": lambda lines, item: (
+                "\n".join(lines[:18] + ["## Applies only to R99; grants no authority for U3 or J3", ""] +
+                           lines[18:]) + "\n", 21)}
+        for label, agents in cases.items():
+            with self.subTest(label=label):
+                params = compose(agents)
+                self.captured_refusal(params, label.replace(" ", "-"), {"U3": refused, "J3": refused})
+        # The genuine AGENTS.md with a decision file whose other records rescope D-PCB-9 and D-PCB-12: the
+        # registered members are unchanged, the decision context is not an approved snapshot.
+        params = compose(lambda lines, item: ("\n".join(lines) + "\n", 19), lambda decisions: {
+            **decisions, "D-PCB-99 scope of D-PCB-9 and D-PCB-12 (2026-10-22)":
+                "D-PCB-9 and D-PCB-12 apply only to R99; they grant no exception for U3 or J3."})
+        self.captured_refusal(params, "decision-scope", {
+            "U3": "decision D-PCB-9 source 'pod/telemetry-pod/expansion/design-rules/constraints.json' is not an "
+                  "approved snapshot", "J3": "decision D-PCB-12 source"})
+
+    def test_delegated_temperature_owner_snapshot_copies_keep_provenance(self):
+        # Byte-exact copies of approved owner snapshots keep their verified provenance wherever they sit: an
+        # untracked scratch copy and one newly staged on the deciding branch both pass; one changed byte does not.
+        _, params = self.pod_temperature_case(thermal=80)
+        shutil.copytree(self.root / "pod", self.root / "worker-scratch")
+        for record in params["operating_temperature"]["delegated_acceptance"].values():
+            for field in ("decision", "delegation"):
+                record[field]["source"] = record[field]["source"].replace("pod/", "worker-scratch/", 1)
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-C", str(self.root)]
+        subprocess.run([*git, "init", "-q"], check=True)
+        self.assertNotEqual(subprocess.run([*git, "ls-files", "--error-unmatch", "worker-scratch/AGENTS.md"],
+                                           capture_output=True).returncode, 0)
+        _, result = self.captured_run(params, "untracked")
+        self.assertEqual((result["execution"], result["outcome"]), ("ok", "pass"), result["summary"])
+        subprocess.run([*git, "add", "worker-scratch"], check=True)
+        staged = subprocess.run([*git, "diff", "--cached", "--name-status"], capture_output=True, text=True,
+                                check=True).stdout
+        self.assertIn("A\tworker-scratch/AGENTS.md", staged)
+        _, result = self.captured_run(params, "staged")
+        self.assertEqual((result["execution"], result["outcome"]), ("ok", "pass"), result["summary"])
+        agents = self.root / "worker-scratch/AGENTS.md"
+        agents.write_bytes(agents.read_bytes() + b"\n")
+        for record in params["operating_temperature"]["delegated_acceptance"].values():
+            record["delegation"]["sha256"] = digest(agents)
+        refused = "is not an approved owner snapshot"
+        self.captured_refusal(params, "changed-copy", {"U3": refused, "J3": refused})
+
+    def test_delegated_temperature_grant_commit_snapshot_accepted(self):
+        # The owner's grant commit AGENTS.md, an earlier approved snapshot, authorizes like the pod commit's.
+        repository = Path(os.environ.get("AGENT_EE_FOME_MC_CHECKOUT", Path.home() / "git/fome-mc"))
+        fome_mc_store(repository, self.GRANT_COMMIT)
+        netlist, params = self.pod_temperature_case(thermal=80)
+        agents = self.root / "pod/AGENTS.md"
+        agents.write_bytes(subprocess.run(["git", "-C", str(repository), "show", f"{self.GRANT_COMMIT}:AGENTS.md"],
+                                          capture_output=True, check=True).stdout)
+        line = agents_items(agents.read_text(encoding="utf-8"))[OWNER_GRANTS_ITEM][0]
+        for record in params["operating_temperature"]["delegated_acceptance"].values():
+            record["delegation"].update(sha256=digest(agents), line=line)
+        report = self.evaluate(netlist, params)
+        self.assertEqual(report["outcome"], "pass", report["findings"])
+
     def test_delegated_temperature_registry_traces_to_owner_commits(self):
         # Every pinned grant is the owner's committed item and every registered decision its recorded text.
-        from agent_ee.assembly_readiness import DELEGATED_DECISIONS, OWNER_GRANTS
+        from agent_ee.assembly_readiness import DELEGATED_DECISIONS
         repository = Path(os.environ.get("AGENT_EE_FOME_MC_CHECKOUT", Path.home() / "git/fome-mc"))
-        commits = {key[2] for key in OWNER_GRANTS} | {d["commit"] for d in DELEGATED_DECISIONS.values()}
+        commits = ({key[2] for key in OWNER_GRANTS} | {d["commit"] for d in DELEGATED_DECISIONS.values()} |
+                   {c for g in OWNER_GRANTS.values() for c in g["snapshots"].values()} |
+                   {c for d in DELEGATED_DECISIONS.values() for c in d["snapshots"].values()})
         fome_mc_store(repository, self.POD_COMMIT, *sorted(commits))
         def git(*args):
             return subprocess.run(["git", "-C", str(repository), *args], capture_output=True, text=True,
@@ -1990,14 +2086,32 @@ class AssemblyReadinessTests(unittest.TestCase):
                                  {commit})
                 # The pod commit the tests read still carries the identical owner item, at line 19.
                 self.assertEqual(pod_items[grant["item_sha256"]][0], 19)
+                # Every approved snapshot is the complete AGENTS.md an owner commit wrote, descended from the
+                # grant and carrying the identical item; the pod commit's file is one of them.
+                for sha, snapshot in grant["snapshots"].items():
+                    self.assertEqual(git("log", "-1", "--format=%an <%ae>|%cn <%ce>", snapshot).strip(),
+                                     f"{grant['author']}|{grant['author']}")
+                    self.assertEqual(git("log", "-1", "--format=%H", snapshot, "--", grant["path"]).strip(), snapshot)
+                    self.assertEqual(subprocess.run(["git", "-C", str(repository), "merge-base", "--is-ancestor",
+                                                     commit, snapshot]).returncode, 0)
+                    text = git("show", f"{snapshot}:{grant['path']}")
+                    self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), sha)
+                    self.assertIn(grant["item_sha256"], agents_items(text))
+                self.assertIn(self.POD_FILES["AGENTS.md"], grant["snapshots"])
         for (repo, decision_id), decision in DELEGATED_DECISIONS.items():
             with self.subTest(decision=decision_id):
                 self.assertEqual(repo, self.POD_REPOSITORY)
                 self.assertEqual(decision["commit"], self.DECISION_COMMITS[decision_id])
                 self.assertEqual(subprocess.run(["git", "-C", str(repository), "merge-base", "--is-ancestor",
                                                  decision["grant_commit"], decision["commit"]]).returncode, 0)
+                # The approved decision files are exactly the recording commit's and the pod commit's.
+                self.assertEqual(sorted(decision["snapshots"].values()), sorted({decision["commit"], self.POD_COMMIT}))
                 for commit in (decision["commit"], self.POD_COMMIT):
-                    recorded = json.loads(git("show", f"{commit}:{decision['path']}"))["decisions"]
+                    blob = git("show", f"{commit}:{decision['path']}")
+                    self.assertEqual(decision["snapshots"][hashlib.sha256(blob.encode()).hexdigest()], commit)
+                    self.assertEqual(git("log", "-1", "--format=%an <%ae>", commit).strip(),
+                                     OWNER_GRANTS[("repository_agents_md", repo, decision["grant_commit"])]["author"])
+                    recorded = json.loads(blob)["decisions"]
                     key = next(k for k in recorded if k.startswith(decision_id + " "))
                     member = json.dumps(key, ensure_ascii=False) + ": " + json.dumps(recorded[key], ensure_ascii=False)
                     self.assertEqual(hashlib.sha256(member.encode()).hexdigest(), decision["record_sha256"], commit)
