@@ -41,18 +41,31 @@ def classify(pair, records=None):
         return {**result, 'class': 'default'}
     if not isinstance(provenance.get('basis'), str) or not provenance['basis'].strip():
         return result
+    # The same citation model and value binding as the design-rule import (AGENTEE-348):
+    # the declared maximum, in exact millimetres, must be the governed value.
+    bound = pair.get('max_distance_nm')
+    values = [Fraction(bound, 10 ** 6)] if type(bound) is int and bound >= 0 else []
     if result['class'] == 'manufacturer':
+        # A captured manufacturing floor never qualifies an unsourced maximum: only a
+        # resolving manufacturer citation of this bound makes it a feasibility limit.
+        resolved = source_authority.cite('manufacturer', provenance.get('citation'), records, values)
+        if resolved['enforcement'] == 'integrity':
+            return {**result, **resolved}
+        if resolved['enforcement'] != 'hard':
+            return {**result, 'reason': resolved['reason']}
         return {**result, 'enforcement': 'feasibility',
                 'reason': 'Captured manufacturing minimum cannot establish an electrical maximum'}
     if result['class'] == 'owner':
-        # Hard only at a pinned owner commit; a verified but uncommitted, stale or
-        # unresolvable decision is advisory with its reason (AGENTEE-348).
-        verification = source_authority.owner_decision(provenance.get('decision_reference'), records)
+        # Hard only at a pinned owner commit whose decision states this bound; a verified but
+        # uncommitted, stale, unresolvable or value-mismatched decision is advisory with its reason.
+        decision = provenance.get('decision_reference')
+        verification = source_authority.cite('owner', {**decision, 'kind': 'owner_decision'}
+                                             if isinstance(decision, dict) else None, records, values)
         if verification['enforcement'] == 'integrity':
             return {**result, **verification}
         if verification['enforcement'] == 'hard':
             return {**result, 'enforcement': 'hard', 'reason': 'explicit owner decision reference'}
-        if source_authority.reference(provenance.get('decision_reference')):
+        if source_authority.reference(decision):
             return {**result, 'reason': verification['reason']}
     if result['class'] == 'datasheet':
         derivation = provenance.get('derivation', {})

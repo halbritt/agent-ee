@@ -1635,7 +1635,10 @@ not admitted. An owner label without the recorded decision stays advisory.
 Under AGENTEE-348 the decision must also name a `repository` and a 40-hex
 `commit` pinned in `source_authority.OWNER_DECISIONS` with the same SHA-256.
 An uncommitted, unresolvable or stale decision is advisory, and its `reason`
-says which. These are the same functions the
+says which. The decision `quote` must also state `max_distance_nm` exactly, as an
+`nm` or `mm` token (review H2). Otherwise the bound is advisory with
+`cited quote does not state the declared value`, exactly as in the design-rule
+import. These are the same functions the
 [design-rule import](scaffold.md#declared-design-rule-sources-agentee-331) uses.
 This checks the retained decision reference, not authenticated authorship.
 Original tests use explicit fixture-author decisions to retain their numerical
@@ -1643,6 +1646,13 @@ contracts; those decisions establish no real hardware requirements. A test
 commits each one to a private temporary repository, checks the commit and bytes
 with `verify_committed` and pins it only in the test process
 (`tests/owner_fixture.py`).
+
+A `manufacturer` pair is a feasibility limit only when its `provenance.citation`
+resolves through `source_authority.cite` against `max_distance_nm` (review H4).
+A label and basis alone are advisory, with the reason
+`free-text manufacturer label without a resolvable citation`. The captured floor
+is still computed and reported as `below_floor`. The floor never qualifies an
+unsourced maximum.
 
 For `manufacturer`, the pinned original numeric records in
 `src/agent_ee/data/jlcpcb-locality.json` retain host capture URLs, timestamps,

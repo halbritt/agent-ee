@@ -724,9 +724,19 @@ does)" (class owner-relayed).
   docstring justification.
 
 Agent reasoning, flagged for review. `OWNER_DECISIONS` ships empty: no reviewed
-owner commit is pinned yet. Captured `.kicad_dru` owner rules keep their
-existing file-hash authority (AGENTEE-331/437). Demoting them would change
-verdicts outside the ruling, so that question is left open for a separate ruling.
+owner commit is pinned yet.
+
+The independent review of eea5a23c (Sol, HOLD H1–H5) was closed under the
+dispatcher boundary ruling. That ruling is agent-449's and is not an owner
+statement: it permits only stricter test expectations, and every changed
+expectation is listed. The closing changes:
+
+- A captured `.kicad_dru` rule no longer gains owner authority from its file.
+- Locality owner bounds are value-bound like the design-rule import.
+- Generated custom rules qualify against their emitted payload.
+- An uncited locality manufacturer maximum is advisory.
+- A builtin manufacturer capture qualifies only its recorded numeric fact.
+  `manufacturer_source` is the captured-document form of manufacturer evidence.
 The physical-intent compiler keeps its existing owner precondition. That is a
 verified captured decision by a named non-agent owner, and it compiles to
 `authority_unavailable`, so it never enforces.

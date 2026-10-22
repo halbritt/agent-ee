@@ -10,7 +10,7 @@ from agent_ee.design_rule_provenance import classify_finding, import_constraints
 from agent_ee.placer_runner import _proposal_drc
 from agent_ee.storage import json_bytes, read_json, write_json
 from tests.toolchain import require_toolchain
-from owner_fixture import cite
+from owner_fixture import bind_owner_rules, cite
 
 
 class NativeOutlineTest(unittest.TestCase):
@@ -313,6 +313,7 @@ class NativeOutlineTest(unittest.TestCase):
             self.assertTrue(text)
             self.assertTrue(all(v['constraint_provenance']['class'] == cls for v in text))
         path.with_suffix('.kicad_dru').write_text('(version 1)\n(rule "owner text" (constraint text_height (min 9mm)))\n')
+        bind_owner_rules(path)  # AGENTEE-348 H1 migration: the owner rule is declared and cited
         drc = native_drc(path, self.root / 'owner')
         text = [v for v in drc['report']['violations'] if v['type'] == 'text_height']
         self.assertTrue(any(v['constraint_provenance']['class'] == 'owner' for v in text))

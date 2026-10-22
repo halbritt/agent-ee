@@ -335,6 +335,8 @@ class SublayoutProvenanceTests(unittest.TestCase):
     def test_project_custom_rule_reaches_drc_and_grades_as_owner(self):
         rules = b"(version 1)\n(rule ee399_wide\n\t(constraint track_width (min 1mm)))\n"
         board = self.project({'.kicad_dru': rules})
+        from owner_fixture import bind_owner_rules
+        bind_owner_rules(board)  # AGENTEE-348 H1 migration: the owner rule is declared and cited
         record, group = self.reg_a(board)
         for finding in self.widths(group):
             provenance = finding['constraint_provenance']

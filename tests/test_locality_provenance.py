@@ -7,7 +7,7 @@ from agent_ee import electrical_locality as locality, locality_provenance
 from agent_ee.placer import pack, transform
 from test_electrical_locality import board, declaration, MM
 from test_placer import request
-from owner_fixture import committed
+from owner_fixture import citation, committed
 
 
 def source(text='Original numeric requirement: 1 mm'):
@@ -241,8 +241,12 @@ class LocalityProvenanceTests(unittest.TestCase):
         facts['footprints'][1]['pads'][1]['size_nm'] = [1000000, 1000000]
         facts['footprints'][0]['fpid'] = 'Owned:SOIC-8_Original'
         facts['footprints'][1]['fpid'] = 'Owned:C_0603_Original'
+        # AGENTEE-348 H4: only a cited manufacturer bound is a feasibility limit.
+        text = 'Original fixture fabricator limit: 0.149999 mm'
+        doc['source_records'] = {**doc['source_records'], 'fixture-sources/fab.txt': text}
         for role in ('supply', 'return'):
-            doc['obligations'][0][role]['provenance'] = {'class': 'manufacturer', 'basis': 'JLCPCB spacing'}
+            doc['obligations'][0][role]['provenance'] = {'class': 'manufacturer', 'basis': 'JLCPCB spacing',
+                'citation': citation('manufacturer', text, 'fixture-sources/fab.txt')}
         result = locality.grade(facts, doc)
         self.assertEqual(result['status'], 'defect', result)
         self.assertEqual([d['kind'] for d in result['defects']], ['locality_infeasible']*2)
@@ -264,8 +268,12 @@ class LocalityProvenanceTests(unittest.TestCase):
         from unittest.mock import patch
         from agent_ee import locality_provenance
         facts, doc = board(), declaration(limit=MM)
+        # AGENTEE-348 H4: a cited manufacturer bound, so the floor is required evidence.
+        text = 'Original fixture fabricator limit: 1 mm'
+        doc['source_records'] = {**doc['source_records'], 'fixture-sources/fab.txt': text}
         for role in ('supply', 'return'):
-            doc['obligations'][0][role]['provenance'] = {'class': 'manufacturer', 'basis': 'Captured PCB clearance'}
+            doc['obligations'][0][role]['provenance'] = {'class': 'manufacturer', 'basis': 'Captured PCB clearance',
+                'citation': citation('manufacturer', text, 'fixture-sources/fab.txt')}
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for content in (None, b'{}'):

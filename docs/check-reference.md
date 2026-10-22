@@ -2201,9 +2201,12 @@ a captured record by hash, locator and quote. An engineering limit may use any
 of these citations. A free-text label, an agent-named owner, or an uncommitted,
 unresolvable or stale commit is advisory. It keeps its class label, emitted
 value and `unsourced_reason`, and stays in the geometry inventory. See the
-[citation model](scaffold.md#declared-design-rule-sources-agentee-331). Captured
-`.kicad_dru` owner rules keep their existing file-hash authority (see the
-AGENTEE-348 entry in [decisions](decisions.md)).
+[citation model](scaffold.md#declared-design-rule-sources-agentee-331). After
+review H1–H5, each citation binds the governed values exactly. A captured
+`.kicad_dru` rule gets no owner authority from its file; it needs a resolving
+declaration of its own payload. A generated custom rule qualifies against its
+emitted constraints. A builtin manufacturer capture qualifies only the numeric
+fact it records.
 
 AGENTEE-425 adds the [unsourced geometry inventory](scaffold.md#unsourced-geometry-inventory-agentee-425)
 to scaffold receipts and project bindings; board-build refreshes it on template

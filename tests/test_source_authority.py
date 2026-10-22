@@ -116,9 +116,14 @@ class CitationModelTest(unittest.TestCase):
         self.assertEqual(source_authority.cite('datasheet', citation('datasheet', other, 'other.txt'),
                                                {'other.txt': other}, [0.15])['reason'],
                          'cited quote does not state the declared value')
-        self.assertEqual(source_authority.cite('datasheet', citation('manufacturer', TEXT, PATH), RECORDS, [0.15]),
-                         {'enforcement': 'advisory',
-                          'reason': "datasheet cannot resolve through citation kind 'manufacturer_capture'"})
+        record = locality_provenance.manufacturing_record()
+        capture = {'kind': 'manufacturer_capture', 'capture': 'pcb', 'sha256': record['sources']['pcb']['sha256'],
+                   'locator': record['locators']['pcb'], 'fact': 'different_net_clearance_nm'}
+        for kind, cite in (('manufacturer_capture', capture),
+                           ('manufacturer_source', citation('manufacturer', TEXT, PATH))):
+            self.assertEqual(source_authority.cite('datasheet', cite, RECORDS, [0.15]),
+                             {'enforcement': 'advisory',
+                              'reason': f"datasheet cannot resolve through citation kind '{kind}'"})
         self.assertEqual(source_authority.cite('manufacturer', citation('datasheet', TEXT, PATH), RECORDS, [0.15]),
                          {'enforcement': 'advisory',
                           'reason': "manufacturer cannot resolve through citation kind 'captured_source'"})
@@ -127,8 +132,8 @@ class CitationModelTest(unittest.TestCase):
                          {'enforcement': 'advisory', 'reason': 'captured source record, locator or quote not verified'})
         self.assertEqual(source_authority.cite('default', citation('datasheet', TEXT, PATH), RECORDS, [0.15]),
                          {'enforcement': 'advisory', 'reason': 'default class is never hard'})
-        capture = citation('manufacturer', TEXT, PATH)
-        self.assertEqual(source_authority.manufacturer_capture(capture)['enforcement'], 'hard')
+        # AGENTEE-348 H5: the builtin capture qualifies only its recorded 0.15 mm fact.
+        self.assertEqual(source_authority.manufacturer_capture(capture, [0.15])['enforcement'], 'hard')
         for change, reason in (({'sha256': '0' * 64},
                                 'manufacturer capture sha256 differs from the pinned capture (stale)'),
                                ({'capture': 'invented'}, 'no captured manufacturer record named invented'),

@@ -1,6 +1,8 @@
 """Import declared board limits without promoting template defaults to authority."""
 import copy
 import hashlib
+import re
+from fractions import Fraction
 
 from . import source_authority
 from .catalog import strict_json
@@ -117,6 +119,78 @@ def inventory(project, document=None, path=None):
             records.append(_record('net_settings.classes.' + netclass['name'] + '.' + name,
                                    value, spec, path, '/net_class_default', key, sources))
     return records
+
+
+# Dimensionless native constraints whose bounds are integer counts.
+COUNT_CONSTRAINTS = frozenset(('thermal_spoke_count', 'via_count'))
+
+
+def rule_payload(node):
+    """The numeric payload of one native rule form (AGENTEE-348 H1/H3).
+
+    Returns exact millimetre lengths and integer counts from every constraint's
+    min/max/opt bound, or None when a bound is not an exact value with a known unit.
+    """
+    lengths, counts = [], []
+    for constraint in node[2:]:
+        if not (isinstance(constraint, list) and len(constraint) > 1
+                and str(constraint[0]).lower() == 'constraint'):
+            continue
+        for bound in constraint[2:]:
+            if not (isinstance(bound, list) and bound and str(bound[0]).lower() in ('min', 'max', 'opt')):
+                continue
+            value = re.fullmatch(r'([0-9]+(?:\.[0-9]+)?)(mm|nm|um|mil|in)?', ''.join(str(t) for t in bound[1:]))
+            if value is None:
+                return None
+            if value[2]:
+                lengths.append(Fraction(value[1]) * source_authority.UNITS[value[2]])
+            elif str(constraint[1]).lower() in COUNT_CONSTRAINTS and value[1].isdigit():
+                counts.append(int(value[1]))
+            else:
+                return None
+    return lengths, counts
+
+
+def rule_authority(spec, node, records):
+    """A custom-rule declaration resolves against its emitted rule's actual numeric payload."""
+    payload = rule_payload(node)
+    if payload is None:
+        return source_authority.advisory('native rule payload is not an exact numeric value')
+    result = source_authority.cite(spec['class'], spec.get('citation'), records, *payload)
+    if result['enforcement'] == 'integrity':
+        raise ValueError('constraint source record integrity: ' + result['reason'])
+    return result
+
+
+def native_rule_source(node, record, capture=None):
+    """Authority of a captured native custom rule: never from the file's path or hash alone.
+
+    The file hash is retained as capture identity. Only a single declaration of the rule
+    whose citation resolves against the rule's payload makes it hard; every other native
+    form stays advisory and is disclosed with its reason (AGENTEE-348 H1).
+    """
+    name = str(node[1])
+    source = {'class': 'default', 'citation': None}
+    if capture is not None:
+        source['capture'] = {**capture, 'rule': name}
+    document = record.get('document') or {}
+    specs = [spec for rules in document.get('custom_rules', {}).values() for spec in rules if spec['rule'] == name]
+    if len(specs) != 1:
+        source['unsourced_reason'] = ('captured native rule has no owner decision or provenance declaration'
+                                      if not specs else 'captured native rule is declared more than once')
+        return source
+    spec = specs[0]
+    source['class'] = spec['class']
+    if spec['class'] == 'default':
+        source['unsourced_reason'] = 'default class is never hard'
+        return source
+    resolved = rule_authority(spec, node, document.get('source_records', {}))
+    if resolved['enforcement'] == 'hard':
+        source['citation'] = {**(capture or {}), 'rule': name, 'basis': spec['basis'],
+                              'source': copy.deepcopy(spec['citation'])}
+    else:
+        source['unsourced_reason'] = resolved['reason']
+    return source
 
 
 def authority(spec, records):
@@ -258,11 +332,11 @@ def geometry_defaults(project, record, rules_raw=None):
             if not isinstance(node, list) or len(node) < 2 or node[0] != 'rule':
                 continue
             name = str(node[1])
-            # Captured owner forms retain the existing owner-file authority;
-            # only generated forms can be unsourced in this composition path.
+            # A captured native form has no authority from the file itself (H1): unless its
+            # declaration resolves, it is disclosed like an unsourced generated form.
             source = shadowed.get(index, record.get('generated_rules', {}).get(name))
             if source is None:
-                continue
+                source = native_rule_source(node, record)
             for ordinal, constraint in enumerate(node[2:]):
                 if isinstance(constraint, list) and constraint and constraint[0] == 'constraint':
                     router_only = len(constraint) > 1 and constraint[1] in {
@@ -430,8 +504,8 @@ def finding_sources(board, findings=()):
                 if any(isinstance(c, list) and len(c) > 1 and str(c[0]).lower() == 'severity'
                        and str(c[1]).lower() == 'ignore' for c in node[2:]):
                     ignored_rules.append(name)
-                owner = record.get('owner_rules', {'path': str(path), 'sha256': digest(path)})
-                rules[name] = {'class': 'owner', 'citation': {**owner, 'rule': name}}
+                capture = record.get('owner_rules', {'path': str(path), 'sha256': digest(path)})
+                rules[name] = native_rule_source(node, record, capture)
         generated = record.get('generated_rules', {})
         require_owner_rule_classes(record, path.name, rules.keys() - generated.keys())
         for name, source in record.get('generated_rules', {}).items():

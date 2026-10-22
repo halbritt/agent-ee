@@ -32,10 +32,18 @@ AGENT_OWNER = re.compile(r'\bagent(?:[- _]?\d+)?\b|design[-_ ]?owner', re.I)
 # that traced the commit and bytes to the owner's repository (see verify_committed);
 # text a deciding agent writes or captures never extends this table. None is pinned yet.
 OWNER_DECISIONS = {}
-# Citation kinds each class may resolve through.
-KINDS = {'owner': ('owner_decision',), 'manufacturer': ('manufacturer_capture',),
+# Citation kinds each class may resolve through. ``manufacturer_capture`` binds the
+# hash-pinned builtin record (raw vendor bytes uncommitted) to one of its transcribed
+# numeric facts; ``manufacturer_source`` is a captured manufacturer document whose quote
+# states the value, the evidence a fab profile already requires.
+KINDS = {'owner': ('owner_decision',), 'manufacturer': ('manufacturer_capture', 'manufacturer_source'),
          'datasheet': ('captured_source',),
-         'engineering': ('captured_source', 'manufacturer_capture', 'owner_decision')}
+         'engineering': ('captured_source', 'manufacturer_capture', 'manufacturer_source', 'owner_decision')}
+# Numeric facts transcribed in each builtin manufacturer capture.
+CAPTURE_FACTS = {'pcb': ('different_net_clearance_nm',)}
+# Exact length units to millimetres (native rules and quotes).
+UNITS = {'mm': Fraction(1), 'nm': Fraction(1, 10 ** 6), 'um': Fraction(1, 1000), 'mil': Fraction(254, 10000),
+         'in': Fraction(254, 10)}
 
 
 def advisory(reason):
@@ -100,28 +108,47 @@ def owner_decision(decision, records):
     return {'enforcement': 'hard', 'reason': 'committed owner decision verified'}
 
 
-def manufacturer_capture(citation):
-    """A named capture in the hash-pinned manufacturer record, cited by its hash."""
+def millimetres(value):
+    """An exact millimetre Fraction from a JSON number or a Fraction."""
+    return value if isinstance(value, Fraction) else Fraction(str(value))
+
+
+def manufacturer_capture(citation, values_mm=()):
+    """A named capture in the hash-pinned manufacturer record, bound to one recorded fact."""
     from .locality_provenance import manufacturing_record
     if (not isinstance(citation, dict) or any(not isinstance(citation.get(k), str)
             or not citation[k].strip() for k in ('capture', 'sha256', 'locator'))):
         return advisory('manufacturer citation needs a capture name, its sha256 and a locator')
-    capture = manufacturing_record()['sources'].get(citation['capture'])
+    record = manufacturing_record()
+    capture = record['sources'].get(citation['capture'])
     if capture is None:
         return advisory('no captured manufacturer record named ' + citation['capture'])
     if capture['sha256'] != citation['sha256']:
         return advisory('manufacturer capture sha256 differs from the pinned capture (stale)')
-    return {'enforcement': 'hard', 'reason': 'captured manufacturer record verified by hash'}
+    if record.get('locators', {}).get(citation['capture']) != citation['locator']:
+        return advisory('manufacturer citation locator differs from the captured record locator')
+    fact = citation.get('fact')
+    if not isinstance(fact, str) or fact not in CAPTURE_FACTS.get(citation['capture'], ()):
+        return advisory(f'manufacturer capture {citation["capture"]} records no fact {fact}')
+    if any(millimetres(v) != Fraction(record[fact]) * UNITS['nm'] for v in values_mm):
+        return advisory('declared value differs from the captured manufacturer fact ' + fact)
+    return {'enforcement': 'hard', 'reason': 'captured manufacturer fact verified by hash'}
 
 
-def states(quote, values_mm):
-    """Every cited millimetre value occurs as a whole number token in the quote."""
-    tokens = {Fraction(n) for n in re.findall(r'(?<![\w.])([0-9]+(?:\.[0-9]+)?)\s*mm\b', quote)}
-    return all(Fraction(str(v)) in tokens for v in values_mm)
+def states(quote, values_mm, counts=()):
+    """Every value occurs in the quote: lengths with an exact unit, counts as whole integers."""
+    lengths = {Fraction(n) * UNITS[unit] for n, unit in
+               re.findall(r'(?<![\w.])([0-9]+(?:\.[0-9]+)?)\s*(mm|nm|um|mil|in)\b', quote)}
+    integers = {int(n) for n in re.findall(r'(?<![\w.])([0-9]+)(?![\w.])', quote)}
+    return (all(millimetres(v) in lengths for v in values_mm)
+            and all(type(n) is int and n in integers for n in counts))
 
 
-def cite(cls, citation, records, values_mm=()):
-    """Resolve a class's citation; a label or prose basis alone is advisory."""
+def cite(cls, citation, records, values_mm=(), counts=()):
+    """Resolve a class's citation against the governed values; a label alone is advisory.
+
+    Authority binds a payload: a citation with no declared value to state is advisory.
+    """
     if cls not in KINDS:
         return advisory('default class is never hard')
     if not isinstance(citation, dict):
@@ -129,14 +156,20 @@ def cite(cls, citation, records, values_mm=()):
     kind = citation.get('kind')
     if kind not in KINDS[cls]:
         return advisory(cls + ' cannot resolve through citation kind ' + repr(kind))
+    if not list(values_mm) and not list(counts):
+        return advisory('no declared value to bind to the citation')
     if kind == 'manufacturer_capture':
-        return manufacturer_capture(citation)
+        return manufacturer_capture(citation, values_mm) if not list(counts) else advisory(
+            'a manufacturer capture records no count')
+    if kind == 'manufacturer_source' and (not isinstance(citation.get('manufacturer'), str)
+                                          or not citation['manufacturer'].strip()):
+        return advisory('manufacturer source names no manufacturer')
     result = (owner_decision if kind == 'owner_decision' else verified_reference)(citation, records)
     if result['enforcement'] == 'verified':
         result = {'enforcement': 'hard', 'reason': 'captured source record verified'}
-    elif kind == 'captured_source' and result['enforcement'] == 'advisory':
+    elif kind != 'owner_decision' and result['enforcement'] == 'advisory':
         result = advisory('captured source record, locator or quote not verified')
-    if result['enforcement'] == 'hard' and not states(citation['quote'], values_mm):
+    if result['enforcement'] == 'hard' and not states(citation['quote'], values_mm, counts):
         return advisory('cited quote does not state the declared value')
     return result
 

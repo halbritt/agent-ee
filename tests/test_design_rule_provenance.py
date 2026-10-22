@@ -16,7 +16,7 @@ from test_scaffold import ScaffoldFixture
 from test_scaffold_producer import ProducerFixture
 from toolchain import require_toolchain
 from test_add_planes import PlaneFixture
-from owner_fixture import cite
+from owner_fixture import cite, citation, owner_rules
 
 
 def document():
@@ -100,8 +100,11 @@ class ConstraintImportTest(unittest.TestCase):
         for source in ('owner', 'manufacturer', 'datasheet'):
             record['generated_rules']['generated'] = {'class': source, 'citation': {'path': 'source.json'}}
             self.assertEqual(geometry_defaults({}, record, raw), [])
-        # Captured owner rules are sourced by the immutable file, not the template.
-        self.assertEqual(geometry_defaults({}, {}, raw), [])
+        # AGENTEE-348 H1 (was []): a captured native form is not sourced by the file itself;
+        # without a resolving declaration it is disclosed with its reason.
+        row, = geometry_defaults({}, {}, raw)
+        self.assertEqual((row['class'], row['citation'], row['unsourced_reason']),
+                         ('default', None, 'captured native rule has no owner decision or provenance declaration'))
         with self.assertRaises(ValueError):
             geometry_defaults({}, {}, b'(rule')
 
@@ -127,9 +130,11 @@ class ConstraintImportTest(unittest.TestCase):
         raw = b'(version 1)\n(rule "same" (constraint clearance (min 0.2mm)))\n(rule "same" (constraint clearance (min 0.4mm)))\n'
         source = dict(index=1, name='same', **{'class': 'default', 'citation': None})
         rows = geometry_defaults({}, {'shadowed_generated_rules': [source]}, raw)
-        self.assertEqual(len(rows), 1)
+        # AGENTEE-348 H1 (was 1 row): the unshadowed captured native form is disclosed too.
+        self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]['setting'], 'native_rules.1.same.0')
         self.assertEqual(rows[0]['value'][-1], ['min', '0.2mm'])
+        self.assertEqual((rows[1]['setting'], rows[1]['citation']), ('native_rules.2.same.0', None))
         for bad in (None, {}, [None], [{}], [dict(source, index=True)],
                     [dict(source, index=-1)], [dict(source, index=99)],
                     [dict(source, name='wrong')], [source, source]):
@@ -768,11 +773,16 @@ class ComposedProducerSourceTest(ProducerFixture, unittest.TestCase):
         record = receipt['constraint_provenance']
         rows = record['unsourced_geometry']
         native = [r for r in rows if r['setting'].startswith('native_rules.')]
-        self.assertEqual(len(native), 3)
-        shadowed, = [r for r in native if '.agent_ee_netclass_RF_50.' in r['setting']]
+        # AGENTEE-348 H1 (was 3 rows and an 'owner' RF_50 rule): the captured owner file confers
+        # no authority without a declaration, so its RF_50 form is disclosed and not owner.
+        self.assertEqual(len(native), 4)
+        shadowed, owner_form = sorted((r for r in native if '.agent_ee_netclass_RF_50.' in r['setting']),
+                                      key=lambda r: int(r['setting'].split('.')[1]))
         self.assertEqual((shadowed['class'], shadowed['citation']), ('default', None))
+        self.assertEqual((owner_form['class'], owner_form['citation'], owner_form['unsourced_reason']),
+                         ('default', None, 'captured native rule has no owner decision or provenance declaration'))
         self.assertEqual(rows, geometry_defaults(project, record, board.with_suffix('.kicad_dru').read_bytes()))
-        self.assertEqual(finding_sources(board)['rules']['agent_ee_netclass_RF_50']['class'], 'owner')
+        self.assertEqual(finding_sources(board)['rules']['agent_ee_netclass_RF_50']['class'], 'default')
         self.assertEqual((board.parent / 'design.owner.kicad_dru').read_bytes(), raw)
 
     def test_generated_geometry_is_disclosed_in_receipt_and_project(self):
@@ -800,8 +810,10 @@ class ComposedProducerSourceTest(ProducerFixture, unittest.TestCase):
                 declared = document()
                 spec = {'rule': name, 'class': 'datasheet', 'basis': 'Original fixture power width'}
                 declared['custom_rules'] = {'design.kicad_dru': [spec]}
-                if cited:
-                    cite(declared, spec)
+                if cited:  # H3: the captured text states the emitted rule's 1.012 mm payload
+                    text = 'Original fixture power width: 1.012 mm'
+                    declared['source_records'] = {'fixture-sources/pwr.txt': text}
+                    spec['citation'] = citation('datasheet', text, 'fixture-sources/pwr.txt')
                 write_json(self.source / 'rule-sources.json', declared)
                 self.plan['constraint_source'] = 'rule-sources.json'
                 self.write()
@@ -824,12 +836,13 @@ class ComposedProducerSourceTest(ProducerFixture, unittest.TestCase):
     def test_declared_sources_compose_net_rules_and_preserve_owner_bytes(self):
         from agent_ee.design_rule_provenance import finding_sources
         self.use_net_constraints()
-        write_json(self.source / 'rule-sources.json', document())
-        self.plan['constraint_source'] = 'rule-sources.json'
         rule = self.source / 'project/design.kicad_dru'
         rule.parent.mkdir(exist_ok=True)
         raw = b'(version 1)\n# Original owner comment with a decoy (version 1)\n(rule "agent_ee_netclass_RF_50" (constraint track_width (min 0.35mm)))\n(rule "original owner gap" (constraint clearance (min 0.15mm)))\n'
         rule.write_bytes(raw)
+        # AGENTEE-348 H1 migration: the owner rules carry committed, value-bound owner decisions.
+        write_json(self.source / 'rule-sources.json', owner_rules(document(), raw, 'design.kicad_dru'))
+        self.plan['constraint_source'] = 'rule-sources.json'
         self.write()
         receipt = self.build()
         inputs = self.root / 'produced/inputs'

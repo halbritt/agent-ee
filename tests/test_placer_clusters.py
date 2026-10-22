@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from agent_ee import electrical_locality
 from agent_ee.placer import _pack, pack, transform
+from owner_fixture import rebind
 from test_electrical_locality import FIXTURE_SOURCES, board, declaration
 from test_placement import MM, part, rectangle
 from test_placer import request
@@ -61,6 +62,7 @@ def random_cluster_case(rng):
         x, y = rng.uniform(0, width-2), rng.uniform(0, height-2)
         obstacles.append(dict(side='F', polygons=[rectangle(x, y, rng.uniform(1, 4), rng.uniform(1, 4))]))
     priorities = rng.sample([fp['ref'] for fp in footprints[1:]], rng.randint(0, 2))
+    rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bounds
     policy = request(electrical_locality=doc, fixed_refs=fixed, priority_refs=priorities,
                      obstacles=obstacles, step_budget=rng.choice([200, 2000, 20000]))
     return source, policy
@@ -100,6 +102,7 @@ def three_cap_case():
     for index, limit in enumerate((3*MM, 4*MM, 4*MM)):
         for role in ('supply', 'return'):
             doc['obligations'][index][role]['max_distance_nm'] = limit
+    rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bounds
     policy = request(electrical_locality=doc, priority_refs=['C1'], step_budget=500)
     return source, policy
 
@@ -128,6 +131,7 @@ class ClusterTests(unittest.TestCase):
         source, doc = cluster_board()
         for role in ('supply', 'return'):
             doc['obligations'][1][role]['max_distance_nm'] = 3*MM
+        rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bounds
         policy = request(electrical_locality=doc, priority_refs=['C1'])
         before = copy.deepcopy((source, policy))
         plan = joint_pack(source, policy)
@@ -144,6 +148,7 @@ class ClusterTests(unittest.TestCase):
         for index, limit in enumerate((4*MM, 3*MM)):
             for role in ('supply', 'return'):
                 doc['obligations'][index][role]['max_distance_nm'] = limit
+        rebind(doc, 'EE322')  # AGENTEE-348 H2: re-cite the changed bounds
         plan = joint_pack(source, request(electrical_locality=doc, priority_refs=['C1'], step_budget=50))
         self.assertEqual(plan['status'], 'planned', plan)
         self.assertLess(plan['steps_used'], 50)

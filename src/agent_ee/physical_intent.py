@@ -60,9 +60,9 @@ LOCALITY_METRICS = frozenset(('pad-centre-to-centre',))
 LAYOUT_SCALE = ('a layout measurement\'s distance_units, scale_nm_per_unit and scale_reference are authored, '
                 'not captured evidence, so arbitrary scale prose could establish any bound; only a numeric '
                 'derivation whose verified quote states the declared maximum compiles')
-OWNER_AUTHORITY = ('owner and manufacturer authors cannot be authenticated in-process: agents run as the '
-                   "owner's Unix user and no signing boundary exists until AGENTEE-348, so a sourced owner "
-                   'maximum is published as authority_unavailable and never enforces')
+OWNER_AUTHORITY = ('this compiler does not resolve owner commits: AGENTEE-348 dropped signing and makes '
+                   'owner authority a committed decision pinned in source_authority.OWNER_DECISIONS, so a '
+                   'sourced owner maximum is published as authority_unavailable and never enforces')
 CONTRACTS = {'topology': 'contracts/topology-rules.json', 'locality': 'contracts/electrical-locality.json',
              'allocation': 'contracts/block-allocation.json'}
 LIMITATIONS = (

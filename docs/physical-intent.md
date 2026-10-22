@@ -159,10 +159,10 @@ without a bound published, passed `verify_receipt` and then crashed
   authored layout derivation `hard`. That existing contract is outside this
   compiler, and changing it would alter existing locality verdicts.
 
-**Owner maxima never enforce.** Agents run as the owner's Unix user, so no
-in-process check can authenticate an owner or manufacturer author until
-AGENTEE-348 provides a signing boundary (coordinator ruling, consistent with the
-AGENTEE-342 trust-boundary ruling). A bound owner maximum is therefore published
+**Owner maxima never enforce.** AGENTEE-348 dropped signing (owner-relayed
+decision, 2026-10-22). Owner authority there is a committed decision pinned in
+`source_authority.OWNER_DECISIONS`. This compiler does not resolve owner
+commits, so a bound owner maximum is still published
 as `authority_unavailable`. In the emitted contract, its provenance keeps
 `class: owner` and the declared limit. It gains `authority:
 authority_unavailable` and `authority_reason`, and the cited decision moves from

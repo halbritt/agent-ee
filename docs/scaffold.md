@@ -662,13 +662,34 @@ grant hard authority. A declaration (board rule, `net_class_default` or
 | Class | Resolving `citation` |
 | --- | --- |
 | `owner` | `kind: owner_decision`, with `path`, `sha256`, `locator`, `quote`, a non-agent `owner`, `repository` and a 40-hex `commit`. `(repository, commit, path)` must be pinned in `source_authority.OWNER_DECISIONS` with the same SHA-256. |
-| `manufacturer` | `kind: manufacturer_capture`, with `capture` naming a source in the hash-pinned `data/jlcpcb-locality.json`, its `sha256` and a `locator`. |
+| `manufacturer` | `kind: manufacturer_capture`: `capture` names a source in the hash-pinned `data/jlcpcb-locality.json`, with its `sha256`, that record's own `locator`, and a `fact` it transcribes (`pcb`: `different_net_clearance_nm`). Every declared value must equal that fact. Or `kind: manufacturer_source`: a captured manufacturer document (`manufacturer`, `path`, `sha256`, `locator`, `quote`) verified against `source_records`. |
 | `datasheet` | `kind: captured_source`, with `path`, `sha256`, `locator` and `quote` verified against the document's `source_records`. |
-| `engineering` | Any of the three citation forms above, under the same checks. |
+| `engineering` | Any of the citation forms above, under the same checks. |
 
 `source_records` maps cited paths to captured UTF-8 text, as in
-electrical-locality/1. The `quote` of an owner or captured-source citation must
-state each declared millimetre value. A declaration without a resolving citation
+electrical-locality/1. Authority binds the governed numeric payload (AGENTEE-348
+review H2/H3/H5). Every quoted citation must state each governed value as a whole
+length token in `mm`, `nm`, `um`, `mil` or `in`, compared exactly, or as an
+integer count. A citation with no value to bind is advisory (`no declared value to
+bind to the citation`). The governed values are:
+
+- for a board rule or net-class default, its declared millimetre values;
+- for a `custom_rules` entry, the emitted or captured native rule's own
+  `min`/`max`/`opt` bounds, read exactly by `design_rule_provenance.rule_payload`.
+
+A bound without an exact value and known unit is advisory with the reason
+`native rule payload is not an exact numeric value`.
+
+A captured native `.kicad_dru` rule has no authority from its path or hash
+(review H1). Its hash is kept as `capture` identity. It is hard only when exactly
+one `custom_rules` declaration names it and that citation resolves against its
+payload. Otherwise it is `default` or its declared class, uncited, with
+`unsourced_reason`. For example, it may read
+`captured native rule has no owner decision or provenance declaration`. It is
+also listed in `unsourced_geometry`. Board-build binding passes the copied rule
+file, so these native forms are disclosed there too.
+
+A declaration without a resolving citation
 keeps its class label and its value is still emitted. It has no citation, is
 `advisory`, and records `unsourced_reason`, for example
 `free-text owner label without a resolvable citation`,
