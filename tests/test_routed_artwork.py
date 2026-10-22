@@ -729,11 +729,26 @@ class RoutedArtworkTest(unittest.TestCase):
             ('footprint pose', F.board(**F.MOVED, fp='10 20.1 -90'), request, 'destination position differs'),
             ('copper pad', F.board(**F.MOVED, pad='0.1 0'), request, 'non-silk board token'),
             ('copper track', F.board(**F.MOVED, track='5.1'), request, 'non-silk board token'),
+            # KiCad refuses to load quoted or non-native pose numbers; so does the qualifier,
+            # alongside an otherwise valid requested edit, before any value comparison.
+            ('quoted destination x', F.board(**dict(F.MOVED, u31='"2.425" -0.575 0')), request, 'native number'),
+            ('quoted destination y', F.board(**dict(F.MOVED, u31='2.425 "-0.575" 0')), request, 'native number'),
+            ('quoted destination angle', F.board(**dict(F.MOVED, u31='2.425 -0.575 "0"')), request,
+             'native number'),
+            ('list destination token', F.board(**dict(F.MOVED, u31='2.425 (-0.575) 0')), request, 'native number'),
+            ('exponent destination', F.board(**dict(F.MOVED, u31='2.425e0 -0.575 0')), request, 'native number'),
+            ('signed-plus destination', F.board(**dict(F.MOVED, u31='+2.425 -0.575 0')), request, 'native number'),
+            ('bare-point destination', F.board(**dict(F.MOVED, u31='2.425 -.575 0')), request, 'native number'),
+            ('quoted footprint angle', F.board(**dict(F.MOVED, fp='10 20 "-90"')), request, 'native number'),
         ]
         for name, changed, req, message in refused:
             self.assertNotEqual(changed, after if req is request else b'')
             with self.subTest(case=name), self.assertRaisesRegex(ValueError, message):
                 art.write_scope(board, changed, field_poses=req)
+        # A quoted source pose refuses too, even when its request is bound to those bytes.
+        quoted = F.board(u31='0 "2.4" 90')
+        with self.assertRaisesRegex(ValueError, 'native number'):
+            art.write_scope(quoted, after, field_poses=F.request(quoted))
         invalid = {
             'targets too': (dict(field_poses=request, targets=[('U31', 'Reference')]), 'exclusive'),
             'fab field': (dict(field_poses=F.request(board, fields=[dict(
@@ -770,9 +785,47 @@ class RoutedArtworkTest(unittest.TestCase):
                               (['--field-pose', json.dumps(reordered, sort_keys=True, separators=(',', ':'))],
                                'not canonical'),
                               (['--field-pose'], 'malformed'), (['--field-pose', '{'], 'malformed'),
+                              # An explicit null is not an absent request and never selects the default.
+                              (['--field-pose', 'null'], 'is null'), (['--field-pose', '[]'], 'malformed'),
                               (['--field-pose', canonical, '--target', 'C1', 'Reference'], 'malformed')):
             with self.subTest(argv=argv), self.assertRaisesRegex(ValueError, message):
                 art.receipt_scope(head + argv)
+        for call in (lambda: art.canonical_field_poses(None), lambda: art.decode_field_poses('null')):
+            with self.assertRaisesRegex(ValueError, 'is null'):
+                call()
+        self.assertEqual(art.decode_field_poses(canonical), art.normalize_field_poses(request))
+
+    def test_explicit_null_field_pose_receipt_refuses_without_edits(self):
+        from agent_ee.cli import policy_files
+        source = self.pod_board(graphic=True)
+        design = self.root / 'design'
+        design.mkdir()
+        (design / 'board.kicad_pcb').write_bytes(source.read_bytes())
+        # The reviewer's repro: an ordinary step with an explicit JSON-null request appended.
+        spec = art.step(self.root / 'tool', 'board.kicad_pcb')
+        spec['argv'] += ['--field-pose', 'null']
+        receipt_dir = self.root / 'receipt'
+        receipt = stage_receipts.run_step(receipt_dir, design, spec, {'implementation': 1})
+        self.assertNotEqual(receipt['status'], 'completed')
+        self.assertFalse((receipt_dir / 'run' / art.BOARD).exists())
+        self.assertFalse((receipt_dir / 'run' / art.ARTWORK).exists())
+        # No board was written: the receipt records the output as absent, never as an edit.
+        self.assertIsNone(receipt['outputs']['board.kicad_pcb'])
+        self.assertIn('field-pose request is null', (receipt_dir / 'run' / 'stderr.log').read_text())
+        self.assertEqual((design / 'board.kicad_pcb').read_bytes(), source.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            art.qualify_receipt(receipt_dir, receipt, 'board.kicad_pcb', policy_files())
+        # The same graphic search, receipted without the flag, still qualifies; relabelling
+        # its argv with an explicit null is refused by the qualifier.
+        default = art.step(self.root / 'tool2', 'board.kicad_pcb')
+        receipt_dir = self.root / 'default'
+        receipt = stage_receipts.run_step(receipt_dir, design, default, {'implementation': 2})
+        self.assertEqual(receipt['status'], 'completed', read_json(receipt_dir / 'run/execution.json'))
+        self.assertTrue(art.qualify_receipt(receipt_dir, receipt, 'board.kicad_pcb', policy_files())['moved_identities'])
+        forged = copy.deepcopy(receipt)
+        forged['spec']['argv'] += ['--field-pose', 'null']
+        with self.assertRaisesRegex(ValueError, 'is null'):
+            art.qualify_receipt(receipt_dir, forged, 'board.kicad_pcb', policy_files())
 
     def test_native_field_pose_producer_writes_exact_rotation_and_receipts_it(self):
         from agent_ee.cli import policy_files

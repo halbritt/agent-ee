@@ -467,6 +467,12 @@ in [0, 360). The whole request is receipted as one canonical JSON argument,
 whitespace. `qualify_receipt` and carry replay refuse a noncanonical or
 malformed request and recompute the proof with it.
 
+An absent request is spelled only by omitting `--field-pose`. An explicitly
+supplied JSON `null` is not an absent request: the producer CLI, receipt
+recovery and canonicalization all refuse it (`field-pose request is null`)
+before any search runs or any proof is granted, so it can never select the
+default search and its graphic moves.
+
 The producer works natively:
 
 1. It checks the source digest and each native source pose.
@@ -484,6 +490,12 @@ every field of the real pod board.
 The qualifier requires each of these, and refuses otherwise:
 
 - the before bytes have the named digest;
+- every token of the requested field's `at` node and its footprint's `at`
+  node, in both boards, is an unquoted plain decimal (`-?digits[.digits]`).
+  KiCad refuses to load a quoted pose number such as `(at "2.425" -0.575 0)`,
+  and the decoded tree would lose the quotes, so the raw spelling is checked
+  first. Quoted, list, exponent, `+`-signed and bare-point tokens refuse
+  (`field-pose position token is not a native number`);
 - each field is unique, in its named footprint, movable, visible and on a silk layer;
 - each source pose equals `from`, and each saved pose equals `to`;
 - exactly the requested fields change, and only in their `at` node;
@@ -501,7 +513,22 @@ normalized request as `field_poses`.
 The refusal tests cover a wrong board hash, a wrong footprint or field uuid, a
 wrong source pose or angle, a wrong destination, an unrequested or unapplied
 rotation, an unselected field or graphic, style, text, layer, visibility and
-property edits, and footprint and copper edits.
+property edits, and footprint and copper edits. They also cover quoted x, y
+and angle tokens, list, exponent, `+`-signed and bare-point tokens alongside
+an otherwise valid requested edit, a quoted source pose and footprint angle,
+and an explicit `null` request: in the receipt argv, and as a freshly executed
+receipt whose producer refuses before writing any board.
+
+The first pod use of a field-pose request (the iter8u C128/U31 derivative of
+iter8t, 2026-10-22) is **experimental and not adopted**; it is retained only
+as diagnostic evidence of the mechanism. It qualified its write scope and
+natively closed eight studied silk findings with no new findings, but
+agent-509 rejected it for adoption: the C128 label reads as belonging to the
+neighbouring R14/R16 passives. Its measured legend-to-mask clearances
+(C128 0.1400 mm, U31 0.1438 mm) are also below the sourced JLCPCB minimum
+silkscreen-to-solder-mask clearance of 0.15 mm, so the derivative is not
+fab-acceptable. The captured fab profile does not yet carry that limit; a
+qualified correction needs the sourced limit captured and bound first.
 
 The receipt uses the existing placement evidence envelope and adds
 `producer: agent-ee-routed-artwork`, the scope proof and the original routed

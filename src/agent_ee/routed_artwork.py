@@ -147,7 +147,34 @@ def normalize_field_poses(request):
 
 
 def canonical_field_poses(request):
+    # Absence of a request is spelled by omitting it, never as JSON null.
+    if request is None:
+        raise ValueError('field-pose request is null')
     return json.dumps(normalize_field_poses(request), sort_keys=True, separators=(',', ':'))
+
+
+def decode_field_poses(text):
+    """Decode an explicitly supplied field-pose argument; JSON null never means absent."""
+    try:
+        request = json.loads(text)
+    except (ValueError, TypeError) as exc:
+        raise ValueError('field-pose request malformed') from exc
+    if request is None:
+        raise ValueError('field-pose request is null')
+    return normalize_field_poses(request)
+
+
+# The pose tokens a requested field's footprint and field `at` nodes may be
+# spelled with: unquoted plain decimals, which KiCad's lexer reads as numbers
+# and Decimal reads identically. Quoted, signed-plus, exponent and bare-point
+# spellings refuse rather than being compared by decoded value.
+_POSE_NUMBER = re.compile(r'-?[0-9]{1,15}(\.[0-9]{1,15})?')
+
+
+def _native_at(raw):
+    """Refuse a raw `at` node unless every pose token is a plain native number."""
+    if raw[:1] != ['at'] or any(not isinstance(t, str) or not _POSE_NUMBER.fullmatch(t) for t in raw[1:]):
+        raise ValueError('field-pose position token is not a native number')
 
 
 def _angle(token):
@@ -187,19 +214,28 @@ def _request_pose(value):
     return (value['x_nm'], value['y_nm'], Fraction(Decimal(value['angle_deg'])))
 
 
-def _check_field_poses(roots, before, request):
+def _check_field_poses(roots, raws, before, request):
     """Bind each requested field's identity, source pose and destination pose."""
     from .silk_artwork import DECLARATION, movable_names
     if hashlib.sha256(before).hexdigest() != request['source_sha256']:
         raise ValueError('field-pose request names a different source board')
+    def ats(node):
+        return [i for i, c in enumerate(node) if isinstance(c, list) and c[:1] == ['at']]
     for entry in request['fields']:
         poses = []
-        for root in roots:
-            found = [(fp, p) for fp in children(root, 'footprint') if children(fp, 'uuid') == [['uuid', entry['footprint_uuid']]]
-                     for p in children(fp, 'property') if children(p, 'uuid') == [['uuid', entry['field_uuid']]]]
+        for root, raw in zip(roots, raws):
+            found = [(i, j) for i, fp in enumerate(root) if isinstance(fp, list) and fp[:1] == ['footprint'] and
+                     children(fp, 'uuid') == [['uuid', entry['footprint_uuid']]]
+                     for j, p in enumerate(fp) if isinstance(p, list) and p[:1] == ['property'] and
+                     children(p, 'uuid') == [['uuid', entry['field_uuid']]]]
             if len(found) != 1:
                 raise ValueError('field-pose request names no unique footprint field')
-            fp, prop = found[0]
+            i, j = found[0]
+            fp, prop = root[i], root[i][j]
+            # The decoded tree loses quoting; check the exact saved pose spelling first.
+            for node, spelled in ((fp, raw[i]), (prop, raw[i][j])):
+                for k in ats(node):
+                    _native_at(spelled[k])
             decl = [p[2] for p in children(fp, 'property') if p[1:2] == [DECLARATION] and len(p) > 2]
             hidden = [h for h in children(prop, 'hide') if h != ['hide', 'no']] or [
                 a for e in children(prop, 'effects') for a in e[1:] if a == 'hide' or a == ['hide', 'yes']]
@@ -229,13 +265,10 @@ def receipt_scope(argv):
         return {'targets': receipt_targets(argv)}
     if len(rest) != 2 or not isinstance(rest[1], str):
         raise ValueError('artwork receipt field-pose arguments malformed')
-    try:
-        request = json.loads(rest[1])
-    except ValueError as exc:
-        raise ValueError('artwork receipt field-pose arguments malformed') from exc
+    request = decode_field_poses(rest[1])
     if canonical_field_poses(request) != rest[1]:
         raise ValueError('artwork receipt field-pose request is not canonical')
-    return {'field_poses': normalize_field_poses(request)}
+    return {'field_poses': request}
 
 
 def receipt_targets(argv):
@@ -361,7 +394,7 @@ def write_scope(before, after, targets=None, field_poses=None):
                 if len([p for p in children(fp, 'property') if p[1:2] == ['Reference']]) != 1]:
             raise ValueError('artwork target requires one Reference per footprint')
     if field_poses is not None:
-        _check_field_poses(roots, before, field_poses)
+        _check_field_poses(roots, raws, before, field_poses)
     compare(*roots, *raws)
     if posed is not None and sorted(moves) != sorted(posed):
         raise ValueError('field-pose request not applied exactly')
@@ -543,5 +576,5 @@ def main():
     parser.add_argument('--field-pose', metavar='JSON', help='canonical exact field-pose request')
     args = parser.parse_args()
     produce(args.board, Path('/work'), targets=args.target,
-            field_poses=None if args.field_pose is None else json.loads(args.field_pose))
+            field_poses=None if args.field_pose is None else decode_field_poses(args.field_pose))
     return 0
