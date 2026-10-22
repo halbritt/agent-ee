@@ -1447,7 +1447,7 @@ def _validate_hand_fit_policy(raw, deviations):
     """Scope-held citation of a captured owner decision naming the exact hand-fit identities."""
     from .hardware_interface import exact_keys, text
     from .part_decisions import names_identity, part
-    exact_keys(raw, "source sha256 line quote identities")
+    exact_keys(raw, "source sha256 line quote identities" + (" selection" if "selection" in raw else ""))
     source = raw["source"]
     if not isinstance(source, str) or str(safe_relative(source)) != source:
         raise ValueError("hand_fit_policy.source must be a normalized captured path")
@@ -1463,16 +1463,121 @@ def _validate_hand_fit_policy(raw, deviations):
     identities = raw["identities"]
     if not isinstance(identities, list) or not identities:
         raise ValueError("hand_fit_policy.identities must name at least one exact identity")
+    selection = _validate_hand_fit_selection(raw["selection"], raw, deviations) if "selection" in raw else None
     for identity in identities:
         part(identity)
         if identity["mpn"] is None:
             raise ValueError("hand_fit_policy identity requires an exact MPN")
-        if not names_identity(identity["mpn"], raw["quote"]):
+        if selection is None and not names_identity(identity["mpn"], raw["quote"]):
             raise ValueError(f"hand_fit_policy.quote does not name {identity['mpn']!r}")
+        if selection is not None:
+            # The owner quote names the category; the pinned selection decision names the exact identity.
+            for token in (identity["mpn"], identity["lcsc"]):
+                if token is None or not names_identity(token, selection["quote"]):
+                    raise ValueError(f"hand_fit_policy.selection.quote does not name {token!r}; a category "
+                                     "selection must name the exact MPN and LCSC")
     if len({(i["mpn"], i["lcsc"]) for i in identities}) != len(identities):
         raise ValueError("duplicate hand_fit_policy identity")
+    if selection is not None and [(i["mpn"], i["lcsc"]) for i in identities] != [
+            (selection["mpn"], selection["lcsc"])]:
+        raise ValueError("hand_fit_policy.identities must be exactly the one identity the reviewed selection names")
     return {key: raw[key] for key in ("source", "sha256", "line", "quote")} | {
-        "identities": [dict(i) for i in identities]}
+        "identities": [dict(i) for i in identities]} | ({"selection": selection} if selection is not None else {})
+
+
+def _hand_fit_source(raw, label, deviations):
+    """A pinned, normalized, non-design captured citation path with a SHA-256."""
+    source = raw["source"]
+    if not isinstance(source, str) or str(safe_relative(source)) != source:
+        raise ValueError(f"{label}.source must be a normalized captured path")
+    if source == deviations:
+        raise ValueError(f"{label}.source cannot be the mutable deviations file")
+    if _design_source(source):
+        raise ValueError(f"{label}.source cannot be a writer-mutable KiCad design file")
+    if not isinstance(raw["sha256"], str) or not SHA256_RE.fullmatch(raw["sha256"]):
+        raise ValueError(f"{label}.sha256 must be a 64-character lowercase hex digest")
+
+
+def _validate_hand_fit_selection(raw, policy, deviations):
+    """Category-to-identity source chain (AGENTEE-207): the owner quote names a part category, never the MPN.
+
+    The owner statement stays the only hand-fit authority and is cited unchanged. The selection is a captured
+    decision line naming both that category and the exact MPN/LCSC, and must be a reviewed decision document
+    (REVIEWED_HAND_FIT_SELECTIONS); each record is a captured JSON object at a pointer carrying that exact
+    identity. Nothing here is agent testimony: every link is pinned bytes."""
+    from .hardware_interface import exact_keys, text
+    from .part_decisions import names_identity
+    label = "hand_fit_policy.selection"
+    exact_keys(raw, "category source sha256 line quote records")
+    text(raw["category"])
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _/.-]*[A-Za-z0-9]", raw["category"]):
+        raise ValueError(f"{label}.category must be one category term from the owner quote")
+    if not names_identity(raw["category"], policy["quote"]):
+        raise ValueError(f"hand_fit_policy.quote does not name the category {raw['category']!r}")
+    _hand_fit_source(raw, label, deviations)
+    if raw["source"] == policy["source"]:
+        raise ValueError(f"{label}.source must be a decision other than the owner hand-fit statement")
+    if isinstance(raw["line"], bool) or not isinstance(raw["line"], int) or raw["line"] < 1:
+        raise ValueError(f"{label}.line must be a positive integer")
+    text(raw["quote"])
+    if "\n" in raw["quote"] or "\r" in raw["quote"]:
+        raise ValueError(f"{label}.quote must be text from one source line")
+    if not names_identity(raw["category"], raw["quote"]):
+        raise ValueError(f"{label}.quote does not name the category {raw['category']!r}")
+    records = raw["records"]
+    if not isinstance(records, list) or not records:
+        raise ValueError(f"{label}.records must name at least one captured identity record")
+    for index, record in enumerate(records):
+        exact_keys(record, "source sha256 pointer")
+        _hand_fit_source(record, f"{label}.records[{index}]", deviations)
+        if not isinstance(record["pointer"], str) or not (record["pointer"] == "" or record["pointer"].startswith("/")):
+            raise ValueError(f"{label}.records[{index}].pointer must be a JSON pointer")
+    if len({(r["source"], r["pointer"]) for r in records}) != len(records):
+        raise ValueError(f"duplicate {label} record")
+    if len(records) < 2:
+        raise ValueError(f"{label}.records must pin both the manifest entry and the part record it names")
+    reviewed = _reviewed_selection(raw)
+    return {key: raw[key] for key in ("category", "source", "sha256", "line", "quote")} | reviewed | {
+        "records": [dict(r) for r in records]}
+
+
+# The closed, reviewed profile of hand-fit selection decisions (AGENTEE-207). A selection binds an owner category
+# to an exact identity only when its cited decision is one of these reviewed captured documents, byte for byte
+# (sha256), at the reviewed line, quote and category. The whole document is the reviewed context: any other
+# revision -- an added qualifier, a withdrawal, a renamed label, even an unrelated new decision -- is unsupported
+# until it is reviewed and added here. No decision wording is interpreted, so no wording can authorize a part.
+# Entry: the pod's D-PCB-10 in telemetry-pod/expansion/design-rules/constraints.json, fome-mc commit
+# 7ab81564dd638ed68b664f3036a78187ce5760bd (the same blob as fome-mc main 7c62ef7), reviewed under AGENTEE-207.
+REVIEWED_HAND_FIT_SELECTIONS = (
+    {"decision": "D-PCB-10 J1 orientation (owner ruling 2026-10-21)",
+     "sha256": "e7e095b3ca595fdfb3c73fc22ad87c326fbc1c152523e85f2da4df4d908ea2e4", "line": 175,
+     "quote": "J1 is the 35-position RIGHT-ANGLE TE AMPSEAL 1-776163-1 (LCSC C596198; footprint "
+              "PodConnector:AMPSEAL_35_1-776163-1)",
+     "category": "AMPSEAL", "reference": "J1", "mpn": "1-776163-1", "lcsc": "C596198",
+     "footprint": "PodConnector:AMPSEAL_35_1-776163-1"},
+)
+
+
+def _reviewed_selection(raw):
+    """The reviewed decision the citation is, exactly; anything else is unsupported, never inferred."""
+    for reviewed in REVIEWED_HAND_FIT_SELECTIONS:
+        if all(raw[key] == reviewed[key] for key in ("sha256", "line", "quote", "category")):
+            return {key: reviewed[key] for key in ("decision", "reference", "mpn", "lcsc", "footprint")}
+    raise ValueError("hand_fit_policy.selection is not a reviewed selection decision: its document sha256, line, "
+                     "quote and category must equal one reviewed entry exactly; any other decision, or any revision "
+                     "of a reviewed one, is unsupported until reviewed")
+
+
+def _json_pointer(doc, pointer):
+    for token in pointer.split("/")[1:] if pointer else []:
+        token = token.replace("~1", "/").replace("~0", "~")
+        if isinstance(doc, list) and re.fullmatch(r"0|[1-9][0-9]*", token) and int(token) < len(doc):
+            doc = doc[int(token)]
+        elif isinstance(doc, dict) and token in doc:
+            doc = doc[token]
+        else:
+            raise ValueError(f"pointer {pointer!r} does not resolve")
+    return doc
 
 
 def capability(params, files, inputs=None):
@@ -1489,6 +1594,12 @@ def capability(params, files, inputs=None):
         if cfg["hand_fit_policy"]["source"] not in files:
             raise ValueError("hand_fit_policy.source must be a captured input")
         immutable_inputs.append(cfg["hand_fit_policy"]["source"])
+        selection = cfg["hand_fit_policy"].get("selection")
+        for rel in ([selection["source"], *(r["source"] for r in selection["records"])] if selection else []):
+            if rel not in files:
+                raise ValueError("hand_fit_policy.selection sources must be captured inputs")
+            if rel not in immutable_inputs:
+                immutable_inputs.append(rel)
     if cfg["rating_provenance"] is not None:
         for key in ("receipt", "report"):
             if cfg["rating_provenance"][key] not in files:
@@ -1589,14 +1700,103 @@ def _verify_hand_fit_policy(inputs, policy):
     if policy["line"] > len(lines) or policy["quote"] not in lines[policy["line"] - 1]:
         raise AssemblyReadinessExecutionError(
             "failed", f"hand_fit_policy quote is absent from {rel!r} line {policy['line']}")
+    selection = policy.get("selection")
     try:
         unit = _policy_unit(lines, policy["line"] - 1)
-        for identity in policy["identities"]:
-            _require_unconditional(unit, identity["mpn"])
+        # With a selection chain the owner statement must declare the category itself unconditionally.
+        for name in [selection["category"]] if selection else [i["mpn"] for i in policy["identities"]]:
+            _require_unconditional(unit, name)
     except ValueError as exc:
         raise AssemblyReadinessExecutionError(
             "failed", f"hand_fit_policy {rel!r} line {policy['line']}: {exc}") from exc
-    return policy | {"class": "owner_hand_fit"}
+    if selection is None:
+        return policy | {"class": "owner_hand_fit"}
+    return policy | {"class": "owner_hand_fit", "selection": _verify_hand_fit_selection(inputs, policy)}
+
+
+def _verify_hand_fit_selection(inputs, policy):
+    """The complete chain is mandatory: a reviewed pinned decision, a manifest entry pinning the decision's
+    footprint, and the part record that entry names. Every link is pinned bytes carrying the one identity."""
+    selection, identities = policy["selection"], policy["identities"]
+
+    def pinned(citation, label):
+        path, rel = _resolve_captured_file(inputs, citation["source"], label)
+        actual = digest(path)
+        if actual != citation["sha256"]:
+            raise AssemblyReadinessExecutionError(
+                "failed", f"{label} {rel!r} sha256 mismatch: expected {citation['sha256']}, got {actual}")
+        try:
+            return rel, path.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise AssemblyReadinessExecutionError("failed", f"unreadable {label}: {exc}") from exc
+
+    rel, content = pinned(selection, "hand_fit_policy selection source")
+    lines = content.splitlines()
+    if selection["line"] > len(lines) or selection["quote"] not in lines[selection["line"] - 1]:
+        raise AssemblyReadinessExecutionError(
+            "failed", f"hand_fit_policy selection quote is absent from {rel!r} line {selection['line']}")
+    wanted = {(i["mpn"], i["lcsc"]) for i in identities}
+    hashes, matched, links, footprints = {r["source"]: r["sha256"] for r in selection["records"]}, set(), [], {}
+    for record in selection["records"]:
+        rel, content = pinned(record, "hand_fit_policy selection record")
+        try:
+            obj = _json_pointer(json.loads(content), record["pointer"])
+        except ValueError as exc:
+            raise AssemblyReadinessExecutionError(
+                "failed", f"hand_fit_policy selection record {rel!r}: {exc}") from exc
+        found = (obj.get("mpn"), obj.get("lcsc")) if isinstance(obj, dict) else None
+        if found not in wanted:
+            raise AssemblyReadinessExecutionError(
+                "failed", f"hand_fit_policy selection record {rel!r} at {record['pointer']!r} carries "
+                          f"{found}, not a policy identity")
+        matched.add(found)
+        # CAD provenance: every footprint the chain pins for an identity must agree; the design must carry it.
+        if "footprint" in obj:
+            if not isinstance(obj["footprint"], str) or not obj["footprint"]:
+                raise AssemblyReadinessExecutionError(
+                    "failed", f"hand_fit_policy selection record {rel!r} has a malformed footprint")
+            if footprints.setdefault(found, obj["footprint"]) != obj["footprint"]:
+                raise AssemblyReadinessExecutionError(
+                    "failed", f"hand_fit_policy selection records pin conflicting footprints for {found}: "
+                              f"{footprints[found]!r} and {obj['footprint']!r}")
+        # A manifest entry naming its part record must name the chain's pinned record bytes.
+        named = obj.get("selection") if isinstance(obj.get("selection"), dict) else {}
+        if "part_record" in named or "part_record_sha256" in named:
+            if hashes.get(named.get("part_record")) != named.get("part_record_sha256"):
+                raise AssemblyReadinessExecutionError(
+                    "failed", f"hand_fit_policy selection record {rel!r} names part record "
+                              f"{named.get('part_record')!r} {named.get('part_record_sha256')!r}, which is not a "
+                              "pinned record of the chain")
+            if "lcsc" in named and named["lcsc"] != found[1]:
+                raise AssemblyReadinessExecutionError(
+                    "failed", f"hand_fit_policy selection record {rel!r} selects {named['lcsc']!r}, not {found[1]!r}")
+            if not isinstance(obj.get("footprint"), str):
+                raise AssemblyReadinessExecutionError(
+                    "unsupported", f"hand_fit_policy selection manifest entry {rel!r} at {record['pointer']!r} "
+                                   "pins no footprint; the chain's CAD provenance is unknown")
+            links.append({"record": rel, "pointer": record["pointer"], "part_record": named["part_record"],
+                          "part_record_sha256": named["part_record_sha256"]})
+    if matched != wanted:
+        raise AssemblyReadinessExecutionError(
+            "failed", f"hand_fit_policy selection records do not carry every policy identity: {sorted(wanted - matched)}")
+    # Mandatory complete chain: no manifest entry, or a record no entry names, leaves the custody unknown.
+    if not links:
+        raise AssemblyReadinessExecutionError(
+            "unsupported", "hand_fit_policy selection records hold no manifest entry naming a pinned part record; "
+                           "the complete source chain (decision, manifest entry, part record) is mandatory")
+    unlinked = sorted(set(hashes) - {link["record"] for link in links} - {link["part_record"] for link in links})
+    if unlinked:
+        raise AssemblyReadinessExecutionError(
+            "unsupported", f"hand_fit_policy selection records {unlinked} are neither a manifest entry nor the "
+                           "part record one names")
+    identity = (selection["mpn"], selection["lcsc"])
+    if footprints.get(identity) != selection["footprint"]:
+        raise AssemblyReadinessExecutionError(
+            "unsupported", f"hand_fit_policy selection decision pins footprint {selection['footprint']!r} but the "
+                           f"chain's records pin {footprints.get(identity)!r}")
+    return selection | {"association": "category_selection", "part_record_links": links,
+                        "footprints": [{"mpn": mpn, "lcsc": lcsc, "footprint": footprints[(mpn, lcsc)]}
+                                       for mpn, lcsc in sorted(footprints)]}
 
 
 # The owner text, not the quote, decides whether a policy identity is unconditional.
@@ -1734,6 +1934,15 @@ def _owner_hand_fit(citation, cfg, catalog, identity, matches):
                          'the deviations file cannot assert it')
     if identity not in citation['identities']:
         raise ValueError(f'identity {identity} is not named by the owner hand-fit policy')
+    if 'selection' in citation and sorted({c['reference'] for c in matches}) != [citation['selection']['reference']]:
+        raise ValueError(f"design references {sorted({c['reference'] for c in matches})} differ from the hand-fit "
+                         f"selection decision's {citation['selection']['reference']!r}")
+    for pinned in citation.get('selection', {}).get('footprints', []):
+        if (pinned['mpn'], pinned['lcsc']) == (identity['mpn'], identity['lcsc']):
+            placed = sorted({_lookup_single_property(c['properties'], 'Footprint') or '' for c in matches})
+            if placed != [pinned['footprint']]:
+                raise ValueError(f"design footprint {placed} differs from the hand-fit selection chain's pinned "
+                                 f"footprint {pinned['footprint']!r}")
     if identity['lcsc'] is None:
         if any(LCSC_RE.fullmatch(_lookup_single_property(c['properties'], 'LCSC') or '') for c in matches):
             raise ValueError('owner hand-fit identity without LCSC cannot cover a native LCSC id')
@@ -1819,6 +2028,8 @@ def _assembly_deviations(inputs, cfg, extracted, catalog, captured_files, citati
                     entry.update(stock_state='owner_hand_fit', policy=deviation['policy'],
                                  policy_citation={k: citation[k] for k in ('source', 'sha256', 'line', 'quote')},
                                  catalog_observation=observation)
+                    if 'selection' in citation:
+                        entry['policy_selection'] = citation['selection']
                 declared.append(entry)
         except AssemblyReadinessExecutionError:
             raise

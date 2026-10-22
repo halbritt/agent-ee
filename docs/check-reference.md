@@ -1398,9 +1398,19 @@ admitted regardless of stock only for an exact identity listed in the scope's
 exact quote. The whole cited Markdown unit must name that identity outside
 every conditional clause. A conditional or ambiguous statement, such as
 NEO-M9N "if unstocked", refuses the run. The identity still needs a fresh,
-known-stock catalog row. See the
-[hand-fit contract](assembly-readiness.md#declared-hand-fit-deviations) and
-[owner hand-fit policy](assembly-readiness.md#owner-hand-fit-policy).
+known-stock catalog row. When the owner text names only a part category ("the
+AMPSEAL header"), an optional `selection` chain binds it to the exact identity
+through a mandatory, complete chain of pinned captured sources: a reviewed
+decision (its document hash, line, quote and category equal an entry of the
+closed `REVIEWED_HAND_FIT_SELECTIONS` profile; today only the pod's D-PCB-10), a
+parts-manifest entry pinning that footprint, and the part record the entry
+names. No decision wording is interpreted: any other decision or revised
+decision document, a missing manifest entry or unknown CAD is `unsupported`; a broken link refuses the run; a placed footprint or reference
+other than the decision's is a defect. This is an assembly disposition only; it
+grants no mechanical-fit or purchase approval. See the
+[hand-fit contract](assembly-readiness.md#declared-hand-fit-deviations),
+[owner hand-fit policy](assembly-readiness.md#owner-hand-fit-policy) and
+[category selection chain](assembly-readiness.md#category-selection-chain).
 
 ## Schematic readability lint
 
