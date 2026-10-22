@@ -461,24 +461,95 @@ def image_native_rerun(first, output, image, repeats=2):
     return read_json(output/'rerun'/'native-rerun.json')
 
 
-# A failed sub-step's reason can embed its execution record as text: the run's
-# own directory and its duration are run identity and timing, nothing else.
-EMBEDDED_DURATION = re.compile(r"'duration_s': [0-9.eE+-]+")
+# A failed DRC copper-containment sub-step embeds its sandbox execution record,
+# as Python text, in three identified check fields. The record is also sealed as
+# check evidence. Only when the text reproduces that sealed record exactly is it
+# compared as a record: its duration is timing, and the run directory the record
+# itself binds (validated below) is run identity. Every other string stays exact.
+CONTAINMENT_FAILURE = 'native copper containment failed: '
+CONTAINMENT_PREFIXES = {'reason':'','summary':'DRC copper containment: ','limitations':'Copper containment unavailable: '}
 
 
-def canonical_text(value, run):
-    if isinstance(value,dict):
-        return {k:canonical_text(v,run) for k,v in value.items()}
-    if isinstance(value,list):
-        return [canonical_text(v,run) for v in value]
-    if isinstance(value,str):
-        return EMBEDDED_DURATION.sub("'duration_s': <volatile>",value.replace(str(run),'<run>'))
-    return value
+def execution_identity(record, run, check_id):
+    """The directory the sealed containment record ran in, from its own sandbox binds.
+
+    It must bind exactly one ``<dir>/inputs`` at /candidate and ``<dir>/work/<check>/containment``
+    at /work, with ``<dir>`` named like the retained run; otherwise None.
+    """
+    argv = record.get('sandbox_argv') if isinstance(record,dict) else None
+    if not isinstance(argv,list) or not all(isinstance(a,str) for a in argv):
+        return None
+    binds = {}
+    for i in range(len(argv)-2):
+        if argv[i] in ('--ro-bind','--bind') and argv[i+2] in ('/candidate','/work'):
+            binds.setdefault(argv[i+2],[]).append(argv[i+1])
+    if sorted(binds)!=['/candidate','/work'] or any(len(v)!=1 for v in binds.values()):
+        return None
+    from pathlib import PurePosixPath
+    inputs, work = PurePosixPath(binds['/candidate'][0]), PurePosixPath(binds['/work'][0])
+    identity = inputs.parent
+    if (not inputs.is_absolute() or inputs.name!='inputs' or '..' in inputs.parts
+            or identity.name!=Path(run).name or work!=identity/'work'/check_id/'containment'):
+        return None
+    return str(identity)
+
+
+def canonical_execution(record, identity):
+    """The sealed record with its duration and its own run-directory prefix masked."""
+    result = dict(record)
+    result['duration_s'] = '<volatile>'
+    # Path-component boundary: a sibling such as <identity>-backup stays exact.
+    result['sandbox_argv'] = ['<run>'+a[len(identity):] if a==identity or a.startswith(identity+'/') else a
+                              for a in record['sandbox_argv']]
+    return result
+
+
+def canonical_containment(text, field, sealed, identity):
+    prefix = CONTAINMENT_PREFIXES[field]+CONTAINMENT_FAILURE
+    if not isinstance(text,str) or not text.startswith(prefix):
+        return text
+    import ast
+    try:
+        embedded = ast.literal_eval(text[len(prefix):])
+    except (ValueError,SyntaxError,MemoryError,RecursionError):
+        return text
+    if embedded!=sealed:
+        return text
+    return {'containment_failure':CONTAINMENT_PREFIXES[field],'execution':canonical_execution(sealed,identity)}
+
+
+def containment_volatility(check, run):
+    """Mask run identity/timing in the identified fields that embed the sealed record."""
+    path = Path(run)/'work'/check.get('id','')/'containment'/'execution.json'
+    if check.get('kind')!='drc' or not path.is_file():
+        return check
+    try:
+        sealed = read_json(path)
+    except ValueError:
+        return check
+    identity = execution_identity(sealed,run,check['id'])
+    if identity is None or not isinstance(sealed.get('duration_s'),(int,float)):
+        return check
+    details = check.get('details')
+    containment = details.get('containment') if isinstance(details,dict) else None
+    if isinstance(containment,dict) and 'reason' in containment:
+        containment['reason'] = canonical_containment(containment['reason'],'reason',sealed,identity)
+    if 'summary' in check:
+        check['summary'] = canonical_containment(check['summary'],'summary',sealed,identity)
+    if isinstance(check.get('limitations'),list):
+        check['limitations'] = [canonical_containment(t,'limitations',sealed,identity) for t in check['limitations']]
+    return check
 
 
 def canonical_check(check, run=None):
-    """Drop only documented execution volatility; keep numerical/locator data."""
-    result = copy.deepcopy(check) if run is None else canonical_text(check,Path(run).absolute())
+    """Drop only documented execution volatility; keep numerical/locator data.
+
+    ``run`` is the retained run's storage directory, which may differ from the
+    directory it executed in; it only locates the sealed containment record.
+    """
+    result = copy.deepcopy(check)
+    if run is not None:
+        result = containment_volatility(result,run)
     for key in ('started_utc','finished_utc','duration_s','candidate_id','run_id'):
         result.pop(key,None)
     if isinstance(result.get('details',{}).get('tool'),dict):
@@ -945,7 +1016,10 @@ def report(manifest_path, first, second=None, judgements=None):
             'native_witness_differences':witness_differences,
             'same_check_assessments':not assessment_differences,'different_check_assessments':assessment_differences,
             'same_seed_classifications':not classification_differences,'different_seed_classifications':classification_differences,
-            'normalization':'Exclude timing/candidate/run IDs and evidence hashes; sort native finding/item arrays only; preserve exact details/locators/numerical values.',
+            'normalization':'Exclude timing/candidate/run IDs and evidence hashes; sort native finding/item arrays only; '
+                            'in DRC containment reason, summary and limitation text that reproduces the sealed containment '
+                            'record, mask only its duration and the run directory its own binds name; preserve exact '
+                            'details/locators/numerical values.',
             'semantic_basis':'Only DRC unconnected_items witnesses may match semantically: on byte-identical captured boards, '
                              'both runs must name the same native copper islands per net, each as one spanning tree; '
                              'every other field must be exactly equal.'}

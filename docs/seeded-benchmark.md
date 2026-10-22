@@ -375,8 +375,21 @@ classification (`same_check_assessments`, `same_seed_classifications`). Its
 check records agree with run 1 by connection semantics. The one exact difference
 is again the DRC `unconnected_items` witness choice in `tmf8829-footprint-01`.
 A failed copper-containment sub-step on `usb-host-pmod`, whose outline is not
-closed, embeds the run directory and a duration in its reason text. The
-comparator now treats exactly those two as run identity and timing.
+closed, embeds its sandbox execution record, with the run directory and a
+duration, in the DRC record's containment reason, limitation and (when the DRC
+is malformed) summary text. The same record is sealed as check evidence
+(`work/<check>/containment/execution.json`). The comparator masks it only where
+the text reproduces that sealed record exactly. It masks the record's
+`duration_s` and the run directory that the record's own `/candidate` and `/work`
+binds name, matched at path-component boundaries. That directory must be the
+same in both binds and carry the retained run's name. The current storage
+directory is never used, so evidence fetched to another directory compares as
+it executed. Any other string, including locators, values, descriptions and
+paths outside the bound run directory, is compared exactly. The run 2
+comparison above was made by the earlier comparator at the original execution
+paths. That comparator masked any substring and any `duration_s` text, and was
+corrected after review. The corrected comparator has not yet been re-run on
+the fetched private evidence.
 
 The [judged control layer](#judged-control-layer) decides the 199 open records
 from run 1, and gives identical results on run 2:

@@ -77,22 +77,103 @@ class ReportTests(unittest.TestCase):
         self.assertNotEqual(canonical_check(record),canonical_check(other))
         self.assertNotEqual(canonical_check(record),canonical_check({**record,'location':'R2'}))
 
-    def test_embedded_run_directory_and_duration_are_volatile_but_other_text_is_not(self):
+    @staticmethod
+    def failed(run, duration, exit_code=1, board='/candidate/b.kicad_pcb', executed=None, inputs=None, text=None,
+               extra=()):
+        """A DRC record whose containment reason embeds the record sealed under ``run``.
+
+        ``executed`` is the directory the record ran in (default: ``run``, unrelocated).
+        """
+        import json
+        from pathlib import Path
+        executed = str(executed or run)
+        record = {'argv':['python3',board],'sandbox_argv':['bwrap','--ro-bind',inputs or executed+'/inputs','/candidate',
+                  '--ro-bind','/opt/agent-ee/src','/app','--bind',executed+'/work/drc/containment','/work',
+                  *[a.replace('<executed>',executed) for a in extra],'--',board],
+                  'timeout_s':120,'execution':'failed','exit_code':exit_code,'duration_s':duration}
+        sealed = Path(run)/'work/drc/containment';sealed.mkdir(parents=True,exist_ok=True)
+        (sealed/'execution.json').write_text(json.dumps(record,sort_keys=True))
+        reason = 'native copper containment failed: '+str(record if text is None else text)
+        return {'id':'drc','kind':'drc','summary':'DRC copper containment: '+reason,
+                'limitations':['zone fill evaluated as saved','Copper containment unavailable: '+reason],
+                'details':{'containment':{'reason':reason},'input':executed+'/inputs/b.kicad_pcb'}}
+
+    def test_sealed_containment_record_masks_only_its_run_directory_and_duration(self):
+        import tempfile
+        from pathlib import Path
         from agent_ee.benchmark_run import canonical_check
-        def failed(run, duration, exit_code=1, board='/candidate/b.kicad_pcb'):
-            reason = (f"native copper containment failed: {{'argv': ['python3', '{board}'], 'sandbox_argv': "
-                      f"['--ro-bind', '{run}/inputs', '/candidate'], 'exit_code': {exit_code}, 'duration_s': {duration}}}")
-            return {'id':'drc','limitations':['Copper containment unavailable: '+reason],
-                    'details':{'containment':{'reason':reason}}}
-        first = canonical_check(failed('/scratch/run1/runs/a',0.57),'/scratch/run1/runs/a')
-        self.assertEqual(first,canonical_check(failed('/scratch/run2/runs/a',0.64),'/scratch/run2/runs/a'))
-        self.assertIn("'duration_s': <volatile>",first['details']['containment']['reason'])
-        # Anything else in the embedded text stays significant.
-        for changed in (failed('/scratch/run2/runs/a',0.64,exit_code=2),
-                        failed('/scratch/run2/runs/a',0.64,board='/candidate/c.kicad_pcb'),
-                        failed('/scratch/other/runs/a',0.64)):
-            with self.subTest(changed=changed['details']['containment']['reason'][-80:]):
-                self.assertNotEqual(first,canonical_check(changed,'/scratch/run2/runs/a'))
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            one, two = tmp/'run1/runs/a', tmp/'run2/runs/a'
+            first = canonical_check(self.failed(one,0.57),one)
+            # The embedded record, not the free-text check field beside it.
+            self.assertEqual(first['details']['containment']['reason']['execution']['duration_s'],'<volatile>')
+            self.assertIn('<run>/inputs',first['details']['containment']['reason']['execution']['sandbox_argv'])
+            self.assertEqual(first['limitations'][0],'zone fill evaluated as saved')
+            self.assertEqual(first['summary']['containment_failure'],'DRC copper containment: ')
+            self.assertEqual(first['limitations'][1]['execution'],first['summary']['execution'])
+            other = self.failed(two,0.64)
+            self.assertNotEqual(first,canonical_check(other,two),'details.input is not an identified field')
+            del other['details']['input']
+            reference = self.failed(one,0.57);del reference['details']['input']
+            first = canonical_check(reference,one)
+            self.assertEqual(first,canonical_check(other,two))
+            # Anything else in the embedded record stays significant.
+            for changed in (self.failed(two,0.64,exit_code=2),self.failed(two,0.64,board='/candidate/c.kicad_pcb'),
+                            # bound outside its own run: the identity is not validated
+                            self.failed(two,0.64,inputs=str(tmp/'other/runs/a/inputs')),
+                            # a sibling of the run directory is not inside it
+                            self.failed(two,0.64,inputs=str(two)+'-backup/inputs'),
+                            # reason text that does not reproduce the sealed record
+                            self.failed(two,0.64,text={'argv':['python3','/candidate/b.kicad_pcb'],'exit_code':1})):
+                del changed['details']['input']
+                with self.subTest(changed=changed['details']['containment']['reason'][-90:]):
+                    self.assertNotEqual(first,canonical_check(changed,two))
+            # Masking stops at a path-component boundary.
+            def pair(extra):
+                a = self.failed(one,0.57,extra=extra);del a['details']['input'];a = canonical_check(a,one)
+                b = self.failed(two,0.64,extra=extra);del b['details']['input']
+                return a, canonical_check(b,two)
+            self.assertEqual(*pair(('--ro-bind','<executed>/lib','/lib')))
+            self.assertNotEqual(*pair(('--ro-bind','<executed>-backup/lib','/lib')))
+            # Without a sealed record nothing is masked.
+            self.assertNotEqual(canonical_check(reference),canonical_check(self.failed(two,0.64)))
+
+    def test_relocated_storage_uses_the_sealed_execution_identity(self):
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import canonical_check
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            executed, stored = tmp/'exec/run1/runs/a', tmp/'fetched/x/runs/a'
+            check = self.failed(executed,0.57);del check['details']['input']
+            shutil.copytree(executed,stored)
+            self.assertEqual(canonical_check(check,stored),canonical_check(check,executed))
+            other = self.failed(tmp/'run2/runs/a',0.64);del other['details']['input']
+            self.assertEqual(canonical_check(check,stored),canonical_check(other,tmp/'run2/runs/a'))
+            # The retained run must carry the executed run's name.
+            renamed = tmp/'fetched/x/runs/b';shutil.copytree(executed,renamed)
+            self.assertNotEqual(canonical_check(check,renamed),canonical_check(check,executed))
+
+    def test_free_text_paths_and_locators_stay_significant(self):
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import canonical_check
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            runs = []
+            for name in ('run1','run2'):
+                run = tmp/name;self.failed(run,0.5);runs.append(run)
+            for run in (None,*runs):
+                with self.subTest(sealed=run is not None):
+                    one, two = (run and runs[0]), (run and runs[1])
+                    self.assertNotEqual(canonical_check({'id':'drc','kind':'drc','details':{'input':str(tmp)+'/run1-backup/b.kicad_pcb'}},one),
+                                        canonical_check({'id':'drc','kind':'drc','details':{'input':str(tmp)+'/run2-backup/b.kicad_pcb'}},two))
+                    self.assertNotEqual(canonical_check({'id':'drc','kind':'drc','location':"R1 value 'duration_s': 1"},one),
+                                        canonical_check({'id':'drc','kind':'drc','location':"R1 value 'duration_s': 2"},two))
+                    self.assertNotEqual(canonical_check({'id':'drc','kind':'drc','details':{'input':str(tmp)+'/run1/b'}},one),
+                                        canonical_check({'id':'drc','kind':'drc','details':{'input':str(tmp)+'/run2/b'}},two))
 
 
 class WiringTests(unittest.TestCase):
@@ -344,8 +425,11 @@ class ConnectionSemanticsTests(unittest.TestCase):
         self.assertIsNone(connection_semantics(self.native(('pad','a1'),('a2','b1'),('pad','b1')),self.islands))
 
 
-def owned_split_board(directory):
-    """One net in three saved-copper islands: a lone pad and two separate tracks."""
+def owned_split_board(directory, closed=True):
+    """One net in three saved-copper islands: a lone pad and two separate tracks.
+
+    ``closed=False`` saves two edge segments that do not close the outline.
+    """
     import pcbnew
     from pathlib import Path
     board = pcbnew.BOARD()
@@ -363,9 +447,15 @@ def owned_split_board(directory):
             tracks.append(track)
     # An outline keeps DRC from reporting the board itself, whose item UUID
     # KiCad regenerates on every load.
-    outline = pcbnew.PCB_SHAPE(board);outline.SetShape(pcbnew.SHAPE_T_RECT);outline.SetLayer(pcbnew.Edge_Cuts)
-    outline.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(-5),pcbnew.FromMM(-5)))
-    outline.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(15),pcbnew.FromMM(15)));board.Add(outline)
+    if closed:
+        outline = pcbnew.PCB_SHAPE(board);outline.SetShape(pcbnew.SHAPE_T_RECT);outline.SetLayer(pcbnew.Edge_Cuts)
+        outline.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(-5),pcbnew.FromMM(-5)))
+        outline.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(15),pcbnew.FromMM(15)));board.Add(outline)
+    else:
+        for start,end in (((-5,-5),(15,-5)),((15,-5),(15,15))):
+            edge = pcbnew.PCB_SHAPE(board);edge.SetShape(pcbnew.SHAPE_T_SEGMENT);edge.SetLayer(pcbnew.Edge_Cuts)
+            edge.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(start[0]),pcbnew.FromMM(start[1])))
+            edge.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(end[0]),pcbnew.FromMM(end[1])));board.Add(edge)
     path = Path(directory)/'owned.kicad_pcb';pcbnew.SaveBoard(str(path),board)
     text = path.read_text()
     from agent_ee.benchmark import parse, children, one, uid, values
@@ -406,10 +496,11 @@ class NativeConnectionWitnessTests(unittest.TestCase):
                 self.assertFalse(compare_records(first,other,board)['semantic'])
 
 
-def owned_native_run(root):
+def owned_native_run(root, text=None):
     """One owned checks-only review with native ERC and DRC, in a benchmark run layout.
 
-    The board is the owned split net, so DRC retains unconnected-item witnesses.
+    The board is the owned split net, so DRC retains unconnected-item witnesses;
+    ``text`` supplies its saved bytes instead of a freshly generated board.
     """
     import json
     import shutil
@@ -420,8 +511,8 @@ def owned_native_run(root):
     source = root/'source';source.mkdir()
     for name in ('interface.kicad_sch','requirements.md'):
         shutil.copyfile(fixture/name,source/name)
-    text = owned_split_board(source)[0]
-    (source/'interface.kicad_pcb').write_text(text);(source/'owned.kicad_pcb').unlink()
+    text = text or owned_split_board(source)[0]
+    (source/'interface.kicad_pcb').write_text(text);(source/'owned.kicad_pcb').unlink(missing_ok=True)
     checks = [{'id':'owned-netlist','kind':'netlist'},{'id':'owned-erc','kind':'erc'},{'id':'owned-drc','kind':'drc'}]
     scope = {'schema':'agent-ee.scope/2','name':'owned','scope':'Owned native rerun fixture.',
         'schematic':'interface.kicad_sch','board':'interface.kicad_pcb',
@@ -475,6 +566,38 @@ class NativeRerunTests(unittest.TestCase):
             (run/'result.json').write_text(json.dumps({**retained,'outcome':'changed'}))
             with self.assertRaisesRegex(ValueError,'retained result changed'):
                 native_rerun(first,Path(tmp)/'tampered-result')
+
+
+class RelocatedEvidenceTests(unittest.TestCase):
+    def test_relocated_runs_reproduce_check_assessments_with_failed_containment(self):
+        """Fetched evidence lives elsewhere than it ran; the sealed record names where it ran."""
+        from toolchain import require_toolchain
+        require_toolchain(native=True)
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from agent_ee.benchmark_run import observations
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            # Both runs review one prepared board, whose outline is not closed.
+            text = owned_split_board(tmp,closed=False)[0]
+            executed = []
+            for name in ('one','two'):
+                (tmp/name).mkdir()
+                executed.append(owned_native_run(tmp/name,text)[1])
+            fetched = []
+            for n, run in enumerate(executed):
+                target = tmp/f'fetched-{n}'/'runs'/run.name
+                shutil.copytree(run,target,symlinks=True);shutil.rmtree(run)
+                fetched.append(target)
+            records = [observations(run) for run in fetched]
+            drc = [r['owned-drc']['check'] for r in records]
+            self.assertEqual(drc[0]['details']['containment']['execution'],'unavailable')
+            reason = drc[0]['details']['containment']['reason']
+            self.assertEqual(reason['execution']['execution'],'failed',reason)
+            self.assertEqual(reason['execution']['duration_s'],'<volatile>')
+            self.assertIn('<run>/inputs',reason['execution']['sandbox_argv'])
+            self.assertEqual({k:v['check'] for k,v in records[0].items()},{k:v['check'] for k,v in records[1].items()})
 
 
 class ControlAdjudicationTests(unittest.TestCase):
