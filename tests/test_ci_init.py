@@ -6,6 +6,7 @@ refusal rejects). Behaviour is proven with the real tini binary run as a subreap
 (`-s`), which is the role PID 1 plays in the container.
 """
 import os
+import select
 import shutil
 import signal
 import subprocess
@@ -20,50 +21,42 @@ TIMEOUT = 20
 
 REAP_CHILD = textwrap.dedent('''
     import os, sys, time
-    init = os.getppid()
-    def zombies(init):
-        out = []
-        for entry in os.listdir('/proc'):
-            if entry.isdigit():
-                try:
-                    stat = open(f'/proc/{entry}/stat').read()
-                except OSError:
-                    continue
-                rest = stat.rsplit(')', 1)[1].split()
-                if rest[0] == 'Z' and int(rest[1]) in (init, os.getpid()):
-                    out.append(entry)
-        return out
-    # Orphans: a middle process forks a grandchild and exits at once, so the
-    # grandchild is reparented to the init (the subreaper) and later exits.
+    exit_code, deadline_s = int(sys.argv[1]), float(sys.argv[2])
+    # Orphans: a middle process forks grandchildren and exits at once, so they are
+    # reparented to the init (the subreaper). Some exit immediately, one lingers.
+    # Each grandchild reports its PID first; this observer never waits on them.
     r, w = os.pipe()
     middle = os.fork()
     if middle == 0:
-        grand = os.fork()
-        if grand == 0:
-            os.close(r)
-            time.sleep(0.3)
-            os.write(w, b'x')
-            os._exit(0)
+        os.close(r)
+        for delay in (0, 0, 0.4):
+            if os.fork() == 0:
+                os.write(w, b'%d\\n' % os.getpid())
+                time.sleep(delay)
+                os._exit(0)
         os._exit(0)
     os.close(w)
     os.waitpid(middle, 0)
-    # An already-exited sibling whose parent never waits on it, then orphaned.
-    sibling = os.fork()
-    if sibling == 0:
-        os._exit(0)
-    os.read(r, 1)                      # the orphan has now exited
-    deadline = time.monotonic() + 10
+    with os.fdopen(r) as pipe:
+        orphans = [int(line) for line in pipe]     # EOF: every grandchild has closed w
+    assert len(orphans) == 3, orphans
+    # Gone from /proc means exited AND reaped (a live or zombie entry still exists).
+    deadline = time.monotonic() + deadline_s
     while time.monotonic() < deadline:
-        # The only zombie allowed is our own unwaited sibling.
-        leftover = [p for p in zombies(init) if p != str(sibling)]
-        if not leftover:
-            break
+        remaining = [p for p in orphans if os.path.exists(f'/proc/{p}')]
+        if not remaining:
+            sys.exit(exit_code)
         time.sleep(0.05)
-    else:
-        print('unreaped:', leftover, flush=True)
-        sys.exit(3)
-    os.waitpid(sibling, 0)
-    sys.exit(int(sys.argv[1]))
+    print('unreaped:', remaining, flush=True)
+    sys.exit(3)
+''')
+
+# Subreaper that never waits on adopted orphans: the fixture must fail under it.
+NON_REAPING_INIT = textwrap.dedent('''
+    import ctypes, os, subprocess, sys
+    ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)    # PR_SET_CHILD_SUBREAPER
+    child = subprocess.run([sys.executable, '-c', sys.argv[1], *sys.argv[2:]])
+    sys.exit(child.returncode)
 ''')
 
 SIGNAL_CHILD = textwrap.dedent('''
@@ -77,6 +70,14 @@ SIGNAL_CHILD = textwrap.dedent('''
     time.sleep(30)
     sys.exit(99)
 ''')
+
+
+def read_line(proc, timeout):
+    """First stdout line of proc, failing (the caller kills proc) if none arrives in time."""
+    ready, _, _ = select.select([proc.stdout], [], [], timeout)
+    if not ready:
+        raise AssertionError(f'no output from child within {timeout}s')
+    return proc.stdout.readline().strip()
 
 
 def find_tini():
@@ -97,8 +98,14 @@ class CiInitTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=TIMEOUT)
 
     def test_orphaned_grandchildren_are_reaped_and_status_forwarded(self):
-        result = self.run_tini(REAP_CHILD, 37)
+        result = self.run_tini(REAP_CHILD, 37, 10)
         self.assertEqual((result.returncode, result.stdout), (37, ''), result.stderr)
+
+    def test_reaping_fixture_fails_under_a_non_reaping_init(self):
+        result = subprocess.run([sys.executable, '-c', NON_REAPING_INIT, REAP_CHILD, '37', '2'],
+                                capture_output=True, text=True, timeout=TIMEOUT)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn('unreaped:', result.stdout)
 
     def test_exit_codes_forwarded_exactly(self):
         for code in (0, 1, 2, 42, 255):
@@ -116,7 +123,7 @@ class CiInitTests(unittest.TestCase):
                 proc = subprocess.Popen([self.tini, '-s', '--', sys.executable, '-c', SIGNAL_CHILD],
                                         stdout=subprocess.PIPE, text=True)
                 try:
-                    self.assertEqual(proc.stdout.readline().strip(), 'ready')
+                    self.assertEqual(read_line(proc, TIMEOUT), 'ready')
                     proc.send_signal(sig)
                     out, _ = proc.communicate(timeout=TIMEOUT)
                 finally:
@@ -125,6 +132,20 @@ class CiInitTests(unittest.TestCase):
                         proc.wait()
                 self.assertEqual(out.strip(), f'got {sig.name}')
                 self.assertEqual(proc.returncode, 40 + sig)
+
+
+class ReadinessBoundTests(unittest.TestCase):
+    def test_silent_live_child_fails_within_the_deadline(self):
+        proc = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'],
+                                stdout=subprocess.PIPE, text=True)
+        try:
+            started = time.monotonic()
+            with self.assertRaisesRegex(AssertionError, 'no output'):
+                read_line(proc, 0.3)
+            self.assertLess(time.monotonic() - started, 5)
+        finally:
+            proc.kill()
+            proc.wait()
 
 
 class DockerfileInitTests(unittest.TestCase):
