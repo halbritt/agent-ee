@@ -231,9 +231,20 @@ carries `drill_table`, the exact table it was checked against. That table holds
 `values_mm` and `continuous_from_mm`, plus the cited capture's `source_path`,
 `source_sha256` and `as_of`. Sizes are never rounded to a nearby option. A
 tampered or changed capture hash leaves the limit unsupported before any
-table is consulted, so on-table drills cannot be graded either. The gate covers
-via holes only, the one hole class the captured record lists options for. The
-preset compiles no rule for pad or NPTH holes, so it never grades them.
+table is consulted, so on-table drills cannot be graded either.
+
+A captured table lists via drills only, so it covers no drilled pad. The native
+inventory also records every drilled pad as `holes`: saved pad UUID,
+`hole_class` (`PTH`, `NPTH`, or `other` for any other drilled attribute) and the
+requested `drill_x_nm`/`drill_y_nm`. A board with any such hole cannot be graded
+by the table, whatever its size. The table record keeps its via grading as
+`via_status`, but becomes `execution=unsupported`, `status=not_evaluated` with
+`code=hole_class_without_drill_table`, the checked `drill_table`, and
+`unsupported_hole_classes`: one entry per observed class with its holes. The
+check is then unknown, never pass. A via refusal above keeps its own code and
+lists the uncovered classes beside it. Via surcharge records are classified
+exactly as on a via-only board, so proved via surcharges are still reported.
+Profiles without `drill_options` have no table and keep their continuous grading.
 Both scalar and conjunctive drill surcharge records then remain unknown because
 their minimum is unevaluated. Raw native reports remain retained evidence, but
 cannot establish a drill charge outside the declared options. The
@@ -349,7 +360,10 @@ the examples and both joint boundaries. It checks saved via IDs and reloads
 pad layers in a fresh process. The existing seal helper rejects changed results
 and profile bytes. It also covers unlisted drills, below-minimum defects, a
 below-minimum plus unlisted mix, exact nanometre boundaries,
-invalid option declarations and missing inventory. The compiler accepts the
+invalid option declarations and missing inventory. Saved and reloaded PTH,
+NPTH (including an oblong slot) and mixed via/pad boards are unknown, with
+their pad UUIDs and sizes, while via grading and surcharges stay as on via-only
+boards. The compiler accepts the
 optional `/2` drill field; check kinds and predicate names are unchanged.
 
 ## Evidence and failure

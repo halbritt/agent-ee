@@ -535,7 +535,11 @@ defect (`below_minimum_vias`), never a surcharge. Other drills (including 0.22 a
 0.28 mm) make drill grading unsupported and the check unknown, with saved via
 UUIDs in `unsupported_vias`, typed `code=via_drill_off_table`, and the checked
 `drill_table` with its capture path and sha256; beside a below-minimum drill, unknown takes
-precedence and both lists are kept. Drill surcharge records then stay unevaluated. Supplier process applicability
+precedence and both lists are kept. Drill surcharge records then stay unevaluated.
+Drilled PTH or NPTH pads have no captured table: the `via-drill` record keeps its
+via result as `via_status` but is unknown with `code=hole_class_without_drill_table`
+and `unsupported_hole_classes` (saved pad UUIDs and requested drill sizes), and
+the check is unknown, never pass. Supplier process applicability
 and pricing remain unqualified.
 The [telemetry-pod profile](telemetry-pod-fab-profile.md) records
 eight dated JLCPCB native/geometry limits plus a finished-thickness tolerance
