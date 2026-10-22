@@ -467,9 +467,11 @@ benchmark consumes, with licence classes; external libraries and 3D models are
 listed but never loaded. Reports keep misses, unsupported execution, unrelated
 findings and control records separate. Fixed rules classify control records:
 hardware-interface invariants give a 0/12 false-alarm rate, and native ERC/DRC
-give only share bounds, because most of their records stay unadjudicated. Native
-reruns in the pinned image agree by connection semantics; DRC witness choice
-varies. No model-review performance is established. Third-party source files
+give only share bounds. A separate, agent-drafted judgement ledger, bound to
+facts re-derived from the captured inputs, decides the remaining records of the
+2026-10-22 rerun. It gives an ERC share of 355/501 and a DRC share of 0.34 to
+0.39, with four font-dependent DRC records open. Native reruns in the pinned
+image agree by connection semantics; DRC witness choice varies. No model-review performance is established. Third-party source files
 and generated candidates/results remain scratch-only pending publication approval.
 
 ## Captured routing constraints
