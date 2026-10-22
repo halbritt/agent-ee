@@ -28,13 +28,15 @@ GATED_KINDS = frozenset({
     'jlc_cost_estimate', 'drc', 'part_binding', 'package_consistency', 'parts_subset',
     'land_pattern', 'catalog', 'part_selection',
 })
-# Board lineage stamp (AGENTEE-351): title block comment 9 names each carry digest of the
+# Board lineage stamp (AGENTEE-351): a title block comment names each carry digest of the
 # placement results that published open defects on this board's ancestry. It travels with
 # the board bytes, so a re-scoped copy cannot release without its placement evidence.
 # KiCad 10 keeps board-level properties in the project, not the saved board, so the
-# title block is the only persistent board field; an occupied comment 9 refuses.
+# title block is the only persistent board field. The writer prefers comment 9 and keeps
+# user text: an occupied slot moves the stamp to the highest free one (AGENTEE-412).
 STAMP = 'agent-ee.placement-lineage/1'
 STAMP_COMMENT = '9'
+STAMP_SLOTS = tuple(str(n) for n in range(9, 0, -1))
 # Gated admission recomputes native DRC on the captured board before any closure
 # (AGENTEE-351 H2): imported evidence cannot close carry by self-consistency.
 VERIFICATION = 'placement-lineage'
@@ -60,35 +62,66 @@ def unstamped(nodes):
     kept, found = [], None
     for node in nodes:
         if isinstance(node, list) and node and node[0] == 'title_block':
-            comments = [c for c in node[1:] if isinstance(c, list) and c[:2] == ['comment', STAMP_COMMENT]]
-            if any(len(c) == 3 and isinstance(c[2], str) and c[2].startswith(STAMP) for c in comments):
-                if found is not None or len(comments) != 1:
+            comments = [c for c in node[1:] if isinstance(c, list) and c[:1] == ['comment']]
+            claims = [c for c in comments if len(c) == 3 and isinstance(c[2], str) and c[2].startswith(STAMP)]
+            if claims:
+                # One claim in one unambiguous comment slot; a repeated slot hides which one KiCad reads.
+                if (found is not None or len(claims) != 1 or claims[0][1] not in STAMP_SLOTS or
+                        sum(c[1:2] == claims[0][1:2] for c in comments) != 1):
                     raise ValueError('ambiguous placement lineage stamp')
-                found = _stamp_digests(comments[0][2])
-                node = [c for c in node if c is not comments[0]]
+                found = _stamp_digests(claims[0][2])
+                node = [c for c in node if c is not claims[0]]
                 if len(node) == 1:
                     continue
         kept.append(node)
     return kept, found
 
 
-def stamp(data):
-    """Lineage stamp digests of saved board bytes; None when the board carries no stamp.
-
-    Always parsed with the shared parser, so an escaped marker cannot evade a byte search.
-    Only title block comment 9 is the stamp; the marker text anywhere else is user text.
-    """
+def _root(data):
     from .symbol_library import parse_sexpr
     try:
         root = parse_sexpr(data)
     except ValueError:
-        root = None
-    if root is None or root[0] != 'kicad_pcb':
+        return None
+    return root if root and root[0] == 'kicad_pcb' else None
+
+
+def stamp(data):
+    """Lineage stamp digests of saved board bytes; None when the board carries no stamp.
+
+    Always parsed with the shared parser, so an escaped marker cannot evade a byte search.
+    Only a title block comment that begins with the marker is the stamp; the marker text
+    anywhere else (title, company, revision, a comment's later words, board text) is user text.
+    """
+    root = _root(data)
+    if root is None:
         # No title block can be read, so any marker, escaped or not, refuses.
         if STAMP.encode() in data.replace(b'\\', b''):
             raise ValueError('placement lineage stamp in a board the shared parser cannot read')
         return None
     return unstamped(root[1:])[1]
+
+
+def stamp_slot(data):
+    """Title block comment the writer records the stamp in: the stamp's own slot, else
+    comment 9, else the highest comment without user text. User text is never replaced."""
+    root = _root(data)
+    if root is None:
+        raise ValueError('placement lineage stamp target is not a board the shared parser can read')
+    stamp(data)
+    occupied = set()
+    for node in root[1:]:
+        if isinstance(node, list) and node and node[0] == 'title_block':
+            for c in node[1:]:
+                if isinstance(c, list) and c[:1] == ['comment'] and len(c) >= 2:
+                    if len(c) == 3 and isinstance(c[2], str) and c[2].startswith(STAMP):
+                        return c[1]
+                    if len(c) != 3 or c[2] != '':
+                        occupied.add(c[1])
+    for slot in STAMP_SLOTS:
+        if slot not in occupied:
+            return slot
+    raise ValueError('every title block comment holds user text; placement lineage cannot be recorded')
 
 
 def stamp_violations(before, after):
