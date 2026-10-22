@@ -29,18 +29,24 @@ RATING_PROVENANCE = 'rating-provenance'
 # Optional envelope-content inputs; envelope, parts and board are the plan's and scope's own.
 CONTENT_PATHS = ('intent', 'layout', 'antenna_facts', 'captured_rule_areas')
 SOURCE = Path(__file__).resolve().parents[1]
-# Acceptance criteria each declared spec revision must carry (AGENTEE-197 review gap 6). Each
-# set is the numbered acceptance list of that revision's captured source, read from the verified
-# spec record's own acceptance entries; a revision outside this table is refused, never guessed.
-#   Rev-2: fixtures/telemetry-pod/spec.md sha256 09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493,
-#          POD-DOC-P1 bytes 30-214 'Revision 2', POD-AC-1..9.
-#   Rev-3: fome-mc 1157b91899fd9f420089fbec4264b823310f0ad9
-#          telemetry-pod/expansion/requirements/compiled/requirements-map/spec.md sha256
-#          e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6 (spec-record.json sha256
-#          1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b), POD-DOC-P1 bytes 30-421
-#          'Revision 3', POD-AC-10 bytes 21943-22224, POD-AC-11 bytes 22229-22495.
-REVISIONS = {'2': dict(criteria=9, bench=('POD-AC-8', 'POD-AC-9')),
-             '3': dict(criteria=11, bench=('POD-AC-8', 'POD-AC-9', 'POD-AC-10', 'POD-AC-11'))}
+# Authoritative pod requirement sources (AGENTEE-197 review H1). A plan selects one by name as
+# requirement_source; the supplied spec and its exact capture must be the pinned bytes, so the
+# revision, acceptance IDs and their locators come from that verified capture, never from
+# supplied prose. A new source is admitted only by a reviewed commit adding an entry here, with
+# both hashes taken from sha256sum of the captured files (see docs/pod-driver.md).
+SOURCES = {
+    # agent-ee fixtures/telemetry-pod/spec.md and spec-record.json (POD-AC-1..9).
+    'telemetry-pod-rev2': dict(
+        revision=2, bench=('POD-AC-8', 'POD-AC-9'),
+        spec_sha256='09e02c8d9471aabfa5d25935c87f436370cf1be367a96425b35305a53ce93493',
+        record_sha256='58f07c5ab3206aad70fc31561d873200d18ff9145b97cc0b1570c465a84fd250'),
+    # fome-mc 1157b91899fd9f420089fbec4264b823310f0ad9
+    # telemetry-pod/expansion/requirements/compiled/requirements-map/{spec.md,spec-record.json} (POD-AC-1..11).
+    'telemetry-pod-rev3': dict(
+        revision=3, bench=('POD-AC-8', 'POD-AC-9', 'POD-AC-10', 'POD-AC-11'),
+        spec_sha256='e71dcca744f4b520fc4698402202d7d9efff2d316f8ad3c5eb6403cdf9d036c6',
+        record_sha256='1d978fc1ddeddfe64a6900a719c437dabb31b2999feb258265b0fbad1ab4820b'),
+}
 REVISION = re.compile(r'\bRevision (\d+)\b')
 BUDGET_NOTE = ('Historical rung-1 estimate: $10-15 review plus $1-3.6 writing per iteration '
                'for three parts; pod work may multiply this. Estimate, not measurement or spending authority.')
@@ -60,29 +66,33 @@ class RequirementSetError(ValueError):
         self.reason, self.requirement = reason, requirement
 
 
-def requirement_set(spec, scope):
-    """The declared revision's acceptance set, bound to the verified spec record and scope.
+def requirement_set(source, spec, record_sha256, scope):
+    """The pinned source's acceptance set, bound to the verified spec record and scope.
 
-    The revision comes from the spec's own first paragraph (POD-DOC-P1); the criteria are the
-    record's acceptance entries. Rev-2 keeps its legacy scope contract (AC8/AC9 bench); Rev-3
-    must also account for every criterion in the scope and keep AC8-AC11 bench obligations."""
+    ``spec`` must already be verified as the exact capture of the spec bytes. Its spec and record
+    hashes must be the selected source's pins; a capture pinned for an earlier revision is a
+    downgrade, any other capture is unapproved. Rev-2 keeps its legacy scope contract (AC8/AC9
+    bench); Rev-3 must also account for every criterion in the scope and keep its bench obligations."""
+    if not isinstance(source, str) or source not in SOURCES:
+        raise RequirementSetError('undeclared-source', str(source),
+                                  'requirement_source must be one of ' + ', '.join(sorted(SOURCES)))
+    rule = SOURCES[source]
+    supplied = (spec['spec']['sha256'], record_sha256)
+    if supplied != (rule['spec_sha256'], rule['record_sha256']):
+        pinned = [name for name, entry in SOURCES.items()
+                  if supplied == (entry['spec_sha256'], entry['record_sha256'])]
+        if pinned and SOURCES[pinned[0]]['revision'] < rule['revision']:
+            raise RequirementSetError('downgraded-source', source,
+                                      f'supplied capture is {pinned[0]}, not the selected Revision {rule["revision"]}')
+        raise RequirementSetError('unapproved-source', source,
+                                  f'spec sha256 {supplied[0]} and record sha256 {supplied[1]} are not its pinned capture')
+    revision = str(rule['revision'])
     prose = [p for p in spec['prose'] if p['id'] == 'POD-DOC-P1']
-    found = set(REVISION.findall(prose[0]['text'])) if prose else set()
-    if len(found) != 1 or next(iter(found)) not in REVISIONS:
-        raise RequirementSetError('undeclared-revision', 'POD-DOC-P1',
-            'spec must declare exactly one of revisions ' + ', '.join(sorted(REVISIONS)))
-    revision = found.pop()
-    rule = REVISIONS[revision]
-    required = [f'POD-AC-{n}' for n in range(1, rule['criteria'] + 1)]
-    present = [r['id'] for r in spec['requirements'] if r['kind'] == 'acceptance']
-    for rid in required:
-        if rid not in present:
-            raise RequirementSetError('missing-acceptance-criterion', rid,
-                                      f'Revision {revision} spec record omits this criterion')
-    for rid in present:
-        if rid not in required:
-            raise RequirementSetError('unexpected-acceptance-criterion', rid,
-                                      f'Revision {revision} declares POD-AC-1..{rule["criteria"]} only')
+    if not prose or set(REVISION.findall(prose[0]['text'])) != {revision}:
+        raise RequirementSetError('revision-mismatch', 'POD-DOC-P1',
+                                  f'{source} is pinned as Revision {revision}; the capture does not declare exactly that')
+    entries = [r for r in spec['requirements'] if r['kind'] == 'acceptance']
+    required = [r['id'] for r in entries]
     limitations = scope.get('limitations', [])
     if revision == '2':
         # Legacy contract, preserved exactly.
@@ -99,8 +109,10 @@ def requirement_set(spec, scope):
             if not any(text.startswith(rid + ': BENCH REQUIRED') for text in limitations):
                 raise RequirementSetError('missing-bench-obligation', rid,
                                           'must remain an explicit BENCH REQUIRED obligation')
-    return dict(revision=int(revision), revision_locator=prose[0]['locator'],
-                spec_sha256=spec['spec']['sha256'], acceptance=required, bench=list(rule['bench']))
+    return dict(source=source, revision=rule['revision'], revision_locator=prose[0]['locator'],
+                spec_sha256=supplied[0], record_sha256=supplied[1], acceptance=required,
+                locators={r['id']: [r['locator']['byte_start'], r['locator']['byte_end']] for r in entries},
+                bench=list(rule['bench']))
 
 
 def _integer(value, name, low, high):
@@ -117,7 +129,7 @@ def _require_rf_reviewer(plan):
 
 
 def validate_plan(plan):
-    required = {'schema', 'scope', 'envelope', 'parts', 'spec', 'spec_record',
+    required = {'schema', 'scope', 'envelope', 'parts', 'spec', 'spec_record', 'requirement_source',
                 'writer_inputs', 'implementation_steps', 'review_profile', 'implementation',
                 'routing_adapter', 'routing_budget_s', 'review_budget_s'}
     if (not isinstance(plan, dict) or plan.get('schema') != SCHEMA or
@@ -133,6 +145,10 @@ def validate_plan(plan):
         stage_receipts.validate_step(step, host=False)
     for key in ('envelope', 'parts', 'spec', 'spec_record'):
         _path(plan[key])
+    source = plan['requirement_source']
+    if not isinstance(source, str) or source not in SOURCES:
+        raise RequirementSetError('undeclared-source', str(source),
+                                  'requirement_source must be one of ' + ', '.join(sorted(SOURCES)))
     if (not isinstance(plan['writer_inputs'], dict) or
             set(plan['writer_inputs']) != {'intent', 'deviations'}):
         raise ValueError('writer_inputs requires intent and deviations paths')
@@ -253,16 +269,16 @@ def validate_configuration(plan, scope, files, inputs):
         raise ValueError('pod generation must retain the fab_package done gate')
     if checks[generation['done_check']]['stage'] != 'verification':
         raise ValueError('fab_package must grade the final declared stage')
-    from .spec_record import verify
+    from .spec_record import sha256, verify
     spec_path, record_path = inputs / plan['spec'], inputs / plan['spec_record']
-    verify(record_path.read_bytes(), spec_path.read_bytes())
-    spec = read_json(record_path)
+    record_raw = record_path.read_bytes()
+    spec = verify(record_raw, spec_path.read_bytes())
     if spec['ids']['prefix'] != 'POD' or not {'POD-AC-8', 'POD-AC-9'} <= {r['id'] for r in spec['requirements']}:
         raise ValueError('expected the captured telemetry pod requirement record')
     if not {plan['spec'], plan['spec_record']} <= baseline['files'].keys():
         raise ValueError('pod spec and capture must be immutable baseline sources')
-    # The campaign baseline enters here: bind it to the complete acceptance set of the captured spec.
-    requirements = requirement_set(spec, scope)
+    # The campaign baseline enters here: bind it to the complete acceptance set of its pinned source.
+    requirements = requirement_set(plan['requirement_source'], spec, sha256(record_raw), scope)
     return dict(baseline_id=baseline['baseline_id'], stage_policy_id=identity(declaration),
                 requirement_set=requirements,
                 mutable_inputs=sorted(mutable), writer_inputs=sorted(writer),
