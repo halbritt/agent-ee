@@ -22,7 +22,19 @@
     "refusal_reason_classes": ["usage", "input", "ledger", "canary", "state"],
     "retained_files": ["result.json", "attempt.json", "RESULT.md", "snapshot.json"],
     "retained_dirs": ["validate", "facts", "work"],
-    "never_consumed": ["kicad-route/route-campaign/1", "campaign/2 (planned)", "routability-experiment/1 (planned)", "blocked/2"]
+    "never_consumed": ["kicad-route/route-campaign/1", "campaign/2 (planned)", "blocked/2"],
+    "experiment_boundary": {
+      "item": "AGENTEE-442",
+      "status": "provisional consumer boundary; the pin produces no experiment evidence",
+      "reference_keys": ["path", "schema", "sha256"],
+      "sidecar_schema": "routability-experiment/1",
+      "policy_schema": "routability-policy/1",
+      "policies": ["historical-all-layer", "current-policy"],
+      "policy_file": "agent-ee-experiment-policy.json",
+      "record_statuses": ["retained", "refused", "absent"],
+      "refusal_reasons": ["missing", "malformed", "unknown_schema", "tampered", "incompatible_schema", "incompatible_policy"],
+      "qualified": false
+    }
   },
   "request_example": {
     "declaration": {

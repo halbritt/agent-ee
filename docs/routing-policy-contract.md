@@ -242,8 +242,18 @@ agent-ee runs only `kicad-route run`. It accepts:
   or state.
 
 It never reads `kicad-route/route-campaign/1` (the pin's campaign record),
-`blocked/2`, revalidation records, or any planned `campaign/2` or
-`routability-experiment/1`. A `grep` of `src/` finds no other kicad-route schema.
+`blocked/2`, revalidation records, or any planned `campaign/2`. A `grep` of
+`src/` finds no other kicad-route schema.
+
+Since AGENTEE-442 the adapter also has a consumer boundary for
+`routability-experiment/1`. A `result.json` `experiment` reference and the
+declared `routability-policy/1` file are retained with their recomputed
+identity, or refused with a typed reason. The
+[routing adapter](routing-adapter.md#routability-experiment-evidence-agentee-442)
+page describes the record. Only the reference shape and the sidecar `schema` and
+`policy` fields are read, and they are provisional until the reviewed K91 schema
+exists. The pin does not produce this evidence, so steps 1-3 and 5-7 below still
+apply when agent-ee re-pins.
 
 The code pin is still byte-exact over every tracked `bin/` and `src/` file:
 276 files, including `src/kicad_route/campaign.py`
@@ -280,13 +290,16 @@ When agent-ee re-pins onto a commit with that work:
    (adapter exit 65). If `campaign/2` and the sidecar touch only the `campaign`
    command, no acceptance change is needed beyond step 1.
 4. **Sidecar retention.** `retain` copies only `result.json`, `attempt.json`,
-   `RESULT.md`, `snapshot.json` and the `validate/`, `facts/` and `work/` trees. A
-   new top-level file in the attempt directory, such as
-   `routability-experiment.json`, is neither refused nor retained. The receipt
-   would silently omit it. To consume the sidecar, add it to `RETAINED_FILES`
-   and `EXPECTED_REPORTS`, and verify its hashes against `inputs`, the snapshot
-   fingerprint and `result.backend` in `verify`. Its comparison key must be
-   rebuilt from the bytes agent-ee retains, not trusted as a label.
+   `RESULT.md`, `snapshot.json` and the `validate/`, `facts/` and `work/` trees.
+   Other top-level files are not retained, with one exception since AGENTEE-442:
+   the `.json` sidecar that `result.json` `experiment` names is copied, hashed
+   and graded by `experiment_grade`. A sidecar without a reference is still not
+   retained. When the reviewed schema arrives, re-check the sidecar fields
+   `experiment_grade` reads (`schema`, and `policy` as `{schema, policy, sha256}`),
+   whether the router echoes the policy in `result.settings` (then
+   `expected_settings` changes), and whether a sidecar exists on process
+   failure. Its comparison key must still be rebuilt from the bytes agent-ee
+   retains, not trusted as a label.
 5. **Re-implemented kicad-route behaviour.** Re-audit every place agent-ee mirrors
    kicad-route internals, whenever the pin changes `cli.py`, `kicad/facts.py`,
    `kicad/pour.py` or `pour.py`:

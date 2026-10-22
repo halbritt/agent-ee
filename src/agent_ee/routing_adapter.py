@@ -60,11 +60,13 @@ def preflight(checkout, state=None, backend='krt'):
 
 
 def step(*, project, board, schematic, name, label, checkout, state=None, budget=300, timeout=None,
-         backend='krt', diff_pairs=None, layer_policy=None):
+         backend='krt', diff_pairs=None, layer_policy=None, experiment_policy=None):
     """The AGENTEE-95 step declaration for one attempt. Raises ValueError if the tool does not qualify.
 
     layer_policy (AGENTEE-231) is the declared allowed signal layers, optional KRT
-    layer costs, pour area-loss bound and optional RF reference plane."""
+    layer costs, pour area-loss bound and optional RF reference plane.
+    experiment_policy (AGENTEE-442) is a routability-policy/1 document the router
+    receives as --experiment-policy; its experiment evidence is retained or refused."""
     check = preflight(checkout, state, backend)
     if check['problems']:
         raise ValueError('kicad-route does not qualify: ' + '; '.join(check['problems']))
@@ -77,6 +79,8 @@ def step(*, project, board, schematic, name, label, checkout, state=None, budget
         args += ['--diff-pairs', diff_pairs]
     if layer_policy is not None:
         args += ['--layer-policy', attempt.canonical_json(layer_policy)]
+    if experiment_policy is not None:
+        args += ['--experiment-policy', attempt.canonical_json(experiment_policy)]
     request = attempt.parse_request(args)  # the same validation the sandbox applies
     return _step(request, check['checkout'], check['state'] if separate else None)
 
@@ -99,7 +103,7 @@ def _step(request, checkout, state):
 def validate_declaration(value):
     """Strict campaign opt-in; command, mounts, pin and environment are not configurable."""
     required = {'schema', 'project', 'board', 'schematic', 'name', 'label', 'checkout'}
-    optional = {'state', 'budget', 'timeout', 'backend', 'diff_pairs', 'layer_policy'}
+    optional = {'state', 'budget', 'timeout', 'backend', 'diff_pairs', 'layer_policy', 'experiment_policy'}
     if (not isinstance(value, dict) or value.get('schema') != 'agent-ee.routing-adapter/1' or
             not required <= set(value) or not set(value) <= required | optional):
         raise ValueError('expected agent-ee.routing-adapter/1 declaration')
@@ -119,12 +123,14 @@ def validate_declaration(value):
         'backend': value.get('backend', 'krt'), 'budget_s': budget, 'timeout_s': timeout,
         'state': 'separate' if separate else 'checkout',
         **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {}),
-        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {})}))
+        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {}),
+        **({'experiment_policy': value['experiment_policy']} if 'experiment_policy' in value else {})}))
     return {'schema': value['schema'], **{k: request[k] for k in ('project', 'board', 'schematic', 'name', 'label')},
             'checkout': checkout, 'state': state if separate else None, 'budget': request['budget_s'],
             'timeout': request['timeout_s'], 'backend': request['backend'],
             **({'diff_pairs': request['diff_pairs']} if 'diff_pairs' in request else {}),
-            **({'layer_policy': request['layer_policy']} if 'layer_policy' in request else {})}
+            **({'layer_policy': request['layer_policy']} if 'layer_policy' in request else {}),
+            **({'experiment_policy': request['experiment_policy']} if 'experiment_policy' in request else {})}
 
 
 def campaign_spec(declaration, manifest, mutable):
@@ -148,7 +154,8 @@ def declaration_spec(value):
         'budget_s': value['budget'], 'timeout_s': value['timeout'],
         'state': 'separate' if value['state'] else 'checkout',
         **({'diff_pairs': value['diff_pairs']} if 'diff_pairs' in value else {}),
-        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {})}))
+        **({'layer_policy': value['layer_policy']} if 'layer_policy' in value else {}),
+        **({'experiment_policy': value['experiment_policy']} if 'experiment_policy' in value else {})}))
     return validate_step(_step(request, value['checkout'], value['state']), host=False)
 
 
@@ -407,12 +414,39 @@ def _verify(run, report, inputs, receipt, layout):
     if 'pair_coverage' in sem and sem['pair_coverage'] != pairs:
         raise ValueError('pair coverage differs from retained routing evidence')
     policy = _policy_grade(routing, report, request, result, classification)
+    experiment = _experiment_grade(routing, report, request, result, classification, retained, expected)
     return {'classification': classification, 'proposal': proposal, 'coverage': coverage,
             'pair_coverage': pairs,
             'router_exit': sem['exit_code'], 'candidate_sha256': (report['candidate'] or {}).get('sha256'),
             'backend': backend, 'tool_version': dict(attempt.TOOL_VERSION),
             'reproducibility': attempt.REPRODUCIBILITY[request['backend']],
-            **({'layer_policy': policy} if policy is not None else {})}
+            **({'layer_policy': policy} if policy is not None else {}),
+            **({'experiment': experiment} if experiment is not None else {})}
+
+
+def _experiment_grade(routing, report, request, result, classification, retained, layout):
+    """Re-derive the K91 experiment record (AGENTEE-442) from the retained bytes; None when not involved.
+
+    A refused record is honest only on an attempt that delivers no board."""
+    sem = report['semantics']
+    key = f'attempt/{attempt.EXPERIMENT_POLICY_FILE}'
+    if 'experiment_policy' not in request:
+        if key in retained:
+            raise ValueError('experiment policy file without a declared experiment policy')
+    elif report['process'] is not None and classification not in ('contradiction', 'timeout', 'cancelled'):
+        if (key not in retained or (routing / key).read_bytes() !=
+                attempt.canonical_json(request['experiment_policy']).encode()):
+            raise ValueError('experiment policy file differs from the declared experiment policy')
+    origin = Path(layout['work']) / 'routing'
+    found = (report['discovery'] or {}).get('attempt_dir')
+    grade = attempt.experiment_grade(request, result, routing / 'attempt',
+                                     origin / found if found is not None else None, origin)
+    if ('experiment' in sem) != (grade is not None) or sem.get('experiment') != grade:
+        raise ValueError('experiment evidence record differs from the retained routing evidence')
+    if (grade is not None and grade['status'] == 'refused' and
+            classification not in ('contradiction', 'timeout', 'cancelled')):
+        raise ValueError(f'a {classification} attempt with refused experiment evidence')
+    return grade
 
 
 def _policy_grade(routing, report, request, result, classification):
@@ -558,13 +592,16 @@ def _request_argv(request):
         flags['diff_pairs'] = '--diff-pairs'
     if 'layer_policy' in request:
         flags['layer_policy'] = '--layer-policy'
+    if 'experiment_policy' in request:
+        flags['experiment_policy'] = '--experiment-policy'
     if set(request) != set(flags):
         raise ValueError('routing adapter request has unknown or missing fields')
     argv = []
     for key, flag in flags.items():
         try:
-            value = attempt.canonical_json(request[key]) if key == 'layer_policy' else str(request[key])
+            value = (attempt.canonical_json(request[key]) if key in ('layer_policy', 'experiment_policy')
+                     else str(request[key]))
         except (TypeError, ValueError):
-            raise ValueError('routing adapter layer policy is not JSON') from None
+            raise ValueError(f'routing adapter {key.replace("_", " ")} is not JSON') from None
         argv += [flag, value]
     return argv

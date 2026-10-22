@@ -206,6 +206,39 @@ if name == 'env':
     write(run / 'validate/env.json', {'environ': dict(os.environ), 'cwd': os.getcwd(),
                                       'dont_write_bytecode': sys.flags.dont_write_bytecode,
                                       'pycache_prefix': sys.pycache_prefix})
+# SYNTHETIC routability-experiment/1 sidecar (AGENTEE-442): the agreed reference
+# shape only, written by this fixture, never by the KICADROUTE-91 producer.
+experiment = scenario.get('experiment', 'ok' if '--experiment-policy' in opts else None)
+if experiment is not None and experiment != 'omit':
+    policy_path = opts.get('--experiment-policy')
+    policy = None
+    if policy_path:
+        policy_bytes = Path(policy_path).read_bytes()
+        declared = json.loads(policy_bytes)
+        policy = {'schema': declared['schema'], 'policy': declared['policy'],
+                  'sha256': hashlib.sha256(policy_bytes).hexdigest()}
+        if experiment == 'rewrite_policy':
+            Path(policy_path).write_text('{"policy":"historical-all-layer","schema":"routability-policy/1"}')
+    if experiment == 'incompatible_policy':
+        policy = {**(policy or {}), 'policy': 'historical-all-layer'}
+    sidecar = run / 'routability-experiment.json'
+    body = {'schema': 'routability-experiment/2' if experiment == 'incompatible_schema' else
+            'routability-experiment/1',
+            'synthetic': 'agent-ee coordinator fixture (AGENTEE-442); not the KICADROUTE-91 producer',
+            'policy': policy, 'input_fingerprint': fingerprint}
+    sidecar.write_text('not json {' if experiment == 'malformed' else json.dumps(body, indent=2) + '\n')
+    result['experiment'] = {'path': os.path.relpath(sidecar), 'sha256': sha(sidecar),
+                            'schema': 'routability-experiment/1'}
+    if experiment == 'unknown_schema':
+        result['experiment']['schema'] = 'routability-experiment/2'
+    if experiment == 'malformed_reference':
+        del result['experiment']['sha256']
+    if experiment == 'escape':
+        result['experiment']['path'] = os.path.relpath(run / '../routability-experiment.json')
+    if experiment == 'tamper':
+        sidecar.write_text(json.dumps({**body, 'policy': None}) + '\n')
+    if experiment == 'missing_file':
+        sidecar.unlink()
 text = 'not json {' if name == 'malformed_json' else json.dumps(result, indent=2) + '\n'
 (run / 'result.json').write_text(text)
 print(text, flush=True)

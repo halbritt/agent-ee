@@ -112,6 +112,19 @@ class ContractSummaryTests(unittest.TestCase):
         self.assertEqual(self.adapter['retained_dirs'], list(attempt.RETAINED_DIRS))
         self.assertNotIn('routability-experiment.json', attempt.RETAINED_FILES)
 
+    def test_experiment_boundary_summary(self):
+        boundary = self.adapter['experiment_boundary']
+        self.assertEqual(boundary['reference_keys'], sorted(attempt.EXPERIMENT_REFERENCE_KEYS))
+        self.assertEqual((boundary['sidecar_schema'], boundary['policy_schema'], boundary['policy_file']),
+                         (attempt.EXPERIMENT_SCHEMA, attempt.EXPERIMENT_POLICY_SCHEMA,
+                          attempt.EXPERIMENT_POLICY_FILE))
+        self.assertEqual(boundary['policies'], list(attempt.EXPERIMENT_POLICIES))
+        self.assertEqual(boundary['refusal_reasons'], list(attempt.EXPERIMENT_REFUSALS))
+        self.assertIs(boundary['qualified'], False)
+        self.assertNotIn(attempt.EXPERIMENT_SCHEMA + ' (planned)', self.adapter['never_consumed'])
+        # The sidecar is retained only through a result.json reference, never by name.
+        self.assertNotIn('routability-experiment.json', attempt.RETAINED_FILES)
+
     def test_request_example_translation(self):
         example = self.contract['request_example']
         declaration = routing_adapter.validate_declaration(example['declaration'])

@@ -680,6 +680,69 @@ own in-sandbox observations. `verify` checks them for consistency but cannot
 re-hash trees that are not retained. The receipt's mount identities are the
 authority for the adapter, checkout and state bytes.
 
+## Routability experiment evidence (AGENTEE-442)
+
+KICADROUTE-91 M1b adds a versioned extension to `run`: `result.json` may carry
+`experiment = {path, sha256, schema: "routability-experiment/1"}`, which names a
+sidecar in the attempt directory. The router can also take
+`--experiment-policy PATH`, a `routability-policy/1` file whose `policy` is
+`historical-all-layer` or `current-policy`. The adapter consumes both at its
+boundary. It retains the evidence with its identity, or refuses it with a typed
+reason. Experiment evidence is never dropped and is never qualified.
+
+- **Declaration.** The step declaration, `step(experiment_policy=...)` and the
+  `agent-ee.routing-adapter/1` field `experiment_policy` take the policy document
+  inline. It must have exactly `schema` and `policy`. Any other schema version,
+  policy name or key is refused before the router runs (exit 64 when it
+  reaches the sandbox), and the request is bound to the stage receipt as usual.
+  The adapter writes the canonical bytes to
+  `routing/attempt/agent-ee-experiment-policy.json` and passes that path as
+  `--experiment-policy`. A router that changes the file makes the attempt a
+  contradiction.
+- **Retention.** A reference that names a `.json` file directly inside the
+  discovered attempt directory is copied to `routing/attempt/<name>` and hashed in
+  `retained`. Names the adapter already retains, or names starting with
+  `agent-ee-`, are not sidecars.
+- **Record.** `semantics.experiment` is re-derived from the retained bytes. It is
+  present whenever a policy was declared or `result.json` has a reference:
+  - `retained`: `path` (the retained copy), the recomputed `sha256`, `schema`,
+    `reference` (the result.json reference, verbatim), `policy` (`schema`,
+    `policy`, sha256 of the policy file, or `null` when undeclared),
+    `policy_file`, `contract` and `qualified: false`.
+  - `refused`: `reason` is one of `missing` (no reference despite a declared
+    policy, or no regular sidecar file at the path), `malformed` (reference
+    shape, a hash that is not hex, a path outside the attempt directory, or a
+    sidecar that is not a JSON object), `unknown_schema` (the reference schema),
+    `tampered` (the recomputed sha256 differs from the reference),
+    `incompatible_schema` (the sidecar's own `schema`) or `incompatible_policy`
+    (the sidecar `policy` differs from the declared identity, including a policy
+    the coordinator never declared). The record keeps the reference and,
+    when a file was retained, its path and recomputed hash.
+  - `absent`: the router wrote no `result.json`, for example a refusal or a
+    not-run attempt.
+- **Classification.** A refusal is a report violation. A complete or incomplete
+  attempt becomes a `contradiction` (exit 65) and delivers no board. A timeout
+  or cancellation keeps its class with the refusal in `reasons`. Without a
+  declared policy and without a reference, reports, argv and `verify` summaries
+  are unchanged. `verify` returns the record as `experiment`, refuses a record
+  that differs from the retained bytes, and refuses a refused record on an
+  attempt that is not a contradiction, timeout or cancellation.
+- **Provisional contract.** Only the reference shape and the sidecar's `schema`
+  and `policy` fields are read. The policy identity inside the sidecar is assumed
+  to be `{schema, policy, sha256}` of the file the router read. Both stay
+  provisional until agent-507 sends the final reviewed schema and producer SHA;
+  `EXPERIMENT_CONTRACT` says so. `tests/test_routing_experiment_boundary.py`
+  exercises the boundary through `step`, `stage_receipts.run_step` and `verify`
+  with a synthetic fixture sidecar. Its `K91_REVIEWED` hook is where the
+  reviewed identity goes before the positive test is rerun.
+- **Pin.** The pinned `5f1c072` `cli.py` has no `--experiment-policy`, and its
+  `main` turns every usage error into a refusal (exit 4). A declared policy at
+  this pin is therefore a `refused` attempt with an `absent` record, or a
+  contradiction if the refusal output is not the known machine form; it never
+  delivers a board. This was read from the pinned source, not run. Consuming real K91 evidence needs the re-pin in the
+  [routing policy contract](routing-policy-contract.md#3-consumer-impact-of-campaign2-and-routability-experiment1).
+  This change does not re-pin and makes no router release claim.
+
 ## Acceptance stays with agent-ee checks
 
 A routing receipt, `result.json` and kicad-route's own validation are
