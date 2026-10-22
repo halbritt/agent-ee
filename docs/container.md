@@ -316,10 +316,11 @@ repository. One job:
 
 Project CI does not call the reusable action and uploads no run directory. A run
 directory holds copies of the candidate inputs, and the RC fixture inputs include
-third-party design material: the FOME-MC-origin fixture and captured stock KiCad
-library files. This repository is public, and the owner has not yet resolved
-whether that material may be republished, so run outputs stay on the ephemeral
-runner and only the gate summary reaches the job page.
+the FOME-MC-origin fixture (origin T1 in [file-origins.json](file-origins.json))
+and captured stock KiCad library files (origin T6). This repository is public.
+T6 publication is unresolved (see [the sample workflow](#sample-workflow-and-local-evidence)),
+so run outputs stay on the ephemeral runner and only the gate summary reaches the
+job page.
 
 The shared test harness defaults incidental candidate imaging off with
 `AGENT_EE_SKIP_VISUALS=1`. The candidate-visual and 3D-render modules explicitly
@@ -506,25 +507,59 @@ scope comes from a trusted revision.
 
 ### Sample workflow and local evidence
 
-The [installation guide](installation.md#sample-consumer-workflow) has a sample
-consumer workflow that runs the action on the seeded RC fixture and fails with the
-`rc-step` finding in the job summary. Like every action run, it uploads the run
-directory as an artifact, and the seeded run directory contains the third-party
-fixture inputs. A hosted run of the sample therefore waits for the owner's
-decision on publishing that material.
+[consumer-sample.yml](../.github/workflows/consumer-sample.yml) is the
+[installation guide's](installation.md#sample-consumer-workflow) sample consumer
+workflow, committed in this repository. It runs only on manual dispatch. It calls
+the action with `uses: ./` on `fixtures/rc/seeded.scope.json` and is expected to
+fail. Its last step adds one line to the job summary saying whether the verdict is
+the expected `check_failed`; it fails for any other verdict. It cannot make the
+job pass.
 
-The local evidence for this behavior is limited. A scratch harness, not part of
-the repository, ran the action's shell steps with GitHub's `bash -eo pipefail`
-semantics against the image built on the demonstrated host. It replaced
-`upload-artifact` with a directory copy. Results:
+Like every action run, it uploads the whole run directory as the `rc-seeded-run`
+artifact. In a local replay of the seeded run, the directory held 589 files. Of
+these, 453 files (17 MB) were the stock KiCad library collections that the scope
+captures under `inputs/stock/`: `Device`, `power` and `Connector_Generic`
+symbols, the complete `Resistor_SMD`, `Capacitor_SMD` and
+`Connector_PinHeader_2.54mm` footprint libraries, and the template tables. The
+directory contains no CC-BY-SA license document. The rest is the T1 fixture,
+the requirements, and the run's own records, tool outputs and inspection renders.
+A version of the scope without the stock captures is not a substitute: ERC and DRC
+then report library warnings as defects (9 ERC and 3 DRC violations in a local
+probe).
 
-- The seeded fixture produced `check_failed`, with the `rc-step` defect in the
-  summary and a failed final step.
-- The control produced `checks_passed`.
-- A zero budget gave `coverage_incomplete`.
-- A missing scope, an existing output directory and an output outside the
-  workspace each gave `result_invalid`.
-- The copied run directory, hidden files included, matched the original.
+The MIT approval relayed on AGENTEE-14 covers T1, not T6. It is an owner
+decision relayed by a coordinator, not text the owner wrote here (class:
+owner-relayed, agent-drafted, unconfirmed), and is quoted verbatim from the
+AGENTEE-14 Plane comment of 2026-10-22:
+
+> Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.
+
+So a hosted dispatch of the sample would publish T6 library files, without their
+license document, as an artifact of a public repository. That still needs an owner
+decision on T6 before dispatch. The origin statuses in `file-origins.json` are
+maintained separately from this page.
+
+The local evidence is a replay, not a hosted run. A scratch harness, not part of
+the repository, extracted each `run:` body of the sample workflow and of
+`action.yml` from a committed tree. It ran them in order with GitHub's
+`bash -eo pipefail` semantics and real Docker. The image was built with the
+action's own `docker build` step. Three steps were replaced:
+`actions/checkout` by `git archive`, `upload-artifact` by a directory copy, and
+the AppArmor step by the name of the already-loaded `agent-ee-container` profile,
+because that step runs `sudo`. Results:
+
+- Seeded fixture: review exited 1, `agent-ee verify` exited 0 and the gate gave
+  `check_failed`. The summary had the `rc-step` row
+  `vout_1ms=0.0951625 outside [0.62, 0.65]`, ERC, DRC and geometry `pass`, the
+  run report and the expected-outcome line. The final action step failed with
+  `::error::agent-ee checks-only verdict: check_failed`. The copied run
+  directory, hidden files included, was identical to the original (`diff -r`).
+- The control scope in the same workflow gave `checks_passed`, a passing action
+  step and a failed expected-outcome step.
+
+An earlier harness covered the remaining verdicts. A zero budget gave
+`coverage_incomplete`. A missing scope, an existing output directory and an
+output outside the workspace each gave `result_invalid`.
 
 The action has not yet run on a hosted runner.
 
