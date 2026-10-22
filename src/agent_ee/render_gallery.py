@@ -37,8 +37,9 @@ _VIEWS = ("top", "bottom", "isometric")
 #   whose host (\\host or //host) is never a basename either.
 # A host ends at a slash, whitespace, a stop or a component boundary (below) and
 # otherwise runs through brackets and punctuation: [fd00::1] and host(1) are hosts
-# whole. A host interrupted by whitespace, a quote or a group and continued by a
-# backslash word (\\host "user"\share) is removed whole, without a basename.
+# whole. A host interrupted by whitespace, a quote or a group and continued on the
+# same line by a separator (\\host "user name" \share) is removed whole, through
+# the whitespace inside and after its quotes and groups, without a basename.
 # A path runs through spaces, commas and brackets (directory names contain them);
 # a URL ends at whitespace.
 # Both stop at a quote, < > | or a newline, at any "file:" URI, and at a component
@@ -140,25 +141,50 @@ def _trim(text, start, end):
     return end
 
 
-def _continuation(text, i):
+def _continuation(text, i, before=""):
     """End of the rest of a host operand interrupted at i, or None when none follows.
 
-    A quote, whitespace or grouping run, then a word holding a backslash (or a slash
-    right after a quote or closing bracket) continues the same UNC/authority path:
-    \\\\host "user"\\share\\m.step. It is removed whole, with no basename.
+    The rest runs on the same line through words, whitespace, quotes and groups (their
+    whitespace included) up to a separator that continues the UNC/authority path: a
+    backslash, a slash inside a quote or group or right after one, or a root after
+    other text. \\\\host "user name" \\share\\m.step is removed whole, with no basename.
+    A further URI, UNC host or drive, a root right after the host, a newline after
+    text, or no separator at all leaves the rest to be scanned on its own. A quote
+    right after a host that a quote opened (before) closes it.
     """
-    p = _SKIP.match(text, i).end()
-    if p >= len(text) or _token_at(text, p, True):
-        return None  # nothing follows, or a new path or URI of its own
-    for q in range(p, len(text)):
-        if text[q].isspace() or _token_at(text, q, False):
-            return None  # the word ends, or a further URI or UNC host starts in it
-        if text[q] == "\\" or (text[q] == "/" and text[q - 1] in "\"')]}"):
+    opened, seen = [], False
+    for q in range(i, len(text)):
+        char, previous = text[q], text[q - 1]
+        start = previous.isspace() or previous in "\"'<>|,;()[]{}" or q == i
+        if char in "\r\n":
+            if seen:
+                return None  # text then a new line: no continuation
+        elif char.isspace() or char in "<>|,;":
+            pass
+        elif char in ")]}":
+            if opened and opened[-1] == _CLOSE[char]:
+                opened.pop()
+                seen = True
+        elif char in "\"'":
+            if q == i and char == before:
+                pass  # closes the quote the host was in
+            elif opened and opened[-1] == char:
+                opened.pop()
+                seen = True
+            else:
+                opened.append(char)
+        elif char in "([{":
+            opened.append(char)
+        elif _token_at(text, q, start and not seen):
+            return None  # a new URI, UNC host or drive (or a root right after the host)
+        elif char == "\\" or (char == "/" and (opened or start or previous in "\"')]}")):
             return _trim(text, i, _scan(text, q + 1))
+        else:
+            seen = True
     return None
 
 
-def _host(text, i):
+def _host(text, i, before=""):
     """Return (end, replacement) for a host (file URI authority or UNC host) starting at i.
 
     The host is removed and never becomes a basename; only a path after it can.
@@ -190,7 +216,7 @@ def _host(text, i):
     if i < len(text) and text[i] in "/\\":
         return _path(text, i + 1)
     if i < len(text) and (text[i].isspace() or text[i] in _STOP):
-        end = _continuation(text, i)
+        end = _continuation(text, i, before)
         if end is not None:
             return end, _MARK
     return _trim(text, start, i), _MARK
@@ -198,19 +224,20 @@ def _host(text, i):
 
 def _token(text, i):
     """Return (end, replacement) for a file URI or absolute path at i, or None."""
+    before = text[i - 1] if i else ""
     if _file_at(text, i):
         i += 5
         if _double(text, i):
-            return _host(text, i + 2)
+            return _host(text, i + 2, before)
         return _path(text, i + (3 if _DRIVE.match(text, i) else 1))
     if text.endswith(_MARK, 0, i) or i and text[i - 1] in "/\\":
         return None  # already redacted text; the rest of a slash run
     if text.startswith("\\\\", i):
-        return _host(text, i + 2)  # a UNC host even when glued: m.step\\host
+        return _host(text, i + 2, before)  # a UNC host even when glued: m.step\\host
     if i and (text[i - 1].isalnum() or text[i - 1] in "_.}"):
         return None  # ${VAR}/x, and/or, v1.2/3: not host paths
     if _double(text, i):
-        return _host(text, i + 2)
+        return _host(text, i + 2, before)
     if text[i] == "/" or (text[i] == "\\" and i + 1 < len(text) and not text[i + 1].isspace()
                           and text[i + 1] not in _STOP):
         return _path(text, i + 1)  # a POSIX root, or a Windows root-relative \share\m.step

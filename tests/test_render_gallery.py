@@ -105,11 +105,41 @@ H1_UNC_FORMS = {'unc-group': ('\\\\unc-host-hidden(1)\\share-hidden\\grp.step', 
                 'unc-bracket': ('\\\\unc-host-hidden[1]\\share-hidden\\brk.step', '<redacted>/brk.step'),
                 'unc-quoted': ('\\\\unc-host-hidden "user-hidden"\\share-hidden\\q.step', '<redacted>'),
                 'unc-spaced': ('\\\\unc-host-hidden (user-hidden)\\share-hidden\\s.step', '<redacted>')}
+# Review 433i H1: whitespace inside an interrupted operand, or between its quote or
+# group and the path after it. These were published as <redacted> "private-user name"<redacted>/m.step.
+H1_INTERRUPTED_EXAMPLES = {
+    '\\\\private-host "private-user" \\private-share\\m.step': '<redacted>',
+    '\\\\private-host "private-user name"\\private-share\\m.step': '<redacted>',
+    '\\\\private-host (private-user name)\\private-share\\m.step': '<redacted>',
+    'file://private-host "private-user name"/private-share/m.step': '<redacted>',
+    '\\\\private-host "private-user name" \\private-share\\m.step': '<redacted>',
+    '\\\\private-host ( private-user name )\t\\private-share\\m.step': '<redacted>',
+    '\\\\private-host [private-user name]  \\private-share\\m.step': '<redacted>',
+    "\\\\private-host 'private-user name' \\private-share\\m.step": '<redacted>',
+    '\\\\private-host private-user \\private-share\\m.step': '<redacted>',
+    '\\\\private-host "private-user name\\private-share\\m.step': '<redacted>',
+    'FILE://private-host "private-user name" /private-share/m.step': '<redacted>',
+    'fIlE://private-host (private-user name)\\private-share\\m.step': '<redacted>',
+    'File:\\\\private-host "private-user name" \\private-share\\m.step': '<redacted>',
+    '("\\\\private-host "private-user name" \\private-share\\m.step"), "x"': '("<redacted>"), "x"',
+    # A root after text is the same operand, over-redacted; a later URI or drive path
+    # is an operand of its own, and text without a separator is prose.
+    '\\\\private-host "see /home/a/m.step"': '<redacted>"',
+    '\\\\private-host "/home/a/m.step"': '<redacted> "<redacted>/m.step"',
+    '\\\\private-host "a b" C:\\Users\\x\\m.step': '<redacted> "a b" <redacted>/m.step',
+    '\\\\private-host (see https://x.org/a)': '<redacted> (see https://x.org/a)',
+    '\\\\private-host "a b"\n\\private-share\\m.step': '<redacted> "a b"\n<redacted>/m.step'}
+H1_SPACED_FORMS = {'unc-quoted-space': ('\\\\unc-host-hidden "user-hidden name"\\share-hidden\\qs.step', '<redacted>'),
+                   'unc-quoted-trailing': ('\\\\unc-host-hidden "user-hidden" \\share-hidden\\qt.step', '<redacted>'),
+                   'unc-group-space': ('\\\\unc-host-hidden (user-hidden name) \\share-hidden\\gs.step', '<redacted>')}
+H1_SPACED_URI_FORMS = {'uri-quoted-space': ('{}://uri-host-hidden "user-hidden name"/share-hidden/us.step', '<redacted>')}
 # Review 433h H2: every operand kind, both drive separators included, as the first,
 # second and later operand inside balanced groups and quotes, with punctuation and
 # whitespace between them.
-OPERANDS = ([(t.format(c), e) for c in CASINGS for t, e in (*URI_FORMS.values(), *H1_URI_FORMS.values())]
+OPERANDS = ([(t.format(c), e) for c in CASINGS
+             for t, e in (*URI_FORMS.values(), *H1_URI_FORMS.values(), *H1_SPACED_URI_FORMS.values())]
             + list(PLAIN_FORMS.values()) + list(UNC_FORMS.values()) + list(H1_UNC_FORMS.values())
+            + list(H1_SPACED_FORMS.values())
             + [('C:/Users/alice-hidden/fwd.step', '<redacted>/fwd.step'), ('D:/', '<redacted>'),
                ('d:\\Users\\alice-hidden\\low.step', '<redacted>/low.step'),
                ('/home/alice-hidden/posix.step', '<redacted>/posix.step')])
@@ -146,7 +176,7 @@ def operand_combinations(separators=OPERAND_SEPARATORS):
 
 def surface_combinations():
     """A compact set with every operand as the first, second and third, for the surface tests."""
-    combinations = list(H1_EXAMPLES.items())
+    combinations = list(H1_EXAMPLES.items()) + list(H1_INTERRUPTED_EXAMPLES.items())
     for n, (text, expected) in enumerate(OPERANDS):
         others = [OPERANDS[(n + 7) % len(OPERANDS)], OPERANDS[(n + 13) % len(OPERANDS)]]
         for position in range(3):
@@ -165,7 +195,8 @@ def assert_no_uri_leak(test, body, where):
 def assert_combinations_leak_free(test, redactor, seed=433, rounds=20000, stride=1):
     """Every combination and seeded random sequence redacts without a host marker, idempotently."""
     combinations = [*uri_combinations(), *later_operand_combinations(), *H1_EXAMPLES.items(),
-                    *operand_combinations(), *operand_combinations(LOOSE_SEPARATORS)]
+                    *H1_INTERRUPTED_EXAMPLES.items(), *operand_combinations(),
+                    *operand_combinations(LOOSE_SEPARATORS)]
     for text, _ in combinations[::stride]:
         assert_no_uri_leak(test, redactor(text), text)
         test.assertEqual(redactor(redactor(text)), redactor(text), text)
@@ -794,12 +825,29 @@ class GalleryTests(unittest.TestCase):
             self.assertEqual(redact(text), expected, text)
             self.assertEqual(redact(expected), expected, expected)
 
+    def test_interrupted_operand_with_whitespace_is_removed_whole(self):
+        # Review 433i H1: the four published leaks, composed whitespace variants and the
+        # later operands that stay separate.
+        for text, expected in H1_INTERRUPTED_EXAMPLES.items():
+            self.assertEqual(redact(text), expected, text)
+            self.assertEqual(redact(expected), expected, expected)
+        for text, expected in (*H1_SPACED_FORMS.values(),
+                               *((t.format(c), e) for c in CASINGS for t, e in H1_SPACED_URI_FORMS.values())):
+            for wrapper in WRAPPERS:
+                self.assertEqual(redact(wrapper.format(text)), wrapper.format(expected), text)
+        for kept in ('\\\\private-host and m.step', '\\\\private-host "a b" and m.step',
+                     'HTTP://example.org/a b', '${KIPRJMOD}/m.step "a b"'):
+            self.assertNotIn('<redacted>/', redact(kept))
+        self.assertEqual(redact('\\\\private-host "a b" and m.step'), '<redacted> "a b" and m.step')
+        self.assertEqual(redact('HTTP://example.org/a "b c" ${KIPRJMOD}/m.step'), 'HTTP://example.org/a "b c" ${KIPRJMOD}/m.step')
+
     def test_property_generator_covers_every_operand_position(self):
         """Review 433h H2: bare drives (both separators), POSIX and UNC operands at every position."""
         triples = [t for t, *_ in operand_triples()]
         kinds = {'forward-drive': r'(?<![/\\])C:/Users', 'back-drive': r'(?<![/\\])[Cd]:\\Users',
                  'posix': r'(?<![/\\:])/home/', 'unc': r'(?<![:\\])\\\\[a-z]',
-                 'ipv6': r'(?i)file://(user-hidden@)?\[', 'interrupted-unc': r'hidden[( ]'}
+                 'ipv6': r'(?i)file://(user-hidden@)?\[', 'interrupted-unc': r'hidden[( ]',
+                 'interrupted-space': r'user-hidden name|hidden[")] \\'}
         for kind, pattern in kinds.items():
             for position in range(3):
                 found = [t for t in triples if re.search(pattern, t[position])]
@@ -831,8 +879,11 @@ class GalleryTests(unittest.TestCase):
         def interrupted_unc(text):  # 433h H1: the share after a quoted or grouped user is prose
             return redact(re.sub(r'\\\\[\w.-]+(?= ?[("])', '<redacted>', text))
 
+        def interrupted_space(text):  # 433i H1: whitespace ends an interrupted operand
+            return redact(text) + ''.join(re.findall(r'"user-hidden name"|\(user-hidden name\)|"user-hidden" (?=\\)', text))
+
         for leaky in (lambda text: text, unwrapped, braces_only, casing, misses_forward_drive,
-                      drive_letter, split_authority, interrupted_unc):
+                      drive_letter, split_authority, interrupted_unc, interrupted_space):
             with self.assertRaisesRegex(AssertionError, 'unexpectedly found in'):
                 assert_combinations_leak_free(self, leaky, rounds=200)
         assert_combinations_leak_free(self, redact, seed=1, rounds=200)
@@ -1275,6 +1326,30 @@ class DiagnosticSupplementTests(unittest.TestCase):
         self.assertEqual(len(names), 6)
         for n, (name, expected) in enumerate(names.items()):
             directory = self.base / ('packet-' + str(n))
+            directory.mkdir()
+            self.packet = directory / name
+            self.packet.write_text('diagnostic ' + str(n))
+            identifier = self.add()
+            stored = [(self.root/'diagnostics'/identifier/'manifest.json').read_text(),
+                      (self.root/'diagnostics.json').read_text()]
+            base = self.serving()
+            served = [self.get(base + '/diagnostics/' + identifier + suffix) for suffix in ('/manifest.json', '/index.html')]
+            served.append(self.get(base))
+            for where, body in zip(('stored manifest', 'stored listing', 'served manifest', 'served html', 'listing'),
+                                   stored + served):
+                assert_no_uri_leak(self, body, where + ' ' + name)
+            self.assertEqual(json.loads(served[0])['source_packet']['name'], expected)
+            self.assertEqual(json.loads(stored[0])['source_packet']['name'], expected)
+
+    def test_real_packet_names_with_spaced_interrupted_operand_are_redacted(self):
+        # Review 433i H1 on the source field: real packet files whose names hold
+        # whitespace inside or after the quote or group of an interrupted host. A file
+        # name cannot hold "/", so the file URI uses the backslash spelling.
+        names = {k: v for k, v in H1_INTERRUPTED_EXAMPLES.items() if '/' not in k and '\n' not in k}
+        names['file:\\\\private-host "private-user name"\\private-share\\m.step'] = '<redacted>'
+        self.assertGreaterEqual(len(names), 10)
+        for n, (name, expected) in enumerate(names.items()):
+            directory = self.base / ('spaced-' + str(n))
             directory.mkdir()
             self.packet = directory / name
             self.packet.write_text('diagnostic ' + str(n))

@@ -90,16 +90,25 @@ bracketed IP literal or a grouped host name is removed whole:
 `FILE://[fd00::1]/share/m.step` and `\\host(1)\share\m.step` give
 `<redacted>/m.step`, and `file://[fd00::1]` or `(\\host)` give `<redacted>` and
 `(<redacted>)` (unmatched closing brackets and trailing punctuation of a pathless
-host stay outside it). When whitespace, a quote or a group interrupts a host and
-the next word continues it with a backslash (or a slash after a quote or closing
-bracket), the whole operand is removed with no basename:
-`\\host "user"\share\m.step` gives `<redacted>`. A single backslash root
+host stay outside it). When whitespace, a quote or a group interrupts a host,
+the rest of the operand runs on the same line through words, whitespace, quotes
+and groups (whitespace inside them included) up to a separator that continues
+it: a backslash, a slash inside or right after a quote or group, or a root after
+other text. The whole operand is then removed with no basename, so
+`\\host "user"\share\m.step`, `\\host "user name" \share\m.step`,
+`\\host (user name)\share\m.step` and `file://host "user name"/share/m.step` all
+give `<redacted>` (an unclosed quote or group runs to the separator too). A later
+URI, UNC host or drive, a root right after the host (`\\host \share` is two
+operands), a newline after text, or no separator at all ends this: the rest is
+redacted on its own, and `\\host "a b" and m.step` gives
+`<redacted> "a b" and m.step`. A single backslash root
 (`\share\m.step`) is a path like a POSIX root. Ambiguous text fails closed:
 `\\` starts a UNC host even when glued to a word (`m.step\\host` gives
 `m.step<redacted>`), and a path with a doubled separator after its root
 (`/home/a//host`, `/a/m.step\\host`) keeps no basename. Redaction is idempotent.
 Tests compose every operand kind (file URIs in every casing, bare drives with
-either slash, POSIX, UNC, IP-literal authorities and interrupted UNC hosts) as
+either slash, POSIX, UNC, IP-literal authorities and interrupted UNC hosts and
+authorities, with whitespace inside or after their quote or group) as
 first, second and third operand inside groups and quotes, and check that the
 property check itself fails for deliberately leaky redactors.
 Other URLs and KiCad variables such as `${KIPRJMOD}/m.step` are kept. The
