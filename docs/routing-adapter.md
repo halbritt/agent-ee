@@ -836,6 +836,17 @@ The engine retains MIT notices and `UPSTREAM.json`, tracing the owner's fork
 [upstream #1292](https://github.com/drandyhaas/KiCadRoutingTools/issues/1292)).
 The historical backend name `krt` now selects that owned implementation.
 
+**Backend names (KICADROUTE-82, AGENTEE-343).** kicad-route renames the owned backend to
+`builtin` and keeps `krt` as a deprecated alias. The adapter accepts both in requests,
+campaign declarations and parsed `result.json`/`attempt.json`, via
+`kicad_route_attempt.canonical_backend`; any other name is refused. A request and its
+retained receipts keep the spelling they were written with, so historical `krt`
+receipts verify with their recorded bytes; the names are normalized only to compare
+and look up. The pinned tool (`5f1c072`) predates the rename and accepts only `krt` and
+`freerouting`, so the adapter, `generate.py` and campaign declarations still emit
+`--backend krt` for either spelling of the owned backend (`PIN_BACKEND_NAMES`). The emit
+switch waits for the pin move (timed with KICADROUTE-91).
+
 Installation requires Rust and builds the included locked crate. The
 [container build](container.md#pinned-routing-tool) pins Rust 1.99.1 in its build
 stage. No Rust compiler, external KRT checkout or acquisition step is needed at
