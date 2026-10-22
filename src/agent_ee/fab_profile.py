@@ -392,7 +392,11 @@ def compile_advisories(advisories, files, inputs, as_of, dependencies):
 
 
 def compile_stackup(value, files, inputs, as_of):
-    """Source-bound nominal copper weights; thickness matching never converts ounces."""
+    """Source-bound nominal copper weights; thickness matching never converts ounces.
+
+    A dielectric whose thickness the source does not publish is declared null, with a null
+    physical `thickness_mm`; it is never derived from the nominal thickness.
+    """
     from .board_envelope import fields, length, load, mm, name, validate_stackup
     from .storage import canonical
     # Reuse the envelope's exact numeric and alternating-layer contract.
@@ -401,7 +405,7 @@ def compile_stackup(value, files, inputs, as_of):
            'thickness_mm', 'layers', 'layer_thickness_tolerance_mm', 'source'])
     name(declaration['name'], 'profile stackup name', ID)
     expected = validate_stackup({k: declaration[k] for k in ('thickness_mm', 'layers')},
-                                declaration['layer_count'])
+                                declaration['layer_count'], unpublished=True)
     expected.update(name=declaration['name'], layer_count=declaration['layer_count'],
                     nominal_thickness_mm=mm(length(declaration['nominal_thickness_mm'],
                                                   'nominal_thickness_mm', positive=True)),
