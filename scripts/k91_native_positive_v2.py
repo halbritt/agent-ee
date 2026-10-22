@@ -96,15 +96,28 @@ def input_mismatch(args, record, board):
     return mismatch
 
 
+def observe(fn):
+    """An observed call: {'attempted': True, 'accepted': bool, 'value' | 'error'} (k91_classify schema)."""
+    try:
+        return {'attempted': True, 'accepted': True, 'value': fn()}
+    except Exception as exc:  # recorded verbatim; every control expects a refusal here
+        return {'attempted': True, 'accepted': False, 'error': f'{type(exc).__name__}: {exc}' or type(exc).__name__}
+
+
+def not_made(reason):
+    return {'attempted': False, 'reason': reason}
+
+
 def chained(verify, adopt):
-    """verify(), then adopt() only when verify() did not refuse, as the consumer does; the bare
-    stage adoption is recorded apart (direct_adopt): it checks the declared outputs only, so a
-    tampered routing artifact that verify() refuses is not its concern."""
-    checked = v1.outcome(verify)
-    direct = v1.outcome(adopt)
-    return {'verify': checked, 'direct_adopt': direct,
-            'adopt': {'accepted': False, 'error': 'not attempted: verify refused'}
-            if classify.verify_refused(checked) else direct}
+    """verify(); the consumer's adoption only when verify() did not refuse (recorded as not made
+    otherwise); and the bare stage adoption, always made and recorded apart as direct_adopt. A call
+    not made is never a refusal (k91_classify): the bare adoption is the observed adoption evidence."""
+    checked = observe(verify)
+    refused = not checked['accepted'] or classify.not_run_refusal(checked['value'])
+    return {'verify': checked,
+            'adopt': not_made('consumer adoption follows only a verify() that did not refuse') if refused
+            else observe(adopt),
+            'direct_adopt': observe(adopt)}
 
 
 def tamper(receipt_dir, rel, receipt, layout, design_root, args):
@@ -121,7 +134,7 @@ def tamper(receipt_dir, rel, receipt, layout, design_root, args):
     path.write_bytes(bytes(data))
     return {'file': rel, 'offset': len(data) // 2, 'sha256_before': hashlib.sha256(original).hexdigest(),
             'sha256_after': hashlib.sha256(bytes(data)).hexdigest(),
-            'validate_receipt': v1.outcome(lambda: stage_receipts.validate_receipt(copy) == receipt),
+            'validate_receipt': observe(lambda: stage_receipts.validate_receipt(copy) == receipt),
             **chained(lambda: routing_adapter.verify(copy / 'run', receipt=receipt, layout=layout),
                       lambda: stage_receipts.adopt(copy, receipt, design))}
 
@@ -200,10 +213,10 @@ def main(argv=None):
         run = receipt_dir / 'run'
         report = json.loads((run / 'routing/adapter-report.json').read_text())
         remaining('verify')
-        summary = v1.outcome(lambda: routing_adapter.verify(run, receipt=receipt, layout=layout))
+        summary = observe(lambda: routing_adapter.verify(run, receipt=receipt, layout=layout))
         adoptable = summary['accepted'] and (summary['value'] or {}).get('candidate_sha256')
-        adopted = v1.outcome(lambda: stage_receipts.adopt(receipt_dir, receipt, design)) if adoptable else \
-            {'accepted': False, 'error': 'not attempted: verify delivered no candidate'}
+        adopted = observe(lambda: stage_receipts.adopt(receipt_dir, receipt, design)) if adoptable else \
+            not_made('verify delivered no candidate')
         after = v1.tree_record(design)
         attempt_dir = run / 'routing/attempt'
         sidecar_path = attempt_dir / 'routability-experiment.json'
@@ -231,7 +244,7 @@ def main(argv=None):
 
         controls = {}
         remaining('control a')
-        host = v1.outcome(lambda: declare(args.mismatch))
+        host = observe(lambda: declare(args.mismatch))
         neg_design = design_copy(args, out / 'neg-runtime/design')
         neg_spec = json.loads(json.dumps(spec))
         neg_spec['mounts'] = [{'source': str(Path(args.mismatch).resolve()), 'at': m['at']}
@@ -240,7 +253,7 @@ def main(argv=None):
         neg = stage_receipts.run_step(neg_dir, neg_design, neg_spec, BINDING, deadline=deadline)
         neg_report = json.loads((neg_dir / 'run/routing/adapter-report.json').read_text())
         controls['a_mismatched_runtime'] = {
-            'host_step': host if not host['accepted'] else {'accepted': True},
+            'host_step': host if not host['accepted'] else {'attempted': True, 'accepted': True, 'value': None},
             'sandbox': {'receipt_id': neg['receipt_id'], 'exit_code': neg['exit_code'], 'status': neg['status'],
                         'classification': neg_report['semantics']['classification'],
                         'reasons': neg_report['semantics']['reasons'], 'candidate': neg_report['candidate']},

@@ -9,24 +9,37 @@ controls_refused false. The historical manifest keeps that value; nothing here
 rewrites it.
 
 CLASSIFIER_V2 (scripts/k91_native_positive_v2.py) classifies every control as
-refused, not_refused or incomplete:
+refused, not_refused or incomplete. Revision 2 (review round 2, H1/H2) judges
+only OBSERVED, schema-valid outcomes:
 
-- a verify() that raises is a refusal, and so is a verify() that returns the
-  coherent not_run record (classification not_run, proposal none, no router
-  process, no candidate). Either way the control's adoption must have failed,
-  or it is not_refused. `adopt` is the consumer's adoption, attempted only after
-  a verify() that did not refuse; the bare stage adoption is kept apart as
-  `direct_adopt` (it checks only the declared outputs, so it accepts a receipt
-  whose routing artifacts verify() refuses);
-- the mismatched-runtime control also needs the host step() refusal, the
-  in-sandbox not_run with its reasons, which are kept in the record, and a
-  failed bare adoption;
+- every observation is explicit: {'attempted': True, 'accepted': bool, and
+  'value' (accepted) or a non-empty 'error' (refused)}, or {'attempted': False,
+  'reason': str} for a call the harness did not make. Anything else, or a
+  missing observation, is malformed, and the control is incomplete;
+- verify() refuses when it raised, or when it returned the coherent not_run
+  record whose keys are all present: classification not_run, proposal none,
+  router_exit null (no router process) and candidate_sha256 null (no
+  candidate). An absent key is never read as null;
+- a control is refused only when verify() refused AND at least one adoption
+  call was attempted and observed to refuse, and no attempted adoption
+  succeeded. Each control records `adopt` (the consumer's adoption, attempted
+  only after a verify() that did not refuse) and `direct_adopt` (the bare
+  stage adoption, always attempted). A skipped call is never a refusal, and a
+  verify() refusal never stands in for one. A refused verify() with no observed
+  adoption refusal, or with a successful adoption, is incomplete. A verify()
+  that accepted is not_refused;
+- the mismatched-runtime control also needs the observed host step() refusal
+  and the in-sandbox not_run with its reasons and an explicit null candidate;
 - the candidate-board and sidecar tamper controls are separate. A control
-  whose target file did not exist (no candidate was delivered) is incomplete,
-  never refused or passed;
-- the positive is judged separately: accepted only when verify() returned a
-  candidate with a retained, unqualified experiment record and the candidate
-  was adopted into the disposable copy.
+  whose target file did not exist (no candidate was delivered) is incomplete;
+- REQUIRED_V2 (mismatched runtime, candidate-board tamper, stale input, the
+  controls the positive-c plan names) decide controls_refused. The sidecar
+  tamper is reported beside them. Its bare stage adoption checks only the
+  declared outputs, so it cannot show an adoption refusal for a tampered
+  routing artifact, and the control stays incomplete;
+- the positive is judged separately: accepted only when an observed verify()
+  returned a candidate with a retained, unqualified experiment record and an
+  observed adoption of it succeeded into the disposable copy.
 
 Nothing here runs a router, writes a receipt or reads anything but the dicts it
 is given.
@@ -56,66 +69,124 @@ def v1_verdict(manifest):
         and experiment.get('qualified') is False), 'controls_refused': refused}
 
 
+REQUIRED_V2 = ('a_mismatched_runtime', 'b_tampered_candidate', 'c_stale_input')
+NOT_RUN_KEYS = ('classification', 'proposal', 'router_exit', 'candidate_sha256')
+
+
+def observed(outcome):
+    """The schema-valid outcome of a call the harness made, or None (skipped, missing or malformed)."""
+    if not isinstance(outcome, dict) or outcome.get('attempted') is not True:
+        return None
+    accepted = outcome.get('accepted')
+    if accepted is True and set(outcome) == {'attempted', 'accepted', 'value'}:
+        return outcome
+    if (accepted is False and set(outcome) == {'attempted', 'accepted', 'error'}
+            and isinstance(outcome['error'], str) and outcome['error']):
+        return outcome
+    return None
+
+
+def skipped(outcome):
+    """A schema-valid record of a call the harness deliberately did not make."""
+    return (isinstance(outcome, dict) and set(outcome) == {'attempted', 'reason'} and outcome['attempted'] is False
+            and isinstance(outcome['reason'], str) and bool(outcome['reason']))
+
+
 def not_run_refusal(value):
-    """True for verify()'s coherent record of an attempt that never ran the router."""
-    return (isinstance(value, dict) and value.get('classification') == 'not_run'
-            and value.get('proposal') == 'none' and value.get('router_exit') is None
-            and value.get('candidate_sha256') is None)
-
-
-def verify_refused(outcome):
-    """A verify() outcome {'accepted', 'value'|'error'} that refuses: raised, or a coherent not_run."""
-    return not outcome['accepted'] or not_run_refusal(outcome.get('value'))
+    """verify()'s coherent not_run record, every key explicit (an absent key is never null)."""
+    return (isinstance(value, dict) and all(key in value for key in NOT_RUN_KEYS)
+            and value['classification'] == 'not_run' and value['proposal'] == 'none'
+            and value['router_exit'] is None and value['candidate_sha256'] is None)
 
 
 def control_state(record):
     """refused / not_refused / incomplete for one recorded control (see the module doc)."""
-    if record is None or 'skipped' in record:
+    if not isinstance(record, dict) or 'skipped' in record:
         return INCOMPLETE
-    if 'verify' not in record or 'adopt' not in record:
+    verify = observed(record.get('verify'))
+    adoptions = [record.get('adopt'), record.get('direct_adopt')]
+    if verify is None or not all(observed(a) is not None or skipped(a) for a in adoptions):
         return INCOMPLETE
-    return REFUSED if verify_refused(record['verify']) and not record['adopt']['accepted'] else NOT_REFUSED
+    if verify['accepted'] and not not_run_refusal(verify['value']):
+        return NOT_REFUSED
+    made = [a for a in adoptions if observed(a) is not None]
+    if not made or any(a['accepted'] for a in made):
+        return INCOMPLETE
+    return REFUSED
 
 
 def runtime_state(record):
-    """The mismatched-runtime control: host refusal, sandbox not_run with reasons, verify and adopt refusal."""
-    if record is None:
+    """The mismatched-runtime control: observed host refusal, sandbox not_run, verify and adoption refusal."""
+    if not isinstance(record, dict):
         return INCOMPLETE
-    host, sandbox = record.get('host_step') or {}, record.get('sandbox') or {}
-    if (host.get('accepted') is not False or not host.get('error') or sandbox.get('classification') != 'not_run'
-            or not sandbox.get('reasons') or sandbox.get('candidate') is not None
-            or (record.get('direct_adopt') or {}).get('accepted')):
+    host, sandbox = observed(record.get('host_step')), record.get('sandbox')
+    if (host is None or not isinstance(sandbox, dict) or not {'classification', 'reasons', 'candidate'} <= set(sandbox)
+            or not isinstance(sandbox['reasons'], list)):
+        return INCOMPLETE
+    if host['accepted'] or sandbox['classification'] != 'not_run' or not sandbox['reasons'] \
+            or sandbox['candidate'] is not None:
         return NOT_REFUSED
     return control_state(record)
 
 
 def positive_accepted(positive):
-    """The positive: a verified candidate, a retained unqualified experiment record, and adoption."""
-    verify, adopt = positive.get('verify') or {}, positive.get('adopt') or {}
-    value = verify.get('value') or {}
-    experiment = value.get('experiment') or {}
-    return bool(verify.get('accepted') and adopt.get('accepted') and value.get('candidate_sha256')
-                and value.get('proposal') not in (None, 'none')
+    """The positive: an observed verified candidate, a retained unqualified record, and an observed adoption."""
+    if not isinstance(positive, dict):
+        return False
+    verify, adopt = observed(positive.get('verify')), observed(positive.get('adopt'))
+    if verify is None or adopt is None or not verify['accepted'] or not adopt['accepted']:
+        return False
+    value = verify['value'] if isinstance(verify['value'], dict) else {}
+    experiment = value.get('experiment') if isinstance(value.get('experiment'), dict) else {}
+    return bool(value.get('candidate_sha256') and value.get('proposal') not in (None, 'none')
                 and experiment.get('status') == 'retained' and experiment.get('qualified') is False
                 and positive.get('design_changed'))
 
 
 def v2_verdict(manifest):
-    """The corrected verdict for a v2 manifest (controls named as in CONTROLS_V2)."""
-    controls = manifest['controls']
+    """The corrected verdict for a v2 manifest: REQUIRED_V2 decide controls_refused; the sidecar is reported."""
+    controls = manifest.get('controls') if isinstance(manifest.get('controls'), dict) else {}
     states = {name: (runtime_state if name == 'a_mismatched_runtime' else control_state)(controls.get(name))
               for name in CONTROLS_V2}
-    return {'classifier': CLASSIFIER_V2, 'positive_accepted': positive_accepted(manifest['positive']),
-            'controls': states, 'controls_refused': all(s == REFUSED for s in states.values())}
+    return {'classifier': CLASSIFIER_V2, 'positive_accepted': positive_accepted(manifest.get('positive')),
+            'controls': states, 'required': list(REQUIRED_V2),
+            'controls_refused': all(states[name] == REFUSED for name in REQUIRED_V2)}
+
+
+V1_NOT_ATTEMPTED = {'accepted': False, 'error': 'not attempted: verify refused'}
+
+
+def _v1_observation(outcome):
+    """A v1 outcome as a v2 observation. The v1 harness called every function it recorded
+    (outcome(fn) runs fn), so each record is an attempted call; its bytes are not edited."""
+    if not isinstance(outcome, dict):
+        return outcome
+    if outcome == V1_NOT_ATTEMPTED:  # the v1 positive skipped adoption after a refused verify()
+        return {'attempted': False, 'reason': outcome['error']}
+    return {'attempted': True, **outcome}
 
 
 def v1_controls_as_v2(manifest):
-    """The historical (v1) records under the v2 rules, without editing them: the v1 b_tampered_output
-    entries map to the two distinct tamper controls; the historical value of each stays as written."""
+    """The historical (v1) records under the v2 rules, without editing them. v1 called verify() and the bare
+    stage adoption directly for every control, so its adopt is the direct_adopt observation and the consumer
+    adoption is recorded as not made; b_tampered_output maps to the two distinct tamper controls."""
     controls = manifest['controls']
     tampered = controls['b_tampered_output']
-    return {'positive': manifest['positive'],
-            'controls': {'a_mismatched_runtime': controls['a_mismatched_runtime'],
-                         'b_tampered_candidate': tampered.get('candidate'),
-                         'b_tampered_sidecar': tampered.get('sidecar'),
-                         'c_stale_input': controls['c_stale_input']}}
+    not_made = {'attempted': False, 'reason': 'v1 harness: no consumer-order adoption; adopt recorded as direct_adopt'}
+
+    def control(record, runtime=False):
+        if not isinstance(record, dict) or 'verify' not in record:
+            return record
+        mapped = {**record, 'verify': _v1_observation(record['verify']), 'adopt': not_made,
+                  'direct_adopt': _v1_observation(record.get('adopt'))}
+        if runtime:
+            mapped['host_step'] = _v1_observation(record.get('host_step'))
+        return mapped
+
+    positive = dict(manifest['positive'])
+    positive.update(verify=_v1_observation(positive.get('verify')), adopt=_v1_observation(positive.get('adopt')))
+    return {'positive': positive,
+            'controls': {'a_mismatched_runtime': control(controls['a_mismatched_runtime'], runtime=True),
+                         'b_tampered_candidate': control(tampered.get('candidate')),
+                         'b_tampered_sidecar': control(tampered.get('sidecar')),
+                         'c_stale_input': control(controls['c_stale_input'])}}

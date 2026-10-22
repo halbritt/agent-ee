@@ -1037,14 +1037,28 @@ Experiment evidence is never dropped and is never qualified.
   harness's recorded `controls_refused: false` is a harness defect: it counted
   the mismatched-runtime control's verified `not_run` as accepted. The record is
   kept as written. `scripts/k91_classify.py` re-derives it (`CLASSIFIER_V1`) and
-  classifies with `CLASSIFIER_V2`. Under V2 a coherent verified `not_run` with
-  failed adoption is a refusal, the candidate-board and sidecar tamper controls
-  are separate, and a missing candidate-board control is incomplete. The
-  successor `scripts/k91_native_positive_v2.py` uses V2. It takes the exact
-  runtime and input identities and the router and total limits, and it adopts
-  only after a `verify` that did not refuse, as the consumer does. A bare
-  `stage_receipts.adopt` checks only the declared outputs: it accepts a receipt
-  whose retained sidecar was tampered, which only `verify` refuses
+  classifies with `CLASSIFIER_V2`. V2 judges only observed, schema-valid
+  outcomes: each call is recorded as made (`attempted`, an explicit boolean
+  `accepted`, a value or an error) or as not made, with a reason. A missing
+  key or outcome is incomplete, never read as null or as refused.
+  - **Refused.** `verify` refuses (it raised, or returned the coherent
+    `not_run` record with explicit null `router_exit` and `candidate_sha256`),
+    at least one adoption call was made and observed to refuse, and none
+    succeeded.
+  - **Not refusals.** A skipped adoption, a `verify` refusal on its own, and a
+    bare adoption that succeeded are incomplete.
+  - **Tamper controls.** The candidate-board and sidecar tamper controls are
+    separate, and a missing candidate-board control is incomplete.
+  - **`controls_refused`.** Decided by the mismatched runtime, the
+    candidate-board tamper and the stale input.
+
+  The successor `scripts/k91_native_positive_v2.py` uses V2. It takes the exact
+  runtime and input identities and the router and total limits. It makes the
+  consumer's adoption only after a `verify` that did not refuse, and always
+  makes the bare `stage_receipts.adopt`, recorded as `direct_adopt`. That bare
+  adoption checks only the declared outputs: it accepts a receipt whose
+  retained sidecar was tampered, which only `verify` refuses. So the sidecar
+  control shows no observed adoption refusal and stays incomplete
   (`tests/test_k91_harness_classifier.py`).
 - **Pin.** The pinned `b5774496` (AGENTEE-450) `cli.py` has no
   `--experiment-policy` (the K91 producer commits `a0ed434` and `bd1e633f` are
