@@ -350,11 +350,15 @@ class ConsumerSampleLocalRunnerTests(unittest.TestCase):
         run = Path(base) / "run"
         run.mkdir(parents=True)
         checks = [check("erc"), check("rc-step", outcome=outcome)]
+        (run / "checks").mkdir()
+        for item in checks:
+            (run / "checks" / f"{item['id']}.json").write_text(json.dumps(item))
         result = {"schema": "agent-ee.result/1", "run_id": "r", "candidate_id": "c" * 64,
                   "state": "incomplete", "outcome": "incomplete", "adjudicated": False,
                   "started_utc": "2026-10-17T00:00:00+00:00", "finished_utc": "2026-10-17T00:01:00+00:00",
                   "expected_check_ids": ["erc", "rc-step"], "checks": checks, "reviews": [],
-                  "review_executions": [], "findings": [], "limitations": []}
+                  "review_executions": [], "findings": collect_findings([], checks),
+                  "limitations": []}
         (run / "result.json").write_text(json.dumps(result))
         return run
 
