@@ -7,6 +7,8 @@ hashes, net-role partitions and, for a board region, the block's framed copper. 
 board file, Gerber, figure or courtyard polygon is stored. ``materialize`` rebuilds
 an ``agent-ee.block-candidate/2`` (AGENTEE-339) from a board's own footprints at the
 entry poses and re-grades it with the same graders, so every use is re-proven.
+Board-region use refuses with ``copper_unknown`` until candidates can apply and
+check that copper. Import refuses boards with unsupported zones with the same kind.
 
 Three import paths: a KiCad board region, a datasheet reference-layout figure whose
 scale is verified against independent dimensions, and a project's hand-placed
@@ -69,6 +71,13 @@ class AuthorityUnavailable(ValueError):
     def __init__(self, what):
         super().__init__(f'authority_unavailable: {what}; hard classes are disabled until a verified owner '
                          'authority mechanism exists (AGENTEE-348), so library entries are search-derived only')
+
+
+class CopperUnknown(ValueError):
+    """Board-region copper cannot be accounted for by the placement-only importer."""
+
+    def __init__(self, reason):
+        super().__init__(f'copper_unknown: {reason}')
 
 
 def _no_authority(provenance_class=None, authority_raw=None):
@@ -649,6 +658,9 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
     block refuses ``block_unknown``, and an allocated block whose members are not exactly
     the mapped references refuses ``block_members``. The frame anchor is the allocated
     block's anchor (declared, else ``blocks.anchor_of``), as admission requires.
+    A board-region entry refuses with ``copper_unknown`` after identity/admission
+    checks: candidate /2 applies poses only, including for an empty legacy copper
+    record whose importer may have omitted zones.
     """
     _no_authority(authority_raw=authority_raw)
     validate_entry(entry)
@@ -759,6 +771,12 @@ def materialize(entry, capture, inventory, sheet_names, inventory_sha256, policy
         if len(image) != 1:
             problems.append({'kind': 'net_role_split' if side == 'entry' else 'net_role_merged', 'role': role,
                              'actual': sorted(image)})
+    if not problems and entry['receipt']['import'] == 'board-region/1':
+        # Even an empty legacy record may have omitted zones. Candidate /2 and its
+        # consumers only apply footprint poses; do not claim copper was materialized.
+        problems.append({'kind': 'copper_unknown', 'reason':
+                         'board-region copper application and native checking are unavailable; '
+                         'a placement-only candidate cannot materialize this entry'})
     if not problems:
         result.update(status='materialized', candidate=candidate)
     return result
@@ -869,8 +887,8 @@ def _label(kind, provenance_class, source, detail=None):
 def board_copper(board_raw, capture, candidate, anchor_pose):
     """Tracks, arcs and vias of the block's nets wholly inside its courtyard extent, framed.
 
-    Coordinates use the block frame; nets are recorded by role, never by name. Zones
-    are not captured.
+    Coordinates use the block frame; nets are recorded by role, never by name. A
+    board with zones refuses as copper_unknown rather than claiming complete copper.
     """
     try:
         root = parse_sexpr(board_raw)
@@ -878,6 +896,8 @@ def board_copper(board_raw, capture, candidate, anchor_pose):
         raise ValueError(f'board is not a KiCad S-expression: {exc}') from None
     if root[0] != 'kicad_pcb':
         raise ValueError('board is not a kicad_pcb file')
+    if children(root, 'zone') or any(children(fp, 'zone') for fp in children(root, 'footprint')):
+        raise CopperUnknown('zones are not supported by board-region copper capture')
     table = {}
     for node in children(root, 'net'):
         atoms = [x for x in node[1:] if isinstance(x, str)]
@@ -1235,7 +1255,8 @@ def main(argv=None):
             return 0
         _write(args.out, result)
     except (OSError, ValueError) as exc:
-        kind = {'kind': 'authority_unavailable'} if isinstance(exc, AuthorityUnavailable) else {}
+        kind = ({'kind': 'authority_unavailable'} if isinstance(exc, AuthorityUnavailable) else
+                {'kind': 'copper_unknown'} if isinstance(exc, CopperUnknown) else {})
         print(json.dumps({'status': 'refused', **kind, 'reason': str(exc)}))
         return 1
     print(json.dumps({'status': 'imported', 'out': str(args.out)}))
