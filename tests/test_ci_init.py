@@ -73,11 +73,21 @@ SIGNAL_CHILD = textwrap.dedent('''
 
 
 def read_line(proc, timeout):
-    """First stdout line of proc, failing (the caller kills proc) if none arrives in time."""
-    ready, _, _ = select.select([proc.stdout], [], [], timeout)
-    if not ready:
-        raise AssertionError(f'no output from child within {timeout}s')
-    return proc.stdout.readline().strip()
+    """First complete stdout line of proc, failing (the caller kills proc) if no newline
+    arrives before the overall deadline. Reads one byte at a time from the raw fd so a
+    partial line can never block and no bytes past the newline are consumed."""
+    fd = proc.stdout.fileno()
+    deadline = time.monotonic() + timeout
+    data = b''
+    while not data.endswith(b'\n'):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+            raise AssertionError(f'no complete output line from child within {timeout}s (got {data!r})')
+        chunk = os.read(fd, 1)
+        if not chunk:
+            raise AssertionError(f'child closed stdout before a complete line (got {data!r})')
+        data += chunk
+    return data.decode().strip()
 
 
 def find_tini():
@@ -140,8 +150,21 @@ class ReadinessBoundTests(unittest.TestCase):
                                 stdout=subprocess.PIPE, text=True)
         try:
             started = time.monotonic()
-            with self.assertRaisesRegex(AssertionError, 'no output'):
+            with self.assertRaisesRegex(AssertionError, 'no complete output line'):
                 read_line(proc, 0.3)
+            self.assertLess(time.monotonic() - started, 5)
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_partial_line_without_newline_fails_within_the_deadline(self):
+        proc = subprocess.Popen([sys.executable, '-c',
+                                 'import sys, time; sys.stdout.write("rea"); sys.stdout.flush(); time.sleep(30)'],
+                                stdout=subprocess.PIPE, text=True)
+        try:
+            started = time.monotonic()
+            with self.assertRaisesRegex(AssertionError, "no complete output line.*'rea'"):
+                read_line(proc, 0.5)
             self.assertLess(time.monotonic() - started, 5)
         finally:
             proc.kill()
