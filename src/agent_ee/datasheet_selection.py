@@ -49,11 +49,13 @@ def validate_document(document, *, context):
     return document
 
 
-def _selected_source(root, ref, *, context):
-    """Return the sole selected source; rejected hashes always take precedence."""
+def _selected_source(root, ref, *, context, reads=None):
+    """Return the sole selected source; rejected hashes always take precedence.
+
+    reads is the calling validation's storage.CallReads, or None to read now."""
     from .parts_manifest import _read_blob
     validate_ref(ref)
-    document = validate_document(strict_json(_read_blob(root, ref)), context=context)
+    document = validate_document(strict_json(_read_blob(root, ref, reads)), context=context)
     entry = document['parts'].get(ref['part_key'])
     if entry is None or len(entry['selected']) != 1:
         ids = [] if entry is None else [s['id'] for s in entry['selected']]
@@ -65,8 +67,8 @@ def _selected_source(root, ref, *, context):
     return selected, entry['rejected']
 
 
-def _receipt(root, selected):
-    record, _ = _acquisition(root, selected['provenance'])
+def _receipt(root, selected, reads=None):
+    record, _ = _acquisition(root, selected['provenance'], reads)
     if record['sha256'] != selected['sha256']:
         raise ValueError('selected source hash differs from acquisition')
     return {**selected, 'acquisition': record}
@@ -77,16 +79,18 @@ def selected_source(root, ref, *, context):
     return _receipt(root, selected), rejected
 
 
-def check_binding(root, ref, artifact, provenance, *, context):
-    """Refuse rejected bytes even under an acquisition alias or a different URL."""
-    selected, rejected = _selected_source(root, ref, context=context)
+def check_binding(root, ref, artifact, provenance, *, context, reads=None):
+    """Refuse rejected bytes even under an acquisition alias or a different URL.
+
+    reads is the calling validation's storage.CallReads (AGENTEE-454), or None."""
+    selected, rejected = _selected_source(root, ref, context=context, reads=reads)
     conflicts = [s for s in rejected if s['sha256'] == artifact['sha256']]
     if conflicts:
         raise ValueError(f'{context}: rejected datasheet source(s) {conflicts}; selected={selected["id"]}')
     if artifact['sha256'] != selected['sha256'] or provenance != selected['provenance']:
         raise ValueError(f'{context}: bound datasheet differs from selected source {selected["id"]} '
                          f'({selected["sha256"]}); bound={artifact}, provenance={provenance}')
-    return _receipt(root, selected)
+    return _receipt(root, selected, reads)
 
 
 def acquisition_source(root, ref, *, context):

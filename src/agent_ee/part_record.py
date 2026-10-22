@@ -98,7 +98,7 @@ def qualify_record(document, root, reads=None):
         ref = document['source_selection']
         check_binding(root, ref, artifact,
                       {**document['datasheets'], 'locator': 'parts[id=' + document['datasheet_id'] + ']'},
-                      context=document['lcsc'])
+                      context=document['lcsc'], reads=reads)
         dependencies[ref['path']] = ref['sha256']
     if 'acquisition' in document and document['acquisition'] != observation['acquisition']:
         raise ValueError('part record acquisition differs from captured identity')

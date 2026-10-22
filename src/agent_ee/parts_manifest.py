@@ -250,7 +250,8 @@ def dependency_closure(document, root, reads=None):
         context = f'part={part["id"]} purchase={part["lcsc"]} instances={part["instances"]}'
         if 'source_selection' in sheet:
             from .datasheet_selection import check_binding, datasheet
-            check_binding(root, sheet['source_selection'], sheet['artifact'], sheet['provenance'], context=context)
+            check_binding(root, sheet['source_selection'], sheet['artifact'], sheet['provenance'], context=context,
+                          reads=reads)
             _, paths = datasheet(root, part, reads)
             blobs += [dict(path=p, sha256=h) for p, h in paths.items()]
             blobs.append({k: sheet['source_selection'][k] for k in ('path', 'sha256')})
@@ -291,7 +292,12 @@ def qualify_manifest(document, root):
         requirements = strict_json(_read_blob(root, document['selection']['requirements'], reads))
         expected = strict_json(_read_blob(root, document['selection']['result'], reads))
         catalog = document['catalog']
-        selection = selection_check(Path(root) / catalog['snapshot'], catalog['manifest_sha256'], requirements)
+        # Selection consumes the snapshot bytes the closure verified; the capture-path
+        # policy is checked again at this use.
+        for name in ('manifest.json', 'catalog.sqlite3'):
+            _captured(root, catalog['snapshot'] + '/' + name)
+        selection = selection_check(Path(root) / catalog['snapshot'], catalog['manifest_sha256'], requirements,
+                                    reads)
         if selection != expected or selection['execution'] != 'ok' or selection['outcome'] != 'pass':
             raise ValueError('canonical captured selection unavailable or differs from rederivation')
         if (selection['snapshot_sha256'] != catalog['database_sha256'] or

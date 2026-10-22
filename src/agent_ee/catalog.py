@@ -511,10 +511,18 @@ def read_database(payload, manifest):
         return rows
 
 
-def load_catalog(snapshot_directory, expected_manifest_sha256):
+def load_catalog(snapshot_directory, expected_manifest_sha256, reads=None):
+    """Verify and parse one snapshot; reads is the calling validation's storage.CallReads.
+
+    With reads (AGENTEE-454) the manifest and database are the bytes that call already
+    verified under the same pins, if any; every pin, size, schema and row check still runs."""
     root = Path(snapshot_directory)
-    payload = (root / 'manifest.json').read_bytes()
-    if hashlib.sha256(payload).hexdigest() != expected_manifest_sha256:
+    if reads is None:
+        payload = (root / 'manifest.json').read_bytes()
+        found = hashlib.sha256(payload).hexdigest()
+    else:
+        payload, found = reads.read(root / 'manifest.json', expected_manifest_sha256)
+    if found != expected_manifest_sha256:
         raise ValueError('snapshot manifest hash mismatch')
     manifest = strict_json(payload)
     exact_fields(manifest, ('schema', 'snapshot_date', 'source_url', 'source_commit', 'currency',
@@ -528,9 +536,13 @@ def load_catalog(snapshot_directory, expected_manifest_sha256):
     exact_fields(database, ('path', 'sha256', 'size_bytes'))
     if database['path'] != 'catalog.sqlite3' or type(database['size_bytes']) is not int or not 0 < database['size_bytes'] <= MAX_TOTAL_BYTES:
         raise ValueError('invalid snapshot database descriptor')
-    with (root / database['path']).open('rb') as stream:
-        payload = stream.read(database['size_bytes'] + 1)
-    if len(payload) != database['size_bytes'] or hashlib.sha256(payload).hexdigest() != database['sha256']:
+    if reads is None:
+        with (root / database['path']).open('rb') as stream:
+            payload = stream.read(database['size_bytes'] + 1)
+        found = hashlib.sha256(payload).hexdigest()
+    else:
+        payload, found = reads.read(root / database['path'], database['sha256'])
+    if len(payload) != database['size_bytes'] or found != database['sha256']:
         raise ValueError('snapshot database size/hash mismatch')
     if type(manifest['pruned_rows']) is not int or manifest['pruned_rows'] < 0:
         raise ValueError('invalid pruned row count')

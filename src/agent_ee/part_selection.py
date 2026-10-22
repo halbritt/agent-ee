@@ -205,11 +205,13 @@ def _select_snapshot(snapshot, expected_manifest_sha256, requirements):
             'allocations': dict(sorted(allocated.items())), 'parts': selections}
 
 
-def selection_check(snapshot_directory, expected_manifest_sha256, requirements):
-    """Check a requirements object or captured Path, retaining verified snapshot identity."""
+def selection_check(snapshot_directory, expected_manifest_sha256, requirements, reads=None):
+    """Check a requirements object or captured Path, retaining verified snapshot identity.
+
+    reads is the calling validation's storage.CallReads (see catalog.load_catalog), or None."""
     snapshot = None
     try:
-        snapshot = load_catalog(snapshot_directory, expected_manifest_sha256)
+        snapshot = load_catalog(snapshot_directory, expected_manifest_sha256, reads)
         if isinstance(requirements, Path):
             requirements = strict_json(requirements.read_text(encoding='utf-8'))
         return _select_snapshot(snapshot, expected_manifest_sha256, requirements)

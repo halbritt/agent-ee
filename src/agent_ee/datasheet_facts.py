@@ -120,7 +120,7 @@ def _load_acquisition(inputs, locator, capture_bindings, reads):
             note = record['source_note']
             exact_fields(note, ('path', 'sha256', 'entry'))
             note_rel = str(directory / str(safe_relative(note['path'])))
-            entry = historical_source(inputs, {**note, 'path': note_rel}, record['sha256'])
+            entry = historical_source(inputs, {**note, 'path': note_rel}, record['sha256'], reads)
             if (record['url'] != entry['url'] or record['captured_at'] != entry['captured_at_utc'] or
                     record['fetched_at'] != entry.get('fetched_at')):
                 raise ValueError('historical import contradicts source note')

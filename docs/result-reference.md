@@ -389,8 +389,10 @@ was hashed, reread for the envelope check, rehashed for the dependency map and r
 again by the closure's final loop.
 
 Now one call creates a `storage.CallReads`, passes it explicitly down the replay
-(`part_record._sources`, `_external_sources`, `datasheet_selection.datasheet`,
-`datasheet_facts.load_acquisition`) and drops it on return:
+(`part_record._sources`, `_external_sources`, `qualify_record`,
+`datasheet_selection.datasheet` and `check_binding`, `datasheet_facts.load_acquisition`,
+`datasheet_capture.historical_source`, `part_selection.selection_check` and
+`catalog.load_catalog`) and drops it on return:
 
 - Each file is read once and hashed from the bytes read. `load_acquisition` checks the
   PDF envelope and parses the acquisition JSON on exactly those bytes; the previous
@@ -403,7 +405,10 @@ Now one call creates a `storage.CallReads`, passes it explicitly down the replay
   `captured_path` containment are rechecked before each lookup, including every path of
   a reused acquisition replay, so no refusal or acceptance of a path is served from it.
 - Consumers inside the call see the verified bytes: the closure's final loop, the part
-  dependency maps and `qualify_manifest`'s CAD check use them, not a later reread.
+  dependency maps, source-selection decisions and their selected-source receipts,
+  historical source notes (hashed and parsed from one read), generic catalog selection
+  (snapshot manifest and database, after every pin, size, schema and row check) and
+  `qualify_manifest`'s CAD check use them, not a later reread.
 - Nothing is module-level, cross-call or keyed by file status. The next call, including
   the next `compile_baseline`/`load_baseline` and every `parts_subset` or identity-witness
   pass inside one, rereads and rehashes current bytes. `storage.digest()` and
@@ -421,8 +426,10 @@ The trade: a byte change made to a capture file in the middle of one call, after
 first read, is not seen by that call (its consumers keep the verified bytes); it is
 refused by the next call. `tests.test_call_reads` covers changed bytes and same-size,
 same-mtime shared-mapping writes between calls, symlinked and aliased paths, a different
-pinned digest, bindings, a link substituted mid-call, and a mid-call substitution whose
-consumers still see the verified bytes.
+pinned digest, bindings, a link substituted mid-call, and mid-call substitutions of a
+capture PDF, a selected-source PDF and decision, a historical source note and the catalog
+snapshot manifest and database, whose consumers still see the verified bytes while the
+next call refuses them.
 
 ## Version-2 witnesses and evidence seal
 
