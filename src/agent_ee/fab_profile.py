@@ -433,14 +433,21 @@ def classify_preferred(records, inventory):
                                             v['drill_nm'] not in allowed and v['drill_nm'] < continuous]
         if below:
             record['below_minimum_vias'] = below
+        # A refusal names the exact captured table (and its source hash) it checked.
+        source = record['expected']['source']
+        table = {**options, 'source_path': source['path'], 'source_sha256': source['sha256'],
+                 'as_of': source['as_of']}
         if unknown is None or unknown:
             record.update(status='not_evaluated', execution='unsupported',
+                          code='via_drill_off_table' if unknown else 'via_inventory_missing',
                           reason='via drill outside sourced options' if unknown else 'via drill inventory missing',
-                          unsupported_vias=unknown)
+                          unsupported_vias=unknown, drill_table=table)
         elif below and (record['status'] != 'violation' or
                         not {v['uuid'] for v in below} <= offender_ids(record)):
             record.update(status='not_evaluated', execution='unsupported',
-                          reason='below-minimum via drill not cited by native DRC', unsupported_vias=[])
+                          code='below_minimum_via_uncited',
+                          reason='below-minimum via drill not cited by native DRC', unsupported_vias=[],
+                          drill_table=table)
     if inventory['outline_xy_mm'] is None:
         for record in records:
             if record['expected'].get('key') == 'min_edge_clearance_mm' and record['status'] == 'satisfied':

@@ -103,6 +103,31 @@ class StandardProfileContractTest(unittest.TestCase):
         empty = classify_preferred([record], {'outline_xy_mm': [10, 10], 'vias': []})[0]
         self.assertEqual((empty['execution'], empty['status']), ('ok', 'satisfied'))
 
+    def test_off_table_refusal_is_typed_with_size_and_captured_table(self):
+        record = next(c for c in self.compile()['constraints'] if c['id'] == 'via-drill')
+        table = {'values_mm': [.15, .2, .25], 'continuous_from_mm': .3,
+                 'source_path': 'jlcpcb-vias.txt', 'source_sha256': self.files['jlcpcb-vias.txt'],
+                 'as_of': '2026-10-19'}
+        for name, inventory, code, vias in (
+                ('off-table', {'vias': [{'uuid': 'b', 'drill_nm': 180000},
+                                        {'uuid': 'c', 'drill_nm': 250000}]},
+                 'via_drill_off_table', [{'uuid': 'b', 'drill_nm': 180000}]),
+                ('missing', {}, 'via_inventory_missing', None)):
+            with self.subTest(case=name):
+                trial = {**copy.deepcopy(record), 'execution': 'ok', 'status': 'satisfied'}
+                result = classify_preferred([trial], {'outline_xy_mm': [10, 10], **inventory})[0]
+                self.assertEqual((result['execution'], result['status'], result['code']),
+                                 ('unsupported', 'not_evaluated', code))
+                self.assertEqual(result['unsupported_vias'], vias)
+                self.assertEqual(result['drill_table'], table)
+        for drill in (150000, 200000, 250000, 300000, 2000000):
+            with self.subTest(drill=drill):
+                trial = {**copy.deepcopy(record), 'execution': 'ok', 'status': 'satisfied'}
+                result = classify_preferred([trial], {'outline_xy_mm': [10, 10],
+                                                      'vias': [{'uuid': 'a', 'drill_nm': drill}]})[0]
+                self.assertEqual((result['execution'], result['status']), ('ok', 'satisfied'))
+                self.assertFalse({'code', 'drill_table', 'unsupported_vias'} & set(result))
+
     def test_below_minimum_drill_needs_native_citation_and_unlisted_drill_takes_precedence(self):
         record = next(c for c in self.compile()['constraints'] if c['id'] == 'via-drill')
         low, unlisted = {'uuid': 'a', 'drill_nm': 149999}, {'uuid': 'b', 'drill_nm': 180000}
@@ -269,6 +294,65 @@ class NativeStandardProfileTest(unittest.TestCase):
                 for ident in ('small-drill', 'small-via'):
                     self.assertEqual((rules[ident]['execution'], rules[ident]['status']),
                                      ('unsupported', 'not_evaluated'))
+
+    def test_off_table_drills_refuse_as_typed_unknown_naming_the_captured_table(self):
+        result, rules, saved = self.run_vias([
+            ('d018', (.18, .4)), ('d022', (.22, .6)), ('d028', (.28, .4)),
+            ('charged', (.25, .4)), *[(f'control{i}', (.3, .6)) for i in range(2)]])
+        self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+        self.assertEqual(result['details']['extra_charges'], [])
+        gate = rules['via-drill']
+        self.assertEqual((gate['execution'], gate['status'], gate['code']),
+                         ('unsupported', 'not_evaluated', 'via_drill_off_table'))
+        self.assertEqual(gate['unsupported_vias'], sorted(
+            [{'uuid': saved[n], 'drill_nm': d} for n, d in
+             (('d018', 180000), ('d022', 220000), ('d028', 280000))], key=lambda v: v['uuid']))
+        self.assertEqual(gate['drill_table'], {
+            'values_mm': [.15, .2, .25], 'continuous_from_mm': .3, 'source_path': 'jlcpcb-vias.txt',
+            'source_sha256': digest(PRESET / 'jlcpcb-vias.txt'), 'as_of': '2026-10-19'})
+        # The on-table 0.25/0.4 mm via is never graded beside an off-table drill.
+        for ident in ('small-drill', 'small-via'):
+            self.assertNotEqual(rules[ident]['status'], 'extra_charge')
+
+    def test_on_table_sizes_keep_their_grading_and_extra_charge_records(self):
+        result, rules, saved = self.run_vias([
+            ('d015', (.15, .6)), ('d020', (.2, .4)), ('d025', (.25, .4)),
+            ('d025_large', (.25, .45)), ('d030', (.3, .4)), ('d040', (.4, .7))])
+        self.assertEqual((result['execution'], result['outcome']), ('ok', 'pass'), result)
+        gate = rules['via-drill']
+        self.assertEqual((gate['execution'], gate['status']), ('ok', 'satisfied'))
+        self.assertFalse({'code', 'drill_table', 'unsupported_vias', 'below_minimum_vias'} & set(gate))
+        self.assertEqual((rules['small-drill']['status'], rules['small-drill']['offender_ids']),
+                         ('extra_charge', [saved['d015']]))
+        self.assertEqual((rules['small-via']['status'], rules['small-via']['offender_ids']),
+                         ('extra_charge', sorted(saved[n] for n in ('d020', 'd025'))))
+        self.assertEqual(result['details']['extra_charges'],
+                         [rules['small-drill'], rules['small-via']])
+
+    def test_tampered_source_hash_refuses_on_table_grading(self):
+        def tampered(field):
+            def profile(inputs):
+                document = standard_profile(inputs)
+                source = inputs / 'jlcpcb-vias.txt'
+                if field == 'sha256':
+                    document['limits'][0]['source']['sha256'] = '0' * 64
+                else:
+                    source.write_bytes(source.read_bytes() + b'0.22 mm\n')
+                return document
+            return profile
+        for field in ('sha256', 'bytes'):
+            with self.subTest(tampered=field):
+                saved = {}
+                result = base.NativeFabTest.run_profile(
+                    self, None, builder=via_board(
+                        [('charged', (.25, .4)), *[(f'control{i}', (.3, .6)) for i in range(5)]], saved),
+                    profile=tampered(field))
+                rules = {c['id']: c for c in result['details']['constraints']}
+                self.assertEqual((result['execution'], result['outcome']), ('unsupported', 'unknown'), result)
+                self.assertEqual(result['details']['extra_charges'], [])
+                self.assertEqual(rules['via-drill']['execution'], 'unsupported')
+                self.assertNotIn('rules', rules['via-drill'])
+                self.assertNotIn('drill_table', rules['via-drill'])
 
     def test_options_match_exact_saved_nanometres_without_rounding_tolerance(self):
         result, rules, saved = self.run_vias([

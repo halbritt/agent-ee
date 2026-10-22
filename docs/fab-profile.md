@@ -225,6 +225,15 @@ An unlisted drill at or above the minimum makes the minimum record
 `execution=unsupported` and `status=not_evaluated`, with the exact
 `unsupported_vias`. Missing inventory is also unsupported; an observed empty
 inventory has no unsupported vias.
+Each such refusal is typed by `code`: `via_drill_off_table`,
+`via_inventory_missing` or `below_minimum_via_uncited`. Each refusal also
+carries `drill_table`, the exact table it was checked against. That table holds
+`values_mm` and `continuous_from_mm`, plus the cited capture's `source_path`,
+`source_sha256` and `as_of`. Sizes are never rounded to a nearby option. A
+tampered or changed capture hash leaves the limit unsupported before any
+table is consulted, so on-table drills cannot be graded either. The gate covers
+via holes only, the one hole class the captured record lists options for. The
+preset compiles no rule for pad or NPTH holes, so it never grades them.
 Both scalar and conjunctive drill surcharge records then remain unknown because
 their minimum is unevaluated. Raw native reports remain retained evidence, but
 cannot establish a drill charge outside the declared options. The
