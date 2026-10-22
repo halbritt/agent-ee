@@ -731,3 +731,27 @@ unselected-profile case that existing tests assert. Production RC scopes use
 [RC envelope on the recorded JLCPCB 2-layer profile](board-envelope.md#rc-envelope-on-the-recorded-jlcpcb-2-layer-profile).
 This decision concerns board stackup only. The component-side ±10% THT fit
 (AGENTEE-448) is separate.
+
+## MIT license approved (AGENTEE-14, 2026-10-22)
+
+Class: owner-relayed, agent-transcribed. Coordinator agent-519 relayed the
+owner's decision in AGENTEE-14 Plane comment
+`ad29d555-b855-43f2-bc24-b5b5dfa67991` (2026-10-22T17:36:33Z), quoted verbatim:
+
+> Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT
+> for agent-ee material, and MIT for the FOME-MC RC fixture and the
+> eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded.
+> This also unblocks AGENTEE-103 and AGENTEE-16.
+
+The rest of this entry is agent reasoning about how the decision is recorded.
+[`docs/file-origins.json`](file-origins.json) marks origins `AE`, `AE-RUN`, `T1`
+and `T2` `owner-confirmed`, each with an `owner_record` giving the date, the
+quote and where it was relayed, and [`LICENSE`](../LICENSE) scopes the grant to
+files whose only origins are those four. `scripts/check_origins.py` still
+derives each file's status from all of its origins. The RC fixture embeds KiCad
+stock library data (`T6`, unresolved), so files whose only origin is `T1`
+report `derived` and name `T6`; files that also declare `T6` or any other
+unresolved origin stay unresolved. `T3` to `T13` stay unresolved and are not
+offered under MIT. `T14`, `T15` and `T16` are unchanged: the decision does not
+mention them, and the 2026-10-18 `T16` decision chooses no repository licence.
+Excludes history rewriting and any change to repository visibility.

@@ -6,9 +6,9 @@
   "license_proposal": {
     "spdx": "MIT",
     "file": "LICENSE",
-    "status": "Merged as a proposal for owner review. Not owner-approved; third-party origins remain excluded.",
-    "covers": "Files whose every origin has permission_status proposed-mit-pending-owner-approval.",
-    "excludes": "Every file with an origin whose permission_status is unresolved-owner-decision-required."
+    "status": "Owner-approved (owner-relayed decision of 2026-10-22, origins AE, AE-RUN, T1 and T2; see their owner_record). Origins T3-T16 are not covered by this decision.",
+    "covers": "Files whose every origin is AE, AE-RUN, T1 or T2. Of those, files whose origins embed an unresolved upstream origin (T1 embeds T6) report permission_status derived: the MIT grant covers the owner's material in them, not the embedded upstream content, which keeps its upstream_license.",
+    "excludes": "Every file with an origin other than AE, AE-RUN, T1 or T2, including every file with an origin whose permission_status is unresolved-owner-decision-required, and T16 (owner-confirmed for committing as fixtures, with no repository licence chosen)."
   },
   "observations": [
     "On 2026-10-17 the GitHub API reported halbritt/agent-ee and halbritt/fome-mc as public, with agent-ee main at 69d7bbf46fa40b170c61bf325f18e5ef78988f8c. That branch already contains the third-party-origin files listed here. This is an observation, not a rights decision."
@@ -40,10 +40,10 @@
       "name": "agent-ee original material",
       "description": "Code, tests, scripts, configuration, documentation, planning records and original fixtures written for agent-ee in this repository by the owner and by AI agents working under the owner's direction. Original fixtures are produced by generators in this repository or hand-authored here.",
       "upstream": null,
-      "upstream_license": "Not applicable. MIT is proposed in LICENSE.",
+      "upstream_license": "Not applicable. MIT (LICENSE), owner-approved 2026-10-22 (owner_record).",
       "license_verified": false,
-      "permission_status": "proposed-mit-pending-owner-approval",
-      "owner_decision": "Approve MIT for this material and confirm the copyright holder named in LICENSE. Authorship by AI agents was not analysed.",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): MIT approved for agent-ee material. Asked: approve MIT for this material and confirm the copyright holder named in LICENSE. Authorship by AI agents was not analysed.",
       "evidence": [
         "git log author for all commits on main is halbritt",
         "LICENSE",
@@ -52,20 +52,35 @@
       "capture_sources": [
         "/fixtures/rc/requirements/",
         "/requirements.txt"
-      ]
+      ],
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.",
+        "where": "AGENTEE-14 Plane comment ad29d555-b855-43f2-bc24-b5b5dfa67991 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed; docs/decisions.md \"MIT license approved (AGENTEE-14, 2026-10-22)\"",
+        "class": "owner-relayed",
+        "applies": "agent-ee material"
+      }
     },
     "AE-RUN": {
       "name": "Retained agent-ee run outputs",
       "description": "Coordinator records, native KiCad/ngspice/Bubblewrap outputs and Claude, Codex and Agy subscription reviewer outputs produced by agent-ee runs. A file has this origin alone only when its run used agent-ee material as input.",
       "upstream": null,
-      "upstream_license": "Not applicable. MIT is proposed in LICENSE.",
+      "upstream_license": "Not applicable. MIT (LICENSE), owner-approved 2026-10-22 (owner_record).",
       "license_verified": false,
-      "permission_status": "proposed-mit-pending-owner-approval",
-      "owner_decision": "Approve MIT for retained run outputs. Model-provider output terms and tool banners in the outputs (for example the ngspice copyright banner) were not analysed.",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): MIT approved for agent-ee material, which includes retained run outputs. Asked: approve MIT for retained run outputs. Model-provider output terms and tool banners in the outputs (for example the ngspice copyright banner) were not analysed.",
       "evidence": [
         "evidence/README.md",
-        "evidence/files-manifest.json"
-      ]
+        "evidence/files-manifest.json",
+        "docs/decisions.md"
+      ],
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.",
+        "where": "AGENTEE-14 Plane comment ad29d555-b855-43f2-bc24-b5b5dfa67991 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed; docs/decisions.md \"MIT license approved (AGENTEE-14, 2026-10-22)\"",
+        "class": "owner-relayed",
+        "applies": "agent-ee material"
+      }
     },
     "T1": {
       "name": "FOME-MC RC filter fixture",
@@ -80,23 +95,31 @@
         },
         "license_file": null
       },
-      "upstream_license": "No license found. FOME-MC has no LICENSE or COPYING file at da52756, and the GitHub API reports no license.",
+      "upstream_license": "No license file in FOME-MC: no LICENSE or COPYING file at da52756, and the GitHub API reports no license. The owner, sole author of these files, approved MIT for them in agent-ee on 2026-10-22 (owner_record). Embedded KiCad stock library data keeps its own licence (T6).",
       "license_verified": true,
       "embedded_origins": [
         "T6"
       ],
-      "permission_status": "unresolved-owner-decision-required",
-      "owner_decision": "Confirm whether these FOME-MC files may be published in agent-ee and under which license. Every FOME-MC commit lists halbritt as author; that is not treated as a publication right.",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): MIT approved for the FOME-MC RC fixture. Asked: confirm whether these FOME-MC files may be published in agent-ee and under which license. Files fold to derived because the fixture embeds unresolved T6 data.",
       "evidence": [
         "fixtures/rc/PROVENANCE.md",
-        "evidence/*/candidate.json sources"
+        "evidence/*/candidate.json sources",
+        "docs/decisions.md"
       ],
       "capture_sources": [
         "/fixtures/rc/control/",
         "/fixtures/rc/seeded/",
         "/disposable/",
         "/native/"
-      ]
+      ],
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.",
+        "where": "AGENTEE-14 Plane comment ad29d555-b855-43f2-bc24-b5b5dfa67991 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed; docs/decisions.md \"MIT license approved (AGENTEE-14, 2026-10-22)\"",
+        "class": "owner-relayed",
+        "applies": "the FOME-MC RC fixture"
+      }
     },
     "T2": {
       "name": "FOME-MC toolchain/eda.py validation logic",
@@ -110,14 +133,22 @@
         },
         "license_file": null
       },
-      "upstream_license": "No license found (see T1).",
+      "upstream_license": "No license file in FOME-MC (see T1). The owner, sole author of eda.py, approved MIT for the derived logic in agent-ee on 2026-10-22 (owner_record).",
       "license_verified": true,
-      "permission_status": "unresolved-owner-decision-required",
-      "owner_decision": "Confirm whether the adapted eda.py logic may be published under MIT. Until then the adapted portions of checks.py are not covered by the MIT grant.",
+      "permission_status": "owner-confirmed",
+      "owner_decision": "Decided 2026-10-22 (owner_record): MIT approved for the eda.py-derived logic. Asked: confirm whether the adapted eda.py logic may be published under MIT.",
       "evidence": [
         "src/agent_ee/checks.py module docstring",
-        "line comparison against fome-mc 5b7b175:toolchain/eda.py"
-      ]
+        "line comparison against fome-mc 5b7b175:toolchain/eda.py",
+        "docs/decisions.md"
+      ],
+      "owner_record": {
+        "date": "2026-10-22",
+        "decision": "Owner decision (2026-10-22, owner via agent-519 decision quiz): APPROVED: MIT for agent-ee material, and MIT for the FOME-MC RC fixture and the eda.py-derived logic (T1, T2; owner is sole author). T3-T13 remain excluded. This also unblocks AGENTEE-103 and AGENTEE-16.",
+        "where": "AGENTEE-14 Plane comment ad29d555-b855-43f2-bc24-b5b5dfa67991 (2026-10-22T17:36:33Z), posted by coordinator agent-519; owner-relayed, agent-transcribed; docs/decisions.md \"MIT license approved (AGENTEE-14, 2026-10-22)\"",
+        "class": "owner-relayed",
+        "applies": "the eda.py-derived logic"
+      }
     },
     "T3": {
       "name": "Polygonus-Universal-112 donor ECU design",
