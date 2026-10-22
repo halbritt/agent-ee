@@ -1,0 +1,174 @@
+{
+  "schema": "agent-ee.ee454-attribution/1",
+  "source": "tools/ee454_io_profile/evidence/closure-count.json",
+  "pass_bytes": 31248837068,
+  "distinct_input_bytes": 128072143,
+  "amplification": 244.0,
+  "parts_times_acquisition_pdf_bytes": 7713990085,
+  "distinct_acquisition_pdf_bytes": 125968914,
+  "attribution": [
+    {
+      "site": "closure-final-loop",
+      "call_chain": "Path.read_bytes @ parts_manifest.dependency_closure > parts_manifest._read_blob > parts_manifest.read_captured",
+      "reads": 14043,
+      "bytes": 8077971383,
+      "share": 0.2585
+    },
+    {
+      "site": "acquisition-digest",
+      "call_chain": "storage._hash_stream @ parts_manifest.dependency_closure > part_record.qualify_record > part_record._sources > datasheet_facts.load_acquisition > storage.digest",
+      "reads": 10441,
+      "bytes": 7718681583,
+      "share": 0.247
+    },
+    {
+      "site": "acquisition-envelope-read",
+      "call_chain": "Path.read_bytes @ parts_manifest.dependency_closure > part_record.qualify_record > part_record._sources > datasheet_facts.load_acquisition",
+      "reads": 10125,
+      "bytes": 7713990085,
+      "share": 0.2469
+    },
+    {
+      "site": "sources-dependency-reread",
+      "call_chain": "Path.read_bytes @ parts_manifest.dependency_closure > part_record.qualify_record > part_record._sources > parts_manifest.read_captured",
+      "reads": 10442,
+      "bytes": 7718682565,
+      "share": 0.247
+    },
+    {
+      "site": "all-other",
+      "reads": null,
+      "bytes": 19511452,
+      "share": 0.0006
+    }
+  ],
+  "acquisitions": [
+    {
+      "acquisition": "telemetry-pod/expansion/canonical-parts/acquisition/manifest.json",
+      "parts": 194,
+      "pdfs": 47,
+      "pdf_bytes": 27802406
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-1/manifest.json",
+      "parts": 47,
+      "pdfs": 16,
+      "pdf_bytes": 43833267
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-auto-caps/manifest.json",
+      "parts": 39,
+      "pdfs": 4,
+      "pdf_bytes": 3088327
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-2/manifest.json",
+      "parts": 10,
+      "pdfs": 3,
+      "pdf_bytes": 1403916
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/core/datasheets-current/manifest.json",
+      "parts": 4,
+      "pdfs": 4,
+      "pdf_bytes": 12265958
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/core/datasheets-core/manifest.json",
+      "parts": 4,
+      "pdfs": 4,
+      "pdf_bytes": 2883575
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-adoption/manifest.json",
+      "parts": 3,
+      "pdfs": 3,
+      "pdf_bytes": 6298781
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passive-exact/manifest.json",
+      "parts": 2,
+      "pdfs": 1,
+      "pdf_bytes": 1363192
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-protection-resolved/manifest.json",
+      "parts": 2,
+      "pdfs": 2,
+      "pdf_bytes": 1205848
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-tracker/manifest.json",
+      "parts": 2,
+      "pdfs": 1,
+      "pdf_bytes": 2148849
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition/manifest.json",
+      "parts": 2,
+      "pdfs": 5,
+      "pdf_bytes": 13070811
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/connector-source/acquisition-molex-retry/manifest.json",
+      "parts": 1,
+      "pdfs": 1,
+      "pdf_bytes": 28831
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-protection/manifest.json",
+      "parts": 1,
+      "pdfs": 1,
+      "pdf_bytes": 250548
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-ua-supplement/manifest.json",
+      "parts": 1,
+      "pdfs": 3,
+      "pdf_bytes": 2279376
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-passives-retry/manifest.json",
+      "parts": 1,
+      "pdfs": 1,
+      "pdf_bytes": 467972
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-supplement/manifest.json",
+      "parts": 1,
+      "pdfs": 2,
+      "pdf_bytes": 1914332
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/parts-closure/recovered-pilot/power-source/acquisition-final-adopt/manifest.json",
+      "parts": 1,
+      "pdfs": 1,
+      "pdf_bytes": 5082555
+    },
+    {
+      "acquisition": "telemetry-pod/expansion/j1-historical-source/acquisition/manifest.json",
+      "parts": 1,
+      "pdfs": 1,
+      "pdf_bytes": 580370
+    }
+  ],
+  "modelled_saving_per_pass": {
+    "R1 load_acquisition hashes the bytes it envelope-checks (one read, not two)": {
+      "bytes": 7713990085,
+      "share": 0.2469
+    },
+    "R2 _sources takes PDF digests from the verified acquisition read, not a reread": {
+      "bytes": 7718682565,
+      "share": 0.247
+    },
+    "R3 dependency_closure final loop reads each distinct path once per pass": {
+      "bytes": 7949899240,
+      "share": 0.2544
+    },
+    "R4 per-pass memo of load_acquisition per (path, sha256, bindings) with R1+R2": {
+      "bytes": 23025385319,
+      "share": 0.7368
+    }
+  },
+  "modelled_R3_R4_remaining_per_pass": 273552509
+}
