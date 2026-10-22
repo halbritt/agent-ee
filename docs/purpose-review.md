@@ -44,10 +44,13 @@ purpose entry beginning `purpose_review:`. Supported waste observations use the
 existing `findings` array beside correctness findings, with `assessment: concern`,
 `severity: info` or `minor`, and the optional `dimension: purpose_review`. A
 finding with that dimension and any other assessment or severity is refused, as
-is one carrying a `downgraded_from` marker: a defect the validator downgraded for
-empty evidence stays correctness uncertainty even if it is relabelled and
-revalidated. Review validation, finding collection and adjudication apply the same
-rule. The `reasoning` states
+is one carrying any downgrade marker the validator emits: `downgraded_from`
+(any value), `validation_note`, the standard downgrade note in `reasoning`, or
+the review's `<role>/<id>: downgraded from defect` limitation. Each marker alone
+keeps the history, so a defect the validator downgraded for empty evidence stays
+correctness uncertainty even if it is relabelled, stripped of one marker and
+revalidated. Review validation, finding collection, adjudication, the run
+outcome and `verify` apply the same rule. The `reasoning` states
 the change, saving in mm² or a named routability measure, calculation or basis,
 and uncertainty. An unquantifiable saving stays unknown with the missing
 measurement named. Renders supplement structured citations to captured text
@@ -76,11 +79,15 @@ severity `info` or `minor`, and has no downgrade marker.
 `purpose_review.verify_records` re-derives them from the retained initial reviews
 (`reviews/<role>.json`) and adjudication event files (`events/*adjudication*.json`).
 A finding is a purpose finding only when its retained review marked it and that
-mark passes the rule above. Its advisory status exists only when a retained
-adjudication record decided it. Its decision events must match those decisions in
-disposition, reason, duplicate target and status, in record order. A
-`dimension`, `purpose_status` or event status on any other finding is refused,
-and so is a changed severity, assessment or downgrade marker on a purpose finding.
+mark passes the rule above. Verification then replays the writer: it collects
+the retained reviews with `collect_findings` and applies each retained
+adjudication record with `adjudicate`, in record order. Each purpose finding in
+`result.json` must equal the replayed finding as a complete object: every
+decision event field (evidence, `candidate_id`, `run_id`, `seq`, disposition,
+reason, duplicate target, status), the latest `decision`, `decision_evidence`,
+`purpose_status`, disposition, severity, assessment and markers. Any difference,
+a record that no longer replays, or a repeated finding id is refused. A
+`dimension`, `purpose_status` or event status on any other finding is refused.
 
 Each initial review records purpose coverage in `result.json`
 `purpose_coverage`. A role is `addressed` when it has a `purpose_review:`

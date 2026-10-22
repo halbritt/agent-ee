@@ -43,6 +43,12 @@ DECISION_OPTIONAL_KEYS = frozenset(("duplicate_of", "checks", "previous_run"))
 STRUCTURED_CITATION_FIELDS = frozenset(("pointer", "lines", "xpath"))
 REVIEW_VERSION = "agent-ee.review/2"
 DECISIONS_VERSION = "agent-ee.decisions/2"
+DOWNGRADE_NOTE = "Downgraded from defect to concern: empty evidence cannot establish a defect."
+
+
+def downgrade_limitation(role, fid):
+    """The review limitation validate_review records for a downgraded finding."""
+    return f"{role}/{fid}: downgraded from defect to concern because evidence was empty."
 
 
 class CitationValidationError(ValueError):
@@ -337,7 +343,7 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
             "reasoning": reasoning,
         }
         from .purpose_review import DIMENSION, check_finding
-        if check_finding(fid, item):
+        if check_finding(fid, item, {"role": role, "limitations": limitations}):
             normalized["dimension"] = DIMENSION
         if "witnesses" in item:
             from .baseline import validate_witness_shape
@@ -349,11 +355,10 @@ def validate_review(value, candidate_id, run_id, packet_sha256, run_dir):
         if not evidence and assessment == "defect":
             normalized["assessment"] = "concern"
             normalized["downgraded_from"] = "defect"
-            note = "Downgraded from defect to concern: empty evidence cannot establish a defect."
-            normalized["validation_note"] = note
-            if note not in normalized["reasoning"]:
-                normalized["reasoning"] = f"{normalized['reasoning']} [{note}]"
-            limitations.append(f"{role}/{fid}: downgraded from defect to concern because evidence was empty.")
+            normalized["validation_note"] = DOWNGRADE_NOTE
+            if DOWNGRADE_NOTE not in normalized["reasoning"]:
+                normalized["reasoning"] = f"{normalized['reasoning']} [{DOWNGRADE_NOTE}]"
+            limitations.append(downgrade_limitation(role, fid))
         elif item.get("downgraded_from"):
             normalized["downgraded_from"] = item["downgraded_from"]
         validated_findings.append(normalized)
@@ -458,9 +463,8 @@ def collect_findings(reviews, checks):
             if not ev and assessment == "defect":
                 assessment = "concern"
                 downgraded_from = "defect"
-                note = "Downgraded from defect to concern: empty evidence cannot establish a defect."
-                if note not in reasoning:
-                    reasoning = f"{reasoning} [{note}]"
+                if DOWNGRADE_NOTE not in reasoning:
+                    reasoning = f"{reasoning} [{DOWNGRADE_NOTE}]"
 
             finding = {
                 "id": fid,
@@ -482,7 +486,7 @@ def collect_findings(reviews, checks):
             if downgraded_from:
                 finding["downgraded_from"] = downgraded_from
             from .purpose_review import DIMENSION, check_finding
-            if check_finding(fid, item):
+            if check_finding(fid, item, review):
                 finding["dimension"] = DIMENSION
             if rcand:
                 finding["candidate_id"] = rcand

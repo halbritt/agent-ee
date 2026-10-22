@@ -56,20 +56,38 @@ def render_sides(visuals, admitted):
     return {side: sorted(paths) for side, paths in sides.items()}
 
 
+def downgrade_history(item, review=None):
+    """Whether item carries any validator downgrade marker (AGENTEE-385 H2).
+
+    validate_review records a downgraded defect four ways: downgraded_from, validation_note, the
+    note appended to reasoning and a review limitation. Each alone keeps the history, so removing
+    one marker cannot make the finding eligible again.
+    """
+    from .findings import DOWNGRADE_NOTE, downgrade_limitation
+    reasoning = item.get('reasoning')
+    return ('downgraded_from' in item or 'validation_note' in item
+            or (isinstance(reasoning, str) and DOWNGRADE_NOTE in reasoning)
+            or (review is not None and downgrade_limitation(review.get('role'), item.get('id'))
+                in review.get('limitations', [])))
+
+
 def eligible(item):
     """A reviewer's info/minor concern that never was a defect; anything else keeps correctness rules."""
     return (item.get('dimension') == DIMENSION and item.get('source', 'review') == 'review'
             and item.get('assessment') == 'concern' and item.get('severity') in ('info', 'minor')
-            and 'downgraded_from' not in item)
+            and not downgrade_history(item))
 
 
-def check_finding(fid, item):
-    """Whether item is a purpose finding; a purpose tag on any other finding is refused."""
+def check_finding(fid, item, review=None):
+    """Whether item is a purpose finding; a purpose tag on any other finding is refused.
+
+    review, when given, is the initial review holding item, whose limitations are also history.
+    """
     if 'dimension' not in item:
         return False
     if item['dimension'] != DIMENSION:
         raise ValueError(f"finding {fid}: invalid dimension {item['dimension']!r}")
-    if 'downgraded_from' in item:
+    if downgrade_history(item, review):
         # A validator-downgraded defect stays correctness uncertainty (AGENTEE-385 H2).
         raise ValueError(f"finding {fid}: a downgraded defect cannot be a purpose_review finding")
     if not eligible(item):
@@ -104,12 +122,28 @@ def record_coverage(result):
     return result
 
 
-def verify_records(run, result):
-    """Re-derive purpose coverage and advisory status from retained reviews and adjudication records.
+def canonical_findings(run, reviews, checks):
+    """Replay the writer over retained records: collect the initial reviews, then adjudicate each
+    retained adjudication record in order, exactly as run_review and apply_decisions did."""
+    from .findings import adjudicate, collect_findings
+    from .storage import read_json
+    findings = collect_findings(reviews, checks)
+    records = [(read_json(p), p.name) for p in (run / 'events').glob('*adjudication*.json')]
+    for record, name in sorted(records, key=lambda pair: (str(pair[0].get('at', '')), pair[1])):
+        try:
+            findings = adjudicate(findings, record['decisions'], run)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise ValueError(f'retained adjudication record {name} does not replay: {exc}') from exc
+    return findings
 
-    The result projection is not trusted: coverage records, their unknown limitations, and each
-    finding's dimension, purpose_status and decision events must equal what the retained initial
-    reviews and adjudication event files grant.
+
+def verify_records(run, result):
+    """Re-derive purpose coverage and every purpose finding from retained reviews and adjudications.
+
+    The result projection is not trusted: coverage records and their unknown limitations must equal
+    the retained initial reviews, and each purpose finding (events with evidence, identity and seq,
+    decision, decision_evidence, purpose_status) must equal the writer's replayed finding. Only the
+    retained initial reviews can grant a purpose tag.
     """
     from .storage import read_json
     reviews = [read_json(p) for p in sorted((run / 'reviews').glob('*.json'))]
@@ -123,34 +157,25 @@ def verify_records(run, result):
             raise ValueError('purpose coverage differs from the retained initial reviews')
         if any(text not in result.get('limitations', []) for text in coverage_limitations(expected)):
             raise ValueError('result omits a purpose coverage unknown limitation')
-    retained = {f"{r['role']}/{f['id']}": f for r in reviews for f in r.get('findings', [])}
-    granted = {}
-    records = [(read_json(p), p.name) for p in (run / 'events').glob('*adjudication*.json')]
-    for record, name in sorted(records, key=lambda pair: (str(pair[0].get('at', '')), pair[1])):
-        try:
-            for decision in record['decisions']['decisions']:
-                granted.setdefault(decision['finding_id'], []).append(
-                    (decision['disposition'], decision['reason'], decision.get('duplicate_of'), 'advisory'))
-        except (KeyError, TypeError, AttributeError) as exc:
-            raise ValueError(f'retained adjudication record {name} is malformed: {exc!r}') from exc
-    for finding in result.get('findings', []):
+    granted = {f"{r['role']}/{f['id']}" for r in reviews for f in r.get('findings', [])
+               if check_finding(f"{r['role']}/{f['id']}", f, r)}
+    findings = result.get('findings', [])
+    for finding in findings:
         fid = finding.get('id')
-        item = retained.get(fid) if finding.get('source') == 'review' else None
-        events = finding.get('events', [])
-        if item is None or not check_finding(fid, item):
+        if finding.get('source') != 'review' or fid not in granted:
             if ('dimension' in finding or 'purpose_status' in finding
-                    or any('purpose_status' in event for event in events)):
+                    or any('purpose_status' in event for event in finding.get('events', []))):
                 raise ValueError(f'finding {fid}: purpose status not granted by its retained initial review')
+    if not granted:
+        return result
+    canonical = {f['id']: f for f in canonical_findings(run, reviews, result.get('checks', []))}
+    by_id = {f.get('id'): f for f in findings}
+    if len(by_id) != len(findings):
+        raise ValueError('result repeats a finding id')
+    for fid in sorted(granted):
+        if fid not in by_id and result.get('state') != 'complete':
             continue
-        decisions = granted.get(fid, [])
-        if (any(finding.get(key) != item.get(key)
-                for key in ('dimension', 'assessment', 'severity', 'downgraded_from'))
-                or [(e.get('disposition'), e.get('reason'), e.get('duplicate_of'), e.get('purpose_status'))
-                    for e in events] != decisions
-                or finding.get('purpose_status') != ('advisory' if decisions else None)
-                or finding.get('disposition', 'unresolved') != (decisions[-1][0] if decisions else 'unresolved')
-                or finding.get('status', 'unresolved') != finding.get('disposition', 'unresolved')
-                or (events and finding.get('decision') != events[-1])):
+        if by_id.get(fid) != canonical[fid]:
             raise ValueError(f'finding {fid}: purpose finding projection differs from its retained '
                              'initial review and adjudication records')
     return result

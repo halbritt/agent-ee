@@ -381,6 +381,53 @@ class PurposeDowngradeTests(unittest.TestCase):
                 self.assertEqual(outcome({**result, 'findings': [{**forged, key: value}]}),
                                  'defects_or_unresolved')
 
+    def test_generated_history_markers_each_keep_the_downgrade(self):
+        from agent_ee.cli import outcome
+        from agent_ee.findings import DOWNGRADE_NOTE, downgrade_limitation
+        raw = self.purpose_finding(assessment='defect', evidence=[], title='Connector enclosure correctness',
+                                   mechanism='Mating connector collides with enclosure')
+        raw.pop('dimension')
+        review = self.validated([raw])
+        down = review['findings'][0]
+        self.assertEqual((down['downgraded_from'], down['validation_note']), ('defect', DOWNGRADE_NOTE))
+        self.assertIn(f'[{DOWNGRADE_NOTE}]', down['reasoning'])
+        self.assertIn(downgrade_limitation('circuit', 'purpose-area'), review['limitations'])
+        # The reviewer probe: drop downgraded_from only; the generated note and annotation stay verbatim.
+        relabelled = {**down, 'dimension': 'purpose_review'}
+        relabelled.pop('downgraded_from')
+        stripped = {k: v for k, v in relabelled.items() if k != 'validation_note'}
+        stripped['reasoning'] = 'Illustrative saving up to 600 mm2; unqualified estimate.'
+        for label, item, limitations in (
+                ('note and annotation', relabelled, []),
+                ('note only', {**relabelled, 'reasoning': stripped['reasoning']}, []),
+                ('annotation only', {**stripped, 'reasoning': relabelled['reasoning']}, []),
+                ('limitation only', stripped, review['limitations'])):
+            with self.subTest(label):
+                with self.assertRaisesRegex(ValueError, 'downgraded defect'):
+                    validate_review({**self._review(findings=[item]), 'schema': 'agent-ee.review/2',
+                                     'limitations': limitations},
+                                    self.candidate_id, self.run_id, self.packet_sha256, self.run_dir)
+                with self.assertRaisesRegex(ValueError, 'downgraded defect'):
+                    collect_findings([{**self._review(findings=[item]), 'limitations': limitations}], [])
+        # The marker-free control is a genuine purpose finding.
+        self.assertEqual(self.validated([stripped])['findings'][0]['dimension'], 'purpose_review')
+        # Collection keeps only the reasoning annotation; adjudication still refuses the tag and the
+        # outcome still holds a forged advisory projection.
+        [collected] = collect_findings([self._review(findings=[down])], [])
+        self.assertNotIn('validation_note', collected)
+        collected.pop('downgraded_from')
+        decisions = {'schema': 'agent-ee.decisions/2', 'candidate_id': self.candidate_id, 'run_id': self.run_id,
+                     'decisions': [{'finding_id': collected['id'], 'disposition': 'deferred',
+                                    'reason': 'Need mechanical evidence', 'evidence': []}]}
+        with self.assertRaisesRegex(ValueError, 'downgraded defect'):
+            adjudicate([{**collected, 'dimension': 'purpose_review'}], decisions, self.run_dir)
+        result = {'state': 'complete', 'adjudicated': True,
+                  'checks': [{'id': 'erc', 'execution': 'ok', 'outcome': 'pass', 'summary': 'clean'}],
+                  'review_executions': [{'execution': 'ok'}, {'execution': 'ok'}], 'reviews': [{}, {}],
+                  'findings': [{**collected, 'dimension': 'purpose_review', 'purpose_status': 'advisory',
+                                'status': 'deferred', 'disposition': 'deferred'}]}
+        self.assertEqual(outcome(result), 'defects_or_unresolved')
+
 
 class PurposeIntegrityRunTests(unittest.TestCase):
     """AGENTEE-385 H1/H3: verify() re-derives purpose status and coverage from retained records."""
@@ -481,9 +528,20 @@ class PurposeIntegrityRunTests(unittest.TestCase):
                 ('forged extra event', purpose(lambda f: f['events'].append({**f['events'][-1], 'seq': 2}))),
                 ('forged event reason', purpose(lambda f: f['events'][-1].update(reason='Forged'))),
                 ('event status removed', purpose(lambda f: f['events'][-1].pop('purpose_status'))),
-                ('forged disposition', purpose(lambda f: f.update(disposition='noted', status='noted')))):
+                ('forged disposition', purpose(lambda f: f.update(disposition='noted', status='noted'))),
+                ('null downgrade marker', purpose(lambda f: f.update(downgraded_from=None))),
+                ('forged decision_evidence', purpose(lambda f: f.update(
+                    decision_evidence=[{'path': 'invented.json', 'locator': 'forged'}])))):
             with self.subTest(label):
                 self.refused(run, result, mutate, differs)
+        # Ruling 385d: each event field, kept consistent with the latest decision, is replayed and compared.
+        for field, value in (('evidence', [{'path': 'invented.json', 'locator': 'forged'}]),
+                             ('candidate_id', 'forged'), ('run_id', 'forged'), ('seq', 999)):
+            def forge(f, field=field, value=value):
+                f['events'][-1][field] = value
+                f['decision'] = dict(f['events'][-1])
+            with self.subTest(event=field):
+                self.assertEqual(self.refused(run, result, purpose(forge), differs), 'criteria_satisfied')
 
         def drop_coverage(value):
             value['purpose_coverage'] = []
@@ -506,6 +564,29 @@ class PurposeIntegrityRunTests(unittest.TestCase):
             with self.subTest(label):
                 self.refused(run, result, mutate, message)
         # The restored result still verifies.
+        self.assertEqual(verify(run)['outcome'], 'criteria_satisfied')
+
+        # A successive central adjudication replays in record order and keeps verifying.
+        from agent_ee.cli import apply_decisions
+        decisions = self.reviews.root / 'second-decisions.json'
+        write_json(decisions, {'schema': 'agent-ee.decisions/2', 'candidate_id': result['candidate_id'],
+                               'run_id': result['run_id'], 'decisions': [
+                                   {'finding_id': 'physical/edge-move', 'disposition': 'deferred',
+                                    'reason': 'Enclosure drawing still unavailable', 'evidence': []}]})
+        apply_decisions(run, decisions)
+        second = verify(run)
+        moved = second['findings'][index(second, 'physical/edge-move')]
+        self.assertEqual([(e['seq'], e['reason']) for e in moved['events']],
+                         [(1, 'Saving needs enclosure measurement'), (2, 'Enclosure drawing still unavailable')])
+        self.assertEqual(second['outcome'], 'criteria_satisfied')
+        for label, mutate in (
+                ('events swapped', purpose(lambda f: f.update(events=[{**f['events'][1], 'seq': 1},
+                                                                      {**f['events'][0], 'seq': 2}],
+                                                              decision={**f['events'][0], 'seq': 2}))),
+                ('first event dropped', purpose(lambda f: f.update(events=[{**f['events'][1], 'seq': 1}],
+                                                                   decision={**f['events'][1], 'seq': 1})))):
+            with self.subTest(label):
+                self.refused(run, second, mutate, differs)
         self.assertEqual(verify(run)['outcome'], 'criteria_satisfied')
 
         # A correctness deferral holds the outcome; no projection edit can grant it purpose status.
