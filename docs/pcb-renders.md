@@ -207,3 +207,7 @@ The container installs `kicad-packages3d` at the same exact package version as
 KiCad. This adds approximately 280 MB of downloads and 3.3 GB of unpacked model
 files (package estimates, not a measured final image delta). Host package
 installation belongs to the owner/infra path. No runtime network is required.
+
+For recurring delivery at a stable private browser URL, use the
+[persistent render gallery](render-gallery.md), which retains candidate history
+and reuses the interactive viewer.

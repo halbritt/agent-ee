@@ -2405,6 +2405,16 @@
     },
     {
       "paths": [
+        "tests/test_render_gallery.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original regression-test code containing a minimal synthetic KiCad board literal (one graphic line, optionally one segment) for supplement candidate binding; no owner or third-party design is read or committed."
+    },
+    {
+      "paths": [
         "tests/test_render3d.py"
       ],
       "kind": "owned-source",
@@ -3720,6 +3730,18 @@
         "AE-RUN"
       ],
       "reviewed": "Captured host/toolchain environment report from the peecee-wsl GPU research run. The only rights notice is the g++ --version banner (FSF copyright line), a tool banner recorded as an identity fact, not copied source."
+    },
+    {
+      "paths": [
+        ".uipass-gallery.yaml",
+        "deployment/agent-ee-render-gallery.service",
+        "src/agent_ee/render_gallery.py"
+      ],
+      "kind": "owned-source",
+      "origins": [
+        "AE"
+      ],
+      "reviewed": "Original gallery service, HTML markup, native fixture browser configuration and user service unit written for agent-ee; existing third-party viewer assets remain under their existing origin rules."
     }
   ]
 }
