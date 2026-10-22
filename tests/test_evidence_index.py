@@ -94,28 +94,33 @@ class EvidenceIndexTests(unittest.TestCase):
         self.assertEqual(row['status'], 'not_met')
         self.assertIn('check1: failed/unknown', row['reasons'])
 
-    def declared_map(self, count=11):
-        return {'schema': 'agent-ee.pod-criteria/2',
-                'declared_criteria': list(map(str, range(1, count + 1))),
-                'criteria': {str(i): [f'R{i}'] if i <= 9 else ['R1']
-                             for i in range(1, count + 1)}}
-
     def capture_map(self, mapping):
         source = self.root / 'source/pod-criteria.json'
         write_json(source, mapping)
         self.run = self.root / ('run-' + digest(source)[:10])
         self.capture()
 
-    def test_rev3_reads_all_eleven_declared_criteria_and_preserves_bench_obligations(self):
-        mapping = self.declared_map()
+    def add_rev3_requirements(self):
         for number in (10, 11):
             self.scope['checks'].append({'id': f'check{number}', 'kind': 'synthetic'})
             self.scope['baseline']['requirements'].append({
                 'id': f'R{number}', 'statement': f'Synthetic criterion {number}',
                 'source': {'path': 'requirements/spec.md', 'locator': str(number)},
                 'checks': [f'check{number}']})
-            mapping['criteria'][str(number)] = [f'R{number}']
+
+    def assert_refused(self, mapping):
         self.capture_map(mapping)
+        with self.assertRaises(CriteriaMapError):
+            self.index()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.assertEqual(main(['--run', str(self.run), '--criteria',
+                                   'requirements/pod-criteria.json']), 2)
+        self.assertIn('criteria map', stderr.getvalue())
+
+    def test_flat_rev3_map_reads_all_eleven_criteria_and_preserves_bench_obligations(self):
+        self.add_rev3_requirements()
+        self.capture_map({str(i): [f'R{i}'] for i in range(1, 12)})
         report = self.index()
         self.assertEqual([r['criterion'] for r in report['criteria']], list(map(str, range(1, 12))))
         self.assertEqual([r['status'] for r in report['criteria']], ['met'] * 7 + ['not_met'] * 4)
@@ -123,12 +128,13 @@ class EvidenceIndexTests(unittest.TestCase):
             self.assertTrue(row['bench_obligation'])
             self.assertIn('built-board bench validation remains required; file checks cannot discharge it',
                           row['reasons'])
+        self.assertIn('Rev-3 bench criteria 10 and 11 remain obligations.', report['limitations'])
         self.assertIn('## Criterion 11', render_index(report))
         self.assertFalse(report['acceptance'])
         for number in (10, 11):
             row = report['criteria'][number - 1]
+            self.assertEqual([c['id'] for c in row['checks']], [f'check{number}'])
             check = row['checks'][0]
-            self.assertEqual(check['id'], f'check{number}')
             self.assertEqual(check['result']['sha256'], digest(self.run / check['result']['path']))
         self.checks[9].update(outcome='unknown')
         write_json(self.run / 'checks/check10.json', self.checks[9])
@@ -139,68 +145,27 @@ class EvidenceIndexTests(unittest.TestCase):
         self.assertIn('check10: ok/unknown', row['reasons'])
         self.assertTrue(row['bench_obligation'])
 
-    def test_declared_map_missing_or_undeclared_criterion_is_typed_refusal(self):
-        for field, key, message in (('criteria', '11', 'missing'),
-                                    ('declared_criteria', '11', 'undeclared')):
-            with self.subTest(field=field):
-                mapping = self.declared_map()
-                if field == 'criteria':
-                    del mapping[field][key]
-                else:
-                    mapping[field].remove(key)
-                self.capture_map(mapping)
-                with self.assertRaisesRegex(CriteriaMapError, message):
-                    self.index()
-                stderr = io.StringIO()
-                with contextlib.redirect_stderr(stderr):
-                    self.assertEqual(main(['--run', str(self.run), '--criteria',
-                                           'requirements/pod-criteria.json']), 2)
-                self.assertIn('criteria declaration mismatch', stderr.getvalue())
+    def test_rev2_report_has_no_rev3_limitation(self):
+        self.assertNotIn('Rev-3 bench criteria 10 and 11 remain obligations.', self.index()['limitations'])
 
-    def test_versioned_nine_criterion_map_has_unchanged_rev2_report(self):
-        old = self.index()
-        self.capture_map(self.declared_map(9))
-        new = self.index()
-        # Recapture changes candidate IDs and therefore result hashes, not verdicts.
-        for row in new['criteria']:
-            for check in row['checks']:
-                self.assertEqual(check['result']['sha256'], digest(self.run / check['result']['path']))
-        for report in (old, new):
-            for row in report['criteria']:
-                for check in row['checks']:
-                    del check['result']['sha256']
-        self.assertEqual(new['criteria'], old['criteria'])
-        self.assertEqual(new['limitations'], old['limitations'])
+    def test_criterion_key_sets_other_than_rev2_or_rev3_refuse(self):
+        self.add_rev3_requirements()
+        everything = [f'R{i}' for i in range(1, 12)]
+        for keys in ([1], range(1, 8), [*range(1, 10), 12], range(1, 11), range(1, 13),
+                     [*range(1, 11), 12], [*range(1, 6), *range(7, 10)]):
+            with self.subTest(keys=list(keys)):
+                mapping = {str(i): [] for i in keys}
+                mapping[str(min(keys))] = everything
+                self.assert_refused(mapping)
 
-    def test_declared_criteria_are_not_padded_or_truncated(self):
-        mapping = self.declared_map()
-        mapping['declared_criteria'] = ['12', *map(str, range(1, 10))]
-        mapping['criteria'] = {str(i): [f'R{i}'] for i in range(1, 10)} | {'12': []}
-        self.capture_map(mapping)
-        self.checks[0].update(outcome='unknown')
-        write_json(self.run / 'checks/check1.json', self.checks[0])
-        publish(self.run, self.checks)
-        report = self.index()
-        self.assertEqual([r['criterion'] for r in report['criteria']],
-                         [*map(str, range(1, 10)), '12'])
-        rows = {r['criterion']: r for r in report['criteria']}
-        self.assertEqual(set(rows), set(mapping['declared_criteria']))
-        self.assertEqual(rows['1']['status'], 'not_met')
-        self.assertIn('check1: ok/unknown', rows['1']['reasons'])
-        self.assertEqual(rows['12']['status'], 'not_met')
-        self.assertIn('no mapped checks', rows['12']['reasons'])
-
-    def test_malformed_or_unsupported_declaration_refuses(self):
-        bad = [dict(self.declared_map(), schema='agent-ee.pod-criteria/99'),
-               dict(self.declared_map(), unexpected=True),
-               dict(self.declared_map(), criteria=[])]
-        for declared in ([], ['1', '1'], ['0'], ['01'], [1], ['-1'], ['١'], None, '1'):
-            bad.append(dict(self.declared_map(), declared_criteria=declared))
-        for mapping in bad:
-            with self.subTest(mapping=mapping):
-                self.capture_map(mapping)
-                with self.assertRaises(CriteriaMapError):
-                    self.index()
+    def test_schema_wrapped_map_refuses(self):
+        criteria = {str(i): [f'R{i}'] for i in range(1, 10)}
+        for mapping in ({'schema': 'agent-ee.pod-criteria/2',
+                         'declared_criteria': list(criteria), 'criteria': criteria},
+                        {'schema': 'agent-ee.pod-criteria/2', **criteria},
+                        [criteria]):
+            with self.subTest(shape=type(mapping).__name__):
+                self.assert_refused(mapping)
 
     def test_captured_limitations_survive_completion_and_cannot_be_removed(self):
         limitations = ['POD-IF-SENSOR-SUPPLY: NOT CHECKED: regulator accuracy and ratiometry.',

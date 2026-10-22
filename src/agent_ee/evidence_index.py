@@ -31,26 +31,9 @@ def criteria_map(run, relative, baseline):
         raise ValueError('criteria map must be an immutable captured baseline input')
     path = run / 'inputs' / relative
     mapping = read_json(path)
-    if isinstance(mapping, dict) and 'schema' in mapping:
-        if (set(mapping) != {'schema', 'declared_criteria', 'criteria'}
-                or mapping['schema'] != 'agent-ee.pod-criteria/2'):
-            raise CriteriaMapError('unsupported criteria map schema or fields')
-        declared = mapping['declared_criteria']
-        if (not isinstance(declared, list) or not declared
-                or any(not isinstance(number, str) or not number.isascii()
-                       or not number.isdecimal() or number.startswith('0') for number in declared)
-                or len(declared) != len(set(declared))):
-            raise CriteriaMapError('declared_criteria must list unique positive decimal criterion strings')
-        mapping = mapping['criteria']
-        if not isinstance(mapping, dict):
-            raise CriteriaMapError('criteria must map every declared criterion to requirement IDs')
-        if set(mapping) != set(declared):
-            missing = sorted(set(declared) - set(mapping), key=int)
-            extra = sorted(set(mapping) - set(declared))
-            raise CriteriaMapError(f'criteria declaration mismatch: missing={missing}; undeclared={extra}')
-        mapping = {number: mapping[number] for number in declared}
-    elif not isinstance(mapping, dict) or set(mapping) != {str(i) for i in range(1, 10)}:
-        raise CriteriaMapError('legacy criteria map must contain exactly keys 1 through 9')
+    rev2, rev3 = ({str(i) for i in range(1, n)} for n in (10, 12))
+    if not isinstance(mapping, dict) or set(mapping) not in (rev2, rev3):
+        raise CriteriaMapError('criteria map must contain exactly keys 1 through 9 (Rev-2) or 1 through 11 (Rev-3)')
     requirements = {r['id']: r for r in baseline['requirements']}
     covered = set()
     for number, ids in mapping.items():
@@ -177,8 +160,7 @@ def build_index(run, criteria):
                 'This index reports the captured mapping; it does not establish that the mapping covers the specification.',
                 'Receipt history and captured inputs are provenance, not passing criterion results.',
                 'No writer text is used to establish a criterion. Bench criteria 8 and 9 remain obligations.',
-                *(['Bench criteria 10 and 11 remain obligations when declared.']
-                  if {'10', '11'} & mapping.keys() else [])]}
+                *(['Rev-3 bench criteria 10 and 11 remain obligations.'] if '10' in mapping else [])]}
 
 
 def render_index(report):

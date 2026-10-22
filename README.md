@@ -42,7 +42,7 @@ checks reduced-limit parts against their own captured ratings and requires
 captured thermal validation before they can pass (AGENTEE-310).
 
 The [telemetry-pod evidence index](docs/evidence-index.md) maps sealed checks to
-the pod's declared criteria (legacy Rev-2 nine or versioned Rev-3 eleven) while retaining bench and operator obligations.
+the pod's criteria (exactly 1-9 for Rev-2 or 1-11 for Rev-3) while retaining bench and operator obligations.
 
 ## A concrete example
 
