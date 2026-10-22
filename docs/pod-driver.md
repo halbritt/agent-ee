@@ -49,6 +49,16 @@ validation summary to clear this gate. The old exemption file cannot pass.
 Use already captured local DigiKey evidence; live DigiKey capture remains
 owner-gated. The driver does not infer or synthesize these declarations.
 
+U3 NEO-M9N and J3 DM3AT-SF-PEJM5 are not owner acceptances. Their 85 degC
+exceptions are the recorded D-PCB-9 and D-PCB-12 decisions in
+`expansion/design-rules/constraints.json`, made under the repository's
+`AGENTS.md` delegation. Declare them as
+[`delegated_acceptance`](assembly-readiness.md#delegated-engineering-acceptance)
+records citing both files, with the decided ranges -40 to 85 and -25 to 85
+degC. Never add U3 or J3 lines to `operating-temperature-acceptances.txt`. They
+need the same DigiKey binding and thermal evidence. J3's rating is not yet
+captured, so it remains unknown until it is.
+
 ## Explicit plan
 
 A plan is `agent-ee.pod-plan/1` with these fields; unknown fields are refused.

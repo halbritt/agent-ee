@@ -10,9 +10,12 @@ import contextlib
 import copy
 import hashlib
 import io
+import json
+import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
@@ -39,7 +42,7 @@ from agent_ee.checks import run_checks, sheet_instances
 from agent_ee.jlc_stock_capture import DEFAULT_ENDPOINT, capture_jlc_stock, ids_from_netlist
 from agent_ee.storage import digest, read_json, write_json
 from tests.test_jlc_stock_capture import JlcStub, row, search
-from tests.toolchain import require_toolchain
+from tests.toolchain import fome_mc_store, require_toolchain
 
 
 HIDDEN = "(effects (font (size 1.27 1.27)) (hide yes))"
@@ -1500,6 +1503,300 @@ class AssemblyReadinessTests(unittest.TestCase):
         (run / "inputs" / rel).write_bytes(b"R1 expected operating temperature is -20 to 200 degC.\n")
         result = run_checks(run, time.monotonic() + 120)[0]
         self.assertEqual(result["outcome"], "unknown", result["summary"])
+
+    # ------------------------------------------------------------------ AGENTEE-310 delegated engineering acceptance
+    # The pod's own inputs, read from the owner's fome-mc object store at a pinned commit and checked against
+    # pinned hashes; nothing is copied into this repository. AGENTS.md line 19 is the repository delegation,
+    # constraints.json holds the recorded D-PCB-9 (U3) and D-PCB-12 (J3) decisions, and the owner file
+    # accepts U1, U2 and U4.
+    POD_COMMIT = "7ab81564dd638ed68b664f3036a78187ce5760bd"
+    POD_FILES = {
+        "AGENTS.md": "31a0b80e72a2f03498e96580a929d8056348ee119ca89f874c45586999e745df",
+        "telemetry-pod/expansion/design-rules/constraints.json":
+            "e7e095b3ca595fdfb3c73fc22ad87c326fbc1c152523e85f2da4df4d908ea2e4",
+        "telemetry-pod/expansion/requirements/operating-temperature-acceptances.txt":
+            "7ca91bc748e3029432e5bb40501c056301429da08119759c612daea7cca8678a"}
+    # Synthetic DigiKey responses (no rating capture): U1/U2/U4 carry the owner-accepted -20..85 coverage the
+    # pod lane recorded, U3/J3 the ranges their decisions state. Each test varies what it probes.
+    POD_PARTS = {"U1": ("ESP32-S3-WROOM-1-N8", "Espressif Systems", "-40°C ~ 85°C"),
+                 "U2": ("LSM6DSO32TR", "STMicroelectronics", "-40°C ~ 85°C"),
+                 "U3": ("NEO-M9N-00B", "u-blox", "-40°C ~ 85°C"),
+                 "U4": ("MCP3208-BI/SL", "Microchip Technology", "-40°C ~ 85°C"),
+                 "J3": ("DM3AT-SF-PEJM5", "Hirose Electric Co Ltd", "-25°C ~ 85°C")}
+    DECISIONS = "pod/telemetry-pod/expansion/design-rules/constraints.json"
+    DELEGATION_QUOTE = "**Owner-reserved decisions are made autonomously, not parked.**"
+
+    def pod_sources(self):
+        repository = Path(os.environ.get("AGENT_EE_FOME_MC_CHECKOUT", Path.home() / "git/fome-mc"))
+        fome_mc_store(repository, self.POD_COMMIT)
+        for rel, expected in self.POD_FILES.items():
+            data = subprocess.run(["git", "-C", str(repository), "show", f"{self.POD_COMMIT}:{rel}"],
+                                  capture_output=True, check=True).stdout
+            self.assertEqual(hashlib.sha256(data).hexdigest(), expected, rel)
+            path = self.root / "pod" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+
+    def decision_line(self, decision_id, rel=None):
+        lines = (self.root / (rel or self.DECISIONS)).read_text(encoding="utf-8").split("\n")
+        return next(n for n, line in enumerate(lines, 1) if line.strip().startswith(f'"{decision_id} '))
+
+    def delegated_record(self, decision_id, quote, low, high, *, line=None, delegation_line=19):
+        return {"authority": "delegated_engineering", "min_c": low, "max_c": high,
+                "decision": {"id": decision_id, "source": self.DECISIONS,
+                             "sha256": digest(self.root / self.DECISIONS),
+                             "line": line or self.decision_line(decision_id), "quote": quote},
+                "delegation": {"kind": "repository_agents_md", "source": "pod/AGENTS.md",
+                               "sha256": digest(self.root / "pod/AGENTS.md"), "line": delegation_line,
+                               "quote": self.DELEGATION_QUOTE}}
+
+    def pod_temperature_case(self, ratings=None, thermal=None):
+        from tests.test_digikey_capture import product
+        from tests.test_digikey_evidence import parameters, write_capture
+        self.pod_sources()
+        ratings = {ref: rating for ref, (_, _, rating) in self.POD_PARTS.items()} | (ratings or {})
+        key = {ref: mpn.replace("/", "-") for ref, (mpn, _, _) in self.POD_PARTS.items()}
+        items = {key[ref]: product(mpn, manufacturer=maker, quantity=100,
+                              parameters=parameters(temperature=ratings[ref]))
+                 for ref, (mpn, maker, _) in self.POD_PARTS.items()}
+        # A capture key cannot hold the '/' of MCP3208-BI/SL; the query keeps the exact MPN.
+        path = write_capture(self.root / "dk", items, {key[ref]: mpn for ref, (mpn, _, _) in self.POD_PARTS.items()})
+        acceptances = "pod/" + list(self.POD_FILES)[2]
+        lines = (self.root / acceptances).read_text(encoding="ascii").split("\n")
+        spec = {"min_c": -20, "max_c": 105, "capture": "dk/digikey-capture.json", "capture_sha256": digest(path),
+                "parts": key,
+                "reduced_acceptance": {ref: {"source": acceptances, "sha256": digest(self.root / acceptances),
+                                             "line": n, "quote": lines[n - 1], "min_c": -20, "max_c": 85}
+                                       for n, ref in enumerate(("U1", "U2", "U4"), 1)},
+                "delegated_acceptance": {
+                    "U3": self.delegated_record(
+                        "D-PCB-9", "U3 u-blox NEO-M9N (-40..85 C) is accepted as an exact 85 C exception", -40, 85),
+                    "J3": self.delegated_record(
+                        "D-PCB-12", "J3 Hirose DM3AT-SF-PEJM5 (-25..+85 C per the LCSC listing) is accepted as an "
+                                    "exact 85 C exception", -25, 85)}}
+        if thermal is not None:
+            # Test-authored stand-in for a captured enclosure validation; the pod has none yet.
+            summary = self.root / "validation/operating-temperature-thermal.txt"
+            summary.parent.mkdir(exist_ok=True)
+            refs = list(self.POD_PARTS)
+            summary.write_text("".join(f"{ref} expected operating temperature is -20 to {thermal} degC.\n"
+                                       for ref in refs), encoding="ascii")
+            spec["thermal_evidence"] = {ref: {"source": "validation/operating-temperature-thermal.txt",
+                                              "sha256": digest(summary), "line": n,
+                                              "quote": f"{ref} expected operating temperature is -20 to {thermal} degC."}
+                                        for n, ref in enumerate(refs, 1)}
+        cat = self.catalog([{"lcsc": "C25804", "stock": 1000, "is_basic": True, "last_seen": "2026-10-15"}])
+        netlist = self.export("pod.kicad_sch", schematic("pod", [
+            part(ref, part_number=("MPN", mpn), manufacturer=maker) for ref, (mpn, maker, _) in self.POD_PARTS.items()]))
+        return netlist, {"catalog": cat, "operating_temperature": spec}
+
+    def temperature_entries(self, report):
+        return {c["reference"]: c for c in report["operating_temperature"]["components"]}
+
+    def test_delegated_temperature_pod_u3_j3_accepted_owner_u1_u2_u4_unchanged(self):
+        netlist, params = self.pod_temperature_case()
+        report = self.evaluate(netlist, params)
+        # Missing thermal evidence is never a pass, for owner and delegated acceptance alike.
+        self.assertEqual(report["outcome"], "unknown", report["findings"])
+        entries = self.temperature_entries(report)
+        for ref, entry in entries.items():
+            self.assertEqual(entry["status"], "unknown", (ref, entry["reason"]))
+            self.assertEqual(entry["reason"], "pending thermal validation", ref)
+        report = self.evaluate(netlist, self.pod_temperature_case(thermal=80)[1])
+        self.assertEqual(report["outcome"], "pass", report["findings"])
+        temperature = report["operating_temperature"]
+        self.assertEqual([e["reference"] for e in temperature["reduced_acceptance"]], ["U1", "U2", "U4"])
+        self.assertEqual([e["reference"] for e in temperature["delegated_acceptance"]], ["J3", "U3"])
+        for entry in temperature["reduced_acceptance"]:
+            # The legacy owner entry keeps its exact shape: no authority or delegation fields appear.
+            self.assertEqual(set(entry), {"reference", "key", "status", "reason", "citation", "accepted_range",
+                                          "rating", "thermal", "digikey"})
+            self.assertEqual(entry["accepted_range"], {"min_c": "-20", "max_c": "85"})
+        u3 = self.temperature_entries(report)["U3"]
+        self.assertEqual((u3["authority"], u3["author"], u3["status"]), ("delegated_engineering", "agent", "pass"))
+        self.assertEqual(u3["accepted_range"], {"min_c": "-40", "max_c": "85"})
+        self.assertEqual((u3["decision"]["id"], u3["delegation"]["source"]), ("D-PCB-9", "pod/AGENTS.md"))
+        self.assertEqual(u3["thermal"]["status"], "pass")
+        self.assertEqual(self.temperature_entries(report)["J3"]["accepted_range"], {"min_c": "-25", "max_c": "85"})
+        # Thermal evidence beyond the actual rating stays a defect for delegated parts.
+        report = self.evaluate(netlist, self.pod_temperature_case(thermal=90)[1])
+        self.assertEqual(report["outcome"], "defect")
+        self.assertEqual(self.temperature_entries(report)["J3"]["thermal"]["status"], "defect")
+
+    def test_delegated_temperature_rating_must_cover_decided_range(self):
+        for rating, expected in (("-25°C ~ 70°C", "defect"), ("-20°C ~ 85°C", "defect"),
+                                 ("-25°C ~ 85°C", "unknown")):
+            with self.subTest(rating=rating):
+                shutil.rmtree(self.root / "dk", ignore_errors=True)
+                netlist, params = self.pod_temperature_case(ratings={"J3": rating})
+                entry = self.temperature_entries(self.evaluate(netlist, params))["J3"]
+                self.assertEqual(entry["status"], expected, entry["reason"])
+                self.assertEqual(entry["rating"], rating)
+
+    def refused(self, netlist, params, ref, reason):
+        report = self.evaluate(netlist, params)
+        entry = self.temperature_entries(report)[ref]
+        self.assertEqual(entry["status"], "unknown", entry["reason"])
+        self.assertIn(reason, entry["reason"])
+        self.assertNotEqual(report["outcome"], "pass")
+
+    def test_delegated_temperature_refuses_tampered_missing_wrong_part_and_range(self):
+        netlist, params = self.pod_temperature_case(thermal=80)
+        spec = params["operating_temperature"]
+        decisions = self.root / self.DECISIONS
+        original = decisions.read_bytes()
+        # Tampered: bytes changed after pinning.
+        decisions.write_bytes(original.replace(b"(-40..85 C)", b"(-40..105 C)"))
+        self.refused(netlist, params, "U3", "differs from its declared sha256")
+        # Tampered and repinned: the decided range no longer equals the declared one.
+        spec["delegated_acceptance"]["U3"]["decision"]["sha256"] = digest(decisions)
+        spec["delegated_acceptance"]["U3"]["decision"]["quote"] = "U3 u-blox NEO-M9N (-40..105 C)"
+        self.refused(netlist, params, "U3", "delegated range differs from decision D-PCB-9")
+        decisions.write_bytes(original)
+        netlist, params = self.pod_temperature_case(thermal=80)
+        spec = params["operating_temperature"]
+        # Missing source: not a captured input of the candidate.
+        files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
+        for rel, reason in ((self.DECISIONS, "not a captured input"), ("pod/AGENTS.md", "not a captured input")):
+            with self.subTest(missing=rel):
+                report = evaluate_assembly_readiness(self.root, netlist, params,
+                                                     captured_files={k: v for k, v in files.items() if k != rel})
+                entries = self.temperature_entries(report)
+                self.assertEqual((entries["U3"]["status"], entries["J3"]["status"]), ("unknown", "unknown"))
+                self.assertIn(reason, entries["U3"]["reason"])
+                self.assertEqual(entries["U1"]["status"], "pass")
+        (self.root / "pod/AGENTS.md").rename(self.root / "pod/AGENTS.md.gone")
+        self.refused(netlist, params, "J3", "missing")
+        (self.root / "pod/AGENTS.md.gone").rename(self.root / "pod/AGENTS.md")
+        # Wrong part: D-PCB-9 mentions U4, but its subject and rated range are U3's.
+        u3 = spec["delegated_acceptance"]["U3"]
+        del spec["reduced_acceptance"]["U4"]
+        spec["delegated_acceptance"]["U4"] = {**u3, "decision": {
+            **u3["decision"], "quote": "on the same terms the owner set for U1, U2 and U4"}}
+        self.refused(netlist, params, "U4", "does not state U4 as its subject")
+        # Wrong range: the declared range must equal the decision's own rated range.
+        netlist, params = self.pod_temperature_case(thermal=80)
+        params["operating_temperature"]["delegated_acceptance"]["U3"]["min_c"] = -30
+        self.refused(netlist, params, "U3", "delegated range differs")
+        # Wrong locator: another line, or a quote that omits the rated range.
+        netlist, params = self.pod_temperature_case(thermal=80)
+        decision = params["operating_temperature"]["delegated_acceptance"]["U3"]["decision"]
+        decision["line"] += 1
+        self.refused(netlist, params, "U3", "quote is absent")
+        decision["line"] -= 1
+        decision["quote"] = "U3 u-blox NEO-M9N"
+        self.refused(netlist, params, "U3", "quote does not cite U3's rated range")
+
+    def test_delegated_temperature_refuses_fabricated_and_impersonated_authority(self):
+        from agent_ee.assembly_readiness import validate_params
+        netlist, params = self.pod_temperature_case(thermal=80)
+        spec = params["operating_temperature"]
+        u3 = spec["delegated_acceptance"]["U3"]
+        # A delegated record dressed as owner, or claiming an unrecognized authority or delegation kind.
+        for change, reason in (({"authority": "owner"}, "must be 'delegated_engineering'"),
+                               ({"authority": "engineering_lead"}, "must be 'delegated_engineering'"),
+                               ({"delegation": {**u3["delegation"], "kind": "owner_delegation"}},
+                                "not a recognized delegation"),
+                               ({"delegation": {**u3["delegation"], "source": self.DECISIONS}},
+                                "cannot be its own delegation"),
+                               ({"delegation": {**u3["delegation"], "source": "pod/DELEGATION.md"}},
+                                "must be the repository's AGENTS.md"),
+                               ({"decision": {**u3["decision"], "source": spec["reduced_acceptance"]["U1"]["source"]}},
+                                "cannot be an owner, thermal or exemption temperature file"),
+                               ({"decision": {**u3["decision"], "id": "PCB-9"}}, "recorded decision id"),
+                               ({"min_c": -10, "max_c": 85}, "may only reduce the maximum")):
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, reason):
+                validate_params({**params, "operating_temperature": {
+                    **spec, "delegated_acceptance": {**spec["delegated_acceptance"], "U3": {**u3, **change}}}})
+        for record in ({k: v for k, v in u3.items() if k != "delegation"}, {**u3, "owner": True}):
+            with self.subTest(record=sorted(record)), self.assertRaisesRegex(ValueError, "expected fields"):
+                validate_params({**params, "operating_temperature": {
+                    **spec, "delegated_acceptance": {"U3": record}}})
+        with self.assertRaisesRegex(ValueError, "both owner-accepted and delegated"):
+            validate_params({**params, "operating_temperature": {
+                **spec, "delegated_acceptance": {**spec["delegated_acceptance"], "U1": u3}}})
+        with self.assertRaisesRegex(ValueError, "must have a DigiKey parts binding"):
+            validate_params({**params, "operating_temperature": {
+                **spec, "delegated_acceptance": {"U9": u3}}})
+        with self.assertRaisesRegex(ValueError, "mutable deviations"):
+            validate_params({**params, "deviations": self.DECISIONS})
+        # The reverse: an owner reduced acceptance cannot cite a delegated decision record.
+        owner = {**spec["reduced_acceptance"]["U1"], **{k: u3["decision"][k] for k in ("source", "sha256")},
+                 "line": self.decision_line("D-PCB-9"), "quote": "U3 u-blox NEO-M9N (-40..85 C)"}
+        impersonated = {**spec, "reduced_acceptance": {**spec["reduced_acceptance"], "U3": {
+            **owner, "min_c": -40, "max_c": 85}}, "delegated_acceptance": {"J3": spec["delegated_acceptance"]["J3"]}}
+        self.refused(netlist, {**params, "operating_temperature": impersonated}, "U3",
+                     "dedicated operating-temperature-acceptances.txt")
+        # Owner decisions, withdrawn decisions and non-grant AGENTS.md lines are not delegated authority.
+        for decision_id, reason in (("D-PCB-10", "recorded as an owner decision"),
+                                    ("D-PCB-16", "recorded as an owner decision"),
+                                    ("D-PCB-3", "withdrawn, retired or superseded")):
+            with self.subTest(decision=decision_id):
+                record = {**u3, "decision": {**u3["decision"], "id": decision_id,
+                                             "line": self.decision_line(decision_id), "quote": "U3"}}
+                self.refused(netlist, {**params, "operating_temperature": {
+                    **spec, "delegated_acceptance": {**spec["delegated_acceptance"], "U3": record}}}, "U3", reason)
+        agents = (self.root / "pod/AGENTS.md").read_text(encoding="utf-8").split("\n")
+        other = next(n for n, line in enumerate(agents, 1) if line.startswith("- Native KiCad files"))
+        record = {**u3, "delegation": {**u3["delegation"], "line": other, "quote": "Native KiCad files"}}
+        self.refused(netlist, {**params, "operating_temperature": {
+            **spec, "delegated_acceptance": {**spec["delegated_acceptance"], "U3": record}}}, "U3",
+            "grants no autonomous decisions")
+
+    def test_delegated_temperature_decision_must_record_autonomous_delegation(self):
+        netlist, params = self.pod_temperature_case(thermal=80)
+        spec = params["operating_temperature"]
+        decisions = self.root / self.DECISIONS
+        doc = read_json(decisions)
+        key = next(k for k in doc["decisions"] if k.startswith("D-PCB-9 "))
+        for text, reason in ((doc["decisions"][key].replace("Decided autonomously", "Decided"),
+                              "does not record an autonomous delegated decision"),
+                             (doc["decisions"][key] + " Owner decision; not autonomous.",
+                              "does not record an autonomous delegated decision")):
+            with self.subTest(text=text[-40:]):
+                edited = {**doc, "decisions": {**doc["decisions"], key: text}}
+                decisions.write_text(json.dumps(edited, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                record = spec["delegated_acceptance"]["U3"]
+                record["decision"].update(sha256=digest(decisions), line=self.decision_line("D-PCB-9"))
+                self.refused(netlist, params, "U3", reason)
+        # A duplicated decision id is ambiguous and refused.
+        edited = {**doc, "decisions": {**doc["decisions"], "D-PCB-9 copy": doc["decisions"][key]}}
+        decisions.write_text(json.dumps(edited, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        spec["delegated_acceptance"]["U3"]["decision"].update(sha256=digest(decisions),
+                                                             line=self.decision_line("D-PCB-9"))
+        self.refused(netlist, params, "U3", "not recorded exactly once")
+
+    def test_delegated_temperature_sources_are_captured_and_immutable(self):
+        from agent_ee.assembly_readiness import capability
+        _, params = self.pod_temperature_case(thermal=80)
+        files = {p.relative_to(self.root).as_posix(): digest(p) for p in self.root.rglob("*") if p.is_file()}
+        immutable = capability(params, files, self.root)["immutable_inputs"]
+        for rel in (self.DECISIONS, "pod/AGENTS.md"):
+            with self.subTest(rel=rel):
+                self.assertIn(rel, immutable)
+                with self.assertRaisesRegex(ValueError, "must be a captured input"):
+                    capability(params, {k: v for k, v in files.items() if k != rel}, self.root)
+
+    def test_delegated_temperature_capture_and_run_checks(self):
+        _, params = self.pod_temperature_case(thermal=80)
+        shutil.copy(self.root / "pod.kicad_sch", self.root / "top.kicad_sch")
+        scope = {"schema": "agent-ee.scope/1", "schematic": "top.kicad_sch",
+                 "inputs": [{"path": str(p), "at": p.relative_to(self.root).as_posix()}
+                            for p in self.root.rglob("*") if p.is_file() and p.name != "pod.kicad_sch"],
+                 "checks": [{"id": "asm", "kind": "assembly_readiness", "params": params}]}
+        write_json(self.root / "scope.json", scope)
+        run = self.root.parent / f"{self.root.name}-run"
+        run.mkdir()
+        self.addCleanup(shutil.rmtree, run, True)
+        capture(self.root / "scope.json", run)
+        result = run_checks(run, time.monotonic() + 120)[0]
+        self.assertEqual((result["execution"], result["outcome"]), ("ok", "pass"), result["summary"])
+        self.assertEqual([e["reference"] for e in result["details"]["operating_temperature"]["delegated_acceptance"]],
+                         ["J3", "U3"])
+        # The captured delegation is immutable: editing it in the run makes U3 and J3 unknown, never pass.
+        (run / "inputs/pod/AGENTS.md").write_text("- Agents approve their own exceptions autonomously.\n")
+        result = run_checks(run, time.monotonic() + 120)[0]
+        self.assertNotEqual(result["outcome"], "pass", result["summary"])
 
     def exemption(self, ref="R2", line="R2 is exempt from operating-temperature verification.", number=1):
         decision = self.root / "decisions/operating-temperature-exemptions.txt"

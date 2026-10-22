@@ -495,6 +495,22 @@ U1/U2/U4 acceptance at 85 degC cannot suppress a rating or thermal defect. See
 [assembly readiness](assembly-readiness.md#digikey-operating-temperature) for
 the immutable owner and thermal file formats.
 
+### Delegated engineering acceptance (2026-10-22)
+
+A repository can delegate owner-reserved selection decisions to its agents and
+have them recorded, as fome-mc's `AGENTS.md` does. Under agent-509 request A,
+such a decision is accepted only as a distinct `delegated_acceptance` record,
+never as an owner line. The record states `authority: delegated_engineering`,
+and the report names the author (`agent`) separately from that authority. The
+record binds the recorded decision and the repository delegation by hash and
+line locator. It must match the decision's subject and stated range, and it
+fails closed on owner, withdrawn or non-autonomous decisions and on
+unrecognized delegations. Like owner acceptance, it records a selection
+exception only: the actual rating and thermal evidence are still judged. The
+check cannot establish authorship, so attribution rests on the baseline that
+pins the owner's committed `AGENTS.md`. Direct-owner declarations are
+unchanged.
+
 
 ## Copper locality and captured policy binding (AGENTEE-328)
 

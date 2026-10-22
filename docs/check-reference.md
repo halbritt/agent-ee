@@ -1724,8 +1724,18 @@ ordered decimal ranges and one reference per line, unique across the file.
 Citations quote the exact complete line. One invalid line makes all citations
 from that file unknown. Legacy `exemptions`, including the old canonical
 `is exempt from operating-temperature verification.` form, return unknown
-with a migration message. Native KiCad files, legacy design files, library
-tables and mutable deviations remain refused as citation sources. An optional
+with a migration message. A distinct `delegated_acceptance` record
+(`authority: delegated_engineering`) covers selection exceptions decided by an
+agent under a repository delegation. It binds a recorded JSON decision (`id`,
+source, sha256, line, quote) and an `AGENTS.md` delegation (`kind:
+repository_agents_md`, source, sha256, line, quote). The decision's subject and
+stated rated range must equal the record. Owner, withdrawn or non-autonomous
+decisions, non-grant delegation lines, `authority: owner`, unrecognized kinds
+and self-citing or temperature-file sources are refused. Ratings and thermal
+evidence are judged exactly as for owner acceptance
+([details](assembly-readiness.md#delegated-engineering-acceptance)).
+Native KiCad files, legacy design files, library tables and mutable deviations
+remain refused as citation sources. An optional
 `package_map` compares the DigiKey package with the footprint. A mismatch is a
 `digikey_package_mismatch` defect, and an unmapped name is unknown. DigiKey
 stock never counts as JLCPCB stock. See

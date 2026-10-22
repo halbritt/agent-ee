@@ -409,6 +409,94 @@ as citation sources. Both owner and thermal files become immutable inputs to
 the existing capability/baseline machinery. Withdraw acceptance by deleting its
 line and repinning the captured file, never by adding annotations.
 
+### Delegated engineering acceptance
+
+A repository can delegate owner-reserved selection decisions to its agents and
+have them recorded, as fome-mc's `AGENTS.md` does ("Owner-reserved decisions are
+made autonomously, not parked"). Such a decision is not an owner acceptance and
+must never be written into `operating-temperature-acceptances.txt`.
+`delegated_acceptance` (AGENTEE-310, agent-509 request A) is its distinct form.
+It records an authorized selection exception only. The same DigiKey binding,
+rating coverage and thermal evidence rules as `reduced_acceptance` apply, so a
+delegated part is judged against its actual rating and missing thermal evidence
+stays unknown. For the pod, alongside a board range of -20 to 105 degC:
+
+```json
+{
+  "delegated_acceptance": {
+    "U3": {
+      "authority": "delegated_engineering",
+      "min_c": -40, "max_c": 85,
+      "decision": {
+        "id": "D-PCB-9",
+        "source": "telemetry-pod/expansion/design-rules/constraints.json",
+        "sha256": "<64 hex>", "line": 171,
+        "quote": "U3 u-blox NEO-M9N (-40..85 C) is accepted as an exact 85 C exception"
+      },
+      "delegation": {
+        "kind": "repository_agents_md",
+        "source": "AGENTS.md",
+        "sha256": "<64 hex>", "line": 19,
+        "quote": "**Owner-reserved decisions are made autonomously, not parked.**"
+      }
+    }
+  }
+}
+```
+
+The declaration is refused (unsupported) unless all of the following hold:
+
+- `authority` is exactly `delegated_engineering`. `owner` is refused, because
+  owner acceptance is only `reduced_acceptance` with the owner file, and so is
+  any other authority.
+- The reference has a DigiKey `parts` binding, is not also in
+  `reduced_acceptance`, and `min_c` is no warmer than the board requirement:
+  the exception may only lower the maximum.
+- `decision.id` has the form `D-<AREA>-<n>`, and `delegation.kind` is a
+  recognized kind. The only recognized kind is `repository_agents_md`, whose
+  source must be named `AGENTS.md`.
+- The decision and delegation are different files. Neither may be a KiCad
+  design file, a library table, the mutable deviations file or a dedicated
+  owner, thermal or exemption temperature file.
+
+At evaluation, each failure below makes the reference unknown:
+
+- **Decision.** The source must be the pinned, captured bytes, and a JSON
+  object whose `decisions` member maps keys to text.
+  - Exactly one key starts with the id and a space.
+  - The key may not mark an owner decision (contain `owner`), and neither key
+    nor text may say retired, withdrawn, superseded, revoked or reversed.
+  - The text must record `Decided autonomously` and must not say
+    `not autonomous`.
+  - The cited line must be exactly that one member, and the quote must lie
+    inside the decision text.
+  - The text must begin with the reference followed by exactly one rated
+    range, such as `U3 u-blox NEO-M9N (-40..85 C)`. The quote must contain that
+    statement, and `min_c`/`max_c` must equal it.
+- **Delegation.** The source must be the pinned, captured bytes. The cited line
+  must be a top-level `- ` list item containing the quote. That item, with its
+  indented continuation lines, must grant decisions made `autonomously`.
+
+The captured DigiKey rating must then cover the decided range, or the result is
+an `operating_temperature_out_of_range` defect, and declared `thermal_evidence`
+is judged as for owner acceptance. Each delegated entry reports
+`authority: delegated_engineering`, `author: agent`, both citations, the
+accepted range, the raw rating and thermal status. It is listed under
+`operating_temperature.delegated_acceptance`, a key that is present only when
+delegated records are declared, and also under `components`, never under
+`reduced_acceptance`. Owner entries keep their exact report shape. Both sources
+become immutable inputs.
+
+Provenance and limits: the check verifies hashes, locators, the decision's
+subject and range, and the delegation's grant. It cannot prove who wrote a file.
+The baseline that pins `AGENTS.md` and the decision record is what attributes
+them. A reviewer must confirm that the pinned `AGENTS.md` is the owner's
+committed repository file, never a file the deciding agent wrote. The pod
+inputs at fome-mc `7ab81564dd638ed68b664f3036a78187ce5760bd` are an example:
+`AGENTS.md` line 19 is from owner commit `3f959131`, and D-PCB-9 (U3) and
+D-PCB-12 (J3) are in `telemetry-pod/expansion/design-rules/constraints.json`.
+The tests read these from the fome-mc object store and check pinned hashes.
+
 `package_map` adds the [DigiKey package check](digikey-capture.md#check-evidence)
 against the netlist `Footprint`. A mismatch is a `digikey_package_mismatch`
 defect, and the reference has no temperature verdict. An unmapped footprint or
