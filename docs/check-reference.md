@@ -2130,6 +2130,18 @@ the saved item geometry. Copper
 outside the board material always refuses placement/plane publication, including
 pre-existing witnesses.
 
+The placer publication comparison independently refuses newly introduced copper
+`items_not_allowed` findings (AGENTEE-424), even if the packing predicate allows
+the pose or the finding has advisory numeric provenance. Native saved shapes
+bind the affected item to each contacted board/peer area in absolute geometry;
+only its own footprint area uses rigid local geometry to retain an unchanged
+owner baseline through translation and quarter turns. Missing contact geometry,
+unsupported contacted contours or ignored category coverage refuses publication.
+Footprint-only findings retain their prior treatment. The native regression is
+`tests.test_placer_pad_keepout`; the authorized courtyard-only mutant in
+`tests.test_placer_packing_scope` retains its refused candidate as diagnostics.
+See [pad keep-outs](placer.md#peer-courtyards-and-pad-keep-outs-agentee-418).
+
 Explicitly ignoring `holes_co_located` refuses grading as unavailable structural
 coverage, even when the project has only default numeric hole limits.
 

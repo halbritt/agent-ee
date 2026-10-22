@@ -1162,13 +1162,28 @@ member's admitted pose. Residual packing and its final land check then bind
 them there (ruling 418b). An owned area that cannot be moved refuses the
 arrangement as `unsupported_geometry`, `outcome: unknown`.
 
-The native publication gate does not back this up. Its DRC comparison blocks
-only `copper_outside_outline` and added hard collision, mask or numeric
-findings. An added `items_not_allowed` is none of these (in the owned fixture
-it is also graded advisory), so a courtyard-only plan with a land in a pad
-keep-out is published as `placed` (`NativePadKeepoutPublicationTest`, mutant
-control). The packing gate is the
-binding check for pad keep-outs.
+The native publication comparison independently blocks newly introduced
+`items_not_allowed` findings involving copper (AGENTEE-424), regardless of their
+numeric provenance classification or the packing predicate. Saved native shapes
+bind each affected item to the rule areas it actually contacts. Board and peer
+contacts include absolute item geometry and area geometry; moving a pad with the
+same UUID inside an already violated board area is a new finding. An owner's
+own contact uses unchanged footprint-local copper and area geometry, retaining
+its rigid baseline finding through translation and every quarter turn. A new
+peer contact cannot hide behind that owner baseline. Custom disallow rules
+also bind to saved native geometry, including rules that reference areas whose
+built-in pad flag is false and rules without an area. Footprint-only findings
+keep their previous comparison behavior.
+
+Missing item/contact geometry, unsupported contacted area contours, ignored
+`items_not_allowed` coverage, missing native output or incomplete severity
+coverage refuses publication. The courtyard-only mutant in
+`NativePadKeepoutPublicationTest` now refuses publication and retains its saved
+land geometry and native Pad 1 of C1 finding in failed-candidate diagnostics
+(coordinator ruling 424a); the healthy publication control is unchanged.
+`tests.test_placer_pad_keepout` also covers moved baseline items, both peer
+movement directions, missing coverage and the owner's rigid baseline at
+0/90/180/270 degrees.
 
 Stage-B copper alignment axes, from AGENTEE-366e, live in
 `block_arrangement._copper_axes`. A block whose members have copper outside
@@ -1238,7 +1253,9 @@ even when both items collided in the baseline. A rigid intra-footprint finding
 with unchanged local geometry remains a baseline finding. Missing native item
 geometry refuses comparison. A native item KIID shared across different
 footprints also refuses comparison, including case aliases normalized by KiCad;
-it cannot establish an intra-footprint baseline. Non-collision numeric categories also bind to absolute saved geometry; other categories retain UUID-based reporting. Enforcement changes and a new
+it cannot establish an intra-footprint baseline. Non-collision numeric categories also bind to absolute saved geometry. Copper
+`items_not_allowed` findings bind to saved item/area contacts as described above;
+other categories retain UUID-based reporting. Enforcement changes and a new
 outline crossing count as new findings on otherwise identical item UUIDs.
 Any added `shorting_items`, `pth_inside_courtyard` or `holes_co_located` refuses
 publication with an engineering citation to AGENTEE-318/325/331. Printed copper-edge actuals below 0.00005 mm (50 nm) are also structural,
@@ -1255,7 +1272,7 @@ SHA-256 and rule name. The comparison retains classified baseline and candidate
 findings, including silk and text findings, and retains failures with the candidate. An introduced
 `solder_mask_bridge` between different footprints also blocks publication;
 baseline and intra-footprint mask bridges remain non-blocking and reported.
-Ignoring a required collision or mask category, a failed tool, missing output,
+Ignoring a required collision, mask or `items_not_allowed` category, a failed tool, missing output,
 incomplete severity coverage or changed evaluation settings also refuses publication. Existing
 courtyard and write-scope gates remain in force. Rule-level `(severity ignore)`
 in `.kicad_dru` never appears in native `ignored_checks`, so the gate refuses

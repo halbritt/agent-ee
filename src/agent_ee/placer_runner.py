@@ -17,7 +17,7 @@ from . import placement_groups
 from .board_net_names import from_xml
 from .locking import writer_lock
 from .placement import judge
-from .placement_probe import extract, custom_pad_geometry, primitive
+from .placement_probe import extract, custom_pad_geometry, primitive, rule_area
 from .placer import _failure, pack, transform
 from .silkscreen import reserve_imu_markings
 from .silk_artwork import SILK_CONFLICTS, relocate
@@ -29,6 +29,7 @@ from .design_rule_provenance import (
 
 DRC_COLLISIONS = frozenset(('shorting_items', 'clearance', 'pth_inside_courtyard', 'holes_co_located'))
 DRC_MASK = 'solder_mask_bridge'
+DRC_KEEPOUT = 'items_not_allowed'
 DRC_COURTYARDS = frozenset(('courtyards_overlap', 'malformed_courtyard', 'missing_courtyard'))
 
 
@@ -162,8 +163,11 @@ def _native_drc(board, scratch):
             any(not isinstance(s, str) for s in report['included_severities']) or
             set(report['included_severities']) != {'error', 'warning', 'exclusion'}):
         raise ValueError('native placement DRC did not evaluate all severities')
+    if any(isinstance(check, dict) and check.get('key') == DRC_KEEPOUT
+           for check in report['ignored_checks']):
+        raise ValueError('native placement DRC explicitly ignored placement category items_not_allowed')
     if any(not isinstance(check, dict) or not isinstance(check.get('key'), str)
-           or check['key'] in DRC_COLLISIONS | {DRC_MASK} | {'courtyards_overlap', 'courtyard_overlap'}
+           or check['key'] in DRC_COLLISIONS | {DRC_MASK, DRC_KEEPOUT} | {'courtyards_overlap', 'courtyard_overlap'}
            or check['key'].startswith('silk_')
            for check in report['ignored_checks']):
         raise ValueError('native placement DRC evaluation unavailable or explicitly ignored')
@@ -177,14 +181,69 @@ def _native_drc(board, scratch):
     return report
 
 
+class _DrcItemStates(dict):
+    """Existing collision states plus independent native keep-out witnesses."""
+
+
+def _keepout_item_states(path, states):
+    """Bind each copper item to the actual areas it intersects, including owner-local areas.
+
+    Native shapes decide contact; area names and DRC wording never prove geometry.
+    Only an item's own area can use a rigid, footprint-local witness. Every peer
+    or board contact includes the absolute copper pose and area geometry.
+    """
+    import pcbnew as k
+    board = k.LoadBoard(str(path))
+    areas = [(None, z) for z in board.Zones() if z.GetIsRuleArea()]
+    items = [(None, t) for t in board.GetTracks()]
+    for fp in board.GetFootprints():
+        areas.extend((fp.m_Uuid.AsString(), z) for z in fp.Zones() if z.GetIsRuleArea())
+        items.extend((fp.m_Uuid.AsString(), p) for p in fp.Pads())
+    result = {}
+    for owner, item in items:
+        uid = item.m_Uuid.AsString()
+        contacts = []
+        for area_owner, area in areas:
+            # Custom disallow rules may reference areas whose built-in pad flag is false.
+            layers = set(item.GetLayerSet().Seq()) & set(area.GetLayerSet().Seq())
+            if not any(area.Outline().Collide(item.GetEffectiveShape(layer), 0) for layer in layers):
+                continue
+            local = owner is not None and owner == area_owner
+            if local:
+                # Use a separate native copy: normalization must not move the other contacts.
+                normalized = k.LoadBoard(str(path))
+                fp = next(f for f in normalized.GetFootprints() if f.m_Uuid.AsString() == owner)
+                fp.SetOrientationDegrees(0)
+                fp.SetPosition(k.VECTOR2I(0, 0))
+                area = next(z for z in fp.Zones() if z.m_Uuid.AsString() == area.m_Uuid.AsString())
+            record = rule_area(area, area_owner or 'board')
+            if record['outline']['status'] != 'proven':
+                # A contact without complete geometry cannot inherit a baseline exemption.
+                contacts = None
+                break
+            contacts.append((states[uid][:2] if local else states[uid], record))
+        if contacts == []:
+            # A native custom disallow may have no area at all. Its physical witness
+            # is the absolute item plus the complete saved area environment.
+            environment = [rule_area(z, own or 'board') for own, z in areas]
+            if any(a['outline']['status'] != 'proven' for a in environment):
+                contacts = None
+            else:
+                contacts = [(states[uid], sorted(environment, key=lambda a: a['uuid']))]
+        result[uid] = None if contacts is None else tuple(sorted(map(_canonical, contacts)))
+    return result
+
+
 def _drc_item_states(path):
     """Bind collision identities to native saved geometry and footprint transforms."""
     import pcbnew
     board = pcbnew.LoadBoard(str(path))
     inventory = _pad_inventory(board)
-    states = {}
+    states = _DrcItemStates()
+    states.noncopper = set()
     for fp in board.GetFootprints():
         owner = fp.m_Uuid.AsString()
+        states.noncopper.add(owner)
         pose = (int(fp.GetPosition().x), int(fp.GetPosition().y),
                 fp.GetOrientationDegrees(), int(fp.GetLayer()))
         fp.SetOrientationDegrees(0)
@@ -209,6 +268,7 @@ def _drc_item_states(path):
         # Native facts ignore serialization whitespace and retain absolute
         # conductor/drawing geometry, layers and widths.
         states[uid] = (uid, json.dumps(item, sort_keys=True), ())
+    states.keepouts = _keepout_item_states(path, states)
     return states
 
 
@@ -252,6 +312,10 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
             before.get('included_severities') != after.get('included_severities')):
         raise ValueError('native baseline/candidate DRC evaluation settings differ')
 
+    if any(check.get('key') == DRC_KEEPOUT for report in (before, after)
+           for check in report['ignored_checks']):
+        raise ValueError('native items_not_allowed evaluation explicitly ignored')
+
     def key(finding, states):
         items = finding.get('items')
         if (not isinstance(items, list) or not items or
@@ -264,6 +328,19 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
         identity = (finding['type'], identities, provenance['enforcement'],
                     finding['type'] == 'copper_edge_clearance' and
                     provenance['reason'] == 'Structural invariant; numeric provenance does not relax it')
+        if finding['type'] == DRC_KEEPOUT:
+            if states is not None and set(identities) <= getattr(states, 'noncopper', set()):
+                return identity
+            if states is None and unchanged_copper is not None:
+                return identity
+            contexts = getattr(states, 'keepouts', {})
+            try:
+                witnesses = tuple(contexts[uuid] for uuid in identities)
+                if any(not witness for witness in witnesses):
+                    raise KeyError('missing native contact')
+            except KeyError as exc:
+                raise ValueError('native items_not_allowed geometry unavailable') from exc
+            return (*identity, finding.get('description'), witnesses)
         if states is None:
             if numeric_finding(finding) and finding['type'] not in DRC_COLLISIONS:
                 return (*identity, finding.get('description'), json.dumps(items, sort_keys=True))
@@ -314,7 +391,9 @@ def _drc_comparison(before, after, before_states=None, after_states=None, source
             remaining[identity] -= 1
     added = [v for i, v in enumerate(after['violations']) if i in chosen]
     return {'added_findings': added,
-            'blocking_findings': [v for v in after['violations'] if v['type'] == 'copper_outside_outline'] + [v for v in added if
+            'blocking_findings': [v for v in after['violations'] if v['type'] == 'copper_outside_outline'] + [v for v in added if v['type'] == DRC_KEEPOUT and
+                not (after_states is not None and {i['uuid'] for i in v['items']} <=
+                     getattr(after_states, 'noncopper', set()))] + [v for v in added if
                 v['constraint_provenance']['enforcement'] == 'hard' and
                 (v['type'] in DRC_COLLISIONS | {DRC_MASK} or numeric_finding(v)) and
                 (v['type'] != DRC_MASK or after_states is None or
