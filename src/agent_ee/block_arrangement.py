@@ -22,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import advisory_regions, blocks, electrical_locality, placement_groups, placer
+from . import advisory_regions, blocks, electrical_locality, placement_groups, placement_trace, placer
 from .catalog import strict_json
 from .footprint_library import digest
 from .native_netlist import read_native_inventory, read_sheet_names
@@ -1055,6 +1055,19 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     ``agent-ee.packing-plan/1`` with a ``block_arrangement`` record, or a typed
     failure; no search-derived arrangement is ever reported as a pass.
     """
+    trace = placement_trace.active()
+    if trace is None:
+        return _arrange(capture, inventory, derivation, policy, arrangement, entries, heartbeat=heartbeat,
+                        effective_policy=effective_policy)
+    started = placement_trace.now()
+    try:
+        return _arrange(capture, inventory, derivation, policy, arrangement, entries, heartbeat=heartbeat,
+                        effective_policy=effective_policy)
+    finally:
+        trace.add('stage_b.arrange', placement_trace.now() - started)
+
+
+def _arrange(capture, inventory, derivation, policy, arrangement, entries, *, heartbeat, effective_policy):
     effective = policy if effective_policy is None else effective_policy
     refs = {fp['ref'] for fp in capture['footprints']}
     placer._validate_policy(policy, refs)
@@ -1174,8 +1187,19 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     if heartbeat is not None:
         heartbeat({'status': 'arranging', 'steps_used': 0, 'blocks_placed': 0})
     levels, backjumps, peak = [], 0, 0
+    trace = placement_trace.active()
+    if trace is not None:
+        trace.counters['stage_b.arrangements'] += 1
+        searching = placement_trace.now()
+
+    def searched():
+        # Stage-B block search time and steps (AGENTEE-430); residual packing is traced as Stage A.
+        if trace is not None:
+            trace.add('stage_b.search', placement_trace.now() - searching)
+            trace.counters['stage_b.steps'] += search.steps
 
     def stopped(status, reason, unplaced=None):
+        searched()
         if search.access_rejections:
             reason += '; access direction rejected poses for ' + ', '.join(sorted(search.access_rejections))
         partial = [{'block': p['block'], 'position_nm': p['position_nm'], 'rotation_deg': p['rotation_deg']}
@@ -1221,6 +1245,10 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     except electrical_locality.TargetBudgetExhausted:
         return stopped('arrangement_budget_exhausted', 'locality target budget exhausted',
                        order[len(search.placed_blocks)])
+    except BaseException:
+        searched()  # A raising search still accounts its traced time (AGENTEE-430).
+        raise
+    searched()
     elapsed = time.monotonic() - search.started
     poses = {fp['ref']: fp for p in search.placed_blocks for fp in p['members']}
     record['search'] = {'strategy': STRATEGY, 'steps_used': search.steps, 'step_budget': search.budget,

@@ -25,7 +25,8 @@ from fractions import Fraction
 import math
 import time
 
-from . import access_direction, advisory_regions, electrical_locality, placement_groups, placement_provenance
+from . import (access_direction, advisory_regions, electrical_locality, placement_groups, placement_provenance,
+               placement_trace)
 from .placement import (area2, boxes_meet, convex, courtyard_bounds, cross, edges, intersection_area, judge,
                         on_segment, overhang_bands, qualified_polygons, validate_capture)
 from .placement_predicates import segment_distance2
@@ -1793,6 +1794,9 @@ class _Search:
         self.copper_axes = False
         self.copper_setback = copper_setback(capture)
         self.cluster_work = {}
+        # Placement generation (AGENTEE-430): one id per partial-placement state. push
+        # allocates a new id and pop restores the previous one, as pop restores peers.
+        self.generations, self.generations_allocated, self.trace_index = [0], 0, None
         # Anchor distance is symmetric: it binds whichever of the pair is placed second.
         self.anchored = {}
         for ref, group in members.items():
@@ -1847,6 +1851,8 @@ class _Search:
 
     def push(self, fp):
         self.placed.append(fp)
+        self.generations_allocated += 1
+        self.generations.append(self.generations_allocated)
         if self.locality is not None:
             self.locality.push(fp)
         if len(self.placed) > len(self.best):
@@ -1860,6 +1866,7 @@ class _Search:
 
     def pop(self):
         fp = self.placed.pop()
+        self.generations.pop()
         if self.locality is not None:
             self.locality.pop(fp['ref'])
         del self.positions[fp['ref']]
@@ -1909,67 +1916,134 @@ class _Search:
 
     def scan(self, fp, conflicts):
         """Admissible candidates in rank order; rejections add their blockers to ``conflicts``."""
-        group = self.members.get(fp['ref'])
-        participating = self.locality is not None and fp['ref'] in self.locality.pairs
-        self.checkpoint()
-        anchors = [(side, box) for side, box, _ in self.reserved] + [(o['side'], o['box']) for o in self.exact]
-        # A concave fixed courtyard's box can lie far from its edges; its slabs carry them.
-        anchors += self.solid
-        anchors += _keepout_boxes(self.obstacles + [area for f in self.placed for area in f.get('packing_keepouts', [])])
-        # Pad keep-outs (AGENTEE-418) align candidates as footprint keep-outs do; a courtyard may enter them.
-        anchors += [(None, _box(k['polygons'])) for k in self.pad_keepouts + [
-            k for f in self.placed for k in f.get('packing_pad_keepouts', [])]]
-        ties = self.ties(fp['ref'])
-        targets = [] if group is None else [p for poly in group.get('region', {}).get('polygons', []) for p in poly]
-        targets += [point for _, point, _ in ties]
-        window = _window(self.outline, self.margin_nm, group, ties)
-        ranked, evaluators = [], {}
-        for rotation in (0, 90, 180, 270):
-            at_origin = self.at_origin(fp, rotation)
-            evaluator = self.locality.prepare(at_origin) if participating else None
-            evaluators[rotation] = evaluator
-            local_targets = evaluator.targets() if evaluator is not None else []
-            xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm,
-                                     targets + local_targets, window, at_origin, self.copper_axes)
-            if self.cluster_active is not None and evaluator is not None:
-                # Intersections of axis projections of the exact pad discs are
-                # necessary only; the full coupled predicates still judge every point.
-                for offset, target, limit, _, hard in evaluator.pairs:
-                    if not hard:
-                        continue  # AGENTEE-337: advisory bounds never prune candidates
-                    xs = [x for x in xs if abs(x + offset[0] - target[0]) <= limit]
-                    ys = [y for y in ys if abs(y + offset[1] - target[1]) <= limit]
-                conflicts.update(ref for _, _, _, involved, hard in evaluator.pairs if hard
-                                 for ref in involved if ref not in self.fixed and ref != fp['ref'])
-            rectangles = {side: [r for poly in c['polygons'] for r in _slabs(poly)]
-                          for side, c in at_origin['courtyards'].items()
-                          if all(_slabs(poly) is not None for poly in c['polygons'])}
-            doomed = set()
-            # Bound keys enter the ranking; the exact wire cost is resolved lazily
-            # by _ranked, in the same order as sorting every exact key.
-            bound_x, bound_y = _wire_bounds(_pad_nets(fp, (0, 0), rotation, self.grounds), self.peers, xs, ys)
-            for x, y in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid,
-                                    self.gap, conflicts, doomed, self.checkpoint):
-                self.checkpoint()
-                hit, local_cost = evaluator.constraint((x, y)) if evaluator is not None else (set(), 0)
-                if self.cluster_active is not None and hit:
-                    conflicts.update(hit - self.fixed - {fp['ref']})
-                    continue
-                ranked.append((local_cost, bound_x[x] + bound_y[y], x, y, rotation, (x, y) in doomed))
+        trace = placement_trace.active()  # None unless tracing is on (AGENTEE-430); no decision reads it.
+        if trace is not None:
+            t, recorded_request = placement_trace.now(), 0
+            try:
+                request = trace.scan_request(self.trace_index, self.generations[-1], fp, self.grounds, self.peers,
+                                             _pad_nets)
+                recorded_request = 1
+            finally:
+                # Recording is the observer's cost, not Stage A's; a raising request keeps its time uncounted.
+                started = placement_trace.now()
+                trace.add('stage_a.trace', started - t, recorded_request)
+            bounds = trace.durations['stage_a.bounds']
+            bounds_before = bounds[0]
+        try:
+            group = self.members.get(fp['ref'])
+            participating = self.locality is not None and fp['ref'] in self.locality.pairs
+            self.checkpoint()
+            anchors = [(side, box) for side, box, _ in self.reserved] + [(o['side'], o['box']) for o in self.exact]
+            # A concave fixed courtyard's box can lie far from its edges; its slabs carry them.
+            anchors += self.solid
+            anchors += _keepout_boxes(self.obstacles + [area for f in self.placed
+                                                        for area in f.get('packing_keepouts', [])])
+            # Pad keep-outs (AGENTEE-418) align candidates as footprint keep-outs do; a courtyard may enter them.
+            anchors += [(None, _box(k['polygons'])) for k in self.pad_keepouts + [
+                k for f in self.placed for k in f.get('packing_pad_keepouts', [])]]
+            ties = self.ties(fp['ref'])
+            targets = [] if group is None else [p for poly in group.get('region', {}).get('polygons', [])
+                                                for p in poly]
+            targets += [point for _, point, _ in ties]
+            window = _window(self.outline, self.margin_nm, group, ties)
+            ranked, evaluators = [], {}
+            for rotation in (0, 90, 180, 270):
+                at_origin = self.at_origin(fp, rotation)
+                evaluator = self.locality.prepare(at_origin) if participating else None
+                evaluators[rotation] = evaluator
+                local_targets = evaluator.targets() if evaluator is not None else []
+                xs, ys = _candidate_axes(fp, rotation, self.outline, anchors, self.gap, self.margin_nm,
+                                         targets + local_targets, window, at_origin, self.copper_axes)
+                if self.cluster_active is not None and evaluator is not None:
+                    # Intersections of axis projections of the exact pad discs are
+                    # necessary only; the full coupled predicates still judge every point.
+                    for offset, target, limit, _, hard in evaluator.pairs:
+                        if not hard:
+                            continue  # AGENTEE-337: advisory bounds never prune candidates
+                        xs = [x for x in xs if abs(x + offset[0] - target[0]) <= limit]
+                        ys = [y for y in ys if abs(y + offset[1] - target[1]) <= limit]
+                    conflicts.update(ref for _, _, _, involved, hard in evaluator.pairs if hard
+                                     for ref in involved if ref not in self.fixed and ref != fp['ref'])
+                rectangles = {side: [r for poly in c['polygons'] for r in _slabs(poly)]
+                              for side, c in at_origin['courtyards'].items()
+                              if all(_slabs(poly) is not None for poly in c['polygons'])}
+                doomed = set()
+                # Bound keys enter the ranking; the exact wire cost is resolved lazily
+                # by _ranked, in the same order as sorting every exact key.
+                if trace is not None:
+                    t, bounded = placement_trace.now(), 0
+                try:
+                    bound_x, bound_y = _wire_bounds(_pad_nets(fp, (0, 0), rotation, self.grounds), self.peers,
+                                                    xs, ys)
+                    bounded = 1
+                finally:
+                    if trace is not None:
+                        # A raising bound keeps its time (geometry excludes it) and is not counted.
+                        trace.add('stage_a.bounds', placement_trace.now() - t, bounded)
+                for x, y in _unreserved(boxes(at_origin), rectangles, xs, ys, self.reserved, self.solid,
+                                        self.gap, conflicts, doomed, self.checkpoint):
+                    self.checkpoint()
+                    hit, local_cost = evaluator.constraint((x, y)) if evaluator is not None else (set(), 0)
+                    if self.cluster_active is not None and hit:
+                        conflicts.update(hit - self.fixed - {fp['ref']})
+                        continue
+                    ranked.append((local_cost, bound_x[x] + bound_y[y], x, y, rotation, (x, y) in doomed))
+        finally:
+            if trace is not None:
+                # Closed on failure too: an exception never loses the entered span.
+                trace.add('stage_a.geometry', placement_trace.now() - started - (bounds[0] - bounds_before))
         def exact(key):
             self.checkpoint()  # Each exact cost is checked as promptly as when generation computed it.
             local_cost, _, x, y, rotation, doomed = key
             return (local_cost, _wire_cost(_pad_nets(fp, (x, y), rotation, self.grounds), self.peers),
                     x, y, rotation, doomed)
-        for _, _, x, y, rotation, doomed in _ranked(ranked, exact):
+        order = _ranked(ranked, exact)
+        if trace is not None:
+            untraced, timed, sample, clock = exact, trace.durations['stage_a.exact'], trace.sample, placement_trace.now
+            recorded = trace.durations['stage_a.trace']
+            scan_generation = self.generations[-1]
+
+            def exact(key):
+                t = clock()
+                try:
+                    resolved = untraced(key)
+                finally:
+                    t1 = clock()
+                    timed[0] += t1 - t  # A raising resolution's time is kept; only resolved ones are counted.
+                timed[1] += 1
+                try:
+                    sample(request, scan_generation, self.generations[-1], key, resolved[1])
+                finally:
+                    recorded[0] += clock() - t1  # The sample is the observer's cost, not ranking's, raising too.
+                recorded[1] += 1
+                return resolved
+            order = trace.timed_rank(_ranked(ranked, exact))
+            if request is not None:
+                request['generated'] = len(ranked)
+            trace.counters['stage_a.candidates_generated'] += len(ranked)
+        for _, _, x, y, rotation, doomed in order:
             self.checkpoint()
             if self.steps == self.budget:
                 raise _BudgetExhausted
             self.steps += 1
             if doomed:
+                if trace is not None:
+                    trace.counters['stage_a.doomed'] += 1
                 continue  # Nearer than the gap to a fixed courtyard or obstacle: the exact test rejects it.
-            proposed = _translate(self.at_origin(fp, rotation), (x, y))
-            hit = self.blockers(proposed, group, ties, evaluators[rotation])
+            if trace is not None:
+                t = placement_trace.now()
+            try:
+                proposed = _translate(self.at_origin(fp, rotation), (x, y))
+                hit = self.blockers(proposed, group, ties, evaluators[rotation])
+            except BaseException:
+                if trace is not None:
+                    trace.counters['stage_a.aborted'] += 1  # The raising step is neither admitted nor rejected.
+                raise
+            finally:
+                if trace is not None:
+                    trace.add('stage_a.predicates', placement_trace.now() - t)
+            if trace is not None:
+                trace.counters['stage_a.admitted' if hit is None else 'stage_a.rejected'] += 1
             if hit is None:
                 yield proposed
             else:
@@ -2093,7 +2167,21 @@ def _pack_joint(capture, policy, heartbeat, runtime, seed, arranged):
 
 def _pack(capture, policy, *, seed=None, **options):
     state = {}
-    result = _pack_run(capture, policy, state=state, seed=seed, **options)
+    trace = placement_trace.active()
+    if trace is not None:
+        started = placement_trace.now()
+    try:
+        result = _pack_run(capture, policy, state=state, seed=seed, **options)
+    finally:
+        if trace is not None:
+            # Preparation until the search starts, the search, then complete-proposal judging
+            # (AGENTEE-430); a raising run still closes the spans it entered.
+            ended = placement_trace.now()
+            searched, judged = state.get('trace_search', ended), state.get('trace_judge', ended)
+            trace.add('prep', searched - started)
+            if 'trace_search' in state:
+                trace.add('stage_a.search', judged - searched)
+                trace.add('stage_a.judge', ended - judged, int('trace_judge' in state))
     if 'carried' in state:
         # Seed fixed pairs closer than the unsourced gap: reported input facts, never refusals.
         result['carried_fixed_pairs'] = state['carried']
@@ -2230,8 +2318,13 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
     missing = copper_setback_missing(fp for fp in capture['footprints'] if fp['ref'] not in fixed)
     if missing:
         return _failure(capture, policy, 'unsupported_geometry', 'unknown', 0, missing, margin_nm)
+    trace = placement_trace.active()
+    if trace is not None:
+        state['trace_search'] = placement_trace.now()
     search = _Search(capture, placed, exact, obstacles, outline, margin_nm, policy, members, heartbeat, pad_keepouts)
     search.copper_axes = copper_axes
+    if trace is not None:
+        search.trace_index = trace.search_started(search, joint=joint, copper_axes=copper_axes)
     if runtime is not None:
         runtime['search'] = search
         runtime['copper_escapes'] = any(fp.get('_packing_copper', {}).get('outline')
@@ -2320,6 +2413,8 @@ def _pack_run(capture, policy, *, heartbeat, joint, state, seed, arranged=None, 
             for _ in done:
                 search.pop()
         del stack[k:]
+    if trace is not None:
+        state['trace_judge'] = placement_trace.now()
     placed, steps = search.placed, search.steps
     proposed_capture = {**capture, 'footprints': placed}
     judgment = judge(proposed_capture, overhangs=policy.get('fixed_overhangs'))
