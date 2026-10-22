@@ -63,8 +63,67 @@ UNBOUND = {
 # physical qualification, until AGENTEE-177/179 evidence closes them. The record
 # carries locators and text only, so it cannot introduce a numeric limit.
 WITNESS = re.compile(r'/(mounting_holes|keepouts|fixed_footprints)/(0|[1-9][0-9]*)\Z')
-WITNESS_CRITERIA = ('outline-containment/1',)
+CONTAINMENT, PART_IDENTITY = 'outline-containment/1', 'part-identity/1'
+WITNESS_CRITERIA = (CONTAINMENT, PART_IDENTITY)
 QUALIFICATION_STAGES = ('candidate_assessment', 'physical_qualification')
+# Reviewed, source-bound minimum contracts for staging generic obligations (AGENTEE-197
+# review H1/H2). Staging is admitted only for an obligation whose id, requirement IDs,
+# owner items and statement equal a contract entry verbatim; the contract, never the
+# caller's coverage list, fixes the generation witnesses and the open qualification items
+# that must stay listed (coverage may add, never drop). It carries roles, references and
+# identities only: no numeric limit. A changed source statement refuses staging until a
+# reviewed commit updates the entry. `envelope_ids` names source envelopes that must carry
+# every contracted obligation even before staging.
+PHYSICAL, CANDIDATE = QUALIFICATION_STAGES[1], QUALIFICATION_STAGES[0]
+OBLIGATION_CONTRACTS = {
+    # fome-mc telemetry-pod production capture composition/envelope.json (envelope id
+    # expanded-pod-microsd-production, sha256 96615a7932b83959cd3898cee1febe1a4737c7ebd25fdc4fde40a4951e471e84),
+    # obligations as staged by the agent-509 decision of 2026-10-22; J1 identity from its
+    # composition parts.json connector/J1 (D-PCB-10: right-angle 35-position AMPSEAL 1-776163-1).
+    'telemetry-pod-expanded/1': {
+        'envelope_ids': ('expanded-pod-microsd-production',),
+        'obligations': {
+            'corner-holes': {
+                'requirement_ids': ['POD-ME-1', 'POD-AC-7'], 'owner_items': ['AGENTEE-177', 'AGENTEE-179'],
+                'statement': 'Provide four corner mounting holes; generator selects drill, plating, inset and '
+                             'coordinates.',
+                'corner_holes': 4,
+                'open': {'hole-authority': PHYSICAL, 'fabricated-holes': PHYSICAL}},
+            'height': {
+                'requirement_ids': ['POD-ME-1'], 'owner_items': ['AGENTEE-177', 'AGENTEE-179'],
+                'statement': 'No 12 mm height limit is adopted. Actual cowl, underside, connector, mating-plug and '
+                             'harness clearances require enclosure validation for the expanded pod.',
+                'open': {'candidate-heights': CANDIDATE, 'cowl-fit': PHYSICAL, 'underside-fit': PHYSICAL,
+                         'connector-fit': PHYSICAL, 'mating-plug-fit': PHYSICAL, 'harness-fit': PHYSICAL}},
+            'harness-edge': {
+                'requirement_ids': ['POD-CD-HARNESS-CONNECTOR', 'POD-ME-2'],
+                'owner_items': ['AGENTEE-177', 'AGENTEE-179'],
+                'statement': 'Place selected TE 1-776163-1 35-position harness connector at the board edge using '
+                             'its captured K1 drawing and exact footprint. Panel cutout, mating plug, retention, '
+                             'board thickness tolerance and harness clearance remain unqualified.',
+                'fixed': {'reference': 'J1', 'identity': {
+                    'manufacturer': 'TE Connectivity', 'mpn': '1-776163-1',
+                    'footprint': 'PodConnector:AMPSEAL_35_1-776163-1'}},
+                'open': {'panel-cutout': PHYSICAL, 'mating-plug': PHYSICAL, 'retention': PHYSICAL,
+                         'thickness-tolerance': PHYSICAL, 'harness-clearance': PHYSICAL}},
+            'antenna': {
+                'requirement_ids': ['POD-CD-MCU-AND-RADIO', 'POD-AC-7'],
+                'owner_items': ['AGENTEE-177', 'AGENTEE-179'],
+                'statement': 'ESP32-S3-WROOM-1 antenna overhangs the top edge (D-PCB-16, owner 2026-10-21: '
+                             'outside-board placement case, Espressif hardware design guidelines Section 1.4.7, '
+                             'page 33). The module-owned keepout rule area is retained from the captured '
+                             'footprint; datasheet Figure 11-1 module dimensions define no base-board clearance '
+                             '(AGENTEE-211). Feed-point side, housing clearance and RF performance remain '
+                             'unqualified.',
+                'fixed': {'reference': 'U1'}, 'antenna_keepout': 'U1',
+                'open': {'feed-point-side': PHYSICAL, 'housing-pocket': PHYSICAL, 'nearby-metal': PHYSICAL,
+                         'support': PHYSICAL, 'rf-performance': PHYSICAL}},
+            'imu-separation': {
+                'requirement_ids': ['POD-ME-4'], 'owner_items': ['AGENTEE-177', 'AGENTEE-179'],
+                'statement': 'Keep tall or heavy parts, including harness connector, SMA and electrolytic '
+                             'capacitors, away from the IMU.',
+                'open': {'placement-assessment': CANDIDATE, 'vibration-coupling': PHYSICAL}}}}}
+CONTRACT_FIELDS = ('requirement_ids', 'owner_items', 'statement')
 
 
 def load(raw):
@@ -424,10 +483,10 @@ def validate_coverage(item, envelope):
         if index >= len(envelope[field]):
             raise ValueError(f"{label} witness {witness['locator']} is not declared in this envelope")
         criterion = witness.get('criterion')
-        if criterion is not None and (criterion not in WITNESS_CRITERIA or field != 'fixed_footprints' or
-                                      'courtyard_overhangs' not in envelope[field][index]):
-            raise ValueError(f"{label} witness criterion {criterion!r} needs a fixed footprint with declared "
-                             f'courtyard_overhangs and one of {list(WITNESS_CRITERIA)}')
+        if criterion is not None and (criterion not in WITNESS_CRITERIA or field != 'fixed_footprints' or (
+                criterion == CONTAINMENT and 'courtyard_overhangs' not in envelope[field][index])):
+            raise ValueError(f"{label} witness criterion {criterion!r} needs a fixed footprint (with declared "
+                             f'courtyard_overhangs for {CONTAINMENT}) and one of {list(WITNESS_CRITERIA)}')
         if (witness['locator'], criterion) in seen:
             raise ValueError(f"{label} repeats witness {witness['locator']}")
         seen.add((witness['locator'], criterion))
@@ -444,6 +503,96 @@ def validate_coverage(item, envelope):
         if not isinstance(entry['statement'], str) or not entry['statement'].strip():
             raise ValueError(f'{label} open item statement required')
     return coverage
+
+
+def corner_holes(envelope, vertices):
+    """Declared hole locators, each with the outline vertex it is uniquely nearest (None on a tie)."""
+    out = []
+    for index, hole in enumerate(envelope['mounting_holes']):
+        at = point(hole['at'], f"mounting hole {hole['id']} at")
+        reach = sorted(((at[0] - v[0]) ** 2 + (at[1] - v[1]) ** 2, i) for i, v in enumerate(vertices))
+        out.append((f'/mounting_holes/{index}', reach[0][1] if reach[0][0] != reach[1][0] else None))
+    return out
+
+
+def contract_witnesses(oid, expected, envelope, vertices):
+    """(locator, criterion) witnesses a contract entry requires, resolved against this envelope."""
+    label = f'obligation {oid} source contract'
+    required = []
+    if 'corner_holes' in expected:
+        holes = corner_holes(envelope, vertices)
+        corners = {corner for _, corner in holes if corner is not None}
+        if len(corners) < expected['corner_holes']:
+            raise ValueError(f"{label} requires {expected['corner_holes']} distinct mounting holes, each nearest a "
+                             f'distinct outline corner; the envelope declares {len(holes)} holes at '
+                             f'{len(corners)} distinct corners')
+        # Every declared hole is a witness, so a hole can be neither dropped nor left unchecked.
+        required += [(locator, None) for locator, _ in holes]
+    if 'fixed' in expected:
+        reference = expected['fixed']['reference']
+        index = next((i for i, f in enumerate(envelope['fixed_footprints']) if f['reference'] == reference), None)
+        if index is None:
+            raise ValueError(f'{label} requires fixed footprint {reference}')
+        locator = f'/fixed_footprints/{index}'
+        required += [(locator, None), (locator, CONTAINMENT)]
+        if 'identity' in expected['fixed']:
+            required.append((locator, PART_IDENTITY))
+    if 'antenna_keepout' in expected:
+        keepouts = [f'/keepouts/{i}' for i, k in enumerate(envelope['keepouts'])
+                    if isinstance(k, dict) and isinstance(k.get('antenna'), dict) and k['antenna'].get('reference') == expected['antenna_keepout']]
+        if not keepouts:
+            raise ValueError(f"{label} requires the captured antenna keepout of {expected['antenna_keepout']}")
+        required += [(locator, None) for locator in keepouts]
+    return required
+
+
+def obligation_contract(envelope, obligations, vertices):
+    """The reviewed source contract staging these obligations, or None when nothing is staged.
+
+    Refuses staging outside a contract, a dropped or altered contracted obligation,
+    and coverage that omits a contracted witness or open qualification item.
+    """
+    staged = [item for item in obligations if 'coverage' in item]
+    claimed = sorted(cid for cid, c in OBLIGATION_CONTRACTS.items() if envelope['id'] in c['envelope_ids']
+                     or any(item['id'] in c['obligations'] for item in staged))
+    if not claimed:
+        if staged:
+            raise ValueError('staged obligations match no reviewed source contract: '
+                             f"{[item['id'] for item in staged]}; only contracted obligations may be staged")
+        return None
+    if len(claimed) > 1:
+        raise ValueError(f'obligations claim more than one source contract: {claimed}')
+    cid = claimed[0]
+    contract = OBLIGATION_CONTRACTS[cid]['obligations']
+    by_id = {item['id']: item for item in obligations}
+    for oid, expected in contract.items():
+        if oid not in by_id:
+            raise ValueError(f'source contract {cid} obligation {oid} is missing; it cannot be dropped')
+        differs = [f for f in CONTRACT_FIELDS if by_id[oid][f] != expected[f]]
+        if differs:
+            raise ValueError(f'obligation {oid} differs from reviewed source contract {cid} in {differs}; a '
+                             'changed source needs a reviewed contract update')
+    outside = sorted(item['id'] for item in staged if item['id'] not in contract)
+    if outside:
+        raise ValueError(f'staged obligations outside source contract {cid}: {outside}')
+    required = {}
+    for item in staged:
+        oid, expected, coverage = item['id'], contract[item['id']], item['coverage']
+        opened = {e['id']: e['stage'] for e in coverage['open']}
+        dropped = sorted(k for k in expected['open'] if k not in opened)
+        restaged = sorted(k for k, stage in expected['open'].items() if k in opened and opened[k] != stage)
+        if dropped or restaged:
+            raise ValueError(f'obligation {oid} coverage must keep source contract {cid} open qualification items'
+                             + (f'; dropped {dropped}' if dropped else '') + (f'; restaged {restaged}' if restaged else ''))
+        witnesses = contract_witnesses(oid, expected, envelope, vertices)
+        listed = {(w['locator'], w.get('criterion')) for w in coverage['generation']}
+        missing = [locator + (f' ({criterion})' if criterion else '') for locator, criterion in witnesses
+                   if (locator, criterion) not in listed]
+        if missing:
+            raise ValueError(f'obligation {oid} coverage omits source contract {cid} generation witnesses: '
+                             + ', '.join(missing))
+        required[oid] = [[locator, criterion] for locator, criterion in witnesses]
+    return {'id': cid, 'required': required}
 
 
 def validate_obligations(items, envelope):
@@ -933,7 +1082,7 @@ def validate(raw, *, profile=None, captured=None):
     copper = copper_names(envelope['layer_count'])
     fab, unresolved = validate_profile(envelope['fab_profile'], profile, captured,
                                        declared_inventory(envelope['layer_count'], copper, edges))
-    obligations, staged = [], []
+    obligations, staged, contract = [], [], None
     namespace = set()
     unique_names(envelope['fixed_footprints'], 'reference', 'fixed footprint', namespace)
     unique_names(envelope['mounting_holes'], 'id', 'mounting hole', namespace)
@@ -941,6 +1090,7 @@ def validate(raw, *, profile=None, captured=None):
     if schema == SCHEMAS[1]:
         unresolved.extend(stackup_support(stackup, fab, captured))
         obligations = validate_obligations(envelope['obligations'], envelope)
+        contract = obligation_contract(envelope, obligations, vertices)
         unresolved.extend({'predicate': f"mechanical_{item['id']}",
                            'reason': f"{item['statement']} Unbound until {', '.join(item['owner_items'])}."}
                           for item in obligations if 'coverage' not in item)
@@ -959,6 +1109,8 @@ def validate(raw, *, profile=None, captured=None):
             'stackup': stackup, 'fab_profile': fab,
             **height,
             **({'obligations': obligations} if schema == SCHEMAS[1] else {}),
+            # Recorded only while staging: an unstaged contracted envelope's record is unchanged.
+            **({'obligation_contract': contract} if contract and contract['required'] else {}),
             'mounting_holes': validate_holes(envelope['mounting_holes'], vertices),
             'keepouts': validate_keepouts(envelope['keepouts'], vertices, copper),
             'fixed_footprints': validate_fixed(envelope['fixed_footprints'], vertices, edges),
@@ -1192,7 +1344,7 @@ def field_of(item):
     return item['source']['locator'].split('/')[1]
 
 
-def obligation_coverage(scope, requirements, record, files):
+def obligation_coverage(scope, requirements, record, files, inputs=None):
     """Per-obligation coverage: bound, unmapped or unknown; vacuous maps are refused.
 
     An altered statement, source locator or intent, or a mapped check that cannot
@@ -1265,7 +1417,7 @@ def obligation_coverage(scope, requirements, record, files):
     by_locator = {r['locator']: r for r in report}
     for entry, declared in staged:
         report.insert(next(i for i, r in enumerate(requirements['requirements']) if r['id'] == entry['id']),
-                      staged_coverage(entry, declared, by_locator, specs, record, files))
+                      staged_coverage(entry, declared, by_locator, specs, record, files, inputs))
     return report
 
 
@@ -1273,11 +1425,83 @@ def index_of(item):
     return int(item['source']['locator'].rsplit('/', 1)[1])
 
 
-def staged_coverage(entry, declared, by_locator, specs, record, files):
+def identity_witness(reference, expected, specs, files, inputs):
+    """Contracted part identity from the existing parts enforcement, never from geometry.
+
+    Every parts_subset check (the scaffold's native membership check, AGENTEE-86) must read
+    a captured agent-ee.parts/1 manifest declaring one required purchased root-sheet part
+    for this reference with the contracted manufacturer, MPN and footprint, the footprint
+    an exact captured member of the manifest's CAD closure (the member the scaffold loads).
+    The check then compares the native instance with that declaration; DRC schematic parity
+    and connector-edge/1 bind the board footprint of the same reference.
+    """
+    from .catalog import strict_json
+    from .copper_features import is_copper
+    from .footprint_library import _members
+    from .parts_manifest import _read_blob, load_manifest
+    from .probe_features import is_probe
+    checks = sorted(cid for cid, spec in specs.items() if spec.get('kind') == 'parts_subset')
+    if not checks:
+        return [], f'{reference} needs a parts_subset check over the captured parts manifest declaring {expected}'
+    if inputs is None:
+        return [], f'{reference} part identity needs the captured inputs'
+    problems = []
+    for cid in checks:
+        params = specs[cid].get('params')
+        try:
+            manifest = params.get('manifest') if isinstance(params, dict) else None
+            if not isinstance(manifest, str) or manifest not in files or digest(Path(inputs) / manifest) != files[manifest]:
+                raise ValueError(f'parts manifest {manifest!r} is not captured')
+            document = load_manifest(inputs, manifest)
+            parts = [p for p in document['parts'] if {'sheet': '/', 'reference': reference} in p['instances']]
+            if len(parts) != 1:
+                raise ValueError(f'{manifest} declares no root-sheet part for {reference}')
+            part = parts[0]
+            if is_probe(part) or is_copper(part) or part.get('required') is not True:
+                raise ValueError(f'{manifest} {reference} is not a required purchased part')
+            wrong = {field: part[field] for field, value in expected.items() if part[field] != value}
+            if wrong:
+                raise ValueError(f'{manifest} declares {reference} as {wrong}, not the contracted {expected}')
+            cad = document['cad']['manifest']
+            if files.get(cad['path']) != cad['sha256']:
+                raise ValueError(f"CAD manifest {cad['path']} is not captured")
+            members = {lib + ':' + Path(m['path']).stem: m for lib, m in _members(strict_json(_read_blob(inputs, cad)))}
+            member = members.get(part['footprint'])
+            if member is None or files.get(member['path']) != member['sha256']:
+                raise ValueError(f"footprint {part['footprint']} is not a captured member of {cad['path']}")
+        except (ValueError, OSError, KeyError, TypeError, AttributeError) as exc:
+            problems.append(f'{cid}: {exc}')
+    if problems:
+        return [], f'{reference} part identity unestablished: ' + '; '.join(problems)
+    return checks, None
+
+
+def staged_coverage(entry, declared, by_locator, specs, record, files, inputs=None):
     """Generation admission for one generic obligation; its open items are never closed here."""
     missing, witnesses = [], []
+    contract = record.get('obligation_contract')
+    expected = OBLIGATION_CONTRACTS[contract['id']]['obligations'][declared['id']] if contract else None
+    listed = {(w['locator'], w.get('criterion')) for w in declared['coverage']['generation']}
+    # The validated record's contract fixes the minimum; a coverage list cannot shrink it.
+    missing += [f'{locator} ({criterion or "bound"}) is required by source contract {contract["id"]}'
+                for locator, criterion in (contract or {}).get('required', {}).get(declared['id'], [])
+                if (locator, criterion) not in listed]
+    if contract is None or declared['id'] not in contract['required']:
+        missing.append('staged without a reviewed source contract')
     for witness in declared['coverage']['generation']:
         locator, criterion = witness['locator'], witness.get('criterion')
+        if criterion == PART_IDENTITY:
+            reference = record['fixed_footprints'][int(locator.rsplit('/', 1)[1])]['reference']
+            identity = (expected or {}).get('fixed', {}).get('identity')
+            if identity is None or expected['fixed']['reference'] != reference:
+                checks, problem = [], f'{locator} {reference} has no contracted part identity'
+            else:
+                checks, problem = identity_witness(reference, identity, specs, files, inputs)
+            if problem:
+                missing.append(problem)
+            witnesses.append({'locator': locator, 'criterion': criterion, 'checks': checks,
+                              'status': 'bound' if not problem else 'absent'})
+            continue
         if criterion is None:
             concrete = by_locator.get(locator)
             status = concrete['status'] if concrete else 'absent'
@@ -1305,9 +1529,9 @@ def staged_coverage(entry, declared, by_locator, specs, record, files):
                                                     'open: ' + ', '.join(e['id'] for e in declared['coverage']['open'])}
 
 
-def require_obligations(scope, requirements, record, files):
+def require_obligations(scope, requirements, record, files, inputs=None):
     """Refuse a scope/3 baseline that drops, alters, vacuously maps or leaves unknown an obligation."""
-    report = obligation_coverage(scope, requirements, record, files)
+    report = obligation_coverage(scope, requirements, record, files, inputs)
     missing = [f"{r['id']} ({r['status']}: {r['reason']})" for r in report
                if r['status'] not in ('bound', 'soft', 'staged')]
     if missing:
@@ -1562,7 +1786,7 @@ def baseline_envelope(scope, files, inputs):
         if extra or any(by_id.get(r['id']) != r for r in expected):
             raise ValueError(f'captured stage-one requirements {rel} do not carry exactly these envelope '
                              'obligations and envelope hash' + (f'; extra {extra}' if extra else ''))
-    coverage = require_obligations(scope, requirements, record, files)
+    coverage = require_obligations(scope, requirements, record, files, inputs)
     return {'inputs': sorted(dependencies), 'record': {
         'schema': 'agent-ee.envelope-baseline/1', **declared,
         'validation': record, 'requirements': requirements, 'coverage': coverage}}

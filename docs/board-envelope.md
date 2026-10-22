@@ -295,7 +295,7 @@ unbound. It refuses:
   derive;
 - a validation record and requirements document for different envelope bytes.
 
-`require_obligations(scope, requirements, record, files)` then refuses anything
+`require_obligations(scope, requirements, record, files, inputs)` then refuses anything
 not `bound`, `soft` or `staged`, listing every such obligation. It also refuses requirements derived
 while predicates were unresolved. An obligation is refused rather than dropped.
 
@@ -320,7 +320,9 @@ admission from final physical qualification:
   must be `bound`; a soft (informational) or unmapped one does not witness.
   `criterion: "outline-containment/1"` is allowed only for a fixed footprint
   with `courtyard_overhangs`. It needs a `placement` check with that criterion
-  over these exact captured envelope bytes. No other field witnesses, so
+  over these exact captured envelope bytes. `criterion: "part-identity/1"` on a
+  fixed footprint needs the contracted part identity (see
+  [source contracts](#source-contracts)). No other field witnesses, so
   `/max_component_height_mm` and `component-height/1` cannot cover a staged
   obligation.
 - `open` lists the qualification evidence still required, one or more
@@ -383,14 +385,57 @@ Staged generation keeps `require_obligations`: capture, scaffold and candidate
 generation proceed. The guard adds no physical closure: today's open items stay
 blocking for final acceptance.
 
-The telemetry pod's `connector-identity` item names candidate evidence that
-exists elsewhere. J1's connector part and CAD identity is bound at preparation
-time by the named part `connector/J1` in `composition/part-refs.json`, through
-`binding_fill.fill` and `parts_manifest.qualify_manifest` (complete coverage and
-the produced-identity comparison), plus the exact captured footprint. No generic
-identity checker repeats it here. A `connector-edge/1` placement check proves J1's
-pose only. It proves neither identity nor mating-plug or enclosure fit, so those
-items stay open.
+### Source contracts
+
+A coverage list is written by whoever composes the envelope, so it cannot set
+its own minimum. `board_envelope.OBLIGATION_CONTRACTS` holds the reviewed,
+source-bound minimum (AGENTEE-197 review H1/H2). Only an obligation whose `id`,
+`requirement_ids`, `owner_items` and `statement` equal a contract entry verbatim
+may be staged. A coverage record on any other obligation is refused. A changed
+source statement refuses staging until a reviewed commit updates the entry.
+While anything is staged, every contracted obligation must be present, so one
+cannot be dropped. The contract's `envelope_ids` name source envelopes that must
+carry every contracted obligation verbatim even before staging.
+
+For each staged entry the contract, not the coverage list, fixes the generation
+witnesses and the open items. Coverage may add witnesses or items and may use
+any order, but it cannot omit or restage what the contract lists. The
+validation record keeps the resolved minimum as `obligation_contract`, and
+`staged_coverage` checks it again. The contract carries roles, references and
+identities only, so it adds no numeric limit.
+
+`telemetry-pod-expanded/1` is reviewed from the production capture
+`composition/envelope.json` (envelope `expanded-pod-microsd-production`):
+
+| Obligation | Required generation witnesses | Open items that must stay listed |
+|---|---|---|
+| `corner-holes` | every declared hole, with four distinct holes each uniquely nearest a distinct outline corner | `hole-authority`, `fabricated-holes` |
+| `height` | none | `candidate-heights` (candidate), `cowl-fit`, `underside-fit`, `connector-fit`, `mating-plug-fit`, `harness-fit` |
+| `harness-edge` | J1 fixed (`connector-edge/1`), J1 `outline-containment/1`, J1 `part-identity/1` | `panel-cutout`, `mating-plug`, `retention`, `thickness-tolerance`, `harness-clearance` |
+| `antenna` | U1 fixed, U1 `outline-containment/1`, the U1 antenna keepout | `feed-point-side`, `housing-pocket`, `nearby-metal`, `support`, `rf-performance` |
+| `imu-separation` | none (assessment only) | `placement-assessment` (candidate), `vibration-coupling` |
+
+Items are `physical_qualification` unless marked candidate. Corner assignment is
+a nearest-vertex comparison with ties refused. It is not a hole position limit.
+Drill, inset and coordinates stay generator-selected and keep the provenance of
+the hole fields. `hole-authority` stays open for them.
+
+J1 identity is not deferred into physical fit. It uses the existing parts
+enforcement, not a second identity checker. A `part-identity/1` witness is bound
+only when every `parts_subset` check in the scope (the scaffold's native
+membership check) reads a captured `agent-ee.parts/1` manifest. That manifest
+must declare one required purchased root-sheet part for J1 with manufacturer
+`TE Connectivity`, MPN `1-776163-1` and footprint
+`PodConnector:AMPSEAL_35_1-776163-1`. The footprint must be an exact member of
+the manifest's captured CAD closure, and that member is the one the scaffold
+loads. A missing check, an uncaptured manifest or member, a missing or optional
+part, or another MPN, manufacturer or footprint leaves the witness `absent`, so
+capture refuses. At run time the `parts_subset` check compares the native J1
+with that declaration. DRC schematic parity and `connector-edge/1` bind the
+board footprint of the same reference. Pose alone is not identity: a
+`connector-edge/1` pass proves neither identity nor mating-plug or enclosure fit.
+At preparation time the same part is bound by `binding_fill.fill` and
+`parts_manifest.qualify_manifest`.
 
 ## Stage-one requirements
 

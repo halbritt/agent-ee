@@ -163,6 +163,13 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             requirements.append(dict(id='R-drc',statement='DRC passes; fixed courtyards stay inside their '
                 'declared overhangs.',intent='acceptance',source=dict(path='targets.md',locator='line 1'),
                 checks=['drc','containment']))
+        if (self.source / 'parts.json').is_file():
+            # The scaffold's native membership check over the captured parts manifest (AGENTEE-86).
+            checks += [dict(id='parts-netlist',kind='netlist'),dict(id='parts',kind='parts_subset',params=dict(
+                manifest='parts.json',netlist_check='parts-netlist',requirement_id='R-parts'))]
+            requirements.append(dict(id='R-parts',statement='Every populated native instance matches parts.json.',
+                intent='acceptance',source=dict(path='requirements.md',locator='line 1'),
+                checks=['parts-netlist','parts']))
         return dict(schema='agent-ee.scope/3',name='owned-ee162',scope='All instantiated envelope geometry',
             inputs=[dict(path=str(p),at=p.relative_to(self.source).as_posix())
                     for p in sorted(self.source.rglob('*')) if p.is_file()],schematic='board.kicad_sch',board='board.kicad_pcb',
@@ -354,39 +361,74 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         for item in record['obligations']:
             self.assertIn('R-envelope-telemetry-pod-obligation-'+item['id'],str(raised.exception))
 
-    def stage(self):
-        """The five generic pod obligations with explicit stage coverage (AGENTEE-197, agent-509 decision).
+    def parts_capture(self, change=None):
+        """An owned captured agent-ee.parts/1 closure whose J1 carries the contracted identity.
 
-        Owned test text: witnesses are concrete envelope locators and every open
-        item is text only, so the record introduces no numeric limit.
+        The catalog, symbols and footprints are the parts-subset test fixture; only the J1
+        identity fields and an owned footprint under the contracted library name are set,
+        so the bytes are original test data, not the vendor footprint.
         """
+        name = 'AMPSEAL_35_1-776163-1'
+        member = f'PodConnector.pretty/{name}.kicad_mod'
+        if not hasattr(self, 'parts_pristine'):
+            from agent_ee.storage import identity
+            from tests.test_native_binding import GEN
+            from tests.test_parts_subset import captured_fixture
+            document = captured_fixture(self, self.source, trio=True)
+            self.member_bytes = GEN.footprint(name, [GEN.tht(n, 4 * i) for i, n in enumerate('123')], 'through_hole')
+            (self.source / 'PodConnector.pretty').mkdir()
+            (self.source / member).write_bytes(self.member_bytes)
+            cad = read_json(self.source / 'cad.json')
+            cad['libraries'].append(dict(name='PodConnector', members=[dict(path=member,
+                                                                            sha256=digest(self.source / member))]))
+            write_json(self.source / 'cad.json', cad)
+            blobs = [m for lib in cad['libraries'] for m in lib['members']] + [{k: lib[k] for k in ('path', 'sha256')}
+                     for lib in read_json(self.source / 'assignments.json')['libraries']]
+            document['cad'].update(manifest=dict(path='cad.json', sha256=digest(self.source / 'cad.json')),
+                                   members_sha256=identity(sorted(blobs, key=lambda m: m['path'])))
+            j1 = next(p for p in document['parts'] if p['instances'] == [dict(sheet='/', reference='J1')])
+            j1.update(manufacturer='TE Connectivity', mpn='1-776163-1', footprint='PodConnector:' + name)
+            self.parts_pristine = document
+        (self.source / member).write_bytes(self.member_bytes)
+        document = copy.deepcopy(self.parts_pristine)
+        j1 = next(p for p in document['parts'] if p['instances'] == [dict(sheet='/', reference='J1')])
+        if change is not None:
+            change(document, j1)
+        write_json(self.source / 'parts.json', document)
+        return document
+
+    def stage(self):
+        """The five generic pod obligations staged under the reviewed source contract (AGENTEE-197).
+
+        Statements come verbatim from the contract; witnesses are concrete envelope
+        locators and every open item is text only, so the record introduces no numeric
+        limit. The contract fixes the minimum; the coverage lists below equal it.
+        """
+        from agent_ee.board_envelope import CONTAINMENT, OBLIGATION_CONTRACTS, PART_IDENTITY
+        contract = OBLIGATION_CONTRACTS['telemetry-pod-expanded/1']['obligations']
         self.envelope = copy.deepcopy(self.pristine)
         self.envelope['fixed_footprints'] = [
             dict(reference='J1', side='front', edge='bottom', position_mm=40, inset_mm=8, rotation_deg=0,
                  insertion='from_top', tolerance_mm=0, courtyard_overhangs=[dict(edge='bottom', max_mm=20)]),
             dict(reference='U1', side='front', edge='top', position_mm=60, inset_mm=6, rotation_deg=0,
                  insertion='from_top', tolerance_mm=0, courtyard_overhangs=[dict(edge='top', max_mm=18)])]
-        opened = lambda stage, *ids: [dict(id=i, stage=stage, statement=f'{i} evidence is not yet captured.')
-                                      for i in ids]
-        physical, candidate = 'physical_qualification', 'candidate_assessment'
-        coverage = {
-            'corner-holes': dict(generation=[dict(locator=f'/mounting_holes/{i}') for i in range(4)],
-                                 open=opened(physical, 'hole-authority', 'fabricated-holes')),
-            'height': dict(generation=[], open=opened(candidate, 'candidate-heights') +
-                           opened(physical, 'cowl-fit', 'underside-fit', 'mating-plug-fit', 'harness-fit')),
-            'harness-edge': dict(generation=[dict(locator='/fixed_footprints/0'),
-                                             dict(locator='/fixed_footprints/0', criterion='outline-containment/1')],
-                                 open=opened(candidate, 'connector-identity') + opened(
-                                     physical, 'panel-cutout', 'mating-plug', 'retention', 'thickness-tolerance',
-                                     'harness-clearance')),
-            'antenna': dict(generation=[dict(locator='/fixed_footprints/1'),
-                                        dict(locator='/fixed_footprints/1', criterion='outline-containment/1'),
-                                        dict(locator='/keepouts/0')],
-                            open=opened(physical, 'housing-pocket', 'nearby-metal', 'support', 'rf-performance')),
-            'imu-separation': dict(generation=[], open=opened(candidate, 'placement-assessment') +
-                                   opened(physical, 'vibration-coupling'))}
-        self.envelope['obligations'] = [dict(item, coverage=coverage[item['id']]) for item in
-                                        read_json(ROOT / 'fixtures/telemetry-pod/envelope.json')['obligations']]
+        generation = {
+            'corner-holes': [dict(locator=f'/mounting_holes/{i}') for i in range(4)],
+            'height': [],
+            'harness-edge': [dict(locator='/fixed_footprints/0'),
+                             dict(locator='/fixed_footprints/0', criterion=CONTAINMENT),
+                             dict(locator='/fixed_footprints/0', criterion=PART_IDENTITY)],
+            'antenna': [dict(locator='/fixed_footprints/1'),
+                        dict(locator='/fixed_footprints/1', criterion=CONTAINMENT), dict(locator='/keepouts/0')],
+            'imu-separation': []}
+        coverage = {oid: dict(generation=generation[oid], open=[
+            dict(id=i, stage=stage, statement=f'{i} evidence is not yet captured.')
+            for i, stage in item['open'].items()]) for oid, item in contract.items()}
+        self.envelope['obligations'] = [dict(id=oid, **{k: copy.deepcopy(item[k]) for k in
+                                        ('requirement_ids', 'statement', 'owner_items')}, coverage=coverage[oid])
+                                        for oid, item in contract.items()]
+        if not (self.source / 'parts.json').is_file():
+            self.parts_capture()
         return coverage
 
     def test_staged_obligations_admit_generation_and_keep_qualification_open(self):
@@ -415,7 +457,7 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         self.assertEqual([w['requirement'] for w in staged['corner-holes']['witnesses']],
                          [f'R-envelope-telemetry-pod-hole-H{i}' for i in range(1, 5)])
         self.assertEqual([w['checks'] for w in staged['harness-edge']['witnesses']],
-                         [['fixed-j1'], ['containment']])
+                         [['fixed-j1'], ['containment'], ['parts']])
         self.assertEqual(staged['antenna']['witnesses'][2]['checks'], ['keepout-antenna'])
         # Admission is not qualification: every staged obligation and open item is named.
         with self.assertRaises(ValueError) as raised:
@@ -424,7 +466,136 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             self.assertIn(f'obligation-{oid} (' + ', '.join(e['id'] for e in item['open']) + ')',
                           str(raised.exception))
         files = source_inventory(self.source)[0]
-        self.assertEqual(require_obligations(self.scope(), requirements, record, files), report)
+        self.assertEqual(require_obligations(self.scope(), requirements, record, files, self.source), report)
+
+    def refused(self, message, scope=None):
+        with self.assertRaisesRegex(ValueError, message):
+            self.capture(scope)
+        self.assertFalse((self.root / f'run-{self.count}' / 'baseline.json').exists())
+
+    def test_source_contract_floor_refuses_caller_coverage(self):
+        """Review H1: the reviewed source contract, not the coverage list, fixes the generation minimum."""
+        def by_id(oid):
+            return next(o for o in self.envelope['obligations'] if o['id'] == oid)
+        def drop_open(oid, item):
+            by_id(oid)['coverage']['open'] = [e for e in by_id(oid)['coverage']['open'] if e['id'] != item]
+        omits = 'coverage omits source contract telemetry-pod-expanded/1 generation witnesses: '
+        cases = {
+            'H4 witness only': (lambda: by_id('corner-holes')['coverage']['generation'].pop(),
+                                'obligation corner-holes ' + omits + '/mounting_holes/3\\Z'),
+            'empty corner witnesses': (lambda: by_id('corner-holes')['coverage'].update(generation=[]),
+                                       'obligation corner-holes ' + omits + '/mounting_holes/0'),
+            'every witness list empty': (lambda: [o['coverage'].update(generation=[])
+                                                  for o in self.envelope['obligations']],
+                                         'obligation corner-holes ' + omits),
+            'antenna keepout witness only': (lambda: by_id('antenna')['coverage']['generation'].pop(),
+                                             'obligation antenna ' + omits + '/keepouts/0'),
+            'identity witness only': (lambda: by_id('harness-edge')['coverage']['generation'].pop(),
+                                      'obligation harness-edge ' + omits + '/fixed_footprints/0 \\(part-identity/1\\)'),
+            'containment witness only': (lambda: by_id('antenna')['coverage']['generation'].pop(1),
+                                         'obligation antenna ' + omits + '/fixed_footprints/1 \\(outline-containment/1\\)'),
+            'cowl-fit open item': (lambda: drop_open('height', 'cowl-fit'), "dropped \\['cowl-fit'\\]"),
+            'connector-fit open item': (lambda: drop_open('height', 'connector-fit'), "dropped \\['connector-fit'\\]"),
+            'feed-point open item': (lambda: drop_open('antenna', 'feed-point-side'), "dropped \\['feed-point-side'\\]"),
+            'imu assessment item': (lambda: drop_open('imu-separation', 'placement-assessment'),
+                                    "dropped \\['placement-assessment'\\]"),
+            'physical item restaged': (lambda: by_id('height')['coverage']['open'][1].update(stage='candidate_assessment'),
+                                       "restaged \\['cowl-fit'\\]"),
+            'H4 declaration and witness': (lambda: (self.envelope['mounting_holes'].pop(),
+                                                    by_id('corner-holes')['coverage']['generation'].pop()),
+                                           'requires 4 distinct mounting holes.*declares 3 holes at 3 distinct corners'),
+            'every hole and witness': (lambda: (self.envelope['mounting_holes'].clear(),
+                                                by_id('corner-holes')['coverage'].update(generation=[])),
+                                       'declares 0 holes at 0 distinct corners'),
+            'two holes at one corner': (lambda: self.envelope['mounting_holes'][3].update(at=[8, 8]),
+                                        'declares 4 holes at 3 distinct corners'),
+            'keepout declaration and witness': (lambda: (self.envelope['keepouts'].clear(),
+                                                         by_id('antenna')['coverage']['generation'].pop()),
+                                                'requires the captured antenna keepout of U1'),
+            'J1 declaration': (lambda: (self.envelope['fixed_footprints'].pop(0),
+                                        [w.update(locator='/fixed_footprints/0')
+                                         for w in by_id('antenna')['coverage']['generation'][:2]],
+                                        by_id('harness-edge')['coverage'].update(generation=[])),
+                               'obligation harness-edge source contract requires fixed footprint J1'),
+            'obligation dropped': (lambda: self.envelope['obligations'].pop(1),
+                                   'obligation height is missing; it cannot be dropped'),
+            'statement altered': (lambda: by_id('height').update(statement='Component height is at most 12 mm.'),
+                                  "obligation height differs from reviewed source contract .* \\['statement'\\]"),
+            'requirement IDs altered': (lambda: by_id('antenna').update(requirement_ids=['POD-AC-7']),
+                                        "differs from reviewed source contract .* \\['requirement_ids'\\]"),
+            'uncontracted obligation': (lambda: self.envelope['obligations'].append(dict(
+                id='extra', requirement_ids=['POD-X'], owner_items=['AGENTEE-177'], statement='Owned extra.',
+                coverage=dict(generation=[], open=[dict(id='x', stage='physical_qualification', statement='x')]))),
+                                        "staged obligations outside source contract .*\\['extra'\\]")}
+        for mode, (change, message) in cases.items():
+            with self.subTest(mode=mode):
+                self.stage()
+                change()
+                with self.assertRaisesRegex(ValueError, message):
+                    self.record()
+                self.refused(message)
+        # Only contracted obligations stage: the same coverage outside a contract refuses.
+        self.stage()
+        for item in self.envelope['obligations']:
+            item['id'] = 'owned-' + item['id']
+        self.refused('staged obligations match no reviewed source contract')
+        # A coverage list may add witnesses and open items, and order is free.
+        self.stage()
+        by_id('height')['coverage']['open'].append(dict(id='owned-extra', stage='physical_qualification',
+                                                       statement='Owned extra qualification item.'))
+        self.envelope['obligations'].reverse()
+        run, _ = self.capture()
+        report = read_json(run / 'baseline.json')['envelope']['coverage']
+        height = next(r for r in report if r['id'].endswith('obligation-height'))
+        self.assertEqual((height['status'], height['open'][-1]['id']), ('staged', 'owned-extra'))
+
+    def test_harness_identity_binds_the_contracted_part(self):
+        """Review H2: J1 identity comes from the captured parts closure, never from geometry or deferral."""
+        self.stage()
+        run, _ = self.capture()
+        report = read_json(run / 'baseline.json')['envelope']['coverage']
+        harness = next(r for r in report if r['id'].endswith('obligation-harness-edge'))
+        identity = next(w for w in harness['witnesses'] if w.get('criterion') == 'part-identity/1')
+        self.assertEqual((harness['status'], identity['status'], identity['checks']), ('staged', 'bound', ['parts']))
+        self.assertNotIn('connector-identity', [e['id'] for e in harness['open']])
+        cases = {
+            'missing part': (lambda d, j1: j1.update(instances=[dict(sheet='/', reference='J9')]),
+                             'declares no root-sheet part for J1'),
+            'wrong part': (lambda d, j1: j1.update(mpn='WRONG_PART'),
+                           "declares J1 as \\{'mpn': 'WRONG_PART'\\}, not the contracted"),
+            'wrong manufacturer': (lambda d, j1: j1.update(manufacturer='Owned Other'),
+                                   "declares J1 as \\{'manufacturer': 'Owned Other'\\}"),
+            'wrong footprint': (lambda d, j1: j1.update(footprint='Owned:PinHeader_1x03'),
+                                "declares J1 as \\{'footprint': 'Owned:PinHeader_1x03'\\}"),
+            'optional part': (lambda d, j1: j1.update(required=False), 'J1 is not a required purchased part')}
+        for mode, (change, message) in cases.items():
+            with self.subTest(mode=mode):
+                self.stage()
+                self.parts_capture(change)
+                self.refused('obligation-harness-edge .*J1 part identity unestablished: parts: parts.json ' + message)
+        with self.subTest(mode='missing capture'):
+            # No parts_subset check: a geometry-only scope, as in the review's WRONG_PART probe.
+            self.stage()
+            self.parts_capture()
+            scope = self.scope()
+            scope['checks'] = [c for c in scope['checks'] if c['id'] not in ('parts', 'parts-netlist')]
+            scope['baseline']['requirements'] = [r for r in scope['baseline']['requirements'] if r['id'] != 'R-parts']
+            self.refused('obligation-harness-edge .*J1 needs a parts_subset check over the captured parts manifest', scope)
+        with self.subTest(mode='uncaptured footprint member'):
+            self.stage()
+            self.parts_capture()
+            scope = self.scope()
+            member = 'PodConnector.pretty/AMPSEAL_35_1-776163-1.kicad_mod'
+            scope['inputs'] = [i for i in scope['inputs'] if i['at'] != member]
+            self.refused('J1 part identity unestablished: parts: footprint PodConnector:AMPSEAL_35_1-776163-1 '
+                         'is not a captured member of cad.json', scope)
+        with self.subTest(mode='footprint member hash'):
+            # The contracted footprint name over substituted bytes is a different capture.
+            self.stage()
+            self.parts_capture()
+            path = self.source / 'PodConnector.pretty/AMPSEAL_35_1-776163-1.kicad_mod'
+            path.write_bytes(path.read_bytes().replace(b'Owned AMPSEAL', b'Owned substitute'))
+            self.refused('hash mismatch|not a captured member')
 
     def test_removing_a_witness_refuses_generation(self):
         for mode in ('hole-absent', 'hole-unmapped', 'containment-absent', 'keepout-soft', 'coverage-absent'):
