@@ -41,12 +41,38 @@ only OBSERVED, schema-valid outcomes:
   returned a candidate with a retained, unqualified experiment record and an
   observed adoption of it succeeded into the disposable copy.
 
+Revision 3 (coordinator boundary ruling a01d6f91, agent-521; a coordinator
+decision, not owner text): the protected boundary is the production routing
+consumer, campaign.run_implementation_steps (run_step, verify_campaign_receipt,
+adopt; scripts/k91_consumer.py), not the generic stage adoption. A required
+control (REQUIRED_V2) is REFUSED only when, in schema-valid records:
+
+- the production consumer call was made and raised (observed refusal);
+- the consumer's design digests before and after are present and equal;
+- each consumer layer (`consumer_run_step`, `consumer_verify`,
+  `consumer_adopt`) is observed or recorded as not called, and no consumer
+  adoption succeeded;
+- the bare `direct_adopt` was observed, or recorded as not made, on a design
+  copy other than the consumer's. It is kept for diagnosis, whatever it
+  returned: a bare adoption that succeeds stays visible and is never counted
+  as a refusal, and a skipped one is never a refusal either;
+- for the runtime control, the production binding (preflight) was also
+  observed to refuse.
+
+A consumer that returned, or changed the design, is not_refused; anything
+missing or malformed is incomplete. The positive needs the consumer to return
+after an observed verify of a delivered candidate with a retained,
+unqualified experiment record and an observed successful consumer adoption
+that delivered exactly that board. control_state (the round-2 low-level rule,
+for records without a consumer layer, such as the historical ones) is kept
+and reported as `low_level`.
+
 Nothing here runs a router, writes a receipt or reads anything but the dicts it
 is given.
 """
 
 CLASSIFIER_V1 = 'agent-ee.k91-native-positive/verdict-1'
-CLASSIFIER_V2 = 'agent-ee.k91-native-positive/verdict-2'
+CLASSIFIER_V2 = 'agent-ee.k91-native-positive/verdict-2r3'
 REFUSED, NOT_REFUSED, INCOMPLETE = 'refused', 'not_refused', 'incomplete'
 CONTROLS_V2 = ('a_mismatched_runtime', 'b_tampered_candidate', 'b_tampered_sidecar', 'c_stale_input')
 
@@ -129,28 +155,82 @@ def runtime_state(record):
     return control_state(record)
 
 
+SHA256 = frozenset('0123456789abcdef')
+
+
+def _digest(value):
+    return isinstance(value, str) and len(value) == 64 and set(value) <= SHA256
+
+
+def _layer(value):
+    return observed(value) is not None or skipped(value)
+
+
+def consumer_state(record):
+    """refused / not_refused / incomplete at the production consumer (revision 3, see the module doc)."""
+    if not isinstance(record, dict) or 'skipped' in record:
+        return INCOMPLETE
+    consumer = observed(record.get('consumer'))
+    layers = [record.get('consumer_run_step'), record.get('consumer_verify'), record.get('consumer_adopt'),
+              record.get('direct_adopt')]
+    if (consumer is None or not all(_layer(value) for value in layers)
+            or not _digest(record.get('design_before')) or not _digest(record.get('design_after'))
+            or not isinstance(record.get('consumer_design'), str) or not isinstance(record.get('direct_design'), str)
+            or record['consumer_design'] == record['direct_design']):
+        return INCOMPLETE
+    adopt = observed(record['consumer_adopt'])
+    if consumer['accepted'] or record['design_before'] != record['design_after'] or (adopt and adopt['accepted']):
+        return NOT_REFUSED
+    return REFUSED
+
+
+def runtime_consumer_state(record):
+    """The runtime control at the consumer, plus the observed refusal of the production binding."""
+    if not isinstance(record, dict):
+        return INCOMPLETE
+    host = observed(record.get('host_binding'))
+    if host is None:
+        return INCOMPLETE
+    if host['accepted']:
+        return NOT_REFUSED
+    return consumer_state(record)
+
+
 def positive_accepted(positive):
-    """The positive: an observed verified candidate, a retained unqualified record, and an observed adoption."""
+    """The positive at the production consumer: returned after an observed verify of a delivered
+    candidate (retained, unqualified record) and an observed adoption that delivered that board."""
     if not isinstance(positive, dict):
         return False
-    verify, adopt = observed(positive.get('verify')), observed(positive.get('adopt'))
-    if verify is None or adopt is None or not verify['accepted'] or not adopt['accepted']:
+    consumer, verify = observed(positive.get('consumer')), observed(positive.get('consumer_verify'))
+    adopt = observed(positive.get('consumer_adopt'))
+    if None in (consumer, verify, adopt) or not (consumer['accepted'] and verify['accepted'] and adopt['accepted']):
         return False
     value = verify['value'] if isinstance(verify['value'], dict) else {}
     experiment = value.get('experiment') if isinstance(value.get('experiment'), dict) else {}
-    return bool(value.get('candidate_sha256') and value.get('proposal') not in (None, 'none')
+    return bool(_digest(value.get('candidate_sha256')) and value.get('proposal') not in (None, 'none')
                 and experiment.get('status') == 'retained' and experiment.get('qualified') is False
-                and positive.get('design_changed'))
+                and _digest(positive.get('design_before')) and _digest(positive.get('design_after'))
+                and positive['design_before'] != positive['design_after']
+                and positive.get('delivered_board_sha256') == value['candidate_sha256'])
 
 
 def v2_verdict(manifest):
-    """The corrected verdict for a v2 manifest: REQUIRED_V2 decide controls_refused; the sidecar is reported."""
+    """Revision 3: REQUIRED_V2 at the production consumer decide controls_refused; the sidecar and the
+    round-2 low-level states are reported beside them."""
     controls = manifest.get('controls') if isinstance(manifest.get('controls'), dict) else {}
-    states = {name: (runtime_state if name == 'a_mismatched_runtime' else control_state)(controls.get(name))
+    states = {name: (runtime_consumer_state if name == 'a_mismatched_runtime' else consumer_state)(controls.get(name))
               for name in CONTROLS_V2}
     return {'classifier': CLASSIFIER_V2, 'positive_accepted': positive_accepted(manifest.get('positive')),
             'controls': states, 'required': list(REQUIRED_V2),
-            'controls_refused': all(states[name] == REFUSED for name in REQUIRED_V2)}
+            'controls_refused': all(states[name] == REFUSED for name in REQUIRED_V2),
+            'low_level': {name: (runtime_state if name == 'a_mismatched_runtime' else control_state)(_low(controls, name))
+                          for name in CONTROLS_V2}}
+
+
+def _low(controls, name):
+    """A control's low-level (round-2 shape) record: its `low_level` part, or the record itself (historical)."""
+    record = controls.get(name)
+    return record.get('low_level', record) if isinstance(record, dict) else record
 
 
 V1_NOT_ATTEMPTED = {'accepted': False, 'error': 'not attempted: verify refused'}

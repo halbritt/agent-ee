@@ -1037,29 +1037,53 @@ Experiment evidence is never dropped and is never qualified.
   harness's recorded `controls_refused: false` is a harness defect: it counted
   the mismatched-runtime control's verified `not_run` as accepted. The record is
   kept as written. `scripts/k91_classify.py` re-derives it (`CLASSIFIER_V1`) and
-  classifies with `CLASSIFIER_V2`. V2 judges only observed, schema-valid
-  outcomes: each call is recorded as made (`attempted`, an explicit boolean
-  `accepted`, a value or an error) or as not made, with a reason. A missing
-  key or outcome is incomplete, never read as null or as refused.
-  - **Refused.** `verify` refuses (it raised, or returned the coherent
-    `not_run` record with explicit null `router_exit` and `candidate_sha256`),
-    at least one adoption call was made and observed to refuse, and none
-    succeeded.
-  - **Not refusals.** A skipped adoption, a `verify` refusal on its own, and a
-    bare adoption that succeeded are incomplete.
-  - **Tamper controls.** The candidate-board and sidecar tamper controls are
-    separate, and a missing candidate-board control is incomplete.
-  - **`controls_refused`.** Decided by the mismatched runtime, the
-    candidate-board tamper and the stale input.
+  classifies with `CLASSIFIER_V2`.
 
-  The successor `scripts/k91_native_positive_v2.py` uses V2. It takes the exact
-  runtime and input identities and the router and total limits. It makes the
-  consumer's adoption only after a `verify` that did not refuse, and always
-  makes the bare `stage_receipts.adopt`, recorded as `direct_adopt`. That bare
-  adoption checks only the declared outputs: it accepts a receipt whose
-  retained sidecar was tampered, which only `verify` refuses. So the sidecar
-  control shows no observed adoption refusal and stays incomplete
-  (`tests/test_k91_harness_classifier.py`).
+  **Boundary.** Under coordinator boundary ruling a01d6f91 (agent-521; a
+  coordinator decision, not owner text), the protected boundary is the
+  production routing consumer, `campaign.run_implementation_steps`: `run_step`,
+  then `verify_campaign_receipt`, then `adopt`, in its own order. The generic
+  `stage_receipts.adopt` is not that boundary.
+
+  **Harness plumbing.** `scripts/k91_consumer.py` calls that function and
+  observes `run_step`, `verify_campaign_receipt` and `adopt` with pass-through
+  observers. Each call is recorded as made (an explicit boolean `accepted`,
+  with a value or an error) or as not called. The design digest is recorded
+  before and after. The proposed pin takes the production adapter shape: a
+  copy of the adapter source with that pin's constants, mounted at the
+  production path. For the board, sidecar and stale controls, replay plumbing
+  stands in for `run_step` only. It returns the retained receipt, as written,
+  from a disposable copy placed at its own path, so the consumer's own checks
+  find any change.
+
+  **Controls.** A required control (mismatched runtime, candidate-board
+  tamper, stale input) is refused only when all of these hold:
+  - the consumer call was observed to raise;
+  - the design digest is unchanged;
+  - every layer record is schema-valid;
+  - no consumer adoption succeeded;
+  - for the runtime control, the production binding preflight was also
+    observed to refuse.
+
+  Anything missing or malformed is incomplete. A skipped adoption is never a
+  refusal. The bare `stage_receipts.adopt` runs on another design copy as a
+  diagnostic (`direct_adopt`), and its result stays visible: it accepts a
+  tampered sidecar, which only `verify_campaign_receipt` refuses. The
+  sidecar control is reported beside the required ones. The positive needs
+  the consumer to verify a delivered candidate with a retained, unqualified
+  record and to adopt exactly that board.
+
+  On the synthetic router (`tests/test_k91_harness_classifier.py`), the
+  consumer refuses each control at its own layer:
+  - the runtime at the live binding, before `run_step`;
+  - the board and the sidecar at `verify_campaign_receipt`;
+  - the stale input after `run_step`.
+
+  It accepts and adopts the positive and an untampered replay. The round-2
+  low-level observations (direct `run_step`, `verify`, bare adoption) are
+  kept apart as `low_level`. The successor `scripts/k91_native_positive_v2.py`
+  takes the exact runtime and input identities and the router and total
+  limits.
 - **Pin.** The pinned `b5774496` (AGENTEE-450) `cli.py` has no
   `--experiment-policy` (the K91 producer commits `a0ed434` and `bd1e633f` are
   not its ancestors), and its `main` turns every usage error into a refusal
