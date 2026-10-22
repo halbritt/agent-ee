@@ -209,38 +209,73 @@ or samples.
 
 The provisional gate is a median trace overhead of at most 5% with tracing on. It
 is an experiment gate, not a physical constraint. A new host or session is a new
-measurement.
+measurement. Under the coordinator ruling on AGENTEE-430 (H6):
+
+- The boundary includes export: recording, envelope assembly and export to a
+  fresh file.
+- The gate applies only to workloads whose tracing-off median is at least 100 ms
+  (cluster-three-cap and the pod boards).
+- It must be measured on an unloaded host, with a 1-minute load average below 2
+  when the measurement starts and when it ends.
+- Sub-100 ms unit fixtures are reported, not gated. For them `overhead()` reports
+  `gate.applies: false` and `gate.met: null`, never met.
 
 `scripts/placement_trace_overhead.py` runs `placement_trace.overhead`. It times
 matched, alternating tracing-off and tracing-on `pack` runs (one warmup, five
-runs) and checks that the plans are identical. A traced run is timed until its
-trace is on disk: recording, envelope assembly and export to a fresh file are
-all inside the measured boundary (`median_overhead`, `gate.met`). The recording
-alone is reported separately as `median_recording_overhead`. The fixtures are
-three unit fixtures and the first two owned pod-scale qualification boards. The
-script generates the pod boards natively, as in `scripts/qualify_pod_placement.py`.
+runs) and checks that the plans are identical. It reports, for every fixture:
 
-Measured on 2026-10-22 on agent-ee-gate-c4 in the pinned CI image (`ae-ci-exec`),
-in two sessions (A / B). The host is shared with release gates, and its load
-average was 15 to 25 during these runs:
+- the tracing-off median;
+- the overhead to export (`median_overhead`);
+- the recording alone (`median_recording_overhead`);
+- export ms.
 
-| Fixture | Status | Steps | Exact | Median off ms | Overhead (to export) | Recording only | Export ms | Coverage | Trace bytes |
-|---|---|---|---|---|---|---|---|---|---|
-| search-promotion | planned | 3 | 3 | 2.4 / 2.8 | 24.66% / 24.36% | 8.87% / 8.21% | 0.38 / 0.45 | complete | 5812 |
-| search-anchor | planned | 6 | 6 | 2.5 / 2.0 | 25.56% / 23.56% | 9.50% / 8.41% | 0.39 / 0.29 | complete | 5947 |
-| cluster-three-cap | packing_budget_exhausted | 500 | 501 | 111.1 / 106.7 | 2.03% / 5.01% | 0.77% / 3.89% | 1.31 / 1.26 | complete | 32608 |
-| pod-80x50-90 | planned | 182 | 34595 | 765.4 / 743.7 | 6.21% / 8.98% | 4.10% / 6.97% | 16.54 / 15.73 | partial | 594321 |
-| pod-85x55-112 | planned | 128 | 157833 | 2824.1 / 2669.7 | 4.79% / 7.57% | 4.09% / 6.83% | 19.60 / 19.58 | partial | 681040 |
+It also records the load average before and after the run. Its report-level
+`gate.met` is true only when the host was unloaded, at least one fixture is
+gated, and every gated fixture is within 5%. The fixtures are three unit
+fixtures and the first two owned pod-scale qualification boards. The script
+generates the pod boards natively, as in `scripts/qualify_pod_placement.py`.
 
-**The gate is not met across these fixtures.** Every plan was identical with
-tracing on and off. On the 2 ms unit fixtures, recording, assembly and export
-cost a fixed 0.3 to 0.5 ms, which is far above 5% of the run. On the pod boards,
-the recording cost is mostly the per-evaluation timing and sampling of up to
-158,000 exact wire-cost evaluations. Export of the 0.6 MB trace adds about 2%.
-Earlier sessions on the same host measured 2 to 4% recording overhead on the pod
-boards, which shows that host load moves these numbers by several points. Whether
-the gate should apply to millisecond unit fixtures, and under which boundary and
-host conditions, is a coordinator ruling. These results are not relabelled as met.
+Measured on 2026-10-22 on talos (12 threads) in the pinned CI image
+(`ae-ci-exec`). The 1-minute load average was 0.99 before the run and 1.72 after:
+
+| Fixture | Status | Median off ms | Overhead (to export) | Recording only | Export ms | Gated | Coverage | Trace bytes |
+|---|---|---|---|---|---|---|---|---|
+| search-promotion | planned | 2.63 | 23.64% | 8.04% | 0.41 | no (reported) | complete | 5965 |
+| search-anchor | planned | 2.93 | 23.17% | 8.63% | 0.43 | no (reported) | complete | 6100 |
+| cluster-three-cap | packing_budget_exhausted | 129.05 | 4.38% | 3.20% | 1.46 | yes: met | complete | 32764 |
+| pod-80x50-90 | planned | 1285.91 | 8.34% | 6.25% | 26.10 | yes: exceeded | partial | 594479 |
+| pod-85x55-112 | planned | 4780.75 | 6.36% | 5.70% | 31.10 | yes: exceeded | partial | 681200 |
+
+**The gate is not met.** Both pod boards exceed 5% on an unloaded host, and
+`gate.met` is false. Every plan was identical with tracing on and off. On the
+pod boards, almost all of the overhead is recording: the per-evaluation exact
+timing and sampling of up to 158,000 exact wire-cost evaluations. Export adds
+1 to 2 points. Matched reruns from saved captures on the same host vary by
+several points from round to round:
+
+- pod-85x55-112: 3.0 to 4.3% before the R3 correction (f3732773), 5.9 to 7.0%
+  after it.
+- pod-80x50-90: 6.4 to 7.6% at both revisions.
+
+The R3 correction adds one clock read for each exact evaluation, so that the
+sample time is reported in `stage_a.trace` instead of in rank time. That costs
+about one to three points on the largest pod. The gate was not met before the
+correction either. `stage_a.exact` is not coarsened to pass the gate.
+
+**Tracing off versus the pre-change parent.** On the same host and image, the
+tracing-off `pack` median was compared with the pre-AGENTEE-430 parent
+`0a07f01e`. The runs alternated between processes for each revision: 6 rounds of
+5 runs, so 30 runs per fixture and revision. The plans were identical between
+the two revisions on every fixture. The differences, all within ±0.9%, are
+noise:
+
+| Fixture | Parent ms | Head ms | Difference |
+|---|---|---|---|
+| search-promotion | 2.58 | 2.57 | −0.18% |
+| search-anchor | 2.87 | 2.87 | −0.18% |
+| cluster-three-cap | 126.30 | 126.47 | +0.13% |
+| pod-80x50-90 | 1259.40 | 1248.47 | −0.87% |
+| pod-85x55-112 | 4648.51 | 4679.31 | +0.66% |
 
 The pod traces are partial because their exact evaluations exceed the
 8192-sample limit. Exact wire cost is the larger share of Stage-A search time on
