@@ -1,0 +1,57 @@
+{
+  "schema": "agent-ee.fixture-expectations/ac4-false-positives",
+  "ticket": "AGENTEE-219",
+  "pinned": {
+    "version": "2.3.1",
+    "commit": "06840467ad0f5d76af45f64449b1f5ecb10f052f",
+    "installation_sha256": "ba9f02f12de12b1567d28208092ed8be360673b311d2b62bb313ecfd9e925562",
+    "status": "known_analyzer_limitation"
+  },
+  "corrected": {
+    "commit": "60ad2290819477357c9101627b83ce2d6096a000",
+    "branch": "fix/pod-ac4-false-positives-c",
+    "installation_sha256": "25d1c210083a784f1e20fe345ed6a6d2d606d52a64af15488dacd9b56cf1e4eb",
+    "status": "proposed_not_adopted"
+  },
+  "superseded": [
+    {"commit": "b8ab8b40973a43d2414c309d1ad04200774d6846", "branch": "fix/pod-ac4-false-positives",
+     "reason": "clears both agent-469 adversarial controls (schematic:PP-001:u11 and the U12 PR-001 errors); never a candidate pin"},
+    {"commit": "33f2b48a648b909245534372e950d2cd38e5accf", "branch": "fix/pod-ac4-false-positives-c",
+     "reason": "219d hardens ambiguous SPI peers and diode polarity; assumption info now requires exact dispositions in agent-ee"}
+  ],
+  "known_analyzer_limitations": [
+    {"finding_id": "schematic:PP-001:u2", "mechanism": "power_out source across inductor ignored (U1.SW -> L1 -> MID_NODE)"},
+    {"finding_id": "schematic:PP-001:u4", "mechanism": "power_out source on the same net ignored (U3.OUT on REF_BUF)"},
+    {"finding_id": "schematic:PP-001:u5", "mechanism": "P-MOSFET with gate pulled to ground not crossed (J1 -> Q1 -> PROT_NODE)"},
+    {"finding_id": "schematic:validation_findings-b76df5435973", "mechanism": "SPI-wired dual-mode device (driven CS, SPI peer U13 on clock and data) classified as I2C by pin names (SCL)"},
+    {"finding_id": "schematic:validation_findings-b76df5435973#1", "mechanism": "SPI-wired dual-mode device (driven CS, SPI peer U13 on clock and data) classified as I2C by pin names (SDA)"}
+  ],
+  "real_violations": [
+    {"finding_id": "schematic:PP-001:u8", "mechanism": "supply pin reached only through capacitors"},
+    {"finding_id": "schematic:PP-001:u10", "mechanism": "P-MOSFET gate driven by a controller: conduction not proven"},
+    {"finding_id": "schematic:validation_findings-d7f3e3f8aa0c", "mechanism": "I2C-mode device (CS tied to +3V3), SCL without pull-up"},
+    {"finding_id": "schematic:validation_findings-d7f3e3f8aa0c#1", "mechanism": "I2C-mode device (CS tied to +3V3), SDA without pull-up"},
+    {"finding_id": "schematic:PP-001:u11", "mechanism": "agent-469 control (1): Q3 gate 100 ohm to the source rail against 1 Mohm to ground; conduction unresolved"},
+    {"finding_id": "schematic:validation_findings-20982167a9ea", "mechanism": "agent-469 control (2): U12 CS has a passive 10k pull-up and an MCU GPIO, no SPI topology; SCL without pull-up"},
+    {"finding_id": "schematic:validation_findings-20982167a9ea#1", "mechanism": "agent-469 control (2): U12 CS has a passive 10k pull-up and an MCU GPIO, no SPI topology; SDA without pull-up"}
+  ],
+  "corrected_unresolved": {
+    "schematic:PP-001:u10": ["Q2 gate is driven by U6 (ic); a controlled switch's conduction is not proven"],
+    "schematic:PP-001:u11": ["Q3 gate 'GATE_DIV' has a competing pull-up (R4): divider R4 to source over R3 to ground implies VGS ~ -0.0001 x V(IN_RAW2); no VGS(th) evidence in the netlist, so conduction is unresolved"]
+  },
+  "corrected_notes": [
+    {"finding_id": "schematic:PP-001:u2", "severity": "info",
+     "summary": "IC power pin U2.1 (IN) is sourced only under stated assumptions (net 'MID_NODE')",
+     "assumptions": ["U1.3 (SW) is declared power_out and U1 is powered in the netlist; its output regulation is trusted, not verified"]},
+    {"finding_id": "schematic:PP-001:u4", "severity": "info",
+     "summary": "IC power pin U4.2 (VREF) is sourced only under stated assumptions (net 'REF_BUF')",
+     "assumptions": ["U3.1 (OUT) is declared power_out and U3 is powered in the netlist; its output regulation is trusted, not verified"]},
+    {"finding_id": "schematic:PP-001:u5", "severity": "info",
+     "summary": "IC power pin U5.1 (VIN) is sourced only under stated assumptions (net 'PROT_NODE')",
+     "assumptions": ["Q1 gate held at ground by R1; conduction assumes the 'PROT_NODE' rail exceeds |VGS(th)| of Q1 (no threshold in the netlist) and that the gate-source clamp D1 breaks down above |VGS(th)|"]},
+    {"finding_id": "schematic:validation_findings-edf777cbe020", "severity": "info",
+     "summary": "U7 SDA/SCL pins classified as SPI (chip-select IMU_CS driven by U6.IO3; SPI clock U13.CLK, SPI data U13.DIN)"},
+    {"finding_id": "schematic:validation_findings-27b0e330fde7", "severity": "info",
+     "summary": "U12 interface mode unresolved (chip-select CS_NODE driven by U6.IO11)"}
+  ]
+}

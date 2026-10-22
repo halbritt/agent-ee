@@ -77,6 +77,7 @@ def evaluate(reports, recorded):
             raise CheckError('unsupported', f'incomplete, filtered or contradictory {name} severity summary')
     seen = set()
     errors, missing = [], []
+    eligible = set()
     for finding in findings:
         native = finding['native']
         fid = native.get('finding_id')
@@ -88,15 +89,16 @@ def evaluate(reports, recorded):
         finding['finding_id'] = fid
         if finding['severity'] == 'error':
             errors.append(fid)
-        elif finding['severity'] == 'warning':
+        if (finding['severity'] == 'warning' or native.get('assumptions')
+                or native.get('source_path') == 'assumed'):
+            eligible.add(fid)
             if fid in recorded:
                 finding['disposition'] = dict(recorded[fid])
             else:
                 missing.append(fid)
     return {'findings': findings, 'error_finding_ids': errors,
             'undispositioned_warning_ids': missing,
-            'unused_disposition_ids': sorted(set(recorded) - {
-                f['finding_id'] for f in findings if f['severity'] == 'warning'})}
+            'unused_disposition_ids': sorted(set(recorded) - eligible)}
 
 
 def check_severity_gate(ctx):
@@ -122,11 +124,11 @@ def check_severity_gate(ctx):
         failed = result['error_finding_ids'] + result['undispositioned_warning_ids']
         ctx.result.update(execution='ok', outcome='defect' if failed else 'pass',
             summary=f"{len(result['error_finding_ids'])} error finding(s); "
-                    f"{len(result['undispositioned_warning_ids'])} warning(s) without dispositions")
+                    f"{len(result['undispositioned_warning_ids'])} warning/assumption finding(s) without dispositions")
         if failed:
             ctx.result['location'] = '; '.join(failed)
         ctx.result['limitations'].append('Severity policy over installed heuristic findings only; '
             'not electrical or EMC certification, complete rule coverage, thermal analysis or SPICE. '
-            'Recorded warning dispositions do not waive errors or central adjudication.')
+            'Recorded dispositions do not waive errors or central adjudication.')
     except (ValueError, KeyError, TypeError, OSError) as exc:
         raise CheckError('malformed', str(exc)) from exc
