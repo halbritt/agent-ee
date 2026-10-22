@@ -318,6 +318,18 @@ class PlacementTraceTest(unittest.TestCase):
         self.assertGreater(len(statuses), 1)
         self.assertEqual(passes, {(False, False), (True, False), (False, True)})
 
+    def test_advisory_regions_are_graded_identically_with_tracing_on_and_off(self):
+        # Advisory grading (AGENTEE-436) runs inside the traced judge span; it must not change.
+        from test_advisory_regions import region
+        from test_placement import capture, part, rectangle
+        board = capture([part('U1', 0, 0), part('C1', 3, 0)], outline=rectangle(0, 0, 6, 2))
+        absolute = region('right-half', side='F', polygons=[rectangle(2, 0, 4, 2)])
+        shadow = region('U1-shadow', shadow_of={'reference': 'U1', 'margin_nm': 500000})
+        plan, recorder = self.assert_identical(board, request(gap_nm=0, advisory_regions=[absolute, shadow]))
+        self.assertEqual(plan['status'], 'planned', plan.get('reason'))
+        self.assertEqual([r['id'] for r in plan['advisory_regions']['regions']], ['right-half', 'U1-shadow'])
+        self.assertEqual(recorder.durations['stage_a.judge'][1], 1)  # The judged complete proposal.
+
     def test_counters_reconcile_with_the_plan(self):
         for case in (promotion_case, anchor_case):
             source, policy = case()
