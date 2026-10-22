@@ -3,7 +3,10 @@
 The [purpose review](purpose-review.md) asks independent reviewers to justify
 constraints, reserves, empty fields and interface poses using captured geometry
 and renders. It adds an advisory packet dimension, not a check kind or acceptance
-limit; estimated savings remain concerns beside correctness findings.
+limit; estimated savings remain concerns beside correctness findings. Purpose
+findings carry an advisory status that cannot hold the run outcome, and visual
+coverage is recorded per board side. `verify` re-derives that status and the
+per-role purpose coverage from the retained reviews and adjudication records.
 
 The [pinned fome-mc wideband fixture](fome-wbo1.md) exercises native ERC,
 netlist export, `hardware_interface` and fresh `block_provenance`. Its coverage
