@@ -4,8 +4,37 @@ import json
 import unittest
 from unittest.mock import patch
 
-from agent_ee.placer_runner import _drc_comparison, _drc_item_states, _native_drc, _proposal_drc
+from agent_ee.placer_runner import (
+    KeepoutWorkLimit, _drc_comparison, _drc_item_states, _native_drc, _proposal_drc,
+    _keepout_item_states)
 import test_placer_packing_scope as fixture
+
+
+def large_board(path, owners=64, pads=16):
+    import pcbnew as k
+    board = k.BOARD()
+    for n in range(owners):
+        fp = k.FOOTPRINT(board)
+        fp.SetReference('U' + str(n + 1))
+        board.Add(fp)
+        for p in range(pads):
+            pad = k.PAD(fp)
+            pad.SetNumber(str(p + 1))
+            pad.SetShape(k.F_Cu, k.PAD_SHAPE_RECT)
+            pad.SetSize(k.F_Cu, k.VECTOR2I(1000000, 1000000))
+            pad.SetAttribute(k.PAD_ATTRIB_SMD)
+            pad.SetLayerSet(k.PAD.SMDMask())
+            fp.Add(pad)
+        zone = k.ZONE(fp)
+        zone.SetIsRuleArea(True)
+        zone.SetLayer(k.F_Cu)
+        zone.SetDoNotAllowPads(True)
+        fp.Add(zone)
+        zone.Outline().NewOutline()
+        for x, y in ((-2, -2), (2, -2), (2, 2), (-2, 2)):
+            zone.Outline().Append(x * 1000000, y * 1000000)
+        fp.SetPosition(k.VECTOR2I((n % 8) * 10000000, (n // 8) * 10000000))
+    k.SaveBoard(str(path), board)
 
 
 class NativeKeepoutComparisonTest(unittest.TestCase):
@@ -22,6 +51,110 @@ class NativeKeepoutComparisonTest(unittest.TestCase):
         before = _native_drc(source, work)
         after = _native_drc(output, work)
         return before, after, _drc_item_states(source), _drc_item_states(output)
+
+    def owned_many_pads(self):
+        import pcbnew as k
+        source, _ = self.drc(['F.Cu'], ('pads',), owned=True)
+        board = k.LoadBoard(str(source))
+        fp = next(iter(board.GetFootprints()))
+        for number in range(2, 33):
+            pad = k.PAD(fp)
+            pad.SetNumber(str(number))
+            pad.SetShape(k.F_Cu, k.PAD_SHAPE_RECT)
+            pad.SetSize(k.F_Cu, k.VECTOR2I(1000000, 1000000))
+            pad.SetAttribute(k.PAD_ATTRIB_SMD)
+            pad.SetLayerSet(k.PAD.SMDMask())
+            pad.SetPosition(k.VECTOR2I(10000000, 10000000))
+            fp.Add(pad)
+        k.SaveBoard(str(source), board)
+        return source
+
+    def test_keepout_inventory_loads_once_for_many_owned_contacts(self):
+        import pcbnew as k
+        source = self.owned_many_pads()
+        states = _drc_item_states(source)
+        with patch.object(k, 'LoadBoard', wraps=k.LoadBoard) as load:
+            repeated = _keepout_item_states(source, states)
+        self.assertEqual(repeated, states.keepouts)
+        self.assertEqual(len(repeated), 32)
+        self.assertEqual(load.call_count, 1)
+
+    def test_large_owned_board_work_and_default_exhaustion(self):
+        from agent_ee import placer_runner as runner
+        for owners in (64, 128):
+            with self.subTest(owners=owners):
+                source = self.root / f'large-{owners}.kicad_pcb'
+                large_board(source, owners=owners)
+                # Build the independent collision inventory without doing the
+                # keep-out scan under test twice. No native geometry is mocked.
+                with patch.object(runner, '_keepout_item_states', return_value={}):
+                    states = runner._drc_item_states(source)
+                stats = {}
+                if owners == 64:
+                    witnesses = _keepout_item_states(source, states, stats=stats)
+                    self.assertEqual(len(witnesses), 1024)
+                    self.assertTrue(all(witnesses.values()))
+                    self.assertEqual(stats['area_pairs'], 65536)
+                    self.assertEqual(stats['normalized_owners'], 64)
+                    self.assertEqual(stats['board_loads'], 1)
+                    self.assertLess(stats['steps_used'], stats['max_steps'])
+                else:
+                    with self.assertRaises(KeepoutWorkLimit) as caught:
+                        _keepout_item_states(source, states, stats=stats)
+                    self.assertEqual(caught.exception.max_steps, runner.KEEPOUT_MAX_STEPS)
+                    self.assertLessEqual(stats['steps_used'], stats['max_steps'])
+
+    def test_keepout_exact_step_boundary_and_typed_unknown(self):
+        source = self.owned_many_pads()
+        states = _drc_item_states(source)
+        stats = {}
+        expected = _keepout_item_states(source, states, stats=stats)
+        self.assertEqual(stats['board_loads'], 1)
+        self.assertEqual(stats['normalized_owners'], 1)
+        self.assertEqual(stats['area_pairs'], 32)
+        required = stats['steps_used']
+        self.assertEqual(_keepout_item_states(source, states, max_steps=required), expected)
+        for limit in (0, required - 1):
+            with self.subTest(limit=limit), self.assertRaises(KeepoutWorkLimit) as caught:
+                _keepout_item_states(source, states, max_steps=limit)
+            error = caught.exception
+            self.assertEqual((error.outcome, error.reason), ('unknown', 'keepout_work_limit'))
+            self.assertEqual(error.max_steps, limit)
+            self.assertLessEqual(error.steps_used, limit)
+        for invalid in (-1, True, 1.5, '100'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                _keepout_item_states(source, states, max_steps=invalid)
+
+    def test_no_contact_environment_is_serialized_once(self):
+        import pcbnew as k
+        from agent_ee import placer_runner as runner
+        source = self.owned_many_pads()
+        board = k.LoadBoard(str(source))
+        area = next(iter(next(iter(board.GetFootprints())).Zones()))
+        area.Move(k.VECTOR2I(20000000, 0))
+        k.SaveBoard(str(source), board)
+        states = _drc_item_states(source)
+        with patch.object(runner, 'rule_area', wraps=runner.rule_area) as serialize:
+            witnesses = _keepout_item_states(source, states)
+        self.assertEqual(serialize.call_count, 1)
+        self.assertEqual(witnesses, states.keepouts)
+        self.assertTrue(all(witnesses.values()))
+
+    def test_work_limit_refuses_publication_and_retains_unknown(self):
+        maker = fixture.NativePadKeepoutPublicationTest()
+        maker.setUp()
+        self.addCleanup(maker.doCleanups)
+        source = maker.source(['F.Cu'])
+        with patch('agent_ee.placer_runner.KEEPOUT_MAX_STEPS', 0):
+            with self.assertRaisesRegex(ValueError, 'keepout work limit exhausted'):
+                maker.place(source, 'exhausted')
+        self.assertFalse((maker.scratch / 'exhausted').exists())
+        retained, = maker.scratch.glob('exhausted-failure-*')
+        failure = json.loads((retained / 'failure.json').read_text())
+        self.assertEqual((failure['outcome'], failure['status'], failure['reason']),
+                         ('unknown', 'not_placed', 'keepout_work_limit'))
+        self.assertEqual((failure['steps_used'], failure['max_steps']), (0, 0))
+        self.assertTrue((retained / 'native-drc.json').is_file())
 
     def test_owner_baseline_across_poses(self):
         import pcbnew as k

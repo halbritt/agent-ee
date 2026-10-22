@@ -2148,6 +2148,15 @@ Footprint-only findings retain their prior treatment. The native regression is
 `tests.test_placer_packing_scope` retains its refused candidate as diagnostics.
 See [pad keep-outs](placer.md#peer-courtyards-and-pad-keep-outs-agentee-418).
 
+[Native keep-out witness cost](placer.md#native-keep-out-witness-cost-agentee-427)
+(AGENTEE-427) uses one native board load, UUID indexes and cached absolute/local
+area geometry. A deterministic one-million-step computational guard refuses
+publication as typed `keepout_work_limit` unknown coverage; it returns no partial
+witnesses and adds no wall-clock default or physical design threshold. Native
+comparison bytes and verdicts remain unchanged within budget. The exact budget
+boundary, 1,024-pad/64-area case, default exhaustion and retained failure fields
+are exercised by `tests.test_placer_pad_keepout`.
+
 Explicitly ignoring `holes_co_located` refuses grading as unavailable structural
 coverage, even when the project has only default numeric hole limits.
 

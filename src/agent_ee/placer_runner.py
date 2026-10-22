@@ -185,52 +185,151 @@ class _DrcItemStates(dict):
     """Existing collision states plus independent native keep-out witnesses."""
 
 
-def _keepout_item_states(path, states):
-    """Bind each copper item to the actual areas it intersects, including owner-local areas.
+# Computational coverage guard, not a physical design limit (AGENTEE-427).
+KEEPOUT_MAX_STEPS = 1_000_000
 
-    Native shapes decide contact; area names and DRC wording never prove geometry.
-    Only an item's own area can use a rigid, footprint-local witness. Every peer
-    or board contact includes the absolute copper pose and area geometry.
+
+class KeepoutWorkLimit(ValueError):
+    """Native keep-out coverage is unknown when deterministic work is exhausted."""
+
+    outcome = 'unknown'
+    reason = 'keepout_work_limit'
+
+    def __init__(self, steps_used, max_steps):
+        self.steps_used = steps_used
+        self.max_steps = max_steps
+        super().__init__(f'native keepout work limit exhausted: {steps_used}/{max_steps} steps; '
+                         'items_not_allowed geometry unavailable')
+
+
+def _keepout_item_states(path, states, *, max_steps=None, stats=None):
+    """Bind copper to contacted areas using one native load and cached native indexes.
+
+    Contact tests use absolute poses first. Only then normalize each contacted
+    owner once, on the same disposable board, and cache its local area records.
+    The budget counts inventory, pairs, layer tests, contour vertices and witness
+    assembly; exhaustion raises typed unknown coverage, never partial witnesses.
     """
     import pcbnew as k
+    limit = KEEPOUT_MAX_STEPS if max_steps is None else max_steps
+    if type(limit) is not int or limit < 0:
+        raise ValueError('keepout max_steps must be a nonnegative integer')
+    work = {'steps_used': 0, 'max_steps': limit, 'board_loads': 0,
+            'area_pairs': 0, 'layer_tests': 0, 'normalized_owners': 0}
+    if stats is not None:
+        stats.update(work)
+
+    def charge(count=1):
+        if work['steps_used'] + count > limit:
+            raise KeepoutWorkLimit(work['steps_used'], limit)
+        work['steps_used'] += count
+        if stats is not None:
+            stats.update(work)
+
+    charge()
     board = k.LoadBoard(str(path))
-    areas = [(None, z) for z in board.Zones() if z.GetIsRuleArea()]
-    items = [(None, t) for t in board.GetTracks()]
+    work['board_loads'] = 1
+    areas, items, owners, local_areas = {}, [], {}, {}
+
+    def add_area(owner, area):
+        charge()
+        # Keep every native area, including repeated UUIDs. Local lookup below
+        # retains the original first-match semantics within the first owner.
+        areas[len(areas)] = (owner, area, set(area.GetLayerSet().Seq()))
+
+    for zone in board.Zones():
+        charge()
+        if zone.GetIsRuleArea():
+            add_area(None, zone)
+    for track in board.GetTracks():
+        charge()
+        items.append((None, track))
     for fp in board.GetFootprints():
-        areas.extend((fp.m_Uuid.AsString(), z) for z in fp.Zones() if z.GetIsRuleArea())
-        items.extend((fp.m_Uuid.AsString(), p) for p in fp.Pads())
-    result = {}
+        charge()
+        owner = fp.m_Uuid.AsString()
+        first_owner = owner not in owners
+        owners.setdefault(owner, fp)
+        for zone in fp.Zones():
+            charge()
+            if first_owner:
+                local_areas.setdefault((owner, zone.m_Uuid.AsString()), zone)
+            if zone.GetIsRuleArea():
+                add_area(owner, zone)
+        for pad in fp.Pads():
+            charge()
+            items.append((owner, pad))
+
+    def record(area, owner):
+        # rule_area traverses the saved polygon. Charge its native vertex count
+        # before serialization, including unqualified holes/contours.
+        charge(1 + area.Outline().TotalVertices())
+        return rule_area(area, owner or 'board')
+
+    contacts_by_item, local_ids = {}, set()
     for owner, item in items:
+        charge()
         uid = item.m_Uuid.AsString()
+        layers = set(item.GetLayerSet().Seq())
+        shapes = {}
         contacts = []
-        for area_owner, area in areas:
-            # Custom disallow rules may reference areas whose built-in pad flag is false.
-            layers = set(item.GetLayerSet().Seq()) & set(area.GetLayerSet().Seq())
-            if not any(area.Outline().Collide(item.GetEffectiveShape(layer), 0) for layer in layers):
-                continue
-            local = owner is not None and owner == area_owner
-            if local:
-                # Use a separate native copy: normalization must not move the other contacts.
-                normalized = k.LoadBoard(str(path))
-                fp = next(f for f in normalized.GetFootprints() if f.m_Uuid.AsString() == owner)
-                fp.SetOrientationDegrees(0)
-                fp.SetPosition(k.VECTOR2I(0, 0))
-                area = next(z for z in fp.Zones() if z.m_Uuid.AsString() == area.m_Uuid.AsString())
-            record = rule_area(area, area_owner or 'board')
-            if record['outline']['status'] != 'proven':
-                # A contact without complete geometry cannot inherit a baseline exemption.
-                contacts = None
+        for area_id, (area_owner, area, area_layers) in areas.items():
+            charge()
+            work['area_pairs'] += 1
+            hit = False
+            for layer in sorted(layers & area_layers):
+                charge(1 + area.Outline().TotalVertices())
+                work['layer_tests'] += 1
+                if layer not in shapes:
+                    shapes[layer] = item.GetEffectiveShape(layer)
+                if area.Outline().Collide(shapes[layer], 0):
+                    hit = True
+                    break
+            if hit:
+                local = owner is not None and owner == area_owner
+                contacts.append((local, area_id))
+                if local:
+                    local_ids.add(area_id)
+        contacts_by_item[uid] = contacts
+
+    # Serialize absolute areas before any owner moves. Cache the complete
+    # environment too: custom disallow rules need it for no-contact items.
+    absolute_ids = {area_id for contacts in contacts_by_item.values()
+                    for local, area_id in contacts if not local}
+    needs_environment = any(not contacts for contacts in contacts_by_item.values())
+    if needs_environment:
+        absolute_ids.update(areas)
+    absolute = {uid: record(areas[uid][1], areas[uid][0]) for uid in sorted(absolute_ids)}
+    environment = sorted(absolute.values(), key=lambda a: a['uuid']) if needs_environment else []
+    environment_proven = all(a['outline']['status'] == 'proven' for a in environment)
+    local_records = {}
+    normalized = set()
+    for uid in sorted(local_ids):
+        owner, area, _ = areas[uid]
+        if owner not in normalized:
+            charge()
+            owners[owner].SetOrientationDegrees(0)
+            owners[owner].SetPosition(k.VECTOR2I(0, 0))
+            normalized.add(owner)
+            work['normalized_owners'] += 1
+        local_records[uid] = record(local_areas[owner, area.m_Uuid.AsString()], owner)
+
+    result = {}
+    for uid, contacts in contacts_by_item.items():
+        charge()
+        witnesses = []
+        for local, area_id in contacts:
+            charge()
+            area_record = (local_records if local else absolute)[area_id]
+            if area_record['outline']['status'] != 'proven':
+                witnesses = None
                 break
-            contacts.append((states[uid][:2] if local else states[uid], record))
-        if contacts == []:
-            # A native custom disallow may have no area at all. Its physical witness
-            # is the absolute item plus the complete saved area environment.
-            environment = [rule_area(z, own or 'board') for own, z in areas]
-            if any(a['outline']['status'] != 'proven' for a in environment):
-                contacts = None
-            else:
-                contacts = [(states[uid], sorted(environment, key=lambda a: a['uuid']))]
-        result[uid] = None if contacts is None else tuple(sorted(map(_canonical, contacts)))
+            witnesses.append((states[uid][:2] if local else states[uid], area_record))
+        if witnesses == []:
+            charge(len(environment))
+            witnesses = [(states[uid], environment)] if environment_proven else None
+        result[uid] = None if witnesses is None else tuple(sorted(map(_canonical, witnesses)))
+    if stats is not None:
+        stats.update(work)
     return result
 
 
@@ -655,8 +754,11 @@ def _retain_failure(root, name, scratch, error):
             shutil.copyfile(path, retained / target)
     if (scratch / 'baseline').is_dir():
         shutil.copytree(scratch / 'baseline', retained / 'baseline')
-    write_json(retained / 'failure.json', {'schema': 'agent-ee.placement-failure/1',
-               'execution': 'failed', 'outcome': 'unknown', 'status': 'not_placed', 'error': str(error)})
+    failure = {'schema': 'agent-ee.placement-failure/1', 'execution': 'failed',
+               'outcome': 'unknown', 'status': 'not_placed', 'error': str(error)}
+    if isinstance(error, KeepoutWorkLimit):
+        failure.update(reason=error.reason, steps_used=error.steps_used, max_steps=error.max_steps)
+    write_json(retained / 'failure.json', failure)
     return retained
 
 
