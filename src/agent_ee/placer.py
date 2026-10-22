@@ -410,8 +410,10 @@ def _keepouts(capture, labels=None, pads=None):
     pads binds every pad whose copper layers meet its layers, inner layers
     included; each part records those it owns as ``packing_pad_keepouts`` and
     the board's are appended to ``pads``, which every caller must check
-    (_copper_escapes, fixed_input_copper). A record without the native ``pads``
-    flag is a hand-built one and forbids no pads.
+    (_copper_escapes, fixed_input_copper). Native extraction always records
+    ``forbid.pads``; a record without it is not evidence that pads are
+    permitted, so a missing or non-boolean flag stops packing as unknown
+    (ruling 418b).
     """
     labels = {} if labels is None else labels
     pads = [] if pads is None else pads
@@ -433,9 +435,11 @@ def _keepouts(capture, labels=None, pads=None):
         if (not isinstance(area, dict) or not isinstance(area.get('forbid'), dict) or
                 type(area['forbid'].get('footprints')) is not bool):
             raise ValueError('malformed rule-area footprint flag')
-        if type(area['forbid'].get('pads', False)) is not bool:
+        if 'pads' not in area['forbid']:
+            raise ValueError('missing rule-area pad flag')
+        if type(area['forbid']['pads']) is not bool:
             raise ValueError('malformed rule-area pad flag')
-        if not area['forbid']['footprints'] and not area['forbid'].get('pads', False):
+        if not area['forbid']['footprints'] and not area['forbid']['pads']:
             continue
         owner = area.get('owner')
         if not isinstance(owner, str) or (owner != 'board' and owner not in owners):
@@ -447,7 +451,7 @@ def _keepouts(capture, labels=None, pads=None):
                 len(set(layers)) != len(layers)):
             raise ValueError('malformed rule-area layers')
         polygons = qualified_polygons(area.get('outline'))
-        if area['forbid'].get('pads', False):
+        if area['forbid']['pads']:
             entry = {'layers': _copper_layers(layers), 'polygons': polygons, 'name': f"rule area {area.get('uuid')}"}
             (pads if owner == 'board' else owners[owner]['packing_pad_keepouts']).append(entry)
         if not area['forbid']['footprints']:

@@ -195,14 +195,30 @@ class PadKeepoutTest(unittest.TestCase):
                                  ('unsupported_geometry', 'unknown', []))
                 self.assertEqual(plan['reason'], 'malformed rule-area pad flag')
 
-    def test_hand_built_area_without_the_native_pad_flag_forbids_no_pads(self):
-        # Documented residual: native extraction always records forbid.pads (NativeRuleAreaSemanticsTest).
+    def test_missing_pad_flag_is_typed_unknown_not_permission(self):
+        # Ruling 418b: native extraction always records forbid.pads (NativeRuleAreaSemanticsTest);
+        # an area without it, wherever it lies and whatever else it forbids, proves nothing.
         capture_ = board([lands_part()])
-        capture_['rule_areas'] = [area('legacy', ['F.Cu'], rectangle(0, 0, 3, 20))]
-        del capture_['rule_areas'][0]['forbid']['pads']
-        capture_['rule_areas'][0]['forbid']['footprints'] = False
-        plan = self.pack(capture_, request(fixed_refs=[]))
-        self.assertEqual(plan, self.pack(capture_, request(fixed_refs=[]), mutant=True))
+        for footprints, where in ((False, rectangle(0, 0, 3, 20)), (True, rectangle(0, 0, 3, 20)),
+                                  (False, rectangle(30, 30, 1, 1))):
+            with self.subTest(footprints=footprints, where=where):
+                capture_['rule_areas'] = [area('legacy', ['F.Cu'], where, footprints=footprints)]
+                del capture_['rule_areas'][0]['forbid']['pads']
+                plan = self.pack(capture_, request(fixed_refs=[]))
+                self.assertEqual((plan['status'], plan['outcome'], plan['placements'], plan['reason']),
+                                 ('unsupported_geometry', 'unknown', [], 'missing rule-area pad flag'))
+
+    def test_targeted_plan_with_a_missing_pad_flag_is_blocked(self):
+        from agent_ee import placement_plans
+        from test_placement_plans import board as plan_board, row
+        from test_placer_copper_extent import MAX_ERROR
+        facts = {**plan_board(), 'max_error_nm': MAX_ERROR}
+        facts['rule_areas'] = [area('legacy', ['F.Cu'], rectangle(30, 30, 1, 1))]
+        self.assertEqual(placement_plans.plan(copy.deepcopy(facts), request(), row())['status'], 'planned')
+        del facts['rule_areas'][0]['forbid']['pads']
+        result = placement_plans.plan(copy.deepcopy(facts), request(), row())
+        self.assertEqual((result['status'], result['outcome'], result['placements']), ('blocked', 'unknown', []))
+        self.assertEqual(result['reasons'], ['missing coverage: missing rule-area pad flag'])
 
 
 class PeerCourtyardTest(unittest.TestCase):
@@ -352,6 +368,48 @@ class ArrangementScopeTest(unittest.TestCase):
         self.assertTrue(any(meets(b, box(strip)) for fp in self.member_fps(board_, mutant) for b in lands_of(fp)
                             if b is not None))
 
+    def test_missing_pad_flag_refuses_arrangement_as_unknown(self):
+        board_ = copy.deepcopy(self.case.board)
+        board_['rule_areas'] = [area('legacy', ['F.Cu'], rectangle(60, 60, 1, 1))]
+        self.assertEqual(self.arrange(board_)['status'], 'planned')
+        del board_['rule_areas'][0]['forbid']['pads']
+        plan = self.arrange(board_)
+        self.assertEqual((plan['status'], plan['outcome'], plan['placements'], plan['reason']),
+                         ('unsupported_geometry', 'unknown', [], 'missing rule-area pad flag'))
+
+    def test_residual_lands_avoid_a_member_owned_pad_keepout_at_its_arranged_pose(self):
+        # Ruling 418b: a member's own pad keep-out moves with it into residual packing. The
+        # area is the base plan's first J1 land mapped back into the owner's source frame.
+        base = self.case.arrange()
+        self.assertEqual(base['status'], 'planned', base.get('reason'))
+        poses = {p['ref']: p for p in base['placements']}
+        target = lands_of(placed(self.case.board, base, 'J1'))[0]
+        for ref in ('U1', 'U2'):
+            with self.subTest(owner=ref):
+                board_ = copy.deepcopy(self.case.board)
+                owner = next(f for f in board_['footprints'] if f['ref'] == ref)
+                pose = poses[ref]
+                if ref == 'U1':
+                    self.assertNotEqual(pose['position_nm'], owner['position_nm'])
+                else:
+                    self.assertEqual((pose['rotation_deg'] - owner['rotation_deg']) % 180, 90)
+                polygon = []
+                for x, y in ((target[0], target[1]), (target[2], target[1]), (target[2], target[3]),
+                             (target[0], target[3])):
+                    dx, dy = placer.rotate((x - pose['position_nm'][0], y - pose['position_nm'][1]),
+                                           (owner['rotation_deg'] - pose['rotation_deg']) // 90)
+                    polygon.append([dx + owner['position_nm'][0], dy + owner['position_nm'][1]])
+                board_['rule_areas'] = [area('owned', ['F.Cu'], polygon, owner=owner['uuid'])]
+                before = copy.deepcopy(board_)
+                plan = self.arrange(board_)
+                self.assertEqual(board_, before)
+                if plan['status'] != 'planned':
+                    self.assertEqual(plan['outcome'], 'unknown', plan)
+                    continue
+                self.assertEqual({p['ref']: (p['position_nm'], p['rotation_deg']) for p in plan['placements']
+                                  if p['ref'] == ref}, {ref: (pose['position_nm'], pose['rotation_deg'])})
+                self.assertFalse(any(meets(b, target) for b in lands_of(placed(board_, plan, 'J1'))))
+
 
 class NativeRuleAreaSemanticsTest(unittest.TestCase):
     """kicad-cli DRC on owned native boards: which rule areas report a footprint or a pad.
@@ -481,6 +539,20 @@ class NativeRuleAreaSemanticsTest(unittest.TestCase):
         fp = facts['footprints'][0]
         self.assertEqual(len(fp['packing_pad_keepouts']), 1)
         self.assertIsNone(placer._copper_escapes(fp, placer._qualified(copy.deepcopy(facts)), [], []))
+
+    def test_native_pad_defect_without_its_extracted_pad_flag_is_unknown(self):
+        # Ruling 418b: deleting only forbid.pads from native facts never turns the defect into a plan.
+        from test_placer import request
+        from agent_ee.placement_probe import extract
+        path, found = self.drc(['In1.Cu'], ('pads',), through=True)
+        self.assertEqual(len(found), 1, found)
+        facts = extract(path)
+        plan = placer.pack(copy.deepcopy(facts), request(fixed_refs=['C1']))
+        self.assertEqual((plan['status'], plan['outcome']), ('fixed_input_copper', 'defect'), plan.get('reason'))
+        del facts['rule_areas'][0]['forbid']['pads']
+        plan = placer.pack(facts, request(fixed_refs=['C1']))
+        self.assertEqual((plan['status'], plan['outcome'], plan['placements'], plan['reason']),
+                         ('unsupported_geometry', 'unknown', [], 'missing rule-area pad flag'))
 
 
 class NativePadKeepoutPublicationTest(NativeBoard, unittest.TestCase):

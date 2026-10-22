@@ -1232,6 +1232,20 @@ def arrange(capture, inventory, derivation, policy, arrangement, entries, *, hea
     residual_capture['footprints'] = [
         _strip(placer.transform(fp, poses[fp['ref']]['position_nm'], poses[fp['ref']]['rotation_deg']))
         if fp['ref'] in poses else fp for fp in residual_capture['footprints']]
+    # An arranged member's own rule areas move with it, exactly once from the source pose,
+    # so residual packing and its final land check bind them where the member stands (ruling 418b).
+    sources = {fp['uuid']: fp for fp in capture['footprints'] if fp['ref'] in poses}
+    try:
+        for area in residual_capture.get('rule_areas', []):
+            if area.get('owner') in sources:
+                fp = sources[area['owner']]
+                pose = poses[fp['ref']]
+                area['outline'] = placer.transform(
+                    {'position_nm': fp['position_nm'], 'rotation_deg': fp['rotation_deg'], 'pads': [],
+                     'courtyards': {'zone': area['outline']}},
+                    list(pose['position_nm']), pose['rotation_deg'])['courtyards']['zone']
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        return failure('unsupported_geometry', 'an arranged member rule area cannot be moved to its pose')
     residual_policy = {**copy.deepcopy(effective), 'obstacles': obstacles + [
         _obstacle(stacking, _shadow(poses[r], stacking['margin_nm']), 'block-arrangement shadow ' + r)
         for r in (stacking['references'] if _hard(stacking) else ()) if r in poses]}

@@ -76,7 +76,7 @@ class AreaTests(unittest.TestCase):
     def test_cheaper_pose_cannot_leave_a_sourced_region(self):
         facts = capture([part('J3', 8, 8, 'B')])
         facts['rule_areas'] = [{'uuid': 'lane', 'name': 'card', 'owner': 'J3',
-            'layers': ['B.Cu'], 'forbid': {'footprints': True},
+            'layers': ['B.Cu'], 'forbid': {'footprints': True, 'pads': False},
             'outline': proven([rectangle(-22, 8, 30, 2)])}]
         fab = {'J3': {'B': proven([rectangle(8, 8, 2, 2)])}}
         policy = request(fixed_refs=[], gap_nm=0, groups=[{
@@ -356,11 +356,16 @@ class NativeAlternativeTests(unittest.TestCase):
         pad.SetShape(k.PAD_SHAPE_RECT); pad.SetSize(k.VECTOR2I(MM, MM))
         layers = k.LSET(); layers.AddLayer(k.B_Cu); pad.SetLayerSet(layers)
         peer.Add(pad); peer.SetPosition(k.VECTOR2I(75*MM, 55*MM))
-        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowPads(True)
+        zone = k.ZONE(board); zone.SetIsRuleArea(True)
+        zone.SetDoNotAllowTracks(True); zone.SetDoNotAllowPads(False)
         zone.SetLayer(k.B_Cu); zone.SetZoneName('unrelated baseline pad exclusion')
         polygon = zone.Outline(); polygon.NewOutline()
         for x, y in rectangle(74, 54, 2, 2): polygon.Append(x, y)
         board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        # Ruling 418b: a native-only pad rule, so the pack keeps the pose and native DRC attributes it.
+        self.source.with_suffix('.kicad_dru').write_text(
+            '(version 1)\n(rule "unrelated baseline pad exclusion"\n  (constraint disallow pad)\n'
+            '  (condition "A.intersectsArea(\'unrelated baseline pad exclusion\')"))\n')
         facts = extract(self.source)
         validator = NativeAlternatives(self.source, self.root / 'baseline-defect', facts, self.policy, {})
         result = validator('J3', (0, 32*MM), 180)
@@ -372,11 +377,15 @@ class NativeAlternativeTests(unittest.TestCase):
         self.assert_unknown_search(lane['alternative'], 'baseline')
 
         # The same retained defect cannot hide a new exclusion at the trial pose.
-        zone = k.ZONE(board); zone.SetIsRuleArea(True); zone.SetDoNotAllowPads(True)
+        zone = k.ZONE(board); zone.SetIsRuleArea(True)
+        zone.SetDoNotAllowTracks(True); zone.SetDoNotAllowPads(False)
         zone.SetLayer(k.B_Cu); zone.SetZoneName('new candidate pad exclusion')
         polygon = zone.Outline(); polygon.NewOutline()
         for x, y in rectangle(0, 31, 2, 2): polygon.Append(x, y)
         board.Add(zone); self.assertTrue(k.SaveBoard(str(self.source), board))
+        with self.source.with_suffix('.kicad_dru').open('a') as rules:
+            rules.write('(rule "new candidate pad exclusion"\n  (constraint disallow pad)\n'
+                        '  (condition "A.intersectsArea(\'new candidate pad exclusion\')"))\n')
         validator = NativeAlternatives(self.source, self.root / 'baseline-plus-new',
                                        extract(self.source), self.policy, {})
         result = validator('J3', (0, 32*MM), 180)

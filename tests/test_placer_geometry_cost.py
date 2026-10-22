@@ -54,7 +54,8 @@ def seeded_board(seed):
     board['pcbnew_version'] = '10.0.7'
     board['max_error_nm'] = 5000  # fixture fact: KiCad's default m_MaxError, which native extraction always emits
     if rng.random() < .3:
-        board['rule_areas'] = [{'uuid': 'zone', 'owner': 'board', 'layers': ['F.Cu'], 'forbid': {'footprints': True},
+        board['rule_areas'] = [{'uuid': 'zone', 'owner': 'board', 'layers': ['F.Cu'],
+                                'forbid': {'footprints': True, 'pads': False},
                                 'outline': {'status': 'proven', 'polygons': [rectangle(6, 6, 4, 3)]}}]
     policy = request(step_budget=3000, gap_nm=rng.choice((0, 250000, 500000)),
                      fixed_refs=[parts[0]['ref']], priority_refs=[parts[-1]['ref']],

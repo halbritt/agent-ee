@@ -1148,10 +1148,19 @@ area in `keepout` (a defect). A hand-built land without native facts whose
 courtyard meets one is `pad_keepout_unproven`, `copper_bounds_nm: null`, and
 `outcome: unknown`.
 
-The `forbid.pads` flag must be a boolean when present (`malformed rule-area pad
-flag`, `unsupported_geometry`). Native extraction always records it. A
-hand-built rule area without it forbids no pads, a documented residual like
-the hand-built land records of ruling 366d.
+Every rule area must carry a boolean `forbid.pads` flag. Native extraction
+always records it. A missing flag is never read as permission (coordinator
+ruling 418b): packing, Stage-B arrangement and targeted plans stop as
+`unsupported_geometry`, `outcome: unknown` (`missing rule-area pad flag`; a
+targeted plan is `blocked` with `missing coverage: missing rule-area pad
+flag`), as a non-boolean flag does (`malformed rule-area pad flag`).
+Hand-built fixtures state `'pads': False` explicitly.
+
+A footprint-owned rule area moves with its owner. Stage B moves each arranged
+member's own areas, once and from the source pose, rotation included, into the
+member's admitted pose. Residual packing and its final land check then bind
+them there (ruling 418b). An owned area that cannot be moved refuses the
+arrangement as `unsupported_geometry`, `outcome: unknown`.
 
 The native publication gate does not back this up. Its DRC comparison blocks
 only `copper_outside_outline` and added hard collision, mask or numeric
@@ -1180,6 +1189,11 @@ Coordinator ruling 418a covers the expectations this gate changed:
   waive that rejection (`test_reserved_area`). The native-rejection fallback
   tests now use a constraint the predicate does not model: a tracks-only rule
   area plus a `.kicad_dru` rule disallowing pads that meet it.
+- Ruling 418b applies the same native-only constraint to both the unrelated
+  baseline area and the added candidate area in
+  `test_unrelated_baseline_defect_is_unknown_not_pose_rejection`. Every
+  assertion is unchanged. The baseline defect still reports `unknown` with
+  retained native evidence, and the new area still rejects the pose.
 
 ```sh
 AGENT_EE_REQUIRE_TOOLCHAIN=1 PYTHONPATH=src:tests python3 -m unittest tests.test_placer_packing_scope -v
