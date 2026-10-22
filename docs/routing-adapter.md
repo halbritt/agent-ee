@@ -702,9 +702,13 @@ reason. Experiment evidence is never dropped and is never qualified.
 - **Retention.** A reference that names a `.json` file directly inside the
   discovered attempt directory is copied to `routing/attempt/<name>` and hashed in
   `retained`. Names the adapter already retains, or names starting with
-  `agent-ee-`, are not sidecars.
+  `agent-ee-`, are not sidecars. The agreed root sidecar
+  `routability-experiment.json` is copied and hashed the same way even when no
+  reference names it, so an unreferenced sidecar is never omitted. If it is a
+  link or special file and unreferenced, it is a link violation (contradiction).
 - **Record.** `semantics.experiment` is re-derived from the retained bytes. It is
-  present whenever a policy was declared or `result.json` has a reference:
+  present whenever a policy was declared, `result.json` has a reference, or a
+  root `routability-experiment.json` was retained:
   - `retained`: `path` (the retained copy), the recomputed `sha256`, `schema`,
     `reference` (the result.json reference, verbatim), `policy` (`schema`,
     `policy`, sha256 of the policy file, or `null` when undeclared),
@@ -716,15 +720,20 @@ reason. Experiment evidence is never dropped and is never qualified.
     `tampered` (the recomputed sha256 differs from the reference),
     `incompatible_schema` (the sidecar's own `schema`) or `incompatible_policy`
     (the sidecar `policy` differs from the declared identity, including a policy
-    the coordinator never declared). The record keeps the reference and,
-    when a file was retained, its path and recomputed hash.
-  - `absent`: the router wrote no `result.json`, for example a refusal or a
-    not-run attempt.
+    the coordinator never declared), or `unbound` (a retained root
+    `routability-experiment.json` that no reference binds: `result.json` is
+    absent, has no `experiment`, or names a different file). The record keeps
+    the reference and, when a file was retained, its path and recomputed hash;
+    for `unbound` that is the unbound root sidecar.
+  - `absent`: the router wrote neither `result.json` nor a root sidecar, for
+    example a refusal or a not-run attempt.
 - **Classification.** A refusal is a report violation. A complete or incomplete
-  attempt becomes a `contradiction` (exit 65) and delivers no board. A timeout
-  or cancellation keeps its class with the refusal in `reasons`. Without a
-  declared policy and without a reference, reports, argv and `verify` summaries
-  are unchanged. `verify` returns the record as `experiment`, refuses a record
+  attempt becomes a `contradiction` (exit 65) and delivers no board, and so
+  does a `validation_failed` attempt: a contradiction rejects no candidate, so
+  `rejected_candidate_sha256` is cleared and `verify` still returns the typed
+  record. A timeout or cancellation keeps its class with the refusal in
+  `reasons`. Without a declared policy, a reference or a root sidecar, reports,
+  argv and `verify` summaries are unchanged. `verify` returns the record as `experiment`, refuses a record
   that differs from the retained bytes, and refuses a refused record on an
   attempt that is not a contradiction, timeout or cancellation.
 - **Provisional contract.** Only the reference shape and the sidecar's `schema`

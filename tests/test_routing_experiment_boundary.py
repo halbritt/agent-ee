@@ -10,6 +10,7 @@ adapter reads (schema, policy). It is not KICADROUTE-91 output.
 """
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -181,6 +182,7 @@ class ExperimentBoundaryTest(unittest.TestCase):
     def test_undeclared_policy_retains_or_refuses_router_evidence_and_is_otherwise_unchanged(self):
         receipt, receipt_dir, _, report = self.receipt({'name': 'complete'})
         self.assertNotIn('experiment', report['semantics'])
+        self.assertNotIn(f'attempt/{attempt.EXPERIMENT_SIDECAR}', report['retained'])
         self.assertNotIn('--experiment-policy', report['process']['argv'])
         self.assertNotIn('experiment', self.verify(receipt_dir, receipt))
         receipt, receipt_dir, _, report = self.receipt({'name': 'complete', 'experiment': 'ok'})
@@ -192,6 +194,62 @@ class ExperimentBoundaryTest(unittest.TestCase):
         receipt, receipt_dir, _, report = self.receipt({'name': 'complete', 'experiment': 'incompatible_policy'})
         self.assertEqual((receipt['exit_code'], report['semantics']['experiment']['reason']),
                          (attempt.EXIT_CONTRADICTION, 'incompatible_policy'))
+
+    def test_an_unreferenced_root_sidecar_is_retained_and_refused_as_unbound(self):
+        for scenario, policy in (('orphan', None), ('orphan', CURRENT), ('second_sidecar', CURRENT)):
+            with self.subTest(scenario=scenario, policy=policy):
+                receipt, receipt_dir, design, report = self.receipt({'name': 'complete', 'experiment': scenario},
+                                                                    policy)
+                sem = report['semantics']
+                self.assertEqual((receipt['exit_code'], sem['classification'], sem['proposal']),
+                                 (attempt.EXIT_CONTRADICTION, 'contradiction', 'none'), sem)
+                self.assertIsNone(report['candidate'])
+                record = sem['experiment']
+                self.assertEqual((record['status'], record['reason'], record['qualified']),
+                                 ('refused', 'unbound', False))
+                self.assertTrue(any(r.startswith('routability experiment evidence refused (unbound)')
+                                    for r in sem['reasons']), sem['reasons'])
+                originals = list((receipt_dir / 'run/routing/out').rglob(attempt.EXPERIMENT_SIDECAR))
+                self.assertEqual(len(originals), 1)
+                kept = receipt_dir / 'run/routing/attempt' / attempt.EXPERIMENT_SIDECAR
+                # The observed artifact identity is preserved, bound to the receipt-anchored report.
+                self.assertEqual((record['path'], record['sha256']),
+                                 (f'attempt/{attempt.EXPERIMENT_SIDECAR}', sha256(originals[0])))
+                self.assertEqual(sha256(kept), sha256(originals[0]))
+                self.assertEqual(report['retained'][f'attempt/{attempt.EXPERIMENT_SIDECAR}'], sha256(kept))
+                with self.assertRaises(ValueError):
+                    stage_receipts.adopt(receipt_dir, receipt, design)
+                # The decision is re-derived from the sealed retained bytes alone.
+                shutil.rmtree(receipt_dir / 'run/routing/out')
+                summary = self.verify(receipt_dir, receipt)
+                self.assertEqual((summary['classification'], summary['experiment']), ('contradiction', record))
+
+    def test_an_unreferenced_root_sidecar_link_is_a_contradiction(self):
+        receipt, receipt_dir, design, report = self.receipt({'name': 'complete', 'experiment': 'orphan_link'})
+        sem = report['semantics']
+        self.assertEqual((receipt['exit_code'], sem['classification']), (attempt.EXIT_CONTRADICTION, 'contradiction'))
+        self.assertIn(f'link or special file in attempt diagnostics: {attempt.EXPERIMENT_SIDECAR}', sem['reasons'])
+        self.assertIsNone(report['candidate'])
+        with self.assertRaises(ValueError):
+            stage_receipts.adopt(receipt_dir, receipt, design)
+        self.assertEqual(self.verify(receipt_dir, receipt)['classification'], 'contradiction')
+
+    def test_a_validation_failure_with_refused_evidence_replays_its_typed_reason(self):
+        for scenario, reason in (('missing_file', 'missing'), ('tamper', 'tampered'), ('orphan', 'unbound')):
+            with self.subTest(scenario):
+                receipt, receipt_dir, design, report = self.receipt(
+                    {'name': 'validation_failed', 'experiment': scenario}, CURRENT)
+                sem = report['semantics']
+                self.assertEqual((receipt['exit_code'], sem['classification'], sem['experiment']['reason']),
+                                 (attempt.EXIT_CONTRADICTION, 'contradiction', reason))
+                # A contradiction rejects no candidate, so the replay invariant holds.
+                self.assertIsNone(report['rejected_candidate_sha256'])
+                self.assertIsNone(report['candidate'])
+                with self.assertRaises(ValueError):
+                    stage_receipts.adopt(receipt_dir, receipt, design)
+                summary = self.verify(receipt_dir, receipt)
+                self.assertEqual((summary['classification'], summary['experiment']),
+                                 ('contradiction', sem['experiment']))
 
     def test_a_non_eligible_attempt_keeps_its_class_and_its_evidence_record(self):
         receipt, receipt_dir, _, report = self.receipt({'name': 'validation_failed'}, CURRENT)

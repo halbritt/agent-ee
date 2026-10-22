@@ -118,11 +118,12 @@ class ContractSummaryTests(unittest.TestCase):
         self.assertEqual((boundary['sidecar_schema'], boundary['policy_schema'], boundary['policy_file']),
                          (attempt.EXPERIMENT_SCHEMA, attempt.EXPERIMENT_POLICY_SCHEMA,
                           attempt.EXPERIMENT_POLICY_FILE))
+        self.assertEqual(boundary['sidecar_file'], attempt.EXPERIMENT_SIDECAR)
         self.assertEqual(boundary['policies'], list(attempt.EXPERIMENT_POLICIES))
         self.assertEqual(boundary['refusal_reasons'], list(attempt.EXPERIMENT_REFUSALS))
         self.assertIs(boundary['qualified'], False)
         self.assertNotIn(attempt.EXPERIMENT_SCHEMA + ' (planned)', self.adapter['never_consumed'])
-        # The sidecar is retained only through a result.json reference, never by name.
+        # The sidecar is not a pinned report: experiment_grade retains or refuses it, never retain().
         self.assertNotIn('routability-experiment.json', attempt.RETAINED_FILES)
 
     def test_request_example_translation(self):

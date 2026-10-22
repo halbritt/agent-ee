@@ -239,6 +239,15 @@ if experiment is not None and experiment != 'omit':
         sidecar.write_text(json.dumps({**body, 'policy': None}) + '\n')
     if experiment == 'missing_file':
         sidecar.unlink()
+    if experiment == 'orphan':
+        del result['experiment']
+    if experiment == 'orphan_link':
+        sidecar.unlink()
+        sidecar.symlink_to(run / 'snapshot.json')
+        del result['experiment']
+    if experiment == 'second_sidecar':
+        shutil.copyfile(sidecar, run / 'alternate.json')
+        result['experiment']['path'] = os.path.relpath(run / 'alternate.json')
 text = 'not json {' if name == 'malformed_json' else json.dumps(result, indent=2) + '\n'
 (run / 'result.json').write_text(text)
 print(text, flush=True)

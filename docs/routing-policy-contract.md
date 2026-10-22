@@ -292,9 +292,10 @@ When agent-ee re-pins onto a commit with that work:
 4. **Sidecar retention.** `retain` copies only `result.json`, `attempt.json`,
    `RESULT.md`, `snapshot.json` and the `validate/`, `facts/` and `work/` trees.
    Other top-level files are not retained, with one exception since AGENTEE-442:
-   the `.json` sidecar that `result.json` `experiment` names is copied, hashed
-   and graded by `experiment_grade`. A sidecar without a reference is still not
-   retained. When the reviewed schema arrives, re-check the sidecar fields
+   the `.json` sidecar that `result.json` `experiment` names, and the root
+   `routability-experiment.json` with or without a reference, are copied, hashed
+   and graded by `experiment_grade`. A root sidecar without a binding reference is
+   refused as `unbound`, so the receipt never omits it. When the reviewed schema arrives, re-check the sidecar fields
    `experiment_grade` reads (`schema`, and `policy` as `{schema, policy, sha256}`),
    whether the router echoes the policy in `result.settings` (then
    `expected_settings` changes), and whether a sidecar exists on process

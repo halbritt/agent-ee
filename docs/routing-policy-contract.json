@@ -31,8 +31,9 @@
       "policy_schema": "routability-policy/1",
       "policies": ["historical-all-layer", "current-policy"],
       "policy_file": "agent-ee-experiment-policy.json",
+      "sidecar_file": "routability-experiment.json",
       "record_statuses": ["retained", "refused", "absent"],
-      "refusal_reasons": ["missing", "malformed", "unknown_schema", "tampered", "incompatible_schema", "incompatible_policy"],
+      "refusal_reasons": ["missing", "malformed", "unknown_schema", "tampered", "incompatible_schema", "incompatible_policy", "unbound"],
       "qualified": false
     }
   },
