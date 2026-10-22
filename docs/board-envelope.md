@@ -433,7 +433,7 @@ identities only, so it adds no numeric limit.
 |---|---|---|
 | `corner-holes` | the source holes `H1`, `H2`, `H3` and `H4`, each uniquely nearest a distinct outline corner | `hole-authority`, `fabricated-holes` |
 | `height` | none | `candidate-heights` (candidate), `cowl-fit`, `underside-fit`, `connector-fit`, `mating-plug-fit`, `harness-fit` |
-| `harness-edge` | J1 fixed (`connector-edge/1`), J1 `outline-containment/1`, J1 `part-identity/1` | `panel-cutout`, `mating-plug`, `retention`, `thickness-tolerance`, `harness-clearance` |
+| `harness-edge` | J1 fixed (`connector-edge/1`), J1 `outline-containment/1`, J1 `part-identity/1` | `panel-cutout`, `mating-plug`, `retention`, `harness-clearance`; `thickness-tolerance` only when the J1 thickness screen does not pass |
 | `antenna` | U1 fixed, U1 `outline-containment/1`, the U1 antenna keepout | `feed-point-side`, `housing-pocket`, `nearby-metal`, `support`, `rf-performance` |
 | `imu-separation` | none (assessment only) | `placement-assessment` (candidate), `vibration-coupling` |
 
@@ -446,6 +446,39 @@ reviewed contract change. Corner assignment is a one-to-one nearest-vertex
 comparison with ties refused. It is not a hole position limit.
 Drill, inset and coordinates stay generator-selected and keep the provenance of
 the hole fields. `hole-authority` stays open for them.
+
+J1 board thickness is screened, not left open (AGENTEE-446). The `harness-edge`
+contract carries a J1 component-side declaration: TE's recommended 1.57 mm,
+cited to customer drawing 776163 rev K1, sheet 2 ("RECOMMENDED P.C. BOARD
+LAYOUT FOR 1.57 THICK P.C. BOARD"). Part number and footprint come from the
+contracted J1 identity. When `harness-edge` is staged, the record grades it with
+the [through-hole thickness fit](#through-hole-thickness-fit) `judge` against
+the envelope nominal thickness. The fab finished-thickness tolerance is not
+read. Before judging, the contract declaration passes the same
+`tht-thickness-fit/1` declaration validator as a captured
+`tht-thickness-fit.json`. If that validator refuses it, the screen is `unknown`
+with reason `thickness fit declaration refused: ...`, never `pass`. Causes
+include a missing or blank citation, a missing or unsupported source class, or
+an unknown field. The result is kept as
+`obligation_contract.thickness_fit.harness-edge` and on the staged coverage
+entry. At the pod's 1.6 mm nominal it is `pass`,
+`screened (default +/-10% component fit)`, band 1.413-1.727 mm. If the screen
+does not pass (refused, or a nominal outside the band, which is advisory
+`unknown`), coverage must list `thickness-tolerance` as a
+`physical_qualification` open item, or staging is refused.
+
+The source statement still says "board thickness tolerance ... remain
+unqualified", because the contract must match the hash-bound source envelope
+verbatim. A source change needs a reviewed contract update. The record therefore
+keeps two statements under `obligation_contract.statements.harness-edge` and on
+the staged coverage entry (`statement`). `source` is that verbatim text, and
+`current` is the accurate current statement. While the screen passes, `current`
+is the contract's `screened_statement`: J1 component board-thickness fit is
+screened, and panel cutout, mating plug, retention and harness clearance remain
+unqualified. Otherwise `current` equals `source`. `requirements.md` prints it as
+`Current statement (obligation harness-edge): ...`. Derived requirement
+statements and baseline mappings keep the source text. This screen is not a TE
+compliance claim and not physical retention evidence.
 
 J1 identity is not deferred into physical fit. It uses the existing parts
 enforcement, not a second identity checker. A `part-identity/1` witness is bound
