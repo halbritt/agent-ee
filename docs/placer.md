@@ -1513,6 +1513,9 @@ uses `kind: layout`, integer `distance_units`, integer `scale_nm_per_unit`, a
 nonempty `scale_reference`, and the same source reference. The check recomputes
 the product exactly. This is a declared measurement with a recorded scale;
 it does not automatically interpret a PDF image.
+Because the scale is authored rather than captured, the
+[manual physical intent compiler](physical-intent.md) refuses `kind: layout`
+and compiles a hard datasheet maximum only from a `numeric` derivation.
 
 For `owner`, `decision_reference` carries the same verified source reference
 plus a nonempty `owner` identity. An agent identity or a case-insensitive

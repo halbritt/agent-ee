@@ -57,7 +57,15 @@ pin 7` before anything is written.
 
 Resolved terminals compile to a [`topology-rules/1`](topology-rules.md)
 document: one `pin_net` rule per terminal, a class declaration per native
-`lib:symbol` with the function-to-pin map. The document passes
+`lib:symbol` with the function-to-pin map. A physical pin has exactly one
+function. A function may name several verified physical pins of one symbol,
+such as two GND pins, each with its own fact and pad UUID. Each of those pins
+then gets its own class terminal, named `function@pin` (`GND@2`, `GND@5`); a
+function bound to one pin keeps its plain name. The alias depends only on the
+bound pins, never on authoring order, and each receipt terminal records its
+`class_terminal`. A pin bound to two functions (U1 and U2 of one symbol citing
+pin 1 as GND and as VCC) is a `contradictory pin identity`, and an alias that
+would equal another bound function name is refused. The document passes
 `topology_rules.validate_rules` and must evaluate `pass` against the strict
 native inventory. Any violation or unknown is `failed topology`. Requirements
 must exist in the run baseline; the compiler adds none.
@@ -68,7 +76,16 @@ must exist in the run baseline; the compiler adds none.
 as authored. They are emitted unchanged except for owner provenance (below).
 locality/1 has no fact or function field, so the compiler adds no guessed IN/GND
 or role semantics to a supply/return pair. Every endpoint must carry its native pad `uuid`. The UUID,
-pad number and net must match the native board. Each pair is qualified with
+pad number and net must match the native board.
+
+Every emitted role must be executable by the real consumers. Each pair must
+declare `max_distance_nm` and a `citation`; the compiler invents no bound, so a
+pair without them is `incomplete locality`. Both endpoints must declare the same
+net, and the metric must be `pad-centre-to-centre`, the only metric
+`electrical_locality.grade` measures. The finished document must then construct
+the actual `electrical_locality.PlacementIndex`. Before this check, a return pair
+without a bound published, passed `verify_receipt` and then crashed
+`PlacementIndex` with `KeyError` (verification 510 R1). Each pair is qualified with
 `locality_provenance.classify` on the captured records:
 
 - an integrity failure (record hash mismatch) is a stale source;
@@ -100,7 +117,16 @@ pad number and net must match the native board. Each pair is qualified with
   numeral (`x3 mm`, `mm3`). Two different stated lengths are ambiguous and
   refuse;
 - a pair declaring `datasheet` must classify `hard`: the numeric derivation equals
-  the declared `max_distance_nm`. Otherwise it is a `numeric mismatch`.
+  the declared `max_distance_nm`. Otherwise it is a `numeric mismatch`;
+- only `derivation.kind: numeric` compiles. Its verified captured quote must
+  state the declared maximum. A `layout` derivation is refused as
+  `unverifiable derivation kind 'layout'`. Its `distance_units`,
+  `scale_nm_per_unit` and `scale_reference` are authored values, not captured
+  evidence. Before this refusal, a captured `within 3 mm` quote with an invented
+  1 nm-per-unit scale compiled to a hard 1 nm datasheet maximum (verification 510
+  R2). The shared `locality_provenance.classify` still grades such a manually
+  authored layout derivation `hard`. That existing contract is outside this
+  compiler, and changing it would alter existing locality verdicts.
 
 **Owner maxima never enforce.** Agents run as the owner's Unix user, so no
 in-process check can authenticate an owner or manufacturer author until
@@ -120,8 +146,18 @@ would still classify `hard`.
 Requested enforcement never raises provenance. Other classes are compiled and
 reported as `advisory` or `feasibility` in `locality_qualification`.
 
-`blocks` compile to `block-allocation/1` and pass the placement allocation
-validator. A reference in two blocks is `conflicting membership`. `moves`
+`blocks` compile to `block-allocation/1`. A reference in two blocks is
+`conflicting membership`. The allocation is then admitted by the actual
+`blocks.derive`. It runs on the native netlist inventory and sheet names, and on
+a capture of the digest-bound native board (footprint reference, UUID, library
+ID, lock state and pad nets). `derive` refuses a locked member, with or without
+a `moves` entry, so the locked U1 of the defect board is refused (verification
+510 R3). It also refuses a footprint that is not an on-board native component,
+such as the netted, board-only C1 of the locality board, and a footprint that
+differs from the netlist. A child-sheet component left in neither a block nor
+the residual set is refused too. The receipt's `allocation_derivation` records
+the derived blocks, residual set and allocation SHA-256. These equal a
+`blocks.derive` of the published file on a pcbnew placement capture. `moves`
 (`translate`, `rotate`, `flip`) on a native locked footprint are `conflicting
 fixed move`. Allowed moves are recorded in the receipt only; no existing
 executable consumer reads them in this slice.
@@ -153,7 +189,8 @@ records:
 - the bound sources, the intent identity and the compiler file's SHA-256;
 - the identity of each artifact;
 - a map from assertion ID to JSON pointer;
-- per-terminal fact, page and native pin evidence;
+- per-terminal fact, page, native pin evidence and class terminal;
+- the `blocks.derive` result for the allocation, when declared;
 - locality qualification, allowed moves, unsupported obligations and diagnostics;
 - limitations;
 - a `package_id` over all of the above.
@@ -170,7 +207,9 @@ Any refusal raises `IntentRefused` before any write. Publication writes the
 complete package to a staging directory beside the destination and renames it
 into place with `RENAME_NOREPLACE`. An existing destination is refused, and a
 failed write removes the staging directory. `verify_receipt` recompiles from
-current sources and requires byte equality and no extra files.
+current sources and requires byte equality and no extra files. Every refusal
+above therefore also refuses `verify_receipt` for a package that a laxer earlier
+compiler published.
 
 Pure compilation of the fixture takes well under the provisional 10-second
 budget. The test asserts the bound. The budget excludes native netlist export
@@ -198,6 +237,18 @@ covers:
   3mm, 0.5 mm and 1.3 mm controls) and the non-hard `authority_unavailable` owner
   output;
 - datasheet numeric mismatch and locality endpoint binding;
+- incomplete locality (no return bound or citation), an unsupported metric and a
+  mixed-net pair, both before output and at `verify_receipt`. The positive
+  locality is checked through the real `PlacementIndex` and graded against a
+  pcbnew placement capture of the sealed board;
+- invented and plausible authored layout scales, both before output and at
+  `verify_receipt`, beside the hard numeric positive;
+- allocation through the actual `blocks.derive`: the locked U1 without moves,
+  the board-only C1, and a positive whose receipt derivation equals `derive` on
+  a pcbnew capture;
+- repeated physical functions (synthetic two-GND/two-VCC symbol through the
+  real terminal join and topology evaluator), with wrong-pin, contradictory-pin
+  and alias-collision refusals;
 - assertion ID collisions (`u1-canl`, `block:can`, a diagnostic and an
   unsupported obligation) and the input snapshot;
 - Kelvin and current-loop visibility, diagnostics, manual and disabled modes,

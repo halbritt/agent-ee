@@ -18,10 +18,10 @@ from pathlib import Path
 
 from fractions import Fraction
 
-from . import blocks, electrical_locality, locality_provenance, topology_rules
+from . import blocks, electrical_locality, locality_provenance, placement, topology_rules
 from .baseline import load_baseline, verify_evidence
 from .candidate import safe_relative, verify_snapshot
-from .native_netlist import read_native_inventory
+from .native_netlist import read_native_inventory, read_sheet_names
 from .storage import digest, identity, json_bytes, read_json, rename_noreplace
 from .symbol_library import LibraryError, children, parse_sexpr
 
@@ -52,6 +52,10 @@ LENGTH_WORD = re.compile(r'(?:[nuµμmcdk]?m|mils?|thou|in|inch(?:es)?|ft|foot|f
                          r'(?:nano|micro|milli|centi|deci|kilo)?met(?:er|re)s?|["\'\u2032\u2033])')
 SIGNS = '+-\u2212\u2013\u2014\u00b1~<>\u2264\u2265'
 NM_PER = {'nm': 1, 'mm': 1000000}
+LOCALITY_METRICS = frozenset(('pad-centre-to-centre',))
+LAYOUT_SCALE = ('a layout measurement\'s distance_units, scale_nm_per_unit and scale_reference are authored, '
+                'not captured evidence, so arbitrary scale prose could establish any bound; only a numeric '
+                'derivation whose verified quote states the declared maximum compiles')
 OWNER_AUTHORITY = ('owner and manufacturer authors cannot be authenticated in-process: agents run as the '
                    "owner's Unix user and no signing boundary exists until AGENTEE-348, so a sourced owner "
                    'maximum is published as authority_unavailable and never enforces')
@@ -70,6 +74,13 @@ LIMITATIONS = (
     'unknown and a cut inequality is not a routability or infeasibility proof.',
     'An owner-sourced maximum is bound to the identity and value its captured decision states, '
     'but it is authority_unavailable and advisory: ' + OWNER_AUTHORITY + '.',
+    'Every emitted locality pair declares max_distance_nm and a citation and is admitted by the '
+    'real electrical_locality.PlacementIndex; a datasheet maximum is hard only through a numeric '
+    'derivation whose verified captured quote states it (' + LAYOUT_SCALE + ').',
+    'Block allocation is admitted only through the actual blocks.derive against the native board '
+    'and netlist (on-board membership, footprint agreement, child-sheet coverage, locked members).',
+    'A function bound to several verified physical pins of one symbol keeps one class terminal per '
+    'pin, named function@pin; a pin bound to two functions is contradictory and refuses.',
     'Allowed moves are checked against native locked footprints only; no existing executable '
     'consumer reads them in this slice.',
     ACTIVATION,
@@ -243,6 +254,7 @@ def _run_sources(run, intent):
         records[rel] = (run / 'inputs' / rel).read_text(encoding='utf-8')
     requirements = {r['id'] for r in baseline['requirements']}
     return {'manifest': manifest, 'paths': paths, 'records': records, 'requirements': requirements,
+            'sources': sources,
             'pin_map': read_json(paths['pin_map']), 'facts': read_json(paths['facts'])}
 
 
@@ -251,7 +263,7 @@ def _atoms(node):
 
 
 def native_board(path):
-    """Footprints by reference: lock state and pads (number, UUID, net) from the native board."""
+    """Footprints by reference: library ID, UUID, lock state and pads (number, UUID, net) from the native board."""
     try:
         root = parse_sexpr(Path(path).read_bytes())
     except LibraryError as exc:
@@ -266,13 +278,15 @@ def native_board(path):
         if refs[0] in footprints:
             _refuse(f'native board duplicates reference {refs[0]}')
         locked = 'locked' in _atoms(fp) or any(_atoms(n) == ['yes'] for n in children(fp, 'locked'))
+        uuids = children(fp, 'uuid')
         pads = []
         for pad in children(fp, 'pad'):
             uuids, nets = children(pad, 'uuid'), children(pad, 'net')
             pads.append({'number': _atoms(pad)[0] if _atoms(pad) else '',
                          'uuid': _atoms(uuids[0])[0] if len(uuids) == 1 and _atoms(uuids[0]) else None,
                          'net': _atoms(nets[0])[-1] if len(nets) == 1 and _atoms(nets[0]) else ''})
-        footprints[refs[0]] = {'locked': locked, 'pads': pads}
+        footprints[refs[0]] = {'locked': locked, 'pads': pads, 'fpid': _atoms(fp)[0] if _atoms(fp) else None,
+                               'uuid': _atoms(uuids[0])[0] if len(uuids) == 1 and _atoms(uuids[0]) else None}
     return footprints
 
 
@@ -290,6 +304,21 @@ def _pad(board, reference, number, uuid, label):
 
 
 # ---------------------------------------------------------------- compilation
+
+def _terminal_names(pins, lib_id):
+    """Class terminal name per physical pin: the function, or ``function@pin`` when it repeats.
+
+    Repeated functions (two GND pins) keep distinct physical identities; the alias depends
+    only on the bound pins, never on authoring order, and never names another function.
+    """
+    count = {}
+    for function in pins.values():
+        count[function] = count.get(function, 0) + 1
+    names = {pin: function if count[function] == 1 else f'{function}@{pin}' for pin, function in pins.items()}
+    if len(set(names.values())) != len(names):
+        _refuse(f'symbol {lib_id}: terminal aliases collide with a bound function name: {sorted(names.values())}')
+    return names
+
 
 def _terminals(intent, src, board, native):
     """Join each terminal to a verified fact, its pin_map comparison and native identities."""
@@ -322,17 +351,28 @@ def _terminals(intent, src, board, native):
         native_net = native['nets'][nid]['name'] if nid is not None else None
         if pad['net'] != native_net:
             _refuse(f'{label}: native board pad net {pad["net"]!r} differs from netlist net {native_net!r}')
-        declaration = classes.setdefault(component['lib_id'], {'class': t['class'], 'terminals': {}})
+        declaration = classes.setdefault(component['lib_id'], {'class': t['class'], 'pins': {}})
         if declaration['class'] != t['class']:
             _refuse(f'{label}: conflicting class for symbol {component["lib_id"]}')
-        if declaration['terminals'].setdefault(t['function'], t['pin']) != t['pin']:
-            _refuse(f'{label}: symbol {component["lib_id"]} binds {t["function"]} to two pins')
+        # A physical pin has one function; one function may name several verified physical pins.
+        if declaration['pins'].setdefault(t['pin'], t['function']) != t['function']:
+            _refuse(f'{label}: contradictory pin identity: symbol {component["lib_id"]} pin {t["pin"]} is bound '
+                    f'to {declaration["pins"][t["pin"]]} and {t["function"]}')
         rules.append({'id': t['id'], 'requirement': t['requirement'], 'type': 'pin_net',
                       'terminal': {'reference': t['reference'], 'pin': t['pin']}, 'net': t['net']})
         resolved.append({'id': t['id'], 'reference': t['reference'], 'pin': t['pin'], 'pad_uuid': t['pad_uuid'],
-                         'function': t['function'], 'net': native_net, 'fact_id': t['fact'],
-                         'part_number': fact['part_number'], 'native_name': comparison['native_name'],
+                         'function': t['function'], 'lib_id': component['lib_id'], 'net': native_net,
+                         'fact_id': t['fact'], 'part_number': fact['part_number'],
+                         'native_name': comparison['native_name'],
                          'fact_source': {k: fact['source'][k] for k in ('path', 'sha256', 'page', 'locator')}})
+    for lib_id, declaration in classes.items():
+        names = _terminal_names(declaration.pop('pins'), lib_id)
+        declaration['terminals'] = {name: pin for pin, name in names.items()}
+        for record in resolved:
+            if record['lib_id'] == lib_id:
+                record['class_terminal'] = names[record['pin']]
+    for record in resolved:
+        del record['lib_id']
     document = {'schema': topology_rules.SCHEMA, 'classes': classes, 'rules': rules}
     try:
         topology_rules.validate_rules(document)
@@ -440,9 +480,18 @@ def _locality(intent, src, board):
     obligations = json.loads(json_bytes(authored))
     qualification = []
     for obligation in obligations:
+        if obligation['metric'] not in LOCALITY_METRICS:
+            _refuse(f'locality {obligation["id"]}: unsupported metric {obligation["metric"]!r}; '
+                    f'electrical-locality/1 grades only {sorted(LOCALITY_METRICS)}')
         for role in electrical_locality.roles(obligation):
             pair = obligation[role]
             label = f'locality {obligation["id"]}.{role}'
+            if pair['from']['net'] != pair['to']['net']:
+                _refuse(f'{label}: endpoints declare different nets {pair["from"]["net"]!r} and '
+                        f'{pair["to"]["net"]!r}; a locality pair joins one net')
+            derivation = pair.get('provenance', {}).get('derivation')
+            if isinstance(derivation, dict) and derivation.get('kind') != 'numeric':
+                _refuse(f'{label}: unverifiable derivation kind {derivation.get("kind")!r}: {LAYOUT_SCALE}')
             for end in ('from', 'to'):
                 endpoint = pair[end]
                 if 'uuid' not in endpoint:
@@ -473,16 +522,27 @@ def _locality(intent, src, board):
             if (locality_provenance.classify(pair, src['records'])['enforcement'] == 'hard'
                     and pair['provenance']['class'] != 'datasheet'):
                 _refuse(f'{label}: only a verified datasheet derivation may compile to a hard maximum')
+            # Every emitted role must be executable by the real consumers (grade, PlacementIndex);
+            # a missing bound is refused, never invented.
+            missing = [k for k in ('max_distance_nm', 'citation') if k not in pair]
+            if missing:
+                _refuse(f'{label}: incomplete locality: no declared {" or ".join(missing)}; the compiler '
+                        'emits only executable pairs and invents no bound')
             qualification.append(entry)
     document['obligations'] = obligations
     electrical_locality.validate(document)
+    try:
+        electrical_locality.PlacementIndex(document)  # the actual placement consumer admits the emitted contract
+    except (KeyError, TypeError, ValueError) as exc:
+        _refuse(f'locality contract is not executable by electrical_locality.PlacementIndex: {exc!r}')
     return document, qualification
 
 
-def _allocation(intent, board):
+def _allocation(intent, src, board, native):
+    """Block membership admitted by the actual ``blocks.derive`` on the captured native identities."""
     entries = intent.get('blocks', [])
     if not entries:
-        return None
+        return None, None
     owner = {}
     for block in entries:
         for ref in block['references']:
@@ -495,11 +555,20 @@ def _allocation(intent, board):
             _refuse(f'block {block["id"]}: anchor must be a member')
     _unique([b['id'] for b in entries], 'block id')
     document = {'schema': blocks.ALLOCATION, 'blocks': entries}
+    # derive reads footprint identity, library ID, lock state and pad nets; all come from the
+    # digest-bound native board. It enforces on-board membership, footprint agreement with the
+    # netlist, child-sheet coverage and the locked-member refusal, independent of moves.
+    capture = {'schema': placement.SCHEMA, 'board_sha256': src['sources']['board_sha256'],
+               'footprints': [{'ref': ref, 'uuid': fp['uuid'], 'fpid': fp['fpid'], 'locked': fp['locked'],
+                               'pads': [{'number': p['number'], 'net': p['net']} for p in fp['pads']]}
+                              for ref, fp in sorted(board.items())]}
     try:
-        blocks._allocation(json_bytes(document))
+        derivation = blocks.derive(native, read_sheet_names(src['paths']['netlist']), capture,
+                                   inventory_sha256=src['sources']['netlist_sha256'],
+                                   allocation_raw=json_bytes(document))
     except ValueError as exc:
-        _refuse(f'block allocation invalid: {exc}')
-    return document
+        _refuse(f'block allocation refused by blocks.derive: {exc}')
+    return document, {k: derivation[k] for k in ('allocation_sha256', 'blocks', 'residual')}
 
 
 def _moves(intent, board):
@@ -557,7 +626,7 @@ def compile_plan(run, intent, *, mode='manual'):
         _refuse(f'native netlist unreadable: {exc}')
     terminals, topology = _terminals(intent, src, board, native)
     locality, qualification = _locality(intent, src, board)
-    allocation = _allocation(intent, board)
+    allocation, derivation = _allocation(intent, src, board, native)
     moves = _moves(intent, board)
     unsupported = _unsupported(intent, src, board, terminals, locality)
     artifacts = {CONTRACTS['topology']: topology}
@@ -583,6 +652,7 @@ def compile_plan(run, intent, *, mode='manual'):
                     'records': dict(sorted(intent['sources'].get('records', {}).items()))},
         'artifacts': {rel: identity(value) for rel, value in sorted(artifacts.items())},
         'assertions': dict(sorted(pointers.items())), 'terminals': terminals,
+        **({'allocation_derivation': derivation} if derivation else {}),
         'locality_qualification': qualification, 'allowed_moves': moves,
         'unsupported': unsupported,
         'diagnostics': [{**d, 'authority': 'diagnostic'} for d in intent.get('diagnostics', [])],

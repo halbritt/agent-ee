@@ -7,9 +7,10 @@ import time
 import unittest
 from pathlib import Path
 
-from agent_ee import locality_provenance, physical_intent
+from agent_ee import blocks, electrical_locality, locality_provenance, physical_intent, topology_rules
 from agent_ee.baseline import freeze_evidence
 from agent_ee.candidate import capture
+from agent_ee.native_netlist import read_native_inventory, read_sheet_names
 from agent_ee.checks import run_checks
 from agent_ee.physical_intent import IntentRefused, compile_and_publish, compile_plan, verify_receipt
 from agent_ee.storage import digest, json_bytes, read_json, write_json
@@ -249,13 +250,9 @@ class PhysicalIntentTests(unittest.TestCase):
         self.refused(self.defect, self.intent(self.defect, terminals=[terminal('l', '6', 'CANL', 'canl')],
                                               moves=[{'reference': 'U1', 'allow': ['translate']}]),
                      'conflicting fixed move: native U1 is locked')
-        ok = compile_plan(self.local, self.intent(self.local, blocks=[{'id': 'can', 'references': ['C1', 'U1'],
-                                                                      'anchor': 'U1'}],
-                                                  moves=[{'reference': 'C1', 'allow': ['translate', 'rotate']}]))
-        self.assertEqual(ok['contracts/block-allocation.json'],
-                         {'schema': 'agent-ee.block-allocation/1',
-                          'blocks': [{'id': 'can', 'references': ['C1', 'U1'], 'anchor': 'U1'}]})
-        self.assertEqual(ok['receipt.json']['allowed_moves'], [{'reference': 'C1', 'allow': ['rotate', 'translate']}])
+        moves = compile_plan(self.local, self.intent(self.local, moves=[{'reference': 'C1',
+                                                                       'allow': ['translate', 'rotate']}]))
+        self.assertEqual(moves['receipt.json']['allowed_moves'], [{'reference': 'C1', 'allow': ['rotate', 'translate']}])
 
     # ------------------------------------------------------------- locality
 
@@ -268,8 +265,10 @@ class PhysicalIntentTests(unittest.TestCase):
         return pair
 
     def locality(self, supply):
+        # Review 510 R1: every emitted role is executable, so the return pair declares its bound too.
         ground = {'from': {'reference': 'U1', 'pad': '2', 'net': 'GND', 'uuid': PAD['2']},
-                  'to': {'reference': 'C1', 'pad': '2', 'net': 'GND', 'uuid': C1_GND}}
+                  'to': {'reference': 'C1', 'pad': '2', 'net': 'GND', 'uuid': C1_GND},
+                  'max_distance_nm': 3_000_000, 'citation': 'authored test limit'}
         return [{'id': 'u1-decoupling', 'metric': 'pad-centre-to-centre', 'supply': supply, 'return': ground}]
 
     def owner(self, owner='owner of record', text=OWNER_TEXT, locator='D-1', quote='within 3 mm of U1 VCC'):
@@ -445,6 +444,128 @@ class PhysicalIntentTests(unittest.TestCase):
         del bare['from']['uuid']
         self.refused(self.local, self.intent(self.local, locality=self.locality(bare)), 'captured native pad uuid')
 
+    def stale_package(self, run, complete, incomplete, contract, document, pattern):
+        """A package a laxer compiler published for ``incomplete`` fails verify_receipt."""
+        compiled = compile_plan(run, complete)
+        compiled[contract] = document
+        out = physical_intent.publish(compiled, self.root / f'stale-{self.id().rsplit(".", 1)[-1]}-'
+                                                            f'{len(list(self.root.glob("stale-*")))}')
+        with self.assertRaisesRegex(IntentRefused, pattern):
+            verify_receipt(out, run, incomplete)
+
+    def test_complete_locality_executes_in_the_real_consumers(self):
+        # Review 510 R1 positive: the emitted contract builds the real PlacementIndex and grades
+        # every role against a native placement capture of the same sealed board.
+        from agent_ee.placement_probe import extract
+        records = ('layout-notes.md',)
+        out = self.root / 'locality-consumer'
+        intent = self.intent(self.local, records=records, locality=self.locality(self.pair(self.datasheet())))
+        compile_and_publish(self.local, intent, out)
+        verify_receipt(out, self.local, intent)
+        document = read_json(out / 'contracts/electrical-locality.json')
+        index = electrical_locality.PlacementIndex(document)
+        self.assertEqual(sorted((own['pad'], peer['reference'], limit, hard) for own, peer, limit, hard
+                                in index.pairs['U1']), [('2', 'C1', 3_000_000, False), ('3', 'C1', 3_000_000, True)])
+        probe = extract(self.local / 'inputs/project/pins.kicad_pcb')
+        graded = electrical_locality.grade(probe, document)
+        self.assertEqual(graded['unknown'], [])
+        self.assertEqual(sorted(r['role'] for r in graded['measured']), ['return', 'supply'])
+        # The authored fixture puts C1 about 14 mm from U1: the hard datasheet supply bound is a
+        # determinate defect and the unsourced return stays an advisory, both from native geometry.
+        self.assertEqual(graded['status'], 'defect')
+        self.assertEqual([(d['kind'], d['role']) for d in graded['defects']], [('electrical_locality_distance', 'supply')])
+        self.assertEqual([(a['role'], a['exceeded']) for a in graded['advisories']], [('return', True)])
+
+    def test_incomplete_or_ungradable_locality_refuses(self):
+        # Review 510 R1 / review ee388d H1: a role without its bound crashed PlacementIndex after
+        # publication and receipt verification. It now refuses before output and at verify_receipt.
+        for key in ('max_distance_nm', 'citation'):
+            with self.subTest(missing=key):
+                incomplete = self.locality(self.pair())
+                del incomplete[0]['return'][key]
+                self.refused(self.local, self.intent(self.local, locality=incomplete),
+                             f'locality u1-decoupling.return: incomplete locality: no declared {key}')
+                bad = self.intent(self.local, locality=incomplete)
+                document = {'schema': electrical_locality.SCHEMA, 'obligations': incomplete}
+                self.stale_package(self.local, self.intent(self.local, locality=self.locality(self.pair())), bad,
+                                   'contracts/electrical-locality.json', document, 'incomplete locality')
+        unbounded = self.locality(self.pair())
+        del unbounded[0]['return']['max_distance_nm']
+        with self.assertRaises(KeyError):  # the actual consumer failure the refusal prevents
+            electrical_locality.PlacementIndex({'schema': electrical_locality.SCHEMA, 'obligations': unbounded})
+        metric = self.locality(self.pair())
+        metric[0]['metric'] = 'routed-length'
+        self.refused(self.local, self.intent(self.local, locality=metric), "unsupported metric 'routed-length'")
+        mixed = self.locality(self.pair())
+        mixed[0]['return']['to'] = {'reference': 'C1', 'pad': '1', 'net': 'VCC', 'uuid': C1_VCC}
+        mixed[0]['supply']['to'] = {'reference': 'C1', 'pad': '2', 'net': 'GND', 'uuid': C1_GND}
+        self.refused(self.local, self.intent(self.local, locality=mixed), 'endpoints declare different nets')
+
+    def test_invented_layout_scale_never_becomes_hard(self):
+        # Review 510 R2 / review ee388d H2: a captured 3 mm quote plus an authored 1 nm/unit scale
+        # compiled to a hard 1 nm datasheet maximum. Layout derivations now refuse before output.
+        records = ('layout-notes.md',)
+        layout = self.datasheet()
+        layout['derivation'].update(kind='layout', distance_units=1, scale_nm_per_unit=1,
+                                    scale_reference='invented scale')
+        del layout['derivation']['value_nm']
+        invented = self.locality(self.pair(layout, limit=1))
+        bad = self.intent(self.local, records=records, locality=invented)
+        self.refused(self.local, bad, "unverifiable derivation kind 'layout'")
+        # A plausible scale is still authored prose, not captured evidence.
+        plausible = copy.deepcopy(layout)
+        plausible['derivation'].update(distance_units=30, scale_nm_per_unit=100_000,
+                                       scale_reference='3 mm scale bar measures 30 units')
+        self.refused(self.local, self.intent(self.local, records=records,
+                                             locality=self.locality(self.pair(plausible))),
+                     "unverifiable derivation kind 'layout'")
+        document = {'schema': electrical_locality.SCHEMA, 'obligations': invented,
+                    'source_records': {'layout-notes.md': LAYOUT_TEXT}}
+        # The shared classifier still grants it hard authority (existing locality_provenance
+        # contract), which is exactly what the compiler must not publish.
+        self.assertEqual(locality_provenance.classify(invented[0]['supply'], document['source_records'])['enforcement'],
+                         'hard')
+        self.stale_package(self.local, self.intent(self.local, records=records,
+                                                   locality=self.locality(self.pair(self.datasheet()))),
+                           bad, 'contracts/electrical-locality.json', document, "derivation kind 'layout'")
+        # The valid numeric positive keeps its hard maximum; its mismatch controls are unchanged.
+        out = compile_plan(self.local, self.intent(self.local, records=records,
+                                                   locality=self.locality(self.pair(self.datasheet()))))
+        self.assertEqual(out['receipt.json']['locality_qualification'][0]['enforcement'], 'hard')
+
+    def test_allocation_is_admitted_by_actual_block_derivation(self):
+        # Review 510 R3 / review ee388d H3: a locked U1 compiled into a block without a moves entry,
+        # although blocks.derive refuses it. Admission now runs the actual derive.
+        locked = self.intent(self.defect, terminals=[terminal('l', '6', 'CANL', 'canl')],
+                             blocks=[{'id': 'locked', 'references': ['U1']}])
+        self.refused(self.defect, locked, 'refused by blocks.derive: locked footprints cannot be rigid-block members')
+        unlocked = self.intent(terminals=[terminal('l', '6', 'CANL', 'canl')],
+                               blocks=[{'id': 'locked', 'references': ['U1']}])
+        self.stale_package(self.defect, self.intent(self.defect, terminals=[terminal('l', '6', 'CANL', 'canl')]),
+                           locked, 'contracts/block-allocation.json',
+                           {'schema': blocks.ALLOCATION, 'blocks': [{'id': 'locked', 'references': ['U1']}]},
+                           'locked footprints')
+        # A netted board-only footprint is not an on-board native component.
+        self.refused(self.local, self.intent(self.local, blocks=[{'id': 'power', 'references': ['C1', 'U1']}]),
+                     'refused by blocks.derive: C1: board footprint is not an on-board native component')
+        # Positive: the compiled allocation survives the actual derive on a pcbnew placement capture.
+        from agent_ee.placement_probe import extract
+        intent = self.intent(blocks=[{'id': 'can', 'references': ['U1'], 'anchor': 'U1'}])
+        out = self.root / 'allocation-consumer'
+        compile_and_publish(self.control, intent, out)
+        receipt = verify_receipt(out, self.control, intent)
+        raw = (out / 'contracts/block-allocation.json').read_bytes()
+        self.assertEqual(read_json(out / 'contracts/block-allocation.json'),
+                         {'schema': blocks.ALLOCATION, 'blocks': [{'id': 'can', 'references': ['U1'], 'anchor': 'U1'}]})
+        netlist = self.control / 'work/netlist/design.xml'
+        derived = blocks.derive(read_native_inventory(netlist), read_sheet_names(netlist),
+                                extract(self.control / 'inputs/project/pins.kicad_pcb'),
+                                inventory_sha256=digest(netlist), allocation_raw=raw)
+        self.assertEqual({k: derived[k] for k in ('allocation_sha256', 'blocks', 'residual')},
+                         receipt['allocation_derivation'])
+        self.assertEqual(derived['blocks'][0]['references'], ['U1'])
+        self.assertIn('receipt.json', compile_plan(self.control, unlocked))
+
     # ------------------------------------------- unsupported and diagnostic
 
     def test_kelvin_and_current_loop_obligations_stay_visible(self):
@@ -490,14 +611,18 @@ class PhysicalIntentTests(unittest.TestCase):
             {'id': 'u1-decoupling', 'kind': 'current_loop', 'required': False, 'requirement': 'pins',
              'terminals': ['u1-canl'], 'statement': 'fixture-only loop obligation'}]),
             'duplicate assertion id: u1-decoupling')
-        # Distinct ids keep every mapping.
-        receipt = compile_plan(self.local, self.intent(self.local, locality=self.locality(self.pair()),
-                                                       blocks=[{'id': 'can', 'references': ['U1']}]))['receipt.json']
+        # Distinct ids keep every mapping. The local board's netted C1 is board-only, which the actual
+        # blocks.derive refuses, so the allocation mapping is checked on the control board.
+        receipt = compile_plan(self.local, self.intent(self.local, locality=self.locality(self.pair())))['receipt.json']
         self.assertEqual(receipt['assertions'], {
-            'block:can': ['/contracts/block-allocation.json#/blocks/0'],
             'u1-canh': ['/contracts/topology-rules.json#/rules/1'],
             'u1-canl': ['/contracts/topology-rules.json#/rules/0'],
             'u1-decoupling': ['/contracts/electrical-locality.json#/obligations/0']})
+        receipt = compile_plan(self.control, self.intent(blocks=[{'id': 'can', 'references': ['U1']}]))['receipt.json']
+        self.assertEqual(receipt['assertions'], {
+            'block:can': ['/contracts/block-allocation.json#/blocks/0'],
+            'u1-canh': ['/contracts/topology-rules.json#/rules/1'],
+            'u1-canl': ['/contracts/topology-rules.json#/rules/0']})
 
     def test_access_and_cut_stay_diagnostic(self):
         diagnostics = [{'id': 'u1-access', 'kind': 'access', 'status': 'unknown', 'statement': 'pad 6 escape unknown'},
@@ -530,6 +655,77 @@ class PhysicalIntentTests(unittest.TestCase):
             physical_intent.publish(compiled, out)
         self.assertFalse(out.exists())
         self.assertEqual([p for p in self.root.iterdir() if p.name.startswith('.broken.')], [])
+
+
+
+class RepeatedFunctionTests(unittest.TestCase):
+    """Review 510 R5 / review ee388d H4: repeated physical functions keep distinct identities.
+
+    Source/native acquisition is synthetic (explicit dictionaries); the real terminal join,
+    topology contract validator and topology evaluator run. No real-device pinout is claimed.
+    """
+    UUIDS = [f'00000000-0000-4000-8000-{i:012d}' for i in range(1, 6)]
+
+    def setUp(self):
+        def fact(pin, function):
+            return {'kind': 'pin_function', 'value': function, 'pin': pin, 'part_number': 'P',
+                    'source': {'path': 'p.pdf', 'sha256': 'a' * 64, 'page': 1, 'locator': 'table'}}
+        pins = {'1': 'GND', '2': 'GND', '3': 'VCC', '4': 'VCC', '5': 'OUT'}
+        self.src = {'requirements': {'r'},
+                    'facts': {'facts': [{'id': f'f{p}', 'status': 'verified', 'fact': fact(p, f)} for p, f in pins.items()]},
+                    'pin_map': {'comparisons': [{'reference': 'U1', 'fact_id': f'f{p}', 'pin': p, 'native_name': f,
+                                                 'matches': True} for p, f in pins.items()]}}
+        nets = {'GND': '1', 'VCC': '2', 'OUT': '3'}
+        self.board = {'U1': {'locked': False, 'pads': [{'number': p, 'uuid': self.UUIDS[int(p) - 1], 'net': f}
+                                                       for p, f in pins.items()]}}
+        self.native = {'components': {'U1': {'pins': list(pins), 'lib_id': 'L:P', 'populated': True, 'value': 'P'}},
+                       'memberships': {('U1', p): nets[f] for p, f in pins.items()},
+                       'nets': {nid: {'name': name, 'locator': nid,
+                                      'terminals': [('U1', p) for p, f in pins.items() if f == name]}
+                                for name, nid in nets.items()}}
+        self.terminals = [{'id': f'u1-{p}', 'reference': 'U1', 'pin': p, 'pad_uuid': self.UUIDS[int(p) - 1],
+                           'function': f, 'fact': f'f{p}', 'net': f, 'class': 'ic', 'requirement': 'r'}
+                          for p, f in pins.items()]
+
+    def compile(self, terminals):
+        return physical_intent._terminals({'terminals': terminals}, self.src, self.board, self.native)
+
+    def test_two_gnd_and_two_vcc_pins_compile_with_distinct_identities(self):
+        resolved, document = self.compile(self.terminals)
+        self.assertEqual(document['classes'], {'L:P': {'class': 'ic', 'terminals': {
+            'GND@1': '1', 'GND@2': '2', 'VCC@3': '3', 'VCC@4': '4', 'OUT': '5'}}})
+        self.assertEqual([(t['pin'], t['function'], t['class_terminal'], t['fact_id']) for t in resolved],
+                         [('1', 'GND', 'GND@1', 'f1'), ('2', 'GND', 'GND@2', 'f2'), ('3', 'VCC', 'VCC@3', 'f3'),
+                          ('4', 'VCC', 'VCC@4', 'f4'), ('5', 'OUT', 'OUT', 'f5')])
+        topology_rules.validate_rules(document)
+        self.assertEqual(topology_rules.evaluate(document, self.native)['outcome'], 'pass')
+        # The alias depends only on the bound pins, never on authoring order.
+        self.assertEqual(self.compile(self.terminals[::-1])[1]['classes'], document['classes'])
+
+    def test_contradictory_or_wrong_repeated_identity_still_refuses(self):
+        # A wrong pin for a repeated function is still a wrong-pin refusal.
+        wrong = [dict(self.terminals[1], pin='3', pad_uuid=self.UUIDS[2])]
+        with self.assertRaisesRegex(IntentRefused, 'verified GND fact binds U1 pin 2, not proposed pin 3'):
+            self.compile(wrong)
+        # Two references of one symbol binding the same physical pin to two functions contradict.
+        self.native['components']['U2'] = dict(self.native['components']['U1'])
+        self.board['U2'] = {'locked': False, 'pads': [{'number': '1', 'uuid': '00000000-0000-4000-8000-000000000099',
+                                                       'net': 'VCC'}]}
+        self.native['memberships'][('U2', '1')] = '2'
+        self.src['facts']['facts'].append({'id': 'g1', 'status': 'verified', 'fact': {
+            **self.src['facts']['facts'][2]['fact'], 'pin': '1'}})
+        self.src['pin_map']['comparisons'].append({'reference': 'U2', 'fact_id': 'g1', 'pin': '1',
+                                                   'native_name': 'VCC', 'matches': True})
+        u2 = {**self.terminals[2], 'id': 'u2-1', 'reference': 'U2', 'pin': '1', 'fact': 'g1',
+              'pad_uuid': '00000000-0000-4000-8000-000000000099'}
+        with self.assertRaisesRegex(IntentRefused, 'contradictory pin identity: symbol L:P pin 1 is bound to GND and VCC'):
+            self.compile(self.terminals[:1] + [u2])
+        # A generated alias never shadows another bound function name.
+        self.src['facts']['facts'][4]['fact']['value'] = 'GND@1'
+        self.src['pin_map']['comparisons'][4]['native_name'] = 'GND@1'
+        clash = self.terminals[:2] + [dict(self.terminals[4], function='GND@1')]
+        with self.assertRaisesRegex(IntentRefused, 'terminal aliases collide'):
+            self.compile(clash)
 
 
 if __name__ == '__main__':
