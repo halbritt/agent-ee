@@ -375,44 +375,58 @@ def _median(values):
     return statistics.median(values) if values else None
 
 
+def _cell_total(cell, key):
+    """Sum over every attempt, or None when any attempt lacks provider usage."""
+    attempts = cell.get('attempts', [])
+    values = [a['tokens'][key] for a in attempts if a.get('tokens')]
+    return sum(values) if attempts and len(values) == len(attempts) else None
+
+
+def _cell_seconds(cell, key):
+    values = [a.get(key) for a in cell.get('attempts', [])]
+    return sum(values) if values and None not in values else None
+
+
 def report(run_record):
-    """Descriptive per-arm measurements; never a savings claim from this sample size."""
+    """Descriptive per-arm measurements; never a savings claim from this sample size.
+
+    Medians cover cells with an accepted review; ``spent`` covers every call made.
+    A pair is comparable only when both of its cells have accepted reviews.
+    """
     arms = {}
     for arm in ARMS:
         cells = [c for c in run_record['cells'] if c['arm'] == arm]
-        measured = [c for c in cells if c.get('attempts')]
-        def field(cell, key):
-            values = [a['tokens'][key] for a in cell['attempts'] if a.get('tokens')]
-            return sum(values) if values else None
-        seeded = [c['score'] for c in cells if c['fixture'] == 'seeded' and c.get('score', {}).get('scored')]
-        control = [c['score'] for c in cells if c['fixture'] == 'control' and c.get('score', {}).get('scored')]
+        accepted = [c for c in cells if c.get('score', {}).get('scored')]
+        seeded = [c['score'] for c in accepted if c['fixture'] == 'seeded']
+        control = [c['score'] for c in accepted if c['fixture'] == 'control']
+        spent = [_cell_total(c, 'prompt_tokens_total') for c in cells if c.get('attempts')]
         arms[arm] = {'cells': len(cells), 'calls': sum(len(c.get('attempts', [])) for c in cells),
-            'accepted_reviews': sum(1 for c in cells if c.get('score', {}).get('scored')),
-            'executions': [c['execution'] for c in cells],
-            'median_prompt_tokens_total': _median([field(c, 'prompt_tokens_total') for c in measured]),
-            'median_output_tokens': _median([field(c, 'outputTokens') for c in measured]),
-            'median_reviewer_seconds': _median([sum(a['duration_s'] or 0 for a in c['attempts']) for c in measured]),
-            'median_api_ms': _median([sum(a['duration_api_ms'] or 0 for a in c['attempts']) for c in measured]
-                                     if all(a.get('duration_api_ms') is not None for c in measured for a in c['attempts'])
-                                     else []),
+            'accepted_reviews': len(accepted), 'executions': {c['id']: c['execution'] for c in cells},
+            'median_prompt_tokens_total': _median([_cell_total(c, 'prompt_tokens_total') for c in accepted]),
+            'median_cache_creation_tokens': _median([_cell_total(c, 'cacheCreationInputTokens') for c in accepted]),
+            'median_output_tokens': _median([_cell_total(c, 'outputTokens') for c in accepted]),
+            'median_reviewer_seconds': _median([_cell_seconds(c, 'duration_s') for c in accepted]),
+            'median_api_ms': _median([_cell_seconds(c, 'duration_api_ms') for c in accepted]),
+            'spent_prompt_tokens_total': sum(spent) if spent and None not in spent else None,
+            'spent_output_tokens': sum(_cell_total(c, 'outputTokens') or 0 for c in cells),
             'seeded_scored': len(seeded), 'seeded_detected': sum(s['seed_detected'] for s in seeded),
             'seeded_missed': sum(s['seed_missed'] for s in seeded),
             'control_scored': len(control), 'control_false_alarm_defects': sum(s['false_alarm_defects'] for s in control),
-            'navigation_citations': sum(len(c['score'].get('navigation_citations', [])) for c in cells
-                                        if c.get('score', {}).get('scored'))}
+            'navigation_citations': sum(len(s['navigation_citations']) for s in seeded + control)}
     pairs = []
     for cell in run_record['cells']:
         if cell['arm'] != 'indexed':
             continue
         peer = next(c for c in run_record['cells'] if c['arm'] == 'baseline' and c['fixture'] == cell['fixture']
                     and c['replicate'] == cell['replicate'])
-        def total(c):
-            values = [a['tokens']['prompt_tokens_total'] for a in c.get('attempts', []) if a.get('tokens')]
-            return sum(values) if values and len(values) == len(c['attempts']) else None
-        pairs.append({'fixture': cell['fixture'], 'replicate': cell['replicate'],
-                      'baseline_prompt_tokens_total': total(peer), 'indexed_prompt_tokens_total': total(cell),
-                      'baseline_seconds': sum(a['duration_s'] or 0 for a in peer.get('attempts', [])) or None,
-                      'indexed_seconds': sum(a['duration_s'] or 0 for a in cell.get('attempts', [])) or None})
+        pair = {'fixture': cell['fixture'], 'replicate': cell['replicate'],
+                'comparable': all(c.get('score', {}).get('scored') for c in (cell, peer))}
+        for name, c in (('baseline', peer), ('indexed', cell)):
+            pair[name] = {'execution': c['execution'], 'calls': len(c.get('attempts', [])),
+                          'prompt_tokens_total': _cell_total(c, 'prompt_tokens_total'),
+                          'output_tokens': _cell_total(c, 'outputTokens'),
+                          'reviewer_seconds': _cell_seconds(c, 'duration_s')}
+        pairs.append(pair)
     return {'schema': REPORT_SCHEMA, 'mode': run_record['mode'], 'plan_id': run_record['plan_id'],
             'ledger': run_record['ledger'], 'arms': arms, 'pairs': pairs,
             'claim': 'none: descriptive measurements of at most two matched pairs per fixture on one small fixture; '
@@ -420,6 +434,7 @@ def report(run_record):
             'limits': ['One initial circuit reviewer per cell; no adjudication.',
                        'The rc-step check already reports the seed; detection measures reviewer reporting, '
                        'not independent discovery.',
+                       'prompt_tokens_total sums uncached input, cache reads and cache writes over every agent turn.',
                        'costUSD is the harness estimate, not subscription billing.',
                        'Scoring is the mechanical preregistered rule in the plan, not engineering adjudication.']}
 

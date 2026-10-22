@@ -1,0 +1,150 @@
+{
+  "arms": {
+    "baseline": {
+      "accepted_reviews": 3,
+      "calls": 5,
+      "cells": 4,
+      "control_false_alarm_defects": 0,
+      "control_scored": 2,
+      "executions": {
+        "control-r1-baseline": "ok",
+        "control-r2-baseline": "ok",
+        "seeded-r1-baseline": "ok",
+        "seeded-r2-baseline": "refused"
+      },
+      "median_api_ms": 261323,
+      "median_cache_creation_tokens": 202626,
+      "median_output_tokens": 19613,
+      "median_prompt_tokens_total": 1853377,
+      "median_reviewer_seconds": 269.06,
+      "navigation_citations": 0,
+      "seeded_detected": 1,
+      "seeded_missed": 0,
+      "seeded_scored": 1,
+      "spent_output_tokens": 77176,
+      "spent_prompt_tokens_total": 8496950
+    },
+    "indexed": {
+      "accepted_reviews": 4,
+      "calls": 4,
+      "cells": 4,
+      "control_false_alarm_defects": 0,
+      "control_scored": 2,
+      "executions": {
+        "control-r1-indexed": "ok",
+        "control-r2-indexed": "ok",
+        "seeded-r1-indexed": "ok",
+        "seeded-r2-indexed": "ok"
+      },
+      "median_api_ms": 264514.5,
+      "median_cache_creation_tokens": 215254.5,
+      "median_output_tokens": 19399.5,
+      "median_prompt_tokens_total": 2313302.5,
+      "median_reviewer_seconds": 268.80899999999997,
+      "navigation_citations": 0,
+      "seeded_detected": 2,
+      "seeded_missed": 0,
+      "seeded_scored": 2,
+      "spent_output_tokens": 81981,
+      "spent_prompt_tokens_total": 9259567
+    }
+  },
+  "claim": "none: descriptive measurements of at most two matched pairs per fixture on one small fixture; no savings, latency or detection improvement is claimed or excluded",
+  "ledger": {
+    "cap": 12,
+    "fake_calls": 8,
+    "malformed_lines": 0,
+    "path": "evidence/packet-index-ab/call-ledger.jsonl",
+    "real_calls": 9,
+    "refused": 0,
+    "unsettled": []
+  },
+  "limits": [
+    "One initial circuit reviewer per cell; no adjudication.",
+    "The rc-step check already reports the seed; detection measures reviewer reporting, not independent discovery.",
+    "prompt_tokens_total sums uncached input, cache reads and cache writes over every agent turn.",
+    "costUSD is the harness estimate, not subscription billing.",
+    "Scoring is the mechanical preregistered rule in the plan, not engineering adjudication."
+  ],
+  "mode": "live",
+  "pairs": [
+    {
+      "baseline": {
+        "calls": 1,
+        "execution": "ok",
+        "output_tokens": 13038,
+        "prompt_tokens_total": 1193380,
+        "reviewer_seconds": 174.449
+      },
+      "comparable": true,
+      "fixture": "seeded",
+      "indexed": {
+        "calls": 1,
+        "execution": "ok",
+        "output_tokens": 17598,
+        "prompt_tokens_total": 2514037,
+        "reviewer_seconds": 244.836
+      },
+      "replicate": 1
+    },
+    {
+      "baseline": {
+        "calls": 1,
+        "execution": "ok",
+        "output_tokens": 19613,
+        "prompt_tokens_total": 1853377,
+        "reviewer_seconds": 269.06
+      },
+      "comparable": true,
+      "fixture": "control",
+      "indexed": {
+        "calls": 1,
+        "execution": "ok",
+        "output_tokens": 21201,
+        "prompt_tokens_total": 2112568,
+        "reviewer_seconds": 291.575
+      },
+      "replicate": 1
+    },
+    {
+      "baseline": {
+        "calls": 2,
+        "execution": "refused",
+        "output_tokens": 23758,
+        "prompt_tokens_total": 2998380,
+        "reviewer_seconds": 340.932
+      },
+      "comparable": false,
+      "fixture": "seeded",
+      "indexed": {
+        "calls": 1,
+        "execution": "ok",
+        "output_tokens": 17544,
+        "prompt_tokens_total": 1662036,
+        "reviewer_seconds": 246.043
+      },
+      "replicate": 2
+    },
+    {
+      "baseline": {
+        "calls": 1,
+        "execution": "ok",
+        "output_tokens": 20767,
+        "prompt_tokens_total": 2451813,
+        "reviewer_seconds": 306.258
+      },
+      "comparable": true,
+      "fixture": "control",
+      "indexed": {
+        "calls": 1,
+        "execution": "ok",
+        "output_tokens": 25638,
+        "prompt_tokens_total": 2970926,
+        "reviewer_seconds": 369.266
+      },
+      "replicate": 2
+    }
+  ],
+  "plan_id": "ed4fa71989995ccee5839123189cc9eb0ef5cbd24ee2f609c364d8c8e88df54c",
+  "schema": "agent-ee.packet-index-ab-report/1"
+}
