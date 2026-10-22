@@ -1324,7 +1324,10 @@ only under a reviewed [source contract](board-envelope.md#source-contracts).
 The contract fixes the minimum witnesses and open items, so coverage cannot
 drop them. It also requires the telemetry pod's J1 `part-identity/1` witness,
 taken from the scope's `parts_subset` check over the captured parts manifest
-and footprint.
+and footprint, with the complete manifest passing `qualify_manifest`. The
+`corner-holes` witnesses are the source holes H1–H4 by identity. The final
+guard verifies the candidate identity and baseline before it reads the scope's
+envelope declaration.
 
 `component-height/1` binds the optional envelope `max_component_height_mm` field
 and supplies `envelope:component-height/1`. It grades every native footprint from

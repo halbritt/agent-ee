@@ -356,7 +356,13 @@ AGENTEE-177/179 evidence that adds a real binding.
 coverage in the run's captured, re-verified `baseline.json` (`load_baseline`),
 never the current envelope file, a scope field or a stored result. It returns
 `agent-ee.final-qualification/1` with the `baseline_id` and a `blocking` list,
-or `None` for a scope without an envelope. Each blocker is
+or `None` for a scope without an envelope. It first checks `candidate.json`
+against its `candidate_id` and re-verifies the baseline, and only then reads
+the scope's envelope declaration. A removed or edited declaration therefore
+refuses: the identity differs, the recompiled baseline differs or refuses the
+envelope the scope still consumes, or the baseline carries envelope coverage
+that the candidate no longer declares. `None` means a verified capture without
+an envelope. Each blocker is
 `{id, status, open}`: a `staged` obligation with its open item IDs, an
 obligation that is not `bound` or `soft`, a derived obligation missing from the
 coverage, or unresolved requirements. An empty `unresolved` list is not
@@ -409,14 +415,19 @@ identities only, so it adds no numeric limit.
 
 | Obligation | Required generation witnesses | Open items that must stay listed |
 |---|---|---|
-| `corner-holes` | every declared hole, with four distinct holes each uniquely nearest a distinct outline corner | `hole-authority`, `fabricated-holes` |
+| `corner-holes` | the source holes `H1`, `H2`, `H3` and `H4`, each uniquely nearest a distinct outline corner | `hole-authority`, `fabricated-holes` |
 | `height` | none | `candidate-heights` (candidate), `cowl-fit`, `underside-fit`, `connector-fit`, `mating-plug-fit`, `harness-fit` |
 | `harness-edge` | J1 fixed (`connector-edge/1`), J1 `outline-containment/1`, J1 `part-identity/1` | `panel-cutout`, `mating-plug`, `retention`, `thickness-tolerance`, `harness-clearance` |
 | `antenna` | U1 fixed, U1 `outline-containment/1`, the U1 antenna keepout | `feed-point-side`, `housing-pocket`, `nearby-metal`, `support`, `rf-performance` |
 | `imu-separation` | none (assessment only) | `placement-assessment` (candidate), `vibration-coupling` |
 
-Items are `physical_qualification` unless marked candidate. Corner assignment is
-a nearest-vertex comparison with ties refused. It is not a hole position limit.
+Items are `physical_qualification` unless marked candidate. The corner witnesses
+are bound by source identity: the envelope must declare exactly holes `H1`–`H4`,
+matched by `id` in any order. Each is a required witness at its own locator. A
+missing, renamed or extra hole is refused, including an extra hole at the same
+coordinates as a source hole or tied between corners. Adding a hole role needs a
+reviewed contract change. Corner assignment is a one-to-one nearest-vertex
+comparison with ties refused. It is not a hole position limit.
 Drill, inset and coordinates stay generator-selected and keep the provenance of
 the hole fields. `hole-authority` stays open for them.
 
@@ -428,9 +439,14 @@ must declare one required purchased root-sheet part for J1 with manufacturer
 `TE Connectivity`, MPN `1-776163-1` and footprint
 `PodConnector:AMPSEAL_35_1-776163-1`. The footprint must be an exact member of
 the manifest's captured CAD closure, and that member is the one the scaffold
-loads. A missing check, an uncaptured manifest or member, a missing or optional
-part, or another MPN, manufacturer or footprint leaves the witness `absent`, so
-capture refuses. At run time the `parts_subset` check compares the native J1
+loads. The complete manifest must then pass the authoritative
+`parts_manifest.qualify_manifest`: the canonical part record or catalog row is
+replayed, the native CAD assignment coverage is complete, and J1's datasheet
+provenance is captured. Declared strings alone do not bind. A missing check, an
+uncaptured manifest or member, a missing or optional part, or another MPN,
+manufacturer or footprint leaves the witness `absent`, so capture refuses. The
+same applies to a self-consistent substitution behind the contracted strings,
+such as another part's record or a re-sealed footprint with changed pads. At run time the `parts_subset` check compares the native J1
 with that declaration. DRC schematic parity and `connector-edge/1` bind the
 board footprint of the same reference. Pose alone is not identity: a
 `connector-edge/1` pass proves neither identity nor mating-plug or enclosure fit.

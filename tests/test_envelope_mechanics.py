@@ -364,17 +364,26 @@ class EnvelopeMechanicsTests(unittest.TestCase):
     def parts_capture(self, change=None):
         """An owned captured agent-ee.parts/1 closure whose J1 carries the contracted identity.
 
-        The catalog, symbols and footprints are the parts-subset test fixture; only the J1
-        identity fields and an owned footprint under the contracted library name are set,
-        so the bytes are original test data, not the vendor footprint.
+        The catalog, symbols and footprints are the parts-subset test fixture; J1 is a
+        synthetic named part record (the approved-parts fixture) under the contracted
+        identity, assigned an owned footprint under the contracted library name, so the
+        closure passes the authoritative qualify_manifest and every byte is original test
+        data, not the vendor record or footprint.
         """
         name = 'AMPSEAL_35_1-776163-1'
         member = f'PodConnector.pretty/{name}.kicad_mod'
         if not hasattr(self, 'parts_pristine'):
+            from agent_ee.parts_manifest import qualify_manifest
             from agent_ee.storage import identity
+            from tests.test_approved_parts import named_fixture
             from tests.test_native_binding import GEN
             from tests.test_parts_subset import captured_fixture
             document = captured_fixture(self, self.source, trio=True)
+            index = next(i for i, p in enumerate(document['parts']) if p['instances'] == [dict(sheet='/', reference='J1')])
+            # A synthetic captured record carrying the contracted identity (LCSC/MPN/manufacturer as
+            # facts only); the canonical replay, not the declared strings, establishes J1.
+            named_fixture(self.source, document, index, lcsc='C596198', mpn='1-776163-1',
+                          package='Push-Pull,P=4mm', manufacturer='TE Connectivity')
             self.member_bytes = GEN.footprint(name, [GEN.tht(n, 4 * i) for i, n in enumerate('123')], 'through_hole')
             (self.source / 'PodConnector.pretty').mkdir()
             (self.source / member).write_bytes(self.member_bytes)
@@ -382,12 +391,19 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             cad['libraries'].append(dict(name='PodConnector', members=[dict(path=member,
                                                                             sha256=digest(self.source / member))]))
             write_json(self.source / 'cad.json', cad)
+            assignments = read_json(self.source / 'assignments.json')
+            next(c for c in assignments['components'] if c['reference'] == document['parts'][index]['id'])[
+                'footprint'] = 'PodConnector:' + name
+            write_json(self.source / 'assignments.json', assignments)
             blobs = [m for lib in cad['libraries'] for m in lib['members']] + [{k: lib[k] for k in ('path', 'sha256')}
-                     for lib in read_json(self.source / 'assignments.json')['libraries']]
+                     for lib in assignments['libraries']]
             document['cad'].update(manifest=dict(path='cad.json', sha256=digest(self.source / 'cad.json')),
+                                   assignments=dict(path='assignments.json',
+                                                    sha256=digest(self.source / 'assignments.json')),
                                    members_sha256=identity(sorted(blobs, key=lambda m: m['path'])))
-            j1 = next(p for p in document['parts'] if p['instances'] == [dict(sheet='/', reference='J1')])
-            j1.update(manufacturer='TE Connectivity', mpn='1-776163-1', footprint='PodConnector:' + name)
+            document['parts'][index]['footprint'] = 'PodConnector:' + name
+            write_json(self.source / 'parts.json', document)
+            qualify_manifest(document, self.source)
             self.parts_pristine = document
         (self.source / member).write_bytes(self.member_bytes)
         document = copy.deepcopy(self.parts_pristine)
@@ -480,6 +496,11 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         def drop_open(oid, item):
             by_id(oid)['coverage']['open'] = [e for e in by_id(oid)['coverage']['open'] if e['id'] != item]
         omits = 'coverage omits source contract telemetry-pod-expanded/1 generation witnesses: '
+        holes = ("obligation corner-holes source contract binds exactly the source mounting-hole witnesses "
+                 "\\['H1', 'H2', 'H3', 'H4'\\]")
+        def extra_hole(at):
+            self.envelope['mounting_holes'].append(dict(id='H5', at=at, drill_mm=3.2, plated=False, tolerance_mm=.1))
+            by_id('corner-holes')['coverage']['generation'].append(dict(locator='/mounting_holes/4'))
         cases = {
             'H4 witness only': (lambda: by_id('corner-holes')['coverage']['generation'].pop(),
                                 'obligation corner-holes ' + omits + '/mounting_holes/3\\Z'),
@@ -503,12 +524,23 @@ class EnvelopeMechanicsTests(unittest.TestCase):
                                        "restaged \\['cowl-fit'\\]"),
             'H4 declaration and witness': (lambda: (self.envelope['mounting_holes'].pop(),
                                                     by_id('corner-holes')['coverage']['generation'].pop()),
-                                           'requires 4 distinct mounting holes.*declares 3 holes at 3 distinct corners'),
+                                           holes + "; missing \\['H4'\\]; another hole role"),
             'every hole and witness': (lambda: (self.envelope['mounting_holes'].clear(),
                                                 by_id('corner-holes')['coverage'].update(generation=[])),
-                                       'declares 0 holes at 0 distinct corners'),
+                                       holes + "; missing \\['H1', 'H2', 'H3', 'H4'\\]"),
             'two holes at one corner': (lambda: self.envelope['mounting_holes'][3].update(at=[8, 8]),
-                                        'declares 4 holes at 3 distinct corners'),
+                                        "witnesses .* each uniquely nearest a distinct outline corner; nearest "
+                                        "corners are \\{'H1': 0, 'H2': 1, 'H3': 2, 'H4': 0\\}"),
+            # Combined review H2: the source witnesses are H1-H4 themselves, not a count of holes.
+            'H4 renamed H5': (lambda: self.envelope['mounting_holes'][3].update(id='H5'),
+                              holes + "; missing \\['H4'\\]; undeclared \\['H5'\\]"),
+            'extra fifth hole with witness': (lambda: extra_hole([60, 4]), holes + "; undeclared \\['H5'\\]"),
+            'coordinate-duplicate extra hole': (lambda: extra_hole([4, 4]), holes + "; undeclared \\['H5'\\]"),
+            'tied extra hole': (lambda: extra_hole([40, 4]), holes + "; undeclared \\['H5'\\]"),
+            'H4 renamed H1': (lambda: self.envelope['mounting_holes'][3].update(id='H1'),
+                              'duplicate reference or identifier: H1'),
+            'H1 witness in place of H4': (lambda: by_id('corner-holes')['coverage']['generation'][3].update(
+                locator='/mounting_holes/0'), 'repeats witness /mounting_holes/0'),
             'keepout declaration and witness': (lambda: (self.envelope['keepouts'].clear(),
                                                          by_id('antenna')['coverage']['generation'].pop()),
                                                 'requires the captured antenna keepout of U1'),
@@ -544,10 +576,15 @@ class EnvelopeMechanicsTests(unittest.TestCase):
         by_id('height')['coverage']['open'].append(dict(id='owned-extra', stage='physical_qualification',
                                                        statement='Owned extra qualification item.'))
         self.envelope['obligations'].reverse()
+        # The H1-H4 binding is by identity, not by declaration order.
+        self.envelope['mounting_holes'].reverse()
         run, _ = self.capture()
         report = read_json(run / 'baseline.json')['envelope']['coverage']
         height = next(r for r in report if r['id'].endswith('obligation-height'))
         self.assertEqual((height['status'], height['open'][-1]['id']), ('staged', 'owned-extra'))
+        corners = next(r for r in report if r['id'].endswith('obligation-corner-holes'))
+        self.assertEqual((corners['status'], sorted(w['requirement'] for w in corners['witnesses'])),
+                         ('staged', [f'R-envelope-telemetry-pod-hole-H{i}' for i in range(1, 5)]))
 
     def test_harness_identity_binds_the_contracted_part(self):
         """Review H2: J1 identity comes from the captured parts closure, never from geometry or deferral."""
@@ -596,6 +633,48 @@ class EnvelopeMechanicsTests(unittest.TestCase):
             path = self.source / 'PodConnector.pretty/AMPSEAL_35_1-776163-1.kicad_mod'
             path.write_bytes(path.read_bytes().replace(b'Owned AMPSEAL', b'Owned substitute'))
             self.refused('hash mismatch|not a captured member')
+        with self.subTest(mode='swapped canonical record'):
+            # Combined review H1: the contracted strings stay, but the selection, LCSC and datasheet
+            # move to another valid captured record; only the authoritative replay sees it.
+            from tests.test_approved_parts import named_fixture
+            def swap(document, j1):
+                other = dict(parts=[copy.deepcopy(j1)])
+                named_fixture(self.source, other, 0)
+                j1.update({k: other['parts'][0][k] for k in ('lcsc', 'selection', 'datasheet')})
+            self.stage()
+            self.parts_capture(swap)
+            self.refused('J1 part identity unestablished: parts: named identity/stock differs from captured part '
+                         'record: header')
+        with self.subTest(mode='self-consistent footprint substitution'):
+            # Pad 1 becomes pad 101 under the contracted name, with every digest re-sealed.
+            from agent_ee.storage import identity
+            cad_path = self.source / 'cad.json'
+            pristine = cad_path.read_bytes()
+            def resealed(document, j1):
+                path = self.source / 'PodConnector.pretty/AMPSEAL_35_1-776163-1.kicad_mod'
+                path.write_bytes(path.read_bytes().replace(b'(pad "1" ', b'(pad "101" ', 1))
+                cad = read_json(cad_path)
+                member = next(m for lib in cad['libraries'] for m in lib['members'] if m['path'] == path.relative_to(
+                    self.source).as_posix())
+                member['sha256'] = digest(path)
+                write_json(cad_path, cad)
+                blobs = [m for lib in cad['libraries'] for m in lib['members']] + [
+                    {k: lib[k] for k in ('path', 'sha256')} for lib in read_json(self.source / 'assignments.json')['libraries']]
+                document['cad'].update(manifest=dict(path='cad.json', sha256=digest(cad_path)),
+                                       members_sha256=identity(sorted(blobs, key=lambda m: m['path'])))
+            self.stage()
+            try:
+                self.parts_capture(resealed)
+                self.refused('J1 part identity unestablished: parts: captured CAD assignments unavailable or '
+                             'inconsistent')
+            finally:
+                cad_path.write_bytes(pristine)
+        with self.subTest(mode='real control'):
+            self.stage()
+            self.parts_capture()
+            run, _ = self.capture()
+            report = read_json(run / 'baseline.json')['envelope']['coverage']
+            self.assertEqual(next(r for r in report if r['id'].endswith('obligation-harness-edge'))['status'], 'staged')
 
     def test_removing_a_witness_refuses_generation(self):
         for mode in ('hole-absent', 'hole-unmapped', 'containment-absent', 'keepout-soft', 'coverage-absent'):
@@ -831,6 +910,62 @@ class EnvelopeMechanicsTests(unittest.TestCase):
                 passed = dict(results['qualified'], candidate_id=check['candidate_id'])
                 with self.assertRaisesRegex(ValueError, 'captured envelope qualification open'):
                     artifact_record(run, passed)
+
+    def test_final_guard_refuses_retained_metadata_tampering(self):
+        """Combined review H3: a removed or edited envelope declaration is refused, never read as no envelope.
+
+        A genuine native clean-board witness (prepare_release) accompanies a would-be passing
+        package result, so only the envelope guard can hold the sealed release.
+        """
+        from agent_ee.board_envelope import require_final
+        from agent_ee.checks import Ctx
+        from agent_ee.fab_package import artifact_record
+        from agent_ee.placement_defects import prepare_release
+        from agent_ee.storage import identity
+        self.stage()
+        run, _ = self.capture(self.fab_scope())
+        check = run_checks(run, time.monotonic() + 300)[-1]
+        self.assertEqual((check['id'], check['execution'], check['outcome']), ('package', 'unsupported', 'unknown'))
+        manifest = read_json(run / 'candidate.json')
+        ctx = Ctx(run, manifest, next(c for c in manifest['scope']['checks'] if c['id'] == check['id']),
+                  time.monotonic() + 300)
+        prepare_release(ctx)
+        passed = dict(check, execution='ok', outcome='pass',
+                      evidence=sorted(set(check['evidence'] + ctx.result['evidence'])))
+        with self.assertRaisesRegex(ValueError, 'captured envelope qualification open: .*obligation-corner-holes '
+                                                'staged'):
+            artifact_record(run, passed)
+        path = run / 'candidate.json'
+        original = path.read_bytes()
+        def removed(candidate):
+            candidate['scope'].pop('envelope')
+        def removed_reidentified(candidate):
+            removed(candidate)
+            candidate['candidate_id'] = identity({'scope': candidate['scope'], 'files': candidate['files']})
+        def changed_reidentified(candidate):
+            candidate['scope']['envelope']['profile'] = 'targets.md'
+            candidate['candidate_id'] = identity({'scope': candidate['scope'], 'files': candidate['files']})
+        cases = {'removed declaration': (removed, 'candidate metadata differs from its captured identity'),
+                 # Recompiling the captured scope refuses the envelope it still consumes.
+                 'removed declaration, re-identified': (removed_reidentified,
+                                                        'consumed envelope .*without a scope envelope declaration'),
+                 'changed declaration, re-identified': (changed_reidentified, 'immutable baseline changed|fab profile')}
+        for mode, (change, message) in cases.items():
+            with self.subTest(mode=mode):
+                candidate = read_json(path)
+                change(candidate)
+                write_json(path, candidate)
+                try:
+                    with self.assertRaisesRegex(ValueError, message):
+                        require_final(run)
+                    with self.assertRaisesRegex(ValueError, message):
+                        artifact_record(run, passed)
+                finally:
+                    path.write_bytes(original)
+        # The captured baseline still stages every obligation.
+        self.assertTrue(read_json(run / 'baseline.json')['envelope']['coverage'])
+        with self.assertRaisesRegex(ValueError, 'captured envelope qualification open'):
+            require_final(run)
 
 
 class EnvelopeMechanicsGeometryTests(unittest.TestCase):

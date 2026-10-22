@@ -87,7 +87,9 @@ OBLIGATION_CONTRACTS = {
                 'requirement_ids': ['POD-ME-1', 'POD-AC-7'], 'owner_items': ['AGENTEE-177', 'AGENTEE-179'],
                 'statement': 'Provide four corner mounting holes; generator selects drill, plating, inset and '
                              'coordinates.',
-                'corner_holes': 4,
+                # The reviewed source witnesses H1-H4, one per outline corner; another hole role
+                # needs a reviewed contract change. Geometry stays generator-selected.
+                'corner_holes': ('H1', 'H2', 'H3', 'H4'),
                 'open': {'hole-authority': PHYSICAL, 'fabricated-holes': PHYSICAL}},
             'height': {
                 'requirement_ids': ['POD-ME-1'], 'owner_items': ['AGENTEE-177', 'AGENTEE-179'],
@@ -520,14 +522,19 @@ def contract_witnesses(oid, expected, envelope, vertices):
     label = f'obligation {oid} source contract'
     required = []
     if 'corner_holes' in expected:
-        holes = corner_holes(envelope, vertices)
-        corners = {corner for _, corner in holes if corner is not None}
-        if len(corners) < expected['corner_holes']:
-            raise ValueError(f"{label} requires {expected['corner_holes']} distinct mounting holes, each nearest a "
-                             f'distinct outline corner; the envelope declares {len(holes)} holes at '
-                             f'{len(corners)} distinct corners')
-        # Every declared hole is a witness, so a hole can be neither dropped nor left unchecked.
-        required += [(locator, None) for locator, _ in holes]
+        holes = dict(zip((hole['id'] for hole in envelope['mounting_holes']), corner_holes(envelope, vertices)))
+        bound = expected['corner_holes']
+        missing, extra = [h for h in bound if h not in holes], sorted(h for h in holes if h not in bound)
+        if missing or extra:
+            raise ValueError(f'{label} binds exactly the source mounting-hole witnesses {list(bound)}'
+                             + (f'; missing {missing}' if missing else '') + (f'; undeclared {extra}' if extra else '')
+                             + '; another hole role needs a reviewed contract change')
+        corners = [holes[h][1] for h in bound]
+        if None in corners or len(set(corners)) != len(bound):
+            raise ValueError(f'{label} requires source witnesses {list(bound)} each uniquely nearest a distinct '
+                             f'outline corner; nearest corners are {dict(zip(bound, corners))}')
+        # Each source witness by its own locator, independent of declaration order.
+        required += [(holes[h][0], None) for h in bound]
     if 'fixed' in expected:
         reference = expected['fixed']['reference']
         index = next((i for i, f in enumerate(envelope['fixed_footprints']) if f['reference'] == reference), None)
@@ -1432,13 +1439,16 @@ def identity_witness(reference, expected, specs, files, inputs):
     a captured agent-ee.parts/1 manifest declaring one required purchased root-sheet part
     for this reference with the contracted manufacturer, MPN and footprint, the footprint
     an exact captured member of the manifest's CAD closure (the member the scaffold loads).
+    The complete manifest must then pass the authoritative parts_manifest.qualify_manifest
+    (canonical record/catalog replay, complete native CAD coverage) with the part's datasheet
+    provenance captured, so a self-consistent substitution behind the contracted strings refuses.
     The check then compares the native instance with that declaration; DRC schematic parity
     and connector-edge/1 bind the board footprint of the same reference.
     """
     from .catalog import strict_json
     from .copper_features import is_copper
     from .footprint_library import _members
-    from .parts_manifest import _read_blob, load_manifest
+    from .parts_manifest import _read_blob, load_manifest, qualify_manifest
     from .probe_features import is_probe
     checks = sorted(cid for cid, spec in specs.items() if spec.get('kind') == 'parts_subset')
     if not checks:
@@ -1469,6 +1479,14 @@ def identity_witness(reference, expected, specs, files, inputs):
             member = members.get(part['footprint'])
             if member is None or files.get(member['path']) != member['sha256']:
                 raise ValueError(f"footprint {part['footprint']} is not a captured member of {cad['path']}")
+            # Declared strings are not the producer result: the existing authoritative qualifier
+            # replays the canonical part record or catalog row and the native CAD assignments.
+            qualified = qualify_manifest(document, inputs)
+            if qualified['cad']['coverage'] != 'complete':
+                raise ValueError(f'{manifest} captured CAD coverage is incomplete')
+            if (part['datasheet']['status'] != 'captured'
+                    or part['id'] in {m['part_id'] for m in qualified['missing_provenance']}):
+                raise ValueError(f'{manifest} {reference} has no captured datasheet provenance')
         except (ValueError, OSError, KeyError, TypeError, AttributeError) as exc:
             problems.append(f'{cid}: {exc}')
     if problems:
@@ -1592,6 +1610,9 @@ def qualification_blockers(record):
 def final_qualification(run):
     """The final-acceptance guard over a run's CAPTURED baseline envelope; None without an envelope.
 
+    The candidate identity and immutable baseline are verified first, so None
+    means a verified envelope-less capture, never a removed declaration.
+
     The one shared guard for final review outcome, fab release and campaign
     acceptance/replay (AGENTEE-197). It re-verifies the immutable baseline.json
     (load_baseline) and reads its envelope coverage; the candidate's current
@@ -1599,12 +1620,19 @@ def final_qualification(run):
     nothing a writer or reviewer changes can close an open item.
     """
     from .baseline import load_baseline
-    from .storage import read_json
+    from .storage import identity, read_json
     run = Path(run)
-    if 'envelope' not in read_json(run / 'candidate.json')['scope']:
-        return None
+    manifest = read_json(run / 'candidate.json')
+    # Authenticate the retained candidate and its baseline before trusting the absence of an
+    # envelope: a removed or edited scope declaration is refused, never read as "no envelope".
+    if identity({'scope': manifest['scope'], 'files': manifest['files']}) != manifest.get('candidate_id'):
+        raise ValueError('candidate metadata differs from its captured identity; final qualification refused')
     baseline = load_baseline(run)
     record = (baseline or {}).get('envelope')
+    if 'envelope' not in manifest['scope']:
+        if record is not None:
+            raise ValueError('captured baseline carries envelope coverage the candidate no longer declares')
+        return None
     if not isinstance(record, dict) or record.get('schema') != 'agent-ee.envelope-baseline/1':
         raise ValueError('scope declares an envelope but its captured baseline carries no envelope coverage')
     return {'schema': QUALIFICATION_SCHEMA, 'baseline_id': baseline['baseline_id'],
