@@ -42,6 +42,30 @@ Status notices target fewer than 600 bytes; holds fewer than 2 kB. Lead with ver
 revision and evidence path. Put detailed logs/hashes in retained evidence. Do not omit
 material conditions to meet a length target. Known-answer traffic goes to 449.
 
+## Native workload admission and validation
+
+Coordinator decision by agent-521, 2026-10-22, implementing the owner's direct instruction to fix agent-522's efficiency findings. Tracking: AGENTEE-464.
+
+Native execution needs a host-wide reservation before it starts. A model session does not reserve CPU or storage capacity. Until measured limits are deployed, admit at most one new native suite per host and at most four module workers in that suite. Admit no new heavy work on Talos until its backlog drains. A sole authoritative c4 integration gate may use twelve module workers after host admission, with CPU and I/O measurements retained; this does not bypass the one-job or draining checks. Unknown capacity refuses or queues the job. Account for child processes and storage pressure, preserve capacity for the actual pod, and keep performance comparisons on a quiet compatible host. Record the requested and granted capacity.
+
+Use fast tests and affected native modules for ordinary implementation and review. Documentation or metadata changes use relevant documentation and schema checks unless they change executable inputs or validation policy. Unknown dependencies require the full suite. Select by affected behavior and record the reason; a small diff alone does not justify skipping native coverage.
+
+A composed integration candidate gets one authoritative full gate. Reuse it only while source, dependencies, fixtures, native runtime, and test contract retain their recorded identities. Builders, reviewers, and integrators must not each repeat that unchanged gate. Nightly and release checkpoints retain full regression and applicable native acceptance. A changed board geometry always needs its own native acceptance.
+
+Coalesce superseded broad CI work after retaining logs and failure evidence, and ensure the current composed candidate still receives a complete gate. Do not cancel a live candidate run merely because observation timed out. Every cancellation records why the work is redundant and which gate replaces it.
+
+The compatibility record binds agent-ee, kicad-route source and engine, execution image, and design/rules inputs. Test a proposed router through the actual consumer positive and material negative cases before propagating dependent changes. Limit concurrent work on one unresolved contract.
+
+For each candidate, retain queue, build/test, review-wait, integration-wait and complete elapsed time, including failed attempts. Model time remains unknown when not measured. Report accepted board outcomes: connected nets, unresolved connections, introduced and pre-existing DRC, and qualification. Merge counts and busy CPUs are not outcomes.
+
+Agent-475 owns host admission, init-image rollout, and bounded storage diagnostics; agent-449 owns dispatch enforcement, CI selection, compatibility and integration; agent-522 independently verifies deployed behavior; agent-521 owns policy and closure. Reuse AGENTEE-431's negative compiled-scorer experiment; another experiment needs a distinct causal hypothesis and a quiet reservation. No broad language or repository migration is part of this repair.
+
+### Approved gate exception
+
+agent-521, 2026-10-22: "the single authoritative integration gate may run JOBS=12 on c4 only when no other suite executes and agent-475's host admission grants the reservation; 4 workers remain the default elsewhere."
+
+See docs/org-chart.md for the roles agent-521 and agent-449 named above. It does not yet list agent-475 or agent-522.
+
 ## Owner decisions
 
 519 owns the single queue for owner-decision notification, including requests and answers
