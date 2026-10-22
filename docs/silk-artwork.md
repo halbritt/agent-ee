@@ -404,6 +404,26 @@ can receive a receipted repair. The ambiguity refusal is pinned by
 `test_pod_board_with_escaped_json_properties_attests_unchanged`, all in
 `tests/test_routed_artwork.py`.
 
+`RealPodArtworkTest` in the same module repeats these checks on a real pod
+board. It reads the retained electrical-locality baseline
+(`telemetry-pod/expansion/electrical-locality/baseline.kicad_pcb`) from the
+fome-mc object store at pinned commit `154cb59e`. The bytes are never copied
+into this repository. Before use, the test checks them against that directory's
+`SHA256SUMS`. The board's footprints carry escaped `PARAM_Datasheet` and
+`AGENT_EE_Ratings` JSON. The test proves four things:
+
+- `write_scope(board, board)` attests unchanged.
+- A targeted native repair of the conflicting R73, R175 and U19 `Reference`
+  fields moves exactly those three fields and replays from its receipt. Every
+  other raw node is unchanged, and the remaining conflicts stay open defects.
+- Changing escaped property content, respelling an escape outside the writer
+  set, or moving an unselected field refuses.
+- A hidden property target refuses.
+
+The test runs on the board alone because the pod project ignores DRC classes
+that artwork DRC requires. An absent store is the `fome-mc-store` gap, which
+fails under `AGENT_EE_REQUIRE_TOOLCHAIN=1`.
+
 ### Targeted repair (AGENTEE-434)
 
 `step(tool_dir, board, targets=[('C128', 'Reference'), ('R73', 'Reference')])`
@@ -445,8 +465,8 @@ without remaining silk findings on those identities. Graphics may differ only
 by the authenticated translation. A raw edit or unreceipted DRC cannot close carry.
 
 `tests.test_routed_artwork` exercises front/back fields, footprint/board graphics,
-escaped pod-like properties, escape and spelling ambiguity, targeted relocation
-and its receipt binding,
+escaped pod-like properties, a real pinned pod board, escape and spelling
+ambiguity, targeted relocation and its receipt binding,
 tracks/vias/zones preservation, non-silk and marking-damage refusals, source-pin
 and output binding, missing output, exhausted searches, ignored silk coverage
 and a nonroot read-only host sandbox.

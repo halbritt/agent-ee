@@ -1,6 +1,9 @@
 """Native routed-board silk repair, restricted geometry and receipt boundaries."""
 import copy
+import hashlib
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -9,7 +12,7 @@ from agent_ee.silk_artwork import DECLARATION
 from agent_ee.storage import read_json
 from agent_ee.symbol_library import children, parse_sexpr
 import test_silk_artwork as silk_fixture
-from toolchain import require_toolchain
+from toolchain import fome_mc_store, require_toolchain
 
 
 class RoutedArtworkTest(unittest.TestCase):
@@ -676,3 +679,130 @@ class RoutedArtworkTest(unittest.TestCase):
             changed['spec']['argv'] = receipt['spec']['argv'][:5] + argv
             with self.subTest(argv=argv), self.assertRaisesRegex(ValueError, message):
                 art.qualify_receipt(receipt_dir, changed, 'board.kicad_pcb', policy_files())
+
+
+# A real telemetry-pod board read from the pinned fome-mc store (never committed
+# here): the retained electrical-locality baseline, whose footprints carry the
+# agent-ee escaped JSON properties and whose visible references have native
+# silk conflicts. R73/R175/U19 have a legal position within the search bound.
+POD_COMMIT = '154cb59ec485c16fcb86d90ab35e2d8cf73a9e01'
+POD_DIR = 'telemetry-pod/expansion/electrical-locality/'
+POD_TARGETS = [('R175', 'Reference'), ('R73', 'Reference'), ('U19', 'Reference')]
+
+
+class RealPodArtworkTest(unittest.TestCase):
+    """AGENTEE-434 on a real pod board: escape-exact attestation and targeted repair."""
+
+    @classmethod
+    def setUpClass(cls):
+        require_toolchain(native=True)
+        repo = fome_mc_store(os.environ.get('AGENT_EE_FOME_MC_CHECKOUT', Path.home() / 'git/fome-mc'), POD_COMMIT)
+        def blob(name):
+            return subprocess.check_output(['git', '-C', str(repo), 'show', f'{POD_COMMIT}:{POD_DIR}{name}'])
+        cls.pod = blob('baseline.kicad_pcb')
+        # The store's own retained digest identifies the board.
+        sums = dict(reversed(line.split('  ', 1)) for line in blob('SHA256SUMS').decode().splitlines())
+        if hashlib.sha256(cls.pod).hexdigest() != sums['baseline.kicad_pcb']:
+            raise AssertionError('pinned pod board differs from its retained SHA256SUMS digest')
+
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory(prefix='ee434-pod-')))
+        # Board only: the pod project's ignored DRC classes would refuse artwork DRC.
+        self.source = self.root / 'design' / 'board.kicad_pcb'
+        self.source.parent.mkdir()
+        self.source.write_bytes(self.pod)
+
+    def footprint_edit(self, data, ref, old, new):
+        """Replace old once inside the footprint whose Reference is ref."""
+        at = data.index(b'(property "Reference" "%s"\n' % ref)
+        start = data.rindex(b'\n\t(footprint ', 0, at)
+        end = data.index(b'\n\t)\n', at)
+        block = data[start:end]
+        self.assertIn(old, block)
+        return data[:start] + block.replace(old, new, 1) + data[end:]
+
+    def reference_uuid(self, ref):
+        uid = [c[1] for fp in children(parse_sexpr(self.pod), 'footprint')
+               for p in children(fp, 'property') if p[1:3] == ['Reference', ref]
+               for c in p if isinstance(c, list) and c[0] == 'uuid']
+        self.assertEqual(len(uid), 1)
+        return uid[0]
+
+    def test_real_pod_board_with_escaped_properties_attests_unchanged(self):
+        before = self.pod
+        self.assertIn(b'\\"', before)
+        escaped = [p for fp in children(parse_sexpr(before, raw=True), 'footprint') for p in children(fp, 'property')
+                   if p[1] in ('"PARAM_Datasheet"', '"AGENT_EE_Ratings"') and '\\"' in p[2]]
+        self.assertEqual({p[1] for p in escaped}, {'"PARAM_Datasheet"', '"AGENT_EE_Ratings"'})
+        digest = hashlib.sha256(before).hexdigest()
+        self.assertEqual(art.write_scope(before, before), {
+            'status': 'allowed', 'before_sha256': digest, 'after_sha256': digest, 'moved_identities': []})
+        self.assertEqual(art.write_scope(before, before, targets=POD_TARGETS)['moved_identities'], [])
+
+    def test_real_pod_targeted_relocation_moves_only_named_fields(self):
+        before = self.pod
+        report = art.produce(self.source, self.root / 'run', targets=POD_TARGETS)
+        artwork = read_json(self.root / 'run' / art.ARTWORK)
+        self.assertEqual(sorted((m['reference'], m['field']) for m in artwork['moved_fields']), POD_TARGETS)
+        self.assertNotIn('moved_graphics', artwork)
+        output = (self.root / 'run' / art.BOARD).read_bytes()
+        proof = art.write_scope(before, output, targets=POD_TARGETS)
+        self.assertEqual(proof, report['write_scope'])
+        self.assertEqual(proof['targets'], [list(t) for t in POD_TARGETS])
+        moved = sorted(self.reference_uuid(ref) for ref, _ in POD_TARGETS)
+        self.assertEqual(proof['moved_identities'], moved)
+        # Repaired targets leave the open set; untargeted conflicts stay typed defects.
+        open_items = {i['uuid'] for d in report['open_defects'] for i in d['native']['items']}
+        self.assertFalse(open_items & set(moved))
+        self.assertIn(self.reference_uuid('U31'), open_items)
+        self.assertEqual(report['verdict'], 'defect')
+        # Every raw node outside the three targeted Reference fields keeps its spelling.
+        selected = [['property', '"Reference"', f'"{ref}"'] for ref, _ in POD_TARGETS]
+        def rest(data):
+            return [n if n[:1] != ['footprint'] else
+                    [c for c in n if not (isinstance(c, list) and c[:3] in selected)]
+                    for n in parse_sexpr(data, raw=True)]
+        self.assertEqual(rest(before), rest(output))
+        self.assertNotEqual(before, output)
+
+    def test_real_pod_targeted_receipt_replays(self):
+        from agent_ee.cli import policy_files
+        spec = art.step(self.root / 'tool', 'board.kicad_pcb', targets=POD_TARGETS)
+        self.assertEqual(spec['argv'][5:], [v for t in POD_TARGETS for v in ('--target', *t)])
+        receipt_dir = self.root / 'receipt'
+        receipt = stage_receipts.run_step(receipt_dir, self.source.parent, spec, {'implementation': 1})
+        self.assertEqual(receipt['status'], 'completed', read_json(receipt_dir / 'run/execution.json'))
+        proof = art.qualify_receipt(receipt_dir, receipt, 'board.kicad_pcb', policy_files())
+        self.assertEqual(proof['before_sha256'], hashlib.sha256(self.pod).hexdigest())
+        self.assertEqual(proof['targets'], [list(t) for t in POD_TARGETS])
+        self.assertEqual(proof['moved_identities'], sorted(self.reference_uuid(r) for r, _ in POD_TARGETS))
+
+    def test_real_pod_escaped_content_and_unselected_field_edits_refuse(self):
+        r73 = [('R73', 'Reference')]
+        moved = self.footprint_edit(self.pod, b'R73', b'(at 0 -1.65 270)', b'(at 0.5 -1.65 270)')
+        # Positive control: the named field alone moves, receipted by target.
+        self.assertEqual(art.write_scope(self.pod, moved, targets=r73)['moved_identities'],
+                         [self.reference_uuid('R73')])
+        refused = {
+            'targeted footprint escaped datasheet': (self.footprint_edit(
+                moved, b'R73', b'"PARAM_Datasheet" "{\\"', b'"PARAM_Datasheet" "{ \\"'), 'non-silk board token'),
+            'escaped ratings content': (moved.replace(
+                b'(property "AGENT_EE_Ratings" "{\\"', b'(property "AGENT_EE_Ratings" "{ \\"', 1), 'non-silk board token'),
+            'escape respelled outside the writer set': (moved.replace(
+                b'(property "AGENT_EE_Ratings" "{\\"', b'(property "AGENT_EE_Ratings" "{\\x22', 1), 'writer set'),
+            'unselected reference': (self.footprint_edit(
+                moved, b'R175', b'(at 0 2.63 0)', b'(at 0.5 2.63 0)'), 'outside the artwork target'),
+            'targeted footprint value': (self.footprint_edit(
+                moved, b'R73', b'(at 0 1.65 270)', b'(at 0.5 1.65 270)'), 'non-silk board token'),
+        }
+        for name, (after, message) in refused.items():
+            self.assertNotEqual(after, moved)
+            for targets in (r73, None):
+                if targets is None and message == 'outside the artwork target':
+                    # Untargeted, the same move is an allowed silk translation.
+                    self.assertEqual(art.write_scope(self.pod, after)['status'], 'allowed')
+                    continue
+                with self.subTest(case=name, targets=targets), self.assertRaisesRegex(ValueError, message):
+                    art.write_scope(self.pod, after, targets=targets)
+        with self.assertRaisesRegex(ValueError, 'not a movable visible silk field'):
+            art.produce(self.source, self.root / 'hidden', targets=[('R73', 'PARAM_Datasheet')])
