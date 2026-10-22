@@ -2254,3 +2254,9 @@ silk and courtyard SVG paths and hashes, including every enabled inner layer.
 Skipped or failed imaging remains explicit missing coverage and leaves every
 existing check verdict unchanged. No image can establish geometric fit or waive
 a native defect.
+
+The shared test harness defaults incidental candidate imaging off with the
+strict `AGENT_EE_SKIP_VISUALS=1` flag. Candidate-visual and 3D-render test modules
+force `0` while they run, retaining native image/hash coverage. Production
+continues to render by default; this test setting neither skips tests nor
+changes a check verdict.

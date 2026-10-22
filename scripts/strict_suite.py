@@ -33,6 +33,7 @@ CHILD = r'''
 import json, sys, unittest
 from pathlib import Path
 module, out = sys.argv[1], Path(sys.argv[2])
+import tests  # Apply the shared test environment before loading any module.
 suite = unittest.defaultTestLoader.discover('tests', pattern=module + '.py')
 result = unittest.TextTestRunner(verbosity=2, stream=sys.stdout).run(suite)
 out.write_text(json.dumps(dict(

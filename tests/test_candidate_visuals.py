@@ -1,6 +1,5 @@
 """Original four-layer native fixture and explicit visual failure boundaries."""
 import json
-import os
 from pathlib import Path
 import shutil
 import tempfile
@@ -10,7 +9,10 @@ from unittest.mock import patch
 from agent_ee.candidate import capture
 from agent_ee.candidate_visuals import produce, packet_visuals, capture_visuals
 from agent_ee.storage import digest
-from toolchain import require_toolchain
+from toolchain import enable_visuals_for_module, require_toolchain
+
+
+setUpModule = enable_visuals_for_module
 
 
 class CandidateVisualTests(unittest.TestCase):
@@ -19,9 +21,6 @@ class CandidateVisualTests(unittest.TestCase):
         require_toolchain(native=True)
 
     def setUp(self):
-        environment = patch.dict(os.environ, {'AGENT_EE_SKIP_VISUALS': '0'})
-        environment.start()
-        self.addCleanup(environment.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)

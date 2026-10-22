@@ -13,7 +13,7 @@ from agent_ee.datasheet_facts import load_facts
 from agent_ee.harnesses import evidence_mounts
 from agent_ee.storage import read_json, write_json
 from test_datasheet_facts import text_pdf
-from toolchain import require_toolchain
+from toolchain import enable_visuals_for_module, require_toolchain
 
 PART = 'AEX-T3'
 # Original fictitious land-pattern page; no vendor datasheet text.
@@ -37,6 +37,8 @@ def pad(number, name, x, y, w, h, cites, kind='smd', shape='rect', hole=None):
     full.update(cites)
     return {'number': number, 'name': name, 'kind': kind, 'shape': shape, 'x': x, 'y': y, 'w': w, 'h': h,
             'hole': hole, 'cite': full}
+
+setUpModule = enable_visuals_for_module
 
 
 class DatasheetFootprintTests(unittest.TestCase):

@@ -11,6 +11,17 @@ from pathlib import Path
 from agent_ee.executor import sandbox_argv
 
 
+# Native placement/review fixtures need no incidental ray tracing. Imaging tests
+# temporarily force 0; preserve explicit values so invalid flags still fail.
+os.environ.setdefault('AGENT_EE_SKIP_VISUALS', '1')
+
+
+def enable_visuals_for_module():
+    """Keep visual evidence tests imaging-on, then restore the caller's flag."""
+    from unittest.mock import patch
+    unittest.enterModuleContext(patch.dict(os.environ, {'AGENT_EE_SKIP_VISUALS': '0'}))
+
+
 @functools.lru_cache(maxsize=None)
 def prerequisite_problem(native=False, tools=()):
     if shutil.which('bwrap') is None:

@@ -122,6 +122,20 @@ a reason. Native failures, timeouts and missing manifests retain
 success and never change a placement/check verdict. Old retained captures report
 that images are unavailable rather than implicitly generating new evidence.
 
+The shared test harness defaults `AGENT_EE_SKIP_VISUALS` to `1` when the
+variable is unset. This covers saved placement proposals and coordinator captures
+made in the test process, and the resulting reviewer packets. The production executor clears
+inherited environment variables: placement helpers launched inside that sandbox
+still need an explicit request or CLI skip flag. The `test_candidate_visuals`,
+`test_render3d`, `test_schematic_render`, `test_datasheet_footprint`,
+`test_schematic_text` and `test_purpose_review` modules force `0` during execution
+and restore the previous environment afterward. Their existing visual evidence
+assertions still run, including native images and hashes. Explicit `0` opts a
+test process into imaging. Invalid flag values remain invalid. Production
+processes do not import the test harness and continue to render by default.
+Schematic rendering and other checks that create their own visual evidence do
+not consult this candidate-imaging flag.
+
 Native image bytes are hashed, but byte determinism is not certified. The result
 records this as `reproducibility.status: not_verified` with a reason: native ray
 tracing has no bound seed in this invocation. The AGENTEE-382 reviewer repeat on

@@ -19,12 +19,14 @@ from agent_ee.reviewers import build_packet
 from agent_ee.schematic_render import (GRID_MM, PIXELS_PER_MM, compare, grid, parameters,
                                        png_bytes, read_ppm)
 from agent_ee.storage import digest, identity, read_json, write_json
-from tests.toolchain import require_toolchain
+from tests.toolchain import enable_visuals_for_module, require_toolchain
 
 REPO = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('owned_lint_fixture', REPO / 'fixtures/schematic-lint/generate.py')
 gen = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gen)
+
+setUpModule = enable_visuals_for_module
 
 
 class ContractTests(unittest.TestCase):
