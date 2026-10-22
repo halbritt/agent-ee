@@ -1016,3 +1016,45 @@ attempt). The receipt's `generation: null` is the supported checkout-local
 layout, and the image build is not claimed to be reproducible. This qualifies execution
 identity on the RC control; it does not demonstrate target-board improvement,
 repeatability, differential-pair acceptance, or close AGENTEE-442.
+
+### Production runtime repin to 7d5b0d4d (2026-10-22, AGENTEE-466)
+
+The qualified production runtime moves from the 854f4e02 image to the gate image of agent-ee
+`7d5b0d4de65a5b8e8f925ad6f366a46653aae563`, which contains the AGENTEE-454 read-once repair.
+The gate built it from `b29cead1c3bfdd8fb8938dcba77bb14956810c90`; `7d5b0d4d` is an empty
+stack-marker commit on top of it, with the same tree. Image tag
+`agent-ee:ci-b29cead1c3bfdd8fb8938dcba77bb14956810c90`, OCI index
+`sha256:6dd73b1559920a8417ac51af6a148b134aff6ee7dacf8e93842156beabce2334` (agent-ee-gate-c4,
+containerd store), config `sha256:d96f8e00a50a1bb6fab119ac8973a083af9373e2c9c235f3df20f655cfc3b5b7`
+(the ID a classic Docker store reports for the same image). All 1,804 files under
+`/opt/agent-ee` match the 7d5b0d4d tree by sha256, with none missing and none extra. The router is
+unchanged: b5774496, `krt.generation: null` (the legacy layout), source
+`9cfc5d5e9369fd044ac6555afe57bdc4ccc829421e5496d42599c2d4a71951b2` (recomputed from the
+checkout), extension `ec5fb733d321343456917b2925ec275af233e3a44d34b2f332800d51352b2cd9`
+(hashed from the actual bytes), interpreter `/opt/kicad-route/.venv-krt/bin/python`
+(Python 3.12.3). The selected manifest is byte-identical to the one the 854f4e02 validation
+selected.
+
+The qualification repeats the validation above on the same `fixtures/rc/control` case. One
+routing step ran through `routing_adapter.step`, `stage_receipts.run_step` and
+`routing_adapter.verify`. The receipt completed with exit 0 in 35.2 s; the adapter classified
+it `complete` and `eligible`, and native validation returned `PASS`. Three mismatched runtimes
+were refused by the same step declaration before routing:
+- a router generation built from edited source (`owned engine source digest differs`);
+- a checkout whose HEAD names the old 5f1c072 pin (`is not the pinned`);
+- an installed extension whose bytes differ from its manifest (`state manifest drift`).
+
+One pod-preparation dry run ran under native-admit in this image, using the production-capture
+`build.py` and `pipeline.py` at fome-mc `5d923c5412d3659638c67c9cfa9f097e24620518`, with only
+`AGENT_EE_PIN` moved to 7d5b0d4d. The committed capture reproduced byte for byte, and all 28
+stages were accepted, as in the retained 81e387ee run. The read-once path executed in the
+actual pipeline: each of the 90 `parts_manifest.dependency_closure` and 22 `qualify_manifest`
+calls read about 128.3 MB, against about 31.3 GB per call in the AGENTEE-454 "before"
+measurement. Of the retained run's 211 mapped output files, 200 emitted design files are
+byte-identical. The other 11 are identity records that differ only in run time and stock age,
+paths, the agent-ee identity and the digests derived from it, and the AGENTEE-450
+`krt`-to-`builtin` step name. Three new 7d5b0d4d policy modules are also bound. The pod pin
+itself (`AGENT_EE_PIN` in fome-mc `production-capture/pipeline.py`) is fome-mc's and is still
+81e387ee on the j6 and j6b2 branches; it moves only in fome-mc. This qualifies execution
+identity and the read-once path on these inputs. It is not a latency claim, a routing campaign
+or project adoption.
